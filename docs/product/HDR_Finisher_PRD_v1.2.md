@@ -1017,6 +1017,21 @@ Point 1 should be settled first: every GPU option produces results that are clos
 
 ---
 
+## 11e. Owner Reminder (2026-10-02): Check the Luminance Mask by Eye
+
+**For Steve to do, not scheduled.** Look at a feathered luminance-range mask at 100% zoom in the SDR lane and in the HDR lane, then compare against a full-size Proof or an export of the same project, and decide whether the difference is visible.
+
+Why: on October 2 Steve chose to let the SDR lane draw luminance masks on the GPU at 100% zoom, as the HDR lane already did, because it removes about a second of CPU mask work per zoom. On the four-mask test project that mask now differs from the export's by up to 2.13 of 255 mask levels (39 pixels of 1.9 million above 2). The mask it replaced measured 1.10. The approved limit for gradual masks is 2; the 2.13 is allowed only by the trial limit of 3 that Steve set on October 1 "while he judges it on screen" (`Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`, sections 12.5 and 14.2). Nobody has judged it on screen yet.
+
+What the check decides:
+
+- If it looks the same: make 3 levels the approved limit for luminance masks, or leave the trial as it is.
+- If a difference is visible: the luminance feather on the GPU needs to be made more accurate (it blurs a reduced copy; the export blurs at full size), or the SDR lane goes back to the slower CPU-made mask.
+
+Export and Proof are not affected either way: they always use the exact mask.
+
+---
+
 ## 12. Out of Scope for v1 (Explicit Deferrals)
 
 The following are reasonable future features but are explicitly deferred to avoid scope bloat:

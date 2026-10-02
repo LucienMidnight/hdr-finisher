@@ -5895,7 +5895,6 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   }
   if (gpuPreviewEligible(lane)
     && lane === state.currentView
-    && state.acceptedPresentation?.execution !== "tiled"
     && els.previewCanvas.style.display !== "none"
     && !state.comparePeekActive
     && state.activeWorkflow !== "proof") {
@@ -5917,7 +5916,6 @@ function gpuScopeEligible(lane) {
     && lane === state.currentView
     && state.acceptedPresentation?.lane === lane
     && state.acceptedPresentation?.transport === "WebGPU"
-    && state.acceptedPresentation?.execution !== "tiled"
     && state.acceptedPresentation?.generation === state.previewGeneration[lane]
     && state.acceptedPresentation?.geometrySignature === geometrySignature()
     && Number.isInteger(state.acceptedPresentation?.sourceSerial)
@@ -5944,7 +5942,39 @@ async function runGpuScopeRequest(request) {
     state.previewScheduler.recordStaleResult();
     return false;
   }
-  const analysis = await state.gpuPreview.analyzeScope(els.previewCanvas, {
+  const accepted = state.acceptedPresentation;
+  const isCurrent = () => state.acceptedPresentation?.lane === lane
+    && state.acceptedPresentation?.generation === accepted?.generation
+    && state.acceptedPresentation?.geometrySignature === accepted?.geometrySignature
+    && (accepted?.execution === "tiled" || state.acceptedPresentation?.sourceSerial === accepted?.sourceSerial)
+    && accepted?.generation === state.previewGeneration[lane]
+    && generation === state.scopeGeneration
+    && request.sessionId === state.session?.session_id
+    && lane === state.currentView && mode === state.scopeMode;
+  let scopeCanvas = els.previewCanvas;
+  let sourceSerial = accepted?.sourceSerial;
+  if (accepted?.execution === "tiled") {
+    // A tiled canvas retains only the viewport. Its scopes still describe the
+    // entire picture, so grade a bounded proxy on a separate GPU canvas after
+    // settlement. Live input keeps the last scope until its settled request;
+    // it never starts an extra grading graph beside the gesture's tiles.
+    if (tier === "interactive") return false;
+    while (isCurrent() && (state.gpuDraftInFlight || state.gpuPreview.activeRenderCount > 0)) {
+      await new Promise((resolve) => window.setTimeout(resolve, 16));
+    }
+    if (!isCurrent()) return false;
+    const rendered = await state.gpuPreview.renderScopeProxy(
+      request.sessionId, lane, state.adjustments, sampleCurvePoints,
+      request.longEdge, request.include_locals ? localAdjustments() : [],
+      request.edit_revision, projectReferenceWhiteNits(),
+      { width: state.session.source.width, height: state.session.source.height },
+      { ...gpuPreviewSourceOptions(lane), applicationGeneration: accepted.generation, isCurrent },
+    );
+    if (!rendered || !isCurrent()) return false;
+    scopeCanvas = rendered.canvas;
+    sourceSerial = rendered.sourceSerial;
+  }
+  const analysis = await state.gpuPreview.analyzeScope(scopeCanvas, {
     width: sampleWidth,
     height: sampleHeight,
     generation,
@@ -5954,16 +5984,16 @@ async function runGpuScopeRequest(request) {
   // the last valid scope visible and let the next scheduled generation win;
   // never fall back to an image-sized CPU request merely because the GPU is busy.
   if (!analysis) return false;
-  const accepted = state.acceptedPresentation;
   if (analysis.sessionId !== request.sessionId
-    || analysis.sourceSerial !== accepted?.sourceSerial
+    || analysis.sourceSerial !== sourceSerial
     || analysis.applicationGeneration !== accepted?.generation
     || accepted?.generation !== state.previewGeneration[lane]
     || analysis.geometrySignature !== accepted?.geometrySignature
     || generation !== state.scopeGeneration
     || lane !== state.currentView
     || mode !== state.scopeMode
-    || request.sessionId !== state.session?.session_id) {
+    || request.sessionId !== state.session?.session_id
+    || !isCurrent()) {
     state.previewScheduler?.recordStaleResult();
     return false;
   }
@@ -5980,7 +6010,8 @@ async function runGpuScopeRequest(request) {
     // number against a generation that is no longer on screen.
     if (generation !== state.scopeGeneration
       || lane !== state.currentView
-      || state.previewGeneration[lane] !== accepted?.generation) {
+      || state.previewGeneration[lane] !== accepted?.generation
+      || !isCurrent()) {
       state.previewScheduler?.recordStaleResult();
       return false;
     }
@@ -12810,7 +12841,9 @@ function navigationThumbnailWorkReady() {
   const accepted = state.acceptedPresentation;
   return !state.importInProgress && !state.zoomRefinementTimer
     && !state.gpuDraftInFlight && !state.previewScheduler?.interacting
+    && !state.gpuScopeRequestInFlight && !state.scopeRequestInFlight
     && !(state.gpuPreview?.activeRenderCount > 0)
+    && !(state.gpuPreview?.activeScopeCount > 0)
     && accepted?.lane === lane && accepted.exact
     && accepted.generation === state.previewGeneration[lane]
     && accepted.geometrySignature === geometrySignature()
@@ -12819,9 +12852,9 @@ function navigationThumbnailWorkReady() {
 
 async function refreshNavigationThumbnail() {
   if (!state.session || state.zoomMode !== "custom" || state.zoomPercent < 100) return;
-  // This overview is a CPU whole-image render even in a GPU editing session.
-  // Starting it 300ms into native zoom competes with foreground mask builds.
-  // Wait for the requested frame and native background work to finish first.
+  // Overview work starts only after the requested picture and scopes settle.
+  // The GPU route grades a separate 512-edge canvas; CPU mode keeps its small
+  // fallback here, outside foreground refinement.
   if (!navigationThumbnailWorkReady()) {
     navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
     return;
@@ -12834,7 +12867,8 @@ async function refreshNavigationThumbnail() {
     return;
   }
   const request = window.HDRWholeImagePreviewPipe.request("navigation", state.session.source.width,
-    { sessionId, lane, editRevision: state.editRevision, geometrySignature: geometrySignature(), includeLocals: !state.compareWithoutLocals });
+    { sessionId, lane, editRevision: state.editRevision, generation: state.previewGeneration[lane],
+      geometrySignature: geometrySignature(), includeLocals: !state.compareWithoutLocals });
   const key = JSON.stringify(request);
   if (navigationThumbnail.key === key && navigationThumbnail.url) return;
   if (navigationThumbnail.inflightKey === key && navigationThumbnail.controller) return;
@@ -12842,20 +12876,33 @@ async function refreshNavigationThumbnail() {
   const controller = new AbortController();
   navigationThumbnail.controller = controller;
   navigationThumbnail.inflightKey = key;
+  const isCurrent = () => controller === navigationThumbnail.controller
+    && state.session?.session_id === sessionId && state.currentView === lane
+    && state.editRevision === request.editRevision && !state.globalEditDirty
+    && state.previewGeneration[lane] === request.generation
+    && geometrySignature() === request.geometrySignature
+    && state.zoomMode === "custom" && state.zoomPercent >= 100
+    && request.includeLocals === !state.compareWithoutLocals
+    && !state.previewScheduler?.interacting && !state.gpuDraftInFlight;
   try {
-    const response = await fetch(`/api/session/${sessionId}/preview/${lane}?purpose=navigation`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ edit_revision: request.editRevision, include_locals: !state.compareWithoutLocals,
-        long_edge: request.longEdge, execution: "whole", hdr_display: false }),
-      signal: controller.signal,
-    });
-    if (!response.ok) return;
-    const blob = await response.blob();
-    if (controller !== navigationThumbnail.controller || state.session?.session_id !== sessionId
-      || state.editRevision !== request.editRevision || state.currentView !== lane
-      || state.zoomMode !== "custom" || state.zoomPercent < 100
-      || request.includeLocals !== !state.compareWithoutLocals) return;
+    let blob;
+    if (gpuPreviewEligible(lane) && state.activeWorkflow !== "proof") {
+      blob = await state.gpuPreview.renderNavigationProxy(sessionId, lane, state.adjustments, sampleCurvePoints,
+        request.includeLocals ? localAdjustments() : [], request.editRevision, projectReferenceWhiteNits(),
+        { width: state.session.source.width, height: state.session.source.height },
+        { ...gpuPreviewSourceOptions(lane), applicationGeneration: request.generation, isCurrent });
+    } else {
+      const response = await fetch(`/api/session/${sessionId}/preview/${lane}?purpose=navigation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ edit_revision: request.editRevision, include_locals: !state.compareWithoutLocals,
+          long_edge: request.longEdge, execution: "whole", hdr_display: false }),
+        signal: controller.signal,
+      });
+      if (!response.ok) return;
+      blob = await response.blob();
+    }
+    if (!blob || !isCurrent()) return;
     const url = URL.createObjectURL(blob);
     const previous = navigationThumbnail.url;
     navigationThumbnail.url = url;

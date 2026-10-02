@@ -7,6 +7,13 @@
 **Primary fixture:** `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher` with `DSC00950.ARW` (read-only; never saved).
 **Reference workstation:** Steve's Windows workstation, NVIDIA GeForce RTX 4070 Ti (12 GiB), 2560 x 1440 at DPR 1.
 
+**Current phase 3 progress:** geometry-mask rasterization, HDR regional leaf
+luminance, local curves/wheels and bounded GPU scopes/navigation are implemented
+and recorded in 14.2–14.3; SDR regional luminance and a faster native-zoom
+source transfer are in 14.2 and 14.4. Steve authorized committing this
+continuation on October 2 (no push) and directed the work to Match on the
+GPU next; the complete phase 3 exit is still open.
+
 ## 1. Problem
 
 Thirty seconds of ordinary use can produce a multi-second stall. Steve built four masks (linear gradient, luminance range, path, brush) on a 42 MP Sony RAW, painted, zoomed to about 200%, and waited 7-8 seconds.
@@ -571,7 +578,8 @@ resources; peak and robust estimates match phase 2. Focused verification adds
 44 passing Python checks including Proof identity, 59 Node checks including
 unchanged shader pins, and 28 synthetic GPU Sharpen cases. Full Detail matrix,
 GPU masks, controls/Match, navigation/scopes and 50-local scaling remain.
-Phase 3 is not closed; phase 4, commit and push have not started.
+Phase 3 is not closed; phase 4 has not started. The first fixes were later
+committed as `fe43970` on Steve's authorization; no push was requested.
 
 ### 14.1 Near-black follow-up and continuation
 
@@ -592,3 +600,82 @@ The earlier full comparisons, timing pairs and Proof checks were not repeated
 after this neutral-only guard. Full Detail matrix and the remaining phase 3
 work stay open. Steve then authorized commit and continuing the sprint;
 push and phase 4 remain unauthorized.
+
+### 14.2 GPU masks and local controls
+
+Neutral-geometry paths and brushes without whole-mask feather/shift now
+rasterize from compact geometry on the GPU, including native tiles. A new
+hard-path pixel mismatch was traced to one ULP in division and repaired.
+Forty-five CPU/GPU raster cases cover 271,360 pixels; the passing four-mask
+HDR-centre capture covers 1,947,690 pixels with zero path mask error/edge
+displacement. Qualified feather bitmaps and their trial limit are unchanged.
+
+HDR leaf luma masks can use aligned source regions and feather halos. Eight
+regional/whole GPU checks (8,192 pixels) are exact; the fresh fixture picture
+and masks pass. A measurement-halo regression initially refused the bounded
+budget; separating display/analysis contracts repairs it. Four post-fix peak/
+robust calls pass, with unchanged HDR maximum error 0.0576% low. See
+[mask evidence](../technical/viewport-phase3-mask-evidence-2026-10-02.md).
+
+The SDR lane now uses the same regional leaf luma masks when its source is
+the ACEScg scene picture (no Match, no authored SDR base); those two cases
+keep the fallback. One fresh four-mask SDR-centre capture (1,947,690 pixels)
+passes picture, masks and peak, and the bounded-peak values are unchanged.
+The SDR luminance mask now measures 2.13 levels (39 pixels above the approved
+2), the HDR lane's existing figure, against 1.10 for the CPU-made regional
+mask it replaces. It is inside the unchanged trial limit of 3 only. Steve
+accepted this on October 2 and asked for a reminder to check it by eye, which
+is section 11e of `HDR_Finisher_PRD_v1.2.md`. A short
+SDR fifty-local session made no backend mask-tile request; its native zoom
+took 772.4 ms to the picture, one observation, 487.5 ms of it source transfer.
+
+Local curves, colour wheels, balance and blending run on the GPU before
+Detail. A tiny local-pass probe also corrected pre-existing SDR matrix/stage
+clamp differences against export. Twenty-four cases / 192 pixels pass,
+including independent local LUTs. A fresh as-saved four-mask SDR-centre
+capture (1,947,690 pixels) passes picture, masks and peak. See
+[local-control evidence](../technical/viewport-phase3-local-control-evidence-2026-10-02.md).
+
+### 14.3 GPU scopes and navigation
+
+Settled tiled scopes now grade a separate GPU proxy capped at 1,600; navigation
+grades a 512-edge GPU canvas after foreground/scopes settle. Direct scopes
+keep their existing route. Latest-state guards, accepted-picture resources
+and bounded peak measurement are preserved. In short fifty-local sessions,
+one sample per action, native picture/scopes were 674.6/3,971.7 ms before and
+820.8/1,767.8 ms in the final GPU auxiliary run. These are observations, not
+controlled medians; picture speed still misses its goal. The final check sees
+no CPU scope/navigation-preview requests and rejects stale auxiliary work.
+Proof/peak checks pass (10 tests). See
+[auxiliary evidence](../technical/viewport-phase3-auxiliary-evidence-2026-10-02.md).
+
+### 14.4 Native-zoom source transfer
+
+A fifty-local native zoom spent 487.5 of 772.4 ms fetching its source region
+in six sequential chunks, while the backend encodes that region in 153 ms
+serially. The region's chunks are now requested side by side through the
+existing four-slot staging ring, and the region is exactly the union of the
+tiles' halo rectangles instead of the viewport padded by a whole tile (10.8
+to 8.6 MP for that view). Pixels, placement and every limit are unchanged:
+one enforced centre comparison each for primary HDR and four-mask HDR/SDR
+(1,947,690 pixels each) reproduces the earlier figures and passes picture,
+masks and peak.
+
+Fifty-local single observations, native picture/scopes: 820.8/1,767.8 ms at
+the handoff (HDR); 467.8/1,400.0 ms HDR and 543.8/1,442.4 ms SDR now. These
+are one operation each, not medians, and the 300 ms goal on the two smaller
+fixtures was not remeasured. The remaining tiled-render time at fifty locals
+(180–250 ms) is GPU mask creation, not local passes or encoding. See
+[zoom transfer evidence](../technical/viewport-phase3-zoom-transfer-evidence-2026-10-02.md).
+
+One Node test, `highlight-anchor.test.js` (denoised-source anchor key), fails
+on committed `fe43970` as well as here. It is not in the earlier list of
+known failures and was not changed.
+
+Steve authorized committing this continuation on October 2; the evidence
+records' "uncommitted" describes them when written. No push was requested.
+Phase 3 stays open: Match, brush feather/
+shift, transformed masks, SDR regional luma under Match or an authored SDR
+base, luminance leaves in expression graphs, complete Detail coverage and
+broader 50-local/continuity checks. No tolerance was widened or fixture saved;
+phase 4 has not started.

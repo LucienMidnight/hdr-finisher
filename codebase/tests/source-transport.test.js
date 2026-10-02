@@ -692,10 +692,96 @@ test("a changed halo reuses a containing source region without fetching", async 
   const options = { region: { x: 150, y: 250, width: 1800, height: 2800 } };
   assert.equal(await preview.loadProxy("session", "sdr", 7968, "{}", 12, "source", options), resident);
   assert.deepEqual(resident.region, { x: 100, y: 200, width: 2000, height: 3000 });
+  assert.equal(await preview.loadProxy("session", "sdr", 7968, "{}", 12, "source",
+    { region: { ...options.region, alignment: 4 } }), resident, "an origin on the requested cells still serves");
   for (const [lane, geometry, sourceIdentity, region] of [
     ["hdr", "{}", "source", options.region],
     ["sdr", "changed", "source", options.region],
     ["sdr", "{}", "matched", options.region],
     ["sdr", "{}", "source", { x: 50, y: 250, width: 1800, height: 2800 }],
+    // A luma feather's downsample cells: the resident origin is not on them.
+    ["sdr", "{}", "source", { ...options.region, alignment: 16 }],
   ]) await assert.rejects(preview.loadProxy("session", lane, 7968, geometry, 12, sourceIdentity, { region }), /unexpected source request/);
+});
+
+/** A region backend that answers after a delay and counts overlapping requests. */
+function createRegionBackend({ width, height, failAt = null, delayMs = 5 }) {
+  const state = { requests: [], active: 0, peakActive: 0 };
+  const fetchImpl = async (url) => {
+    const parsed = new URL(url, "http://localhost");
+    const rect = Object.fromEntries(["x", "y", "width", "height"].map((name) => [name, Number(parsed.searchParams.get(name))]));
+    const probe = rect.width === 1 && rect.height === 1;
+    state.requests.push({ ...rect, probe, epoch: parsed.searchParams.get("source_epoch") });
+    if (!probe) {
+      state.active += 1;
+      state.peakActive = Math.max(state.peakActive, state.active);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      state.active -= 1;
+    }
+    if (failAt !== null && !probe && rect.y === failAt) {
+      return { ok: false, status: 409, headers: { get: () => null }, json: async () => ({ detail: "Stale source tile request dropped." }) };
+    }
+    const bytesPerRow = alignRow(rect.width * 8);
+    const headers = new Map([
+      ["X-Output-Width", String(width)], ["X-Output-Height", String(height)],
+      ["X-Tile-X", String(rect.x)], ["X-Tile-Y", String(rect.y)],
+      ["X-Tile-Width", String(rect.width)], ["X-Tile-Height", String(rect.height)],
+      ["X-Pixel-Format", "rgba16float"], ["X-Working-Space", "acescg"],
+      ["X-Geometry-Signature", "{}"], ["X-Source-Epoch", "7"], ["X-Bytes-Per-Row", String(bytesPerRow)],
+    ]);
+    return { ok: true, status: 200, headers: { get: (name) => headers.get(name) ?? null },
+      arrayBuffer: async () => new ArrayBuffer(bytesPerRow * rect.height) };
+  };
+  return { fetchImpl, state };
+}
+
+function regionPreview(backend, chunkRows, regionWidth) {
+  const Preview = loadPreview(backend.fetchImpl);
+  const preview = new Preview(null);
+  const harness = createDevice();
+  preview.device = harness.device;
+  preview.maxSourceChunkBytes = regionWidth * 8 * chunkRows;
+  return { preview, harness };
+}
+
+test("a source region fetches its chunks side by side, bounded by the staging ring", async () => {
+  const backend = createRegionBackend({ width: 5320, height: 7968 });
+  const region = { x: 686, y: 2618, width: 1024, height: 1003 };
+  const { preview, harness } = regionPreview(backend, 100, region.width);
+  const proxy = await preview.loadProxyRegion("session", "sdr", 7968, "{}", 0, "source", "key", region);
+
+  assert.deepEqual({ ...proxy.region }, region);
+  assert.equal(preview.sourceTransportMetrics.chunkCount, 11);
+  assert.ok(backend.state.peakActive > 1, "chunks overlap");
+  assert.ok(backend.state.peakActive <= 4, `at most one request per staging slot, saw ${backend.state.peakActive}`);
+  // Only the ring's buffers ever exist, however many chunks pass through.
+  assert.ok(harness.buffers.length <= 5, `staging buffers: ${harness.buffers.length}`);
+  assert.ok(harness.buffers.every((buffer) => buffer.destroyed));
+  const covered = new Array(region.height).fill(0);
+  for (const write of harness.writes) {
+    assert.equal(write.width, region.width);
+    for (let row = write.originY; row < write.originY + write.rows; row += 1) covered[row] += 1;
+  }
+  assert.ok(covered.every((count) => count === 1), "every row written exactly once");
+  const chunks = backend.state.requests.filter((request) => !request.probe);
+  assert.ok(chunks.every((request) => request.epoch === "7" && request.x === region.x && request.width === region.width));
+});
+
+test("a failed region chunk stops every lane before the partial texture is released", async () => {
+  const backend = createRegionBackend({ width: 5320, height: 7968, failAt: 2618 + 300 });
+  const region = { x: 686, y: 2618, width: 1024, height: 1000 };
+  const { preview, harness } = regionPreview(backend, 100, region.width);
+  let destroyedWhileActive = null;
+  preview.destroyAfterActiveRenders = (release) => { destroyedWhileActive = backend.state.active; release(); };
+
+  await assert.rejects(
+    () => preview.loadProxyRegion("session", "sdr", 7968, "{}", 0, "source", "key", region),
+    (error) => error.recoverable === true && error.status === 409,
+  );
+  assert.equal(destroyedWhileActive, 0, "no request was still in flight when the texture was released");
+  assert.equal(preview.proxies.size, 0);
+  assert.equal(harness.textures.length, 1);
+  assert.equal(harness.textures[0].destroyed, true);
+  // Lanes stop asking once one has failed: the tail of the region is never requested.
+  assert.ok(backend.state.requests.filter((request) => !request.probe).length < 10);
 });

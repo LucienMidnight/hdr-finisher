@@ -69,28 +69,28 @@
    * the whole frame at that scale is pure transport. The plan pads the visible
    * region by the minimum ROI fraction, and every foreground tile carries its
    * own halo; a tile that merely intersects the padded region may start a
-   * whole tile outside it. Expanding the same padded region by halo plus one
-   * tile therefore covers every halo rect the pass will copy, and nothing
-   * outside the padded region is ever read. Clamped to the output; the
-   * backend clamps again.
+   * whole tile outside it. Tiles are anchored to the frame's grid, so the
+   * padded region rounded out to that grid and then grown by the halo is
+   * exactly the union of the halo rects the pass will copy: nothing the pass
+   * reads is missing and nothing it never reads is transferred. Clamped to
+   * the output; the backend clamps again.
    */
   function sourceFetchRegion(visible, outputWidth, outputHeight, tileSize, halo, minimumRoiFraction = DEFAULT_MINIMUM_ROI_FRACTION) {
     const width = Math.max(1, toInt(outputWidth, 1));
     const height = Math.max(1, toInt(outputHeight, 1));
     const size = Math.max(64, Math.floor(Number(tileSize) || DEFAULT_TILE_SIZE));
-    const margin = Math.max(0, toInt(halo, 0)) + size;
+    const margin = Math.max(0, toInt(halo, 0));
     const roi = paddedRoi(
       normalizedRect(visible, width, height),
       width,
       height,
       clamp(Number(minimumRoiFraction), 0, 1),
     );
-    return normalizedRect({
-      x: roi.x - margin,
-      y: roi.y - margin,
-      width: roi.width + margin * 2,
-      height: roi.height + margin * 2,
-    }, width, height);
+    const left = Math.max(0, Math.floor(roi.x / size) * size - margin);
+    const top = Math.max(0, Math.floor(roi.y / size) * size - margin);
+    const right = Math.ceil((roi.x + roi.width) / size) * size + margin;
+    const bottom = Math.ceil((roi.y + roi.height) / size) * size + margin;
+    return normalizedRect({ x: left, y: top, width: right - left, height: bottom - top }, width, height);
   }
 
   /** The source-pixel region a padded output region maps back to. */

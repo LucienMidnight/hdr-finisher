@@ -93,9 +93,36 @@ Export and Proof compile every mask on the CPU for the whole image; that is the 
 
 Luminance masks and simple linear gradients are also made on the GPU where their inputs are resident.
 
-At and above 100% zoom a frame is drawn for the visible region plus a margin on the tiled route, whatever the image's size. Outside the tiles it has drawn, a region pass shows the last finished frame stretched. A pan draws what it exposes, and the rest of the frame is completed in the background only when that needs no mask from the backend. `readLocalMaskRegion` reads back the mask each local pass sampled, for the preview-versus-export comparison.
+Phase 3 adds compact geometry rasterization for neutral-geometry paths and
+brushes without whole-mask feather/shift. Native tiles receive geometry rather
+than CPU bitmaps; eligible low-resolution Fit masks are also made on the GPU.
+HDR source regions can supply leaf luminance masks with a feather halo aligned
+to the full-frame downsample grid. An SDR source region serves the same way
+when it is the ACEScg scene picture; a Match or authored-base region is not
+scene luminance and keeps the fallback. Regional masks carry their frame placement
+and use the full frame's feather distance. Editing measurement keeps its
+separate bounded-mask/halo contract. Unsupported forms retain the existing
+fallback; painted feather peak normalization and mask qualification are
+unchanged. See [phase 3 mask evidence](viewport-phase3-mask-evidence-2026-10-02.md).
+
+Local curves and colour wheels run on the GPU before local Detail. Curve LUTs
+have a separate segment and cached samples for each active local/lane. Local
+SDR colour conversion and stage clipping match export. See
+[local control evidence](viewport-phase3-local-control-evidence-2026-10-02.md).
+
+At and above 100% zoom a frame is drawn for the visible region plus a margin on the tiled route, whatever the image's size. Its source region is exactly the union of the foreground tiles' halo rectangles, fetched as row chunks side by side through a four-slot staging ring ([phase 3 zoom transfer evidence](viewport-phase3-zoom-transfer-evidence-2026-10-02.md)). Outside the tiles it has drawn, a region pass shows the last finished frame stretched. A pan draws what it exposes, and the rest of the frame is completed in the background only when that needs no mask from the backend. `readLocalMaskRegion` reads back the mask each local pass sampled, for the preview-versus-export comparison.
 
 Fallback scopes use vectorized bin-index generation and `numpy.bincount`. Scope results and adjusted frames are single-flight and cached by source state, lane, proxy level, dimensions, and adjustment signature. Cache diagnostics report managed bytes, hits, misses, evictions, in-flight work, and stale cancellations.
+
+Settled tiled scopes grade a separate GPU canvas capped at 1,600 instead of
+starting a CPU whole-picture grade. Interactive tiled scopes wait for
+settlement; direct scopes read the existing finished texture. The navigation
+overview uses a separate 512-edge GPU canvas with the established SDR-display
+mapping after picture/scopes settle. Auxiliary rendering preserves native
+sources and visible presentation resources, checks latest state, and leaves
+peak/anchor measurement on its bounded native contract. CPU rendering mode
+retains its small idle overview fallback. See
+[phase 3 auxiliary evidence](viewport-phase3-auxiliary-evidence-2026-10-02.md).
 
 ### Editing peak and highlight anchors (phase 2)
 

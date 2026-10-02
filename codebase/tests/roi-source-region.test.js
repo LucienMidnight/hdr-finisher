@@ -47,13 +47,22 @@ test("a magnified fetch region covers every foreground tile's halo rect", () => 
         );
         assert.ok(region.width > 0 && region.height > 0, "the region must have area");
         assert.ok(containsRect({ x: 0, y: 0, ...output }, region), "the region stays inside the frame");
-        for (const tile of planForegroundTiles(output, viewport, tileSize, halo, minimumRoiFraction)) {
+        const tiles = planForegroundTiles(output, viewport, tileSize, halo, minimumRoiFraction);
+        for (const tile of tiles) {
           assert.ok(
             containsRect(region, tile.haloRect),
             `halo rect ${JSON.stringify(tile.haloRect)} is outside region ${JSON.stringify(region)}`
               + ` (viewport ${JSON.stringify(viewport)}, tile ${tileSize}, halo ${halo})`,
           );
         }
+        // And nothing more: the transfer is the union of those halo rects.
+        const edges = tiles.map((tile) => tile.haloRect);
+        assert.deepEqual(region, {
+          x: Math.min(...edges.map((rect) => rect.x)),
+          y: Math.min(...edges.map((rect) => rect.y)),
+          width: Math.max(...edges.map((rect) => rect.x + rect.width)) - Math.min(...edges.map((rect) => rect.x)),
+          height: Math.max(...edges.map((rect) => rect.y + rect.height)) - Math.min(...edges.map((rect) => rect.y)),
+        });
         }
       }
     }

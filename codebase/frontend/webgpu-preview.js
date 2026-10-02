@@ -400,9 +400,9 @@
   // Tile position changes the uniform slots, but neither the local grade nor
   // the picture entering its Detail bands. Build those once per generation,
   // especially for brush masks whose serialized stroke history can be large.
-  function buildTiledLocalState(proxyIdentity, params, locals, lane, sourcePixelScale = 1) {
+  function buildTiledLocalState(proxyIdentity, params, locals, lane, sourcePixelScale = 1, curveOffsets = new Map()) {
     const states = locals.map((local) => ({
-      params: buildLocalParams(local, lane, sourcePixelScale), detailPrefix: null,
+      params: buildLocalParams(local, lane, sourcePixelScale,curveOffsets.get(local.id) || 0), detailPrefix: null,
     }));
     let lastDetail = -1;
     locals.forEach((local, index) => {
@@ -1383,6 +1383,7 @@
           upsample: this.createMaskPipeline("maskUpsampleFragmentMain"),
           combine: this.createMaskPipeline("maskCombineFragmentMain"),
           linearGradient: this.createMaskPipeline("linearGradientFragmentMain"),
+          shapeRaster: this.createMaskPipeline("shapeRasterFragmentMain"),
         };
         const lostDevice = this.device;
         this.device.lost.then((info) => {
@@ -1951,7 +1952,7 @@
         // Rank upstream of the shoulder; native patches evaluate all later
         // neighbourhood stages. Unrelated atlas neighbours never feed Detail.
         params[74] = 0;
-        this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
+        this.uploadParamsAndCurves(lane, adjustments, curveSampler, params, locals);
         const pipelines = this.pipelineFor("rgba16float");
         const masks = [];
         if (lane === "hdr") this.markResidentMaskFrame(sessionId, locals, 1600, signature);
@@ -1970,7 +1971,7 @@
         pass(a, pipelines.base, source, b, this.paramBuffer, b);
         let current = a;
         for (const {local, entry} of masks) {
-          const values = buildLocalParams(local, lane, 1);
+          const values = buildLocalParams(local, lane, 1,this.localCurveOffsets?.get(local.id) || 0);
           values[14] = values[15] = values[17] = 0;
           const buffer = this.createStorageBuffer(values); buffers.push(buffer);
           this.device.queue.writeBuffer(buffer, 0, values);
@@ -2043,7 +2044,8 @@
       const frame = {width: ranked.width, height: ranked.height,
         longEdge: Math.max(sourceSize.width, sourceSize.height), workingSpace: ranked.working_space};
       const activeLocals = activeGpuLocals(lane, locals);
-      const halo = this.roiSourceHalo(lane, adjustments, frame, sourceSize, {hdr: lane === "hdr"}, white, options, activeLocals);
+      const halo = this.roiSourceHalo(lane, adjustments, frame, sourceSize, {hdr: lane === "hdr"}, white,
+        {...options,analysisMasks:true}, activeLocals);
       const processedBound = ranked.patches.reduce((sum, patch) => sum + (patch.width + 2*halo)*(patch.height + 2*halo), 0);
       if (processedBound > 4*1024*1024) return {rendered:false, refusals:["editing peak patch budget exceeded"]};
       let peak = 0, rendered = 0;
@@ -2237,8 +2239,20 @@
     }
 
     /** Upload the parameter and curve storage both routes read from. */
-    uploadParamsAndCurves(lane, adjustments, curveSampler, params) {
-      const curves = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
+    uploadParamsAndCurves(lane, adjustments, curveSampler, params, locals = []) {
+      const global = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
+      const curved = activeGpuLocals(lane,locals).filter(local=>!curveSetNeutral(local[`${lane}_grade`]));
+      this.localCurveOffsets = new Map();
+      const curves = curved.length ? new Float32Array(global.length*(curved.length+1)) : global;
+      if (curved.length) {
+        curves.set(global);
+        curved.forEach((local,index)=>{
+          const offset = global.length*(index+1);
+          this.localCurveOffsets.set(local.id,offset);
+          curves.set(buildCurves(lane,{[lane]:local[`${lane}_grade`]},curveSampler,this.curveSampleCache,
+            `${lane}:local:${local.id}`),offset);
+        });
+      }
       this.ensureStorageBuffers(params.byteLength, curves.byteLength);
       this.device.queue.writeBuffer(this.paramBuffer, 0, params);
       if (curves !== this.lastCurveSamples) {
@@ -2439,12 +2453,11 @@
       // Only the tiled route draws a region; anything else needs the frame.
       if (this.executionOverrideFor(sourceOptions) !== "tiled") return null;
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
-      // A luminance mask is made on the GPU from the whole frame's source and
-      // on the CPU from anything less, which costs about a second per region
-      // at 42 MP. Until it is made per region on the GPU, a frame with one
-      // fetches the whole source: slower once, then nothing more to fetch.
+      // Leaf luma masks can use this ungraded HDR source region, including a
+      // globally aligned feather halo. Expression graphs still need their
+      // established source contract.
       if (lane === "hdr" && (sourceOptions?.identity || "source") === "source"
-        && (activeLocals || []).some((local) => maskUsesLuminance(local.mask))) return null;
+        && (activeLocals || []).some((local) => maskUsesLuminance(local.mask) && !isGpuLumaMask(local.mask))) return null;
       // The whole frame's source, once resident, serves every region of it
       // with no fetch at all.
       if (this.wholeSourceResident(sessionId, lane, longEdge, geometrySignature, sourceOptions?.identity || "source")) {
@@ -2479,7 +2492,7 @@
       const request = this.tileViewportRequest(
         sessionId, lane, previousFrame, sourceSize, sourceOptions, geometrySignature, tileSize, halo,
       );
-      return Contract.sourceFetchRegion(
+      let region = Contract.sourceFetchRegion(
         request.visible,
         previousFrame.width,
         previousFrame.height,
@@ -2487,6 +2500,23 @@
         request.halo,
         request.minimumRoiFraction,
       );
+      if (region && lumaSceneSource(lane, sourceOptions?.identity, previousFrame.workingSpace)) {
+        // Downsampling must start on the same cells as a whole-frame mask.
+        let alignment = 1;
+        const gcd = (a,b) => b ? gcd(b,a%b) : a;
+        for (const local of activeLocals || []) if (isGpuLumaMask(local.mask)) {
+          const factor = lumaFeatherPlan(local.mask.leaf.mask_feather, previousFrame.width,
+            previousFrame.height, this.featherReferenceScale?.(geometrySignature) || 1).factor;
+          alignment = alignment / gcd(alignment,factor) * factor;
+          if (alignment > 512) return null;
+        }
+        const x = Math.floor(region.x/alignment)*alignment, y = Math.floor(region.y/alignment)*alignment;
+        region = {x,y,width:Math.min(previousFrame.width,Math.ceil((region.x+region.width)/alignment)*alignment)-x,
+          height:Math.min(previousFrame.height,Math.ceil((region.y+region.height)/alignment)*alignment)-y};
+        // A resident region may only stand in for this one on the same cells.
+        if (alignment > 1) region.alignment = alignment;
+      }
+      return region;
     }
 
     /**
@@ -2502,6 +2532,7 @@
         if (isGpuLumaMask(mask)) return this.wholeSourceResident(sessionId, "hdr", longEdge, geometrySignature, "source");
         if (mask?.operator !== "leaf") return false;
         if (this.gpuAnalyticMasksEnabled && isGpuLinearGradientMask(mask, geometrySignature)) return true;
+        if (this.gpuAnalyticMasksEnabled && window.HDRMaskRaster?.eligible(mask,geometrySignature)) return true;
         const entry = this.softMasks.get(softMaskIdentity(sessionId, geometrySignature, gpuMaskIdentity(mask)));
         return Boolean(entry && !entry.destroyed && (entry.soft || (entry.larger?.soft && !entry.larger.destroyed)));
       });
@@ -2605,6 +2636,13 @@
         const clarity = contract.clarityMapPlan(contract.claritySigma(frame.width, frame.height, params[151]));
         halo = Math.max(halo, clarity.reach + clarity.scale + alignment);
       }
+      if (!sourceOptions?.analysisMasks && lumaSceneSource(lane, sourceOptions?.identity, frame.workingSpace)) {
+        for (const local of activeLocals || []) if (isGpuLumaMask(local.mask)) {
+          const plan = lumaFeatherPlan(local.mask.leaf.mask_feather,frame.width,frame.height,
+            this.featherReferenceScale?.(JSON.stringify(adjustments.shared?.geometry || {})) || 1);
+          halo = Math.max(halo,Math.ceil(3*plan.sigma)+2*plan.factor);
+        }
+      }
       return halo;
     }
 
@@ -2623,6 +2661,7 @@
         && serial === this.renderSerials.get(canvas) && sourceOptions?.isCurrent?.() !== false;
       for (const local of locals) {
         if (local.mask?.operator !== "leaf" || isGpuLumaMask(local.mask)) continue;
+        if (this.gpuAnalyticMasksEnabled && window.HDRMaskRaster?.eligible(local.mask,geometrySignature)) continue;
         void this.softLeafMask(sessionId, local, local.mask, "", editRevision,
           geometrySignature, current, this.sourceAbortSignal()).catch(() => null);
       }
@@ -2749,7 +2788,7 @@
       params[134] = Number(overlayColor[1]) || 0;
       params[135] = Number(overlayColor[2]) || 0;
 
-      this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
+      this.uploadParamsAndCurves(lane, adjustments, curveSampler, params, activeLocals);
 
       const result = await this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
         measureOnly,
@@ -2870,15 +2909,22 @@
       sessionId, batch, longEdge, editRevision, geometrySignature, isCurrent, signal, proxy = null,
     ) {
       const signature = gpuMaskIdentity(batch.local.mask);
+      if (this.gpuAnalyticMasksEnabled && proxy
+        && window.HDRMaskRaster?.eligible(batch.local.mask, geometrySignature)) {
+        const generated = this.loadGpuShapeTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy);
+        if (generated) return generated;
+      }
       if (this.gpuAnalyticMasksEnabled && proxy && isGpuLinearGradientMask(batch.local.mask, geometrySignature)) {
         return this.loadGpuLinearGradientTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy);
       }
+      const lumaRegionSource = proxy?.region
+        && lumaSceneSource(proxy.lane, proxy.sourceIdentity, proxy.workingSpace) ? proxy : null;
       if (isGpuLumaMask(batch.local.mask)
-        && this.wholeSourceResident(sessionId, "hdr", longEdge, geometrySignature, "source")) {
+        && (lumaRegionSource || this.wholeSourceResident(sessionId, "hdr", longEdge, geometrySignature, "source"))) {
         // The same GPU-made mask the direct route draws with, once the source
         // it is made from is on the GPU: no backend compile, no upload.
         const luma = await this.loadGpuLumaMask(
-          sessionId, batch.local, longEdge, editRevision, geometrySignature, isCurrent, signal,
+          sessionId, batch.local, longEdge, editRevision, geometrySignature, isCurrent, signal, false, lumaRegionSource,
         );
         if (luma) {
           luma.wholeFrame = true;
@@ -2945,6 +2991,40 @@
           cpuMaskRequest: false });
       }
       return { localIndex: batch.localIndex, entries };
+    }
+
+    loadGpuShapeTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy) {
+      const prefix = `${sessionId}:${batch.local.id}:${longEdge}:${geometrySignature}:${signature}:gpu-shape:`;
+      // Prepare every tile before allocating: oversized geometry retains the
+      // established fallback without leaving a partially published mask.
+      const prepared = batch.tiles.map(tile => ({tile, values: window.HDRMaskRaster.parameters(
+        batch.local.mask, tile.haloRect, proxy.width, proxy.height)}));
+      if (prepared.some(item => !item.values)) return null;
+      const entries = new Map(), encoder = this.device.createCommandEncoder(), buffers = [];
+      let generated = 0;
+      for (const {tile,values} of prepared) {
+        if (!isCurrent()) break;
+        const key = `${prefix}${maskLoader().spatialTileKey(tile)}`;
+        let entry = this.maskTiles.get(key);
+        if (!entry) {
+          const rect = tile.haloRect, texture = this.createMaskTexture(rect.width,rect.height);
+          const buffer = this.createStorageBuffer(values);
+          this.device.queue.writeBuffer(buffer,0,values);
+          this.encodeMaskPass(encoder,this.maskPipelines.shapeRaster,this.createMaskBindGroup(proxy.texture,buffer),texture);
+          buffers.push(buffer);
+          entry = {key,texture,width:rect.width,height:rect.height,byteSize:rect.width*rect.height*2,
+            kind:`gpu-${batch.local.mask.leaf.type}-raster`};
+          this.maskTiles.set(key,entry);generated++;
+        } else {this.maskTiles.delete(key);this.maskTiles.set(key,entry);}
+        entries.set(tile.key,entry);
+      }
+      if (generated) {
+        this.device.queue.submit([encoder.finish()]);
+        this.destroyAfterActiveRenders(()=>buffers.forEach(buffer=>buffer.destroy()));
+        this.performanceMetrics.maskEvents ||= [];
+        this.performanceMetrics.maskEvents.push({kind:`gpu-${batch.local.mask.leaf.type}-raster`,longEdge,tiles:generated,cpuMaskRequest:false});
+      }
+      return {localIndex:batch.localIndex,entries};
     }
 
     trimMaskTiles(pinned = []) {
@@ -3311,7 +3391,7 @@
       this.device.queue.writeBuffer(this.tileCompositeParamBuffer, 0, slots);
 
       const tiledLocalState = buildTiledLocalState(
-        proxy.identity, params, activeLocals, lane, options.sourcePixelScale || 1,
+        proxy.identity, params, activeLocals, lane, options.sourcePixelScale || 1,this.localCurveOffsets,
       );
       const localBuffers = activeLocals.map((local, localIndex) => {
         const localStride = Math.ceil(PARAM_COUNT * 4 / alignment) * alignment;
@@ -3853,6 +3933,9 @@
         exactPeak: measuredPeak, exactPeakLongEdge: Math.max(proxy.width, proxy.height),
         tileCount: plan.tileCount, visibleCount: plan.visibleCount, submissions,
         tileBatchSize,
+        // Encoding is this thread's time up to the last submission; the
+        // remainder waits for the GPU to finish the tiles and return the peak grid.
+        encodeMs: Math.max(0, (this.lastSubmissionAt ?? startedAt) - startedAt),
         // What the request asked for versus what the graph
         // processed. Each tile processes its haloed rect, so the sum is the
         // real processed area and the ratio is the halo amplification.
@@ -4009,7 +4092,7 @@
       let masks = [];
       let masksReadyAt = proxyReadyAt;
 
-      let surface = this.configureSurface(canvas, context, lane === "hdr");
+      let surface = this.configureSurface(canvas, context, lane === "hdr" && !sourceOptions?.forceSdrSurface);
       let pipelines = this.pipelineFor(surface.format);
       const sourcePixelScale = this.sourcePixelScaleFor(proxy, sourceSize);
       let params = buildParams(
@@ -4032,7 +4115,7 @@
       // plan and the decision describe real work rather than a generic guess.
       // Stale levels leave before admission, so the plan charges what the
       // device will actually hold for this render.
-      this.evictStaleProxies({ sessionId, lane, geometrySignature, sourceIdentity, keep: proxy.identity });
+      if (!sourceOptions?.scopeAnalysis) this.evictStaleProxies({ sessionId, lane, geometrySignature, sourceIdentity, keep: proxy.identity });
       const plan = this.planRender(proxy.width, proxy.height, {
         executionOverride: this.executionOverrideFor(sourceOptions),
         // A region proxy covers only the visible area; if Direct is admitted
@@ -4117,7 +4200,7 @@
           editRevision,
           geometrySignature,
           isCurrent: isMaskCurrent,
-          remember: !sourceOptions?.measureOnly,
+          remember: !sourceOptions?.measureOnly || Boolean(sourceOptions?.scopeAnalysis),
         });
         masks = loadedMasks.results;
         masksReadyAt = performance.now();
@@ -4131,7 +4214,7 @@
       // intermediate graph to build and passes to encode; clearing before then
       // would leave the viewer with nothing if the encode failed or was
       // superseded. The presentation gate below is the only place that resizes.
-      const presentationSurface = this.configureSurface(canvas, context, lane === "hdr");
+      const presentationSurface = this.configureSurface(canvas, context, lane === "hdr" && !sourceOptions?.forceSdrSurface);
       if (presentationSurface.format !== surface.format || presentationSurface.hdr !== surface.hdr) {
         surface = presentationSurface;
         pipelines = this.pipelineFor(surface.format);
@@ -4167,7 +4250,7 @@
       // frame is stated rather than inferred.
       params[164] = proxy.width;
       params[165] = proxy.height;
-      this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
+      this.uploadParamsAndCurves(lane, adjustments, curveSampler, params, activeLocals);
       if (plan.decision.mode === "tiled") {
         const refusals = this.tiledExecutionRefusals({
           activeLocals,
@@ -4581,7 +4664,7 @@
         )
         : { current: () => true, release: () => {} };
       if (!presentation) return this.refuseRender("superseded-before-presentation");
-      this.configureSurface(canvas, context, lane === "hdr");
+      this.configureSurface(canvas, context, lane === "hdr" && !sourceOptions?.forceSdrSurface);
       try {
       this.device.queue.writeBuffer(intermediate.compositeParamBuffer, 0, params);
       const pass = encoder.beginRenderPass({
@@ -5875,6 +5958,29 @@
       for (const texture of Object.values(selector.cache?.adaptiveScratch?.textures || {})) texture.destroy();
     }
 
+    async renderScopeProxy(sessionId, lane, adjustments, curveSampler, longEdge, locals, revision, white, sourceSize, options) {
+      this.scopeAnalysisCanvas ||= document.createElement("canvas");
+      const canvas = this.scopeAnalysisCanvas;
+      const rendered = await this.renderTo(canvas, sessionId, lane, adjustments, curveSampler,
+        Math.max(1, Math.min(1600, longEdge)), locals, revision, null, white, sourceSize,
+        { ...options, measureOnly: true, scopeAnalysis: true });
+      // A whole-picture scope cannot sample a viewport-only retained target.
+      return rendered?.execution === "direct" && this.scopeSources.has(canvas)
+        ? { canvas, sourceSerial: rendered.sourceSerial } : null;
+    }
+
+    async renderNavigationProxy(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, options) {
+      this.navigationAnalysisCanvas ||= document.createElement("canvas");
+      const canvas = this.navigationAnalysisCanvas;
+      const rendered = await this.renderTo(canvas, sessionId, lane, adjustments, curveSampler,
+        512, locals, revision, null, white, sourceSize,
+        { ...options, measureOnly: true, scopeAnalysis: true, forceSdrSurface: true });
+      if (rendered?.execution !== "direct" || options.isCurrent?.() === false) return null;
+      await this.waitForSubmittedWork();
+      if (options.isCurrent?.() === false) return null;
+      return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    }
+
     async analyzeScope(canvas, { width = 256, height = 128, generation = 0, tier = "interactive" } = {}) {
       if (!this.available) return null;
       const source = this.scopeSources.get(canvas);
@@ -6031,6 +6137,7 @@
      * within the gate instead of finishing the image.
      */
     recordSubmission(lane, options, tiles) {
+      this.lastSubmissionAt = performance.now();
       if (!this.instrumentationEnabled) return;
       this.submissionLog.push({
         at: performance.now(),
@@ -6369,6 +6476,12 @@
           usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
       }
+      if (this.curveBuffer && this.curveBuffer.size < curveBytes) {
+        const previous = this.curveBuffer;
+        this.curveBuffer = null;
+        this.lastCurveSamples = null;
+        this.destroyAfterActiveRenders(()=>previous.destroy());
+      }
       if (!this.curveBuffer) {
         this.curveBuffer = this.device.createBuffer({
           size: Math.max(16, Math.ceil(curveBytes / 4) * 4),
@@ -6656,6 +6769,11 @@
       isCurrent = () => true, signal = undefined, allowSoft = true, remember = true,
     ) {
       const leafLocal = { ...local, id: maskPath ? `${local.id}:${maskPath}` : local.id, mask: expression };
+      if (remember && longEdge <= SOFT_MASK_MAX_EDGE && this.gpuAnalyticMasksEnabled
+        && window.HDRMaskRaster?.eligible(expression,geometrySignature)) {
+        const shape = this.loadGpuShapeLeaf(sessionId,expression,longEdge,geometrySignature,isCurrent);
+        if (shape) return shape;
+      }
       if (isGpuLumaMask(expression)) {
         return this.loadGpuLumaMask(
           sessionId, leafLocal, longEdge, editRevision, geometrySignature, isCurrent, signal, !remember,
@@ -6671,6 +6789,34 @@
       return this.loadCpuLeafAt(
         sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature, isCurrent, signal, remember,
       );
+    }
+
+    loadGpuShapeLeaf(sessionId, expression, longEdge, geometrySignature, isCurrent) {
+      if (!isCurrent()) return null;
+      // Fit/Direct already loaded this frame. Geometry-only masks need its
+      // dimensions, but never another source fetch or a backend compile.
+      const source = [...this.proxies.values()].find(proxy => !proxy.region
+        && proxy.sessionId === sessionId && proxy.longEdge === longEdge && proxy.geometrySignature === geometrySignature);
+      if (!source) return null;
+      const key = `${sessionId}:${longEdge}:${geometrySignature}:gpu-shape:${gpuMaskIdentity(expression)}`;
+      let entry = this.localMasks.get(key);
+      if (!entry) {
+        const {width,height} = source, rect = {x:0,y:0,width,height};
+        const values = window.HDRMaskRaster.parameters(expression,rect,width,height);
+        if (!values) return null;
+        const buffer = this.createStorageBuffer(values), texture = this.createMaskTexture(width,height);
+        this.device.queue.writeBuffer(buffer,0,values);
+        const encoder = this.device.createCommandEncoder();
+        this.encodeMaskPass(encoder,this.maskPipelines.shapeRaster,this.createMaskBindGroup(source.texture,buffer),texture);
+        this.device.queue.submit([encoder.finish()]);
+        this.destroyAfterActiveRenders(()=>buffer.destroy());
+        entry = {texture,width,height,byteSize:width*height*2,kind:`gpu-${expression.leaf.type}-raster`};
+        this.localMasks.set(key,entry);
+        this.performanceMetrics.maskEvents ||= [];
+        this.performanceMetrics.maskEvents.push({kind:entry.kind,longEdge,width,height,cpuMaskRequest:false});
+      } else {this.localMasks.delete(key);this.localMasks.set(key,entry);}
+      this.retainLocalMask(entry,longEdge);
+      return entry;
     }
 
     /**
@@ -6872,18 +7018,21 @@
 
     async loadSceneLuminance(
       sessionId, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
+      sourceOverride = null,
     ) {
-      const key = `${sessionId}:${longEdge}:${geometrySignature}`;
+      const regionIdentity = sourceOverride?.region ? `:region:${JSON.stringify(sourceOverride.region)}` : "";
+      const key = `${sessionId}:${longEdge}:${geometrySignature}${regionIdentity}`;
       const cached = this.sceneLuminance.get(key);
       if (cached) return { ...cached, created: false };
       const inflight = this.sceneLuminanceInflight.get(key);
       if (inflight && !inflight.signal?.aborted) return inflight.promise;
       const pending = (async () => {
-        const source = await this.loadProxy(
+        const source = sourceOverride || await this.loadProxy(
           sessionId, "hdr", longEdge, geometrySignature, editRevision, "source", { signal, isCurrent },
         );
         if (!source || signal?.aborted || !isCurrent()) return null;
-        const texture = this.createMaskTexture(source.width, source.height);
+        const width = source.textureWidth || source.width, height = source.textureHeight || source.height;
+        const texture = this.createMaskTexture(width, height);
         const params = this.createStorageBuffer(new Float32Array(4));
         this.device.queue.writeBuffer(params, 0, new Float32Array(4));
         const bindGroup = this.createMaskBindGroup(source.texture, params);
@@ -6893,9 +7042,11 @@
         params.destroy();
         const entry = {
           texture,
-          width: source.width,
-          height: source.height,
-          byteSize: source.width * source.height * 2,
+          width, height, frameWidth: source.width, frameHeight: source.height,
+          regionIdentity,
+          frameRect: source.region ? [source.region.x/source.width,source.region.y/source.height,
+            width/source.width,height/source.height] : null,
+          byteSize: width * height * 2,
         };
         this.sceneLuminance.set(key, entry);
         const prefix = `${sessionId}:`;
@@ -6920,14 +7071,15 @@
     async loadGpuLumaMask(
       sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
       editingMeasurement = false,
+      sourceOverride = null,
     ) {
       const startedAt = performance.now();
       const scene = await this.loadSceneLuminance(
-        sessionId, longEdge, editRevision, geometrySignature, isCurrent, signal,
+        sessionId, longEdge, editRevision, geometrySignature, isCurrent, signal, sourceOverride,
       );
       if (!scene || signal?.aborted || !isCurrent()) return null;
       const baseSignature = gpuLumaBaseIdentity(local.mask);
-      const key = `${sessionId}:${longEdge}:${geometrySignature}:gpu-luma:${baseSignature}`;
+      const key = `${sessionId}:${longEdge}:${geometrySignature}:gpu-luma:${baseSignature}${scene.regionIdentity || ""}`;
       let entry = this.localMasks.get(key);
       let baseRegenerated = false;
       if (!entry) {
@@ -6936,7 +7088,7 @@
         const qualifyBuffer = this.createStorageBuffer(qualifyValues);
         this.device.queue.writeBuffer(qualifyBuffer, 0, qualifyValues);
         entry = {
-          kind: "gpu-luma",
+          kind: scene.regionIdentity ? "gpu-luma-region" : "gpu-luma",
           texture: baseTexture,
           baseTexture,
           horizontalTexture: null,
@@ -6946,6 +7098,7 @@
           verticalBuffer: null,
           width: scene.width,
           height: scene.height,
+          frameRect: scene.frameRect,
           byteSize: scene.width * scene.height * 2 + 16,
           refinementIdentity: null,
         };
@@ -6971,7 +7124,7 @@
       const refinementIdentity = `${feather}:${inverted}:${referenceScale}`;
       let refinementRan = false;
       if (entry.refinementIdentity !== refinementIdentity) {
-        const plan = lumaFeatherPlan(feather, entry.width, entry.height, referenceScale);
+        const plan = lumaFeatherPlan(feather, scene.frameWidth, scene.frameHeight, referenceScale);
         if (plan.sigma < 0.25 && !inverted) {
           entry.texture = entry.baseTexture;
         } else {
@@ -7372,7 +7525,7 @@
     localParamBuffer(local, lane, sourcePixelScale, frameWidth = 0, frameHeight = 0, maskEntry = null) {
       const key = `${local.id}:${lane}`;
       let buffer = this.localParamBuffers.get(key);
-      const values = buildLocalParams(local, lane, sourcePixelScale);
+      const values = buildLocalParams(local, lane, sourcePixelScale,this.localCurveOffsets?.get(local.id) || 0);
       if (frameWidth > 0 && frameHeight > 0) {
         writeClarityPlan(values, frameWidth, frameHeight, values[16]);
         values[164] = frameWidth;
@@ -7501,11 +7654,12 @@
   }
 
   function curveSetNeutral(branch) {
-    return ["luma_curve", "red_curve", "green_curve", "blue_curve"].every((name) => {
-      const points = branch?.[name];
-      return Array.isArray(points) && points.length >= 2
-        && points.every((point) => Array.isArray(point) && Math.abs(Number(point[0]) - Number(point[1])) < 0.000001);
-    });
+    return ["luma_curve", "red_curve", "green_curve", "blue_curve"].every(name=>curvePointsNeutral(branch?.[name]));
+  }
+
+  function curvePointsNeutral(points) {
+    return Array.isArray(points) && points.length >= 2
+      && points.every(point=>Array.isArray(point) && Math.abs(Number(point[0])-Number(point[1]))<0.000001);
   }
 
   function toneEqualizerNeutral(branch) {
@@ -7769,18 +7923,18 @@
     return nodes;
   }
 
-  function buildCurves(lane, adjustments, curveSampler, sampleCache) {
+  function buildCurves(lane, adjustments, curveSampler, sampleCache, cacheNamespace = lane) {
     const branch = adjustments[lane];
     const names = ["luma_curve", "red_curve", "green_curve", "blue_curve"];
     const signatures = names.map((name) => JSON.stringify(branch[name]));
-    const packedKey = `${lane}:packed`;
+    const packedKey = `${cacheNamespace}:packed`;
     const packedSignature = signatures.join("|");
     const packedCached = sampleCache.get(packedKey);
     if (packedCached?.signature === packedSignature) return packedCached.samples;
     const packed = new Float32Array(CURVE_SAMPLES * 4);
     names.forEach((name, channel) => {
       const signature = signatures[channel];
-      const cacheKey = `${lane}:${name}`;
+      const cacheKey = `${cacheNamespace}:${name}`;
       let cached = sampleCache.get(cacheKey);
       if (!cached || cached.signature !== signature) {
         cached = { signature, samples: curveSampler(branch[name], CURVE_SAMPLES) };
@@ -7797,11 +7951,7 @@
   }
 
   function gpuLocalSupported(grade) {
-    if (!grade || !curveSetNeutral(grade)) return false;
-    const grading = grade.color_grading || {};
-    if (Math.abs(Number(grading.balance) || 0) > 0.000001 || Math.abs((Number(grading.blending) || 50) - 50) > 0.000001) return false;
-    return [grading.shadows, grading.midtones, grading.highlights].every((wheel) =>
-      !wheel || [wheel.hue, wheel.saturation, wheel.luminance_ev].every((value) => Math.abs(Number(value) || 0) < 0.000001));
+    return Boolean(grade);
   }
 
   function activeGpuLocals(lane, localAdjustments) {
@@ -7815,7 +7965,7 @@
     return graphScaleContract().localDetailActive(grade);
   }
 
-  function buildLocalParams(local, lane, sourcePixelScale = 1) {
+  function buildLocalParams(local, lane, sourcePixelScale = 1, curveOffset = 0) {
     const grade = local[`${lane}_grade`];
     const detail = grade.detail || {};
     const values = new Float32Array(PARAM_COUNT);
@@ -7840,6 +7990,19 @@
     values[18] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
     values[19] = Math.min(1, Math.max(0, (Number(detail.sharpen_threshold) || 0) / 100)) * 0.5;
     values[20] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
+    ['luma_curve','red_curve','green_curve','blue_curve'].forEach((name,index)=>{
+      if (!curvePointsNeutral(grade[name])) values[21] += 1 << index;
+    });
+    values[22] = curveOffset;
+    const grading = grade.color_grading || {};
+    values[111] = 1;
+    values[112] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;
+    values[113] = (grading.balance || 0) / 50;
+    [grading.shadows || {},grading.midtones || {},grading.highlights || {}].forEach((wheel,index)=>{
+      values[114+index*3] = wheel.hue || 0;
+      values[115+index*3] = (wheel.saturation || 0)/400;
+      values[116+index*3] = wheel.luminance_ev || 0;
+    });
     return values;
   }
 
@@ -7907,6 +8070,18 @@
     if (!expression) return false;
     if (expression.operator === "leaf") return expression.leaf?.type === "luminance_range";
     return (expression.children || []).some(maskUsesLuminance);
+  }
+
+  /**
+   * Whether a lane's source is the scene picture a luma mask qualifies.
+   *
+   * Export always reads ACEScg scene luminance. The HDR lane's source is that
+   * picture; so is the SDR lane's unless Match or an authored SDR base
+   * replaces it, which the backend states as a different working space.
+   */
+  function lumaSceneSource(lane, sourceIdentity, workingSpace) {
+    return (sourceIdentity || "source") === "source"
+      && (lane === "hdr" || (lane === "sdr" && workingSpace === "acescg"));
   }
 
   function isGpuLumaMask(expression) {

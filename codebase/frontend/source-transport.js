@@ -498,43 +498,60 @@
     let chunkCount = 0;
     let firstTileMs = null;
     try {
-      for (let top = 0; top < delivered.height; top += rowsPerChunk) {
-        const rows = Math.min(rowsPerChunk, delivered.height - top);
-        assertCurrent("ROI source region stream was superseded");
-        const response = await fetch(query({
-          x: delivered.x, y: delivered.y + top, width: delivered.width, height: rows,
-        }, sourceEpoch), { signal });
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null);
-          const error = new Error(payload?.detail || "A source region could not be loaded");
-          error.recoverable = response.status === 409;
-          error.status = response.status;
-          throw error;
-        }
-        const chunk = {
-          x: Number(response.headers.get("X-Tile-X")),
-          y: Number(response.headers.get("X-Tile-Y")),
-          width: Number(response.headers.get("X-Tile-Width")),
-          height: Number(response.headers.get("X-Tile-Height")),
-        };
-        const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
-        const data = await response.arrayBuffer();
-        if (!(chunk.width > 0 && chunk.height > 0)) throw new Error("A source region chunk arrived empty");
-        if (chunk.x < delivered.x || chunk.y < delivered.y
-          || chunk.x + chunk.width > delivered.x + delivered.width
-          || chunk.y + chunk.height > delivered.y + delivered.height) {
-          throw new Error("A source region chunk arrived outside its region");
-        }
-        if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
-        transferredBytes += data.byteLength;
-        chunkCount += 1;
-        await copyChunkStaged(renderer, stagingRing, retiredStaging,
-          chunkCount % ringSize, data, {
+      // The chunks are independent row ranges of one texture, and the backend
+      // spends most of each request converting to half float. One lane per
+      // staging slot fetches them side by side: a slot's next write still
+      // waits only for its own earlier copy, and at most `ringSize` chunk
+      // responses exist at once, never the whole region.
+      let nextTop = 0;
+      let failure = null;
+      const lane = async (slot) => {
+        while (!failure && nextTop < delivered.height) {
+          const top = nextTop;
+          const rows = Math.min(rowsPerChunk, delivered.height - top);
+          nextTop += rows;
+          assertCurrent("ROI source region stream was superseded");
+          const response = await fetch(query({
+            x: delivered.x, y: delivered.y + top, width: delivered.width, height: rows,
+          }, sourceEpoch), { signal });
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            const error = new Error(payload?.detail || "A source region could not be loaded");
+            error.recoverable = response.status === 409;
+            error.status = response.status;
+            throw error;
+          }
+          const chunk = {
+            x: Number(response.headers.get("X-Tile-X")),
+            y: Number(response.headers.get("X-Tile-Y")),
+            width: Number(response.headers.get("X-Tile-Width")),
+            height: Number(response.headers.get("X-Tile-Height")),
+          };
+          const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
+          const data = await response.arrayBuffer();
+          if (failure) return;
+          if (!(chunk.width > 0 && chunk.height > 0)) throw new Error("A source region chunk arrived empty");
+          if (chunk.x < delivered.x || chunk.y < delivered.y
+            || chunk.x + chunk.width > delivered.x + delivered.width
+            || chunk.y + chunk.height > delivered.y + delivered.height) {
+            throw new Error("A source region chunk arrived outside its region");
+          }
+          if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
+          transferredBytes += data.byteLength;
+          chunkCount += 1;
+          await copyChunkStaged(renderer, stagingRing, retiredStaging, slot, data, {
             bytesPerRow, rows: chunk.height, width: chunk.width, texture,
             origin: { x: chunk.x - delivered.x, y: chunk.y - delivered.y },
           });
-        assertCurrent("ROI source region stream was superseded");
-      }
+          assertCurrent("ROI source region stream was superseded");
+        }
+      };
+      // Every lane stops before the partial texture is released: a copy into
+      // a destroyed texture must not be left in flight.
+      await Promise.all(Array.from({ length: ringSize }, (_, slot) => lane(slot).catch((error) => {
+        failure ||= error;
+      })));
+      if (failure) throw failure;
     } catch (error) {
       renderer.destroyAfterActiveRenders(() => texture.destroy());
       throw error;
@@ -696,6 +713,9 @@
           && proxy.sessionId === sessionId && proxy.lane === lane
           && proxy.longEdge === longEdge && proxy.geometrySignature === geometrySignature
           && proxy.sourceIdentity === sourceIdentity
+          // A luma feather downsamples from the region's origin, so a stand-in
+          // must start on the requested cells.
+          && loaded.x % (region.alignment || 1) === 0 && loaded.y % (region.alignment || 1) === 0
           && loaded.x <= region.x && loaded.y <= region.y
           && loaded.x + loaded.width >= region.x + region.width
           && loaded.y + loaded.height >= region.y + region.height;

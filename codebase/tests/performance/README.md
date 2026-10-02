@@ -140,3 +140,33 @@ four-mask outliers and three alternating timing pairs are recorded in
 is a tiny CPU/GPU regression for signed near-black colours, neutral wheel
 identity and active grading. It opens no project. The follow-up evidence
 records a single HDR-centre fixture comparison resolving the two outliers.
+
+`tests/mask-raster-reference.js`, through the Electron wrapper, checks GPU
+path/brush tiles against CPU masks, including a native-coordinate hard-edge
+regression and exact Bezier vertices. It opens no project. The first tile
+implementation and one enforced fixture capture are recorded in
+[phase 3 mask evidence](../../../docs/technical/viewport-phase3-mask-evidence-2026-10-02.md).
+
+`tests/luma-region-reference.js` checks aligned source regions against the
+existing whole-source GPU luminance mask for narrow/reduced feather and
+inversion. It opens no project. Follow it with a chosen-route picture capture
+and the bounded-peak check when changing the source/measurement contracts.
+`tests/luma-region-routing.test.js` (Node) checks which lane/working-space
+regions may supply that mask: HDR, and SDR only when its source is the ACEScg
+scene picture.
+
+`tests/local-grade-reference.js` checks production local parameters and the
+actual local shader against CPU export for curves, wheels and opacity in both
+lanes. `tests/performance/phase3-local-route-smoke.js` makes one local curves/
+wheels edit and one native zoom in a disposable fixture session; it is a route
+and timing observation, not an export comparison or long-session test.
+`--lane sdr` runs it in the SDR lane; each action records how many backend
+mask-tile requests it made. The `tiled-render` stage in its report carries
+`encodeMs` beside `durationMs`; the difference is the wait for the GPU. See
+[zoom transfer evidence](../../../docs/technical/viewport-phase3-zoom-transfer-evidence-2026-10-02.md).
+
+The local-route smoke also waits for an actual new settled GPU scope, checks
+the loaded 512-edge GPU navigation overview, rejects a stale auxiliary render,
+and asserts no CPU scope/navigation-preview requests during the two actions.
+See [auxiliary-view evidence](../../../docs/technical/viewport-phase3-auxiliary-evidence-2026-10-02.md)
+for one-operation timings and their limits; these are not session medians.

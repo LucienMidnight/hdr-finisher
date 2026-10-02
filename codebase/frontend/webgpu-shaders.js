@@ -556,7 +556,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return t * t * (3.0 - 2.0 * t);
     }
     fn curveValue(channel: u32, value: f32) -> f32 {
-      let base = channel * 1024u;
+      return curveValueOffset(channel,value,0u);
+    }
+    fn curveValueOffset(channel: u32, value: f32, offset: u32) -> f32 {
+      let base = offset + channel * 1024u;
       if (value < 0.0) {
         let slope = (curveLuts[base + 1u] - curveLuts[base]) * 1023.0;
         return curveLuts[base] + value * slope;
@@ -603,6 +606,28 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         rgb[channel] = curveValue(channel + 1u, value);
       }
       return curveDecode(rgb, hdr);
+    }
+    fn applyCurvesOffset(input: vec3f, hdr: bool, channels: u32, offset: u32) -> vec3f {
+      var rgb = select(clamp(input, vec3f(0.0), vec3f(1.0)), input, hdr);
+      if ((channels & 1u) != 0u) {
+      let sourceLuma = select(lumaSrgb(rgb), lumaAces(rgb), hdr);
+      let curveLuma = select(clamp(sourceLuma, 0.0, 1.0), curveEncodeChannel(sourceLuma), hdr);
+      let mappedCurveLuma = curveValueOffset(0u, curveLuma,offset);
+      let mappedLuma = select(mappedCurveLuma, curveDecodeChannel(mappedCurveLuma), hdr);
+      if (abs(sourceLuma) > 0.00001) { rgb *= mappedLuma / sourceLuma; }
+      }
+      if ((channels & 14u) == 0u) { return rgb; }
+      var encoded = curveEncode(rgb, hdr);
+      for (var channel = 0u; channel < 3u; channel++) {
+        if ((channels & (2u << channel)) != 0u) {
+          encoded[channel] = curveValueOffset(channel + 1u, encoded[channel],offset);
+        }
+      }
+      let decoded = curveDecode(encoded, hdr);
+      for (var channel = 0u; channel < 3u; channel++) {
+        if ((channels & (2u << channel)) != 0u) { rgb[channel] = decoded[channel]; }
+      }
+      return rgb;
     }
     fn acescgToSrgb(rgb: vec3f) -> vec3f {
       return vec3f(
@@ -1924,10 +1949,25 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         rgb *= vec3f(1.0 + offset * 0.15, 1.0 + p[10] * 0.08, 1.0 - offset * 0.15);
         rgb = localSaturation(rgb);
       } else {
-        var aces = srgbToAcescg(rgb);
+        // Local export converts display-linear sRGB with CAT02. The shared
+        // source transform serves a different input contract.
+        var aces = vec3f(
+          0.61311781290644*rgb.r + 0.34118199585562525*rgb.g + 0.04578734428233729*rgb.b,
+          0.06993408230751336*rgb.r + 0.9181030375085815*rgb.g + 0.011932775530201238*rgb.b,
+          0.0204629926377373*rgb.r + 0.1067686633825107*rgb.g + 0.8727159106194422*rgb.b
+        );
         let offset = (p[9] - 6500.0) / 6500.0;
         aces *= vec3f(1.0 + offset * 0.15, 1.0 + p[10] * 0.08, 1.0 - offset * 0.15);
         rgb = acescgToSrgb(localSaturation(aces));
+      }
+      // Local curves precede colour wheels and Detail, just as in export.
+      rgb = applyCurvesOffset(rgb,hdr,u32(p[21]),u32(p[22]));
+      rgb = applyColorGrading(rgb,hdr);
+      // CPU active SDR grading clips before Detail; neutral grading skips
+      // that stage so an unclipped candidate can still enter Detail.
+      if (!hdr && (p[115] != 0.0 || p[116] != 0.0 || p[118] != 0.0
+        || p[119] != 0.0 || p[121] != 0.0 || p[122] != 0.0)) {
+        rgb = min(rgb,vec3f(1.0));
       }
       return max(rgb, vec3f(0.0));
     }
@@ -2435,7 +2475,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
       let influence = clamp(localMaskValue(coordinate) * p[1] * p[13], 0.0, 1.0);
-      return vec4f(mix(source, applyLocalGrade(source), influence), 1.0);
+      let graded = applyLocalGrade(source);
+      let candidate = select(min(graded,vec3f(1.0)),graded,p[0]>0.5);
+      return vec4f(mix(source,candidate,influence), 1.0);
     }
 
     @fragment fn localCandidateFragmentMain(input: VertexOut) -> @location(0) vec4f {
@@ -2681,6 +2723,84 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (p[11] < 0.5) { value = 0.0; }
       value = round(clamp(value, 0.0, 1.0) * 255.0) / 255.0;
       return vec4f(value, value, value, 1.0);
+    }
+
+    fn maskSegmentDistance(point: vec2f, first: vec2f, last: vec2f, floorValue: f32) -> f32 {
+      let delta = last - first;
+      let projection = clamp(dot(point - first, delta) / max(dot(delta, delta), floorValue), 0.0, 1.0);
+      return distance(point, first + projection * delta);
+    }
+
+    // Native hard edges need the CPU's rounded pixel-centre division. A GPU
+    // reciprocal approximation can move a centre across a polygon edge.
+    fn maskDivide(numerator: f32, denominator: f32) -> f32 {
+      let quotient = numerator / denominator;
+      return quotient + fma(-quotient, denominator, numerator) / denominator;
+    }
+
+    @fragment fn shapeRasterFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let pixel = input.position.xy + vec2f(p[1], p[2]);
+      let uv = vec2f(maskDivide(pixel.x, p[3]), maskDivide(pixel.y, p[4]));
+      var value = 0.0;
+      var attenuation = 1.0;
+      let count = u32(p[7]);
+      if (p[0] > 0.5) {
+        var inside = false;
+        var edge = 1e20;
+        let aspect = p[3] / p[4];
+        let metric = vec2f(max(aspect, 1.0), max(1.0 / aspect, 1.0));
+        for (var i = 0u; i < count; i++) {
+          let firstIndex = 10u + 2u * i;
+          let lastIndex = 10u + 2u * ((i + 1u) % count);
+          let first = vec2f(p[firstIndex], p[firstIndex+1u]);
+          let last = vec2f(p[lastIndex], p[lastIndex+1u]);
+          let crossing = (first.y > uv.y) != (last.y > uv.y);
+          let edgeX = maskDivide((last.x-first.x)*(uv.y-first.y), last.y-first.y+1e-12)+first.x;
+          if (crossing && uv.x < edgeX) { inside = !inside; }
+          edge = min(edge, maskSegmentDistance(uv*metric, first*metric, last*metric, 1e-12));
+        }
+        value = select(0.0, 1.0, inside);
+        if (count > 0u && p[8] > 0.0) {
+          let feather = clamp(edge / max(p[8], 1e-6), 0.0, 1.0);
+          value = select(0.5-0.5*feather, 0.5+0.5*feather, inside);
+        }
+      } else {
+        let point = pixel / p[3];
+        var cursor = 10u;
+        var eraseSeen = false;
+        for (var i = 0u; i < count; i++) {
+          let segments = u32(p[cursor]);
+          let hardness = p[cursor+1u];
+          let flow = p[cursor+2u];
+          let opacity = p[cursor+3u];
+          let erase = p[cursor+4u] > 0.5;
+          let within = pixel.x >= p[cursor+5u] && pixel.y >= p[cursor+6u]
+            && pixel.x < p[cursor+7u] && pixel.y < p[cursor+8u];
+          cursor += 10u;
+          var coverage = 0.0;
+          for (var j = 0u; j < segments; j++) {
+            if (within) {
+              let first = vec2f(p[cursor],p[cursor+1u]);
+              let last = vec2f(p[cursor+2u],p[cursor+3u]);
+              let radius = p[cursor+4u];
+              let distance = maskSegmentDistance(point, first, last, 1e-8);
+              coverage = max(coverage, 1.0-clamp((distance-radius*hardness)/max(radius*(1.0-hardness),1e-6),0.0,1.0));
+            }
+            cursor += 5u;
+          }
+          let strength = min(opacity, coverage*flow);
+          if (erase) { attenuation *= 1.0-strength; eraseSeen = true; }
+          else if (within) {
+            value = max(value, min(opacity, value+strength));
+            if (eraseSeen) { attenuation = max(attenuation, min(opacity, attenuation+strength)); }
+          }
+        }
+      }
+      if (p[5] > 0.5) { value = 1.0-value; }
+      value *= attenuation;
+      if (p[6] < 0.5) { value = 0.0; }
+      value = round(clamp(value,0.0,1.0)*255.0)/255.0;
+      return vec4f(value,value,value,1.0);
     }
 
     @fragment fn lumaQualificationFragmentMain(input: VertexOut) -> @location(0) vec4f {
