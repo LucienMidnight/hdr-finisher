@@ -86,7 +86,7 @@ A mask is treated as soft only when the app can show it meets the soft limit. An
 
 | Quantity | While editing | Export and Proof |
 |---|---|---|
-| Reported peak luminance | within 3% of the exact value (the current tests hold 1%) | exact, measured at full resolution |
+| Reported peak luminance | within 1% of the exact value (Steve's phase 2 decision: keep the accurate measurement) | exact, measured at full resolution |
 | Delivered peak | not applicable | never above the configured target; highlight compression enforces this from the exact measurement |
 | Highlight compression curve | driven by the editing-time measurement | re-derived from the exact measurement |
 
@@ -206,7 +206,8 @@ Phases 1 and 2 are linked: a whole-image native peak measurement would force har
 - **Tiled and whole-frame render paths.** Both exist today and both read masks. Decide whether region rendering replaces the whole-frame path at 100% and above or sits beside it.
 - **Soft-mask threshold.** Estimated, not measured: a Fit-size bitmap can carry an edge about 40 px wide at 100% on a 42 MP image; a 4K bitmap about 15 px. Whether a middle tier is worth having depends on how many real masks fall between.
 - **Healing brush.** Not designed. It reads image content, so it will need its own region rule; this PRD only requires that the mask and render design not preclude it.
-- **Open:** should the editing-time peak limit be 3%, or stay at 1% with a cheaper method? Should Proof default to full size? (Phase 0 left the default at Reduced: a full-size Proof measured 229 s on the primary fixture.)
+- **Phase 2 decision:** keep the editing-time peak limit at 1%; do not widen it for speed. Steve subsequently directed the work to the zoom delay while keeping that measurement.
+- **Open:** should Proof default to full size? (Phase 0 left the default at Reduced: a full-size Proof measured 229 s on the primary fixture.)
 
 ## 11. Phase 0 record (October 1, 2026)
 
@@ -429,3 +430,59 @@ Not decided at closure, and left as they are:
 - The working limit of 3 levels for gradual masks (12.5) is still a trial; the approved limit is 2.
 - The larger bitmap tried once for a mask the Fit bitmap cannot carry (12.2, the primary fixture's unfeathered brush) was added without being asked for, against the preference for no extra CPU-side machinery. It stays until Steve says otherwise.
 - Panning per frame and views below 100% (section 4.4) were not measured.
+
+## 13. Phase 2 working record — accuracy retained, speed exit still open (October 2)
+
+**Not a phase 2 completion or an accepted regression.** Steve chose to keep the accurate editing measurement (1%) and then directed work to the zoom delay. The bounded measurement, SDR anchor correction and delivery warnings are implemented. The final five-minute four-mask session is slower than phase 1, so the no-regression exit remains open. No tolerance was widened, no phase 3 or 4 work was started, and nothing was committed or pushed.
+
+### 13.1 Measurement and delivery
+
+- At import, the CPU keeps real RGB channel/luminance maxima and their positions from a 64-by-64 source grid, at most 16,384 candidates. Editing transforms this fixed list. The GPU ranks it and measures up to sixteen native 128-by-128 patches, including the graph's neighbourhood, with a total source-patch budget of 4,194,304 pixels.
+- Editing masks are bounded bitmaps: 1,600 edge, or phase 1's existing qualified larger-bitmap fallback only where its bitmap fits that pixel budget. A refused measurement never falls back to a whole native source or mask. Robust anchors use a 1,600-edge proxy. These are estimates, labelled as such; unsupported evidence leaves a preview-only peak label.
+- HDR's anchor remains the finished signal before output highlights. SDR's canonical background anchor now uses the prefix before display grading and locals, as the accuracy design requires. Phase 1's background native tiled anchor reduction instead read the finished SDR signal. The new maximum SDR reduction uses the unchanged pinned prefix shader on real source candidate RGB values. Source candidates also preserve isolated highlights lost by downsampling.
+- Anchor keys are independent of zoom. Measurement does not replace the visible frame, its canvas dimensions, mask record or placeholder. A zoom immediately supersedes a pending measurement. Measurement has separate tile-graph and Clarity resources; measurement/magnified mask budgets cannot evict Fit bitmaps, and resident masks needed by the foreground frame are marked before trimming. A cancelled measurement's mask request cannot strand a zoom that joined it.
+- Source transport now reuses a resident region containing the complete requested rectangle, with its original coordinates. This removes repeat loads when Clarity's required rectangle changes inside an already loaded one. The index-only geometry map selects the same 49 float32 coordinate samples without building whole coordinate images; its answers are bit-identical in the tested rotations/flips.
+- Export and full-size Proof retain exact rendering and ceiling enforcement. They compare the current recipe's editing peak/anchor evidence with exact delivery measurements and display a warning above 1%. A cached full-size Proof compares each caller's estimates against its stored exact measurements; estimates do not change artifact identity. Reduced Proof does not make a native accuracy comparison.
+- Peak-reduction and Denoise shader byte pins pass unchanged. The trial 3-level gradual-mask limit and larger-bitmap fallback qualification are unchanged. The known failing inventory/interaction drivers were not fixed and were not dependencies of this work.
+
+### 13.2 Fresh accuracy checks
+
+Artifacts: `codebase/output/performance/review/viewport-phase2-baseline-2026-10-01/`. Drivers ran serially in disposable Electron profiles, 2560 by 1440, DPR 1. The three fixture archives retain their original hashes and were never saved.
+
+The fresh pre-change comparison measured the primary peak at 610.2 versus 629.7498 nit with global Detail off (3.1044% low), and the four-mask peak at 2,460 versus 3,208.967 nit (23.3398% low). The primary as-saved comparison was 615.5 versus 638.1938 nit (3.5559% low). These are one comparison run each; they replace assumptions based only on section 11's readings.
+
+Final runs (`phase2-verified-*`):
+
+| Measurement | Sample count | Result |
+|---|---|---|
+| Primary as saved, bounded HDR peak | 1 contract call; 5 panel conditions in 1 readout run | 636.5777 against 638.1938 nit: 0.2532% low; panel consistently says estimate |
+| Primary with global Detail off, reported peak | 1 comparison run | 628.3176 against 629.7498 nit: 0.2274% low |
+| Four-mask reported peak | 1 contract call; 5 panel conditions; 1 comparison run | 3,207.1181 against 3,208.967 nit: 0.0576% low |
+| Bounded-work contract, maximum peaks and robust anchors in HDR/SDR | 4 calls per fixture, 8 total | All pass; native patch totals 2,096,704 pixels primary and 262,144 four-mask; no native whole-source/mask request; accepted picture/resources unchanged |
+| Primary tone and masks, global Detail off | 3 captures of 1,947,690 pixels per lane | All verdicts pass |
+| Four-mask SDR tone and all masks | 3 captures of 1,947,690 pixels per lane | Pass under the unchanged 8-bit rule; judged SDR luminance p99 0–0.2558%, maximum 1.4505% |
+| Four-mask HDR tone | Same captures | Existing near-black ceiling outliers remain (maximum 8.0335%); not fixed in phase 2 |
+| Former worst SDR window pixel, image coordinate (2247,4329) | 1 point in each capture | Preview 0.922914 before, 0.511093 now; exact export reference 0.509876 of white, same recipe |
+
+The bounded-contract calls run after import and initial measurement settle; their warm maximum-measurement durations were 406/472 ms (HDR/SDR) on the primary and 246/310 ms on four-mask. Robust calls were 87/56 and 22/70 ms respectively. Robust percentile accuracy against a native reference was not measured by that contract; it verifies cost and frame isolation.
+
+44 Node tests pass, covering source transport/cache reuse, mask cancellation/cache protection, peak single-flight, disclosure and shader pins. 27 Python tests pass, including bounded coordinate-map equivalence, exact export peak/ceiling measurement and full-size Proof/export file identity for the available encoders, with cached-warning and reduced-Proof checks. JavaScript syntax and diff whitespace checks pass.
+
+### 13.3 Zoom checks and unresolved speed exit
+
+Times below are action to the exact picture, separate from scope settlement. No speed tolerance was widened.
+
+| Five-minute fresh-work session | Phase 1 section 12.3: median (max), samples | Phase 2 latest: median (max), samples |
+|---|---|---|
+| Primary zoom to 100% | 617 (1,512) ms, n=25 | 327 (1,483) ms, n=23 |
+| Four-mask zoom to 100% | 136 (1,807) ms, n=31 | 229 (2,065) ms, n=27 |
+| Primary return to Fit | 101 (118) ms, n=25 | 107 (116) ms, n=23 |
+| Four-mask return to Fit | 105 (129) ms, n=31 | 108 (143) ms, n=27 |
+
+The four-mask no-regression failure was checked against the untouched phase 1 HEAD in a separate checkout with the same current driver/runtime, serially: 148 ms median, 1,911 ms maximum, n=31 zooms (`phase1-today-session-fourmask.json`). The new build remains slower than that fresh reference. Before containing-region reuse, the new build took 721 ms median, n=26; the cache fix reduced that to 229 ms but did not close the gap. Both latest phase 2 sessions and the fresh reference finished without page errors.
+
+The post-mask-cache zoom driver was also run three times at 100% on each fixture and three times at 200% (`phase2-pinned-zoom-*-100-*`, `phase2-final-zoom-*-200-*`). The primary's six-second wait with local Detail still reaches roughly 2.3 seconds: its trace requests foreground native brush-mask tiles, rather than an editing peak pass. This phase has not changed that phase 1 fallback. Current phase 1 replays of that case have a 2,215 ms median, n=3; the phase 1 record was 2,067 ms, n=3.
+
+50-local case, one post-cache run (`phase2-pinned-zoom-fifty-100.json`): the six zooms were 1,810, 321, 2,139, 302, 286 and 577 ms, against 2,036, 449, 2,351, 432, 339 and 949 ms in matching phase 1 cases. Four of six are within its existing 600 ms target. Six returns to Fit were 99–111 ms, versus phase 1's 248–258 ms.
+
+**Open:** explain and remove the remaining four-mask session zoom regression while retaining the 1% measurement, bounded work, and phase 1 mask rules. The measured primary improvement and SDR correction do not waive that exit. Further implementation stopped at this failed speed check for owner direction.

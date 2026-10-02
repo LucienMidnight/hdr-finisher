@@ -33,7 +33,7 @@ node tools/playwright_gpu_parity.js test-pattern output/performance/gpu-local-ph
 Generated JSON is written below `output/performance/`. Durable conclusions and
 the exact percentile method belong in local maintainer QA notes.
 
-## Viewport-Bounded GPU Preview (phase 0 tools)
+## Viewport-Bounded GPU Preview
 
 Plan and limits: `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`.
 Every driver opens projects in a disposable session and never saves them. Run
@@ -52,8 +52,9 @@ node tests/run-in-electron.js tests/performance/preview-export-compare.js `
 
 Limitations to keep in mind when reading its report:
 
-- Only the tiled route retains a readable frame, so the capture forces it. The
-  route the app chose is recorded in `routeChosenByApp`.
+- The fixtures choose the tiled route at native zoom and are captured on that
+  route. If another project chooses Direct, picture readback requires a tiled
+  capture; the app's choice and the capture route are both recorded.
 - The preview side of a mask is a readback from the renderer
   (`readLocalMaskRegion`): the value each local pass sampled for the frame on
   screen, before opacity, drawn through the same shader function the local
@@ -100,4 +101,23 @@ the same for the masks of a real project:
 Fixtures. `make_four_mask_fixture.py` builds the owner's four-mask case from a
 RAW (and `--locals 50` the scaling case) under the git-ignored
 `local-test-media/viewport/`. `peak-readout-review.js` records what the scope
-panel reports as Peak at Fit and 100% with Exact Peak off and on.
+panel reports as Peak at Fit and 100% with the peak option off and on.
+
+Phase 2 keeps the owner's 1% peak limit. The panel reports a bounded estimate
+in both checkbox states; the historical driver/API names remain for baseline
+comparison. `tests/editing-peak-bounded.js` checks maximum peaks and robust
+anchors for both lanes: no whole source above a 1,600 edge, no source-patch
+budget above four million pixels, and no mask bitmap above that pixel budget.
+It also checks that measurement leaves the accepted picture and its resources
+alone. An optional `--reference-nits` enforces the 1% HDR peak limit against an
+independently measured CPU reference:
+
+```powershell
+node tests/run-in-electron.js tests/editing-peak-bounded.js `
+  --project <file.hdrfinisher> --reference-nits <exact-peak> --output <report.json>
+```
+
+Export/Proof warnings are checked by `tests/test_peak_accuracy.py` and
+`tests/test_proof_export_identity.py`, including cached Proof requests with
+different estimates. Full-size Proof keeps encoded export identity; reduced
+Proof does not compare its smaller rendition against a native editing estimate.

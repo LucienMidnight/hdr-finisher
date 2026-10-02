@@ -70,6 +70,7 @@ class ProofArtifact:
     sdr_authored: np.ndarray
     jpeg_gain_map: JPEGGainMapProofMetadata | None = None
     full_size: bool = False
+    exact_measurements: dict | None = None
 
 
 @dataclass
@@ -194,7 +195,7 @@ class ProofArtifactStore:
                 cached_id = self._request_cache.get(signature)
                 cached = self._artifacts.get(cached_id or "")
                 if cached is not None and cached.path.exists():
-                    return self._response(cached)
+                    return self._response(cached, request.editing_measurements)
 
         render_cache = getattr(session, "render_cache")
         if request.full_size:
@@ -226,6 +227,8 @@ class ProofArtifactStore:
         # the exporter to replace that owned target if it created a partial file.
         staged = self.root / f"request-{signature}-{uuid4().hex}{suffix}"
         export_settings = request.to_export_settings(str(staged))
+        if full_size:
+            export_settings.editing_measurements = {lane: {"peak": 0, "anchor": 0} for lane in ("hdr", "sdr")}
         try:
             result = backend.export(
                 proxy_session,
@@ -294,11 +297,12 @@ class ProofArtifactStore:
             sdr_authored=np.ascontiguousarray(sdr_matrix_endpoint, dtype=np.float32),
             jpeg_gain_map=jpeg_gain_map,
             full_size=full_size,
+            exact_measurements=export_settings._exact_measurements if full_size else None,
         )
         with self._lock:
             self._artifacts[artifact_id] = artifact
             self._request_cache[signature] = artifact_id
-        return self._response(artifact)
+        return self._response(artifact, request.editing_measurements)
 
     def artifact(self, artifact_id: str) -> ProofArtifact:
         with self._lock:
@@ -563,7 +567,7 @@ class ProofArtifactStore:
         # it stays out of the signature. Denoise is not part of the request, so
         # its state has to be folded in explicitly: otherwise a proof built
         # before a denoise change would be served for it unchanged.
-        request_payload = request.model_dump_json(exclude={"force"})
+        request_payload = request.model_dump_json(exclude={"force", "editing_measurements"})
         denoise_payload = ""
         if denoise is not None:
             denoise_payload = (
@@ -577,7 +581,8 @@ class ProofArtifactStore:
         return hashlib.sha256(payload).hexdigest()[:24]
 
     @staticmethod
-    def _response(artifact: ProofArtifact) -> ProofArtifactResponse:
+    def _response(artifact: ProofArtifact, estimates: dict | None = None) -> ProofArtifactResponse:
+        from .peak_accuracy import measurement_warnings
         suffix, _media_type = PROOF_FORMAT_INFO[artifact.format]
         return ProofArtifactResponse(
             artifact_id=artifact.artifact_id,
@@ -594,6 +599,7 @@ class ProofArtifactStore:
             metadata_summary=artifact.metadata_summary,
             encoded_headroom=round(artifact.encoded_headroom, 4),
             jpeg_gain_map=artifact.jpeg_gain_map,
+            measurement_warnings=measurement_warnings(estimates or {}, artifact.exact_measurements or {}) if artifact.full_size else [],
         )
 
 

@@ -65,7 +65,7 @@ LIMITS = {
     "softMaskWorkingLevels": 3,
     "hardEdgePixels": 1,
     "maskMovePixels": 2,
-    "editingPeak": 0.03,
+    "editingPeak": 0.01,
 }
 TYPICAL_PERCENTILE = 99.0
 LUMINANCE_FLOOR_OF_WHITE = 0.01
@@ -561,7 +561,10 @@ def run(manifest_path: Path, output_path: Path) -> dict[str, Any]:
         tone_ok = True
         mask_ok = True
         pairs = True
+        peak_ok = True
         for lane_report in report["lanes"]:
+            if lane_report.get("peak"):
+                peak_ok = peak_ok and lane_report["peak"].get("withinEditingLimit", False)
             pairs = pairs and lane_report["sizesAgree"]
             for region_report in lane_report["regions"]:
                 tone = region_report["tone"]
@@ -574,7 +577,7 @@ def run(manifest_path: Path, output_path: Path) -> dict[str, Any]:
                     mask_ok = mask_ok and bool(mask.get("measured")) and mask["regionOk"] and (
                         mask["softOk"] or mask["hardEdgeOk"]
                     )
-        return {"pixelsPaired": pairs, "tone": tone_ok, "masks": mask_ok}
+        return {"pixelsPaired": pairs, "tone": tone_ok, "masks": mask_ok, "peak": peak_ok}
 
     # Masks that pass only under the working limit, for the owner to look at.
     report["masksOverApprovedSoftLimit"] = [

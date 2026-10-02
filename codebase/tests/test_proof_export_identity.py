@@ -188,6 +188,25 @@ def test_full_size_proof_is_the_export_byte_for_byte(backends, tmp_path: Path, f
         assert (proof.width, proof.height) == (WIDTH, HEIGHT)
         assert proof.sha256 == hashes[0]
 
+        # Estimates affect the warning, never the encoded artifact or its
+        # cache identity. Compare against the current caller's estimate even
+        # when the exact proof was already encoded for an earlier caller.
+        cached = store.create(
+            session,
+            ProofArtifactRequest(
+                adjustments=session.adjustments,
+                format=format_name,
+                quality=ExportSettings().quality,
+                full_size=True,
+                editing_measurements={"hdr": {"peak": 0.000001}},
+            ),
+            backend,
+        )
+        assert cached.artifact_id == proof.artifact_id
+        assert cached.sha256 == hashes[0]
+        assert len(cached.measurement_warnings) == 1
+        assert proof.measurement_warnings == []
+
         reduced = store.create(
             session,
             ProofArtifactRequest(
@@ -195,12 +214,14 @@ def test_full_size_proof_is_the_export_byte_for_byte(backends, tmp_path: Path, f
                 format=format_name,
                 quality=ExportSettings().quality,
                 long_edge=1200,
+                editing_measurements={"hdr": {"peak": 0.000001}},
             ),
             backend,
         )
         assert reduced.full_size is False
         assert max(reduced.width, reduced.height) == 1200
         assert reduced.artifact_id != proof.artifact_id
+        assert reduced.measurement_warnings == []
     finally:
         store.clear()
 

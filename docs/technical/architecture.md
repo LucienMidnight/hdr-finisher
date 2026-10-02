@@ -97,6 +97,14 @@ At and above 100% zoom a frame is drawn for the visible region plus a margin on 
 
 Fallback scopes use vectorized bin-index generation and `numpy.bincount`. Scope results and adjusted frames are single-flight and cached by source state, lane, proxy level, dimensions, and adjustment signature. Cache diagnostics report managed bytes, hits, misses, evictions, in-flight work, and stale cancellations.
 
+### Editing peak and highlight anchors (phase 2)
+
+The CPU collects real RGB maxima and their positions in a 64-by-64 source grid once at import. Editing transforms at most 16,384 candidates; the GPU grades and ranks them, then measures up to sixteen native 128-by-128 patches with the graph's neighbourhood. The total source-patch budget is four million pixels. Measurement masks use a 1,600-edge bitmap, or the existing qualified larger-bitmap fallback only when its bitmap fits that pixel budget. Measurement never falls back to a native whole-image render or mask. Robust anchors use a 1,600-edge proxy. Unsupported geometry or source evidence remains a refusal, not permission for an unbounded measurement.
+
+HDR anchors measure the finished image before output compression; SDR anchors measure the earlier tone-adjusted prefix before display grading and locals. Maximum SDR anchors use the existing peak-reduction shader on the real candidate RGB values. Anchors are shared across zoom levels. The scope calls its bounded peak an estimate. Export and full-size Proof measure exactly, rederive the curve, and report a difference exceeding the owner's 1% limit. Reduced Proof does not make that comparison. Proof's artifact cache excludes the editing estimates from pixel identity and compares each caller's current estimates against the stored exact measurements.
+
+Measurement has separate tile-graph and Clarity-map resources. Its mask cache cannot evict Fit masks; magnified masks have a separate budget, and resident masks needed by the next foreground frame are marked before trimming. A magnified source request reuses a resident region if it contains the complete required rectangle, retaining its original sampling coordinates. These cache changes do not change phase 1's mask qualification rules.
+
 ## API shape
 
 Major route groups:

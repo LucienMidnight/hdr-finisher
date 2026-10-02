@@ -30,6 +30,7 @@ from .denoise_reference import AnalysisPreset, ResolveControls
 from .denoise_tiles import analyze_denoise_tiled, resolve_denoise_tiled
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .finishing import apply_output_finishing
+from .peak_accuracy import measurement_warnings
 from .gainmap_decoders import parse_jpeg_gain_map_probe
 from .models import AdjustmentState, CapabilityInfo, CapabilityStatus, ExportResponse, ExportSettings, PreviewKind
 from .jpegxl import (
@@ -182,8 +183,9 @@ def _render_export_branch(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState
 ) -> np.ndarray:
     color_context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
+    source = _denoised_export_source(session, kind)
     image = apply_adjustments(
-        _denoised_export_source(session, kind),
+        source,
         adjustments,
         kind,
         sdr_reference_image=getattr(session, "sdr_reference_image", None),
@@ -201,8 +203,33 @@ def _render_export_branch(
         return apply_matched_final_grain(image, adjustments, getattr(session, "sdr_match"))
     image = apply_final_grain(image, adjustments, kind)
     if kind == PreviewKind.HDR:
-        return apply_hdr_output_highlight_compression(image, adjustments, color_context=color_context)
-    return apply_sdr_output_highlight_compression(image, adjustments)
+        result = apply_hdr_output_highlight_compression(image, adjustments, color_context=color_context)
+    else:
+        result = apply_sdr_output_highlight_compression(image, adjustments)
+    lane = kind.value
+    if lane in settings.editing_measurements:
+        from .adjustments import hdr_highlight_peak_signal, sdr_highlight_peak_signal, sdr_highlight_stage_input
+        from .finishing import apply_geometry
+        if kind == PreviewKind.HDR:
+            from .scopes import scope_peak_value
+            peak = scope_peak_value(result, kind, color_context) * .18 / color_context.hdr_reference_white_nits
+        else:
+            peak = float(np.max(result[..., :3] @ np.array([.2126, .7152, .0722], dtype=np.float32)))
+        measurement = {"peak": peak}
+        if kind == PreviewKind.HDR:
+            signal = hdr_highlight_peak_signal(image, adjustments.hdr)
+        elif not getattr(getattr(session, "sdr_match", None), "active", False):
+            reference = getattr(session, "sdr_reference_image", None)
+            authored = reference is not None and adjustments.sdr.use_authored_base
+            stage = sdr_highlight_stage_input(apply_geometry(reference if authored else source, adjustments.shared.geometry), adjustments, authored_reference=authored)
+            signal = sdr_highlight_peak_signal(stage, adjustments.sdr)
+        else:
+            signal = None
+        if signal is not None:
+            robust = getattr(adjustments, lane).highlight_compression_peak_measurement == "robust"
+            measurement["anchor"] = float(np.quantile(signal, .9999) if robust else np.max(signal))
+        settings._exact_measurements[lane] = measurement
+    return result
 
 
 @dataclass(frozen=True)
@@ -264,6 +291,7 @@ def _execute_export(
         message=success_message(output_path, validation),
         output_path=str(output_path),
         timings_ms=timings,
+        measurement_warnings=measurement_warnings(settings.editing_measurements, settings._exact_measurements),
     )
 
 

@@ -247,7 +247,7 @@ async function main() {
           return {
             reportedNits: Number.isFinite(cached?.peak) ? cached.peak / 0.18 * projectReferenceWhiteNits()
               : Number.isFinite(displayed) ? displayed : null,
-            source: Number.isFinite(cached?.peak) ? 'exact scope peak cache for the current edit state'
+            source: Number.isFinite(cached?.peak) ? 'bounded editing peak cache for the current edit state'
               : Number.isFinite(displayed) ? 'the Peak figure shown in the scope panel' : 'none available',
             exact: cached?.exact ?? null,
             measuredLongEdge: cached?.longEdge ?? null,

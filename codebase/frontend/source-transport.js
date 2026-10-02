@@ -686,6 +686,25 @@
       renderer.recordStage("proxy-request", { lane, longEdge, cacheHit: true });
       return renderer.proxies.get(key);
     }
+    // Clarity can change the required halo without changing the source pixels.
+    // A resident region that contains the request is already complete evidence;
+    // keep its original coordinates so the tile encoder samples it correctly.
+    if (region) {
+      const resident = [...renderer.proxies.values()].filter((proxy) => {
+        const loaded = proxy.region;
+        return loaded && proxy.regionTransport && !proxy.identity?.includes(":analysis:")
+          && proxy.sessionId === sessionId && proxy.lane === lane
+          && proxy.longEdge === longEdge && proxy.geometrySignature === geometrySignature
+          && proxy.sourceIdentity === sourceIdentity
+          && loaded.x <= region.x && loaded.y <= region.y
+          && loaded.x + loaded.width >= region.x + region.width
+          && loaded.y + loaded.height >= region.y + region.height;
+      }).sort((a, b) => a.byteSize - b.byteSize)[0];
+      if (resident) {
+        renderer.recordStage("proxy-request", { lane, longEdge, cacheHit: true, route: "region", contained: true });
+        return renderer.proxies.get(resident.identity);
+      }
+    }
     if (renderer.proxyInflight.has(key)) return renderer.proxyInflight.get(key);
     const signal = options.signal || renderer.sourceAbortSignal();
     const isCurrent = typeof options.isCurrent === "function" ? options.isCurrent : null;

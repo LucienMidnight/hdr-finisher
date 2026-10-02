@@ -1452,6 +1452,9 @@
 
     resetSession(sessionId = null) {
       this.resourceGeneration += 1;
+      this.editingCandidateCache?.clear();
+      this.editingAnalysisCanvas = null;
+      this.analysisClarityFrameMap = null;
       // Source fetches for the session being replaced have nowhere to land.
       this.sourceAbort?.abort();
       this.sourceAbort = null;
@@ -1475,6 +1478,7 @@
       }
       this.disposeDenoiseSelectorSeam();
       this.destroyTileGraph();
+      this.destroyTileGraph("analysisTileGraph");
       for (const entry of this.detailBandTiles.values()) entry.texture?.destroy();
       this.detailBandTiles.clear();
       for (const entry of this.maskTiles.values()) entry.texture?.destroy();
@@ -1649,7 +1653,7 @@
       const detailBandCacheBytes = [...this.detailBandTiles.values()]
         .reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
       const maskTileBytes = [...this.maskTiles.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
-      const tileGraphBytes = this.tileGraph?.byteSize || 0;
+      const tileGraphBytes = (this.tileGraph?.byteSize || 0) + (this.analysisTileGraph?.byteSize || 0);
       const scopeBytes = [...this.scopeResources.values()].reduce(
         (sum, pool) => sum + pool.reduce((poolSum, resource) => poolSum + (resource.byteSize || 0), 0),
         0,
@@ -1898,26 +1902,185 @@
     }
 
     /**
-     * Describe the highlight-peak anchor this render needs, without taking it.
-     *
-     * The anchor is a whole-image measurement, and its cache key is a long
-     * list of parameter indices that has to mean the same thing on both
-     * routes -- a Direct render and a Tiled one of the same grade must hit the
-     * same cache entry, or the shoulder moves when execution changes. Returns
-     * `null` when this graph does not measure, and otherwise the key and any
-     * cached value; *taking* the measurement is left to the caller, because
-     * Direct and Tiled differ on when they are willing to await one.
+     * Rank real source candidates on the GPU without spatial-neighbourhood
+     * operations. The returned bounded native patches evaluate those stages
+     * on real neighbours; the candidate atlas never invents their input.
      */
-    highlightAnchorRequest(lane, adjustments, proxy, params) {
+    async rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent) {
+      const signature = JSON.stringify(adjustments.shared?.geometry || {});
+      this.editingCandidateCache ||= new Map();
+      const evidenceKey = `${sessionId}:${lane}:${signature}:${adjustments.sdr?.use_authored_base}`;
+      let evidence = this.editingCandidateCache.get(evidenceKey);
+      if (!evidence) {
+        const response = await fetch(`/api/session/${sessionId}/peak-candidates/${lane}?edit_revision=${revision}`, { signal: this.sourceAbortSignal() });
+        if (!response.ok) throw new Error(`Peak candidate evidence: ${response.status}`);
+        evidence = await response.json();
+        if (!isCurrent()) return null;
+        if (!evidence.samples?.length || evidence.samples.length > 16384) throw new Error("Bounded peak evidence is unavailable");
+        this.editingCandidateCache.set(evidenceKey, evidence);
+        while (this.editingCandidateCache.size > 4) this.editingCandidateCache.delete(this.editingCandidateCache.keys().next().value);
+      }
+      const side = 128;
+      const rgb = new Float32Array(side * side * 4);
+      const position = new Float32Array(rgb.length);
+      evidence.samples.forEach(([x, y, r, g, b], i) => {
+        rgb.set([r, g, b, 1], i * 4);
+        position.set([(x + .5) / evidence.width, (y + .5) / evidence.height, 0, 1], i * 4);
+      });
+      const textures = [], buffers = [];
+      const texture = (format, usage) => {
+        const result = this.device.createTexture({ size: [side, side], format, usage });
+        textures.push(result); return result;
+      };
+      try {
+        const source = texture("rgba32float", GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST);
+        const positions = texture("rgba16float", GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST);
+        this.device.queue.writeTexture({ texture: source }, rgb, { bytesPerRow: side * 16 }, [side, side]);
+        const positionHalf = new Uint16Array(position.length);
+        for (let i = 0; i < position.length; i++) {
+          const value = position[i];
+          if (!(value > 0)) continue;
+          const exponent = Math.floor(Math.log2(value));
+          positionHalf[i] = exponent < -14 ? Math.round(value / 2**-24) : ((exponent + 15) << 10) + Math.round((value / 2**exponent - 1)*1024);
+        }
+        this.device.queue.writeTexture({ texture: positions }, positionHalf, { bytesPerRow: side * 8 }, [side, side]);
+        const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC;
+        const a = texture("rgba16float", usage), b = texture("rgba16float", usage);
+        const params = buildParams(lane, adjustments, evidence.working_space, lane === "hdr", white, 1);
+        const anchor = this.highlightAnchorRequest(lane, adjustments, { sessionId, geometrySignature: signature, sourceIdentity: "source", identity: evidenceKey }, params, locals);
+        // Rank upstream of the shoulder; native patches evaluate all later
+        // neighbourhood stages. Unrelated atlas neighbours never feed Detail.
+        params[74] = 0;
+        this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
+        const pipelines = this.pipelineFor("rgba16float");
+        const masks = [];
+        if (lane === "hdr") this.markResidentMaskFrame(sessionId, locals, 1600, signature);
+        if (lane === "hdr") for (const local of activeGpuLocals(lane, locals)) {
+          const entry = await this.loadEditingMask(sessionId, local, revision, signature, evidence, sourceSize, isCurrent, this.sourceAbortSignal());
+          if (!entry || !isCurrent()) return null;
+          masks.push({ local, entry });
+        }
+        const encoder = this.device.createCommandEncoder();
+        const pass = (target, pipeline, src, mask = src, parameter = this.paramBuffer, overlay = src) => {
+          const render = encoder.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+          render.setPipeline(pipeline);
+          render.setBindGroup(0, this.bindGraphResources(src.createView(), mask.createView(), { buffer: parameter }, overlay.createView()));
+          render.draw(3); render.end();
+        };
+        pass(a, pipelines.base, source, b, this.paramBuffer, b);
+        let current = a;
+        for (const {local, entry} of masks) {
+          const values = buildLocalParams(local, lane, 1);
+          values[14] = values[15] = values[17] = 0;
+          const buffer = this.createStorageBuffer(values); buffers.push(buffer);
+          this.device.queue.writeBuffer(buffer, 0, values);
+          const target = current === a ? b : a;
+          pass(target, pipelines.peakCandidateLocal, current, entry.texture, buffer, positions);
+          current = target;
+        }
+        const read = this.device.createBuffer({ size: side * side * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }); buffers.push(read);
+        encoder.copyTextureToBuffer({ texture: current }, { buffer: read, bytesPerRow: side * 8 }, [side, side]);
+        this.device.queue.submit([encoder.finish()]);
+        // SDR's automatic anchor is an early, mask-free signal. The pinned
+        // prefix reduction evaluates exactly that stage on these real pixels.
+        let sdrAnchor = null;
+        if (lane === "sdr" && anchor?.measurement === "maximum") {
+          params[74] = 1;
+          sdrAnchor = await this.measureToneAdjustedPeak({texture: source, width: side, height: side}, params, "maximum", anchor.key);
+        }
+        await read.mapAsync(GPUMapMode.READ);
+        const values = new Uint16Array(read.getMappedRange());
+        const ranked = evidence.samples.map((sample, i) => ({
+          x: Math.floor(sample[0]), y: Math.floor(sample[1]),
+          score: halfToFloat(values[i*4]) * .2722287 + halfToFloat(values[i*4+1]) * .6740818 + halfToFloat(values[i*4+2]) * .0536895,
+        })).sort((left, right) => right.score - left.score);
+        read.unmap();
+        const seen = new Set(), patches = [];
+        for (const item of ranked) {
+          const x = Math.floor(item.x / 128) * 128, y = Math.floor(item.y / 128) * 128;
+          const key = `${x},${y}`;
+          if (seen.has(key)) continue;
+          seen.add(key); patches.push({x, y, width: Math.min(128, evidence.width - x), height: Math.min(128, evidence.height - y)});
+          if (patches.length === 16) break;
+        }
+        return { ...evidence, samples: undefined, patches, anchor, sdrAnchor };
+      } finally {
+        textures.forEach(item => item.destroy()); buffers.forEach(item => item.destroy());
+      }
+    }
+
+    async measureEditingPeak(canvas, sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, options = {}) {
+      const isCurrent = options.isCurrent || (() => true);
+      if (options.highlightAnchorOnly && adjustments[lane]?.highlight_compression_peak_measurement === "robust") {
+        const signature = JSON.stringify(adjustments.shared?.geometry || {});
+        const proxy = await this.loadProxy(sessionId, lane, 1600, signature, revision, options.identity || "source", {isCurrent});
+        if (!proxy || !isCurrent()) return null;
+        const params = buildParams(lane, adjustments, proxy.workingSpace, lane === "hdr", white, this.sourcePixelScaleFor(proxy, sourceSize), options.inheritedGrain);
+        const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params, locals);
+        if (!anchor) return null;
+        let value;
+        if (lane === "sdr") {
+          value = await this.measureToneAdjustedPeak(proxy, params, "robust", anchor.key);
+        } else {
+          this.editingAnalysisCanvas ||= document.createElement("canvas");
+          const uncompressed = structuredClone(adjustments);
+          uncompressed.hdr.highlight_section_enabled = false;
+          const rendered = await this.renderTo(this.editingAnalysisCanvas, sessionId, lane, uncompressed, curveSampler, 1600, locals, revision, null, white, sourceSize, {isCurrent, measureOnly:true});
+          const finished = this.scopeSources.get(this.editingAnalysisCanvas);
+          if (!rendered?.width || !finished || !isCurrent()) return null;
+          const pipeline = await this.ensurePeakReductionPipeline("finishedPeakReductionMain");
+          value = await this.runPeakReduction(pipeline, finished.filmTexture, finished.width, finished.height, params, "robust", anchor.key);
+        }
+        return {highlightAnchor:{key:anchor.key, value}};
+      }
+      const ranked = await this.rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent);
+      if (!ranked || !isCurrent()) return null;
+      if (options.highlightAnchorOnly && lane === "sdr") return { highlightAnchor: ranked.anchor ? {key: ranked.anchor.key, value: ranked.sdrAnchor} : null };
+      // Roll currently materializes a native geometry frame. Never enter that
+      // fallback from an editing measurement.
+      if (ranked.resample_stage === "roll") return { rendered: false, refusals: ["bounded roll measurement unavailable"] };
+      const signature = JSON.stringify(adjustments.shared?.geometry || {});
+      const frame = {width: ranked.width, height: ranked.height, workingSpace: ranked.working_space};
+      const activeLocals = activeGpuLocals(lane, locals);
+      const halo = this.roiSourceHalo(lane, adjustments, frame, sourceSize, {hdr: lane === "hdr"}, white, options, activeLocals);
+      const processedBound = ranked.patches.reduce((sum, patch) => sum + (patch.width + 2*halo)*(patch.height + 2*halo), 0);
+      if (processedBound > 4*1024*1024) return {rendered:false, refusals:["editing peak patch budget exceeded"]};
+      let peak = 0, rendered = 0;
+      for (const patch of ranked.patches) {
+        if (!isCurrent()) return null;
+        const x = Math.max(0, patch.x - halo), y = Math.max(0, patch.y - halo);
+        const region = {x, y, width: Math.min(frame.width, patch.x + patch.width + halo)-x, height: Math.min(frame.height, patch.y + patch.height + halo)-y};
+        let result;
+        try {
+          result = await this.renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, Math.max(sourceSize.width,sourceSize.height), locals, revision, null, white, sourceSize, {
+            ...options, measureOnly: true, tileSize: 128, analysisPatch: patch, analysisRegion: region, analysisMasks: true,
+          });
+        } finally {
+          const key = `${sessionId}:${lane}:${Math.max(sourceSize.width,sourceSize.height)}:${signature}:${options.identity || "source"}:analysis:${JSON.stringify(region)}`;
+          this.evictGpuCacheEntry("source-proxy", key);
+        }
+        if (!result?.rendered || !Number.isFinite(result.metrics?.exactPeak)) return result;
+        peak = Math.max(peak, result.metrics.exactPeak); rendered++;
+      }
+      const result = {rendered:true, metrics:{exactPeak:peak, exactPeakLongEdge:Math.max(frame.width,frame.height), tileCount:rendered, processedBound, bounded:true}};
+      if (options.highlightAnchorOnly && ranked.anchor) {
+        this.peakReductionCache.set(ranked.anchor.key,peak);
+        result.highlightAnchor = {key:ranked.anchor.key, value:peak};
+      }
+      return result;
+    }
+
+    highlightAnchorRequest(lane, adjustments, proxy, params, locals = []) {
       const measurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
       const measures = (lane === "hdr" || params[159] > 0.5) && params[74] === 1 && measurement !== "manual";
       if (!measures) return null;
       const key = JSON.stringify([
-        measurement === "maximum" ? [proxy.sessionId, proxy.geometrySignature, proxy.sourceIdentity] : proxy.identity,
-        this.highlightSourceToken(proxy), lane, params[1], params[159], measurement,
+        [proxy.sessionId, proxy.geometrySignature, proxy.sourceIdentity],
+        this.highlightSourceToken(proxy), lane, params[159], measurement,
         params[2], params[4], params[8], params[9], params[110],
         ...params.slice(10, 12), ...params.slice(61, 73),
         ...params.slice(BLACK_AND_WHITE_PARAM, BLACK_AND_WHITE_PARAM + 9),
+        lane === "hdr" ? [adjustments.hdr, locals] : null,
       ]);
       return { measurement, key, cached: this.peakReductionCache.get(key) };
     }
@@ -1940,6 +2103,7 @@
      */
     highlightSourceToken(proxy) {
       const selector = this.denoiseSourceSelector;
+      if (selector?.selected === "resolved") return `denoise:${selector.identity}:${selector.resolvedVersion ?? 0}:${JSON.stringify(selector.controls || {})}`;
       if (selector?.resolved && proxy === selector.resolved) return `denoise:${selector.resolvedVersion ?? 0}`;
       return "original";
     }
@@ -1975,22 +2139,15 @@
       }
       const carried = this.carriedHighlightAnchor(lane, sourceProxy, params);
       const used = carried ?? estimate;
-      // Robust percentile measurement still uses the retained top-k reduction.
-      // The native tiled maximum below is exact only for the maximum mode.
+      // Percentile mode uses a bounded proxy histogram; maximum mode uses
+      // ranked native patches. Both run after presentation and remain estimates.
       if (anchor.measurement !== "maximum") {
-        if (interactive) {
-          this.scheduleHighlightMeasurement(anchor, sourceProxy, params, lane, used);
-          return used;
-        }
-        const value = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, anchor.key, {
-          reference: Math.max(estimate, carried ?? 0),
-        });
-        this.noteHighlightMeasurement(lane, sourceProxy, params, value);
-        return value;
+        this.requestCanonicalHighlightAnchor(anchor, lane, used);
+        return used;
       }
       // A display proxy is never allowed to define the canonical cache entry:
       // its mip changes with zoom.  Present immediately with the best carried
-      // estimate and ask the scheduler for one native finished-image reduction.
+      // estimate and ask the scheduler for bounded editing measurement.
       this.requestCanonicalHighlightAnchor(anchor, lane, used);
       return used;
     }
@@ -2170,15 +2327,16 @@
      * stop following the image and follow the tile instead, so peak residency
      * stays flat as the selected tier grows.
      */
-    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false, denoiseActive = false, spatialGrid = 4) {
-      const current = this.tileGraph;
+    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false, denoiseActive = false, spatialGrid = 4, analysis = false) {
+      const graphKey = analysis ? "analysisTileGraph" : "tileGraph";
+      const current = this[graphKey];
       if (current && current.width === width && current.height === height
         && current.outputFormat === outputFormat && current.sourceFormat === sourceFormat
         && current.spatialActive === spatialActive && current.denoiseActive === denoiseActive
         && current.spatialGrid === spatialGrid) {
         return current;
       }
-      this.destroyTileGraph();
+      this.destroyTileGraph(graphKey);
       const make = (format, usage) => this.device.createTexture({
         size: { width, height }, format, usage,
       });
@@ -2191,7 +2349,7 @@
         size: { width: spatialWidth, height: spatialHeight }, format: "rgba16float", usage: attachment,
       });
       try {
-        this.tileGraph = {
+        this[graphKey] = {
           width,
           height,
           outputFormat,
@@ -2229,24 +2387,24 @@
         };
       } catch (error) {
         this.recordAllocationFailure("tile-graph", error, { width, height });
-        this.tileGraph = null;
+        this[graphKey] = null;
         return null;
       }
-      this.recordAllocation("tile-graph", this.tileGraph.byteSize, { width, height });
+      this.recordAllocation("tile-graph", this[graphKey].byteSize, { width, height });
       if (this.gpuAllocator) {
         // A pinned reservation: the graph is the pass's own working set, never
         // an eviction candidate while it exists.
-        this.tileGraph.allocatorEntry = this.gpuAllocator.register({
-          kind: "tile-graph", key: "tile-graph", bytes: this.tileGraph.byteSize, pinned: true,
+        this[graphKey].allocatorEntry = this.gpuAllocator.register({
+          kind: "tile-graph", key: graphKey, bytes: this[graphKey].byteSize, pinned: true,
         });
       }
-      return this.tileGraph;
+      return this[graphKey];
     }
 
-    destroyTileGraph() {
-      const graph = this.tileGraph;
+    destroyTileGraph(graphKey = "tileGraph") {
+      const graph = this[graphKey];
       if (!graph) return;
-      this.tileGraph = null;
+      this[graphKey] = null;
       if (graph.allocatorEntry) {
         this.gpuAllocator?.unregister(graph.allocatorEntry);
         graph.allocatorEntry = null;
@@ -2457,6 +2615,36 @@
      * source fetch, scheduler, masks and graph execution. Small command
      * batches write an offscreen target; one final copy presents it.
      */
+    prefetchZoomMasks(canvas, sessionId, locals, editRevision, geometrySignature, sourceOptions, serial) {
+      if (!sourceOptions?.viewport || sourceOptions?.measureOnly) return;
+      const generation = this.resourceGeneration;
+      const current = () => generation === this.resourceGeneration
+        && serial === this.renderSerials.get(canvas) && sourceOptions?.isCurrent?.() !== false;
+      for (const local of locals) {
+        if (local.mask?.operator !== "leaf" || isGpuLumaMask(local.mask)) continue;
+        void this.softLeafMask(sessionId, local, local.mask, "", editRevision,
+          geometrySignature, current, this.sourceAbortSignal()).catch(() => null);
+      }
+    }
+
+    async loadEditingMask(sessionId, local, revision, signature, frame, sourceSize, isCurrent, signal) {
+      const nativeEdge = Math.max(sourceSize?.width || frame.width, sourceSize?.height || frame.height);
+      const width = Math.ceil(frame.width * SOFT_MASK_MAX_EDGE / nativeEdge);
+      const height = Math.ceil(frame.height * SOFT_MASK_MAX_EDGE / nativeEdge);
+      // Reuse precisely the existing preview fallback, only where its bitmap
+      // fits the measurement budget. Never enter the native-mask alternative.
+      if (local.mask?.operator === "leaf" && !isGpuLumaMask(local.mask)
+        && width * height <= 4 * 1024 * 1024) {
+        const identity = softMaskIdentity(sessionId, signature, gpuMaskIdentity(local.mask));
+        const verdict = this.softMasks.get(identity);
+        if (verdict && !verdict.soft && verdict.softRetryable) {
+          const soft = await this.softLeafMask(sessionId, local, local.mask, "", revision, signature, isCurrent, signal);
+          if (soft) return soft;
+        }
+      }
+      return this.loadLocalMask(sessionId, local, 1600, revision, signature, isCurrent, signal, false);
+    }
+
     async renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
       if (!this.available || !this.device) return false;
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
@@ -2497,15 +2685,20 @@
       // makes the region safe, so this is the ordinary whole-frame route in
       // every other case.
       const previousFrame = this.lastPresentedFrame;
-      const region = this.roiRegionFor(
+      const region = sourceOptions?.analysisRegion || this.roiRegionFor(
         canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals, longEdge,
       );
-      let proxy = await this.loadProxy(
+      this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial);
+      let proxy = sourceOptions?.analysisPatch
+        ? await this.loadProxyRegion(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
+          `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}:analysis:${JSON.stringify(region)}`, region,
+          {isCurrent: sourceOptions?.isCurrent})
+        : await this.loadProxy(
         sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
         { isCurrent: sourceOptions?.isCurrent, onProgress: sourceOptions?.onSourceProgress, region },
       );
       if (!proxy) return { rendered: false, refusals: ["source proxy unavailable"] };
-      if (proxy.region && (!previousFrame
+      if (!sourceOptions?.analysisPatch && proxy.region && (!previousFrame
         || proxy.width !== previousFrame.width || proxy.height !== previousFrame.height)) {
         const whole = await this.loadProxy(
           sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
@@ -2535,7 +2728,7 @@
       // The highlight anchor is a whole-image measurement, so it is taken once
       // and shared by every tile. Measuring per tile would make each tile fit
       // its own peak and the seams would show.
-      const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params);
+      const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params, localAdjustments);
       const highlightAnchorOnly = Boolean(sourceOptions?.highlightAnchorOnly);
       if (anchor && !highlightAnchorOnly) {
         params[75] = await this.resolveHighlightAnchor(anchor, proxy, params, { interactive: false, lane });
@@ -2559,6 +2752,8 @@
 
       const result = await this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
         measureOnly,
+        analysisPatch: sourceOptions?.analysisPatch,
+        analysisMasks: sourceOptions?.analysisMasks,
         Scheduler,
         serial,
         isCurrent: sourceOptions?.isCurrent || null,
@@ -2581,7 +2776,7 @@
         zoom: sourceOptions?.zoom,
       });
       const measured = result?.metrics?.exactPeak;
-      if (highlightAnchorOnly && anchor && Number.isFinite(measured)) {
+      if (highlightAnchorOnly && anchor && Number.isFinite(measured) && !sourceOptions?.analysisPatch) {
         this.peakReductionCache.set(anchor.key, measured);
         this.requestedCanonicalHighlightKeys.delete(anchor.key);
         this.noteHighlightMeasurement(lane, proxy, params, measured);
@@ -2841,7 +3036,7 @@
       const denoiseActive = Boolean(
         denoiseSelector?.cache && denoiseSelector.original
         && denoiseSelector.selected === "resolved"
-        && denoiseSelector.identity === proxy.identity
+        && (denoiseSelector.identity === proxy.identity || (options.analysisMasks && denoiseSelector.original.sessionId === proxy.sessionId && denoiseSelector.original.geometrySignature === proxy.geometrySignature))
         && denoiseSelector.original.width === proxy.width
         && denoiseSelector.original.height === proxy.height,
       );
@@ -2900,6 +3095,13 @@
         // foreground batch. No viewport means Fit, which is the whole output.
         viewport: viewportRequest.fit ? undefined : viewportRequest.visible,
       });
+      if (options.analysisPatch) {
+        const patch = options.analysisPatch;
+        plan.tiles = plan.tiles.filter(tile => tile.rect.x === patch.x && tile.rect.y === patch.y);
+        plan.tileCount = plan.tiles.length;
+        plan.visibleCount = plan.tiles.length;
+        plan.visibleKeys = plan.tiles.map(tile => tile.key);
+      }
       const workWidth = Math.min(proxy.width, tileSize + halo * 2);
       const workHeight = Math.min(proxy.height, tileSize + halo * 2);
       // Foreground selection. With a viewport and an accepted frame of
@@ -2980,7 +3182,7 @@
       let cancelled = false;
       const graph = this.ensureTileGraph(
         workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
-        spatialGridScale(proxy.width, proxy.height),
+        spatialGridScale(proxy.width, proxy.height), Boolean(options.analysisPatch),
       );
       if (!graph) return { rendered: false, refusals: ["tile graph allocation failed"] };
 
@@ -2996,6 +3198,8 @@
       const maskBatches = activeLocals.length && foregroundTiles.length && this.maskTileBatch
         ? this.maskTileBatch.plan({ locals: activeLocals, tiles: foregroundTiles })
         : [];
+      this.markResidentMaskFrame(options.sessionId, activeLocals, options.analysisMasks ? 1600 : longEdge,
+        options.geometrySignature || "{}");
       const maskCoordinator = measureOnly
         ? this.backgroundMaskRequestCoordinator
         : this.maskRequestCoordinator;
@@ -3004,10 +3208,16 @@
         ? await maskCoordinator.run(
           maskGeneration,
           maskBatches,
-          (batch, _index, signal) => this.loadLocalMaskTiles(
-            options.sessionId, batch, longEdge, editRevision,
-            options.geometrySignature || "{}", isCurrent, signal, proxy,
-          ),
+          async (batch, _index, signal) => {
+            if (options.analysisMasks) {
+              const mask = await this.loadEditingMask(options.sessionId, batch.local, editRevision,
+                options.geometrySignature || "{}", proxy, options.sourceSize, isCurrent, signal);
+              const entry = mask ? {...mask, wholeFrame:true} : null;
+              return {localIndex:batch.localIndex, entries:new Map(batch.tiles.map(tile => [tile.key,entry]))};
+            }
+            return this.loadLocalMaskTiles(options.sessionId, batch, longEdge, editRevision,
+              options.geometrySignature || "{}", isCurrent, signal, proxy);
+          },
           isCurrent,
         )
         : { results: [], current: isCurrent() };
@@ -3041,6 +3251,7 @@
           workWidth,
           workHeight,
           alignment: denoiseAlignment,
+          analysis: Boolean(options.analysisMasks),
         })
         : null;
       if (clarityFrame && proxy.region) {
@@ -3768,6 +3979,10 @@
       const region = denoiseAtScale ? null : this.roiRegionFor(
         canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals, longEdge,
       );
+      // Native background measurement used to warm these preview bitmaps.
+      // A requested zoom can overlap the same bounded fallback with its source
+      // transfer, without compiling a native whole-image measurement mask.
+      this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial);
       let proxy = await this.loadProxy(
         sessionId,
         lane,
@@ -3863,7 +4078,7 @@
       // after the reduction lands, rather than an await inside the render.
       // Show noise never reaches the output mapping, so it has no peak to anchor.
       const noiseView = Boolean(sourceOptions?.noiseView);
-      const anchor = noiseView ? null : this.highlightAnchorRequest(lane, adjustments, sourceProxy, params);
+      const anchor = noiseView ? null : this.highlightAnchorRequest(lane, adjustments, sourceProxy, params, localAdjustments);
       if (anchor) {
         const interactive = sourceOptions?.tier === "interactive";
         // An interactive frame that stopped for a whole-image reduction would
@@ -3888,7 +4103,8 @@
       // accepted presentation at all, which strands the geometry handoff. Tiled
       // skips this entirely: it carries bounded per-tile masks instead.
       if (plan.decision.mode !== "tiled") {
-        this.maskUseSerial += 1;
+        if (!sourceOptions?.measureOnly) this.maskUseSerial += 1;
+        this.markResidentMaskFrame(sessionId, activeLocals, longEdge, geometrySignature);
         const isMaskCurrent = () => resourceGeneration === this.resourceGeneration
           && serial === this.renderSerials.get(canvas)
           && sourceOptions?.isCurrent?.() !== false;
@@ -3900,6 +4116,7 @@
           editRevision,
           geometrySignature,
           isCurrent: isMaskCurrent,
+          remember: !sourceOptions?.measureOnly,
         });
         masks = loadedMasks.results;
         masksReadyAt = performance.now();
@@ -4389,6 +4606,7 @@
       }
       // Direct composites straight to the canvas, so there is no retained
       // target behind this frame and a later tiled pass must redraw it whole.
+      if (!sourceOptions?.measureOnly) {
       this.lastPresentedFrame = {
         sessionId,
         lane,
@@ -4414,6 +4632,7 @@
           entries: masks,
         }] : [],
       });
+      }
       const submittedAt = performance.now();
       this.recordStage("grading", {
         serial,
@@ -6013,6 +6232,12 @@
         primitive: { topology: "triangle-list" },
       });
       const pipelines = {
+        peakCandidateLocal: this.device.createRenderPipeline({
+          layout: this.pipelineLayout,
+          vertex: { module: this.module, entryPoint: "vertexMain" },
+          fragment: { module: this.module, entryPoint: "peakCandidateLocalFragmentMain", targets: [{ format: "rgba16float" }] },
+          primitive: { topology: "triangle-list" },
+        }),
         base,
         finish,
         scopePeakTile,
@@ -6153,7 +6378,7 @@
 
     trimProxyLevels(sessionId, lane) {
       const prefix = `${sessionId}:${lane}:`;
-      const keys = [...this.proxies.keys()].filter((key) => key.startsWith(prefix));
+      const keys = [...this.proxies.keys()].filter((key) => key.startsWith(prefix) && !key.includes(":analysis:"));
       // A lane keeps its source levels until the central budget asks for them
       // back: evicting the level a warm step is about to reuse is exactly the
       // churn this item removes. The global LRU evicts by budget and protects
@@ -6388,6 +6613,7 @@
 
     async loadDirectMasks({
       generation, sessionId, activeLocals, longEdge, editRevision, geometrySignature, isCurrent = () => true,
+      remember = true,
     }) {
       const tasks = Array.from(activeLocals || []);
       if (!tasks.length) return { results: [], current: isCurrent() };
@@ -6396,7 +6622,7 @@
         for (const local of tasks) {
           if (!isCurrent()) break;
           results.push(await this.loadLocalMask(
-            sessionId, local, longEdge, editRevision, geometrySignature, isCurrent,
+            sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, undefined, remember,
           ));
         }
         while (results.length < tasks.length) results.push(null);
@@ -6406,7 +6632,7 @@
         generation,
         tasks,
         (local, _index, signal) => this.loadLocalMask(
-          sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal,
+          sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal, remember,
         ),
         isCurrent,
       );
@@ -6414,23 +6640,24 @@
 
     async loadLocalMask(
       sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
+      remember = true,
     ) {
       if (local.mask?.operator !== "leaf") {
-        return this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal);
+        return this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal, remember);
       }
       return this.loadMaskLeaf(
-        sessionId, local, local.mask, "", longEdge, editRevision, geometrySignature, isCurrent, signal,
+        sessionId, local, local.mask, "", longEdge, editRevision, geometrySignature, isCurrent, signal, true, remember,
       );
     }
 
     async loadMaskLeaf(
       sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature,
-      isCurrent = () => true, signal = undefined, allowSoft = true,
+      isCurrent = () => true, signal = undefined, allowSoft = true, remember = true,
     ) {
       const leafLocal = { ...local, id: maskPath ? `${local.id}:${maskPath}` : local.id, mask: expression };
       if (isGpuLumaMask(expression)) {
         return this.loadGpuLumaMask(
-          sessionId, leafLocal, longEdge, editRevision, geometrySignature, isCurrent, signal,
+          sessionId, leafLocal, longEdge, editRevision, geometrySignature, isCurrent, signal, !remember,
         );
       }
       if (allowSoft && longEdge > SOFT_MASK_MAX_EDGE) {
@@ -6441,7 +6668,7 @@
         if (signal?.aborted || !isCurrent()) return null;
       }
       return this.loadCpuLeafAt(
-        sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature, isCurrent, signal,
+        sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature, isCurrent, signal, remember,
       );
     }
 
@@ -6528,6 +6755,7 @@
 
     async loadGpuMaskGraph(
       sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
+      remember = true,
     ) {
       const startedAt = performance.now();
       const layoutIdentity = gpuMaskGraphLayoutIdentity(local.mask);
@@ -6546,7 +6774,7 @@
           // A combination is built texel for texel from its leaves, so each
           // leaf is loaded at the frame's own size, never as a small bitmap.
           const leafEntry = await this.loadMaskLeaf(
-            sessionId, local, expression, path, longEdge, editRevision, geometrySignature, isCurrent, signal, false,
+            sessionId, local, expression, path, longEdge, editRevision, geometrySignature, isCurrent, signal, false, remember,
           );
           return leafEntry ? { expression, leafEntry, children: [] } : null;
         }
@@ -6624,7 +6852,8 @@
       this.device.queue.submit([encoder.finish()]);
       parameterBuffers.forEach((buffer) => buffer.destroy());
       this.localMasks.set(key, entry);
-      this.retainLocalMask(entry, longEdge);
+      if (!remember) this.retainEditingMask(entry);
+      else this.retainLocalMask(entry, longEdge);
       if (this.instrumentationEnabled) {
         this.performanceMetrics.maskEvents ||= [];
         this.performanceMetrics.maskEvents.push({
@@ -6689,6 +6918,7 @@
 
     async loadGpuLumaMask(
       sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
+      editingMeasurement = false,
     ) {
       const startedAt = performance.now();
       const scene = await this.loadSceneLuminance(
@@ -6794,7 +7024,8 @@
         }
         entry.refinementIdentity = refinementIdentity;
       }
-      this.retainLocalMask(entry, longEdge);
+      if (editingMeasurement) this.retainEditingMask(entry);
+      else this.retainLocalMask(entry, longEdge);
       if (this.instrumentationEnabled) {
         const event = {
           kind: "gpu-luma",
@@ -6882,18 +7113,55 @@
       pass.end();
     }
 
+    markResidentMaskFrame(sessionId, locals, longEdge, geometrySignature) {
+      // Mark every resident input before the first retain can trim the cache.
+      // A frame may legitimately need more than the idle mask budget; loading
+      // its first local must not evict the locals it is about to read next.
+      const mark = (key) => {
+        const entry = this.localMasks.get(key);
+        if (entry && !entry.destroyed) entry.lastUseSerial = this.maskUseSerial;
+      };
+      const prefix = `${sessionId}:${longEdge}:${geometrySignature}:`;
+      const visit = (expression) => {
+        if (expression?.operator === "leaf") {
+          mark(isGpuLumaMask(expression)
+            ? `${prefix}gpu-luma:${gpuLumaBaseIdentity(expression)}`
+            : `${prefix}cpu-spatial-leaf:${gpuMaskIdentity(expression)}`);
+        } else for (const child of expression?.children || []) visit(child);
+      };
+      for (const local of locals) {
+        visit(local.mask);
+        if (local.mask?.operator !== "leaf") {
+          mark(`${sessionId}:${local.id}:${longEdge}:${geometrySignature}:gpu-mask-graph:${gpuMaskGraphLayoutIdentity(local.mask)}`);
+        }
+      }
+    }
+
     retainLocalMask(entry, longEdge) {
+      entry.editingMeasurement = false;
+      entry.magnifiedMask = longEdge > 1600;
       entry.lastUseSerial = this.maskUseSerial;
-      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024, false, entry.magnifiedMask);
+    }
+
+    retainEditingMask(entry) {
+      entry.editingMeasurement = true;
+      entry.lastUseSerial = this.maskUseSerial;
+      this.trimLocalMaskCache(96 * 1024 * 1024, true);
     }
 
     /**
      * Evict least-recently-used masks down to `budget`, except the ones the
      * current render uses, which may exceed it together.
      */
-    trimLocalMaskCache(budget) {
-      let total = [...this.localMasks.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
-      for (const [key, entry] of [...this.localMasks.entries()]) {
+    trimLocalMaskCache(budget, editingMeasurement = false, magnifiedMask = false) {
+      // Magnified masks must not spend the Fit bitmap budget. Otherwise the
+      // first zoom evicts dozens of small masks and the return to Fit fetches
+      // them all again, even though their identities have not changed.
+      const entries = [...this.localMasks.entries()].filter(([,entry]) => Boolean(entry.editingMeasurement) === editingMeasurement
+        && (editingMeasurement || Boolean(entry.magnifiedMask) === magnifiedMask));
+      let total = entries.reduce((sum, [,entry]) => sum + entry.byteSize, 0);
+      for (const [key, entry] of entries) {
         if (total <= budget) break;
         if (entry.lastUseSerial === this.maskUseSerial) continue;
         this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
@@ -6969,7 +7237,7 @@
      * `alignment` is Denoise's wavelet grid, which a reconstructed region
      * has to start on.
      */
-    planClarityFrameMap({ proxy, params, identity, tiles, workWidth, workHeight, alignment = 1 }) {
+    planClarityFrameMap({ proxy, params, identity, tiles, workWidth, workHeight, alignment = 1, analysis = false }) {
       const plan = writeClarityPlan(new Float32Array(PARAM_COUNT), proxy.width, proxy.height, params[151]);
       const extents = clarityMapExtents(plan, 0, 0, proxy.width, proxy.height);
       // The frame keeps its base map, which every radius shares; only the
@@ -6977,12 +7245,13 @@
       const scale = plan.baseScale;
       const columns = extents.baseWidth;
       const rows = extents.baseHeight;
-      const entry = this.clarityMapTextures("frame", columns, rows);
+      const entry = this.clarityMapTextures(analysis ? "analysis-frame" : "frame", columns, rows);
       const reducedKey = `${identity}|s${scale}|${proxy.width}x${proxy.height}`;
-      let state = this.clarityFrameMap;
+      let state = analysis ? this.analysisClarityFrameMap : this.clarityFrameMap;
       if (!state || state.reducedKey !== reducedKey || state.entry !== entry) {
         state = { reducedKey, entry, blurKey: null, covered: new Uint8Array(columns * rows) };
-        this.clarityFrameMap = state;
+        if (analysis) this.analysisClarityFrameMap = state;
+        else this.clarityFrameMap = state;
       }
       const bounds = tiles.reduce((box, tile) => ({
         x0: Math.min(box.x0, tile.rect.x),

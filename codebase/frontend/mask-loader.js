@@ -30,7 +30,23 @@
       return cached;
     }
     const inflight = renderer.localMaskInflight.get(key);
-    if (inflight && !inflight.signal?.aborted) return inflight.promise;
+    if (inflight && !inflight.signal?.aborted) {
+      let entry;
+      try {
+        entry = await inflight.promise;
+      } catch (error) {
+        if (error?.name !== "AbortError") throw error;
+      }
+      if (entry || signal?.aborted || !isCurrent()) return entry;
+      // A zoom may join a bounded measurement's request just as that
+      // measurement is cancelled. Its cancellation must not cancel the zoom.
+      // Retry the leaf for this still-current caller, without restarting the
+      // entire preview render.
+      return loadCpuMaskLeaf(renderer, {
+        sessionId, local, maskPath, longEdge, editRevision, geometrySignature,
+        maskSignature, isCurrent, signal, draftExpression, remember,
+      });
+    }
     const pending = (async () => {
       const pathQuery = maskPath ? `&mask_path=${encodeURIComponent(maskPath)}` : "";
       const startedAt = performance.now();
@@ -100,7 +116,8 @@
       if (remember && longEdge <= (renderer.softMaskMaxEdge || 0)) {
         renderer.rememberSoftMask?.(sessionId, geometrySignature, maskSignature, entry);
       }
-      renderer.retainLocalMask(entry, longEdge);
+      if (!remember && longEdge <= 1600) renderer.retainEditingMask(entry);
+      else renderer.retainLocalMask(entry, longEdge);
       if (renderer.instrumentationEnabled) {
         renderer.performanceMetrics.maskEvents ||= [];
         renderer.performanceMetrics.maskEvents.push({

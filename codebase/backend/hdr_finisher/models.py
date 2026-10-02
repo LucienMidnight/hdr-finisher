@@ -6,7 +6,7 @@ import math
 from typing import Any, ClassVar, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_serializer, model_validator
 
 from .color_context import validate_reference_white
 
@@ -1400,7 +1400,7 @@ class ExportSettings(_EncodingSettings):
         "sdr_png_bit_depth",
         *_ENCODING_FIELD_ORDER[10:],
         "metadata_policy", "output_path", "path_grant", "overwrite", "overwrite_target",
-        "edit_revision", "output_finishing",
+        "edit_revision", "output_finishing", "editing_measurements",
     )
 
     sdr_png_bit_depth: Literal[8, 16] = 8
@@ -1410,6 +1410,8 @@ class ExportSettings(_EncodingSettings):
     overwrite: bool = False
     overwrite_target: ExportTargetIdentity | None = None
     edit_revision: int | None = Field(default=None, ge=0)
+    editing_measurements: dict[str, dict[str, float]] = Field(default_factory=dict)
+    _exact_measurements: dict[str, dict[str, float]] = PrivateAttr(default_factory=dict)
 
 
 class ExportResponse(BaseModel):
@@ -1418,6 +1420,7 @@ class ExportResponse(BaseModel):
     message: str
     output_path: str | None = None
     timings_ms: dict[str, float] = Field(default_factory=dict)
+    measurement_warnings: list[str] = Field(default_factory=list)
 
 
 class DirectoryPickRequest(BaseModel):
@@ -1465,7 +1468,7 @@ class DesktopProjectSaveRequest(BaseModel):
 class ProofArtifactRequest(_EncodingSettings):
     _serialized_field_order: ClassVar[tuple[str, ...]] = (
         "adjustments", "edit_revision", *_ENCODING_FIELD_ORDER,
-        "long_edge", "full_size", "output_finishing", "force",
+        "long_edge", "full_size", "output_finishing", "force", "editing_measurements",
     )
 
     adjustments: AdjustmentState | None = None
@@ -1480,6 +1483,7 @@ class ProofArtifactRequest(_EncodingSettings):
     # the cache. Excluded from the request signature: a forced build must land
     # on the same cache entry an ordinary one would, not a parallel one.
     force: bool = False
+    editing_measurements: dict[str, dict[str, float]] = Field(default_factory=dict)
 
     def to_export_settings(self, output_path: str) -> ExportSettings:
         encoding = {
@@ -1541,6 +1545,7 @@ class ProofArtifactResponse(BaseModel):
     metadata_summary: str
     encoded_headroom: float
     jpeg_gain_map: JPEGGainMapProofMetadata | None = None
+    measurement_warnings: list[str] = Field(default_factory=list)
 
 
 class ProofMatrixRequest(BaseModel):

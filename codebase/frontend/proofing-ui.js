@@ -199,6 +199,7 @@
           body: JSON.stringify({
             adjustments: state.adjustments,
             edit_revision: state.editRevision,
+            editing_measurements: editingMeasurementsForDelivery(),
             format: state.proofFormat,
             quality: Number(els.exportQuality.value) || 85,
             jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value) || 100,
@@ -406,6 +407,7 @@
     }
     const result = state.proofReconstruction;
     const details = [proofSizeLabel(), `${proofFormatLabel()} · ${proofPreviewLabel()}`];
+    details.push(...(state.proofArtifact?.measurement_warnings || []));
     if (state.proofPreview !== "hdr") details.push(`reference ${result.target_label}`);
     details.push(`${result.resolved_headroom.toFixed(2)} stops`);
     if (result.display_label) details.push(result.display_label);

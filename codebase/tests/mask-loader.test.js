@@ -107,6 +107,35 @@ test("supersession after the body read publishes no texture", async () => {
   assert.equal(target.localMasks.size, 0);
 });
 
+test("a zoom joining cancelled measurement retries its leaf without losing the frame", async () => {
+  const target = renderer();
+  let releaseBody, fetches = 0, measurementCurrent = true;
+  const bodyReady = new Promise(resolve => { releaseBody = resolve; });
+  context.fetch = async () => {
+    fetches += 1;
+    const first = fetches === 1;
+    return {
+      ok: true,
+      headers: { get: name => ({
+        "X-Geometry-Signature": "{}", "X-Image-Width": "2", "X-Image-Height": "2",
+      }[name] || null) },
+      arrayBuffer: async () => {
+        if (first) await bodyReady;
+        return new Uint8Array([0, 64, 128, 255]).buffer;
+      },
+    };
+  };
+  const measurement = request(target, { isCurrent: () => measurementCurrent });
+  const zoom = request(target);
+  measurementCurrent = false;
+  releaseBody();
+  assert.equal(await measurement, null);
+  assert.equal((await zoom).byteSize, 4);
+  assert.equal(fetches, 2);
+  assert.equal(target.writes.length, 1);
+  assert.equal(target.localMaskInflight.size, 0);
+});
+
 test("the uploaded mask is padded, retained, and reused from cache", async () => {
   const target = renderer();
   let fetches = 0;

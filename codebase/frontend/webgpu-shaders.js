@@ -2380,6 +2380,18 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(applyLocalGrade(textureLoad(sourceTexture, coordinate, 0).rgb), 1.0);
     }
 
+    // A candidate atlas has unrelated real source pixels beside one another.
+    // Its position atlas keeps mask lookup in the photograph's coordinates.
+    // Neighbourhood effects are evaluated later in bounded native patches.
+    @fragment fn peakCandidateLocalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let coordinate = vec2i(input.position.xy);
+      let source = textureLoad(sourceTexture, coordinate, 0).rgb;
+      let frameUv = textureLoad(overlayMaskTexture, coordinate, 0).xy;
+      let mask = textureSampleLevel(spatialTexture, spatialSampler, frameUv, 0.0).r;
+      let influence = clamp(mask * p[1] * p[13], 0.0, 1.0);
+      return vec4f(mix(source, applyLocalGrade(source), influence), 1.0);
+    }
+
     @fragment fn localDetailMixFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));

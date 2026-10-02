@@ -1007,6 +1007,20 @@ def source_mip_progress(session_id: str) -> dict[str, object]:
     return {"active_builds": [build for build in builds if build["identity"] in identities]}
 
 
+@app.get("/api/session/{session_id}/peak-candidates/{kind}")
+def webgpu_peak_candidates(session_id: str, kind: PreviewKind, edit_revision: int | None = Query(default=None, ge=0)) -> dict:
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, edit_revision)
+        return session.render_cache.peak_candidates(kind, session.adjustments, session.sdr_match)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    except TileUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @app.get("/api/session/{session_id}/proxy/{kind}")
 def webgpu_proxy(
     session_id: str,

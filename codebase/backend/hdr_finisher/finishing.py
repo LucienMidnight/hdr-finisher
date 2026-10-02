@@ -256,16 +256,22 @@ def geometry_coordinate_map(
     geometry: GeometryAdjustments,
 ) -> tuple[tuple[float, ...], tuple[float, ...], int, int]:
     """Return normalized output/source homographies from the exact geometry path."""
-    source_x = np.broadcast_to(
-        (np.arange(width, dtype=np.float32) + np.float32(0.5)) / max(width, 1),
-        (height, width),
-    )
-    source_y = np.broadcast_to(
-        ((np.arange(height, dtype=np.float32) + np.float32(0.5)) / max(height, 1))[:, None],
-        (height, width),
-    )
-    mapped = apply_geometry(np.stack((source_x, source_y), axis=-1), geometry)
-    output_height, output_width = mapped.shape[:2]
+    indexed = geometry_resample_stage(geometry) == "index"
+    if indexed:
+        oriented_width, oriented_height = (height, width) if geometry.rotation in (90, 270) else (width, height)
+        left, top, right, bottom = _crop_bounds(oriented_width, oriented_height, geometry)
+        output_width, output_height = right - left, bottom - top
+    else:
+        source_x = np.broadcast_to(
+            (np.arange(width, dtype=np.float32) + np.float32(0.5)) / max(width, 1),
+            (height, width),
+        )
+        source_y = np.broadcast_to(
+            ((np.arange(height, dtype=np.float32) + np.float32(0.5)) / max(height, 1))[:, None],
+            (height, width),
+        )
+        mapped = apply_geometry(np.stack((source_x, source_y), axis=-1), geometry)
+        output_height, output_width = mapped.shape[:2]
 
     # Fit a projective map against interior pixel centers after running the
     # coordinate ramps through the real image operation. This keeps Pillow's
@@ -278,7 +284,24 @@ def geometry_coordinate_map(
     grid_x, grid_y = np.meshgrid(sample_x, sample_y)
     output_u = (grid_x.ravel().astype(np.float64) + 0.5) / max(output_width, 1)
     output_v = (grid_y.ravel().astype(np.float64) + 0.5) / max(output_height, 1)
-    samples = mapped[grid_y.ravel(), grid_x.ravel(), :].astype(np.float64)
+    if indexed:
+        # Select the same float32 coordinate-ramp values as the full image
+        # operation, without constructing or copying its whole coordinate frame.
+        x, y = grid_x.ravel() + left, grid_y.ravel() + top
+        if geometry.flip_horizontal:
+            x = oriented_width - 1 - x
+        if geometry.flip_vertical:
+            y = oriented_height - 1 - y
+        if geometry.rotation == 90:
+            x, y = y, height - 1 - x
+        elif geometry.rotation == 180:
+            x, y = width - 1 - x, height - 1 - y
+        elif geometry.rotation == 270:
+            x, y = width - 1 - y, x
+        samples = np.column_stack(((x.astype(np.float32) + np.float32(.5)) / max(width, 1),
+                                   (y.astype(np.float32) + np.float32(.5)) / max(height, 1))).astype(np.float64)
+    else:
+        samples = mapped[grid_y.ravel(), grid_x.ravel(), :].astype(np.float64)
     source_u = samples[:, 0]
     source_v = samples[:, 1]
     zeros = np.zeros_like(output_u)

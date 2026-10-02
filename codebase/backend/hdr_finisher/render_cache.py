@@ -674,6 +674,29 @@ class SessionRenderCache:
     # ``native`` (the decoded frame itself), ``memory``/``disk`` (warm mip),
     # ``built`` (cold mip build) or ``session`` (no persistent store).
     _source_level_states: dict[int, str] = field(default_factory=dict, init=False, repr=False)
+    _peak_candidates: dict[str, np.ndarray] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._build_peak_candidates()
+
+    def _build_peak_candidates(self) -> None:
+        from .peak_candidates import source_candidates
+        self._peak_candidates = {"hdr": source_candidates(self.image)}
+        if self.sdr_reference_image is not None:
+            self._peak_candidates["sdr"] = source_candidates(self.sdr_reference_image)
+
+    def peak_candidates(self, kind: PreviewKind, adjustments: AdjustmentState, sdr_match: SdrMatchState) -> dict:
+        from .peak_candidates import positioned_candidates
+        if kind == PreviewKind.SDR and sdr_match.active:
+            # Materializing a matched rendition here could trigger a native
+            # render. Keep editing bounded and disclose unavailable evidence.
+            raise TileUnavailableError("Matched SDR candidate evidence is unavailable.")
+        authored = kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base
+        lane = "sdr" if authored else "hdr"
+        image = self.sdr_reference_image if authored else self.image
+        result = positioned_candidates(self._peak_candidates[lane], image.shape, adjustments.shared.geometry)
+        result.update(working_space="linear-srgb" if authored else "acescg", source_epoch=self._source_epoch)
+        return result
 
     def set_color_context(self, context: RenderColorContext) -> None:
         with self._lock:
@@ -716,6 +739,7 @@ class SessionRenderCache:
             self._masks.clear()
             self._geometry_maps.clear()
             self._cancel_inflight_locked()
+            self._build_peak_candidates()
 
     def clear_adjusted(self, *, clear_masks: bool = False) -> None:
         with self._lock:

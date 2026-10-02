@@ -5233,30 +5233,17 @@ function exactScopePeakKey(lane = state.currentView) {
 }
 
 /**
- * The exact maximum of the finished picture, measured at full resolution.
- *
- * The scopes otherwise report a maximum over the preview proxy, and a proxy is
- * a Lanczos downsample: an isolated specular is averaged with its neighbours
- * before the scope ever sees it, so the number comes out low. Low is the
- * dangerous direction -- it says a delivery is under its ceiling when it is
- * not. On a 42 MP photograph the settled proxies under-report by 13.6%, 11.3%
- * and 5.0% at the performance, detailed and reference profiles.
- *
- * This runs the same render graph at native resolution and takes a true
- * maximum, tile by tile, with no presentation surface and no whole-frame
- * intermediate. A maximum is decomposable, so tiling it costs nothing in
- * accuracy: the answer is exact, not a closer estimate.
- *
- * Returns null when it cannot be measured -- the graph is refused, the budget
- * will not hold a native source, or the state moved underneath it. The caller
- * then reports the proxy peak and says that is what it is, rather than
- * presenting a lower bound as though it were the answer.
+ * Estimate the finished peak from bounded source evidence and native patches.
+ * A downsample alone can erase isolated speculars. Real source candidates
+ * locate those pixels; the GPU ranks them and evaluates a fixed patch budget
+ * with bounded masks. This remains an estimate, labelled in the scopes.
+ * Export and full-size Proof measure the entire finished image exactly.
+ * The historical function/cache names remain for performance-driver callers.
+ * Returns null on refusal or when foreground work supersedes the measurement.
  */
 async function measureExactScopePeak({ lane = state.currentView, force = false } = {}) {
   if (!state.gpuPreview?.available || !state.session) return null;
-  // This is speculative work: nobody asked for it, it paints nothing, and a
-  // full-resolution render is the most expensive thing the renderer does. It
-  // must therefore never be in the way of something the user did ask for.
+  // Background measurement paints nothing and yields to foreground work.
   // Importing a source replaces the session this would be measuring, so there
   // is nothing to measure and every reason not to compete for the network and
   // the device while it happens.
@@ -5274,32 +5261,29 @@ async function measureExactScopePeak({ lane = state.currentView, force = false }
 }
 
 async function measureExactScopePeakInner(lane, key) {
-  const nativeEdge = previewTargetLongEdge("full");
   const started = performance.now();
-  // The session this measurement describes. A native render takes seconds on a
-  // large frame, and a result attributed to a session that has since been
-  // replaced is worse than no result at all.
+  // Never attribute a completed estimate to a replaced session or edit.
   const sessionId = state.session.session_id;
   const importGeneration = state.importGeneration;
   const foregroundSerial = state.gpuRenderSerial;
   let measured = null;
   const generation = state.previewGeneration[lane];
   const revision = state.editRevision;
+  const requestedEdge = requiredProcessingLongEdge();
   const current = () => state.session?.session_id === sessionId
     && state.importGeneration === importGeneration && !state.importInProgress
-            && state.gpuRenderSerial === foregroundSerial
-    && state.previewGeneration[lane] === generation && state.editRevision === revision;
+    && state.gpuRenderSerial === foregroundSerial
+    && state.previewGeneration[lane] === generation && state.editRevision === revision
+    && requiredProcessingLongEdge() === requestedEdge;
   try {
-    const result = await state.gpuPreview.renderTiledTo(
+    const result = await state.gpuPreview.measureEditingPeak(
       els.previewCanvas,
       state.session.session_id,
       lane,
       JSON.parse(JSON.stringify(state.adjustments)),
       sampleCurvePoints,
-      nativeEdge,
       state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())),
       state.editRevision,
-      null,
       projectReferenceWhiteNits(),
       { width: state.session.source.width, height: state.session.source.height },
       {
@@ -5317,7 +5301,8 @@ async function measureExactScopePeakInner(lane, key) {
       measured = {
         peak: result.metrics.exactPeak,
         longEdge: result.metrics.exactPeakLongEdge,
-        exact: result.metrics.exactPeakLongEdge >= nativeEdge,
+        exact: false,
+        bounded: true,
         tiles: result.metrics.tileCount,
         durationMs: performance.now() - started,
       };
@@ -5330,10 +5315,9 @@ async function measureExactScopePeakInner(lane, key) {
   // Only cache against a session that is still the one in hand, or a later
   // session could read this answer as its own.
   if (!current() || exactScopePeakKey(lane) !== key) return null;
-  // A geometry-cropped native result may have a shorter output edge than the
-  // imported source. Retain its valid measurement and existing disclosure;
-  // only a failed/refused measurement (no finite peak) must remain retryable.
+  // Refused measurements remain retryable; valid estimates are reused.
   if (Number.isFinite(measured?.peak)) {
+    recordEditingMeasurement(lane, {peak: measured.peak});
     exactScopePeakCache.set(key, measured);
     while (exactScopePeakCache.size > 8) exactScopePeakCache.delete(exactScopePeakCache.keys().next().value);
   }
@@ -5341,11 +5325,11 @@ async function measureExactScopePeakInner(lane, key) {
 }
 
 /**
- * Resolve Peak Fit's shoulder anchor from the native finished picture.
+ * Resolve Peak Fit's shoulder anchor with bounded editing measurement.
  *
- * Unlike the scope peak this reduction runs before output highlights and uses
- * the selected colour mode's signal.  Its renderer cache key deliberately
- * excludes preview resolution, so every zoom reuses this one value.
+ * HDR measures the finished picture before output highlights. SDR measures
+ * its prefix before display grading and locals. The key excludes preview
+ * resolution, so every zoom reuses the same value for an unchanged recipe.
  */
 const pendingHighlightAnchors = new Map();
 function scheduleExactHighlightAnchor(request) {
@@ -5384,19 +5368,17 @@ async function measureExactHighlightAnchor({ lane, key, used }) {
   const foregroundSerial = state.gpuRenderSerial;
   const previewGeneration = state.previewGeneration[lane];
   const revision = state.editRevision;
-  const nativeEdge = previewTargetLongEdge("full");
+  const requestedEdge = requiredProcessingLongEdge();
   const run = (async () => {
     try {
-      const result = await state.gpuPreview.renderTiledTo(
+      const result = await state.gpuPreview.measureEditingPeak(
         els.previewCanvas,
         sessionId,
         lane,
         JSON.parse(JSON.stringify(state.adjustments)),
         sampleCurvePoints,
-        nativeEdge,
         state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())),
         state.editRevision,
-        null,
         projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
         {
@@ -5409,7 +5391,8 @@ async function measureExactHighlightAnchor({ lane, key, used }) {
             && state.importGeneration === importGeneration && !state.importInProgress
             && state.gpuRenderSerial === foregroundSerial
             && state.currentView === lane && state.editRevision === revision
-            && state.previewGeneration[lane] === previewGeneration,
+            && state.previewGeneration[lane] === previewGeneration
+            && requiredProcessingLongEdge() === requestedEdge,
         },
       );
       if (state.session?.session_id !== sessionId || state.importGeneration !== importGeneration
@@ -5417,13 +5400,14 @@ async function measureExactHighlightAnchor({ lane, key, used }) {
         || state.previewGeneration[lane] !== previewGeneration) return null;
       if (result?.highlightAnchor?.key !== key || !Number.isFinite(result.highlightAnchor.value)) return null;
       const measured = result.highlightAnchor.value;
+      recordEditingMeasurement(lane, {anchor: measured});
       if (Math.abs(measured / Math.max(Number(used) || measured, 1e-9) - 1) > 0.0001) {
         invalidatePreview(lane, { markDirty: false });
         debouncePreview(lane);
       }
       return measured;
     } catch (error) {
-      console.warn("Native highlight anchor measurement failed", error);
+      console.warn("Editing highlight anchor measurement failed", error);
       return null;
     } finally {
       exactHighlightAnchorInflight.delete(key);
@@ -5984,11 +5968,11 @@ async function runGpuScopeRequest(request) {
     return false;
   }
   // The peak is the one scope number a delivery decision is made on, so on a
-  // settled read it is measured at full resolution rather than taken from the
-  // proxy the rest of the scope is drawn from. Only settled: during a drag the
+  // settled read it uses bounded peak evidence rather than just the proxy
+  // the rest of the scope is drawn from. Only settled: during a drag the
   // proxy peak is the right trade, and it is labelled as such.
   let exactPeak = null;
-  if (state.scopeExactPeak && tier === "settled" && !scopeRegion) {
+  if (tier === "settled" && !scopeRegion) {
     exactPeak = await measureExactScopePeak({ lane });
     // The measurement is a render of its own and takes time. Anything that
     // moved underneath it invalidates this payload exactly as it would have
@@ -6012,6 +5996,7 @@ async function runGpuScopeRequest(request) {
     scopeRegion,
     exactPeak,
   });
+  applyEditingScopePeak(payload, exactPeak, lane);
   presentScopePayload(payload, { generation, tier, lane, mode, source: "gpu", metric: analysis.metric });
   return true;
 }
@@ -6125,6 +6110,11 @@ async function runScopeRequest(request) {
       state.previewScheduler?.recordStaleResult();
       return false;
     }
+    if (tier === "settled" && !request.scopeRegion) {
+      const measured = await measureExactScopePeak({lane});
+      if (generation !== state.scopeGeneration || request.sessionId !== state.session?.session_id) return false;
+      applyEditingScopePeak(payload, measured, lane);
+    }
     applyAcceptedCpuScopePeak(payload, request);
     presentScopePayload(payload, { generation, tier, lane, mode, source: "cpu" });
     applied = true;
@@ -6148,21 +6138,58 @@ async function runScopeRequest(request) {
 
 function applyAcceptedCpuScopePeak(payload, request) {
   const accepted = state.acceptedPresentation;
-  if (!state.scopeExactPeak || request.scopeRegion || payload?.preview_kind !== "hdr"
+  if (payload?.peak_exact === false || !state.scopeExactPeak || request.scopeRegion || payload?.preview_kind !== "hdr"
     || accepted?.transport === "WebGPU" || accepted?.lane !== request.lane
     || accepted?.generation !== state.previewGeneration[request.lane]
     || accepted?.geometrySignature !== geometrySignature() || !accepted?.exact
     || !Number.isFinite(accepted?.scopePeak)) return;
   const peak = accepted.scopePeak;
   payload.peak_value = peak;
-  payload.peak_exact = true;
+  payload.peak_exact = false;
   payload.peak_measured_long_edge = accepted.processedLongEdge;
   if (Array.isArray(payload.stats) && payload.stats.length) {
     payload.stats[0] = {
-      label: "Peak",
+      label: "Peak (preview)",
       value: peak >= 1000 ? `${peak.toFixed(0)} nit` : peak >= 99.995 ? `${peak.toFixed(1)} nit` : `${peak.toFixed(2)} nit`,
     };
   }
+}
+
+function applyEditingScopePeak(payload, measured, lane) {
+  if (!Number.isFinite(measured?.peak)) {
+    // A refused bounded measurement leaves only the proxy's scope value.
+    // It must not inherit the label reserved for the measured estimate.
+    payload.peak_exact = false;
+    if (payload.stats?.length) payload.stats[0] = {...payload.stats[0], label: "Peak (preview)"};
+    return;
+  }
+  const peak = lane === "hdr" ? measured.peak / .18 * projectReferenceWhiteNits() : measured.peak;
+  payload.peak_value = peak;
+  payload.peak_exact = false;
+  payload.peak_measured_long_edge = measured.longEdge;
+  if (payload.stats?.length) payload.stats[0] = {
+    label: "Peak (estimate)",
+    value: lane === "hdr" ? `${peak >= 1000 ? peak.toFixed(0) : peak.toFixed(1)} nit` : `${(peak*100).toFixed(1)}%`,
+  };
+}
+
+function editingMeasurementRecipe() {
+  return JSON.stringify([state.session?.session_id, state.editRevision, state.adjustments, localAdjustments(),
+    state.denoise, state.editDocument?.sdr_match, state.compareWithoutLocals]);
+}
+
+function recordEditingMeasurement(lane, values) {
+  state.editingMeasurementEvidence ||= {};
+  const recipe = editingMeasurementRecipe();
+  const previous = state.editingMeasurementEvidence[lane];
+  state.editingMeasurementEvidence[lane] = {recipe, values:{...(previous?.recipe === recipe ? previous.values : {}), ...values}};
+}
+
+function editingMeasurementsForDelivery() {
+  const recipe = editingMeasurementRecipe();
+  return Object.fromEntries(Object.entries(state.editingMeasurementEvidence || {})
+    .filter(([,evidence]) => evidence.recipe === recipe && !state.compareWithoutLocals)
+    .map(([lane,evidence]) => [lane,evidence.values]));
 }
 
 function waveformRequestResolution(tier) {
@@ -7018,8 +7045,9 @@ async function exportCurrentSession() {
     const completedMessage = Number.isFinite(totalExportMs)
       ? `${exportMessage} Completed in ${(totalExportMs / 1000).toFixed(1)}s.`
       : exportMessage;
-    status.post({ id: "export", severity: "success", message: completedMessage });
-    els.exportStatus.textContent = "The completed export is available below.";
+    const measurementWarning = (payload.measurement_warnings || []).join(" ");
+    status.post({ id: "export", severity: measurementWarning ? "warning" : "success", message: `${completedMessage}${measurementWarning ? ` ${measurementWarning}` : ""}` });
+    els.exportStatus.textContent = measurementWarning || "The completed export is available below.";
     if (payload.output_path) {
       const parsed = splitOutputPath(payload.output_path);
       els.exportFilename.value = parsed.filename;
@@ -11441,6 +11469,7 @@ function requestSessionExport(outputPath, overwrite, pathGrant = null, overwrite
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       format: els.exportFormat.value,
+      editing_measurements: editingMeasurementsForDelivery(),
       quality: Number(els.exportQuality.value),
       jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value),
       jpeg_gain_map_scale: els.jpegGainMapScale.value,

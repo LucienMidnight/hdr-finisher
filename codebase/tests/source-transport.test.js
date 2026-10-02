@@ -680,3 +680,22 @@ test("replacing the session aborts in-flight source transport", () => {
   assert.notEqual(preview.sourceAbortSignal(), signal, "a new session gets a fresh signal");
   assert.equal(preview.sourceAbortSignal().aborted, false);
 });
+
+test("a changed halo reuses a containing source region without fetching", async () => {
+  const Preview = loadPreview(async () => { throw new Error("unexpected source request"); });
+  const preview = new Preview(null);
+  const identity = "session:sdr:7968:{}:source:region:100,200,2000,3000";
+  const resident = { identity, sessionId: "session", lane: "sdr", longEdge: 7968,
+    geometrySignature: "{}", sourceIdentity: "source", regionTransport: true,
+    region: { x: 100, y: 200, width: 2000, height: 3000 }, byteSize: 48000000 };
+  preview.proxies.set(identity, resident);
+  const options = { region: { x: 150, y: 250, width: 1800, height: 2800 } };
+  assert.equal(await preview.loadProxy("session", "sdr", 7968, "{}", 12, "source", options), resident);
+  assert.deepEqual(resident.region, { x: 100, y: 200, width: 2000, height: 3000 });
+  for (const [lane, geometry, sourceIdentity, region] of [
+    ["hdr", "{}", "source", options.region],
+    ["sdr", "changed", "source", options.region],
+    ["sdr", "{}", "matched", options.region],
+    ["sdr", "{}", "source", { x: 50, y: 250, width: 1800, height: 2800 }],
+  ]) await assert.rejects(preview.loadProxy("session", lane, 7968, geometry, 12, sourceIdentity, { region }), /unexpected source request/);
+});
