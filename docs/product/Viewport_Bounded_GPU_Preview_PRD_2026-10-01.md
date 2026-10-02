@@ -12,7 +12,10 @@ luminance, local curves/wheels and bounded GPU scopes/navigation are implemented
 and recorded in 14.2–14.3; SDR regional luminance and a faster native-zoom
 source transfer are in 14.2 and 14.4. Steve authorized committing this
 continuation on October 2 (no push) and directed the work to Match on the
-GPU next; the complete phase 3 exit is still open.
+GPU next. Match candidates now render on the GPU (14.5); Steve approved that
+on October 2, including that Match may choose a different recipe than
+before, will judge the results by eye himself, and authorized the commit
+(no push). The complete phase 3 exit is still open.
 
 ## 1. Problem
 
@@ -672,9 +675,54 @@ One Node test, `highlight-anchor.test.js` (denoised-source anchor key), fails
 on committed `fe43970` as well as here. It is not in the earlier list of
 known failures and was not changed.
 
-Steve authorized committing this continuation on October 2; the evidence
-records' "uncommitted" describes them when written. No push was requested.
-Phase 3 stays open: Match, brush feather/
+Steve authorized committing this continuation on October 2 (`bb38137`); the
+evidence records' "uncommitted" describes them when written. No push was
+requested.
+
+### 14.5 Match candidates on the GPU
+
+Match explores SDR recipes by rendering each at a 768-pixel analysis size
+and measuring it against the settled HDR target. Those renders were on the
+CPU: 11 per Match on the three fixtures, 210-1,450 ms each. The page's GPU
+now renders them while the Match request waits, through a small bridge; the
+fitting logic, its order and its quality gates are unchanged. The recipe the
+fit reaches is rendered once by the export pipeline, and that render gives
+the reported quality, the matched/needs-review status and the rejection
+gate. If the page cannot answer, or that CPU check rejects the recipe, the
+whole fit reruns on the CPU as before.
+
+One Match per fixture, action to page return: four-mask 4.59 s to 1.81 s,
+primary 6.20 s to 3.17 s, fifty-local 23.98 s to 5.94 s, against goals of 2,
+2 and 4 s. These are single runs. What remains is CPU work outside the
+candidates: the HDR target, local translation, the neutral tonal fit and the
+final CPU check.
+
+GPU and CPU candidates agree to 0.002-0.010 of display white at the worst
+pixel on the three fixtures (one verify run each). Status is unchanged on
+all three and the chosen recipes agree on two. On the primary the GPU fit
+lands just the other side of the 0.04 OKLab gate that the CPU fit ends just
+inside (0.0395), so it runs the curve corrections and returns a different
+recipe with slightly lower CPU-measured error.
+
+Getting there exposed a preview-versus-export difference that is not
+specific to Match: the GPU's SDR base stage clipped to display white before
+Detail and the locals, and export does not unless contrast, primaries,
+curves or colour grading are active. A recipe that lifts highlights above
+white under a darkening local, which Match's own recipes do, previewed up
+to 0.15 darker there than it exported. The preview now follows export. As-
+saved comparisons on both fixtures pass unchanged; the fix itself was
+checked at the analysis size, not at 100% against an export. See
+[Match evidence](../technical/viewport-phase3-match-evidence-2026-10-02.md).
+
+Steve approved this on October 2: a different recipe from Match is
+acceptable, and he will check matched results on screen and fine-tune from
+there. Not yet done by anyone: that on-screen check, and a 100% comparison
+of the clipping fix against an export.
+
+Also found: `test_model_declaration_contracts.py` fails on committed code
+since phase 2 added `editing_measurements` to the Proof request; left alone.
+
+Phase 3 stays open: Match on primary and fifty-local over goal, brush feather/
 shift, transformed masks, SDR regional luma under Match or an authored SDR
 base, luminance leaves in expression graphs, complete Detail coverage and
 broader 50-local/continuity checks. No tolerance was widened or fixture saved;

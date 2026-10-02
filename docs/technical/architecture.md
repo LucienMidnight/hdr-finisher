@@ -124,6 +124,25 @@ peak/anchor measurement on its bounded native contract. CPU rendering mode
 retains its small idle overview fallback. See
 [phase 3 auxiliary evidence](viewport-phase3-auxiliary-evidence-2026-10-02.md).
 
+### Match candidates (phase 3)
+
+Match fits editable SDR controls to the settled HDR picture by rendering
+candidate recipes at a 768-pixel analysis size and measuring each. The fit
+stays in `sdr_match.py`. For a plain Match under GPU rendering the page
+renders the candidates: the request thread offers a recipe through
+`sdr_match_remote.py`, the page collects it from
+`/api/session/{id}/sdr-match/candidate`, grades it as SDR from the scene
+source on a separate canvas with a shoulder anchor measured on that frame,
+and returns the output-mapped picture as half-float RGB. The export pipeline
+then renders the chosen recipe once; that render is the quality Match
+reports and gates on. A refusal, a late answer or a rejected recipe reruns
+the whole fit on the CPU. Convert and CPU rendering mode use the CPU
+throughout. See [phase 3 Match evidence](viewport-phase3-match-evidence-2026-10-02.md).
+
+The SDR base stage clips to display white only inside its active stages
+(contrast, primaries, curves, colour grading), as export does, so a
+highlight lifted above white reaches Detail and the locals unclipped.
+
 ### Editing peak and highlight anchors (phase 2)
 
 The CPU collects real RGB maxima and their positions in a 64-by-64 source grid once at import. Editing transforms at most 16,384 candidates; the GPU grades and ranks them, then measures up to sixteen native 128-by-128 patches with the graph's neighbourhood. The total source-patch budget is four million pixels. Measurement masks use a 1,600-edge bitmap, or the existing qualified larger-bitmap fallback only when its bitmap fits that pixel budget. Measurement never falls back to a native whole-image render or mask. Robust anchors use a 1,600-edge proxy. Unsupported geometry or source evidence remains a refusal, not permission for an unbounded measurement.

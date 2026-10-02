@@ -1367,6 +1367,12 @@
           fragment: { module: this.module, entryPoint: "settledScopeFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         });
+        this.outputPicturePipeline = this.device.createRenderPipeline({
+          layout: this.pipelineLayout,
+          vertex: { module: this.module, entryPoint: "vertexMain" },
+          fragment: { module: this.module, entryPoint: "outputPictureFragmentMain", targets: [{ format: "rgba16float" }] },
+          primitive: { topology: "triangle-list" },
+        });
         this.maskBindGroupLayout = this.device.createBindGroupLayout({
           entries: [
             { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
@@ -1441,6 +1447,7 @@
       this.maskPipelines = null;
       this.scopePipeline = null;
       this.settledScopePipeline = null;
+      this.outputPicturePipeline = null;
       this.spatialSampler = null;
       this.paramBuffer = null;
       this.curveBuffer = null;
@@ -4067,9 +4074,12 @@
       // A requested zoom can overlap the same bounded fallback with its source
       // transfer, without compiling a native whole-image measurement mask.
       this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial);
+      // A Match candidate grades the scene picture as SDR whatever the SDR
+      // lane's own source is, so it names the lane its source comes from.
+      const sourceLane = sourceOptions?.sourceLane || lane;
       let proxy = await this.loadProxy(
         sessionId,
-        lane,
+        sourceLane,
         longEdge,
         geometrySignature,
         editRevision,
@@ -4088,6 +4098,8 @@
         || !proxy
         || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
       let sourceProxy = this.selectedDenoiseSource(proxy);
+      // Export's Match analysis reads the source as decoded, not a reconstruction.
+      if (sourceOptions?.frameAnchor) sourceProxy = proxy;
       proxyPin = this.gpuAllocator && proxy.allocatorEntry ? this.gpuAllocator.pin(proxy.allocatorEntry) : null;
       let masks = [];
       let masksReadyAt = proxyReadyAt;
@@ -4163,7 +4175,18 @@
       // Show noise never reaches the output mapping, so it has no peak to anchor.
       const noiseView = Boolean(sourceOptions?.noiseView);
       const anchor = noiseView ? null : this.highlightAnchorRequest(lane, adjustments, sourceProxy, params, localAdjustments);
-      if (anchor) {
+      if (anchor && sourceOptions?.frameAnchor) {
+        // Export's analysis frame anchors its shoulder on its own pixels. A
+        // frame rendered to be compared with one does the same, through the
+        // SDR prefix reduction, and leaves the editing anchor cache and its
+        // scheduler alone.
+        if (lane !== "sdr") return this.refuseRender("frame-anchor-unsupported-lane");
+        const key = `frame:${serial}:${anchor.key}`;
+        params[75] = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, key);
+        this.peakReductionCache.delete(key);
+        if (resourceGeneration !== this.resourceGeneration || serial !== this.renderSerials.get(canvas)
+          || sourceOptions?.isCurrent?.() === false) return this.refuseRender("peak:superseded");
+      } else if (anchor) {
         const interactive = sourceOptions?.tier === "interactive";
         // An interactive frame that stopped for a whole-image reduction would
         // miss its deadline, so it carries the last measurement instead and
@@ -5969,6 +5992,33 @@
         ? { canvas, sourceSerial: rendered.sourceSerial } : null;
     }
 
+    /**
+     * One SDR Match candidate: the given recipe graded from the scene source
+     * at the analysis size, returned as the display-linear sRGB picture the
+     * export pipeline's candidate is (output highlights applied, clamped, no
+     * grain). Null when this renderer cannot draw the recipe; the fit then
+     * runs on the CPU.
+     */
+    async renderMatchCandidate(sessionId, adjustments, curveSampler, locals, revision, white, sourceSize, longEdge, expected) {
+      this.matchCandidateCanvas ||= document.createElement("canvas");
+      const canvas = this.matchCandidateCanvas;
+      const startedAt = performance.now();
+      const candidate = structuredClone(adjustments);
+      candidate.sdr.film_look = { ...(candidate.sdr.film_look || {}), grain_amount: 0 };
+      const rendered = await this.renderTo(canvas, sessionId, "sdr", candidate, curveSampler,
+        longEdge, locals, revision, null, white, sourceSize,
+        { measureOnly: true, scopeAnalysis: true, forceSdrSurface: true, sourceLane: "hdr", frameAnchor: true });
+      if (rendered?.execution !== "direct" || rendered.width !== expected.width || rendered.height !== expected.height
+        || !this.scopeSources.has(canvas)) return null;
+      const renderedAt = performance.now();
+      const analysis = await this.analyzeScope(canvas, {
+        width: rendered.width, height: rendered.height, tier: "picture", raw: true,
+      });
+      return analysis ? { pixels: analysis.halves, width: analysis.width, height: analysis.height,
+        anchor: this.scopeSources.get(canvas)?.params?.[75] ?? null,
+        renderMs: renderedAt - startedAt, readbackMs: performance.now() - renderedAt } : null;
+    }
+
     async renderNavigationProxy(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, options) {
       this.navigationAnalysisCanvas ||= document.createElement("canvas");
       const canvas = this.navigationAnalysisCanvas;
@@ -5981,7 +6031,7 @@
       return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
     }
 
-    async analyzeScope(canvas, { width = 256, height = 128, generation = 0, tier = "interactive" } = {}) {
+    async analyzeScope(canvas, { width = 256, height = 128, generation = 0, tier = "interactive", raw = false } = {}) {
       if (!this.available) return null;
       const source = this.scopeSources.get(canvas);
       if (!source) return null;
@@ -6014,7 +6064,8 @@
           storeOp: "store",
         }],
       });
-      pass.setPipeline(tier === "interactive" ? this.scopePipeline : this.settledScopePipeline);
+      pass.setPipeline(tier === "interactive" ? this.scopePipeline
+        : tier === "picture" ? this.outputPicturePipeline : this.settledScopePipeline);
       pass.setBindGroup(0, bindGroup);
       pass.draw(3);
       pass.end();
@@ -6028,7 +6079,7 @@
       const submittedAt = performance.now();
       return scopeReadback().readAnalysis(this, {
         canvas, source, resource, width, height, generation, tier,
-        startedAt, encodedAt, submittedAt, halfToFloat,
+        startedAt, encodedAt, submittedAt, halfToFloat, raw,
       });
     }
 

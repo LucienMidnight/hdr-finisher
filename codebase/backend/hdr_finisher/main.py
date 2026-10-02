@@ -89,6 +89,7 @@ from .resource_preflight import (
     estimate_preview_resources,
 )
 from .scopes import build_scope_from_processed
+from .sdr_match_remote import bridge_for, close_bridge, open_bridge
 from .sessions import EditCommandError, RevisionConflictError, SessionStore
 from .test_pattern import build_delivery_proof_pattern
 
@@ -649,18 +650,56 @@ def post_edit_commands(session_id: str, batch: EditCommandBatch) -> EditStateRes
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/session/{session_id}/sdr-match/candidate")
+def get_sdr_match_candidate(session_id: str, wait_ms: int = Query(default=500, ge=0, le=2000)) -> Response:
+    """Hand the page the next Match candidate to render, or 204 when none is waiting."""
+    bridge = bridge_for(session_id)
+    if bridge is None or bridge.closed:
+        return Response(status_code=204, headers={"X-Match-Active": "0"})
+    job = bridge.next_job(wait_ms / 1000.0)
+    if job is None:
+        return Response(status_code=204, headers={"X-Match-Active": "0" if bridge.closed else "1"})
+    return JSONResponse(job)
+
+
+@app.post("/api/session/{session_id}/sdr-match/candidate/{job_id}")
+async def post_sdr_match_candidate(
+    session_id: str,
+    job_id: int,
+    request: Request,
+    width: int = Query(default=0, ge=0, le=4096),
+    height: int = Query(default=0, ge=0, le=4096),
+    anchor: float | None = Query(default=None),
+) -> Response:
+    """Receive one rendered candidate as half-float RGB; an empty body declines it."""
+    bridge = bridge_for(session_id)
+    if bridge is None:
+        return Response(status_code=204)
+    body = await request.body()
+    bridge.submit(job_id, body or None, width, height, anchor)
+    return Response(status_code=204)
+
+
 @app.post("/api/session/{session_id}/sdr-match", response_model=EditStateResponse)
 def post_sdr_match(session_id: str, request: SdrMatchActionRequest, response: Response) -> EditStateResponse:
     timing: dict[str, object] = {}
     started = perf_counter()
+    bridge = open_bridge(session_id) if request.gpu_candidates and request.action == "match" else None
+    if bridge is not None and request.verify_gpu_candidates:
+        timing["verify_gpu_candidates"] = True
     try:
-        result = store.apply_sdr_match_action(
-            session_id,
-            expected_revision=request.expected_revision,
-            action=request.action,
-            authored_sdr_override_consent=request.authored_sdr_override_consent,
-            timing=timing,
-        )
+        try:
+            result = store.apply_sdr_match_action(
+                session_id,
+                expected_revision=request.expected_revision,
+                action=request.action,
+                authored_sdr_override_consent=request.authored_sdr_override_consent,
+                timing=timing,
+                candidate_bridge=bridge,
+            )
+        finally:
+            if bridge is not None:
+                close_bridge(session_id, bridge)
         timing["request_total_ms"] = round((perf_counter() - started) * 1000.0, 3)
         response.headers["X-SDR-Match-Timing"] = json.dumps(timing, separators=(",", ":"))
         return result

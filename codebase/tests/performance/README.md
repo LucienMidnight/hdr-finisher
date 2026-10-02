@@ -165,6 +165,14 @@ mask-tile requests it made. The `tiled-render` stage in its report carries
 `encodeMs` beside `durationMs`; the difference is the wait for the GPU. See
 [zoom transfer evidence](../../../docs/technical/viewport-phase3-zoom-transfer-evidence-2026-10-02.md).
 
+`tests/performance/match-candidate-review.js` presses Match once in a
+disposable session and records the backend's stage timing, the recipe and
+the CPU-measured quality. `--renderer gpu` (the app's default), `cpu`, or
+`verify`, which renders every GPU candidate on the CPU as well and reports
+the largest luminance difference; verify timings are not Match timings.
+`tests/test_sdr_match_remote.py` covers the bridge and its CPU fallback with
+a stand-in page. See [Match evidence](../../../docs/technical/viewport-phase3-match-evidence-2026-10-02.md).
+
 The local-route smoke also waits for an actual new settled GPU scope, checks
 the loaded 512-edge GPU navigation overview, rejects a stale auxiliary render,
 and asserts no CPU scope/navigation-preview requests during the two actions.

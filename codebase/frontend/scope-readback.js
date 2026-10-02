@@ -34,6 +34,7 @@
     encodedAt,
     submittedAt,
     halfToFloat,
+    raw = false,
   }) {
     try {
       await resource.readBuffer.mapAsync(GPUMapMode.READ);
@@ -41,6 +42,21 @@
       const mappedAt = performance.now();
       const sourceBytes = new Uint16Array(resource.readBuffer.getMappedRange());
       const rowStride = resource.bytesPerRow / 2;
+      if (raw) {
+        // The caller forwards the half floats as they are: RGB, rows packed.
+        const halves = new Uint16Array(width * height * 3);
+        let target = 0;
+        for (let row = 0; row < height; row += 1) {
+          let index = row * rowStride;
+          for (let column = 0; column < width; column += 1) {
+            halves[target++] = sourceBytes[index];
+            halves[target++] = sourceBytes[index + 1];
+            halves[target++] = sourceBytes[index + 2];
+            index += 4;
+          }
+        }
+        return { halves, width, height, sourceSerial: source.serial };
+      }
       const pixels = new Float32Array(width * height * 3);
       const cellPeaks = new Float32Array(width * height);
       let targetIndex = 0;

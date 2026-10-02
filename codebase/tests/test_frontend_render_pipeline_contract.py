@@ -335,7 +335,9 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "defaultGeometry" not in gpu_scope_eligibility
     assert "renderer.scopeSources.get(canvas) !== source" in scope_readback
     assert "analysis.sessionId !== request.sessionId" in javascript
-    assert "analysis.sourceSerial !== accepted?.sourceSerial" in javascript
+    # The serial is the accepted picture's, or the bounded scope proxy's when
+    # the accepted picture is tiled (phase 3 GPU scopes).
+    assert "analysis.sourceSerial !== sourceSerial" in javascript
     assert "analysis.applicationGeneration !== accepted?.generation" in javascript
     assert 'state.acceptedPresentation?.transport === "WebGPU"' in javascript
     assert "state.acceptedPresentation?.generation === state.previewGeneration[lane]" in javascript
@@ -608,10 +610,15 @@ def test_phase_one_local_influence_and_latest_generation_contract() -> None:
         webgpu.index("function gpuLocalSupported"):
         webgpu.index("function activeGpuLocals")
     ]
-    assert "curveSetNeutral(grade)" in local_support
+    # Phase 3: local curves and colour wheels run on the GPU, so no local
+    # grade is refused for them; their parameters travel with the local.
+    assert "return Boolean(grade);" in local_support
     assert "detail.texture_amount" not in local_support
-    assert "grading.balance" in local_support and "grading.blending" in local_support
-    assert "grading.shadows, grading.midtones, grading.highlights" in local_support
+    local_params = webgpu[webgpu.index("function buildLocalParams"):]
+    local_params = local_params[:local_params.index("return values;")]
+    assert "grading.balance" in local_params and "grading.blending" in local_params
+    assert "grading.shadows || {},grading.midtones || {},grading.highlights || {}" in local_params
+    assert "curvePointsNeutral(grade[name])" in local_params
     render_to = webgpu[
         webgpu.index("async renderTo(canvas"):
         webgpu.index("selectedDenoiseSource(originalProxy)")

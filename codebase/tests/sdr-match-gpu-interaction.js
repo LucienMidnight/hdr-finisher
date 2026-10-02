@@ -89,12 +89,14 @@ function sameBuffer(left, right) {
       const rendered = !await presentMatchedSdrPreview({ longEdge: refinementProxyLongEdge(), tier: "refinement" });
       await new Promise((resolve) => requestAnimationFrame(() => resolve()));
       const accepted = state.acceptedPresentation;
-      const unsupportedCurveLocal = JSON.parse(JSON.stringify(local));
-      unsupportedCurveLocal.sdr_grade.luma_curve = [[0, 0], [0.5, 0.6], [1, 1]];
-      const unsupportedDetailLocal = JSON.parse(JSON.stringify(local));
-      unsupportedDetailLocal.sdr_grade.detail.texture_amount = 1;
-      const unsupportedWheelLocal = JSON.parse(JSON.stringify(local));
-      unsupportedWheelLocal.sdr_grade.color_grading.highlights.luminance_ev = 0.1;
+      // Local curves, Detail and colour wheels all run on the GPU since
+      // phase 3 of the viewport-bounded preview; none sends a local to the CPU.
+      const curveLocal = JSON.parse(JSON.stringify(local));
+      curveLocal.sdr_grade.luma_curve = [[0, 0], [0.5, 0.6], [1, 1]];
+      const detailLocal = JSON.parse(JSON.stringify(local));
+      detailLocal.sdr_grade.detail.texture_amount = 1;
+      const wheelLocal = JSON.parse(JSON.stringify(local));
+      wheelLocal.sdr_grade.color_grading.highlights.luminance_ev = 0.1;
       return {
         revision: state.editRevision,
         generation: state.previewGeneration.sdr,
@@ -127,9 +129,9 @@ function sameBuffer(left, right) {
         acceptedLane: accepted?.lane,
         acceptedGeneration: accepted?.generation,
         acceptedTransport: accepted?.transport,
-        helperEligibilityCorrect: !state.gpuPreview.supportsLocalAdjustments("sdr", [unsupportedCurveLocal])
-          && state.gpuPreview.supportsLocalAdjustments("sdr", [unsupportedDetailLocal])
-          && !state.gpuPreview.supportsLocalAdjustments("sdr", [unsupportedWheelLocal]),
+        helperEligibilityCorrect: state.gpuPreview.supportsLocalAdjustments("sdr", [curveLocal])
+          && state.gpuPreview.supportsLocalAdjustments("sdr", [detailLocal])
+          && state.gpuPreview.supportsLocalAdjustments("sdr", [wheelLocal]),
         recipe: JSON.stringify(state.adjustments.sdr),
       };
     });

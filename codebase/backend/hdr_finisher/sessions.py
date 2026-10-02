@@ -38,6 +38,7 @@ from .models import (
 from .render_cache import SessionRenderCache, SourceMipIdentity, default_source_mip_store
 from .source_luminance import describe_source_luminance
 from .sdr_match import MATCH_ANALYSIS_EDGE, SDRMatchMaterializationError, materialize_sdr_match
+from .sdr_match_remote import RemoteCandidateBridge
 
 
 class RevisionConflictError(RuntimeError):
@@ -538,8 +539,14 @@ class SessionStore:
         action: str,
         authored_sdr_override_consent: bool = False,
         timing: dict[str, object] | None = None,
+        candidate_bridge: RemoteCandidateBridge | None = None,
     ) -> EditStateResponse:
-        """Materialize a normal SDR recipe, or explicitly manage a legacy v1 match."""
+        """Materialize a normal SDR recipe, or explicitly manage a legacy v1 match.
+
+        ``candidate_bridge`` lets the page's GPU render the candidates of a
+        plain Match.  Convert analyses a captured recipe whose locals are not
+        the session's, so it keeps the CPU renderer.
+        """
         with self._lock:
             session = self.get(session_id)
             if session.edit_revision != expected_revision:
@@ -623,6 +630,7 @@ class SessionStore:
                     source_pixel_scale=min(1.0, 768 / max(session.image.shape[:2])),
                     settled_hdr=settled,
                     timing=timing,
+                    candidate_bridge=candidate_bridge if action == "match" else None,
                 )
             except SDRMatchMaterializationError as exc:
                 raise EditCommandError(str(exc)) from exc

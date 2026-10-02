@@ -25,7 +25,7 @@ from .adjustments import (
 )
 from .color import acescg_to_linear_srgb
 from .color_context import RenderColorContext
-from .finishing import apply_geometry
+from .finishing import apply_geometry, geometry_output_dimensions
 from .local_adjustments import _apply_local_grade
 from .models import (
     AdjustmentState,
@@ -41,6 +41,7 @@ from .models import (
 )
 from .sdr_gamut import compress_to_srgb_gamut, linear_srgb_to_oklab
 from .sdr_match_inputs import match_spatial_mask, render_match_candidate, reuse_match_render_inputs
+from .sdr_match_remote import RemoteCandidateBridge, RemoteCandidateUnavailable
 
 
 MATCH_SHOULDER_START = np.float32(0.90)
@@ -50,6 +51,8 @@ MATCH_REVIEW_P95_LUMA_LIMIT = 0.06
 
 
 _MATCH_TIMING: ContextVar[dict[str, object] | None] = ContextVar("sdr_match_timing", default=None)
+# Set while the page's GPU renders this fit's candidates (sdr_match_remote).
+_MATCH_REMOTE: ContextVar[RemoteCandidateBridge | None] = ContextVar("sdr_match_remote", default=None)
 
 
 @contextmanager
@@ -225,15 +228,24 @@ def materialize_sdr_match(
     source_pixel_scale: float,
     settled_hdr: np.ndarray | None = None,
     timing: dict[str, object] | None = None,
+    candidate_bridge: RemoteCandidateBridge | None = None,
 ) -> MaterializedSDRMatch:
-    """Fit a temporary HDR target into normal, editable SDR controls."""
+    """Fit a temporary HDR target into normal, editable SDR controls.
+
+    With ``candidate_bridge`` the page's GPU renders the candidates the fit
+    explores.  The recipe it arrives at is then rendered and measured on the
+    CPU, so quality and status are the export pipeline's.  If the page cannot
+    supply a candidate, or that CPU measurement rejects the recipe, the whole
+    fit runs again on the CPU exactly as it does without a bridge.
+    """
     timing_token = _MATCH_TIMING.set(timing)
     materialize_started = perf_counter()
     if timing is not None:
         timing.setdefault("stage_ms", {})
         timing.setdefault("candidate_passes", {})
         timing["analysis_edge"] = MATCH_ANALYSIS_EDGE
-    try:
+
+    def run() -> MaterializedSDRMatch:
         return _materialize_sdr_match_impl(
             source,
             adjustments,
@@ -242,6 +254,34 @@ def materialize_sdr_match(
             source_pixel_scale=source_pixel_scale,
             settled_hdr=settled_hdr,
         )
+
+    try:
+        if candidate_bridge is None:
+            return run()
+        remote_token = _MATCH_REMOTE.set(candidate_bridge)
+        try:
+            result = run()
+            if timing is not None:
+                timing["candidate_renderer"] = "gpu"
+            return result
+        except (RemoteCandidateUnavailable, SDRMatchMaterializationError) as exc:
+            if timing is not None:
+                timing["gpu_candidate_fallback"] = str(exc)
+                timing["gpu_attempt_ms"] = round((perf_counter() - materialize_started) * 1000.0, 3)
+                timing["gpu_attempt_stage_ms"] = timing.pop("stage_ms", {})
+                timing["gpu_attempt_passes"] = timing.pop("candidate_passes", {})
+                timing["stage_ms"] = {}
+                timing["candidate_passes"] = {}
+                timing.pop("candidate_label", None)
+        finally:
+            _MATCH_REMOTE.reset(remote_token)
+            if timing is not None:
+                timing["gpu_candidates"] = candidate_bridge.rendered
+                timing["gpu_candidate_wait_ms"] = round(candidate_bridge.wait_ms, 3)
+            candidate_bridge.close()
+        if timing is not None:
+            timing["candidate_renderer"] = "cpu"
+        return run()
     finally:
         if timing is not None:
             timing["materialize_total_ms"] = round((perf_counter() - materialize_started) * 1000.0, 3)
@@ -407,6 +447,17 @@ def _materialize_sdr_match_impl(
             (perf_counter() - luma_recovery_started) * 1000.0, 3
         )
         timing["candidate_label"] = None
+
+    if _MATCH_REMOTE.get() is not None:
+        # The fit explored GPU renders. What it reports, and whether it is
+        # accepted, is decided on the export pipeline's render of the recipe.
+        with _match_stage("cpu_certification"):
+            explored = quality
+            candidate = render_match_candidate(source, result_adjustments, result_locals, source_pixel_scale)
+            quality = _quality_metrics(target, candidate, body)
+        if timing is not None:
+            timing["gpu_explored_quality"] = explored.model_dump(mode="json")
+            timing["cpu_certified_quality"] = quality.model_dump(mode="json")
 
     # A final-output HDR shoulder can leave a slightly broader luma residual
     # than the former early-stage curve. Preserve a valid editable recipe as
@@ -789,7 +840,10 @@ def _render_candidate(
     timing = _MATCH_TIMING.get()
     label = str(timing.get("candidate_label") or "unclassified") if timing is not None else ""
     started = perf_counter()
+    bridge = _MATCH_REMOTE.get()
     try:
+        if bridge is not None:
+            return _render_remote_candidate(bridge, source, adjustments, local_adjustments, source_pixel_scale)
         return render_match_candidate(source, adjustments, local_adjustments, source_pixel_scale)
     finally:
         if timing is not None:
@@ -797,6 +851,70 @@ def _render_candidate(
             entry = passes.setdefault(label, {"count": 0, "total_ms": 0.0})
             entry["count"] = int(entry["count"]) + 1
             entry["total_ms"] = round(float(entry["total_ms"]) + (perf_counter() - started) * 1000.0, 3)
+
+
+def _render_remote_candidate(
+    bridge: RemoteCandidateBridge,
+    source: np.ndarray,
+    adjustments: AdjustmentState,
+    local_adjustments: list[LocalAdjustment],
+    source_pixel_scale: float,
+) -> np.ndarray:
+    """One candidate from the page's GPU, in the CPU candidate's frame and units."""
+    width, height = geometry_output_dimensions(source.shape[1], source.shape[0], adjustments.shared.geometry)
+    payload: dict[str, object] = {
+        "adjustments": adjustments.model_dump(mode="json"),
+        "long_edge": MATCH_ANALYSIS_EDGE,
+    }
+    # The locals are fixed once translated; send them when they change, not
+    # with every trial.
+    if bridge.locals_identity != id(local_adjustments):
+        payload["local_adjustments"] = [item.model_dump(mode="json") for item in local_adjustments]
+        bridge.locals_identity = id(local_adjustments)
+    candidate = bridge.render(payload, int(width), int(height))
+    timing = _MATCH_TIMING.get()
+    if timing is not None and timing.get("verify_gpu_candidates"):
+        reference = render_match_candidate(source, adjustments, local_adjustments, source_pixel_scale)
+        difference = np.abs(_linear_luma(candidate) - _linear_luma(reference))
+        timing.setdefault("gpu_candidate_parity", []).append({
+            "stage": timing.get("candidate_label"),
+            "luma_abs_median": float(np.median(difference)),
+            "luma_abs_p99": float(np.percentile(difference, 99.0)),
+            "luma_abs_max": float(np.max(difference)),
+            "rgb_abs_max": float(np.max(np.abs(candidate - reference))),
+            **_parity_diagnostics(candidate, reference),
+            "gpu_anchor": bridge.last_anchor,
+            "cpu_anchor": _cpu_sdr_anchor(source, adjustments),
+        })
+    return candidate
+
+
+def _cpu_sdr_anchor(source: np.ndarray, adjustments: AdjustmentState) -> float | None:
+    """The shoulder peak the CPU candidate measures on its own frame (diagnostic only)."""
+    from .adjustments import _sdr_pre_highlight, sdr_highlight_peak_signal
+
+    signal = sdr_highlight_peak_signal(
+        _sdr_pre_highlight(apply_geometry(source, adjustments.shared.geometry), adjustments), adjustments.sdr
+    )
+    if signal is None or not signal.size:
+        return None
+    robust = adjustments.sdr.highlight_compression_peak_measurement == "robust"
+    return float(np.quantile(signal, 0.9999) if robust else np.max(signal))
+
+
+def _parity_diagnostics(candidate: np.ndarray, reference: np.ndarray) -> dict[str, object]:
+    """Where a GPU candidate departs from the CPU one (diagnostic only)."""
+    gpu = _linear_luma(candidate)
+    cpu = _linear_luma(reference)
+    far = np.abs(gpu - cpu) > 0.02
+    return {
+        "far_fraction": float(np.mean(far)),
+        "far_gpu_mean": float(np.mean(gpu[far])) if far.any() else None,
+        "far_cpu_mean": float(np.mean(cpu[far])) if far.any() else None,
+        "gpu_max": float(np.max(gpu)),
+        "cpu_max": float(np.max(cpu)),
+        "shape": list(gpu.shape),
+    }
 
 
 def _fit_image_semantic_controls(
@@ -1083,23 +1201,9 @@ def _quality_metrics(
     candidate: np.ndarray,
     body: np.ndarray | None = None,
 ) -> SDRMatchQualityMetrics:
-    target_luma = _linear_luma(target)
+    target_luma, target_lab, body = _quality_target(target, body)
     candidate_luma = _linear_luma(candidate)
-    if body is None:
-        body = target_luma <= MATCH_SHOULDER_START
-    else:
-        body = np.asarray(body, dtype=bool)
-        if body.shape != target_luma.shape:
-            raise ValueError("SDR Match quality selection must match the rendered image geometry.")
-    # OKLab's cube-root toe makes minute linear values look numerically large:
-    # mapping 0.0002 to display black is roughly a 0.058 Lab distance despite
-    # being below the useful SDR grading floor. Keep the safety metric focused
-    # on visible body tones rather than letting sub-0.1% patches dominate P95.
-    body = body & (target_luma >= np.float32(0.0008))
-    if not np.any(body):
-        body = np.ones_like(target_luma, dtype=bool)
     luma_error = np.abs(candidate_luma - target_luma)[body]
-    target_lab = linear_srgb_to_oklab(np.clip(target, 0.0, 1.0))
     candidate_lab = linear_srgb_to_oklab(np.clip(candidate, 0.0, 1.0))
     oklab_error = np.linalg.norm(candidate_lab - target_lab, axis=-1)[body]
     return SDRMatchQualityMetrics(
@@ -1108,6 +1212,38 @@ def _quality_metrics(
         median_oklab_error=float(np.median(oklab_error)),
         p95_oklab_error=float(np.percentile(oklab_error, 95.0)),
     )
+
+
+# One fit measures every candidate against the same target and selection, so
+# the target's half of the metric is computed once. The entry holds the arrays
+# it was built from and is used only for those exact objects.
+_QUALITY_TARGET: tuple[np.ndarray, np.ndarray | None, np.ndarray, np.ndarray, np.ndarray] | None = None
+
+
+def _quality_target(
+    target: np.ndarray, body: np.ndarray | None
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    global _QUALITY_TARGET
+    cached = _QUALITY_TARGET
+    if cached is not None and cached[0] is target and cached[1] is body:
+        return cached[2], cached[3], cached[4]
+    target_luma = _linear_luma(target)
+    if body is None:
+        selection = target_luma <= MATCH_SHOULDER_START
+    else:
+        selection = np.asarray(body, dtype=bool)
+        if selection.shape != target_luma.shape:
+            raise ValueError("SDR Match quality selection must match the rendered image geometry.")
+    # OKLab's cube-root toe makes minute linear values look numerically large:
+    # mapping 0.0002 to display black is roughly a 0.058 Lab distance despite
+    # being below the useful SDR grading floor. Keep the safety metric focused
+    # on visible body tones rather than letting sub-0.1% patches dominate P95.
+    selection = selection & (target_luma >= np.float32(0.0008))
+    if not np.any(selection):
+        selection = np.ones_like(target_luma, dtype=bool)
+    target_lab = linear_srgb_to_oklab(np.clip(target, 0.0, 1.0))
+    _QUALITY_TARGET = (target, body, target_luma, target_lab, selection)
+    return target_luma, target_lab, selection
 
 
 def _highlight_order_is_safe(settled_hdr: np.ndarray, candidate: np.ndarray) -> bool:

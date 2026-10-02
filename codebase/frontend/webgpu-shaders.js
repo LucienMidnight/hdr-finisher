@@ -947,7 +947,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       var result = input + tint * sourceY;
       let tintedY = max(select(lumaSrgb(result), lumaAces(result), hdr), 0.0000001);
       result *= sourceY / tintedY;
-      return max(result * exp2(luminanceEv), vec3f(0.0));
+      let graded = max(result * exp2(luminanceEv), vec3f(0.0));
+      // Export's active SDR grading clips to display white inside the stage.
+      return select(min(graded, vec3f(1.0)), graded, hdr);
     }
     fn hdrSoftCeiling(input: vec3f) -> vec3f {
       if (p[74] != 2.0 || p[3] <= 0.0) { return input; }
@@ -1363,7 +1365,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(grey))))), false), false);
         }
       }
-      return clamp(rgb, vec3f(0.0), vec3f(1.0));
+      // Export clips to display white only inside the stages that are active
+      // (contrast, primaries, curves, grading), which the helpers above do. A
+      // tone-equalizer lift above white therefore reaches Detail and the
+      // locals unclipped, and a darkening local recovers it; the output
+      // mapping clips last.
+      return max(rgb, vec3f(0.0));
     }
 
     fn filmLuma(rgb: vec3f) -> f32 {
@@ -2648,6 +2655,14 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         }
       }
       return vec4f(total / f32(max(count, 1u)), peak);
+    }
+
+    // The finished, output-mapped picture itself, one texel per pixel. The
+    // settled scope pass above is a reduction whose float cell bounds can
+    // take in a neighbouring row; a readback of the picture must not.
+    @fragment fn outputPictureFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let output = scopeOutputAt(vec2i(input.position.xy));
+      return vec4f(output, scopePeakSignal(output));
     }
 
     // What a region pass shows outside the tiles it has drawn: the whole
