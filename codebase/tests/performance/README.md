@@ -121,3 +121,22 @@ Export/Proof warnings are checked by `tests/test_peak_accuracy.py` and
 `tests/test_proof_export_identity.py`, including cached Proof requests with
 different estimates. Full-size Proof keeps encoded export identity; reduced
 Proof does not compare its smaller rendition against a native editing estimate.
+
+Phase 3's Sharpen filter regression compares the actual GPU kernel against
+export's CPU three-box blur, including small-image boundaries and radius
+transitions, in both lanes:
+
+```powershell
+node tests/run-in-electron.js tests/sharpen-blur-reference.js `
+  --output <report.json>
+```
+
+This synthetic filter check does not replace `preview-export-compare.js` or
+its unchanged picture tolerances. The primary as-saved repair, remaining
+four-mask outliers and three alternating timing pairs are recorded in
+[phase 3 Detail evidence](../../../docs/technical/viewport-phase3-detail-evidence-2026-10-02.md).
+
+`tests/neutral-color-grading-reference.js`, through the same Electron wrapper,
+is a tiny CPU/GPU regression for signed near-black colours, neutral wheel
+identity and active grading. It opens no project. The follow-up evidence
+records a single HDR-centre fixture comparison resolving the two outliers.

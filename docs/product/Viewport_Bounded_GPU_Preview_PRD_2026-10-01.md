@@ -1,7 +1,7 @@
 # Viewport-Bounded GPU Preview
 
 **Date:** October 1, 2026
-**Status:** Phases 0 and 1 closed on October 1, 2026. On October 2 Steve accepted the phase 2 report, requested commit and push, and directed the next thread to move on in the PRD. Phase 2's implementation, measurements and remaining limitations are recorded in section 13. Phase 3 is next; phase 4 has not started. Phase 1 met its mask-accuracy exit and part of its speed exit; its accepted gap to the section 6 targets remains carried to phase 3. Steve approved the section 4 limits and accepted the section 6 targets as goals on October 1. Phase 0 is recorded in section 11.
+**Status:** Phases 0 and 1 closed on October 1, 2026. On October 2 Steve accepted the phase 2 report, requested commit and push, and directed the next thread to move on in the PRD. Phase 2's implementation, measurements and remaining limitations are recorded in section 13. Phase 3 started on October 2 with a measured Sharpen correction (section 14). The four-mask near-black blocker is subsequently repaired (section 14.1); Steve authorized committing these fixes and continuing the sprint. Phase 3 remains open; phase 4 has not started. Phase 1 met its mask-accuracy exit and part of its speed exit; its accepted gap to the section 6 targets remains carried to phase 3. Steve approved the section 4 limits and accepted the section 6 targets as goals on October 1. Phase 0 is recorded in section 11.
 **Owner decisions recorded here:** move to the pattern other raw editors use (work bounded by the viewport, masks independent of resolution, export as the exact reference); accept small preview-versus-export differences; put the app's rigor into HDR handling; move interactive work to the GPU.
 **Predecessor:** [GPU Performance Review Sprint](GPU_Performance_Review_Sprint_PRD_2026-09-29.md), section 14 (October 1 root-cause pass).
 **Primary fixture:** `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher` with `DSC00950.ARW` (read-only; never saved).
@@ -539,3 +539,56 @@ Robust anchors now have native-reference accuracy checks, separate from the boun
 All four are inside the unchanged 1% limit. Native references are `robust-native-{primary,fourmask}.json`; the fixture modes and bounded refusals described in 13.1 still delimit what this validates.
 
 Final focused verification: 50 Node tests pass, including both zoom scheduling modes, fallback disclosure, source/mask caches, cancellation, single-flight and unchanged shader byte pins. The 27 Python checks pass, including exact ceiling enforcement and `test_proof_export_identity.py` for the available encoders. The final performance sessions preceded the disclosure-only evidence recording change; the final accuracy comparisons and Node suite include it. No new benchmark was run after the promised last comparison. The known phase 1 failures and Detail agreement issues remain outside this phase.
+
+## 14. Phase 3 first working stage — October 2, 2026
+
+Work starts from clean `5d5ae6d64739fddc993452d0969588618a78eb39` on
+`viewport-bounded-preview-phase-2-wip`. The inspected order is Detail diagnosis,
+GPU masks/region luminance, controls/Match, then navigation/scopes. The
+[durable Detail evidence record](../technical/viewport-phase3-detail-evidence-2026-10-02.md)
+contains the path inventory, baseline isolation, implementation and provenance.
+
+Before either renderer changed, isolated primary HDR centre comparisons
+identified Sharpen: p99 luminance 6.958% and maximum 26.054%, while inactive
+Detail, Clarity alone and Microcontrast alone passed. GPU Sharpen now matches
+export's three-box kernel and cropped source-pixel scale. Export is unchanged.
+The combined primary as-saved comparison passes the existing limits: three
+1,947,690-pixel regions per lane, one run, HDR luminance p99 0.495–0.854%,
+maximum 1.354–1.947%; SDR judged maximum 1.854–2.698%. Masks and peak pass.
+
+Four-mask SDR passes in the same fresh sampling, but HDR still has the two
+near-black outliers recorded in phase 2: luminance maximum 8.0335% against 5%,
+OKLab maximum 0.136093 against 0.03. No tolerance is widened. Implementation
+pauses for Steve's decision under the next-thread instruction to show evidence
+and stop when a limit remains unmet.
+
+Three alternating before/after fresh-session timing pairs show mixed small
+changes, without a clear regression. Local-Detail delayed brush zoom remains
+2093 → 2053 ms to the picture and 3556 → 3502 ms through scope settlement
+(three samples per build). This accepted speed gap remains open. Eight
+bounded-contract calls across both fixtures retain the budgets and frame
+resources; peak and robust estimates match phase 2. Focused verification adds
+44 passing Python checks including Proof identity, 59 Node checks including
+unchanged shader pins, and 28 synthetic GPU Sharpen cases. Full Detail matrix,
+GPU masks, controls/Match, navigation/scopes and 50-local scaling remain.
+Phase 3 is not closed; phase 4, commit and push have not started.
+
+### 14.1 Near-black follow-up and continuation
+
+Steve requested investigation of the two outliers with few long tests. CPU
+tracing and a tiny actual-shader probe identify neutral colour grading: export
+skips it, but GPU luminance normalization erased signed RAW colours with
+nonpositive luminance. GPU neutral wheels now return the input unchanged.
+Active grading and export remain unchanged.
+
+One fresh as-saved HDR-centre comparison, 1,947,690 pixels, passes all existing
+verdicts. Luminance maximum falls 8.0335% → 0.712%, OKLab maximum
+0.136093 → 0.00390; no ceiling failures remain in that region. The individual
+pixels (2599, 3988) and (2658, 4353) now have luminance errors 0.0204% and
+0.0068%. Eight synthetic CPU/GPU grading cases (64 pixels) pass, including
+neutral identity, hue/balance, disabled and active grading in both lanes.
+Peak/Denoise pins pass unchanged; no tolerance or fixture was changed.
+The earlier full comparisons, timing pairs and Proof checks were not repeated
+after this neutral-only guard. Full Detail matrix and the remaining phase 3
+work stay open. Steve then authorized commit and continuing the sprint;
+push and phase 4 remain unauthorized.

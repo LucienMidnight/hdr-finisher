@@ -105,6 +105,12 @@ HDR anchors measure the finished image before output compression; SDR anchors me
 
 Measurement has separate tile-graph and Clarity-map resources. Its mask cache cannot evict Fit masks; magnified masks have a separate budget, and resident masks needed by the next foreground frame are marked before trimming. A magnified source request reuses a resident region if it contains the complete required rectangle, retaining its original sampling coordinates. These cache changes do not change phase 1's mask qualification rules.
 
+### Detail agreement (phase 3 working stage)
+
+GPU Sharpen now follows export's three box passes, using a fused interior kernel and per-pass boundary clamping. The unused packed Clarity channel carries a half-float remainder for Sharpen. Global and local Detail share this filter. Crop dimensions do not determine source-pixel pitch: processing scale uses the requested source proxy edge before geometry, and tile halos retain that metadata and cover all three box passes. The CPU export/Proof implementation is unchanged.
+
+The primary fixture's as-saved comparison passes the existing limits in both lanes after this correction. A subsequent neutral colour-grading identity guard fixes the four-mask HDR near-black outliers: neutral wheels no longer erase signed RAW colours with nonpositive luminance. Export already skips neutral grading. The affected HDR centre region passes; the complete local/global Detail matrix remains open. This is not phase 3 closure. Measurements and provenance are in [the phase 3 Detail evidence record](viewport-phase3-detail-evidence-2026-10-02.md).
+
 ## API shape
 
 Major route groups:

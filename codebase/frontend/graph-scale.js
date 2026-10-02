@@ -66,9 +66,10 @@
    * The canonical processing scale of one pass.
    *
    * `sourceSize` is the imported source's dimensions, before geometry;
-   * `frame` is the geometry-fixed processing frame (a proxy's `width`/
-   * `height`, which stay the frame's even when the texture carries only a
-   * region). The result is clamped to 1.0 so an upscaled view is not treated
+   * `frame.longEdge` is the requested source proxy resolution, before
+   * geometry. Cropping changes the frame dimensions, not the source-pixel
+   * pitch. Dimension-only callers retain the uncropped fallback. The result
+   * is clamped to 1.0 so an upscaled view is not treated
    * as a reason to process more pixels.
    */
   function processingScaleFor(sourceSize, frame) {
@@ -78,7 +79,8 @@
       finiteNumber(sourceSize?.width, 0) || frameWidth,
       finiteNumber(sourceSize?.height, 0) || frameHeight,
     );
-    return Math.min(1, Math.max(frameWidth, frameHeight) / Math.max(1, sourceLongEdge));
+    const processingEdge = finiteNumber(frame?.longEdge, 0) || Math.max(frameWidth, frameHeight);
+    return Math.min(1, processingEdge / Math.max(1, sourceLongEdge));
   }
 
   /**
@@ -234,7 +236,8 @@
    * How far past its own rectangle a tile has to be correct for the Detail
    * stage.
    *
-   * Separable analysis reaches two radii in each direction. Texture's edge
+   * Texture analysis reaches two radii in each direction. Sharpen uses three
+   * box passes, each reaching its integer box radius. Texture's edge
    * guide then reaches another two coarse radii into that packed band. The
    * extra two pixels cover the bilinear sample at the reach's edge.
    *
@@ -244,13 +247,20 @@
    */
   function detailReach(width, height, params, localAdjustments = [], lane = "hdr") {
     const { global, locals } = detailRadii(width, height, params, localAdjustments, lane);
-    const reaches = [2 * global[0], 4 * global[1], 2 * global[3]];
+    const reaches = [2 * global[0], 4 * global[1], sharpenBlurReach(global[3])];
     const grades = (Array.isArray(localAdjustments) ? localAdjustments : []).map((local) => local?.[`${lane}_grade`]);
     locals.forEach((radii, index) => {
-      reaches.push(2 * radii[0], 4 * radii[1], 2 * radii[3]);
+      reaches.push(2 * radii[0], 4 * radii[1], sharpenBlurReach(radii[3]));
       if (localClarityActive(grades[index])) reaches.push(clarityMapPlan(radii[2]).reach);
     });
     return Math.ceil(Math.max(...reaches) + 2);
+  }
+
+  function sharpenBlurReach(sigma) {
+    if (sigma < 0.35) return 0;
+    let width = Math.max(3, Math.round(Math.sqrt(4 * sigma * sigma + 1)));
+    if (width % 2 === 0) width += 1;
+    return 3 * Math.floor(width / 2);
   }
 
   /**
@@ -562,6 +572,7 @@
     localDetailActive,
     detailRadii,
     detailReach,
+    sharpenBlurReach,
     CLARITY_MAP_MIN_TEXELS,
     CLARITY_MAP_TAP_REACH,
     clarityMapPlan,

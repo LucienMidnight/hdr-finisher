@@ -110,6 +110,8 @@ async function main() {
       const chosen = await page.evaluate(() => ({
         execution: state.acceptedPresentation?.execution ?? null,
         processedLongEdge: state.acceptedPresentation?.processedLongEdge ?? null,
+        processingScale: state.gpuPreview?.lastPresentedFrame
+          ? state.gpuPreview.sourcePixelScaleFor(state.gpuPreview.lastPresentedFrame, state.session.source) : null,
       }));
       // A target left valid by an earlier tiled frame says nothing about the
       // frame on screen now, so the accepted frame's own route decides.

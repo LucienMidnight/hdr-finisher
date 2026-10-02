@@ -900,6 +900,11 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn applyColorGrading(input: vec3f, hdr: bool) -> vec3f {
       if (p[111] < 0.5) { return input; }
+      // Export treats neutral wheels as identity, including signed RAW
+      // colours near black. Running the luminance normalization anyway would
+      // erase a positive channel when the weighted luminance is nonpositive.
+      if (p[115] == 0.0 && p[116] == 0.0 && p[118] == 0.0
+        && p[119] == 0.0 && p[121] == 0.0 && p[122] == 0.0) { return input; }
       let sourceY = max(select(lumaSrgb(input), lumaAces(input), hdr), 0.0);
       let signal = select(log2(max(srgbEncode(sourceY), 0.0000001) / 0.5), log2(max(sourceY, 0.0000001) / 0.18), hdr);
       let shadow = 1.0 - smoothRange(-1.0 + p[113] - p[112] * 0.5, -1.0 + p[113] + p[112] * 0.5, signal);
@@ -1999,6 +2004,71 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return total / weightTotal;
     }
 
+    // Sharpen follows detail.py's three box passes, rather than a sparse
+    // Gaussian. Fuse each axis in the interior; retain each pass's edge
+    // clamping at the image boundary. The axes commute, including clamping.
+    fn sharpenBoxRadius(sigma: f32) -> i32 {
+      if (sigma < 0.35) { return 0; }
+      var width = max(3, i32(floor(sqrt(4.0 * sigma * sigma + 1.0) + 0.5)));
+      if (width % 2 == 0) { width += 1; }
+      return width / 2;
+    }
+
+    fn sharpenTriangle(value: i32) -> f32 {
+      if (value < 0) { return 0.0; }
+      return f32((value + 1) * (value + 2)) * 0.5;
+    }
+
+    fn sharpenBoxWeight(offset: i32, radius: i32) -> f32 {
+      let width = 2 * radius + 1;
+      let index = offset + 3 * radius;
+      return (sharpenTriangle(index) - 3.0 * sharpenTriangle(index - width)
+        + 3.0 * sharpenTriangle(index - 2 * width) - sharpenTriangle(index - 3 * width))
+        / f32(width * width * width);
+    }
+
+    fn sharpenBlurSample(coordinate: vec2i, vertical: bool) -> f32 {
+      let sample = textureLoad(spatialTexture, coordinate, 0);
+      if (vertical) { return sample.w + sample.z; }
+      return detailLogLuma(sample.rgb);
+    }
+
+    fn sharpenBlur(coordinate: vec2i, sigma: f32, vertical: bool) -> f32 {
+      let radius = sharpenBoxRadius(sigma);
+      if (radius == 0) { return sharpenBlurSample(coordinate, vertical); }
+      let step = select(vec2i(1, 0), vec2i(0, 1), vertical);
+      let bound = validTileDimensions() - vec2i(1);
+      let position = select(coordinate.x, coordinate.y, vertical);
+      let limit = select(bound.x, bound.y, vertical);
+      var total = 0.0;
+      if (position < 3 * radius || position + 3 * radius > limit) {
+        // Extending the original image once is different from clamping after
+        // each box. This small boundary strip retains the reference's order.
+        for (var a = -radius; a <= radius; a++) {
+          let first = clamp(coordinate + a * step, vec2i(0), bound);
+          for (var b = -radius; b <= radius; b++) {
+            let second = clamp(first + b * step, vec2i(0), bound);
+            for (var c = -radius; c <= radius; c++) {
+              total += sharpenBlurSample(clamp(second + c * step, vec2i(0), bound), vertical);
+            }
+          }
+        }
+        let width = 2 * radius + 1;
+        return total / f32(width * width * width);
+      }
+      for (var offset = -3 * radius; offset <= 3 * radius; offset++) {
+        total += sharpenBlurSample(coordinate + offset * step, vertical) * sharpenBoxWeight(offset, radius);
+      }
+      return total;
+    }
+
+    fn packSharpenBand(fine: f32, coarse: f32, sharpen: f32) -> vec4f {
+      // The unused Clarity channel carries the Sharpen remainder, avoiding
+      // half-float log-luminance rounding before threshold qualification.
+      let high = unpack2x16float(pack2x16float(vec2f(sharpen, 0.0))).x;
+      return vec4f(fine, coarse, sharpen - high, high);
+    }
+
     // Clarity's brightness map. Log luminance is box-averaged over blocks of
     // p[172] pixels anchored to the frame (the base map), averaged again over
     // blocks of base texels up to p[167] pixels, blurred densely there (p[168]
@@ -2181,11 +2251,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = detailRadii();
-      return vec4f(
+      return packSharpenBand(
         detailHorizontalBlur(vec2f(coordinate), radii.x, 2, true),
         detailHorizontalBlur(vec2f(coordinate), radii.y, 2, true),
-        0.0,
-        detailHorizontalBlur(vec2f(coordinate), radii.w, 3, true)
+        sharpenBlur(coordinate, radii.w, false)
       );
     }
 
@@ -2193,11 +2262,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = detailRadii();
-      return vec4f(
+      return packSharpenBand(
         detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, true),
         detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, true),
-        0.0,
-        detailVerticalBlur(vec2f(coordinate), radii.w, 3u, 3, true)
+        sharpenBlur(coordinate, radii.w, true)
       );
     }
 
@@ -2205,8 +2273,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(textureDimensions(spatialTexture));
-      let blurred = textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0);
+      let blurred = textureLoad(spatialTexture, coordinate, 0);
       let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), DETAIL_LUMA_FLOOR);
       let logY = log2(sourceY);
       var adjusted = logY;
@@ -2220,7 +2287,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         adjusted += band * edgeWeight * p[150];
       }
       if (p[152] > 0.000001) {
-        let edge = logY - blurred.w;
+        let edge = logY - (blurred.w + blurred.z);
         let qualification = select(smoothRange(p[154], p[154] + 0.04, abs(edge)), 1.0, p[154] <= 0.000001);
         let qualified = edge * qualification;
         let extrema = detailLocalExtrema(coordinate);
@@ -2249,11 +2316,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = localDetailRadii();
-      return vec4f(
+      return packSharpenBand(
         detailHorizontalBlur(vec2f(coordinate), radii.x, 2, true),
         detailHorizontalBlur(vec2f(coordinate), radii.y, 2, true),
-        0.0,
-        detailHorizontalBlur(vec2f(coordinate), radii.w, 3, true)
+        sharpenBlur(coordinate, radii.w, false)
       );
     }
 
@@ -2261,11 +2327,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = localDetailRadii();
-      return vec4f(
+      return packSharpenBand(
         detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, true),
         detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, true),
-        0.0,
-        detailVerticalBlur(vec2f(coordinate), radii.w, 3u, 3, true)
+        sharpenBlur(coordinate, radii.w, true)
       );
     }
 
@@ -2273,8 +2338,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(textureDimensions(spatialTexture));
-      let blurred = textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0);
+      let blurred = textureLoad(spatialTexture, coordinate, 0);
       let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), DETAIL_LUMA_FLOOR);
       let logY = log2(sourceY);
       var adjusted = logY;
@@ -2288,7 +2352,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         adjusted += band * edgeWeight * p[15];
       }
       if (p[17] > 0.000001) {
-        let edge = logY - blurred.w;
+        let edge = logY - (blurred.w + blurred.z);
         let qualification = select(smoothRange(p[19], p[19] + 0.04, abs(edge)), 1.0, p[19] <= 0.000001);
         let qualified = edge * qualification;
         let extrema = detailLocalExtrema(coordinate);

@@ -102,6 +102,12 @@ test("processing scale is the CPU reference's source_pixel_scale", () => {
   // Missing source dimensions fall back to the frame, as the renderer's own
   // derivation did before it was moved here.
   assert.equal(Scale.processingScaleFor(null, DISPLAY), 1);
+  // Native crop preserves the authored radius; only source downsampling
+  // changes pixel pitch. A source-region upload retains the same metadata.
+  const croppedSource = { width: 7362, height: 4920 };
+  assert.equal(Scale.processingScaleFor(croppedSource, { width: 4608, height: 4608, longEdge: 7362 }), 1);
+  assert.equal(Scale.processingScaleFor(croppedSource,
+    { width: 1002, height: 1002, longEdge: 1600, region: { x: 400, y: 400 } }), 1600 / 7362);
   // The renderer's static surface is the same function, not a copy.
   assert.equal(Preview.processingScaleFor(NATIVE, DISPLAY), Scale.processingScaleFor(NATIVE, DISPLAY));
 });
@@ -176,6 +182,17 @@ test("the Detail halo covers the shader's reach at maximum radii", () => {
     width, height, activeParams({ 151: 0.2, 153: 0.3, 155: 0.25 }), [smallLocal], "hdr",
   );
   assert.ok(halo > smaller);
+});
+
+test("a small frame reserves all three Sharpen box passes at radius jumps", () => {
+  // On a small frame Texture's reach cannot hide an undersized Sharpen halo.
+  for (const [sigma, reach] of [[0.3, 0], [0.349, 0], [0.35, 3], [0.8, 3], [1.7, 6], [3, 9]]) {
+    assert.equal(Scale.sharpenBlurReach(sigma), reach);
+    const params = activeParams({ 153: sigma, 155: 1 });
+    assert.ok(Scale.detailReach(64, 40, params, [], "hdr") >= reach + 2);
+    const local = { hdr_grade: { detail: { sharpen_radius_px: sigma } } };
+    assert.ok(Scale.detailReach(64, 40, activeParams({ 153: 0.3 }), [local], "hdr") >= reach + 2);
+  }
 });
 
 test("the Clarity map spends exactly the requested blur, on a level a few texels wide", () => {

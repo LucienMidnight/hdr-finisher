@@ -2040,7 +2040,8 @@
       // fallback from an editing measurement.
       if (ranked.resample_stage === "roll") return { rendered: false, refusals: ["bounded roll measurement unavailable"] };
       const signature = JSON.stringify(adjustments.shared?.geometry || {});
-      const frame = {width: ranked.width, height: ranked.height, workingSpace: ranked.working_space};
+      const frame = {width: ranked.width, height: ranked.height,
+        longEdge: Math.max(sourceSize.width, sourceSize.height), workingSpace: ranked.working_space};
       const activeLocals = activeGpuLocals(lane, locals);
       const halo = this.roiSourceHalo(lane, adjustments, frame, sourceSize, {hdr: lane === "hdr"}, white, options, activeLocals);
       const processedBound = ranked.patches.reduce((sum, patch) => sum + (patch.width + 2*halo)*(patch.height + 2*halo), 0);
@@ -2467,7 +2468,7 @@
         const known = this.lastPresentedFrame;
         if (!(size?.width > 0 && size?.height > 0) || !known?.workingSpace
           || known.sessionId !== sessionId || known.lane !== lane) return null;
-        previousFrame = { width: size.width, height: size.height, workingSpace: known.workingSpace };
+        previousFrame = { width: size.width, height: size.height, longEdge, workingSpace: known.workingSpace };
       }
       if (!previousFrame.workingSpace) return null;
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
@@ -2583,7 +2584,7 @@
       if (!frame?.workingSpace) return 0;
       const params = buildParams(
         lane, adjustments, frame.workingSpace, surface.hdr, referenceWhiteNits,
-        this.sourcePixelScaleFor({ width: frame.width, height: frame.height }, sourceSize),
+        this.sourcePixelScaleFor(frame, sourceSize),
         sourceOptions?.inheritedGrain || null,
       );
       let { halo } = this.composedTileHalo(frame.width, frame.height, params, activeLocals, lane);
