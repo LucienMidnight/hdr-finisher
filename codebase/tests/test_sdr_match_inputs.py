@@ -5,6 +5,7 @@ import pytest
 
 from hdr_finisher import sdr_match_inputs as cache
 from hdr_finisher.adjustments import apply_adjustments
+from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.models import AdjustmentState, LocalAdjustment, PreviewKind
 
 
@@ -75,6 +76,37 @@ def test_spatial_mask_can_be_reused_across_translation_and_candidate_render(monk
         cache.render_match_candidate(source, adjustments, locals_, 1)
     candidate(source)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("reference_white", [100, 203])
+def test_hdr_target_translation_and_sdr_certification_share_exact_inputs(monkeypatch, reference_white):
+    source, adjustments, locals_ = fixture()
+    adjustments.shared.geometry.straighten_angle = 2.0
+    adjustments.shared.geometry.flip_horizontal = True
+    adjustments.hdr.exposure = 0.4
+    context = RenderColorContext(reference_white)
+    original = cache.compile_geometry_fixed_mask
+    calls = []
+    monkeypatch.setattr(cache, "compile_geometry_fixed_mask",
+                        lambda *a, **k: (calls.append(1), original(*a, **k))[1])
+
+    @cache.reuse_match_render_inputs
+    def fit(source):
+        target = cache.render_match_target(source, adjustments, locals_, 0.6, context)
+        np.testing.assert_array_equal(target, apply_adjustments(
+            source, adjustments, PreviewKind.HDR, include_grain=False,
+            local_adjustments=locals_, source_pixel_scale=0.6, color_context=context,
+        ))
+        cache.match_spatial_mask(source, locals_[0].mask, adjustments.shared.geometry)
+        candidate = cache.render_match_candidate(source, adjustments, locals_, 0.6)
+        np.testing.assert_array_equal(candidate, apply_adjustments(
+            source, adjustments, PreviewKind.SDR, include_grain=False,
+            local_adjustments=locals_, source_pixel_scale=0.6,
+        ))
+
+    fit(source)
+    assert len(calls) == 1
+    assert cache._INPUTS.get() is None
 
 
 def test_match_scope_releases_inputs_on_failure_and_isolates_concurrent_calls():

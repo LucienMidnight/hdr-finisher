@@ -139,6 +139,12 @@ reports and gates on. A refusal, a late answer or a rejected recipe reruns
 the whole fit on the CPU. Convert and CPU rendering mode use the CPU
 throughout. See [phase 3 Match evidence](viewport-phase3-match-evidence-2026-10-02.md).
 
+The CPU HDR target, local translation and CPU certification share immutable
+spatial masks and the geometry-fixed source within one Match request. The
+neutral tonal search reuses private trial adjustment states. Pixel operations,
+quality gates and the CPU fallback are unchanged; retained inputs are released
+when the request finishes. See [Match CPU evidence](viewport-phase3-match-cpu-evidence-2026-10-02.md).
+
 The SDR base stage clips to display white only inside its active stages
 (contrast, primaries, curves, colour grading), as export does, so a
 highlight lifted above white reaches Detail and the locals unclipped.

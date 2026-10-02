@@ -15,7 +15,10 @@ continuation on October 2 (no push) and directed the work to Match on the
 GPU next. Match candidates now render on the GPU (14.5); Steve approved that
 on October 2, including that Match may choose a different recipe than
 before, will judge the results by eye himself, and authorized the commit
-(no push). The complete phase 3 exit is still open.
+(no push). On October 2 Steve also accepted the subsequent Match timings
+of 3.05 s primary / 4.99 s fifty-local for now, authorized committing the
+CPU input-reuse slice (14.6), and directed work to the next phase 3 task.
+Further Match speed work is deferred. The complete phase 3 exit is still open.
 
 ## 1. Problem
 
@@ -727,3 +730,25 @@ shift, transformed masks, SDR regional luma under Match or an authored SDR
 base, luminance leaves in expression graphs, complete Detail coverage and
 broader 50-local/continuity checks. No tolerance was widened or fixture saved;
 phase 4 has not started.
+
+### 14.6 Match CPU input reuse
+
+The CPU HDR target now shares its geometry-fixed source and immutable spatial
+masks with local translation and final CPU certification inside one fit.
+The neutral tonal search also reuses private trial states rather than copying
+the full adjustment tree for every trial. The CPU target, certification,
+quality gates, fallback and pixel operations are unchanged.
+
+One new Match per over-goal fixture, action to page return: primary 3.05 s
+(prior 3.17 s), fifty-local 4.99 s (prior 5.94 s). Local translation fell from
+186 to 17 ms and 1,048 to 124 ms respectively. Both recipes agree at the prior
+reports' precision; CPU-certified quality is exactly unchanged. These are single observations,
+not controlled medians; both remain over goal. Six direct tonal-fit checks
+against the committed implementation and 46 focused Match tests pass. See
+[Match CPU evidence](../technical/viewport-phase3-match-cpu-evidence-2026-10-02.md).
+
+Steve accepted these speeds for now on October 2 and authorized committing
+this slice and moving to the next phase 3 task. The original 2 s / 4 s goals
+remain recorded; further Match speed work is deferred. Phase 3 remains open,
+with the other work in 14.5 still outstanding. Phase 4 has not started and
+no push was requested.

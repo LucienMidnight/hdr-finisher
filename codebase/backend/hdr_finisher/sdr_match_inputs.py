@@ -26,7 +26,7 @@ class _MatchInputs:
             self.masks[key] = value
         return self.masks[key]
 
-    def render(self, adjustments, locals, source_pixel_scale):
+    def render(self, adjustments, locals, source_pixel_scale, *, kind=PreviewKind.SDR, color_context=None):
         geometry = adjustments.shared.geometry
         key = geometry.model_dump_json()
         if key not in self.fixed_sources:
@@ -34,9 +34,10 @@ class _MatchInputs:
         masks = {local.id: self.mask(local.mask, geometry)
                  for local in locals if local.enabled and local.opacity > 0.0}
         return apply_fixed_source_adjustments(
-            self.fixed_sources[key], adjustments, PreviewKind.SDR,
+            self.fixed_sources[key], adjustments, kind,
             include_grain=False, local_adjustments=locals,
             compiled_local_masks=masks, source_pixel_scale=source_pixel_scale,
+            color_context=color_context,
         )
 
 
@@ -61,6 +62,17 @@ def render_match_candidate(source, adjustments, locals, source_pixel_scale):
         return inputs.render(adjustments, locals, source_pixel_scale)
     return apply_adjustments(source, adjustments, PreviewKind.SDR, include_grain=False,
                              local_adjustments=locals, source_pixel_scale=source_pixel_scale)
+
+
+def render_match_target(source, adjustments, locals, source_pixel_scale, color_context):
+    """Render the exact CPU HDR target using this fit's fixed inputs."""
+    inputs = _INPUTS.get()
+    if inputs is not None and inputs.source is source:
+        return inputs.render(adjustments, locals, source_pixel_scale,
+                             kind=PreviewKind.HDR, color_context=color_context)
+    return apply_adjustments(source, adjustments, PreviewKind.HDR, include_grain=False,
+                             local_adjustments=locals, source_pixel_scale=source_pixel_scale,
+                             color_context=color_context)
 
 
 def match_spatial_mask(source, expression, geometry):

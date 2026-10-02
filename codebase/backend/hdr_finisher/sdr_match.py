@@ -40,7 +40,7 @@ from .models import (
     ToneEqualizerNode,
 )
 from .sdr_gamut import compress_to_srgb_gamut, linear_srgb_to_oklab
-from .sdr_match_inputs import match_spatial_mask, render_match_candidate, reuse_match_render_inputs
+from .sdr_match_inputs import match_spatial_mask, render_match_candidate, render_match_target, reuse_match_render_inputs
 from .sdr_match_remote import RemoteCandidateBridge, RemoteCandidateUnavailable
 
 
@@ -256,6 +256,16 @@ def materialize_sdr_match(
         )
 
     try:
+        if reference_white_nits not in {100, 203}:
+            raise SDRMatchMaterializationError("SDR Match requires the app-wide 100/203-nit reference convention.")
+        if settled_hdr is None:
+            target_started = perf_counter()
+            settled_hdr = render_match_target(
+                source, adjustments, local_adjustments, source_pixel_scale,
+                RenderColorContext(reference_white_nits),
+            )
+            if timing is not None:
+                timing["settled_hdr_ms"] = round((perf_counter() - target_started) * 1000.0, 3)
         if candidate_bridge is None:
             return run()
         remote_token = _MATCH_REMOTE.set(candidate_bridge)
@@ -761,12 +771,14 @@ def _fit_neutral_tonal_response(
     best: tuple[float, float, float, float] | None = None
     best_loss = float("inf")
     exposure_center = float(np.clip(hdr_adjustments.hdr.exposure, -4.0, 4.0))
+    # Only these four scalar controls change in the search. Keep one private
+    # trial rather than deep-copying the entire adjustment tree 324 times.
+    trial = _tonal_analysis_copy(target_adjustments)
+    trial.sdr.tone_equalizer_section_enabled = False
     for exposure in np.linspace(exposure_center - 2.0, exposure_center + 2.0, 9):
         for start_percent in (70.0, 80.0, 90.0, 95.0):
             for detail in (0.0, 35.0, 70.0):
                 for bias in (-35.0, 0.0, 35.0):
-                    trial = _tonal_analysis_copy(target_adjustments)
-                    trial.sdr.tone_equalizer_section_enabled = False
                     trial.sdr.exposure = float(np.clip(exposure, -8.0, 8.0))
                     trial.sdr.highlight_compression_start_percent = start_percent
                     trial.sdr.highlight_compression_peak_detail = detail
@@ -793,9 +805,9 @@ def _fit_neutral_tonal_response(
     ) = best
     best_contrast = 0.0
     best_contrast_loss = float("inf")
+    trial = _tonal_analysis_copy(target_adjustments)
+    trial.sdr.tone_equalizer_section_enabled = False
     for contrast in np.linspace(-0.30, 0.30, 7):
-        trial = _tonal_analysis_copy(target_adjustments)
-        trial.sdr.tone_equalizer_section_enabled = False
         trial.sdr.contrast = float(contrast)
         candidate = apply_adjustments(ramp, trial, PreviewKind.SDR, include_grain=False)
         candidate_luma = np.maximum(_linear_luma(candidate)[0], 1e-6)

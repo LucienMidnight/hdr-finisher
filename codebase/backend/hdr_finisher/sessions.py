@@ -609,18 +609,6 @@ class SessionStore:
             source, _ = session.render_cache.source_pair(MATCH_ANALYSIS_EDGE)
             if timing is not None:
                 timing["source_proxy_ms"] = round((perf_counter() - source_started) * 1000.0, 3)
-            settled_started = perf_counter()
-            settled = apply_adjustments(
-                source,
-                analysis_adjustments,
-                PreviewKind.HDR,
-                include_grain=False,
-                local_adjustments=analysis_locals,
-                color_context=RenderColorContext(analysis_reference_white),
-                source_pixel_scale=min(1.0, MATCH_ANALYSIS_EDGE / max(session.image.shape[:2])),
-            )
-            if timing is not None:
-                timing["settled_hdr_ms"] = round((perf_counter() - settled_started) * 1000.0, 3)
             try:
                 materialized = materialize_sdr_match(
                     source,
@@ -628,7 +616,6 @@ class SessionStore:
                     analysis_locals,
                     reference_white_nits=analysis_reference_white,
                     source_pixel_scale=min(1.0, 768 / max(session.image.shape[:2])),
-                    settled_hdr=settled,
                     timing=timing,
                     candidate_bridge=candidate_bridge if action == "match" else None,
                 )
