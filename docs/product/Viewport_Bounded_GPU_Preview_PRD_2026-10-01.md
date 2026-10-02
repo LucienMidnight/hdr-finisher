@@ -1,7 +1,7 @@
 # Viewport-Bounded GPU Preview
 
 **Date:** October 1, 2026
-**Status:** Phase 0 and phase 1 carried out and closed on October 1, 2026; phases 2 to 4 not started. Phase 1 met its mask-accuracy exit and part of its speed exit. Steve tried the build and closed the phase with the speed as measured; the remaining gap to the section 6 targets is carried to phase 3. What it built, measured and left open is in section 12. Steve approved the section 4 limits and accepted the section 6 targets as goals on October 1. What phase 0 built, measured and found is recorded in section 11.
+**Status:** Phases 0 and 1 closed on October 1, 2026. On October 2 Steve accepted the phase 2 report, requested commit and push, and directed the next thread to move on in the PRD. Phase 2's implementation, measurements and remaining limitations are recorded in section 13. Phase 3 is next; phase 4 has not started. Phase 1 met its mask-accuracy exit and part of its speed exit; its accepted gap to the section 6 targets remains carried to phase 3. Steve approved the section 4 limits and accepted the section 6 targets as goals on October 1. Phase 0 is recorded in section 11.
 **Owner decisions recorded here:** move to the pattern other raw editors use (work bounded by the viewport, masks independent of resolution, export as the exact reference); accept small preview-versus-export differences; put the app's rigor into HDR handling; move interactive work to the GPU.
 **Predecessor:** [GPU Performance Review Sprint](GPU_Performance_Review_Sprint_PRD_2026-09-29.md), section 14 (October 1 root-cause pass).
 **Primary fixture:** `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher` with `DSC00950.ARW` (read-only; never saved).
@@ -431,9 +431,9 @@ Not decided at closure, and left as they are:
 - The larger bitmap tried once for a mask the Fit bitmap cannot carry (12.2, the primary fixture's unfeathered brush) was added without being asked for, against the preference for no extra CPU-side machinery. It stays until Steve says otherwise.
 - Panning per frame and views below 100% (section 4.4) were not measured.
 
-## 13. Phase 2 working record — accuracy retained, speed exit still open (October 2)
+## 13. Phase 2 working record — accuracy retained, zoom delay investigated (October 2)
 
-**Not a phase 2 completion or an accepted regression.** Steve chose to keep the accurate editing measurement (1%) and then directed work to the zoom delay. The bounded measurement, SDR anchor correction and delivery warnings are implemented. The final five-minute four-mask session is slower than phase 1, so the no-regression exit remains open. No tolerance was widened, no phase 3 or 4 work was started, and nothing was committed or pushed.
+Steve chose to keep the accurate editing measurement (1%) and then directed work to the zoom delay. The bounded measurement, SDR anchor correction and delivery warnings are implemented. Sections 13.2–13.3 record the earlier checkpoint and its unresolved slowdown; section 13.4 records the subsequent investigation and final checks. On Steve's instruction to follow the external review, a local checkpoint was made on `viewport-bounded-preview-phase-2-wip`, commit `4f4e72d`. Steve subsequently accepted the final report and authorized committing and pushing the later scheduling/disclosure fixes and this record on October 2. No tolerance was widened and no phase 3 or 4 work was started. Faster pictures do not imply faster scope settlement after every edit; both are reported below.
 
 ### 13.1 Measurement and delivery
 
@@ -485,4 +485,57 @@ The post-mask-cache zoom driver was also run three times at 100% on each fixture
 
 50-local case, one post-cache run (`phase2-pinned-zoom-fifty-100.json`): the six zooms were 1,810, 321, 2,139, 302, 286 and 577 ms, against 2,036, 449, 2,351, 432, 339 and 949 ms in matching phase 1 cases. Four of six are within its existing 600 ms target. Six returns to Fit were 99–111 ms, versus phase 1's 248–258 ms.
 
-**Open:** explain and remove the remaining four-mask session zoom regression while retaining the 1% measurement, bounded work, and phase 1 mask rules. The measured primary improvement and SDR correction do not waive that exit. Further implementation stopped at this failed speed check for owner direction.
+**Earlier open exit:** explain and remove the remaining four-mask session zoom regression while retaining the 1% measurement, bounded work, and phase 1 mask rules. Further implementation stopped at this failed speed check for owner direction. Steve subsequently directed the investigation recorded in 13.4.
+
+### 13.4 Investigation and final verification (October 2)
+
+Reference build: the unchanged phase 1 commit `7c4e318`, extracted into an isolated directory and run with the current driver/runtime. `phase1-reference-provenance.json` records the source checks; the enclosing repository's commit in raw driver manifests is not the reference build's commit. Drivers ran serially at 2560 by 1440, with disposable profiles and no other HDR Finisher instance. All three fixture archive hashes are unchanged after the last comparison.
+
+**What the investigation established:**
+
+- Three alternating normal five-minute sessions per build did not reproduce a uniform 55% zoom slowdown. Phase 1's four-mask medians were 139, 138 and 132 ms (31 zooms each); the checkpoint's were 145, 168 and 157 ms (28, 28 and 29 zooms). Matched-step median differences were −1.65, +19 and −2 ms. The earlier 229 ms session remains a measured result, not a repeatable estimate of the gap.
+- Disabling editing measurement did not restore the checkpoint's zoom speed. Disabling it in phase 1 made four-mask zoom much slower: 678, 617 and 676 ms medians in three sessions (29, 29 and 28 zooms). Traces show phase 1 repeatedly fetching native regions without its background pass; that whole-image pass had incidentally warmed foreground data. Phase 2's containing-region reuse avoids those repeat fetches. The instrumented zoom starts checked did not wait behind an active measurement; instrumented on/off run totals are not directly comparable because logging volume differs.
+- Discrete zoom actions still paid the same 80 ms debounce as wheel/slider gestures. Three alternating timer-only pairs, retaining measurement, reduced matched-step median picture times by 57.8, 72.6 and 58.1 ms. The delayed sessions had medians 168.7, 133.1 and 168.1 ms (29 zooms each); immediate sessions had 117.3, 89.5 and 110.9 ms (29, 30 and 29). This isolates a removable delay, rather than attributing the entire earlier 229 ms result to one cause.
+
+**Change:** a discrete Fit, 100%, typed or stepped zoom schedules refinement immediately. Continuous wheel and slider gestures retain the 80 ms debounce. Cancellation, latest-state guards and exact-scope recovery remain in place. No pixel math, mask qualification or shader pins changed. The final disclosure fix also records a settled full-image fallback preview peak, in the proper HDR/SDR units, so exact delivery can warn about its disagreement; regional and interactive frames are not recorded as whole-image evidence.
+
+Final ordinary five-minute sessions, action to exact picture, median (maximum) ms:
+
+| Fixture and action | Fresh phase 1 | Final phase 2 |
+|---|---|---|
+| Primary zoom 100% | 624 (1,431), n=26, 1 session | 216 (1,375), n=24, 1 session |
+| Four-mask zoom 100% | 134 (1,926), n=93, pooled 3 sessions | 113 (1,724), n=29, 1 session |
+| Primary return to Fit | 100 (109), n=26 | 21 (29), n=24 |
+| Four-mask return to Fit | 105 (152), n=93 | 22 (27), n=29 |
+
+The three timer-only immediate sessions support the final four-mask session result; they are separate experimental runs, not additional ordinary-driver sessions. Raw artifacts are `repeat-phase1-fourmask-*`, `zoom-delay-{80,0}-fourmask-*`, `post-timer-*-session.json`; reductions are `zoom-delay-summary.json` and `final-speed-summary.json`. The per-zoom distribution is retained in `zoom-experiments.html`.
+
+Matched zoom-after-edit cases at 100%, three runs per fixture/build, median (maximum) ms:
+
+| Case | Primary phase 1 | Primary final | Four-mask phase 1 | Four-mask final |
+|---|---|---|---|---|
+| Immediately after stroke | 624 (628) | 457 (678) | 989 (994) | 847 (859) |
+| Six seconds after stroke | 315 (360) | 281 (315) | 207 (217) | 131 (139) |
+| Immediately after stroke, local Detail on | 254 (259) | 153 (183) | 606 (623) | 473 (482) |
+| Six seconds after stroke, local Detail on | 2,215 (2,382) | 2,083 (2,304) | 359 (361) | 271 (277) |
+| Local Detail on, unchanged/cached | 248 (284) | 169 (169) | 115 (116) | 44 (189) |
+| Immediately after new local | 442 (493) | 294 (302) | 490 (793) | 400 (518) |
+
+Every matched-case median improved; individual maxima still vary, including the primary cold zoom and four-mask cached case. The primary native brush fallback still takes roughly 2.1–2.3 seconds with local Detail and belongs to the accepted phase 1 gap. A final 200% run per fixture produced six picture times of 472/192/117/2,049/120/245 ms (primary) and 716/107/230/176/132/262 ms (four-mask); these are one sample per case, not repeated medians. Fifty locals at 100%, one sample per matching case: fresh phase 1 1,734/402/2,108/395/328/547 ms; final 1,694/218/2,029/256/221/387 ms. Four of six final cases meet its unchanged 600 ms target.
+
+**Picture versus scopes:** fresh brush pictures stayed similar (HDR/SDR primary 189/188 → 181/186 ms; four-mask 140/144 → 138/139 ms). Fresh HDR brush scope settlement became slower: primary 231 → 430 ms and four-mask 174 → 328 ms; SDR was 229 → 237 and 184 → 274 ms. These use the session sample counts above. The driver waits for scopes too, so the final primary/four-mask sessions completed 24/29 cycles versus 26/31 per reference session. Zoom scope settlement improved (primary 1,957 → 1,677 ms; four-mask 644 → 519 ms). These waits are reported separately and are not a waiver of a speed requirement or proof that all background work became faster.
+
+**Final accuracy:** `post-timer-peak-*`, `post-timer-bounded-*` and `post-timer-compare-*` repeat the fixture checks after the scheduling and disclosure changes. Primary as-saved peak is 636.5777 versus 638.1938 nit (0.2532% low); four-mask is 3,207.1181 versus 3,208.967 nit (0.0576% low): one readout run with five conditions and one bounded maximum call per fixture. Primary global-Detail-off peak is 0.2274% low in one comparison run. Eight bounded-contract calls (maximum and robust, HDR/SDR on both fixtures) retain the source/mask bounds and leave the accepted frame/resources unchanged. Primary tone/masks pass; four-mask SDR tone/masks pass. Each comparison samples three regions of 1,947,690 pixels per lane. The four-mask HDR near-black outliers remain (two pixels over the ceiling; maximum 8.0335%); the final comparison retains that failed HDR verdict. The earlier single-point window reading in 13.2 was not resampled separately; the final SDR regional comparisons pass with the same correction.
+
+Robust anchors now have native-reference accuracy checks, separate from the bounded-work contract: one GPU call and one exact CPU export-branch render per lane/fixture, four paired comparisons. Exact reference renders are test work, not editing work.
+
+| Robust anchor | GPU estimate | Exact native | Relative error |
+|---|---|---|---|
+| Primary HDR | 0.5221368912 | 0.5214771032 | 0.1265% high |
+| Primary SDR | 0.5632608093 | 0.5581789613 | 0.9104% high |
+| Four-mask HDR | 2.3784142300 | 2.3697741032 | 0.3646% high |
+| Four-mask SDR | 10.8340443755 | 10.7701473236 | 0.5933% high |
+
+All four are inside the unchanged 1% limit. Native references are `robust-native-{primary,fourmask}.json`; the fixture modes and bounded refusals described in 13.1 still delimit what this validates.
+
+Final focused verification: 50 Node tests pass, including both zoom scheduling modes, fallback disclosure, source/mask caches, cancellation, single-flight and unchanged shader byte pins. The 27 Python checks pass, including exact ceiling enforcement and `test_proof_export_identity.py` for the available encoders. The final performance sessions preceded the disclosure-only evidence recording change; the final accuracy comparisons and Node suite include it. No new benchmark was run after the promised last comparison. The known phase 1 failures and Detail agreement issues remain outside this phase.

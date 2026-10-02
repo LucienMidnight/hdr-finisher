@@ -25,3 +25,28 @@ test('a refused editing measurement cannot become an exact peak through CPU fall
   assert.equal(fallback.peak_exact, false);
   assert.equal(fallback.stats[0].label, 'Peak (preview)');
 });
+
+test('the displayed fallback peak is sent to delivery in its reference units', () => {
+  const recorded = [];
+  const context = vm.createContext({
+    projectReferenceWhiteNits: () => 203,
+    recordEditingMeasurement: (lane, values) => recorded.push({lane, peak:values.peak}),
+  });
+  vm.runInContext(source.slice(begin, end), context);
+  context.recordDisplayedScopePeak({peak_value:2459.9817, peak_exact:false}, {tier:'settled',lane:'hdr'});
+  context.recordDisplayedScopePeak({peak_value:.52, peak_exact:false}, {tier:'settled',lane:'sdr'});
+  assert.equal(recorded.length, 2);
+  assert.equal(recorded[0].lane, 'hdr');
+  assert.equal(recorded[0].peak, 2459.9817*.18/203);
+  assert.deepEqual(recorded[1], {lane:'sdr',peak:.52});
+});
+
+test('live, regional and missing peaks cannot replace delivery evidence', () => {
+  let count = 0;
+  const context = vm.createContext({recordEditingMeasurement: () => count++});
+  vm.runInContext(source.slice(begin, end), context);
+  context.recordDisplayedScopePeak({peak_value:600}, {tier:'interactive',lane:'hdr'});
+  context.recordDisplayedScopePeak({peak_value:600}, {tier:'settled',lane:'hdr',scopeRegion:{x:0}});
+  context.recordDisplayedScopePeak({}, {tier:'settled',lane:'hdr'});
+  assert.equal(count, 0);
+});

@@ -3604,7 +3604,7 @@ function bindEvents() {
   els.zoomOut.addEventListener("click", () => stepZoom(-1));
   els.zoomIn.addEventListener("click", () => stepZoom(1));
   els.zoomSlider.addEventListener("input", () => {
-    setCustomZoom(sliderToZoomPercent(Number(els.zoomSlider.value)));
+    setCustomZoom(sliderToZoomPercent(Number(els.zoomSlider.value)), null, { continuous: true });
   });
   els.zoomReadout.addEventListener("focus", () => els.zoomReadout.select());
   els.zoomReadout.addEventListener("change", commitZoomReadout);
@@ -5997,6 +5997,7 @@ async function runGpuScopeRequest(request) {
     exactPeak,
   });
   applyEditingScopePeak(payload, exactPeak, lane);
+  recordDisplayedScopePeak(payload, request);
   presentScopePayload(payload, { generation, tier, lane, mode, source: "gpu", metric: analysis.metric });
   return true;
 }
@@ -6116,6 +6117,7 @@ async function runScopeRequest(request) {
       applyEditingScopePeak(payload, measured, lane);
     }
     applyAcceptedCpuScopePeak(payload, request);
+    recordDisplayedScopePeak(payload, request);
     presentScopePayload(payload, { generation, tier, lane, mode, source: "cpu" });
     applied = true;
     return true;
@@ -6171,6 +6173,15 @@ function applyEditingScopePeak(payload, measured, lane) {
     label: "Peak (estimate)",
     value: lane === "hdr" ? `${peak >= 1000 ? peak.toFixed(0) : peak.toFixed(1)} nit` : `${(peak*100).toFixed(1)}%`,
   };
+}
+
+function recordDisplayedScopePeak(payload, { tier, lane, scopeRegion }) {
+  // Compare delivery with the full-image number the owner actually saw,
+  // including a preview-only fallback after bounded measurement was refused.
+  // A live drag or a selected scope region is not delivery evidence.
+  if (tier !== "settled" || scopeRegion || !Number.isFinite(payload?.peak_value)) return;
+  const peak = lane === "hdr" ? payload.peak_value * .18 / projectReferenceWhiteNits() : payload.peak_value;
+  recordEditingMeasurement(lane, { peak });
 }
 
 function editingMeasurementRecipe() {
@@ -12862,7 +12873,7 @@ async function refreshNavigationThumbnail() {
   }
 }
 
-function scheduleZoomRefinement() {
+function scheduleZoomRefinement({ continuous = false } = {}) {
   if (!state.session || !gpuPreviewEligible(state.currentView)) return;
   window.clearTimeout(state.zoomRefinementTimer);
   // A pending adjustment settle from the previous scale can otherwise race
@@ -12871,8 +12882,10 @@ function scheduleZoomRefinement() {
   state.inactiveSourceController?.abort();
   state.inactiveSourceController = null;
   // Zoom changes the requested processing scale without changing the edit
-  // generation. Recompute the visible status before the debounce expires.
+  // generation. Recompute the visible status before the replacement starts.
   renderViewerStatus();
+  // Single navigation actions need no gesture debounce. Retain it for wheel
+  // and slider input so a gesture replaces pending work instead of flooding it.
   state.zoomRefinementTimer = window.setTimeout(async () => {
     state.zoomRefinementTimer = 0;
     if (!state.session || !gpuPreviewEligible(state.currentView)) return;
@@ -12909,7 +12922,7 @@ function scheduleZoomRefinement() {
       && accepted.exact && accepted.processedLongEdge === target) {
       await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
     }
-  }, 80);
+  }, continuous ? 80 : 0);
 }
 
 function shouldKeepHdrGpuSurface(lane) {
@@ -12918,7 +12931,7 @@ function shouldKeepHdrGpuSurface(lane) {
     && !state.comparePeekActive;
 }
 
-function setCustomZoom(percent, anchor = null) {
+function setCustomZoom(percent, anchor = null, { continuous = false } = {}) {
   const nextPercent = clamp(Number(percent) || 100, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT);
   const changed = state.zoomMode !== "custom" || Math.abs(state.zoomPercent - nextPercent) > 0.001;
   const preview = anchor?.previewElement || activePreviewElement();
@@ -12940,7 +12953,7 @@ function setCustomZoom(percent, anchor = null) {
   }
   syncOverlayPlacement();
   scheduleNavigationThumbnail();
-  if (changed) scheduleZoomRefinement();
+  if (changed) scheduleZoomRefinement({ continuous });
 }
 
 function applyZoomGeometry() {
@@ -13124,7 +13137,7 @@ function handleViewerWheel(event) {
       ? event.deltaY * els.dropzone.clientHeight
       : event.deltaY;
   const nextPercent = (state.zoomPercent || 100) * Math.exp(-delta * 0.0022);
-  setCustomZoom(nextPercent, { clientX: event.clientX, clientY: event.clientY, previewElement: preview });
+  setCustomZoom(nextPercent, { clientX: event.clientX, clientY: event.clientY, previewElement: preview }, { continuous: true });
 }
 
 function zoomPercentToSlider(percent) {
