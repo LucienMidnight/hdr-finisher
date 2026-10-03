@@ -975,12 +975,35 @@ function previewTargetLongEdge(value = state.previewResolution) {
 function requiredProcessingLongEdge() {
   if (state.previewResolutionOverride === false) {
     const nativeEdge = previewTargetLongEdge("full");
-    return Math.round(Math.max(256, Math.min(nativeEdge, state.zoomMode === "custom" && state.zoomPercent >= 100
-      ? nativeEdge : displayedLongEdge())));
+    const edge = state.zoomMode !== "custom" ? displayedLongEdge()
+      : state.zoomPercent >= 100 ? nativeEdge : steppedProcessingLongEdge(nativeEdge, displayedLongEdge());
+    return Math.round(Math.max(256, Math.min(nativeEdge, edge)));
   }
   return state.zoomMode === "custom" && state.zoomPercent >= 100
     ? previewTargetLongEdge("full")
     : previewTargetLongEdge();
+}
+
+/**
+ * The size a magnified view below 100% is processed at: the smallest of a few
+ * fixed sizes (the source's long edge divided by powers of the square root of
+ * two) that still covers what is displayed.
+ *
+ * Every distinct processing size is a resized copy of the whole source in the
+ * backend and a fresh set of masks and luminance on the GPU. A wheel zoom
+ * lands on arbitrary percentages, and each one used to pay all of that; at
+ * 98% it built a copy barely smaller than the source itself. The steps are
+ * shared by every percentage in their range, and the view is scaled from the
+ * step to the screen, which at most doubles the pixels processed.
+ */
+function steppedProcessingLongEdge(nativeEdge, displayedEdge) {
+  let edge = nativeEdge;
+  for (let step = 1; step <= 16; step += 1) {
+    const next = Math.round(nativeEdge / 2 ** (step / 2));
+    if (next < displayedEdge || next < 1024) break;
+    edge = next;
+  }
+  return edge;
 }
 
 function previewResolutionDimensions(value = state.previewResolution) {

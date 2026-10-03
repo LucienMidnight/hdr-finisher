@@ -285,6 +285,37 @@ test("a catch-up armed for an older generation never dispatches", async () => {
   assert.equal(dispatches.length, 0);
 });
 
+test("a view that moves while its zoom pass renders still gets the part now on screen", async () => {
+  // A zoom anchors its scroll after the request is made. The pan note is
+  // refused then (no accepted tiled frame yet), and used to be lost: the app
+  // reported ready with stale tiles on screen.
+  const dispatch = deferredDispatch();
+  const { coordinator, timers, dispatches } = makeCoordinator({
+    sessionId: "s1", roiMode: "refinement", dispatchImpl: dispatch.impl,
+  });
+  coordinator.noteViewport("hdr", { x: 0, y: 0, width: 100, height: 100 });
+  const zoom = coordinator.submit({ lane: "hdr", tier: "refinement", viewport: true, longEdge: 1000, reason: "zoom" });
+  await flush();
+  assert.equal(dispatches.length, 1);
+  coordinator.noteViewport("hdr", { x: 60, y: 80, width: 100, height: 100 });
+  assert.equal(coordinator.notePan("hdr"), false, "nothing is accepted yet to refine");
+  dispatch.queue[0].resolve({ rendered: true, execution: "tiled" });
+  await zoom;
+  await flush();
+  assert.equal(coordinator.panPending("hdr"), true, "the missed move is made up after the pass presents");
+  coordinator.cancelCatchUp("hdr");
+  timers.fireAll();
+  await flush();
+  const pan = dispatches.find((request) => request.panPass);
+  assert.ok(pan);
+  assert.equal(pan.viewport.x, 60);
+  assert.equal(pan.viewport.y, 80);
+  dispatch.queue.at(-1).resolve({ rendered: true, execution: "tiled" });
+  await flush();
+  coordinator.cancelCatchUp("hdr");
+  assert.equal(coordinator.panPending("hdr"), false, "a pass that rendered the current view arms nothing more");
+});
+
 test("the pan follow-up waits for busy work, re-arms, and re-arms the catch-up", async () => {
   const dispatch = deferredDispatch();
   const { coordinator, timers, dispatches } = makeCoordinator({

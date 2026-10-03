@@ -457,6 +457,12 @@
         st.pending = null;
         if (pending.token.isCurrent()) void this.runEntry(st, pending);
         else this.settleEntry(st, pending, false, "superseded-before-dispatch");
+      } else if (entry.request.viewport && st.viewportGeneration !== entry.request.viewportGeneration) {
+        // The view moved while this pass rendered (a zoom anchors its scroll
+        // after the request is made). `notePan` refused at the time, because
+        // the frame it would refine was not accepted yet, so nothing was left
+        // to render the part now on screen. Make up for it.
+        this.notePan(st.lane);
       }
 
       if (error) {

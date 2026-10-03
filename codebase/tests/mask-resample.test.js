@@ -210,6 +210,23 @@ test('a whole-picture catch-up splits resampled masks by tile',async()=>{
  const result=await f.renderer.loadGpuResampledRegion('session',batch,8000,f.straighten,()=>true,undefined,{width:recipe.width,height:recipe.height});
  assert.equal(result.entries.size,2);assert.equal(f.made.length,2);
 });
+test('a region its producer refuses is warped tile by tile instead of falling back to CPU tiles',async()=>{
+ // A wide Shift halo around a large view exceeds the scratch cap as one
+ // region; each tile's halo fits.
+ const f=fixture(),mask=f.brush({mask_shift_edge:.019}),recipe=f.renderer.resamplePlan('session',mask,4000,f.straighten);
+ const calls=[];
+ const tiles=[0,1,2,3].flatMap(column=>[0,1].map(row=>({key:`${column},${row}`,haloRect:{x:800+column*250,y:600+row*250,width:300,height:300}})));
+ const proxy={width:recipe.width,height:recipe.height,region:{x:800,y:600,width:1050,height:550}};
+ f.renderer.loadGpuResampledMask=async(...values)=>{calls.push({...values[5]});return values[5].width>600?null:{kind:'gpu-resampled-brush',texture:{},rect:values[5]};};
+ const result=await f.renderer.loadGpuResampledRegion('session',{local:{id:'a',mask},localIndex:0,tiles},4000,f.straighten,()=>true,undefined,proxy);
+ assert.equal(result.entries.size,8);
+ // The whole region is refused; two halves of two columns each are accepted.
+ assert.deepEqual(calls.map(rect=>[rect.x,rect.y,rect.width,rect.height].join()),['800,600,1050,550','800,600,550,550','1300,600,550,550']);
+ assert.equal(result.entries.get('0,0'),result.entries.get('1,1'),'tiles of one half share its mask');
+ assert.notEqual(result.entries.get('1,1'),result.entries.get('2,0'));
+ assert.deepEqual(Array.from(result.entries.get('3,1').frameRect),[1300/recipe.width,600/recipe.height,550/recipe.width,550/recipe.height]);
+ assert.equal(await f.renderer.loadGpuResampledRegion('session',{local:{id:'a',mask},localIndex:0,tiles:[{key:'only'}]},4000,f.straighten,()=>true,undefined,proxy),null,'a single refused region keeps the fallback');
+});
 test('straightened Fit, scope and measurement leaves use the whole-frame resampled mask before any other route',async()=>{
  const f=fixture(),mask=f.brush({mask_feather:.02});
  f.renderer.loadCpuLeafAt=async()=>{throw Error('unexpected CPU mask');};

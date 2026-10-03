@@ -3216,7 +3216,19 @@
         try { entry = await record.promise; } finally { if (this.localMaskInflight.get(key) === record) this.localMaskInflight.delete(key); }
         if (!current()) return null;
       }
-      if (!entry) return null;
+      if (!entry) {
+        // A leaf can refuse a region that fits (a wide Shift halo around a
+        // large view); its tiles are small enough to hold that halo.
+        if (batch.tiles.length <= 1 || halos.some(rect => !rect) || signal?.aborted || !isCurrent()) return null;
+        const entries = new Map();
+        for (const tile of batch.tiles) {
+          const result = await this.loadGpuComposedRegion(sessionId, {...batch, tiles: [tile]}, longEdge,
+            geometrySignature, isCurrent, signal, {...proxy, region: tile.haloRect});
+          if (!result) return null;
+          entries.set(tile.key, result.entries.get(tile.key));
+        }
+        return {localIndex: batch.localIndex, entries};
+      }
       this.retainLocalMask(entry, longEdge);
       return {localIndex: batch.localIndex, entries: new Map(batch.tiles.map(tile => [tile.key, entry]))};
     }
@@ -3572,22 +3584,36 @@
       const region = proxy.region || {x, y, width: Math.max(...halos.map(rect => rect.x + rect.width)) - x,
         height: Math.max(...halos.map(rect => rect.y + rect.height)) - y};
       const source = window.HDRGpuMaskResample.sourceRect(recipe, region), limit = this.device.limits.maxTextureDimension2D;
-      if (!source || source.width > limit || source.height > limit || source.width * source.height > 16777216
-        || region.width > limit || region.height > limit) {
-        // Keep each catch-up mask bounded rather than warp a whole frame.
+      const fits = source && source.width <= limit && source.height <= limit && source.width * source.height <= 16777216
+        && region.width <= limit && region.height <= limit;
+      const whole = fits ? await this.loadGpuResampledMask(sessionId, expression, longEdge, geometrySignature, recipe, region, isCurrent, signal) : null;
+      if (!whole) {
+        if (signal?.aborted || !isCurrent()) return null;
+        // Keep each mask bounded rather than warp a whole frame. A producer
+        // can also refuse a region that fits (a wide Shift halo around a
+        // large view). Halve the tiles along their longer run until each
+        // part is accepted: every part carries its own halo once, where
+        // per-tile masks would each recompute it.
         if (batch.tiles.length <= 1 || halos.some(rect => !rect)) return null;
+        const columns = [...new Set(halos.map(rect => rect.x))].sort((a, b) => a - b);
+        const rows = [...new Set(halos.map(rect => rect.y))].sort((a, b) => a - b);
+        const across = columns.length >= rows.length, cuts = across ? columns : rows;
+        const cut = cuts[Math.ceil(cuts.length / 2)];
         const entries = new Map();
-        for (const tile of batch.tiles) {
+        for (const tiles of [batch.tiles.filter(tile => (across ? tile.haloRect.x : tile.haloRect.y) < cut),
+          batch.tiles.filter(tile => (across ? tile.haloRect.x : tile.haloRect.y) >= cut)]) {
           if (signal?.aborted || !isCurrent()) return null;
-          const result = await this.loadGpuResampledRegion(sessionId, {...batch, tiles: [tile]}, longEdge,
-            geometrySignature, isCurrent, signal, {...proxy, region: tile.haloRect});
+          const part = tiles.map(tile => tile.haloRect);
+          const left = Math.min(...part.map(rect => rect.x)), top = Math.min(...part.map(rect => rect.y));
+          const result = await this.loadGpuResampledRegion(sessionId, {...batch, tiles}, longEdge, geometrySignature, isCurrent, signal,
+            {...proxy, region: {x: left, y: top, width: Math.max(...part.map(rect => rect.x + rect.width)) - left,
+              height: Math.max(...part.map(rect => rect.y + rect.height)) - top}});
           if (!result) return null;
-          entries.set(tile.key, result.entries.get(tile.key));
+          for (const [key, entry] of result.entries) entries.set(key, entry);
         }
         return {localIndex: batch.localIndex, entries};
       }
-      const entry = await this.loadGpuResampledMask(sessionId, expression, longEdge, geometrySignature, recipe, region, isCurrent, signal);
-      if (!entry) return null;
+      const entry = whole;
       Object.assign(entry, {wholeFrame: true, frameRect: [region.x / proxy.width, region.y / proxy.height,
         region.width / proxy.width, region.height / proxy.height]});
       return {localIndex: batch.localIndex, entries: new Map(batch.tiles.map(tile => [tile.key, entry]))};
