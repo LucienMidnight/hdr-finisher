@@ -1255,3 +1255,64 @@ for now as close enough to the two-level limit (P3-MASK-REVIEW-02). This
 covers warped feathered brush masks at up to two byte levels only; it is not
 a general three-level approval and the general limit stays two. Steve
 authorized a checkpoint commit of this slice (no push).
+
+### 14.23 Source-space combined and luminance masks, Peak and windowed straighten
+
+Built together on the fast checks and validated in serialized GPU passes; the
+[evidence](../technical/viewport-phase3-source-space-mask-evidence-2026-10-03.md)
+records them. Not committed.
+
+**Combined and luminance masks under straighten/perspective.** Export
+composes the whole expression in source space, rounds it and warps it once.
+The preview now does the same. The backend serves un-resampled scene
+luminance for a rectangle (one half float per pixel, quarter turn and flips
+only); the renderer keeps it as bounded tiles, qualifies and feathers a
+luminance leaf in source space, composes combinations there from the existing
+leaf producers, and warps the result with the existing resampler. This fixes
+P3-LUMA-RESAMPLE-01, which the paired baseline shows predates the previous
+slice: 3.15 levels with 943 pixels over two becomes two byte levels on 565
+pixels (0.03% of the region), and the masks verdict passes. Of 112 reference
+regions no byte differs by more than two levels and 77 are within 1.13; the
+rest reach two byte levels (up to 2.124 as stored) on at most 0.07% of their
+pixels. That is at the general two-level limit, not inside it, and outside
+the brush-only exception of 14.22, so it is put to Steve.
+
+**Peak under straighten (P3-PEAK-03).** The bounded editing Peak is now
+produced: 627.2 nit against export 628.4 (0.19% low; was 3.7%). Budget and
+shader pins are unchanged. The automatic anchor is therefore measured under
+straighten as it is elsewhere, so a Fit edit's exact settlement there is the
+anchor replacement at about 1.4–1.6 s; first feedback stays at 39–60 ms.
+
+**Straightened picture source.** The backend resamples only the requested
+window for straighten (Pillow's rotate matrix and safe inset as arithmetic),
+within the 1e-6 tolerance already approved for windowed perspective; export
+and Proof keep the full-frame path. First straightened 100% zoom falls from
+about 3,500–3,700 ms to a median of 827 ms over three sessions (8,253 ms
+before the previous slice), scopes from about 4,000 to 1,234 ms, with zero
+CPU mask requests. The 300 ms goal is still unmet; the luminance mask's
+whole-frame range scan is now the largest term.
+
+**Fit stroke and Feather.** Measurement only: first feedback is 104–250 ms;
+the 1.1–1.6 s "exact" figures are the automatic-anchor replacement, plus the
+deferred P3-FALLBACK-01 compile on two steps. Fetching anchor patches side by
+side shortened settlement but delayed first feedback under straighten and
+was not kept.
+
+A 0.5 GiB replay under straighten completes 96 operations and 4,025 warped
+masks with no errors or over-budget bytes. Node passes 413 tests and the full
+Python suite 1,651 with three skips, plus seven new. Fixture hashes are
+unchanged. No classifier, tolerance, shader pin, export or zoom-scheduler
+change. Phase 3 remains open; no commit, push or phase 4 work.
+
+**Owner decision (Steve, October 3).** Warped luminance masks and combinations at up to two byte
+levels (up to 2.124 as stored; at most 0.03% of a real region, 0.07% of a reference region) are
+accepted as a case-specific exception (P3-MASK-REVIEW-03), like the warped feathered brush case.
+It is not a general three-level approval; the general limit stays two. Do not request review of
+unchanged cases again.
+
+**Owner decision (Steve, October 3), speed.** The current timings are accepted as they stand against
+their goals: first 100% zoom 636 ms (827 ms straightened) against 300 ms; scopes after first zoom
+about 0.9-1.2 s; first feedback after a Fit Feather step 104-250 ms against 100 ms; Fit exact
+settlement about 1.0-1.6 s (the deferred automatic-anchor replacement). A regression from these
+figures reopens the item. Steve authorized a checkpoint commit (no push), then the coverage audit
+and the 30-minute endurance run.

@@ -23,6 +23,13 @@
   // frame is magnified and its soft masks come from the small bitmap.
   const SOFT_MASK_LONG_EDGE = 1600;
   const SOFT_MASK_MAX_EDGE = 3200;
+  // Un-resampled scene luminance for source-space masks: tile side, resident
+  // bytes, the largest feathered region one request may build, and the
+  // largest it filters with exact boxes away from the frame edge.
+  const ORIENTED_LUMINANCE_TILE = 2048;
+  const ORIENTED_LUMINANCE_BYTES = 192 * 1024 * 1024;
+  const ORIENTED_LUMA_REGION_PIXELS = 24 * 1024 * 1024;
+  const ORIENTED_LUMA_EXACT_PIXELS = 12 * 1024 * 1024;
   const TILE_ORIGIN_X_INDEX = 160;
   const TILE_ORIGIN_Y_INDEX = 161;
   const NOISE_VIEW_INDEX = 166;
@@ -816,6 +823,8 @@
       this.proxyInflight = new Map();
       this.sceneLuminance = new Map();
       this.sceneLuminanceInflight = new Map();
+      this.orientedLuminance = new Map();
+      this.orientedLuminanceInflight = new Map();
       this.sessionId = null;
       this.available = false;
       this.detail = "WebGPU has not been initialized";
@@ -946,6 +955,7 @@
       // forget to report one. Reads touch the global LRU order.
       this.proxies = this.trackGpuCache("source-proxy", this.proxies);
       this.sceneLuminance = this.trackGpuCache("scene-luminance", this.sceneLuminance);
+      this.orientedLuminance = this.trackGpuCache("oriented-luminance", this.orientedLuminance);
       this.localMasks = this.trackGpuCache("local-mask", this.localMasks);
       this.detailBandTiles = this.trackGpuCache("detail-band-tile", this.detailBandTiles);
       this.maskTiles = this.trackGpuCache("mask-tile", this.maskTiles);
@@ -1160,6 +1170,12 @@
         if (!entry) return;
         this.localMasks.delete(key);
         this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
+      } else if (kind === "oriented-luminance") {
+        const entry = this.orientedLuminance.get(key);
+        if (!entry) return;
+        this.orientedLuminance.delete(key);
+        entry.destroyed = true;
+        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
       }
     }
 
@@ -1508,6 +1524,13 @@
       for (const scene of this.sceneLuminance.values()) this.destroyAfterActiveRenders(() => scene.texture?.destroy());
       this.sceneLuminance.clear();
       this.sceneLuminanceInflight.clear();
+      for (const tile of this.orientedLuminance.values()) {
+        tile.destroyed = true;
+        this.destroyAfterActiveRenders(() => tile.texture?.destroy());
+      }
+      this.orientedLuminance.clear();
+      this.orientedLuminanceInflight.clear();
+      this.maskExtents?.clear();
       for (const intermediate of this.intermediates.values()) {
         this.destroyAfterActiveRenders(() => {
           intermediate.baseTexture?.destroy();
@@ -1663,7 +1686,7 @@
 
     resourceMemorySnapshot() {
       const proxyBytes = [...this.proxies.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
-      const sceneLuminanceBytes = [...this.sceneLuminance.values()]
+      const sceneLuminanceBytes = [...this.sceneLuminance.values(), ...this.orientedLuminance.values()]
         .reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
       const localMaskBytes = [...this.localMasks.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
       // The two LRU caches and the tiled working graph are real
@@ -2056,9 +2079,6 @@
       const ranked = await this.rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent);
       if (!ranked || !isCurrent()) return null;
       if (options.highlightAnchorOnly && lane === "sdr") return { highlightAnchor: ranked.anchor ? {key: ranked.anchor.key, value: ranked.sdrAnchor} : null };
-      // Roll currently materializes a native geometry frame. Never enter that
-      // fallback from an editing measurement.
-      if (ranked.resample_stage === "roll") return { rendered: false, refusals: ["bounded roll measurement unavailable"] };
       const signature = JSON.stringify(adjustments.shared?.geometry || {});
       const frame = {width: ranked.width, height: ranked.height,
         longEdge: Math.max(sourceSize.width, sourceSize.height), workingSpace: ranked.working_space};
@@ -2476,7 +2496,8 @@
       // halo. Supported expression graphs compose those same regional leaves.
       if (lane === "hdr" && (sourceOptions?.identity || "source") === "source"
         && (activeLocals || []).some((local) => maskUsesLuminance(local.mask)
-          && !isGpuLumaMask(local.mask) && !gpuRegionalGraphEligible(local.mask, geometrySignature))) return null;
+          && !isGpuLumaMask(local.mask) && !gpuRegionalGraphEligible(local.mask, geometrySignature)
+          && !this.resamplePlan(sessionId, local.mask, longEdge, geometrySignature))) return null;
       // The whole frame's source, once resident, serves every region of it
       // with no fetch at all.
       if (this.wholeSourceResident(sessionId, lane, longEdge, geometrySignature, sourceOptions?.identity || "source")) {
@@ -2505,8 +2526,12 @@
       if (!previousFrame.workingSpace) return null;
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
       const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler?.DEFAULT_TILE_SIZE || 512));
+      // A mask finished in source space is not feathered on the picture.
+      const pictureLumaLocals = (activeLocals || []).filter(local =>
+        !this.resamplePlan(sessionId, local.mask, longEdge, geometrySignature));
       const halo = this.roiSourceHalo(
         lane, adjustments, previousFrame, sourceSize, surface, referenceWhiteNits, sourceOptions, activeLocals,
+        pictureLumaLocals,
       );
       const request = this.tileViewportRequest(
         sessionId, lane, previousFrame, sourceSize, sourceOptions, geometrySignature, tileSize, halo,
@@ -2523,7 +2548,7 @@
         // Downsampling must start on the same cells as a whole-frame mask.
         let alignment = 1;
         const gcd = (a,b) => b ? gcd(b,a%b) : a;
-        for (const leaf of (activeLocals || []).flatMap(local => gpuLumaLeaves(local.mask))) {
+        for (const leaf of pictureLumaLocals.flatMap(local => gpuLumaLeaves(local.mask))) {
           const factor = lumaFeatherPlan(leaf.mask_feather, previousFrame.width,
             previousFrame.height, this.featherReferenceScale?.(geometrySignature) || 1).factor;
           alignment = alignment / gcd(alignment,factor) * factor;
@@ -2630,7 +2655,8 @@
      * will use, so the parameter set and the composed halo are the same ones
      * `encodeTiledGeneration` derives after the proxy arrives.
      */
-    roiSourceHalo(lane, adjustments, frame, sourceSize, surface, referenceWhiteNits, sourceOptions, activeLocals) {
+    roiSourceHalo(lane, adjustments, frame, sourceSize, surface, referenceWhiteNits, sourceOptions, activeLocals,
+      lumaLocals = activeLocals) {
       if (!frame?.workingSpace) return 0;
       const params = buildParams(
         lane, adjustments, frame.workingSpace, surface.hdr, referenceWhiteNits,
@@ -2656,7 +2682,7 @@
         halo = Math.max(halo, clarity.reach + clarity.scale + alignment);
       }
       if (!sourceOptions?.analysisMasks && lumaSceneSource(lane, sourceOptions?.identity, frame.workingSpace)) {
-        for (const leaf of (activeLocals || []).flatMap(local => gpuLumaLeaves(local.mask))) {
+        for (const leaf of (lumaLocals || []).flatMap(local => gpuLumaLeaves(local.mask))) {
           const plan = lumaFeatherPlan(leaf.mask_feather,frame.width,frame.height,
             this.featherReferenceScale?.(JSON.stringify(adjustments.shared?.geometry || {})) || 1);
           halo = Math.max(halo, lumaFeatherReach(plan));
@@ -2679,10 +2705,8 @@
       const current = () => generation === this.resourceGeneration
         && serial === this.renderSerials.get(canvas) && sourceOptions?.isCurrent?.() !== false;
       for (const local of locals) {
-        if (local.mask?.operator !== "leaf" || isGpuLumaMask(local.mask)) continue;
-        if (this.gpuAnalyticMasksEnabled && window.HDRMaskRaster?.eligible(local.mask,geometrySignature)) continue;
-        const leaf = local.mask.leaf, signal = this.sourceAbortSignal();
-        // A straightened or perspective leaf is warped on the GPU: prepare
+        const signal = this.sourceAbortSignal();
+        // A straightened or perspective mask is warped on the GPU: prepare
         // its range (and feather field) instead of a bitmap it will not use.
         const recipe = this.gpuAnalyticMasksEnabled && this.resamplePlan(sessionId, local.mask, longEdge, geometrySignature);
         if (recipe) {
@@ -2690,6 +2714,9 @@
             () => current() && !signal?.aborted).catch(() => null);
           continue;
         }
+        if (local.mask?.operator !== "leaf" || isGpuLumaMask(local.mask)) continue;
+        if (this.gpuAnalyticMasksEnabled && window.HDRMaskRaster?.eligible(local.mask,geometrySignature)) continue;
+        const leaf = local.mask.leaf;
         const field = () => this.prefetchGpuBrushFeatherField(sessionId, local.mask, longEdge, geometrySignature, current);
         // Native Shift never uses a qualified bitmap, so none is prepared.
         if (leaf?.type === "brush" && Number(leaf.mask_shift_edge) && field()) continue;
@@ -3049,13 +3076,14 @@
     }
 
     /** Straighten and perspective. Export finishes the mask in source space
-     * and warps it with the picture; the plan is that exact warp, or null for
-     * index geometry, unsupported leaves or a frame that does not match.
+     * (every leaf and the whole combination) and warps it with the picture;
+     * the plan is that exact warp, or null for index geometry, an unsupported
+     * leaf anywhere in the mask or a frame that does not match.
      */
     resamplePlan(sessionId, expression, longEdge, geometrySignature) {
-      const planner = window.HDRGeometryResample, size = this.maskSourceSize, leaf = expression?.leaf;
+      const planner = window.HDRGeometryResample, size = this.maskSourceSize;
       if (!planner || !window.HDRGpuMaskResample || !window.HDRGpuBrushMask?.nativeScratch
-        || size?.sessionId !== sessionId || expression?.operator !== "leaf" || expression.children?.length) return null;
+        || size?.sessionId !== sessionId || !expression) return null;
       let geometry;
       try { geometry = JSON.parse(geometrySignature); } catch { return null; }
       if (!Number(geometry.straighten_angle || 0) && !Number(geometry.perspective_rotate || 0)
@@ -3072,10 +3100,189 @@
       const recipe = this.resamplePlans.get(planKey);
       if (!recipe) return null;
       const oriented = recipe.orientedSignature;
-      const spatial = leaf?.type === "brush" ? {...expression, leaf: {...leaf, mask_feather: 0, mask_shift_edge: 0}} : expression;
-      if (!(leaf?.type === "linear_gradient" ? isGpuLinearGradientMask(expression, oriented)
-        : window.HDRMaskRaster?.eligible(spatial, oriented))) return null;
+      const eligible = node => {
+        if (node?.operator !== "leaf") {
+          // A proper combination has at least two operands; degenerate and
+          // disabled graphs keep the established path.
+          const children = node?.enabled === false ? [] : (node?.children || []).filter(child => child.enabled !== false);
+          return children.length >= 2 && children.every(eligible);
+        }
+        if (node.children?.length) return false;
+        const leaf = node.leaf;
+        if (isGpuLumaMask(node)) return node.enabled !== false;
+        const spatial = leaf?.type === "brush" ? {...node, leaf: {...leaf, mask_feather: 0, mask_shift_edge: 0}} : node;
+        return Boolean(leaf?.type === "linear_gradient" ? isGpuLinearGradientMask(node, oriented)
+          : window.HDRMaskRaster?.eligible(spatial, oriented));
+      };
+      if (!eligible(expression)) return null;
       return {...recipe, frame: {width: recipe.orientedWidth, height: recipe.orientedHeight, geometrySignature: oriented}};
+    }
+
+    /** Scene luminance of the source before straighten or perspective, for
+     * one rectangle of the oriented frame. Export qualifies a luminance mask
+     * there and warps the finished mask; the warped picture is no substitute.
+     */
+    async fetchOrientedLuminance(sessionId, longEdge, frame, rect, signal) {
+      const geometry = JSON.parse(frame.geometrySignature);
+      const response = await fetch(`/api/session/${sessionId}/source-luminance?long_edge=${longEdge}`
+        + `&x=${rect.x}&y=${rect.y}&width=${rect.width}&height=${rect.height}`
+        + `&rotation=${Number(geometry.rotation || 0)}&flip_horizontal=${Boolean(geometry.flip_horizontal)}`
+        + `&flip_vertical=${Boolean(geometry.flip_vertical)}`, {signal});
+      if (!response.ok) { await response.arrayBuffer().catch(() => null); return null; }
+      const header = name => Number(response.headers.get(name));
+      return {data: await response.arrayBuffer(), width: header("X-Tile-Width"), height: header("X-Tile-Height"),
+        frameWidth: header("X-Output-Width"), frameHeight: header("X-Output-Height")};
+    }
+
+    /** One resident tile of that luminance. Tiles are shared by every mask
+     * and viewport, so a fetch belongs to the session, not to one request.
+     */
+    orientedLuminanceTile(sessionId, longEdge, frame, x, y) {
+      const key = `${sessionId}:${longEdge}:${frame.geometrySignature}:${x},${y}`;
+      const cached = this.orientedLuminance.get(key);
+      if (cached) return Promise.resolve(cached);
+      let pending = this.orientedLuminanceInflight.get(key);
+      if (!pending) {
+        const device = this.device, generation = this.resourceGeneration;
+        const rect = {x, y, width: Math.min(ORIENTED_LUMINANCE_TILE, frame.width - x),
+          height: Math.min(ORIENTED_LUMINANCE_TILE, frame.height - y)};
+        pending = (async () => {
+          const started = performance.now();
+          const tile = await this.fetchOrientedLuminance(sessionId, longEdge, frame, rect, this.sourceAbortSignal());
+          if (!tile || tile.frameWidth !== frame.width || tile.frameHeight !== frame.height
+            || tile.width !== rect.width || tile.height !== rect.height
+            || this.device !== device || this.resourceGeneration !== generation) return null;
+          const texture = device.createTexture({size: [rect.width, rect.height], format: "r16float",
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC});
+          device.queue.writeTexture({texture}, tile.data, {bytesPerRow: rect.width * 2, rowsPerImage: rect.height},
+            [rect.width, rect.height]);
+          const entry = {texture, ...rect, byteSize: rect.width * rect.height * 2};
+          this.orientedLuminance.set(key, entry);
+          let total = 0;
+          for (const value of this.orientedLuminance.values()) total += value.byteSize;
+          for (const oldKey of [...this.orientedLuminance.keys()]) {
+            if (total <= ORIENTED_LUMINANCE_BYTES || oldKey === key) break;
+            total -= this.orientedLuminance.get(oldKey).byteSize;
+            this.evictGpuCacheEntry("oriented-luminance", oldKey);
+          }
+          this.performanceMetrics.maskEvents ||= [];
+          this.performanceMetrics.maskEvents.push({kind: "oriented-luminance-tile", longEdge, ...rect,
+            requestMs: performance.now() - started, cpuMaskRequest: false});
+          return entry;
+        })().catch(() => null).finally(() => {
+          if (this.orientedLuminanceInflight.get(key) === pending) this.orientedLuminanceInflight.delete(key);
+        });
+        this.orientedLuminanceInflight.set(key, pending);
+      }
+      return pending;
+    }
+
+    /** One rectangle of that luminance as a texture the caller owns. */
+    async orientedLuminanceRegion(sessionId, longEdge, frame, rect, current) {
+      const side = ORIENTED_LUMINANCE_TILE, device = this.device;
+      for (let attempt = 0; attempt < 3 && current(); attempt++) {
+        const wanted = [];
+        for (let y = Math.floor(rect.y / side) * side; y < rect.y + rect.height; y += side) {
+          for (let x = Math.floor(rect.x / side) * side; x < rect.x + rect.width; x += side) {
+            wanted.push(this.orientedLuminanceTile(sessionId, longEdge, frame, x, y));
+          }
+        }
+        const tiles = await Promise.all(wanted);
+        if (tiles.some(tile => !tile) || !current() || this.device !== device) return null;
+        // A tile evicted while its neighbours loaded is fetched again.
+        if (tiles.some(tile => tile.destroyed)) continue;
+        const texture = device.createTexture({size: [rect.width, rect.height], format: "r16float",
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST});
+        const encoder = device.createCommandEncoder();
+        for (const tile of tiles) {
+          const x = Math.max(rect.x, tile.x), y = Math.max(rect.y, tile.y);
+          const right = Math.min(rect.x + rect.width, tile.x + tile.width);
+          const bottom = Math.min(rect.y + rect.height, tile.y + tile.height);
+          encoder.copyTextureToTexture({texture: tile.texture, origin: [x - tile.x, y - tile.y]},
+            {texture, origin: [x - rect.x, y - rect.y]}, [right - x, bottom - y]);
+        }
+        device.queue.submit([encoder.finish()]);
+        return texture;
+      }
+      return null;
+    }
+
+    /** A luminance leaf over one oriented rectangle: qualified and feathered
+     * in source space, with the feather's whole reach around the rectangle
+     * and its reduced grid anchored to the frame.
+     */
+    async gpuOrientedLumaRegion(sessionId, expression, longEdge, frame, rect, current) {
+      const resample = window.HDRGpuMaskResample, inverted = Boolean(expression.inverted);
+      const feather = Math.min(0.05, Math.max(0, Number(expression.leaf.mask_feather) || 0));
+      const plan = lumaFeatherPlan(feather, frame.width, frame.height);
+      const feathered = plan.sigma >= 0.25, reach = feathered ? lumaFeatherReach(plan) : 0, grid = plan.factor;
+      const x = Math.floor(Math.max(0, rect.x - reach) / grid) * grid;
+      const y = Math.floor(Math.max(0, rect.y - reach) / grid) * grid;
+      const right = Math.min(frame.width, Math.ceil((rect.x + rect.width + reach) / grid) * grid);
+      const bottom = Math.min(frame.height, Math.ceil((rect.y + rect.height + reach) / grid) * grid);
+      const width = right - x, height = bottom - y, limit = this.device.limits.maxTextureDimension2D;
+      if (width > limit || height > limit || width * height > ORIENTED_LUMA_REGION_PIXELS) return null;
+      const luminance = await this.orientedLuminanceRegion(sessionId, longEdge, frame, {x, y, width, height}, current);
+      if (!luminance) return null;
+      const baseTexture = this.createMaskTexture(width, height);
+      const qualifyValues = buildGpuLumaQualificationParams(expression);
+      const qualifyBuffer = this.createStorageBuffer(qualifyValues);
+      this.device.queue.writeBuffer(qualifyBuffer, 0, qualifyValues);
+      const entry = {texture: baseTexture, baseTexture, qualifyBuffer, width, height, byteSize: 0,
+        horizontalTexture: null, refinedTexture: null, horizontalBuffer: null, verticalBuffer: null};
+      const encoder = this.device.createCommandEncoder();
+      this.encodeMaskPass(encoder, this.maskPipelines.qualify, this.createMaskBindGroup(luminance, qualifyBuffer), baseTexture);
+      this.device.queue.submit([encoder.finish()]);
+      if (feathered || inverted) {
+        // Export's own boxes wherever their prefix sums fit: the warp that
+        // follows amplifies the reduced grid's sub-level error to whole levels.
+        this.refineLumaMask(entry, plan, inverted, width * height <= ORIENTED_LUMA_EXACT_PIXELS
+          || x === 0 || y === 0 || right >= frame.width || bottom >= frame.height);
+      }
+      let texture = entry.texture, buffer = null;
+      if (x === rect.x && y === rect.y && width === rect.width && height === rect.height) {
+        // The whole region is the answer; keep it out of the scratch release.
+        for (const name of ["texture", "baseTexture", "refinedTexture"]) if (entry[name] === texture) entry[name] = null;
+      } else {
+        const values = new Float32Array([rect.x - x, rect.y - y, 0, 0]);
+        buffer = this.createStorageBuffer(values);
+        this.device.queue.writeBuffer(buffer, 0, values);
+        texture = this.createMaskTexture(rect.width, rect.height);
+        const crop = this.device.createCommandEncoder();
+        this.encodeMaskPass(crop, resample.cropPipeline(this), this.createMaskBindGroup(entry.texture, buffer), texture);
+        this.device.queue.submit([crop.finish()]);
+      }
+      this.destroyAfterActiveRenders(() => { this.destroyLocalMaskEntry(entry); luminance.destroy(); buffer?.destroy(); });
+      return {texture, width: rect.width, height: rect.height};
+    }
+
+    /** A combination over one oriented rectangle, composed in source space
+     * as export composes it before the warp. Operands are made one at a time.
+     */
+    async gpuOrientedGraphRegion(sessionId, expression, longEdge, frame, rect, current) {
+      const children = (expression.children || []).filter(child => child.enabled !== false), made = [];
+      const release = () => this.destroyAfterActiveRenders(() => made.forEach(item => item.destroy()));
+      let result = null;
+      for (const [index, child] of children.entries()) {
+        const operand = await this.gpuOrientedMaskRegion(sessionId, child, longEdge, frame, rect, current);
+        if (operand) made.push(operand.texture);
+        if (!operand || !current()) { release(); return null; }
+        const opacity = child.operator === "leaf" ? Math.min(1, Math.max(0, Number(child.leaf?.mask_opacity ?? 1))) : 1;
+        if (!result) { result = {texture: operand.texture, opacity}; continue; }
+        const values = new Float32Array([gpuMaskOperatorCode(expression.operator), result.opacity, opacity,
+          index === children.length - 1 && expression.inverted ? 1 : 0]);
+        const buffer = this.createStorageBuffer(values), target = this.createMaskTexture(rect.width, rect.height);
+        this.device.queue.writeBuffer(buffer, 0, values);
+        const encoder = this.device.createCommandEncoder();
+        this.encodeMaskPass(encoder, this.maskPipelines.combine,
+          this.createMaskBindGroup(result.texture, buffer, operand.texture), target);
+        this.device.queue.submit([encoder.finish()]);
+        made.push(buffer, target);
+        result = {texture: target, opacity: 1};
+      }
+      made.splice(made.indexOf(result.texture), 1);
+      release();
+      return {texture: result.texture, width: rect.width, height: rect.height};
     }
 
     /** One rectangle of the finished mask in the oriented source frame
@@ -3086,6 +3293,8 @@
       const helper = window.HDRGpuBrushMask, leaf = expression.leaf, limit = this.device.limits.maxTextureDimension2D;
       const {width, height, geometrySignature: signature} = frame;
       if (rect.width > limit || rect.height > limit || rect.width * rect.height > 16777216 || !current()) return null;
+      if (expression.operator !== "leaf") return this.gpuOrientedGraphRegion(sessionId, expression, longEdge, frame, rect, current);
+      if (isGpuLumaMask(expression)) return this.gpuOrientedLumaRegion(sessionId, expression, longEdge, frame, rect, current);
       if (leaf.type === "brush") {
         if (helper.featherFieldPlan(expression, width, height, signature, limit)) {
           const field = await this.loadGpuBrushFeatherField(sessionId, longEdge, signature, expression, frame, current);
@@ -3147,7 +3356,9 @@
       if (!helper.warm(this)) return null;
       const pipelines = this.brushPipelines;
       // A tile and its filter halo must fit the scratch cap; halve until all do.
-      for (let side = Math.min(4096, device.limits.maxTextureDimension2D); side >= 256 && current(); side /= 2) {
+      // A luminance feather builds its reach around every tile, so start smaller.
+      const first = maskUsesLuminance(expression) ? ORIENTED_LUMINANCE_TILE : 4096;
+      for (let side = Math.min(first, device.limits.maxTextureDimension2D); side >= 256 && current(); side /= 2) {
         const scratch = helper.nativeScratch(this, current), {texture, draw} = scratch;
         try {
           const across = Math.ceil(frame.width / side), count = across * Math.ceil(frame.height / side);
@@ -3193,7 +3404,7 @@
       return null;
     }
 
-    /** One output rectangle of a leaf mask under straighten/perspective. */
+    /** One output rectangle of a mask under straighten/perspective. */
     async loadGpuResampledMask(sessionId, expression, longEdge, geometrySignature, recipe, rect, isCurrent, signal) {
       const resample = window.HDRGpuMaskResample, source = resample.sourceRect(recipe, rect);
       if (!source || rect.x < 0 || rect.y < 0 || rect.x + rect.width > recipe.width || rect.y + rect.height > recipe.height) return null;
@@ -3219,7 +3430,7 @@
             device.queue.submit([encoder.finish()]);
             this.destroyAfterActiveRenders(() => { buffer.destroy(); oriented.texture.destroy(); });
             const generated = {cacheKey: key, texture, width: rect.width, height: rect.height, byteSize: rect.width * rect.height * 2,
-              kind: `gpu-resampled-${expression.leaf.type}`};
+              kind: `gpu-resampled-${expression.leaf?.type || "graph"}`};
             this.localMasks.set(key, generated);
             this.performanceMetrics.maskEvents ||= [];
             this.performanceMetrics.maskEvents.push({kind: generated.kind, longEdge, width: rect.width, height: rect.height,
@@ -3437,8 +3648,9 @@
       geometrySignature, isCurrent, signal) {
       if (!this.gpuAnalyticMasksEnabled || !proxy?.region || proxy.lane !== "sdr"
         || lumaSceneSource(proxy.lane, proxy.sourceIdentity, proxy.workingSpace)) return null;
-      const leaves = locals.filter(local => isGpuLumaMask(local.mask)
-        || gpuRegionalGraphEligible(local.mask, geometrySignature)).flatMap(local => gpuLumaLeaves(local.mask));
+      const leaves = locals.filter(local => (isGpuLumaMask(local.mask)
+        || gpuRegionalGraphEligible(local.mask, geometrySignature))
+        && !this.resamplePlan(sessionId, local.mask, longEdge, geometrySignature)).flatMap(local => gpuLumaLeaves(local.mask));
       if (!leaves.length || !tiles.length || !isCurrent()) return null;
       let reach = 0, alignment = 1;
       const gcd = (a,b) => b ? gcd(b,a%b) : a;
@@ -7395,6 +7607,12 @@
       remember = true,
     ) {
       if (local.mask?.operator !== "leaf") {
+        if (this.gpuAnalyticMasksEnabled) {
+          // Composed in source space and warped once, as export does it.
+          const resampled = await this.loadGpuResampledLeaf(sessionId, local.mask, longEdge, geometrySignature, isCurrent, signal);
+          if (resampled) return resampled;
+          if (signal?.aborted || !isCurrent()) return null;
+        }
         return this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal, remember);
       }
       return this.loadMaskLeaf(
@@ -7913,67 +8131,9 @@
         if (plan.sigma < 0.25 && !inverted) {
           entry.texture = entry.baseTexture;
         } else {
-          if (!entry.refinedTexture) {
-            entry.refinedTexture = this.createMaskTexture(entry.width, entry.height);
-            entry.horizontalBuffer = this.createStorageBuffer(new Float32Array(260));
-            entry.verticalBuffer = this.createStorageBuffer(new Float32Array(260));
-            entry.byteSize += entry.width * entry.height * 2 + 2080;
-          }
-          // A full-size intermediate only for a small feather; a large one is
-          // blurred at a reduced size.
-          if (plan.factor === 1 && !entry.horizontalTexture) {
-            entry.horizontalTexture = this.createMaskTexture(entry.width, entry.height);
-            entry.byteSize += entry.width * entry.height * 2;
-          }
-          const encoder = this.device.createCommandEncoder();
-          const touchesFrameEdge = !scene.frameRect || scene.frameRect[0] === 0 || scene.frameRect[1] === 0
-            || scene.frameRect[0] + scene.frameRect[2] >= 1
-            || scene.frameRect[1] + scene.frameRect[3] >= 1;
-          if (touchesFrameEdge && plan.sigma >= .25) {
-            this.encodeExactLumaBoxes(encoder, entry, plan, inverted);
-          } else if (plan.factor === 1) {
-            this.device.queue.writeBuffer(entry.horizontalBuffer, 0, lumaBlurParams(plan,0,false));
-            this.device.queue.writeBuffer(entry.verticalBuffer, 0, lumaBlurParams(plan,1,inverted));
-            this.encodeMaskPass(encoder, this.maskPipelines.refine,
-              this.createMaskBindGroup(entry.baseTexture, entry.horizontalBuffer), entry.horizontalTexture);
-            this.encodeMaskPass(encoder, this.maskPipelines.refine,
-              this.createMaskBindGroup(entry.horizontalTexture, entry.verticalBuffer), entry.refinedTexture);
-          } else {
-            const reduced = this.lumaFeatherScratch(entry, plan.factor);
-            const values = [
-              [plan.factor, 0, 0, 0],
-              [plan.factor, 1, 0, 0],
-              lumaBlurParams(plan,0,false),
-              lumaBlurParams(plan,1,false),
-              [plan.factor, inverted ? 1 : 0, 0, 0],
-            ];
-            values.forEach((value, index) => this.device.queue.writeBuffer(reduced.buffers[index], 0, new Float32Array(value)));
-            // Area-average across, then down (the first pass writes into the
-            // full-width scratch texture), blur at the reduced size, and
-            // interpolate back to the mask's own size.
-            this.encodeMaskPass(encoder, this.maskPipelines.downsample,
-              this.createMaskBindGroup(entry.baseTexture, reduced.buffers[0]), reduced.narrow);
-            this.encodeMaskPass(encoder, this.maskPipelines.downsample,
-              this.createMaskBindGroup(reduced.narrow, reduced.buffers[1]), reduced.first);
-            this.encodeMaskPass(encoder, this.maskPipelines.refine,
-              this.createMaskBindGroup(reduced.first, reduced.buffers[2]), reduced.second);
-            this.encodeMaskPass(encoder, this.maskPipelines.refine,
-              this.createMaskBindGroup(reduced.second, reduced.buffers[3]), reduced.first);
-            this.encodeMaskPass(encoder, this.maskPipelines.upsample,
-              this.createMaskBindGroup(reduced.first, reduced.buffers[4]), entry.refinedTexture);
-          }
-          this.device.queue.submit([encoder.finish()]);
-          if(entry.exactFeatherScratch){
-            const scratch=entry.exactFeatherScratch;
-            this.destroyAfterActiveRenders(()=>{
-              if(entry.exactFeatherScratch!==scratch)return;
-              scratch.textures.forEach(texture=>texture.destroy());scratch.prefix.destroy();
-              scratch.buffers.forEach(buffer=>buffer.destroy());entry.exactFeatherScratch=null;
-              entry.byteSize-=entry.width*entry.height*12+12*16;
-              this.syncGpuCacheBytes(entry);
-            });
-          }
-          entry.texture = entry.refinedTexture;
+          this.refineLumaMask(entry, plan, inverted, !scene.frameRect || scene.frameRect[0] === 0
+            || scene.frameRect[1] === 0 || scene.frameRect[0] + scene.frameRect[2] >= 1
+            || scene.frameRect[1] + scene.frameRect[3] >= 1);
           refinementRan = true;
         }
         entry.refinementIdentity = refinementIdentity;
@@ -7998,6 +8158,70 @@
         if (this.performanceMetrics.maskEvents.length > 480) this.performanceMetrics.maskEvents.shift();
       }
       return entry;
+    }
+
+    /** Feather and invert `entry.baseTexture` into `entry.refinedTexture`.
+     * A mask that reaches the frame edge takes export's own boxes there.
+     */
+    refineLumaMask(entry, plan, inverted, touchesFrameEdge) {
+      if (!entry.refinedTexture) {
+        entry.refinedTexture = this.createMaskTexture(entry.width, entry.height);
+        entry.horizontalBuffer = this.createStorageBuffer(new Float32Array(260));
+        entry.verticalBuffer = this.createStorageBuffer(new Float32Array(260));
+        entry.byteSize += entry.width * entry.height * 2 + 2080;
+      }
+      // A full-size intermediate only for a small feather; a large one is
+      // blurred at a reduced size.
+      if (plan.factor === 1 && !entry.horizontalTexture) {
+        entry.horizontalTexture = this.createMaskTexture(entry.width, entry.height);
+        entry.byteSize += entry.width * entry.height * 2;
+      }
+      const encoder = this.device.createCommandEncoder();
+      if (touchesFrameEdge && plan.sigma >= .25) {
+        this.encodeExactLumaBoxes(encoder, entry, plan, inverted);
+      } else if (plan.factor === 1) {
+        this.device.queue.writeBuffer(entry.horizontalBuffer, 0, lumaBlurParams(plan,0,false));
+        this.device.queue.writeBuffer(entry.verticalBuffer, 0, lumaBlurParams(plan,1,inverted));
+        this.encodeMaskPass(encoder, this.maskPipelines.refine,
+          this.createMaskBindGroup(entry.baseTexture, entry.horizontalBuffer), entry.horizontalTexture);
+        this.encodeMaskPass(encoder, this.maskPipelines.refine,
+          this.createMaskBindGroup(entry.horizontalTexture, entry.verticalBuffer), entry.refinedTexture);
+      } else {
+        const reduced = this.lumaFeatherScratch(entry, plan.factor);
+        const values = [
+          [plan.factor, 0, 0, 0],
+          [plan.factor, 1, 0, 0],
+          lumaBlurParams(plan,0,false),
+          lumaBlurParams(plan,1,false),
+          [plan.factor, inverted ? 1 : 0, 0, 0],
+        ];
+        values.forEach((value, index) => this.device.queue.writeBuffer(reduced.buffers[index], 0, new Float32Array(value)));
+        // Area-average across, then down (the first pass writes into the
+        // full-width scratch texture), blur at the reduced size, and
+        // interpolate back to the mask's own size.
+        this.encodeMaskPass(encoder, this.maskPipelines.downsample,
+          this.createMaskBindGroup(entry.baseTexture, reduced.buffers[0]), reduced.narrow);
+        this.encodeMaskPass(encoder, this.maskPipelines.downsample,
+          this.createMaskBindGroup(reduced.narrow, reduced.buffers[1]), reduced.first);
+        this.encodeMaskPass(encoder, this.maskPipelines.refine,
+          this.createMaskBindGroup(reduced.first, reduced.buffers[2]), reduced.second);
+        this.encodeMaskPass(encoder, this.maskPipelines.refine,
+          this.createMaskBindGroup(reduced.second, reduced.buffers[3]), reduced.first);
+        this.encodeMaskPass(encoder, this.maskPipelines.upsample,
+          this.createMaskBindGroup(reduced.first, reduced.buffers[4]), entry.refinedTexture);
+      }
+      this.device.queue.submit([encoder.finish()]);
+      if(entry.exactFeatherScratch){
+        const scratch=entry.exactFeatherScratch;
+        this.destroyAfterActiveRenders(()=>{
+          if(entry.exactFeatherScratch!==scratch)return;
+          scratch.textures.forEach(texture=>texture.destroy());scratch.prefix.destroy();
+          scratch.buffers.forEach(buffer=>buffer.destroy());entry.exactFeatherScratch=null;
+          entry.byteSize-=entry.width*entry.height*12+12*16;
+          this.syncGpuCacheBytes(entry);
+        });
+      }
+      entry.texture = entry.refinedTexture;
     }
 
     /**

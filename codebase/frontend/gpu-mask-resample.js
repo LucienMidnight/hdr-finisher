@@ -27,20 +27,30 @@
       }
       let value = clamp(pillowCubic(rows[0], rows[1], rows[2], rows[3], t.y), p[9], p[10]);
       return vec4f(vec3f(round(clamp(value, 0.0, 255.0)) / 255.0), 1.0);
+    }
+    // One rectangle of a larger mask, texel for texel; p[0], p[1] its origin.
+    @fragment fn maskCropFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let size = vec2i(textureDimensions(sourceTexture));
+      let at = clamp(vec2i(floor(input.position.xy)) + vec2i(i32(p[0]), i32(p[1])), vec2i(0), size - 1);
+      return vec4f(vec3f(textureLoad(sourceTexture, at, 0).r), 1.0);
     }`;
 
-  function pipeline(renderer) {
+  function pipelines(renderer) {
     const d = renderer.device;
     if (renderer.maskResampleDevice !== d) {
       const module = d.createShaderModule({ code: window.HDRWebGPUShaders.LUMA_MASK_SHADER_SOURCE + SHADER });
-      renderer.maskResamplePipeline = d.createRenderPipeline({ layout: renderer.maskPipelineLayout,
+      const make = entryPoint => d.createRenderPipeline({ layout: renderer.maskPipelineLayout,
         vertex: { module, entryPoint: 'vertexMain' },
-        fragment: { module, entryPoint: 'maskResampleFragmentMain', targets: [{ format: 'r16float' }] },
+        fragment: { module, entryPoint, targets: [{ format: 'r16float' }] },
         primitive: { topology: 'triangle-list' } });
+      renderer.maskResamplePipeline = make('maskResampleFragmentMain');
+      renderer.maskCropPipeline = make('maskCropFragmentMain');
       renderer.maskResampleDevice = d;
     }
-    return renderer.maskResamplePipeline;
+    return renderer;
   }
+  const pipeline = renderer => pipelines(renderer).maskResamplePipeline;
+  const cropPipeline = renderer => pipelines(renderer).maskCropPipeline;
 
   /** The oriented source rectangle one output rectangle samples, with the
    * kernel's reach, clipped to the frame. A projective image of a rectangle
@@ -70,5 +80,5 @@
       k[6], k[7], divisor, extent.min, extent.max]);
   }
 
-  window.HDRGpuMaskResample = Object.freeze({ pipeline, sourceRect, parameters });
+  window.HDRGpuMaskResample = Object.freeze({ pipeline, cropPipeline, sourceRect, parameters });
 })();

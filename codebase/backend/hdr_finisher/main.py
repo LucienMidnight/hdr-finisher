@@ -40,6 +40,7 @@ from .models import (
     DirectoryPickResponse,
     DesktopPathGrantRequest,
     DesktopPathGrantResponse,
+    GeometryAdjustments,
     DesktopProjectOpenRequest,
     DesktopProjectSaveRequest,
     DesktopSessionOpenRequest,
@@ -1354,6 +1355,58 @@ def webgpu_source_tile(
             "X-Geometry-Signature": geometry_signature or authoritative_signature,
             "X-Edit-Revision": str(session.edit_revision),
             "X-Source-Level-State": source_state or "unknown",
+        },
+    )
+
+
+@app.get("/api/session/{session_id}/source-luminance")
+def webgpu_source_luminance(
+    session_id: str,
+    x: int = Query(default=0, ge=0),
+    y: int = Query(default=0, ge=0),
+    width: int = Query(default=512, ge=1, le=4096),
+    height: int = Query(default=512, ge=1, le=4096),
+    long_edge: int = Query(default=1600, ge=256),
+    rotation: int = Query(default=0),
+    flip_horizontal: bool = Query(default=False),
+    flip_vertical: bool = Query(default=False),
+    source_epoch: int | None = Query(default=None, ge=0),
+) -> Response:
+    """Serve scene luminance for one rectangle of the un-resampled source.
+
+    A mask under straighten or perspective is finished in source space and
+    then warped, as export does it. This is the source-space luminance that
+    needs: quarter turn and flips only, one half-float per pixel, tight rows.
+    """
+    try:
+        session = store.get(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if rotation not in (0, 90, 180, 270):
+        raise HTTPException(status_code=400, detail="Invalid rotation.")
+    geometry = GeometryAdjustments(
+        rotation=rotation, flip_horizontal=flip_horizontal, flip_vertical=flip_vertical
+    )
+    luminance, delivered, size, epoch = session.render_cache.oriented_source_luminance(
+        long_edge, geometry, (x, y, x + width, y + height)
+    )
+    # A stale source must not be answered with luminance from the new one.
+    if source_epoch is not None and int(source_epoch) != int(epoch):
+        raise HTTPException(status_code=409, detail="Stale source epoch luminance request dropped.")
+    limit = float(np.finfo(np.float16).max)
+    body = np.clip(luminance, -limit, limit).astype("<f2").tobytes()
+    return Response(
+        content=body,
+        media_type="application/octet-stream",
+        headers={
+            "X-Tile-X": str(delivered[0]),
+            "X-Tile-Y": str(delivered[1]),
+            "X-Tile-Width": str(delivered[2] - delivered[0]),
+            "X-Tile-Height": str(delivered[3] - delivered[1]),
+            "X-Output-Width": str(size[0]),
+            "X-Output-Height": str(size[1]),
+            "X-Source-Epoch": str(epoch),
+            "X-Pixel-Format": "r16float",
         },
     )
 

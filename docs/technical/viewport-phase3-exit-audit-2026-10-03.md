@@ -8,7 +8,30 @@ narrow unqualified brushes, resampling geometry and timing misses remain
 open. The original tables are retained as the before record, not a claim
 that phase 3 has closed.
 
-## Latest straighten/perspective, wide-frame and Fit continuation
+## Latest source-space mask, Peak and windowed straighten continuation
+
+The [source-space evidence](viewport-phase3-source-space-mask-evidence-2026-10-03.md)
+records four changes validated together. Not committed.
+
+| ID | Status after this slice |
+|---|---|
+| P3-GPU-01 | Combined masks and luminance leaves under straighten/perspective: **implemented** (composed in source space, warped once). Still on the previous route: masks with a gradient-with-luminance or sampled leaf, degenerate combinations, feathered luminance regions above 24 megapixels, P3-FALLBACK-01. |
+| P3-LUMA-RESAMPLE-01 | **Fixed.** 3.15 levels with 943 pixels over two becomes two byte levels on 565 pixels; masks verdict passes. Baseline confirms it predated the previous slice. |
+| P3-PEAK-03 | **Fixed.** Bounded editing Peak under straighten: 627.2 against 628.4 nit (0.19% low; was 3.7%). |
+| P3-MASK-REVIEW-03 | **Accepted by Steve (October 3) as a case-specific exception; the general limit stays two.** Warped luminance masks and combinations reach two byte levels (up to 2.124 as stored) on at most 0.03% of a real region and 0.07% of a reference region. No byte differs by more than two. Outside the brush-only exception. |
+| P3-PERF-01 | First straightened 100% zoom about 3,500 to a median of 827 ms (three sessions); scopes 1,234 ms. Without straighten 636 ms (one session). Goal 300, unmet. Fit first feedback 104–250 ms after Feather (goal 100); the 1.1–1.6 s settlement is the deferred automatic-anchor replacement. Under straighten the anchor is now measured, so settlement there is 1.4–1.6 s where it was instant and wrong. |
+| P3-PERF-02, coverage, endurance | Open. The 0.5 GiB straighten replay (96 operations, no errors) is route coverage only. |
+
+Node passes 413 tests; Python 1,651 with three skips. Phase 3 is not closed.
+
+**Owner decision (Steve, October 3), speed.** The current timings are accepted as they stand against
+their goals: first 100% zoom 636 ms (827 ms straightened) against 300 ms; scopes after first zoom
+about 0.9-1.2 s; first feedback after a Fit Feather step 104-250 ms against 100 ms; Fit exact
+settlement about 1.0-1.6 s (the deferred automatic-anchor replacement). A regression from these
+figures reopens the item. Steve authorized a checkpoint commit (no push), then the coverage audit
+and the 30-minute endurance run.
+
+## Earlier straighten/perspective, wide-frame and Fit continuation
 
 The [resampled-mask evidence](viewport-phase3-resampled-mask-evidence-2026-10-03.md)
 records three changes validated together.

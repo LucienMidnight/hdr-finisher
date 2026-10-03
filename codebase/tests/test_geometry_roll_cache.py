@@ -1,19 +1,12 @@
-"""The straighten route rebuilds the whole rolled frame for every tile.
+"""Resampled source tiles are cut from the source, not from a rebuilt frame.
 
-``apply_geometry_region`` extracts the ``index`` and ``perspective`` stages a
-window at a time, but ``roll`` -- any straighten -- still materializes the
-complete rotated frame and slices it, because Image.rotate(expand=True)'s
-expansion and safe inset are not yet reproducible for a window.
+``apply_geometry_region`` resamples only the window for straighten and
+perspective. What a window cannot know by itself is the range of each whole
+source channel, which the full-frame path clips to. ``range_cache`` holds
+those numbers across the tiles of one source.
 
-That is a known limitation. What made it expensive is that a streamed proxy
-asks for the same frame once per row chunk: a straightened 4K tier is six
-chunks, each paying a full-frame rotation measured at ~1.2 s, serially, before
-anything reaches the viewer. ``roll_cache`` holds one frame across those
-chunks.
-
-These tests pin both halves of that: the cache must not change a single pixel,
-and it must actually prevent the recomputation -- otherwise it is dead weight
-that still holds the memory.
+These tests pin both halves of that: a straightened tile never rebuilds the
+rotated frame, and the held range belongs to exactly one source.
 """
 
 from __future__ import annotations
@@ -32,7 +25,12 @@ from hdr_finisher.finishing import (  # noqa: E402
     apply_geometry_region,
     geometry_resample_stage,
 )
-from hdr_finisher.models import GeometryAdjustments  # noqa: E402
+from hdr_finisher.models import AdjustmentState, GeometryAdjustments, PreviewKind  # noqa: E402
+from hdr_finisher.render_cache import SessionRenderCache  # noqa: E402
+
+# The approved tolerance of the windowed resamples; see test_geometry_region.
+WARP_ATOL = 1e-6
+WARP_RTOL = 1e-6
 
 
 def straightened(**overrides) -> GeometryAdjustments:
@@ -47,19 +45,21 @@ def image() -> np.ndarray:
 
 @pytest.fixture()
 def counted(monkeypatch):
-    """Count the full-frame rotations, which is the cost being avoided.
+    """Count the whole-source scans and the full-frame rotations."""
+    calls = {"ranges": 0, "rotations": 0}
+    original_minimum = np.min
+    original_rotate = finishing._rotate_to_valid_pixels
 
-    ``apply_geometry`` rolls too, so a test that builds a reference frame
-    clears the counter before asserting on the region calls it cares about.
-    """
-    calls = []
-    original = finishing._rotate_to_valid_pixels
+    def counting_minimum(array, *args, **kwargs):
+        calls["ranges"] += 1
+        return original_minimum(array, *args, **kwargs)
 
-    def counting(array, angle):
-        calls.append(angle)
-        return original(array, angle)
+    def counting_rotate(array, angle):
+        calls["rotations"] += 1
+        return original_rotate(array, angle)
 
-    monkeypatch.setattr(finishing, "_rotate_to_valid_pixels", counting)
+    monkeypatch.setattr(finishing.np, "min", counting_minimum)
+    monkeypatch.setattr(finishing, "_rotate_to_valid_pixels", counting_rotate)
     return calls
 
 
@@ -68,108 +68,77 @@ def chunks(height: int, rows: int) -> list[tuple[int, int, int, int]]:
     return [(0, top, 10_000, min(top + rows, height)) for top in range(0, height, rows)]
 
 
-def test_the_straighten_route_is_the_one_that_materializes(image):
-    assert geometry_resample_stage(straightened()) == "roll"
-
-
-def test_cached_strips_are_byte_identical_to_uncached_ones(image, counted):
+def test_strips_match_the_frame_with_and_without_the_cache(image):
     geometry = straightened()
+    assert geometry_resample_stage(geometry) == "roll"
     reference = apply_geometry(image, geometry)
     cache: dict = {}
     for rect in chunks(reference.shape[0], 40):
         plain = apply_geometry_region(image, geometry, rect)
-        cached = apply_geometry_region(image, geometry, rect, roll_cache=cache, roll_cache_key="k")
+        cached = apply_geometry_region(image, geometry, rect, range_cache=cache, range_cache_key="k")
         np.testing.assert_array_equal(cached, plain)
         top, bottom = rect[1], min(rect[3], reference.shape[0])
-        np.testing.assert_array_equal(cached, reference[top:bottom, 0 : reference.shape[1]])
+        np.testing.assert_allclose(cached, reference[top:bottom], atol=WARP_ATOL, rtol=WARP_RTOL)
 
 
-def test_one_rotation_serves_every_strip(image, counted):
-    geometry = straightened()
-    height = apply_geometry(image, geometry).shape[0]
+def test_one_source_scan_serves_every_strip(image, counted):
+    channels = image.shape[2]
+    for geometry in (straightened(), GeometryAdjustments(perspective_vertical=12.0)):
+        height = apply_geometry(image, geometry).shape[0]
+        strips = chunks(height, 40)
+        assert len(strips) > 1, "the point of the cache is more than one strip"
+        cache: dict = {}
+        counted["ranges"] = counted["rotations"] = 0
+        for rect in strips:
+            apply_geometry_region(image, geometry, rect, range_cache=cache, range_cache_key="k")
+        assert counted["ranges"] == channels
+        assert counted["rotations"] == 0, "a tile must not rebuild the rotated frame"
+        counted["ranges"] = 0
+        for rect in strips:
+            apply_geometry_region(image, geometry, rect)
+        assert counted["ranges"] == channels * len(strips)
+
+
+def test_the_cache_holds_one_source_and_survives_geometry_changes(image, counted):
     cache: dict = {}
-    strips = chunks(height, 40)
-    assert len(strips) > 1, "the point of the cache is more than one strip"
-    counted.clear()
-    for rect in strips:
-        apply_geometry_region(image, geometry, rect, roll_cache=cache, roll_cache_key="k")
-    assert len(counted) == 1
-
-
-def test_without_a_cache_every_strip_pays_again(image, counted):
-    geometry = straightened()
-    height = apply_geometry(image, geometry).shape[0]
-    strips = chunks(height, 40)
-    counted.clear()
-    for rect in strips:
-        apply_geometry_region(image, geometry, rect)
-    assert len(counted) == len(strips)
-
-
-def test_a_crop_drag_reuses_the_frame(image, counted):
-    # The crop is applied by slicing the rolled frame, so it is deliberately
-    # not part of the key: dragging a crop rectangle over a straightened image
-    # must not rebuild anything.
-    cache: dict = {}
-    for width in (1.0, 0.9, 0.8, 0.7):
-        geometry = straightened(crop={"x": 0.0, "y": 0.0, "width": width, "height": width})
-        apply_geometry_region(image, geometry, None, roll_cache=cache, roll_cache_key="k")
-    assert len(counted) == 1
-
-
-def test_a_different_angle_rebuilds_and_is_correct(image, counted):
-    cache: dict = {}
-    rebuilds = 0
-    for angle in (-1.8, 2.5):
-        geometry = GeometryAdjustments(straighten_angle=angle)
-        counted.clear()
-        result = apply_geometry_region(image, geometry, None, roll_cache=cache, roll_cache_key=("k", angle))
-        rebuilds += len(counted)
-        np.testing.assert_array_equal(result, apply_geometry(image, geometry))
-    assert rebuilds == 2
-    assert len(cache) == 1, "the cache holds one frame, it does not accumulate them"
+    scans = 0
+    for angle, width in ((-1.8, 1.0), (2.5, 0.9), (-1.8, 0.7)):
+        geometry = GeometryAdjustments(straighten_angle=angle, crop={"x": 0.0, "y": 0.0, "width": width, "height": width})
+        counted["ranges"] = 0
+        result = apply_geometry_region(image, geometry, None, range_cache=cache, range_cache_key="k")
+        scans += counted["ranges"]
+        np.testing.assert_allclose(result, apply_geometry(image, geometry), atol=WARP_ATOL, rtol=WARP_RTOL)
+    assert scans == image.shape[2], "the range belongs to the source, not to its geometry"
+    assert len(cache) == 1
 
 
 def test_a_key_collision_between_two_bases_is_refused(image, counted):
     # Two different source arrays can legitimately produce the same key -- an
     # SDR-matched base and an authored SDR reference are both "linear-srgb" at
-    # the same epoch and geometry. Serving one frame's pixels for the other
-    # would be silent corruption, so the entry is accepted on identity.
-    other = image[:, ::-1].copy()
+    # the same epoch. Clipping one to the other's range would be silent
+    # corruption, so the entry is accepted on identity.
+    other = (image[:, ::-1] * np.float32(0.5)).copy()
     geometry = straightened()
     cache: dict = {}
-    counted.clear()
-    first = apply_geometry_region(image, geometry, None, roll_cache=cache, roll_cache_key="same")
-    second = apply_geometry_region(other, geometry, None, roll_cache=cache, roll_cache_key="same")
-    rebuilds = len(counted)
-    np.testing.assert_array_equal(first, apply_geometry(image, geometry))
-    np.testing.assert_array_equal(second, apply_geometry(other, geometry))
-    # Neither call may reuse the other's frame, so both pay.
-    assert rebuilds == 2
+    counted["ranges"] = 0
+    first = apply_geometry_region(image, geometry, None, range_cache=cache, range_cache_key="same")
+    second = apply_geometry_region(other, geometry, None, range_cache=cache, range_cache_key="same")
+    scans = counted["ranges"]
+    np.testing.assert_allclose(first, apply_geometry(image, geometry), atol=WARP_ATOL, rtol=WARP_RTOL)
+    np.testing.assert_allclose(second, apply_geometry(other, geometry), atol=WARP_ATOL, rtol=WARP_RTOL)
+    # Neither call may reuse the other's range, so both scan.
+    assert scans == 2 * image.shape[2]
 
 
-def test_the_index_and_perspective_routes_ignore_the_cache(image, counted):
+def test_the_index_route_ignores_the_cache(image, counted):
     cache: dict = {}
-    for geometry in (
-        GeometryAdjustments(rotation=90),
-        GeometryAdjustments(perspective_horizontal=0.2),
-    ):
-        reference = apply_geometry(image, geometry)
-        counted.clear()
-        result = apply_geometry_region(image, geometry, None, roll_cache=cache, roll_cache_key="k")
-        np.testing.assert_allclose(result, reference, atol=1e-6, rtol=1e-6)
-        assert counted == []
+    geometry = GeometryAdjustments(rotation=90)
+    result = apply_geometry_region(image, geometry, None, range_cache=cache, range_cache_key="k")
+    np.testing.assert_array_equal(result, apply_geometry(image, geometry))
     assert cache == {}
 
 
 # --- the route that actually pays for this ---------------------------------
-#
-# The unit tests above pin the mechanism. This one pins that the caller wired
-# it up: the streamed source-tile route is what asks for the same rolled frame
-# once per row chunk, and it is the only reason the cache exists.
-
-from hdr_finisher.models import AdjustmentState, PreviewKind  # noqa: E402
-from hdr_finisher.render_cache import SessionRenderCache  # noqa: E402
 
 
 def straightened_state() -> AdjustmentState:
@@ -178,11 +147,12 @@ def straightened_state() -> AdjustmentState:
     return adjustments
 
 
-def test_streamed_row_chunks_roll_the_frame_once(image, counted):
+def test_streamed_row_chunks_never_roll_the_frame(image, counted):
     cache = SessionRenderCache(image, None)
     adjustments = straightened_state()
     edge = max(image.shape[:2])
 
+    counted["ranges"] = counted["rotations"] = 0
     _first, _space, _signature, placement = cache.geometry_source_tile(
         PreviewKind.HDR, edge, adjustments, None, (0, 0, 10_000, 40)
     )
@@ -191,26 +161,40 @@ def test_streamed_row_chunks_roll_the_frame_once(image, counted):
     strips = list(range(0, height, 40))
     assert len(strips) > 1
 
-    counted.clear()
     collected = []
     for top in strips:
         tile, _space, _signature, _placement = cache.geometry_source_tile(
             PreviewKind.HDR, edge, adjustments, None, (0, top, 10_000, top + 40)
         )
         collected.append(tile)
-    assert len(counted) == 0, "the frame rolled for the first chunk still serves the rest"
+    assert counted["rotations"] == 0
+    assert counted["ranges"] == image.shape[2], "the range measured for the first chunk serves the rest"
 
-    # And the strips still assemble into exactly the full-frame result.
+    # And the strips still assemble into the full-frame result.
     reference = apply_geometry(cache.source_proxy(PreviewKind.HDR, edge)[0], adjustments.shared.geometry)
-    np.testing.assert_array_equal(np.concatenate(collected, axis=0), reference)
+    np.testing.assert_allclose(np.concatenate(collected, axis=0), reference, atol=WARP_ATOL, rtol=WARP_RTOL)
 
 
-def test_a_new_source_drops_the_held_frame(image, counted):
+def test_a_new_source_drops_the_held_range(image):
     cache = SessionRenderCache(image, None)
     adjustments = straightened_state()
     edge = max(image.shape[:2])
     cache.geometry_source_tile(PreviewKind.HDR, edge, adjustments, None, (0, 0, 10_000, 40))
-    assert cache._roll_frame
+    assert cache._source_ranges
 
     cache.replace_source(image[:, ::-1].copy(), None)
-    assert not cache._roll_frame, "a frame rolled from the old source must not outlive it"
+    assert not cache._source_ranges, "a range measured on the old source must not outlive it"
+
+
+def test_oriented_luminance_is_the_source_the_mask_qualifies(image):
+    from hdr_finisher.local_adjustments import ACESCG_LUMA
+
+    cache = SessionRenderCache(image, None)
+    edge = max(image.shape[:2])
+    geometry = GeometryAdjustments(rotation=90, flip_horizontal=True)
+    luminance, delivered, size, _epoch = cache.oriented_source_luminance(edge, geometry, (5, 7, 60, 10_000))
+    oriented = np.flip(np.rot90(image, k=-1), axis=1)
+    assert size == (oriented.shape[1], oriented.shape[0])
+    assert delivered == (5, 7, 60, oriented.shape[0])
+    expected = np.einsum("...c,c->...", oriented[7:, 5:60, :3], ACESCG_LUMA, optimize=True)
+    np.testing.assert_array_equal(luminance, expected)

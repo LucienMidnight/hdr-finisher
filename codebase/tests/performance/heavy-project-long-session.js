@@ -25,7 +25,7 @@ async function main(){
  report.displayContext=JSON.parse(process.env.HDR_FINISHER_REVIEW_DISPLAY_CONTEXT||'null');
  report.actualViewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight,devicePixelRatio}));
  const requests=c.networkProbe(page); const memory=c.sampler(); page.on('pageerror',e=>report.errors.push(String(e)));
- async function checkpoint(label){ report.checkpoints.push({label,at:Date.now(),state:await page.evaluate(()=>{const g=HDRFinisherPerformance.gpuSnapshot();return {nativeShiftCoverage:window.__nativeShiftCoverage||null,nativeAnchors:{cached:state.gpuPreview?.peakReductionCache?.size,pending:pendingHighlightAnchors.size,inflight:exactHighlightAnchorInflight.size,backgroundMasks:state.gpuPreview?.backgroundMaskRequestCoordinator?.snapshot()},readiness:{gpuDraftInFlight:Boolean(state.gpuDraftInFlight),generation:state.previewGeneration[state.currentView],requiredEdge:requiredProcessingLongEdge(),scopeUpdating:document.querySelector("#scope-freshness")?.classList.contains("updating"),scopeText:document.querySelector("#scope-freshness")?.textContent,gpuScopeInFlight:Boolean(state.gpuScopeRequestInFlight),cpuScopeInFlight:Boolean(state.scopeRequestInFlight),scopeGeneration:state.scopeGeneration},lane:state.currentView,viewer:viewerState(),accepted:state.acceptedPresentation,refusal:state.lastGpuDraftRefusal,gpu:{available:g.available,resources:g.resources,renders:g.renders?.slice(-2)},scheduler:HDRFinisherPerformance.snapshot(),failurePolicy:state.gpuFailurePolicy?.snapshot?.()};})}); report.memorySamples=memory.rows;report.samplerErrors=memory.errors;c.write(output,report); }
+ async function checkpoint(label){ report.checkpoints.push({label,at:Date.now(),state:await page.evaluate(()=>{const g=HDRFinisherPerformance.gpuSnapshot();return {nativeShiftCoverage:window.__nativeShiftCoverage||null,resampledCoverage:window.__resampledCoverage?structuredClone(window.__resampledCoverage):null,orientedLuminanceTiles:state.gpuPreview?.orientedLuminance?.size??null,nativeAnchors:{cached:state.gpuPreview?.peakReductionCache?.size,pending:pendingHighlightAnchors.size,inflight:exactHighlightAnchorInflight.size,backgroundMasks:state.gpuPreview?.backgroundMaskRequestCoordinator?.snapshot()},readiness:{gpuDraftInFlight:Boolean(state.gpuDraftInFlight),generation:state.previewGeneration[state.currentView],requiredEdge:requiredProcessingLongEdge(),scopeUpdating:document.querySelector("#scope-freshness")?.classList.contains("updating"),scopeText:document.querySelector("#scope-freshness")?.textContent,gpuScopeInFlight:Boolean(state.gpuScopeRequestInFlight),cpuScopeInFlight:Boolean(state.scopeRequestInFlight),scopeGeneration:state.scopeGeneration},lane:state.currentView,viewer:viewerState(),accepted:state.acceptedPresentation,refusal:state.lastGpuDraftRefusal,gpu:{available:g.available,resources:g.resources,renders:g.renders?.slice(-2)},scheduler:HDRFinisherPerformance.snapshot(),failurePolicy:state.gpuFailurePolicy?.snapshot?.()};})}); report.memorySamples=memory.rows;report.samplerErrors=memory.errors;c.write(output,report); }
  async function operation(name,action){ const start=Date.now(),n=requests.length,b=await c.mark(page); const detail=await action(); await c.stable(page,180000); const end=Date.now();report.operations.push({name,startedAt:start,totalMs:end-start,drag:detail?.trustedPointers?detail:undefined,input:detail?.sequence?detail:undefined,observation:await c.result(page,b,b.at),requests:requests.slice(n)});c.write(output,report); }
  try{
   await c.open(page,project,false);
@@ -42,6 +42,21 @@ async function main(){
       return result;
     };
   });
+  // --geometry straighten_angle=2 replays the session under resampling
+  // geometry, where every mask is finished in source space and warped.
+  report.geometryEdits=opt('--geometry','').split(',').filter(Boolean).map(entry=>entry.split('='));
+  if(report.geometryEdits.length){
+    await page.evaluate(edits=>{
+      window.__resampledCoverage={masks:0,kinds:{}};
+      const renderer=state.gpuPreview,load=renderer.loadGpuResampledMask;
+      renderer.loadGpuResampledMask=async function(...values){
+        const entry=await load.apply(this,values);
+        if(entry){__resampledCoverage.masks++;__resampledCoverage.kinds[entry.kind]=(__resampledCoverage.kinds[entry.kind]||0)+1;}
+        return entry;};
+      for(const [key,value] of edits)commitAdjustmentValue(`shared.geometry.${key}`,Number(value),{manual:true});
+    },report.geometryEdits);
+    await c.stable(page,180000);
+  }
   await checkpoint('opened');
   if(budgetGb!==null){
    report.disposableBudgetGb=budgetGb;
@@ -96,7 +111,9 @@ async function main(){
   report.activeEndedAt=Date.now();await checkpoint('active complete');
   for(let i=0;i<idleMinutes*6;i++){await page.waitForTimeout(10000);await checkpoint(`idle ${(i+1)*10}s`);}
   const final=report.checkpoints.at(-1)?.state;
-  if(nativeShift&&!final?.nativeShiftCoverage?.successfulBatches)throw Error('Shift replay did not exercise the native GPU route');
+  // Under resampling geometry the same masks are warped from source space.
+  if(report.geometryEdits.length&&!final?.resampledCoverage?.masks)throw Error('Geometry replay did not exercise the resampled GPU route');
+  if(nativeShift&&!report.geometryEdits.length&&!final?.nativeShiftCoverage?.successfulBatches)throw Error('Shift replay did not exercise the native GPU route');
   if(shiftFeather&&!final.nativeShiftCoverage.fields)throw Error('Feathered Shift replay did not build a native feather field');
   if(report.errors.length)throw Error(`Page errors: ${report.errors.join('; ')}`);
   if(!final?.gpu?.available||final.viewer?.status!=='ready'

@@ -23,9 +23,128 @@ test('only straighten and perspective leaves get a resampling plan',()=>{
  assert.ok(plan({operator:'leaf',leaf:{type:'path',nodes:[{x:.1,y:.1},{x:.9,y:.2},{x:.5,y:.8}]}}));
  assert.ok(plan(f.brush(),JSON.stringify({perspective_vertical:15})));
  assert.equal(plan(f.brush(),'{}'),null);assert.equal(plan(f.brush(),JSON.stringify({rotation:90,flip_horizontal:true})),null);
- assert.equal(plan({operator:'leaf',leaf:{type:'luminance_range'}}),null);
- assert.equal(plan({operator:'union',children:[f.brush(),f.brush()]}),null);
  assert.equal(f.renderer.resamplePlan('other',f.brush(),4000,f.straighten),null);
+});
+test('luminance leaves and whole combinations get the same plan; one unsupported leaf refuses the mask',()=>{
+ const f=fixture(),plan=mask=>f.renderer.resamplePlan('session',mask,4000,f.straighten);
+ const luma={operator:'leaf',leaf:{type:'luminance_range',mask_feather:.01}};
+ const gradient=leaf=>({operator:'leaf',leaf:{type:'linear_gradient',start:{x:.1,y:.2},end:{x:.8,y:.9},gradient_midpoint_1:.3,gradient_midpoint_2:.7,...leaf}});
+ assert.ok(plan(luma));assert.equal(plan({...luma,enabled:false}),null);
+ assert.ok(plan({operator:'union',children:[f.brush({mask_feather:.02}),luma]}));
+ assert.ok(plan({operator:'subtract',inverted:true,children:[{operator:'intersect',children:[luma,gradient()]},f.brush(),{...luma,enabled:false}]}));
+ assert.equal(plan({operator:'union',children:[luma,gradient({gradient_luma_enabled:true})]}),null);
+ assert.equal(plan({operator:'union',children:[luma,{operator:'leaf',leaf:{type:'sampled'}}]}),null);
+ assert.equal(plan({operator:'union',children:[luma]}),null,'a degenerate graph keeps the established path');
+ assert.equal(plan({operator:'union',children:[luma,{...luma,enabled:false}]}),null);
+ assert.equal(plan({operator:'union',enabled:false,children:[luma,f.brush()]}),null);
+ assert.equal(plan({operator:'union',children:[luma,{operator:'intersect',children:[f.brush()]}]}),null);
+});
+function gpuStub(f){
+ const passes=[],made=[];
+ const texture=(width,height)=>{const t={width,height,destroyed:false,destroy(){this.destroyed=true;}};made.push(t);return t;};
+ Object.assign(f.renderer,{createMaskTexture:texture,createStorageBuffer:values=>({values,destroy(){}}),
+  createMaskBindGroup:(...v)=>v,encodeMaskPass:(_e,pipeline,group,target)=>passes.push({pipeline,group,target}),
+  maskPipelines:{combine:'combine',qualify:'qualify'},destroyAfterActiveRenders:callback=>callback(),performanceMetrics:{}});
+ f.context.GPUTextureUsage={COPY_SRC:1,COPY_DST:2,TEXTURE_BINDING:4,RENDER_ATTACHMENT:16};
+ f.renderer.device={limits:{maxTextureDimension2D:8192},createShaderModule:()=>({}),createRenderPipeline:({fragment})=>fragment.entryPoint,createCommandEncoder:()=>({finish(){},copyTextureToTexture(...v){passes.push({copy:v});}}),
+  createTexture:({size})=>texture(size[0],size[1]),queue:{writeBuffer(){},writeTexture(){},submit(){}}};
+ return {passes,made,texture};
+}
+test('a combination is composed in source space in export order, one operand at a time',async()=>{
+ const f=fixture(),gpu=gpuStub(f),order=[];
+ const luma=(name,opacity=1)=>({operator:'leaf',leaf:{type:'luminance_range',mask_opacity:opacity,name}});
+ f.renderer.gpuOrientedLumaRegion=async(_s,expression)=>{order.push(expression.leaf.name);return{texture:gpu.texture(8,8)};};
+ const frame={width:4000,height:2667,geometrySignature:'{}'},rect={x:10,y:20,width:800,height:600};
+ const graph={operator:'subtract',inverted:true,children:[luma('a',.7),{operator:'intersect',children:[luma('b',.5),luma('c')]},{...luma('skipped'),enabled:false},luma('d',.25)]};
+ const result=await f.renderer.gpuOrientedMaskRegion('session',graph,4000,frame,rect,()=>true);
+ assert.deepEqual(order,['a','b','c','d']);
+ const values=gpu.passes.map(pass=>Array.from(pass.group[1].values).map(v=>Math.round(v*100)/100));
+ // intersect(b,c); then a minus that; then minus d, inverted on the last operand.
+ assert.deepEqual(values,[[1,.5,1,0],[2,.7,1,0],[2,1,.25,1]]);
+ assert.equal(result.texture,gpu.passes.at(-1).target);assert.equal(result.texture.destroyed,false);
+ assert.equal(result.width,800);assert.equal(result.height,600);
+ assert.ok(gpu.made.filter(t=>t!==result.texture).every(t=>t.destroyed),'operands and intermediates are released');
+ f.renderer.gpuOrientedLumaRegion=async(_s,expression)=>expression.leaf.name==='c'?null:{texture:gpu.texture(8,8)};
+ gpu.made.length=0;
+ assert.equal(await f.renderer.gpuOrientedMaskRegion('session',graph,4000,frame,rect,()=>true),null);
+ assert.ok(gpu.made.every(t=>t.destroyed),'a refused operand releases the ones before it');
+});
+test('a source-space luminance leaf builds its whole feather reach on the frame grid',async()=>{
+ const f=fixture(),gpu=gpuStub(f),regions=[],refined=[];
+ f.renderer.orientedLuminanceRegion=async(_s,_e,_f,region)=>{regions.push(region);return gpu.texture(region.width,region.height);};
+ f.renderer.refineLumaMask=(entry,plan,inverted,edge)=>{refined.push({plan,inverted,edge});entry.refinedTexture=gpu.texture(entry.width,entry.height);entry.texture=entry.refinedTexture;};
+ const frame={width:4000,height:2667,geometrySignature:'{}'},rect={x:1500,y:900,width:640,height:480};
+ const leaf=(feather,inverted=false)=>({operator:'leaf',inverted,leaf:{type:'luminance_range',mask_feather:feather,fade_in_start_ev:-6,full_start_ev:-3,full_end_ev:2,fade_out_end_ev:5}});
+ let result=await f.renderer.gpuOrientedMaskRegion('session',leaf(.01),4000,frame,rect,()=>true);
+ const region=regions[0],{plan}=refined[0],grid=plan.factor;
+ assert.equal(plan.sigma,.09*.2*4000);assert.ok(grid>1);
+ assert.equal(region.x%grid,0);assert.equal(region.y%grid,0);
+ assert.ok(region.x<=rect.x-4*plan.sigma&&region.y<=rect.y-4*plan.sigma);
+ assert.ok(region.x+region.width>=rect.x+rect.width+4*plan.sigma&&region.y+region.height>=rect.y+rect.height+4*plan.sigma);
+ assert.equal(refined[0].edge,true,'a bounded interior region still takes the exact boxes');
+ const crop=gpu.passes.at(-1);assert.deepEqual(Array.from(crop.group[1].values).slice(0,2),[rect.x-region.x,rect.y-region.y]);
+ assert.equal(result.texture,crop.target);assert.equal(result.width,640);
+ assert.ok(gpu.made.filter(t=>t!==result.texture).every(t=>t.destroyed),'luminance and scratch are released');
+ // Unfeathered: exactly the rectangle, no refinement, no crop.
+ regions.length=refined.length=gpu.passes.length=0;
+ result=await f.renderer.gpuOrientedMaskRegion('session',leaf(0),4000,frame,rect,()=>true);
+ assert.deepEqual({...regions[0]},rect);assert.equal(refined.length,0);assert.equal(gpu.passes.length,1);
+ assert.equal(result.texture,gpu.passes[0].target);assert.equal(result.texture.destroyed,false);
+ result=await f.renderer.gpuOrientedMaskRegion('session',leaf(0,true),4000,frame,rect,()=>true);
+ assert.equal(refined[0].inverted,true);assert.equal(result.texture.destroyed,false);
+ // A region at the frame corner is clipped and says so.
+ regions.length=refined.length=0;
+ await f.renderer.gpuOrientedMaskRegion('session',leaf(.01),4000,frame,{x:0,y:0,width:640,height:480},()=>true);
+ assert.equal(regions[0].x,0);assert.equal(regions[0].y,0);assert.equal(refined[0].edge,true);
+ // A reach no bounded region can hold is refused rather than truncated.
+ const huge={width:9000,height:6000,geometrySignature:'{}'};regions.length=0;
+ assert.equal(await f.renderer.gpuOrientedMaskRegion('session',leaf(.05),9000,huge,{x:3000,y:2000,width:2048,height:2048},()=>true),null);
+ assert.equal(regions.length,0);
+ f.renderer.orientedLuminanceRegion=async()=>null;
+ assert.equal(await f.renderer.gpuOrientedMaskRegion('session',leaf(.01),4000,frame,rect,()=>true),null);
+});
+test('un-resampled luminance is fetched once per tile and assembled per rectangle',async()=>{
+ const f=fixture(),gpu=gpuStub(f),fetched=[];
+ f.renderer.resourceGeneration=0;f.renderer.sourceAbortSignal=()=>undefined;
+ f.renderer.fetchOrientedLuminance=async(_s,_e,frame,rect)=>{fetched.push(`${rect.x},${rect.y},${rect.width},${rect.height}`);
+  return{data:new ArrayBuffer(8),width:rect.width,height:rect.height,frameWidth:frame.width,frameHeight:frame.height};};
+ const frame={width:5000,height:3000,geometrySignature:'{"rotation":90}'},rect={x:2000,y:1000,width:2200,height:1100};
+ const [a,b]=await Promise.all([f.renderer.orientedLuminanceRegion('session',5000,frame,rect,()=>true),
+  f.renderer.orientedLuminanceRegion('session',5000,frame,rect,()=>true)]);
+ assert.ok(a&&b&&a!==b);
+ assert.deepEqual(fetched.sort(),['0,0,2048,2048','0,2048,2048,952','2048,0,2048,2048','2048,2048,2048,952','4096,0,904,2048','4096,2048,904,952']);
+ const copies=gpu.passes.filter(pass=>pass.copy).slice(0,6).map(pass=>pass.copy);
+ assert.deepEqual(copies.map(([from,to,size])=>[...from.origin,...to.origin,...size].join()).sort(),
+  ['2000,1000,0,0,48,1048','0,1000,48,0,2048,1048','0,1000,2096,0,104,1048','2000,0,0,1048,48,52','0,0,48,1048,2048,52','0,0,2096,1048,104,52'].sort());
+ fetched.length=0;
+ await f.renderer.orientedLuminanceRegion('session',5000,frame,{x:10,y:10,width:100,height:100},()=>true);
+ assert.deepEqual(fetched,[],'resident tiles are not fetched again');
+ assert.equal(await f.renderer.orientedLuminanceRegion('session',5000,frame,rect,()=>false),null);
+ // A frame the backend sizes differently is refused, not stretched.
+ f.renderer.fetchOrientedLuminance=async(_s,_e,_f,rect)=>({data:new ArrayBuffer(8),width:rect.width,height:rect.height,frameWidth:5001,frameHeight:3000});
+ assert.equal(await f.renderer.orientedLuminanceRegion('other',5000,frame,rect,()=>true),null);
+ f.renderer.fetchOrientedLuminance=async()=>{throw Error('offline');};
+ assert.equal(await f.renderer.orientedLuminanceRegion('third',5000,frame,rect,()=>true),null);
+});
+test('a straightened combination is warped whole for Fit and tiles, and prepared while the zoom source is in transit',async()=>{
+ const f=fixture(),luma={operator:'leaf',leaf:{type:'luminance_range',mask_feather:.01}};
+ const mask={operator:'intersect',children:[f.brush({mask_feather:.02}),luma]},local={id:'a',mask};
+ f.renderer.loadGpuMaskGraph=async()=>{throw Error('unexpected per-leaf composition');};
+ const entry=await f.renderer.loadLocalMask('session',local,1600,1,f.straighten,()=>true,undefined,true);
+ assert.equal(entry.kind,'gpu-resampled-brush');assert.equal(f.made[0][1],mask);
+ const recipe=f.renderer.resamplePlan('session',mask,4000,f.straighten);
+ const result=await f.renderer.loadGpuResampledRegion('session',{local,localIndex:0,tiles:[{key:'t'}]},4000,f.straighten,()=>true,undefined,
+  {width:recipe.width,height:recipe.height,region:{x:800,y:600,width:1000,height:700}});
+ assert.ok(result.entries.get('t'));assert.equal(f.made[1][1],mask);
+ const extents=[];
+ f.renderer.gpuMaskExtent=async(_s,expression)=>{extents.push(expression);return{min:0,max:255};};
+ f.renderer.resourceGeneration=0;f.renderer.renderSerials=new Map([['canvas',3]]);f.renderer.sourceAbortSignal=()=>undefined;
+ f.renderer.softLeafMask=async()=>{throw Error('unexpected bitmap');};
+ f.renderer.prefetchZoomMasks('canvas','session',[local,{id:'b',mask:luma}],1,f.straighten,{viewport:{}},3,4000);
+ assert.deepEqual(extents,[mask,luma]);
+ // Without resampling geometry the established graph route is untouched.
+ let graphs=0;f.renderer.loadGpuMaskGraph=async()=>{graphs++;return{kind:'gpu-mask-graph'};};
+ assert.equal((await f.renderer.loadLocalMask('session',local,1600,1,'{}',()=>true,undefined,true)).kind,'gpu-mask-graph');assert.equal(graphs,1);
 });
 test('the source rectangle carries the bicubic reach and the shader terms reproduce the plan',()=>{
  const f=fixture(),recipe=f.renderer.resamplePlan('session',f.brush(),4000,JSON.stringify({perspective_horizontal:12,perspective_vertical:-9,straighten_angle:3}));

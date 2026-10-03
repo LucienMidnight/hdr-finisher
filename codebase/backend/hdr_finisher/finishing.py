@@ -86,9 +86,8 @@ def geometry_resample_stage(geometry: GeometryAdjustments) -> str:
     """Name the resampling stage a region extraction has to cross.
 
     ``index`` needs no resampling at all, so a region is pure slicing.
-    ``perspective`` is a projective map that can be evaluated for one window.
-    ``roll`` goes through ``Image.rotate(expand=True)``, whose expansion and
-    safe-inset geometry this module does not yet reproduce for a window.
+    ``perspective`` is a projective map and ``roll`` an affine one; both are
+    evaluated for one window.
     """
     if geometry.perspective_horizontal or geometry.perspective_vertical:
         return "perspective"
@@ -101,8 +100,8 @@ def apply_geometry_region(
     image: np.ndarray,
     geometry: GeometryAdjustments,
     rect: tuple[int, int, int, int] | None = None,
-    roll_cache: dict | None = None,
-    roll_cache_key: object | None = None,
+    range_cache: dict | None = None,
+    range_cache_key: object | None = None,
 ) -> np.ndarray:
     """Extract one post-geometry output rectangle.
 
@@ -112,19 +111,14 @@ def apply_geometry_region(
     which ``tests/test_geometry_region.py`` asserts directly.
 
     PRD 5.4: the backend must extract a post-geometry output region without
-    first constructing the complete transformed frame. The ``index`` and
-    ``perspective`` stages meet that; ``roll`` still materializes and is
-    recorded as a known limitation.
+    first constructing the complete transformed frame. Every stage meets that:
+    ``roll`` and ``perspective`` resample only the window, from only the source
+    pixels the window samples.
 
-    ``roll_cache`` softens that limitation for the caller that feels it most.
-    A streamed proxy asks for the same rolled frame once per row chunk, so a
-    straightened 4K tier rebuilt it six times over -- measured at 1.2 s each,
-    serially, before a single pixel reached the viewer. The cache holds exactly
-    one frame: the entry is replaced, not accumulated, because the frame is as
-    large as the proxy itself. ``roll_cache_key`` must identify everything the
-    rolled frame depends on -- the source it came from and the total roll --
-    but deliberately not the crop, which is applied by slicing afterwards, so
-    dragging a crop rectangle over a straightened image reuses it.
+    The full-frame path clips each resampled channel to the range of the whole
+    source channel, so a window needs those two numbers per channel.
+    ``range_cache`` holds them for one source across requests; without it every
+    tile scans the whole source again. ``range_cache_key`` names the source.
     """
     oriented = _oriented_view(image, geometry)
     stage = geometry_resample_stage(geometry)
@@ -139,35 +133,176 @@ def apply_geometry_region(
         )
 
     if stage == "roll":
-        # Image.rotate(expand=True) owns its own expansion and inset geometry.
-        # Reproducing it for a window is deferred, so this path still builds the
-        # rotated frame and slices it. Parity is exact; memory is not bounded.
-        cacheable = roll_cache is not None and roll_cache_key is not None
-        cached = roll_cache.get(roll_cache_key) if cacheable else None
-        # The entry holds the array it was rolled from and is accepted only on
-        # identity. A key describes the geometry, but two different bases can
-        # share one -- an SDR-matched base and an authored SDR reference are
-        # both "linear-srgb" at the same epoch -- and serving one frame's
-        # pixels for the other would be silent corruption. Holding the base
-        # also keeps it alive, so `is` can never meet a recycled object.
-        rotated = cached[1] if cached is not None and cached[0] is image else None
-        if rotated is None:
+        height, width = oriented.shape[:2]
+        roll = _roll_stage(width, height, total_roll)
+        if roll is None:
+            # A roll of exactly a quarter turn takes Pillow's transpose path,
+            # which has no window form. It is not reachable from one control.
             rotated = _rotate_to_valid_pixels(np.ascontiguousarray(oriented, dtype=np.float32), total_roll)
-            if cacheable:
-                # Single entry: drop the previous frame before holding a new
-                # one, so this never costs more than the one rotation already
-                # in flight.
-                roll_cache.clear()
-                rotated.setflags(write=False)
-                roll_cache[roll_cache_key] = (image, rotated)
-        left, top, right, bottom = _crop_bounds(rotated.shape[1], rotated.shape[0], geometry)
+            left, top, right, bottom = _crop_bounds(rotated.shape[1], rotated.shape[0], geometry)
+            window = _clamp_rect(rect, right - left, bottom - top)
+            return np.ascontiguousarray(
+                rotated[top + window[1] : top + window[3], left + window[0] : left + window[2]],
+                dtype=np.float32,
+            )
+        matrix, safe_left, safe_top, safe_width, safe_height = roll
+        left, top, right, bottom = _crop_bounds(safe_width, safe_height, geometry)
         window = _clamp_rect(rect, right - left, bottom - top)
-        return np.ascontiguousarray(
-            rotated[top + window[1] : top + window[3], left + window[0] : left + window[2]],
-            dtype=np.float32,
+        offset_x = safe_left + left + window[0]
+        offset_y = safe_top + top + window[1]
+        a, b, c, d, e, f = matrix
+        coefficients = (a, b, a * offset_x + b * offset_y + c, d, e, d * offset_x + e * offset_y + f, 0.0, 0.0)
+        return _resample_window(
+            oriented,
+            coefficients,
+            (window[2] - window[0], window[3] - window[1]),
+            _channel_ranges(image, range_cache, range_cache_key),
+            projective=False,
         )
 
-    return _warp_perspective_region(oriented, geometry, total_roll, rect)
+    return _warp_perspective_region(
+        oriented, geometry, total_roll, rect, _channel_ranges(image, range_cache, range_cache_key)
+    )
+
+
+def _channel_ranges(
+    image: np.ndarray,
+    cache: dict | None = None,
+    key: object | None = None,
+) -> tuple[tuple[float, float], ...]:
+    """Each channel's minimum and maximum over the whole source.
+
+    The entry holds the array it was measured on and is accepted only on
+    identity. A key describes the request, but two different bases can share
+    one -- an SDR-matched base and an authored SDR reference are both
+    "linear-srgb" at the same epoch -- and clipping one to the other's range
+    would be silent corruption. Holding the base also keeps it alive, so `is`
+    can never meet a recycled object. Single entry: it is replaced, not
+    accumulated.
+    """
+    cacheable = cache is not None and key is not None
+    cached = cache.get(key) if cacheable else None
+    if cached is not None and cached[0] is image:
+        return cached[1]
+    ranges = tuple(
+        (float(np.min(image[..., index])), float(np.max(image[..., index])))
+        for index in range(image.shape[2])
+    )
+    if cacheable:
+        cache.clear()
+        cache[key] = (image, ranges)
+    return ranges
+
+
+def _roll_stage(
+    width: int, height: int, angle_degrees: float
+) -> tuple[tuple[float, ...], int, int, int, int] | None:
+    """``Image.rotate(expand=True)`` and the safe inset, as arithmetic.
+
+    Returns Pillow's output-pixel to input-pixel affine for the expanded
+    frame, and the inset rectangle ``_rotate_to_valid_pixels`` keeps of it as
+    ``(left, top, width, height)``. ``None`` for a multiple of a quarter turn,
+    which Pillow transposes instead of resampling.
+    """
+    angle = angle_degrees % 360.0
+    if angle in (0.0, 90.0, 180.0, 270.0):
+        return None
+    radians = -math.radians(angle)
+    matrix = [
+        round(math.cos(radians), 15), round(math.sin(radians), 15), 0.0,
+        round(-math.sin(radians), 15), round(math.cos(radians), 15), 0.0,
+    ]
+
+    def transform(x: float, y: float) -> tuple[float, float]:
+        a, b, c, d, e, f = matrix
+        return a * x + b * y + c, d * x + e * y + f
+
+    center_x, center_y = width / 2.0, height / 2.0
+    matrix[2], matrix[5] = transform(-center_x, -center_y)
+    matrix[2] += center_x
+    matrix[5] += center_y
+    corners = [transform(x, y) for x, y in ((0, 0), (width, 0), (width, height), (0, height))]
+    xs = [corner[0] for corner in corners]
+    ys = [corner[1] for corner in corners]
+    expanded_width = math.ceil(max(xs)) - math.floor(min(xs))
+    expanded_height = math.ceil(max(ys)) - math.floor(min(ys))
+    matrix[2], matrix[5] = transform(-(expanded_width - width) / 2.0, -(expanded_height - height) / 2.0)
+    safe_width, safe_height = _largest_rotated_rectangle(width, height, math.radians(abs(angle_degrees)))
+    safe_width = max(1, min(int(math.floor(safe_width)) - 4, expanded_width))
+    safe_height = max(1, min(int(math.floor(safe_height)) - 4, expanded_height))
+    return (
+        tuple(matrix),
+        (expanded_width - safe_width) // 2,
+        (expanded_height - safe_height) // 2,
+        safe_width,
+        safe_height,
+    )
+
+
+def _resample_window(
+    oriented: np.ndarray,
+    coefficients: tuple[float, ...],
+    size: tuple[int, int],
+    ranges: tuple[tuple[float, float], ...],
+    *,
+    projective: bool,
+) -> np.ndarray:
+    """Pillow's bicubic for one output window, from the source it samples.
+
+    ``coefficients`` are Pillow's eight output-to-input terms for the window
+    (the last two zero for an affine map). A projective image of a rectangle
+    is bounded by its corners, so only that part of the source, with the
+    kernel's reach, is handed to Pillow rather than every channel whole.
+    """
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover - Pillow is required
+        raise RuntimeError("Pillow is required for geometry resampling") from exc
+
+    width, height = size
+    k = coefficients
+    xs: list[float] = []
+    ys: list[float] = []
+    for x, y in ((0.5, 0.5), (width - 0.5, 0.5), (0.5, height - 0.5), (width - 0.5, height - 0.5)):
+        divisor = k[6] * x + k[7] * y + 1.0
+        xs.append((k[0] * x + k[1] * y + k[2]) / divisor)
+        ys.append((k[3] * x + k[4] * y + k[5]) / divisor)
+    source_height, source_width = oriented.shape[:2]
+    left = top = 0
+    right, bottom = source_width, source_height
+    if all(math.isfinite(value) for value in (*xs, *ys)):
+        # Four pixels clear the kernel, so an interior edge of this block is
+        # never clamped to or treated as outside the image.
+        block_left = max(0, math.floor(min(xs)) - 4)
+        block_top = max(0, math.floor(min(ys)) - 4)
+        block_right = min(source_width, math.ceil(max(xs)) + 4)
+        block_bottom = min(source_height, math.ceil(max(ys)) + 4)
+        if block_right > block_left and block_bottom > block_top:
+            left, top, right, bottom = block_left, block_top, block_right, block_bottom
+    if left or top:
+        k = (
+            k[0] - left * k[6], k[1] - left * k[7], k[2] - left,
+            k[3] - top * k[6], k[4] - top * k[7], k[5] - top,
+            k[6], k[7],
+        )
+    method = Image.Transform.PERSPECTIVE if projective else Image.Transform.AFFINE
+    data = tuple(k) if projective else tuple(k[:6])
+
+    channels: list[np.ndarray] = []
+    for index in range(oriented.shape[2]):
+        source = np.ascontiguousarray(oriented[top:bottom, left:right, index], dtype=np.float32)
+        transformed = Image.fromarray(source).transform(
+            (width, height),
+            method,
+            data,
+            resample=Image.Resampling.BICUBIC,
+            fillcolor=0.0,
+        )
+        # The full-frame path clips against the whole channel's range, so the
+        # window must use the same bounds rather than its own local extremes.
+        low, high = ranges[index]
+        channels.append(np.clip(np.asarray(transformed, dtype=np.float32), low, high))
+    return np.ascontiguousarray(np.stack(channels, axis=-1), dtype=np.float32)
 
 
 def _clamp_rect(
@@ -189,13 +324,9 @@ def _warp_perspective_region(
     geometry: GeometryAdjustments,
     total_roll: float,
     rect: tuple[int, int, int, int] | None,
+    ranges: tuple[tuple[float, float], ...],
 ) -> np.ndarray:
     """Evaluate the projective map for one output window only."""
-    try:
-        from PIL import Image
-    except ImportError as exc:  # pragma: no cover - Pillow is required
-        raise RuntimeError("Pillow is required for perspective correction") from exc
-
     height, width = oriented.shape[:2]
     inverse = _perspective_inverse_matrix(
         width, height, total_roll, geometry.perspective_horizontal, geometry.perspective_vertical
@@ -211,8 +342,6 @@ def _warp_perspective_region(
         safe_right - safe_left, safe_bottom - safe_top, geometry
     )
     window = _clamp_rect(rect, crop_right - crop_left, crop_bottom - crop_top)
-    window_width = window[2] - window[0]
-    window_height = window[3] - window[1]
 
     # Translate the output origin into the homography so Pillow renders only
     # this window. Output pixel (0, 0) of the window is warped-frame pixel
@@ -232,22 +361,9 @@ def _warp_perspective_region(
         shifted = inverse @ translation
         shifted = shifted / shifted[2, 2]
     coefficients = tuple(float(value) for value in shifted.ravel()[:8])
-
-    channels: list[np.ndarray] = []
-    for index in range(oriented.shape[2]):
-        source = np.ascontiguousarray(oriented[..., index], dtype=np.float32)
-        transformed = Image.fromarray(source).transform(
-            (window_width, window_height),
-            Image.Transform.PERSPECTIVE,
-            coefficients,
-            resample=Image.Resampling.BICUBIC,
-            fillcolor=0.0,
-        )
-        channel = np.asarray(transformed, dtype=np.float32)
-        # The full-frame path clips against the whole channel's range, so the
-        # window must use the same bounds rather than its own local extremes.
-        channels.append(np.clip(channel, float(np.min(source)), float(np.max(source))))
-    return np.ascontiguousarray(np.stack(channels, axis=-1), dtype=np.float32)
+    return _resample_window(
+        oriented, coefficients, (window[2] - window[0], window[3] - window[1]), ranges, projective=True
+    )
 
 
 def geometry_coordinate_map(

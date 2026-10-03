@@ -25,21 +25,21 @@ from hdr_finisher.finishing import (  # noqa: E402
 )
 from hdr_finisher.models import GeometryAdjustments  # noqa: E402
 
-# Approved tolerance for the windowed perspective route.
+# Approved tolerance for the windowed perspective and roll routes.
 #
-# A window that is not anchored at the warped origin composes the projective
-# matrix with a translation and renormalizes it, which perturbs the float32
-# resample in its last bits. Measured worst case across this corpus is 6e-08
-# absolute and 9e-08 relative, on 2 of 1680 samples. RGBA16F transport carries
-# roughly 1e-03 relative precision, so this is about four orders of magnitude
-# below anything the preview can represent. Every other route is exact.
+# A window that is not anchored at the warped origin composes the map with a
+# translation, which perturbs the float32 resample in its last bits. Measured
+# worst case across this corpus is 6e-08 absolute and 9e-08 relative, on 2 of
+# 1680 perspective samples. RGBA16F transport carries roughly 1e-03 relative
+# precision, so this is about four orders of magnitude below anything the
+# preview can represent. The index route is exact.
 WARP_ATOL = 1e-6
 WARP_RTOL = 1e-6
 
 
 def assert_tile_matches(tile, reference, geometry, message):
-    """Exact everywhere except the windowed projective resample."""
-    if geometry_resample_stage(geometry) == "perspective":
+    """Exact everywhere except the windowed resamples."""
+    if geometry_resample_stage(geometry) != "index":
         np.testing.assert_allclose(tile, reference, atol=WARP_ATOL, rtol=WARP_RTOL, err_msg=message)
     else:
         np.testing.assert_array_equal(tile, reference, err_msg=message)
@@ -242,3 +242,30 @@ def test_the_perspective_route_windows_the_warp_instead_of_the_frame(monkeypatch
     reference_geometry = PERSPECTIVE_CROP
     tile = apply_geometry_region(image, reference_geometry, (0, 0, 6, 6))
     assert tile.shape[:2] == (6, 6)
+
+
+def test_the_roll_route_windows_the_rotation_instead_of_the_frame(monkeypatch) -> None:
+    import hdr_finisher.finishing as finishing
+
+    def fail(*_args, **_kwargs):  # pragma: no cover - only runs on regression
+        raise AssertionError("the roll region built the full rotated frame")
+
+    monkeypatch.setattr(finishing, "_rotate_to_valid_pixels", fail)
+
+    image = _source()
+    for geometry in (ROLL, _geometry(straighten_angle=-17.0, rotation=90, flip_horizontal=True)):
+        tile = apply_geometry_region(image, geometry, (2, 3, 8, 9))
+        assert tile.shape[:2] == (6, 6)
+
+
+@pytest.mark.parametrize("angle", [-44.0, -7.3, -0.1, 0.05, 2.0, 12.5, 33.0, 45.0])
+def test_roll_windows_match_the_rotated_frame_at_many_angles(angle: float) -> None:
+    for width, height in ((97, 61), (61, 97), (64, 64)):
+        image = _source(width, height)
+        geometry = _geometry(straighten_angle=angle, crop={"x": 0.05, "y": 0.1, "width": 0.8, "height": 0.75})
+        reference = apply_geometry(image, geometry)
+        out_height, out_width = reference.shape[:2]
+        assert apply_geometry_region(image, geometry, None).shape == reference.shape
+        left, top = out_width // 3, out_height // 4
+        tile = apply_geometry_region(image, geometry, (left, top, out_width, out_height))
+        assert_tile_matches(tile, reference[top:, left:], geometry, f"{angle} degrees at {width}x{height}")

@@ -28,6 +28,7 @@ from .cpu_strips import (
     strip_execution_refusals,
 )
 from .finishing import (
+    _oriented_view,
     apply_geometry,
     apply_geometry_region,
     geometry_coordinate_map,
@@ -35,6 +36,7 @@ from .finishing import (
     geometry_resample_stage,
 )
 from .local_adjustments import (
+    ACESCG_LUMA,
     compile_geometry_fixed_mask,
     compile_geometry_fixed_mask_region,
     mask_influence_opacity,
@@ -48,7 +50,7 @@ from .mask_work import (
     phase as mask_phase,
     shared_work as mask_shared_work,
 )
-from .models import AdjustmentState, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind, SdrMatchState
+from .models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind, SdrMatchState
 from .preview import ResizeCancelled, downsample_image
 
 
@@ -644,10 +646,10 @@ class SessionRenderCache:
     mip_store: SourceMipStore | None = field(default=None, repr=False)
     _lock: RLock = field(default_factory=RLock, init=False, repr=False)
     _source_proxies: OrderedDict[int, np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
-    # The rolled frame the straighten path has to materialize, held across
-    # the row chunks of one streamed proxy instead of being rebuilt for each
-    # of them. Single entry by contract; see apply_geometry_region.
-    _roll_frame: dict = field(default_factory=dict, init=False, repr=False)
+    # Each channel's range over the source a resampled tile was cut from, so
+    # every tile is clipped as the whole frame would be without scanning the
+    # source again. Single entry by contract; see apply_geometry_region.
+    _source_ranges: dict = field(default_factory=dict, init=False, repr=False)
     _sdr_proxies: OrderedDict[int, np.ndarray | None] = field(default_factory=OrderedDict, init=False, repr=False)
     _frames: OrderedDict[tuple[int, str, int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     # The exact scope peak of a cached frame, keyed alongside it. Only the
@@ -731,7 +733,7 @@ class SessionRenderCache:
             self._source_epoch += 1
             self._source_proxies.clear()
             self._sdr_proxies.clear()
-            self._roll_frame.clear()
+            self._source_ranges.clear()
             self._frames.clear()
             self._frame_scope_peaks.clear()
             self._matched_sdr_bases.clear()
@@ -801,7 +803,7 @@ class SessionRenderCache:
         the rectangle actually delivered after clamping.
 
         The tile is produced by ``apply_geometry_region``, which does not build
-        the complete transformed frame for the index or perspective routes.
+        the complete transformed frame.
         """
         edge = max(256, int(long_edge))
         geometry = adjustments.shared.geometry
@@ -845,21 +847,8 @@ class SessionRenderCache:
             base,
             geometry,
             haloed,
-            roll_cache=self._roll_frame,
-            # Everything the rolled frame depends on, and nothing else. The
-            # crop is applied by slicing afterwards, so a crop drag over a
-            # straightened image reuses the frame rather than rebuilding it.
-            roll_cache_key=(
-                source_epoch,
-                edge,
-                working_space,
-                int(geometry.rotation),
-                bool(geometry.flip_horizontal),
-                bool(geometry.flip_vertical),
-                round(float(geometry.straighten_angle + geometry.perspective_rotate), 9),
-                round(float(geometry.perspective_horizontal), 9),
-                round(float(geometry.perspective_vertical), 9),
-            ),
+            range_cache=self._source_ranges,
+            range_cache_key=(source_epoch, edge, working_space),
         )
         placement = {
             "source_epoch": source_epoch,
@@ -874,6 +863,32 @@ class SessionRenderCache:
             "long_edge": edge,
         }
         return tile, working_space, signature, placement
+
+    def oriented_source_luminance(
+        self,
+        long_edge: int,
+        geometry: GeometryAdjustments,
+        rect: tuple[int, int, int, int],
+        is_current: Callable[[], bool] | None = None,
+    ) -> tuple[np.ndarray, tuple[int, int, int, int], tuple[int, int], int]:
+        """Scene luminance of one rectangle of the source before any resampling.
+
+        Export qualifies and composes a mask in source space and warps the
+        finished mask, so under straighten or perspective a luminance mask
+        cannot be made from the warped picture. Only the quarter turn and the
+        flips of ``geometry`` apply here. The values are the ones
+        ``_luminance_range`` qualifies.
+        """
+        edge = max(256, int(long_edge))
+        source, _sdr_reference = self._proxies(edge, is_current=is_current)
+        with self._lock:
+            source_epoch = self._source_epoch
+        oriented = _oriented_view(source, geometry)
+        height, width = oriented.shape[:2]
+        delivered = _clamp_output_rect(rect, width, height)
+        block = oriented[delivered[1] : delivered[3], delivered[0] : delivered[2], :3]
+        luminance = np.einsum("...c,c->...", block, ACESCG_LUMA, optimize=True)
+        return luminance, delivered, (width, height), source_epoch
 
     def matched_sdr_base(
         self,
@@ -1431,8 +1446,7 @@ class SessionRenderCache:
     def _proxy_bytes_locked(self) -> int:
         source = sum(int(proxy.nbytes) for proxy in self._source_proxies.values())
         sdr = sum(int(proxy.nbytes) for proxy in self._sdr_proxies.values() if proxy is not None)
-        roll = sum(int(frame.nbytes) for _base, frame in self._roll_frame.values())
-        return source + sdr + roll
+        return source + sdr
 
     def _compiled_masks(
         self,
