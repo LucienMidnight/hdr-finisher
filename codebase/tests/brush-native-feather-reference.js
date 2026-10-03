@@ -37,6 +37,11 @@ for shift,feather,turn in [(.05,.05,0),(-.02,.004,90),(0,.0006,0),(.01,.0005,270
  w,h=6000,4000
  expression=MaskExpression(leaf=dict(type='brush',mask_shift_edge=shift,mask_feather=feather,strokes=[dict(points=[dict(x=.1,y=.08),dict(x=.85,y=.95)],radius=.09,hardness=.8,opacity=.6),dict(points=[dict(x=.9,y=.1)],radius=.004,hardness=1),dict(points=[dict(x=.5,y=.52)],radius=.05,erase=True)]),inverted=turn==90)
  add(w,h,expression,GeometryAdjustments(rotation=turn),lambda width,height:[(width//2-1280,height//2-720,2560,1440),(0,height-1440,2560,1440)])
+# A frame wider than one GPU texture: paint and its halo span column tiles.
+for shift,feather in [(.01,.02),(0,.0004),(.004,.0000001)]:
+ w,h=9000,3000
+ expression=MaskExpression(leaf=dict(type='brush',mask_shift_edge=shift,mask_feather=feather,strokes=[dict(points=[dict(x=.02,y=.3),dict(x=.98,y=.7)],radius=.03,hardness=.7,opacity=.8),dict(points=[dict(x=.95,y=.2)],radius=.004,hardness=1),dict(points=[dict(x=.5,y=.5)],radius=.02,erase=True)]))
+ add(w,h,expression,GeometryAdjustments(),lambda width,height:[(width-2560,height//2-720,2560,1440),(3200,800,2560,1440)])
 print(json.dumps(cases))
 `],{cwd:root,encoding:'utf8',maxBuffer:512*1024*1024}));
 (async()=>{const browser=await chromium.launch();try{const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL||'http://127.0.0.1:8799');await page.waitForFunction(()=>state.gpuPreview?.available);

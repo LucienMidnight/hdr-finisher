@@ -8,7 +8,22 @@ narrow unqualified brushes, resampling geometry and timing misses remain
 open. The original tables are retained as the before record, not a claim
 that phase 3 has closed.
 
-## Latest native Feather continuation
+## Latest straighten/perspective, wide-frame and Fit continuation
+
+The [resampled-mask evidence](viewport-phase3-resampled-mask-evidence-2026-10-03.md)
+records three changes validated together.
+
+| ID | Status after this slice |
+|---|---|
+| P3-GPU-01 | Brush, path and gradient **leaves under straighten/perspective: implemented** (export's own warp and bicubic). Frames wider than the texture limit: **implemented** for native Shift/Feather (reference coverage only). Fit-scale unqualified brushes for scopes/measurements: **implemented**. Still CPU or unmatched: combined masks composed before the warp, luminance leaves under resampling, P3-FALLBACK-01. |
+| P3-MASK-REVIEW-02 | **Accepted for now by Steve (October 3).** Two of 70 warped reference regions reach two byte levels (2.06 as stored) on six pixels; 68 are within 1.124. Covers warped feathered brush masks at up to two byte levels only; the general limit stays two. |
+| P3-PEAK-03 | **New, open.** No bounded editing Peak under straighten; preview Peak 3.7% low. Identical with the new route disabled. |
+| P3-LUMA-RESAMPLE-01 | **New, open.** Luminance leaf under perspective: 3.153 levels, 943 pixels over two in one primary region. Route untouched by this slice. |
+| P3-PERF-01 | First straightened 100% zoom 8253 → about 3500–3700 ms (single sessions); the remainder is the straightened picture source. Other timings unchanged. |
+
+Node passes 408 tests. Phase 3 is not closed.
+
+## Earlier native Feather continuation
 
 The [native Feather evidence](viewport-phase3-native-feather-evidence-2026-10-03.md)
 supersedes the "native Shift plus Feather remains unfinished" statements

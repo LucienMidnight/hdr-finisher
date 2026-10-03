@@ -278,7 +278,7 @@
     const region={x,y,width:right-x,height:bottom-y};
     // Scratch cap is an admission guard, not a relaxed accuracy limit.
     if(!(rect.width>0&&rect.height>0)||region.width>limit||region.height>limit||region.width*region.height>16777216
-      ||width>limit||rect.x<0||rect.y<0||rect.x+rect.width>width||rect.y+rect.height>height)return null;
+      ||rect.x<0||rect.y<0||rect.x+rect.width>width||rect.y+rect.height>height)return null;
     return {spatial,radii,region,rect,width,height,signature};
   }
   const PREFIX=`
@@ -339,12 +339,14 @@
       render.setPipeline(pipeline);render.setBindGroup(0,bind);render.setBindGroup(1,extra);render.draw(3);render.end();
     };
     try{
-      const bandHeight=Math.min(256,height),bands=Math.ceil(height/bandHeight);
-      const band=texture(width,bandHeight),rows=texture(1,bandHeight),peak=texture(1,1),peaks=texture(1,bands);
+      // A frame wider than one texture is scanned in column tiles.
+      const columns=Math.min(width,d.limits.maxTextureDimension2D),across=Math.ceil(width/columns);
+      const bandHeight=Math.min(256,height),bands=Math.ceil(height/bandHeight)*across;
+      const band=texture(columns,bandHeight),rows=texture(1,bandHeight),peak=texture(1,1),peaks=texture(1,bands);
       for(let i=0;i<bands;i++){
         if(!isCurrent())return null;
-        const y=i*bandHeight,h=Math.min(bandHeight,height-y);
-        const values=nativeBrushParameters(recipe.spatial,{x:0,y,width,height:h},width,height,signature);
+        const x=(i%across)*columns,y=Math.floor(i/across)*bandHeight;
+        const values=nativeBrushParameters(recipe.spatial,{x,y},width,height,signature);
         if(!values)return null;
         // Stroke bounds clip to the physical frame; unused rows in a short
         // final band are zero and cannot introduce a larger painted peak.
@@ -438,7 +440,7 @@
     }
     if(!renderer.brushPipelines.bandMaximum){
       const module=d.createShaderModule({code:window.HDRWebGPUShaders.LUMA_MASK_SHADER_SOURCE+EXTRA+NATIVE});
-      for(const [key,entryPoint] of [['bandMaximum','brushBandMaximum'],['coarseBand','brushCoarseBand'],
+      for(const [key,entryPoint] of [['bandMaximum','brushBandMaximum'],['bandMinimum','brushBandMinimum'],['coarseBand','brushCoarseBand'],
         ['fractionalWindow','brushFractionalBoxWindow'],['expandWindow','brushExpandWindow']]){
         renderer.brushPipelines[key]=d.createRenderPipeline({layout:renderer.maskPipelineLayout,
           vertex:{module,entryPoint:'vertexMain'},fragment:{module,entryPoint,targets:[{format:'r32float'}]},primitive:{topology:'triangle-list'}});
@@ -454,6 +456,14 @@
       let y=i32(input.position.y);var value=0.0;
       if(y>=i32(p[0])&&y<i32(p[1])){
         for(var x=i32(p[2]);x<i32(p[3]);x++){value=max(value,textureLoad(sourceTexture,vec2i(x,y),0).r);}
+      }
+      return vec4f(vec3f(clamp(value,0.0,1.0)),1.0);
+    }
+    // One minus the row minimum, so the shared maximum reduction yields a minimum.
+    @fragment fn brushBandMinimum(input:VertexOut)->@location(0) vec4f {
+      let y=i32(input.position.y);var value=0.0;
+      if(y>=i32(p[0])&&y<i32(p[1])){
+        for(var x=i32(p[2]);x<i32(p[3]);x++){value=max(value,1.0-textureLoad(sourceTexture,vec2i(x,y),0).r);}
       }
       return vec4f(vec3f(clamp(value,0.0,1.0)),1.0);
     }
@@ -512,7 +522,9 @@
   // dimensions; a narrow one keeps export's full-resolution boxes.
   function featherFieldPlan(expression,width,height,signature,limit=8192) {
     const leaf=expression?.leaf;
-    if(expression?.operator!=='leaf'||leaf?.type!=='brush'||width<2||height<2||width>limit)return null;
+    // A frame wider than one texture is admitted; the painted bounds plus
+    // their halo, which the bands span, must still fit (checked when made).
+    if(expression?.operator!=='leaf'||leaf?.type!=='brush'||width<2||height<2)return null;
     const sigma=nativeSigma(featherRadius(leaf.mask_feather),width,height);
     if(sigma<.25)return null;
     const spatial={...expression,leaf:{...leaf,mask_feather:0,mask_shift_edge:0}};
@@ -611,12 +623,12 @@
       const bounds=paintBounds(base,width,height,signature);
       if(bounds&&recipe.shiftActive){
         // Shift normalizes by the peak of every painted pixel before filtering.
-        const w=bounds.right-bounds.x,h=bounds.bottom-bounds.y;
-        const rows=Math.max(1,Math.min(h,limit,Math.floor(4194304/w))),count=Math.ceil(h/rows);
-        const band=texture(w,rows),line=texture(1,rows),list=texture(1,count);
+        const w=bounds.right-bounds.x,h=bounds.bottom-bounds.y,columns=Math.min(w,limit),across=Math.ceil(w/columns);
+        const rows=Math.max(1,Math.min(h,limit,Math.floor(4194304/columns))),count=Math.ceil(h/rows)*across;
+        const band=texture(columns,rows),line=texture(1,rows),list=texture(1,count);
         for(let i=0;i<count;i++){
           const encoder=d.createCommandEncoder();
-          draw(encoder,pipelines.nativePaint,line,band,at(bounds.x,bounds.y+i*rows));
+          draw(encoder,pipelines.nativePaint,line,band,at(bounds.x+(i%across)*columns,bounds.y+Math.floor(i/across)*rows));
           draw(encoder,pipelines.maximum,band,line,new Float32Array([0]));
           draw(encoder,pipelines.maximum,line,one,new Float32Array([1]));
           encoder.copyTextureToTexture({texture:one},{texture:list,origin:[0,i]},[1,1]);
@@ -627,19 +639,26 @@
         if(count>1)release(band,line,list);
       }
       if(bounds){
-        const halo=recipe.shiftReach+(coarse?0:recipe.reach);
+        const halo=recipe.shiftReach+(coarse?0:recipe.reach),align=n=>coarse?n-n%factor:n;
         const x0=Math.max(0,bounds.x-halo),x1=Math.min(width,bounds.right+halo);
         const y0=Math.max(0,bounds.y-halo),y1=Math.min(height,bounds.bottom+halo);
-        // The scratch cap is an admission guard, not a relaxed accuracy limit.
-        let rows=Math.min(Math.floor(16777216/(x1-x0)),limit)-2*halo;
-        if(coarse)rows-=rows%factor;
-        if(rows<factor)return null;
-        const start=coarse?y0-y0%factor:y0,count=Math.ceil((y1-start)/rows);
-        const sourceList=texture(1,count),blurList=coarse?null:texture(1,count);
+        // Paint and its halo normally fit one texture across. A wider field is
+        // tiled in columns that carry the same complete halo as the row bands.
+        const whole=x1-x0<=limit,across=whole?x1-x0:align(limit-2*halo),tiles=[];
+        if(across<factor)return null;
+        for(let u0=whole?x0:align(x0);u0<x1;u0+=across){
+          const u1=whole?x1:Math.min(u0+across,width);
+          const left=whole?x0:Math.max(x0,u0-halo),right=whole?x1:Math.min(x1,u1+halo);
+          // The scratch cap is an admission guard, not a relaxed accuracy limit.
+          let rows=Math.min(Math.floor(16777216/(right-left)),limit)-2*halo;
+          if(coarse)rows-=rows%factor;
+          if(rows<factor)return null;
+          for(let v0=align(y0);v0<y1;v0+=rows)tiles.push({u0,u1,v0,v1:Math.min(v0+rows,height),left,right});
+        }
+        const count=tiles.length,sourceList=texture(1,count),blurList=coarse?null:texture(1,count);
         const paintMaxima=scratch.maxima(paintPeak,paintPeak),filtered=recipe.shiftActive||!coarse;
-        for(let v0=start;v0<y1;v0+=rows,bands++){
-          const v1=Math.min(v0+rows,height),y=Math.max(y0,v0-halo);
-          const r={x:x0,y,width:x1-x0,height:Math.min(y1,v1+halo)-y};
+        for(const {u0,u1,v0,v1,left,right} of tiles){
+          const y=Math.max(y0,v0-halo),r={x:left,y,width:right-left,height:Math.min(y1,v1+halo)-y};
           if(!set||set.width!==r.width||set.height!==r.height){
             // Only a later band replaces a set, after its predecessor settled.
             if(set){release(set.paint,set.a,set.b,set.line);set.scratch?.destroy();}
@@ -660,8 +679,9 @@
             draw(encoder,pipelines.shift,blurred,target,new Float32Array([recipe.shift,1]),{operand:set.paint,extra:paintMaxima});
             field=target;free=blurred;
           }
-          // Halo rows of an interior band are incomplete; reduce only its own rows.
-          const valid=new Float32Array([Math.max(v0,r.y)-r.y,Math.min(v1,r.y+r.height)-r.y,0,r.width]);
+          // Halo pixels of an interior tile are incomplete; reduce only its own.
+          const valid=new Float32Array([Math.max(v0,r.y)-r.y,Math.min(v1,r.y+r.height)-r.y,
+            Math.max(u0,r.x)-r.x,Math.min(u1,r.x+r.width)-r.x]);
           const reduce=(source,list)=>{
             draw(encoder,pipelines.bandMaximum,source,set.line,valid);
             draw(encoder,pipelines.maximum,set.line,one,new Float32Array([1]));
@@ -670,20 +690,21 @@
           reduce(field,sourceList);
           if(coarse){
             const first=v0?v0/factor+1:0,last=Math.ceil(v1/factor)+(v1===height?1:0);
+            const firstColumn=whole?0:u0?u0/factor+1:0,lastColumn=whole?coarse.width-1:Math.ceil(u1/factor)+(u1===width?1:0);
             draw(encoder,pipelines.coarseBand,field,grid,new Float32Array([factor,width,height,r.x,r.y]),
-              {scissor:[0,first,coarse.width,last-first+1]});
+              {scissor:[firstColumn,first,lastColumn-firstColumn+1,last-first+1]});
           }else{
             const [blurred]=boxPasses(renderer,encoder,field,free,recipe.radii,r,set.scratch,buffers);
             reduce(blurred,blurList);
           }
-          if(v0+rows>=y1){
+          if(++bands===count){
             draw(encoder,pipelines.maximum,sourceList,sourcePeak,new Float32Array([1]));
             if(blurList)draw(encoder,pipelines.maximum,blurList,blurPeak,new Float32Array([1]));
           }
           d.queue.submit([encoder.finish()]);
           if(!await settle(count>1))return null;
         }
-        if(count>1){release(set.paint,set.a,set.b,set.line);set.scratch?.destroy();set=null;}
+        if(count>1&&set){release(set.paint,set.a,set.b,set.line);set.scratch?.destroy();set=null;}
       }
       if(bounds&&coarse){
         let encoder=d.createCommandEncoder();
@@ -694,13 +715,14 @@
         d.queue.submit([encoder.finish()]);
         // Export normalizes by the largest interpolated native pixel, which
         // need not coincide with a coarse sample.
-        const rows=Math.max(1,Math.min(height,limit,Math.floor(4194304/width))),count=Math.ceil(height/rows);
-        const band=texture(width,rows),line=texture(1,rows),list=texture(1,count);
+        const columns=Math.min(width,limit),across=Math.ceil(width/columns);
+        const rows=Math.max(1,Math.min(height,limit,Math.floor(4194304/columns))),count=Math.ceil(height/rows)*across;
+        const band=texture(columns,rows),line=texture(1,rows),list=texture(1,count);
         encoder=d.createCommandEncoder();
         for(let i=0;i<count;i++){
-          const y=i*rows;
-          draw(encoder,pipelines.expandWindow,grid,band,new Float32Array([factor,width,height,0,y]));
-          draw(encoder,pipelines.bandMaximum,band,line,new Float32Array([0,Math.min(rows,height-y),0,width]));
+          const x=(i%across)*columns,y=Math.floor(i/across)*rows;
+          draw(encoder,pipelines.expandWindow,grid,band,new Float32Array([factor,width,height,x,y]));
+          draw(encoder,pipelines.bandMaximum,band,line,new Float32Array([0,Math.min(rows,height-y),0,Math.min(columns,width-x)]));
           draw(encoder,pipelines.maximum,line,one,new Float32Array([1]));
           encoder.copyTextureToTexture({texture:one},{texture:list,origin:[0,i]},[1,1]);
         }
@@ -772,6 +794,6 @@
   }
   // Pipeline compilation can overlap the source transfer of a zoom.
   const warm=renderer=>{try{return ensureNativePipelines(renderer);}catch{return false;}};
-  window.HDRGpuBrushMask=Object.freeze({plan,generate,evenRound,shiftRegionPlan,generateShiftRegion,warm,
+  window.HDRGpuBrushMask=Object.freeze({plan,generate,evenRound,shiftRegionPlan,generateShiftRegion,warm,nativeScratch,
     featherFieldPlan,featherRegionPlan,generateFeatherField,generateFeatherRegion});
 })();

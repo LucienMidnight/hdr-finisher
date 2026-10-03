@@ -161,6 +161,11 @@ write_project_archive(d.model_dump(mode='json'),Path(sys.argv[2]))
     }
     // In-session edits for isolating a module (never saved), e.g.
     //   --set hdr.film_look.grain_amount=0,sdr.film_look.grain_amount=0
+    // Paired baseline: keep straighten/perspective leaf masks on the CPU.
+    if (args.includes('--disable-resampled-masks')) {
+      report.resampledMaskPolicy = 'Disabled in disposable renderer for paired baseline';
+      await page.evaluate(() => { state.gpuPreview.resamplePlan = () => null; });
+    }
     report.sessionEdits = opt('--set', '').split(',').filter(Boolean).map((entry) => {
       const [controlPath, raw] = entry.split('=');
       let value = raw;

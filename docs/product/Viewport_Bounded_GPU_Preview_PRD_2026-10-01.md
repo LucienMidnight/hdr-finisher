@@ -28,8 +28,9 @@ are recorded in 14.12. Steve also deferred the separate SDR cross-scale
 continuity issue in 14.13 because it is close to the limit. Gradient Fan and
 Fit gradient masks now use the GPU (14.14). GPU brush feather and index crops
 are recorded in 14.15; the October 3 exit audit consolidates unmet targets,
-fallback gaps and owner-review items. Native Shift Edge is recorded in 14.20
-and native Feather, with and without Shift, in 14.21. Phase 3 remains open.
+fallback gaps and owner-review items. Native Shift Edge is recorded in 14.20,
+native Feather, with and without Shift, in 14.21, and straighten/perspective
+leaf masks, wide frames and Fit bitmaps in 14.22. Phase 3 remains open.
 
 ## 1. Problem
 
@@ -1203,3 +1204,54 @@ covers this control only and may be reopened on regression. The redundant
 bitmap size has been refused) is noted as P3-FALLBACK-01 and deferred for
 later exploration; the fallback is unchanged. Steve authorized a checkpoint
 commit of this slice (no push).
+
+### 14.22 Straighten/perspective leaf masks, wide frames and Fit bitmaps
+
+At Steve's request three changes were built together and validated in one
+combined pass; the [evidence](../technical/viewport-phase3-resampled-mask-evidence-2026-10-03.md)
+records them.
+
+**Straighten and perspective.** Export finishes a mask in source space,
+rounds it to bytes and warps it with the picture. The preview now does the
+same on the GPU for brush, path and linear-gradient leaves: the warp is
+computed as export's own arithmetic (Pillow coefficients, safe inset, crop
+rounding; not a fitted homography), the source mask comes from the existing
+native producers, and Pillow's bicubic kernel and range clip are applied per
+output rectangle. A CPU-only test reproduces the export geometry stage pixel
+for pixel within 0.002 levels over 33 recipes. Of 70 GPU reference regions,
+68 are within 1.124 levels; two feathered regions reach two byte levels
+(2.06 as stored) on six pixels in total, because export's kernel amplifies a
+byte that rounds the other way. That is at the general two-level approval,
+not inside it, and is put to Steve rather than accepted. On the primary with
+a 2 degree straighten and with perspective 15, brush and gradient masks pass
+at 1.12 levels with none over two. First straightened 100% zoom falls from
+8253 to about 3500–3700 ms and CPU mask requests from eight to zero (single
+sessions); what remains is the straightened picture source, not masks.
+
+Luminance leaves and combined masks under straighten/perspective are not
+covered. Two faults were found that this work neither caused nor fixes:
+P3-PEAK-03 (no bounded editing Peak under straighten; preview 3.7% low, the
+same with the new route disabled) and P3-LUMA-RESAMPLE-01 (a luminance leaf
+at 3.153 levels with 943 pixels over two under perspective).
+
+**Wide frames.** Native Shift and the feather field tile columns as well as
+rows, so a frame wider than the adapter texture limit no longer falls back.
+Six regions of a 9000-pixel frame pass at 1.124 levels. The device limit and
+picture pipeline are unchanged; no real fixture this wide exists.
+
+**Fit bitmaps.** A GPU brush bitmap made at exactly the requested scale now
+serves scopes and measurements whether or not it qualifies as stretchable,
+removing the 1,600-edge CPU mask requests in the stroke/Feather sequence.
+The deferred P3-FALLBACK-01 compiles remain.
+
+Full Node passes 408 tests; 114 native Feather, 52 native Shift and 804
+rounded references still pass; fixture hashes are unchanged. No classifier,
+tolerance, shader pin, export or zoom-scheduler change. Phase 3 remains open;
+no push or phase 4 work is performed.
+
+**Owner decision (Steve, October 3).** The two warped feathered reference
+regions at two byte levels (2.06 as stored, six pixels in total) are accepted
+for now as close enough to the two-level limit (P3-MASK-REVIEW-02). This
+covers warped feathered brush masks at up to two byte levels only; it is not
+a general three-level approval and the general limit stays two. Steve
+authorized a checkpoint commit of this slice (no push).
