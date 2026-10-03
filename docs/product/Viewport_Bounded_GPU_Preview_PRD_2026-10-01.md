@@ -1316,3 +1316,36 @@ about 0.9-1.2 s; first feedback after a Fit Feather step 104-250 ms against 100 
 settlement about 1.0-1.6 s (the deferred automatic-anchor replacement). A regression from these
 figures reopens the item. Steve authorized a checkpoint commit (no push), then the coverage audit
 and the 30-minute endurance run.
+
+### 14.24 Coverage audit and 30-minute endurance
+
+The [evidence](../technical/viewport-phase3-coverage-endurance-evidence-2026-10-03.md)
+records both exit runs.
+
+**Coverage audit.** A new harness makes one edit at a time at 100% zoom and
+records the route: all 143 static controls outside the geometry panel on the
+saved geometry, one control per module and family on rotate, flip,
+straighten, perspective and both combined, and every mask edit and
+luminance combination, in both lanes. Final run: 938 rows on the primary and
+690 on the four-mask project, every one an exact WebGPU tiled picture, with
+no CPU picture, CPU scope or whole native source request and no page error.
+The first run found three gaps under index geometry, now fixed: a
+combination containing a feathered or shifted brush compiled CPU mask tiles
+(about 4.7 s) and is now composed in source space on the GPU (0.81-1.12
+levels against export, all verdicts passing); cropped gradient and hard-brush
+edits requested small CPU bitmaps they never used; and a measurement of a
+combination compiled a CPU mask for its brush leaf. The only CPU mask
+requests left are the deferred P3-FALLBACK-01 compiles.
+
+**Endurance.** Thirty active minutes on the primary (1,815 operations, 112
+cycles, Match included, no memory cap) complete with zero page errors and no
+CPU picture or scope request. Medians of the first and last ten cycles agree
+(for example zoom to 100% 418 and 476 ms, Feather drag 1,016 and 1,037 ms).
+Registered GPU memory levels off at 4.4 GiB of a 6.1 GiB budget by mid-run
+with nothing over budget. The run predates the audit fixes and used the
+saved geometry.
+
+Node passes 414 tests; fixture hashes are unchanged. With the speed table
+accepted on October 3 and the deferrals already recorded, no phase 3 exit
+requirement remains open in the evidence. Closing the phase is Steve's
+decision after his own testing; it is not declared here.

@@ -2497,7 +2497,7 @@
       if (lane === "hdr" && (sourceOptions?.identity || "source") === "source"
         && (activeLocals || []).some((local) => maskUsesLuminance(local.mask)
           && !isGpuLumaMask(local.mask) && !gpuRegionalGraphEligible(local.mask, geometrySignature)
-          && !this.resamplePlan(sessionId, local.mask, longEdge, geometrySignature))) return null;
+          && !this.sourceSpaceMask(sessionId, local.mask, longEdge, geometrySignature))) return null;
       // The whole frame's source, once resident, serves every region of it
       // with no fetch at all.
       if (this.wholeSourceResident(sessionId, lane, longEdge, geometrySignature, sourceOptions?.identity || "source")) {
@@ -2528,7 +2528,7 @@
       const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler?.DEFAULT_TILE_SIZE || 512));
       // A mask finished in source space is not feathered on the picture.
       const pictureLumaLocals = (activeLocals || []).filter(local =>
-        !this.resamplePlan(sessionId, local.mask, longEdge, geometrySignature));
+        !this.sourceSpaceMask(sessionId, local.mask, longEdge, geometrySignature));
       const halo = this.roiSourceHalo(
         lane, adjustments, previousFrame, sourceSize, surface, referenceWhiteNits, sourceOptions, activeLocals,
         pictureLumaLocals,
@@ -2704,6 +2704,8 @@
       const generation = this.resourceGeneration;
       const current = () => generation === this.resourceGeneration
         && serial === this.renderSerials.get(canvas) && sourceOptions?.isCurrent?.() !== false;
+      let uncropped = geometrySignature;
+      try { uncropped = JSON.stringify({...JSON.parse(geometrySignature), crop: {x: 0, y: 0, width: 1, height: 1}}); } catch { /* keep */ }
       for (const local of locals) {
         const signal = this.sourceAbortSignal();
         // A straightened or perspective mask is warped on the GPU: prepare
@@ -2715,7 +2717,10 @@
           continue;
         }
         if (local.mask?.operator !== "leaf" || isGpuLumaMask(local.mask)) continue;
-        if (this.gpuAnalyticMasksEnabled && window.HDRMaskRaster?.eligible(local.mask,geometrySignature)) continue;
+        // An index crop changes placement, not eligibility: such a leaf is
+        // rastered for the region and needs no bitmap.
+        if (this.gpuAnalyticMasksEnabled && (window.HDRMaskRaster?.eligible(local.mask, uncropped)
+          || isGpuLinearGradientMask(local.mask, uncropped))) continue;
         const leaf = local.mask.leaf;
         const field = () => this.prefetchGpuBrushFeatherField(sessionId, local.mask, longEdge, geometrySignature, current);
         // Native Shift never uses a qualified bitmap, so none is prepared.
@@ -3039,6 +3044,13 @@
           entries: new Map(batch.tiles.map(tile => [tile.key, graph])) };
         if (signal?.aborted || !isCurrent()) return { localIndex: batch.localIndex, entries: new Map() };
       }
+      if (this.gpuAnalyticMasksEnabled && proxy && batch.local.mask?.operator !== "leaf") {
+        // A combination the regional route cannot hold (a feathered or shifted
+        // brush among its leaves) is composed in source space instead.
+        const composed = await this.loadGpuComposedRegion(sessionId, batch, longEdge, geometrySignature, isCurrent, signal, proxy);
+        if (composed) return composed;
+        if (signal?.aborted || !isCurrent()) return { localIndex: batch.localIndex, entries: new Map() };
+      }
       if (isGpuLumaMask(batch.local.mask)
         && (lumaRegionSource || this.wholeSourceResident(sessionId, "hdr", longEdge, geometrySignature, "source"))) {
         // The same GPU-made mask the direct route draws with, once the source
@@ -3100,6 +3112,14 @@
       const recipe = this.resamplePlans.get(planKey);
       if (!recipe) return null;
       const oriented = recipe.orientedSignature;
+      if (!this.sourceSpaceEligible(expression, oriented)) return null;
+      return {...recipe, frame: {width: recipe.orientedWidth, height: recipe.orientedHeight, geometrySignature: oriented}};
+    }
+
+    /** Whether every leaf of a mask has a source-space GPU producer for a
+     * frame with only quarter turns and flips.
+     */
+    sourceSpaceEligible(expression, oriented) {
       const eligible = node => {
         if (node?.operator !== "leaf") {
           // A proper combination has at least two operands; degenerate and
@@ -3114,8 +3134,91 @@
         return Boolean(leaf?.type === "linear_gradient" ? isGpuLinearGradientMask(node, oriented)
           : window.HDRMaskRaster?.eligible(spatial, oriented));
       };
-      if (!eligible(expression)) return null;
-      return {...recipe, frame: {width: recipe.orientedWidth, height: recipe.orientedHeight, geometrySignature: oriented}};
+      return eligible(expression);
+    }
+
+    /** Index geometry: the uncropped frame a combination is composed in when
+     * the regional graph route cannot hold one of its leaves (a feathered or
+     * shifted brush). Null for leaves, resampling geometry and graphs that
+     * route already serves.
+     */
+    composedFrame(sessionId, expression, longEdge, geometrySignature, width, height) {
+      if (!this.gpuAnalyticMasksEnabled || !window.HDRGpuBrushMask?.nativeScratch || !window.HDRGpuMaskResample
+        || !expression || expression.operator === "leaf" || gpuRegionalGraphEligible(expression, geometrySignature)) return null;
+      let frame = null;
+      try {
+        const geometry = JSON.parse(geometrySignature);
+        if (Number(geometry.straighten_angle || 0) || Number(geometry.perspective_rotate || 0)
+          || Number(geometry.perspective_horizontal || 0) || Number(geometry.perspective_vertical || 0)) return null;
+        frame = this.analyticMaskFrame(sessionId, longEdge, geometrySignature, width, height);
+      } catch { return null; }
+      return frame && this.sourceSpaceEligible(expression, frame.geometrySignature) ? frame : null;
+    }
+
+    /** A mask finished in source space takes nothing from the picture: no
+     * luminance halo, grid alignment or scene region.
+     */
+    sourceSpaceMask(sessionId, expression, longEdge, geometrySignature) {
+      return Boolean(this.resamplePlan(sessionId, expression, longEdge, geometrySignature)
+        || this.composedFrame(sessionId, expression, longEdge, geometrySignature));
+    }
+
+    /** Viewport form of a composed combination under index geometry. */
+    async loadGpuComposedRegion(sessionId, batch, longEdge, geometrySignature, isCurrent, signal, proxy) {
+      const expression = batch.local.mask;
+      const frame = this.composedFrame(sessionId, expression, longEdge, geometrySignature, proxy.width, proxy.height);
+      if (!frame || signal?.aborted || !isCurrent()) return null;
+      const halos = batch.tiles.map(tile => tile.haloRect);
+      if (!proxy.region && (!halos.length || halos.some(rect => !rect))) return null;
+      const x = proxy.region?.x ?? Math.min(...halos.map(rect => rect.x));
+      const y = proxy.region?.y ?? Math.min(...halos.map(rect => rect.y));
+      const region = proxy.region || {x, y, width: Math.max(...halos.map(rect => rect.x + rect.width)) - x,
+        height: Math.max(...halos.map(rect => rect.y + rect.height)) - y};
+      const limit = this.device.limits.maxTextureDimension2D;
+      if (region.width > limit || region.height > limit || region.width * region.height > 16777216) {
+        // Keep each catch-up mask bounded rather than compose a whole frame.
+        if (batch.tiles.length <= 1 || halos.some(rect => !rect)) return null;
+        const entries = new Map();
+        for (const tile of batch.tiles) {
+          if (signal?.aborted || !isCurrent()) return null;
+          const result = await this.loadGpuComposedRegion(sessionId, {...batch, tiles: [tile]}, longEdge,
+            geometrySignature, isCurrent, signal, {...proxy, region: tile.haloRect});
+          if (!result) return null;
+          entries.set(tile.key, result.entries.get(tile.key));
+        }
+        return {localIndex: batch.localIndex, entries};
+      }
+      const key = `${sessionId}:${longEdge}:${geometrySignature}:gpu-composed:${gpuMaskIdentity(expression)}:${JSON.stringify(region)}`;
+      let entry = this.localMasks.get(key);
+      const generation = this.resourceGeneration, device = this.device;
+      const current = () => !signal?.aborted && isCurrent() && this.resourceGeneration === generation && this.device === device;
+      for (let own = false; !entry && !own;) {
+        let record = this.localMaskInflight.get(key);
+        if (!record || record.signal?.aborted) {
+          own = true;
+          const promise = (async () => {
+            const started = performance.now();
+            const made = await this.gpuOrientedMaskRegion(sessionId, expression, longEdge, frame,
+              {x: region.x + frame.x, y: region.y + frame.y, width: region.width, height: region.height}, current);
+            if (!made) return null;
+            if (!current()) { made.texture.destroy(); return null; }
+            const generated = {cacheKey: key, texture: made.texture, width: region.width, height: region.height,
+              byteSize: region.width * region.height * 2, kind: "gpu-composed-graph", wholeFrame: true,
+              frameRect: [region.x / proxy.width, region.y / proxy.height, region.width / proxy.width, region.height / proxy.height]};
+            this.localMasks.set(key, generated);
+            this.performanceMetrics.maskEvents ||= [];
+            this.performanceMetrics.maskEvents.push({kind: generated.kind, longEdge, width: region.width, height: region.height,
+              gpuPrepareMs: performance.now() - started, cpuMaskRequest: false});
+            return generated;
+          })();
+          record = {promise, signal}; this.localMaskInflight.set(key, record);
+        }
+        try { entry = await record.promise; } finally { if (this.localMaskInflight.get(key) === record) this.localMaskInflight.delete(key); }
+        if (!current()) return null;
+      }
+      if (!entry) return null;
+      this.retainLocalMask(entry, longEdge);
+      return {localIndex: batch.localIndex, entries: new Map(batch.tiles.map(tile => [tile.key, entry]))};
     }
 
     /** Scene luminance of the source before straighten or perspective, for
@@ -3650,7 +3753,7 @@
         || lumaSceneSource(proxy.lane, proxy.sourceIdentity, proxy.workingSpace)) return null;
       const leaves = locals.filter(local => (isGpuLumaMask(local.mask)
         || gpuRegionalGraphEligible(local.mask, geometrySignature))
-        && !this.resamplePlan(sessionId, local.mask, longEdge, geometrySignature)).flatMap(local => gpuLumaLeaves(local.mask));
+        && !this.sourceSpaceMask(sessionId, local.mask, longEdge, geometrySignature)).flatMap(local => gpuLumaLeaves(local.mask));
       if (!leaves.length || !tiles.length || !isCurrent()) return null;
       let reach = 0, alignment = 1;
       const gcd = (a,b) => b ? gcd(b,a%b) : a;
@@ -7662,7 +7765,10 @@
         if (soft) return soft;
         if (signal?.aborted || !isCurrent()) return null;
       }
-      if (remember || (longEdge <= SOFT_MASK_MAX_EDGE && Number(expression.leaf?.mask_shift_edge))) {
+      // A bitmap made at the requested scale is the mask itself, so a
+      // measurement of a combination needs no CPU compile for its brush leaf.
+      if (remember || (longEdge <= SOFT_MASK_MAX_EDGE
+        && (Number(expression.leaf?.mask_shift_edge) || Number(expression.leaf?.mask_feather)))) {
         const brush = await this.loadGpuBrushLeaf(sessionId,local,expression,maskPath,longEdge,editRevision,
           geometrySignature,isCurrent,signal);
         if (brush) return brush;

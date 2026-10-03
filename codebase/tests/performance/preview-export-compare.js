@@ -108,11 +108,11 @@ write_project_archive(d.model_dump(mode='json'),Path(sys.argv[2]))
     await c.open(page, openedProject, false);
     report.viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }));
     if (args.includes('--luma-graph')) {
-      report.lumaGraph = await page.evaluate(async OPERATOR => {
+      report.lumaGraph = await page.evaluate(async ([OPERATOR, OPERAND]) => {
         const local = structuredClone(localAdjustments().find(item => item.mask?.leaf?.type === 'luminance_range'));
         // A path where the project has one, otherwise its gradient or brush.
         const operator = OPERATOR;
-        const path = structuredClone(['path', 'linear_gradient', 'brush'].map(type => localAdjustments()
+        const path = structuredClone(OPERAND.map(type => localAdjustments()
           .find(item => item.mask?.operator === 'leaf' && item.mask.leaf?.type === type)?.mask).find(Boolean));
         if (!local || !path) throw new Error('--luma-graph requires a luminance local and a spatial one');
         path.id = crypto.randomUUID();
@@ -120,7 +120,7 @@ write_project_archive(d.model_dump(mode='json'),Path(sys.argv[2]))
           children: [local.mask, path] };
         if (!await queueEditCommand('update_local', { local }, local.id)) throw new Error('Could not create diagnostic graph');
         return { localId: local.id, operator: local.mask.operator, operand: path.leaf.type };
-      }, opt('--luma-graph-operator', 'union'));
+      }, [opt('--luma-graph-operator', 'union'), opt('--luma-graph-operand', 'path,linear_gradient,brush').split(',')]);
       await settled();
     }
     if (args.includes('--match')) {

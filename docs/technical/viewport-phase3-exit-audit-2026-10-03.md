@@ -8,7 +8,22 @@ narrow unqualified brushes, resampling geometry and timing misses remain
 open. The original tables are retained as the before record, not a claim
 that phase 3 has closed.
 
-## Latest source-space mask, Peak and windowed straighten continuation
+## Latest: coverage audit and endurance
+
+The [coverage and endurance evidence](viewport-phase3-coverage-endurance-evidence-2026-10-03.md)
+records both exit runs.
+
+| ID | Status |
+|---|---|
+| P3-COVERAGE-01 | **Run.** 1,628 audited edits across six geometry states, two lanes and two fixtures: all exact WebGPU tiled, no CPU picture, CPU scope or whole native source request, no page error. Three index-geometry gaps found and fixed (combinations with a feathered brush, cropped analytic-leaf prefetch, measurement of a combination). Limits: one committed edit per control, one control per family off the saved geometry, fifty-local fixture not audited. |
+| P3-GPU-01 | Remaining CPU mask requests are the deferred P3-FALLBACK-01 only. Still on the previous route by design: masks with a gradient-with-luminance or sampled leaf, degenerate combinations, feathered luminance regions above 24 megapixels. |
+| Endurance | **Run.** 30 minutes, 1,815 operations, zero page errors, no drift between first and last cycles, memory level at 4.4 of 6.1 GiB. Saved geometry; predates the audit fixes. |
+| P3-PERF-01/02 | Timings accepted by Steve on October 3 as they stand. |
+
+No exit requirement remains open in the evidence. Phase 3 is not declared
+closed; that is Steve's decision after his own testing.
+
+## Earlier source-space mask, Peak and windowed straighten continuation
 
 The [source-space evidence](viewport-phase3-source-space-mask-evidence-2026-10-03.md)
 records four changes validated together. Not committed.

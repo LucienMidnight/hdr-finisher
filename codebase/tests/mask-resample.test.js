@@ -146,6 +146,38 @@ test('a straightened combination is warped whole for Fit and tiles, and prepared
  let graphs=0;f.renderer.loadGpuMaskGraph=async()=>{graphs++;return{kind:'gpu-mask-graph'};};
  assert.equal((await f.renderer.loadLocalMask('session',local,1600,1,'{}',()=>true,undefined,true)).kind,'gpu-mask-graph');assert.equal(graphs,1);
 });
+test('an index-geometry combination with a feathered brush is composed on the GPU, not sent to CPU tiles',async()=>{
+ const f=fixture(),luma={operator:'leaf',leaf:{type:'luminance_range',mask_feather:.01}};
+ const cropped=JSON.stringify({rotation:0,crop:{x:.25,y:.25,width:.5,height:.5}}),plain=JSON.stringify({rotation:0});
+ const feathered={operator:'intersect',children:[luma,f.brush({mask_feather:.02})]},hard={operator:'union',children:[luma,f.brush()]};
+ const frame=f.renderer.composedFrame('session',feathered,4000,cropped);
+ assert.deepEqual({x:frame.x,y:frame.y,width:frame.width,height:frame.height},{x:1000,y:667,width:4000,height:2667});
+ assert.equal(JSON.parse(frame.geometrySignature).crop.width,1);
+ assert.equal(f.renderer.composedFrame('session',hard,4000,cropped),null,'the regional graph route keeps what it already serves');
+ assert.equal(f.renderer.composedFrame('session',feathered,4000,f.straighten),null,'resampling geometry takes the warp');
+ assert.equal(f.renderer.composedFrame('session',{operator:'union',children:[luma,luma]},4000,f.straighten),null);
+ assert.equal(f.renderer.composedFrame('session',f.brush({mask_feather:.02}),4000,cropped),null);
+ assert.equal(f.renderer.composedFrame('other',feathered,4000,cropped),null);
+ assert.ok(f.renderer.sourceSpaceMask('session',feathered,4000,cropped)&&f.renderer.sourceSpaceMask('session',feathered,4000,f.straighten));
+ assert.equal(f.renderer.sourceSpaceMask('session',hard,4000,cropped),false);
+ const regions=[];f.renderer.localMaskInflight=new Map();f.renderer.resourceGeneration=0;f.renderer.performanceMetrics={};
+ f.renderer.gpuOrientedMaskRegion=async(_s,_m,_e,made,rect)=>{regions.push({made,rect});return{texture:{destroy(){}}};};
+ f.context.window.HDRMaskTileBatch=undefined;
+ const batch={local:{id:'a',mask:feathered},localIndex:1,tiles:[{key:'t'}]},proxy={width:2000,height:1333,region:{x:300,y:200,width:900,height:700}};
+ const result=await f.renderer.loadLocalMaskTiles('session',batch,4000,1,cropped,()=>true,undefined,proxy);
+ const entry=result.entries.get('t');assert.equal(entry.kind,'gpu-composed-graph');assert.equal(entry.wholeFrame,true);
+ assert.deepEqual({...regions[0].rect},{x:1300,y:867,width:900,height:700});
+ assert.deepEqual(Array.from(entry.frameRect),[300/2000,200/1333,900/2000,700/1333]);
+ assert.equal((await f.renderer.loadLocalMaskTiles('session',batch,4000,1,cropped,()=>true,undefined,proxy)).entries.get('t'),entry,'a resident region is reused');
+ assert.equal(regions.length,1);
+ assert.equal(await f.renderer.loadGpuComposedRegion('session',batch,4000,cropped,()=>true,undefined,{...proxy,width:1999}),null,'a picture of another size keeps the fallback');
+ const extents=[],bitmaps=[];
+ f.renderer.renderSerials=new Map([['canvas',3]]);f.renderer.sourceAbortSignal=()=>undefined;
+ f.renderer.softLeafMask=async(_s,local)=>{bitmaps.push(local.id);return null;};
+ const gradient={operator:'leaf',leaf:{type:'linear_gradient',start:{x:.1,y:.2},end:{x:.8,y:.9},gradient_midpoint_1:.3,gradient_midpoint_2:.7}};
+ f.renderer.prefetchZoomMasks('canvas','session',[{id:'gradient',mask:gradient},{id:'hard',mask:f.brush()}],1,cropped,{viewport:{}},3,4000);
+ assert.deepEqual(bitmaps,[],'a cropped analytic leaf is rastered per region and prefetches no bitmap');
+});
 test('the source rectangle carries the bicubic reach and the shader terms reproduce the plan',()=>{
  const f=fixture(),recipe=f.renderer.resamplePlan('session',f.brush(),4000,JSON.stringify({perspective_horizontal:12,perspective_vertical:-9,straighten_angle:3}));
  const rect={x:900,y:500,width:1280,height:720},source=f.resample.sourceRect(recipe,rect);
