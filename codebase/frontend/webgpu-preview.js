@@ -2933,6 +2933,11 @@
       sceneMaskSource = null,
     ) {
       const signature = gpuMaskIdentity(batch.local.mask);
+      if (this.gpuAnalyticMasksEnabled && proxy && longEdge > SOFT_MASK_MAX_EDGE) {
+        const shifted = await this.loadGpuBrushShiftRegion(sessionId,batch,longEdge,
+          geometrySignature,isCurrent,signal,proxy);
+        if (shifted) return shifted;
+      }
       if (this.gpuAnalyticMasksEnabled && proxy?.region && longEdge > SOFT_MASK_MAX_EDGE) {
         const separated = await this.loadGpuBrushEraseRegion(sessionId,batch,longEdge,editRevision,
           geometrySignature,isCurrent,signal,proxy);
@@ -2989,6 +2994,61 @@
       return maskLoader().loadCpuMaskTiles(this, {
         sessionId, batch, longEdge, editRevision, geometrySignature, maskSignature: signature, isCurrent, signal,
       });
+    }
+
+    async loadGpuBrushShiftRegion(sessionId,batch,longEdge,geometrySignature,isCurrent,signal,proxy) {
+      const helper=window.HDRGpuBrushMask,expression=batch.local.mask;
+      const frame=this.analyticMaskFrame(sessionId,longEdge,geometrySignature,proxy.width,proxy.height);
+      if(!frame||!helper?.shiftRegionPlan||signal?.aborted||!isCurrent())return null;
+      const halos=batch.tiles.map(tile=>tile.haloRect);
+      if(!proxy.region&&(!halos.length||halos.some(rect=>!rect)))return null;
+      const x=proxy.region?.x??Math.min(...halos.map(rect=>rect.x));
+      const y=proxy.region?.y??Math.min(...halos.map(rect=>rect.y));
+      const region=proxy.region||{x,y,width:Math.max(...halos.map(rect=>rect.x+rect.width))-x,
+        height:Math.max(...halos.map(rect=>rect.y+rect.height))-y};
+      const rect={...region,x:region.x+frame.x,y:region.y+frame.y};
+      if(!helper.shiftRegionPlan(expression,frame.width,frame.height,frame.geometrySignature,rect,
+        this.device.limits.maxTextureDimension2D)){
+        // Whole-proxy catch-up can contain many tiles. Keep each native mask
+        // bounded rather than turning the catch-up into a whole-mask compile.
+        if(batch.tiles.length<=1||!Number(expression?.leaf?.mask_shift_edge)
+          ||Number(expression.leaf.mask_feather)||halos.some(rect=>!rect))return null;
+        const entries=new Map();
+        for(const tile of batch.tiles){
+          if(signal?.aborted||!isCurrent())return null;
+          const result=await this.loadGpuBrushShiftRegion(sessionId,{...batch,tiles:[tile]},longEdge,
+            geometrySignature,isCurrent,signal,{...proxy,region:tile.haloRect});
+          if(!result)return null;
+          entries.set(tile.key,result.entries.get(tile.key));
+        }
+        return {localIndex:batch.localIndex,entries};
+      }
+      const key=`${sessionId}:${longEdge}:${geometrySignature}:gpu-brush-native-shift:${gpuMaskIdentity(expression)}:${JSON.stringify(region)}`;
+      let entry=this.localMasks.get(key);
+      if(!entry){
+        const generation=this.resourceGeneration,device=this.device;
+        const current=()=>!signal?.aborted&&isCurrent()&&this.resourceGeneration===generation&&this.device===device;
+        let record=this.localMaskInflight.get(key);
+        if(!record||record.signal?.aborted){
+          const pending=(async()=>{
+            const generated=await helper.generateShiftRegion(this,expression,frame.width,frame.height,frame.geometrySignature,rect,current);
+            if(!generated)return null;
+            if(!current()){generated.texture.destroy();return null;}
+            Object.assign(generated,{cacheKey:key,wholeFrame:true,frameRect:[region.x/proxy.width,
+              region.y/proxy.height,region.width/proxy.width,region.height/proxy.height]});
+            this.localMasks.set(key,generated);
+            this.performanceMetrics.maskEvents||=[];
+            this.performanceMetrics.maskEvents.push({kind:generated.kind,longEdge,width:generated.width,height:generated.height,
+              ...generated.timings,scratchRegion:generated.scratchRegion,cpuMaskRequest:false});
+            return generated;
+          })();
+          record={promise:pending,signal};this.localMaskInflight.set(key,record);
+        }
+        try{entry=await record.promise;}finally{if(this.localMaskInflight.get(key)===record)this.localMaskInflight.delete(key);}
+        if(!entry||!current())return null;
+      }
+      this.retainLocalMask(entry,longEdge);
+      return {localIndex:batch.localIndex,entries:new Map(batch.tiles.map(tile=>[tile.key,entry]))};
     }
 
     /** A steep post-feather eraser must not force the painted feather to CPU.

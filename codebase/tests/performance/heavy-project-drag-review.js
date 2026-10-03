@@ -62,12 +62,22 @@ async function main() {
   async function row(name, action) {
     if (!only.test(name)) return;
     const observations = []; const entry = {name, observations, recipe:await page.evaluate(()=>({lane:state.currentView,adjustments:structuredClone(state.adjustments[state.currentView]),denoise:structuredClone(state.denoise[state.currentView])}))}; report.rows.push(entry);
-    for (let i=0;i<count;i++) { const n=requests.length; const r=await action(i%2 ? -1 : 1); r.requests=requests.slice(n); observations.push(r); c.write(output,report); }
+    for (let i=0;i<count;i++) { const n=requests.length; const r=await action(i%2 ? -1 : 1); r.requests=requests.slice(n); if(name.includes('mask_shift_edge'))r.shiftRoute=await page.evaluate(()=>({leaf:localAdjustments().find(x=>x.mask?.leaf?.type==='brush')?.mask?.leaf,events:state.gpuPreview.performanceMetrics.maskEvents?.filter(e=>e.kind==='gpu-brush-native-shift').slice(-4)})); observations.push(r); c.write(output,report); }
     entry.summary = Object.fromEntries(['inputToFirstFrameMs','releaseToExactMs','releaseToScopesMs','releaseToScopeCallbackCompleteMs','releaseToObservedStableMs'].map(k=>[k,{medianMs:percentile(observations.map(x=>x[k]),.5),p95Ms:percentile(observations.map(x=>x[k]),.95),maximumMs:Math.max(...observations.map(x=>x[k]).filter(Number.isFinite))}]));
     c.write(output,report); console.log(name, JSON.stringify(entry.summary));
   }
   try {
     await c.open(page,project,true);
+    if(args.includes('--disable-native-shift'))await page.evaluate(()=>{state.gpuPreview.loadGpuBrushShiftRegion=async()=>null;});
+    if(args.includes('--shift-feather-zero')){
+      await page.evaluate(async()=>{
+        const local=structuredClone(localAdjustments().find(x=>x.mask?.leaf?.type==='brush'));
+        if(!local)throw Error('No brush for Shift isolation');
+        local.mask.leaf.mask_feather=0;
+        if(!await queueEditCommand('update_local',{local},local.id))throw Error('Shift isolation edit failed');
+      });await c.stable(page);
+      report.shiftFeather=0;
+    }
     if (native) { await page.locator('#zoom-actual').click(); await c.stable(page); }
     for (const lane of ['hdr','sdr']) {
       await page.evaluate(x=>switchLane(x),lane); await c.stable(page);

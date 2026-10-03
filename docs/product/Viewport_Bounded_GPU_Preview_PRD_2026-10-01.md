@@ -1103,3 +1103,42 @@ slice, not the outstanding 30-minute endurance requirement.
 Native Shift, intrinsically narrow painted masks, geometry/graph resampling,
 primary stroke/feather, zoom/scopes/pan and full endurance remain open.
 Existing deferrals remain unchanged; phase 3 is open and phase 4 has not begun.
+
+
+### 14.20 Bounded native Shift Edge with zero Feather
+
+The [native Shift evidence](../technical/viewport-phase3-native-shift-evidence-2026-10-03.md)
+records a native-coordinate Shift route with Feather zero. Full-field painted
+peak reduction uses bounded GPU bands; the viewport field carries the entire
+finite box-filter halo. Float32 prefix filtering, inversion and ordered
+native erase/repaint attenuation preserve export's operation order. Whole
+resident picture proxies also use bounded foreground mask regions, and
+large catch-up batches split masks by tile. Mask allocations, cancellation,
+inflight ownership and device replacement retain the existing cache contract.
+A native display-metric/segment rounding
+repair resolves two hardness-one stress pixels that initially differed by
+12.00824 levels. All 52 native reference regions, including ±0.05 Shift,
+now pass at at most 1.12403 levels; 804 existing rounded producer cases pass.
+No large-error trial or tolerance change is retained.
+
+The primary +0.005 expansion and added-stroke −0.005 contraction, both with
+Feather zero, pass all four native verdicts in HDR/SDR and three regions.
+Their Shift masks reach 1.015/1.066 levels with zero pixels over two. Full Node passes 379 tests. Repeated
+paired release-picture medians (three fresh sessions per mode) improve from
+3321.5 to 186.9 ms HDR and 4265.8 to 158.2 ms SDR; scopes improve from
+3680.0/4624.0 to 556.5/531.3 ms. Native CPU mask-tile requests fall to zero.
+First-feedback and scope goals remain unmet. These zero-Feather isolation
+measurements cannot replace the earlier feathered native Shift benchmark.
+The short 0.5 GiB replay completes 96 operations, records 13 successful
+native batches and 389 evictions, and drains through 30 seconds of idle
+without errors, allocator debt or mask-registration mismatch. Full recipes
+and pressure coverage are recorded in the linked evidence.
+
+This advances P3-GPU-01 but does not close it: native Shift plus Feather,
+intrinsically rejected narrow paint and resampled masks/graphs remain open.
+The earlier feathered native Shift benchmark is a different recipe. No
+classifier, general two-level approval, exact CPU Proof/export, Peak/Denoise
+pin, editing-Peak budget, zoom scheduler or existing owner deferral changes.
+Phase 3 remains open; final 30-minute endurance still requires stabilized
+remaining implementation. The owner subsequently authorized a checkpoint
+commit and next-thread prompt. No phase 4 or push is performed.

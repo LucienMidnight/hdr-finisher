@@ -8,6 +8,20 @@ narrow unqualified brushes, resampling geometry and timing misses remain
 open. The original tables are retained as the before record, not a claim
 that phase 3 has closed.
 
+## Latest native Shift continuation
+
+The [native Shift evidence](viewport-phase3-native-shift-evidence-2026-10-03.md)
+adds bounded native Shift with Feather zero, using full-field painted peak
+reduction, finite native halos and GPU prefix filtering. Primary expansion
+and added-stroke contraction pass all four native verdicts in both lanes
+and three regions, with Shift maxima of 1.015/1.066 levels. Node passes 379
+tests. A short 0.5 GiB replay exercises 13 successful native batches and
+389 evictions without errors, allocator debt or mask-registration mismatch.
+General native Shift plus
+Feather remains unfinished; neither the saved feathered Shift timings nor
+phase 3 exit are superseded by an isolated zero-Feather result. Other open
+implementation, performance and endurance requirements remain unchanged.
+
 ## Current continuation status
 
 The latest [regional eraser evidence](viewport-phase3-regional-erase-evidence-2026-10-03.md)

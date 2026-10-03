@@ -1,7 +1,7 @@
 (function () {
   'use strict';
-  // Bounded whole bitmaps only. Native shifted edges retain the exact fallback;
-  // global normalization is not approximated per tile.
+  // Rounded bounded bitmaps and native Shift regions. Native peak reduction
+  // scans the full painted field; normalization is never inferred per tile.
   const EXTRA = `
     @group(1) @binding(0) var paintedMaximum:texture_2d<f32>;
     @group(1) @binding(1) var blurredMaximum:texture_2d<f32>;
@@ -78,12 +78,16 @@
       value=round(clamp(value,0.0,1.0)*255.0)/255.0;
       return vec4f(vec3f(value),1.0);
     }
+    @fragment fn brushNormalize(input:VertexOut)->@location(0) vec4f {
+      let peak=textureLoad(paintedMaximum,vec2i(0),0).r;
+      return vec4f(vec3f(textureLoad(sourceTexture,vec2i(input.position.xy),0).r/max(peak,1e-30)),1.0);
+    }
     @fragment fn brushShift(input: VertexOut) -> @location(0) vec4f {
       let at=vec2i(input.position.xy);
       let peak=textureLoad(paintedMaximum,vec2i(0),0).r;
       let threshold=select(.841345,.158655,p[0]>0.0);
       let shifted=smoothstep(threshold-.035,threshold+.035,
-        textureLoad(sourceTexture,at,0).r/max(peak,1e-30))*peak;
+        textureLoad(sourceTexture,at,0).r/select(max(peak,1e-30),1.0,p[1]>.5))*peak;
       let original=textureLoad(operandTexture,at,0).r;
       let value=select(min(original,shifted),max(original,shifted),p[0]>0.0);
       return vec4f(vec3f(value),1.0);
@@ -127,14 +131,8 @@
     return {spatial,rasterSignature,crop:{x:left,y:top,width:right-left,height:bottom-top},
       shiftRadii,radii:sigma<.25?[]:radii,factor,halfWidth:Math.sqrt(3*Math.max(variance/(factor*factor)-own,1e-6)/6)};
   }
-  async function generate(renderer,expression,width,height,signature,isCurrent=()=>true) {
-    const recipe=plan(expression,width,height,signature);if(!recipe||!isCurrent())return null;
-    const started=performance.now(),timings={};
-    const d=renderer.device,temporary=[],buffers=[];
-    const texture=(w,h,format='r32float')=>{
-      const t=d.createTexture({size:[w,h],format,usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_SRC|GPUTextureUsage.COPY_DST});
-      temporary.push(t);return t;
-    };
+  function ensurePipelines(renderer) {
+    const d=renderer.device;
     if(renderer.brushPipelineDevice!==d)renderer.brushPipelines=null;
     renderer.brushPipelines ||= (()=>{
       const module=d.createShaderModule({code:window.HDRWebGPUShaders.LUMA_MASK_SHADER_SOURCE+EXTRA});
@@ -145,10 +143,20 @@
         vertex:{module,entryPoint:'vertexMain'},fragment:{module,entryPoint,targets:[{format}]},primitive:{topology:'triangle-list'}});
       return {paint:pipeline('brushPaintFragmentMain'),erase:pipeline('brushEraseFragmentMain'),
         box:pipeline('brushBox'),coarse:pipeline('brushCoarse'),fractional:pipeline('brushFractionalBox'),expand:pipeline('brushExpand'),
-        maximum:pipeline('brushMaximum'),shift:pipeline('brushShift','r32float',finishLayout),
+        normalize:pipeline('brushNormalize','r32float',finishLayout),maximum:pipeline('brushMaximum'),shift:pipeline('brushShift','r32float',finishLayout),
         finish:pipeline('brushFinish','r16float',finishLayout),peakLayout};
     })();
     renderer.brushPipelineDevice=d;
+  }
+  async function generate(renderer,expression,width,height,signature,isCurrent=()=>true) {
+    const recipe=plan(expression,width,height,signature);if(!recipe||!isCurrent())return null;
+    const started=performance.now(),timings={};
+    const d=renderer.device,temporary=[],buffers=[];
+    const texture=(w,h,format='r32float')=>{
+      const t=d.createTexture({size:[w,h],format,usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_SRC|GPUTextureUsage.COPY_DST});
+      temporary.push(t);return t;
+    };
+    ensurePipelines(renderer);
     const pass=(encoder,pipeline,input,target,values,operand=input,extra=null)=>{
       const buffer=renderer.createStorageBuffer(values);buffers.push(buffer);d.queue.writeBuffer(buffer,0,values);
       const bindGroup=renderer.createMaskBindGroup(input,buffer,operand);
@@ -193,7 +201,7 @@
         const shiftMaxima=d.createBindGroup({layout:renderer.brushPipelines.peakLayout,entries:[
           {binding:0,resource:paintPeak.createView()},{binding:1,resource:paintPeak.createView()}]});
         pass(encoder,renderer.brushPipelines.shift,shiftedBlur,painted,
-          new Float32Array([expression.leaf.mask_shift_edge]),paint,shiftMaxima);
+          new Float32Array([expression.leaf.mask_shift_edge,0]),paint,shiftMaxima);
       }
       let blurred=painted,next=a;
       if(recipe.factor>1){
@@ -239,5 +247,172 @@
       temporary.forEach(t=>t.destroy());buffers.forEach(buffer=>buffer.destroy());
     }
   }
-  window.HDRGpuBrushMask=Object.freeze({plan,generate,evenRound});
+  // Native Shift is never stretched from a qualified soft bitmap. Its peak
+  // includes every painted pixel, scanned in bounded bands, before filtering
+  // the viewport plus the complete finite support of all twelve box passes.
+  function shiftRegionPlan(expression,width,height,signature,rect,limit=8192) {
+    const leaf=expression?.leaf;
+    if(!Number(leaf?.mask_shift_edge)||Number(leaf.mask_feather))return null;
+    const spatial={...expression,leaf:{...leaf,mask_shift_edge:0}};
+    if(!window.HDRMaskRaster.eligible(spatial,signature))return null;
+    if(width<2||height<2)return null;
+    // Export derives sigma from the rounded full-frame source grid steps.
+    const f=Math.fround,step=n=>f(f(1.5/n)-f(.5/n));
+    const sigma=Math.min(2048,Math.abs(leaf.mask_shift_edge)/Math.min(step(width),step(height)));
+    if(sigma<.25)return null;
+    let lower=Math.max(1,Math.floor(Math.sqrt(2*sigma*sigma+1)));
+    if(!(lower%2))lower=Math.max(1,lower-1);
+    const count=Math.max(0,Math.min(6,evenRound((12*sigma*sigma-6*lower*lower-24*lower-18)/(-4*lower-4))));
+    const radii=sigma<.25?[]:Array.from({length:6},(_,i)=>(lower+(i<count?0:2)-1)/2);
+    const reach=radii.reduce((a,b)=>a+b,0);
+    const x=Math.max(0,rect.x-reach),y=Math.max(0,rect.y-reach);
+    const right=Math.min(width,rect.x+rect.width+reach),bottom=Math.min(height,rect.y+rect.height+reach);
+    const region={x,y,width:right-x,height:bottom-y};
+    // Scratch cap is an admission guard, not a relaxed accuracy limit.
+    if(!(rect.width>0&&rect.height>0)||region.width>limit||region.height>limit||region.width*region.height>16777216
+      ||width>limit||rect.x<0||rect.y<0||rect.x+rect.width>width||rect.y+rect.height>height)return null;
+    return {spatial,radii,region,rect,width,height,signature};
+  }
+  const PREFIX=`
+    @group(0) @binding(0) var source:texture_2d<f32>;
+    @group(0) @binding(1) var destination:texture_storage_2d<r32float,write>;
+    @group(0) @binding(2) var<storage,read_write> sums:array<f32>;
+    @group(0) @binding(3) var<uniform> settings:vec4u;
+    @compute @workgroup_size(64) fn prefix(@builtin(global_invocation_id) id:vec3u) {
+      let size=textureDimensions(source);let vertical=settings.y!=0u;
+      let length=select(size.x,size.y,vertical);let lines=select(size.y,size.x,vertical);
+      if(id.x>=lines){return;}let radius=settings.x;let stride=length+2u*radius+1u;
+      let offset=id.x*stride;var sum=0.0;sums[offset]=0.0;
+      for(var i=0u;i<length+2u*radius;i++){
+        let index=clamp(i32(i)-i32(radius),0,i32(length)-1);
+        sum+=textureLoad(source,select(vec2i(index,i32(id.x)),vec2i(i32(id.x),index),vertical),0).r;
+        sums[offset+i+1u]=sum;
+      }
+    }
+    @compute @workgroup_size(8,8) fn box(@builtin(global_invocation_id) id:vec3u) {
+      let size=textureDimensions(source);if(any(id.xy>=size)){return;}
+      let vertical=settings.y!=0u;let length=select(size.x,size.y,vertical);
+      let index=select(id.x,id.y,vertical);let line=select(id.y,id.x,vertical);
+      let radius=settings.x;let width=2u*radius+1u;let offset=line*(length+2u*radius+1u)+index;
+      textureStore(destination,vec2i(id.xy),vec4f((sums[offset+width]-sums[offset])/f32(width)));
+    }`;
+  function nativeBrushParameters(expression,rect,width,height,signature) {
+    const values=window.HDRMaskRaster.parameters(expression,{x:0,y:0,width,height},width,height,signature);
+    if(!values)return null;
+    values[1]=rect.x;values[2]=rect.y;
+    const w=values[3],h=values[4],f=Math.fround;
+    const originX=f(.5/w),originY=f(.5/h);
+    const scaleY=f(f(1.5/w)-originX)/f(f(1.5/h)-originY);
+    const point=p=>[p.x-originX,(p.y-originY)*scaleY];
+    let cursor=10;
+    for(const stroke of expression.leaf.strokes||[]){
+      const points=stroke.points||[];if(!points.length)continue;
+      const segments=points.length===1?[[points[0],points[0]]]:points.slice(1).map((p,i)=>[points[i],p]);
+      cursor+=10;
+      for(const [a,b] of segments){const first=point(a),last=point(b);values.set([...first,last[0]-first[0],last[1]-first[1]],cursor);cursor+=5;}
+    }
+    return new Float32Array([...values,originX,originY,scaleY,scaleY-f(scaleY)]);
+  }
+  async function generateShiftRegion(renderer,expression,width,height,signature,rect,isCurrent=()=>true) {
+    const recipe=shiftRegionPlan(expression,width,height,signature,rect,renderer.device.limits.maxTextureDimension2D);
+    if(!recipe||!isCurrent())return null;
+    const d=renderer.device,temporary=[],buffers=[],started=performance.now();
+    const texture=(w,h,format='r32float')=>{const t=d.createTexture({size:[w,h],format,usage:
+      GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_SRC|GPUTextureUsage.COPY_DST
+      |(format==='r32float'?GPUTextureUsage.STORAGE_BINDING:0)});temporary.push(t);return t;};
+    ensurePipelines(renderer);
+    if(!renderer.brushPipelines.nativePaint){
+      const source=window.HDRWebGPUShaders.LUMA_MASK_SHADER_SOURCE;
+      if(!source.includes('let delta = last - first;')||!source.includes('let point = pixel / p[3];'))return null;
+      // This module follows export's native display metric; the qualified
+      // rounded bitmap pipelines above retain their original raster.
+      const code=source
+        .replace('let delta = last - first;','let delta = last;')
+        .replace('let point = pixel / p[3];',`
+        let tail=arrayLength(&p)-4u;
+        let normY=maskDivide(pixel.y,p[4]);let originY=p[tail+1u];
+        let deltaY=normY-originY;let back=deltaY-normY;
+        let deltaLow=(normY-(deltaY-back))-(originY+back);
+        let product=deltaY*p[tail+2u];
+        let residual=fma(deltaY,p[tail+2u],-product)+deltaLow*p[tail+2u]+deltaY*p[tail+3u];
+        let point=vec2f(maskDivide(pixel.x,p[3])-p[tail],product+residual);`);
+      const module=d.createShaderModule({code});
+      for(const [key,entryPoint] of [['nativePaint','brushPaintFragmentMain'],['nativeErase','brushEraseFragmentMain']]){
+        renderer.brushPipelines[key]=d.createRenderPipeline({layout:renderer.maskPipelineLayout,
+          vertex:{module,entryPoint:'vertexMain'},fragment:{module,entryPoint,targets:[{format:'r32float'}]},primitive:{topology:'triangle-list'}});
+      }
+    }
+    if(renderer.brushPrefixDevice!==d){
+      const module=d.createShaderModule({code:PREFIX});
+      const bindLayout=d.createBindGroupLayout({entries:[
+        {binding:0,visibility:GPUShaderStage.COMPUTE,texture:{sampleType:'unfilterable-float'}},
+        {binding:1,visibility:GPUShaderStage.COMPUTE,storageTexture:{access:'write-only',format:'r32float'}},
+        {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:'storage'}},
+        {binding:3,visibility:GPUShaderStage.COMPUTE,buffer:{type:'uniform'}}]});
+      const layout=d.createPipelineLayout({bindGroupLayouts:[bindLayout]});
+      const prefix=d.createComputePipeline({layout,compute:{module,entryPoint:'prefix'}});
+      const box=d.createComputePipeline({layout,compute:{module,entryPoint:'box'}});
+      renderer.brushPrefix={prefix,box};renderer.brushPrefixDevice=d;
+    }
+    const pass=(encoder,pipeline,input,target,values,operand=input,extra=null)=>{
+      const buffer=renderer.createStorageBuffer(values);buffers.push(buffer);d.queue.writeBuffer(buffer,0,values);
+      const bind=renderer.createMaskBindGroup(input,buffer,operand);
+      if(!extra){renderer.encodeMaskPass(encoder,pipeline,bind,target);return;}
+      const render=encoder.beginRenderPass({colorAttachments:[{view:target.createView(),loadOp:'clear',storeOp:'store',clearValue:{r:0,g:0,b:0,a:1}}]});
+      render.setPipeline(pipeline);render.setBindGroup(0,bind);render.setBindGroup(1,extra);render.draw(3);render.end();
+    };
+    try{
+      const bandHeight=Math.min(256,height),bands=Math.ceil(height/bandHeight);
+      const band=texture(width,bandHeight),rows=texture(1,bandHeight),peak=texture(1,1),peaks=texture(1,bands);
+      for(let i=0;i<bands;i++){
+        if(!isCurrent())return null;
+        const y=i*bandHeight,h=Math.min(bandHeight,height-y);
+        const values=nativeBrushParameters(recipe.spatial,{x:0,y,width,height:h},width,height,signature);
+        if(!values)return null;
+        // Stroke bounds clip to the physical frame; unused rows in a short
+        // final band are zero and cannot introduce a larger painted peak.
+        const encoder=d.createCommandEncoder();
+        pass(encoder,renderer.brushPipelines.nativePaint,rows,band,values);
+        pass(encoder,renderer.brushPipelines.maximum,band,rows,new Float32Array([0]));
+        pass(encoder,renderer.brushPipelines.maximum,rows,peak,new Float32Array([1]));
+        encoder.copyTextureToTexture({texture:peak},{texture:peaks,origin:[0,i]},[1,1]);
+        d.queue.submit([encoder.finish()]);
+        await d.queue.onSubmittedWorkDone();
+      }
+      if(!isCurrent())return null;
+      const r=recipe.region,paint=texture(r.width,r.height),erase=texture(r.width,r.height),a=texture(r.width,r.height),b=texture(r.width,r.height);
+      const encoder=d.createCommandEncoder();
+      pass(encoder,renderer.brushPipelines.maximum,peaks,peak,new Float32Array([1]));
+      const maxima=d.createBindGroup({layout:renderer.brushPipelines.peakLayout,entries:[0,1].map(binding=>({binding,resource:peak.createView()}))});
+      const values=nativeBrushParameters(recipe.spatial,r,width,height,signature);
+      if(!values)return null;
+      pass(encoder,renderer.brushPipelines.nativePaint,a,paint,values);
+      pass(encoder,renderer.brushPipelines.nativeErase,a,erase,values);
+      pass(encoder,renderer.brushPipelines.normalize,paint,a,new Float32Array([0]),paint,maxima);
+      let input=a,target=b;
+      const maxRadius=Math.max(0,...recipe.radii),scratchBytes=Math.max(r.height*(r.width+2*maxRadius+1),r.width*(r.height+2*maxRadius+1))*4;
+      if(scratchBytes>d.limits.maxStorageBufferBindingSize)return null;
+      const scratch=d.createBuffer({size:scratchBytes,usage:GPUBufferUsage.STORAGE});buffers.push(scratch);
+      for(const axis of [0,1])for(const radius of recipe.radii)if(radius){
+        const settings=d.createBuffer({size:16,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});buffers.push(settings);
+        d.queue.writeBuffer(settings,0,new Uint32Array([radius,axis,0,0]));
+        const pipelines=renderer.brushPrefix,bind=d.createBindGroup({layout:pipelines.prefix.getBindGroupLayout(0),entries:[
+          {binding:0,resource:input.createView()},{binding:1,resource:target.createView()},{binding:2,resource:{buffer:scratch}},{binding:3,resource:{buffer:settings}}]});
+        for(const [pipeline,x,y] of [[pipelines.prefix,Math.ceil((axis?r.width:r.height)/64),1],[pipelines.box,Math.ceil(r.width/8),Math.ceil(r.height/8)]]){
+          const compute=encoder.beginComputePass();compute.setPipeline(pipeline);compute.setBindGroup(0,bind);compute.dispatchWorkgroups(x,y);compute.end();
+        }
+        input=target;target=target===a?b:a;
+      }
+      pass(encoder,renderer.brushPipelines.shift,input,target,new Float32Array([expression.leaf.mask_shift_edge,1]),paint,maxima);
+      const finished=texture(r.width,r.height,'r16float'),result=texture(rect.width,rect.height,'r16float');
+      pass(encoder,renderer.brushPipelines.finish,target,finished,new Float32Array([expression.inverted?1:0,expression.enabled===false?0:1]),erase,maxima);
+      encoder.copyTextureToTexture({texture:finished,origin:[rect.x-r.x,rect.y-r.y]},{texture:result},[rect.width,rect.height]);
+      d.queue.submit([encoder.finish()]);await d.queue.onSubmittedWorkDone();
+      if(!isCurrent())return null;
+      temporary.splice(temporary.indexOf(result),1);
+      return {texture:result,width:rect.width,height:rect.height,byteSize:rect.width*rect.height*2,
+        kind:'gpu-brush-native-shift',timings:{gpuPrepareMs:performance.now()-started},scratchRegion:r};
+    }finally{await d.queue.onSubmittedWorkDone().catch(()=>{});temporary.forEach(t=>t.destroy());buffers.forEach(b=>b.destroy());}
+  }
+  window.HDRGpuBrushMask=Object.freeze({plan,generate,evenRound,shiftRegionPlan,generateShiftRegion});
 })();

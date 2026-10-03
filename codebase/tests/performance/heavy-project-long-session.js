@@ -4,6 +4,8 @@ const c=require('./heavy-project-review-common'); const {selectLocal}=require('.
 const args=process.argv.slice(2); const opt=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d;
 const project=path.resolve(opt('--project','')); const output=path.resolve(opt('--output','output/performance/review/long-session.json'));
 const freshWork=args.includes('--fresh-work');
+const nativeShift=args.includes('--native-shift-zero-feather');
+if(nativeShift&&!freshWork)throw Error('--native-shift-zero-feather requires --fresh-work');
 const skipMatch=args.includes('--skip-match');
 const panLane=opt('--pan-lane','sdr');
 if(!['hdr','sdr'].includes(panLane))throw Error('Invalid --pan-lane');
@@ -14,15 +16,27 @@ async function main(){
  const browser=await chromium.launch({headless:false}); const page=await browser.newPage({viewport:{width:2560,height:1440}});
  const report={...c.manifest(project),schemaVersion:1,activeMinutes:minutes,idleMinutes,anchorPolicy:'Original fixture automatic; no manual override',operations:[],checkpoints:[],errors:[],status:'running'};
  report.freshWork=freshWork; report.inputPolicy=freshWork?'Deterministic unique strokes, feather, exposure and clarity radius per lane/cycle; retained fixture strokes':'Original repeated two-value edits';
+ if(nativeShift)report.shiftPolicy='Disposable zero-Feather brush, deterministic unique Shift and pointer drags; native zoom and pan';
  report.matchPolicy=skipMatch?'Owner-accepted Match omitted from this ordinary-edit coverage run':'Existing periodic Match coverage';
  report.panLane=panLane;
  report.displayContext=JSON.parse(process.env.HDR_FINISHER_REVIEW_DISPLAY_CONTEXT||'null');
  report.actualViewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight,devicePixelRatio}));
  const requests=c.networkProbe(page); const memory=c.sampler(); page.on('pageerror',e=>report.errors.push(String(e)));
- async function checkpoint(label){ report.checkpoints.push({label,at:Date.now(),state:await page.evaluate(()=>{const g=HDRFinisherPerformance.gpuSnapshot();return {nativeAnchors:{cached:state.gpuPreview?.peakReductionCache?.size,pending:pendingHighlightAnchors.size,inflight:exactHighlightAnchorInflight.size,backgroundMasks:state.gpuPreview?.backgroundMaskRequestCoordinator?.snapshot()},readiness:{gpuDraftInFlight:Boolean(state.gpuDraftInFlight),generation:state.previewGeneration[state.currentView],requiredEdge:requiredProcessingLongEdge(),scopeUpdating:document.querySelector("#scope-freshness")?.classList.contains("updating"),scopeText:document.querySelector("#scope-freshness")?.textContent,gpuScopeInFlight:Boolean(state.gpuScopeRequestInFlight),cpuScopeInFlight:Boolean(state.scopeRequestInFlight),scopeGeneration:state.scopeGeneration},lane:state.currentView,viewer:viewerState(),accepted:state.acceptedPresentation,refusal:state.lastGpuDraftRefusal,gpu:{available:g.available,resources:g.resources,renders:g.renders?.slice(-2)},scheduler:HDRFinisherPerformance.snapshot(),failurePolicy:state.gpuFailurePolicy?.snapshot?.()};})}); report.memorySamples=memory.rows;report.samplerErrors=memory.errors;c.write(output,report); }
+ async function checkpoint(label){ report.checkpoints.push({label,at:Date.now(),state:await page.evaluate(()=>{const g=HDRFinisherPerformance.gpuSnapshot();return {nativeShiftCoverage:window.__nativeShiftCoverage||null,nativeAnchors:{cached:state.gpuPreview?.peakReductionCache?.size,pending:pendingHighlightAnchors.size,inflight:exactHighlightAnchorInflight.size,backgroundMasks:state.gpuPreview?.backgroundMaskRequestCoordinator?.snapshot()},readiness:{gpuDraftInFlight:Boolean(state.gpuDraftInFlight),generation:state.previewGeneration[state.currentView],requiredEdge:requiredProcessingLongEdge(),scopeUpdating:document.querySelector("#scope-freshness")?.classList.contains("updating"),scopeText:document.querySelector("#scope-freshness")?.textContent,gpuScopeInFlight:Boolean(state.gpuScopeRequestInFlight),cpuScopeInFlight:Boolean(state.scopeRequestInFlight),scopeGeneration:state.scopeGeneration},lane:state.currentView,viewer:viewerState(),accepted:state.acceptedPresentation,refusal:state.lastGpuDraftRefusal,gpu:{available:g.available,resources:g.resources,renders:g.renders?.slice(-2)},scheduler:HDRFinisherPerformance.snapshot(),failurePolicy:state.gpuFailurePolicy?.snapshot?.()};})}); report.memorySamples=memory.rows;report.samplerErrors=memory.errors;c.write(output,report); }
  async function operation(name,action){ const start=Date.now(),n=requests.length,b=await c.mark(page); const detail=await action(); await c.stable(page,180000); const end=Date.now();report.operations.push({name,startedAt:start,totalMs:end-start,drag:detail?.trustedPointers?detail:undefined,input:detail?.sequence?detail:undefined,observation:await c.result(page,b,b.at),requests:requests.slice(n)});c.write(output,report); }
  try{
-  await c.open(page,project,false);await checkpoint('opened');
+  await c.open(page,project,false);
+  if(nativeShift)await page.evaluate(()=>{
+    window.__nativeShiftCoverage={successfulBatches:0};
+    const renderer=state.gpuPreview,load=renderer.loadGpuBrushShiftRegion;
+    renderer.loadGpuBrushShiftRegion=async function(...args){
+      const result=await load.apply(this,args);
+      if(result&&[...result.entries.values()].some(entry=>entry?.kind==='gpu-brush-native-shift'))
+        __nativeShiftCoverage.successfulBatches++;
+      return result;
+    };
+  });
+  await checkpoint('opened');
   if(budgetGb!==null){
    report.disposableBudgetGb=budgetGb;
    await page.evaluate(value=>state.gpuPreview.setMemoryBudget(value),budgetGb);
@@ -41,18 +55,20 @@ async function main(){
     },{cycle,lane,originals}));
     for(const p of ['exposure','detail.clarity_amount'])await operation(`${cycle} ${lane} ${p} drag`,()=>c.drag(page,`current.${p}`,cycle%2?1:-1));
     await selectLocal(page,'brush');
-    if(freshWork) await operation(`${cycle} ${lane} fresh brush stroke`,()=>page.evaluate(async({cycle,lane,originals})=>{
+    if(freshWork) await operation(`${cycle} ${lane} fresh brush stroke`,()=>page.evaluate(async({cycle,lane,originals,nativeShift})=>{
       const sequence=cycle*2+(lane==='sdr'?1:0);
       const local=structuredClone(state.editDocument.local_adjustments.find(x=>x.id===state.selectedLocalId));
       const phase=(sequence*.61803398875)%1;
       const x=.18+phase*.58,y=.16+((sequence*.41421356237)%1)*.64;
       local.mask.leaf.strokes=[...originals.strokes,{points:[{x,y,pressure:.8},{x:Math.min(.94,x+.025+phase*.04),y:Math.min(.94,y+.03),pressure:1}],
         radius:.008+phase*.018,hardness:.25+phase*.55,flow:.25+phase*.5,opacity:.4+phase*.5,erase:sequence%5===0}];
-      local.mask.leaf.mask_feather=Math.max(.001,Math.min(.1,originals.feather*(.7+.6*phase)+sequence*.000001));
+      local.mask.leaf.mask_feather=nativeShift?0:Math.max(.001,Math.min(.1,originals.feather*(.7+.6*phase)+sequence*.000001));
+      if(nativeShift)local.mask.leaf.mask_shift_edge=(sequence%2?1:-1)*(.001+phase*.006);
       if(!await queueEditCommand('update_local',{local},local.id))throw Error('Fresh brush edit failed');
       return {sequence,x,y,phase};
-    },{cycle,lane,originals}));
-    await operation(`${cycle} ${lane} brush feather drag`,()=>c.drag(page,'input[data-local-mask-param="mask_feather"]',cycle%2?1:-1));
+    },{cycle,lane,originals,nativeShift}));
+    await operation(`${cycle} ${lane} brush ${nativeShift?'Shift':'feather'} drag`,()=>c.drag(page,
+      nativeShift?'input[data-local-mask-param="mask_shift_edge"]':'input[data-local-mask-param="mask_feather"]',cycle%2?1:-1));
     if(await page.locator('#grade-mode-local').getAttribute('aria-expanded')==='true')await page.locator('#grade-mode-local').click();
    }
    if(panLane!=='sdr')await operation(`${cycle} ${panLane} pan lane`,()=>page.evaluate(x=>switchLane(x),panLane));
@@ -74,6 +90,7 @@ async function main(){
   report.activeEndedAt=Date.now();await checkpoint('active complete');
   for(let i=0;i<idleMinutes*6;i++){await page.waitForTimeout(10000);await checkpoint(`idle ${(i+1)*10}s`);}
   const final=report.checkpoints.at(-1)?.state;
+  if(nativeShift&&!final?.nativeShiftCoverage?.successfulBatches)throw Error('Shift replay did not exercise the native GPU route');
   if(report.errors.length)throw Error(`Page errors: ${report.errors.join('; ')}`);
   if(!final?.gpu?.available||final.viewer?.status!=='ready'
    ||final.accepted?.generation!==final.readiness?.generation
