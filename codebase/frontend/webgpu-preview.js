@@ -2673,7 +2673,7 @@
      * source fetch, scheduler, masks and graph execution. Small command
      * batches write an offscreen target; one final copy presents it.
      */
-    prefetchZoomMasks(canvas, sessionId, locals, editRevision, geometrySignature, sourceOptions, serial) {
+    prefetchZoomMasks(canvas, sessionId, locals, editRevision, geometrySignature, sourceOptions, serial, longEdge = 0) {
       if (!sourceOptions?.viewport || sourceOptions?.measureOnly) return;
       const generation = this.resourceGeneration;
       const current = () => generation === this.resourceGeneration
@@ -2681,9 +2681,40 @@
       for (const local of locals) {
         if (local.mask?.operator !== "leaf" || isGpuLumaMask(local.mask)) continue;
         if (this.gpuAnalyticMasksEnabled && window.HDRMaskRaster?.eligible(local.mask,geometrySignature)) continue;
-        void this.softLeafMask(sessionId, local, local.mask, "", editRevision,
-          geometrySignature, current, this.sourceAbortSignal()).catch(() => null);
+        const leaf = local.mask.leaf, signal = this.sourceAbortSignal();
+        const field = () => this.prefetchGpuBrushFeatherField(sessionId, local.mask, longEdge, geometrySignature, current);
+        // Native Shift never uses a qualified bitmap, so none is prepared.
+        if (leaf?.type === "brush" && Number(leaf.mask_shift_edge) && field()) continue;
+        const resident = this.softMasks.get(softMaskIdentity(sessionId, geometrySignature, gpuMaskIdentity(local.mask)));
+        const erased = leaf?.type === "brush" && leaf.strokes?.some(stroke => stroke.erase);
+        if (erased && !(resident?.soft && !resident.destroyed) && field()) continue;
+        void this.softLeafMask(sessionId, local, local.mask, "", editRevision, geometrySignature, current, signal)
+          .then(soft => { if (!soft && !signal?.aborted) field(); }).catch(() => null);
       }
+    }
+
+    /** Start the viewport-independent feather field while the zoomed source
+     * is still in transit. Returns whether this mask takes the native route.
+     */
+    prefetchGpuBrushFeatherField(sessionId, expression, longEdge, geometrySignature, current) {
+      const helper = window.HDRGpuBrushMask;
+      if (!this.gpuAnalyticMasksEnabled || !helper?.featherFieldPlan || !(longEdge > SOFT_MASK_MAX_EDGE)
+        || expression?.leaf?.type !== "brush" || !current()) return false;
+      let frame = null;
+      try { frame = this.analyticMaskFrame(sessionId, longEdge, geometrySignature); } catch { return false; }
+      if (!frame) return false;
+      const limit = this.device.limits.maxTextureDimension2D;
+      if (!helper.featherFieldPlan(expression, frame.width, frame.height, frame.geometrySignature, limit)) {
+        // Unfeathered Shift has no field; its pipelines can still compile now.
+        const shifted = Boolean(helper.shiftRegionPlan(expression, frame.width, frame.height, frame.geometrySignature,
+          {x: 0, y: 0, width: 1, height: 1}, limit));
+        if (shifted) helper.warm(this);
+        return shifted;
+      }
+      const generation = this.resourceGeneration, device = this.device;
+      void this.loadGpuBrushFeatherField(sessionId, longEdge, geometrySignature, expression, frame,
+        () => current() && this.resourceGeneration === generation && this.device === device).catch(() => null);
+      return true;
     }
 
     async loadEditingMask(sessionId, local, revision, signature, frame, sourceSize, isCurrent, signal) {
@@ -2748,7 +2779,7 @@
       const region = sourceOptions?.analysisRegion || this.roiRegionFor(
         canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals, longEdge,
       );
-      this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial);
+      this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial, longEdge);
       let proxy = sourceOptions?.analysisPatch
         ? await this.loadProxyRegion(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
           `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}:analysis:${JSON.stringify(region)}`, region,
@@ -2990,16 +3021,32 @@
           return { localIndex: batch.localIndex, entries: new Map(batch.tiles.map((tile) => [tile.key, soft])) };
         }
         if (signal?.aborted || !isCurrent()) return { localIndex: batch.localIndex, entries: new Map() };
+        if (this.gpuAnalyticMasksEnabled && proxy) {
+          // Feathered paint no bitmap qualifies for: export's own reduced
+          // grid at native coordinates rather than a CPU mask compile.
+          const feathered = await this.loadGpuBrushShiftRegion(sessionId,batch,longEdge,
+            geometrySignature,isCurrent,signal,proxy,true);
+          if (feathered) return feathered;
+          if (signal?.aborted || !isCurrent()) return { localIndex: batch.localIndex, entries: new Map() };
+        }
       }
       return maskLoader().loadCpuMaskTiles(this, {
         sessionId, batch, longEdge, editRevision, geometrySignature, maskSignature: signature, isCurrent, signal,
       });
     }
 
-    async loadGpuBrushShiftRegion(sessionId,batch,longEdge,geometrySignature,isCurrent,signal,proxy) {
+    /** Native Shift Edge, with or without Feather. Feather without Shift
+     * keeps its qualified bitmap routes and arrives here (`featherOnly`)
+     * only after they refuse, so admission is unchanged.
+     */
+    async loadGpuBrushShiftRegion(sessionId,batch,longEdge,geometrySignature,isCurrent,signal,proxy,featherOnly=false) {
       const helper=window.HDRGpuBrushMask,expression=batch.local.mask;
+      if(Boolean(Number(expression?.leaf?.mask_shift_edge))===featherOnly)return null;
       const frame=this.analyticMaskFrame(sessionId,longEdge,geometrySignature,proxy.width,proxy.height);
       if(!frame||!helper?.shiftRegionPlan||signal?.aborted||!isCurrent())return null;
+      const limit=this.device.limits.maxTextureDimension2D;
+      const feathered=Boolean(helper.featherFieldPlan?.(expression,frame.width,frame.height,frame.geometrySignature,limit));
+      if(featherOnly&&!feathered)return null;
       const halos=batch.tiles.map(tile=>tile.haloRect);
       if(!proxy.region&&(!halos.length||halos.some(rect=>!rect)))return null;
       const x=proxy.region?.x??Math.min(...halos.map(rect=>rect.x));
@@ -3007,31 +3054,36 @@
       const region=proxy.region||{x,y,width:Math.max(...halos.map(rect=>rect.x+rect.width))-x,
         height:Math.max(...halos.map(rect=>rect.y+rect.height))-y};
       const rect={...region,x:region.x+frame.x,y:region.y+frame.y};
-      if(!helper.shiftRegionPlan(expression,frame.width,frame.height,frame.geometrySignature,rect,
-        this.device.limits.maxTextureDimension2D)){
+      if(!(feathered?helper.featherRegionPlan:helper.shiftRegionPlan)(
+        expression,frame.width,frame.height,frame.geometrySignature,rect,limit)){
         // Whole-proxy catch-up can contain many tiles. Keep each native mask
         // bounded rather than turning the catch-up into a whole-mask compile.
-        if(batch.tiles.length<=1||!Number(expression?.leaf?.mask_shift_edge)
-          ||Number(expression.leaf.mask_feather)||halos.some(rect=>!rect))return null;
+        if(batch.tiles.length<=1||halos.some(rect=>!rect))return null;
         const entries=new Map();
         for(const tile of batch.tiles){
           if(signal?.aborted||!isCurrent())return null;
           const result=await this.loadGpuBrushShiftRegion(sessionId,{...batch,tiles:[tile]},longEdge,
-            geometrySignature,isCurrent,signal,{...proxy,region:tile.haloRect});
+            geometrySignature,isCurrent,signal,{...proxy,region:tile.haloRect},featherOnly);
           if(!result)return null;
           entries.set(tile.key,result.entries.get(tile.key));
         }
         return {localIndex:batch.localIndex,entries};
       }
-      const key=`${sessionId}:${longEdge}:${geometrySignature}:gpu-brush-native-shift:${gpuMaskIdentity(expression)}:${JSON.stringify(region)}`;
+      const key=`${sessionId}:${longEdge}:${geometrySignature}:gpu-brush-native-${feathered?'feather':'shift'}:${gpuMaskIdentity(expression)}:${JSON.stringify(region)}`;
       let entry=this.localMasks.get(key);
-      if(!entry){
-        const generation=this.resourceGeneration,device=this.device;
-        const current=()=>!signal?.aborted&&isCurrent()&&this.resourceGeneration===generation&&this.device===device;
+      const generation=this.resourceGeneration,device=this.device;
+      const current=()=>!signal?.aborted&&isCurrent()&&this.resourceGeneration===generation&&this.device===device;
+      // A shared generation follows its first requester. A later requester
+      // that is still current repeats it rather than fall to a CPU compile.
+      for(let own=false;!entry&&!own;){
         let record=this.localMaskInflight.get(key);
         if(!record||record.signal?.aborted){
+          own=true;
           const pending=(async()=>{
-            const generated=await helper.generateShiftRegion(this,expression,frame.width,frame.height,frame.geometrySignature,rect,current);
+            const field=feathered&&await this.loadGpuBrushFeatherField(sessionId,longEdge,geometrySignature,expression,frame,current);
+            const generated=feathered
+              ?field&&await helper.generateFeatherRegion(this,expression,frame.width,frame.height,frame.geometrySignature,rect,field,current)
+              :await helper.generateShiftRegion(this,expression,frame.width,frame.height,frame.geometrySignature,rect,current);
             if(!generated)return null;
             if(!current()){generated.texture.destroy();return null;}
             Object.assign(generated,{cacheKey:key,wholeFrame:true,frameRect:[region.x/proxy.width,
@@ -3045,10 +3097,44 @@
           record={promise:pending,signal};this.localMaskInflight.set(key,record);
         }
         try{entry=await record.promise;}finally{if(this.localMaskInflight.get(key)===record)this.localMaskInflight.delete(key);}
-        if(!entry||!current())return null;
+        if(!current())return null;
       }
+      if(!entry)return null;
       this.retainLocalMask(entry,longEdge);
       return {localIndex:batch.localIndex,entries:new Map(batch.tiles.map(tile=>[tile.key,entry]))};
+    }
+
+    /** The feather field depends on the mask and frame, never the viewport:
+     * one resident coarse grid and its global peaks serve every native region
+     * and pan. A requester that outlives a superseded generation makes its own.
+     */
+    async loadGpuBrushFeatherField(sessionId,longEdge,geometrySignature,expression,frame,current) {
+      const key=`${sessionId}:${longEdge}:${geometrySignature}:gpu-brush-native-feather-field:${gpuMaskIdentity(expression)}`;
+      for(let own=false;!own&&current();){
+        let entry=this.localMasks.get(key);
+        if(!entry||entry.destroyed){
+          let record=this.localMaskInflight.get(key);
+          if(!record){
+            own=true;
+            const promise=(async()=>{
+              const generated=await window.HDRGpuBrushMask.generateFeatherField(
+                this,expression,frame.width,frame.height,frame.geometrySignature,current);
+              if(!generated)return null;
+              if(!current()){generated.texture.destroy();return null;}
+              generated.cacheKey=key;
+              this.localMasks.set(key,generated);
+              this.performanceMetrics.maskEvents||=[];
+              this.performanceMetrics.maskEvents.push({kind:generated.kind,longEdge,width:generated.width,height:generated.height,
+                ...generated.timings,factor:generated.factor,bands:generated.bands,cpuMaskRequest:false});
+              return generated;
+            })();
+            record={promise};this.localMaskInflight.set(key,record);
+          }
+          try{entry=await record.promise;}finally{if(this.localMaskInflight.get(key)===record)this.localMaskInflight.delete(key);}
+        }
+        if(entry&&!entry.destroyed&&current()){this.retainLocalMask(entry,longEdge);return entry;}
+      }
+      return null;
     }
 
     /** A steep post-feather eraser must not force the painted feather to CPU.
@@ -3061,6 +3147,10 @@
         ||Number(leaf.mask_shift_edge)||!leaf.strokes?.some(stroke=>stroke.erase))return null;
       const resident=this.softMasks.get(softMaskIdentity(sessionId,geometrySignature,gpuMaskIdentity(expression)));
       if(resident?.soft&&!resident.destroyed)return null;
+      // Export's own reduced grid at native coordinates needs no bitmap
+      // qualification; the qualified painted bitmap remains its fallback.
+      const native=await this.loadGpuBrushShiftRegion(sessionId,batch,longEdge,geometrySignature,isCurrent,signal,proxy,true);
+      if(native||signal?.aborted||!isCurrent())return native;
       const spatial={...expression,leaf:{...leaf,mask_feather:0,mask_shift_edge:0}};
       const frame=this.analyticMaskFrame(sessionId,longEdge,geometrySignature,proxy.width,proxy.height);
       if(!frame||!window.HDRMaskRaster?.eligible(spatial,frame.geometrySignature))return null;
@@ -3139,7 +3229,10 @@
      */
     analyticMaskFrame(sessionId,longEdge,geometrySignature,width,height) {
       const geometry=JSON.parse(geometrySignature),crop=geometry.crop||{};
-      if(!Number(crop.x||0)&&!Number(crop.y||0)&&(crop.width??1)===1&&(crop.height??1)===1)
+      // Without picture dimensions (zoom preparation) the frame follows
+      // source metadata alone, exactly as the cropped case already does.
+      const derived=width==null;
+      if(!derived&&!Number(crop.x||0)&&!Number(crop.y||0)&&(crop.width??1)===1&&(crop.height??1)===1)
         return {geometrySignature,width,height,x:0,y:0};
       const size=this.maskSourceSize;
       if(size?.sessionId!==sessionId)return null;
@@ -3153,7 +3246,7 @@
       const x=Math.min(w-1,Math.max(0,round((crop.x||0)*w))),y=Math.min(h-1,Math.max(0,round((crop.y||0)*h)));
       const right=Math.min(w,Math.max(x+1,round(((crop.x||0)+(crop.width??1))*w)));
       const bottom=Math.min(h,Math.max(y+1,round(((crop.y||0)+(crop.height??1))*h)));
-      if(right-x!==width||bottom-y!==height)return null;
+      if(!derived&&(right-x!==width||bottom-y!==height))return null;
       return {geometrySignature:normalized,width:w,height:h,x,y};
     }
 
@@ -4323,7 +4416,7 @@
       // Native background measurement used to warm these preview bitmaps.
       // A requested zoom can overlap the same bounded fallback with its source
       // transfer, without compiling a native whole-image measurement mask.
-      this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial);
+      this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial, longEdge);
       // A Match candidate grades the scene picture as SDR whatever the SDR
       // lane's own source is, so it names the lane its source comes from.
       const sourceLane = sourceOptions?.sourceLane || lane;

@@ -10,12 +10,14 @@ function fixture(){
  renderer.createMaskTexture=(w,h)=>{const t={width:w,height:h,destroy(){}};textures.push(t);return t;};
  renderer.createMaskBindGroup=()=>({});renderer.encodeMaskPass=()=>{};renderer.destroyAfterActiveRenders=fn=>fn();renderer.retainLocalMask=()=>{};
  renderer.loadGpuBrushLeaf=async(_id,_local,mask,_path,edge)=>{qualified.push({mask,edge});return{soft:edge>=1600,longEdge:edge,texture:{},frameRect:[0,0,1,1]};};
+ // These cases cover the qualified-paint fallback used when the native field refuses.
+ const native=[];renderer.loadGpuBrushShiftRegion=async(...values)=>{native.push(values);return null;};
  const stroke={points:[{x:.04,y:.09}],radius:.1,hardness:.8,flow:1,opacity:1};
  const mask={operator:'leaf',inverted:true,leaf:{type:'brush',mask_feather:.05,strokes:[stroke,{...stroke,erase:true},stroke]}};
  const proxy={region:{x:123,y:456,width:600,height:400},width:8000,height:6000};
  const batch={localIndex:0,local:{id:'brush',mask},tiles:[{key:'first'},{key:'second'}]};
  const run=(current=()=>true,geometry='{}')=>renderer.loadGpuBrushEraseRegion('session',batch,8000,1,geometry,current,undefined,proxy);
- return{renderer,qualified,textures,writes,batch,run};
+ return{renderer,qualified,textures,writes,batch,run,native};
 }
 test('paint qualification excludes erasers; native attenuation retains repaint and frame placement',async()=>{
  const f=fixture(),result=await f.run();
@@ -39,4 +41,11 @@ test('an already qualified complete brush keeps its existing small-bitmap route'
  // Supply a previously qualified complete mask instead of a paint-only mask.
  f.renderer.softMasks.get=()=>({soft:true,destroyed:false});
  assert.equal(await f.run(),null);assert.equal(f.qualified.length,0);assert.equal(f.textures.length,0);
+});
+test('the native feather field precedes paint qualification and an already qualified mask precedes both',async()=>{
+ const f=fixture(),entry={kind:'gpu-brush-native-feather'},served={localIndex:0,entries:new Map([['first',entry]])};
+ f.renderer.loadGpuBrushShiftRegion=async(...values)=>{f.native.push(values);return served;};
+ assert.equal(await f.run(),served);assert.equal(f.native[0][7],true);assert.equal(f.qualified.length,0);assert.equal(f.textures.length,0);
+ f.renderer.softMasks.get=()=>({soft:true,destroyed:false});
+ assert.equal(await f.run(),null);assert.equal(f.native.length,1);
 });

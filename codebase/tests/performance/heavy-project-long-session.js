@@ -4,8 +4,11 @@ const c=require('./heavy-project-review-common'); const {selectLocal}=require('.
 const args=process.argv.slice(2); const opt=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d;
 const project=path.resolve(opt('--project','')); const output=path.resolve(opt('--output','output/performance/review/long-session.json'));
 const freshWork=args.includes('--fresh-work');
-const nativeShift=args.includes('--native-shift-zero-feather');
-if(nativeShift&&!freshWork)throw Error('--native-shift-zero-feather requires --fresh-work');
+// --native-shift-feather keeps a varying Feather so the replay exercises the
+// native feather field as well as the regional masks made from it.
+const shiftFeather=args.includes('--native-shift-feather');
+const nativeShift=shiftFeather||args.includes('--native-shift-zero-feather');
+if(nativeShift&&!freshWork)throw Error('--native-shift-zero-feather and --native-shift-feather require --fresh-work');
 const skipMatch=args.includes('--skip-match');
 const panLane=opt('--pan-lane','sdr');
 if(!['hdr','sdr'].includes(panLane))throw Error('Invalid --pan-lane');
@@ -16,7 +19,7 @@ async function main(){
  const browser=await chromium.launch({headless:false}); const page=await browser.newPage({viewport:{width:2560,height:1440}});
  const report={...c.manifest(project),schemaVersion:1,activeMinutes:minutes,idleMinutes,anchorPolicy:'Original fixture automatic; no manual override',operations:[],checkpoints:[],errors:[],status:'running'};
  report.freshWork=freshWork; report.inputPolicy=freshWork?'Deterministic unique strokes, feather, exposure and clarity radius per lane/cycle; retained fixture strokes':'Original repeated two-value edits';
- if(nativeShift)report.shiftPolicy='Disposable zero-Feather brush, deterministic unique Shift and pointer drags; native zoom and pan';
+ if(nativeShift)report.shiftPolicy=`Disposable ${shiftFeather?'feathered':'zero-Feather'} brush, deterministic unique Shift and pointer drags; native zoom and pan`;
  report.matchPolicy=skipMatch?'Owner-accepted Match omitted from this ordinary-edit coverage run':'Existing periodic Match coverage';
  report.panLane=panLane;
  report.displayContext=JSON.parse(process.env.HDR_FINISHER_REVIEW_DISPLAY_CONTEXT||'null');
@@ -27,11 +30,14 @@ async function main(){
  try{
   await c.open(page,project,false);
   if(nativeShift)await page.evaluate(()=>{
-    window.__nativeShiftCoverage={successfulBatches:0};
+    window.__nativeShiftCoverage={successfulBatches:0,fields:0};
+    const field=state.gpuPreview.loadGpuBrushFeatherField;
+    state.gpuPreview.loadGpuBrushFeatherField=async function(...values){
+      const entry=await field.apply(this,values);if(entry)__nativeShiftCoverage.fields++;return entry;};
     const renderer=state.gpuPreview,load=renderer.loadGpuBrushShiftRegion;
     renderer.loadGpuBrushShiftRegion=async function(...args){
       const result=await load.apply(this,args);
-      if(result&&[...result.entries.values()].some(entry=>entry?.kind==='gpu-brush-native-shift'))
+      if(result&&[...result.entries.values()].some(entry=>entry?.kind==='gpu-brush-native-shift'||entry?.kind==='gpu-brush-native-feather'))
         __nativeShiftCoverage.successfulBatches++;
       return result;
     };
@@ -55,18 +61,18 @@ async function main(){
     },{cycle,lane,originals}));
     for(const p of ['exposure','detail.clarity_amount'])await operation(`${cycle} ${lane} ${p} drag`,()=>c.drag(page,`current.${p}`,cycle%2?1:-1));
     await selectLocal(page,'brush');
-    if(freshWork) await operation(`${cycle} ${lane} fresh brush stroke`,()=>page.evaluate(async({cycle,lane,originals,nativeShift})=>{
+    if(freshWork) await operation(`${cycle} ${lane} fresh brush stroke`,()=>page.evaluate(async({cycle,lane,originals,nativeShift,shiftFeather})=>{
       const sequence=cycle*2+(lane==='sdr'?1:0);
       const local=structuredClone(state.editDocument.local_adjustments.find(x=>x.id===state.selectedLocalId));
       const phase=(sequence*.61803398875)%1;
       const x=.18+phase*.58,y=.16+((sequence*.41421356237)%1)*.64;
       local.mask.leaf.strokes=[...originals.strokes,{points:[{x,y,pressure:.8},{x:Math.min(.94,x+.025+phase*.04),y:Math.min(.94,y+.03),pressure:1}],
         radius:.008+phase*.018,hardness:.25+phase*.55,flow:.25+phase*.5,opacity:.4+phase*.5,erase:sequence%5===0}];
-      local.mask.leaf.mask_feather=nativeShift?0:Math.max(.001,Math.min(.1,originals.feather*(.7+.6*phase)+sequence*.000001));
+      local.mask.leaf.mask_feather=nativeShift&&!shiftFeather?0:Math.max(.001,Math.min(.1,originals.feather*(.7+.6*phase)+sequence*.000001));
       if(nativeShift)local.mask.leaf.mask_shift_edge=(sequence%2?1:-1)*(.001+phase*.006);
       if(!await queueEditCommand('update_local',{local},local.id))throw Error('Fresh brush edit failed');
       return {sequence,x,y,phase};
-    },{cycle,lane,originals,nativeShift}));
+    },{cycle,lane,originals,nativeShift,shiftFeather}));
     await operation(`${cycle} ${lane} brush ${nativeShift?'Shift':'feather'} drag`,()=>c.drag(page,
       nativeShift?'input[data-local-mask-param="mask_shift_edge"]':'input[data-local-mask-param="mask_feather"]',cycle%2?1:-1));
     if(await page.locator('#grade-mode-local').getAttribute('aria-expanded')==='true')await page.locator('#grade-mode-local').click();
@@ -91,6 +97,7 @@ async function main(){
   for(let i=0;i<idleMinutes*6;i++){await page.waitForTimeout(10000);await checkpoint(`idle ${(i+1)*10}s`);}
   const final=report.checkpoints.at(-1)?.state;
   if(nativeShift&&!final?.nativeShiftCoverage?.successfulBatches)throw Error('Shift replay did not exercise the native GPU route');
+  if(shiftFeather&&!final.nativeShiftCoverage.fields)throw Error('Feathered Shift replay did not build a native feather field');
   if(report.errors.length)throw Error(`Page errors: ${report.errors.join('; ')}`);
   if(!final?.gpu?.available||final.viewer?.status!=='ready'
    ||final.accepted?.generation!==final.readiness?.generation

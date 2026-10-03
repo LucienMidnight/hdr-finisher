@@ -8,7 +8,34 @@ narrow unqualified brushes, resampling geometry and timing misses remain
 open. The original tables are retained as the before record, not a claim
 that phase 3 has closed.
 
-## Latest native Shift continuation
+## Latest native Feather continuation
+
+The [native Feather evidence](viewport-phase3-native-feather-evidence-2026-10-03.md)
+supersedes the "native Shift plus Feather remains unfinished" statements
+below. A viewport-independent GPU feather field (export's reduced grid,
+banded Shift with complete halos, global peaks) plus a per-viewport native
+finish serves Shift with Feather, feathered paint that no bitmap qualifies
+for, and erased feathered brushes at native zoom. 108 reference regions pass
+at at most 1.12403 levels; five primary recipes pass all four native
+verdicts in both lanes and three regions. Saved feathered Shift release
+medians fall from 3607.8/4649.2 to 151.2/141.2 ms HDR/SDR with CPU mask-tile
+requests 12→0. A 2.124-level, 150-pixel exceedance found in the earlier
+qualified-paint route at a narrow feather is resolved (1.12 levels, none
+over two), not accepted. Node passes 398 tests.
+
+| ID | Status after this slice |
+|---|---|
+| P3-GPU-01 | Native Shift plus Feather and native unqualified/erased feathered paint: **implemented** on index geometry. Still CPU: straighten/perspective and resampled graphs; frames wider than the adapter texture limit; Fit-scale and auxiliary masks whose bitmap does not qualify. |
+| P3-PERF-01 | Saved feathered Shift release 151.2/141.2 ms (goal 100, unmet). First native zoom 619.8 ms (goal 300, unmet; no regression from 672.9). Fit stroke about 1.9 s and Feather 1.4–1.6 s unchanged. Scopes about 0.5 s after Shift and 0.95 s after first zoom. |
+| P3-PERF-02, coverage, endurance | Unchanged and open. The 0.5 GiB replay is route coverage, not the 30-minute requirement. |
+
+| P3-FALLBACK-01 | New, **deferred by Steve (October 3) to explore later**: after every GPU bitmap size is refused, the larger-bitmap fallback still compiles a 3,200-pixel CPU mask (578–977 ms observed in the background). Unchanged. |
+
+Steve accepted the saved feathered Shift release timings (151.2/141.2 ms)
+for now against the 100 ms goal on October 3, for this control only, and
+authorized a checkpoint commit without push. Phase 3 is not closed.
+
+## Earlier native Shift continuation
 
 The [native Shift evidence](viewport-phase3-native-shift-evidence-2026-10-03.md)
 adds bounded native Shift with Feather zero, using full-field painted peak

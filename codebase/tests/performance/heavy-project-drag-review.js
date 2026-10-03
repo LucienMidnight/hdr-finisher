@@ -62,7 +62,7 @@ async function main() {
   async function row(name, action) {
     if (!only.test(name)) return;
     const observations = []; const entry = {name, observations, recipe:await page.evaluate(()=>({lane:state.currentView,adjustments:structuredClone(state.adjustments[state.currentView]),denoise:structuredClone(state.denoise[state.currentView])}))}; report.rows.push(entry);
-    for (let i=0;i<count;i++) { const n=requests.length; const r=await action(i%2 ? -1 : 1); r.requests=requests.slice(n); if(name.includes('mask_shift_edge'))r.shiftRoute=await page.evaluate(()=>({leaf:localAdjustments().find(x=>x.mask?.leaf?.type==='brush')?.mask?.leaf,events:state.gpuPreview.performanceMetrics.maskEvents?.filter(e=>e.kind==='gpu-brush-native-shift').slice(-4)})); observations.push(r); c.write(output,report); }
+    for (let i=0;i<count;i++) { const n=requests.length; const r=await action(i%2 ? -1 : 1); r.requests=requests.slice(n); if(name.includes('mask_shift_edge'))r.shiftRoute=await page.evaluate(()=>({leaf:localAdjustments().find(x=>x.mask?.leaf?.type==='brush')?.mask?.leaf,events:state.gpuPreview.performanceMetrics.maskEvents?.filter(e=>e.kind?.startsWith('gpu-brush-native')).slice(-6)})); observations.push(r); c.write(output,report); }
     entry.summary = Object.fromEntries(['inputToFirstFrameMs','releaseToExactMs','releaseToScopesMs','releaseToScopeCallbackCompleteMs','releaseToObservedStableMs'].map(k=>[k,{medianMs:percentile(observations.map(x=>x[k]),.5),p95Ms:percentile(observations.map(x=>x[k]),.95),maximumMs:Math.max(...observations.map(x=>x[k]).filter(Number.isFinite))}]));
     c.write(output,report); console.log(name, JSON.stringify(entry.summary));
   }

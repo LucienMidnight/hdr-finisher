@@ -23,6 +23,10 @@ async function completeGeneration(page){
  await c.open(page,project,false);
  report.regionalErasePolicy=args.includes('--disable-regional-erase')?'Disabled in disposable renderer for paired baseline':'Production';
  if(args.includes('--disable-regional-erase'))await page.evaluate(()=>{state.gpuPreview.loadGpuBrushEraseRegion=async()=>null;});
+ // Paired baseline for native Feather: keep native Shift, refuse the feather-only field.
+ report.nativeFeatherPolicy=args.includes('--disable-native-feather')?'Disabled in disposable renderer for paired baseline':'Production';
+ if(args.includes('--disable-native-feather'))await page.evaluate(()=>{const renderer=state.gpuPreview,load=renderer.loadGpuBrushShiftRegion;
+  renderer.loadGpuBrushShiftRegion=function(...values){return values[7]?Promise.resolve(null):load.apply(this,values);};});
  if(lane!=='hdr'){await page.evaluate(lane=>switchLane(lane),lane);await c.stable(page);}
  await completeGeneration(page);
  report.settlementContract='Current exact picture and scopes after automatic-anchor and coordinator work drain';

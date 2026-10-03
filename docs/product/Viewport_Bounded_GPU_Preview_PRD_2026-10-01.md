@@ -28,7 +28,8 @@ are recorded in 14.12. Steve also deferred the separate SDR cross-scale
 continuity issue in 14.13 because it is close to the limit. Gradient Fan and
 Fit gradient masks now use the GPU (14.14). GPU brush feather and index crops
 are recorded in 14.15; the October 3 exit audit consolidates unmet targets,
-fallback gaps and owner-review items. Phase 3 remains open.
+fallback gaps and owner-review items. Native Shift Edge is recorded in 14.20
+and native Feather, with and without Shift, in 14.21. Phase 3 remains open.
 
 ## 1. Problem
 
@@ -1142,3 +1143,63 @@ pin, editing-Peak budget, zoom scheduler or existing owner deferral changes.
 Phase 3 remains open; final 30-minute endurance still requires stabilized
 remaining implementation. The owner subsequently authorized a checkpoint
 commit and next-thread prompt. No phase 4 or push is performed.
+
+### 14.21 Bounded native Feather field, with and without Shift Edge
+
+The [native Feather evidence](../technical/viewport-phase3-native-feather-evidence-2026-10-03.md)
+records the route that removes the CPU mask compile for native Shift Edge
+plus Feather. Export's reduced feather grid depends on the mask and frame,
+not the viewport, so it is built once as a small GPU field: native paint,
+full-field painted peak, export's float32 Shift boxes in bounded bands
+carrying the complete halo, block means joined across bands, twelve
+fractional passes and the blurred peak over every interpolated native
+pixel. Each viewport then interpolates that field at native centres,
+restores the painted peak and applies inversion and ordered erase. Narrow
+feathers keep export's full-resolution boxes over the finite halo. No
+native-frame texture, stretched shifted bitmap or homography is used, and
+the existing 16,777,216-pixel scratch cap, cache registration, cancellation
+and device-replacement contracts apply.
+
+The same field now serves feathered paint that no bitmap qualifies for,
+after qualification refuses and before any CPU compile, and precedes the
+paint-bitmap qualification for erased feathered brushes at native zoom. The
+latter is a change of order from 14.19, made on evidence: an added-stroke
+Feather 0.0005 recipe measured 2.124 levels with 150 pixels over two through
+the qualified paint bitmap, and 1.12 levels with none over two through the
+field. Already-qualified complete masks keep their small-bitmap route. The
+classifier, its limits, the general two-level approval and the three
+case-specific acceptances are unchanged; admission is not widened.
+
+All 108 native Feather reference regions pass at at most 1.12403 levels,
+including 24-megapixel frames that need up to 16 bands; the 52 native Shift
+and 804 rounded references still pass. Saved-Feather Shift expansion, an
+added-stroke contraction, two narrow feathers and the saved state pass all
+four native verdicts in both lanes and three regions.
+
+Three fresh sessions per mode on the saved feathered recipe measure release
+picture medians of 3607.8→151.2 ms HDR and 4649.2→141.2 ms SDR, scopes
+3983.8→551.8 and 5013.5→524.2 ms, and CPU mask-tile requests 12→0 per lane.
+The first version of the new order made first native zoom slower (890
+versus 673 ms) through cold pipelines and queue waits; preparing the field
+during the zoom's source transfer and removing the waits measures 619.8 ms
+over three sessions, which is reported as no regression rather than a gain.
+The 300 ms zoom goal, the 100 ms slider goal, scope settlement and Fit
+stroke/Feather timings remain unmet; Fit never enters this route. Full Node
+passes 398 tests. A 0.5 GiB replay with varying Feather completes 96
+operations and 394 evictions without errors, allocator debt or
+registration mismatch.
+
+This closes the native Shift-plus-Feather gap of P3-GPU-01 and the native
+part of the narrow-paint gap on supported geometry. Resampling geometry and
+graphs, frames wider than the adapter texture limit, Fit-scale auxiliary CPU
+masks, timing exits, the coverage audit and 30-minute endurance remain
+open. Phase 3 remains open; no push or phase 4 work is performed.
+
+**Owner decisions (Steve, October 3).** The saved feathered Shift release
+timings of 151.2 ms HDR / 141.2 ms SDR are accepted for now against the
+100 ms slider goal, given the improvement from 3.6–4.6 s; this acceptance
+covers this control only and may be reopened on regression. The redundant
+3,200-pixel CPU mask compile in the larger-bitmap fallback (after every GPU
+bitmap size has been refused) is noted as P3-FALLBACK-01 and deferred for
+later exploration; the fallback is unchanged. Steve authorized a checkpoint
+commit of this slice (no push).
