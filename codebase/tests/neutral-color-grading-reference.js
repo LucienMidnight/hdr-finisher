@@ -19,7 +19,9 @@ for kind in [PreviewKind.HDR,PreviewKind.SDR]:
     for name, recipe, enabled in [('neutral',{},True),('neutral-hue-balance',dict(shadows=dict(hue=270),midtones=dict(hue=90),highlights=dict(hue=180),balance=45,blending=100),True),('disabled',dict(shadows=dict(saturation=30)),False),('active',dict(shadows=dict(hue=210,saturation=30,luminance_ev=.2),midtones=dict(hue=45,saturation=20,luminance_ev=-.1),highlights=dict(hue=90,saturation=15,luminance_ev=.1)),True)]:
         grading=ColorGradingAdjustments(**recipe)
         expected=_apply_color_grading(pixels,grading,kind) if enabled else pixels
-        cases.append(dict(lane=kind.value,name=name,grading=grading.model_dump(),enabled=enabled,clampOutput=kind==PreviewKind.SDR and name=='active',source=pixels.reshape(-1).tolist(),expected=expected.reshape(-1).tolist()))
+        fixture=dict(lane=kind.value,name=name,grading=grading.model_dump(),enabled=enabled,clampOutput=kind==PreviewKind.SDR and name=='active',source=pixels.reshape(-1).tolist(),expected=expected.reshape(-1).tolist())
+        cases.append(fixture)
+        if kind==PreviewKind.HDR:cases.append(dict(fixture,name='base/'+name,base=True))
 print(json.dumps(cases))
 `], {cwd:root,encoding:'utf8'}));
 
@@ -29,20 +31,20 @@ print(json.dumps(cases))
     await page.goto(process.env.HDR_FINISHER_URL || 'http://127.0.0.1:8799');
     await page.waitForFunction(() => state.gpuPreview?.available);
     const results = await page.evaluate(async cases => {
-      const device = state.gpuPreview.device;
+      const renderer=state.gpuPreview,device = renderer.device;
+      renderer.ensureStorageBuffers(196*4,4);
+      const dummy=renderer.createMaskTexture(1,1);
       const module = device.createShaderModule({code:HDRWebGPUShaders.SHADER_SOURCE + `
         @fragment fn gradingProbe(input: VertexOut) -> @location(0) vec4f {
-          let graded = applyColorGrading(textureLoad(sourceTexture, vec2i(input.position.xy), 0).rgb, p[0] > 0.5);
+          let source=textureLoad(sourceTexture, vec2i(input.position.xy), 0).rgb;
+          var graded = applyColorGrading(source, p[0] > 0.5);
+          if(p[194]>0.5){graded=renderHdrBase(source);}
           // renderSdrBase immediately clamps active grading to display range;
           // CPU's grading function includes that upper clamp itself.
           return vec4f(select(graded, min(graded, vec3f(1.0)), p[195] > 0.5), 1.0);
         }
       `});
-      const bindings = device.createBindGroupLayout({entries:[
-        {binding:0,visibility:GPUShaderStage.FRAGMENT,texture:{sampleType:'unfilterable-float'}},
-        {binding:1,visibility:GPUShaderStage.FRAGMENT,buffer:{type:'read-only-storage'}},
-      ]});
-      const pipeline = device.createRenderPipeline({layout:device.createPipelineLayout({bindGroupLayouts:[bindings]}),
+      const pipeline = device.createRenderPipeline({layout:renderer.pipelineLayout,
         vertex:{module,entryPoint:'vertexMain'},fragment:{module,entryPoint:'gradingProbe',targets:[{format:'rgba32float'}]},primitive:{topology:'triangle-list'}});
       const results=[];
       for(const fixture of cases) {
@@ -50,6 +52,7 @@ print(json.dumps(cases))
         const target=device.createTexture({size:[8,1],format:'rgba32float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC});
         const params=new Float32Array(196); params[0]=fixture.lane==='hdr'?1:0;params[111]=fixture.enabled?1:0;
         params[195]=fixture.clampOutput?1:0;
+        params[194]=fixture.base?1:0;
         params[112]=.55+3.45*fixture.grading.blending/100;params[113]=fixture.grading.balance/50;
         ['shadows','midtones','highlights'].forEach((name,i)=>{const wheel=fixture.grading[name];params[114+i*3]=wheel.hue;params[115+i*3]=wheel.saturation/400;params[116+i*3]=wheel.luminance_ev;});
         const buffer=device.createBuffer({size:params.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
@@ -57,7 +60,7 @@ print(json.dumps(cases))
         try {
           const rgba=new Float32Array(32); for(let i=0;i<8;i++){rgba.set(fixture.source.slice(i*3,i*3+3),i*4);rgba[i*4+3]=1;}
           device.queue.writeTexture({texture:source},rgba,{bytesPerRow:128},[8,1]);device.queue.writeBuffer(buffer,0,params);
-          const group=device.createBindGroup({layout:bindings,entries:[{binding:0,resource:source.createView()},{binding:1,resource:{buffer}}]});
+          const group=renderer.bindGraphResources(source.createView(),dummy.createView(),{buffer},dummy.createView());
           const encoder=device.createCommandEncoder(),pass=encoder.beginRenderPass({colorAttachments:[{view:target.createView(),loadOp:'clear',storeOp:'store',clearValue:{r:0,g:0,b:0,a:0}}]});
           pass.setPipeline(pipeline);pass.setBindGroup(0,group);pass.draw(3);pass.end();
           encoder.copyTextureToBuffer({texture:target},{buffer:read,bytesPerRow:256},[8,1]);device.queue.submit([encoder.finish()]);
@@ -67,10 +70,10 @@ print(json.dumps(cases))
           results.push({lane:fixture.lane,name:fixture.name,pixels:8,maxError,firstPixel:actual.slice(0,3)});
         } finally {[source,target,buffer,read].forEach(r=>r.destroy());}
       }
-      return results;
+      dummy.destroy();return results;
     },cases);
     fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,JSON.stringify({results},null,2)+'\n');
     for(const result of results) assert.ok(result.maxError<=.000002,JSON.stringify(result));
-    console.log(`Colour grading CPU/GPU: ${results.length} cases, 64 pixels pass.`);
+    console.log(`Colour grading/HDR base CPU/GPU: ${results.length} cases, ${results.length*8} pixels pass.`);
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

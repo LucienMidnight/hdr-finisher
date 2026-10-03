@@ -154,7 +154,12 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
     // on both sides; the same added-difference measure holds them to the
     // same agreement.
     const structureFailures = [];
-    for (const detail of [{ softness: 60 }, { microcontrast: 80 }, { microcontrast: -60 }, { softness: 30, microcontrast: 50 }]) {
+    for (const detail of [
+      { softness: 0 }, { softness: 60 }, { softness: 100 },
+      { microcontrast: -100 }, { microcontrast: -60 }, { microcontrast: 0 },
+      { microcontrast: 80 }, { microcontrast: 100 },
+      { softness: 30, microcontrast: 50 }, { softness: 100, microcontrast: -100 },
+    ]) {
       const result = await compare(detail);
       if (result.error) throw new Error(`${JSON.stringify(detail)}: ${result.error}`);
       const added = result.differences.map((value, index) => Math.max(0, value - neutral.differences[index]) / 255);

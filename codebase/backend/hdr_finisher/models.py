@@ -1193,6 +1193,19 @@ class PreviewRequest(BaseModel):
     execution: Literal["whole", "strips"] = "whole"
 
 
+class LocalMaskBitmapVerdictRequest(BaseModel):
+    """Classify a bounded GPU bitmap without rasterizing the source mask."""
+
+    model_config = ConfigDict(extra="forbid")
+    mask: MaskExpression
+    edit_revision: int | None = Field(default=None, ge=0)
+    long_edge: int = Field(ge=256, le=3200)
+    geometry_signature: str
+    width: int = Field(ge=1, le=3200)
+    height: int = Field(ge=1, le=3200)
+    bitmap: str = Field(max_length=13653336)
+
+
 class LocalMaskPreviewRequest(BaseModel):
     """A non-persistent mask draft compiled against the current session source."""
 

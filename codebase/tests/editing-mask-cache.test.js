@@ -47,3 +47,17 @@ test('all resident masks needed by a frame survive the first cache trim', () => 
   assert.equal(target.localMasks.size, 3);
   for (const [, entry] of entries) assert.equal(entry.lastUseSerial, 2);
 });
+
+test('regional graph outputs are protected before loading another local', () => {
+  const region = {x:100,y:200,width:600,height:400};
+  const local = {id:'graph',mask:{operator:'intersect',children:[
+    {operator:'leaf',leaf:{type:'luminance_range'}}, {operator:'leaf',leaf:{type:'path'}}]}};
+  const key = 'session:graph:7968:{}:gpu-mask-graph:node(leaf:luminance_range,leaf:path):region:' + JSON.stringify(region);
+  const entry = {byteSize:200*1024*1024,magnifiedMask:true,lastUseSerial:1};
+  const target = Object.create(proto);
+  Object.assign(target,{localMasks:new Map([[key,entry]]),maskUseSerial:2,
+    destroyAfterActiveRenders:fn=>fn(),destroyLocalMaskEntry:()=>assert.fail('current graph was evicted')});
+  target.markResidentMaskFrame('session',[local],7968,'{}',region);
+  target.retainLocalMask({byteSize:1},7968);
+  assert.equal(target.localMasks.get(key),entry); assert.equal(entry.lastUseSerial,2);
+});

@@ -493,6 +493,10 @@ async function overlayMaskAlphaAt(page, x, y) {
       `A continuous Feather drag did not collapse to a bounded latest-state preview (${featherDraftCount} exact frame(s)).`,
     );
     const feathered = await overlayColors(overlay);
+    const draftMaskPixels=await page.evaluate(()=>{
+      const canvas=localAuthoritativeMaskCache.get(selectedLocal().id).canvas;
+      return {width:canvas.width,height:canvas.height,pixels:Array.from(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data)};
+    });
     await page.screenshot({
       path: path.resolve(__dirname, "../output/brush-qa/feathered.png"),
       fullPage: true,
@@ -513,12 +517,16 @@ async function overlayMaskAlphaAt(page, x, y) {
     assert(await page.locator("#preview-status").isHidden(), "The UI remained stuck on Updating after mask feather committed.");
     const authoritativeMask = await overlayColors(overlay);
     assert(authoritativeMask.red > painted.red * 2, `The server mask driving the adjustment is not visibly feathered: ${JSON.stringify({ painted, authoritativeMask })}`);
-    assert(
-      authoritativeMask.alphaSum === feathered.alphaSum
-      && authoritativeMask.red === feathered.red
-      && JSON.stringify(authoritativeMask.bounds) === JSON.stringify(feathered.bounds),
-      `The live Feather preview differs from the settled server mask: ${JSON.stringify({ feathered, authoritativeMask })}`,
-    );
+    const settledMaskPixels=await page.evaluate(()=>{
+      const canvas=localAuthoritativeMaskCache.get(selectedLocal().id).canvas;
+      return {width:canvas.width,height:canvas.height,pixels:Array.from(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data)};
+    });
+    // Compare every authoritative texel before and after commit. The overlay
+    // canvas changes width when the controls rail changes; its translated
+    // bounding box and fractional drawing alpha are not mask differences.
+    assert(draftMaskPixels.width===settledMaskPixels.width && draftMaskPixels.height===settledMaskPixels.height
+      && draftMaskPixels.pixels.every((value,i)=>value===settledMaskPixels.pixels[i]),
+      'The live Feather mask texels differ from the settled server mask.');
 
     const maskMatrix = [];
     for (const shift of [-66, 0, 66]) {
@@ -615,13 +623,14 @@ async function overlayMaskAlphaAt(page, x, y) {
 
     await page.locator("#local-eraser").click();
     const beforeErase = await authoritativeMaskAlphaQuality(page);
-    const beforeEraseCenter = await authoritativeMaskAlphaAt(page, 0.84, 0.30);
+    const beforeEraseCenter = await authoritativeMaskAlphaAt(page, 0.85, 0.30);
     const revisionBeforeErase = await page.evaluate(() => state.editRevision);
     const staleMaskRequests = [];
+    let eraseReleased = false;
     const recordMaskRequest = (request) => {
       const url = new URL(request.url());
       if (
-        request.method() === "GET"
+        eraseReleased && request.method() === "GET"
         && url.pathname.includes("/local-mask/")
         && Number(url.searchParams.get("edit_revision")) === revisionBeforeErase
       ) {
@@ -637,7 +646,7 @@ async function overlayMaskAlphaAt(page, x, y) {
     await page.mouse.down();
     await page.mouse.move(previewBox.x + previewBox.width * 0.87, previewBox.y + previewBox.height * 0.30, { steps: 16 });
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    const duringEraseCenterOverlay = await overlayMaskAlphaAt(page, 0.84, 0.30);
+    const duringEraseCenterOverlay = await overlayMaskAlphaAt(page, 0.85, 0.30);
     await page.evaluate(() => {
       window.__eraseReleaseAlphaSamples = new Promise((resolve) => {
         const samples = [];
@@ -647,15 +656,17 @@ async function overlayMaskAlphaAt(page, x, y) {
           const preview = document.querySelector("#preview-canvas");
           const overlayRect = overlay.getBoundingClientRect();
           const previewRect = preview.getBoundingClientRect();
-          const pixelX = Math.round((previewRect.left + 0.84 * previewRect.width - overlayRect.left) * overlay.width / overlayRect.width);
+          const pixelX = Math.round((previewRect.left + 0.85 * previewRect.width - overlayRect.left) * overlay.width / overlayRect.width);
           const pixelY = Math.round((previewRect.top + 0.30 * previewRect.height - overlayRect.top) * overlay.height / overlayRect.height);
           samples.push(overlay.getContext("2d").getImageData(pixelX, pixelY, 1, 1).data[3]);
+          const local=selectedLocal(), cached=localAuthoritativeMaskCache.get(local?.id);
           if (performance.now() < deadline) requestAnimationFrame(sample);
           else resolve(samples);
         };
         requestAnimationFrame(sample);
       });
     });
+    eraseReleased = true;
     await page.mouse.up();
     assert((await eraseResponse).ok(), "Erasing the painted mask failed.");
     const eraseDuration = Date.now() - eraseStarted;
@@ -664,7 +675,7 @@ async function overlayMaskAlphaAt(page, x, y) {
       return local && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask);
     });
     const settledErase = await authoritativeMaskAlphaQuality(page);
-    const settledEraseCenter = await authoritativeMaskAlphaAt(page, 0.84, 0.30);
+    const settledEraseCenter = await authoritativeMaskAlphaAt(page, 0.85, 0.30);
     const eraseReleaseAlphaSamples = await page.evaluate(() => window.__eraseReleaseAlphaSamples);
     page.off("request", recordMaskRequest);
     assert(

@@ -11,11 +11,44 @@ from pathlib import Path
 import sys
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "performance"))
 
 import preview_export_compare as compare  # noqa: E402
 from export_parity_check import display_encode, presentation_encode  # noqa: E402
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_sdr_stage_inspection_keeps_pixels_and_restores_functions(fail) -> None:
+    from hdr_finisher import adjustments, local_adjustments
+    from hdr_finisher.models import DetailAdjustments, GeometryAdjustments, LocalAdjustment, PreviewKind
+
+    original_detail, original_locals = adjustments.apply_detail, local_adjustments.apply_local_stack
+    source = np.full((3, 4, 3), 1.2, dtype=np.float32)
+    local = LocalAdjustment()
+    local.sdr_grade.exposure = -1
+    masks = {local.id: np.full((3, 4), 255, dtype=np.uint8)}
+    options = dict(compiled_masks=masks)
+    geometry = GeometryAdjustments()
+    expected = original_locals(source, source, [local], PreviewKind.SDR, geometry, **options)
+    region = {"id": "subset", "rect": {"x": 1, "y": 1, "width": 2, "height": 1}}
+    try:
+        with compare.inspect_sdr_stages([region]) as evidence:
+            detailed = adjustments.apply_detail(source, DetailAdjustments(), PreviewKind.SDR)
+            np.testing.assert_array_equal(detailed, source)
+            actual = local_adjustments.apply_local_stack(detailed, source, [local], PreviewKind.SDR, geometry, **options)
+            np.testing.assert_array_equal(actual, expected)
+            assert evidence["globalDetail"][0]["inputAboveWhitePixels"] == 2
+            assert evidence["globalDetail"][0]["aboveWhiteUnchangedPixels"] == 2
+            assert evidence["locals"][0]["recoveredBelow098Pixels"] == 2
+            if fail:
+                raise ValueError("reference render failed")
+    except ValueError as error:
+        assert fail and str(error) == "reference render failed"
+    assert adjustments.apply_detail is original_detail
+    assert local_adjustments.apply_local_stack is original_locals
+    np.testing.assert_array_equal(source, np.full((3, 4, 3), 1.2, dtype=np.float32))
 
 
 def _frame(seed: int = 3, height: int = 60, width: int = 80) -> np.ndarray:

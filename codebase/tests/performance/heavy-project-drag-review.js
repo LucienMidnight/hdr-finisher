@@ -8,6 +8,7 @@ const project = path.resolve(opt('--project', ''));
 const output = path.resolve(opt('--output', 'output/performance/review/drag-review.json'));
 const count = Number(opt('--samples', 10));
 const only = new RegExp(opt('--only', '.*'));
+const native = args.includes('--native');
 const paths = ['exposure', 'contrast_pivot', 'lift', 'lift_range', 'saturation', 'white_balance_kelvin',
   'color_grading.blending', 'black_and_white.reds', 'vignette.amount', 'vignette.feather',
   'film_look.look_strength', 'film_look.red_response', 'detail.clarity_amount', 'detail.microcontrast',
@@ -53,6 +54,7 @@ async function padDrag(page,kind,direction){
 }
 async function main() {
   const report = { ...c.manifest(project), schemaVersion: 1, sampleCount: count, methodology: '12 native pointer moves over nominal 500 ms; actual duration retained. Control fine mode for enhanced rails; native-thumb movement for overlaid luma rails. Preparation excluded; manual highlight anchors isolate controls; Color and Color Grading activated outside clock. First sample is first interaction in that row, NOT guaranteed cold cache; later samples alternate direction. Application presentation event/rAF observations, not physical scanout timings.', rows: [], errors: [] };
+  report.zoomPolicy = native ? '100% native; zoom preparation excluded' : 'Fit';
   const browser = await chromium.launch({headless:false}); const page = await browser.newPage({viewport:{width:2560,height:1440}});
   report.displayContext=JSON.parse(process.env.HDR_FINISHER_REVIEW_DISPLAY_CONTEXT||'null');
   report.actualViewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight,devicePixelRatio}));
@@ -66,6 +68,7 @@ async function main() {
   }
   try {
     await c.open(page,project,true);
+    if (native) { await page.locator('#zoom-actual').click(); await c.stable(page); }
     for (const lane of ['hdr','sdr']) {
       await page.evaluate(x=>switchLane(x),lane); await c.stable(page);
       // The mature fixture bypasses Color and Color Grading. Activate these
@@ -87,7 +90,7 @@ async function main() {
       await row(`${lane}: color-wheel pad`,d=>padDrag(page,'wheel',d));
       await row(`${lane}: vignette center handle`,d=>padDrag(page,'vignette',d));
       await selectLocal(page,'brush');
-      for (const selector of ['#local-exposure','#local-opacity','input[data-local-mask-param="mask_feather"]'])
+      for (const selector of ['#local-exposure','#local-opacity','input[data-local-mask-param="mask_feather"]','input[data-local-mask-param="mask_shift_edge"]'])
         await row(`${lane}: brush ${selector}`,d=>c.drag(page,selector,d));
       await selectLocal(page,'linear_gradient');
       await row(`${lane}: gradient fan`,d=>c.drag(page,'input[data-local-mask-param="gradient_fan"]',d));

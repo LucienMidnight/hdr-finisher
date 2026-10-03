@@ -19,7 +19,10 @@
  *
  * Options: --lanes hdr,sdr   --zoom 100   --regions id:x:y,id:x:y (centre of
  * each region as a fraction of the image)   --enforce (exit non-zero when a
- * section 4 limit is exceeded).
+ * section 4 limit is exceeded). --match fits SDR with the app's GPU route
+ * before any --set edits, so native captures can exercise a matched recipe.
+ * --sdr-darkening-check (with --match) isolates a neutral full-coverage local
+ * at -1 EV after the matched SDR base, and records CPU highlight-stage coverage.
  */
 const { execFileSync } = require('child_process');
 const fs = require('fs');
@@ -75,8 +78,87 @@ async function main() {
 
   const manifest = { project, lanes: [] };
   try {
-    await c.open(page, project, false);
+    let openedProject = project;
+    if (args.includes('--legacy-match')) {
+      if (args.includes('--match')) throw new Error('--legacy-match and --match are mutually exclusive');
+      openedProject = path.join(work, `legacy-match-input-${Date.now()}.hdrfinisher`);
+      // A new diagnostic archive exercises the old independent SDR base.
+      // The source fixture is only read; captured locals are deliberately empty.
+      execFileSync(pythonExecutable(), ['-c', `
+import json,sys,zipfile
+from pathlib import Path
+sys.path.insert(0,str(Path('backend').resolve()))
+sys.path.insert(0,str(Path('tests/performance').resolve()))
+from hdr_finisher.models import EditDocument,SdrMatchState,SDRMatchRevertState
+from reference_session import write_project_archive
+d=EditDocument.model_validate(json.loads(zipfile.ZipFile(sys.argv[1]).read('edit-state.json')))
+d.sdr_match=SdrMatchState(active=True,grain_source='sdr_override',
+    captured_hdr_adjustments=d.global_adjustments.hdr.model_copy(deep=True),
+    captured_shared_adjustments=d.global_adjustments.shared.model_copy(deep=True),
+    captured_reference_white_nits=d.hdr_reference_white_nits,
+    captured_source_fingerprint_sha256=d.source.fingerprint_sha256,
+    automatic_highlight_boundary_ratio=.8,signature='phase3-regional-scene-diagnostic',
+    revert_state=SDRMatchRevertState(sdr_adjustments=d.global_adjustments.sdr.model_copy(deep=True),
+        sdr_denoise=d.denoise.sdr.model_copy(deep=True)))
+write_project_archive(d.model_dump(mode='json'),Path(sys.argv[2]))
+`, project, openedProject], {cwd:ROOT,stdio:'pipe'});
+      manifest.project = openedProject;
+      report.legacyMatchInput = openedProject;
+    }
+    await c.open(page, openedProject, false);
     report.viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }));
+    if (args.includes('--luma-graph')) {
+      report.lumaGraph = await page.evaluate(async () => {
+        const local = structuredClone(localAdjustments().find(item => item.mask?.leaf?.type === 'luminance_range'));
+        const path = structuredClone(localAdjustments().find(item => item.mask?.leaf?.type === 'path')?.mask);
+        if (!local || !path) throw new Error('--luma-graph requires luminance and path locals');
+        path.id = crypto.randomUUID();
+        local.mask = { id: crypto.randomUUID(), operator: 'union', enabled: true, inverted: false,
+          children: [local.mask, path] };
+        if (!await queueEditCommand('update_local', { local }, local.id)) throw new Error('Could not create diagnostic graph');
+        return { localId: local.id, operator: local.mask.operator };
+      });
+      await settled();
+    }
+    if (args.includes('--match')) {
+      report.match = await page.evaluate(async () => {
+        if (!await setSdrMatch('match')) throw new Error('Match did not complete');
+        return { status: state.editDocument?.sdr_match?.materialized_status,
+          metrics: structuredClone(state.editDocument?.sdr_match?.materialized_metrics),
+          candidateTimings: structuredClone(state.sdrMatchCandidateTimings || []) };
+      });
+      await settled();
+    }
+    if (args.includes('--sdr-darkening-check')) {
+      if (!args.includes('--match')) throw new Error('--sdr-darkening-check requires --match');
+      report.darkeningCheck = await page.evaluate(async () => {
+        for (const item of localAdjustments()) {
+          const local = structuredClone(item);
+          local.sdr_grade.enabled = false;
+          if (!await queueEditCommand('update_local', { local }, local.id)) throw new Error('Could not isolate SDR locals');
+        }
+        const local = newLocalAdjustment('linear_gradient');
+        local.name = 'Diagnostic highlight darkening';
+        // The exact CPU and GPU gradient both give full coverage for a zero-length axis.
+        local.mask.leaf.start = { x: 0.5, y: 0.5 };
+        local.mask.leaf.end = { x: 0.5, y: 0.5 };
+        local.sdr_grade.exposure = -1;
+        if (!await queueEditCommand('create_local', { local })) throw new Error('Could not add diagnostic local');
+        return { localId: local.id, exposure: -1, existingSdrGradesDisabled: true };
+      });
+      manifest.inspectSdrStages = true;
+      await settled();
+    }
+    if (args.includes('--without-locals')) {
+      await page.evaluate(async () => {
+        for (const existing of localAdjustments()) {
+          const local = structuredClone(existing); local.enabled = false;
+          if (!await queueEditCommand('update_local', { local }, local.id)) throw new Error('Could not disable diagnostic local');
+        }
+      });
+      report.localsDisabled = true;
+      await settled();
+    }
     // In-session edits for isolating a module (never saved), e.g.
     //   --set hdr.film_look.grain_amount=0,sdr.film_look.grain_amount=0
     report.sessionEdits = opt('--set', '').split(',').filter(Boolean).map((entry) => {
@@ -90,6 +172,40 @@ async function main() {
         for (const edit of edits) commitAdjustmentValue(edit.path, edit.value, { manual: true });
         await settlePreview(state.currentView, {});
       }, report.sessionEdits);
+      await settled();
+    }
+    const localEdits = opt('--local-set', '').split(',').filter(Boolean).map(entry => {
+      const [controlPath, raw] = entry.split('=');
+      return { path: controlPath, value: JSON.parse(raw) };
+    });
+    if (args.includes('--brush-stroke')) {
+      report.brushStroke = await page.evaluate(async () => {
+        const local=structuredClone(localAdjustments().find(item=>item.mask?.leaf?.type==='brush'));
+        if(!local)throw Error('--brush-stroke requires a brush local');
+        const stroke={points:[{x:.35,y:.45,pressure:.4},{x:.4,y:.5,pressure:.8},{x:.45,y:.55,pressure:.7}],radius:.06,hardness:.5,flow:.7,opacity:.8,erase:false};
+        local.mask.leaf.strokes.push(stroke);
+        if(!await queueEditCommand('update_local',{local},local.id))throw Error('Brush edit failed');
+        return {localId:local.id,stroke};
+      });
+      await settled();
+    }
+    if (localEdits.length) {
+      report.localEdits = await page.evaluate(async ({ edits, lanes, type }) => {
+        const local = structuredClone(localAdjustments().find(item => item.mask?.leaf?.type === type));
+        if (!local) throw new Error(`--local-set requires a ${type} local`);
+        for (const edit of edits) {
+          if (edit.path === 'opacity') { local.opacity = edit.value; continue; }
+          if (edit.path.startsWith('mask.')) { local.mask.leaf[edit.path.slice(5)] = edit.value; continue; }
+          for (const lane of lanes) {
+            const parts = edit.path.split('.');
+            let target = local[`${lane}_grade`];
+            for (const part of parts.slice(0,-1)) target = target[part];
+            target[parts.at(-1)] = edit.value;
+          }
+        }
+        if (!await queueEditCommand('update_local', { local }, local.id)) throw new Error('Local edit failed');
+        return { localId: local.id, type, lanes, edits };
+      }, { edits: localEdits, lanes, type: opt('--local-type', 'path') });
       await settled();
     }
     manifest.document = await page.evaluate(() => ({
@@ -155,7 +271,8 @@ async function main() {
           }
           const name = `${lane}-${regionId}-${route}-mask-${local.localId}.f32`;
           fs.writeFileSync(path.join(work, name), Buffer.from(read.base64, 'base64'));
-          masks.push({ ...local, route: read.execution, previewSource: `renderer readback (${read.sources.join(', ')})`, file: name });
+          masks.push({ ...local, route: read.execution, sources:read.sources,
+            previewSource: `renderer readback (${read.sources.join(', ')})`, file: name });
         }
         return masks;
       };
@@ -257,6 +374,43 @@ async function main() {
           };
         });
       }
+      laneCapture.sceneMaskSources = await page.evaluate(() => [...state.gpuPreview.proxies.values()]
+        .filter(proxy => proxy.lane === 'hdr' && proxy.region && proxy.sourceIdentity === 'source')
+        .map(proxy => ({workingSpace:proxy.workingSpace,longEdge:proxy.longEdge,
+          width:proxy.width,height:proxy.height,region:proxy.region,byteSize:proxy.byteSize})));
+      if (args.includes('--require-gpu-gradient')) {
+        for (const region of laneCapture.regions) {
+          const mask = region.masks.find(mask => mask.leafType === 'linear_gradient');
+          if (!mask?.sources?.some(source => source.startsWith('gpu-linear-gradient'))) {
+            throw new Error('No GPU gradient mask was captured for the native comparison');
+          }
+        }
+      }
+      if (args.includes('--require-gpu-brush')) {
+        for (const region of laneCapture.regions) {
+          const mask=region.masks.find(mask=>mask.leafType==='brush');
+          if(!mask?.sources?.some(source=>source.startsWith('gpu-brush-feather')))
+            throw new Error('No qualified GPU brush feather was captured for the native comparison');
+        }
+      }
+      if (args.includes('--require-gpu-path')) {
+        for (const region of laneCapture.regions) {
+          const mask=region.masks?.find(mask=>mask.leafType==='path');
+          if(!mask?.sources?.some(source=>source.startsWith('gpu-path-raster')))
+            throw new Error(`Native path did not use GPU raster coverage in ${lane}:${region.id}`);
+        }
+      }
+      if (args.includes('--require-scene-region') && lane === 'sdr') {
+        if (!laneCapture.sceneMaskSources.some(source => source.workingSpace === 'acescg'
+          && source.longEdge === chosen.processedLongEdge
+          && source.region.width*source.region.height < source.width*source.height*.9)) {
+          throw new Error('No bounded HDR scene region was loaded for SDR masks');
+        }
+        if (!laneCapture.regions.some(region => region.masks.some(mask => mask.sources?.some(source =>
+          source.startsWith('gpu-mask-graph') || source.startsWith('gpu-luma'))))) {
+          throw new Error('No GPU scene-qualified mask was captured');
+        }
+      }
       if (forced) await page.evaluate(() => applyExecutionOverride(null));
       await page.locator('#zoom-fit').click();
       await settled();
@@ -277,6 +431,12 @@ async function main() {
       enforceFailed = true;
     }
     report.comparison = JSON.parse(fs.readFileSync(comparePath, 'utf8'));
+    if (report.darkeningCheck) {
+      const evidence = report.comparison.lanes.find((lane) => lane.lane === 'sdr')?.stageEvidence;
+      if (!evidence?.locals?.some((region) => region.inputAboveWhitePixels > 0 && region.recoveredBelow098Pixels > 0)) {
+        throw new Error('The diagnostic local did not recover above-white highlights in a captured region');
+      }
+    }
     report.projectUnchanged = c.manifest(project).projectSha256 === report.projectSha256;
     report.status = enforceFailed ? 'limits-exceeded' : 'complete';
     if (enforceFailed || !report.projectUnchanged) process.exitCode = 1;

@@ -5970,7 +5970,13 @@ async function runGpuScopeRequest(request) {
       { width: state.session.source.width, height: state.session.source.height },
       { ...gpuPreviewSourceOptions(lane), applicationGeneration: accepted.generation, isCurrent },
     );
-    if (!rendered || !isCurrent()) return false;
+    if (!isCurrent()) return false;
+    if (!rendered) {
+      // The accepted tiled picture is current, but an auxiliary GPU graph
+      // can still be refused under memory pressure. Keep the same generation
+      // guards and settle through the established CPU scope fallback.
+      return new Promise(resolve => enqueueScopeRequest({...request,resolve}));
+    }
     scopeCanvas = rendered.canvas;
     sourceSerial = rendered.sourceSerial;
   }
@@ -11259,7 +11265,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       viewport: options.viewport !== undefined
         ? Boolean(options.viewport)
         : (state.roiPreviewMode === "refinement" && tier === "refinement" && !options.roiCatchUp)
-          || (state.zoomMode === "custom" && state.zoomPercent >= 100 && !options.roiCatchUp),
+          || (state.zoomMode === "custom" && !options.roiCatchUp),
       catchUp: Boolean(options.roiCatchUp),
       panPass: Boolean(options.panPass),
       allowInactive: Boolean(options.allowInactive),
@@ -15076,6 +15082,14 @@ function scheduleSpatialMaskPreview(local) {
     scheduleLocalPreview();
     return;
   }
+  if (!state.selectedSubMaskId && state.gpuPreview?.supportsLiveGradientMask?.(local?.mask, geometrySignature())) {
+    // Analytic gradients use the current local document on the GPU and need
+    // no backend revision or bitmap verdict. Keep overlay drafts independent
+    // of picture feedback while the slider is held.
+    scheduleAuthoritativeLocalMaskDraft(local);
+    scheduleLocalPreview();
+    return;
+  }
   state.localMaskDraftDirty = true;
   const selectedLeaf = selectedMaskLeaf(local);
   if (selectedLeaf?.type === "path") beginPathMaskProgress(local);
@@ -16432,7 +16446,9 @@ function bindLocalMaskCanvas() {
     const gesture = state.localPointerGesture;
     if (!gesture) return;
     state.localPointerGesture = null;
-    if (gesture.type === "brush") gesture.leaf.strokes.push(gesture.stroke);
+    if (gesture.type === "brush") {
+      gesture.leaf.strokes.push(gesture.stroke);
+    }
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     if (gesture.type === "luminance_sample") {
       await finishLuminanceSampleGesture(gesture);
@@ -17415,6 +17431,11 @@ function renderLocalMaskOverlay() {
   const authoritativeCurrent = Boolean(authoritative
     && authoritativeGeometryCurrent
     && authoritative.signature === (authoritative.spatialOnly ? spatialSignature : maskSignature));
+  // The exact response may precede the progress target's final signature
+  // update. Settlement is also true when that already-cached frame is drawn.
+  if (authoritativeCurrent) {
+    finishPathMaskProgress(local.id, authoritative.signature, authoritative.spatialOnly);
+  }
   const needsAuthoritativeOverlay = local.mask?.operator !== "leaf"
     || ["linear_gradient", "luminance_range"].includes(local.mask?.leaf?.type);
   const drawOptions = {

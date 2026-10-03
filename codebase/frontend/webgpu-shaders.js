@@ -1293,7 +1293,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let balanced = blackAndWhite(scene, guide);
       let equalized = toneEqualizer(balanced);
       let primaries = hdrPrimaries(equalized);
-      return max(applyColorGrading(applyCurves(primaries, true), true), vec3f(0.0));
+      // Export retains signed HDR channels until Detail and locals have run.
+      // Clipping here changes the neighbourhood's luminance and Sharpen fence.
+      return applyColorGrading(applyCurves(primaries, true), true);
     }
     fn displayHdr(rgb: vec3f) -> vec3f {
       if (p[16] > 0.5) {
@@ -2005,53 +2007,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       );
     }
 
-    fn detailHorizontalBlur(coordinate: vec2f, radius: f32, halfSamples: i32, enabled: bool) -> f32 {
-      let dimensions = vec2f(textureDimensions(spatialTexture));
-      let valid = vec2f(validTileDimensions());
-      let centerUv = clamp(coordinate + vec2f(0.5), vec2f(0.5), valid - vec2f(0.5)) / dimensions;
-      let center = detailLogLuma(textureSampleLevel(spatialTexture, spatialSampler, centerUv, 0.0).rgb);
-      if (!enabled) { return center; }
-      var total = 0.0;
-      var weightTotal = 0.0;
-      for (var index: i32 = -8; index <= 8; index = index + 1) {
-        if (abs(index) <= halfSamples) {
-          let distance = 2.0 * f32(index) / f32(halfSamples);
-          let weight = exp(-0.5 * distance * distance);
-          let sampleUv = clamp(
-            coordinate + vec2f(distance * radius, 0.0) + vec2f(0.5),
-            vec2f(0.5), valid - vec2f(0.5)
-          ) / dimensions;
-          total += detailLogLuma(textureSampleLevel(spatialTexture, spatialSampler, sampleUv, 0.0).rgb) * weight;
-          weightTotal += weight;
-        }
-      }
-      return total / weightTotal;
-    }
-
-    fn detailVerticalBlur(coordinate: vec2f, radius: f32, channel: u32, halfSamples: i32, enabled: bool) -> f32 {
-      let dimensions = vec2f(textureDimensions(spatialTexture));
-      let valid = vec2f(validTileDimensions());
-      let centerUv = clamp(coordinate + vec2f(0.5), vec2f(0.5), valid - vec2f(0.5)) / dimensions;
-      let center = textureSampleLevel(spatialTexture, spatialSampler, centerUv, 0.0)[channel];
-      if (!enabled) { return center; }
-      var total = 0.0;
-      var weightTotal = 0.0;
-      for (var index: i32 = -8; index <= 8; index = index + 1) {
-        if (abs(index) <= halfSamples) {
-          let distance = 2.0 * f32(index) / f32(halfSamples);
-          let weight = exp(-0.5 * distance * distance);
-          let sampleUv = clamp(
-            coordinate + vec2f(0.0, distance * radius) + vec2f(0.5),
-            vec2f(0.5), valid - vec2f(0.5)
-          ) / dimensions;
-          total += textureSampleLevel(spatialTexture, spatialSampler, sampleUv, 0.0)[channel] * weight;
-          weightTotal += weight;
-        }
-      }
-      return total / weightTotal;
-    }
-
-    // Sharpen follows detail.py's three box passes, rather than a sparse
+    // Texture and Sharpen follow detail.py's three box passes, rather than a sparse
     // Gaussian. Fuse each axis in the interior; retain each pass's edge
     // clamping at the image boundary. The axes commute, including clamping.
     fn sharpenBoxRadius(sigma: f32) -> i32 {
@@ -2074,15 +2030,25 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         / f32(width * width * width);
     }
 
-    fn sharpenBlurSample(coordinate: vec2i, vertical: bool) -> f32 {
+    fn detailBoxSample(coordinate: vec2i, vertical: bool, channel: u32) -> f32 {
       let sample = textureLoad(spatialTexture, coordinate, 0);
-      if (vertical) { return sample.w + sample.z; }
+      if (vertical) {
+        if (channel == 3u) { return sample.w + sample.z; }
+        return sample[channel];
+      }
       return detailLogLuma(sample.rgb);
     }
 
-    fn sharpenBlur(coordinate: vec2i, sigma: f32, vertical: bool) -> f32 {
+    fn detailBoxCount(origin: i32, samplePosition: i32, limit: i32, radius: i32) -> f32 {
+      if (limit == 0) { return f32(2 * radius + 1); }
+      if (samplePosition == 0) { return f32(max(0, radius - origin + 1)); }
+      if (samplePosition == limit) { return f32(max(0, origin + radius - limit + 1)); }
+      return select(0.0, 1.0, abs(samplePosition - origin) <= radius);
+    }
+
+    fn detailBoxBlur(coordinate: vec2i, sigma: f32, vertical: bool, channel: u32) -> f32 {
       let radius = sharpenBoxRadius(sigma);
-      if (radius == 0) { return sharpenBlurSample(coordinate, vertical); }
+      if (radius == 0) { return detailBoxSample(coordinate, vertical, channel); }
       let step = select(vec2i(1, 0), vec2i(0, 1), vertical);
       let bound = validTileDimensions() - vec2i(1);
       let position = select(coordinate.x, coordinate.y, vertical);
@@ -2091,22 +2057,33 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (position < 3 * radius || position + 3 * radius > limit) {
         // Extending the original image once is different from clamping after
         // each box. This small boundary strip retains the reference's order.
-        for (var a = -radius; a <= radius; a++) {
-          let first = clamp(coordinate + a * step, vec2i(0), bound);
-          for (var b = -radius; b <= radius; b++) {
-            let second = clamp(first + b * step, vec2i(0), bound);
-            for (var c = -radius; c <= radius; c++) {
-              total += sharpenBlurSample(clamp(second + c * step, vec2i(0), bound), vertical);
-            }
+        // Count the first two clamped passes at each intermediate texel,
+        // then apply the final box. Quadratic work avoids a cubic edge strip
+        // for Texture's wider native-resolution support.
+        for (var middle = max(0, position - 2 * radius); middle <= min(limit, position + 2 * radius); middle++) {
+          var count = 0.0;
+          for (var first = max(0, position - radius); first <= min(limit, position + radius); first++) {
+            count += detailBoxCount(position, first, limit, radius)
+              * detailBoxCount(first, middle, limit, radius);
           }
+          var last = 0.0;
+          for (var sample = max(0, middle - radius); sample <= min(limit, middle + radius); sample++) {
+            last += detailBoxSample(coordinate + (sample - position) * step, vertical, channel)
+              * detailBoxCount(middle, sample, limit, radius);
+          }
+          total += count * last;
         }
         let width = 2 * radius + 1;
         return total / f32(width * width * width);
       }
       for (var offset = -3 * radius; offset <= 3 * radius; offset++) {
-        total += sharpenBlurSample(coordinate + offset * step, vertical) * sharpenBoxWeight(offset, radius);
+        total += detailBoxSample(coordinate + offset * step, vertical, channel) * sharpenBoxWeight(offset, radius);
       }
       return total;
+    }
+
+    fn sharpenBlur(coordinate: vec2i, sigma: f32, vertical: bool) -> f32 {
+      return detailBoxBlur(coordinate, sigma, vertical, 3u);
     }
 
     fn packSharpenBand(fine: f32, coarse: f32, sharpen: f32) -> vec4f {
@@ -2299,8 +2276,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = detailRadii();
       return packSharpenBand(
-        detailHorizontalBlur(vec2f(coordinate), radii.x, 2, true),
-        detailHorizontalBlur(vec2f(coordinate), radii.y, 2, true),
+        detailBoxBlur(coordinate, radii.x, false, 0u),
+        detailBoxBlur(coordinate, radii.y, false, 1u),
         sharpenBlur(coordinate, radii.w, false)
       );
     }
@@ -2310,8 +2287,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = detailRadii();
       return packSharpenBand(
-        detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, true),
-        detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, true),
+        detailBoxBlur(coordinate, radii.x, true, 0u),
+        detailBoxBlur(coordinate, radii.y, true, 1u),
         sharpenBlur(coordinate, radii.w, true)
       );
     }
@@ -2364,8 +2341,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = localDetailRadii();
       return packSharpenBand(
-        detailHorizontalBlur(vec2f(coordinate), radii.x, 2, true),
-        detailHorizontalBlur(vec2f(coordinate), radii.y, 2, true),
+        detailBoxBlur(coordinate, radii.x, false, 0u),
+        detailBoxBlur(coordinate, radii.y, false, 1u),
         sharpenBlur(coordinate, radii.w, false)
       );
     }
@@ -2375,8 +2352,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = localDetailRadii();
       return packSharpenBand(
-        detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, true),
-        detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, true),
+        detailBoxBlur(coordinate, radii.x, true, 0u),
+        detailBoxBlur(coordinate, radii.y, true, 1u),
         sharpenBlur(coordinate, radii.w, true)
       );
     }
@@ -2724,10 +2701,23 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     @fragment fn linearGradientFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let coordinate = input.position.xy + vec2f(p[6], p[7]);
+      var coordinate = input.position.xy + vec2f(p[6], p[7]);
+      let transform = u32(p[12]);
+      let rotation = transform & 3u;
+      let sourceSize = vec2f(p[8], p[9]);
+      let outputSize = select(sourceSize, sourceSize.yx, (rotation & 1u) != 0u);
+      if ((transform & 4u) != 0u) { coordinate.x = outputSize.x - coordinate.x; }
+      if ((transform & 8u) != 0u) { coordinate.y = outputSize.y - coordinate.y; }
+      if (rotation == 1u) { coordinate = vec2f(coordinate.y, sourceSize.y - coordinate.x); }
+      else if (rotation == 2u) { coordinate = sourceSize - coordinate; }
+      else if (rotation == 3u) { coordinate = vec2f(sourceSize.x - coordinate.y, coordinate.x); }
       let uv = coordinate / max(vec2f(p[8], p[9]), vec2f(1.0));
       let axis = vec2f(p[2] - p[0], p[3] - p[1]);
-      let position = dot(uv - vec2f(p[0], p[1]), axis) / max(dot(axis, axis), 0.00000001);
+      let denominator = max(dot(axis, axis), 0.00000001);
+      let axisLength = max(sqrt(denominator), 0.00000001);
+      let perpendicular = tanh(dot(uv - vec2f(p[0], p[1]), vec2f(-axis.y, axis.x)) / (axisLength * axisLength));
+      let fanScale = clamp(1.0 + p[13] * 0.8 * perpendicular * perpendicular, 0.2, 1.8);
+      let position = dot(uv - vec2f(p[0], p[1]), axis) / denominator / fanScale;
       let first = clamp(position / max(p[4], 0.000001), 0.0, 1.0);
       let middle = clamp((position - p[4]) / max(p[5] - p[4], 0.000001), 0.0, 1.0);
       let last = clamp((position - p[5]) / max(1.0 - p[5], 0.000001), 0.0, 1.0);
@@ -2736,7 +2726,11 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         position > p[4]);
       if (p[10] > 0.5) { value = 1.0 - value; }
       if (p[11] < 0.5) { value = 0.0; }
-      value = round(clamp(value, 0.0, 1.0) * 255.0) / 255.0;
+      // Keep Fan coverage in float: rounding its curved profile to a byte
+      // before half-float storage adds a second quantization at byte ties.
+      // The neutral Fan path retains its established byte coverage.
+      value = clamp(value, 0.0, 1.0);
+      if (p[13] == 0.0) { value = round(value * 255.0) / 255.0; }
       return vec4f(value, value, value, 1.0);
     }
 
@@ -2753,8 +2747,19 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return quotient + fma(-quotient, denominator, numerator) / denominator;
     }
 
-    @fragment fn shapeRasterFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let pixel = input.position.xy + vec2f(p[1], p[2]);
+    fn shapeRasterCoverage(position: vec2f) -> vec2f {
+      var pixel = position + vec2f(p[1], p[2]);
+      // Export rasterizes in source space, then applies quarter turns and
+      // flips. Invert those exact pixel permutations before qualification.
+      let transform = u32(p[9]);
+      let rotation = transform & 3u;
+      let sourceSize = vec2f(p[3],p[4]);
+      let outputSize = select(sourceSize,sourceSize.yx,(rotation & 1u) != 0u);
+      if ((transform & 4u) != 0u) { pixel.x = outputSize.x-pixel.x; }
+      if ((transform & 8u) != 0u) { pixel.y = outputSize.y-pixel.y; }
+      if (rotation == 1u) { pixel = vec2f(pixel.y,sourceSize.y-pixel.x); }
+      else if (rotation == 2u) { pixel = sourceSize-pixel; }
+      else if (rotation == 3u) { pixel = vec2f(sourceSize.x-pixel.y,pixel.x); }
       let uv = vec2f(maskDivide(pixel.x, p[3]), maskDivide(pixel.y, p[4]));
       var value = 0.0;
       var attenuation = 1.0;
@@ -2764,18 +2769,37 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         var edge = 1e20;
         let aspect = p[3] / p[4];
         let metric = vec2f(max(aspect, 1.0), max(1.0 / aspect, 1.0));
+        let outer = p[0] > 1.5;
+        let stride = select(2u,4u,outer);
+        let start = select(10u,11u,outer);
+        var transition = 0.0;
         for (var i = 0u; i < count; i++) {
-          let firstIndex = 10u + 2u * i;
-          let lastIndex = 10u + 2u * ((i + 1u) % count);
+          let firstIndex = start + stride * i;
+          let lastIndex = start + stride * ((i + 1u) % count);
           let first = vec2f(p[firstIndex], p[firstIndex+1u]);
           let last = vec2f(p[lastIndex], p[lastIndex+1u]);
           let crossing = (first.y > uv.y) != (last.y > uv.y);
           let edgeX = maskDivide((last.x-first.x)*(uv.y-first.y), last.y-first.y+1e-12)+first.x;
           if (crossing && uv.x < edgeX) { inside = !inside; }
           edge = min(edge, maskSegmentDistance(uv*metric, first*metric, last*metric, 1e-12));
+          if (outer) {
+            let a=first*metric;let delta=last*metric-a;
+            let projection=clamp(dot(uv*metric-a,delta)/max(dot(delta,delta),1e-12),0.0,1.0);
+            let distance=length(uv*metric-(a+projection*delta));
+            let width=p[firstIndex+2u]+projection*(p[firstIndex+3u]-p[firstIndex+2u]);
+            let t=distance/max(width,1e-6);
+            let compact=clamp(1.0-t,0.0,1.0);
+            let compactProfile=compact*compact*(3.0-2.0*compact);
+            var soft=1.0-(t-.05)/.9;
+            if(t<.1){soft=1.0-t*t/.18;}
+            else if(t>.9){soft=(1.0-t)*(1.0-t)/.18;}
+            soft=select(0.0,clamp(soft,0.0,1.0),t<=1.0);
+            transition=max(transition,compactProfile+clamp(p[10],0.0,1.0)*(soft-compactProfile));
+          }
         }
         value = select(0.0, 1.0, inside);
-        if (count > 0u && p[8] > 0.0) {
+        if (outer) {value=select(transition,1.0,inside);}
+        else if (count > 0u && p[8] > 0.0) {
           let feather = clamp(edge / max(p[8], 1e-6), 0.0, 1.0);
           value = select(0.5-0.5*feather, 0.5+0.5*feather, inside);
         }
@@ -2811,8 +2835,39 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           }
         }
       }
+      return vec2f(value, attenuation);
+    }
+
+    @fragment fn brushPaintFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      return vec4f(shapeRasterCoverage(input.position.xy).xxx, 1.0);
+    }
+    @fragment fn brushEraseFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      return vec4f(shapeRasterCoverage(input.position.xy).yyy, 1.0);
+    }
+    // Feather/Invert precede Erase in export. Keep the qualified painted
+    // bitmap, but evaluate post-feather attenuation at native pixel centres.
+    @fragment fn brushRegionalEraseFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let tail=arrayLength(&p)-8u;
+      let frame=vec2f(p[tail],p[tail+1u]);
+      let pixel=input.position.xy+vec2f(p[tail+2u],p[tail+3u]);
+      let origin=vec2f(p[tail+4u],p[tail+5u]);
+      let extent=vec2f(p[tail+6u],p[tail+7u]);
+      let size=vec2i(textureDimensions(sourceTexture));
+      let at=(pixel/frame-origin)/extent*vec2f(size)-.5;
+      let base=vec2i(floor(at));let fraction=fract(at);
+      let a=textureLoad(sourceTexture,clamp(base,vec2i(0),size-1),0).r;
+      let b=textureLoad(sourceTexture,clamp(base+vec2i(1,0),vec2i(0),size-1),0).r;
+      let c=textureLoad(sourceTexture,clamp(base+vec2i(0,1),vec2i(0),size-1),0).r;
+      let d=textureLoad(sourceTexture,clamp(base+vec2i(1,1),vec2i(0),size-1),0).r;
+      let painted=mix(mix(a,b,fraction.x),mix(c,d,fraction.x),fraction.y);
+      let value=round(clamp(painted*shapeRasterCoverage(input.position.xy).y,0.0,1.0)*255.0)/255.0;
+      return vec4f(vec3f(value),1.0);
+    }
+    @fragment fn shapeRasterFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let coverage = shapeRasterCoverage(input.position.xy);
+      var value = coverage.x;
       if (p[5] > 0.5) { value = 1.0-value; }
-      value *= attenuation;
+      value *= coverage.y;
       if (p[6] < 0.5) { value = 0.0; }
       value = round(clamp(value,0.0,1.0)*255.0)/255.0;
       return vec4f(value,value,value,1.0);
@@ -2837,7 +2892,14 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let coordinate = pixelCoordinate(input.position.xy);
       let sigma = p[0];
       var value = textureLoad(sourceTexture, coordinate, 0).r;
-      if (sigma >= 0.25) {
+      if (p[1] > 0.0 && sigma >= 0.25) {
+        let direction = select(vec2i(1,0),vec2i(0,1),p[2]>.5);
+        value*=p[4];
+        for(var tap=1;tap<i32(p[1]);tap++){
+          value+=p[u32(tap)+4u]*(textureLoad(sourceTexture,clamp(coordinate+direction*tap,vec2i(0),dimensions-1),0).r
+            +textureLoad(sourceTexture,clamp(coordinate-direction*tap,vec2i(0),dimensions-1),0).r);
+        }
+      } else if (sigma >= 0.25) {
         let direction = select(vec2i(1, 0), vec2i(0, 1), p[2] > 0.5);
         let reach = min(i32(ceil(sigma * 3.0)), 64);
         var total = 0.0;

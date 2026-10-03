@@ -297,6 +297,35 @@ test("every cache map registers through the allocator, so a set is an allocation
   assert.equal(preview.gpuAllocator.snapshot().byKind["mask-tile"], undefined);
 });
 
+test("luminance refinement scratch growth and release update registered device bytes", () => {
+  const { preview, ledger } = createPreview();
+  const entry = cacheTexture(preview, 32, 16);
+  entry.width = 32;
+  entry.height = 16;
+  preview.localMasks.set("luma", entry);
+  const before = ledger.liveBytes;
+  preview.lumaFeatherScratch(entry, 2);
+  assert.ok(ledger.liveBytes > before);
+  assert.equal(preview.gpuAllocator.usedBytes(), ledger.liveBytes);
+  preview.releaseLumaFeatherScratch(entry);
+  assert.equal(ledger.liveBytes, before);
+  assert.equal(preview.gpuAllocator.usedBytes(), before);
+});
+
+test("growing a retained mask enforces pressure without evicting the value being refined", () => {
+  const { preview } = createPreview();
+  const old = cacheTexture(preview, 8, 8);
+  const growing = cacheTexture(preview, 8, 8);
+  preview.localMasks.set("old", old);
+  preview.localMasks.set("growing", growing);
+  preview.gpuAllocator.setBudget(1024);
+  growing.byteSize = 900;
+  preview.retainLocalMask(growing, 1600);
+  assert.equal(preview.localMasks.has("old"), false);
+  assert.equal(preview.localMasks.get("growing"), growing);
+  assert.equal(preview.gpuAllocator.usedBytes(), 900);
+});
+
 test("budget pressure evicts the global LRU across cache kinds, through each entry's release", () => {
   const { preview, ledger } = createPreview();
   preview.detailBandTiles.set("detail:lru", cacheTexture(preview, 24, 24));

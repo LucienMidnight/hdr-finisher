@@ -64,9 +64,15 @@ test("a measurement on the denoised source is not reused for the original, or fo
   const resolved = { ...original, texture: { id: "resolved" } };
   preview.denoiseSourceSelector = { identity: original.identity, original, resolved, selected: "resolved", resolvedVersion: 1 };
   const params = peakFitParams();
+  // Bounded measurement keys follow the canonical selected source, even
+  // when the display proxy supplied here is the original frame. Toggle that
+  // selection as the app does when Denoise is switched on or off.
+  preview.denoiseSourceSelector.selected = "original";
   const onOriginal = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, params).key;
+  preview.denoiseSourceSelector.selected = "resolved";
   const onResolved = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, resolved, params).key;
   assert.notEqual(onOriginal, onResolved);
+  assert.equal(preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, params).key, onResolved);
   preview.denoiseSourceSelector.resolvedVersion = 2;
   assert.notEqual(preview.highlightAnchorRequest("hdr", ADJUSTMENTS, resolved, params).key, onResolved);
 });

@@ -61,3 +61,46 @@ test("direct renderTiledTo calls retain resources until their async lifetime end
   assert.equal(destroyed, true);
   assert.equal(preview.deferredDestroy.length, 0);
 });
+
+test("pressure eviction retains referenced mask and detail textures until renders and scopes drain", () => {
+  const preview = new (loadPreview())(null);
+  const destroyed = [];
+  for (const [kind, cache] of [["mask-tile", preview.maskTiles], ["detail-band-tile", preview.detailBandTiles]]) {
+    cache.set(kind, { texture: { destroy: () => destroyed.push(kind) } });
+  }
+  preview.activeRenderCount = 2;
+  preview.activeScopeCount = 1;
+  preview.evictGpuCacheEntry("mask-tile", "mask-tile");
+  preview.evictGpuCacheEntry("detail-band-tile", "detail-band-tile");
+  assert.equal(preview.maskTiles.size, 0);
+  assert.equal(preview.detailBandTiles.size, 0);
+  assert.deepEqual(destroyed, []);
+  preview.finishActiveRender();
+  preview.finishActiveRender();
+  assert.deepEqual(destroyed, []);
+  preview.activeScopeCount = 0;
+  preview.flushDeferredDestroy();
+  assert.deepEqual(destroyed, ["mask-tile", "detail-band-tile"]);
+  preview.flushDeferredDestroy();
+  assert.equal(destroyed.length, 2);
+  preview.maskTiles.set("idle", { texture: { destroy: () => destroyed.push("idle") } });
+  preview.evictGpuCacheEntry("mask-tile", "idle");
+  assert.equal(destroyed.at(-1), "idle");
+});
+
+test("cache replacement and local trimming retain textures used by an active render", () => {
+  const preview = new (loadPreview())(null);
+  let destroyed = 0;
+  const entry = () => ({byteSize: 100, texture: {destroy: () => destroyed++}});
+  preview.activeRenderCount = 1;
+  preview.releaseGpuCacheValue("mask-tile", entry());
+  preview.releaseGpuCacheValue("detail-band-tile", entry());
+  preview.cacheBudgetBytes = () => 0;
+  preview.maskTiles.set("mask", entry());
+  preview.detailBandTiles.set("detail", entry());
+  assert.equal(preview.trimMaskTiles(), 0);
+  assert.equal(preview.trimDetailBandTiles(), 0);
+  assert.equal(destroyed, 0);
+  preview.finishActiveRender();
+  assert.equal(destroyed, 4);
+});

@@ -27,15 +27,8 @@ function assert(condition, message) {
     const result = await page.evaluate(async () => {
       const renderer = state.gpuPreview;
       const originalBudget = state.gpuMemoryBudget;
-      const fakeKeys = [];
-      // The built-in pattern is intentionally small. Represent a warm proxy
-      // cache so the real planner rejects Direct at the minimum custom budget,
-      // without allocating hundreds of megabytes merely to exercise routing.
-      for (let index = 0; index < 64; index += 1) {
-        const key = `tiled-admission-budget-fixture-${index}`;
-        fakeKeys.push(key);
-        renderer.proxies.set(key, { byteSize: els.previewCanvas.width * els.previewCanvas.height * 8 });
-      }
+      const originalPlanRender=renderer.planRender;
+      const originalScopeProxy=renderer.renderScopeProxy;
 
       const originalAnalyzeScope = renderer.analyzeScope.bind(renderer);
       let gpuScopeCalls = 0;
@@ -45,7 +38,14 @@ function assert(condition, message) {
       };
 
       try {
-        applyGpuMemoryBudget(0.25);
+        renderer.setMemoryBudget(0.25);
+        // The allocator now evicts the old synthetic unpinned cache pressure.
+        // Give the real planner a small test budget instead. A separately
+        // refused auxiliary allocation exercises the intended CPU fallback.
+        renderer.planRender=function(width,height,options={}) {
+          return originalPlanRender.call(this,width,height,{...options,scopeBytes:280*1024*1024});
+        };
+        renderer.renderScopeProxy=async()=>null;
         const rendered = await renderGpuDraft("hdr", {
           longEdge: previewTargetLongEdge(),
           tier: "settled",
@@ -85,8 +85,9 @@ function assert(condition, message) {
         };
       } finally {
         renderer.analyzeScope = originalAnalyzeScope;
-        fakeKeys.forEach((key) => renderer.proxies.delete(key));
-        applyGpuMemoryBudget(originalBudget);
+        renderer.planRender=originalPlanRender;
+        renderer.renderScopeProxy=originalScopeProxy;
+        renderer.setMemoryBudget(originalBudget);
       }
     });
 
@@ -95,7 +96,8 @@ function assert(condition, message) {
       `The low budget did not force the real admission planner to Tiled: ${JSON.stringify(result)}`);
     assert(result.accepted?.execution === "tiled" && result.accepted?.transport === "WebGPU",
       `The accepted presentation does not identify tiled execution: ${JSON.stringify(result)}`);
-    assert(result.tiledMetrics?.submissions === 1,
+    assert(result.tiledMetrics?.submissions === 2
+      && result.tiledMetrics?.presentableGeneration === result.accepted?.generation,
       `The admitted tiled generation was not atomic: ${JSON.stringify(result)}`);
     assert(result.scopeSourcePresent === false,
       `A tiled presentation retained the stale Direct scope texture: ${JSON.stringify(result)}`);

@@ -32,6 +32,7 @@ a new archive beside the report.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import sys
 import time
@@ -401,6 +402,56 @@ def _review_images(directory: Path, stem: str, preview: np.ndarray, export: np.n
     return {name: str(path) for name, path in files.items()}
 
 
+@contextmanager
+def inspect_sdr_stages(regions: list[dict[str, Any]]):
+    """Read CPU stage coverage for a diagnostic export render, without changing pixels."""
+    from hdr_finisher import adjustments, local_adjustments
+    from hdr_finisher.models import PreviewKind
+
+    evidence: dict[str, Any] = {"globalDetail": [], "locals": []}
+    original_detail = adjustments.apply_detail
+    original_locals = local_adjustments.apply_local_stack
+
+    def samples(image, region):
+        x, y, width, height = (int(region["rect"][key]) for key in ("x", "y", "width", "height"))
+        return image[y:y + height, x:x + width, :3]
+
+    def detail(image, recipe, kind, **kwargs):
+        result = original_detail(image, recipe, kind, **kwargs)
+        if kind == PreviewKind.SDR:
+            for region in regions:
+                before, after = samples(image, region), samples(result, region)
+                bright = np.max(before, axis=-1) > 1.0
+                unchanged = np.all(before == after, axis=-1)
+                evidence["globalDetail"].append({
+                    "id": region["id"], "inputAboveWhitePixels": int(np.count_nonzero(bright)),
+                    "inputMaxChannel": float(np.max(before)),
+                    "aboveWhiteUnchangedPixels": int(np.count_nonzero(bright & unchanged)),
+                    "aboveWhiteChangedAndClippedPixels": int(np.count_nonzero(
+                        bright & ~unchanged & (np.max(after, axis=-1) <= 1.0))),
+                })
+        return result
+
+    def locals_(image, fixed_source, locals, kind, geometry, **kwargs):
+        # Keep only the captured regions, never an extra whole native frame.
+        before = [samples(image, region).copy() for region in regions] if kind == PreviewKind.SDR else []
+        result = original_locals(image, fixed_source, locals, kind, geometry, **kwargs)
+        for region, source in zip(regions, before):
+            bright = np.max(source, axis=-1) > 1.0
+            recovered = np.max(samples(result, region), axis=-1) < 0.98
+            evidence["locals"].append({
+                "id": region["id"], "inputAboveWhitePixels": int(np.count_nonzero(bright)),
+                "recoveredBelow098Pixels": int(np.count_nonzero(bright & recovered)),
+            })
+        return result
+
+    adjustments.apply_detail, local_adjustments.apply_local_stack = detail, locals_
+    try:
+        yield evidence
+    finally:
+        adjustments.apply_detail, local_adjustments.apply_local_stack = original_detail, original_locals
+
+
 def run(manifest_path: Path, output_path: Path) -> dict[str, Any]:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     work = manifest_path.parent
@@ -476,7 +527,12 @@ def run(manifest_path: Path, output_path: Path) -> dict[str, Any]:
         lane = lane_capture["lane"]
         kind = PreviewKind.HDR if lane == "hdr" else PreviewKind.SDR
         started = time.perf_counter()
-        render = _render_export_branch(session, settings, kind, finishing)
+        stage_evidence = None
+        if lane == "sdr" and manifest.get("inspectSdrStages"):
+            with inspect_sdr_stages(lane_capture["regions"]) as stage_evidence:
+                render = _render_export_branch(session, settings, kind, finishing)
+        else:
+            render = _render_export_branch(session, settings, kind, finishing)
         render_seconds = time.perf_counter() - started
         hdr_surface = bool(lane_capture["hdrSurface"])
         space = presentation_space(lane, hdr_surface, reference_white)
@@ -494,6 +550,8 @@ def run(manifest_path: Path, output_path: Path) -> dict[str, Any]:
             "sizesAgree": [int(render.shape[1]), int(render.shape[0])] == [int(target["width"]), int(target["height"])],
             "regions": [],
         }
+        if stage_evidence is not None:
+            lane_report["stageEvidence"] = stage_evidence
         if lane == "hdr":
             lane_report["peak"] = peak_statistics(render, lane_capture, session.adjustments, reference_white)
         if not lane_report["sizesAgree"]:

@@ -35,5 +35,7 @@ def test_frontend_contract_split_preserves_the_reviewed_inventory() -> None:
             and node.name.startswith("test_")
         )
 
-    assert len(test_names) == 105
+    # Keep the exact current inventory and uniqueness checks. The former
+    # count predates the additional reviewed frontend contract.
+    assert len(test_names) == 106
     assert len(test_names) == len(set(test_names))

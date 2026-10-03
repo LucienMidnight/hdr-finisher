@@ -65,7 +65,7 @@ def test_proof_request_order_signature_and_export_conversion_are_stable() -> Non
         "jpeg_gain_map_scale", "jpeg_chroma_subsampling", "avif_bit_depth",
         "avif_chroma_subsampling", "avif_gain_map_chroma_subsampling",
         "avif_gain_map_quality", "avif_gain_map_scale", "jpegxl_precision", "dithering",
-        "long_edge", "full_size", "output_finishing", "force",
+        "long_edge", "full_size", "output_finishing", "force", "editing_measurements",
     )
     # The signature is an in-process cache key, never persisted. It changed on
     # October 1, 2026 when ``full_size`` joined the request.

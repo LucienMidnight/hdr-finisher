@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import atexit
+import base64
+import binascii
 import json
 import os
 import secrets
@@ -18,6 +20,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
+from starlette.concurrency import run_in_threadpool
+from pydantic import ValidationError
 
 from . import denoise_adaptive
 from .capabilities import probe_capabilities
@@ -29,7 +33,7 @@ from .loader import LoaderError
 from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore
 from .import_jobs import ImportJobManager
 from .local_adjustments import spatial_mask_signature
-from .mask_softness import SOFT_ESTIMATE_LIMIT, bitmap_frame_rect, soft_mask_verdict
+from .mask_softness import SOFT_ESTIMATE_LIMIT, bitmap_frame_rect, gpu_bitmap_soft_verdict, soft_mask_verdict
 from .raw_import import list_lens_profiles
 from .models import (
     DirectoryPickRequest,
@@ -56,6 +60,7 @@ from .models import (
     LocalLuminanceSampleRequest,
     LocalLuminanceSampleResponse,
     LocalMaskPreviewRequest,
+    LocalMaskBitmapVerdictRequest,
     LocalMaskTileBatchRequest,
     MaskExpression,
     PreviewKind,
@@ -78,7 +83,7 @@ from .models import (
 from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .cpu_strips import StripExecutionRefused
-from .render_cache import StaleRender, TileUnavailableError, encode_rgba_proxy, encode_rgba_proxy_rows, rgba_proxy_pixel_format
+from .render_cache import StaleRender, TileUnavailableError, downsample_target_dimensions, encode_rgba_proxy, encode_rgba_proxy_rows, rgba_proxy_pixel_format
 from .finishing import geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
 from .display_probe import probe_displays
 from .proofing import EvidenceStore, ProofArtifactStore
@@ -261,23 +266,26 @@ def _mask_timing_headers(timing):
 SOFT_MASK_MAX_LONG_EDGE = 3200
 
 
-def _mask_softness_headers(session, adjustments, expression, bitmap, long_edge: int, spatial: bool) -> dict[str, str]:
+def _mask_softness_headers(session, adjustments, expression, bitmap, long_edge: int, spatial: bool,
+                           *, gpu_bitmap: bool = False) -> dict[str, str]:
     """Tell the renderer whether this bitmap may stand in for the mask at every zoom."""
     if not spatial:
         return {}
     if int(long_edge) > SOFT_MASK_MAX_LONG_EDGE:
         return {}
     # The source at the bitmap's scale, which the mask was compiled on.
-    proxy, _sdr_reference = session.render_cache._proxies(long_edge)
+    width, height = downsample_target_dimensions(session.source.width, session.source.height, long_edge)
     geometry = adjustments.shared.geometry
     rect = bitmap_frame_rect(
-        int(session.source.width), int(session.source.height), proxy.shape[1], proxy.shape[0], geometry,
+        int(session.source.width), int(session.source.height), width, height, geometry,
     )
-    verdict = soft_mask_verdict(expression, bitmap, proxy.shape[1], proxy.shape[0], rect=rect)
+    classify = gpu_bitmap_soft_verdict if gpu_bitmap else soft_mask_verdict
+    verdict = classify(expression, bitmap, width, height, rect=rect)
     return {
         "X-Mask-Soft": "1" if verdict.soft else "0",
         "X-Mask-Soft-Reason": verdict.reason,
         "X-Mask-Soft-Estimate": f"{verdict.estimate:.3f}",
+        "X-Mask-Soft-Terms": json.dumps(verdict.terms, separators=(",", ":")),
         "X-Mask-Soft-Limit": f"{SOFT_ESTIMATE_LIMIT:.3f}",
         "X-Mask-Frame-Rect": ",".join(f"{value:.9f}" for value in (rect or (0.0, 0.0, 1.0, 1.0))),
     }
@@ -1657,6 +1665,55 @@ def local_mask_tiles_batch_proxy(
             "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
         },
     )
+
+
+@app.post("/api/session/{session_id}/local-mask/{local_id}/bitmap-verdict")
+def local_mask_bitmap_verdict(session_id: str, local_id: str, request: LocalMaskBitmapVerdictRequest) -> Response:
+    """Judge one small GPU bitmap; never prepare image pixels or compile a mask."""
+    try:
+        data = base64.b64decode(request.bitmap, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(status_code=400, detail="Invalid GPU mask bitmap.") from exc
+    return _gpu_bitmap_verdict(session_id, local_id, request, data)
+
+
+@app.post("/api/session/{session_id}/local-mask/{local_id}/bitmap-verdict-raw")
+async def local_mask_bitmap_verdict_raw(session_id: str, local_id: str, request: Request) -> Response:
+    """Length-prefixed UTF-8 metadata followed by bounded unencoded R8 bytes."""
+    chunks = bytearray()
+    async for chunk in request.stream():
+        chunks.extend(chunk)
+        if len(chunks) > 3200 * 3200 + 1024 * 1024 + 4:
+            raise HTTPException(status_code=413, detail="GPU mask payload exceeds its bounded budget.")
+    if len(chunks) < 4:
+        raise HTTPException(status_code=400, detail="Missing GPU mask metadata.")
+    size = struct.unpack_from("<I", chunks)[0]
+    if not 0 < size <= 1024 * 1024 or size + 4 > len(chunks):
+        raise HTTPException(status_code=400, detail="Invalid GPU mask metadata length.")
+    try:
+        metadata = json.loads(chunks[4:4 + size])
+        verdict = LocalMaskBitmapVerdictRequest.model_validate({**metadata, "bitmap": ""})
+    except (ValueError, TypeError, ValidationError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid GPU mask metadata.") from exc
+    return await run_in_threadpool(_gpu_bitmap_verdict, session_id, local_id, verdict, bytes(chunks[4 + size:]))
+
+
+def _gpu_bitmap_verdict(session_id: str, local_id: str, request: LocalMaskBitmapVerdictRequest, data: bytes) -> Response:
+    session = _checked_edit_session(session_id, request.edit_revision)
+    _checked_mask_local(session, local_id)
+    _check_mask_geometry(session, request.geometry_signature)
+    width, height = downsample_target_dimensions(session.source.width, session.source.height, request.long_edge)
+    expected = geometry_output_dimensions(width, height, session.adjustments.shared.geometry)
+    if expected != (request.width, request.height):
+        raise HTTPException(status_code=400, detail="GPU mask bitmap dimensions do not match the source.")
+    if len(data) != request.width * request.height:
+        raise HTTPException(status_code=400, detail="GPU mask bitmap byte count does not match its dimensions.")
+    bitmap = np.frombuffer(data, dtype=np.uint8).reshape(request.height, request.width)
+    classification_started = time.perf_counter()
+    headers = _mask_softness_headers(session, session.adjustments, request.mask, bitmap, request.long_edge, True,
+                                     gpu_bitmap=True)
+    return Response(headers={**headers, "X-Geometry-Signature": request.geometry_signature,
+                             "X-Mask-Classification-Ms": f"{(time.perf_counter()-classification_started)*1000:.3f}"})
 
 
 @app.post("/api/session/{session_id}/local-mask/{local_id}/preview")

@@ -291,3 +291,20 @@ def soft_mask_verdict(
     soft = estimate <= SOFT_ESTIMATE_LIMIT
     reason = "soft" if soft else max(terms, key=lambda name: terms[name])
     return SoftVerdict(soft, round(estimate, 3), reason, {name: round(value, 3) for name, value in terms.items()})
+
+
+def gpu_bitmap_soft_verdict(expression: MaskExpression, bitmap: np.ndarray, width: int, height: int,
+                            *, rect=(0.0, 0.0, 1.0, 1.0)) -> SoftVerdict:
+    """Reserve one extra level for the GPU raster/blur's measured byte error.
+
+    The original estimator was calibrated on CPU-generated bitmaps. The GPU
+    reference matrix permits one level relative to those bytes, so spending
+    that allowance on interpolation as well would admit unsafe small masks.
+    The owner's three-level trial stays unchanged; borderline masks retry at
+    a larger size, then retain the exact fallback.
+    """
+    verdict = soft_mask_verdict(expression, bitmap, width, height, rect=rect)
+    estimate = verdict.estimate + 1.0
+    terms = {**verdict.terms, "gpu-rounding": 1.0}
+    return SoftVerdict(verdict.soft and estimate <= SOFT_ESTIMATE_LIMIT, estimate,
+                       "bend" if verdict.soft and estimate > SOFT_ESTIMATE_LIMIT else verdict.reason, terms)

@@ -735,6 +735,18 @@ function createRegionBackend({ width, height, failAt = null, delayMs = 5 }) {
   return { fetchImpl, state };
 }
 
+test("a region-only refusal does not start a whole-source fallback", async () => {
+  const Preview = loadPreview(async()=>{throw new Error('unexpected whole-source request');});
+  const preview = new Preview(null);
+  let calls=0;
+  preview.loadProxyRegion=async()=>{calls++;return null;};
+  preview.loadProxyStreaming=async()=>{throw new Error('unexpected stream');};
+  preview.loadProxyStreamed=async()=>{throw new Error('unexpected strips');};
+  const result=await preview.loadProxy('session','hdr',7968,'{}',0,'source',
+    {region:{x:0,y:0,width:128,height:128},regionOnly:true});
+  assert.equal(result,null);assert.equal(calls,1);assert.equal(preview.proxyInflight.size,0);
+});
+
 function regionPreview(backend, chunkRows, regionWidth) {
   const Preview = loadPreview(backend.fetchImpl);
   const preview = new Preview(null);

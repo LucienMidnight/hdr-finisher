@@ -736,6 +736,10 @@
           { signal, isCurrent },
         );
         if (regional) return regional;
+        // Scene-qualified masks on an authored SDR region may request a
+        // separate HDR region. A refused region must retain the mask fallback,
+        // never initiate a native whole-source preparation from that request.
+        if (options.regionOnly) return null;
       }
       if (longEdge * longEdge * 8 > renderer.maxSourceChunkBytes) {
         if (renderer.sourceTransportMode !== "strips") {

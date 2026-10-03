@@ -14,9 +14,11 @@ async function waitForPathGestureMovement(page, what) {
   try {
     await page.waitForFunction(() => state.localPointerGesture?.changed === true, null, { timeout: 5000 });
   } catch {
-    const gesture = await page.evaluate(() => (state.localPointerGesture
+    const gesture = await page.evaluate(() => ({gesture:state.localPointerGesture
       ? { type: state.localPointerGesture.type, changed: state.localPointerGesture.changed }
-      : null));
+      : null,grade:state.gradeMode,gizmo:localGizmoVisible(),selected:state.selectedPathNode,
+      geometry:state.adjustments.shared.geometry,preview:activePreviewElement()?.getBoundingClientRect().toJSON(),
+      nodes:selectedMaskLeaf()?.nodes}));
     throw new Error(`${what}: the drag never registered as movement (gesture ${JSON.stringify(gesture)}).`);
   }
 }
@@ -36,6 +38,9 @@ async function pathState(page) {
 }
 
 async function clickNormalized(page, box, x, y, options = {}) {
+  // Local controls can change the rail width. Pointer coordinates belong to
+  // the current picture, rather than the rectangle from initial creation.
+  Object.assign(box, await activePreviewBox(page));
   await page.mouse.click(box.x + box.width * x, box.y + box.height * y, options);
 }
 
@@ -76,6 +81,7 @@ async function activePreviewBox(page) {
     });
     await clickNormalized(page, box, .25, .20);
     const liveTarget = { x: box.x + box.width * .48, y: box.y + box.height * .58 };
+    Object.assign(box, await activePreviewBox(page));
     await page.mouse.move(box.x + box.width * .43, box.y + box.height * .48);
     await page.mouse.move(liveTarget.x, liveTarget.y);
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -134,8 +140,10 @@ async function activePreviewBox(page) {
     await page.locator('[data-local-tool="path"]').click();
 
     await clickNormalized(page, box, .25, .25);
+    Object.assign(box, await activePreviewBox(page));
     await page.mouse.move(box.x + box.width * .67, box.y + box.height * .25);
     await page.mouse.down();
+    Object.assign(box, await activePreviewBox(page));
     await page.mouse.move(box.x + box.width * .74, box.y + box.height * .18, { steps: 5 });
     await page.mouse.up();
     await clickNormalized(page, box, .72, .70);
@@ -241,8 +249,12 @@ async function activePreviewBox(page) {
     current = await pathState(page);
     assert(current.leaf.nodes[0].node_type === "smooth" && current.leaf.nodes[0].in_x !== null, "Smooth control did not generate handles.");
     const smoothBefore = JSON.parse(JSON.stringify(current.leaf.nodes[0]));
+    await page.waitForFunction(() => !state.gpuDraftInFlight
+      && state.acceptedPresentation?.generation===state.previewGeneration[state.currentView]);
+    Object.assign(box, await activePreviewBox(page));
     await page.mouse.move(box.x + box.width * smoothBefore.out_x, box.y + box.height * smoothBefore.out_y);
     await page.mouse.down();
+    Object.assign(box, await activePreviewBox(page));
     await page.mouse.move(box.x + box.width * (smoothBefore.out_x + .035), box.y + box.height * (smoothBefore.out_y + .015), { steps: 4 });
     await waitForPathGestureMovement(page, "Smooth handle drag");
     response = page.waitForResponse((item) => item.url().includes("/edit-commands") && item.request().method() === "POST");
@@ -277,8 +289,10 @@ async function activePreviewBox(page) {
     });
     assert(baselineValidity.valid, `Materialized feather boundary is invalid: ${JSON.stringify(baselineValidity)}`);
     const firstFeather = featherBefore[0];
+    Object.assign(box, await activePreviewBox(page));
     await page.mouse.move(box.x + box.width * firstFeather.x, box.y + box.height * firstFeather.y);
     await page.mouse.down();
+    Object.assign(box, await activePreviewBox(page));
     await page.mouse.move(box.x + box.width * (firstFeather.x - .035), box.y + box.height * (firstFeather.y - .03), { steps: 4 });
     await waitForPathGestureMovement(page, "Independent feather-node drag");
     response = page.waitForResponse((item) => item.url().includes("/edit-commands") && item.request().method() === "POST");
@@ -315,14 +329,24 @@ async function activePreviewBox(page) {
       await page.locator("#local-show-mask").click();
     }
     let draftRequestCount = 0;
+    const draftRecipes = [];
+    await page.waitForFunction(() => !state.localMaskDraftController && !state.localMaskDraftPending && !state.localMaskDraftTimer);
     const delayedDraft = async (route) => {
       draftRequestCount += 1;
+      const body=route.request().postDataJSON();draftRecipes.push({longEdge:body.long_edge,feather:body.mask?.leaf?.feather,revision:body.edit_revision,adjustments:Boolean(body.adjustments)});
       await new Promise((resolve) => setTimeout(resolve, 550));
-      await route.continue();
+      try { await route.continue(); }
+      catch(error) {
+        // A superseding commit can abort the held draft before the delay
+        // expires. Chromium has then already completed the interception.
+        if(!String(error).includes('Route is already handled') || !route.request().failure())throw error;
+      }
     };
     await page.route("**/local-mask/*/preview", delayedDraft);
     await slider.evaluate((input) => {
-      for (const value of [18, 7, 10]) {
+      // End on an uncached mask; returning to the existing value legitimately
+      // settles immediately and cannot exercise delayed-work progress.
+      for (const value of [18, 7, 11]) {
         input.value = String(value);
         input.dispatchEvent(new Event("input", { bubbles: true }));
       }
@@ -369,11 +393,19 @@ async function activePreviewBox(page) {
     await slider.evaluate((input) => input.dispatchEvent(new Event("change", { bubbles: true })));
     assert((await response).ok(), "Rapid Feather inputs did not commit.");
     await latestPreviewPresented;
-    await page.locator("#path-mask-progress").waitFor({ state: "hidden", timeout: 5000 });
-    await page.unroute("**/local-mask/*/preview", delayedDraft);
-    assert(draftRequestCount <= 1, `Rapid Feather input launched ${draftRequestCount} draft mask jobs instead of only the latest value.`);
+    await page.locator("#path-mask-progress").waitFor({ state: "hidden", timeout: 5000 }).catch(async error => {
+      console.log('Path progress diagnostic', await page.evaluate(() => ({
+        target:state.pathMaskProgressTarget, mask:selectedLocal()?.mask,
+        cache:localAuthoritativeMaskCache.get(selectedLocal()?.id)?.signature,
+        pending:state.localMaskDraftPending,dirty:state.localMaskDraftDirty,
+        requests:[...localAuthoritativeMaskRequests.keys()],
+      })));
+      throw error;
+    });
+    await page.unrouteAll({behavior:'wait'});
+    assert(draftRequestCount <= 1, `Rapid Feather input launched ${draftRequestCount} draft mask jobs instead of only the latest value: ${JSON.stringify(draftRecipes)}`);
     current = await pathState(page);
-    assert(Math.abs(current.leaf.feather - .05) < 1e-8 && Number(await slider.inputValue()) === 10, "Rapid Feather inputs did not converge on the final value.");
+    assert(Math.abs(current.leaf.feather - .055) < 1e-8 && Number(await slider.inputValue()) === 11, "Rapid Feather inputs did not converge on the final value.");
 
     const softness = page.locator('[data-local-mask-param="feather_softness"]');
     assert(await softness.count() === 1, "Path Softness control was not rendered below Feather.");
@@ -468,8 +500,10 @@ async function activePreviewBox(page) {
     const beforeEdgePathLocals = (await pathState(page)).locals;
     await page.locator("#local-add-adjustment").click();
     await page.locator('[data-local-tool="path"]').click();
+    Object.assign(box, await activePreviewBox(page));
     await page.mouse.move(box.x + box.width * .03, box.y + box.height * .38);
     await page.mouse.down();
+    Object.assign(box, await activePreviewBox(page));
     await page.mouse.move(box.x + box.width * .14, box.y + box.height * .32, { steps: 4 });
     await page.mouse.up();
     await clickNormalized(page, box, .72, .20);

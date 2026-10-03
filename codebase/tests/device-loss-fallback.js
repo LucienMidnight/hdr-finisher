@@ -38,7 +38,11 @@ async function loseDevice(page) {
 async function waitForRebuilt(page) {
   await page.waitForFunction(() => state.gpuPreview?.available === true
     && state.gpuPreview?.deviceLost === false
-    && state.gpuPreview?.device !== window.__lostDevice, null, { timeout: 60000 });
+    && state.gpuPreview?.device !== window.__lostDevice
+    && state.acceptedPresentation?.transport === 'WebGPU'
+    && state.acceptedPresentation?.lane === state.currentView
+    && state.acceptedPresentation?.generation === state.previewGeneration[state.currentView]
+    && !state.gpuDraftInFlight, null, { timeout: 60000 });
   return page.evaluate(() => ({
     available: state.gpuPreview.available,
     detail: state.gpuPreview.detail,
@@ -86,7 +90,10 @@ async function waitForRebuilt(page) {
         control.dispatchEvent(new Event("input", { bubbles: true }));
         control.dispatchEvent(new Event("change", { bubbles: true }));
       }, cycle === 1 ? "0.5" : "0.25");
-      await page.waitForFunction(() => document.getElementById("scope-freshness")?.textContent !== "Updating", null, { timeout: 30000 });
+      await page.waitForFunction(() => state.acceptedPresentation?.transport === 'WebGPU'
+        && state.acceptedPresentation?.generation === state.previewGeneration[state.currentView]
+        && !state.gpuDraftInFlight
+        && document.getElementById("scope-freshness")?.textContent !== "Updating", null, { timeout: 30000 });
       const transportAfterEdit = await page.evaluate(() => state.previewInfo?.transport);
       assert(transportAfterEdit !== "Raw RGBA8", `Cycle ${cycle}: an edit after rebuild fell back to the CPU preview`);
     }

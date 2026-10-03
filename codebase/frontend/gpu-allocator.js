@@ -55,6 +55,14 @@ class HDRGpuAllocator {
     return this.entries.delete(entry.id);
   }
 
+  /** A cache value may gain or release refinement textures after registration. */
+  resize(entry, bytes) {
+    if (!entry || !this.entries.has(entry.id)) return false;
+    entry.bytes = Math.max(0, Number(bytes) || 0);
+    this.enforceBudget({ protect: entry.id });
+    return true;
+  }
+
   touch(entry) {
     if (!entry || !this.entries.has(entry.id)) return entry;
     this.entries.delete(entry.id);

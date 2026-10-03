@@ -149,9 +149,10 @@ test("the Detail halo covers the shader's reach at maximum radii", () => {
     Math.max(0.70, diagonal * 0.0012),
     Math.max(0.30, 3 * 1),
   ];
-  // Separable analysis reaches two radii; texture's edge guide reaches two
-  // coarse radii into the packed band; two pixels cover the edge sample.
-  const bandReach = Math.max(2 * shaderRadii[0], 4 * shaderRadii[1], 2 * shaderRadii[2]);
+  // The exact box analysis plus the coarse guide must fit before the
+  // two pixels reserved for the edge sample.
+  const bandReach = Math.max(Scale.sharpenBlurReach(shaderRadii[0]),
+    Scale.sharpenBlurReach(shaderRadii[1]) + 2 * shaderRadii[1], Scale.sharpenBlurReach(shaderRadii[2]));
   // A local's Clarity map is built inside the tile: the B-spline spans two
   // coarse texels either side, each blurred texel reads `taps` texels either
   // side, and each texel averages a whole block.

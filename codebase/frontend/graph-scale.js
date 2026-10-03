@@ -236,8 +236,8 @@
    * How far past its own rectangle a tile has to be correct for the Detail
    * stage.
    *
-   * Texture analysis reaches two radii in each direction. Sharpen uses three
-   * box passes, each reaching its integer box radius. Texture's edge
+   * Texture and Sharpen use three box passes, each reaching its integer
+   * box radius. Texture's edge
    * guide then reaches another two coarse radii into that packed band. The
    * extra two pixels cover the bilinear sample at the reach's edge.
    *
@@ -247,10 +247,10 @@
    */
   function detailReach(width, height, params, localAdjustments = [], lane = "hdr") {
     const { global, locals } = detailRadii(width, height, params, localAdjustments, lane);
-    const reaches = [2 * global[0], 4 * global[1], sharpenBlurReach(global[3])];
+    const reaches = [sharpenBlurReach(global[0]), sharpenBlurReach(global[1]) + 2 * global[1], sharpenBlurReach(global[3])];
     const grades = (Array.isArray(localAdjustments) ? localAdjustments : []).map((local) => local?.[`${lane}_grade`]);
     locals.forEach((radii, index) => {
-      reaches.push(2 * radii[0], 4 * radii[1], sharpenBlurReach(radii[3]));
+      reaches.push(sharpenBlurReach(radii[0]), sharpenBlurReach(radii[1]) + 2 * radii[1], sharpenBlurReach(radii[3]));
       if (localClarityActive(grades[index])) reaches.push(clarityMapPlan(radii[2]).reach);
     });
     return Math.ceil(Math.max(...reaches) + 2);

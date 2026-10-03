@@ -14,7 +14,10 @@ async function stable(page, timeout = 180000) {
 }
 async function open(page, project, manual = false) {
   await page.goto(process.env.HDR_FINISHER_URL || 'http://127.0.0.1:8799', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.HDRFinisherPerformance?.gpuSnapshot()?.available, null, { timeout: 180000 });
+  await page.waitForFunction(() => state.gpuPreview?.detail !== undefined
+    && state.gpuPreview.detail !== 'WebGPU has not been initialized', null, { timeout: 180000 });
+  const initialization=await page.evaluate(()=>({available:state.gpuPreview?.available,detail:state.gpuPreview?.detail}));
+  if(!initialization.available)throw Error(`WebGPU initialization failed: ${initialization.detail}`);
   await page.evaluate(() => {
     window.HDRFinisherPerformance.enableGpuInstrumentation(true);
     window.__review = { previews: [], scopes: [], inputs: [], pointers: [], changes: [], errors: [], settledScopes: [], edits: [] };
@@ -91,7 +94,7 @@ async function result(page, begin, releaseAt) {
       releaseToScopeCallbackCompleteMs: (() => { const x = __review.settledScopes.find(x => x.at >= released && x.lane === a.lane && x.applicationGeneration === a.generation); return x ? x.at - released : null; })(),
       dragDurationMs: released - b.at, framesDuringDrag: p.filter(x => x.at <= released).length,
       framesAfterRelease: p.filter(x => x.at > released).length,
-      inputs: __review.inputs.slice(b.i), changes: __review.changes.slice(b.c),
+      inputs: __review.inputs.slice(b.i), changes: __review.changes.slice(b.c), edits: __review.edits.slice(b.e),
       trustedPointers: __review.pointers.slice(b.t).filter(x => x.trusted).length,
       accepted: a, scope: currentScope || null, gpuRenders: gpu.renders?.slice(-8),
       stages: gpu.stages?.slice(b.gpuStage), refusal: state.lastGpuDraftRefusal,
@@ -110,19 +113,33 @@ async function drag(page, selector, direction = 1, duration = 500, options = {})
   const valueBefore = await page.locator(selector).first().inputValue();
   const modelBefore = await page.locator(selector).first().evaluate(x => x.dataset.path ? getValueByPath(state.adjustments,x.dataset.path) : null);
   const bounds = await page.locator(selector).first().evaluate(x => ({ min: Number(x.min), max: Number(x.max), enhanced: Boolean(x.closest('.range-shell')), thumb: x.closest('.luma-nit-range,.gradient-luma-ramp') ? 13 : parseFloat(getComputedStyle(x,'::-webkit-slider-thumb').width) || 13, padding: parseFloat(getComputedStyle(x).paddingLeft) || 0 }));
-  if (direction > 0 && Number(valueBefore) >= bounds.max || direction < 0 && Number(valueBefore) <= bounds.min) direction *= -1;
+  const endMargin=(bounds.max-bounds.min)*.01;
+  if (direction > 0 && Number(valueBefore) >= bounds.max-endMargin || direction < 0 && Number(valueBefore) <= bounds.min+endMargin) direction *= -1;
   const b = await mark(page);
-  const startX = bounds.enhanced ? box.x + box.width / 2 : box.x + bounds.padding + bounds.thumb / 2 + (Number(valueBefore)-bounds.min)/(bounds.max-bounds.min)*(box.width-2*bounds.padding-bounds.thumb);
+  let startX = bounds.enhanced ? box.x + box.width / 2 : box.x + bounds.padding + bounds.thumb / 2 + (Number(valueBefore)-bounds.min)/(bounds.max-bounds.min)*(box.width-2*bounds.padding-bounds.thumb);
+  let startY = box.y + box.height / 2;
+  if (!bounds.enhanced) {
+    // Overlaid ranges expose only their thumb to hit testing. Locate that
+    // actual hit surface rather than assuming a track's CSS vertical offset.
+    const hit = await page.locator(selector).first().evaluate((input, point) => {
+      const rect=input.getBoundingClientRect(), hits=[];
+      for(let y=rect.top;y<rect.bottom;y+=1)for(let x=Math.max(rect.left,point-18);x<Math.min(rect.right,point+18);x+=1)
+        if(document.elementFromPoint(x,y)===input)hits.push({x,y,d:(x-point)**2+(y-(rect.top+rect.height/2))**2});
+      return hits.sort((a,b)=>a.d-b.d)[0]||null;
+    },startX);
+    if(!hit)throw Error(`No exposed native thumb hit surface: ${selector}`);
+    startX=hit.x;startY=hit.y;
+  }
   // Fine mode keeps edits near the mature grade instead of jumping to track midpoint.
-  await page.keyboard.down('Control');
-  await page.mouse.move(startX, box.y + box.height / 2);
+  if(bounds.enhanced)await page.keyboard.down('Control');
+  await page.mouse.move(startX, startY);
   await page.mouse.down();
   try {
     for (let step = 1; step <= 12; step++) {
-      await page.mouse.move(startX + direction * box.width * .12 * step / 12, box.y + box.height / 2);
+      await page.mouse.move(startX + direction * box.width * .12 * step / 12, startY);
       await page.waitForTimeout(duration / 12);
     }
-  } finally { await page.mouse.up(); await page.keyboard.up('Control'); }
+  } finally { await page.mouse.up(); if(bounds.enhanced)await page.keyboard.up('Control'); }
   const released = await page.evaluate(b => __review.pointers.slice(b.t).filter(x => x.kind === 'pointerup').at(-1)?.at || performance.now(), b);
   if (!await page.evaluate(b => __review.inputs.length > b.i, b)) throw Error(`Native pointer did not reach a slider thumb: ${selector}`);
   let applyAt = null, draftPaintAt = null;
@@ -166,7 +183,9 @@ function sampler() {
 function write(file, report) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(report, null, 2)); }
 function manifest(project) {
   const sha = file => require('crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-  const sources = [process.argv[1], __filename, path.join(__dirname,'heavy-project-drag-review.js'), path.join(__dirname,'../run-in-electron.js'), path.join(__dirname,'../../frontend/app.js')];
+  const sources = [process.argv[1], __filename, path.join(__dirname,'heavy-project-drag-review.js'), path.join(__dirname,'../run-in-electron.js'),
+    ...['app.js','webgpu-preview.js','webgpu-shaders.js','gpu-brush-mask.js','mask-raster.js'].map(file=>path.join(__dirname,'../../frontend',file)),
+    path.join(__dirname,'../../backend/hdr_finisher/mask_softness.py')];
   return { createdAt: new Date().toISOString(), project, projectSha256: sha(project), codeSha256: Object.fromEntries([...new Set(sources)].filter(fs.existsSync).map(file=>[path.relative(process.cwd(),file),sha(file)])), commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), dirty: !!execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim(), host: 'Electron disposable profile', measurementOnly: true };
 }
 module.exports = { stable, open, reveal, mark, result, drag, networkProbe, sampler, write, manifest };
