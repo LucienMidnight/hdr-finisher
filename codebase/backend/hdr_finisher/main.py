@@ -1128,7 +1128,7 @@ def webgpu_proxy(
 
 
 # Adaptive denoise models measured on preview proxies, newest last. A model is
-# a handful of numbers, but measuring one reads the whole proxy.
+# a handful of numbers, but measuring one resamples its sample windows.
 _DENOISE_MODEL_CACHE: dict[tuple, dict] = {}
 _DENOISE_MODEL_CACHE_LIMIT = 16
 
@@ -1163,17 +1163,22 @@ def adaptive_denoise_model(
     cached = _DENOISE_MODEL_CACHE.pop(key, None)
     if cached is None:
         revision = session.edit_revision
+        request = (kind, long_edge, session.adjustments, session.sdr_match)
+        is_current = lambda: session.edit_revision == revision  # noqa: E731
         try:
-            proxy, _working_space, _signature = session.render_cache.geometry_source_proxy(
-                kind,
-                long_edge,
-                session.adjustments,
-                session.sdr_match,
-                is_current=lambda: session.edit_revision == revision,
-            )
+            # The model reads a few sample windows, so only those are corrected
+            # for geometry where the proxy can be read by rectangle.
+            windows = session.render_cache.geometry_source_windows(*request, is_current=is_current)
+            if windows is not None:
+                model = denoise_adaptive.estimate_adaptive_model_from_windows(*windows)
+            else:
+                proxy, _working_space, _signature = session.render_cache.geometry_source_proxy(
+                    *request, is_current=is_current
+                )
+                model = denoise_adaptive.estimate_adaptive_model(np.asarray(proxy))
         except StaleRender:
             return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
-        cached = denoise_adaptive.estimate_adaptive_model(np.asarray(proxy)).as_dict()
+        cached = model.as_dict()
     _DENOISE_MODEL_CACHE[key] = cached
     while len(_DENOISE_MODEL_CACHE) > _DENOISE_MODEL_CACHE_LIMIT:
         _DENOISE_MODEL_CACHE.pop(next(iter(_DENOISE_MODEL_CACHE)))

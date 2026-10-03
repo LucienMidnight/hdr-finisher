@@ -464,8 +464,40 @@ def _tail_confidence(fraction: float) -> float:
     return float(np.clip((fraction - low) / (high - low), 0.0, 1.0))
 
 
+class _WindowSource:
+    """A frame known only through the estimation windows read from it.
+
+    Estimation slices nothing but ``_sample_tiles`` windows, each several
+    times, so a window is fetched once and kept.
+    """
+
+    def __init__(self, height: int, width: int, read) -> None:
+        self.shape = (int(height), int(width), 3)
+        self._read = read
+        self._windows: dict[tuple[int, int, int, int], np.ndarray] = {}
+
+    def __getitem__(self, key) -> np.ndarray:
+        rows, columns = key[0], key[1]
+        window = (rows.start, columns.start, rows.stop, columns.stop)
+        if window not in self._windows:
+            pixels = np.asarray(self._read(*window), dtype=np.float32)[..., :3]
+            if pixels.shape[:2] != (window[2] - window[0], window[3] - window[1]):
+                raise ValueError("Denoise estimation window was read at the wrong size.")
+            self._windows[window] = pixels
+        return self._windows[window]
+
+
 def estimate_adaptive_model(image: np.ndarray) -> AdaptiveNoiseModel:
-    source = np.asarray(image, dtype=np.float32)
+    return _estimate(np.asarray(image, dtype=np.float32))
+
+
+def estimate_adaptive_model_from_windows(height: int, width: int, read) -> AdaptiveNoiseModel:
+    """``estimate_adaptive_model`` of a ``height`` x ``width`` frame that is not
+    built: ``read(y0, x0, y1, x1)`` returns that rectangle of it."""
+    return _estimate(_WindowSource(height, width, read))
+
+
+def _estimate(source) -> AdaptiveNoiseModel:
     model, windows = _measure_model(source)
     limits, reference = _tail_reference()
     tails, fraction = _energy_tails(source, windows, model, limits)

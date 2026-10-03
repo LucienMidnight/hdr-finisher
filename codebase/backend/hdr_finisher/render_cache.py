@@ -790,6 +790,51 @@ class SessionRenderCache:
         fixed = apply_geometry(proxy, geometry)
         return downsample_image(fixed, edge), working_space, signature
 
+    def geometry_source_windows(
+        self,
+        kind: PreviewKind,
+        long_edge: int,
+        adjustments: AdjustmentState,
+        sdr_match: SdrMatchState | None = None,
+        is_current: Callable[[], bool] | None = None,
+    ) -> tuple[int, int, Callable[[int, int, int, int], np.ndarray]] | None:
+        """The size of ``geometry_source_proxy``'s frame and a reader of
+        rectangles of it, without building the frame.
+
+        ``read(y0, x0, y1, x1)`` returns what that slice of the proxy would
+        hold. ``None`` where only the whole-frame path reproduces the proxy:
+        the SDR-matched base, and a geometry that needs a post-geometry
+        downsample.
+        """
+        edge = max(256, int(long_edge))
+        geometry = adjustments.shared.geometry
+        if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
+            return None
+        source, sdr_reference = self._proxies(edge, is_current=is_current)
+        use_authored_sdr = (
+            kind == PreviewKind.SDR
+            and sdr_reference is not None
+            and adjustments.sdr.use_authored_base
+        )
+        base = sdr_reference if use_authored_sdr else source
+        working_space = "linear-srgb" if use_authored_sdr else "acescg"
+        with self._lock:
+            source_epoch = self._source_epoch
+        output_width, output_height = geometry_output_dimensions(base.shape[1], base.shape[0], geometry)
+        if max(output_width, output_height) > edge:
+            return None
+
+        def read(y0: int, x0: int, y1: int, x1: int) -> np.ndarray:
+            return apply_geometry_region(
+                base,
+                geometry,
+                (x0, y0, x1, y1),
+                range_cache=self._source_ranges,
+                range_cache_key=(source_epoch, edge, working_space),
+            )
+
+        return output_height, output_width, read
+
     def geometry_source_tile(
         self,
         kind: PreviewKind,
