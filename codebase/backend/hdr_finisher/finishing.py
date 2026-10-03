@@ -378,16 +378,7 @@ def geometry_coordinate_map(
         left, top, right, bottom = _crop_bounds(oriented_width, oriented_height, geometry)
         output_width, output_height = right - left, bottom - top
     else:
-        source_x = np.broadcast_to(
-            (np.arange(width, dtype=np.float32) + np.float32(0.5)) / max(width, 1),
-            (height, width),
-        )
-        source_y = np.broadcast_to(
-            ((np.arange(height, dtype=np.float32) + np.float32(0.5)) / max(height, 1))[:, None],
-            (height, width),
-        )
-        mapped = apply_geometry(np.stack((source_x, source_y), axis=-1), geometry)
-        output_height, output_width = mapped.shape[:2]
+        output_width, output_height = geometry_output_dimensions(width, height, geometry)
 
     # Fit a projective map against interior pixel centers after running the
     # coordinate ramps through the real image operation. This keeps Pillow's
@@ -417,7 +408,7 @@ def geometry_coordinate_map(
         samples = np.column_stack(((x.astype(np.float32) + np.float32(.5)) / max(width, 1),
                                    (y.astype(np.float32) + np.float32(.5)) / max(height, 1))).astype(np.float64)
     else:
-        samples = mapped[grid_y.ravel(), grid_x.ravel(), :].astype(np.float64)
+        samples = _coordinate_ramp_samples(width, height, geometry, grid_x.ravel(), grid_y.ravel())
     source_u = samples[:, 0]
     source_v = samples[:, 1]
     zeros = np.zeros_like(output_u)
@@ -444,6 +435,36 @@ def geometry_coordinate_map(
     output_to_source = tuple(float(value) for value in output_to_source_matrix.ravel())
     source_to_output = tuple(float(value) for value in source_to_output_matrix.ravel())
     return output_to_source, source_to_output, output_width, output_height
+
+
+def _coordinate_ramp_samples(
+    width: int, height: int, geometry: GeometryAdjustments, xs: np.ndarray, ys: np.ndarray
+) -> np.ndarray:
+    """Source coordinates at the given output pixels, read through the real
+    resample one pixel at a time.
+
+    Running whole coordinate ramps through the geometry cost as much as
+    correcting the photograph (2.5 s at 42 MP) for the 49 pixels the fit reads.
+    The ramps are broadcast views, so nothing image-sized is allocated either.
+    """
+    ramp_x = (np.arange(width, dtype=np.float32) + np.float32(0.5)) / max(width, 1)
+    ramp_y = (np.arange(height, dtype=np.float32) + np.float32(0.5)) / max(height, 1)
+    total_roll = geometry.straighten_angle + geometry.perspective_rotate
+    if geometry_resample_stage(geometry) == "roll" and total_roll % 90.0 == 0.0:
+        # A roll of a whole quarter turn has no window form: each pixel would
+        # rotate the whole frame. Rotate it once instead.
+        ramps = np.stack(
+            (np.broadcast_to(ramp_x, (height, width)), np.broadcast_to(ramp_y[:, None], (height, width))), axis=-1
+        )
+        return apply_geometry(ramps, geometry)[ys, xs, :].astype(np.float64)
+    samples = np.empty((xs.size, 2), dtype=np.float64)
+    for channel, (values, shape) in enumerate(((ramp_x, (1, width, 1)), (ramp_y, (height, 1, 1)))):
+        ramp = np.broadcast_to(values.reshape(shape), (height, width, 1))
+        # The resample clips to the whole channel's range, which a ramp states.
+        ranges = {"ramp": (ramp, ((float(values.min()), float(values.max())),))}
+        for row, (x, y) in enumerate(zip(xs.tolist(), ys.tolist())):
+            samples[row, channel] = apply_geometry_region(ramp, geometry, (x, y, x + 1, y + 1), ranges, "ramp")[0, 0, 0]
+    return samples
 
 
 def geometry_output_dimensions(width: int, height: int, geometry: GeometryAdjustments) -> tuple[int, int]:

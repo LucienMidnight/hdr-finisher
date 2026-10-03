@@ -77,3 +77,18 @@ test("mask projection preserves absent path handles and recursively maps leaves"
   assert.equal(HDRGeometryMath.projectiveMatrixIsAffine(matrix), true);
   assert.equal(HDRGeometryMath.projectiveMatrixIsAffine([1, 0, 0, 0, 1, 0, 0.1, 0, 1]), false);
 });
+
+test("the frame size at a processing edge is exact or unknown, never a scaled guess", () => {
+  const source = { width: 5320, height: 7968 };
+  assert.deepEqual(HDRGeometryMath.frameSizeAtEdge(source, {}, 5634), { width: 3762, height: 5634 });
+  assert.deepEqual(HDRGeometryMath.frameSizeAtEdge(source, {}, 16384), source);
+  const perspective = { perspective_horizontal: -30, perspective_vertical: -20 };
+  // Scaling the full-resolution output (4900 x 7421) gives 3464; the backend's frame is 3465 wide.
+  assert.equal(HDRGeometryMath.frameSizeAtEdge(source, perspective, 5634), null);
+  assert.equal(HDRGeometryMath.frameSizeAtEdge(source, perspective, 5634, { fullOutputWidth: 4900, fullOutputHeight: 7421 }), null);
+  assert.deepEqual(
+    HDRGeometryMath.frameSizeAtEdge(source, perspective, 5634, { outputWidth: 3465, outputHeight: 5247 }),
+    { width: 3465, height: 5247 },
+  );
+  assert.equal(HDRGeometryMath.frameSizeAtEdge(null, {}, 5634), null);
+});

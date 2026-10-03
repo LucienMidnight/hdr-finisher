@@ -69,6 +69,31 @@
     return { width: right - left, height: bottom - top };
   }
 
+  /**
+   * The exact size of the frame a render at `longEdge` produces, or null when
+   * it is not known.
+   *
+   * The backend applies geometry to the source resized to that edge, and its
+   * safe inset and crop round at that size. Scaling the full-resolution frame
+   * lands a pixel away, which is enough for a region fetched against the
+   * guess to miss the last column of the real frame. Only the coordinate map
+   * fitted at this edge states the size; without geometry it is the resize.
+   */
+  function frameSizeAtEdge(source, geometry, longEdge, edgeMap = null) {
+    if (!source?.width || !source?.height || !(longEdge > 0)) return null;
+    if (geometryTransformIsNeutral(geometry)) {
+      const scale = Math.min(1, longEdge / Math.max(source.width, source.height));
+      return {
+        width: Math.max(1, Math.round(source.width * scale)),
+        height: Math.max(1, Math.round(source.height * scale)),
+      };
+    }
+    if (edgeMap?.outputWidth > 0 && edgeMap?.outputHeight > 0) {
+      return { width: edgeMap.outputWidth, height: edgeMap.outputHeight };
+    }
+    return null;
+  }
+
   function cropAspectRatio(geometry, source) {
     if (geometry.ratio_mode === "free") return null;
     if (geometry.ratio_mode === "original") {
@@ -125,6 +150,7 @@
     projectivePoint,
     rotatedFrameDimensions,
     sourcePixelFrameDimensions,
+    frameSizeAtEdge,
     cropAspectRatio,
     projectiveMatrixIsAffine,
     projectPathNodeToOutput,

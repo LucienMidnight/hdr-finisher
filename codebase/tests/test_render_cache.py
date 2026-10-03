@@ -981,3 +981,25 @@ def test_strip_and_whole_frame_paths_share_one_single_flight(monkeypatch) -> Non
     np.testing.assert_array_equal(results["whole_frame"], strip_frame)
     assert cache._misses == 1
     assert cache._hits == 1
+
+
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        GeometryAdjustments(straighten_angle=1, perspective_horizontal=-30, perspective_vertical=-20, perspective_rotate=-2),
+        GeometryAdjustments(straighten_angle=2.5),
+        GeometryAdjustments(rotation=90, crop={"x": 0.07, "y": 0.11, "width": 0.61, "height": 0.83}),
+    ],
+)
+def test_geometry_map_states_the_proxy_frame_size_at_every_edge_without_building_a_level(geometry) -> None:
+    # The GPU preview fetches a region of the frame this size names, so it must
+    # be the size of the proxy itself and not the full-resolution frame scaled.
+    image = np.random.default_rng(5).random((797, 532, 3), dtype=np.float32)
+    adjustments = AdjustmentState()
+    adjustments.shared.geometry = geometry
+    for edge in (797, 564, 398, 282):
+        cache = SessionRenderCache(image, None)
+        _to_source, _to_output, width, height = cache.geometry_map(adjustments, edge)
+        assert not cache._source_proxies
+        proxy, _space, _signature = cache.geometry_source_proxy(PreviewKind.HDR, edge, adjustments)
+        assert (width, height) == proxy.shape[1::-1]

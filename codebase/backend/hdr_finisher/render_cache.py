@@ -1006,8 +1006,11 @@ class SessionRenderCache:
             if cached is not None:
                 self._geometry_maps.move_to_end(key)
                 return cached
-        source, _sdr_reference = self._proxies(edge)
-        result = geometry_coordinate_map(source.shape[1], source.shape[0], geometry)
+        # The map depends on the level's size, not its pixels, so a size that
+        # has no level yet does not have one built to answer this.
+        with self._lock:
+            level_width, level_height = downsample_target_dimensions(self.image.shape[1], self.image.shape[0], edge)
+        result = geometry_coordinate_map(level_width, level_height, geometry)
         output_to_source, source_to_output, output_width, output_height = result
         if max(output_width, output_height) > edge:
             scale = edge / max(output_width, output_height)

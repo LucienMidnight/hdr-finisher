@@ -57,8 +57,20 @@ async function settle(page) {
     async function step(name, action) {
       const before = await c.mark(page), requestStart = network.length;
       const maskStart = await page.evaluate(() => state.gpuPreview.performanceMetrics.maskEvents?.length || 0);
+      // Every size the picture is laid out at during the step: more than one
+      // after the action itself means it was resized, and so moved, by itself.
+      await page.evaluate(() => {
+        const log = window.__layoutLog = { start: performance.now(), rows: [], stop: false };
+        const sample = () => {
+          const size = `${Math.round(parseFloat(els.previewCanvas.style.width))}x${Math.round(parseFloat(els.previewCanvas.style.height))}`;
+          if (log.rows.at(-1)?.size !== size) log.rows.push({ ms: Math.round(performance.now() - log.start), size });
+          if (!log.stop) requestAnimationFrame(sample);
+        };
+        sample();
+      });
       await action();
       await settle(page);
+      const layout = await page.evaluate(() => { window.__layoutLog.stop = true; return window.__layoutLog.rows; });
       const observation = await c.result(page, before, before.at);
       const detail = await page.evaluate(maskStart => {
         const events = (state.gpuPreview.performanceMetrics.maskEvents || []).slice(maskStart), kinds = {};
@@ -82,11 +94,14 @@ async function settle(page) {
         entry.count++; entry.ms += stage.durationMs || 0;
       }
       for (const entry of Object.values(stages)) entry.ms = Math.round(entry.ms);
-      const row = { name, exactMs: Math.round(observation.releaseToExactMs), scopesMs: Math.round(observation.releaseToScopesMs),
-        stableMs: Math.round(observation.releaseToObservedStableMs), ...detail, requests: group, stages,
+      const refused = (observation.stages || []).filter(stage => /refused/.test(stage.stage));
+      if (refused.length) console.log(`   REFUSED ${JSON.stringify(refused)}`);
+      const row = { refused, name, exactMs: Math.round(observation.releaseToExactMs), scopesMs: Math.round(observation.releaseToScopesMs),
+        stableMs: Math.round(observation.releaseToObservedStableMs), ...detail, layout, requests: group, stages,
         renders: (observation.gpuRenders || []).slice(-3).map(render => ({ edge: render.longEdge, proxyAwaitMs: Math.round(render.proxyAwaitMs), maskAwaitMs: Math.round(render.maskAwaitMs), gpuMs: Math.round(render.gpuMs || 0) })) };
       report.steps.push(row); c.write(output, report);
       console.log(`${name.padEnd(12)} exact ${String(row.exactMs).padStart(6)} ms  scopes ${String(row.scopesMs).padStart(6)}  stable ${String(row.stableMs).padStart(6)}  edge ${detail.requiredEdge}  ${detail.accepted.execution}`);
+      console.log(`   layout ${layout.map(entry => `${entry.size}@${entry.ms}`).join(' -> ')}`);
       console.log(`   masks ${JSON.stringify(detail.kinds)}`);
       console.log(`   requests ${JSON.stringify(group)}`);
       console.log(`   renders ${JSON.stringify(row.renders)}`);

@@ -282,6 +282,10 @@ const LOCAL_COMPARISON_COLORS = Object.freeze({
 });
 const geometryCoordinateMapCache = new Map();
 const geometryCoordinateMapRequests = new Map();
+// The full-resolution frame a geometry produces, by session and geometry. A
+// coordinate map is fitted per processing size, but this part of its answer is
+// the same at every size.
+const geometryFullOutputFrames = new Map();
 let localMaskOverlayFrame = 0;
 let pathMarchingAntFrame = 0;
 
@@ -883,11 +887,10 @@ function projectivePoint(matrix, point) {
   return geometryMath.projectivePoint(matrix, point);
 }
 
-async function ensureGeometryCoordinateMap() {
+async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge()) {
   if (!state.session || geometryTransformIsNeutral()) return IDENTITY_GEOMETRY_COORDINATE_MAP;
   const sessionId = state.session.session_id;
   const signature = geometrySignature();
-  const longEdge = settledProxyLongEdge();
   const key = geometryCoordinateMapKey(signature, longEdge);
   const cached = geometryCoordinateMapCache.get(key);
   if (cached) return cached;
@@ -911,6 +914,10 @@ async function ensureGeometryCoordinateMap() {
       fullOutputHeight: payload.full_output_height,
     };
     geometryCoordinateMapCache.set(key, result);
+    geometryFullOutputFrames.set(`${sessionId}:${signature}`, result);
+    while (geometryFullOutputFrames.size > 12) {
+      geometryFullOutputFrames.delete(geometryFullOutputFrames.keys().next().value);
+    }
     while (geometryCoordinateMapCache.size > 12) {
       geometryCoordinateMapCache.delete(geometryCoordinateMapCache.keys().next().value);
     }
@@ -8814,7 +8821,11 @@ function beginProjectOpenStatus(label) {
 
 function sourcePixelFrameDimensions(geometry = state.adjustments?.shared?.geometry) {
   const source = state.session?.source;
-  const map = geometryCoordinateMapCache.get(geometryCoordinateMapKey(JSON.stringify(geometry)));
+  // Not the map of the current processing size: a zoom changes that size, and
+  // until its own map arrived the frame fell back to arithmetic that knows
+  // nothing of perspective, so the picture was laid out at the wrong size and
+  // jumped when the map landed.
+  const map = geometryFullOutputFrames.get(`${state.session?.session_id || "none"}:${JSON.stringify(geometry)}`);
   return geometryMath.sourcePixelFrameDimensions(source, geometry, map);
 }
 
@@ -11246,11 +11257,24 @@ async function applyComparisonUrl(url) {
  * waits on this instead of superseding it.
  */
 /**
- * The size of the frame a render at `longEdge` produces. The processing edge
- * is the uncropped source's long edge at that size, so the frame is the
- * full-resolution output scaled by the processing edge over the source's.
+ * The exact size of the frame a render at `longEdge` produces, or null until
+ * the coordinate map for that size has said what geometry makes of it.
  */
 function gpuFrameSizeAt(longEdge) {
+  return geometryMath.frameSizeAtEdge(
+    state.session?.source,
+    state.adjustments?.shared?.geometry,
+    longEdge,
+    geometryCoordinateMapCache.get(geometryCoordinateMapKey(geometrySignature(), longEdge)),
+  );
+}
+
+/**
+ * About the size of that frame: the full-resolution output scaled by the
+ * processing edge over the source's. Good for placing the view, not for
+ * addressing pixels.
+ */
+function approximateGpuFrameSizeAt(longEdge) {
   const source = { width: state.session?.source?.width || 1, height: state.session?.source?.height || 1 };
   const frame = sourcePixelFrameDimensions(state.adjustments?.shared?.geometry) || source;
   const scale = Math.min(1, longEdge / Math.max(1, source.width, source.height));
@@ -11268,7 +11292,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
     // The visible region is measured here, where the mounted canvas is known,
     // and handed to the coordinator so the deferred pan pass can use the same
     // model without measuring DOM state from inside the state machine.
-    const frame = gpuFrameSizeAt(longEdge);
+    const frame = gpuFrameSizeAt(longEdge) || approximateGpuFrameSizeAt(longEdge);
     coordinator.noteViewport(lane, visibleOutputRect(frame.width, frame.height));
     coordinator.noteScale(lane, { tier, longEdge });
   }
@@ -11358,6 +11382,9 @@ async function renderGpuDraftInner(
       if (!ready) return refuse("denoise-scale-analysis-unavailable");
     }
   }
+  // A magnified pass fetches a region of the frame it will produce, so it has
+  // to know that frame's exact size first.
+  if (request.viewport && !gpuFrameSizeAt(longEdge)) await ensureGeometryCoordinateMap(longEdge);
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
   const localSnapshot = state.compareWithoutLocals
     ? []
@@ -11370,7 +11397,7 @@ async function renderGpuDraftInner(
     viewport: request.viewport || null,
     // The frame this pass will produce, so that the first magnified pass can
     // fetch only the region it draws.
-    frameSize: gpuFrameSizeAt(longEdge),
+    frameSize: geometrySignature() === requestedGeometrySignature ? gpuFrameSizeAt(longEdge) : null,
     roiCatchUp,
     panPass,
     noiseView: denoiseNoiseViewActive(lane),

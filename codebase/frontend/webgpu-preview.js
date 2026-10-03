@@ -4180,7 +4180,9 @@
           || tile.haloRect.y + tile.haloRect.height > region.y + region.height
         ));
         if (uncovered) {
-          this.recordStage("roi-region-refused", { lane, longEdge, region: { ...region } });
+          this.recordStage("roi-region-refused", { lane, longEdge, region: { ...region },
+            frame: { width: proxy.width, height: proxy.height }, viewport: viewport ? { ...viewport } : null,
+            roi: foregroundRegion ? { ...foregroundRegion } : null, halo });
           return { rendered: false, refusals: ["roi source region does not cover its foreground tiles"] };
         }
       }
