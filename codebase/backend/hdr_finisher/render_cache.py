@@ -478,14 +478,19 @@ class SourceMipStore:
             self._counters["corrupt_discards"] += 1
 
     def _insert_memory_locked(self, key: tuple[str, int], array: np.ndarray) -> None:
-        if self.memory_budget_bytes <= 0 or int(array.nbytes) > self.memory_budget_bytes:
+        if self.memory_budget_bytes <= 0:
             return
         existing = self._memory.pop(key, None)
         if existing is not None:
             self._memory_bytes -= int(existing.nbytes)
         self._memory[key] = array
         self._memory_bytes += int(array.nbytes)
-        while self._memory_bytes > self.memory_budget_bytes and self._memory:
+        # The two most recent levels stay resident whatever their size. A level
+        # larger than the budget is the one a magnified view is reading for
+        # every tile, mask and pan (a 36-megapixel source at 66.67% is 258 MiB),
+        # and a lane's HDR and SDR levels are requested together; refusing to
+        # hold them meant a full read from disk per request.
+        while self._memory_bytes > self.memory_budget_bytes and len(self._memory) > 2:
             _evicted_key, evicted = self._memory.popitem(last=False)
             self._memory_bytes -= int(evicted.nbytes)
             self._counters["memory_evictions"] += 1

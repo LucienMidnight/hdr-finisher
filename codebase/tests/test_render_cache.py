@@ -701,11 +701,32 @@ def test_source_mip_memory_and_disk_lrus_are_byte_bounded(tmp_path) -> None:
     store.level(identity, 400, image)
 
     diagnostics = store.diagnostics()
-    assert diagnostics["memory_bytes"] <= store.memory_budget_bytes
+    # Memory is bounded beyond the two most recent levels, which stay resident.
+    assert diagnostics["memory_entries"] == 2
     assert diagnostics["disk_bytes"] <= store.disk_budget_bytes
     assert diagnostics["disk_entries"] >= 1
     assert diagnostics["memory_evictions"] >= 1
     assert diagnostics["disk_evictions"] >= 1
+
+
+def test_a_level_larger_than_the_memory_budget_is_still_served_from_memory(tmp_path) -> None:
+    # A magnified view reads one level for every tile, mask and pan. A
+    # 36-megapixel source at 66.67% is 258 MiB against a 256 MiB budget; it
+    # used to be read from disk again for each of those requests.
+    image = _mip_image(900, 600)
+    identity = _mip_identity(image)
+    store = SourceMipStore(tmp_path / "mips", memory_budget_bytes=100_000)
+
+    first, state = store.level(identity, 600, image)
+    assert state == "built" and first.nbytes > store.memory_budget_bytes
+    again, state = store.level(identity, 600, image)
+    assert state == "memory" and again is first
+    # The lane's other level at that size does not push it out either.
+    store.level(identity, 590, image)
+    assert store.level(identity, 600, image)[1] == "memory"
+    assert store.level(identity, 590, image)[1] == "memory"
+    store.level(identity, 256, image)
+    assert store.diagnostics()["memory_entries"] == 2
 
 
 def test_source_mip_telemetry_counts_cold_warm_and_build_duration(tmp_path) -> None:
