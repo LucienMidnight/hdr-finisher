@@ -30,7 +30,11 @@ Fit gradient masks now use the GPU (14.14). GPU brush feather and index crops
 are recorded in 14.15; the October 3 exit audit consolidates unmet targets,
 fallback gaps and owner-review items. Native Shift Edge is recorded in 14.20,
 native Feather, with and without Shift, in 14.21, and straighten/perspective
-leaf masks, wide frames and Fit bitmaps in 14.22. Phase 3 remains open.
+leaf masks, wide frames and Fit bitmaps in 14.22. Phase 3 remains open. Source-space
+combined and luminance masks, Peak under straighten and the windowed straighten
+source are in 14.23; the coverage audit and 30-minute endurance run in 14.24.
+**Everything deferred, accepted or left as a known limit is listed in one place
+in section 15.**
 
 ## 1. Problem
 
@@ -1349,3 +1353,51 @@ Node passes 414 tests; fixture hashes are unchanged. With the speed table
 accepted on October 3 and the deferrals already recorded, no phase 3 exit
 requirement remains open in the evidence. Closing the phase is Steve's
 decision after his own testing; it is not declared here.
+
+## 15. Deferred, accepted and known limits at the end of phase 3 (October 3, 2026)
+
+One register of what phase 3 leaves behind. Each row links to where it was
+measured. "Reopen" says what would bring the item back.
+
+### 15.1 Deferred by Steve (work not done, on purpose)
+
+| ID | What is deferred | Current state | Reopen when | Detail |
+|---|---|---|---|---|
+| P3-MATCH-01 | Further Match speed work | 3.05 s primary, 4.99 s fifty-local against 2 s / 4 s goals | It gets slower, or Match speed becomes a priority | 14.5, 14.6 |
+| P3-PEAK-01 | Peak with wide Clarity (Clarity 100, radius 3%) | Reported Peak about 19% low; the exact measurement needs far more pixels than the 4,194,304-pixel editing budget | The automatic-anchor redesign is taken up | 14.9 |
+| P3-PEAK-02 | Peak with maximum Sharpen | Reported Peak about 9% low; candidate patches miss export's maximum | With P3-PEAK-01 | 14.11 |
+| Automatic anchor | Redesign of the automatic highlight-anchor measurement | Correct within 1% in ordinary states, but its re-measure is why a Fit edit takes about 1.0-1.6 s to settle fully | With P3-PEAK-01/02. Parallel patch fetching was tried and not kept (14.23) | 14.17, 14.23 |
+| P3-ZOOM-01 | SDR cross-scale continuity | Block luminance p99 3.35% against a 2% typical limit; HDR passes at 0.68% | It is visible in use | 14.13 |
+| P3-FALLBACK-01 | The larger-bitmap fallback for a feathered brush no bitmap size qualifies for | Compiles a 3,200-pixel CPU mask in the background (about 0.04-1.2 s); the only CPU mask request left in the coverage audit | It is explored on its own; do not change without Steve | 14.21, 14.24 |
+
+### 15.2 Accepted by Steve (measured outside a limit or goal, accepted as is)
+
+| ID | What was accepted | Scope of the acceptance | Detail |
+|---|---|---|---|
+| P3-MASK-REVIEW-01 | Three rounded brush panels (228, 249, 421) above two levels | Those exact images only | 14.17 |
+| P3-MASK-REVIEW-02 | Warped feathered brush masks at up to two byte levels (2.06 as stored, six reference pixels) | That kind of mask only | 14.22 |
+| P3-MASK-REVIEW-03 | Warped luminance masks and combinations at up to two byte levels (2.124 as stored; at most 0.03% of a real region) | That kind of mask only | 14.23 |
+| Shift release | Saved feathered Shift release 151 / 141 ms HDR / SDR against 100 ms | That control only | 14.21 |
+| Speed table | First 100% zoom 636 ms (827 ms straightened) against 300 ms; scopes after first zoom about 0.9-1.2 s; first feedback after a Fit Feather step 104-250 ms against 100 ms; Fit exact settlement about 1.0-1.6 s | These figures; a regression reopens the item | 14.23 |
+
+None of these is a general approval. The general soft-mask limit stays two
+levels.
+
+### 15.3 Known limits (not deferred by decision, not blocking)
+
+| Area | Limit | Detail |
+|---|---|---|
+| Masks under straighten/perspective | A mask containing a gradient with its luminance option on, a sampled leaf, or a degenerate or disabled combination keeps the previous route. So does a feathered luminance region above 24 megapixels or one whose feather reach exceeds the texture limit | 14.23 |
+| Straightened first zoom | The luminance mask's whole-frame range scan is the largest remaining cost (about 770 ms on a 36-megapixel file) | 14.23 |
+| Native Shift | A full-frame mask with Shift at 24 megapixels takes 0.4-0.5 s to prepare; unfeathered native Shift waits on the queue per region and rescans the painted peak | 14.20, 14.21 |
+| Wide frames | Frames wider than the GPU texture limit have reference coverage only; no real fixture exists | 14.22 |
+| Coverage audit | One committed edit per control, not a drag; one control per module family on the non-saved geometries; the fifty-local project was not audited; its pan step did not move the view | 14.24 |
+| Endurance | Run on the saved geometry, before the three audit fixes, and not repeated. Straighten has a one-minute capped-memory replay only | 14.24 |
+| Timing evidence | Perspective and un-straightened first-zoom timings are single sessions | 14.23 |
+| Not designed | Healing brush | 10 |
+
+### 15.4 Not changed in phase 3
+
+Peak and Denoise shader byte pins; the 4,194,304-pixel editing-Peak budget;
+exact CPU export and Proof; the rounded brush shader; classifier limits;
+immediate discrete zoom and the 80 ms continuous-zoom debounce.
