@@ -162,6 +162,23 @@ write_project_archive(d.model_dump(mode='json'),Path(sys.argv[2]))
       report.localsDisabled = true;
       await settled();
     }
+    // Isolate one local at a time: --disable-locals 0,2 switches off the
+    // locals at those positions in the project's list (never saved).
+    const disabledLocals = opt('--disable-locals', '').split(',').filter(Boolean).map(Number);
+    if (disabledLocals.length) {
+      report.localsDisabledAt = await page.evaluate(async (positions) => {
+        const disabled = [];
+        for (const position of positions) {
+          const existing = localAdjustments()[position];
+          if (!existing) throw new Error(`--disable-locals: no local at position ${position}`);
+          const local = structuredClone(existing); local.enabled = false;
+          if (!await queueEditCommand('update_local', { local }, local.id)) throw new Error('Could not disable diagnostic local');
+          disabled.push({ position, id: local.id, type: local.mask?.leaf?.type ?? null });
+        }
+        return disabled;
+      }, disabledLocals);
+      await settled();
+    }
     // In-session edits for isolating a module (never saved), e.g.
     //   --set hdr.film_look.grain_amount=0,sdr.film_look.grain_amount=0
     // Paired baseline: keep straighten/perspective leaf masks on the CPU.

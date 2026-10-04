@@ -1,7 +1,17 @@
 # Denoise accuracy and performance — plan for independent review
 
-Status: **Proposed; awaiting independent review and Steve's feedback before execution.**
+Status: **Reviewed and narrowed on 2026-10-04; see the outcome below.** The original proposal follows unchanged.
 Date: 2026-10-04.
+
+## Outcome of the review (2026-10-04)
+
+Recorded in the viewport preview PRD, section 14.25 and section 15.
+
+- Step 1 (new comparator and coordinate contract): not done. The below-100% miss is at the 2% limit and is listed as P3-ZOOM-02 for Steve to decide.
+- Step 2 (isolate locals): done. The cause is the brush local's Clarity leaving the preview without a bounded editing Peak, so the highlight roll-off differs on specular pixels. That is the deferred P3-PEAK-01; no Detail or mask change was made.
+- Step 3 (Denoise-only outliers): not done. Seven pixels of 5.8 million; Steve decided no action.
+- Step 4 (cache of denoised regions): done as kept denoised tiles, measured before and after.
+- Step 5 (model reuse across geometry): removed; smaller levels are measured per size and geometry again.
 
 ## Purpose and decisions requested
 

@@ -950,6 +950,7 @@
       this.pendingCacheTrim = null;
       this.detailBandTiles = new Map();
       this.maskTiles = new Map();
+      this.denoiseTiles = new Map();
       // Every cache map is registered through the allocator, so
       // a set, delete or clear *is* an allocation event and no call site can
       // forget to report one. Reads touch the global LRU order.
@@ -959,6 +960,11 @@
       this.localMasks = this.trackGpuCache("local-mask", this.localMasks);
       this.detailBandTiles = this.trackGpuCache("detail-band-tile", this.detailBandTiles);
       this.maskTiles = this.trackGpuCache("mask-tile", this.maskTiles);
+      // Adaptive Denoise's reconstruction of a tile, before any grading. A
+      // grade-only edit copies it back instead of reconstructing the tile.
+      this.denoiseTiles = this.trackGpuCache("denoise-tile", this.denoiseTiles);
+      this.denoiseTileIdentity = null;
+      this.denoiseTileCounters = { hits: 0, misses: 0, evictions: 0 };
       const MaskRequestCoordinator = typeof window !== "undefined"
         ? window.HDRMaskRequestCoordinator
         : null;
@@ -1159,6 +1165,12 @@
         const entry = this.maskTiles.get(key);
         if (!entry) return;
         this.maskTiles.delete(key);
+        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
+      } else if (kind === "denoise-tile") {
+        const entry = this.denoiseTiles.get(key);
+        if (!entry) return;
+        this.denoiseTiles.delete(key);
+        this.denoiseTileCounters.evictions += 1;
         this.destroyAfterActiveRenders(() => entry.texture?.destroy());
       } else if (kind === "scene-luminance") {
         const entry = this.sceneLuminance.get(key);
@@ -1509,6 +1521,9 @@
       this.detailBandTiles.clear();
       for (const entry of this.maskTiles.values()) this.destroyAfterActiveRenders(() => entry.texture?.destroy());
       this.maskTiles.clear();
+      this.dropDenoiseTiles();
+      this.denoiseTileIdentity = null;
+      this.denoiseTileCounters = { hits: 0, misses: 0, evictions: 0 };
       this.releaseClarityMaps();
       this.detailCacheCounters = {
         hits: 0, misses: 0, analysisPasses: 0, evictions: 0,
@@ -1703,6 +1718,7 @@
       const detailBandCacheBytes = [...this.detailBandTiles.values()]
         .reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
       const maskTileBytes = [...this.maskTiles.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
+      const denoiseTileBytes = [...this.denoiseTiles.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
       const tileGraphBytes = (this.tileGraph?.byteSize || 0) + (this.analysisTileGraph?.byteSize || 0);
       const scopeBytes = [...this.scopeResources.values()].reduce(
         (sum, pool) => sum + pool.reduce((poolSum, resource) => poolSum + (resource.byteSize || 0), 0),
@@ -1755,6 +1771,7 @@
         localMaskBytes,
         detailBandCacheBytes,
         maskTileBytes,
+        denoiseTileBytes,
         tileGraphBytes,
         scopeBytes,
         denoiseEvidenceBytes,
@@ -1770,6 +1787,7 @@
         localMaskBytes,
         detailBandCacheBytes,
         maskTileBytes,
+        denoiseTileBytes,
         denoiseEvidenceBytes,
         denoiseReconstructionScratchBytes,
       };
@@ -2986,6 +3004,75 @@
       return Math.max(floorBytes, Math.floor(free * share));
     }
 
+    /**
+     * One tile of adaptive Denoise's reconstruction, kept across generations.
+     *
+     * The reconstruction reads only ungraded source pixels, the noise model and
+     * the Denoise controls, all of which are in `key`, so a grade edit finds
+     * the tile it reconstructed last time. `hit` is false for a new or resized
+     * entry, which the caller must fill before anything reads it.
+     */
+    denoiseTile(key, width, height) {
+      let entry = this.denoiseTiles.get(key);
+      if (entry && entry.width === width && entry.height === height) {
+        this.denoiseTiles.delete(key);
+        this.denoiseTiles.set(key, entry);
+        this.denoiseTileCounters.hits += 1;
+        return { ...entry, hit: true };
+      }
+      if (entry) {
+        const previous = entry;
+        this.destroyAfterActiveRenders(() => previous.texture.destroy());
+      }
+      const texture = this.device.createTexture({
+        label: "denoise-tile",
+        size: { width, height },
+        format: "rgba16float",
+        usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
+      });
+      entry = { texture, width, height, byteSize: width * height * 8 };
+      this.denoiseTiles.set(key, entry);
+      this.denoiseTileCounters.misses += 1;
+      return { ...entry, hit: false };
+    }
+
+    /** Forget these tiles (all of them by default) and release their textures. */
+    dropDenoiseTiles(keys = null) {
+      for (const key of keys || [...this.denoiseTiles.keys()]) {
+        const entry = this.denoiseTiles.get(key);
+        if (!entry) continue;
+        this.denoiseTiles.delete(key);
+        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
+      }
+    }
+
+    /**
+     * Keep the denoised tiles inside a quarter of what the budget has free
+     * once everything that is not a tile cache is counted. The detail and mask
+     * caches see these bytes as resident, so the three cannot overcommit.
+     */
+    trimDenoiseTiles(pinned = []) {
+      let bytes = [...this.denoiseTiles.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
+      if (!bytes) return 0;
+      const protectedKeys = new Set(pinned);
+      const snapshot = this.resourceMemorySnapshot();
+      const categories = snapshot.resident?.categories || {};
+      const cacheBytes = (categories.detailBandCacheBytes || 0) + (categories.maskTileBytes || 0)
+        + (categories.denoiseTileBytes || 0);
+      const nonCacheBytes = Math.max(0, (snapshot.resident?.totalBytes || 0) - cacheBytes);
+      const free = Math.max(0, this.memoryBudgetBytes() * 0.9 - nonCacheBytes);
+      const budget = Math.max(64 * 1024 * 1024, Math.floor(free * 0.25));
+      for (const [key, entry] of [...this.denoiseTiles]) {
+        if (bytes <= budget) break;
+        if (protectedKeys.has(key)) continue;
+        this.denoiseTiles.delete(key);
+        this.destroyAfterActiveRenders(() => entry.texture.destroy());
+        bytes -= entry.byteSize;
+        this.denoiseTileCounters.evictions += 1;
+      }
+      return bytes;
+    }
+
     trimDetailBandTiles(pinned = []) {
       const protectedKeys = new Set(pinned);
       const budget = this.cacheBudgetBytes(0.80, 64 * 1024 * 1024);
@@ -3998,6 +4085,7 @@
             }
             this.trimDetailBandTiles();
             this.trimMaskTiles();
+            this.trimDenoiseTiles();
             resolve();
           }).catch(reject);
         });
@@ -4223,6 +4311,42 @@
       // buffers once it has gone through.
       const denoiseParamBuffers = [];
       let denoiseTileResolves = 0;
+      // Denoised tiles are kept only for the picture on screen, and only when
+      // the source this pass holds reaches a full reconstruction margin past
+      // the tile (or the frame ends first), so a kept tile is exactly what the
+      // whole frame would give. Show noise and measurement passes reconstruct.
+      //
+      // Tiles are kept for one Denoise state at a time, and only from the
+      // second pass that draws it: a Denoise control drag, a geometry edit or a
+      // new zoom level changes the state every pass, and keeping a set of tiles
+      // for each would fill the budget with tiles nothing will read again.
+      const denoiseTileIdentity = adaptiveDenoise && !noiseView && !measureOnly
+        ? `${denoiseSelector.cache.identity}|${JSON.stringify(denoiseControls)}`
+        : null;
+      const denoiseStateSeen = denoiseTileIdentity !== null && this.denoiseTileIdentity === denoiseTileIdentity;
+      if (denoiseTileIdentity !== null && !denoiseStateSeen) {
+        this.dropDenoiseTiles();
+        this.denoiseTileIdentity = denoiseTileIdentity;
+      }
+      const denoiseTilePrefix = denoiseStateSeen ? denoiseTileIdentity : null;
+      const denoiseHeld = proxy.region || { x: 0, y: 0, width: proxy.width, height: proxy.height };
+      const denoiseTileKey = (region) => {
+        if (!denoiseTilePrefix) return null;
+        const reaches = (start, size, heldStart, heldSize, frameSize) => (
+          Math.max(0, start - ADAPTIVE_DENOISE_MARGIN) >= heldStart
+          && Math.min(frameSize, start + size + ADAPTIVE_DENOISE_MARGIN) <= heldStart + heldSize
+        );
+        if (!reaches(region.x, region.width, denoiseHeld.x, denoiseHeld.width, proxy.width)
+          || !reaches(region.y, region.height, denoiseHeld.y, denoiseHeld.height, proxy.height)) return null;
+        return `${denoiseTilePrefix}|${region.x},${region.y},${region.width},${region.height}`;
+      };
+      // Tiles this pass created, and those whose fill is still in an encoder
+      // that has not been submitted: a pass that stops early must not leave a
+      // tile behind that was never written.
+      const denoiseTilesCreated = [];
+      const denoiseTilesUnsubmitted = [];
+      const denoiseTilesUsed = [];
+      let denoiseTileHits = 0;
       // Tiles are grouped by local and sent as bounded batches: one HTTP
       // request and one coordinator slot per batch, and one mask identity per
       // batch for the backend to compile once.
@@ -4440,8 +4564,49 @@
         this.device.queue.submit([encoder.finish()]);
         this.recordSubmission(lane, options, batchTiles);
         encoder = this.device.createCommandEncoder();
+        denoiseTilesUnsubmitted.length = 0;
         batchTiles = 0;
         submissions += 1;
+      };
+      // The denoised picture for one region, left in the graph's source
+      // texture: copied from a kept tile, or reconstructed and kept.
+      const denoiseInto = async (region) => {
+        const key = denoiseTileKey(region);
+        const kept = key ? this.denoiseTile(key, region.width, region.height) : null;
+        const extent = { width: region.width, height: region.height, depthOrArrayLayers: 1 };
+        const origin = { x: 0, y: 0, z: 0 };
+        if (kept) denoiseTilesUsed.push(key);
+        if (kept?.hit) {
+          denoiseTileHits += 1;
+          encoder.copyTextureToTexture({ texture: kept.texture, origin }, { texture: graph.sourceTexture, origin }, extent);
+          return;
+        }
+        if (kept) {
+          denoiseTilesCreated.push(key);
+          denoiseTilesUnsubmitted.push(key);
+        }
+        // Reconstruct only this region, into a texture the size of one tile,
+        // and into the same encoder so the generation stays one submission.
+        // The reconstruction reads the original at its true frame position,
+        // so the pixels are the ones the whole-frame resolve would produce.
+        const resolved = await this.resolveDenoiseProxy(denoiseControls, {
+          region: { ...region },
+          destination: {
+            texture: graph.denoiseResolvedTexture,
+            width: graph.width,
+            height: graph.height,
+            byteSize: graph.width * graph.height * 8,
+          },
+          encoder,
+          source: denoiseSource,
+        });
+        if (resolved?.paramBuffer) denoiseParamBuffers.push(resolved.paramBuffer);
+        denoiseTileResolves += 1;
+        // Show noise keeps the reconstruction where it is and takes the
+        // original as the source.
+        if (noiseView) return;
+        encoder.copyTextureToTexture({ texture: graph.denoiseResolvedTexture, origin }, { texture: graph.sourceTexture, origin }, extent);
+        if (kept) encoder.copyTextureToTexture({ texture: graph.denoiseResolvedTexture, origin }, { texture: kept.texture, origin }, extent);
       };
       const pass = (view, pipeline, bindGroup, width, height, alpha = 1) => {
         const renderPass = encoder.beginRenderPass({
@@ -4518,24 +4683,7 @@
             buffer: this.tileCompositeParamBuffer, offset: (plan.tileCount + chunkIndex) * stride, size: params.byteLength,
           };
           if (denoiseActive) {
-            const resolved = await this.resolveDenoiseProxy(denoiseControls, {
-              region: { ...region },
-              destination: {
-                texture: graph.denoiseResolvedTexture,
-                width: graph.width,
-                height: graph.height,
-                byteSize: graph.width * graph.height * 8,
-              },
-              encoder,
-              source: denoiseSource,
-            });
-            if (resolved?.paramBuffer) denoiseParamBuffers.push(resolved.paramBuffer);
-            denoiseTileResolves += 1;
-            encoder.copyTextureToTexture(
-              { texture: graph.denoiseResolvedTexture, origin: { x: 0, y: 0, z: 0 } },
-              { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
-              { width: region.width, height: region.height, depthOrArrayLayers: 1 },
-            );
+            await denoiseInto(region);
           } else {
             const sourceOrigin = proxy.region || { x: 0, y: 0 };
             encoder.copyTextureToTexture(
@@ -4585,35 +4733,10 @@
         const bind = (source, spatial = source, overlay = spatial, binding = parameterBinding) =>
           this.bindGraphResources(source, spatial, binding, overlay);
         if (denoiseActive) {
-          // Reconstruct only this tile, into a texture the size of one tile,
-          // and into the same encoder so the generation stays one submission.
-          // The reconstruction reads the original at its true frame position,
-          // so the pixels are the ones the whole-frame resolve would produce.
-          const resolved = await this.resolveDenoiseProxy(denoiseControls, {
-            region: {
-              x: tile.haloRect.x, y: tile.haloRect.y,
-              width: tile.haloRect.width, height: tile.haloRect.height,
-            },
-            destination: {
-              texture: graph.denoiseResolvedTexture,
-              width: graph.width,
-              height: graph.height,
-              byteSize: graph.width * graph.height * 8,
-            },
-            encoder,
-            source: denoiseSource,
+          await denoiseInto({
+            x: tile.haloRect.x, y: tile.haloRect.y,
+            width: tile.haloRect.width, height: tile.haloRect.height,
           });
-          if (resolved?.paramBuffer) denoiseParamBuffers.push(resolved.paramBuffer);
-          denoiseTileResolves += 1;
-          // Show noise keeps the reconstruction where it is and takes the
-          // original as the source below.
-          if (!noiseView) {
-            encoder.copyTextureToTexture(
-              { texture: graph.denoiseResolvedTexture, origin: { x: 0, y: 0, z: 0 } },
-              { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
-              { width, height, depthOrArrayLayers: 1 },
-            );
-          }
         }
         if (!denoiseActive || noiseView) {
           // A region source is positioned at the region's own origin, so the
@@ -4811,6 +4934,7 @@
       }
       submissions += 1;
       this.device.queue.submit([encoder.finish()]);
+      denoiseTilesUnsubmitted.length = 0;
       this.recordSubmission(lane, options, 0);
       } catch (error) {
         encodeError = error;
@@ -4818,6 +4942,8 @@
         presentation?.release();
         localBuffers.forEach((entry) => entry.buffer.destroy());
         denoiseParamBuffers.forEach((buffer) => buffer.destroy());
+        // A cancelled or failed pass never submitted its last encoder.
+        this.dropDenoiseTiles(denoiseTilesUnsubmitted);
         if (cancelled || encodeError) {
           if (peakTarget) peakTarget.busy = false;
         }
@@ -4829,6 +4955,7 @@
       }
       if (validationError) {
         if (clarityFrame) this.clarityFrameMap = null;
+        this.dropDenoiseTiles(denoiseTilesCreated);
         if (peakTarget) peakTarget.busy = false;
         this.recordStage("tiled-validation-error", { message: validationError.message });
         return { rendered: false, refusals: [`validation: ${validationError.message}`] };
@@ -4888,6 +5015,7 @@
       if (!measureOnly) this.presentedMaskKeys = new Set(pinnedMasks);
       const detailCacheBytes = this.trimDetailBandTiles(pinnedDetail);
       const maskCacheBytes = this.trimMaskTiles(pinnedMasks);
+      const denoiseTileCacheBytes = this.trimDenoiseTiles(denoiseTilesUsed);
       const durationMs = performance.now() - startedAt;
       const metrics = {
         width: proxy.width, height: proxy.height, tileSize, halo,
@@ -4964,6 +5092,9 @@
         // Denoise reconstructions this generation ran: one per tile, plus one
         // per Clarity map region when Denoise feeds the map.
         denoiseTileResolves,
+        // Regions answered from a tile an earlier generation reconstructed.
+        denoiseTileHits,
+        denoiseTileCacheBytes,
         clarityMapReblurred: Boolean(clarityFrame?.reblur),
         clarityMapScale: clarityFrame ? clarityFrame.plan.scale : null,
         detailBandStacks: (detailActive ? 1 : 0)

@@ -1354,6 +1354,89 @@ accepted on October 3 and the deferrals already recorded, no phase 3 exit
 requirement remains open in the evidence. Closing the phase is Steve's
 decision after his own testing; it is not declared here.
 
+### 14.25 Post-testing fixes and Denoise (October 3-4)
+
+Steve tested by hand after 14.24. The fixes, in order: source levels in use
+stay in memory (`58bf0de`); stale tiles after a zoom, fixed processing sizes
+below 100% and bounded wide Shift regions (`91e4a12`); the Denoise noise model
+measured from its sample windows only (`1ee6351`); the picture shifting by
+itself and a CPU fallback on zoom under straighten and perspective
+(`1eec092`). Causes and timings are in the
+[post-testing prompt](../technical/viewport-phase3-post-testing-next-thread-prompt-2026-10-03.md).
+
+**Denoise is now bounded by the view** (`cf15236`). Adaptive Denoise loads no
+source of its own; a zoomed-in render reconstructs from the region it already
+fetched, so the whole 42 MP frame is no longer uploaded (it was about 3.5 s and
+340 MB). The full-size noise model is one measurement per source, the one
+export makes, started when a session opens. To read a region source the
+adaptive Denoise shader takes the region's origin; its arithmetic is unchanged
+and **its byte pin was updated for that one offset**. The Peak and wavelet
+Denoise pins are unchanged. An experiment that reused the first geometry's
+noise model below 100% was removed: the picture then depended on which
+geometry had been seen first.
+
+**Denoised tiles are kept across grade edits.** Denoise reads only ungraded
+source pixels, so an Exposure edit used to reconstruct every tile on screen
+for nothing. Tiles are now kept for one Denoise state (source, geometry, size,
+noise model and controls), from the second pass that draws it, inside a
+quarter of the free GPU budget, and dropped on any change of that state, on a
+session reset and for a pass that never reached the queue. A kept tile is
+pixel-identical to a fresh reconstruction (`tests/denoise-tile-cache.js`).
+On the saved 42 MP photo below, frames shown during a 60-input Exposure drag,
+before and after, same session conditions, one run each:
+
+| View | Processed long edge | Before | After |
+|---|---|---|---|
+| 50% | 3,984 | 21 | 37 |
+| 75% | 7,968 (native) | 8 | 10 |
+| 25% | 1,992 | 44 | 54 |
+| 50%, return visit | 3,984 | 21 | 40 |
+
+The first frame of a drag is one reconstruction plus a copy slower (78 to
+128 ms at 50%). With the Full override (native at every zoom) the gain is
+smaller and noisier (6, 11, 3 frames to 6, 14, 6). These are single runs.
+
+**Accuracy on `Denoise-stuck-DSC04761.hdrfinisher`** (42 MP, strong
+perspective, three locals; read-only, hash unchanged). Not a section 8
+fixture. Native preview against export, HDR, regions of 1,947,690 pixels:
+
+| State | Luminance p99 / worst | Pixels over 5% | OKLab worst | Within 4.1 |
+|---|---|---|---|---|
+| Denoise off, no locals | 0.21% / 0.29% | 0 | 0.0011 | yes |
+| Denoise on, no locals | 0.69% / 6.90% | 7 of 5.8 million | 0.0119 | no (ceiling) |
+| Denoise off, saved locals | 0.50% / 6.27% | 3,276 in one region | 0.0324 | no (ceiling) |
+| Same, brush local off | 0.24% / 3.51% | 0 | 0.0180 | yes |
+| Same, brush Clarity 0 | 0.31% / 4.20% | 0 | 0.0217 | yes |
+| Same, brush Sharpen 0 | 0.43% / 6.89% | 3,738 | 0.0359 | no (ceiling) |
+| Saved locals, highlight compression off | 0.29% / 2.71% | 0 | 0.0049 | yes |
+
+1. **The seven Denoise-only pixels need no action** (Steve, October 4).
+2. **The larger gap is not Denoise and not Detail arithmetic. It is Peak.**
+   The over-limit pixels are specular glints on wet sand. They appear only
+   when the brush local's Clarity is on, and then the preview has no bounded
+   editing Peak: it shows 796 nits against export's 905 (12% low), where with
+   that Clarity off it reads 931 and with the brush off 903. The highlight
+   roll-off is fitted to that reading, so the brightest pixels differ. With
+   highlight compression switched off the same project is inside every limit.
+   This is the deferred P3-PEAK-01 case reached through a local's Clarity
+   (radius 0.75% on 42 MP). No Detail, mask or Denoise code was changed for
+   it; it closes with the automatic-anchor redesign.
+3. **Below 100% the HDR picture is at the 2% continuity limit, with or without
+   Denoise.** Saved photo at 50%: 2.55% (2.53% with Denoise off; 0.57% with
+   neutral geometry and no locals). Primary fixture: 1.96% at 50%, 2.10% at
+   63.3%. Recorded as P3-ZOOM-02 in section 15; not yet decided by Steve.
+
+Evidence: `codebase/output/performance/review/local-isolation-2026-10-04/`,
+`codebase/output/performance/review/denoise-tile-cache-2026-10-04/`, and the
+notes in `codebase/docs/technical/denoise-followups-2026-10-04.md`. Node 427
+and Python 1,692 pass. Nine Denoise and tiled GPU drivers pass. Three do not,
+none because of this work: `roi-pan-cache` fails the same way at `1eec092`;
+`denoise-pan-enable-drag` passes on its generated source but on the saved
+photo's cold case shows 6-7 frames or a 1.1 s first frame against its own
+10-frame / 1 s gate, with and without the kept tiles; and
+`local-adjustments-interaction` failed once on an aborted request and passed
+on the rerun.
+
 ## 15. Deferred, accepted and known limits at the end of phase 3 (October 3, 2026)
 
 One register of what phase 3 leaves behind. Each row links to where it was
@@ -1364,7 +1447,7 @@ measured. "Reopen" says what would bring the item back.
 | ID | What is deferred | Current state | Reopen when | Detail |
 |---|---|---|---|---|
 | P3-MATCH-01 | Further Match speed work | 3.05 s primary, 4.99 s fifty-local against 2 s / 4 s goals | It gets slower, or Match speed becomes a priority | 14.5, 14.6 |
-| P3-PEAK-01 | Peak with wide Clarity (Clarity 100, radius 3%) | Reported Peak about 19% low; the exact measurement needs far more pixels than the 4,194,304-pixel editing budget | The automatic-anchor redesign is taken up | 14.9 |
+| P3-PEAK-01 | Peak with wide Clarity (Clarity 100, radius 3%), and with a local's Clarity on a 42 MP frame | Reported Peak about 19% low (12% low in the local case, where the highlight roll-off then differs from export by up to 6.3% on specular pixels); the exact measurement needs far more pixels than the 4,194,304-pixel editing budget | The automatic-anchor redesign is taken up | 14.9, 14.25 |
 | P3-PEAK-02 | Peak with maximum Sharpen | Reported Peak about 9% low; candidate patches miss export's maximum | With P3-PEAK-01 | 14.11 |
 | Automatic anchor | Redesign of the automatic highlight-anchor measurement | Correct within 1% in ordinary states, but its re-measure is why a Fit edit takes about 1.0-1.6 s to settle fully | With P3-PEAK-01/02. Parallel patch fetching was tried and not kept (14.23) | 14.17, 14.23 |
 | P3-ZOOM-01 | SDR cross-scale continuity | Block luminance p99 3.35% against a 2% typical limit; HDR passes at 0.68% | It is visible in use | 14.13 |
@@ -1378,6 +1461,7 @@ measured. "Reopen" says what would bring the item back.
 | P3-MASK-REVIEW-02 | Warped feathered brush masks at up to two byte levels (2.06 as stored, six reference pixels) | That kind of mask only | 14.22 |
 | P3-MASK-REVIEW-03 | Warped luminance masks and combinations at up to two byte levels (2.124 as stored; at most 0.03% of a real region) | That kind of mask only | 14.23 |
 | Shift release | Saved feathered Shift release 151 / 141 ms HDR / SDR against 100 ms | That control only | 14.21 |
+| P3-DENOISE-PIX-01 | Seven pixels of 5.8 million over the 5% luminance ceiling with Denoise on and no locals (worst 6.9%) | That photo and measurement (Steve, October 4: no action) | 14.25 |
 | Speed table | First 100% zoom 636 ms (827 ms straightened) against 300 ms; scopes after first zoom about 0.9-1.2 s; first feedback after a Fit Feather step 104-250 ms against 100 ms; Fit exact settlement about 1.0-1.6 s | These figures; a regression reopens the item | 14.23 |
 
 None of these is a general approval. The general soft-mask limit stays two
@@ -1395,9 +1479,16 @@ levels.
 | Endurance | Run on the saved geometry, before the three audit fixes, and not repeated. Straighten has a one-minute capped-memory replay only | 14.24 |
 | Timing evidence | Perspective and un-straightened first-zoom timings are single sessions | 14.23 |
 | Not designed | Healing brush | 10 |
+| P3-ZOOM-02, HDR continuity below 100% | At the 2% limit and not decided by Steve: 2.55% on a strongly corrected 42 MP photo at 50%, 1.96% / 2.10% on the primary at 50% / 63.3%. Denoise is not the cause | 14.25 |
+| Denoise coverage | The coverage audit still does not include Denoise. The cold pan-enable-drag case on the saved 42 MP photo misses its driver's gate (6-7 frames, or 1.1 s to the first) | 14.25 |
+| `roi-pan-cache` driver | Fails ("the pan pass did not use the retained frame"), and did before the Denoise work; not investigated | 14.25 |
 
 ### 15.4 Not changed in phase 3
 
 Peak and Denoise shader byte pins; the 4,194,304-pixel editing-Peak budget;
 exact CPU export and Proof; the rounded brush shader; classifier limits;
 immediate discrete zoom and the 80 ms continuous-zoom debounce.
+
+Since then (14.25): the adaptive Denoise shader's pin was updated for a
+region-origin offset, with its arithmetic unchanged. Everything else in this
+list still holds.
