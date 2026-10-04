@@ -486,6 +486,41 @@
     return { ...plan, baseScale };
   }
 
+  // A measurement patch can read Clarity's map from a reduced render of the
+  // whole frame (`measurementClaritySurround`) instead of building it from
+  // its own halo. The map texture then covers the blocks the halo rectangle
+  // touches plus this margin, which is as far as the B-spline reads past the
+  // block a pixel is in.
+  const SURROUND_MAP_MARGIN = 2;
+
+  function surroundMapRect(haloRect, scale) {
+    const x = Math.floor(haloRect.x / scale) - SURROUND_MAP_MARGIN;
+    const y = Math.floor(haloRect.y / scale) - SURROUND_MAP_MARGIN;
+    return {
+      x, y,
+      width: Math.ceil((haloRect.x + haloRect.width) / scale) + SURROUND_MAP_MARGIN - x,
+      height: Math.ceil((haloRect.y + haloRect.height) / scale) + SURROUND_MAP_MARGIN - y,
+    };
+  }
+
+  // The grade as the halo sees it when those maps come from the surround:
+  // that Clarity reaches no further than the tile itself.
+  function surroundHaloParams(params, surround) {
+    if (!surround?.global) return params;
+    const values = params.slice();
+    values[150] = 0;
+    return values;
+  }
+
+  function surroundHaloLocals(locals, lane, surround) {
+    if (!surround?.locals.size) return locals;
+    return locals.map((local) => {
+      const grade = local[`${lane}_grade`];
+      if (!surround.locals.has(local.id) || !grade?.detail) return local;
+      return { ...local, [`${lane}_grade`]: { ...grade, detail: { ...grade.detail, clarity_amount: 0 } } };
+    });
+  }
+
   /**
    * Model a Tiled execution of the same graph.
    *
@@ -1493,6 +1528,8 @@
       this.editingCandidateCache?.clear();
       this.editingAnalysisCanvas = null;
       this.analysisClarityFrameMap = null;
+      this.releaseClaritySurround(this.claritySurround);
+      this.claritySurround = null;
       // Source fetches for the session being replaced have nowhere to land.
       this.sourceAbort?.abort();
       this.sourceAbort = null;
@@ -2108,10 +2145,32 @@
       const frame = {width: ranked.width, height: ranked.height,
         longEdge: Math.max(sourceSize.width, sourceSize.height), workingSpace: ranked.working_space};
       const activeLocals = activeGpuLocals(lane, locals);
-      const halo = this.roiSourceHalo(lane, adjustments, frame, sourceSize, {hdr: lane === "hdr"}, white,
-        {...options,analysisMasks:true}, activeLocals);
-      const processedBound = ranked.patches.reduce((sum, patch) => sum + (patch.width + 2*halo)*(patch.height + 2*halo), 0);
-      if (processedBound > 4*1024*1024) return {rendered:false, refusals:["editing peak patch budget exceeded"]};
+      const budget = 4*1024*1024;
+      // What a patch makes for itself rather than reading at reduced size: its
+      // plain luminance masks, and Clarity's maps while their reach fits.
+      let analysis = {analysisNativeLuma: true, claritySurround: null};
+      let halo, processedBound;
+      const bound = () => {
+        halo = this.roiSourceHalo(lane, adjustments, frame, sourceSize, {hdr: lane === "hdr"}, white,
+          {...options, analysisMasks: true, ...analysis}, activeLocals);
+        const surround = analysis.claritySurround;
+        processedBound = ranked.patches.reduce((sum, patch) => sum + (patch.width + 2*halo)*(patch.height + 2*halo),
+          surround ? surround.frameWidth * surround.frameHeight : 0);
+        return processedBound <= budget;
+      };
+      if (!bound()) {
+        const clarity = graphScaleContract().clarityActive(buildParams(lane, adjustments, frame.workingSpace, lane === "hdr", white, 1))
+          || activeLocals.some(local => gpuLocalDetailActive(local[`${lane}_grade`]) && graphScaleContract().localClarityActive(local[`${lane}_grade`]));
+        const surround = clarity
+          ? await this.measurementClaritySurround(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, options)
+          : null;
+        if (!isCurrent()) return null;
+        if (surround) analysis = {...analysis, claritySurround: surround};
+        if (!bound()) {
+          analysis = {...analysis, analysisNativeLuma: false};
+          if (!bound()) return {rendered:false, refusals:["editing peak patch budget exceeded"]};
+        }
+      }
       let peak = 0, rendered = 0;
       for (const patch of ranked.patches) {
         if (!isCurrent()) return null;
@@ -2121,6 +2180,7 @@
         try {
           result = await this.renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, Math.max(sourceSize.width,sourceSize.height), locals, revision, null, white, sourceSize, {
             ...options, measureOnly: true, tileSize: 128, analysisPatch: patch, analysisRegion: region, analysisMasks: true,
+            ...analysis,
           });
         } finally {
           const key = `${sessionId}:${lane}:${Math.max(sourceSize.width,sourceSize.height)}:${signature}:${options.identity || "source"}:analysis:${JSON.stringify(region)}`;
@@ -2129,7 +2189,8 @@
         if (!result?.rendered || !Number.isFinite(result.metrics?.exactPeak)) return result;
         peak = Math.max(peak, result.metrics.exactPeak); rendered++;
       }
-      const result = {rendered:true, metrics:{exactPeak:peak, exactPeakLongEdge:Math.max(frame.width,frame.height), tileCount:rendered, processedBound, bounded:true}};
+      const result = {rendered:true, metrics:{exactPeak:peak, exactPeakLongEdge:Math.max(frame.width,frame.height), tileCount:rendered, processedBound, bounded:true,
+        claritySurround: Boolean(analysis.claritySurround), nativeLumaMasks: analysis.analysisNativeLuma}};
       if (options.highlightAnchorOnly && ranked.anchor) {
         this.peakReductionCache.set(ranked.anchor.key,peak);
         result.highlightAnchor = {key:ranked.anchor.key, value:peak};
@@ -2440,7 +2501,8 @@
           detailScratchTexture: make("rgba16float", attachment),
           detailResultTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST),
           filmTexture: make("rgba16float", attachment),
-          finishTexture: make("rgba16float", attachment),
+          // A measurement copies its patch out of the finished tile.
+          finishTexture: make("rgba16float", analysis ? attachment | GPUTextureUsage.COPY_SRC : attachment),
           spatialATexture: spatialActive ? makeSpatial() : null,
           spatialBTexture: spatialActive ? makeSpatial() : null,
           spatialWidth,
@@ -2688,7 +2750,9 @@
         this.sourcePixelScaleFor(frame, sourceSize),
         sourceOptions?.inheritedGrain || null,
       );
-      let { halo } = this.composedTileHalo(frame.width, frame.height, params, activeLocals, lane);
+      const surround = sourceOptions?.claritySurround || null;
+      let { halo } = this.composedTileHalo(frame.width, frame.height, surroundHaloParams(params, surround),
+        surroundHaloLocals(activeLocals, lane, surround), lane);
       const selector = this.denoiseSourceSelector;
       const adaptive = this.adaptiveDenoiseSelected();
       const denoiseActive = adaptive || Boolean(
@@ -2706,15 +2770,23 @@
       // just their halos: its reach, rounded out to whole blocks and to the
       // denoise grid. The source region has to cover that too.
       const contract = graphScaleContract();
-      if (contract.clarityActive(params)) {
+      if (contract.clarityActive(params) && !surround?.global) {
         const clarity = contract.clarityMapPlan(contract.claritySigma(frame.width, frame.height, params[151]));
         halo = Math.max(halo, clarity.reach + clarity.scale + alignment);
       }
+      const referenceScale = this.featherReferenceScale?.(JSON.stringify(adjustments.shared?.geometry || {})) || 1;
       if (!sourceOptions?.analysisMasks && lumaSceneSource(lane, sourceOptions?.identity, frame.workingSpace)) {
         for (const leaf of (lumaLocals || []).flatMap(local => gpuLumaLeaves(local.mask))) {
-          const plan = lumaFeatherPlan(leaf.mask_feather,frame.width,frame.height,
-            this.featherReferenceScale?.(JSON.stringify(adjustments.shared?.geometry || {})) || 1);
+          const plan = lumaFeatherPlan(leaf.mask_feather,frame.width,frame.height,referenceScale);
           halo = Math.max(halo, lumaFeatherReach(plan));
+        }
+      }
+      // A measurement patch makes its plain luminance leaves from its own
+      // pixels, so it carries their feather's reach.
+      if (sourceOptions?.analysisNativeLuma && lumaSceneSource(lane, sourceOptions?.identity, frame.workingSpace)) {
+        for (const local of activeLocals || []) {
+          const plan = analysisLumaPlan(local.mask, frame.width, frame.height, referenceScale);
+          if (plan) halo = Math.max(halo, lumaFeatherReach(plan));
         }
       }
       return halo;
@@ -2914,6 +2986,8 @@
         measureOnly,
         analysisPatch: sourceOptions?.analysisPatch,
         analysisMasks: sourceOptions?.analysisMasks,
+        analysisNativeLuma: sourceOptions?.analysisNativeLuma,
+        claritySurround: sourceOptions?.claritySurround,
         Scheduler,
         serial,
         isCurrent: sourceOptions?.isCurrent || null,
@@ -4159,8 +4233,12 @@
       const denoiseAlignment = denoiseActive
         ? denoiseTileAlignment(denoiseSelector.cache.settings.levels)
         : 1;
+      // A measurement may bring Clarity's maps from a reduced render of the
+      // frame; the tile then needs no halo for them.
+      const surround = options.claritySurround || null;
       let { halo, detailHalo, spatialHalo } = this.composedTileHalo(
-        proxy.width, proxy.height, params, activeLocals, lane,
+        proxy.width, proxy.height, surroundHaloParams(params, surround),
+        surroundHaloLocals(activeLocals, lane, surround), lane,
       );
       if (denoiseActive && halo % denoiseAlignment) {
         halo = Math.ceil(halo / denoiseAlignment) * denoiseAlignment;
@@ -4372,8 +4450,10 @@
             maskBatches,
             async (batch, _index, signal) => {
               if (options.analysisMasks) {
-                const mask = await this.loadEditingMask(options.sessionId, batch.local, editRevision,
-                  options.geometrySignature || "{}", proxy, options.sourceSize, isCurrent, signal);
+                const mask = (options.analysisNativeLuma
+                  && this.analysisLumaMask(batch.local, proxy, options.geometrySignature || "{}"))
+                  || await this.loadEditingMask(options.sessionId, batch.local, editRevision,
+                    options.geometrySignature || "{}", proxy, options.sourceSize, isCurrent, signal);
                 const entry = mask ? {...mask, wholeFrame:true} : null;
                 return {localIndex:batch.localIndex, entries:new Map(batch.tiles.map(tile => [tile.key,entry]))};
               }
@@ -4408,6 +4488,7 @@
       // tile halo. The map is keyed by the picture entering Detail, and by
       // Denoise's live controls when Denoise reconstructs that picture.
       const clarityFrame = !noiseView && foregroundTiles.length && graphScaleContract().clarityActive(params)
+        && !surround?.global
         ? this.planClarityFrameMap({
           proxy,
           params,
@@ -4463,6 +4544,11 @@
         slots[base + 163] = tile.haloRect.height;
         slots[base + 164] = proxy.width;
         slots[base + 165] = proxy.height;
+        if (surround?.global) {
+          const origin = surroundMapRect(tile.haloRect, params[CLARITY_MAP_SCALE_INDEX]);
+          slots[base + CLARITY_MAP_ORIGIN_X_INDEX] = origin.x;
+          slots[base + CLARITY_MAP_ORIGIN_Y_INDEX] = origin.y;
+        }
         writeMaskRect(
           slots, base, options.overlayIndex >= 0 ? maskMatrix[index][options.overlayIndex] : null,
           proxy.width, proxy.height,
@@ -4497,7 +4583,12 @@
           // A local builds its Clarity map inside the tile; the map starts at
           // the frame block holding the halo rectangle's first pixel.
           const slot = values.subarray(offset, offset + PARAM_COUNT);
-          writeClarityPlan(slot, proxy.width, proxy.height, slot[16], tile.haloRect.x, tile.haloRect.y);
+          const clarity = writeClarityPlan(slot, proxy.width, proxy.height, slot[16], tile.haloRect.x, tile.haloRect.y);
+          if (surround?.locals.has(local.id)) {
+            const origin = surroundMapRect(tile.haloRect, clarity.scale);
+            slot[CLARITY_MAP_ORIGIN_X_INDEX] = origin.x;
+            slot[CLARITY_MAP_ORIGIN_Y_INDEX] = origin.y;
+          }
         });
         this.device.queue.writeBuffer(buffer, 0, values);
         return { buffer, stride: localStride };
@@ -4778,7 +4869,10 @@
                 { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
               );
             }
-            pass(localView, pipelines.detailComposite, bind(baseView, detailResultView, clarityMapView), width, height);
+            const globalClarityView = surround?.global && graphScaleContract().clarityActive(params)
+              ? this.encodeSurroundClarityMap(encoder, pipelines, surround, surround.global, params[151], proxy, tile.haloRect).createView()
+              : clarityMapView;
+            pass(localView, pipelines.detailComposite, bind(baseView, detailResultView, globalClarityView), width, height);
             localSource = graph.localTexture;
           }
 
@@ -4814,10 +4908,14 @@
               // The halo carries the map's whole reach, so every texel the
               // tile's own pixels read is the one the whole-frame map holds.
               let localClarityView = detailResultView;
-              if (graphScaleContract().localClarityActive(local[`${lane}_grade`])) {
+              const radiusPercent = Number(local[`${lane}_grade`].detail?.clarity_radius_percent) || 0.75;
+              if (surround?.locals.has(local.id)) {
+                localClarityView = this.encodeSurroundClarityMap(
+                  encoder, pipelines, surround, surround.locals.get(local.id), radiusPercent, proxy, tile.haloRect,
+                ).createView();
+              } else if (graphScaleContract().localClarityActive(local[`${lane}_grade`])) {
                 const clarity = writeClarityPlan(
-                  new Float32Array(PARAM_COUNT), proxy.width, proxy.height,
-                  Number(local[`${lane}_grade`].detail?.clarity_radius_percent) || 0.75,
+                  new Float32Array(PARAM_COUNT), proxy.width, proxy.height, radiusPercent,
                 );
                 const extents = clarityMapExtents(clarity, tile.haloRect.x, tile.haloRect.y, width, height);
                 const maps = this.clarityMapTextures("work", extents.baseWidth, extents.baseHeight);
@@ -4860,6 +4958,31 @@
         // composite encodes for the display and this has to read the picture.
         // On a measurement pass this is the only thing the tile is for.
         if (peakTarget) {
+          let peakBindGroup = bind(finishView);
+          if (options.analysisPatch && (tile.rect.width !== width || tile.rect.height !== height)) {
+            // A measurement reads the patch alone. The halo is there to make
+            // the patch's pixels right; its own outer pixels lack the
+            // neighbours Detail reads, and a wrong one can outshine the patch.
+            const patchTexture = this.device.createTexture({
+              size: { width: tile.rect.width, height: tile.rect.height }, format: "rgba16float",
+              usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+            });
+            encoder.copyTextureToTexture(
+              { texture: graph.finishTexture, origin: { x: tile.rect.x - tile.haloRect.x, y: tile.rect.y - tile.haloRect.y, z: 0 } },
+              { texture: patchTexture },
+              { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
+            );
+            const patchValues = slots.slice(index * (stride / 4), index * (stride / 4) + params.length);
+            patchValues[160] = tile.rect.x;
+            patchValues[161] = tile.rect.y;
+            patchValues[162] = tile.rect.width;
+            patchValues[163] = tile.rect.height;
+            const patchBuffer = this.createStorageBuffer(patchValues);
+            this.device.queue.writeBuffer(patchBuffer, 0, patchValues);
+            const patchView = patchTexture.createView();
+            peakBindGroup = this.bindGraphResources(patchView, patchView, { buffer: patchBuffer }, patchView);
+            this.destroyAfterActiveRenders(() => { patchTexture.destroy(); patchBuffer.destroy(); });
+          }
           const peakPass = encoder.beginRenderPass({
             colorAttachments: [{
               view: peakView,
@@ -4869,7 +4992,7 @@
             }],
           });
           peakPass.setPipeline(pipelines.scopePeakTile);
-          peakPass.setBindGroup(0, bind(finishView));
+          peakPass.setBindGroup(0, peakBindGroup);
           peakPass.draw(3);
           peakPass.end();
         }
@@ -5499,6 +5622,10 @@
         masks[overlayIndex]?.texture?.createView() || spatialAView,
       );
       const encoder = this.device.createCommandEncoder();
+      if (sourceOptions?.captureClarity) {
+        sourceOptions.captureClarity.frameWidth = proxy.width;
+        sourceOptions.captureClarity.frameHeight = proxy.height;
+      }
       const gpuTiming = this.instrumentationEnabled && this.device.features.has("timestamp-query")
         ? this.createGpuTimingResources()
         : null;
@@ -5556,6 +5683,9 @@
               encoder, pipelines, (view) => makeBindGroup(view, view, this.paramBuffer, view),
               intermediate.baseTexture.createView(), maps.textures, extents,
             );
+            if (sourceOptions?.captureClarity) {
+              sourceOptions.captureClarity.global = this.captureClarityMap(encoder, map, extents);
+            }
             compositeBindGroup = makeBindGroup(
               intermediate.baseTexture.createView(), intermediate.detailBTexture.createView(), this.paramBuffer, map.createView(),
             );
@@ -5635,10 +5765,12 @@
                 scale: values[CLARITY_MAP_SCALE_INDEX], baseScale: values[CLARITY_BASE_SCALE_INDEX],
               }, 0, 0, proxy.width, proxy.height);
               const maps = this.clarityMapTextures("work", extents.baseWidth, extents.baseHeight);
-              clarityMapView = this.encodeClarityMap(
+              const map = this.encodeClarityMap(
                 encoder, pipelines, (view) => makeBindGroup(view, view, localBuffer, view),
                 target.createView(), maps.textures, extents,
-              ).createView();
+              );
+              sourceOptions?.captureClarity?.locals.set(local.id, this.captureClarityMap(encoder, map, extents));
+              clarityMapView = map.createView();
             }
             const detailCompositeBindGroup = makeBindGroup(
               target.createView(),
@@ -7517,7 +7649,8 @@
       const clarityLevel = clarityPipeline("clarityLevelFragmentMain");
       const clarityBlurHorizontal = clarityPipeline("clarityBlurHorizontalFragmentMain");
       const clarityBlurVertical = clarityPipeline("clarityBlurVerticalFragmentMain");
-      const extract = this.device.createRenderPipeline({
+      const claritySurround = clarityPipeline("claritySurroundFragmentMain");
+      const extract =this.device.createRenderPipeline({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "spatialExtractFragmentMain", targets: [{ format: "rgba16float" }] },
@@ -7595,6 +7728,7 @@
         clarityLevel,
         clarityBlurHorizontal,
         clarityBlurVertical,
+        claritySurround,
         response,
         extract,
         blurHorizontal,
@@ -8859,7 +8993,7 @@
       const make = () => this.device.createTexture({
         size: { width: grownWidth, height: grownHeight },
         format: CLARITY_MAP_FORMAT,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
       });
       const entry = { width: grownWidth, height: grownHeight, textures: [make(), make(), make()] };
       this.clarityMaps.set(key, entry);
@@ -9018,6 +9152,151 @@
         x: 0, y: 0, width: plan.baseWidth, height: plan.baseHeight,
       });
       return this.encodeClarityLevels(encoder, pipelines, bind, textures, plan);
+    }
+
+    /** Keep a finished Clarity map past the render that made it. */
+    captureClarityMap(encoder, finished, extents) {
+      const texture = this.device.createTexture({
+        size: { width: extents.width, height: extents.height },
+        format: CLARITY_MAP_FORMAT,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+      encoder.copyTextureToTexture({ texture: finished }, { texture },
+        { width: extents.width, height: extents.height, depthOrArrayLayers: 1 });
+      return { texture, scale: extents.scale };
+    }
+
+    /**
+     * One measurement patch's Clarity map, resampled from a kept map of the
+     * reduced frame onto the blocks this frame's own map would use.
+     * `writeSurroundMapOrigin` tells the patch's parameters where it starts.
+     */
+    encodeSurroundClarityMap(encoder, pipelines, surround, kept, radiusPercent, proxy, haloRect) {
+      const values = new Float32Array(PARAM_COUNT);
+      const plan = writeClarityPlan(values, proxy.width, proxy.height, radiusPercent);
+      const rect = surroundMapRect(haloRect, plan.scale);
+      values[CLARITY_MAP_ORIGIN_X_INDEX] = rect.x;
+      values[CLARITY_MAP_ORIGIN_Y_INDEX] = rect.y;
+      values[CLARITY_BASE_SCALE_INDEX] = kept.scale;
+      values[TILE_ORIGIN_X_INDEX] = surround.frameWidth;
+      values[TILE_ORIGIN_Y_INDEX] = surround.frameHeight;
+      values[164] = proxy.width;
+      values[165] = proxy.height;
+      const buffer = this.createStorageBuffer(values);
+      this.device.queue.writeBuffer(buffer, 0, values);
+      const texture = this.device.createTexture({
+        size: { width: rect.width, height: rect.height },
+        format: CLARITY_MAP_FORMAT,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      const view = kept.texture.createView();
+      this.encodeClarityPass(encoder, texture.createView(), pipelines.claritySurround,
+        this.bindGraphResources(view, view, { buffer }, view), { x: 0, y: 0, width: rect.width, height: rect.height });
+      this.destroyAfterActiveRenders(() => { texture.destroy(); buffer.destroy(); });
+      return texture;
+    }
+
+    releaseClaritySurround(surround) {
+      if (!surround) return;
+      const textures = [surround.global, ...surround.locals.values()].filter(Boolean).map((kept) => kept.texture);
+      if (textures.length) this.destroyAfterActiveRenders(() => textures.forEach((texture) => texture.destroy()));
+    }
+
+    /**
+     * Clarity's brightness maps for an editing measurement, from one reduced
+     * render of the whole frame.
+     *
+     * A patch that builds a map itself needs the map's whole reach around it
+     * at full size: more than the editing budget from a 0.6% radius up on a
+     * 42 MP frame, and more than the frame itself at the widest. The map is a
+     * wide blur of block averages, so the reduced picture gives nearly the
+     * same one for a small fraction of the pixels. Export and Proof build
+     * theirs at full size.
+     */
+    async measurementClaritySurround(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, options) {
+      const isCurrent = options.isCurrent || (() => true);
+      const key = JSON.stringify([sessionId, lane, revision, adjustments.shared?.geometry || {}, adjustments[lane], locals,
+        white, options.identity || "source", this.highlightSourceToken({})]);
+      const kept = this.claritySurround;
+      if (kept?.key === key && kept.generation === this.resourceGeneration) return kept;
+      // The Peak readout and the highlight anchor are measured side by side
+      // for one edit. They share one render: two on the same canvas would
+      // each supersede the other's source load.
+      const flight = this.claritySurroundInflight;
+      if (flight?.key === key && flight.generation === this.resourceGeneration) {
+        flight.current.push(isCurrent);
+        return flight.promise;
+      }
+      const current = [isCurrent];
+      const anyCurrent = () => current.some((check) => check());
+      const promise = (async () => {
+        this.editingAnalysisCanvas ||= document.createElement("canvas");
+        // Output highlights follow Detail, so the map does not depend on them,
+        // and an HDR render with them on would wait for the anchor this measures.
+        const reduced = structuredClone(adjustments);
+        if (lane === "hdr") reduced.hdr.highlight_section_enabled = false;
+        const surround = { key, generation: this.resourceGeneration, frameWidth: 0, frameHeight: 0, global: null, locals: new Map() };
+        const rendered = await this.renderTo(this.editingAnalysisCanvas, sessionId, lane, reduced, curveSampler, 1600, locals,
+          revision, null, white, sourceSize, { isCurrent: anyCurrent, measureOnly: true, captureClarity: surround });
+        if (!rendered?.width || !surround.frameWidth || !anyCurrent() || surround.generation !== this.resourceGeneration) {
+          this.releaseClaritySurround(surround);
+          return null;
+        }
+        this.releaseClaritySurround(this.claritySurround);
+        this.claritySurround = surround;
+        return surround;
+      })();
+      const record = { key, generation: this.resourceGeneration, current, promise };
+      this.claritySurroundInflight = record;
+      try {
+        return await promise;
+      } finally {
+        if (this.claritySurroundInflight === record) this.claritySurroundInflight = null;
+      }
+    }
+
+    /**
+     * A luminance leaf for a measurement patch, qualified from the patch's own
+     * pixels. The reduced bitmap averages a small highlight into its
+     * surroundings, which can place a specular inside a range it lies above;
+     * the local then grades the very pixels the peak is read from. Nothing is
+     * kept: a patch is measured once.
+     */
+    analysisLumaMask(local, proxy, geometrySignature) {
+      if (!proxy?.region || !lumaSceneSource(proxy.lane, proxy.sourceIdentity, proxy.workingSpace)) return null;
+      const plan = analysisLumaPlan(local.mask, proxy.width, proxy.height,
+        Math.max(0.001, Number(this.featherReferenceScale?.(geometrySignature)) || 1));
+      if (!plan) return null;
+      const width = proxy.textureWidth || proxy.width, height = proxy.textureHeight || proxy.height;
+      const frameRect = [proxy.region.x / proxy.width, proxy.region.y / proxy.height, width / proxy.width, height / proxy.height];
+      const luminance = this.createMaskTexture(width, height);
+      const luminanceBuffer = this.createStorageBuffer(new Float32Array(4));
+      this.device.queue.writeBuffer(luminanceBuffer, 0, new Float32Array(4));
+      const qualifyValues = buildGpuLumaQualificationParams(local.mask);
+      const qualifyBuffer = this.createStorageBuffer(qualifyValues);
+      this.device.queue.writeBuffer(qualifyBuffer, 0, qualifyValues);
+      const baseTexture = this.createMaskTexture(width, height);
+      const entry = {
+        kind: "gpu-luma-analysis", texture: baseTexture, baseTexture, horizontalTexture: null, refinedTexture: null,
+        qualifyBuffer, horizontalBuffer: null, verticalBuffer: null, width, height, frameRect, wholeFrame: true,
+        byteSize: width * height * 2 + 16,
+      };
+      const encoder = this.device.createCommandEncoder();
+      this.encodeMaskPass(encoder, this.maskPipelines.sceneLuminance,
+        this.createMaskBindGroup(proxy.texture, luminanceBuffer), luminance);
+      this.encodeMaskPass(encoder, this.maskPipelines.qualify, this.createMaskBindGroup(luminance, qualifyBuffer), baseTexture);
+      this.device.queue.submit([encoder.finish()]);
+      const inverted = Boolean(local.mask.inverted);
+      if (plan.sigma >= 0.25 || inverted) {
+        this.refineLumaMask(entry, plan, inverted, frameRect[0] === 0 || frameRect[1] === 0
+          || frameRect[0] + frameRect[2] >= 1 || frameRect[1] + frameRect[3] >= 1);
+      }
+      this.destroyAfterActiveRenders(() => {
+        this.destroyLocalMaskEntry(entry);
+        luminance.destroy();
+        luminanceBuffer.destroy();
+      });
+      return entry;
     }
 
     localParamBuffer(local, lane, sourcePixelScale, frameWidth = 0, frameHeight = 0, maskEntry = null) {
@@ -9674,6 +9953,17 @@
     if (sigma < 8) return { sigma, factor: 1, reducedSigma: sigma };
     const factor = Math.floor(sigma / 4);
     return { sigma, factor, reducedSigma: Math.sqrt(Math.max(0.0625, (sigma * sigma) / (factor * factor) - 0.25)) };
+  }
+
+  // The feather plan of a mask a measurement patch can make from its own
+  // pixels: a plain luminance leaf whose feather is filtered at full size. A
+  // wider feather is blurred on a grid anchored to the frame and keeps the
+  // reduced bitmap, which such a blur leaves close to the truth anyway.
+  function analysisLumaPlan(expression, width, height, referenceScale = 1) {
+    if (!isGpuLumaMask(expression) || expression.enabled === false) return null;
+    const feather = Math.min(0.05, Math.max(0, Number(expression.leaf.mask_feather) || 0));
+    const plan = lumaFeatherPlan(feather, width, height, referenceScale);
+    return plan.factor === 1 ? plan : null;
   }
 
   function lumaFeatherReach(plan) {

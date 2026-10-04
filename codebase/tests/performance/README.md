@@ -125,6 +125,20 @@ node tests/run-in-electron.js tests/editing-peak-bounded.js `
   --project <file.hdrfinisher> --reference-nits <exact-peak> --output <report.json>
 ```
 
+When Clarity's reach puts the measurement patches over that budget, the
+measurement reads Clarity's maps from one reduced render of the frame instead
+of each patch's own halo (P3-PEAK-01). `editing-peak-clarity-reference.js`
+checks that against the patches' own full-size maps, measured in groups that
+each fit the budget, patch by patch (limit 0.5%). The reference needs one patch
+to fit with its full halo, so above about 2% radius on a 42 MP frame the check
+is `preview-export-compare.js` against the export:
+
+```powershell
+node tests/run-in-electron.js tests/performance/editing-peak-clarity-reference.js `
+  --project <file.hdrfinisher> --set hdr.detail.clarity_amount=100,hdr.detail.clarity_radius_percent=1.5 `
+  --output <report.json>
+```
+
 Export/Proof warnings are checked by `tests/test_peak_accuracy.py` and
 `tests/test_proof_export_identity.py`, including cached Proof requests with
 different estimates. Full-size Proof keeps encoded export identity; reduced

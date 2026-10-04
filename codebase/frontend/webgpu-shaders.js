@@ -2240,6 +2240,32 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return total;
     }
 
+    // One map texel for a measurement patch, read from the finished map of a
+    // reduced render of the whole frame (bound as the source). p[160], p[161]
+    // are that render's frame size and p[172] its map's block size. The patch
+    // then reads this texture exactly as it would a map built from its halo.
+    @fragment fn claritySurroundFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let texel = clamp(vec2i(input.position.xy) + clarityMapOrigin(), vec2i(0), clarityFrameTexelLimit());
+      let frame = frameDimensions();
+      let centre = min((vec2f(texel) + vec2f(0.5)) * f32(clarityScale()), frame);
+      let position = centre * vec2f(p[160], p[161]) / frame / f32(clarityBaseScale()) - vec2f(0.5);
+      let firstTexel = vec2i(floor(position)) - vec2i(1);
+      let fraction = position - floor(position);
+      let across = clarityBsplineWeights(fraction.x);
+      let down = clarityBsplineWeights(fraction.y);
+      let lastStored = vec2i(textureDimensions(sourceTexture)) - vec2i(1);
+      var total = 0.0;
+      for (var row: i32 = 0; row < 4; row = row + 1) {
+        var rowTotal = 0.0;
+        for (var column: i32 = 0; column < 4; column = column + 1) {
+          let stored = clamp(firstTexel + vec2i(column, row), vec2i(0), lastStored);
+          rowTotal += clarityMapValue(textureLoad(sourceTexture, stored, 0)) * across[column];
+        }
+        total += rowTotal * down[row];
+      }
+      return claritySplit(total);
+    }
+
     fn detailTextureEdgeWeight(coordinate: vec2f, logY: f32, coarse: f32) -> f32 {
       let dimensions = vec2f(textureDimensions(spatialTexture));
       let coarseRadius = max(0.70, length(frameDimensions()) * 0.0012);

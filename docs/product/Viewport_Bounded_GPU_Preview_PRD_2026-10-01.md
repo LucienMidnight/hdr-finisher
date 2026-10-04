@@ -33,6 +33,8 @@ native Feather, with and without Shift, in 14.21, and straighten/perspective
 leaf masks, wide frames and Fit bitmaps in 14.22. Phase 3 remains open. Source-space
 combined and luminance masks, Peak under straighten and the windowed straighten
 source are in 14.23; the coverage audit and 30-minute endurance run in 14.24.
+Post-testing fixes and Denoise are in 14.25, and the editing Peak with Clarity
+(P3-PEAK-01, closed) in 14.26.
 **Everything deferred, accepted or left as a known limit is listed in one place
 in section 15.**
 
@@ -1438,6 +1440,128 @@ photo's cold case shows 6-7 frames or a 1.1 s first frame against its own
 `local-adjustments-interaction` failed once on an aborted request and passed
 on the rerun.
 
+### 14.26 Editing Peak with Clarity, and luminance masks in the measurement (P3-PEAK-01, October 4-5)
+
+Brief: `docs/technical/codex-brief-p3-peak-01-2026-10-04.md`. Findings were
+put to Steve first with no product code changed; he approved the Clarity
+approach and the luminance-mask fix on October 4. Committed locally; no
+push.
+
+**What was wrong (three causes, each confirmed by a run).**
+
+1. *Clarity's reach refuses the measurement.* A patch built Clarity's
+   brightness map from its own halo, so the halo carried the map's whole
+   reach: 250 pixels for a local at 0.75% on the saved photo, 6,291,304 pixels
+   against the 4,194,304 budget; 1,121 pixels and 89,870,400 at 3% on the
+   four-mask fixture. On a 42 MP frame every radius from 0.6% up refuses, which
+   includes the default 0.75%. The roll-off then ran on a carried or estimated
+   anchor.
+2. *The measurement's luminance masks were the 1,600-pixel bitmaps.* At that
+   size a specular is averaged into its surroundings and lands inside a range
+   it lies above, so a luminance-range local graded the very pixels the anchor
+   is read from. On the saved photo the editing anchor was 12-15% above
+   export's exact anchor with no Clarity anywhere (4,740 against 4,226 nit with
+   the brush off; 4,974 against 4,332 with the brush's Clarity at 0). The Peak
+   readout hid it, being measured through the same masks. The picture's
+   highlights came out about 4% dark: around the brightest area, with the
+   brush's Clarity at 0, luminance p99 was 4.01% against the 2% typical limit.
+   The "inside every limit" rows of 14.25 held only for the two regions tested.
+3. *Each patch was read over its halo as well.* The halo's outer pixels lack
+   the neighbours Detail reads, and one of them could outshine the patch (a
+   Peak readout of 931-945 nit on a picture whose brightest pixel is 905).
+
+**What changed (preview measurement only).**
+
+- When the patches' own halos would exceed the budget, Clarity's maps come
+  from one reduced render of the whole frame (long edge 1,600, the level the
+  robust anchor already uses), resampled onto the blocks the full-size map
+  would use. The patch then needs no halo for Clarity. The reduced frame's
+  pixels are counted against the budget: the saved photo measures 2,235,436
+  pixels. While the halos fit, a patch still builds its own map as before.
+- A plain luminance-range leaf is qualified from the patch's own pixels.
+  Combinations containing one, and a feather wide enough to be blurred on a
+  reduced grid, keep the bitmap.
+- The reduction reads the patch alone, not its halo.
+
+No limit, budget or pinned shader changed. The picture shader gains one
+fragment entry (`claritySurroundFragmentMain`); the Peak-reduction and Denoise
+pins hold. Export, Proof, Detail, mask and Denoise arithmetic are untouched.
+
+**Peak, editing against export (HDR, native).**
+
+| Case | Before | After |
+|---|---|---|
+| Four-mask, Texture 100, Clarity 100 / 3%, Sharpen 100 (14.9) | 2,989 / 3,703 nit, 19.3% low | 3,696 / 3,703, 0.19% low |
+| Four-mask, Clarity 100 / 3% alone | not measured | 3,209.3 / 3,209.0, 0.01% |
+| Saved photo as saved (brush Clarity 29, 0.75%) | 796 / 905, 12% low | 907.5 / 904.7, 0.31% high |
+| Saved photo, brush Clarity 0 | 931 / 905, 2.9% high | 907.5 / 904.7, 0.31% high |
+| Saved photo, brush off | 903 / 905, 0.19% low | 907.5 / 904.8, 0.30% high |
+| Saved photo, highlight compression off | no bounded figure | 4,323.9 / 4,317.6, 0.15% high |
+| Primary as saved | within 1% | 636.6 / 638.2, 0.25% low |
+| Four-mask as saved | within 1% | 3,209.3 / 3,209.0, 0.01% |
+
+Highlight anchor on the saved photo, editing against export's exact value:
+4,323.9 / 4,332.0 nit as saved and with the brush's Clarity at 0 (0.19% low;
+was 14.8% high or unmeasured), 4,218.2 / 4,226.3 with the brush off (0.19% low;
+was 12.2% high), 4,341.5 / 4,348.6 with the luminance local off.
+
+**Picture at 100% against export (section 4.1), saved photo, three regions
+including the brightest area.** As saved: worst luminance 2.71%, OKLab 0.0049,
+no pixel over the ceiling (was 6.27%, 0.0324, 3,276 pixels). Brush Clarity 0:
+the same figures; the brightest area is p99 0.28%, worst 1.36% (was 4.01% /
+4.21%). Brush off: worst 0.47%. Compression off: unchanged. Both four-mask
+Clarity cases, the primary and the four-mask as saved pass every verdict.
+
+**The reduced map against the patch's own.** With the reduced render switched
+off and the same patches measured with their full halos in budget-sized groups,
+all sixteen patches agree within 0.074% (one half-float step) at global Clarity
++100 and -100 with radii 0.75%, 1% and 1.5% on the saved photo, with the
+brush's Clarity at 29 and at 100, and within 0.053% at Clarity 100 / 2% on the
+four-mask fixture. `tests/performance/editing-peak-clarity-reference.js`
+repeats this. Above about 2% no patch fits the budget with its full halo, so
+the 3% radius is checked against the export only (the two four-mask rows).
+Clarity fades out on a pixel far above its surroundings, so it rarely moves an
+isolated peak; the per-patch check is the more sensitive of the two.
+
+**Speed.** Primary (no Clarity), Fit Feather steps to the anchor replacement:
+1.06-1.63 s after, 1.06-1.65 s before, four sessions each, alternating; first
+100% zoom 431-545 ms both ways. Saved photo: the picture after a Fit local edit
+is first exact at 26-27 ms (22-23 before); its scopes settle at 0.48 s against
+0.18 s, because the Peak is now measured where it was refused. An edit that
+moves the anchor is now followed by the anchor-replacement frame, as in every
+project without Clarity. First 100% zoom 1.00 s against 0.96-0.98 s. One
+measurement pass takes 0.30-0.40 s with the reduced render (shared by the Peak
+and anchor passes of one edit) and 0.20-0.38 s without.
+
+**Found on the way.** The Peak readout and the anchor measurement start side
+by side; two reduced renders on one canvas superseded each other's source load
+and both failed at Fit. They now share one render.
+
+**Not met, and open.**
+
+- P3-PEAK-02 is unchanged: maximum Sharpen with no locals reads 3,639 against
+  4,015 nit (9.37% low). An ordinary measurement now uses 0.26-0.9 million of
+  the 4.19 million pixels, so more patches would fit; that is not done.
+- The automatic-anchor settle (about 1.0-1.6 s) is unchanged.
+- The candidate ranking still uses the reduced masks; only the patches use
+  the patch's own luminance mask.
+- `highlight-anchor-stability.js` fails, identically before and after this
+  work: with Denoise off its own reference measurement returns nothing for
+  three strokes and differs by 8.6% on the fourth. Not investigated.
+
+Evidence: `codebase/output/performance/review/peak-01/` (`final/` holds the
+last serial pass). Node 427 and Python 1,692 pass with three skips.
+`editing-peak-bounded.js` passes on the primary, four-mask and saved projects:
+no source or mask above a 1,600 edge (on the saved photo no region above
+55,696 pixels).
+Fixture hashes are unchanged.
+
+**Owner decision pending (Steve, October 4).** Steve finds the Clarity Radius
+slider's upper range poorly tuned and is open to limiting Radius, and Amount a
+little. The measurement no longer needs a limit: it holds at 3%. A limit is now
+only a question of how the control feels, and of what happens to saved projects
+above it. Nothing was changed.
+
 ## 15. Deferred, accepted and known limits at the end of phase 3 (October 3, 2026)
 
 One register of what phase 3 leaves behind. Each row links to where it was
@@ -1448,9 +1572,8 @@ measured. "Reopen" says what would bring the item back.
 | ID | What is deferred | Current state | Reopen when | Detail |
 |---|---|---|---|---|
 | P3-MATCH-01 | Further Match speed work | 3.05 s primary, 4.99 s fifty-local against 2 s / 4 s goals | It gets slower, or Match speed becomes a priority | 14.5, 14.6 |
-| P3-PEAK-01 | Peak with wide Clarity (Clarity 100, radius 3%), and with a local's Clarity on a 42 MP frame | Reported Peak about 19% low (12% low in the local case, where the highlight roll-off then differs from export by up to 6.3% on specular pixels); the exact measurement needs far more pixels than the 4,194,304-pixel editing budget | The automatic-anchor redesign is taken up | 14.9, 14.25 |
-| P3-PEAK-02 | Peak with maximum Sharpen | Reported Peak about 9% low; candidate patches miss export's maximum | With P3-PEAK-01 | 14.11 |
-| Automatic anchor | Redesign of the automatic highlight-anchor measurement | Correct within 1% in ordinary states, but its re-measure is why a Fit edit takes about 1.0-1.6 s to settle fully | With P3-PEAK-01/02. Parallel patch fetching was tried and not kept (14.23) | 14.17, 14.23 |
+| P3-PEAK-02 | Peak with maximum Sharpen | Reported Peak about 9% low (3,639 against 4,015 nit, measured again October 5); candidate patches miss export's maximum. P3-PEAK-01 closed without it | It is taken up on its own; the measurement has spare budget for more patches | 14.11, 14.26 |
+| Automatic anchor | Redesign of the automatic highlight-anchor measurement | Correct within 1% in ordinary states, and now with Clarity (14.26), but its re-measure is why a Fit edit takes about 1.0-1.6 s to settle fully | With P3-PEAK-02. Parallel patch fetching was tried and not kept (14.23) | 14.17, 14.23 |
 | P3-ZOOM-01 | SDR cross-scale continuity | Block luminance p99 3.35% against a 2% typical limit; HDR passes at 0.68% | It is visible in use | 14.13 |
 | P3-ZOOM-02 | HDR cross-scale continuity below 100% (deferred October 4) | At the 2% typical limit: 2.55% on a strongly corrected 42 MP photo at 50%, 1.96% / 2.10% on the primary at 50% / 63.3%. Denoise is not the cause | It is visible in use | 14.25 |
 | P3-FALLBACK-01 | The larger-bitmap fallback for a feathered brush no bitmap size qualifies for | Compiles a 3,200-pixel CPU mask in the background (about 0.04-1.2 s); the only CPU mask request left in the coverage audit | It is explored on its own; do not change without Steve | 14.21, 14.24 |
@@ -1483,6 +1606,9 @@ levels.
 | Not designed | Healing brush | 10 |
 | Denoise coverage | The coverage audit still does not include Denoise. The cold pan-enable-drag case on the saved 42 MP photo misses its driver's gate (6-7 frames, or 1.1 s to the first) | 14.25 |
 | `roi-pan-cache` driver | Fails ("the pan pass did not use the retained frame"), and did before the Denoise work; not investigated | 14.25 |
+| Editing Peak masks | The measurement makes a plain luminance-range leaf from its patch. A combination containing one, and a luminance feather wide enough to be blurred on a reduced grid, keep the 1,600-pixel bitmap, as does the candidate ranking | 14.26 |
+| Editing Peak with Clarity | Above about 2% radius on a 42 MP frame the reduced Clarity map is checked against the export only (four-mask fixture, 3%), not patch by patch | 14.26 |
+| `highlight-anchor-stability` driver | Fails with Denoise off (its own reference measurement returns nothing or differs by 8.6%), the same before and after 14.26; not investigated | 14.26 |
 
 ### 15.4 Not changed in phase 3
 
@@ -1492,4 +1618,10 @@ immediate discrete zoom and the 80 ms continuous-zoom debounce.
 
 Since then (14.25): the adaptive Denoise shader's pin was updated for a
 region-origin offset, with its arithmetic unchanged. Everything else in this
-list still holds.
+list still holds, including after 14.26.
+
+### 15.5 Closed since this register was written
+
+| ID | What it was | Closed | Detail |
+|---|---|---|---|
+| P3-PEAK-01 | Peak with wide Clarity, and with a local's Clarity on a 42 MP frame (about 19% and 12% low; roll-off up to 6.3% from export) | October 5: within 0.31% on every measured case, picture inside section 4.1, budget and limits unchanged | 14.26 |
