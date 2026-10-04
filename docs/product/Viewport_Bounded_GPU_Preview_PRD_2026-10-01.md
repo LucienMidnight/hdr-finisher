@@ -1424,7 +1424,8 @@ fixture. Native preview against export, HDR, regions of 1,947,690 pixels:
 3. **Below 100% the HDR picture is at the 2% continuity limit, with or without
    Denoise.** Saved photo at 50%: 2.55% (2.53% with Denoise off; 0.57% with
    neutral geometry and no locals). Primary fixture: 1.96% at 50%, 2.10% at
-   63.3%. Recorded as P3-ZOOM-02 in section 15; not yet decided by Steve.
+   63.3%. Steve deferred this on October 4 as P3-ZOOM-02 (section 15); the
+   2% limit is unchanged.
 
 Evidence: `codebase/output/performance/review/local-isolation-2026-10-04/`,
 `codebase/output/performance/review/denoise-tile-cache-2026-10-04/`, and the
@@ -1451,6 +1452,7 @@ measured. "Reopen" says what would bring the item back.
 | P3-PEAK-02 | Peak with maximum Sharpen | Reported Peak about 9% low; candidate patches miss export's maximum | With P3-PEAK-01 | 14.11 |
 | Automatic anchor | Redesign of the automatic highlight-anchor measurement | Correct within 1% in ordinary states, but its re-measure is why a Fit edit takes about 1.0-1.6 s to settle fully | With P3-PEAK-01/02. Parallel patch fetching was tried and not kept (14.23) | 14.17, 14.23 |
 | P3-ZOOM-01 | SDR cross-scale continuity | Block luminance p99 3.35% against a 2% typical limit; HDR passes at 0.68% | It is visible in use | 14.13 |
+| P3-ZOOM-02 | HDR cross-scale continuity below 100% (deferred October 4) | At the 2% typical limit: 2.55% on a strongly corrected 42 MP photo at 50%, 1.96% / 2.10% on the primary at 50% / 63.3%. Denoise is not the cause | It is visible in use | 14.25 |
 | P3-FALLBACK-01 | The larger-bitmap fallback for a feathered brush no bitmap size qualifies for | Compiles a 3,200-pixel CPU mask in the background (about 0.04-1.2 s); the only CPU mask request left in the coverage audit | It is explored on its own; do not change without Steve | 14.21, 14.24 |
 
 ### 15.2 Accepted by Steve (measured outside a limit or goal, accepted as is)
@@ -1479,7 +1481,6 @@ levels.
 | Endurance | Run on the saved geometry, before the three audit fixes, and not repeated. Straighten has a one-minute capped-memory replay only | 14.24 |
 | Timing evidence | Perspective and un-straightened first-zoom timings are single sessions | 14.23 |
 | Not designed | Healing brush | 10 |
-| P3-ZOOM-02, HDR continuity below 100% | At the 2% limit and not decided by Steve: 2.55% on a strongly corrected 42 MP photo at 50%, 1.96% / 2.10% on the primary at 50% / 63.3%. Denoise is not the cause | 14.25 |
 | Denoise coverage | The coverage audit still does not include Denoise. The cold pan-enable-drag case on the saved 42 MP photo misses its driver's gate (6-7 frames, or 1.1 s to the first) | 14.25 |
 | `roi-pan-cache` driver | Fails ("the pan pass did not use the retained frame"), and did before the Denoise work; not investigated | 14.25 |
 
