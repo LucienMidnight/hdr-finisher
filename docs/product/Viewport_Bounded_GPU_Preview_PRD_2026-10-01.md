@@ -1444,8 +1444,8 @@ on the rerun.
 
 Brief: `docs/technical/codex-brief-p3-peak-01-2026-10-04.md`. Findings were
 put to Steve first with no product code changed; he approved the Clarity
-approach and the luminance-mask fix on October 4. Committed locally; no
-push.
+approach and the luminance-mask fix on October 4. Committed and pushed on
+October 5 at Steve's direction.
 
 **What was wrong (three causes, each confirmed by a run).**
 
@@ -1556,11 +1556,11 @@ no source or mask above a 1,600 edge (on the saved photo no region above
 55,696 pixels).
 Fixture hashes are unchanged.
 
-**Owner decision pending (Steve, October 4).** Steve finds the Clarity Radius
-slider's upper range poorly tuned and is open to limiting Radius, and Amount a
-little. The measurement no longer needs a limit: it holds at 3%. A limit is now
-only a question of how the control feels, and of what happens to saved projects
-above it. Nothing was changed.
+**Owner decision (Steve, October 5).** On October 4 Steve found the Clarity
+Radius slider's upper range poorly tuned and was open to limiting Radius, and
+Amount a little. The measurement no longer needs a limit: it holds at 3%. Told
+that, Steve decided to leave the Clarity controls as they are for now. He
+authorized the commit and the push.
 
 ## 15. Deferred, accepted and known limits at the end of phase 3 (October 3, 2026)
 
