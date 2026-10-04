@@ -428,3 +428,44 @@ test("timing feedback records dispatch and queue latency", async () => {
   assert.equal(snapshot.lanes.hdr.panTimerPending, false);
   assert.equal(snapshot.lanes.hdr.catchUpTimerPending, false);
 });
+
+
+test("paced adaptive drag snapshots finish despite newer grade inputs", async () => {
+  const work = deferred();
+  let request;
+  const coordinator = new HDRRenderCoordinator({
+    dispatch: (entry) => { request = entry; return work.promise; },
+    present: (entry) => ({ generation: entry.applicationGeneration }),
+  });
+  const pending = coordinator.submit({ lane: "hdr", tier: "interactive", interactiveSnapshot: true });
+  coordinator.noteEdit("hdr", { preserveInteractive: true });
+  coordinator.noteEdit("hdr", { preserveInteractive: true });
+  assert.equal(request.isCurrent(), true);
+  work.resolve({ rendered: true });
+  assert.ok(await pending);
+  assert.equal(coordinator.state("hdr").accepted.generation, request.applicationGeneration);
+});
+
+test("release and source changes still cancel paced drag snapshots", async () => {
+  for (const cancel of [c => c.noteEdit("hdr"), c => c.noteSource("replacement")]) {
+    const work = deferred(); let request;
+    const coordinator = new HDRRenderCoordinator({ dispatch: entry => { request = entry; return work.promise; } });
+    const pending = coordinator.submit({ lane: "hdr", tier: "interactive", interactiveSnapshot: true });
+    cancel(coordinator);
+    assert.equal(request.isCurrent(), false);
+    work.resolve({ rendered: true });
+    await pending;
+    assert.equal(coordinator.state("hdr").accepted, null);
+  }
+});
+
+test("preserving a drag never preserves ordinary settled work", async () => {
+  const work = deferred(); let request;
+  const coordinator = new HDRRenderCoordinator({ dispatch: entry => { request = entry; return work.promise; } });
+  const pending = coordinator.submit({ lane: "hdr", tier: "settled" });
+  coordinator.noteEdit("hdr", { preserveInteractive: true });
+  assert.equal(request.isCurrent(), false);
+  work.resolve({ rendered: true });
+  await pending;
+  assert.equal(coordinator.state("hdr").accepted, null);
+});

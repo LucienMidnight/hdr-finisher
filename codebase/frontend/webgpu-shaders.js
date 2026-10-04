@@ -381,7 +381,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 // scratch: (originX, originY, width, height) in frame pixels
 // frame:   (frameWidth, frameHeight, level, axis)   axis 0 = horizontal
 // tile:    (x, y, width, height) of the output, in frame pixels
-// dest:    (originX, originY, 0, 0): where the destination's (0, 0) sits
+// dest:    (originX, originY, sourceX, sourceY): where the destination's (0, 0)
+//          sits, and where the source texture's (0, 0) sits (a region source)
 // model:   (a, b, c, 0)
 // strength:(luma, chroma, fineMultiplier, fineFloor)
 // sigma:   (Y, C1, C2, 0) band noise factors at this level
@@ -435,7 +436,8 @@ fn reflectFrame(f: i32, extent: i32, reach: i32) -> i32 {
 @compute @workgroup_size(8, 8)
 fn adaptiveLoadMain(@builtin(global_invocation_id) id: vec3u) {
   if (!inScratch(id)) { return; }
-  let rgb = textureLoad(srcTex, scratchOrigin() + vec2i(id.xy), 0).rgb;
+  let sourceOrigin = vec2i(i32(ap.dest.z), i32(ap.dest.w));
+  let rgb = textureLoad(srcTex, scratchOrigin() - sourceOrigin + vec2i(id.xy), 0).rgb;
   textureStore(dstTex, vec2i(id.xy), vec4f(toOpponent(rgb), dot(rgb, ACES_LUMA)));
 }
 

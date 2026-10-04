@@ -11,6 +11,8 @@ const opt = (key,value) => args.includes(key) ? args[args.indexOf(key)+1] : valu
 const project = path.resolve(opt('--project',''));
 const output = path.resolve(opt('--output','output/performance/zoom-block-continuity.json'));
 const lanes = opt('--lanes','hdr,sdr').split(',');
+const zooms = opt('--zooms','50').split(',').map(Number);
+assert(zooms.length && zooms.every(z=>z>0&&z<100),'--zooms must be below 100%');
 const edits = opt('--set','').split(',').filter(Boolean).map(item => {
   const [key,raw] = item.split('=');let value=raw;try {value=JSON.parse(raw);} catch {} return {key,value};
 });
@@ -22,6 +24,16 @@ const edits = opt('--set','').split(',').filter(Boolean).map(item => {
   try {
     const page = await browser.newPage();
     await c.open(page,project,false);
+    if(args.includes('--warm-denoise-first')) {
+      assert(args.includes('--denoise') && lanes.join(',')==='hdr','Warm-first currently covers HDR only');
+      await page.evaluate(async()=>{
+        updateDenoiseAlgorithm(DENOISE_ADAPTIVE_ALGORITHM);await persistDenoiseSettings();
+        await setDenoiseEnabled(true);setCustomZoom(50);
+      });await page.waitForTimeout(250);await c.stable(page);
+      report.warmedBeforeEdits=await page.evaluate(()=>({
+        geometry:geometrySignature(),edge:requiredProcessingLongEdge(),
+        model:structuredClone(state.gpuPreview.denoiseSourceSelector.cache.model)}));
+    }
     if(args.includes('--without-locals')) {
       await page.evaluate(async () => {
         for(const existing of localAdjustments()) {
@@ -30,6 +42,14 @@ const edits = opt('--set','').split(',').filter(Boolean).map(item => {
         }
       });
       report.localsDisabled=true;
+    }
+    if(args.includes('--without-local-detail')) {
+      await page.evaluate(async()=>{
+        for(const existing of localAdjustments()) {
+          const local=structuredClone(existing);Object.assign(local.hdr_grade.detail,{texture_amount:0,clarity_amount:0,sharpen_amount:0});
+          if(!await queueEditCommand('update_local',{local},local.id))throw Error('Could not neutralize local Detail');
+        }
+      });report.localDetailDisabled=true;
     }
     await page.evaluate(async edits => {
       for(const edit of edits)commitAdjustmentValue(edit.key,edit.value,{manual:true});
@@ -45,8 +65,17 @@ const edits = opt('--set','').split(',').filter(Boolean).map(item => {
     };
     for(const lane of lanes) {
       await page.evaluate(lane=>switchLane(lane),lane);await stable();
+      if(args.includes('--denoise')) {
+        await page.evaluate(async()=>{
+          if(state.denoise[state.currentView].analysis.algorithm_version!==DENOISE_ADAPTIVE_ALGORITHM) {
+            updateDenoiseAlgorithm(DENOISE_ADAPTIVE_ALGORITHM);await persistDenoiseSettings();
+          }
+          await setDenoiseEnabled(true);
+        });await stable();
+      }
+      for(const comparisonZoom of zooms) {
       const frames=[];
-      for(const zoom of [100,50]) {
+      for(const zoom of [100,comparisonZoom]) {
         await page.evaluate(zoom=>setCustomZoom(zoom),zoom);await stable();
         await page.evaluate(() => {
           const canvas=els.previewCanvas.getBoundingClientRect(),pane=els.dropzone.getBoundingClientRect();
@@ -59,8 +88,7 @@ const edits = opt('--set','').split(',').filter(Boolean).map(item => {
           if(accepted?.execution!=='tiled'||!accepted.exact||!target?.valid)throw Error('App-selected route is not a readable exact tile frame');
           const box=els.previewCanvas.getBoundingClientRect();
           const screenScale={x:box.width/target.width,y:box.height/target.height,dpr:devicePixelRatio};
-          if(screenScale.dpr!==1||Math.abs(screenScale.x-1)>.001||Math.abs(screenScale.y-1)>.001)
-            throw Error('This checker requires one presentation pixel per screen pixel');
+          if(screenScale.dpr!==1)throw Error('This checker requires DPR 1');
           const visible=visibleOutputRect(target.width,target.height);
           if(!visible)throw Error('This test requires a partially visible custom zoom');
           const width=Math.min(1024,visible.width-2),height=Math.min(768,visible.height-2);
@@ -72,45 +100,28 @@ const edits = opt('--set','').split(',').filter(Boolean).map(item => {
           return {rect,visible,width:target.width,height:target.height,format:target.format,
             white:projectReferenceWhiteNits(),zoom:state.zoomPercent,base64:btoa(binary),screenScale,
             laneAdjustments:structuredClone(state.adjustments[state.currentView]),
+            denoise:structuredClone(state.denoise[state.currentView]),
+            denoiseStatus:state.denoiseRuntime[state.currentView].status,
+            denoiseSelected:renderer.diagnosticsSnapshot().denoise.selectedSource,
+            denoiseModel:renderer.denoiseSourceSelector?.cache?.model || null,
             accepted:{lane:accepted.lane,execution:accepted.execution,processedLongEdge:accepted.processedLongEdge}};
         });
-        const file=output.replace(/\.json$/,'')+`-${lane}-${zoom}.rgba32`;
+        const file=output.replace(/\.json$/,'')+`-${lane}-${comparisonZoom}-${zoom}.rgba32`;
         fs.writeFileSync(file,Buffer.from(frame.base64,'base64'));delete frame.base64;
         frames.push({...frame,file});
       }
-      assert.equal(frames[0].width,2*frames[1].width,'This checker requires exact 2:1 processing dimensions');
-      assert.equal(frames[0].height,2*frames[1].height);
+      if(report.warmedBeforeEdits && frames[1].accepted.processedLongEdge===report.warmedBeforeEdits.edge) {
+        assert.deepEqual(frames[1].denoiseModel,report.warmedBeforeEdits.model,'Intermediate model changed after geometry edit');
+        report.modelReuseChecked=true;
+      }
       assert.equal(frames[0].format,frames[1].format);
-      const metadata=output.replace(/\.json$/,'')+`-${lane}-frames.json`;
+      const metadata=output.replace(/\.json$/,'')+`-${lane}-${comparisonZoom}-frames.json`;
       fs.writeFileSync(metadata,JSON.stringify({lane,frames},null,2)+'\n');
-      const result=JSON.parse(execFileSync(path.resolve('.venv/Scripts/python.exe'),['-c',`
-import json,sys,numpy as np
-sys.path.insert(0,'tests/performance')
-from preview_export_compare import srgb_decode,presentation_space,tone_statistics
-d=json.load(open(sys.argv[1]));a,b=d['frames'];ra,rb=a['rect'],b['rect']
-left=int(np.ceil(max(ra['x'],2*rb['x'])/16)*16)
-top=int(np.ceil(max(ra['y'],2*rb['y'])/16)*16)
-right=int(np.floor(min(ra['x']+ra['width'],2*(rb['x']+rb['width']))/16)*16)
-bottom=int(np.floor(min(ra['y']+ra['height'],2*(rb['y']+rb['height']))/16)*16)
-w,h=right-left,bottom-top
-if w<320 or h<320:raise ValueError('Too few common visible blocks')
-def blocks(frame,rect,factor):
-    image=np.fromfile(frame['file'],dtype=np.float32).reshape(rect['height'],rect['width'],4)[...,:3]
-    x,y=left//factor-rect['x'],top//factor-rect['y']
-    image=srgb_decode(image[y:y+h//factor,x:x+w//factor].astype(np.float64))
-    size=16//factor
-    return image.reshape(h//16,size,w//16,size,3).mean(axis=(1,3))
-reference,preview=blocks(a,ra,1),blocks(b,rb,2)
-space=presentation_space(d['lane'],d['lane']=='hdr' and '16float' in a['format'],a['white'])
-tone=tone_statistics(preview,reference,space,eight_bit_target=False)
-tone={k:v for k,v in tone.items() if not k.startswith('_')}
-print(json.dumps(dict(commonNativeRect=dict(x=left,y=top,width=w,height=h),blocks=(w//16)*(h//16),
-    zoomedOutScreenBlock=8,referenceNativeBlock=16,tone=tone,
-    passed=tone['luminance']['p99']<=.02 and tone['oklab']['p99']<=.01)))
-`,metadata],{encoding:'utf8',maxBuffer:1024*1024}));
-      report.results.push({lane,frames,...result});c.write(output,report);
-      console.log(JSON.stringify({lane,blocks:result.blocks,luminanceP99:result.tone.luminance.p99,
+      const result=JSON.parse(execFileSync(path.resolve('.venv/Scripts/python.exe'),['tests/performance/zoom_block_compare.py',metadata],{encoding:'utf8',maxBuffer:1024*1024}));
+      report.results.push({lane,zoom:comparisonZoom,frames,...result});c.write(output,report);
+      console.log(JSON.stringify({lane,zoom:comparisonZoom,blocks:result.blocks,luminanceP99:result.tone.luminance.p99,
         oklabP99:result.tone.oklab.p99,passed:result.passed}));
+      }
     }
     report.projectUnchanged=c.manifest(project).projectSha256===report.projectSha256;
     assert.ok(report.projectUnchanged);c.write(output,report);

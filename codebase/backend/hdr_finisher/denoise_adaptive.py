@@ -33,6 +33,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from statistics import NormalDist
+from threading import Lock
 
 import numpy as np
 
@@ -437,23 +438,27 @@ def _energy_tails(source: np.ndarray, windows, model: AdaptiveNoiseModel, quiet_
 
 
 _TAIL_REFERENCE: dict[str, list] = {}
+_TAIL_REFERENCE_LOCK = Lock()
 
 
 def _tail_reference() -> tuple[list[float], list[list[float]]]:
     """White noise read through the whole estimator: the coarse-band energies
     that define quiet (``TAIL_QUIET_QUANTILE`` of each), and the tails read
     there."""
-    if not _TAIL_REFERENCE:
-        rng = np.random.default_rng(3)
-        noise = rng.standard_normal((1024, 1024, 3)).astype(np.float32) * np.float32(0.01) + np.float32(0.5)
-        model, windows = _measure_model(noise)
-        coarse = [[] for _ in range(6)]
-        for window_coarse, _ in _window_energies(noise, windows, model):
-            for index, energy in enumerate(window_coarse):
-                coarse[index].append(energy.ravel())
-        limits = [float(np.quantile(np.concatenate(values), TAIL_QUIET_QUANTILE)) for values in coarse]
-        _TAIL_REFERENCE["limits"] = limits
-        _TAIL_REFERENCE["tails"] = _energy_tails(noise, windows, model, limits)[0]
+    # Native warm-up and a differently sized preview can arrive together.
+    # Publish the shared calibration only once both parts are complete.
+    with _TAIL_REFERENCE_LOCK:
+        if not _TAIL_REFERENCE:
+            rng = np.random.default_rng(3)
+            noise = rng.standard_normal((1024, 1024, 3)).astype(np.float32) * np.float32(0.01) + np.float32(0.5)
+            model, windows = _measure_model(noise)
+            coarse = [[] for _ in range(6)]
+            for window_coarse, _ in _window_energies(noise, windows, model):
+                for index, energy in enumerate(window_coarse):
+                    coarse[index].append(energy.ravel())
+            limits = [float(np.quantile(np.concatenate(values), TAIL_QUIET_QUANTILE)) for values in coarse]
+            tails = _energy_tails(noise, windows, model, limits)[0]
+            _TAIL_REFERENCE.update(limits=limits, tails=tails)
     return _TAIL_REFERENCE["limits"], _TAIL_REFERENCE["tails"]
 
 

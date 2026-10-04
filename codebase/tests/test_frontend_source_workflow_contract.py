@@ -192,7 +192,11 @@ def test_source_transport_carries_abort_and_generation_checks() -> None:
     # The presenting renderers pass their currency into the proxy load. The
     # third site is the ROI region fallback: a viewport request admitted Direct
     # reloads the whole frame and must carry the same checks.
-    assert webgpu.count("isCurrent: () => resourceGeneration === this.resourceGeneration") == 3
+    # The main proxy load asks through sourceLoadIsCurrent, which lets an
+    # adaptive Denoise drag keep a source load that is still useful.
+    assert webgpu.count("isCurrent: () => resourceGeneration === this.resourceGeneration") == 2
+    assert "isCurrent: () => this.sourceLoadIsCurrent(canvas, serial, resourceGeneration, sourceOptions)," in webgpu
+    assert "if (resourceGeneration !== this.resourceGeneration) return false;" in webgpu
     assert "{ isCurrent: sourceOptions?.isCurrent }" in webgpu
 
 def test_viewport_request_contract_reaches_the_scheduler() -> None:
@@ -405,7 +409,7 @@ def test_app_emits_intent_to_the_render_coordinator() -> None:
     assert "coordinator.submit({" in javascript
     assert "dispatch: (request) => renderGpuDraftInner(request.lane, request)," in javascript
     assert "const coordinator = state.renderCoordinator;" in javascript
-    assert "coordinator.noteEdit(lane);" in javascript
+    assert "coordinator.noteEdit(lane, {" in javascript
     assert "state.renderCoordinator?.noteSource(payload.session.session_id);" in javascript
     assert "state.renderCoordinator?.noteSource(null);" in javascript
     assert "state.renderCoordinator?.noteActiveLane(lane);" in javascript

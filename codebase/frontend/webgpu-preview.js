@@ -1477,6 +1477,7 @@
 
     resetSession(sessionId = null) {
       this.resourceGeneration += 1;
+      this.denoiseModelWarm = null;
       this.editingCandidateCache?.clear();
       this.editingAnalysisCanvas = null;
       this.analysisClarityFrameMap = null;
@@ -1583,6 +1584,12 @@
     finishActiveRender() {
       this.activeRenderCount = Math.max(0, this.activeRenderCount - 1);
       this.flushDeferredDestroy();
+    }
+
+    sourceLoadIsCurrent(canvas, serial, resourceGeneration, options) {
+      if (resourceGeneration !== this.resourceGeneration) return false;
+      if (typeof options?.isSourceCurrent === "function") return options.isSourceCurrent() !== false;
+      return serial === this.renderSerials.get(canvas) && options?.isCurrent?.() !== false;
     }
 
     async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
@@ -2665,7 +2672,8 @@
       );
       let { halo } = this.composedTileHalo(frame.width, frame.height, params, activeLocals, lane);
       const selector = this.denoiseSourceSelector;
-      const denoiseActive = Boolean(
+      const adaptive = this.adaptiveDenoiseSelected();
+      const denoiseActive = adaptive || Boolean(
         selector?.cache && selector.original
         && selector.selected === "resolved"
         && selector.original.width === frame.width
@@ -2673,6 +2681,9 @@
       );
       const alignment = denoiseActive ? denoiseTileAlignment(selector.cache.settings.levels) : 1;
       if (halo % alignment) halo = Math.ceil(halo / alignment) * alignment;
+      // Adaptive Denoise reconstructs a tile from the source around it, so the
+      // region has to reach that far past every tile's halo.
+      if (adaptive) halo += Math.ceil(ADAPTIVE_DENOISE_MARGIN / alignment) * alignment;
       // Global Clarity's map pre-pass reads the picture around the tiles, not
       // just their halos: its reach, rounded out to whole blocks and to the
       // denoise grid. The source region has to cover that too.
@@ -4038,13 +4049,19 @@
       // and keeps the evidence so re-enabling is free -- so on every tiled
       // render, which is every render at the Full tier, Denoise could not be
       // switched off at all.
-      const denoiseActive = Boolean(
+      //
+      // Adaptive Denoise holds no evidence, only a noise model, so it
+      // reconstructs from whatever source this pass loaded -- a region of the
+      // frame as readily as the whole of it.
+      const adaptiveDenoise = this.adaptiveDenoiseFor(proxy);
+      const denoiseActive = adaptiveDenoise || Boolean(
         denoiseSelector?.cache && denoiseSelector.original
         && denoiseSelector.selected === "resolved"
         && (denoiseSelector.identity === proxy.identity || (options.analysisMasks && denoiseSelector.original.sessionId === proxy.sessionId && denoiseSelector.original.geometrySignature === proxy.geometrySignature))
         && denoiseSelector.original.width === proxy.width
         && denoiseSelector.original.height === proxy.height,
       );
+      const denoiseSource = adaptiveDenoise ? proxy : null;
       const denoiseControls = denoiseSelector?.controls
         || { amount: 0.5, luminance: 0.5, colorNoise: 0.5, detailRecovery: 0 };
       // Show noise differences the original against this generation's own
@@ -4073,8 +4090,15 @@
           maxScratchBytes: (tileSize + halo * 2) ** 2 * 8,
         }));
       // The view mode is part of tile identity so the pan cache never answers a
-      // noise-view pass with graded tiles, or the reverse.
-      const identity = `${proxy.identity}|${editRevision}|${surface.format}${noiseView ? "|noise" : ""}`;
+      // noise-view pass with graded tiles, or the reverse. So is Denoise: the
+      // toggle changes neither the edit revision nor the generation, so without
+      // this a bypass at Full or zoomed in found every visible tile already
+      // drawn for this generation, redrew nothing, and left the denoised
+      // picture up until something else moved the identity.
+      const denoiseIdentity = denoiseActive
+        ? `|denoise:${denoiseSelector.identity}:${JSON.stringify(denoiseControls)}`
+        : "";
+      const identity = `${proxy.identity}|${editRevision}|${surface.format}${noiseView ? "|noise" : ""}${denoiseIdentity}`;
       const nodes = ["geometry"];
       if (denoiseActive) nodes.push({ id: "denoise", halo });
       nodes.push("exposure", "white-balance", "curves", "color", "grading");
@@ -4503,6 +4527,7 @@
                 byteSize: graph.width * graph.height * 8,
               },
               encoder,
+              source: denoiseSource,
             });
             if (resolved?.paramBuffer) denoiseParamBuffers.push(resolved.paramBuffer);
             denoiseTileResolves += 1;
@@ -4576,6 +4601,7 @@
               byteSize: graph.width * graph.height * 8,
             },
             encoder,
+            source: denoiseSource,
           });
           if (resolved?.paramBuffer) denoiseParamBuffers.push(resolved.paramBuffer);
           denoiseTileResolves += 1;
@@ -4995,6 +5021,7 @@
       // analysis has already made that source level resident, so reuse it and
       // process only the visible ROI rather than uploading a second region.
       const denoiseAtScale = this.denoiseSourceSelector?.selected === "resolved"
+        && !this.adaptiveDenoiseSelected()
         && this.denoiseSourceSelector?.original?.longEdge === longEdge
         && this.denoiseSourceSelector?.original?.sourceIdentity === sourceIdentity;
       const region = denoiseAtScale ? null : this.roiRegionFor(
@@ -5015,9 +5042,7 @@
         editRevision,
         sourceIdentity,
         {
-          isCurrent: () => resourceGeneration === this.resourceGeneration
-            && serial === this.renderSerials.get(canvas)
-            && sourceOptions?.isCurrent?.() !== false,
+          isCurrent: () => this.sourceLoadIsCurrent(canvas, serial, resourceGeneration, sourceOptions),
           onProgress: sourceOptions?.onSourceProgress,
           region,
         },
@@ -5094,6 +5119,14 @@
           proxy = whole;
           sourceProxy = this.selectedDenoiseSource(proxy);
         }
+      }
+      // Direct grades one whole-frame texture, so adaptive Denoise fills its
+      // reconstruction here, the first time this frame is drawn that way.
+      if (plan.decision.mode !== "tiled" && await this.ensureDenoiseResolved(proxy)) {
+        if (resourceGeneration !== this.resourceGeneration
+          || serial !== this.renderSerials.get(canvas)
+          || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
+        sourceProxy = sourceOptions?.frameAnchor ? proxy : this.selectedDenoiseSource(proxy);
       }
       // The anchor is measured before anything is encoded, so this render can
       // never await once it owns GPU resources or the canvas. A settled draft
@@ -5750,6 +5783,38 @@
       return originalProxy;
     }
 
+    /** Whether adaptive Denoise is switched on, at whatever scale it was set up for. */
+    adaptiveDenoiseSelected() {
+      const selector = this.denoiseSourceSelector;
+      return Boolean(selector?.cache?.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION
+        && selector.selected === "resolved");
+    }
+
+    /**
+     * Whether adaptive Denoise applies to this source: the frame it was set up
+     * for, whole or as a region of it.
+     */
+    adaptiveDenoiseFor(proxy) {
+      if (!proxy || !this.adaptiveDenoiseSelected()) return false;
+      const selector = this.denoiseSourceSelector;
+      return selector.identity
+        === `${proxy.sessionId}:${proxy.lane}:${proxy.longEdge}:${proxy.geometrySignature}:${proxy.sourceIdentity}`;
+    }
+
+    /**
+     * Fill adaptive Denoise's whole-frame reconstruction of `proxy` if it is
+     * missing or was made with other controls. Returns whether it did any work.
+     */
+    async ensureDenoiseResolved(proxy) {
+      if (!proxy || proxy.region || !this.adaptiveDenoiseFor(proxy)) return false;
+      const selector = this.denoiseSourceSelector;
+      if (selector.identity !== proxy.identity) return false;
+      if (selector.original !== proxy) selector.original = proxy;
+      if (selector.resolved && selector.resolvedFor === JSON.stringify(selector.controls || {})) return false;
+      await this.resolveDenoiseProxy(selector.controls || {}, { source: proxy });
+      return true;
+    }
+
     async ensureDenoisePipelines() {
       if (this.denoisePipelines) return this.denoisePipelines;
       const module = this.device.createShaderModule({ code: DENOISE_SHADER_SOURCE });
@@ -5792,13 +5857,18 @@
       if (!this.available || !sessionId) return false;
       const generation = ++this.denoiseSelectorGeneration;
       const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
-      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, {
-        isCurrent: () => generation === this.denoiseSelectorGeneration && this.sessionId === sessionId,
-      });
-      if (!original) return false;
+      // Adaptive needs a noise model and nothing else: no source is loaded for
+      // it. A render reconstructs from the source it loads for itself, which
+      // zoomed in is only the part on screen.
+      const original = preset?.algorithm === ADAPTIVE_DENOISE_ALGORITHM_VERSION
+        ? null
+        : await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, {
+          isCurrent: () => generation === this.denoiseSelectorGeneration && this.sessionId === sessionId,
+        });
       if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) return false;
       if (preset?.algorithm === ADAPTIVE_DENOISE_ALGORITHM_VERSION) {
-        return this.analyzeAdaptiveDenoise(sessionId, lane, original, longEdge, editRevision, geometrySignature, generation, {
+        const frame = { identity: `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}` };
+        return this.analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, {
           amount: controls.amount ?? 0.5,
           luminance: controls.luminance ?? 0.5,
           colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
@@ -5809,6 +5879,7 @@
           coarseNoise: controls.coarseNoise ?? controls.coarse_noise ?? 0.5,
         });
       }
+      if (!original) return false;
       const pipelines = await this.ensureDenoisePipelines();
       const settings = {
         name: "Photo / Fine",
@@ -6040,19 +6111,45 @@
       return { textures, byteSize: names.length * size * size * 16, textureCount: names.length };
     }
 
+    warmDenoiseModel(sessionId, lane, native) {
+      if (!(native >= 256 && native <= 16384)) return Promise.resolve(false);
+      const key = `${sessionId}:${lane}:${native}`;
+      if (this.denoiseModelWarm?.key === key) return this.denoiseModelWarm.promise;
+      const warm = { key, promise: null };
+      warm.promise = fetch(`/api/session/${sessionId}/denoise-model/${lane}?long_edge=${native}`)
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`Denoise warm-up failed (${response.status}).`);
+          await response.json();
+          return true;
+        }).catch(() => {
+          // Failed warm-ups may be retried; they must not poison this photo.
+          if (this.denoiseModelWarm === warm) this.denoiseModelWarm = null;
+          return false;
+        });
+      this.denoiseModelWarm = warm;
+      return warm.promise;
+    }
+
     /**
-     * Fetch the noise model the backend measured on this exact proxy and
-     * install it as the selector's cache. Nothing heavier is cached: the
-     * reconstruction recomputes its bands from the original every time, which
-     * is what keeps a 42 MP frame's denoise from holding evidence at all.
+     * Fetch the noise model the backend measured for this frame and install it
+     * as the selector's cache. Nothing heavier is cached and no source is
+     * loaded: the reconstruction recomputes its bands from the source a render
+     * hands it, which is what keeps a 42 MP frame's denoise from holding
+     * evidence, or the frame, at all.
      */
-    async analyzeAdaptiveDenoise(sessionId, lane, original, longEdge, editRevision, geometrySignature, generation, controls) {
+    async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls) {
       const startedAt = performance.now();
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
       const response = await fetch(`/api/session/${sessionId}/denoise-model/${lane}?long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`);
       if (!response.ok) throw new Error(`Denoise noise model request failed (${response.status}).`);
       const model = await response.json();
+      // The full-size model is one measurement per source, about a second on a
+      // 42 MP frame. Asking for it now, from a smaller view, means the first
+      // zoom to 100% finds it already made.
+      const native = this.maskSourceSize?.sessionId === sessionId
+        ? Math.max(this.maskSourceSize.width, this.maskSourceSize.height) : 0;
+      if (native > longEdge) void this.warmDenoiseModel(sessionId, lane, native);
       if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) {
         this.recordStage("denoise-analysis", { state: "stale", generation });
         return false;
@@ -6065,7 +6162,7 @@
         algorithmVersion: ADAPTIVE_DENOISE_ALGORITHM_VERSION,
         settings,
         model,
-        identity: `${original.identity}|${ADAPTIVE_DENOISE_ALGORITHM_VERSION}|${JSON.stringify(model)}`,
+        identity: `${frame.identity}|${ADAPTIVE_DENOISE_ALGORITHM_VERSION}|${JSON.stringify(model)}`,
         tiles: [],
         levels: [],
         resolveScratch: [],
@@ -6074,13 +6171,16 @@
         textureCount: scratch.textureCount,
       };
       this.denoiseSourceSelector = {
-        identity: original.identity,
-        original,
+        identity: frame.identity,
+        // Adopted by the first Direct render of this frame; a tiled render
+        // never needs it.
+        original: this.proxies.get(frame.identity) || null,
         resolved: null,
-        selected: previous?.identity === original.identity ? previous.selected : "original",
+        selected: "resolved",
         cache,
         generation,
       };
+      this.setDenoiseControls(controls);
       this.destroyDenoiseSelector(previous);
       this.denoiseCounters.allocations += cache.textureCount;
       this.denoiseCounters.allocatedBytes += cache.byteSize;
@@ -6091,7 +6191,7 @@
       this.recordStage("denoise-analysis", {
         state: "ready", generation, durationMs: performance.now() - startedAt, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION,
       });
-      return this.resolveDenoiseProxy(controls);
+      return true;
     }
 
     /**
@@ -6103,12 +6203,16 @@
      * load, the noise map's two smoothing levels, five bands of blur, energy
      * and accumulation, and the final write.
      */
-    encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin) {
+    encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin, source) {
       const pipelines = this.adaptiveDenoisePipelines;
       const { model } = selector.cache;
       const scratch = selector.cache.adaptiveScratch.textures;
-      const frameWidth = selector.original.width;
-      const frameHeight = selector.original.height;
+      const frameWidth = source.width;
+      const frameHeight = source.height;
+      // What of the frame the source texture holds. A region source is fetched
+      // wide enough for every margin; clamping to it is the guard for one that
+      // was not, and then only the outermost margin is short.
+      const held = source.region || { x: 0, y: 0, width: frameWidth, height: frameHeight };
       const strengths = adaptiveDenoiseStrengths({
         amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes,
       });
@@ -6117,10 +6221,10 @@
         for (let x = target.x; x < target.x + target.width; x += ADAPTIVE_DENOISE_TILE) {
           const width = Math.min(ADAPTIVE_DENOISE_TILE, target.x + target.width - x);
           const height = Math.min(ADAPTIVE_DENOISE_TILE, target.y + target.height - y);
-          const x0 = Math.max(0, x - ADAPTIVE_DENOISE_MARGIN);
-          const y0 = Math.max(0, y - ADAPTIVE_DENOISE_MARGIN);
-          const x1 = Math.min(frameWidth, x + width + ADAPTIVE_DENOISE_MARGIN);
-          const y1 = Math.min(frameHeight, y + height + ADAPTIVE_DENOISE_MARGIN);
+          const x0 = Math.max(held.x, x - ADAPTIVE_DENOISE_MARGIN);
+          const y0 = Math.max(held.y, y - ADAPTIVE_DENOISE_MARGIN);
+          const x1 = Math.min(held.x + held.width, x + width + ADAPTIVE_DENOISE_MARGIN);
+          const y1 = Math.min(held.y + held.height, y + height + ADAPTIVE_DENOISE_MARGIN);
           tiles.push({ tile: { x, y, width, height }, scratch: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } });
         }
       }
@@ -6131,7 +6235,7 @@
       });
       const slots = new Float32Array(paramBuffer.size / 4);
       let slot = 0;
-      const originalView = selector.original.texture.createView();
+      const originalView = source.texture.createView();
       const dispatch = (pipeline, binding, values, { width, height }) => {
         slots.set(values, slot * (ADAPTIVE_DENOISE_SLOT / 4));
         const view = (texture) => texture.createView();
@@ -6160,7 +6264,7 @@
           region.x, region.y, region.width, region.height,
           frameWidth, frameHeight, level, axis,
           tile.x, tile.y, tile.width, tile.height,
-          destinationOrigin.x, destinationOrigin.y, 0, 0,
+          destinationOrigin.x, destinationOrigin.y, held.x, held.y,
           model.a, model.b, model.c, 0,
           strengths.luma, strengths.chroma, strengths.fineMultiplier, strengths.fineFloor,
           ...sigmas, 0,
@@ -6199,18 +6303,23 @@
       return { paramBuffer, dispatches: slot, tiles: tiles.length };
     }
 
-    async resolveAdaptiveDenoise(selector, weights, sizes, generation, startedAt, region, destination, sharedEncoder) {
+    async resolveAdaptiveDenoise(selector, weights, sizes, generation, startedAt, region, destination, sharedEncoder, source) {
       await this.ensureAdaptiveDenoisePipelines();
-      const frame = { x: 0, y: 0, width: selector.original.width, height: selector.original.height };
+      const frame = { x: 0, y: 0, width: source.width, height: source.height };
+      const held = source.region || frame;
+      const left = Math.max(held.x, Math.floor(region ? region.x : 0));
+      const top = Math.max(held.y, Math.floor(region ? region.y : 0));
       const target = region
         ? {
-          x: Math.max(0, Math.floor(region.x)),
-          y: Math.max(0, Math.floor(region.y)),
-          width: Math.min(frame.width, Math.floor(region.x + region.width)) - Math.max(0, Math.floor(region.x)),
-          height: Math.min(frame.height, Math.floor(region.y + region.height)) - Math.max(0, Math.floor(region.y)),
+          x: left,
+          y: top,
+          width: Math.min(held.x + held.width, Math.floor(region.x + region.width)) - left,
+          height: Math.min(held.y + held.height, Math.floor(region.y + region.height)) - top,
         }
         : frame;
       if (target.width <= 0 || target.height <= 0) return false;
+      // The whole-frame reconstruction is one texture of the whole frame.
+      if (!destination && source.region) return false;
       const destinationOrigin = destination ? { x: target.x, y: target.y } : { x: 0, y: 0 };
       const candidateIsNew = !destination && !selector.resolved;
       const candidate = destination || selector.resolved
@@ -6218,7 +6327,7 @@
       let paramBuffer = null;
       try {
         const encoder = sharedEncoder || this.device.createCommandEncoder();
-        const encoded = this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin);
+        const encoded = this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin, source);
         paramBuffer = encoded.paramBuffer;
         this.denoiseCounters.resolveDispatches += encoded.dispatches;
         this.denoiseCounters.resolveTiles += encoded.tiles;
@@ -6260,6 +6369,7 @@
         selector.controls = {
           amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes,
         };
+        selector.resolvedFor = JSON.stringify(selector.controls);
         selector.resolvedRegion = region ? target : null;
         this.denoiseCounters.atomicSwaps += 1;
         this.recordStage("denoise-resolve", stage);
@@ -6308,7 +6418,8 @@
      */
     setDenoiseControls(controls = {}) {
       const selector = this.denoiseSourceSelector;
-      if (!selector?.cache || !selector.original || selector.selected !== "resolved") return false;
+      const adaptive = selector?.cache?.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION;
+      if (!selector?.cache || (!selector.original && !adaptive) || selector.selected !== "resolved") return false;
       const weights = ["amount", "luminance", "colorNoise", "detailRecovery"].map((name) => {
         const value = Number(controls[name] ?? 0.5);
         if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
@@ -6323,13 +6434,22 @@
       return true;
     }
 
-    async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null } = {}) {
+    async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null, source = null } = {}) {
       const selector = this.denoiseSourceSelector;
-      if (!selector?.cache || !selector.original) return false;
+      if (!selector?.cache) return false;
       // Reconstruction reads the original's pixels; adopt the live copy if the
       // source cache has replaced (and freed) the one the selector holds.
       const live = this.proxies.get(selector.identity);
       if (live && live !== selector.original) selector.original = live;
+      const adaptive = selector.cache.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION;
+      if (!source && (!selector.original || (adaptive && !selector.resolved))) {
+        // Adaptive with no whole-frame reconstruction in use: there is nothing
+        // to reconstruct ahead of time. The controls are what a tiled render
+        // reads, and a Direct render reconstructs once it has loaded its frame
+        // (`ensureDenoiseResolved`). Reconstructing here regardless filled a
+        // frame-sized texture at Full that no tiled render ever reads.
+        return adaptive && selector.selected === "resolved" && this.setDenoiseControls(controls);
+      }
       const generation = ++this.denoiseSelectorGeneration;
       const startedAt = performance.now();
       this.denoiseCounters.resolveCalls += 1;
@@ -6341,6 +6461,7 @@
       if (selector.cache.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION) {
         return this.resolveAdaptiveDenoise(
           selector, weights, adaptiveDenoiseSizes(controls), generation, startedAt, region, destination, sharedEncoder,
+          source || selector.original,
         );
       }
       const pipelines = await this.ensureDenoisePipelines();

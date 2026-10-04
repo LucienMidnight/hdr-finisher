@@ -27,11 +27,16 @@ function viewportState() {
   const canvas = document.getElementById("preview-canvas");
   const viewport = document.getElementById("dropzone");
   const rect = canvas.getBoundingClientRect();
+  const pane = viewport.getBoundingClientRect();
   return {
+    viewportLeft: pane.left,
+    viewportWidth: pane.width,
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
-    left: rect.left,
-    top: rect.top,
+    // Preserve pan relative to the pane centre, even when inspector/scope
+    // layout changes the pane width. Absolute window coordinates are not fixed.
+    left: rect.left - pane.left - (pane.width - rect.width) / 2,
+    top: rect.top - pane.top - (pane.height - rect.height) / 2,
     width: rect.width,
     height: rect.height,
     scrollLeft: viewport.scrollLeft,
@@ -47,9 +52,33 @@ function assertStableViewport(before, after, label, { allowCanvasResize = false 
   const numericKeys = ["left", "top", "width", "height", "scrollLeft", "scrollTop", "zoomPercent"];
   if (!allowCanvasResize) numericKeys.unshift("canvasWidth", "canvasHeight");
   for (const key of numericKeys) {
-    assert.ok(Math.abs(before[key] - after[key]) <= 0.01, `${label}: ${key} changed (${before[key]} -> ${after[key]})`);
+    // clientWidth rounds to integers while CSS boxes retain fractional widths;
+    // centering can therefore move by less than half a pixel during reflow.
+    const tolerance = key === "left" || key === "top" ? 0.5 : 0.01;
+    assert.ok(Math.abs(before[key] - after[key]) <= tolerance, `${label}: ${key} changed (${before[key]} -> ${after[key]}): ${JSON.stringify({before,after})}`);
   }
   for (const key of ["zoomMode", "lane", "sessionId"]) assert.equal(after[key], before[key], `${label}: ${key} changed`);
+}
+
+async function settleViewport(window) {
+  // Presentation is emitted before ResizeObserver places the canvas. Require
+  // a quiet layout before comparing placement, outside the latency sample.
+  await window.evaluate(async () => {
+    let previous = null;
+    let quietSince = performance.now();
+    const started = quietSince;
+    while (performance.now() - quietSince < 600) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const canvas = document.getElementById("preview-canvas").getBoundingClientRect();
+      const key = JSON.stringify([canvas.left, canvas.top, canvas.width, canvas.height]);
+      if (key !== previous || state.gpuDraftInFlight || state.zoomRefinementTimer
+        || state.renderCoordinator?.state(state.currentView).inFlight
+        || state.renderCoordinator?.state(state.currentView).pending
+        || document.getElementById("scope-freshness")?.classList.contains("updating")) quietSince = performance.now();
+      previous = key;
+      if (performance.now() - started > 30000) throw new Error("Viewport did not settle");
+    }
+  });
 }
 
 async function waitForPresentation(window, action) {
@@ -79,7 +108,22 @@ async function renderTier(window, longEdge) {
       }, { once: true });
     });
     if (!await window.HDRFinisherPerformance.renderGpuTier(edge)) throw new Error("Tier render failed");
-    return presented;
+    const detail = await presented;
+    // A diagnostic tier also starts normal scopes/refinement. Do not sample
+    // placement in the middle of the resulting viewer reflow.
+    while (state.gpuDraftInFlight || state.renderCoordinator?.state(state.currentView).inFlight
+      || state.renderCoordinator?.state(state.currentView).pending || state.zoomRefinementTimer
+      || document.getElementById("scope-freshness")?.classList.contains("updating")) {
+      await new Promise(resolve => setTimeout(resolve, 25));
+      if (performance.now() - detail.presentedAt > 30000) throw new Error("Tier layout did not settle");
+    }
+    // Source publication and scope layout can queue another ResizeObserver
+    // cycle after the render promise. This baseline is outside latency timing.
+    await new Promise(resolve => setTimeout(resolve, 500));
+    // Presentation updates CSS; the viewer ResizeObserver applies its final
+    // placement on the next animation frame, after layout has run.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return detail;
   }, longEdge);
 }
 
@@ -211,6 +255,15 @@ async function main() {
         { timeout: 30000 },
       );
     }
+    // A visible bootstrap canvas precedes the completed import and its Grade
+    // layout. Position the view only after that layout has settled; otherwise
+    // the first measured render also recenters the image in the finished pane.
+    await window.waitForFunction(() => !state.importInProgress
+      && viewerState().status === "ready" && !state.gpuDraftInFlight
+      && !document.getElementById("scope-freshness")?.classList.contains("updating"),
+    null, { timeout: importTimeout });
+    await window.evaluate(() => activateWorkflowTab("grade", { focus: false }));
+    await window.waitForTimeout(300);
     await window.evaluate(() => {
       setCustomZoom(200);
       const viewport = document.getElementById("dropzone");
@@ -220,6 +273,7 @@ async function main() {
     });
     recordRequests = true;
 
+    await settleViewport(window);
     const initialViewport = await window.evaluate(viewportState);
     await renderTier(window, longEdge);
     const baselineViewport = await window.evaluate(viewportState);
@@ -229,6 +283,7 @@ async function main() {
       exposureSamples.push(await measureExposure(window, index % 2 ? 0.35 : -0.35));
     }
     assert.ok(exposureSamples.every((sample) => !sample.timedOut), `exposure telemetry timed out: ${JSON.stringify(exposureSamples)}`);
+    await settleViewport(window);
     assertStableViewport(
       baselineViewport,
       await window.evaluate(viewportState),
@@ -497,6 +552,7 @@ async function main() {
       const enabled = index % 2 === 0;
       const timing = await waitForPresentation(window, { enabled, longEdge });
       toggleMs.push(timing.elapsedMs);
+      await settleViewport(window);
       const current = await window.evaluate(viewportState);
       assertStableViewport(before, current, `toggle ${index}`);
     }

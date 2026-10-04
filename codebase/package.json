@@ -69,6 +69,8 @@
     "test:denoise-disclosure": "node tests/denoise-progressive-disclosure.js",
     "test:denoise-noise-view": "node tests/denoise-noise-view.js",
     "test:denoise-adaptive-parity": "node tests/denoise-adaptive-parity.js",
+    "test:denoise-pan-enable-drag": "node tests/run-in-electron.js tests/denoise-pan-enable-drag.js",
+    "test:denoise-zoomed-region": "node tests/run-in-electron.js tests/denoise-zoomed-region.js",
     "test:tier-change-blank": "node tests/performance/tier-change-blank-canvas.js",
     "test:tier-film-consistency": "node tests/performance/tier-film-consistency.js",
     "test:tiled-mask-batch": "node tests/performance/tiled-mask-batch-transport.js",

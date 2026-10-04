@@ -416,7 +416,7 @@ def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_
     # a tiled generation can rebuild one tile at a time into a tile-sized
     # texture and still submit once. The whole-frame signature is still the
     # default: omitting both is the interactive drag path, unchanged.
-    assert "resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null } = {})" in preview
+    assert "resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null, source = null } = {})" in preview
     assert 'const weights = ["amount", "luminance", "colorNoise", "detailRecovery"]' in preview
     assert "settings.lumaSigma * scale" in preview
     assert 'recordStage("denoise-analysis"' in preview

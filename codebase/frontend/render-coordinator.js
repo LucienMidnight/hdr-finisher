@@ -147,11 +147,15 @@
      * follow-ups belong to the generation it replaces, and any in-flight
      * render stops at its next boundary instead of presenting old pixels.
      */
-    noteEdit(lane) {
+    noteEdit(lane, { preserveInteractive = false } = {}) {
       const st = this.laneState(lane);
       st.editGeneration += 1;
       this.cancelFollowUps(lane);
-      this.cancelInFlight(lane, "superseded-by-edit");
+      // A paced slider frame may take longer than the interval between inputs.
+      // Let that snapshot finish; the scheduler will draw the latest one next.
+      if (!(preserveInteractive && st.inFlight?.token.allowEditAdvance)) {
+        this.cancelInFlight(lane, "superseded-by-edit");
+      }
       this.emitChange(lane, "edit");
       return st.editGeneration;
     }
@@ -239,7 +243,8 @@
     tokenCurrent(token) {
       if (!token || token.cancelled) return false;
       const st = this.laneState(token.lane);
-      return token.generation.edit === st.editGeneration
+      return (token.generation.edit === st.editGeneration
+        || (token.allowEditAdvance && token.generation.edit < st.editGeneration))
         && token.generation.source === st.sourceGeneration;
     }
 
@@ -259,6 +264,7 @@
           lane: st.laneGeneration,
         },
         signal: controller ? controller.signal : null,
+        allowEditAdvance: Boolean(intent.interactiveSnapshot),
         cancelled: false,
         cancelReason: null,
       };
@@ -337,6 +343,7 @@
         roiCatchUp: Boolean(intent.catchUp),
         panPass: Boolean(intent.panPass),
         coarse: Boolean(intent.coarse),
+        interactiveSnapshot: Boolean(intent.interactiveSnapshot),
         hideStatus: intent.hideStatus !== false,
         sessionId: this.sessionId,
         token,
@@ -383,6 +390,7 @@
         catchUp: Boolean(intent.catchUp),
         panPass: Boolean(intent.panPass),
         coarse: Boolean(intent.coarse),
+        interactiveSnapshot: Boolean(intent.interactiveSnapshot),
         hideStatus: intent.hideStatus !== false,
         allowInactive: Boolean(intent.allowInactive),
       };

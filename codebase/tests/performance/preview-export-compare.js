@@ -216,6 +216,18 @@ write_project_archive(d.model_dump(mode='json'),Path(sys.argv[2]))
       }, { edits: localEdits, lanes, type: opt('--local-type', 'path') });
       await settled();
     }
+    if (args.includes('--denoise')) {
+      for (const lane of lanes) {
+        await page.evaluate(target => switchLane(target), lane); await settled();
+        await page.evaluate(async () => {
+          if (state.denoise[state.currentView].analysis.algorithm_version !== DENOISE_ADAPTIVE_ALGORITHM) {
+            updateDenoiseAlgorithm(DENOISE_ADAPTIVE_ALGORITHM); await persistDenoiseSettings();
+          }
+          await setDenoiseEnabled(true);
+        }); await settled();
+      }
+      report.adaptiveDenoiseEnabled = true;
+    }
     manifest.document = await page.evaluate(() => ({
       ...structuredClone(state.editDocument),
       global_adjustments: structuredClone(state.adjustments),

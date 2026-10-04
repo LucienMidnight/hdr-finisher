@@ -1244,6 +1244,13 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     scopePeak: Number.isFinite(scopePeak) ? scopePeak : null,
     fallbackReason,
   };
+  // Start the source's measurement once a picture is visible, before Denoise
+  // is enabled or the first zoom asks for it. No source upload or reconstruction.
+  if (transport === "WebGPU" && state.gpuPreview?.warmDenoiseModel
+    && state.denoise?.hdr?.analysis?.algorithm_version === DENOISE_ADAPTIVE_ALGORITHM) {
+    const native = Math.max(state.session?.source?.width || 0, state.session?.source?.height || 0);
+    void state.gpuPreview?.warmDenoiseModel?.(state.session.session_id, "hdr", native);
+  }
   if (exact) state.previewUnavailableReason = "";
   if (lane === state.currentView && width && height) {
     if (state.geometryTransformHandoffSignature === geometrySignature()) {
@@ -5999,7 +6006,12 @@ async function runGpuScopeRequest(request) {
       request.edit_revision, projectReferenceWhiteNits(),
       { width: state.session.source.width, height: state.session.source.height },
       { ...gpuPreviewSourceOptions(lane), applicationGeneration: accepted.generation, isCurrent },
-    );
+    ).catch((error) => {
+      // A newer generation stopping this one's source load is not a failure;
+      // the scope that replaces it is already on its way.
+      if (error?.superseded || !isCurrent() || request.edit_revision !== state.editRevision) return null;
+      throw error;
+    });
     if (!isCurrent()) return false;
     if (!rendered) {
       // The accepted tiled picture is current, but an auxiliary GPU graph
@@ -10408,6 +10420,8 @@ async function setDenoiseEnabled(enabled) {
     runtime.showOriginal = true;
     state.denoiseNoiseView = false;
     state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: true });
+    // The button answers the click at once; the redraw can take a while at Full.
+    renderDenoiseControls();
     await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
     renderDenoiseControls();
     void persistDenoiseSettings();
@@ -10435,6 +10449,36 @@ async function setDenoiseEnabled(enabled) {
 }
 
 async function recalculateDenoise(lane = state.currentView, options = {}) {
+  const settings = state.denoise[lane];
+  if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
+  const runtime = state.denoiseRuntime[lane];
+  const longEdge = options.longEdge || refinementProxyLongEdge();
+  const key = JSON.stringify([
+    state.session.session_id, lane, longEdge, geometrySignature(),
+    gpuPreviewSourceOptions(lane)?.identity || "source", settings.analysis,
+  ]);
+  // Pan, enable and the first edit can all ask for the same setup. Sharing it
+  // keeps them from repeatedly replacing the selector and measuring again.
+  let pending = runtime.analysisInFlight;
+  if (pending?.key !== key) {
+    pending = { key, promise: recalculateDenoiseAnalysis(lane, { longEdge, renderAfter: false }) };
+    runtime.analysisInFlight = pending;
+  }
+  let ready;
+  try {
+    ready = await pending.promise;
+  } finally {
+    if (runtime.analysisInFlight === pending) runtime.analysisInFlight = null;
+  }
+  if (!ready || !settings.enabled) return false;
+  if (options.renderAfter !== false) {
+    await renderGpuDraft(lane, { longEdge });
+    debounceOverlayAndScopes();
+  }
+  return true;
+}
+
+async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}) {
   const settings = state.denoise[lane];
   if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
   const runtime = state.denoiseRuntime[lane];
@@ -11318,6 +11362,9 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       allowInactive: Boolean(options.allowInactive),
       hideStatus: options.hideStatus !== false,
       coarse: Boolean(options.coarse),
+      interactiveSnapshot: tier === "interactive" && Boolean(state.previewScheduler?.interacting)
+        && state.denoise?.[lane]?.enabled
+        && state.denoise[lane].analysis.algorithm_version === DENOISE_ADAPTIVE_ALGORITHM,
     })
     : renderGpuDraftInner(lane, options);
   state.gpuDraftInFlight = pending;
@@ -11378,7 +11425,12 @@ async function renderGpuDraftInner(
     const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:${sourceIdentity}`;
     const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
     if (state.denoiseRuntime[lane].dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
+      // At 100% on a large frame this is several seconds with the previous
+      // picture still up, so say what the wait is.
+      const waiting = "Preparing Denoise for this view…";
+      if (hideStatus && lane === state.currentView) setIndeterminatePreviewMessage(waiting);
       const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false });
+      if (state.previewStatusEntry?.message === waiting) hidePreviewMessage();
       if (!ready) return refuse("denoise-scale-analysis-unavailable");
     }
   }
@@ -11401,6 +11453,15 @@ async function renderGpuDraftInner(
     roiCatchUp,
     panPass,
     noiseView: denoiseNoiseViewActive(lane),
+    // Adaptive reconstruction reads ungraded source pixels. A slider changes
+    // the render, but leaves these pixels useful to its replacement. Keep the
+    // load alive while the photo, geometry and source base remain the same.
+    isSourceCurrent: state.denoise?.[lane]?.enabled
+      && state.denoise[lane].analysis.algorithm_version === DENOISE_ADAPTIVE_ALGORITHM
+      ? () => !geometryDraftActive() && state.session?.session_id === sessionId
+        && requestedGeometrySignature === geometrySignature()
+        && (sourceOptions.identity || "source") === (gpuPreviewSourceOptions(lane)?.identity || "source")
+      : null,
     onSourceProgress: (progress) => {
       if (progress.state !== "building" || !sourceOptions.isCurrent() || !hideStatus) return;
       const completed = Math.max(0, Number(progress.completed) || 0);
@@ -11416,7 +11477,8 @@ async function renderGpuDraftInner(
     isCurrent: () => (typeof request.isCurrent === "function" ? request.isCurrent() : true)
       && !geometryDraftActive()
       && state.session?.session_id === sessionId
-      && generation === state.previewGeneration[lane]
+      && (generation === state.previewGeneration[lane]
+        || (request.interactiveSnapshot && state.previewScheduler?.interacting))
       && requestedGeometrySignature === geometrySignature()
       && (allowInactive || lane === state.currentView)
       // A softer drag frame is never shown after release. One still on
@@ -12315,7 +12377,11 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
   // mirror keeps every existing reader of previewGeneration valid.
   const coordinator = state.renderCoordinator;
   if (coordinator) {
-    coordinator.noteEdit(lane);
+    coordinator.noteEdit(lane, {
+      preserveInteractive: Boolean(state.previewScheduler?.interacting)
+        && state.denoise?.[lane]?.enabled
+        && state.denoise[lane].analysis.algorithm_version === DENOISE_ADAPTIVE_ALGORITHM,
+    });
     state.previewGeneration[lane] = coordinator.generation(lane, "edit");
   } else {
     cancelRoiCatchUp();
@@ -18967,6 +19033,11 @@ async function activateDesktopSession(session, projectPath) {
   if (!projectPath) await applyNewSessionPreferences();
   state.interpretationGateDismissed = false;
   state.gpuPreview?.resetSession(session.session_id);
+  if (state.gpuPreview?.warmDenoiseModel
+    && state.denoise?.hdr?.analysis?.algorithm_version === DENOISE_ADAPTIVE_ALGORITHM) {
+    const native = Math.max(session.source.width, session.source.height);
+    void state.gpuPreview.warmDenoiseModel(session.session_id, "hdr", native);
+  }
   invalidatePreview("hdr", { markDirty: false });
   invalidatePreview("sdr", { markDirty: false });
   activateWorkflowTab("grade", { focus: false });

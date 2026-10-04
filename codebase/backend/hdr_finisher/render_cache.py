@@ -790,6 +790,38 @@ class SessionRenderCache:
         fixed = apply_geometry(proxy, geometry)
         return downsample_image(fixed, edge), working_space, signature
 
+    @property
+    def source_epoch(self) -> int:
+        """Identity of the decoded source and its colour interpretation.
+
+        Reading this integer needs no lock. Resize workers check it while the
+        owning thread holds the cache lock and waits for their completion.
+        """
+        return self._source_epoch
+
+    def native_denoise_source(
+        self,
+        kind: PreviewKind,
+        long_edge: int,
+        adjustments: AdjustmentState,
+        sdr_match: SdrMatchState | None = None,
+    ) -> tuple[np.ndarray, int] | None:
+        """The full-size source export measures its Denoise noise model on, and
+        the source epoch it belongs to.
+
+        ``None`` unless this proxy is that source at its own size: a smaller
+        level has its own noise, and the SDR-matched and authored SDR bases are
+        other pictures.
+        """
+        if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
+            return None
+        if kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base:
+            return None
+        if max(256, int(long_edge)) < max(self.image.shape[:2]):
+            return None
+        with self._lock:
+            return self.image, self._source_epoch
+
     def geometry_source_windows(
         self,
         kind: PreviewKind,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import atexit
+from concurrent.futures import Future
+from threading import Lock
 import base64
 import binascii
 import json
@@ -1131,6 +1133,38 @@ def webgpu_proxy(
 # a handful of numbers, but measuring one resamples its sample windows.
 _DENOISE_MODEL_CACHE: dict[tuple, dict] = {}
 _DENOISE_MODEL_CACHE_LIMIT = 16
+_DENOISE_MODEL_LOCK = Lock()
+_DENOISE_MODEL_PENDING: dict[tuple, Future] = {}
+
+
+def _cached_denoise_model(key: tuple, measure) -> dict:
+    """Overlapping warm-up and foreground requests share one measurement."""
+    with _DENOISE_MODEL_LOCK:
+        cached = _DENOISE_MODEL_CACHE.pop(key, None)
+        if cached is not None:
+            _DENOISE_MODEL_CACHE[key] = cached
+            return cached
+        pending = _DENOISE_MODEL_PENDING.get(key)
+        owner = pending is None
+        if owner:
+            pending = Future()
+            _DENOISE_MODEL_PENDING[key] = pending
+    if not owner:
+        return pending.result()
+    try:
+        result = measure()
+        with _DENOISE_MODEL_LOCK:
+            _DENOISE_MODEL_CACHE[key] = result
+            while len(_DENOISE_MODEL_CACHE) > _DENOISE_MODEL_CACHE_LIMIT:
+                _DENOISE_MODEL_CACHE.pop(next(iter(_DENOISE_MODEL_CACHE)))
+        pending.set_result(result)
+        return result
+    except BaseException as error:
+        pending.set_exception(error)
+        raise
+    finally:
+        with _DENOISE_MODEL_LOCK:
+            _DENOISE_MODEL_PENDING.pop(key, None)
 
 
 @app.get("/api/session/{session_id}/denoise-model/{kind}")
@@ -1141,8 +1175,9 @@ def adaptive_denoise_model(
     edit_revision: int | None = Query(default=None, ge=0),
     geometry_signature: str | None = Query(default=None),
 ) -> dict:
-    """The adaptive denoise noise model, measured on exactly the source proxy the
-    WebGPU preview denoises at this size and geometry."""
+    """The adaptive denoise noise model: the source's own at full size, and
+    below that measured on the proxy the WebGPU preview denoises at this size
+    and geometry."""
     try:
         session = store.get(session_id)
         _check_revision(session.edit_revision, edit_revision)
@@ -1159,30 +1194,41 @@ def adaptive_denoise_model(
             raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
         if requested_geometry != authoritative_geometry:
             raise HTTPException(status_code=409, detail="Stale geometry denoise request dropped.")
-    key = (session_id, kind.value, long_edge, json.dumps(authoritative_geometry, sort_keys=True))
-    cached = _DENOISE_MODEL_CACHE.pop(key, None)
-    if cached is None:
+    request = (kind, long_edge, session.adjustments, session.sdr_match)
+    # At full size the picture's noise is the source's own, whatever the
+    # geometry: one model per source, the one export measures, so a rotation or
+    # a crop costs no new measurement and cannot move the result.
+    native = session.render_cache.native_denoise_source(*request)
+    if native is not None:
+        image, source_epoch = native
+        key = (session_id, "native", source_epoch)
+        return _cached_denoise_model(
+            key, lambda: denoise_adaptive.estimate_adaptive_model(image).as_dict()
+        )
+    # A smaller level is measured on the proxy the preview denoises, at this
+    # size and geometry, so the picture never depends on which geometry was
+    # seen first.
+    source_epoch = session.render_cache.source_epoch
+    key = (session_id, kind.value, long_edge, source_epoch, json.dumps(authoritative_geometry, sort_keys=True))
+
+    def measure() -> dict:
         revision = session.edit_revision
-        request = (kind, long_edge, session.adjustments, session.sdr_match)
-        is_current = lambda: session.edit_revision == revision  # noqa: E731
-        try:
-            # The model reads a few sample windows, so only those are corrected
-            # for geometry where the proxy can be read by rectangle.
-            windows = session.render_cache.geometry_source_windows(*request, is_current=is_current)
-            if windows is not None:
-                model = denoise_adaptive.estimate_adaptive_model_from_windows(*windows)
-            else:
-                proxy, _working_space, _signature = session.render_cache.geometry_source_proxy(
-                    *request, is_current=is_current
-                )
-                model = denoise_adaptive.estimate_adaptive_model(np.asarray(proxy))
-        except StaleRender:
-            return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
-        cached = model.as_dict()
-    _DENOISE_MODEL_CACHE[key] = cached
-    while len(_DENOISE_MODEL_CACHE) > _DENOISE_MODEL_CACHE_LIMIT:
-        _DENOISE_MODEL_CACHE.pop(next(iter(_DENOISE_MODEL_CACHE)))
-    return cached
+        is_current = lambda: session.edit_revision == revision and session.render_cache.source_epoch == source_epoch  # noqa: E731
+        windows = session.render_cache.geometry_source_windows(*request, is_current=is_current)
+        if windows is not None:
+            model = denoise_adaptive.estimate_adaptive_model_from_windows(*windows)
+        else:
+            proxy, _working_space, _signature = session.render_cache.geometry_source_proxy(
+                *request, is_current=is_current
+            )
+            model = denoise_adaptive.estimate_adaptive_model(np.asarray(proxy))
+        return model.as_dict()
+
+    try:
+        return _cached_denoise_model(key, measure)
+    except StaleRender:
+        return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
+
 
 
 @app.get("/api/session/{session_id}/proxy-stream/{kind}")

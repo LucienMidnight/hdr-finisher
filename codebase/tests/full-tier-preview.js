@@ -81,14 +81,14 @@ function assert(condition, message) {
 
     assert(stripPeaks.length > 0 && Number.isFinite(stripPeaks.at(-1)),
       `CPU Full response did not carry its exact scope peak: ${JSON.stringify(stripPeaks)}`);
-    // Exact scope peak is an explicit analysis option during authoring.
+    // CPU authoring reports its accepted preview peak with an honest preview label.
     await page.evaluate(() => {
       const exactPeak = document.querySelector("#scope-exact-peak");
       exactPeak.checked = true;
       exactPeak.dispatchEvent(new Event("change", { bubbles: true }));
     });
     try {
-      await page.waitForFunction(() => state.lastScope?.peak_exact === true
+      await page.waitForFunction(() => state.lastScope?.peak_exact === false
         && state.lastScope?.peak_value === state.acceptedPresentation?.scopePeak,
       null, { timeout: 120000 });
     } catch (error) {
@@ -106,12 +106,12 @@ function assert(condition, message) {
           generation: state.scopeRequestInFlight.generation,
         },
       }));
-      throw new Error(`CPU Full exact peak never became current: ${JSON.stringify(diagnostics)} (${error.message})`);
+      throw new Error(`CPU Full preview peak never became current: ${JSON.stringify(diagnostics)} (${error.message})`);
     }
     const cpuScope = await page.evaluate(() => ({ scope: state.lastScope }));
-    assert(cpuScope.scope?.peak_exact === true
+    assert(cpuScope.scope?.peak_exact === false
       && cpuScope.scope?.peak_value === stripPeaks.at(-1)
-      && cpuScope.scope?.stats?.[0]?.label === "Peak",
+      && cpuScope.scope?.stats?.[0]?.label === "Peak (preview)",
     `CPU Full scope did not use the accepted presentation peak: ${JSON.stringify({ cpuScope, stripPeaks })}`);
 
     console.log(JSON.stringify({
