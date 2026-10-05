@@ -266,3 +266,14 @@ Initial sweep/repeat failures retained. See PRD 16.14.
 
 Path-layout batch: actual sweep driver passes; fast suites 463 Node / 1,692
 Python pass with the same three skips. No app or fixture changes.
+
+
+## Full-sweep manual Detail capture setup
+
+Drain all automatic picture/scope/anchor work before cancelling deferred
+refresh/pan/catch-up and manually capturing Direct/Tiled. Original alignment,
+distribution and 0.5 seam limits retained; synchronized diagnostic matches
+baseline rounded seams. Original failed capture/repeat evidence kept. PRD 16.15.
+
+Detail capture batch: actual sweep driver passes; fast suites 463 Node /
+1,692 Python pass with the same three skips. No app or fixture changes.

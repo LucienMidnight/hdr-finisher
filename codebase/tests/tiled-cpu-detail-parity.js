@@ -156,8 +156,18 @@ const MAX_SEAM_ELEVATION = 0.5;
       const info = await page.evaluate(async ({ mode, tileSize }) => {
         // Stop the app's own preview work first: a queued settled pass would
         // present at the display tier and replace this frame.
+        const deadline = performance.now() + 30000;
+        while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+          || state.gpuScopeRequestInFlight || state.scopeRequestInFlight
+          || state.pendingGpuScopeRequest || state.pendingScopeRequest
+          || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+          if (performance.now() > deadline) throw new Error("Automatic setup work did not settle before seam capture");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
         state.previewScheduler?.cancel();
-        while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
+        window.clearTimeout(state.refreshTimer);
+        state.renderCoordinator.cancelCatchUp(state.currentView);
+        state.renderCoordinator.cancelPan(state.currentView);
         const longEdge = previewTargetLongEdge();
         const result = mode === "tiled"
           ? await window.HDRFinisherPerformance.renderTiledTier(longEdge, { tileSize })

@@ -2233,3 +2233,25 @@ retrying a failed gesture. Initial sweep and repeat failures remain in logs and
 
 Path-layout batch: actual sweep driver passes; fast suites 463 Node / 1,692
 Python pass with the same three skips. No app or fixture changes.
+
+
+### 16.15 Full-sweep manual Detail capture setup repair
+
+`tiled-cpu-detail-parity` initially fails its retained capture alignment check:
+the final tiled canvas is viewport 1004x565, while its CPU reference/manual
+render is 1024x576. An unchanged repeat passes with exactly the baseline's
+rounded differences and seams. Existing setup cancelled queued preview work but
+only waited for gpuDraftInFlight. It now drains picture/scope/anchor work, then
+cancels deferred refresh, catch-up and pan before each explicit diagnostic render.
+The backing store is still read in the original renderer task chain, after GPU
+completion. No app work, CPU reference, renderer or Detail shader is changed.
+
+The synchronized diagnostic passes: tile 256 seams 0.0015/-0.0001 and tile 512
+-0.0005/-0.0009 against the unchanged 0.5 limit, identical to baseline rounded
+values. Original alignment and distribution reporting remains, including the
+large common GPU/CPU difference (70.082% above 16 levels); this check protects
+extra tile seams, not whole-image CPU parity. Initial failure/repeat/diagnostic
+logs and the initial ledger row are preserved. Actual driver reruns in sweep.
+
+Detail capture batch: actual sweep driver passes; fast suites 463 Node /
+1,692 Python pass with the same three skips. No app or fixture changes.
