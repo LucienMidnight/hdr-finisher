@@ -1710,7 +1710,7 @@ column) without confirming the item first.
 
 | ID | What was measured | Check |
 |---|---|---|
-| CF-SPEED-01 | Exposure drag at 200% on the heavy project: 2.4 frames a second (49.6 at Fit) against 30 / 20 floors | `tests/performance/drag-gpu-load.js` |
+| CF-SPEED-01 | Exposure drag at 200% on the heavy project: baseline 2.4 frames a second (49.6 at Fit) against 30 / 20 floors. Phase 4 counter follow-up: 0.2 at 200%, 50.0 Fit; original-probe control 1.4 at 200%. Open, unattributed; see 16.5 | `tests/performance/drag-gpu-load.js` |
 | CF-SPEED-02 | Warm luminance Feather p95 1,005.6 ms against 1,000 ms | `tests/performance/luma-feather-latency.js` |
 | CF-SPEED-03 | First feedback of about 0.75-1.0 s on the colour-wheel pad, brush Feather and Shift Edge, and the luminance rails; straighten and perspective drag-and-Apply 1.4-1.7 s | `heavy-project-drag-review.js` |
 | CF-SPEED-04 | Headline latency: cold 100% zoom feedback 850 ms against 150 ms; warm 200% slider feedback p95 85 ms against 50 ms | `headline-latency.js` |
@@ -1902,3 +1902,35 @@ mask compilation is unnecessary. CF-ROUTE remains open. No tests retired,
 app code changed or original limits relaxed. The full sweep and audits remain
 pending.
 Fast suites: 463 Node and 1,692 Python checks pass, same three skips.
+
+### 16.5 Drag frame lifetime counter
+
+`drag-gpu-load` counts each outer viewer-render request once from entry until
+its original promise settles. Nested tiled work, scope work and individual
+GPU queue submissions are no longer called additional whole viewer frames.
+The observer returns the renderer's original promise unchanged; it adds no
+GPU wait or replacement promise. Queue submissions and their maximum pending
+count remain separately reported. A positive observed-frame assertion prevents
+a disconnected probe passing vacuously. All original frame-rate and coarse
+gates remain unchanged. This measures logical viewer request lifetimes, not
+physical GPU occupancy; the queue and timestamp metrics still report GPU work.
+
+The final observer run has Fit 50.0 fps / worst second 47, 264 submits,
+one viewer request in flight and 2 ms release settle. Baseline: 49.6 fps /
+47, 264 submits, one, 7 ms. Changes: +0.4 fps, unchanged worst second and
+submits, -5 ms settle. At 200% the final run has 0.2 fps / worst second zero,
+12 submits, one viewer request and 1,435 ms release settle. Baseline was
+2.4 fps / worst second one, 762 submits and 32 ms release settle; the old
+counter's three 'frames' were submissions. The final run is 2.2 fps lower,
+750 fewer submissions and 1,403 ms slower to settle. No causal attribution.
+An original committed-probe control run also fails: Fit 50.0 fps / 47, native
+1.4 fps / one, three queue submissions in flight and 19 ms release settle.
+Earlier observer attempts measured native 0.2 and 0.3 fps, still red; an initial
+async observer was replaced to preserve promise identity. All reports remain
+in the phase4-cleanup evidence directory. No speed improvement is claimed.
+
+CF-SPEED-01 remains open with its original 30 fps average / 20 fps worst-second
+floors. The driver now fails for that named performance reason rather than
+mislabeling tiled submissions as multiple viewer frames. No app change, shader
+change, check retirement or lowered limit. Fast suites: 463 Node and 1,692
+Python checks pass, same three skips. Full sweep and audits remain pending.

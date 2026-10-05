@@ -139,3 +139,13 @@ only in its test session to exercise reachable CPU batching, preserving every
 original transport, ROI, submission and offscreen-pixel gate. Both routes and
 the batching driver pass. No CPU mask code deleted; PRD 16.4 has measurements.
 Fast suites: 463 Node and 1,692 Python checks pass, same three skips.
+
+## Drag frame counter replacement
+
+The old drag probe counted each GPU queue submission as a whole frame. The
+replacement observes the original outer viewer-render promise without changing
+it, and reports queue submissions separately. It observes one viewer request
+at a time at Fit and 200%, with positive observed-frame coverage. All 60 fps
+cap, one-frame, 30/20 fps floors and default no-coarse guards remain. The driver
+still fails CF-SPEED-01 at 200%; no red gate hidden or app fix introduced.
+PRD 16.5 records the original-counter control and every measured movement.

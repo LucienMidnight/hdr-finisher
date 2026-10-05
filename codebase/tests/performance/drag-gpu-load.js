@@ -12,8 +12,9 @@
 // under test:
 //   - display refresh rate (requestAnimationFrame interval),
 //   - presented frames per second (the app's preview-presented events),
-//   - GPU frames in flight: every queue submit is counted up and counted down
-//     when onSubmittedWorkDone resolves; the maximum is sampled at each submit,
+//   - viewer frames in flight: each outer viewer render is counted once for
+//     its complete request lifetime; tiled and analysis submits are recorded
+//     separately rather than being mistaken for additional whole frames,
 //   - GPU busy time per second: the renderer's own timestamp-query gpuMs for
 //     the renders in the window (the adapter supports timestamp queries),
 //   - coarse frames shown (must be 0 by default).
@@ -163,11 +164,15 @@ async function measureDrag(page, zoom) {
       const preview = state.gpuPreview;
       const queue = preview.device.queue;
       const submit = queue.submit.bind(queue);
+      const render = preview.render.bind(preview);
       const probe = {
-        active: false, inFlight: 0, maxInFlight: 0, submits: 0,
+        active: false, epoch: 0, inFlight: 0, maxInFlight: 0, frameStarts: 0,
+        queueInFlight: 0, maxQueueInFlight: 0, submits: 0,
         presented: [], coarse: 0, rafIntervals: [], lastRaf: null, raf: null,
         start() {
-          this.active = true; this.inFlight = 0; this.maxInFlight = 0; this.submits = 0;
+          this.active = true; this.epoch += 1;
+          this.inFlight = 0; this.maxInFlight = 0; this.frameStarts = 0;
+          this.queueInFlight = 0; this.maxQueueInFlight = 0; this.submits = 0;
           this.presented = []; this.coarse = 0; this.rafIntervals = []; this.lastRaf = null;
           this.startedAt = performance.now();
           if (preview.performanceMetrics) {
@@ -223,6 +228,8 @@ async function measureDrag(page, zoom) {
             coarseFrames: this.coarse,
             submits: this.submits,
             maxFramesInFlight: this.maxInFlight,
+            frameStarts: this.frameStarts,
+            maxQueueSubmissionsInFlight: this.maxQueueInFlight,
             gpuBusyMsPerS: gpuMs.length ? Number((gpuMs.reduce((sum, value) => sum + value, 0) / duration).toFixed(1)) : null,
             gpuMsSamples: gpuMs.length,
             stageSummary,
@@ -230,13 +237,38 @@ async function measureDrag(page, zoom) {
           };
         },
       };
+      // app renderGpuDraft calls this outer method once per viewer frame.
+      // renderTo -> renderTiledTo nesting and auxiliary canvas work cannot
+      // inflate this count. Return timing and renderer arguments are preserved.
+      preview.render = (...args) => {
+        const epoch = probe.epoch;
+        const counted = probe.active;
+        if (counted) {
+          probe.frameStarts += 1;
+          probe.inFlight += 1;
+          probe.maxInFlight = Math.max(probe.maxInFlight, probe.inFlight);
+        }
+        const finish = () => {
+          if (counted && epoch === probe.epoch) probe.inFlight -= 1;
+        };
+        // Observe the original promise, returning it unchanged. An async
+        // wrapper would add continuation turns to the measured scheduling.
+        try {
+          const pending = render(...args);
+          pending.then(finish, finish);
+          return pending;
+        } catch (error) { finish(); throw error; }
+      };
       queue.submit = (buffers) => {
         const result = submit(buffers);
         if (probe.active) {
+          const epoch = probe.epoch;
           probe.submits += 1;
-          probe.inFlight += 1;
-          probe.maxInFlight = Math.max(probe.maxInFlight, probe.inFlight);
-          queue.onSubmittedWorkDone().then(() => { probe.inFlight = Math.max(0, probe.inFlight - 1); });
+          probe.queueInFlight += 1;
+          probe.maxQueueInFlight = Math.max(probe.maxQueueInFlight, probe.queueInFlight);
+          queue.onSubmittedWorkDone().then(() => {
+            if (epoch === probe.epoch) probe.queueInFlight -= 1;
+          }).catch(() => {});
         }
         return result;
       };
@@ -265,6 +297,7 @@ async function measureDrag(page, zoom) {
       console.log(`${row.control} ${String(row.zoom).padEnd(4)} runs ${row.denoiseRunsPerS}/s  settle ${row.settleMs} ms  refresh ${row.refreshHz} Hz  presented ${row.presentedFps} fps (worst second ${row.worstSecondFps})  in flight max ${row.maxFramesInFlight}  submits ${row.submits}  GPU busy ${row.gpuBusyMsPerS} ms/s  card ${row.card.utilizationPct}% ${row.card.powerW} W (idle ${row.cardIdle.utilizationPct}% ${row.cardIdle.powerW} W)  coarse ${row.coarseFrames}`);
       if (enforce) {
         if (row.presentedFps > CAP_FPS * 1.05) failures.push(`${row.zoom}: ${row.presentedFps} fps is above the ${CAP_FPS} fps cap`);
+        if (row.frameStarts === 0) failures.push(`${row.zoom}: no viewer frame lifetime was observed`);
         if (row.maxFramesInFlight > 1) failures.push(`${row.zoom}: ${row.maxFramesInFlight} GPU frames in flight`);
         if (row.presentedFps < 30 || (row.worstSecondFps ?? 0) < 20) failures.push(`${row.zoom}: below the frame-rate floor (${row.presentedFps} fps, worst second ${row.worstSecondFps})`);
         if (row.coarseFrames > 0) failures.push(`${row.zoom}: ${row.coarseFrames} coarse frames shown`);
