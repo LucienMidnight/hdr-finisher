@@ -1728,6 +1728,7 @@ column) without confirming the item first.
 | CF-ROUTE-05 | 35 HTTP 409 responses in the endurance run; probably superseded work, bodies not captured |
 | CF-ROUTE-06 | Phase 4 explicit 1 GiB Full test: minimum graph requires Tiled, but 25 interactive drafts reach renderer refusal (`tiled-refused:interactive render`) rather than the preserved pre-dispatch guard; source/parameter preparation precedes refusal. No app fix; see 16.8 |
 | CF-ROUTE-07 | Same settled-render overlap enters CPU settle branch once for `coalesced-by-newer-render` in two repeats. Zero CPU picture HTTP requests in these warm runs; original branch-level guard remains red. See 16.8 |
+| CF-ROUTE-08 | Execution readout reports Direct while accepted viewer execution is Tiled at 100%, 200% and Full/Fit under 1 GiB. Both repeats agree; the readout reads the last renderer plan, which can belong to auxiliary work. See 16.9 |
 
 **Checks that fail because they still describe the old design (phase 4
 input).** Each is rewritten for the viewport-bounded design or retired with
@@ -2062,3 +2063,33 @@ this path. No app fix, removal or gate retirement follows these findings.
 Fast suites pass: 463 Node and 1,692 Python, same three skips. Four protected
 project hashes remain unchanged. Phase 4 remains in progress; full sweep,
 three audits and remaining old-design checks still need completion.
+
+
+### 16.9 Memory-budget route and accepted-frame readout
+
+`budget-route` checks current accepted execution: Display Fit Direct and native
+100%/200% viewport Tiled. Full/Fit separately retains the original Auto Direct
+-> 1 GiB Tiled -> Auto Direct admission-switch coverage, using real settings
+in its disposable profile. Every change still requires a new presentation
+within 1,000 ms without an edit; accepted exact Full and current generation
+are now required. Idle timeouts fail explicitly. The presentation listener
+ignores an unchanged serial and removes itself on its original 3 s timeout.
+Readout agreement now means the viewer's accepted route, rather than an
+auxiliary pass's most recent plan. No app route or budget implementation changes.
+
+The original test's unmodified control still fails its old Auto-restored-Direct
+assumption at 200%, with Tiled correct for that view. Baseline lower/restore
+latencies: 31.3/37.9 ms; control: 35.9/56.5 ms (+4.6/+18.6 ms). Current explicit
+Full/Fit switch: 143.2/14.1 ms, repeat 198.5/12.1 ms, all within the unchanged
+1 s limit. These are different processing scenarios, not isolated performance
+comparisons. Both new runs accept the required native viewport routes and
+Full/Fit admission switch, with zero page errors.
+
+The driver remains red for CF-ROUTE-08: the readout says Direct while the
+accepted frame is Tiled at both native zooms and after lowering Full/Fit to
+1 GiB. Both repeats reproduce it. Source inspection confirms the readout uses
+`lastRenderPlan`, which can describe auxiliary Direct work, rather than the
+accepted viewer execution. This was not cleanup of dead code or an app fix;
+the failing agreement guard remains. No check retired. Fast suites pass: 463 Node and 1,692 Python, same three
+skips. Remaining old-design checks and the full sweep/
+audits still need completion.

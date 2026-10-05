@@ -192,3 +192,15 @@ happens after dispatch (CF-ROUTE-06); two repeats enter the CPU settle branch
 for coalesced-by-newer-render (CF-ROUTE-07). Original guards remain, no app fix
 or retirement. PRD 16.8 records Auto baseline/control and forced-budget data.
 Fast suites pass (463 Node; 1,692 Python, three skips); fixtures unchanged.
+
+
+## Memory-budget route and readout check
+
+budget-route checks accepted native viewport execution and retains the original
+Auto/1 GiB admission switch at Full/Fit, with unchanged one-second limit and
+positive new/exact presentation requirements. Both repeats accept all expected
+routes and timings, but fail CF-ROUTE-08: the UI says Direct while the viewer
+accepts Tiled. The last auxiliary plan can overwrite the readout. No app fix
+or check retirement; PRD 16.9 records baseline/control/current measurements.
+
+Budget batch fast suites: 463 Node / 1,692 Python pass, three skips.

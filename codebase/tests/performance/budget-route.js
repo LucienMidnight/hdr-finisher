@@ -5,11 +5,11 @@
 //
 // On the 42.4 MP fixture with the memory setting on Auto:
 //   1. Auto reports its source (detected card memory, or the 2 GiB fallback).
-//   2. At Fit, 100% and 200% a settled edit presents through Direct, and the
-//      Execution readout names the route the last plan actually chose.
-//   3. Changing the limit to 1 GiB presents a new frame on the new route
-//      (Tiled) within 1 s with no edit, and the readout matches the plan;
-//      returning to Auto does the same back to Direct.
+//   2. Display Fit uses Direct; native 100%/200% use viewport Tiled. The
+//      Execution readout names the accepted viewer route.
+//   3. At Full/Fit, lowering the budget to 1 GiB exercises admission to Tiled
+//      within the original 1 s without an edit; restoring Auto checks Direct
+//      where detected memory admits it. The readout agrees throughout.
 //
 // Step 2 expects Direct only when the calibrated Auto budget can hold a native
 // 42 MP graph; on a machine without a detected card it records the route and
@@ -29,9 +29,13 @@ const baseUrl = option("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.
 const outputPath = path.resolve(option("--output", "output/performance/budget-route.json"));
 
 async function waitForIdle(page, timeout = 300000) {
-  await page.waitForFunction(() => viewerState().status === "ready", null, { timeout }).catch(() => null);
+  await page.waitForFunction(() => viewerState().status === "ready"
+    && state.acceptedPresentation?.exact
+    && state.acceptedPresentation?.generation === state.previewGeneration[state.currentView], null, { timeout });
   await page.waitForTimeout(600);
-  await page.waitForFunction(() => viewerState().status === "ready", null, { timeout }).catch(() => null);
+  await page.waitForFunction(() => viewerState().status === "ready"
+    && state.acceptedPresentation?.exact
+    && state.acceptedPresentation?.generation === state.previewGeneration[state.currentView], null, { timeout });
 }
 
 async function settledEdit(page) {
@@ -59,13 +63,19 @@ async function changeBudget(page, value) {
     const startedAt = performance.now();
     const presented = new Promise((resolve) => {
       const listener = () => {
+        if (state.acceptedPresentation?.sourceSerial === before) return;
         window.removeEventListener("hdrfinisher:preview-presented", listener);
         resolve(performance.now() - startedAt);
       };
       window.addEventListener("hdrfinisher:preview-presented", listener);
-      setTimeout(() => resolve(null), 3000);
+      setTimeout(() => {
+        window.removeEventListener("hdrfinisher:preview-presented", listener);
+        resolve(null);
+      }, 3000);
     });
-    applyGpuMemoryBudget(setting);
+    const select = document.querySelector("#settings-gpu-memory-limit");
+    select.value = String(setting);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
     const presentedMs = await presented;
     // The route is final once the viewer is ready again.
     const readyBy = performance.now() + 3000;
@@ -74,6 +84,9 @@ async function changeBudget(page, value) {
     }
     return {
       setting,
+      execution: state.acceptedPresentation?.execution || null,
+      requestedTier: state.acceptedPresentation?.requestedTier || null,
+      exact: state.acceptedPresentation?.exact || false,
       presentedMs,
       readyMs: performance.now() - startedAt,
       newPresentation: (state.acceptedPresentation?.sourceSerial ?? null) !== before,
@@ -83,7 +96,8 @@ async function changeBudget(page, value) {
   }, value);
 }
 
-const readoutMatches = (row) => (row.planMode === "tiled" ? /^Tiled GPU/ : /^Direct GPU/).test(row.readout || "");
+const readoutMatches = (row) => ["direct", "tiled"].includes(row.execution)
+  && (row.execution === "tiled" ? /^Tiled GPU/ : /^Direct GPU/).test(row.readout || "");
 
 (async () => {
   const browser = await chromium.launch({ headless: false });
@@ -113,19 +127,39 @@ const readoutMatches = (row) => (row.planMode === "tiled" ? /^Tiled GPU/ : /^Dir
       await waitForIdle(page);
       const row = await settledEdit(page);
       routes.push(row);
-      if (!readoutMatches(row)) failures.push(`readout "${row.readout}" does not match the ${row.planMode} plan at ${zoom}`);
-      if (detectedCard && row.planMode !== "direct") failures.push(`expected Direct at ${zoom} on Auto, got ${row.planMode}`);
+      if (!readoutMatches(row)) failures.push(`readout "${row.readout}" does not match accepted ${row.execution} at ${zoom}`);
+      const expected = zoom === "fit" ? "direct" : "tiled";
+      if (row.execution !== expected) failures.push(`expected ${expected} at ${zoom} on Auto, got ${row.execution}`);
     }
 
+    // Native whole-frame Full/Fit retains the original admission switch.
+    // Magnified viewport renders already use Tiled on Auto.
+    await page.evaluate(() => {
+      setZoomMode("fit");
+      const select = document.querySelector("#settings-preview-resolution");
+      select.value = "full";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await waitForIdle(page);
+    await page.waitForFunction(() => state.acceptedPresentation?.requestedTier === "full"
+      && state.acceptedPresentation?.exact, null, { timeout: 300000 });
+    const admissionBefore = await page.evaluate(() => ({
+      execution: state.acceptedPresentation?.execution,
+      requestedTier: state.acceptedPresentation?.requestedTier,
+      readout: previewExecutionLabel(),
+    }));
+    if (detectedCard && admissionBefore.execution !== "direct") failures.push("Full/Fit Auto did not exercise Direct before lowering the budget");
+    if (!readoutMatches(admissionBefore)) failures.push("Full/Fit initial readout disagrees with accepted route");
     const lowered = await changeBudget(page, 1);
     const restored = await changeBudget(page, "auto");
     for (const [row, expected] of [[lowered, "tiled"], [restored, detectedCard ? "direct" : null]]) {
       if (!(row.presentedMs !== null && row.presentedMs <= 1000)) failures.push(`budget ${row.setting}: no new presentation within 1 s (${row.presentedMs})`);
       if (!row.newPresentation) failures.push(`budget ${row.setting}: the presentation did not change`);
-      if (expected && row.planMode !== expected) failures.push(`budget ${row.setting}: expected ${expected}, got ${row.planMode}`);
-      if (!readoutMatches(row)) failures.push(`budget ${row.setting}: readout "${row.readout}" does not match the ${row.planMode} plan`);
+      if (!row.exact || row.requestedTier !== "full") failures.push(`budget ${row.setting}: current exact Full did not settle`);
+      if (expected && row.execution !== expected) failures.push(`budget ${row.setting}: expected ${expected}, got ${row.execution}`);
+      if (!readoutMatches(row)) failures.push(`budget ${row.setting}: readout "${row.readout}" does not match accepted ${row.execution}`);
     }
-    const report = { recordedAt: new Date().toISOString(), calibration, routes, budgetChanges: [lowered, restored], failures, pageErrors };
+    const report = { recordedAt: new Date().toISOString(), calibration, routes, admissionBefore, budgetChanges: [lowered, restored], failures, pageErrors };
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report, null, 2));
