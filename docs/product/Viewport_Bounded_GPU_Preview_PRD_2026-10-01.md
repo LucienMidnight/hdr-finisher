@@ -1628,6 +1628,6 @@ list still holds, including after 14.26.
 | `highlight-anchor-stability` driver | Its reference was measured on whichever resident source rendered last, which at 200% is the 512-pixel navigation proxy (8.6% low) | October 5: the reference is the app's bounded measurement for the recipe, and the driver waits for it. That exposed a product gap, also fixed: an anchor request queued during a drag carried an earlier input's key, so its measurement was cached by the renderer but never recorded as delivery evidence. Two runs of two pass | 15.3 |
 | Desktop smoke test | Waited for "Project saved" in the project badge; the September 28 status bar moved that message | October 5: reads the status bar entry. Passes | 14.25 |
 
-Not committed at the time of writing. Node 427 and Python 1,692 pass with three
+Committed locally as `c905bd8`, not pushed. Node 427 and Python 1,692 pass with three
 skips. The cold Denoise pan-enable-drag miss on the saved photo (15.3) is a
 real timing and was measured again: 5 and 7 frames.
