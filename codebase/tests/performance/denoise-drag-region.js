@@ -1,12 +1,13 @@
 // NEXT-01 #4 -- a zoomed-in Denoise drag reconstructs only what is on
-// screen, and the whole frame is brought up to date on release.
+// screen; release uses current controls and a subsequent whole-frame view
+// must equal a fresh reconstruction, without stale pixels offscreen.
 //
 //   node tests/run-in-electron.js tests/performance/denoise-drag-region.js
 //
 // Negative controls:
 //   - during the drag every reconstruction is a region, none is whole-frame
 //     (a whole-frame one per step was the GPU heat at 200%)
-//   - after release the whole-frame result equals a fresh whole-frame
+//   - the subsequent Full/Fit result equals a fresh whole-frame
 //     reconstruction with the final controls, so no stale area is left off
 //     screen for a later pan or zoom-out to show
 
@@ -60,13 +61,30 @@ async function idle(page) {
     await page.evaluate(() => setCustomZoom(200));
     await idle(page);
 
-    const region = await page.evaluate(() => liveDenoiseRegion());
+    const region = await page.evaluate(() => {
+      if (state.acceptedPresentation?.execution !== "tiled") return null;
+      return state.gpuPreview.tiledExecutionMetrics?.viewport || liveDenoiseRegion();
+    });
     assert(region && region.width * region.height < WIDTH * HEIGHT,
       `At 200% the live region should be part of the frame, got ${JSON.stringify(region)}.`);
 
     await page.evaluate(async (steps) => {
       window.HDRFinisherPerformance.enableGpuInstrumentation(true);
       state.gpuPreview.performanceMetrics.stages = [];
+      // Adaptive Tiled encodes reconstruction in the viewer's shared encoder;
+      // that route has no standalone denoise-resolve ready stage. Observe actual
+      // successful encodes too, preserving the original renderer promise.
+      window.__dragDenoiseResolves = [];
+      window.__dragOriginalResolve = state.gpuPreview.resolveDenoiseProxy;
+      state.gpuPreview.resolveDenoiseProxy = function (controls, options = {}) {
+        const region = options.region
+          ? `${options.region.x},${options.region.y},${options.region.width},${options.region.height}` : "whole";
+        const pending = window.__dragOriginalResolve.call(this, controls, options);
+        pending.then((value) => {
+          if (value?.encoded) window.__dragDenoiseResolves.push(region);
+        }, () => {});
+        return pending;
+      };
       const control = document.getElementById("denoise-amount");
       control.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", buttons: 1, isPrimary: true }));
       for (let step = 1; step <= steps; step += 1) {
@@ -76,13 +94,23 @@ async function idle(page) {
       }
     }, STEPS);
     // Let the queued reconstructions finish while still "dragging".
-    await page.waitForFunction(() => !state.denoiseInputQueue?.busy, null, { timeout: 120000 });
-    const during = await page.evaluate(() => state.gpuPreview.performanceMetrics.stages
-      .filter((entry) => entry.stage === "denoise-resolve" && entry.state === "ready")
-      .map((entry) => entry.region));
+    await page.waitForFunction(() => !state.denoiseInputQueue?.busy
+      && !state.gpuDraftInFlight && !state.previewScheduler?.frameInFlight, null, { timeout: 120000 });
+    const during = await page.evaluate(async () => {
+      await state.gpuPreview.device.queue.onSubmittedWorkDone();
+      state.gpuPreview.resolveDenoiseProxy = window.__dragOriginalResolve;
+      return state.gpuPreview.performanceMetrics.stages
+        .filter((entry) => entry.stage === "denoise-resolve" && entry.state === "ready")
+        .map((entry) => entry.region).concat(window.__dragDenoiseResolves);
+    });
     assert(during.length > 0, "The drag reconstructed nothing.");
     assert(during.every((value) => value !== "whole"),
       `A zoomed-in drag ran ${during.filter((value) => value === "whole").length} whole-frame reconstructions: ${JSON.stringify(during)}`);
+    assert(during.every((value) => {
+      const rect = String(value).split(",").map(Number);
+      return rect.length === 4 && rect.every(Number.isFinite) && rect[2] > 0
+        && rect[3] > 0 && rect[2] * rect[3] < WIDTH * HEIGHT;
+    }), `Reconstruction regions did not exercise bounded work: ${JSON.stringify(during)}`);
     assert(await page.evaluate(() => Boolean(state.denoiseWholeFrameStale)), "The drag did not mark the whole frame out of date.");
 
     await page.evaluate(() => {
@@ -91,6 +119,32 @@ async function idle(page) {
       control.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await idle(page);
+
+    const releasedState = await page.evaluate(() => ({
+      stale: Boolean(state.denoiseWholeFrameStale),
+      amount: state.gpuPreview.denoiseSourceSelector?.controls?.amount,
+      execution: state.acceptedPresentation?.execution,
+      exact: state.acceptedPresentation?.exact,
+    }));
+    assert(!releasedState.stale && releasedState.exact && releasedState.execution === "tiled",
+      `The released viewport did not settle: ${JSON.stringify(releasedState)}`);
+    assert(Math.abs(releasedState.amount - 0.9) < 1e-6,
+      `The released viewport controls are stale: ${JSON.stringify(releasedState)}`);
+
+    // Adaptive viewport rendering does not keep a whole reconstruction. Exercise
+    // the next whole-frame view before taking the original exhaustive readback:
+    // it must reconstruct with the released controls, not revive an old frame.
+    await page.evaluate(() => {
+      const select = document.querySelector("#settings-preview-resolution");
+      select.value = "full";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      setZoomMode("fit");
+    });
+    await idle(page);
+    await page.waitForFunction(() => state.acceptedPresentation?.requestedTier === "full"
+      && state.acceptedPresentation?.execution === "direct"
+      && state.gpuPreview.denoiseSourceSelector?.original
+      && state.gpuPreview.denoiseSourceSelector?.resolved, null, { timeout: 300000 });
 
     const result = await page.evaluate(async () => {
       const preview = state.gpuPreview;
@@ -115,7 +169,7 @@ async function idle(page) {
     assert(result.differing === 0,
       `${result.differing} of ${result.total} values differ from a fresh whole-frame reconstruction after release.`);
     assert(!pageErrors.length, `Page errors: ${pageErrors.join("; ")}`);
-    console.log(`Denoise drag region test passed (${during.length} region reconstructions during the drag).`);
+    console.log(`Denoise drag region test passed (${during.length} region reconstructions; released ${JSON.stringify(releasedState)}; subsequent Full/Fit ${result.total} values, ${result.differing} differences).`);
   } catch (error) {
     console.error(error.message || error);
     process.exitCode = 1;

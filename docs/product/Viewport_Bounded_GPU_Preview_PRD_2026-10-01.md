@@ -2093,3 +2093,43 @@ accepted viewer execution. This was not cleanup of dead code or an app fix;
 the failing agreement guard remains. No check retired. Fast suites pass: 463 Node and 1,692 Python, same three
 skips. Remaining old-design checks and the full sweep/
 audits still need completion.
+
+
+### 16.10 Denoise regional drag and freed-source coverage
+
+`denoise-stale-source` explicitly prepares the reachable native Direct
+selector before evicting its source. It requires the held original to be the
+resident cache entry, actual eviction with the selector still holding the old
+copy, and adoption of a different live reloaded entry. The original off/on
+GPU-validation-scoped redraws remain and must use Direct. Additional off/on
+viewport redraws must use Tiled, and the on case must select the reconstruction.
+Automatic draft/scope/anchor/queue work drains before diagnostic renders so
+setup cannot supersede the protected draw; the failed first setup log remains.
+Two final runs pass every redraw with zero validation errors, actual native
+4,200-edge source eviction and live-copy adoption. Source/cache implementations
+remain live and untouched, including the code held for CF-ROUTE-03/05.
+
+`denoise-drag-region` checks the actual accepted Tiled viewport; the historical
+live-region helper expects a whole-frame selector texture which adaptive Tiled
+need not allocate. Standalone ready-stage reconstruction checks remain. A
+promise-preserving observer also records successful shared-encoder adaptive
+reconstruction, which emits no standalone ready stage. Queue completion is
+awaited before reading counts. Positive reconstruction, no whole frame during
+drag, positive region dimensions/area, stale-whole marking and released final
+0.9 controls are required. The released frame must be exact Tiled and clear
+the stale marker.
+
+A subsequent real Full/Fit change exercises the first whole-frame view after
+release. Adaptive Tiled keeps no whole reconstruction, so the old immediate
+selector readback was invalid. This retains the original protection against
+stale offscreen pixels on a later whole-frame view. The original exhaustive
+released-versus-fresh reconstruction equality, final amount and cleared stale
+flag checks remain, with zero tolerance. Both runs pass: 57/69 region encodes,
+no whole-frame reconstruction during drag, correct released controls, and
+15,360,000 values identical to a fresh whole-frame reconstruction at Full/Fit.
+The old helper/telemetry setup attempts remain in the evidence directory.
+These are current-route coverage results, not isolated performance measurements;
+the baseline drivers stopped at the old selector expectation. No shader,
+reconstruction math, CPU fallback or fixture changes. No checks retired.
+Fast suites pass: 463 Node / 1,692 Python, same three skips. Four protected
+project hashes remain unchanged.

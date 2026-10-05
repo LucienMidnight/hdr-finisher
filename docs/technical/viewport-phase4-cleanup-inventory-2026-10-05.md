@@ -204,3 +204,18 @@ accepts Tiled. The last auxiliary plan can overwrite the readout. No app fix
 or check retirement; PRD 16.9 records baseline/control/current measurements.
 
 Budget batch fast suites: 463 Node / 1,692 Python pass, three skips.
+
+
+## Denoise region and freed-source batch
+
+Both Denoise drivers pass with current-route coverage. stale-source retains
+Direct off/on validation after actual cache eviction and requires live-copy
+adoption; added viewport Tiled off/on redraws pass too. drag-region observes
+actual shared-encoder regional reconstruction, keeping positive work/no-whole
+checks and stale/final-control guards. The subsequent Full/Fit view equals a
+fresh reconstruction over all 15,360,000 values with zero tolerance. Failed
+setup attempts are retained. No source/cache/Denoise implementation deleted;
+PRD 16.10 records route differences from the baseline and final results.
+
+Denoise batch fast suites: 463 Node / 1,692 Python pass, three skips; all
+four protected project hashes unchanged.

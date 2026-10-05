@@ -26,15 +26,31 @@ async function idle(page) {
   await page.waitForTimeout(500);
 }
 
-async function redrawErrors(page) {
-  return page.evaluate(async () => {
+async function redrawErrors(page, viewport = false) {
+  return page.evaluate(async (useViewport) => {
+    const deadline = performance.now() + 120000;
+    while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+      || state.scopeRequestInFlight || state.gpuScopeRequestInFlight
+      || state.pendingScopeRequest || state.pendingGpuScopeRequest
+      || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size
+      || state.denoiseInputQueue?.busy) {
+      if (performance.now() > deadline) throw new Error("Automatic setup work did not settle");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    state.previewScheduler.cancel();
+    window.clearTimeout(state.refreshTimer);
+    state.renderCoordinator.cancelCatchUp(state.currentView);
+    state.renderCoordinator.cancelPan(state.currentView);
     const device = state.gpuPreview.device;
     device.pushErrorScope("validation");
-    const rendered = await renderGpuDraft(state.currentView, { tier: "settled", longEdge: state.acceptedPresentation.processedLongEdge });
+    const rendered = await renderGpuDraft(state.currentView, { tier: "settled",
+      longEdge: state.acceptedPresentation.processedLongEdge, viewport: useViewport });
     await device.queue.onSubmittedWorkDone();
     const error = await device.popErrorScope();
-    return { rendered: Boolean(rendered), error: error?.message || null };
-  });
+    return { rendered: Boolean(rendered), error: error?.message || null,
+      execution: state.acceptedPresentation?.execution,
+      selected: state.gpuPreview.denoiseSourceSelector?.selected };
+  }, viewport);
 }
 
 (async () => {
@@ -50,6 +66,13 @@ async function redrawErrors(page) {
     await idle(page);
     await page.evaluate(() => setDenoiseEnabled(true));
     await idle(page);
+    // Adaptive viewport Tiled keeps a model and has no original texture.
+    // Exercise the still-reachable Direct selector explicitly before eviction;
+    // both Direct and current viewport redraws below must survive the freed copy.
+    const prepared = await redrawErrors(page, false);
+    if (!prepared.rendered || prepared.error || prepared.execution !== "direct") {
+      failures.push(`Direct selector setup did not run: ${JSON.stringify(prepared)}`);
+    }
     await page.evaluate(() => setDenoiseEnabled(false));
     await idle(page);
 
@@ -60,20 +83,38 @@ async function redrawErrors(page) {
       const selector = preview.denoiseSourceSelector;
       if (!selector?.original) return { error: "no denoise selector" };
       const key = selector.identity;
+      if (preview.proxies.get(key) !== selector.original) return { error: "selector copy is not resident" };
+      window.__evictedDenoiseOriginal = selector.original;
       preview.evictGpuCacheEntry("source-proxy", key);
       await preview.device.queue.onSubmittedWorkDone();
-      return { key: key.split(":")[2], selectorHeldCopy: true };
+      return { key: key.split(":")[2], selectorHeldCopy: selector.original === window.__evictedDenoiseOriginal, evicted: !preview.proxies.has(key) };
     });
-    if (replaced.error) failures.push(replaced.error);
+    if (replaced.error || !replaced.evicted || !replaced.selectorHeldCopy) failures.push(replaced.error || "Source was not evicted");
 
     const off = await redrawErrors(page);
     if (!off.rendered || off.error) failures.push(`denoise off after replacement: ${JSON.stringify(off)}`);
+    const adopted = await page.evaluate(() => {
+      const preview = state.gpuPreview, selector = preview.denoiseSourceSelector;
+      return Boolean(selector?.original && selector.original !== window.__evictedDenoiseOriginal
+        && selector.original === preview.proxies.get(selector.identity));
+    });
+    if (!adopted) failures.push("Direct selector did not adopt the reloaded live copy");
+    const offViewport = await redrawErrors(page, true);
+    if (!offViewport.rendered || offViewport.error || offViewport.execution !== "tiled") {
+      failures.push(`viewport denoise off after replacement: ${JSON.stringify(offViewport)}`);
+    }
     await page.evaluate(() => setDenoiseEnabled(true));
     await idle(page);
+    const onViewport = await redrawErrors(page, true);
+    if (!onViewport.rendered || onViewport.error || onViewport.execution !== "tiled"
+      || onViewport.selected !== "resolved") {
+      failures.push(`viewport denoise on after replacement: ${JSON.stringify(onViewport)}`);
+    }
     const on = await redrawErrors(page);
     if (!on.rendered || on.error) failures.push(`denoise on after replacement: ${JSON.stringify(on)}`);
 
-    console.log(JSON.stringify({ replaced, off, on }, null, 2));
+    if (off.execution !== "direct" || on.execution !== "direct") failures.push("Original Direct redraw coverage did not run");
+    console.log(JSON.stringify({ prepared, replaced, adopted, off, offViewport, onViewport, on }, null, 2));
     if (failures.length) throw new Error(`Stale source test failed:\n  ${failures.join("\n  ")}`);
     console.log("Denoise stale source test passed.");
   } catch (error) {
