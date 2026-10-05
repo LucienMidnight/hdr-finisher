@@ -85,6 +85,24 @@ function assert(condition, message) {
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 900000 });
 
     const result = await page.evaluate(async (renders) => {
+      // Drain automatic work from setup before this driver's explicit request.
+      // Otherwise a queued anchor/overlay/scheduler scope advances the same
+      // generation while the measured call is awaiting its CPU response.
+      const drainSetup = async () => {
+        const deadline = performance.now() + 120000;
+        while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+          || state.scopeRequestInFlight || state.gpuScopeRequestInFlight
+          || state.pendingScopeRequest || state.pendingGpuScopeRequest
+          || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+          if (performance.now() > deadline) throw new Error("Automatic setup work did not settle");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        state.previewScheduler?.cancel();
+        window.clearTimeout(state.refreshTimer);
+        state.renderCoordinator?.cancelCatchUp(state.currentView);
+        state.renderCoordinator?.cancelPan(state.currentView);
+      };
+      await drainSetup();
       window.HDRFinisherPerformance.enableGpuInstrumentation(true);
 
       // Every uncaptured device error, not just the one that refuses a render.
@@ -102,9 +120,11 @@ function assert(condition, message) {
         // rather than through an input event: an event also wakes the
         // scheduler, whose own draft then supersedes the render being measured
         // and reports a refusal that has nothing to do with instrumentation.
+        await drainSetup();
         state.adjustments.hdr.exposure = -0.4 + index * 0.1;
-        state.previewGeneration.hdr += 1;
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        // Keep coordinator and app generation mirrors coherent; mutating only
+        // previewGeneration made every explicit render stale before upload.
+        invalidatePreview("hdr", { markDirty: false });
 
         const rendered = await window.HDRFinisherPerformance.renderGpuTier(
           Math.max(state.session.source.width, state.session.source.height),

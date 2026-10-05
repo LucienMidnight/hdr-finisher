@@ -103,3 +103,9 @@ stage timestamps moved from 4,283/4,438 ms to 4,979/5,139 ms. These are not
 isolated latency measurements. No controlled timing comparison claimed.
 Full sweep and three audits are pending; phase 4 is not complete.
 Evidence: codebase/output/performance/review/phase4-cleanup-2026-10-05/.
+
+## Test synchronization batch
+
+Both named timing-race drivers are rewritten and pass their original gates.
+No test retired. Detail and first-attempt failure are recorded in PRD 16.1.
+Fast suites: 463 Node pass, Python 1,692 pass with three skips.

@@ -1776,3 +1776,31 @@ shared compiles, GPU cache eviction and Denoise input coalescing stay.
 Inventory and test-replacement work list:
 [cleanup inventory](../technical/viewport-phase4-cleanup-inventory-2026-10-05.md).
 Logs and reports: `codebase/output/performance/review/phase4-cleanup-2026-10-05/`.
+
+### 16.1 Test synchronization batch
+
+The two timing races named in 15.7 are repaired in the tests only; no app code
+or original acceptance assertion changes. `tiled-admission-scope-fallback`
+waits for an exact current frame, requests the current refinement size rather
+than the bootstrap target, drains automatic picture/anchor/scope work, and
+cancels deferred setup tasks before its explicit request. It records scope
+refresh call origins so later supersession has inspectable evidence. The
+original CPU fallback, real budget admission, atomic tiled presentation,
+missing GPU scope texture and truthful freshness gates pass. The first repair
+passed once but failed its repeat because it still requested a bootstrap size;
+that attempt is retained in `scope-race-repeat.log`, not counted as a pass.
+The corrected version passes two consecutive runs.
+
+`full-tier-instrumented-tiling` drains automatic setup work and uses the app's
+existing `invalidatePreview` rather than advancing only the app generation
+mirror. Its eight explicit Full tiled renders all complete; three overlap
+rounds each include a completed tiled render and a Peak value. Other competing
+renders report `superseded-before-presentation`, as expected for the shared
+presentation target. The original overlap gate is retained; this is not a claim
+that every competing presentation succeeds. No mapped-buffer or other device
+errors. Both serialized runs pass with timestamp-query available.
+
+Fast suites: 463 Node checks (427 primary + 36 additional) and 1,692 Python
+checks pass, with the same three skips. No test retired, limit relaxed or app
+fix mixed in. The remaining old-design checks, full sweep and coverage audits
+are still pending; the original baseline is not overwritten.

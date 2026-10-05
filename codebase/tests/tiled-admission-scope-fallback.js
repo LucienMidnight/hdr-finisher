@@ -20,11 +20,38 @@ function assert(condition, message) {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Load test pattern" }).click();
     await page.waitForFunction(() => state.session?.session_id && state.gpuPreview?.available, null, { timeout: 120000 });
-    await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 120000 });
+    await page.waitForFunction(() => viewerState().status === "ready"
+      && state.acceptedPresentation?.exact === true
+      && state.acceptedPresentation?.generation === state.previewGeneration[state.currentView],
+    null, { timeout: 120000 });
     await page.waitForFunction(() => !state.gpuDraftInFlight
       && !state.scopeRequestInFlight && !state.gpuScopeRequestInFlight, null, { timeout: 120000 });
 
     const result = await page.evaluate(async () => {
+      // Drain automatic work from setup before this driver's explicit request.
+      // Otherwise a queued anchor/overlay/scheduler scope advances the same
+      // generation while the measured call is awaiting its CPU response.
+      const drainSetup = async () => {
+        const deadline = performance.now() + 120000;
+        while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+          || state.scopeRequestInFlight || state.gpuScopeRequestInFlight
+          || state.pendingScopeRequest || state.pendingGpuScopeRequest
+          || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+          if (performance.now() > deadline) throw new Error("Automatic setup work did not settle");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        state.previewScheduler?.cancel();
+        window.clearTimeout(state.refreshTimer);
+        state.renderCoordinator?.cancelCatchUp(state.currentView);
+        state.renderCoordinator?.cancelPan(state.currentView);
+      };
+      await drainSetup();
+      const scopeRefreshes = [];
+      const originalRefreshScopes = refreshScopes;
+      refreshScopes = (...args) => {
+        scopeRefreshes.push({ generationBefore: state.scopeGeneration, stack: new Error().stack });
+        return originalRefreshScopes(...args);
+      };
       const renderer = state.gpuPreview;
       const originalBudget = state.gpuMemoryBudget;
       const originalPlanRender=renderer.planRender;
@@ -47,9 +74,10 @@ function assert(condition, message) {
         };
         renderer.renderScopeProxy=async()=>null;
         const rendered = await renderGpuDraft("hdr", {
-          longEdge: previewTargetLongEdge(),
+          longEdge: refinementProxyLongEdge(),
           tier: "settled",
         });
+        await drainSetup();
         const accepted = state.acceptedPresentation ? { ...state.acceptedPresentation } : null;
         const plan = renderer.lastRenderPlan;
         const scopeSourcePresent = renderer.scopeSources.has(els.previewCanvas);
@@ -71,6 +99,7 @@ function assert(condition, message) {
         const scope = await scopeEvent;
         return {
           rendered,
+          scopeRefreshes,
           accepted,
           planMode: plan?.decision?.mode,
           violations: plan?.decision?.violations?.map((violation) => violation.rule) || [],
@@ -84,6 +113,7 @@ function assert(condition, message) {
           freshnessUpdating: els.scopeFreshness.classList.contains("updating"),
         };
       } finally {
+        refreshScopes = originalRefreshScopes;
         renderer.analyzeScope = originalAnalyzeScope;
         renderer.planRender=originalPlanRender;
         renderer.renderScopeProxy=originalScopeProxy;
