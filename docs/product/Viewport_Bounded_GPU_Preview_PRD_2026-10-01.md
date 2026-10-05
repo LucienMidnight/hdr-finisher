@@ -1,7 +1,7 @@
 # Viewport-Bounded GPU Preview
 
 **Date:** October 1, 2026
-**Status:** Phases 0 and 1 closed on October 1, 2026. On October 2 Steve accepted the phase 2 report, requested commit and push, and directed the next thread to move on in the PRD. Phase 2's implementation, measurements and remaining limitations are recorded in section 13. Phase 3 started on October 2 with a measured Sharpen correction (section 14). The four-mask near-black blocker is subsequently repaired (section 14.1); Steve authorized committing these fixes and continuing the sprint. Phase 3 remains open; phase 4 has not started. Phase 1 met its mask-accuracy exit and part of its speed exit; its accepted gap to the section 6 targets remains carried to phase 3. Steve approved the section 4 limits and accepted the section 6 targets as goals on October 1. Phase 0 is recorded in section 11.
+**Status:** Phases 0 and 1 closed on October 1, 2026. On October 2 Steve accepted the phase 2 report, requested commit and push, and directed the next thread to move on in the PRD. Phase 2's implementation, measurements and remaining limitations are recorded in section 13. Phase 3 started on October 2 with a measured Sharpen correction (section 14). The four-mask near-black blocker is subsequently repaired (section 14.1); Steve authorized committing these fixes and continuing the sprint. **Steve closed phase 3 on October 5, 2026, with the findings in section 15.7 carried forward; phase 4 has not started.** Phase 1 met its mask-accuracy exit and part of its speed exit; its accepted gap to the section 6 targets remains carried to phase 3. Steve approved the section 4 limits and accepted the section 6 targets as goals on October 1. Phase 0 is recorded in section 11.
 **Owner decisions recorded here:** move to the pattern other raw editors use (work bounded by the viewport, masks independent of resolution, export as the exact reference); accept small preview-versus-export differences; put the app's rigor into HDR handling; move interactive work to the GPU.
 **Predecessor:** [GPU Performance Review Sprint](GPU_Performance_Review_Sprint_PRD_2026-09-29.md), section 14 (October 1 root-cause pass).
 **Primary fixture:** `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher` with `DSC00950.ARW` (read-only; never saved).
@@ -18,7 +18,7 @@ before, will judge the results by eye himself, and authorized the commit
 (no push). On October 2 Steve also accepted the subsequent Match timings
 of 3.05 s primary / 4.99 s fifty-local for now, authorized committing the
 CPU input-reuse slice (14.6), and directed work to the next phase 3 task.
-Further Match speed work is deferred. The complete phase 3 exit is still open.
+Further Match speed work is deferred.
 
 Subsequent work records shared regional masks and expression graphs (14.8),
 exact Texture repair (14.9), and Detail-control/subnative-zoom checks (14.10).
@@ -30,13 +30,14 @@ Fit gradient masks now use the GPU (14.14). GPU brush feather and index crops
 are recorded in 14.15; the October 3 exit audit consolidates unmet targets,
 fallback gaps and owner-review items. Native Shift Edge is recorded in 14.20,
 native Feather, with and without Shift, in 14.21, and straighten/perspective
-leaf masks, wide frames and Fit bitmaps in 14.22. Phase 3 remains open. Source-space
+leaf masks, wide frames and Fit bitmaps in 14.22. Source-space
 combined and luminance masks, Peak under straighten and the windowed straighten
 source are in 14.23; the coverage audit and 30-minute endurance run in 14.24.
 Post-testing fixes and Denoise are in 14.25, and the editing Peak with Clarity
 (P3-PEAK-01, closed) in 14.26.
 **Everything deferred, accepted or left as a known limit is listed in one place
-in section 15.**
+in section 15. Phase 3 closed on October 5; what it carries forward is the
+named list in 15.7.**
 
 ## 1. Problem
 
@@ -1678,5 +1679,65 @@ and fixture hashes were completed the same day. The fresh packaged smoke test
 and packaged baselines pass, the fast suites are unchanged (Node 427, Python
 1,692 with three skips, 36 additional), and all four fixture hashes match. The
 cold Denoise pan-enable-drag case on the saved 42 MP photo showed no frame
-during its one-second drag. The baseline is complete; phase 3 has not been
-declared closed and phase 4 has not started.
+during its one-second drag. The baseline is complete and committed locally as
+`1858790`.
+
+### 15.7 Phase 3 closure and carry-forward list (Steve, October 5, 2026)
+
+Steve closed phase 3 on October 5 after the baseline in 15.6. Closing it is
+not an acceptance of anything below: every item is open, keeps its limit, and
+is carried forward by name. The deferrals and acceptances in 15.1 and 15.2
+stand with their original scope. Detail and logs for every row are in the
+[baseline evidence](../technical/viewport-phase3-baseline-before-cleanup-2026-10-05.md).
+Steve chose to start phase 4 before these are confirmed; phase 4 must not
+delete or rewrite the code an unconfirmed item points at (see the last
+column) without confirming the item first.
+
+**Suspected defects in the picture. None is confirmed.**
+
+| ID | What was measured | Confidence | Check that shows it |
+|---|---|---|---|
+| CF-PIX-01 | A very small image (70 pixels) asks for a preview size below the backend minimum of 256 and gets two HTTP 422 errors after export | High | `tests/export-file-browser-interaction.js` |
+| CF-PIX-02 | SDR Black & White: four filtered-channel cases differ between preview and export beyond the pixel limit; HDR passes | Moderate | `tests/bw-parity.js` |
+| CF-PIX-03 | SDR scopes with Exposure Bands: Peak differs by 4.71% against 3% | Moderate | `tests/gpu-scope-parity.js` |
+| CF-PIX-04 | Linear gradient: the GPU mask differs from the CPU bitmap by far more than the 1/255 gate | Moderate | `tests/performance/gpu-linear-gradient-parity.js` |
+| CF-PIX-05 | Local Sharpen Threshold 0, 10 and 100 give identical pixels; the synthetic source may be insensitive | Moderate | `tests/webgpu-shader-compilation.js` |
+| CF-PIX-06 | Spatial film effects at tile size 512: 20 pixels differ, largest 4 levels, against byte-exact | Moderate | `tests/tiled-film-parity.js` |
+| CF-PIX-07 | Diffusion against bloom disagreement 1.252 against 1.25 | Low (the harness is known to be sensitive) | `tests/performance/tier-film-consistency.js` |
+| CF-PEAK-01 | Clarity 100 / 1.5% on the 42 MP four-mask fixture: worst anchor patch 0.516% against 0.50%, one run. Does not reopen P3-PEAK-01 by itself | Moderate | `tests/performance/editing-peak-clarity-reference.js` |
+
+**Speed.**
+
+| ID | What was measured | Check |
+|---|---|---|
+| CF-SPEED-01 | Exposure drag at 200% on the heavy project: 2.4 frames a second (49.6 at Fit) against 30 / 20 floors | `tests/performance/drag-gpu-load.js` |
+| CF-SPEED-02 | Warm luminance Feather p95 1,005.6 ms against 1,000 ms | `tests/performance/luma-feather-latency.js` |
+| CF-SPEED-03 | First feedback of about 0.75-1.0 s on the colour-wheel pad, brush Feather and Shift Edge, and the luminance rails; straighten and perspective drag-and-Apply 1.4-1.7 s | `heavy-project-drag-review.js` |
+| CF-SPEED-04 | Headline latency: cold 100% zoom feedback 850 ms against 150 ms; warm 200% slider feedback p95 85 ms against 50 ms | `headline-latency.js` |
+| CF-SPEED-05 | Cold Denoise pan-enable-drag on the saved 42 MP photo: none to seven frames during 60 inputs | `tests/denoise-pan-enable-drag.js --project` |
+| CF-DRIFT-01 | 30-minute endurance: HDR Clarity drag +32.8%, fresh brush stroke +22.9%, zoom to 100% +27.4% between the first and last ten cycles. Observed, not attributed | `heavy-project-long-session.js` |
+
+**CPU work behind an exact GPU frame.**
+
+| ID | What was measured |
+|---|---|
+| CF-ROUTE-01 | An Exposure edit after rotation, flip or straighten falls back to a CPU picture (`dirty-edit-with-stale-geometry`): three on the four-mask audit, five on fifty-local |
+| CF-ROUTE-02 | CPU mask requests beyond the deferred P3-FALLBACK-01: 121 primary, 36 four-mask, 402 fifty-local, including 512-edge masks and mask tiles |
+| CF-ROUTE-03 | Whole native source fetched by enabling legacy Denoise and by a few colour rows: 13-14 requests an audit |
+| CF-ROUTE-04 | CPU scope requests: nine on fifty-local, six for HDR during switches to SDR in the endurance run |
+| CF-ROUTE-05 | 35 HTTP 409 responses in the endurance run; probably superseded work, bodies not captured |
+
+**Checks that fail because they still describe the old design (phase 4
+input).** Each is rewritten for the viewport-bounded design or retired with
+the reason recorded; none is deleted only to make a run green.
+
+`desktop/tests/highlight-lane-4k.js`, `tests/gpu-highlight-compression-parity.js`,
+`tests/local-design-qa.js`, `tests/native-region-stall.js`,
+`tests/path-feather-mask-cache.js`, `tests/scope-exact-peak.js`, and under
+`tests/performance/`: `budget-route.js`, `denoise-drag-region.js`,
+`denoise-stale-source.js`, `full-tier-tone-cost.js`, `phase4-preview.js`,
+`phase4-regression-browser.js`, `roi-refinement.js`, `roi-source-transport.js`,
+`tier-change-blank-canvas.js`, `tiled-mask-batch-transport.js`, and the flight
+counter in `drag-gpu-load.js`. Test timing races, not app faults:
+`tests/tiled-admission-scope-fallback.js` and
+`tests/performance/full-tier-instrumented-tiling.js`.
