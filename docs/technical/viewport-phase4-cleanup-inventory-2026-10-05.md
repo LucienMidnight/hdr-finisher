@@ -69,7 +69,7 @@ the baseline; no behavior comparison has yet been performed.
 
 ## Old-design checks: replacement work inventory, no retirement proposed
 
-Every entry from PRD 15.7 remains pending. Replacement goals below require
+The table below records the initial work inventory; completed replacements are recorded by batch below. Replacement goals below require
 inspection of each driver's original assertions before implementation.
 
 | Checks | Coverage to preserve in the current design |
@@ -149,3 +149,19 @@ at a time at Fit and 200%, with positive observed-frame coverage. All 60 fps
 cap, one-frame, 30/20 fps floors and default no-coarse guards remain. The driver
 still fails CF-SPEED-01 at 200%; no red gate hidden or app fix introduced.
 PRD 16.5 records the original-counter control and every measured movement.
+
+## Source ownership and cold ROI transport batch
+
+native-region-stall now observes delivered source responses spanning a viewer
+change, including the current source-tile drain path. It requires at least
+four cleaned responses, rejects any unread delivered superseded response, and
+keeps the pool/no-wedge/exact-convergence gates. Actual header synchronization
+and fresh picture generations ensure the warm viewport cache cannot make the
+coverage vacuous. Two final runs clean 16 responses and pass.
+roi-source-transport explicitly evicts the whole source after its reference
+pass to test cold ROI uploads, while retaining zero-tolerance pixel parity and
+all original byte bounds. Real settings prevent later preference callbacks
+resetting its processing tier. Whole and streamed display mip routes are
+accepted with the same exact-size and zero-cold-build/zero-generated-byte gates.
+Both drivers pass, fast suites pass (463 Node; 1,692 Python, same three skips),
+and all four protected fixture hashes remain unchanged. PRD 16.6 has details.

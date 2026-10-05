@@ -4,7 +4,7 @@
 //
 // Two claims are measured against the 4096x2304 fixture and the real app:
 //
-// 1. A magnified ROI pass at native scale fetches only its visible region from
+// 1. A cold magnified ROI pass at native scale fetches only its visible region from
 //    the native mip. `tiledExecutionMetrics().sourceRoute` must be "region",
 //    the region must be a fraction of the frame, the uploaded texture must be
 //    a fraction of the frame's bytes, and the ROI output must still be
@@ -65,8 +65,14 @@ function bytesForFrame(width, height, bytesPerPixel = 8) {
 
     // Native-scale ROI: tier Full, tiled, magnified zoom, refinement mode.
     await page.evaluate(() => {
-      applyExecutionOverride("tiled");
-      applyPreviewResolution("full");
+      // Persist through the real controls: later ROI preference changes must
+      // not restore Auto execution or an old processing tier.
+      for (const [id, value] of [["settings-execution-override", "tiled"],
+        ["settings-preview-resolution", "full"]]) {
+        const control = document.getElementById(id);
+        control.value = value;
+        control.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     });
     await waitReady();
     await page.evaluate(() => setCustomZoom(200));
@@ -76,13 +82,46 @@ function bytesForFrame(width, height, bytesPerPixel = 8) {
     await page.evaluate(() => window.HDRFinisherPerformance.cancelRoiCatchUp());
 
     const roi = await page.evaluate(async () => {
-      const parity = await window.HDRFinisherPerformance.roiParity({ tolerance: 0 });
-      return {
-        parity,
-        metrics: window.HDRFinisherPerformance.tiledExecutionMetrics(),
-        transport: state.gpuPreview.sourceTransportMetrics || null,
+      const deadline = performance.now() + 120000;
+      while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+        || state.scopeRequestInFlight || state.gpuScopeRequestInFlight
+        || state.pendingScopeRequest || state.pendingGpuScopeRequest
+        || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+        if (performance.now() > deadline) throw new Error("Automatic setup work did not settle");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      state.previewScheduler.cancel();
+      window.clearTimeout(state.refreshTimer);
+      state.renderCoordinator.cancelCatchUp(state.currentView);
+      state.renderCoordinator.cancelPan(state.currentView);
+      const renderer = state.gpuPreview;
+      const original = renderer.renderTo;
+      let coldRoi = false;
+      const evicted = [];
+      renderer.renderTo = function(...args) {
+        const options = args[11];
+        if (!coldRoi && args[0] === els.previewCanvas && options?.viewport) {
+          coldRoi = true;
+          // The reference pass necessarily loaded a whole source. Warm ROI
+          // correctly reuses it; evict it here to measure the cold upload claim.
+          for (const [key, proxy] of this.proxies) {
+            if (!proxy.region && proxy.longEdge === Math.max(state.session.source.width, state.session.source.height)) {
+              evicted.push(key);
+              this.evictGpuCacheEntry("source-proxy", key);
+            }
+          }
+        }
+        return original.apply(this, args);
       };
+      try {
+        const parity = await window.HDRFinisherPerformance.roiParity({ tolerance: 0 });
+        return { parity, coldRoi, evicted,
+          metrics: window.HDRFinisherPerformance.tiledExecutionMetrics(),
+          transport: renderer.sourceTransportMetrics || null };
+      } finally { renderer.renderTo = original; }
     });
+    assert(roi.coldRoi && roi.evicted.length > 0,
+      `The cold ROI upload setup did not release the whole source: ${JSON.stringify(roi)}`);
     assert(roi.parity?.ok, `The ROI parity run did not complete: ${JSON.stringify(roi.parity)}`);
     assert(roi.parity.comparison?.comparedPixels > 0,
       `The comparison covered no pixels: ${JSON.stringify(roi.parity.comparison)}`);
@@ -106,8 +145,9 @@ function bytesForFrame(width, height, bytesPerPixel = 8) {
     // second must be answered from the persistent cache with no cold build and
     // no byte generated, and must upload only the mip.
     const displayTier = await page.evaluate(() => {
-      applyExecutionOverride("tiled");
-      applyPreviewResolution("1024");
+      const control = document.getElementById("settings-preview-resolution");
+      control.value = "1024";
+      control.dispatchEvent(new Event("change", { bubbles: true }));
       setZoomMode("fit");
       return true;
     });
@@ -130,7 +170,7 @@ function bytesForFrame(width, height, bytesPerPixel = 8) {
     });
     assert(fit.result?.rendered === true,
       `The warm Fit tiled pass did not render: ${JSON.stringify(fit)}`);
-    assert(fit.metrics?.sourceRoute === "whole-frame",
+    assert(["whole-frame", "streamed"].includes(fit.metrics?.sourceRoute),
       `The Fit pass did not use the whole-frame route: ${JSON.stringify(fit.metrics)}`);
     const fitBytes = bytesForFrame(1024, Math.round(HEIGHT * 1024 / WIDTH));
     assert(fit.metrics.sourceTextureBytes === fitBytes,
@@ -144,7 +184,7 @@ function bytesForFrame(width, height, bytesPerPixel = 8) {
     // its persistent cache. What it must not do is read or generate the native
     // frame: no cold build, no generated bytes.
     const frontendCacheHit = fit.transportBefore === JSON.stringify(fit.transport || null);
-    const backendServedTheMip = fit.transport?.route === "whole-frame"
+    const backendServedTheMip = ["whole-frame", "streamed"].includes(fit.transport?.route)
       && fit.transport.width === 1024
       && fit.transport.transferredBytes === fitBytes;
     assert(frontendCacheHit || backendServedTheMip,
@@ -166,6 +206,7 @@ function bytesForFrame(width, height, bytesPerPixel = 8) {
       roi: {
         zoomPercent: 200,
         tier: "full",
+        coldSourceEvictions: roi.evicted.length,
         visible: roi.parity.visible,
         longEdge: roi.parity.longEdge,
         comparedPixels: roi.parity.comparison.comparedPixels,

@@ -40,9 +40,10 @@ const stepMs = Math.max(60, Number(option("--step-ms", "150")));
 // them. The real backend does the same while it builds a cold native mip; doing
 // it here keeps the supersession window below deterministic across machines.
 const headerDelayMs = Math.max(0, Number(option("--header-delay-ms", "500")));
-// The injection must actually abandon source responses before a reader exists,
-// or a pass proves nothing (a slow machine may not dispatch the native pass
-// inside the step window). Pre-fix runs wedged after four such abandonments.
+// The injection must supersede real source responses and observe their body
+// cleanup, or a pass proves nothing. Current source tiles drain with arrayBuffer
+// before checking currency; streamed whole frames can cancel before a reader.
+// Preserve the four-response positive coverage gate for both cleanup paths.
 const minAbandons = Math.max(1, Number(option("--min-abandons", "4")));
 
 function assert(condition, message) {
@@ -60,6 +61,11 @@ const installProbe = (headerDelayMs) => {
   window.__hdrSourceHeaderDelayMs = Math.max(0, Number(headerDelayMs) || 0);
   const short = (value) => String(value).replace(/^https?:\/\/[^/]+/, "");
   const originalFetch = window.fetch;
+  const viewerKey = () => {
+    try { return JSON.stringify([state.session?.session_id, state.zoomMode,
+      state.zoomPercent, requiredProcessingLongEdge(), geometrySignature()]); }
+    catch { return null; } // Navigation requests can precede app initialization.
+  };
   window.fetch = function probedFetch(input, init) {
     const url = typeof input === "string" ? input : (input && input.url) || String(input);
     const headers = (init && init.headers) || {};
@@ -67,6 +73,7 @@ const installProbe = (headerDelayMs) => {
       id: probe.fetches.length,
       url: short(url),
       start: performance.now(),
+      viewerAtStart: viewerKey(),
       state: "pending",
       signal: Boolean(init && init.signal),
       probe: headers["x-hdr-probe"] === "1",
@@ -90,7 +97,11 @@ const installProbe = (headerDelayMs) => {
       // `deliveredAt` is when the application actually receives the response.
       // A body is only "undrained" once the app had it and did nothing; one
       // still inside the injected delay is not the app's yet.
-      const deliver = () => { record.deliveredAt = performance.now(); return response; };
+      const deliver = () => {
+        record.deliveredAt = performance.now();
+        record.viewerAtDelivery = viewerKey();
+        return response;
+      };
       if (delay > 0 && response.ok) {
         return new Promise((resolve) => setTimeout(() => resolve(deliver()), delay));
       }
@@ -196,9 +207,17 @@ const installProbe = (headerDelayMs) => {
     && r.deliveredAt !== undefined && now - r.deliveredAt > 250
     && !r.hasReader && !r.bodyDone && !r.cancelDone && !r.streamCancelAt && !r.abortedAt;
   // A pre-reader abandonment on a source route, fixed (cancelled) or not.
-  window.__hdrIsPreReaderAbandon = (r) => /\/(proxy-stream|proxy)\//.test(r.url)
+  window.__hdrIsPreReaderAbandon = (r) => /\/(proxy-stream|proxy|source-tile)\//.test(r.url)
     && r.status === 200 && !r.hasReader && !r.bodyDone
     && (Boolean(r.streamCancelAt) || window.__hdrIsUndrained(r));
+  // Count the live source-tile drain path separately from old stream
+  // abandonment. A source response must have spanned an actual viewer change
+  // while delayed, then have been read/cancelled/aborted by the app.
+  window.__hdrIsSupersededSource = (r) => /\/(proxy-stream|proxy|source-tile)\//.test(r.url)
+    && r.status === 200 && r.deliveredAt !== undefined
+    && r.viewerAtStart !== null && r.viewerAtDelivery !== null
+    && r.viewerAtStart !== r.viewerAtDelivery;
+  window.__hdrSourceCleanupDone = (r) => Boolean(r.bodyDone || r.cancelDone || r.abortedAt);
   const poolProbe = (timeoutMs) => Promise.race([
     fetch(`/api/session/${state.session?.session_id}`, {
       cache: "no-store", headers: { "x-hdr-probe": "1" },
@@ -251,6 +270,9 @@ const dumpProbe = () => {
     // before a reader existed. Zero means the run exercised nothing.
     preReaderAbandons: records.filter((r) => window.__hdrIsPreReaderAbandon(r)).length,
     preReaderCancelled: records.filter((r) => window.__hdrIsPreReaderAbandon(r) && r.streamCancelAt).length,
+    supersededSourceResponses: records.filter((r) => window.__hdrIsSupersededSource(r)).map(decorate),
+    supersededSourceCleaned: records.filter((r) => window.__hdrIsSupersededSource(r)
+      && window.__hdrSourceCleanupDone(r)).length,
     sourceRecent: records.filter(sourceRoute).slice(-24).map((r) => ({
       id: r.id,
       url: r.url.split("?")[0] + (r.url.match(/long_edge=(\d+)/) ? `?long_edge=${r.url.match(/long_edge=(\d+)/)[1]}` : ""),
@@ -354,10 +376,26 @@ function establishedConnections(port) {
     for (let index = 0; index < 8 && !wedgeSample; index += 1) {
       const first = 183;
       const second = index % 2 === 0 ? 80 : 60;
-      await page.evaluate((value) => setCustomZoom(value), first);
-      await page.waitForTimeout(stepMs);
+      const fetchCursor = await page.evaluate(() => window.__hdrFetchProbe.fetches.length);
+      await page.evaluate((value) => {
+        // Repeated identical zooms are now served by the retained viewport
+        // cache. Start a fresh picture generation and release its region
+        // sources so each pair actually exercises delayed source ownership.
+        invalidatePreview(state.currentView, { markDirty: false });
+        for (const [key, proxy] of state.gpuPreview.proxies) {
+          if (proxy.region) state.gpuPreview.evictGpuCacheEntry("source-proxy", key);
+        }
+        setCustomZoom(value);
+      }, first);
+      // Supersede after real source headers arrive, during the injected delay.
+      // A fixed 150 ms pause can finish before the current renderer dispatches.
+      await page.waitForFunction((cursor) => window.__hdrFetchProbe.fetches.slice(cursor)
+        .some((r) => r.url.includes("/source-tile/") && r.status === 200
+          && r.deliveredAt === undefined), fetchCursor, { timeout: 30000 });
       await page.evaluate((value) => setCustomZoom(value), second);
-      await page.waitForTimeout(stepMs * 2);
+      // Keep the superseding view in place until withheld headers are handed
+      // to the app. Returning to the first zoom before delivery masks currency.
+      await page.waitForTimeout(Math.max(stepMs * 2, headerDelayMs + 50));
       pairs += 1;
       const sample = await page.evaluate(() => window.__hdrMonitorSample());
       samples.push({ pair: pairs, first, second, ...sample });
@@ -405,6 +443,7 @@ function establishedConnections(port) {
       })),
       preReaderAbandons: probeState.preReaderAbandons,
       preReaderCancelled: probeState.preReaderCancelled,
+      supersededSourceCleaned: probeState.supersededSourceCleaned,
       undrainedBodies: probeState.undrainedBodies?.map((r) => ({
         url: r.url.split("?")[0], ageMs: r.ageMs, bytes: r.bytes ?? 0,
         aborted: Boolean(r.abortedAt), cancelled: Boolean(r.cancelAt),
@@ -417,9 +456,11 @@ function establishedConnections(port) {
       outputPath,
       shotPath,
     }, null, 2));
-    assert(probeState.preReaderAbandons >= minAbandons,
-      `The injection abandoned only ${probeState.preReaderAbandons} source responses before a reader existed `
-      + `(need ${minAbandons}); the run did not exercise the leak. Raise --header-delay-ms or --step-ms.`);
+    assert(probeState.supersededSourceCleaned >= minAbandons,
+      `The injection cleaned only ${probeState.supersededSourceCleaned} superseded source responses `
+      + `(need ${minAbandons}); the run did not exercise source cleanup.`);
+    assert(probeState.supersededSourceResponses.every((r) => r.bodyDone || r.cancelDone || r.abortedAt),
+      `Superseded source responses were left unread: ${JSON.stringify(probeState.supersededSourceResponses)}`);
     assert(wedgeSample === null,
       `The connection pool wedged during the storm (pair ${wedgeSample?.pair}): ${JSON.stringify(wedgeSample)}`);
     assert((probeState.undrainedBodies || []).length === 0,

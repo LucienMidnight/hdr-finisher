@@ -1934,3 +1934,55 @@ floors. The driver now fails for that named performance reason rather than
 mislabeling tiled submissions as multiple viewer frames. No app change, shader
 change, check retirement or lowered limit. Fast suites: 463 Node and 1,692
 Python checks pass, same three skips. Full sweep and audits remain pending.
+
+### 16.6 Source ownership and cold ROI transport
+
+`native-region-stall` replaces the old proxy-stream-only pre-reader coverage
+counter with delivered source-response ownership coverage. Source-tile bodies
+now drain through arrayBuffer before currency checks, so a clean run need not
+abandon them before creating a reader. The probe records the viewer key at
+fetch and delivery, requires at least four responses spanning a view change
+to be consumed/cancelled/aborted, and rejects unread delivered responses.
+The original no-undrained-body, no-wedged-pool, responsive final pool request,
+exact convergence and page-error assertions remain. Pre-reader cancellation
+is still separately recorded, now including source-tile URLs.
+
+The test starts fresh picture generations, releases cached region sources,
+waits for actual source headers during the existing 500 ms injected delay,
+and holds the superseding view until delivery. Earlier attempts with a fixed
+150 ms dispatch assumption or returning to the initial zoom before headers
+were handed to the app did not meet the unchanged four-response coverage
+gate; their logs remain. A probe attribution attempt also incorrectly included
+responses still held inside its own delay, and is retained as a failed setup
+attempt. The final version excludes those from app ownership.
+Two final serialized runs pass: 16 responses spanning viewer changes cleaned,
+zero unread delivered bodies, zero wedge, no page errors. Pre-reader counts
+are one cancelled response in the first run and zero in the repeat; cleanup
+coverage includes the source-tile drain route and old proxy routes. The repeat
+converges in 1,536 ms and the pool probe answers in 2 ms; baseline was 1,535 ms
+and 3 ms. Differences +1/-1 ms are recorded, but the deliberate synchronization
+and cold-source setup make these distinct scenarios, not isolated speed claims.
+An already exact current frame can coexist with a pending pan follow-up;
+final pan ages were 314/287 ms, with no coordinator pending request. The test
+retains its original current-view convergence contract, not a claim that every
+background task has stopped.
+
+`roi-source-transport` persists tiled execution and Full/1K test tiers through
+real preferences. Its whole-frame reference necessarily leaves a whole source
+resident, which a warm ROI correctly reuses. A test-only render hook releases
+that whole source immediately before the ROI pass so the cold-upload claim
+actually runs. One whole-source eviction is observed. Pixel tolerance remains
+zero: 103,685 compared pixels, maximum difference zero. The ROI source is
+1,024 x 1,024 / 8,388,608 bytes versus native 75,497,472 bytes (11.1%), with
+four foreground tiles and a retained frame, within the original 50% byte and
+area bounds. This is an explicit cold cache scenario, not a production upload
+improvement over the baseline's valid warm whole-source reuse.
+Warm Fit uses 4,718,592 bytes for the exact 1K mip, with zero new cold builds
+and zero bytes generated. Both existing whole-frame and streamed display-mip
+transports are accepted, under the same exact byte-size and 10% native-byte
+bound. No test retired or tolerance relaxed; source transport implementations
+and the held wrappers remain untouched.
+
+Fast suites: 463 Node and 1,692 Python checks pass, same three skips. All four
+protected project SHA-256 hashes remain unchanged. Full sweep, three audits
+and remaining old-design checks are pending. No app fix or shader change.
