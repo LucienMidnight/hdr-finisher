@@ -1986,3 +1986,37 @@ and the held wrappers remain untouched.
 Fast suites: 463 Node and 1,692 Python checks pass, same three skips. All four
 protected project SHA-256 hashes remain unchanged. Full sweep, three audits
 and remaining old-design checks are pending. No app fix or shader change.
+
+
+### 16.7 Bounded editing Peak disclosure
+
+`scope-exact-peak` preserves exact Direct-versus-tiled maxima at both tile
+sizes, half-float saturation protection, native sampling, canvas/scope-source/
+diagnostic isolation and the optional real-photograph positive under-report
+check. It now observes `measureEditingPeak`'s actual conservative processed
+bound and requires positive analysis within the unchanged 4,194,304 pixels.
+The renderer's original promise is returned unchanged by the observation hook.
+Current required processing scale replaces the bootstrap proxy target; the
+latter allowed a deferred current-scale render to resize the canvas during
+an isolation probe. The failed setup log is retained.
+
+The GPU scope measures automatically even with the legacy flag off. Both
+flag states must disclose `Peak (estimate)` and `peak_exact=false`. An injected
+bounded-measurement refusal positively exercises `Peak (preview)`, with the
+legacy default-off guard retained. This replaces the old flag-off assumption
+with current refusal disclosure coverage. No delivery certification is made:
+CPU export and full-size Proof remain exact. No shader or measurement code
+changed, and CF-PEAK remains open.
+
+The pattern run passes: Direct and both tile sizes return exactly 7.5234375,
+12/4 tiles, unchanged 1004 x 565 canvas, scope source and diagnostics. Native
+1280-edge analysis processes 16 patches, conservative bound 243,712 pixels;
+210 ms versus baseline 198.2 ms (+11.8 ms). These are single-run measurements,
+not a speed attribution. The optional photograph assertion is not exercised
+by the baseline's pattern scenario. No checks retired. Fast suites pass: 463 Node and 1,692 Python, same three
+skips. An additional read-only DSC00950.ARW run passes: exact Direct/tile
+peak 0.452392578125, unchanged 845 x 565 canvas, native 7,362-edge analysis
+with 16 patches / 262,144 bounded pixels / 230 ms. The preview reads 510.2
+nits versus the estimate 528.4 nits (3.44% lower), positively exercising the
+original optional photograph under-report gate. This is an unmodified source
+import, not the saved project grade or a closure of CF-PEAK.

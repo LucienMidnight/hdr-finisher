@@ -165,3 +165,18 @@ resetting its processing tier. Whole and streamed display mip routes are
 accepted with the same exact-size and zero-cold-build/zero-generated-byte gates.
 Both drivers pass, fast suites pass (463 Node; 1,692 Python, same three skips),
 and all four protected fixture hashes remain unchanged. PRD 16.6 has details.
+
+
+## Bounded editing Peak check
+
+scope-exact-peak retains exhaustive Direct/tile arithmetic and measurement
+isolation. It requires positive native-patch analysis inside the original
+4,194,304-pixel budget and truthful estimate labels. A deliberate measurement
+refusal replaces the obsolete legacy-flag-off proxy-label scenario, retaining
+positive preview fallback disclosure. Pattern run passes; optional real-photo
+under-report coverage remains available. PRD 16.7 records measurements and
+failed setup attempts. No Peak implementation or shader changed.
+
+The additional DSC00950.ARW run also passes, including positive proxy
+under-report coverage (3.44%). Fast suites: 463 Node / 1,692 Python pass,
+same three skips.

@@ -1,9 +1,9 @@
 /**
- * The scope's peak is the number a delivery decision is made on.
+ * Editing Peak is a bounded estimate. CPU export and full-size Proof remain
+ * the exact delivery references; this driver does not certify delivery.
  *
- * Everything else a scope draws is read for shape. The peak is read for a
- * pass/fail against a ceiling -- "is this under 1000 nits" -- so it is the one
- * number that has to be exactly right, and wrong in no direction at all.
+ * Preserve exhaustive Direct/tile parity as an independent arithmetic guard,
+ * then check the editing estimate's native patch budget and truthful labels.
  *
  * It used to be a maximum over the preview proxy, and a proxy is a Lanczos
  * downsample: an isolated specular is averaged with its neighbours before the
@@ -20,8 +20,8 @@
  *   2. It does not depend on the tile size.
  *   3. The measurement pass disturbs nothing: not the canvas the viewer is
  *      looking at, not the scope source, not the tiled diagnostics.
- *   4. With the preference off, the scope says so -- "Peak (preview)" -- rather
- *      than presenting a lower bound as though it were the answer.
+ *   4. Automatic bounded measurement says "Peak (estimate)"; a refusal says
+ *      "Peak (preview)". Neither is presented as an exact delivery answer.
  *   5. With `--input`, that the measured peak is genuinely higher than the
  *      proxy's on a real photograph. Without it the built-in pattern is flat
  *      enough in its highlights that downsampling costs nothing, so that one
@@ -79,9 +79,20 @@ function assert(condition, message) {
       // is nowhere near it: the 42 MP frame peaks around 17 in these units
       // against a representable 65504.
       state.adjustments.hdr.exposure = hasInput ? 0.5 : -0.5;
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      const deadline = performance.now() + 120000;
+      while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+        || state.scopeRequestInFlight || state.gpuScopeRequestInFlight
+        || state.pendingScopeRequest || state.pendingGpuScopeRequest
+        || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+        if (performance.now() > deadline) throw new Error("Automatic setup work did not settle");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      state.previewScheduler.cancel();
+      window.clearTimeout(state.refreshTimer);
+      state.renderCoordinator.cancelCatchUp(state.currentView);
+      state.renderCoordinator.cancelPan(state.currentView);
 
-      const longEdge = previewTargetLongEdge();
+      const longEdge = requiredProcessingLongEdge();
       const nativeEdge = previewTargetLongEdge("full");
 
       // 1 -- Direct's own exhaustive maximum over the displayed tier, as the
@@ -116,7 +127,22 @@ function assert(condition, message) {
         scopeSource: state.gpuPreview.scopeSources.has(els.previewCanvas),
         metrics: JSON.stringify(state.gpuPreview.tiledExecutionMetrics || null),
       };
-      const measured = await window.HDRFinisherPerformance.measureExactPeak({ force: true });
+      // Observe the actual renderer result, including its conservative pixel
+      // bound. Return the original promise unchanged and restore the method.
+      const renderer = state.gpuPreview;
+      const originalMeasure = renderer.measureEditingPeak;
+      const measurements = [];
+      renderer.measureEditingPeak = function (...args) {
+        const pending = originalMeasure.apply(this, args);
+        pending.then((value) => measurements.push(value?.metrics || null), () => {});
+        return pending;
+      };
+      let measured;
+      try {
+        measured = await window.HDRFinisherPerformance.measureExactPeak({ force: true });
+      } finally {
+        renderer.measureEditingPeak = originalMeasure;
+      }
       const after = {
         width: els.previewCanvas.width,
         height: els.previewCanvas.height,
@@ -124,7 +150,8 @@ function assert(condition, message) {
         metrics: JSON.stringify(state.gpuPreview.tiledExecutionMetrics || null),
       };
 
-      // 4 -- what the scope panel actually says, with the preference both ways.
+      // 4 -- automatic estimate disclosure, including the legacy flag and a
+      // reachable refusal. The old preference no longer controls GPU estimation.
       const readPanel = async (enabled) => {
         state.scopeExactPeak = enabled;
         if (els.scopeExactPeak) els.scopeExactPeak.checked = enabled;
@@ -141,10 +168,23 @@ function assert(condition, message) {
       };
       const panelOn = await readPanel(true);
       const panelOff = await readPanel(false);
-      await readPanel(false);
+      // Make the bounded analysis refuse, as it can for an over-budget graph.
+      // Keep a positive fallback-label guard rather than assuming the legacy
+      // flag disables an automatically measured GPU scope.
+      exactScopePeakCache.clear();
+      renderer.measureEditingPeak = async () => ({
+        rendered: false, refusals: ["test: bounded measurement unavailable"],
+      });
+      let panelRefused;
+      try {
+        panelRefused = await readPanel(false);
+      } finally {
+        renderer.measureEditingPeak = originalMeasure;
+        exactScopePeakCache.clear();
+      }
 
       return {
-        longEdge, nativeEdge, directPeak, tiled, measured, before, after, panelOn, panelOff,
+        longEdge, nativeEdge, directPeak, tiled, measured, measurements, before, after, panelOn, panelOff, panelRefused,
         checkboxDefault: document.getElementById("scope-exact-peak")?.defaultChecked,
       };
     }, Boolean(input));
@@ -178,27 +218,37 @@ function assert(condition, message) {
     console.log(`isolation           canvas ${result.after.width}x${result.after.height} unchanged, `
       + `scope source retained, diagnostics untouched  PASS`);
 
-    assert(result.measured?.peak !== null && result.measured?.exact === true,
-      `The exact measurement did not complete: ${JSON.stringify(result.measured)}`);
+    assert(Number.isFinite(result.measured?.peak) && result.measured?.exact === false
+      && result.measured?.bounded === true,
+      `The bounded estimate did not complete truthfully: ${JSON.stringify(result.measured)}`);
+    assert(result.measurements.length === 1 && result.measurements[0]?.bounded === true
+      && result.measurements[0].processedBound > 0
+      && result.measurements[0].processedBound <= 4194304,
+      `Editing Peak did not exercise the unchanged patch budget: ${JSON.stringify(result.measurements)}`);
     assert(result.measured.longEdge === result.nativeEdge,
       `The measurement ran at ${result.measured.longEdge}, not native ${result.nativeEdge}`);
-    console.log(`native measurement  ${result.measured.longEdge} long edge, ${result.measured.tiles} tiles, `
+    console.log(`bounded measurement ${result.measured.longEdge} native long edge, ${result.measured.tiles} patches, `
+      + `${result.measurements[0].processedBound}/4194304 pixels, `
       + `${Math.round(result.measured.durationMs)} ms  PASS`);
 
     assert(result.checkboxDefault === false, "The exact-peak preference must default to off during authoring");
-    assert(result.panelOn.exact === true && result.panelOn.label === "Peak",
-      `The panel did not report an exact peak when enabled: ${JSON.stringify(result.panelOn)}`);
-    assert(result.panelOff.exact === false && result.panelOff.label === "Peak (preview)",
-      `The panel did not disclose a proxy peak when disabled: ${JSON.stringify(result.panelOff)}`);
+    assert(result.panelOn.applied && result.panelOn.exact === false && result.panelOn.label === "Peak (estimate)"
+      && result.panelOn.measuredLongEdge === result.nativeEdge,
+      `The panel did not disclose its native-patch estimate: ${JSON.stringify(result.panelOn)}`);
+    assert(result.panelOff.applied && result.panelOff.exact === false && result.panelOff.label === "Peak (estimate)",
+      `Automatic estimation changed with the legacy flag: ${JSON.stringify(result.panelOff)}`);
+    assert(result.panelRefused.applied && result.panelRefused.exact === false
+      && result.panelRefused.label === "Peak (preview)",
+      `The panel did not disclose the refused measurement fallback: ${JSON.stringify(result.panelRefused)}`);
     console.log(`panel disclosure    on -> "${result.panelOn.label}" at ${result.panelOn.measuredLongEdge}, `
-      + `off -> "${result.panelOff.label}"  PASS`);
+      + `legacy off -> "${result.panelOff.label}", refused -> "${result.panelRefused.label}"  PASS`);
 
     if (input) {
-      const gain = result.panelOn.peakValue - result.panelOff.peakValue;
+      const gain = result.panelOn.peakValue - result.panelRefused.peakValue;
       assert(gain > 0,
-        `On a real photograph the exact peak should exceed the proxy's, but it did not: `
-        + `${result.panelOn.peakValue} vs ${result.panelOff.peakValue}`);
-      console.log(`under-report        proxy ${result.panelOff.peakValue.toFixed(1)} nit vs exact `
+        `On this real photograph the native-patch estimate should exceed the proxy's, but it did not: `
+        + `${result.panelOn.peakValue} vs ${result.panelRefused.peakValue}`);
+      console.log(`under-report        proxy ${result.panelRefused.peakValue.toFixed(1)} nit vs estimate `
         + `${result.panelOn.peakValue.toFixed(1)} nit  ->  the proxy reads `
         + `${(gain / result.panelOn.peakValue * 100).toFixed(2)}% low  PASS`);
     } else {
@@ -207,7 +257,7 @@ function assert(condition, message) {
     }
 
     assert(pageErrors.length === 0, `Browser errors: ${pageErrors.join(" | ")}`);
-    console.log("The scope's peak is an exact maximum of the finished picture at full resolution.");
+    console.log("Direct/tile exhaustive maxima agree; editing Peak stays bounded and labelled as an estimate.");
   } finally {
     await browser.close();
   }
