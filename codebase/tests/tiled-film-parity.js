@@ -177,7 +177,7 @@ const MAX_CHANNEL_DELTA = 0;
     const parityPass = async (label, tileSize) => {
       // Start from an idle app: Ready, nothing in flight, and no settle or
       // refinement timer left to present its own frame over a capture.
-      await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight, null, { timeout: 180000 });
+      await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight && pendingHighlightAnchors.size === 0 && exactHighlightAnchorInflight.size === 0, null, { timeout: 180000 });
       await page.evaluate(() => state.previewScheduler?.cancel());
       const directShot = await renderDirect();
       const directFrame = lastFrame;

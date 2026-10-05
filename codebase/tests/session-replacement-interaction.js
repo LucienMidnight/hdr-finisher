@@ -83,13 +83,18 @@ function assert(condition, message) {
     await page.getByRole("button", { name: "Load test pattern" }).click();
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 30000 });
     const sessionBeforeDrop = await page.evaluate(() => state.session.session_id);
-    await page.evaluate(() => { state.documentDirty = true; });
+    await page.evaluate(async () => {
+      state.documentDirty = true;
+      if (desktop) await desktop.setDocumentState({ path: state.projectPath || '', dirty: true,
+        displayName: state.session.source.filename });
+    });
     let sessionPosts = 0;
     const countPosts = (request) => {
       if (request.method() === "POST" && new URL(request.url()).pathname === "/api/session") sessionPosts += 1;
     };
     page.on("request", countPosts);
     page.on("dialog", (dialog) => dialog.dismiss());
+    await global.HDRFinisherElectronTestHarness?.selectUnsavedResponse(2);
     await page.locator("body").dispatchEvent("drop", {
       dataTransfer: await page.evaluateHandle(() => {
         const transfer = new DataTransfer();
@@ -99,6 +104,7 @@ function assert(condition, message) {
     });
     await page.waitForTimeout(200);
     page.off("request", countPosts);
+    await global.HDRFinisherElectronTestHarness?.selectUnsavedResponse(1);
     assert(sessionPosts === 0, `Cancelled browser drop still uploaded ${sessionPosts} source(s).`);
     assert(await page.evaluate(() => state.session.session_id) === sessionBeforeDrop, "Cancelled browser drop replaced the active frontend session.");
 
@@ -107,11 +113,14 @@ function assert(condition, message) {
       const originalFetch = window.fetch;
       const template = JSON.parse(JSON.stringify(state.session));
       const posts = [];
+      let markFirstUploadStarted;
+      const firstUploadStarted = new Promise(resolve => { markFirstUploadStarted = resolve; });
       window.fetch = async (input, init = {}) => {
         const url = typeof input === "string" ? input : input.url;
         if (url === "/api/session" && init.method === "POST") {
           const file = init.body.get("file");
           posts.push(file.name);
+          if (file.name === "A.png") markFirstUploadStarted();
           await new Promise((resolve) => setTimeout(resolve, file.name === "A.png" ? 250 : 10));
           const session = JSON.parse(JSON.stringify(template));
           session.source.filename = file.name;
@@ -120,7 +129,8 @@ function assert(condition, message) {
         return originalFetch(input, init);
       };
       const a = uploadFile(new File([new Uint8Array([1])], "A.png", { type: "image/png" }));
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await Promise.race([firstUploadStarted, new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('First upload did not start')), 10000))]);
       const b = uploadFile(new File([new Uint8Array([2])], "B.png", { type: "image/png" }));
       await Promise.all([a, b]);
       window.fetch = originalFetch;

@@ -41,7 +41,8 @@ async function settle(page) {
     null, { timeout: 120000 });
   await page.waitForFunction(() => {
     const coordinator = state.renderCoordinator?.state(state.currentView);
-    return !state.zoomRefinementTimer && !coordinator?.panTimerPending && !coordinator?.inFlight && !coordinator?.pending;
+    return !state.zoomRefinementTimer && !coordinator?.panTimerPending && !coordinator?.inFlight && !coordinator?.pending
+      && state.acceptedPresentation?.geometrySignature === geometrySignature();
   }, null, { timeout: 120000 });
   await c.stable(page, 120000);
 }
@@ -124,7 +125,7 @@ function classify(rows) {
         report.states.push(stateReport);
         // Geometry is set at Fit, outside the rows; then the view goes to 100%.
         await page.evaluate(() => setZoomMode('fit')); await settle(page);
-        await page.evaluate(lane => { if (state.currentView !== lane) switchLane(lane); }, lane); await settle(page);
+        await page.evaluate(async lane => { if (state.currentView !== lane) await switchLane(lane); }, lane); await settle(page);
         await page.evaluate(({ saved, edits }) => {
           for (const key of ['rotation', 'flip_horizontal', 'flip_vertical', 'straighten_angle', 'perspective_horizontal', 'perspective_vertical', 'perspective_rotate']) {
             const wanted = (edits.find(([name]) => name === key) || [key, saved[key]])[1];
@@ -158,6 +159,58 @@ function classify(rows) {
           }, controlPath);
           if (!plan || plan.alternative === undefined) { stateReport.rows.push({ name: controlPath, kind: 'control', skipped: 'no control or alternative', flags: [] }); continue; }
           await row(stateReport, controlPath, 'control', () => setControl(controlPath, plan.alternative), () => setControl(controlPath, plan.original));
+        }
+
+        // Denoise has no data-path controls. Exercise both algorithms explicitly
+        // through the same handlers as the UI, in the disposable session only.
+        if (args.includes('--include-denoise')) {
+          const original = await page.evaluate(() => structuredClone(state.denoise[state.currentView]));
+          const configure = settings => page.evaluate(async settings => {
+            await setDenoiseEnabled(false);
+            state.denoise[state.currentView] = structuredClone(settings);
+            markDenoiseAnalysisDirty();
+            if (!await persistDenoiseSettings()) throw Error('Denoise settings did not persist');
+            await setDenoiseEnabled(settings.enabled);
+            if (settings.enabled && state.denoiseRuntime[state.currentView].status !== 'ready')
+              throw Error(state.denoiseRuntime[state.currentView].error || 'Denoise is not ready');
+          }, settings);
+          for (const algorithm of ['adaptive-atrous-v1', 'compact-haar-residual-v1']) {
+            const enabled = structuredClone(original);
+            enabled.enabled = true;
+            enabled.analysis.algorithm_version = algorithm;
+            await row(stateReport, `Denoise ${algorithm}: enable`, 'denoise', () => configure(enabled));
+            for (const key of ['amount', 'luminance', 'color_noise', 'detail_recovery',
+              'finest_noise', 'fine_noise', 'medium_noise', 'coarse_noise']) {
+              const value = enabled.controls[key] ?? 0.5;
+              const alternative = value <= 0.9 ? value + 0.1 : value - 0.1;
+              const edit = value => page.evaluate(async ({ key, value }) => {
+                await updateLiveDenoiseControl(key, value);
+                if (!await persistDenoiseSettings()) throw Error('Denoise control did not persist');
+                if (state.denoiseRuntime[state.currentView].status !== 'ready')
+                  throw Error(state.denoiseRuntime[state.currentView].error || 'Denoise is not ready');
+              }, { key, value });
+              await row(stateReport, `Denoise ${algorithm}: ${key}`, 'denoise', () => edit(alternative), () => edit(value));
+            }
+            if (algorithm === 'compact-haar-residual-v1') {
+              for (const [key, alternative] of [['levels', enabled.analysis.levels === 2 ? 3 : 2],
+                ['noise_threshold', enabled.analysis.noise_threshold === 3 ? 4 : 3],
+                ['luma_sigma', enabled.analysis.luma_sigma === 0.035 ? 0.04 : 0.035],
+                ['chroma_sigma', enabled.analysis.chroma_sigma === 0.035 ? 0.04 : 0.035]]) {
+                const edit = value => page.evaluate(async ({ key, value }) => {
+                  updateCustomDenoiseAnalysis(key, value, false);
+                  if (!await persistDenoiseSettings() || !await recalculateDenoise())
+                    throw Error(state.denoiseRuntime[state.currentView].error || 'Denoise recalculation failed');
+                }, { key, value });
+                await row(stateReport, `Denoise ${algorithm}: ${key}`, 'denoise', () => edit(alternative), () => configure(enabled));
+              }
+            }
+            const exposure = await page.evaluate(() => getValueByPath(state.adjustments, 'current.exposure'));
+            await row(stateReport, `Denoise ${algorithm}: grade edit`, 'denoise',
+              () => setControl('current.exposure', exposure + 0.1), () => setControl('current.exposure', exposure));
+            await row(stateReport, `Denoise ${algorithm}: disable`, 'denoise', () => configure({ ...enabled, enabled: false }));
+          }
+          await configure(original);
+          await settle(page);
         }
 
         // Mask edits on every saved local, then combinations.
@@ -198,12 +251,16 @@ function classify(rows) {
           }
         }
         await row(stateReport, 'Pan', 'viewer', () => page.evaluate(() => {
-          const frame = document.querySelector('#preview-frame') || els.previewCanvas.parentElement;
-          const scroller = [frame, frame?.parentElement, document.scrollingElement].find(item => item && item.scrollWidth > item.clientWidth + 8) || frame;
-          scroller.scrollLeft = Math.max(0, scroller.scrollLeft > 400 ? scroller.scrollLeft - 400 : scroller.scrollLeft + 400);
-          scroller.scrollTop = Math.max(0, scroller.scrollTop > 300 ? scroller.scrollTop - 300 : scroller.scrollTop + 300);
+          const scroller = els.dropzone;
+          const before = { left: scroller.scrollLeft, top: scroller.scrollTop };
+          const maxLeft = scroller.scrollWidth - scroller.clientWidth;
+          const maxTop = scroller.scrollHeight - scroller.clientHeight;
+          scroller.scrollLeft = before.left > maxLeft / 2 ? Math.max(0, before.left - 400) : Math.min(maxLeft, before.left + 400);
+          scroller.scrollTop = before.top > maxTop / 2 ? Math.max(0, before.top - 300) : Math.min(maxTop, before.top + 300);
           scroller.dispatchEvent(new Event('scroll'));
-          return { left: scroller.scrollLeft, top: scroller.scrollTop };
+          const after = { left: scroller.scrollLeft, top: scroller.scrollTop };
+          if (after.left === before.left && after.top === before.top) throw Error('Audit pan did not move the viewport');
+          return { before, after };
         }));
         const flagged = stateReport.rows.filter(entry => entry.flags?.length);
         stateReport.summary = { rows: stateReport.rows.length, flagged: flagged.length,

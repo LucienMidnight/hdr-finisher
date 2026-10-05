@@ -370,6 +370,10 @@ async function canvasVariationCount(locator) {
     const straighten = page.locator("#crop-straighten");
     const straightenBox = await straighten.boundingBox();
     assert(straightenBox, "Straighten slider is unavailable.");
+    // Earlier crop/grade anchor work must finish before this draft-only snapshot.
+    await page.waitForFunction(() => pendingHighlightAnchors.size === 0 && exactHighlightAnchorInflight.size === 0
+      && !state.gpuDraftInFlight,
+    null, { timeout: 30000 });
     const straightenStart = await page.evaluate(() => {
       const preview = activePreviewElement();
       const rect = preview.getBoundingClientRect();

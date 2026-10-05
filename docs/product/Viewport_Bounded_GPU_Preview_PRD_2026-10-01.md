@@ -1576,7 +1576,7 @@ measured. "Reopen" says what would bring the item back.
 | Automatic anchor | Redesign of the automatic highlight-anchor measurement | Correct within 1% in ordinary states, and now with Clarity (14.26), but its re-measure is why a Fit edit takes about 1.0-1.6 s to settle fully | With P3-PEAK-02. Parallel patch fetching was tried and not kept (14.23) | 14.17, 14.23 |
 | P3-ZOOM-01 | SDR cross-scale continuity | Block luminance p99 3.35% against a 2% typical limit; HDR passes at 0.68% | It is visible in use | 14.13 |
 | P3-ZOOM-02 | HDR cross-scale continuity below 100% (deferred October 4) | At the 2% typical limit: 2.55% on a strongly corrected 42 MP photo at 50%, 1.96% / 2.10% on the primary at 50% / 63.3%. Denoise is not the cause | It is visible in use | 14.25 |
-| P3-FALLBACK-01 | The larger-bitmap fallback for a feathered brush no bitmap size qualifies for | Compiles a 3,200-pixel CPU mask in the background (about 0.04-1.2 s); the only CPU mask request left in the coverage audit | It is explored on its own; do not change without Steve | 14.21, 14.24 |
+| P3-FALLBACK-01 | The larger-bitmap fallback for a feathered brush no bitmap size qualifies for | Compiles a 3,200-pixel CPU mask in the background (about 0.04-1.2 s); October 5 broader coverage also records other CPU mask work (15.6) | It is explored on its own; do not change without Steve | 14.21, 14.24 |
 
 ### 15.2 Accepted by Steve (measured outside a limit or goal, accepted as is)
 
@@ -1600,12 +1600,12 @@ levels.
 | Straightened first zoom | The luminance mask's whole-frame range scan is the largest remaining cost (about 770 ms on a 36-megapixel file) | 14.23 |
 | Native Shift | A full-frame mask with Shift at 24 megapixels takes 0.4-0.5 s to prepare; unfeathered native Shift waits on the queue per region and rescans the painted peak | 14.20, 14.21 |
 | Wide frames | Frames wider than the GPU texture limit have reference coverage only; no real fixture exists | 14.22 |
-| Coverage audit | One committed edit per control, not a drag; one control per module family on the non-saved geometries; the fifty-local project was not audited; its pan step did not move the view | 14.24 |
-| Endurance | Run on the saved geometry, before the three audit fixes, and not repeated. Straighten has a one-minute capped-memory replay only | 14.24 |
+| Coverage audit | October 5 current-code audit includes Denoise and the fifty-local project, with real 400 x 300 pans. Still one committed edit per control, not a drag; representative controls on non-saved geometries | 14.24 |
+| Endurance | Repeated October 5 on current code: 30.261 active minutes, 85 cycles, 1,378 operations and two idle minutes. Saved geometry only; no long warped-geometry endurance. See 15.6 for errors, CPU work, memory and drift | 14.24 |
 | Timing evidence | Perspective and un-straightened first-zoom timings are single sessions | 14.23 |
 | Not designed | Healing brush | 10 |
-| Denoise coverage | The coverage audit still does not include Denoise. The cold pan-enable-drag case on the saved 42 MP photo misses its driver's gate (6-7 frames, or 1.1 s to the first) | 14.25 |
-| `tiled-admission-scope-fallback` driver | Fails at `de48a40` and after the October 5 fixes alike: the CPU scope is presented, but the driver's own scope request resolves false. Found October 5; not investigated | 15.5 |
+| Denoise coverage | October 5 audit includes Denoise across both lanes and six geometry states. Cold pan-enable-drag gate on the saved 42 MP photo remains a measured limitation: 5 and 7 frames, then none, during 60 inputs on October 5 | 14.25 |
+| `tiled-admission-scope-fallback` driver | Fails at `de48a40` and after the October 5 fixes alike: the CPU scope is presented, but the driver's own scope request resolves false. October 5 investigation: automatic scope generations supersede the driver's explicit refresh; likely test timing race, high confidence. Assertion retained; current failure remains recorded | 15.5 |
 | Editing Peak masks | The measurement makes a plain luminance-range leaf from its patch. A combination containing one, and a luminance feather wide enough to be blurred on a reduced grid, keep the 1,600-pixel bitmap, as does the candidate ranking | 14.26 |
 | Editing Peak with Clarity | Above about 2% radius on a 42 MP frame the reduced Clarity map is checked against the export only (four-mask fixture, 3%), not patch by patch | 14.26 |
 
@@ -1631,3 +1631,52 @@ list still holds, including after 14.26.
 Committed locally as `c905bd8`, not pushed. Node 427 and Python 1,692 pass with three
 skips. The cold Denoise pan-enable-drag miss on the saved photo (15.3) is a
 real timing and was measured again: 5 and 7 frames.
+
+### 15.6 Current-code baseline before cleanup — October 5
+
+The [baseline evidence](../technical/viewport-phase3-baseline-before-cleanup-2026-10-05.md)
+records the complete automated sweep, failure classifications, broader coverage
+and repeated endurance. This adds measurements, not owner acceptances or
+phase 3 closure. Every deferral and acceptance above keeps its original scope.
+No phase 4 work, app code, pinned shader, budget or tolerance changes are included.
+
+Current findings require Steve's closure decision: suspected pixel defects in
+SDR B&W, Exposure Bands scopes, gradient parity, tiled spatial filtering and
+Sharpen Threshold; performance misses in heavy native-zoom dragging and
+luminance feather; and a 0.516% Clarity anchor-patch result against the 0.50%
+reference gate on the active 42 MP fixture. The October 5 P3-PEAK-01 closure
+above remains the historical owner record; this new gate miss is recorded
+for assessment without silently reopening or broadening it.
+
+The fifty-local audit completes 4,202 rows, including 312 Denoise rows and 12
+real pans, with zero audit errors and exact WebGPU accepted presentations.
+It also flags 181 rows: CPU mask work, CPU scopes, whole-source requests and
+five CPU picture fallbacks. Exact GPU presentation does not imply zero CPU
+work. Known warped-mask limits and the deferred brush fallback do not grant
+a general acceptance of these findings.
+
+Endurance completes without page/sampler errors or allocation over budget.
+Registered GPU memory rises from 61.4 MiB to 4,378.6 MiB (4,394.5 MiB peak),
+then plateaus below the unchanged 6 GiB setting. It records six CPU scope
+requests, 450 CPU mask requests and 35 HTTP 409 responses; response bodies
+were not captured, so benign cancellation is not proved for every 409.
+First-to-last cycle windows show HDR Clarity +32.8%, fresh brush +22.9% and
+native zoom +27.4% in operation totals. Values and positions vary by cycle:
+this is observed drift, not a controlled regression attribution. Drag release
+and scope goals are missed; the evidence retains all measured misses.
+
+The corrected primary and four-mask audits are also complete: 1,250 / 1,166
+rows, 69 / 35 flagged rows, zero page errors, 312 Denoise rows and 12 real pans
+each. Primary records no CPU picture/scopes, 121 CPU masks and 13 whole-source
+requests. Four-mask records three CPU picture fallbacks, no CPU scopes,
+36 CPU masks and 14 whole-source requests. Its Exposure edits after rotation,
+flip and straighten still refuse GPU work with dirty-edit-with-stale-geometry;
+these remain suspected app-routing issues, not accepted exceptions.
+
+The remaining variants, packaged checks, diagnostic helpers, final fast reruns
+and fixture hashes were completed the same day. The fresh packaged smoke test
+and packaged baselines pass, the fast suites are unchanged (Node 427, Python
+1,692 with three skips, 36 additional), and all four fixture hashes match. The
+cold Denoise pan-enable-drag case on the saved 42 MP photo showed no frame
+during its one-second drag. The baseline is complete; phase 3 has not been
+declared closed and phase 4 has not started.

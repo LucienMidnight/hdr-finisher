@@ -50,12 +50,17 @@ async function injectFailure(page, message) {
   await page.evaluate((text) => {
     if (!window.__originalGpuRender) window.__originalGpuRender = state.gpuPreview.render;
     state.gpuPreview.render = async () => { throw new TypeError(text); };
+    if (!window.__originalGpuRenderTiledTo) window.__originalGpuRenderTiledTo = state.gpuPreview.renderTiledTo;
+    state.gpuPreview.renderTiledTo = async () => { throw new TypeError(text); };
+    invalidatePreview(state.currentView);
   }, message);
 }
 
 async function clearFailure(page) {
   await page.evaluate(() => {
     if (window.__originalGpuRender) state.gpuPreview.render = window.__originalGpuRender;
+    if (window.__originalGpuRenderTiledTo) state.gpuPreview.renderTiledTo = window.__originalGpuRenderTiledTo;
+    invalidatePreview(state.currentView);
   });
 }
 
@@ -127,6 +132,7 @@ async function settleAndWait(page, timeout = 120000) {
     // The one permitted sticky path: repeated validation failure.
     await injectFailure(page, "validation error: invalid value in setPipeline");
     for (let attempt = 0; attempt < 4; attempt += 1) {
+      await page.evaluate(() => invalidatePreview(state.currentView));
       await page.evaluate(() => settlePreview(state.currentView).catch(() => null));
       await page.waitForTimeout(400);
       const available = await page.evaluate(() => state.gpuPreview.available);

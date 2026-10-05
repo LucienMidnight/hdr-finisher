@@ -175,7 +175,11 @@ async function dragRange(page, slider, distance, { ctrl = false, shift = false, 
       if (profile.visualMarks !== 0) throw new Error(`Semantic snapping leaked visual marks into the empty rail: ${JSON.stringify(profile)}.`);
     }
 
-    await page.locator("#settings-open").click();
+    if (await page.evaluate(() => Boolean(desktop))) {
+      await page.evaluate(() => window.HDRApplicationShell.openSettings());
+    } else {
+      await page.locator("#settings-open").click();
+    }
     await page.locator('[data-settings-tab="shortcuts"]').click();
     await page.locator("#shortcut-search").fill("hdr.exposure");
     const exposureIncrease = page.locator(".shortcut-row").filter({ hasText: "Increase Exposure" }).first();
@@ -183,6 +187,8 @@ async function dragRange(page, slider, distance, { ctrl = false, shift = false, 
     await page.keyboard.press("i");
     await page.locator("#settings-close").click();
     await resetRange(page, '[data-path="hdr.exposure"]', 0);
+    // Assigned authoring shortcuts require focus outside form controls.
+    await page.evaluate(() => document.activeElement?.blur());
     await page.keyboard.press("i");
     await page.keyboard.press("Control+i");
     const assignedFineValue = Number(await exposure.inputValue());

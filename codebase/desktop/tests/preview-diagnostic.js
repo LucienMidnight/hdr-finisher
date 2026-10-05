@@ -34,7 +34,7 @@ const { _electron: electron } = require("playwright");
     record({ event: "preview-restoration-fix-applied" });
   }
   await page.evaluate(() => applyPreviewResolution("4096"));
-  await page.waitForFunction(() => state.acceptedPresentation?.tier === "refinement"
+  await page.waitForFunction(() => state.acceptedPresentation?.requestedTier === "4096" && state.acceptedPresentation.exact === true
     && state.acceptedPresentation.generation === state.previewGeneration[state.currentView], null, { timeout: 30000 });
   await page.evaluate(() => {
     const events = [];
@@ -70,8 +70,8 @@ const { _electron: electron } = require("playwright");
           pending: state.geometryPresentationPending },
         edit: { dirty: state.globalEditDirty, revision: state.editRevision },
         zoom: { mode: state.zoomMode, percent: state.zoomPercent },
-        menu: { visible: els.previewPopover.getClientRects().length > 0, open: els.previewLatency.matches(":open"),
-          disabled: els.previewLatency.disabled, focus: document.activeElement?.id },
+        menu: { visible: els.previewPopover.getClientRects().length > 0, fasterDragging: els.previewFasterDragging.checked,
+          disabled: els.previewFasterDragging.disabled, focus: document.activeElement?.id },
         scheduler: { current: state.previewScheduler.current, interacting: state.previewScheduler.interacting,
           frameInFlight: state.previewScheduler.frameInFlight, scopeInFlight: state.previewScheduler.scopeInFlight,
           pendingFrame: state.previewScheduler.framePending },

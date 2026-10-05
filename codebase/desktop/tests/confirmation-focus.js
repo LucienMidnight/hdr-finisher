@@ -55,6 +55,8 @@ async function main() {
   try {
     const window = await electronApp.firstWindow();
     await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    await window.waitForFunction(() => Boolean(window.HDRApplicationShell?.preferences()),
+      null, { timeout: 30000 });
     checkpoint("window ready");
 
     // No source is imported. The reported control lives in the viewer's

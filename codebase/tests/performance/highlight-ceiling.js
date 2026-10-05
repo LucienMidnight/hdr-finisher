@@ -80,6 +80,12 @@ async function idle(page) {
     const rows = [];
     for (const entry of cases) {
       const row = await page.evaluate(async ({ handling, anchorFactor, compression, clarity = false, targetNits }) => {
+        const idleBy = performance.now() + 120000;
+        while (state.gpuDraftInFlight || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+          if (performance.now() > idleBy) throw new Error("Highlight ceiling setup did not settle");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        state.previewScheduler?.cancel();
         window.__ceilingCase = { anchorFactor };
         state.adjustments.hdr.detail_section_enabled = true;
         Object.assign(state.adjustments.hdr.detail, { clarity_amount: clarity ? 100 : 0, clarity_radius_percent: 3 });
@@ -97,7 +103,7 @@ async function idle(page) {
         const used = window.__ceilingParams;
         const region = await state.gpuPreview.readPresentationRegion(frame.width, frame.height, 0, 0);
         window.__ceilingCase = null;
-        if (!rendered || !region) return { error: `rendered=${Boolean(rendered)} region=${Boolean(region)}` };
+        if (!rendered || !region) return { error: `rendered=${Boolean(rendered)} region=${Boolean(region)} refusal=${JSON.stringify(state.gpuPreview.lastRenderRefusal)}` };
         const decode = (value) => {
           const magnitude = Math.abs(value);
           const linear = magnitude <= 0.04045 ? magnitude / 12.92 : ((magnitude + 0.055) / 1.055) ** 2.4;

@@ -177,7 +177,7 @@ function saveDataUrl(dataUrl, filePath) {
       null, { timeout: 900000 },
     );
     const status = await page.evaluate(() => state.denoiseRuntime[state.currentView].status);
-    assert(status === "ready", `Denoise did not reach ready: ${status}`);
+    assert(status === "ready", `Denoise did not reach ready: ${status}; ${JSON.stringify(await page.evaluate(() => state.denoiseRuntime[state.currentView]))}`);
   };
 
   const settle = async () => {
@@ -242,7 +242,10 @@ function saveDataUrl(dataUrl, filePath) {
         control.value = String(value);
         control.dispatchEvent(new Event("input", { bubbles: true }));
       }
-      if (definition.denoise) await setDenoiseEnabled(true);
+      if (definition.denoise) {
+        await syncGlobalEditState();
+        await setDenoiseEnabled(true);
+      }
       return report;
     }, scenario);
     if (scenario.denoise) await waitDenoiseReady();

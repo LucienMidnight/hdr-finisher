@@ -17,6 +17,11 @@ function assert(condition, message) {
       await page.waitForFunction(() => state.session?.session_id, null, { timeout: 30000 });
       const rail = page.locator(".source-rail");
       if (width < 1500) {
+        // Import reveals metadata; explicitly exercise its collapsed state.
+        const collapseButton = page.locator('#source-rail-expand');
+        if (await collapseButton.getAttribute('aria-expanded') === 'true') {
+          await collapseButton.click();
+        }
         const showButton = page.getByRole("button", { name: "Expand source metadata" });
         const collapsedLayout = await showButton.evaluate((element) => ({
           text: element.textContent,

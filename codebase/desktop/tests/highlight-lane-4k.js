@@ -97,7 +97,7 @@ function presentation(page, predicate, timeout = 180000) {
     assert.equal(compressionState.eligible, true, "Highlight Compression must remain WebGPU eligible");
     assert.equal(compressionState.accepted.transport, "WebGPU", "Highlight Compression presented a CPU/backend frame");
     assert.equal(fourKState.selected, "4096");
-    assert.ok(fourKState.accepted.longEdge >= 4096, "The accepted Grade presentation was not 4K");
+    assert.ok(fourKState.accepted.processedLongEdge >= 4096, "The accepted Grade presentation was not 4K");
     assert.ok(Math.max(fourKState.canvas.width, fourKState.canvas.height) >= 4096, "The canvas backing texture was not 4K");
     assert.deepEqual(pageErrors, []);
     console.log(JSON.stringify({ enableCompression, compressionState, fourK, fourKState, firstSdr, firstSdrRefined, returnHdr }, null, 2));
@@ -110,5 +110,5 @@ function presentation(page, predicate, timeout = 180000) {
   process.exit(0);
 })().catch((error) => {
   console.error(error);
-  process.exitCode = 1;
+  process.exit(1);
 });

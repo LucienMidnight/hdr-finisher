@@ -55,9 +55,12 @@ function assert(condition, message) {
       const host = document.createElement("div");
       host.id = "status-manager-test-host";
       document.body.append(host);
+      const fallback = document.createElement('button');
+      fallback.textContent = 'Status test focus target';
+      document.body.append(fallback);
       const manager = HDRStatusManager.create(host, {
         successTimeoutMs: 220,
-        focusFallback: () => document.getElementById("project-open"),
+        focusFallback: () => fallback,
       });
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -84,7 +87,7 @@ function assert(condition, message) {
       focused.focus();
       await wait(300);
       const focusPaused = focused.isConnected;
-      document.getElementById("project-open").focus();
+      fallback.focus();
       await wait(260);
       const focusDismissed = !focused.isConnected;
 
@@ -103,8 +106,9 @@ function assert(condition, message) {
       dismiss.focus();
       dismiss.click();
       const dismissRemoved = !host.querySelector('[data-status-id="dismiss"]');
-      const dismissFocusRestored = document.activeElement === document.getElementById("project-open");
+      const dismissFocusRestored = document.activeElement === fallback;
       host.remove();
+      fallback.remove();
       return {
         errorPersistent, replacedBySuccess, retryDismissed,
         hoverPaused, hoverDismissed, focusPaused, focusDismissed,

@@ -61,10 +61,26 @@ const MB = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
 
           const pageUrl = new URL(url);
           await page.goto(pageUrl.toString(), { waitUntil: "networkidle" });
+          // Electron preferences live in the desktop profile, not localStorage.
+          await page.evaluate((gib) => {
+            const select = document.getElementById("settings-gpu-memory-limit");
+            select.value = "custom";
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            const input = document.getElementById("settings-gpu-memory-custom");
+            input.value = String(gib);
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }, budgetGiB);
+          await page.waitForFunction((gib) => HDRApplicationShell.preferences().maximumGpuMemoryGiB === gib,
+            budgetGiB, { timeout: 10000 });
           await page.setInputFiles("#file-input", resolved);
           await page.waitForFunction(() => state.session?.session_id, null, { timeout: 1_800_000 });
           await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
           await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 600000 });
+
+          const budgetBytes = await page.evaluate(() => state.gpuPreview.memoryBudgetBytes());
+          if (Math.abs(budgetBytes - budgetGiB * 1024 ** 3) > 1024) {
+            throw new Error(`The GPU budget did not take: wanted ${budgetGiB} GiB, got ${budgetBytes} bytes`);
+          }
 
           await page.locator("#settings-preview-resolution").evaluate((select) => {
             select.value = "full";

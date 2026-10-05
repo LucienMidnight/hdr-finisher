@@ -52,9 +52,12 @@ function assert(condition, message) {
 
     const renderRefinement = () => page.evaluate(async () => {
       const longEdge = Math.max(state.session.source.width, state.session.source.height);
+      const visibleBefore = { rect: window.HDRFinisherPerformance.visibleOutputRect(),
+        canvasWidth: els.previewCanvas.width, canvasHeight: els.previewCanvas.height };
       const rendered = await renderGpuDraft(state.currentView, { tier: "refinement", longEdge });
       return {
         rendered: Boolean(rendered),
+        visibleBefore,
         mode: state.roiPreviewMode,
         visible: window.HDRFinisherPerformance.visibleOutputRect(),
         metrics: window.HDRFinisherPerformance.tiledExecutionMetrics(),
@@ -121,7 +124,7 @@ function assert(condition, message) {
       width: rect.width / width,
       height: rect.height / height,
     });
-    const expected = fraction(visibleRect.rect, visibleRect.canvasWidth, visibleRect.canvasHeight);
+    const expected = fraction(on.visibleBefore.rect, on.visibleBefore.canvasWidth, on.visibleBefore.canvasHeight);
     const actual = fraction(on.metrics.viewport, on.metrics.width, on.metrics.height);
     const close = (a, b) => Math.abs(a - b) < 0.02;
     assert(

@@ -166,7 +166,7 @@ function readGpuMask(page) {
     const geometry = geometrySignature();
     // The entry for this range and geometry (older ones may still be cached).
     const entry = [...preview.localMasks.entries()].reverse()
-      .find(([key, candidate]) => candidate.kind === "gpu-luma" && key.includes(geometry)
+      .find(([key, candidate]) => ["gpu-luma", "gpu-resampled-luminance_range"].includes(candidate.kind) && key.includes(geometry)
         && key.includes(`"full_start_ev":${leaf.full_start_ev},`)
         && key.includes(`"fade_out_end_ev":${leaf.fade_out_end_ev}`))?.[1];
     if (!entry) return null;

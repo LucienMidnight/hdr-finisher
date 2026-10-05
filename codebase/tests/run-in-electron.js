@@ -220,12 +220,17 @@ function packagedExecutable() {
   // the main process when its window closes. That is a native dialog: the
   // page cannot dismiss it, a graceful close waits on it forever, and the
   // prompt is left sitting on the desktop of whoever ran the test. So the
-  // harness answers every main-process dialog itself, with Discard, which is
+  // harness answers only that unsaved-project prompt with Discard, which is
   // response 1 of ["Save", "Discard", "Cancel"]. A test run must never write
   // over somebody's file, and it must never block on a question.
   await app.evaluate(({ dialog }) => {
-    dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
-    dialog.showMessageBoxSync = () => 1;
+    const original = dialog.showMessageBox.bind(dialog);
+    const originalSync = dialog.showMessageBoxSync.bind(dialog);
+    const isUnsaved = args => JSON.stringify(args.at(-1)?.buttons)
+      === JSON.stringify(['Save', 'Discard', 'Cancel']);
+    dialog.showMessageBox = async (...args) => isUnsaved(args)
+      ? { response: dialog.hdrFinisherTestUnsavedResponse ?? 1, checkboxChecked: false } : original(...args);
+    dialog.showMessageBoxSync = (...args) => isUnsaved(args) ? (dialog.hdrFinisherTestUnsavedResponse ?? 1) : originalSync(...args);
   }).catch(() => { /* older Electron surface; the kill below still applies */ });
 
   // Shutdown is a kill of the whole tree rather than `app.close()`, for the
@@ -250,7 +255,7 @@ function packagedExecutable() {
   // stub is what releases Electron's handles and lets the process exit. The
   // exit code is then the test's own: its explicit `process.exitCode`, or the
   // non-zero an unhandled rejection produces. Nothing here overrides it.
-  playwright.chromium.launch = async () => ({
+  const browserFacade = {
     // A viewport is a request to the browser; here it has to become a resize
     // of the real window, because more than one test asserts on geometry that
     // follows the preview's size.
@@ -308,11 +313,37 @@ function packagedExecutable() {
     },
     contexts: () => [],
     isConnected: () => true,
-  });
+  };
+  require("./electron-browser-context").installSequentialContexts(browserFacade, window, navigate, origin);
+  playwright.chromium.launch = async () => browserFacade;
   process.on("exit", stop);
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => { stop(); process.exit(130); });
   }
+
+  // API-only drivers use Node fetch rather than the page's authenticated
+  // fetch. Expose a same-origin test capability without exposing its token.
+  const nodeFetch = global.fetch.bind(global);
+  global.HDRFinisherElectronTestHarness = {
+    fetch: (input, options = {}) => {
+      const target = new URL(String(input), origin);
+      if (target.origin !== origin) throw new Error("Test API request must use the disposable sidecar origin");
+      const headers = new Headers(options.headers || {});
+      if (authoringToken) headers.set("X-HDR-Finisher-Token", authoringToken);
+      return nodeFetch(target, { ...options, headers });
+    },
+    selectUnsavedResponse: async (response) => {
+      if (![1, 2].includes(response)) throw new Error('Tests may Discard or Cancel, never Save fixtures');
+      await app.evaluate(({ dialog }, value) => { dialog.hdrFinisherTestUnsavedResponse = value; }, response);
+    },
+    selectExportPath: async (selectedPath) => {
+      if (fs.existsSync(selectedPath)) throw new Error('Test export destination must be new');
+      await app.evaluate(({ dialog }, filePath) => {
+        dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+      }, path.resolve(selectedPath));
+    },
+    close: async () => stop(),
+  };
 
   process.argv = [process.argv[0], path.resolve(testPath), ...testArguments];
   require(path.resolve(testPath));

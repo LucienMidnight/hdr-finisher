@@ -33,10 +33,23 @@ async function main() {
     });
     if (!reservedNameRejected) throw new Error("Windows reserved project filenames were not rejected.");
 
-    const chooserPromise = page.waitForEvent("filechooser");
-    await page.locator("#import-button").click();
-    const chooser = await chooserPromise;
-    await chooser.setFiles(path.resolve("tests", "fixtures", "hdr_headroom.tiff"));
+    const fixture = path.resolve("tests", "fixtures", "hdr_headroom.tiff");
+    let chooser = null;
+    if (await page.evaluate(() => Boolean(desktop))) {
+      await page.locator("#import-button").click();
+      await page.locator("#directory-browser").waitFor({ state: "visible" });
+      await page.waitForFunction(() => !document.getElementById('directory-browser-go')?.disabled);
+      await page.locator("#directory-browser-path").fill(path.dirname(fixture));
+      await page.locator("#directory-browser-path").press("Enter");
+      await page.locator(".directory-browser-entry", { hasText: "hdr_headroom.tiff" }).click();
+      await page.locator("#directory-browser-select").click();
+      await page.locator("#directory-browser").waitFor({ state: "hidden" });
+    } else {
+      const chooserPromise = page.waitForEvent("filechooser");
+      await page.locator("#import-button").click();
+      chooser = await chooserPromise;
+      await chooser.setFiles(fixture);
+    }
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 120000 });
     if (await page.locator("#interpretation-gate").isVisible()) await page.locator("#accept-interpretation").click();
 
@@ -69,6 +82,9 @@ async function main() {
       }
       await page.locator("#export-filename").fill(filename);
       const exportResponsePromise = page.waitForResponse((response) => response.url().includes("/export") && response.request().method() === "POST", { timeout: 120000 });
+      if (global.HDRFinisherElectronTestHarness) {
+        await global.HDRFinisherElectronTestHarness.selectExportPath(expectedOutput);
+      }
       await page.locator("#export-confirm-button").click();
       const response = await exportResponsePromise;
       const payload = await response.json();
@@ -85,7 +101,7 @@ async function main() {
     }
 
     const result = {
-      fileChooserMultiple: chooser.isMultiple(),
+      fileChooserMultiple: chooser ? chooser.isMultiple() : null,
       selectedDirectory: await page.locator("#export-directory").inputValue(),
       exports,
       browserErrors,

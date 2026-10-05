@@ -23,7 +23,7 @@ const { _electron: electron } = require("playwright");
       await page.evaluate(`globalThis.showCachedPreview = (${restore}); void 0;`);
     }
     await page.evaluate(() => applyPreviewResolution("4096"));
-    const waitRefined = () => page.waitForFunction(() => state.acceptedPresentation?.tier === "refinement"
+    const waitRefined = () => page.waitForFunction(() => state.acceptedPresentation?.requestedTier === "4096" && state.acceptedPresentation.exact === true
       && state.acceptedPresentation.generation === state.previewGeneration[state.currentView]
       && state.acceptedPresentation.longEdge > 2000, null, { timeout: 15000 });
     await waitRefined();
@@ -57,4 +57,4 @@ const { _electron: electron } = require("playwright");
     await app.evaluate(({ app }) => app.exit(0)).catch(() => {});
     await app.close();
   }
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+})().catch((error) => { console.error(error); process.exit(1); });

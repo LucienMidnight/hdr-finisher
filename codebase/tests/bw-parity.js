@@ -113,6 +113,16 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         ? { halation_amount: 60, halation_saturation: 100, red_response: 50, blue_response: -50 }
         : { halation_amount: 0, red_response: 0, blue_response: 0 });
       branch.film_look.grain_amount = 0;
+      // Direct recipe mutations still need the ordinary save and automatic
+      // anchor settlement; otherwise SDR is captured under the previous recipe.
+      state.globalEditDirty = true;
+      if (!await syncGlobalEditState()) throw Error('Recipe sync failed');
+      invalidatePreview(lane);
+      await settlePreview(lane, {});
+      while (pendingHighlightAnchors.size || exactHighlightAnchorInflight.size)
+        await new Promise(resolve => setTimeout(resolve, 20));
+      state.previewScheduler?.cancel();
+      while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
       if (!await renderGpuDraft(lane, { longEdge })) return { error: "GPU render failed" };
       await state.gpuPreview.device.queue.onSubmittedWorkDone();
       const image = await new Promise((resolve, reject) => {

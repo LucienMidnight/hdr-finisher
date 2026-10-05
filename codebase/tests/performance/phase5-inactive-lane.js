@@ -54,6 +54,12 @@ function assert(condition, message) {
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 180000 });
 
     const deferred = await page.evaluate(async () => {
+      const idleBy = performance.now() + 120000;
+      while (state.gpuDraftInFlight || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+        if (performance.now() > idleBy) throw new Error("Inactive-lane setup did not settle");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      state.previewScheduler.cancel();
       const before = state.previewScheduler.snapshot().inactiveDeferred;
       let calls = 0;
       await new Promise((resolve) => {

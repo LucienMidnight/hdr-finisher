@@ -36,10 +36,11 @@ function curvePointPosition(box, x, y) {
     }
     const localPlacement = await page.evaluate(() => {
       const grading = document.querySelector('[data-group="color-grading"]');
-      return grading?.nextElementSibling?.dataset.group;
+      const blackAndWhite = grading?.nextElementSibling;
+      return [blackAndWhite?.dataset.group, blackAndWhite?.nextElementSibling?.dataset.group];
     });
-    if (localPlacement !== "local-adjustments") {
-      throw new Error(`Local Adjustments did not follow Color Grading: ${localPlacement}`);
+    if (JSON.stringify(localPlacement) !== JSON.stringify(["black-and-white", "local-adjustments"])) {
+      throw new Error(`Expected Black & White then Local Adjustments after Color Grading: ${JSON.stringify(localPlacement)}`);
     }
 
     await page.click("#view-sdr");

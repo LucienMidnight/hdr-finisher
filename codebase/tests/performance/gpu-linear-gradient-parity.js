@@ -28,6 +28,11 @@ const url = urlIndex >= 0 ? process.argv[urlIndex + 1] : "http://127.0.0.1:8799"
       }];
       await queueEditCommand("replace_document", { document }, null, { refreshPreview: false });
       applyExecutionOverride("tiled");
+      const setupDeadline = performance.now() + 120000;
+      while (state.gpuDraftInFlight || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+        if (performance.now() > setupDeadline) throw new Error("Gradient parity setup did not settle");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
       state.previewScheduler?.cancel();
       window.HDRFinisherPerformance.cancelRoiCatchUp();
       const gpu = state.gpuPreview;
