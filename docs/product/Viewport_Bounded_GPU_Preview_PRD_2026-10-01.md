@@ -1716,6 +1716,8 @@ column) without confirming the item first.
 | CF-SPEED-04 | Headline latency: cold 100% zoom feedback 850 ms against 150 ms; warm 200% slider feedback p95 85 ms against 50 ms | `headline-latency.js` |
 | CF-SPEED-05 | Cold Denoise pan-enable-drag on the saved 42 MP photo: none to seven frames during 60 inputs | `tests/denoise-pan-enable-drag.js --project` |
 | CF-DRIFT-01 | 30-minute endurance: HDR Clarity drag +32.8%, fresh brush stroke +22.9%, zoom to 100% +27.4% between the first and last ten cycles. Observed, not attributed | `heavy-project-long-session.js` |
+| CF-DRIFT-03 | Phase 4 headline repeat: warm Fit current/settled p95 245.2ms vs baseline33.4 (50/100ms targets); warm100% refined138.4 vs53.9 (100ms); warm native zoom893.6 vs9.1 (150ms). New target misses, observed/unattributed, confirmation pending; no app fix or limit change. See16.17 |
+| CF-DRIFT-02 | local-design-qa reaches retained visual checks after pending/assigned-mask setup repair: shared switch is 46x20 with 2px border, original contract requires 46x24/borderless. Diagnostic also observes scrollbar/control-section mismatches and keyboard-lane timeout. Four original clipboard reference images are absent, so intended appearance remains unconfirmed. No app fix or weakened assertion. See 16.12 |
 
 **CPU work behind an exact GPU frame.**
 
@@ -1729,7 +1731,6 @@ column) without confirming the item first.
 | CF-ROUTE-06 | Phase 4 explicit 1 GiB Full test: minimum graph requires Tiled, but 25 interactive drafts reach renderer refusal (`tiled-refused:interactive render`) rather than the preserved pre-dispatch guard; source/parameter preparation precedes refusal. No app fix; see 16.8 |
 | CF-ROUTE-07 | Same settled-render overlap enters CPU settle branch once for `coalesced-by-newer-render` in two repeats. Zero CPU picture HTTP requests in these warm runs; original branch-level guard remains red. See 16.8 |
 | CF-ROUTE-08 | Execution readout reports Direct while accepted viewer execution is Tiled at 100%, 200% and Full/Fit under 1 GiB. Both repeats agree; the readout reads the last renderer plan, which can belong to auxiliary work. See 16.9 |
-| CF-DRIFT-02 | local-design-qa reaches retained visual checks after pending/assigned-mask setup repair: shared switch is 46x20 with 2px border, original contract requires 46x24/borderless. Diagnostic also observes scrollbar/control-section mismatches and keyboard-lane timeout. Four original clipboard reference images are absent, so intended appearance remains unconfirmed. No app fix or weakened assertion. See 16.12 |
 
 **Checks that fail because they still describe the old design (phase 4
 input).** Each is rewritten for the viewport-bounded design or retired with
@@ -2276,3 +2277,46 @@ actual driver reruns in the sweep. Saved projects are not used or modified.
 
 Residency batch: actual sweep driver passes with diagnostic-identical
 894.2-967.8 MB range; fast suites 463 Node / 1,692 Python pass, three skips.
+
+
+### 16.17 Full-sweep timing comparison in progress (October 6)
+
+Headline latency recorder exits successfully, but four previously passing
+summary targets miss in this run: warm Fit current/settled p95 245.2 ms versus
+33.4 ms (original 50/100 ms targets); warm 100% refined 138.4 versus 53.9 ms
+(100 ms); warm native zoom 893.6 versus 9.1 ms (150 ms). These are CF-DRIFT-03,
+observed and unattributed; a confirmation run remains pending. No app fix or
+acceptance change is made. Measurement-only successful exit does not imply
+speed gates pass, and behavior/timing equivalence cannot be claimed from this
+run. All per-case numbers and verdicts remain in target-verdict-comparison.json.
+
+Other movements include cold Fit feedback 27.7 to 13.4 ms, cold native zoom
+850.2 to 906.8 ms (still misses), warm 200% feedback 85.2 to 178.9 ms (still
+misses), warm pan 11.2 to 15.2 ms (still inside 33), and input handler p95 8.6
+to 5.8 ms (inside 16.7). The derived warm refinement limit remains Fit p95+50;
+its increase makes some refinement verdicts pass despite increased timings.
+The original formula/targets are retained and raw timings are reported.
+Full sweep, endurance, three audits and final comparison are not yet complete.
+
+
+### 16.18 Cleanup endurance comparison (October 6)
+
+The serialized 30-minute active / two-minute idle repeat completes: 83 cycles,
+1,345 operations, zero test or sampler errors, and final picture/scopes settled.
+Baseline: 85 cycles / 1,378 operations. Registered GPU memory ends at 4,376.0 MiB
+versus 4,378.6; maximum 4,395.0 versus 4,394.5, within the unchanged 6,141 MiB
+budget, zero over-budget bytes. This is saved-geometry endurance; warped geometry
+is covered by the shorter audits, not a new long endurance acceptance.
+
+First/last ten-cycle medians still drift (CF-DRIFT-01): HDR exposure
+1,264.5 to 1,631.0 ms (+29.0%), HDR Clarity 1,209.5 to 1,468.0 (+21.4%),
+100% zoom 470 to 536 (+14.0%), Fit zoom 70 to 78 (+11.4%). Baseline respective
+drift: +18.6%, +32.8%, +27.4%, +28.2%. Fresh HDR brush now 877.5 to 850.0
+(-3.1%), versus baseline 718.5 to 883 (+22.9%); the higher starting value is
+also reported. All 17 operation comparisons are retained in endurance-comparison.json.
+
+Live CPU routes remain: two HDR scope requests versus six baseline (CF-ROUTE-04),
+and 26 HTTP 409 responses versus 35 (CF-ROUTE-05). Response bodies are still not
+captured, so the supersession explanation remains tentative. These findings
+are not closed or attributed to the two unused-wrapper deletions. No app fix,
+limit, CPU path or shader change. Full driver sweep and three audits continue.

@@ -108,3 +108,7 @@ Local design QA retains an unresolved visual contract (CF-DRIFT-02): shared
 switch dimensions/border differ from the original guard. Further diagnostic
 UI checks also fail; original temporary reference images are unavailable.
 See viewport PRD 16.12.
+
+October 6 cleanup validation observed new warm latency target misses
+(CF-DRIFT-03), pending confirmation and unattributed to cleanup. Successful
+measurement recorder exits do not mean all speed targets passed. See PRD16.17.
