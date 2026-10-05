@@ -219,3 +219,16 @@ PRD 16.10 records route differences from the baseline and final results.
 
 Denoise batch fast suites: 463 Node / 1,692 Python pass, three skips; all
 four protected project hashes unchanged.
+
+
+## Deferred highlight anchor check
+
+gpu-highlight-compression-parity passes twice. Four original shader numeric
+comparisons, scope resolution/identity and stale/current recovery guards remain.
+The obsolete foreground-one-reduction assumption is replaced by positive
+pending work during interaction and exactly one bounded canonical measurement
+after release, inside the unchanged pixel budget. The old unused measurement
+wrapper stays held; no Peak implementation or shader changed. PRD 16.11 has
+the baseline/current route comparison.
+
+Highlight batch fast suites: 463 Node / 1,692 Python pass, three skips.

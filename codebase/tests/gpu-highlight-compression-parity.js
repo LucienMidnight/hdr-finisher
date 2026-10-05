@@ -20,6 +20,21 @@ function assert(condition, message) {
 
     const result = await page.evaluate(async () => {
       const renderer = state.gpuPreview;
+      const drain = async () => {
+        const deadline = performance.now() + 120000;
+        while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+          || state.scopeRequestInFlight || state.gpuScopeRequestInFlight
+          || state.pendingScopeRequest || state.pendingGpuScopeRequest
+          || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+          if (performance.now() > deadline) throw new Error("Automatic work did not settle");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        state.previewScheduler.cancel();
+        window.clearTimeout(state.refreshTimer);
+        state.renderCoordinator.cancelCatchUp(state.currentView);
+        state.renderCoordinator.cancelPan(state.currentView);
+      };
+      await drain();
       const device = renderer.device;
       const texture = device.createTexture({
         size: { width: 3, height: 1 },
@@ -116,7 +131,11 @@ function assert(condition, message) {
       });
       const activeHdrGpuEligible = gpuPreviewEligible("hdr");
       invalidatePreview("hdr");
+      await syncGlobalEditState();
+      await drain();
       renderer.peakReductionCache.clear();
+      renderer.requestedCanonicalHighlightKeys.clear();
+      const longEdge = requiredProcessingLongEdge();
       const originalMeasure = renderer.measureToneAdjustedPeak.bind(renderer);
       let reductions = 0;
       let completedReductions = 0;
@@ -128,15 +147,36 @@ function assert(condition, message) {
           completedReductions += 1;
         }
       };
-      // A drag frame never waits for the whole-image reduction: it returns
-      // before any measurement completes and defers the one it skipped. The
-      // settled frame then reuses that deferred measurement, so the pair
-      // costs exactly one reduction.
-      const interactiveRendered = await renderGpuDraft("hdr", { longEdge: 512, tier: "interactive" });
+      const originalEditingMeasure = renderer.measureEditingPeak;
+      const anchors = [];
+      renderer.measureEditingPeak = function (...args) {
+        const pending = originalEditingMeasure.apply(this, args);
+        if (args.at(-1)?.highlightAnchorOnly) {
+          const entry = { interacting: Boolean(state.previewScheduler?.interacting), completed: false };
+          anchors.push(entry);
+          pending.then((value) => {
+            entry.completed = true;
+            entry.anchor = value?.highlightAnchor || null;
+            entry.metrics = value?.metrics || null;
+          }, () => {});
+        }
+        return pending;
+      };
+      // Current rendering defers one canonical bounded anchor until interaction
+      // ends. Neither foreground frame runs the old whole-image reduction.
+      state.previewScheduler.beginInteraction();
+      const interactiveRendered = await renderGpuDraft("hdr", { longEdge, tier: "interactive" });
+      await new Promise((resolve) => setTimeout(resolve, 250));
       const interactiveReductions = completedReductions;
-      const settledRendered = await renderGpuDraft("hdr", { longEdge: 512, tier: "settled" });
-      await renderer.pendingHighlightMeasurement;
+      const interactiveAnchors = anchors.length;
+      const pendingDuringInteraction = pendingHighlightAnchors.size;
+      state.previewScheduler.endInteraction();
+      const settledRendered = await renderGpuDraft("hdr", { longEdge, tier: "settled" });
+      await drain();
       const settledReductions = reductions;
+      const settledAnchors = anchors.map((entry) => structuredClone(entry));
+      renderer.measureEditingPeak = originalEditingMeasure;
+      renderer.measureToneAdjustedPeak = originalMeasure;
 
       const low = await renderer.analyzeScope(els.previewCanvas, { width: 64, height: 32, tier: "settled" });
       const high = await renderer.analyzeScope(els.previewCanvas, { width: 256, height: 128, tier: "settled" });
@@ -149,7 +189,7 @@ function assert(condition, message) {
       await syncGlobalEditState();
       const staleScopeApplied = await refreshScopes(scopeLongEdge("interactive"), { tier: "interactive", lane: "hdr" });
       const staleScopeRetainedUpdating = els.scopeFreshness.classList.contains("updating");
-      const refreshedRendered = await renderGpuDraft("hdr", { longEdge: 512, tier: "settled" });
+      const refreshedRendered = await renderGpuDraft("hdr", { longEdge, tier: "settled" });
       const currentScopeApplied = await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "hdr" });
       return {
         measured,
@@ -165,6 +205,9 @@ function assert(condition, message) {
         settledRendered,
         interactiveReductions,
         settledReductions,
+        interactiveAnchors,
+        pendingDuringInteraction,
+        settledAnchors,
         lowPeak,
         highPeak,
         sourceSerial: high.sourceSerial,
@@ -193,8 +236,16 @@ function assert(condition, message) {
     assert(result.activeHdrGpuEligible === true,
       `Final-output HDR compression did not remain on WebGPU: ${JSON.stringify(result)}`);
     assert(result.interactiveRendered && result.settledRendered
-      && result.interactiveReductions === 0 && result.settledReductions === 1,
-    `Final-output highlight rendering used an unexpected number of peak reductions: ${JSON.stringify(result)}`);
+      && result.interactiveReductions === 0 && result.settledReductions === 0
+      && result.interactiveAnchors === 0 && result.pendingDuringInteraction > 0,
+    `Foreground rendering did not defer bounded anchor work: ${JSON.stringify(result)}`);
+    assert(result.settledAnchors.length === 1 && result.settledAnchors[0].completed
+      && !result.settledAnchors[0].interacting
+      && Number.isFinite(result.settledAnchors[0].anchor?.value)
+      && result.settledAnchors[0].metrics?.bounded === true
+      && result.settledAnchors[0].metrics.processedBound > 0
+      && result.settledAnchors[0].metrics.processedBound <= 4194304,
+    `One canonical anchor did not complete within the unchanged pixel budget: ${JSON.stringify(result)}`);
     assert(Math.abs(result.lowPeak - result.highPeak) / Math.max(result.highPeak, 1e-8) < 0.0001,
       `Settled scope peak changed with analysis resolution: ${JSON.stringify(result)}`);
     assert(result.sourceSerial === result.acceptedSourceSerial
@@ -202,7 +253,7 @@ function assert(condition, message) {
     `Scope source identity does not match the accepted presentation: ${JSON.stringify(result)}`);
     assert(result.staleScopeApplied === false && result.staleScopeRetainedUpdating,
       `A stale WebGPU source was presented for a newer edit: ${JSON.stringify(result)}`);
-    assert(result.replacementCurrent,
+    assert(result.replacementCurrent && result.refreshedRendered && result.currentScopeApplied,
       `The matching replacement preview did not recover: ${JSON.stringify(result)}`);
     console.log(JSON.stringify(result, null, 2));
   } finally {

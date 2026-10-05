@@ -2133,3 +2133,35 @@ the baseline drivers stopped at the old selector expectation. No shader,
 reconstruction math, CPU fallback or fixture changes. No checks retired.
 Fast suites pass: 463 Node / 1,692 Python, same three skips. Four protected
 project hashes remain unchanged.
+
+
+### 16.11 Deferred bounded highlight anchor and retained Peak arithmetic
+
+`gpu-highlight-compression-parity` preserves all four saturated HDR/BT.2020/
+generated-SDR/authored-SDR reduction comparisons with their original 0.00002
+relative limit. Its foreground lifecycle check now exercises actual interaction
+and the deferred canonical anchor: zero old foreground reductions, zero anchor
+jobs while interacting, positive pending anchor coverage, then exactly one
+completed job after release with finite value and positive conservative work
+within the unchanged 4,194,304-pixel budget. The observation hook returns the
+original bounded-measurement promise. No old pendingHighlightMeasurement wait
+is mistaken for live production work, and the held wrapper is not removed.
+
+The grade is synchronized and setup draft/scope/anchor work drains before the
+probe. Current required processing edge replaces the bootstrap 512-edge
+partial view, which cannot satisfy exact-current scheduling prerequisites.
+The original scope analysis-resolution limit 0.0001, accepted source serial/
+generation equality, stale-source rejection/updating indication and matching
+replacement recovery remain; a positive current-scope application is required.
+No shader, anchor implementation, pixel limit or app behavior changed.
+
+Two runs pass, including all four shader comparisons and exactly one deferred
+bounded anchor. Scope maxima agree exactly at 0.88623046875 at both resolutions;
+current replacement recovers with no refusal. Baseline's four shader guards
+passed but its obsolete exactly-one foreground reduction guard failed (zero
+reductions). The rewritten test still protects positive measurement work,
+sharing/deferral and scope identity under the current design. No check retired;
+Both runs use native 1,280-edge analysis, 16 patches, conservative bound
+243,712 pixels and anchor 113.3125. CF-PEAK and the deferred automatic-anchor
+redesign remain open. Fast suites pass: 463 Node and 1,692 Python, same three
+skips.
