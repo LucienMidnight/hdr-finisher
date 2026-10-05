@@ -2255,3 +2255,24 @@ logs and the initial ledger row are preserved. Actual driver reruns in sweep.
 
 Detail capture batch: actual sweep driver passes; fast suites 463 Node /
 1,692 Python pass with the same three skips. No app or fixture changes.
+
+
+### 16.16 Full-sweep Detail residency setup supersession
+
+`detail-cache-residency` initially refuses the first 42 MP render because a mask
+tile is unavailable or superseded. An unchanged repeat passes at the baseline's
+rounded 875.3-929.0 MB residency and 72.8-106.6 MB working set. Existing settle
+only awaited gpuDraftInFlight. It now drains picture/scope/anchor/mask work and
+cancels deferred refresh/pan/catch-up before its manual measurement. The first
+and second ordinary planned renders, positive Tiled route, cache-trim wait and
+all original residency/working-set/spread gates remain. No app/cache/budget fix.
+
+Synchronized diagnostic passes: same 72.8-106.6 MB working set, residency
+894.2-967.8 MB (+18.9/+38.8 MB endpoints versus baseline), spread 73.6 MB versus
+53.7 MB. All remain inside the original 1 GiB (1073.7 MB decimal) budget and
+spread gate. This setup-sensitive movement is reported, not attributed to the
+unused-wrapper removals. Initial failure and unchanged repeat are retained;
+actual driver reruns in the sweep. Saved projects are not used or modified.
+
+Residency batch: actual sweep driver passes with diagnostic-identical
+894.2-967.8 MB range; fast suites 463 Node / 1,692 Python pass, three skips.

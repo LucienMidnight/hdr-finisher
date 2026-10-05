@@ -103,8 +103,20 @@ const MB = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
         const settle = async () => {
           await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 600000 });
           await page.evaluate(async () => {
-            if (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => false);
+            const deadline = performance.now() + 60000;
+            while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+              || state.gpuScopeRequestInFlight || state.scopeRequestInFlight
+              || state.pendingGpuScopeRequest || state.pendingScopeRequest
+              || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size
+              || state.localMaskDraftController || state.localMaskDraftPending
+              || state.localMaskDraftTimer) {
+              if (performance.now() > deadline) throw new Error("Automatic setup work did not settle before residency measurement");
+              await new Promise((resolve) => setTimeout(resolve, 20));
+            }
             state.previewScheduler?.cancel();
+            window.clearTimeout(state.refreshTimer);
+            state.renderCoordinator.cancelCatchUp(state.currentView);
+            state.renderCoordinator.cancelPan(state.currentView);
           });
         };
         await settle();

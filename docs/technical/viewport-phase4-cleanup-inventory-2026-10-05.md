@@ -277,3 +277,14 @@ baseline rounded seams. Original failed capture/repeat evidence kept. PRD 16.15.
 
 Detail capture batch: actual sweep driver passes; fast suites 463 Node /
 1,692 Python pass with the same three skips. No app or fixture changes.
+
+
+## Full-sweep Detail residency setup
+
+Drain automatic picture/scope/anchor/mask work before manual residency renders.
+Original Tiled/cache-trim/memory/spread guards retained. Diagnostic stays within
+all original limits; peak residency endpoints increase 18.9/38.8 MB while
+working-set endpoints are unchanged. Initial failure/repeat retained. PRD 16.16.
+
+Residency batch: actual sweep driver passes with diagnostic-identical
+894.2-967.8 MB range; fast suites 463 Node / 1,692 Python pass, three skips.
