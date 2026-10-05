@@ -65,17 +65,34 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
     assert.equal(fit.output, "display");
     assert.ok(fit.processed < fit.native, JSON.stringify(fit));
 
-    await page.evaluate(() => {
+    const gestureSetup = await page.evaluate(async () => {
+      // Finish automatic import/anchor work before injecting a slow graph sample.
+      // Its real timings must not overwrite the sample before this gesture runs.
+      const deadline = performance.now() + 120000;
+      while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+        || state.scopeRequestInFlight || state.gpuScopeRequestInFlight
+        || state.pendingScopeRequest || state.pendingGpuScopeRequest
+        || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+        if (performance.now() > deadline) throw new Error("Automatic setup work did not settle");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      state.previewScheduler.cancel();
+      window.clearTimeout(state.refreshTimer);
+      state.renderCoordinator.cancelCatchUp(state.currentView);
+      state.renderCoordinator.cancelPan(state.currentView);
       state.previewScheduler.timings.settleMs = 2500;
-      state.previewLatencyController.samples.set(previewGraphTimingKey(), { msPerPixel: 0.001, count: 1 });
-    });
-    await page.evaluate(() => {
-      // P5: a softer frame is only for an active gesture.
+      // Faster Dragging now uses Balanced timing: exercise its learned slow
+      // graph path explicitly instead of assuming the old Responsive cold start.
       state.previewScheduler.beginInteraction();
+      state.previewLatencyController.samples.set(previewGraphTimingKey(), { msPerPixel: 0.001, count: 1 });
+      const decision = interactiveScaleDecision(state.currentView, { interacting: true });
       const control = document.querySelector("#hdr-exposure");
       control.value = "0.5";
       control.dispatchEvent(new Event("input", { bubbles: true }));
+      return { fasterDragging: state.fasterDragging, decision };
     });
+    assert.equal(gestureSetup.fasterDragging, true);
+    assert.equal(gestureSetup.decision.coarse, true, JSON.stringify(gestureSetup));
     await page.waitForFunction(() => viewerStatusLabel().startsWith("Coarse —"), null, { timeout: 30000 });
     const coarse = await page.evaluate(() => ({ edge: state.acceptedPresentation.processedLongEdge,
       exact: state.acceptedPresentation.exact, label: viewerStatusLabel(),

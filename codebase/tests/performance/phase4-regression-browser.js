@@ -11,7 +11,8 @@ const width = Number(process.argv.includes('--width') ? process.argv[process.arg
 const height = Number(process.argv.includes('--height') ? process.argv[process.argv.indexOf('--height') + 1] : 2800);
 const preferences = process.argv.includes('--preferences')
   ? process.argv[process.argv.indexOf('--preferences') + 1].split(',')
-  : ['responsive', 'balanced', 'precise'];
+  : ['on', 'off'];
+const fasterDraggingOn = (mode) => !['off', 'precise'].includes(mode);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: 'msedge',
@@ -47,9 +48,9 @@ const preferences = process.argv.includes('--preferences')
     const steps = [];
     for (const preference of preferences) {
       await page.evaluate((mode) => {
-        // P5: Responsive and Balanced became Faster dragging on; Precise is off.
+        // Keep legacy command-line aliases, but test the current on/off control.
         const faster = document.getElementById("preview-faster-dragging");
-        const on = mode !== "precise";
+        const on = !["off", "precise"].includes(mode);
         if (faster && faster.checked !== on) {
           faster.checked = on;
           faster.dispatchEvent(new Event("change", { bubbles: true }));
@@ -58,17 +59,36 @@ const preferences = process.argv.includes('--preferences')
       for (const [name, zoom] of [['out-50', 50], ['out-35', 35], ['native-100', 100], ['zoom-200', 200],
         ['fit', null], ['warm-50', 50], ['warm-100', 100]]) {
         const before = await page.evaluate(async () => {
+          const deadline = performance.now() + 120000;
+          while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+            || state.scopeRequestInFlight || state.gpuScopeRequestInFlight
+            || state.pendingScopeRequest || state.pendingGpuScopeRequest
+            || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+            if (performance.now() > deadline) throw new Error('Automatic setup work did not settle');
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          state.previewScheduler.cancel();
+          window.clearTimeout(state.refreshTimer);
+          state.renderCoordinator.cancelCatchUp(state.currentView);
+          state.renderCoordinator.cancelPan(state.currentView);
           const id = state.session.session_id;
           return { cache: (await (await fetch(`/api/session/${id}/diagnostics`)).json()).render_cache.source_mip,
             eventCount: window.__regressionEvents.length, stateCount: window.__regressionStates.length };
         });
         const start = Date.now();
-        const immediate = await page.evaluate((value) => {
+        const immediate = await page.evaluate(({ value, slowGraph }) => {
           if (value === null) setZoomMode('fit'); else setCustomZoom(value);
+          // Balanced has no forced coarse cold start. Exercise the live coarse
+          // zoom path with a learned slow graph, before its timer dispatches.
+          if (slowGraph) state.previewLatencyController.samples.set(previewGraphTimingKey(),
+            { msPerPixel: 0.001, count: 1 });
           return { at: performance.now(), required: requiredProcessingLongEdge(), status: viewerStatusLabel(),
+            fasterDragging: state.fasterDragging, slowGraph,
             accepted: state.acceptedPresentation?.processedLongEdge,
             decision: interactiveScaleDecision(), graph: previewGraphTimingKey() };
-        }, zoom);
+        }, { value: zoom, slowGraph: fasterDraggingOn(preference) && name === 'out-50' });
+        assert.equal(immediate.fasterDragging, fasterDraggingOn(preference));
+        if (immediate.slowGraph) assert.equal(immediate.decision.coarse, true, JSON.stringify(immediate));
         await page.waitForFunction(() => viewerState().status === 'ready'
           && state.acceptedPresentation?.processedLongEdge === requiredProcessingLongEdge(), null,
         { timeout: 600000 });
@@ -135,8 +155,8 @@ const preferences = process.argv.includes('--preferences')
           + `luma ${pan.centerLuma.toFixed(3)}, ${pan.viewer}`);
       }
       for (const [name, selector, value] of [['exposure', '#hdr-exposure',
-        preference === 'responsive' ? '0.25' : preference === 'balanced' ? '0.5' : '0.75'],
-      ['detail', '#detail-texture', preference === 'responsive' ? '12' : preference === 'balanced' ? '18' : '24']]) {
+        preference === 'balanced' ? '0.5' : fasterDraggingOn(preference) ? '0.25' : '0.75'],
+      ['detail', '#detail-texture', preference === 'balanced' ? '18' : fasterDraggingOn(preference) ? '12' : '24']]) {
         const before = await page.evaluate(() => ({ generation: state.previewGeneration.hdr,
           stateCount: window.__regressionStates.length }));
         const immediate = await page.evaluate(({ selector, value }) => {
@@ -167,12 +187,12 @@ const preferences = process.argv.includes('--preferences')
     // run's data on disk for diagnosis.
     fs.mkdirSync(path.dirname(output), { recursive: true });
     fs.writeFileSync(output, JSON.stringify({ fixture: `${width}x${height} deterministic noisy TIFF`, steps }, null, 2));
-    if (preferences.includes('responsive')) {
-      const cold = steps.find((step) => step.preference === 'responsive' && step.name === 'out-50');
-      const warm = steps.find((step) => step.preference === 'responsive' && step.name === 'warm-50');
+    for (const preference of preferences.filter(fasterDraggingOn)) {
+      const cold = steps.find((step) => step.preference === preference && step.name === 'out-50');
+      const warm = steps.find((step) => step.preference === preference && step.name === 'warm-50');
       const coldCoarse = cold?.states?.find((entry) => entry.coarse);
       const warmCoarse = warm?.states?.find((entry) => entry.coarse);
-      assert.ok(coldCoarse, 'Responsive zoom never presented coarse pixels');
+      assert.ok(coldCoarse, 'Faster Dragging slow-graph zoom never presented coarse pixels');
       // Phase 5 item 1 keeps a lane's source levels until the central budget
       // asks for them back, so a warm 50% can reuse the exact level it built
       // cold and present it without a coarse flash. The invariant is that warm
@@ -187,10 +207,10 @@ const preferences = process.argv.includes('--preferences')
       assert.equal(warm.cacheAfter.cold_builds - warm.cacheBefore.cold_builds, 0,
         'Warm zoom rebuilt a source mip instead of reusing the cache');
     }
-    if (preferences.includes('precise')) {
-      assert.ok(steps.filter((step) => step.preference === 'precise')
+    for (const preference of preferences.filter((mode) => !fasterDraggingOn(mode))) {
+      assert.ok(steps.filter((step) => step.preference === preference)
         .every((entry) => !entry.states?.some((state) => state.coarse)),
-      'Precise unexpectedly presented a coarse frame');
+      'Faster Dragging off unexpectedly presented a coarse frame');
     }
   } finally { await browser.close(); }
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -1835,3 +1835,38 @@ scenario rather than a like-for-like speed comparison.
 
 Fast suites: 463 Node and 1,692 Python checks pass, same three skips. Logs are
 in the phase4-cleanup evidence directory. Phase 4 remains in progress.
+
+### 16.3 Faster Dragging checks
+
+Two old-design drivers are rewritten without changing app behavior.
+`phase4-preview` drains automatic setup work, then injects a learned slow-graph
+sample in the same browser task that starts its active gesture. Faster Dragging
+uses Balanced timing now: the old Responsive cold-start assumption no longer
+provides reliable positive coarse coverage. The test still requires actual
+coarse presentation within 30 seconds and exact refinement within its existing
+120-second limit. Both repeated runs pass: Display exact 698 pixels, coarse
+512, exact refinement 698; the no-coarse control is byte-identical. Rapid
+reversals present only current generation 7, and native processing reaches
+2,400 pixels with no page errors. Preference migration and round-trip remain.
+The Electron harness seeds schema-2/2K preferences before launch only in its
+new disposable profile, matching the browser test's localStorage fixture.
+An initial unseeded desktop attempt failed the migration assertion and is
+not counted as a pass; the corrected run log replaces that initial attempt.
+
+`phase4-regression-browser` defaults to Faster Dragging on/off and preserves
+Responsive/Balanced/Precise CLI aliases. It drains setup before each zoom and
+seeds a slow graph only for the positive coarse zoom case. Actual coarse
+pixels, unchanged warm coarse level if present, zero warm source-mip builds,
+exact target processing and no coarse pixels with Faster Dragging off remain
+gates. Both the current-mode run and the legacy-alias run pass. Current on:
+cold 50% exact 515 ms / first changed current frame 266 ms; warm 50% exact
+197 ms / first 105 ms. Off: cold 50% exact 103 ms, warm 115 ms. These are
+single-session measurements with deliberate slow timing injection; they are
+not like-for-like speed comparisons with the baseline's failed old-mode gate.
+Pan and edit timing evidence remains in both reports.
+
+No test retired, pixel tolerance relaxed, shader changed or app fix mixed in.
+Full driver sweep, coverage audits and the other old-design checks remain
+pending; Phase 4 is not complete.
+Fast suites for this batch: 463 Node checks and 1,692 Python checks pass,
+with the same three skips.

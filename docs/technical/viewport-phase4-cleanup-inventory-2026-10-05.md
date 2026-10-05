@@ -115,3 +115,15 @@ Fast suites: 463 Node pass, Python 1,692 pass with three skips.
 roi-refinement, highlight-lane-4k and tier-change-blank-canvas are rewritten
 and pass. Original tiled blank-frame coverage is retained; Auto is also tested.
 PRD 16.2 records all replacements and measurements. No tests retired.
+
+## Faster Dragging batch
+
+phase4-preview and phase4-regression-browser now exercise the current on/off
+control and pass. Coarse presentation remains positively tested with a learned
+slow-graph sample; Balanced cold-start exactness is no longer mistaken for a
+regression of the old Responsive mode. Legacy CLI aliases remain supported.
+Migration, preference round-trip, exact pixel equality, latest-generation
+reversal, native processing, warm source-mip reuse and off-mode exactness gates
+remain. The Electron runner seeds the migration fixture only in the fresh
+profile it creates; existing externally supplied profiles are not written.
+PRD 16.3 records the measurements. No checks retired or app code changed.
