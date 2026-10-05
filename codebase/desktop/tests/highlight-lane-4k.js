@@ -98,7 +98,30 @@ function presentation(page, predicate, timeout = 180000) {
     assert.equal(compressionState.accepted.transport, "WebGPU", "Highlight Compression presented a CPU/backend frame");
     assert.equal(fourKState.selected, "4096");
     assert.ok(fourKState.accepted.processedLongEdge >= 4096, "The accepted Grade presentation was not 4K");
-    assert.ok(Math.max(fourKState.canvas.width, fourKState.canvas.height) >= 4096, "The canvas backing texture was not 4K");
+    // Processing remains 4K; the visible backing surface follows the accepted
+    // viewport-sized output rather than allocating a whole 4K picture.
+    assert.equal(fourKState.accepted.transport, "WebGPU");
+    assert.equal(fourKState.accepted.exact, true);
+    assert.equal(fourKState.accepted.requestedTier, "4096");
+    assert.deepEqual(fourKState.canvas, {
+      width: fourKState.accepted.width, height: fourKState.accepted.height,
+    }, "Canvas backing dimensions disagree with the accepted output");
+    assert.ok(fourKState.canvas.width > 0 && fourKState.canvas.height > 0,
+      "The accepted canvas has no pixels");
+    const box = await page.locator("#preview-canvas").boundingBox();
+    assert.ok(box && box.width > 0 && box.height > 0, "The returned HDR canvas is not visible");
+    const screenshot = await page.screenshot({ clip: box });
+    const paintedPeak = await page.evaluate(async (source) => {
+      const image = new Image();
+      image.src = source;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 32;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(image, 0, 0, 32, 32);
+      return Math.max(...context.getImageData(0, 0, 32, 32).data.filter((_, index) => index % 4 !== 3));
+    }, `data:image/png;base64,${screenshot.toString("base64")}`);
+    assert.ok(paintedPeak > 0, "The returned HDR compositor frame is blank");
     assert.deepEqual(pageErrors, []);
     console.log(JSON.stringify({ enableCompression, compressionState, fourK, fourKState, firstSdr, firstSdrRefined, returnHdr }, null, 2));
   } finally {

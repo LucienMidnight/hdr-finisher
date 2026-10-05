@@ -1804,3 +1804,34 @@ Fast suites: 463 Node checks (427 primary + 36 additional) and 1,692 Python
 checks pass, with the same three skips. No test retired, limit relaxed or app
 fix mixed in. The remaining old-design checks, full sweep and coverage audits
 are still pending; the original baseline is not overwritten.
+
+### 16.2 Viewport presentation checks
+
+Three old-design drivers are rewritten without app changes or retired tests.
+`roi-refinement` now requires a successful interactive native-scale viewport
+pass, a retained frame and complete foreground/reused tile coverage. Its
+refinement-region tolerance, cache no-work gate and preference checks remain.
+It passes: two cached viewport tiles reused, zero processed pixels, no page
+errors; custom-zoom interactive work correctly carries a viewport.
+
+`highlight-lane-4k` preserves the 4K processing and HDR/SDR lane checks. It
+requires exact 4K GPU acceptance, canvas dimensions matching the accepted output,
+nonzero dimensions and a painted compositor screenshot after returning to HDR.
+The old whole-4K backing allocation is replaced by the output-size contract.
+The native driver passes and its Desktop project SHA-256 is unchanged.
+
+`tier-change-blank-canvas` preserves the original tiled-presentation regression
+by setting tiled execution through real preferences in its disposable profile.
+A direct function-only override was reset by resolution preference changes;
+that setup attempt correctly failed its retained tiled assertion. The corrected
+forced-tiled transition completes in 1,236 ms, with ten painted samples, zero
+blank/nothing samples and zero CPU picture requests. An additional Auto run
+uses Direct: 849 ms, nine painted samples, zero blank/nothing samples and zero
+CPU picture requests. Both require exact Full processing at 7,968 pixels.
+The same compositor sampler, blank threshold and transition timeout remain.
+Baseline Auto was 857 ms / nine painted samples: this run is 8 ms lower,
+without a controlled latency attribution. Forced-tiled is a distinct added
+scenario rather than a like-for-like speed comparison.
+
+Fast suites: 463 Node and 1,692 Python checks pass, same three skips. Logs are
+in the phase4-cleanup evidence directory. Phase 4 remains in progress.

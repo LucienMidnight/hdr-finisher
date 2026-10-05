@@ -112,6 +112,21 @@ assert(classifyPeak(0) === "blank" && classifyPeak(255) === "painted",
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 900000 });
 
+    // Keep the original tiled-presentation regression exercised even when
+    // viewport-sized Full would naturally fit Direct. --execution auto also
+    // checks the ordinary admission route with the same pixel sampler.
+    const execution = argument("--execution", "tiled");
+    assert(["tiled", "auto"].includes(execution), "Unknown execution mode: " + execution);
+    if (execution === "tiled") {
+      await page.evaluate(() => {
+        // Persist in this disposable profile: resolution changes replay the
+        // shell preferences and would reset a direct function-only override.
+        const select = document.querySelector("#settings-execution-override");
+        select.value = "tiled";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+
     // Settle at 4K first, so the tier change to Full is a real resize from one
     // presented frame to another. Starting cold would confuse "nothing has
     // been drawn yet" with "what was drawn has been thrown away".
@@ -121,7 +136,8 @@ assert(classifyPeak(0) === "blank" && classifyPeak(255) === "painted",
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await page.waitForFunction(
-      () => viewerState().status === "ready" && state.acceptedPresentation?.exact === true,
+      () => viewerState().status === "ready" && state.acceptedPresentation?.exact === true
+        && state.acceptedPresentation?.requestedTier === "4096",
       null, { timeout: 900000 },
     );
     await page.waitForTimeout(2000);
@@ -153,6 +169,7 @@ assert(classifyPeak(0) === "blank" && classifyPeak(255) === "painted",
       }
       return {
         elapsedMs: performance.now() - startedAt,
+        accepted: { ...state.acceptedPresentation },
         execution: state.acceptedPresentation?.execution || null,
         transport: state.acceptedPresentation?.transport || null,
         cpuFallbacks: JSON.parse(JSON.stringify(state.cpuFallbacks)),
@@ -197,9 +214,16 @@ assert(classifyPeak(0) === "blank" && classifyPeak(255) === "painted",
     assert(result.painted > 0,
       "No sample ever showed a painted frame, so the sampler is not working: "
       + JSON.stringify(result));
-    assert(result.execution === "tiled",
-      "Full did not tile, so the path under test was not exercised: "
-      + JSON.stringify(result));
+    assert(result.accepted?.exact === true && result.accepted?.requestedTier === "full"
+      && result.accepted?.processedLongEdge === WIDTH && result.transport === "WebGPU",
+      "The transition did not reach exact Full processing on the GPU: " + JSON.stringify(result));
+    if (execution === "tiled") {
+      assert(result.execution === "tiled",
+        "Forced Full did not tile, so the original path was not exercised: " + JSON.stringify(result));
+    } else {
+      assert(["direct", "tiled"].includes(result.execution),
+        "Auto Full did not report an admitted GPU route: " + JSON.stringify(result));
+    }
 
     // drawImage cannot reliably read a WebGPU canvas after compositor handoff,
     // so every sample above is a Chromium compositor screenshot instead.

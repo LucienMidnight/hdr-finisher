@@ -109,3 +109,9 @@ Evidence: codebase/output/performance/review/phase4-cleanup-2026-10-05/.
 Both named timing-race drivers are rewritten and pass their original gates.
 No test retired. Detail and first-attempt failure are recorded in PRD 16.1.
 Fast suites: 463 Node pass, Python 1,692 pass with three skips.
+
+## Viewport presentation batch
+
+roi-refinement, highlight-lane-4k and tier-change-blank-canvas are rewritten
+and pass. Original tiled blank-frame coverage is retained; Auto is also tested.
+PRD 16.2 records all replacements and measurements. No tests retired.

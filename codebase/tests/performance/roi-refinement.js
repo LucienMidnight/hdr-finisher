@@ -1,17 +1,17 @@
-// Phase 2 ROI refinement -- the visible-region pass is opt-in, applies only to
-// the refinement tier, and never limits interactive pan or zoom.
+// Viewport refinement -- the diagnostic switch controls refinement; custom
+// zoom also bounds interactive work to the visible region.
 //
 //   node tests/performance/roi-refinement.js --url http://127.0.0.1:8765
 //
-// The recommended behaviour: pan and zoom stay whole-frame (instant, no gaps),
-// and the expensive refinement pass processes only the tiles the viewer can
-// see while the retained target keeps the rest of the accepted frame.
+// Foreground passes process the visible tiles while the retained target
+// keeps accepted pixels outside that region. Returning to refined tiles does
+// no processing work.
 //
 // Negative controls:
 //   - with the switch off, the refinement pass carries no viewport
 //   - with the switch on and a magnified view, the refinement pass carries the
 //     visible rect, retains the accepted frame, and skips offscreen tiles
-//   - an interactive-tier pass carries no viewport even with the switch on
+//   - an interactive-tier pass at custom zoom covers the visible tile set
 
 const fs = require("fs");
 const path = require("path");
@@ -168,23 +168,23 @@ function assert(condition, message) {
     );
     assert(cached.metrics.processedPixels === 0, `The cached pass processed pixels: ${JSON.stringify(cached.metrics)}`);
 
-    // An interactive pass must stay whole frame even with the switch on. It may
-    // refuse (the viewer is at another tier), in which case there is no new
-    // presentation to inspect; the static contract test enforces the tier gate.
+    // Custom zoom bounds interactive passes too. Keep the selected native
+    // processing size so this checks real editing work rather than a bootstrap
+    // resize, and require a successful pass rather than a vacuous refusal.
     await page.evaluate(() => window.HDRFinisherPerformance.cancelRoiCatchUp());
     const interactive = await page.evaluate(async () => {
-      const rendered = await renderGpuDraft(state.currentView, { tier: "interactive", longEdge: 512 });
+      const rendered = await renderGpuDraft(state.currentView, { tier: "interactive", longEdge: requiredProcessingLongEdge() });
       return {
         rendered: Boolean(rendered),
         metrics: window.HDRFinisherPerformance.tiledExecutionMetrics(),
       };
     });
-    if (interactive.rendered) {
-      assert(
-        interactive.metrics?.viewportRequested === false,
-        `An interactive pass was ROI-limited: ${JSON.stringify(interactive.metrics)}`,
-      );
-    }
+    assert(interactive.rendered, `Interactive viewport pass was refused: ${JSON.stringify(interactive)}`);
+    assert(interactive.metrics?.viewportRequested === true && interactive.metrics?.retainedFrame === true,
+      `Interactive viewport pass lost the visible request or retained frame: ${JSON.stringify(interactive.metrics)}`);
+    assert(interactive.metrics.viewportTiles > 0
+      && interactive.metrics.foregroundTiles + interactive.metrics.reusedTiles === interactive.metrics.viewportTiles,
+      `Interactive viewport coverage is incomplete: ${JSON.stringify(interactive.metrics)}`);
 
     // The user-facing surface: the Settings select drives the same state. Done
     // last, because a preference change schedules the app's own render cycle.
