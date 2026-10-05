@@ -244,3 +244,14 @@ non-gating diagnostic records further UI contract mismatches and a timeout.
 No app fixes or test retirement. PRD 16.12 records the evidence.
 
 Local design batch fast suites: 463 Node / 1,692 Python pass, three skips.
+
+
+## Full-sweep path-node timing repair
+
+local-adjustment-usability waits for preceding viewer/mask work and current
+geometry mapping before calculating the real node click. Added positive tangent
+overlap guard; all original assertions retained. Two repeats pass. Original
+sweep failure/repeat and pointer diagnostic retained. See PRD 16.13.
+
+Path-node batch: actual sweep driver passes; fast suites 463 Node / 1,692
+Python pass with the same three skips. No app changes or fixture writes.

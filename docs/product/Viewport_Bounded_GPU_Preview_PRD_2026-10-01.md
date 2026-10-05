@@ -2190,3 +2190,25 @@ The driver remains red for a named unresolved contract. Evidence is in
 `phase4-cleanup-2026-10-05/logs/local-design-qa*.log`.
 
 Local design batch fast suites: 463 Node / 1,692 Python pass, three skips.
+
+
+### 16.13 Full-sweep path-node coordinate timing repair
+
+`local-adjustment-usability` passed in the baseline but failed twice in the
+cleanup sweep: the old Smooth node remained selected after clicking its
+neighbour. A diagnostic preserves the original real click and records the
+computed node hit, then a null hit at actual pointerdown; the current geometry
+map is unavailable as preceding edit work changes processing size. Only the
+unused-wrapper removals affect app source; no event or geometry app fix is made.
+
+The test waits for the preceding Smooth edit's viewer/mask work, ensures the
+current coordinate map, then calculates the pointer coordinate. A new positive
+check requires the tangent still overlaps the neighbouring node, preventing a
+lost fixture from satisfying the test. Two diagnostic repeats pass every
+original node selection/profile state, rename, layout and scrolling guard.
+Original failures and pointer-event evidence remain in the phase 4 logs; the
+initial sweep row is preserved in `sweep-initial-attempts.json`. The full sweep
+reruns the actual repaired driver. No original assertion removed or loosened.
+
+Path-node batch: actual sweep driver passes; fast suites 463 Node / 1,692
+Python pass with the same three skips. No app changes or fixture writes.

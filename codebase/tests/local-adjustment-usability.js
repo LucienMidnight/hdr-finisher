@@ -49,14 +49,23 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
       renderLocalMaskOverlay();
     });
 
+    // Wait for the preceding Smooth edit's viewer/mask work before calculating
+    // a pointer coordinate; processing-size changes invalidate geometry maps.
+    await page.waitForFunction(() => viewerState().status === "ready"
+      && !state.gpuDraftInFlight && !state.previewScheduler?.frameInFlight
+      && !state.localMaskDraftController && !state.localMaskDraftPending
+      && !state.localMaskDraftTimer, null, { timeout: 30000 });
+    await page.evaluate(async () => { await ensureGeometryCoordinateMap(); });
+    await page.waitForFunction(() => Boolean(currentGeometryCoordinateMap()));
     const secondNodeTarget = await page.evaluate(() => {
       const nodes = activePathNodes(firstMaskLeaf(selectedLocal().mask, "path"));
       const rect = activePreviewElement().getBoundingClientRect();
       const display = sourcePointToDisplay(nodes[1]);
       const clientX = rect.left + rect.width * display.x;
       const clientY = rect.top + rect.height * display.y;
-      return { clientX, clientY, hit: pathTargetAtPointer({ clientX, clientY }, nodes, state.selectedPathNode) };
+      return { clientX, clientY, overlapping: nodes[0].out_x === nodes[1].x && nodes[0].out_y === nodes[1].y, hit: pathTargetAtPointer({ clientX, clientY }, nodes, state.selectedPathNode) };
     });
+    assert(secondNodeTarget.overlapping, "The overlapping tangent fixture was lost during setup");
     assert(secondNodeTarget.hit?.type === "node" && secondNodeTarget.hit.index === 1, `The second node did not hit-test as itself: ${JSON.stringify(secondNodeTarget)}`);
     await page.mouse.click(secondNodeTarget.clientX, secondNodeTarget.clientY);
     const nodeSelection = await page.evaluate(() => {
