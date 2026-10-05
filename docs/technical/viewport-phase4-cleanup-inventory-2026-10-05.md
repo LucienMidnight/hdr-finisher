@@ -288,3 +288,12 @@ working-set endpoints are unchanged. Initial failure/repeat retained. PRD 16.16.
 
 Residency batch: actual sweep driver passes with diagnostic-identical
 894.2-967.8 MB range; fast suites 463 Node / 1,692 Python pass, three skips.
+
+
+## Full-sweep stop-gate setup
+
+Pending read-only Peak work from setup shared the measured submission log.
+Drain automatic work around warm-up; keep all50ms gates and add a positive
+two-render identity guard. Two diagnostics pass at baseline4.1ms. Initial
+failure/repeat retained; no app fix. See PRD16.20. Actual sweep passes;
+fast463 Node /1,692 Python pass, three skips.

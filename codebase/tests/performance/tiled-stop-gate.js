@@ -83,12 +83,30 @@ function assert(condition, message) {
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
 
     const outcome = await page.evaluate(async ({ delayMs }) => {
+      // Read-only Peak reductions from setup also use the tiled encoder's
+      // submission log. Finish them before measuring the two explicit calls.
+      const drainSetup = async () => {
+        const deadline = performance.now() + 120000;
+        while (state.gpuDraftInFlight || state.previewScheduler?.frameInFlight
+          || state.scopeRequestInFlight || state.gpuScopeRequestInFlight
+          || state.pendingScopeRequest || state.pendingGpuScopeRequest
+          || pendingHighlightAnchors.size || exactHighlightAnchorInflight.size) {
+          if (performance.now() > deadline) throw new Error("Automatic stop-gate setup did not settle");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        state.previewScheduler?.cancel();
+        window.clearTimeout(state.refreshTimer);
+        state.renderCoordinator?.cancelCatchUp(state.currentView);
+        state.renderCoordinator?.cancelPan(state.currentView);
+      };
+      await drainSetup();
       state.gpuPreview.instrumentationEnabled = true;
       const longEdge = Math.max(state.session.source.width, state.session.source.height);
       // Warm-up: proxy, masks and the denoise selector are cached, so the
       // measured pair reaches the encode loop where the per-tile awaits are.
       await window.HDRFinisherPerformance.renderTiledTier(longEdge);
       await new Promise((resolve) => setTimeout(resolve, 200));
+      await drainSetup();
       state.gpuPreview.submissionLog = [];
 
       const first = window.HDRFinisherPerformance.renderTiledTier(longEdge);
@@ -116,6 +134,7 @@ function assert(condition, message) {
     // The superseded generation is the one whose serial the newer render
     // replaced: the last distinct serial before the newest one.
     const serials = [...new Set(log.map((entry) => entry.serial))];
+    assert(serials.length === 2, `Expected only the two measured renders: ${JSON.stringify(serials)}`);
     const newSerial = serials[serials.length - 1];
     const staleSerials = new Set(serials.slice(0, -1));
     const newEntries = log.filter((entry) => entry.serial === newSerial);

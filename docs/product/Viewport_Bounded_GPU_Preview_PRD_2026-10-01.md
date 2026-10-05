@@ -1717,6 +1717,7 @@ column) without confirming the item first.
 | CF-SPEED-05 | Cold Denoise pan-enable-drag on the saved 42 MP photo: none to seven frames during 60 inputs | `tests/denoise-pan-enable-drag.js --project` |
 | CF-DRIFT-01 | 30-minute endurance: HDR Clarity drag +32.8%, fresh brush stroke +22.9%, zoom to 100% +27.4% between the first and last ten cycles. Observed, not attributed | `heavy-project-long-session.js` |
 | CF-DRIFT-03 | Phase 4 headline repeat: warm Fit current/settled p95 245.2ms vs baseline33.4 (50/100ms targets); warm100% refined138.4 vs53.9 (100ms); warm native zoom893.6 vs9.1 (150ms). New target misses, observed/unattributed, confirmation pending; no app fix or limit change. See16.17 |
+| CF-DRIFT-04 | Cleanup primary audit: rotated SDR compact-Haar Denoise color_noise takes15,013ms vs582 baseline; other long-tail rows also move. Exact WebGPU presentation, no row error/CPU request. Observed/unattributed; focused confirmation pending. See16.19 |
 | CF-DRIFT-02 | local-design-qa reaches retained visual checks after pending/assigned-mask setup repair: shared switch is 46x20 with 2px border, original contract requires 46x24/borderless. Diagnostic also observes scrollbar/control-section mismatches and keyboard-lane timeout. Four original clipboard reference images are absent, so intended appearance remains unconfirmed. No app fix or weakened assertion. See 16.12 |
 
 **CPU work behind an exact GPU frame.**
@@ -2320,3 +2321,48 @@ and 26 HTTP 409 responses versus 35 (CF-ROUTE-05). Response bodies are still not
 captured, so the supersession explanation remains tentative. These findings
 are not closed or attributed to the two unused-wrapper deletions. No app fix,
 limit, CPU path or shader change. Full driver sweep and three audits continue.
+
+
+### 16.19 Cleanup coverage audits (October 6; in progress)
+
+Primary audit complete: all 1,250 original rows matched, including 312 Denoise
+rows, zero errors and every row exact WebGPU. Saved-project hash unchanged.
+Flagged rows 69 to 68; CPU mask requests121 to117, whole-native requests13 to12,
+CPU picture/scopes remain0/0, source-luminance requests27 unchanged. These
+CPU mask/source routes remain live (CF-ROUTE-01/03); no removal is justified.
+
+Median row duration800 to811.5ms. Largest increases: rotated SDR compact-Haar
+color_noise582 to15,013ms; perspective SDR levels1,817 to7,634; flipped SDR
+chroma_sigma595 to3,558. Largest decrease: rotated HDR luminance-intersect-gradient
+3,761 to1,521ms. Per-state/control timing and route differences are retained
+in audit-comparison.json. CF-DRIFT-04 records the new long-tail observation;
+a focused rotate/SDR repeat is pending, with no app fix or attribution.
+Four-mask and fifty-local audits are still pending.
+
+
+### 16.20 Stop-gate setup synchronization (October 6)
+
+Baseline-passing tiled-stop-gate fails its full-sweep attempt and unchanged
+repeat: longest logged encode span161.4/162.4ms versus the unchanged50ms gate;
+actual stop latency24.3/25.1ms and no stale submission after the newer render.
+Original logs/reports and the initial ledger entry are preserved.
+
+A separate origin diagnostic proves pending read-only Peak reductions from
+setup use the tiled submission log alongside explicit picture renders. Their
+serials can appear to belong to another generation even though the read-only
+pass does not supersede the visible canvas. The diagnostic logs scope origins
+and pending scope state; the original test intended to measure two picture calls.
+
+Test-only repair drains automatic picture/scope/anchor work and cancels deferred
+scheduler/refresh/pan/catch-up before warm-up and after its original200ms wait.
+All original50ms gates, delay, newer-picture presentation and stale-submission
+assertions remain. An added positive guard requires exactly the two measured
+serials. Two synchronized diagnostics pass: longest span4.1ms, matching baseline;
+no stale submissions after the newer render. The first measured pass completes
+before the200ms supersession in baseline and these repeats; this driver does not
+provide positive mid-encode interruption coverage. Existing Full overlap tests
+retain their positive overlap coverage. No app fix or limit change.
+
+Fast suites463 Node /1,692 Python pass, same three skips. The actual sweep
+driver passes: two measured serials, span4ms inside50ms, no stale submissions
+after the newer render, both picture calls present via WebGPU.
