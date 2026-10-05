@@ -417,6 +417,11 @@ The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libult
 
 ### DENOISE-01 — Screen-door pattern at high Strength
 
+**Status:** Resolved (Steve, October 5, 2026). The pattern belonged to the
+wavelet Denoise described below; it no longer appears since the switch to
+adaptive Denoise. Closed on Steve's hands-on report, not on a measurement. The
+analysis below is kept as the record for the wavelet method.
+
 At high Amount the current denoise leaves a regular grid texture in flat
 areas, visible as a fine screen door rather than as smoothing.
 

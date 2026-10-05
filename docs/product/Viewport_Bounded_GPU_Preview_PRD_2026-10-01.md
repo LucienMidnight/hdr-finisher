@@ -1605,10 +1605,9 @@ levels.
 | Timing evidence | Perspective and un-straightened first-zoom timings are single sessions | 14.23 |
 | Not designed | Healing brush | 10 |
 | Denoise coverage | The coverage audit still does not include Denoise. The cold pan-enable-drag case on the saved 42 MP photo misses its driver's gate (6-7 frames, or 1.1 s to the first) | 14.25 |
-| `roi-pan-cache` driver | Fails ("the pan pass did not use the retained frame"), and did before the Denoise work; not investigated | 14.25 |
+| `tiled-admission-scope-fallback` driver | Fails at `de48a40` and after the October 5 fixes alike: the CPU scope is presented, but the driver's own scope request resolves false. Found October 5; not investigated | 15.5 |
 | Editing Peak masks | The measurement makes a plain luminance-range leaf from its patch. A combination containing one, and a luminance feather wide enough to be blurred on a reduced grid, keep the 1,600-pixel bitmap, as does the candidate ranking | 14.26 |
 | Editing Peak with Clarity | Above about 2% radius on a 42 MP frame the reduced Clarity map is checked against the export only (four-mask fixture, 3%), not patch by patch | 14.26 |
-| `highlight-anchor-stability` driver | Fails with Denoise off (its own reference measurement returns nothing or differs by 8.6%), the same before and after 14.26; not investigated | 14.26 |
 
 ### 15.4 Not changed in phase 3
 
@@ -1625,3 +1624,10 @@ list still holds, including after 14.26.
 | ID | What it was | Closed | Detail |
 |---|---|---|---|
 | P3-PEAK-01 | Peak with wide Clarity, and with a local's Clarity on a 42 MP frame (about 19% and 12% low; roll-off up to 6.3% from export) | October 5: within 0.31% on every measured case, picture inside section 4.1, budget and limits unchanged | 14.26 |
+| `roi-pan-cache` driver | Failed three runs of three: a scope, navigation or Match render sent to the tiled route drew into the viewer's retained target and replaced its accepted frame, so the next pan pass had nothing to keep | October 5: such a render is refused before it is encoded (its callers only ever used a Direct result). Four runs of four pass | 15.3 |
+| `highlight-anchor-stability` driver | Its reference was measured on whichever resident source rendered last, which at 200% is the 512-pixel navigation proxy (8.6% low) | October 5: the reference is the app's bounded measurement for the recipe, and the driver waits for it. That exposed a product gap, also fixed: an anchor request queued during a drag carried an earlier input's key, so its measurement was cached by the renderer but never recorded as delivery evidence. Two runs of two pass | 15.3 |
+| Desktop smoke test | Waited for "Project saved" in the project badge; the September 28 status bar moved that message | October 5: reads the status bar entry. Passes | 14.25 |
+
+Not committed at the time of writing. Node 427 and Python 1,692 pass with three
+skips. The cold Denoise pan-enable-drag miss on the saved photo (15.3) is a
+real timing and was measured again: 5 and 7 frames.

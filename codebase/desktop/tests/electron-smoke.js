@@ -672,7 +672,7 @@ async function main() {
     await window.locator("#directory-browser-select").click();
     await window.locator("#directory-browser").waitFor({ state: "hidden" });
     checkpoint("project save returned");
-    await window.waitForFunction(() => document.querySelector("#badge")?.textContent.includes("Project saved"));
+    await window.waitForFunction(() => document.querySelector('[data-status-id="project-save"]')?.textContent.includes("Project saved"));
     checkpoint("project saved");
     assert.equal(fs.existsSync(projectPath), true);
     const savedProject = await window.evaluate(() => state.editDocument);

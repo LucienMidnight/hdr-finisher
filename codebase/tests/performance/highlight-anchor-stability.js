@@ -15,8 +15,9 @@
 // Pass:
 //   - no consecutive frames differ by more than MAX_STEP_STOPS in the
 //     normalised anchor, and
-//   - the resting frame after each stroke uses a real measurement of its own
-//     source and grade (within 1%), not an estimate.
+//   - the resting frame after each stroke uses the app's bounded editing
+//     measurement for its own grade (within 1%), not an estimate. How close
+//     that measurement is to export is editing-peak-bounded.js's question.
 //
 // The ceiling is not tested here; highlight-ceiling.js does that.
 
@@ -40,6 +41,13 @@ async function idle(page) {
   await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight, null, { timeout: 300000 });
 }
 
+// The bounded measurement lands after the first settled frame and redraws it.
+async function measured(page) {
+  await idle(page);
+  await page.waitForFunction(() => Number.isFinite(editingMeasurementsForDelivery().hdr?.anchor), null, { timeout: 30000 }).catch(() => {});
+  await idle(page);
+}
+
 async function stroke(page, deltaX) {
   const control = page.locator('[data-path="hdr.exposure"]').first();
   const box = await control.boundingBox();
@@ -59,29 +67,21 @@ async function runCase(page, label) {
   for (const deltaX of [60, -90, 40, -30]) {
     await page.evaluate(() => { window.__anchorLog = []; });
     await stroke(page, deltaX);
-    await idle(page);
+    await measured(page);
     const result = await page.evaluate(async () => {
       const log = window.__anchorLog.slice();
       const last = log.at(-1);
-      // The truth for the resting frame: measure its own source and grade.
-      let truth = null;
-      if (last?.params) {
-        const preview = state.gpuPreview;
-        const proxy = [...preview.proxies.values()].find((entry) => entry.identity === last.identity) || null;
-        const selector = preview.denoiseSourceSelector;
-        const source = selector?.identity === last.identity && selector.selected === "resolved" && selector.resolved
-          ? selector.resolved : proxy;
-        if (source) {
-          truth = await preview.measureToneAdjustedPeak(source, new Float32Array(last.params), "maximum", `stability-truth:${Math.random()}`);
-          for (const key of [...preview.peakReductionCache.keys()]) if (String(key).startsWith("stability-truth:")) preview.peakReductionCache.delete(key);
-        }
-      }
+      // The truth for the resting frame: the bounded measurement the app holds
+      // for exactly this recipe, the one export and Proof compare against. A
+      // resident source is no reference here; at 200% the only whole frames in
+      // memory are the scope and navigation proxies.
+      const truth = editingMeasurementsForDelivery().hdr?.anchor ?? null;
       const cache = [...state.gpuPreview.peakReductionCache.entries()].map(([key, value]) => {
         const parts = JSON.parse(key);
         return `${String(parts[0]).split(":")[2]}/${parts[1]}/exp=${Number(parts[6]).toFixed(2)}=${value.toFixed(4)}`;
       });
       const recheck = (state.gpuPreview.performanceMetrics?.stages || []).filter((stage) => stage.stage === "highlight-anchor-recheck");
-      return { log: log.map(({ params, ...entry }) => entry), truth, cache, recheck, last: state.gpuPreview.lastHighlightMeasurement?.hdr || null };
+      return { log, truth, cache, recheck, last: state.gpuPreview.lastHighlightMeasurement?.hdr || null };
     });
     const normalised = result.log.map((entry) => Math.log2(entry.anchor / 2 ** entry.exposure));
     let worstStep = 0;
@@ -142,17 +142,9 @@ async function runCase(page, label) {
             contrast: params[8],
             lift: params[4],
             tier: state.gpuDraftInFlightTier,
-            identity: preview.lastRenderIdentity || null,
-            params: Array.from(params),
           });
         }
         return inner(lane, adjustments, curveSampler, params);
-      };
-      // The identity of the source each render uses, for the truth measurement.
-      const innerAnchor = preview.highlightAnchorRequest.bind(preview);
-      preview.highlightAnchorRequest = (lane, adjustments, proxy, params) => {
-        preview.lastRenderIdentity = proxy.identity;
-        return innerAnchor(lane, adjustments, proxy, params);
       };
     });
     await page.evaluate(() => setCustomZoom(200));
@@ -178,12 +170,12 @@ async function runCase(page, label) {
       debouncePreview("hdr");
     });
     await enableShoulder();
-    await idle(page);
+    await measured(page);
     const rows = [...await runCase(page, "denoise-off")];
     await page.evaluate(() => setDenoiseEnabled(true));
     await idle(page);
     await enableShoulder();
-    await idle(page);
+    await measured(page);
     const denoiseState = await page.evaluate(() => state.denoiseRuntime.hdr.status);
     rows.push(...await runCase(page, `denoise-${denoiseState}`));
 

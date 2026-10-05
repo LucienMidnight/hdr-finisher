@@ -5435,10 +5435,15 @@ async function measureExactHighlightAnchor({ lane, key, used }) {
       if (state.session?.session_id !== sessionId || state.importGeneration !== importGeneration
         || state.editRevision !== revision || state.currentView !== lane
         || state.previewGeneration[lane] !== previewGeneration) return null;
-      if (result?.highlightAnchor?.key !== key || !Number.isFinite(result.highlightAnchor.value)) return null;
+      if (!Number.isFinite(result?.highlightAnchor?.value)) return null;
       const measured = result.highlightAnchor.value;
+      // A request queued during a drag can carry an earlier input's key. The
+      // measurement is of the recipe in hand all the same (the checks above),
+      // so it is kept as evidence; `used` then belongs to that earlier input
+      // and the frame is redrawn.
       recordEditingMeasurement(lane, {anchor: measured});
-      if (Math.abs(measured / Math.max(Number(used) || measured, 1e-9) - 1) > 0.0001) {
+      if (result.highlightAnchor.key !== key
+        || Math.abs(measured / Math.max(Number(used) || measured, 1e-9) - 1) > 0.0001) {
         invalidatePreview(lane, { markDirty: false });
         debouncePreview(lane);
       }

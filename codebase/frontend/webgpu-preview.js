@@ -5503,6 +5503,10 @@
         // A whole-frame tiled pass is too slow for a drag frame; a region
         // pass is bounded by the viewport and is not.
         if (sourceOptions?.tier === "interactive" && !sourceOptions?.viewport) refusals.push("interactive render");
+        // Scopes, the navigation thumbnail and Match candidates draw on their
+        // own canvas and only use a Direct result. Tiled would draw them into
+        // the viewer's retained target and replace its accepted frame.
+        if (sourceOptions?.scopeAnalysis) refusals.push("auxiliary render");
         if (refusals.length) {
           this.recordStage("tiled-refused", { lane, longEdge, refusals });
           return this.refuseRender(`tiled-refused:${refusals.join(",")}`);
