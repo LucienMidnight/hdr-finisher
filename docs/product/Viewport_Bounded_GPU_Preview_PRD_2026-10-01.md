@@ -1726,6 +1726,8 @@ column) without confirming the item first.
 | CF-ROUTE-03 | Whole native source fetched by enabling legacy Denoise and by a few colour rows: 13-14 requests an audit |
 | CF-ROUTE-04 | CPU scope requests: nine on fifty-local, six for HDR during switches to SDR in the endurance run |
 | CF-ROUTE-05 | 35 HTTP 409 responses in the endurance run; probably superseded work, bodies not captured |
+| CF-ROUTE-06 | Phase 4 explicit 1 GiB Full test: minimum graph requires Tiled, but 25 interactive drafts reach renderer refusal (`tiled-refused:interactive render`) rather than the preserved pre-dispatch guard; source/parameter preparation precedes refusal. No app fix; see 16.8 |
+| CF-ROUTE-07 | Same settled-render overlap enters CPU settle branch once for `coalesced-by-newer-render` in two repeats. Zero CPU picture HTTP requests in these warm runs; original branch-level guard remains red. See 16.8 |
 
 **Checks that fail because they still describe the old design (phase 4
 input).** Each is rewritten for the viewport-bounded design or retired with
@@ -2020,3 +2022,43 @@ with 16 patches / 262,144 bounded pixels / 230 ms. The preview reads 510.2
 nits versus the estimate 528.4 nits (3.44% lower), positively exercising the
 original optional photograph under-report gate. This is an unmodified source
 import, not the saved project grade or a closure of CF-PEAK.
+
+
+### 16.8 Explicit Full tiled settle coverage and additional findings
+
+`full-tier-tone-cost` uses the real disposable-profile 1 GiB preference so
+subsequent resolution changes cannot restore Auto. It requires the accepted
+requested tier before each measurement and records the minimum admission
+decision and actual budget. Native Full differs from 4K; under the chosen
+budget the minimum native graph predicts 2,256,634,266 bytes, above the
+1,073,741,824-byte limit. These are existing user settings, not changed app
+budgets. All original 4x timing, exact Full, positive tiled/settle-overlap,
+no-CPU-branch/request, no-empty-canvas and pre-dispatch refusal guards remain.
+
+The unchanged Auto control retains the baseline's old failure: Full uses
+Direct and cannot exercise tiled overlap. Baseline 4K/Full gesture times were
+1,707.3/1,699.7 ms; the unmodified control reads 1,748.7/1,728.5 ms (+41.4/
++28.8 ms), zero CPU picture requests, zero blanks, zero overlap. No speed
+attribution is made from single runs.
+
+Three explicit 1 GiB runs exercise exact Full Tiled and reproduce 4/3/3
+settled-render overlaps. Full gesture/release times: 1,020.7/37.8,
+1,185.1/39.6 and 1,189.9/38.9 ms, against 4K gestures 1,700.8, 1,666.3 and
+1,743.3 ms. All ratios are inside the unchanged 4x ceiling; all runs have
+zero CPU preview/scopes requests and zero blank samples. These distinct
+forced-budget scenarios cannot be compared as performance changes from the
+Auto baseline.
+
+The driver stays red for newly exposed findings. CF-ROUTE-06: all three runs
+record 25 `interactive:tiled-refused:interactive render`, not the required
+pre-dispatch refusal. Source/parameter preparation occurs before the current
+renderer guard; source inspection finds no app pre-dispatch guard at the
+active dispatch. CF-ROUTE-07: two repeats also enter the CPU settle branch
+once for `coalesced-by-newer-render`, although cached warm state prevents a
+CPU picture network request. The original branch-level guard catches this.
+Neither finding proves cleanup introduced it; the baseline never exercised
+this path. No app fix, removal or gate retirement follows these findings.
+
+Fast suites pass: 463 Node and 1,692 Python, same three skips. Four protected
+project hashes remain unchanged. Phase 4 remains in progress; full sweep,
+three audits and remaining old-design checks still need completion.

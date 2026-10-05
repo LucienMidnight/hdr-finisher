@@ -26,9 +26,9 @@ const path = require("node:path");
 const { chromium } = require("playwright");
 const { ensureLargeNoisySource } = require("../large-noisy-tiff.js");
 
-// Big enough that Full is genuinely a different resolution from 4K and takes
-// the tiled route on its own. 4200px renders Full on Direct on a roomy GPU and
-// silently skips the path this measures.
+// Full must differ from 4K. A deliberate 1 GiB budget below exercises the
+// minimum-graph tiled refusal even on GPUs whose Auto budget admits Direct.
+// Viewport-sized presentation alone no longer guarantees this route.
 const WIDTH = 7968;
 const HEIGHT = 5320;
 
@@ -107,6 +107,14 @@ function round(value) {
       "Full and 4K are the same tier for this source, so the comparison proves nothing: "
       + JSON.stringify(sourceSize));
 
+    // Use the real preference in this disposable profile: changing resolution
+    // replays preferences and would undo a function-only budget override.
+    await page.evaluate(() => {
+      const select = document.querySelector("#settings-gpu-memory-limit");
+      select.value = "1";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
     const measure = async (tier) => {
       await page.evaluate((value) => {
         const select = document.querySelector("#settings-preview-resolution");
@@ -114,8 +122,10 @@ function round(value) {
         select.dispatchEvent(new Event("change", { bubbles: true }));
       }, tier);
       await page.waitForFunction(
-        () => viewerState().status === "ready" && state.acceptedPresentation?.exact === true,
-        null, { timeout: 900000 },
+        (requestedTier) => viewerState().status === "ready"
+          && state.acceptedPresentation?.exact === true
+          && state.acceptedPresentation?.requestedTier === requestedTier,
+        tier, { timeout: 900000 },
       );
       // Let the settle tail (inactive lane, scopes) drain, so its backend cost
       // is not charged to the drag that follows.
@@ -209,6 +219,9 @@ function round(value) {
 
         return {
           readyMs,
+          minimumDecision: state.gpuPreview.minimumExecutionDecision(
+            state.session.source.width, state.session.source.height, "interactive"),
+          memoryBudgetBytes: state.gpuPreview.memoryBudgetBytes(),
           settleCaught,
           // Release-to-Ready is zero whenever the viewer happened to be idle at
           // the moment of release, which makes it useless as a denominator.
@@ -246,6 +259,8 @@ function round(value) {
       };
       return {
         tier,
+        minimumDecision: drag.minimumDecision,
+        memoryBudgetBytes: drag.memoryBudgetBytes,
         readyMs: round(drag.readyMs),
         gestureMs: round(drag.gestureMs),
         settleCaught: drag.settleCaught,
@@ -316,15 +331,9 @@ function round(value) {
       "No burst landed on a running settled render, so the race under test never "
       + "happened and this run proves nothing.");
 
-    // A Full frame that cannot fit even the minimum Direct graph must be
-    // refused before source preparation or renderer submission. Counting the
-    // old renderer-returned-nothing refusal would mean the guard ran too late.
-    assert((full.refusals["interactive:pre-dispatch-tiled"] || 0) > 0,
-      "No guaranteed-tiled interactive draft was refused before dispatch: "
-      + JSON.stringify(full.refusals));
-    assert((full.refusals["interactive:renderer-returned-nothing"] || 0) === 0,
-      "A guaranteed-tiled interactive draft still reached the renderer: "
-      + JSON.stringify(full.refusals));
+    assert(full.memoryBudgetBytes === 1073741824 && full.minimumDecision.mode === "tiled",
+      "The test did not guarantee tiled admission under its 1 GiB budget: "
+      + JSON.stringify({ budget: full.memoryBudgetBytes, decision: full.minimumDecision }));
 
     // The settle path taking its CPU branch is the defect, and it is the
     // reliable observable. Whether that branch then reaches the network
@@ -352,6 +361,16 @@ function round(value) {
       "Time to Ready at Full is not within " + READY_RATIO_LIMIT + "x of 4K: "
       + full.gestureMs + " ms against " + four.gestureMs + " ms ("
       + round(full.gestureMs / four.gestureMs) + "x).");
+
+    // A Full frame that cannot fit even the minimum Direct graph must be
+    // refused before source preparation or renderer submission. Counting the
+    // old renderer-returned-nothing refusal would mean the guard ran too late.
+    assert((full.refusals["interactive:pre-dispatch-tiled"] || 0) > 0,
+      "No guaranteed-tiled interactive draft was refused before dispatch: "
+      + JSON.stringify(full.refusals));
+    assert((full.refusals["interactive:renderer-returned-nothing"] || 0) === 0,
+      "A guaranteed-tiled interactive draft still reached the renderer: "
+      + JSON.stringify(full.refusals));
 
     console.log(
       "A tone drag at Full stays on the GPU: " + full.gestureMs + " ms against "

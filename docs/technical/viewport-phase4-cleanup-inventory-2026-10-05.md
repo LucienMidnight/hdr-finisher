@@ -180,3 +180,15 @@ failed setup attempts. No Peak implementation or shader changed.
 The additional DSC00950.ARW run also passes, including positive proxy
 under-report coverage (3.44%). Fast suites: 463 Node / 1,692 Python pass,
 same three skips.
+
+
+## Full tiled settle check
+
+full-tier-tone-cost now guarantees its original tiled scenario using the real
+1 GiB preference and waits for the requested tier. Three runs reproduce the
+settle overlap, inside the original 4x timing limit, with zero blank frames
+and no CPU picture HTTP requests. The driver stays red: interactive refusal
+happens after dispatch (CF-ROUTE-06); two repeats enter the CPU settle branch
+for coalesced-by-newer-render (CF-ROUTE-07). Original guards remain, no app fix
+or retirement. PRD 16.8 records Auto baseline/control and forced-budget data.
+Fast suites pass (463 Node; 1,692 Python, three skips); fixtures unchanged.
