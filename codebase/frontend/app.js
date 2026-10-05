@@ -4468,21 +4468,6 @@ function cancelRoiPanRefinement() {
 }
 
 /**
- * Whether a pan follow-up has anything to work with.
- *
- * Only a retained tiled frame at the selected tier can be panned into without
- * the whole frame being redrawn, so that is the only case this pass is for.
- * A direct frame, a smaller proxy, a geometry change or a fit view all mean
- * the ordinary settle path already owns the next render. The coordinator owns
- * the retained-frame and viewport facts; the app supplies session and geometry.
- */
-function roiPanCandidate() {
-  return state.renderCoordinator
-    ? state.renderCoordinator.panCandidate(state.currentView)
-    : false;
-}
-
-/**
  * A pan never waits on a render: the compositor moves the accepted frame
  * immediately. What a pan can do is expose a strip that was never refined for
  * the current generation, so once the scroll pauses the coordinator asks for a

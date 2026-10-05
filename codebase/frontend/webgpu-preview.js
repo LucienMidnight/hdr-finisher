@@ -1312,10 +1312,6 @@
       return sourceOptions?.viewport || sourceOptions?.roiCatchUp ? "tiled" : null;
     }
 
-    admitDirect(width, height, options = {}) {
-      return this.planRender(width, height, options).decision;
-    }
-
     /**
      * Whether even the smallest graph at these exact dimensions must tile.
      *

@@ -1,6 +1,6 @@
 # Known Limitations and Support Status
 
-This page prevents implemented, validated, expected, and planned behavior from being conflated. Status reflects the repository on **September 4, 2026**.
+This page prevents implemented, validated, expected, and planned behavior from being conflated. Platform and distribution status reflects **September 4, 2026**; the Denoise and preview notes below were refreshed on **October 5, 2026** against the viewport-preview PRD and baseline.
 
 ## Platform matrix
 
@@ -34,7 +34,7 @@ HDR Finisher is a finishing editor, not a full compositor or RAW editor:
 - RAW development is a constrained convenience beta. Ordinary supported Bayer and X-Trans RGB RAWs use a camera-linear float bridge with a versioned, bypassable NumPy opposed-color highlight reconstruction stage before AHD. The method repairs channel-clipped color from spatially supported opposing CFA channels but does not invent texture in fully clipped areas. Complicated colored lighting can retain pink/green boundaries, and heavily clipped X-Trans speculars can retain blue residuals that become visible only when HDR exposure is lowered; threshold changes require source re-development. Unsupported sensor/color metadata is identified in the Metadata panel as a legacy compatibility fallback. Experimental DNG Import adds metadata-driven LinearRaw decoding and audited OpcodeList3 GainMap/WarpRectilinear handling. These routes do not add segmentation/guided-laplacian reconstruction, hot-pixel repair, denoise, sharpening, creative camera profiles, or a general RAW-development UI.
 - Local finishing masks support brush, gradient, path, luminance-range, and Boolean combinations; there is no pixel cloning or object-aware selection.
 - No layers or compositing
-- Crop/transform and Lensfun correction are available, but there is no denoise or full retouching toolset.
+- Crop/transform, Lensfun correction and Denoise are available. There is no full retouching toolset. Denoise includes legacy and adaptive algorithms; cold enabling while panned on the saved 42 MP photo can show too few frames during a drag (PRD 15.3 / CF-SPEED-05).
 - No batch queue or automation UI
 - Undo/history and saved projects are available, but projects reference the original source rather than embedding its pixels.
 - No local presets/look library
@@ -43,8 +43,8 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 
 ## Preview limitations
 
-- Fast proxies are display-aware; high-quality refinement is capped at 2,000 pixels on the long edge.
-- 100% zoom refers to proxy pixels, not necessarily original pixels.
+- Editing preview is viewport-bounded, with selectable processing resolutions including Full. CPU preview remains available for an unavailable or lost GPU. The October 5 audits also record CPU picture, mask, scope and whole-source work that is still under investigation (PRD 15.7).
+- Native zoom uses source-resolution viewport processing; magnified views below 100% use stepped processing sizes. Preview/export and cross-scale agreement have the specific limitations recorded in PRD 15.1, 15.2 and 15.7.
 - WebGPU is the settled authoring preview where parity and device support are validated; explicit proof and export remain backend-authoritative.
 - Routine scopes analyze the current preview proxy, not every full-source pixel. Tiny source-resolution features can be reduced by proxy downsampling.
 - An SDR-compatible representation is not true HDR output.

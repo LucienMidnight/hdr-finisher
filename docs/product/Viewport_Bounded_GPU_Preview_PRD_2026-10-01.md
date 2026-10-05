@@ -1741,3 +1741,38 @@ the reason recorded; none is deleted only to make a run green.
 counter in `drag-gpu-load.js`. Test timing races, not app faults:
 `tests/tiled-admission-scope-fallback.js` and
 `tests/performance/full-tier-instrumented-tiling.js`.
+
+## 16. Phase 4 cleanup record (October 5, 2026; in progress)
+
+Steve approved inventory Group A: remove only the unused `roiPanCandidate`
+app wrapper and `admitDirect` renderer wrapper. Their active implementations
+remain in the render coordinator and render planner. Repository-wide caller
+searches found no executable caller for either wrapper.
+
+Removed: app.js 14 lines including its obsolete comment, webgpu-preview.js
+3 lines; 17 lines / 713 UTF-8 bytes before their two separator blank lines
+(19 source lines including separators). No shader, limit, budget, CPU export,
+Proof, fallback or saved-project format changes.
+
+The Python pan-delegation source check now verifies the live app pan intent,
+the coordinator eligibility conditions and both scheduling/refinement callers.
+Existing behavioral pan tests remain. No check is retired.
+
+Group A validation: Node 427 pass; Python 1,692 pass with the same three skips. Additional desktop/performance Node checks: 36 pass. Electron device-loss and real-scroll pan-cache
+checks pass, serialized at 2560x1440. All four fixture hashes match the baseline.
+Pan work is identical to October 5: new strip 262,144 pixels / two submissions;
+return pan zero processed pixels, 262,144 reused / one submission; retained
+exact tiled frame and zero page errors. Stage timestamps changed from
+4,283/4,438 ms to 4,979/5,139 ms; these are session-relative timestamps,
+not isolated pan latency. No speed improvement or regression is inferred.
+
+This is one batch, not phase 4 completion. The 160-driver sweep, three coverage
+audits and old-design driver rewrites remain pending. The baseline's 28 failed
+drivers and every 15.7 finding retain their classifications and limits.
+Source-upload wrappers and the old queued highlight measurement are deliberately
+held because of the open route/Peak findings. Live CPU work, cancellation,
+shared compiles, GPU cache eviction and Denoise input coalescing stay.
+
+Inventory and test-replacement work list:
+[cleanup inventory](../technical/viewport-phase4-cleanup-inventory-2026-10-05.md).
+Logs and reports: `codebase/output/performance/review/phase4-cleanup-2026-10-05/`.

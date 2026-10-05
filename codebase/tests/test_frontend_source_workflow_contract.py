@@ -426,7 +426,17 @@ def test_app_emits_intent_to_the_render_coordinator() -> None:
     assert "state.renderCoordinator?.setRoiMode(state.roiPreviewMode, { cancelFollowUps: false });" in javascript
     # The deferred follow-up lifecycle is delegated, not duplicated.
     assert "state.renderCoordinator?.cancelCatchUp(state.currentView);" in javascript
-    assert "state.renderCoordinator.panCandidate(state.currentView)" in javascript
+    assert "state.renderCoordinator?.notePan(state.currentView);" in javascript
+    coordinator = (FRONTEND / "render-coordinator.js").read_text(encoding="utf-8")
+    pan_predicate = coordinator[coordinator.index("    panCandidate(lane) {"):coordinator.index("    notePan(lane) {")]
+    assert 'accepted.transport !== "WebGPU" || accepted.execution !== "tiled"' in pan_predicate
+    assert "accepted.exact !== true" in pan_predicate
+    assert "if (!st.viewport) return false;" in pan_predicate
+    assert "if (this.canPanRefine && !this.canPanRefine(lane)) return false;" in pan_predicate
+    pan_scheduling = coordinator[coordinator.index("    notePan(lane) {"):coordinator.index("    cancelPan(lane) {")]
+    pan_refinement = coordinator[coordinator.index("    async requestPanRefinement(lane) {"):]
+    assert "if (!this.panCandidate(lane)) return false;" in pan_scheduling
+    assert "if (!this.panCandidate(lane)) return false;" in pan_refinement
     assert "state.renderCoordinator.requestPanRefinement(state.currentView)" in javascript
 
 def test_roi_parity_diagnostic_compares_legacy_and_roi() -> None:
