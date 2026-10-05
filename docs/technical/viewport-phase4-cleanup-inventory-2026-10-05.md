@@ -127,3 +127,15 @@ reversal, native processing, warm source-mip reuse and off-mode exactness gates
 remain. The Electron runner seeds the migration fixture only in the fresh
 profile it creates; existing externally supplied profiles are not written.
 PRD 16.3 records the measurements. No checks retired or app code changed.
+
+## Mask cache and fallback batching batch
+
+path-feather-mask-cache now runs the normal GPU route by default and also
+supports an explicit CPU fallback scenario. The GPU guard requires current
+live Feather values and prevents one cached mask entry being reused for two
+Feather identities. The original CPU draft and acknowledgement checks remain
+in the fallback run. tiled-mask-batch-transport disables analytic rasterization
+only in its test session to exercise reachable CPU batching, preserving every
+original transport, ROI, submission and offscreen-pixel gate. Both routes and
+the batching driver pass. No CPU mask code deleted; PRD 16.4 has measurements.
+Fast suites: 463 Node and 1,692 Python checks pass, same three skips.

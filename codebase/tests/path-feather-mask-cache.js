@@ -1,5 +1,7 @@
 // Path Feather drag must never cache the committed mask under a newer leaf.
 //
+// Run current GPU rasterization by default, or --mask-route cpu to preserve
+// the reachable CPU fallback's draft/acknowledgement regression coverage.
 // The GPU caches each CPU-rasterized mask under the identity of the leaf it is
 // rendering, but `/local-mask/{id}` rasterizes the backend's committed local,
 // and a Feather drag commits only on release. Fetching that endpoint mid-drag
@@ -12,6 +14,9 @@
 const { chromium } = require("playwright");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
+const routeIndex = process.argv.indexOf("--mask-route");
+const maskRoute = routeIndex >= 0 ? process.argv[routeIndex + 1] : "gpu";
+if (!["gpu", "cpu"].includes(maskRoute)) throw new Error("--mask-route must be gpu or cpu");
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 
 (async () => {
@@ -49,8 +54,26 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     await page.waitForTimeout(1500);
 
     // Log every mask request the renderer makes, and every acknowledged commit.
-    await page.evaluate(() => {
+    await page.evaluate((route) => {
       window.__maskLog = [];
+      window.__gpuMaskLog = [];
+      // The CPU route is still reachable on analytic-raster refusal. Exercise
+      // it deliberately instead of requiring CPU traffic from the normal GPU path.
+      state.gpuPreview.gpuAnalyticMasksEnabled = route === "gpu";
+      const renderer = state.gpuPreview;
+      const originalGpuLeaf = renderer.loadGpuAnalyticLeaf;
+      const entries = new WeakMap();
+      let nextEntry = 0;
+      renderer.loadGpuAnalyticLeaf = function(sessionId, expression, edge, geometry, current) {
+        const result = originalGpuLeaf.call(this, sessionId, expression, edge, geometry, current);
+        if (result && expression.leaf?.type === "path") {
+          if (!entries.has(result)) entries.set(result, ++nextEntry);
+          window.__gpuMaskLog.push({ feather: expression.leaf.feather,
+            liveFeather: firstMaskLeaf(selectedLocal()?.mask, "path")?.feather,
+            acknowledgedFeather: window.__acknowledgedFeather, entry: entries.get(result), edge, geometry });
+        }
+        return result;
+      };
       const original = window.fetch;
       window.fetch = async (input, init) => {
         const url = typeof input === "string" ? input : input.url;
@@ -73,7 +96,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
         return result;
       };
       window.__acknowledgedFeather = firstMaskLeaf(selectedLocal().mask, "path").feather;
-    });
+    }, maskRoute);
 
     // A real pointer drag of the Feather slider: renders run during it.
     const slider = page.locator('input[type="range"][data-default-value="4"]');
@@ -98,11 +121,29 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     assert(!stale.length,
       `Committed-mask requests were made for a Feather the backend had not acknowledged: ${JSON.stringify(stale)}`);
     const drafts = log.filter((entry) => entry.kind === "draft-endpoint");
-    assert(drafts.length > 0, `No mid-drag frame rasterized its own leaf: ${JSON.stringify(log)}`);
+    const gpuMasks = await page.evaluate(() => window.__gpuMaskLog);
+    if (maskRoute === "cpu") {
+      assert(drafts.length > 0, `No mid-drag CPU frame rasterized its own leaf: ${JSON.stringify(log)}`);
+    } else {
+      const intermediate = gpuMasks.filter((entry) => entry.feather !== entry.acknowledgedFeather);
+      assert(intermediate.length > 0, `No mid-drag GPU frame rasterized its own leaf: ${JSON.stringify(gpuMasks)}`);
+      assert(intermediate.every((entry) => entry.feather === entry.liveFeather),
+        `GPU rasterization used a stale live leaf: ${JSON.stringify(intermediate)}`);
+      const identities = new Map();
+      for (const entry of gpuMasks) {
+        const previous = identities.get(entry.entry);
+        assert(previous === undefined || previous === entry.feather,
+          `A GPU mask cache entry was reused for a different Feather: ${JSON.stringify(entry)}`);
+        identities.set(entry.entry, entry.feather);
+      }
+      assert(gpuMasks.some((entry) => entry.feather === finalFeather),
+        "The GPU did not rasterize the final committed Feather.");
+    }
     assert(log.some((entry) => entry.kind === "commit" && entry.payloadFeather === finalFeather),
       "The final Feather was not committed.");
     assert(!pageErrors.length, `Page errors: ${pageErrors.join(" | ")}`);
-    console.log(JSON.stringify({ finalFeather, drafts: drafts.length, committedRequests: log.filter((e) => e.kind === "committed-endpoint").length }));
+    console.log(JSON.stringify({ maskRoute, finalFeather, drafts: drafts.length, gpuMasks,
+      committedRequests: log.filter((e) => e.kind === "committed-endpoint").length }));
   } finally {
     await browser.close();
   }

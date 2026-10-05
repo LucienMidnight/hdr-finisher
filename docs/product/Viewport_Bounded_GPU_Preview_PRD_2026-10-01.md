@@ -1870,3 +1870,35 @@ Full driver sweep, coverage audits and the other old-design checks remain
 pending; Phase 4 is not complete.
 Fast suites for this batch: 463 Node checks and 1,692 Python checks pass,
 with the same three skips.
+
+### 16.4 Mask cache and fallback batching checks
+
+`path-feather-mask-cache` no longer requires CPU draft requests from normal
+GPU rasterization. It records actual GPU leaf loads during the real Feather
+drag, requires an intermediate leaf newer than the backend acknowledgement,
+requires that leaf to equal the current live controls, and rejects reuse of
+one GPU cache entry for different Feather values. The final Feather must be
+rasterized and committed. The normal run passes: final Feather 0.1, no CPU
+draft mask requests, 28 distinct GPU mask entries across Display/auxiliary
+sizes, and one committed mask request. `--mask-route cpu` disables analytic
+rasterization in the disposable session and retains the original positive CPU
+draft, no-unacknowledged-committed-fetch and final-commit guards. It passes:
+23 draft requests, three committed requests, final Feather 0.1. No page errors.
+
+`tiled-mask-batch-transport` tests the still-reachable CPU mask fallback by
+explicitly disabling analytic rasterization in its disposable renderer. The
+original assertions all remain: zero per-tile requests, successful bounded
+batches, multi-tile batching, foreground-only ROI work, retained offscreen
+pixels, active mask node and small GPU submission batches. It passes with two
+HTTP batches of 2 and 6 tiles, zero per-tile requests; the six-tile whole-frame
+pass submits three batches and the ROI pass submits two, processing four
+foreground tiles and skipping two. ROI mask requests reuse cached masks, so
+there are no additional ROI HTTP batches. Offscreen brightness is 135.20
+before and 125.04 after, a 10.16 change within the original 12-unit limit;
+this measured movement is retained, not described as pixel equality.
+
+These tests preserve the reachable CPU route; they do not establish that CPU
+mask compilation is unnecessary. CF-ROUTE remains open. No tests retired,
+app code changed or original limits relaxed. The full sweep and audits remain
+pending.
+Fast suites: 463 Node and 1,692 Python checks pass, same three skips.

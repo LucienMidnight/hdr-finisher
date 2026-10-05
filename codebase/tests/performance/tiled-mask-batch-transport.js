@@ -7,7 +7,9 @@
 // compile the same mask repeatedly. The batched route carries many tiles in
 // one request, grouped by local so the backend compiles each mask identity
 // once. This scenario forces the tiled route with an active local and records
-// what the renderer actually asked the backend for.
+// what the renderer actually asked the backend for. CPU mask batching is a
+// reachable fallback; force analytic-raster refusal here rather than requiring
+// CPU traffic from the normal GPU mask route.
 //
 // Negative controls:
 //   - zero per-tile requests to /local-mask-tile/<id>
@@ -112,7 +114,10 @@ async function clipBrightness(page, clip) {
     // Force the route under test and let the automatic re-render settle first.
     // Two tiled generations sharing the presentation canvas at different sizes
     // is a different defect; this scenario measures transport.
-    await page.evaluate(() => applyExecutionOverride("tiled"));
+    await page.evaluate(() => {
+      state.gpuPreview.gpuAnalyticMasksEnabled = false;
+      applyExecutionOverride("tiled");
+    });
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
     // A legacy pass first: no viewport, every tile foreground, nothing kept.
     const longEdge = await page.evaluate(
