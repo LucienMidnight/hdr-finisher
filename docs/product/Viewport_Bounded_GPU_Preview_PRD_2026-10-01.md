@@ -2212,3 +2212,24 @@ reruns the actual repaired driver. No original assertion removed or loosened.
 
 Path-node batch: actual sweep driver passes; fast suites 463 Node / 1,692
 Python pass with the same three skips. No app changes or fixture writes.
+
+
+### 16.14 Full-sweep path pointer and letterbox setup repair
+
+`path-mask-interaction` passed in the baseline. Initial cleanup sweep timed out
+at the test's artificial letterbox-size wait; an unchanged repeat failed earlier
+because Smooth controls had not affected the expected selected node. Completed
+path clicks and the two manually letterboxed layouts now wait for preceding
+viewer/mask/anchor/scope work and ensure the current geometry map before taking
+coordinates or overriding layout. Draft drawing remains continuous; no app
+scheduling, event handler or geometry implementation changes.
+
+Two separate diagnostic runs pass every original creation-guide/projective,
+profile, Feather, rendered compare-without, insertion/removal, drag, letterbox,
+outside-handle movement/hover and submask round-trip assertion. Original limits
+and five-second gesture/layout waits remain. This is setup synchronization, not
+retrying a failed gesture. Initial sweep and repeat failures remain in logs and
+`sweep-initial-attempts.json`. The actual repaired driver is rerun in the sweep.
+
+Path-layout batch: actual sweep driver passes; fast suites 463 Node / 1,692
+Python pass with the same three skips. No app or fixture changes.

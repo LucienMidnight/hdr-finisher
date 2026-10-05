@@ -255,3 +255,14 @@ sweep failure/repeat and pointer diagnostic retained. See PRD 16.13.
 
 Path-node batch: actual sweep driver passes; fast suites 463 Node / 1,692
 Python pass with the same three skips. No app changes or fixture writes.
+
+
+## Full-sweep path layout setup repair
+
+Completed-path pointer coordinates and manual letterbox fixtures wait for
+preceding viewer/mask/anchor/scope work and current geometry mapping. All
+original gesture/pixel/hover/submask guards remain; two diagnostics pass.
+Initial sweep/repeat failures retained. See PRD 16.14.
+
+Path-layout batch: actual sweep driver passes; fast suites 463 Node / 1,692
+Python pass with the same three skips. No app or fixture changes.

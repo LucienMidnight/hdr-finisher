@@ -37,7 +37,20 @@ async function pathState(page) {
   });
 }
 
+async function settlePathPointerSetup(page) {
+  await page.waitForFunction(() => viewerState().status === "ready"
+    && !state.gpuDraftInFlight && !state.previewScheduler?.frameInFlight
+    && !state.localMaskDraftController && !state.localMaskDraftPending
+    && !state.localMaskDraftTimer && pendingHighlightAnchors.size === 0
+    && exactHighlightAnchorInflight.size === 0
+    && !state.gpuScopeRequestInFlight && !state.scopeRequestInFlight,
+    null, { timeout: 30000 });
+  await page.evaluate(async () => { await ensureGeometryCoordinateMap(); });
+  await page.waitForFunction(() => Boolean(currentGeometryCoordinateMap()));
+}
+
 async function clickNormalized(page, box, x, y, options = {}) {
+  if (!await page.evaluate(() => Boolean(state.localPathDraft))) await settlePathPointerSetup(page);
   // Local controls can change the rail width. Pointer coordinates belong to
   // the current picture, rather than the rectangle from initial creation.
   Object.assign(box, await activePreviewBox(page));
@@ -517,6 +530,7 @@ async function activePreviewBox(page) {
     const edgeHandleBefore = { x: current.leaf.nodes[0].in_x, y: current.leaf.nodes[0].in_y };
     // Create a contained-image/letterbox layout like portrait photos in the
     // desktop viewer so the outside handle remains inside the overlay pane.
+    await settlePathPointerSetup(page);
     const beforeLetterbox = await page.evaluate(() => {
       const preview = activePreviewElement();
       const rect = preview.getBoundingClientRect();
@@ -548,6 +562,7 @@ async function activePreviewBox(page) {
     assert((await response).ok(), "Out-of-image Path handle did not commit.");
     current = await pathState(page);
     assert(Math.hypot(current.leaf.nodes[0].in_x - edgeHandleBefore.x, current.leaf.nodes[0].in_y - edgeHandleBefore.y) > .01, "Out-of-image Path handle could not be selected and dragged.");
+    await settlePathPointerSetup(page);
     await page.evaluate(() => {
       const preview = activePreviewElement();
       const rect = preview.getBoundingClientRect();
