@@ -1729,6 +1729,7 @@ column) without confirming the item first.
 | CF-ROUTE-06 | Phase 4 explicit 1 GiB Full test: minimum graph requires Tiled, but 25 interactive drafts reach renderer refusal (`tiled-refused:interactive render`) rather than the preserved pre-dispatch guard; source/parameter preparation precedes refusal. No app fix; see 16.8 |
 | CF-ROUTE-07 | Same settled-render overlap enters CPU settle branch once for `coalesced-by-newer-render` in two repeats. Zero CPU picture HTTP requests in these warm runs; original branch-level guard remains red. See 16.8 |
 | CF-ROUTE-08 | Execution readout reports Direct while accepted viewer execution is Tiled at 100%, 200% and Full/Fit under 1 GiB. Both repeats agree; the readout reads the last renderer plan, which can belong to auxiliary work. See 16.9 |
+| CF-DRIFT-02 | local-design-qa reaches retained visual checks after pending/assigned-mask setup repair: shared switch is 46x20 with 2px border, original contract requires 46x24/borderless. Diagnostic also observes scrollbar/control-section mismatches and keyboard-lane timeout. Four original clipboard reference images are absent, so intended appearance remains unconfirmed. No app fix or weakened assertion. See 16.12 |
 
 **Checks that fail because they still describe the old design (phase 4
 input).** Each is rewritten for the viewport-bounded design or retired with
@@ -2165,3 +2166,27 @@ Both runs use native 1,280-edge analysis, 16 patches, conservative bound
 243,712 pixels and anchor 113.3125. CF-PEAK and the deferred automatic-anchor
 redesign remain open. Fast suites pass: 463 Node and 1,692 Python, same three
 skips.
+
+
+### 16.12 Local design workflow setup and unresolved visual contract
+
+`local-design-qa` creates a pending adjustment before choosing its mask tool,
+matching the existing assigned-mask lock. It waits for completed brush assignment
+and positively requires brush/gradient tools locked. Path setup now commits an
+actual closed path before leaving the pending adjustment. Original visual,
+material, layout, keyboard and contrast checks are retained unchanged. Missing
+original comparison assets are reported explicitly when that stage is reached.
+
+The synchronized driver confirms the lock then fails CF-DRIFT-02: the current
+shared switch is 46x20 with 2px border against the original 46x24/borderless
+contract. A separate non-gating diagnostic proceeds through path creation and
+observes scrollbar, Brush/Mask Controls section mismatches and a keyboard-lane
+activation timeout. It is not a passing driver or substitute coverage. Four
+original temporary clipboard references are absent, preventing confirmation of
+intended appearance. Their absence was checked without modifying fixtures.
+Baseline stopped at locked-mask selection; these later checks had not run.
+No app change, limit change, test retirement or visual reference replacement.
+The driver remains red for a named unresolved contract. Evidence is in
+`phase4-cleanup-2026-10-05/logs/local-design-qa*.log`.
+
+Local design batch fast suites: 463 Node / 1,692 Python pass, three skips.

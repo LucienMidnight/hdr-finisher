@@ -188,10 +188,16 @@ function assert(condition, message) {
 
     await page.locator("#grade-mode-local").click();
 
-    await page.locator('[data-local-tool="brush"]').click();
     await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="brush"]').click();
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 1);
 
+    // The row can appear before its create request finishes locking the tools.
+    await page.waitForFunction(() => !state.pendingLocalAdjustment
+      && Boolean(selectedMaskLeaf(selectedLocal(), "brush")));
+    assert(await page.locator('[data-local-tool="brush"]').isDisabled()
+      && await page.locator('[data-local-tool="linear_gradient"]').isDisabled(),
+      "Assigned brush mask tools must stay locked; create a new adjustment before selecting another type.");
     const stackSurface = page.locator(".local-stack-surface");
     const singleBrushScrollbar = await stackSurface.evaluate((node) => ({
       overflowY: getComputedStyle(node).overflowY,
@@ -205,8 +211,8 @@ function assert(condition, message) {
     assert(singleBrushScrollbar.clientHeight === singleBrushScrollbar.scrollHeight, "A single adjustment unnecessarily shows a scrollbar.");
     assert(singleBrushScrollbar.webkitWidth === "9px", "The overflow scrollbar width is not applied in Edge.");
 
-    await page.locator('[data-local-tool="linear_gradient"]').click();
     await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="linear_gradient"]').click();
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 2);
     const gradientToggleSurface = await page.locator(".gradient-luma-toggle input").evaluate((control) => {
       const snapshot = () => {
@@ -240,8 +246,8 @@ function assert(condition, message) {
       },
     });
 
-    await page.locator('[data-local-tool="luminance_range"]').click();
     await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="luminance_range"]').click();
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 3);
     const lumaLabelTypography = await page.locator(".luma-range-control").evaluate((control) => ({
       heading: getComputedStyle(control.querySelector(".luma-range-heading")).fontSize,
@@ -262,20 +268,30 @@ function assert(condition, message) {
     );
     await page.locator(".local-mask-subpanel").first().screenshot({ path: path.join(outputDir, "luma-selector-implementation.png") });
 
-    await page.locator('[data-local-tool="path"]').click();
     await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="path"]').click();
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 4);
+    // Commit an actual path through the supported drawing workflow before
+    // leaving it; the pending empty path is not a saved fourth adjustment.
+    const pathBox = await page.locator("#local-mask-overlay").boundingBox();
+    assert(pathBox, "Path creation surface is unavailable.");
+    const pathPoints = [[.30, .30], [.70, .30], [.72, .68], [.32, .70]];
+    for (const [x, y] of pathPoints) await page.mouse.click(pathBox.x + pathBox.width*x, pathBox.y + pathBox.height*y);
+    const pathCreated = page.waitForResponse((response) => response.url().includes("/edit-commands")
+      && response.request().method() === "POST");
+    await page.mouse.click(pathBox.x + pathBox.width*.30, pathBox.y + pathBox.height*.30);
+    assert((await pathCreated).ok(), "Path creation did not commit.");
     await page.locator("#local-adjustment-list button[data-local-id]").first().click();
     await page.evaluate(() => window.scrollTo(0, 0));
 
     const removeButton = page.locator("#local-delete");
     const initialSurfaceHeight = (await stackSurface.boundingBox()).height;
     for (let index = 4; index < 8; index += 1) {
-      await page.locator('[data-local-tool="brush"]').click();
+      await page.locator("#local-add-adjustment").click();
       const createResponse = page.waitForResponse((response) =>
         response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
       );
-      await page.locator("#local-add-adjustment").click();
+      await page.locator('[data-local-tool="brush"]').click();
       await createResponse;
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, index + 1);
     }
@@ -671,6 +687,12 @@ function assert(condition, message) {
       await page.waitForFunction(() => document.querySelector('.control-group[data-group="hdr-color"] .group-toggle')?.getAttribute("aria-expanded") === "true");
     }
     await colorGroup.screenshot({ path: path.join(outputDir, "color-rails-implementation.png") });
+    const referenceAssets = [referencePath, sliderReferencePath, groupReferencePath,
+      "C:/Users/Steve/AppData/Local/Temp/codex-clipboard-9b1a27fa-7b2d-414e-9359-6cfcdc148cda.png"];
+    const missingReferences = referenceAssets.filter((file) => !fs.existsSync(file));
+    assert(missingReferences.length === 0,
+      "UI assertions completed; original visual comparison is blocked by missing reference assets: "
+      + missingReferences.join("; "));
     const comparison = await browser.newPage({ viewport: { width: 1200, height: 1780 }, deviceScaleFactor: 1 });
     const reference = fs.readFileSync(referencePath).toString("base64");
     const implementation = fs.readFileSync(implementationPath).toString("base64");

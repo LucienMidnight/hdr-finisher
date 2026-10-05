@@ -103,3 +103,8 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 - Batch automation
 
 Planned does not mean promised. Use the product requirements and issue tracker for direction, but use this page and the active code for current capability.
+
+Local design QA retains an unresolved visual contract (CF-DRIFT-02): shared
+switch dimensions/border differ from the original guard. Further diagnostic
+UI checks also fail; original temporary reference images are unavailable.
+See viewport PRD 16.12.

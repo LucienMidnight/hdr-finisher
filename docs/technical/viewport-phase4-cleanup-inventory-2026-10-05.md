@@ -232,3 +232,15 @@ wrapper stays held; no Peak implementation or shader changed. PRD 16.11 has
 the baseline/current route comparison.
 
 Highlight batch fast suites: 463 Node / 1,692 Python pass, three skips.
+
+
+## Local design workflow batch
+
+Pending-adjustment selection and committed path setup now match the live UI;
+assigned tool locking is positively checked after assignment completes. All
+original visual guards remain. The driver stays red for CF-DRIFT-02; original
+switch geometry differs, and four original reference images are absent. A
+non-gating diagnostic records further UI contract mismatches and a timeout.
+No app fixes or test retirement. PRD 16.12 records the evidence.
+
+Local design batch fast suites: 463 Node / 1,692 Python pass, three skips.
