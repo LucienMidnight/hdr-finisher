@@ -2093,7 +2093,7 @@
 
     highlightAnchorRequest(lane, adjustments, proxy, params, locals = []) {
       const measurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
-      const measures = (lane === "hdr" || params[159] > 0.5) && params[74] === 1 && measurement !== "manual";
+      const measures = params[74] === 1 && measurement !== "manual";
       if (!measures) return null;
       // A denoise reconstruction carries no session or source identity of its
       // own. Name it by the source it was made from, or its key never matches
@@ -2102,7 +2102,7 @@
       const origin = selector?.original && proxy === selector.resolved ? selector.original : proxy;
       const key = JSON.stringify([
         [origin.sessionId, origin.geometrySignature, origin.sourceIdentity],
-        this.highlightSourceToken(proxy), lane, params[159], measurement,
+        this.highlightSourceToken(proxy), lane, measurement,
         params[2], params[4], params[8], params[9], params[110],
         ...params.slice(10, 12), ...params.slice(61, 73),
         ...params.slice(BLACK_AND_WHITE_PARAM, BLACK_AND_WHITE_PARAM + 9),
@@ -8974,9 +8974,6 @@
     params[9] = branch.contrast_pivot || (lane === "hdr" ? 0.1845 : 0.5);
     params[10] = colorActive ? colorSource.white_balance_kelvin || 6500 : 6500;
     params[11] = colorActive ? colorSource.tint || 0 : 0;
-    // 12 to 14 fed the removed SDR base rendition; the shader still declares
-    // them, so they hold its neutral values (0, 1, 0).
-    params[13] = 1;
     params[15] = branch.curves_section_enabled !== false && !curveSetNeutral(branch) ? 1 : 0;
     params[16] = hdrSurface ? 1 : 0;
     // The transport limit is absolute; scene-linear scale follows the project.
@@ -8998,7 +8995,6 @@
     params[57] = branch.gamma_range ?? 4.25;
     params[58] = branch.gain_pivot ?? 2;
     params[59] = branch.gain_range ?? 4;
-    params[60] = 1; // the removed SDR base rendition switch, held on
     const colorMatrix = colorActive ? rgbPrimariesAdjustmentMatrix(colorSource) : IDENTITY_3X3;
     colorMatrix.forEach((value, index) => { params[61 + index] = value; });
     params[70] = colorActive ? colorSource.saturation || 0 : 0;
@@ -9122,6 +9118,7 @@
     params[153] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
     params[154] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold) || 0) / 100) * 0.50;
     params[155] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
+    // Read only by the pinned peak-measurement shader, to tell the SDR lane.
     params[159] = lane === "sdr" ? 1 : 0;
     // Direct renders the whole output, so its tile origin is the origin.
     params[TILE_ORIGIN_X_INDEX] = 0;

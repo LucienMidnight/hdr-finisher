@@ -39,7 +39,6 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "fn sdrScenePrefix(source: vec3f) -> vec3f {" in shader and "return sceneColor(rgb);" in shader
     assert "let grey = blackAndWhite(scene, guide);" in shader
     assert "acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18)" in shader
-    assert "toneMap(grey)" in shader
     assert "rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb), srgbToAcescg(guide)));" in shader
     # Each pixel's colour comes from the source around it, only with a slider set.
     assert "blackAndWhiteGuideSource = blackAndWhiteLatticeMean(sourceTexture, coordinate, validTileDimensions());" in shader
@@ -91,19 +90,15 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert shader.count("sdrPeakFit(sdrSoftCeiling(") == 2
     assert "fn clipToOutputTarget(input: vec3f) -> vec3f" in shader
     assert "if (p[0] > 0.5) { return clipToOutputTarget(hdrPeakFit(hdrSoftCeiling(input))); }" in shader
-    assert "if (p[159] > 0.5) { return clipToOutputTarget(input); }" in shader
+    assert "p[159]" not in shader
     # Sharpening excursions must stay bounded, or the anchor above measures
     # ringing instead of picture.
     assert "const SHARPEN_HALO_ALLOWANCE_EV: f32 = 0.25;" in shader
     assert "const DETAIL_LUMA_FLOOR: f32 = 0.0001;" in shader
     assert shader.count("min(0.12 * (extrema.y - extrema.x), SHARPEN_HALO_ALLOWANCE_EV)") == 2
     assert "0.12 * (extrema.y - extrema.x);" not in shader
-    assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
-    assert "toneMap(grey)" in shader
-    assert "sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(grey)))))" in shader
     assert "let y = max(select(lumaSrgb(input), lumaAces(input), p[0] > 0.5), 0.0)" in shader
-    assert "retoneMapSdrReference(rgb)" in shader
-    assert "let displayReferenceWhite = 100.0 / 203.0" in shader
+    assert "toneMap(" not in shader and "highlightRecovery(" not in shader and "retoneMapSdrReference(" not in shader
     assert "if (value <= 0.18) { return 0.5 * pow(value / 0.18, 1.0 / log(100.0)); }" in shader
     assert "if (value <= 0.5) { return 0.18 * pow(2.0 * value, log(100.0)); }" in shader
     assert "log2(value / 0.18) / log2(100.0)" in shader

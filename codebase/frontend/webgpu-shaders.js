@@ -1072,60 +1072,6 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (linearY > 0.000001) { return rgb * (targetY / linearY); }
       return vec3f(targetY);
     }
-    fn highlightRecovery(input: vec3f) -> vec3f {
-      if (p[3] <= 0.0) { return input; }
-      let rgb = max(input, vec3f(0.0));
-      let y = lumaSrgb(rgb);
-      let pivot = 100.0 / 203.0;
-      let span = 1.0 - pivot;
-      let position = clamp((y - pivot) / span, 0.0, 1.0);
-      let amount = 2.5 * (1.0 - exp(-0.5 * clamp(p[3], 0.0, 4.0)));
-      let recoveredPosition = position - amount * position * position * (1.0 - position);
-      let recoveredValue = pivot + span * recoveredPosition;
-      let targetValue = select(y, recoveredValue, y > pivot);
-      return select(vec3f(0.0), rgb * (targetValue / max(y, 0.00000001)), y > 0.00000001);
-    }
-    fn toneCurveLuma(y: f32) -> f32 {
-      var mapped = 0.0;
-      if (p[12] > 1.5) {
-        let scaledY = y * 5.393743257820929;
-        mapped = scaledY / (1.0 + scaledY);
-      } else if (p[12] > 0.5) {
-        let scaledY = y * 2.0294105241641414;
-        mapped = ((scaledY * (2.51 * scaledY + 0.03)) / (scaledY * (2.43 * scaledY + 0.59) + 0.14)) / (2.51 / 2.43);
-      } else {
-        let basePower = 1.1 * clamp(p[13], 0.5, 1.5);
-        let shadowPower = basePower * exp2(-0.75 * clamp(p[14], -1.0, 1.0));
-        let highlightPower = basePower * exp2(0.75 * clamp(p[14], -1.0, 1.0));
-        let sceneMiddleGray = 0.18;
-        let displayReferenceWhite = 100.0 / 203.0;
-        let logExposure = log(max(y, 0.00000001) / sceneMiddleGray);
-        let localPower = mix(shadowPower, highlightPower, smoothRange(-0.5, 0.5, logExposure));
-        let referenceOdds = log(displayReferenceWhite / (1.0 - displayReferenceWhite));
-        mapped = select(0.0, 1.0 / (1.0 + exp(-clamp(referenceOdds + localPower * logExposure, -32.0, 32.0))), y > 0.0);
-      }
-      return clamp(mapped, 0.0, 1.0);
-    }
-    fn toneMap(input: vec3f) -> vec3f {
-      let rgb = max(input, vec3f(0.0));
-      let y = lumaAces(rgb);
-      let mapped = toneCurveLuma(y);
-      let scaled = select(vec3f(0.0), rgb * (mapped / max(y, 0.00000001)), y > 0.00000001);
-      return compressSrgbGamut(acescgToSrgb(scaled));
-    }
-    fn retoneMapSdrReference(input: vec3f) -> vec3f {
-      let rgb = clamp(input, vec3f(0.0), vec3f(1.0));
-      if (p[12] < 0.5 && abs(p[13] - 1.0) < 0.000001 && abs(p[14]) < 0.000001) { return rgb; }
-      let y = lumaSrgb(rgb);
-      let boundedY = clamp(y, 0.0000001, 0.9999999);
-      let sceneMiddleGray = 0.18;
-      let displayReferenceWhite = 100.0 / 203.0;
-      let displayReferenceOdds = log(displayReferenceWhite / (1.0 - displayReferenceWhite));
-      let encodedOdds = log(boundedY / (1.0 - boundedY));
-      let sceneY = select(0.0, sceneMiddleGray * exp(clamp((encodedOdds - displayReferenceOdds) / 1.1, -32.0, 32.0)), y > 0.0);
-      let mapped = toneCurveLuma(sceneY);
-      return clamp(select(vec3f(0.0), rgb * (mapped / max(y, 0.00000001)), y > 0.00000001), vec3f(0.0), vec3f(1.0));
-    }
     ${blackAndWhiteWgsl("p", "blackAndWhite")}
     // The source-pixel lattice mean for Black & White's guide, filled by
     // baseFragmentMain only when a slider is set.
@@ -1163,7 +1109,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return display / (vec3f(1.0) + display);
     }
     fn sdrReferencePrefix(source: vec3f) -> vec3f {
-      var rgb = select(clamp(source, vec3f(0.0), vec3f(1.0)), max(source, vec3f(0.0)), p[159] > 0.5) * exp2(p[2]);
+      var rgb = max(source, vec3f(0.0)) * exp2(p[2]);
       if (p[4] != 0.0) {
         let mask = 1.0 - smoothRange(0.0, 0.5, lumaSrgb(rgb));
         rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
@@ -1190,34 +1136,25 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           if (needsGuide) { guide = sdrReferencePrefix(blackAndWhiteGuideSource); }
           rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb), srgbToAcescg(guide)));
         }
-        if (p[159] > 0.5) {
-          rgb = sdrPeakFit(sdrSoftCeiling(rgb));
-          rgb = toneEqualizer(rgb);
-          rgb = sdrContrast(rgb);
-          rgb = sdrReferenceColor(rgb);
-          rgb = sdrPrimaries(rgb);
-          rgb = applyColorGrading(applyCurves(rgb, false), false);
-        } else {
-          if (p[60] > 0.5) { rgb = retoneMapSdrReference(rgb); }
-          rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))), false), false);
-        }
+        rgb = sdrPeakFit(sdrSoftCeiling(rgb));
+        rgb = toneEqualizer(rgb);
+        rgb = sdrContrast(rgb);
+        rgb = sdrReferenceColor(rgb);
+        rgb = sdrPrimaries(rgb);
+        rgb = applyColorGrading(applyCurves(rgb, false), false);
       } else {
         let scene = sdrScenePrefix(source);
         var guide = scene;
         if (needsGuide) { guide = sdrScenePrefix(blackAndWhiteGuideSource); }
         let grey = blackAndWhite(scene, guide);
-        if (p[159] > 0.5) {
-          // The SDR shoulder is the scene-to-display placement, not a final
-          // limiter: every stage below it is display-referred. Only the ceiling
-          // runs in applyOutputHighlights.
-          rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18))));
-          rgb = toneEqualizer(rgb);
-          rgb = sdrContrast(rgb);
-          rgb = sdrPrimaries(rgb);
-          rgb = applyColorGrading(applyCurves(rgb, false), false);
-        } else {
-          rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(grey))))), false), false);
-        }
+        // The SDR shoulder is the scene-to-display placement, not a final
+        // limiter: every stage below it is display-referred. Only the ceiling
+        // runs in applyOutputHighlights.
+        rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18))));
+        rgb = toneEqualizer(rgb);
+        rgb = sdrContrast(rgb);
+        rgb = sdrPrimaries(rgb);
+        rgb = applyColorGrading(applyCurves(rgb, false), false);
       }
       // Export clips to display white only inside the stages that are active
       // (contrast, primaries, curves, grading), which the helpers above do. A
@@ -1310,8 +1247,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (p[74] < 0.5) { return input; }
       if (p[74] == 3.0) { return clipToOutputTarget(input); }
       if (p[0] > 0.5) { return clipToOutputTarget(hdrPeakFit(hdrSoftCeiling(input))); }
-      if (p[159] > 0.5) { return clipToOutputTarget(input); }
-      return input;
+      return clipToOutputTarget(input);
     }
     // The tile work texture is allocated once at the largest tile plus halo and
     // reused, so an edge tile's valid region is smaller than the texture it
