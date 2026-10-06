@@ -1,7 +1,7 @@
 # Viewport-Bounded GPU Preview
 
 **Date:** October 1, 2026
-**Status:** Phases 0 and 1 closed on October 1, 2026. On October 2 Steve accepted the phase 2 report, requested commit and push, and directed the next thread to move on in the PRD. Phase 2's implementation, measurements and remaining limitations are recorded in section 13. Phase 3 started on October 2 with a measured Sharpen correction (section 14). The four-mask near-black blocker is subsequently repaired (section 14.1); Steve authorized committing these fixes and continuing the sprint. **Steve closed phase 3 on October 5, 2026, with the findings in section 15.7 carried forward; phase 4 has not started.** Phase 1 met its mask-accuracy exit and part of its speed exit; its accepted gap to the section 6 targets remains carried to phase 3. Steve approved the section 4 limits and accepted the section 6 targets as goals on October 1. Phase 0 is recorded in section 11.
+**Status:** Phases 0 and 1 closed on October 1, 2026. On October 2 Steve accepted the phase 2 report, requested commit and push, and directed the next thread to move on in the PRD. Phase 2's implementation, measurements and remaining limitations are recorded in section 13. Phase 3 started on October 2 with a measured Sharpen correction (section 14). The four-mask near-black blocker is subsequently repaired (section 14.1); Steve authorized committing these fixes and continuing the sprint. **Steve closed phase 3 on October 5, 2026, with the findings in section 15.7 carried forward; phase 4 Group A cleanup and validation are recorded in section 16; the green exit remains unmet.** Phase 1 met its mask-accuracy exit and part of its speed exit; its accepted gap to the section 6 targets remains carried to phase 3. Steve approved the section 4 limits and accepted the section 6 targets as goals on October 1. Phase 0 is recorded in section 11.
 **Owner decisions recorded here:** move to the pattern other raw editors use (work bounded by the viewport, masks independent of resolution, export as the exact reference); accept small preview-versus-export differences; put the app's rigor into HDR handling; move interactive work to the GPU.
 **Predecessor:** [GPU Performance Review Sprint](GPU_Performance_Review_Sprint_PRD_2026-09-29.md), section 14 (October 1 root-cause pass).
 **Primary fixture:** `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher` with `DSC00950.ARW` (read-only; never saved).
@@ -1716,8 +1716,9 @@ column) without confirming the item first.
 | CF-SPEED-04 | Headline latency: cold 100% zoom feedback 850 ms against 150 ms; warm 200% slider feedback p95 85 ms against 50 ms | `headline-latency.js` |
 | CF-SPEED-05 | Cold Denoise pan-enable-drag on the saved 42 MP photo: none to seven frames during 60 inputs | `tests/denoise-pan-enable-drag.js --project` |
 | CF-DRIFT-01 | 30-minute endurance: HDR Clarity drag +32.8%, fresh brush stroke +22.9%, zoom to 100% +27.4% between the first and last ten cycles. Observed, not attributed | `heavy-project-long-session.js` |
-| CF-DRIFT-03 | Phase 4 headline repeat: warm Fit current/settled p95 245.2ms vs baseline33.4 (50/100ms targets); warm100% refined138.4 vs53.9 (100ms); warm native zoom893.6 vs9.1 (150ms). New target misses, observed/unattributed, confirmation pending; no app fix or limit change. See16.17 |
-| CF-DRIFT-04 | Cleanup primary audit: rotated SDR compact-Haar Denoise color_noise takes15,013ms vs582 baseline; other long-tail rows also move. Exact WebGPU presentation, no row error/CPU request. Observed/unattributed; focused confirmation pending. See16.19 |
+| CF-DRIFT-03 | New warm headline target misses repeated: Fit current/refined p95 258.7ms vs baseline 33.4 (50/100ms targets), warm 100% refined 108.3 vs 53.9 (100ms), warm native zoom 891.9 vs 9.1 (150ms). All four first-run misses reproduced, observed/unattributed; no app fix or limit change. See16.21 |
+| CF-DRIFT-04 | Primary rotated SDR compact-Haar color_noise: baseline 582 ms, first 15,013 ms, focused repeat 575 ms. Outlier not reproduced in 90-row zero-error exact-WebGPU repeat; first measurement and other long tails retained, intermittent/unattributed. See16.21 |
+| CF-DRIFT-05 | Completed fifty-local audit: edit-revision mismatch 3804/3805 at flip/SDR compact-Haar amount; both/SDR compact-Haar enable apply-settle and amount restore-settle hit original 120s guards. Initial interrupted audit recovered before agent stop; no confirmed livelock. Repeat completes 4,202 rows but is not green. See16.21 |
 | CF-DRIFT-02 | local-design-qa reaches retained visual checks after pending/assigned-mask setup repair: shared switch is 46x20 with 2px border, original contract requires 46x24/borderless. Diagnostic also observes scrollbar/control-section mismatches and keyboard-lane timeout. Four original clipboard reference images are absent, so intended appearance remains unconfirmed. No app fix or weakened assertion. See 16.12 |
 
 **CPU work behind an exact GPU frame.**
@@ -1748,7 +1749,7 @@ counter in `drag-gpu-load.js`. Test timing races, not app faults:
 `tests/tiled-admission-scope-fallback.js` and
 `tests/performance/full-tier-instrumented-tiling.js`.
 
-## 16. Phase 4 cleanup record (October 5, 2026; in progress)
+## 16. Phase 4 cleanup record (October 5-6, 2026; validation complete, green exit unmet)
 
 Steve approved inventory Group A: remove only the unused `roiPanCandidate`
 app wrapper and `admitDirect` renderer wrapper. Their active implementations
@@ -2340,6 +2341,16 @@ a focused rotate/SDR repeat is pending, with no app fix or attribution.
 Four-mask and fifty-local audits are still pending.
 
 
+Four-mask audit completes all 1,166 rows with zero page errors. Fifty-local initial
+attempt is preserved separately after 3,275 rows: one edit-revision mismatch page
+error at saved/SDR compact-Haar levels; perspective/SDR amount and luminance each
+have 120-second apply/restore settle timeouts. Live snapshots show ongoing picture
+work, but ordinary audit edits were subsequently progressing, so their generation
+churn does not prove an application livelock. The agent interrupted after recovery;
+the original full command is repeated to obtain a complete comparison. CF-DRIFT-05
+records the observed revision/settle failures, without app fix or attribution.
+Initial raw report, diagnostics and interruption correction are preserved.
+
 ### 16.20 Stop-gate setup synchronization (October 6)
 
 Baseline-passing tiled-stop-gate fails its full-sweep attempt and unchanged
@@ -2366,3 +2377,49 @@ retain their positive overlap coverage. No app fix or limit change.
 Fast suites463 Node /1,692 Python pass, same three skips. The actual sweep
 driver passes: two measured serials, span4ms inside50ms, no stale submissions
 after the newer render, both picture calls present via WebGPU.
+
+
+
+### 16.21 Final cleanup validation disposition (October 6)
+
+Authorized Group A cleanup and its validation are complete. The phase 4
+green exit is not met. Earlier section 16 batch notes describe their status
+at the time; the final disposition supersedes their pending-work statements.
+The [complete comparison](../technical/viewport-phase4-cleanup-after-validation-2026-10-06.md)
+records all 160 named drivers, retained failed guards, all three audits,
+headline confirmations, endurance, broad control/drag movement and protected
+SHA-256 values. Only the approved unused wrappers changed application source
+(17 nonblank lines / 713 UTF-8 bytes, 19 source lines with separators).
+Group B and all live cancellation, CPU fallback, source staging, mask/cache
+and Denoise coalescing remain held or retained. No check retired or tolerance,
+shader pin, budget, saved-project format, preference or CPU export/Proof change.
+
+Final checks: 463 Node passed; 1,692 Python passed, same three skips. Full
+serialized Electron sweep: 160 drivers complete, 147 pass / 13 fail versus
+132 / 28 baseline. No new baseline-passing driver exit failure remains after
+five documented test setup repairs; first failures and diagnostics are kept.
+All three coverage audits completed 6,618 matched rows, including 312 Denoise
+rows per fixture. All four protected saved projects retain their baseline hashes.
+
+CF-DRIFT-03 reproduces all four new warm target misses (repeat Fit 258.7 ms,
+100% refinement 108.3 ms, native zoom 891.9 ms). CF-DRIFT-04's rotated SDR
+compact-Haar color_noise outlier (15,013ms vs 582) is not reproduced (575ms)
+in the unchanged focused 90-row repeat; zero errors, every row exact WebGPU.
+The first observation remains intermittent and unattributed.
+
+The four-mask audit completes 1,166 rows, 35 flagged unchanged; CPU pictures
+3 to 4, scopes 0. The fifty-local audit completes 4,202 rows, 181 flagged unchanged;
+CPU pictures 5 to 4, scopes 9 to 12. CF-DRIFT-05 records one page error
+(expected revision 3804 / current 3805) at flip/SDR compact-Haar amount; both/SDR
+compact-Haar enable apply-settle and amount restore-settle each hit the 120s
+guard. Exit 0 measures completion, not a green audit. Its all-exact aggregate
+is false due to the uncompleted enable row; other sampled rows retain GPU
+presentation. The original interrupted attempt and agent's premature-stop
+correction remain preserved; generation churn did not prove continuing livelock.
+
+The 30-minute endurance has zero errors and no memory-budget overshoot, but
+HDR exposure median grows 29% within the run. All 17 operation comparisons
+and 122 broad control/drag comparisons are retained, including regressions
+and improvements. These movements are not attributed to unused wrappers.
+Known route, pixel, Peak, speed and drift findings remain open. No defect fix,
+installer build or push was performed; further cleanup stays separate.

@@ -1,8 +1,8 @@
 # Phase 4 cleanup inventory - October 5, 2026
 
 Status: Steve approved Group A and it is implemented and validated. Group B
-remains held. This is the first bounded batch, not a claim that the entire
-preview has been audited.
+remains held. Authorized validation is complete; phase 4 has not met its
+green exit. Earlier batch notes retain their historical status.
 
 Repository: branch `viewport-bounded-preview-phase-2-wip`, HEAD `ccf2fb5`,
 clean before inventory, four commits ahead of origin. No reset, push or build.
@@ -297,3 +297,15 @@ Drain automatic work around warm-up; keep all50ms gates and add a positive
 two-render identity guard. Two diagnostics pass at baseline4.1ms. Initial
 failure/repeat retained; no app fix. See PRD16.20. Actual sweep passes;
 fast463 Node /1,692 Python pass, three skips.
+
+## Final validation disposition - October 6
+
+463 Node checks and 1,692 Python checks pass, same three skips. All 160
+original drivers complete: 147 pass / 13 fail, baseline 132 / 28. All three
+audits complete 6,618 matched rows, with fifty-local revision/settle errors
+retained. New headline misses reproduce; the primary 15-second Denoise
+outlier does not reproduce in the focused repeat. All four protected saved
+project hashes are unchanged. No check retired, app defect fix, further
+deletion, push or installer build. Group B remains held for live routes
+and open findings. See the [final comparison](viewport-phase4-cleanup-after-validation-2026-10-06.md)
+and PRD 16.21 for complete before/after numbers and named dispositions.
