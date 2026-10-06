@@ -1744,9 +1744,9 @@ CF-DRIFT-03 and CF-DRIFT-05; that is not measured.
 
 **To remove (Steve, October 6).** The legacy Denoise method: its results are
 poor and it is old code, so it is to be deleted, leaving the adaptive method
-as the only one. Not started. A project saved with the legacy method must
-still open, so the removal needs a tested migration to the adaptive method.
-It would also retire the whole-source fetch that enabling legacy Denoise
+as the only one. Not started. No migration: the app is before 1.0 and has no
+outside users, so a project saved with the legacy method may break and no
+compatibility code is kept for it (Steve, October 6). It would also retire the whole-source fetch that enabling legacy Denoise
 causes (part of CF-ROUTE-03).
 
 **Checks that fail because they still describe the old design (phase 4
