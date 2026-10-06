@@ -2004,19 +2004,6 @@ label.select-control {
   display: none;
 }
 
-.denoise-custom-settings {
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--raised) 55%, transparent);
-}
-
-.denoise-custom-settings[hidden] {
-  display: none;
-}
-
 .denoise-view-actions {
   display: flex;
 }

@@ -295,18 +295,8 @@ const defaultDenoiseDocument = () => ({
   sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
 });
 
-// The measured method is the default for new work; the original wavelet stays
-// selectable, and documents authored with it keep it.
+// The one Denoise method. It measures the noise in the photo itself.
 const DENOISE_ADAPTIVE_ALGORITHM = "adaptive-atrous-v1";
-const DENOISE_LEGACY_ALGORITHM = "compact-haar-residual-v1";
-
-const DENOISE_ANALYSIS_PRESETS = Object.freeze({
-  photo_fine: Object.freeze({ levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035, note: "Two-scale cleanup for fine photographic noise." }),
-  photo_mixed: Object.freeze({ levels: 3, noise_threshold: 3.4, luma_sigma: 0.05, chroma_sigma: 0.07, note: "Three-scale cleanup for mixed luma noise and larger color structure." }),
-  render_fine: Object.freeze({ levels: 2, noise_threshold: 3.6, luma_sigma: 0.025, chroma_sigma: 0.025, note: "Two-scale cleanup tuned for fine, channel-balanced render noise." }),
-  render_coarse: Object.freeze({ levels: 4, noise_threshold: 4, luma_sigma: 0.065, chroma_sigma: 0.065, note: "Four-scale cleanup for larger Monte Carlo noise; inspect edges and texture carefully." }),
-  custom: Object.freeze({ note: "Custom scale count, threshold, and scene-linear luma/color noise levels." }),
-});
 
 const SDR_MATCH_GRAIN_FIELDS = Object.freeze([
   "grain_enabled",
@@ -1246,8 +1236,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   };
   // Start the source's measurement once a picture is visible, before Denoise
   // is enabled or the first zoom asks for it. No source upload or reconstruction.
-  if (transport === "WebGPU" && state.gpuPreview?.warmDenoiseModel
-    && state.denoise?.hdr?.analysis?.algorithm_version === DENOISE_ADAPTIVE_ALGORITHM) {
+  if (transport === "WebGPU" && state.gpuPreview?.warmDenoiseModel) {
     const native = Math.max(state.session?.source?.width || 0, state.session?.source?.height || 0);
     void state.gpuPreview?.warmDenoiseModel?.(state.session.session_id, "hdr", native);
   }
@@ -1453,23 +1442,10 @@ const els = {
   denoiseBypass: document.getElementById("denoise-bypass"),
   denoiseShowNoise: document.getElementById("denoise-show-noise"),
   noiseViewBadge: document.getElementById("noise-view-badge"),
-  denoiseAlgorithm: document.getElementById("denoise-algorithm"),
-  denoiseLegacyMethodRow: document.getElementById("denoise-legacy-method-row"),
-  denoiseMethod: document.getElementById("denoise-method"),
-  denoiseMethodNote: document.getElementById("denoise-method-note"),
-  denoiseCustomSettings: document.getElementById("denoise-custom-settings"),
-  denoiseLevels: document.getElementById("denoise-levels"),
-  denoiseThreshold: document.getElementById("denoise-threshold"),
-  denoiseLumaSigma: document.getElementById("denoise-luma-sigma"),
-  denoiseChromaSigma: document.getElementById("denoise-chroma-sigma"),
-  denoiseThresholdValue: document.getElementById("denoise-threshold-value"),
-  denoiseLumaSigmaValue: document.getElementById("denoise-luma-sigma-value"),
-  denoiseChromaSigmaValue: document.getElementById("denoise-chroma-sigma-value"),
   denoiseAmount: document.getElementById("denoise-amount"),
   denoiseLuminance: document.getElementById("denoise-luminance"),
   denoiseColor: document.getElementById("denoise-color"),
   denoiseDetail: document.getElementById("denoise-detail"),
-  denoiseSizeControls: document.getElementById("denoise-size-controls"),
   denoiseFinest: document.getElementById("denoise-finest"),
   denoiseFine: document.getElementById("denoise-fine"),
   denoiseMedium: document.getElementById("denoise-medium"),
@@ -1929,7 +1905,7 @@ function groupPresetPaths(groupId) {
   const lane = groupId.slice(0, separator);
   const group = groupId.slice(separator + 1);
   if (!["hdr", "sdr"].includes(lane)) return [];
-  if (group === "denoise") return [`denoise.${lane}.controls`, `denoise.${lane}.analysis`];
+  if (group === "denoise") return [`denoise.${lane}.controls`];
   if (group === "curves") return ["luma_curve", "red_curve", "green_curve", "blue_curve"].map((key) => `${lane}.${key}`);
   if (["color-grading", "detail", "film-look", "vignette"].includes(group)) return [`${lane}.${group.replaceAll("-", "_")}`];
   return [];
@@ -3466,18 +3442,6 @@ function bindEvents() {
   });
   els.denoiseBypass?.addEventListener("click", () => setDenoiseEnabled(!state.denoise[state.currentView].enabled));
   els.denoiseShowNoise?.addEventListener("click", toggleDenoiseNoiseView);
-  els.denoiseAlgorithm?.addEventListener("change", () => updateDenoiseAlgorithm(els.denoiseAlgorithm.value));
-  els.denoiseMethod?.addEventListener("change", () => updateDenoiseAnalysisPreset(els.denoiseMethod.value));
-  els.denoiseLevels?.addEventListener("change", () => updateCustomDenoiseAnalysis("levels", Number(els.denoiseLevels.value)));
-  const denoiseAnalysisSliders = [
-    [els.denoiseThreshold, "noise_threshold"],
-    [els.denoiseLumaSigma, "luma_sigma"],
-    [els.denoiseChromaSigma, "chroma_sigma"],
-  ];
-  for (const [control, key] of denoiseAnalysisSliders) {
-    control?.addEventListener("input", () => updateCustomDenoiseAnalysis(key, Number(control.value), false));
-    control?.addEventListener("change", () => updateCustomDenoiseAnalysis(key, Number(control.value), true));
-  }
   const denoiseSliders = [
     [els.denoiseAmount, "amount"],
     [els.denoiseLuminance, "luminance"],
@@ -10264,40 +10228,11 @@ function renderDenoiseControls() {
   const enabled = Boolean(settings.enabled);
   const group = els.denoiseBypass.closest(".control-group");
   const defaults = defaultDenoiseDocument()[lane];
-  const modified = !valuesEqual(settings.controls, defaults.controls) || !valuesEqual(settings.analysis, defaults.analysis);
+  const modified = !valuesEqual(settings.controls, defaults.controls);
   els.denoiseBypass.classList.toggle("bypassed", !enabled);
   els.denoiseBypass.setAttribute("aria-pressed", String(enabled));
   group?.classList.toggle("bypassed", !enabled);
   group?.classList.toggle("modified", modified);
-  const analysis = settings.analysis;
-  const analysisEnabled = enabled && !["preparing", "recalculating"].includes(runtime.status);
-  const adaptive = (analysis.algorithm_version || DENOISE_LEGACY_ALGORITHM) === DENOISE_ADAPTIVE_ALGORITHM;
-  if (els.denoiseAlgorithm) {
-    els.denoiseAlgorithm.value = adaptive ? DENOISE_ADAPTIVE_ALGORITHM : DENOISE_LEGACY_ALGORITHM;
-    els.denoiseAlgorithm.disabled = !analysisEnabled;
-  }
-  // Adaptive measures the noise itself, so the wavelet presets and their
-  // custom noise levels mean nothing to it.
-  if (els.denoiseLegacyMethodRow) els.denoiseLegacyMethodRow.hidden = adaptive;
-  // Noise size belongs to the adaptive method; the wavelet has fixed scales.
-  if (els.denoiseSizeControls) els.denoiseSizeControls.hidden = !adaptive;
-  els.denoiseMethod.value = analysis.preset;
-  els.denoiseMethod.disabled = !analysisEnabled;
-  els.denoiseMethodNote.dataset.tooltip = DENOISE_ANALYSIS_PRESETS[analysis.preset]?.note || DENOISE_ANALYSIS_PRESETS.custom.note;
-  els.denoiseCustomSettings.hidden = adaptive || analysis.preset !== "custom";
-  els.denoiseLevels.value = String(analysis.levels);
-  els.denoiseLevels.disabled = !analysisEnabled;
-  const analysisControls = [
-    [els.denoiseThreshold, els.denoiseThresholdValue, analysis.noise_threshold, 1],
-    [els.denoiseLumaSigma, els.denoiseLumaSigmaValue, analysis.luma_sigma, 3],
-    [els.denoiseChromaSigma, els.denoiseChromaSigmaValue, analysis.chroma_sigma, 3],
-  ];
-  for (const [input, output, value, digits] of analysisControls) {
-    input.value = String(value);
-    input.disabled = !analysisEnabled;
-    output.textContent = Number(value).toFixed(digits);
-    updateRangeVisual(input);
-  }
   const controls = [
     [els.denoiseAmount, els.denoiseAmountValue, settings.controls.amount],
     [els.denoiseLuminance, els.denoiseLuminanceValue, settings.controls.luminance],
@@ -10323,7 +10258,7 @@ function renderDenoiseControls() {
     off: "Denoise is off.",
     preparing: "Preparing the denoise cache; the original remains interactive.",
     ready: "Denoise cache ready.",
-    dirty: "Analysis settings changed. The previous valid result remains visible until recalculated.",
+    dirty: "The view changed. The previous valid result remains visible until recalculated.",
     recalculating: "Recalculating; the previous valid result remains interactive.",
     error: "Denoise could not be prepared. The original pipeline remains available.",
   }[runtime.status] || "");
@@ -10394,37 +10329,6 @@ function renderDenoiseAdvancedVisibility() {
   const open = Boolean(state.denoiseAdvancedOpen);
   els.denoiseAdvancedToggle?.setAttribute("aria-expanded", String(open));
   els.denoiseAdvancedPanel?.classList.toggle("hidden", !open);
-}
-
-function updateDenoiseAlgorithm(algorithm) {
-  if (![DENOISE_ADAPTIVE_ALGORITHM, DENOISE_LEGACY_ALGORITHM].includes(algorithm)) return;
-  const lane = state.currentView;
-  state.denoise[lane].analysis.algorithm_version = algorithm;
-  markDenoiseAnalysisDirty();
-  void persistDenoiseSettings();
-  // A method change is a new analysis; with Denoise on, run it now rather than
-  // leaving the previous method's result on screen until Recalculate.
-  if (state.denoise[lane].enabled) void recalculateDenoise(lane);
-}
-
-function updateDenoiseAnalysisPreset(presetName) {
-  const preset = DENOISE_ANALYSIS_PRESETS[presetName];
-  if (!preset) return;
-  const analysis = state.denoise[state.currentView].analysis;
-  analysis.preset = presetName;
-  if (presetName !== "custom") {
-    for (const key of ["levels", "noise_threshold", "luma_sigma", "chroma_sigma"]) analysis[key] = preset[key];
-  }
-  markDenoiseAnalysisDirty();
-  void persistDenoiseSettings();
-}
-
-function updateCustomDenoiseAnalysis(key, value, persist = true) {
-  const analysis = state.denoise[state.currentView].analysis;
-  analysis.preset = "custom";
-  analysis[key] = key === "levels" ? clamp(Math.round(value), 1, 4) : value;
-  markDenoiseAnalysisDirty();
-  if (persist) void persistDenoiseSettings();
 }
 
 async function persistDenoiseSettings() {
@@ -10512,7 +10416,6 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
   runtime.error = "";
   if (lane === state.currentView) renderDenoiseControls();
   try {
-    const analysis = settings.analysis;
     const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
     const ready = await state.gpuPreview.analyzeDenoiseProxy(
       state.session.session_id,
@@ -10520,14 +10423,7 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
       JSON.parse(JSON.stringify(state.adjustments)),
       options.longEdge || refinementProxyLongEdge(),
       state.editRevision,
-      {
-        name: settings.analysis.preset,
-        algorithm: analysis.algorithm_version || DENOISE_LEGACY_ALGORITHM,
-        levels: analysis.levels,
-        noiseThreshold: analysis.noise_threshold,
-        lumaSigma: analysis.luma_sigma,
-        chromaSigma: analysis.chroma_sigma,
-      },
+      { algorithm: DENOISE_ADAPTIVE_ALGORITHM },
       sourceIdentity,
       denoiseRendererControls(settings.controls),
     );
@@ -11388,8 +11284,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       hideStatus: options.hideStatus !== false,
       coarse: Boolean(options.coarse),
       interactiveSnapshot: tier === "interactive" && Boolean(state.previewScheduler?.interacting)
-        && state.denoise?.[lane]?.enabled
-        && state.denoise[lane].analysis.algorithm_version === DENOISE_ADAPTIVE_ALGORITHM,
+        && Boolean(state.denoise?.[lane]?.enabled),
     })
     : renderGpuDraftInner(lane, options);
   state.gpuDraftInFlight = pending;
@@ -11482,7 +11377,6 @@ async function renderGpuDraftInner(
     // the render, but leaves these pixels useful to its replacement. Keep the
     // load alive while the photo, geometry and source base remain the same.
     isSourceCurrent: state.denoise?.[lane]?.enabled
-      && state.denoise[lane].analysis.algorithm_version === DENOISE_ADAPTIVE_ALGORITHM
       ? () => !geometryDraftActive() && state.session?.session_id === sessionId
         && requestedGeometrySignature === geometrySignature()
         && (sourceOptions.identity || "source") === (gpuPreviewSourceOptions(lane)?.identity || "source")
@@ -12407,8 +12301,7 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
   if (coordinator) {
     coordinator.noteEdit(lane, {
       preserveInteractive: Boolean(state.previewScheduler?.interacting)
-        && state.denoise?.[lane]?.enabled
-        && state.denoise[lane].analysis.algorithm_version === DENOISE_ADAPTIVE_ALGORITHM,
+        && Boolean(state.denoise?.[lane]?.enabled),
     });
     state.previewGeneration[lane] = coordinator.generation(lane, "edit");
   } else {
@@ -13668,13 +13561,12 @@ function builtInGroupPresets(context) {
   if (context?.group === "denoise") {
     const defaults = defaultDenoiseDocument()[context.lane];
     return [{
-      id: "built-in:photo_fine",
+      id: "built-in:default",
       groupId: context.groupId,
-      name: "Photo / Fine",
+      name: "Default",
       builtIn: true,
       values: {
         [`denoise.${context.lane}.controls`]: JSON.parse(JSON.stringify(defaults.controls)),
-        [`denoise.${context.lane}.analysis`]: JSON.parse(JSON.stringify(defaults.analysis)),
       },
     }];
   }
@@ -13858,7 +13750,6 @@ function resetControlGroup(group) {
     const lane = state.currentView;
     const defaults = defaultDenoiseDocument()[lane];
     state.denoise[lane].controls = JSON.parse(JSON.stringify(defaults.controls));
-    state.denoise[lane].analysis = JSON.parse(JSON.stringify(defaults.analysis));
     const runtime = state.denoiseRuntime[lane];
     runtime.dirty = true;
     runtime.status = state.denoise[lane].enabled ? "dirty" : "off";
@@ -19061,8 +18952,7 @@ async function activateDesktopSession(session, projectPath) {
   if (!projectPath) await applyNewSessionPreferences();
   state.interpretationGateDismissed = false;
   state.gpuPreview?.resetSession(session.session_id);
-  if (state.gpuPreview?.warmDenoiseModel
-    && state.denoise?.hdr?.analysis?.algorithm_version === DENOISE_ADAPTIVE_ALGORITHM) {
+  if (state.gpuPreview?.warmDenoiseModel) {
     const native = Math.max(session.source.width, session.source.height);
     void state.gpuPreview.warmDenoiseModel(session.session_id, "hdr", native);
   }

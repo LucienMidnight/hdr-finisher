@@ -69,8 +69,8 @@ function halfToFloat(bits) {
       const group = document.querySelector(".denoise-group .group-toggle");
       if (group.getAttribute("aria-expanded") !== "true") group.click();
     });
-    assert(await page.evaluate(() => document.getElementById("denoise-legacy-method-row").hidden),
-      "The wavelet presets are showing while Adaptive is selected.");
+    assert(await page.evaluate(() => !document.getElementById("denoise-legacy-method-row")),
+      "The removed wavelet presets are still in the panel.");
     await page.evaluate(() => document.querySelector("#denoise-bypass").click());
     await page.waitForFunction(
       () => ["ready", "error"].includes(state.denoiseRuntime[state.currentView].status),

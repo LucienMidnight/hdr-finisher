@@ -259,8 +259,6 @@ def test_explanatory_copy_uses_title_hover_without_persistent_helper_rows() -> N
     assert 'data-tooltip="Scale-selective detail:' in html
     assert 'data-tooltip="Controls physical enlargement for halation, resolution, and grain.' in html
     assert 'data-tooltip="Strip modes anchor the cross-scan dimension' in html
-    assert 'id="denoise-method-note" class="tooltip-trigger"' in html
-    assert "els.denoiseMethodNote.dataset.tooltip =" in javascript
     assert 'class="help-tip' not in html
     assert 'id="raw-highlight-status"' not in html
     assert "rawHighlightStatus:" not in javascript

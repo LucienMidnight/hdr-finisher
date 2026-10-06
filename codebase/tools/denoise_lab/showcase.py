@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image
 
 from . import corpus, metrics
-from .methods import AtrousWiener, CurrentHaar, NlmReference
+from .methods import AtrousWiener, NlmReference
 from .run import SWEEPS
 
 OUT = corpus.ROOT / "output" / "denoise_lab" / "showcase"
@@ -24,7 +24,6 @@ SHOWCASE = (("taipei-signs", "processed-strong"), ("beach-sky-tree", "raw-high-i
 # at the mockup's +1.5 EV view and the shipping controls at Amount 100%.
 REAL_CROP = ("Affinity_DSC06898_DisplayP3_Linear_32f.exr", 4080, 2400, 800, 1200)
 REAL_EXPOSURE = 2 ** 1.5
-REAL_CURRENT_KNOBS = {"amount": 1.0}
 NOISE_VIEW_GAIN = 6.0
 CROP = 320  # a 1:1 window from the middle of each case
 
@@ -52,7 +51,7 @@ def main() -> None:
         save(window(metrics.encode(clean, exposure)), OUT / f"{stem}_clean.jpg")
         save(window(encoded_noisy), OUT / f"{stem}_noisy.jpg")
         entry = {"reference": reference, "case": case.name, "methods": {}}
-        for method in (CurrentHaar(), AtrousWiener(), NlmReference()):
+        for method in (AtrousWiener(), NlmReference()):
             knobs = SWEEPS[method.name]["default"]
             state = method.prepare(noisy)
             denoised = method.apply(noisy, state, **knobs)
@@ -77,7 +76,7 @@ def real(manifest: list) -> None:
     encoded_noisy = metrics.encode(noisy, REAL_EXPOSURE)
     stem = "real-happy-sign"
     save(encoded_noisy, OUT / f"{stem}_noisy.jpg")
-    for method, knobs in ((CurrentHaar(), REAL_CURRENT_KNOBS), (AtrousWiener(), SWEEPS["atrous-wiener"]["default"])):
+    for method, knobs in ((AtrousWiener(), SWEEPS["atrous-wiener"]["default"]),):
         denoised = method.apply(noisy, method.prepare(noisy), **knobs)
         encoded = metrics.encode(denoised, REAL_EXPOSURE)
         save(encoded, OUT / f"{stem}_{method.name}.jpg")

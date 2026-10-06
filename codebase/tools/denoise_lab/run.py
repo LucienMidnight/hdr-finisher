@@ -1,6 +1,6 @@
 """Run the denoise benchmark.
 
-    .venv/Scripts/python.exe -m tools.denoise_lab.run [--quick] [--methods current,vst-atrous]
+    .venv/Scripts/python.exe -m tools.denoise_lab.run [--quick] [--methods adaptive,atrous-wiener]
 
 For every corpus case and every method this sweeps the method's knobs and
 reports two numbers per method:
@@ -23,19 +23,9 @@ import time
 import numpy as np
 
 from . import corpus, metrics
-from .methods import Adaptive, AtrousWiener, CurrentHaar, NlmReference
+from .methods import Adaptive, AtrousWiener, NlmReference
 
 SWEEPS = {
-    "current": {
-        "default": {},
-        "grid": {
-            "levels": [2, 3],
-            "relative_sigma": [0.05, 0.1, 0.2, 0.4],
-            "amount": [0.5, 1.0],
-            "luminance": [1.0],
-            "color": [1.0],
-        },
-    },
     "atrous-wiener": {
         "default": {"strength": 1.0, "chroma": 1.0},
         "grid": {"strength": [0.4, 0.6, 0.8, 1.0, 1.3], "chroma": [1.0, 1.5, 2.5]},
@@ -50,7 +40,7 @@ SWEEPS = {
     },
 }
 
-METHODS = {cls.name: cls for cls in (CurrentHaar, AtrousWiener, Adaptive, NlmReference)}
+METHODS = {cls.name: cls for cls in (AtrousWiener, Adaptive, NlmReference)}
 
 
 def grid(spec: dict):

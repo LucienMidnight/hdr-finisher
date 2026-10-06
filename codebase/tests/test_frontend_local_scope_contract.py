@@ -448,7 +448,7 @@ def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_
     assert "analyzeDenoiseWavelet" in app_script
     assert "resolveDenoiseWavelet" in app_script
 
-def test_denoise_phase_three_exposes_locked_wavelet_methods_and_four_live_controls() -> None:
+def test_denoise_exposes_one_method_and_its_live_controls() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     app_script = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
@@ -459,21 +459,18 @@ def test_denoise_phase_three_exposes_locked_wavelet_methods_and_four_live_contro
     assert 'data-reset-group="denoise"' in html
     assert 'id="denoise-enabled"' not in html
     assert 'id="denoise-ab"' not in html
-    assert 'id="denoise-method"' in html
-    for method in ("photo_fine", "photo_mixed", "render_fine", "render_coarse", "custom"):
-        assert f'value="{method}"' in html
-    assert 'id="denoise-levels"' in html
-    assert 'id="denoise-threshold"' in html
-    assert 'id="denoise-luma-sigma"' in html
-    assert 'id="denoise-chroma-sigma"' in html
+    # One method: no selector, and none of the removed wavelet method's controls.
+    for removed in ("denoise-algorithm", "denoise-method", "denoise-levels", "denoise-threshold",
+                    "denoise-luma-sigma", "denoise-chroma-sigma"):
+        assert f'id="{removed}"' not in html
     assert '>Denoise <span class="module-modified-marker" aria-hidden="true"></span></button>' in html
     assert html.index('id="raw-settings-section"') < html.index('data-group="denoise"') < html.index('id="local-adjustments-group"')
     assert "defaultDenoiseDocument" in app_script
-    assert 'id: "built-in:photo_fine"' in app_script
+    assert 'id: "built-in:default"' in app_script
     assert 'group === "denoise"' in app_script
     assert 'queueEditCommand("set_denoise_settings"' in app_script
-    assert "updateDenoiseAnalysisPreset" in app_script
-    assert "updateCustomDenoiseAnalysis" in app_script
+    assert "updateDenoiseAnalysisPreset" not in app_script
+    assert "updateCustomDenoiseAnalysis" not in app_script
     # The live controls still reach the renderer's reconstruction, but through
     # the coalescing queue rather than one call per input event.
     assert "state.gpuPreview?.resolveDenoiseProxy?.(controls)" in app_script

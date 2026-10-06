@@ -22,12 +22,6 @@ from .corpus import LUMA, ROOT
 
 sys.path.insert(0, str(ROOT / "backend"))
 from hdr_finisher import denoise_adaptive  # noqa: E402
-from hdr_finisher.denoise_reference import (  # noqa: E402
-    AnalysisPreset,
-    ResolveControls,
-    analyze_denoise,
-    resolve_denoise,
-)
 
 # --------------------------------------------------------------------------
 # Shared building blocks
@@ -111,26 +105,6 @@ def noise_map(image: np.ndarray, model: noise_model.NoiseModel) -> np.ndarray:
 
 # --------------------------------------------------------------------------
 # Methods
-
-
-class CurrentHaar:
-    """The shipping algorithm, driven exactly as the app drives it."""
-
-    name = "current"
-
-    def prepare(self, noisy: np.ndarray) -> float:
-        return float(max(np.median(noisy @ LUMA), 1e-4))
-
-    def apply(self, image, median, *, levels=2, relative_sigma=None, amount=0.5,
-              luminance=0.5, color=0.5, detail=0.5):
-        if relative_sigma is None:
-            preset = AnalysisPreset(levels=levels)  # the shipping default: absolute 0.035
-        else:
-            sigma = relative_sigma * median
-            preset = AnalysisPreset(levels=levels, luma_sigma=sigma, chroma_sigma=sigma)
-        analysis = analyze_denoise(image, preset)
-        controls = ResolveControls(amount=amount, luminance=luminance, color_noise=color, detail_recovery=detail)
-        return resolve_denoise(image, analysis, controls)
 
 
 @dataclass(frozen=True)

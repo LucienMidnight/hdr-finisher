@@ -26,8 +26,6 @@ from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020
 from .color_context import RenderColorContext, scene_linear_to_nits
 from . import denoise_adaptive
-from .denoise_reference import AnalysisPreset, ResolveControls
-from .denoise_tiles import analyze_denoise_tiled, resolve_denoise_tiled
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .finishing import apply_output_finishing
 from .peak_accuracy import measurement_warnings
@@ -130,51 +128,26 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
     that, so export has to denoise before grading too, or the two would differ
     by where in the graph the noise was removed rather than by resolution.
 
-    Analysis and reconstruction are the tiled reference routines, bit-identical
-    to the whole-image ones and pinned by the denoise parity suites. That
-    matters twice over: the export stays bounded on a 42 MP frame, and it is
-    the same arithmetic the preview's GPU path is pinned against by a shared
-    fixture.
+    The noise model is measured at the export's own resolution, as the preview
+    measures at its own: noise per pixel depends on the scale it is read at.
     """
     image = getattr(session, "image")
     lane = denoise_settings_for_export(session, kind)
     if lane is None:
         return image
-    analysis_settings = lane.analysis
-    if analysis_settings.algorithm_version == denoise_adaptive.ALGORITHM_VERSION:
-        # Measured at the export's own resolution, as the preview measures at
-        # its own: noise per pixel depends on the scale it is read at.
-        controls = lane.controls
-        return denoise_adaptive.resolve_adaptive(
-            image,
-            denoise_adaptive.estimate_adaptive_model(image),
-            denoise_adaptive.AdaptiveControls(
-                amount=controls.amount,
-                luminance=controls.luminance,
-                color_noise=controls.color_noise,
-                detail_recovery=controls.detail_recovery,
-                finest_noise=controls.finest_noise,
-                fine_noise=controls.fine_noise,
-                medium_noise=controls.medium_noise,
-                coarse_noise=controls.coarse_noise,
-            ),
-        )
-    preset = AnalysisPreset(
-        levels=analysis_settings.levels,
-        noise_threshold=analysis_settings.noise_threshold,
-        luma_sigma=analysis_settings.luma_sigma,
-        chroma_sigma=analysis_settings.chroma_sigma,
-    )
-    analysis = analyze_denoise_tiled(image, preset)
     controls = lane.controls
-    return resolve_denoise_tiled(
+    return denoise_adaptive.resolve_adaptive(
         image,
-        analysis,
-        ResolveControls(
+        denoise_adaptive.estimate_adaptive_model(image),
+        denoise_adaptive.AdaptiveControls(
             amount=controls.amount,
             luminance=controls.luminance,
             color_noise=controls.color_noise,
             detail_recovery=controls.detail_recovery,
+            finest_noise=controls.finest_noise,
+            fine_noise=controls.fine_noise,
+            medium_noise=controls.medium_noise,
+            coarse_noise=controls.coarse_noise,
         ),
     )
 

@@ -891,10 +891,11 @@ class DenoiseLiveControls(BaseModel):
 class DenoiseAnalysisSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # "adaptive-atrous-v1" measures the noise and ignores the preset fields
-    # below; "compact-haar-residual-v1" is the original wavelet, kept so a
-    # document authored with it renders exactly as it did.
-    algorithm_version: Literal["compact-haar-residual-v1", "adaptive-atrous-v1"] = "adaptive-atrous-v1"
+    # The one method. It measures the noise and reads none of the fields
+    # below, which belonged to the removed wavelet method. They stay in the
+    # schema only because every saved project carries them and unknown fields
+    # are forbidden here.
+    algorithm_version: Literal["adaptive-atrous-v1"] = "adaptive-atrous-v1"
     preset: Literal["photo_fine", "photo_mixed", "render_fine", "render_coarse", "custom"] = "photo_fine"
     levels: int = Field(default=2, ge=1, le=4)
     noise_threshold: float = Field(default=3.0, gt=0.0, le=16.0)

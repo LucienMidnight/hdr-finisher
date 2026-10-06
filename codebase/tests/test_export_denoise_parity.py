@@ -31,13 +31,6 @@ import numpy as np
 from hdr_finisher import denoise_adaptive
 import pytest
 
-from hdr_finisher.denoise_reference import (
-    AnalysisPreset,
-    ResolveControls,
-    analyze_denoise,
-    resolve_denoise,
-)
-from hdr_finisher.denoise_tiles import analyze_denoise_tiled, resolve_denoise_tiled
 from hdr_finisher.exporters import _denoised_export_source, denoise_settings_for_export
 from hdr_finisher.models import (
     AdjustmentState,
@@ -119,10 +112,6 @@ def _document(lane: str = "hdr", **overrides) -> _Document:
     document = _Document(DenoiseDocumentSettings())
     settings = getattr(document.denoise, lane)
     settings.enabled = overrides.pop("enabled", True)
-    # The parity checks here pin the original wavelet, which documents that
-    # were authored with it keep; the adaptive route has its own tests below.
-    settings.analysis.algorithm_version = overrides.pop("algorithm_version", "compact-haar-residual-v1")
-    settings.analysis.levels = overrides.pop("levels", 2)
     settings.controls.amount = overrides.pop("amount", 0.8)
     settings.controls.luminance = overrides.pop("luminance", 0.7)
     settings.controls.color_noise = overrides.pop("color_noise", 0.6)
@@ -141,41 +130,6 @@ def test_enabled_denoise_changes_the_exported_source() -> None:
     # It should be removing noise, not adding energy.
     assert float(np.std(denoised - image)) > 0.0
     assert float(np.std(denoised)) < float(np.std(image))
-
-
-def test_export_source_is_exactly_the_reference_reconstruction() -> None:
-    image = _noisy()
-    document = _document()
-    lane = document.denoise.hdr
-
-    preset = AnalysisPreset(
-        levels=lane.analysis.levels,
-        noise_threshold=lane.analysis.noise_threshold,
-        luma_sigma=lane.analysis.luma_sigma,
-        chroma_sigma=lane.analysis.chroma_sigma,
-    )
-    controls = ResolveControls(
-        amount=lane.controls.amount,
-        luminance=lane.controls.luminance,
-        color_noise=lane.controls.color_noise,
-        detail_recovery=lane.controls.detail_recovery,
-    )
-    expected = resolve_denoise_tiled(image, analyze_denoise_tiled(image, preset), controls)
-
-    produced = _denoised_export_source(_session(document, image), PreviewKind.HDR)
-    np.testing.assert_array_equal(produced, expected)
-
-
-def test_the_bounded_route_equals_the_whole_image_one() -> None:
-    """Export takes the tiled route; the contract is written against the whole."""
-    image = _noisy()
-    preset = AnalysisPreset(levels=2)
-    controls = ResolveControls(amount=0.8, luminance=0.7, color_noise=0.6, detail_recovery=0.3)
-
-    whole = resolve_denoise(image, analyze_denoise(image, preset), controls)
-    tiled = resolve_denoise_tiled(image, analyze_denoise_tiled(image, preset), controls)
-
-    np.testing.assert_array_equal(tiled, whole)
 
 
 @pytest.mark.parametrize(
@@ -214,16 +168,6 @@ def test_a_session_without_a_document_exports_undenoised() -> None:
     assert _denoised_export_source(session, PreviewKind.HDR) is image
 
 
-def test_analysis_settings_reach_the_reconstruction() -> None:
-    """A different level count must produce a different picture, or the
-    authored analysis is being ignored and a default silently substituted."""
-    image = _noisy()
-    two = _denoised_export_source(_session(_document(levels=2), image), PreviewKind.HDR)
-    four = _denoised_export_source(_session(_document(levels=4), image), PreviewKind.HDR)
-
-    assert not np.array_equal(two, four)
-
-
 def test_the_export_branch_actually_renders_the_denoised_source() -> None:
     """The helper above is only useful if the export graph calls it.
 
@@ -255,7 +199,7 @@ def test_the_export_branch_actually_renders_the_denoised_source() -> None:
 def test_adaptive_export_is_exactly_the_adaptive_reconstruction() -> None:
     """The adaptive route measures its model on the export frame itself."""
     image = _noisy(96, 128)
-    document = _document(algorithm_version=denoise_adaptive.ALGORITHM_VERSION)
+    document = _document()
     lane = document.denoise.hdr
     expected = denoise_adaptive.resolve_adaptive(
         image,
@@ -277,9 +221,11 @@ def test_adaptive_export_is_exactly_the_adaptive_reconstruction() -> None:
     assert not np.array_equal(produced, image), "the adaptive export source was not denoised at all"
 
 
-def test_new_documents_default_to_adaptive_and_old_ones_keep_theirs() -> None:
+def test_adaptive_is_the_only_method() -> None:
     assert DenoiseDocumentSettings().hdr.analysis.algorithm_version == denoise_adaptive.ALGORITHM_VERSION
-    legacy = DenoiseDocumentSettings.model_validate(
-        {"hdr": {"analysis": {"algorithm_version": "compact-haar-residual-v1"}}},
-    )
-    assert legacy.hdr.analysis.algorithm_version == "compact-haar-residual-v1"
+    # The wavelet method is removed and, before 1.0, not migrated: a document
+    # saved with it is refused rather than silently rendered another way.
+    with pytest.raises(ValueError):
+        DenoiseDocumentSettings.model_validate(
+            {"hdr": {"analysis": {"algorithm_version": "compact-haar-residual-v1"}}},
+        )

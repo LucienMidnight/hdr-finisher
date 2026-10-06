@@ -1,8 +1,7 @@
 // PRD 6.3 -- progressive disclosure for the Denoise controls.
 //
 // Amount and Detail Recovery are always visible; Luminance and Colour Noise
-// sit behind Advanced; the method/preset selector stays visible; the Custom
-// analysis settings stay behind Custom.
+// sit behind Advanced. There is one method, so no method selector.
 //
 //   node tests/denoise-progressive-disclosure.js --url http://127.0.0.1:8765
 //
@@ -67,14 +66,11 @@ function assert(condition, message) {
     assert(await shown("denoise-detail"), "Detail Recovery is not always visible.");
     assert(await page.locator("#denoise-detail").inputValue() === "0", "A new project did not start Detail Recovery at 0%.");
     assert(await page.locator("#denoise-detail-value").textContent() === "0%", "The new Detail Recovery default was not displayed as 0%.");
-    assert(await shown("denoise-algorithm"), "The method selector is not visible.");
-    // The wavelet presets belong to the legacy method: hidden under Adaptive,
-    // back as soon as the legacy method is chosen.
-    assert(!await shown("denoise-method"), "The wavelet presets are visible under the Adaptive method.");
+    for (const removed of ["denoise-algorithm", "denoise-method", "denoise-levels"]) {
+      assert(await page.locator(`#${removed}`).count() === 0, `The removed control #${removed} is still in the panel.`);
+    }
     assert(!await shown("denoise-luminance"), "Luminance is visible before Advanced is opened.");
     assert(!await shown("denoise-color"), "Colour Noise is visible before Advanced is opened.");
-    assert(!await shown("denoise-levels"),
-      "The Custom analysis settings are visible while a preset is selected.");
 
     await page.click("#denoise-advanced-toggle");
     assert(await shown("denoise-luminance"), "Advanced did not reveal Luminance.");
@@ -85,12 +81,7 @@ function assert(condition, message) {
     await page.click("#denoise-advanced-toggle");
     assert(!await shown("denoise-luminance"), "Advanced did not hide Luminance again.");
 
-    // Recalculate stays reachable outside Custom. 6.3 reads as though it
-    // belongs inside, but changing a *preset* also marks the analysis dirty,
-    // so putting Recalculate behind Custom would strand a dirty preset with
-    // no way to recalculate it.
-    assert(await shown("denoise-recalculate"),
-      "Recalculate is not reachable while a preset is selected.");
+    assert(await shown("denoise-recalculate"), "Recalculate is not reachable.");
 
     // 2. The part that matters: nothing changed silently.
 
@@ -109,21 +100,6 @@ function assert(condition, message) {
       await page.waitForTimeout(1200);
     };
     await enableDenoise();
-
-    // Method is live once Denoise is on; each switch is a new analysis.
-    const switchMethod = async (algorithm) => {
-      await page.selectOption("#denoise-algorithm", algorithm);
-      await page.waitForFunction(
-        () => ["ready", "error"].includes(state.denoiseRuntime[state.currentView].status),
-        null, { timeout: 300000 },
-      );
-      await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
-      await page.waitForTimeout(1200);
-    };
-    await switchMethod("compact-haar-residual-v1");
-    assert(await shown("denoise-method"), "Choosing the legacy method did not reveal its presets.");
-    await switchMethod("adaptive-atrous-v1");
-    assert(!await shown("denoise-method"), "Returning to Adaptive did not hide the wavelet presets.");
 
     const capture = async () => (await page.locator("#preview-canvas").screenshot({
       clip: { x: 0, y: 0, width: 384, height: 384 },
