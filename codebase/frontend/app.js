@@ -11589,7 +11589,10 @@ async function renderGpuDraftInner(
       };
     if (verdict.kind === "superseded") {
       console.debug("WebGPU authoring render deferred until geometry commit.", error);
-      return false;
+      // Say so. A silent false leaves the previous refusal standing, and the
+      // settle pass then reads an old hard refusal (stale geometry, say) as
+      // this render's and draws a CPU picture for an ordinary supersession.
+      return refuse("superseded-during-render");
     }
     if (verdict.recoverable && !verdict.disabled) {
       // Section 5.8: keep the device and the accepted frame. A retryable
