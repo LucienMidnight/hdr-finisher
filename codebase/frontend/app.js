@@ -2259,6 +2259,17 @@ function initializePreviewScheduler() {
           coarse: true, scale: 0.5 };
       }
       if (decision.coarse) decision.edge = responseCoarseLongEdge(refinementProxyLongEdge());
+      // The renderer refuses a whole-frame tiled drag frame, but only after
+      // the source and parameters are prepared. Refuse it here, before that
+      // work; the settled pass draws the edit. A magnified view is a bounded
+      // region pass and goes through.
+      if (tiled && !decision.coarse && state.zoomMode !== "custom") {
+        const reason = "pre-dispatch-tiled";
+        state.lastGpuDraftRefusal = { reason, lane: task.lane, tier: "interactive", at: performance.now() };
+        const key = `interactive:${reason}`;
+        state.gpuDraftRefusals[key] = (state.gpuDraftRefusals[key] || 0) + 1;
+        return false;
+      }
       const detailActive = gpuDetailGraphActive(task.lane);
       const detailInteraction = state.detailInteractionRestore?.lane === task.lane;
       // A queued interactive callback may become runnable only after pointerup
@@ -4993,6 +5004,9 @@ function transientGpuRefusal() {
   const reason = String(state.lastGpuDraftRefusal?.reason || "");
   return reason === "superseded-during-render"
     || reason.startsWith("superseded-")
+    // The coordinator's name for the same thing: a queued render replaced by
+    // a newer one before it was dispatched.
+    || reason === "coalesced-by-newer-render"
     || reason.startsWith("peak:newer-render-started")
     || reason.startsWith("peak:application-not-current")
     || (reason.startsWith("tiled-encode-failed:") && reason.includes("superseded"));
