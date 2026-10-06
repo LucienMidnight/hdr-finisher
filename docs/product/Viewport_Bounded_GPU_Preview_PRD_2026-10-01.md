@@ -1770,6 +1770,16 @@ Look image-structure move into Detail and the Denoise Fine-to-Finest carry-over.
 Older projects that used them open with the current rendering and defaults. The
 render shader still declares the legacy SDR inputs, held at neutral values.
 
+**Old-preferences code removed (Steve, October 6; `6255b81`).** The preview-tier
+migration and its notice, the Responsive-to-Faster-dragging carry-over, and the
+reading of `rendering-preferences.json` and `favorite-folders.json` are gone.
+
+**Legacy code still present, awaiting Steve.** The v1 SDR Match (the hidden
+renderer behind "Convert legacy match" and "Revert"): it runs through the CPU
+render and export, the render cache, the session commands, the saved-project
+state and the SDR panel, and one of the 22 saved projects has one active. Also
+the unused legacy SDR inputs in the pinned render shader.
+
 **Checks that fail because they still describe the old design (phase 4
 input).** Each is rewritten for the viewport-bounded design or retired with
 the reason recorded; none is deleted only to make a run green.
