@@ -1,13 +1,13 @@
 # GPU Performance Review Sprint
 
 **Date:** September 29, 2026  
-**Status:** Wider measurement gates remain open; Steve authorized a first targeted optimization pass on September 30. See [targeted changes and focused verification](../technical/high-impact-performance-changes-2026-09-30.md). Historical measurement-only rules below describe the original sprint contract; this authorization supersedes the optimization-entry gate for the targeted pass.
+**Status:** Wider measurement gates remain open; Steve authorized a first targeted optimization pass on September 30. See [targeted changes and focused verification](../technical/archive/high-impact-performance-changes-2026-09-30.md). Historical measurement-only rules below describe the original sprint contract; this authorization supersedes the optimization-entry gate for the targeted pass.
 **Primary fixture:** `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher` with `DSC00950.ARW`  
 **Reference workstation:** Steve's Windows workstation, NVIDIA GeForce RTX 4070 Ti (12 GiB), AC power  
 **Related plans:** [Preview Responsiveness Tuning Sprint](Preview_Responsiveness_Tuning_Sprint_PRD_2026-09-25.md), [Viewport ROI Preview Performance Sprint](Viewport_ROI_Preview_Performance_Sprint_PRD_2026-09-22.md)  
-**Related architecture review:** [Preview Performance Architecture Review](../technical/preview-performance-architecture-review-2026-09-22.md)  
+**Related architecture review:** [Preview Performance Architecture Review](../technical/archive/preview-performance-architecture-review-2026-09-22.md)  
 **Recent structural baseline:** [Repo Cleanup and Code Audit Results](../design/Repo_Cleanup_and_Code_Audit_Results_2026-09-27.md)
-**Controlled traces and resumed coverage:** [Heavy-project baseline and measurement ledger](../technical/performance-review-baseline-2026-09-30.md)
+**Controlled traces and resumed coverage:** [Heavy-project baseline and measurement ledger](../technical/archive/performance-review-baseline-2026-09-30.md)
 
 ### September 30 continuation checkpoint
 

@@ -1,7 +1,7 @@
 # Exact-tier GPU latency measurement
 
 **Recorded:** 2026-09-19
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
 **Source state:** `main` at the Phase 3 ledger commit
 **Harness:** `codebase/tests/performance/exact-tier-latency.js`
 **Raw report:** `codebase/output/performance/exact-tier-latency-42mp.json` (intentionally gitignored)

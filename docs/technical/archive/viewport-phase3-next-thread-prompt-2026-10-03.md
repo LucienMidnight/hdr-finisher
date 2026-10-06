@@ -8,9 +8,9 @@ Workspace: `D:\AI\AI Projects\HDR Finisher Tool`. Git root: `ai`; executable/tes
 
 Read these first, relative to the git root:
 - `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md` (exit criteria, owner decisions, sections 14.17–14.22).
-- `docs/technical/viewport-phase3-exit-audit-2026-10-03.md`.
-- `docs/technical/viewport-phase3-resampled-mask-evidence-2026-10-03.md` (latest slice).
-- `docs/technical/viewport-phase3-native-feather-evidence-2026-10-03.md` and `viewport-phase3-native-shift-evidence-2026-10-03.md` (previous slices). Follow earlier evidence links only as needed.
+- `docs/technical/archive/viewport-phase3-exit-audit-2026-10-03.md`.
+- `docs/technical/archive/viewport-phase3-resampled-mask-evidence-2026-10-03.md` (latest slice).
+- `docs/technical/archive/viewport-phase3-native-feather-evidence-2026-10-03.md` and `viewport-phase3-native-shift-evidence-2026-10-03.md` (previous slices). Follow earlier evidence links only as needed.
 
 ## What exists now
 

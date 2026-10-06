@@ -1,7 +1,7 @@
 # Phase 4 checkpoint — tile scheduler and tiled memory model
 
 **Recorded:** 2026-09-19
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
 **Status:** **Phase 4 is in progress.** Two of four exit-gate conditions are met.
 **Source state:** `main` after the Phase 3 ledger commit
 **Python:** `codebase/.venv` — Python 3.12.10

@@ -1,7 +1,7 @@
 # Phase 3 exit-gate evidence — geometry-aware bounded transport
 
 **Recorded:** 2026-09-19
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
 **Source state:** worktree based on `493a318` (`main`)
 **Application:** HDR Finisher 0.8.12
 **Host:** Windows 10.0.26200; Node v24.14.0

@@ -103,14 +103,14 @@ scene luminance and keeps the fallback. Regional masks carry their frame placeme
 and use the full frame's feather distance. Editing measurement keeps its
 separate bounded-mask/halo contract. Unsupported forms retain the existing
 fallback; painted feather peak normalization and mask qualification are
-unchanged. See [phase 3 mask evidence](viewport-phase3-mask-evidence-2026-10-02.md).
+unchanged. See [phase 3 mask evidence](archive/viewport-phase3-mask-evidence-2026-10-02.md).
 
 Local curves and colour wheels run on the GPU before local Detail. Curve LUTs
 have a separate segment and cached samples for each active local/lane. Local
 SDR colour conversion and stage clipping match export. See
-[local control evidence](viewport-phase3-local-control-evidence-2026-10-02.md).
+[local control evidence](archive/viewport-phase3-local-control-evidence-2026-10-02.md).
 
-At and above 100% zoom a frame is drawn for the visible region plus a margin on the tiled route, whatever the image's size. Its source region is exactly the union of the foreground tiles' halo rectangles, fetched as row chunks side by side through a four-slot staging ring ([phase 3 zoom transfer evidence](viewport-phase3-zoom-transfer-evidence-2026-10-02.md)). Outside the tiles it has drawn, a region pass shows the last finished frame stretched. A pan draws what it exposes, and the rest of the frame is completed in the background only when that needs no mask from the backend. `readLocalMaskRegion` reads back the mask each local pass sampled, for the preview-versus-export comparison.
+At and above 100% zoom a frame is drawn for the visible region plus a margin on the tiled route, whatever the image's size. Its source region is exactly the union of the foreground tiles' halo rectangles, fetched as row chunks side by side through a four-slot staging ring ([phase 3 zoom transfer evidence](archive/viewport-phase3-zoom-transfer-evidence-2026-10-02.md)). Outside the tiles it has drawn, a region pass shows the last finished frame stretched. A pan draws what it exposes, and the rest of the frame is completed in the background only when that needs no mask from the backend. `readLocalMaskRegion` reads back the mask each local pass sampled, for the preview-versus-export comparison.
 
 Fallback scopes use vectorized bin-index generation and `numpy.bincount`. Scope results and adjusted frames are single-flight and cached by source state, lane, proxy level, dimensions, and adjustment signature. Cache diagnostics report managed bytes, hits, misses, evictions, in-flight work, and stale cancellations.
 
@@ -122,7 +122,7 @@ mapping after picture/scopes settle. Auxiliary rendering preserves native
 sources and visible presentation resources, checks latest state, and leaves
 peak/anchor measurement on its bounded native contract. CPU rendering mode
 retains its small idle overview fallback. See
-[phase 3 auxiliary evidence](viewport-phase3-auxiliary-evidence-2026-10-02.md).
+[phase 3 auxiliary evidence](archive/viewport-phase3-auxiliary-evidence-2026-10-02.md).
 
 ### Match candidates (phase 3)
 
@@ -137,13 +137,13 @@ and returns the output-mapped picture as half-float RGB. The export pipeline
 then renders the chosen recipe once; that render is the quality Match
 reports and gates on. A refusal, a late answer or a rejected recipe reruns
 the whole fit on the CPU. Convert and CPU rendering mode use the CPU
-throughout. See [phase 3 Match evidence](viewport-phase3-match-evidence-2026-10-02.md).
+throughout. See [phase 3 Match evidence](archive/viewport-phase3-match-evidence-2026-10-02.md).
 
 The CPU HDR target, local translation and CPU certification share immutable
 spatial masks and the geometry-fixed source within one Match request. The
 neutral tonal search reuses private trial adjustment states. Pixel operations,
 quality gates and the CPU fallback are unchanged; retained inputs are released
-when the request finishes. See [Match CPU evidence](viewport-phase3-match-cpu-evidence-2026-10-02.md).
+when the request finishes. See [Match CPU evidence](archive/viewport-phase3-match-cpu-evidence-2026-10-02.md).
 
 The SDR base stage clips to display white only inside its active stages
 (contrast, primaries, curves, colour grading), as export does, so a
@@ -151,7 +151,7 @@ highlight lifted above white reaches Detail and the locals unclipped.
 One native four-mask SDR-centre comparison now verifies this with a
 session-only darkening local and global Sharpen: unchanged above-white
 Detail samples reach the local, while changed SDR samples clip. The full
-Detail matrix remains open. See [native SDR evidence](viewport-phase3-matched-sdr-native-evidence-2026-10-02.md).
+Detail matrix remains open. See [native SDR evidence](archive/viewport-phase3-matched-sdr-native-evidence-2026-10-02.md).
 
 ### Editing peak and highlight anchors (phase 2)
 
@@ -168,7 +168,7 @@ as shared regional/tile masks. A single parameter builder anchors both
 routes to the same source coordinates and quarter-turn/flip transform.
 Nonzero Fan retains float coverage through mask storage; neutral Fan keeps
 its prior byte quantization. Crop, straighten, perspective and qualified
-gradients retain fallback. See [gradient Fan evidence](viewport-phase3-gradient-fan-evidence-2026-10-02.md).
+gradients retain fallback. See [gradient Fan evidence](archive/viewport-phase3-gradient-fan-evidence-2026-10-02.md).
 
 Cross-scale tone continuity has separate open issue P3-ZOOM-01: on the
 four-mask fixture, averaged 8-screen-pixel blocks at 50% differ from the
@@ -178,7 +178,7 @@ The backend downsamples scene sources before GPU display-colour processing;
 these results suggest investigating their ordering, not changing the gamut
 algorithm or treating the issue as deferred Peak work. Steve deferred this
 separate issue on October 2 because it is close to the limit and authorized
-continuation. See [zoom-continuity evidence](viewport-phase3-zoom-continuity-evidence-2026-10-02.md).
+continuation. See [zoom-continuity evidence](archive/viewport-phase3-zoom-continuity-evidence-2026-10-02.md).
 
 Analytic masks share a texture over the foreground tiles' halo union, with
 one cache owner and per-tile placement. Proper expression graphs can compose
@@ -188,7 +188,7 @@ their coordinates. Path/brush rasterization also supports exact quarter-turn
 and flip permutations, retaining source brush pitch and culling in source
 space. Index-cropped leaves now evaluate in the uncropped source frame.
 Resampling transforms and Shift Edge retain fallbacks. See
-[regional mask evidence](viewport-phase3-regional-mask-evidence-2026-10-02.md).
+[regional mask evidence](archive/viewport-phase3-regional-mask-evidence-2026-10-02.md).
 
 GPU brush feather uses float paint/erase coverage, export's six-box/fractional
 blur and a GPU painted/blurred-peak reduction. It normalizes before index
@@ -201,7 +201,7 @@ bitmaps are tried up to 3,200 source pixels before the prior fallback. Scratch
 resources survive submitted work and are released on cancellation; returned
 textures enter the existing owned mask cache. Unqualified narrow feathers
 still require CPU compilation. See
-[brush/crop evidence](viewport-phase3-brush-crop-evidence-2026-10-03.md).
+[brush/crop evidence](archive/viewport-phase3-brush-crop-evidence-2026-10-03.md).
 
 Eligible linear gradients use the same inverse quarter-turn/flip coordinates
 before their source-space projection, preserving one shared regional bitmap.
@@ -222,18 +222,18 @@ Authored/legacy matched SDR bases now fetch a separate bounded
 HDR region for eligible scene-qualified masks, shared across the foreground
 tile halo union and aligned for every feather grid. Refusal retains the mask
 fallback without whole-source preparation. See
-[SDR scene-mask evidence](viewport-phase3-sdr-scene-mask-evidence-2026-10-02.md)
+[SDR scene-mask evidence](archive/viewport-phase3-sdr-scene-mask-evidence-2026-10-02.md)
 for native manual-anchor validation and the deferred legacy automatic-anchor
 limitation.
 
 The Detail-control sweep and fifty-local route comparisons are
-recorded in [Detail/zoom evidence](viewport-phase3-detail-zoom-evidence-2026-10-02.md).
+recorded in [Detail/zoom evidence](archive/viewport-phase3-detail-zoom-evidence-2026-10-02.md).
 
 GPU Texture and Sharpen follow export's three box passes, using a fused interior kernel and per-pass boundary clamping. Boundary multiplicities retain that clamping with quadratic work for wider Texture filters. The unused packed Clarity channel carries a half-float remainder for Sharpen. Global and local Detail share these filters. Crop dimensions do not determine source-pixel pitch: processing scale uses the requested source proxy edge before geometry, and tile halos retain that metadata and cover all three box passes plus Texture's coarse edge guide. The CPU export/Proof implementation is unchanged.
 
-Wide Clarity exposes open issue P3-PEAK-01: at 100 Amount / 3% radius on the four-mask 42 MP fixture, the patch source neighbourhoods require 89.9 million pixels and correctly exceed the 4.19-million-pixel guard. The preview Peak readout is 19.3% below export, outside the unchanged 1% requirement, even though the final native centre and peak-vicinity picture comparisons pass. Steve authorized deferring its bounded-measurement redesign while continuing phase 3. See [Texture and peak evidence](viewport-phase3-texture-peak-evidence-2026-10-02.md); the full native Detail matrix remains open.
+Wide Clarity exposes open issue P3-PEAK-01: at 100 Amount / 3% radius on the four-mask 42 MP fixture, the patch source neighbourhoods require 89.9 million pixels and correctly exceed the 4.19-million-pixel guard. The preview Peak readout is 19.3% below export, outside the unchanged 1% requirement, even though the final native centre and peak-vicinity picture comparisons pass. Steve authorized deferring its bounded-measurement redesign while continuing phase 3. See [Texture and peak evidence](archive/viewport-phase3-texture-peak-evidence-2026-10-02.md); the full native Detail matrix remains open.
 
-The primary fixture's as-saved comparison passes the existing limits in both lanes after this correction. A subsequent neutral colour-grading identity guard fixes the four-mask HDR near-black outliers: neutral wheels no longer erase signed RAW colours with nonpositive luminance. Export already skips neutral grading. The affected HDR centre region passes; the complete local/global Detail matrix remains open. This is not phase 3 closure. Measurements and provenance are in [the phase 3 Detail evidence record](viewport-phase3-detail-evidence-2026-10-02.md).
+The primary fixture's as-saved comparison passes the existing limits in both lanes after this correction. A subsequent neutral colour-grading identity guard fixes the four-mask HDR near-black outliers: neutral wheels no longer erase signed RAW colours with nonpositive luminance. Export already skips neutral grading. The affected HDR centre region passes; the complete local/global Detail matrix remains open. This is not phase 3 closure. Measurements and provenance are in [the phase 3 Detail evidence record](archive/viewport-phase3-detail-evidence-2026-10-02.md).
 
 ## API shape
 

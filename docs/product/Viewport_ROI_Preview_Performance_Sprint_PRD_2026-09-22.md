@@ -8,7 +8,7 @@
 **Competitive target:** Interaction should feel comparable to DxO PhotoLab, Adobe Lightroom, and darktable on equivalent hardware  
 **Amends:** [Stable Exact Preview Tiers and Full-Resolution Processing Sprint](Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)  
 **Related product requirements:** [HDR Finisher PRD v1.2](HDR_Finisher_PRD_v1.2.md)  
-**Technical basis:** [Preview performance architecture review](../technical/preview-performance-architecture-review-2026-09-22.md), [review feedback](../technical/preview-performance-architecture-feedback-2026-09-22.md)
+**Technical basis:** [Preview performance architecture review](../technical/archive/preview-performance-architecture-review-2026-09-22.md), [review feedback](../technical/archive/preview-performance-architecture-feedback-2026-09-22.md)
 
 ## 1. Executive summary
 
@@ -2059,7 +2059,7 @@ Control and regression: the injection itself is the pre-fix failure — the reta
 
 ### 15.57 Comparison disclosure banner removed — 2026-09-24
 
-Owner request: the "Not an exact comparison — edit N vs M / tier vs tier" strip appeared along the bottom of every two-frame comparison view and was to be removed, with the behaviour explained in the user documentation instead. Removed: `#comparison-disclosure` (`frontend/index.html`), its `els` entry, `renderComparisonDisclosure()` and its three call sites plus the now-unused `formatTierEdge()` (`frontend/app.js`), the `.comparison-disclosure` rules (`frontend/styles.css`), and the dedicated driver `tests/comparison-disclosure.js` with its `test:comparison-disclosure` script. This retires the Phase 7–8 disclosure requirement recorded in `docs/technical/phase-7-8-completion-evidence-2026-09-20.md` by owner decision; rendering is unchanged — the inactive pane still holds its last settled result at the settled proxy edge. Documentation: `docs/user-guide/viewer-and-analysis.md` gains "Two-frame comparisons are not always exact" (different edit generations, different processing resolutions, settle before comparing). `node --test` 236 pass / 0 fail. Uncommitted.
+Owner request: the "Not an exact comparison — edit N vs M / tier vs tier" strip appeared along the bottom of every two-frame comparison view and was to be removed, with the behaviour explained in the user documentation instead. Removed: `#comparison-disclosure` (`frontend/index.html`), its `els` entry, `renderComparisonDisclosure()` and its three call sites plus the now-unused `formatTierEdge()` (`frontend/app.js`), the `.comparison-disclosure` rules (`frontend/styles.css`), and the dedicated driver `tests/comparison-disclosure.js` with its `test:comparison-disclosure` script. This retires the Phase 7–8 disclosure requirement recorded in `docs/technical/archive/phase-7-8-completion-evidence-2026-09-20.md` by owner decision; rendering is unchanged — the inactive pane still holds its last settled result at the settled proxy edge. Documentation: `docs/user-guide/viewer-and-analysis.md` gains "Two-frame comparisons are not always exact" (different edit generations, different processing resolutions, settle before comparing). `node --test` 236 pass / 0 fail. Uncommitted.
 
 ### 15.58 Exposure overlay (zebra / false colour) did not follow edits — 2026-09-24
 

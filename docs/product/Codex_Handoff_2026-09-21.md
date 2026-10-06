@@ -36,7 +36,7 @@ re-litigate those; they were Director decisions.
 
 The implementation items handed off below are now resolved, one reported
 symptom was not reproduced with a corrected harness, and all are covered by
-[`sprint-wrap-evidence-2026-09-21.md`](../technical/sprint-wrap-evidence-2026-09-21.md):
+[`sprint-wrap-evidence-2026-09-21.md`](../technical/archive/sprint-wrap-evidence-2026-09-21.md):
 
 - bounded CPU presentations return the exact accepted-frame scope peak;
 - compositor screenshots stayed painted across Full-tier replacement; the

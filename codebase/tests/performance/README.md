@@ -51,7 +51,7 @@ neutral full-coverage -1 EV local in the disposable session. The reference
 records above-white Detail/local stage counts in the captured regions, and
 the driver requires actual highlight recovery. This is a controlled clipping
 regression case, not the project's saved local configuration. See
-[native matched-SDR evidence](../../../docs/technical/viewport-phase3-matched-sdr-native-evidence-2026-10-02.md).
+[native matched-SDR evidence](../../../docs/technical/archive/viewport-phase3-matched-sdr-native-evidence-2026-10-02.md).
 
 ```powershell
 node tests/run-in-electron.js tests/performance/preview-export-compare.js `
@@ -156,7 +156,7 @@ node tests/run-in-electron.js tests/sharpen-blur-reference.js `
 This synthetic filter check does not replace `preview-export-compare.js` or
 its unchanged picture tolerances. The primary as-saved repair, remaining
 four-mask outliers and three alternating timing pairs are recorded in
-[phase 3 Detail evidence](../../../docs/technical/viewport-phase3-detail-evidence-2026-10-02.md).
+[phase 3 Detail evidence](../../../docs/technical/archive/viewport-phase3-detail-evidence-2026-10-02.md).
 
 `tests/neutral-color-grading-reference.js`, through the same Electron wrapper,
 is a tiny CPU/GPU regression for signed near-black colours, neutral wheel
@@ -167,7 +167,7 @@ records a single HDR-centre fixture comparison resolving the two outliers.
 path/brush tiles against CPU masks, including a native-coordinate hard-edge
 regression and exact Bezier vertices. It opens no project. The first tile
 implementation and one enforced fixture capture are recorded in
-[phase 3 mask evidence](../../../docs/technical/viewport-phase3-mask-evidence-2026-10-02.md).
+[phase 3 mask evidence](../../../docs/technical/archive/viewport-phase3-mask-evidence-2026-10-02.md).
 
 `tests/luma-region-reference.js` checks aligned source regions against the
 existing whole-source GPU luminance mask for narrow/reduced feather and
@@ -186,7 +186,7 @@ and timing observation, not an export comparison or long-session test.
 texture counts and bytes, alongside how many backend
 mask-tile requests it made. The `tiled-render` stage in its report carries
 `encodeMs` beside `durationMs`; the difference is the wait for the GPU. See
-[zoom transfer evidence](../../../docs/technical/viewport-phase3-zoom-transfer-evidence-2026-10-02.md).
+[zoom transfer evidence](../../../docs/technical/archive/viewport-phase3-zoom-transfer-evidence-2026-10-02.md).
 
 `tests/performance/match-candidate-review.js` presses Match once in a
 disposable session and records the backend's stage timing, the recipe and
@@ -194,12 +194,12 @@ the CPU-measured quality. `--renderer gpu` (the app's default), `cpu`, or
 `verify`, which renders every GPU candidate on the CPU as well and reports
 the largest luminance difference; verify timings are not Match timings.
 `tests/test_sdr_match_remote.py` covers the bridge and its CPU fallback with
-a stand-in page. See [Match evidence](../../../docs/technical/viewport-phase3-match-evidence-2026-10-02.md).
+a stand-in page. See [Match evidence](../../../docs/technical/archive/viewport-phase3-match-evidence-2026-10-02.md).
 
 The local-route smoke also waits for an actual new settled GPU scope, checks
 the loaded 512-edge GPU navigation overview, rejects a stale auxiliary render,
 and asserts no CPU scope/navigation-preview requests during the two actions.
-See [auxiliary-view evidence](../../../docs/technical/viewport-phase3-auxiliary-evidence-2026-10-02.md)
+See [auxiliary-view evidence](../../../docs/technical/archive/viewport-phase3-auxiliary-evidence-2026-10-02.md)
 for one-operation timings and their limits; these are not session medians.
 
 `tests/mask-raster-reference.js --shared` checks one brush/path texture shared
@@ -211,7 +211,7 @@ wrapper and compact synthetic sources, without opening a project.
 `preview-export-compare.js --luma-graph` makes a disposable union of an existing
 luminance local and path mask so native picture/mask comparison exercises the
 regional graph route. It requires those two leaf types in the source project.
-See [regional mask evidence](../../../docs/technical/viewport-phase3-regional-mask-evidence-2026-10-02.md).
+See [regional mask evidence](../../../docs/technical/archive/viewport-phase3-regional-mask-evidence-2026-10-02.md).
 
 Adding `--orthogonal` to the shared shape reference expands it to 300 cases,
 including all quarter-turn/flip combinations and their native hard-boundary
@@ -228,7 +228,7 @@ records candidate patches, source halo, processing bound and refusal. It also
 accepts `--without-locals` to isolate a global grade; `--set` paths must name
 the actual document fields, such as `hdr.detail.sharpen_amount=200`. It does
 not render a CPU export or save the fixture. See
-[Texture/peak evidence](../../../docs/technical/viewport-phase3-texture-peak-evidence-2026-10-02.md).
+[Texture/peak evidence](../../../docs/technical/archive/viewport-phase3-texture-peak-evidence-2026-10-02.md).
 
 `tests/detail-control-reference.js` checks 80 compact global/local Detail
 control cases in HDR/SDR with production half-float intermediates against CPU
@@ -242,7 +242,7 @@ zoom after its queued pan/refinement work settles. Optional `--roi-parity`
 at a 50% step captures whole-GPU and region-GPU outputs and evaluates the
 approved picture metrics through the existing Python reference helper.
 This same-scale A/B is not a CPU-export or cross-scale continuity sign-off.
-See [Detail/zoom evidence](../../../docs/technical/viewport-phase3-detail-zoom-evidence-2026-10-02.md).
+See [Detail/zoom evidence](../../../docs/technical/archive/viewport-phase3-detail-zoom-evidence-2026-10-02.md).
 
 `tests/gradient-transform-reference.js` checks shared GPU linear-gradient masks
 under all quarter-turn/flip permutations, both source aspects, inversion and
@@ -258,7 +258,7 @@ scene-qualified masks were actually used. Use a common manual highlight
 anchor to isolate these masks from the deferred legacy automatic-anchor gap;
 `--match` instead creates the newer materialized recipe and is mutually
 exclusive with `--legacy-match`. See
-[SDR scene-mask evidence](../../../docs/technical/viewport-phase3-sdr-scene-mask-evidence-2026-10-02.md).
+[SDR scene-mask evidence](../../../docs/technical/archive/viewport-phase3-sdr-scene-mask-evidence-2026-10-02.md).
 
 `tests/neutral-color-grading-reference.js` includes signed HDR input through
 the actual base pipeline as well as isolated grading. Run with the Electron
@@ -281,7 +281,7 @@ apply to averaged blocks, without a pixel-wise eight-bit exemption. Raw
 float readbacks and frame metadata stay beside the report; fixture hashes
 are persisted even on failure. Run through the serialized Electron wrapper.
 This is GPU cross-scale continuity, not CPU-export sign-off. See
-[cross-scale evidence](../../../docs/technical/viewport-phase3-zoom-continuity-evidence-2026-10-02.md).
+[cross-scale evidence](../../../docs/technical/archive/viewport-phase3-zoom-continuity-evidence-2026-10-02.md).
 
 `gradient-transform-reference.js` now covers 640 cases including Fan extremes,
 rotations/flips, inversion and both source aspects. It compares CPU export's
@@ -290,7 +290,7 @@ The native driver supports `--local-type linear_gradient --local-set
 mask.gradient_fan=1 --require-gpu-gradient` for an unsaved picture/mask export
 comparison that refuses CPU fallback. The nested regional graph fixture also
 uses maximum negative Fan. See
-[gradient Fan evidence](../../../docs/technical/viewport-phase3-gradient-fan-evidence-2026-10-02.md).
+[gradient Fan evidence](../../../docs/technical/archive/viewport-phase3-gradient-fan-evidence-2026-10-02.md).
 
 `tests/brush-feather-reference.js` checks GPU painted-peak feathering against
 CPU masks in 804 cases, including Shift Edge, random pressure/erase, orthogonal geometry,
@@ -318,12 +318,12 @@ automatic-anchor routing and the accepted owner deferral remain unchanged.
 whose first brush uses CPU fallback; unsupported/narrow masks can legitimately
 fail that route assertion. Use the ordinary comparison to judge their pixels.
 
-The October 3 [brush/crop evidence](../../../docs/technical/viewport-phase3-brush-crop-evidence-2026-10-03.md)
-and [exit audit](../../../docs/technical/viewport-phase3-exit-audit-2026-10-03.md)
+The October 3 [brush/crop evidence](../../../docs/technical/archive/viewport-phase3-brush-crop-evidence-2026-10-03.md)
+and [exit audit](../../../docs/technical/archive/viewport-phase3-exit-audit-2026-10-03.md)
 distinguish passing reference/native checks from unmet performance and GPU
 coverage. Phase 3 remains open.
 
-The [continuation evidence](../../../docs/technical/viewport-phase3-continuation-evidence-2026-10-03.md)
+The [continuation evidence](../../../docs/technical/archive/viewport-phase3-continuation-evidence-2026-10-03.md)
 records the six-box luminance repair, actual authored-SDR fixture, outer-path
 forms, live Fan feedback and repeated costs. `preview-export-compare.js
 --local-type path --local-set 'mask.feather_mode="outer_boundary",mask.feather=0.05'

@@ -1,7 +1,7 @@
 # Phase 4 — tiled execution, parity and measured residency
 
 **Recorded:** 2026-09-19
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
 **Status:** **3 of 4 exit gates met.** Gate 4 (CPU Full through a bounded path) is open.
 **Supersedes:** the modelled residency figures in
 [phase-4-tile-scheduler-checkpoint-2026-09-19.md](phase-4-tile-scheduler-checkpoint-2026-09-19.md),

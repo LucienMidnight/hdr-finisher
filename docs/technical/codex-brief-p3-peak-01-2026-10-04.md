@@ -14,7 +14,7 @@ The Peak and automatic highlight-anchor design is Steve's and is the product's d
 ## Context
 
 - Workspace `D:\AI\AI Projects\HDR Finisher Tool`; git root `ai`; run tests from `ai\codebase`; branch `viewport-bounded-preview-phase-2-wip`. Check HEAD and status first; do not reset. Latest local commits are `cf15236` and `66eb873` (not pushed).
-- Read first, relative to the git root: `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md` sections 2, 4.1, 4.3, 5.3, 14.9, 14.11, 14.17, 14.23, 14.25 and 15; `docs/technical/viewport-phase3-texture-peak-evidence-2026-10-02.md`.
+- Read first, relative to the git root: `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md` sections 2, 4.1, 4.3, 5.3, 14.9, 14.11, 14.17, 14.23, 14.25 and 15; `docs/technical/archive/viewport-phase3-texture-peak-evidence-2026-10-02.md`.
 - Related open items in section 15: P3-PEAK-02 (maximum Sharpen: the measurement finishes in budget but misses the patch holding export's maximum) and the automatic-anchor redesign (its re-measure is why a Fit edit takes about 1.0-1.6 s to settle). Say in the proposal whether your approach also resolves these, or leaves them.
 
 ## What is known
@@ -52,7 +52,7 @@ How to get there is yours to propose. If the honest answer is that 1% cannot be 
 - Export and Proof stay the exact CPU reference. No new CPU machinery for the preview: interactive work belongs on the GPU.
 - Do not change Detail, mask or Denoise arithmetic to make this pass; the 14.25 isolation showed they are not the cause.
 - Keep the deferrals and acceptances in section 15 as they are, other than the items this work closes.
-- Never save over the fixtures. Verify their SHA-256 after GPU runs (hashes are in `docs/technical/viewport-phase3-post-testing-next-thread-prompt-2026-10-03.md`; the saved photo's is `2dd3ef64d3b4127d5e793c6664b12075d4e203e19a746d55b92e317bf23daf86`).
+- Never save over the fixtures. Verify their SHA-256 after GPU runs (hashes are in `docs/technical/archive/viewport-phase3-post-testing-next-thread-prompt-2026-10-03.md`; the saved photo's is `2dd3ef64d3b4127d5e793c6664b12075d4e203e19a746d55b92e317bf23daf86`).
 - Commit locally when a change is validated; ask before pushing. No installer rebuild unless asked.
 
 ## How Steve wants the work run

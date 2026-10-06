@@ -236,7 +236,7 @@ Phases 1 and 2 are linked: a whole-image native peak measurement would force har
   unqualified brush fallback, primary stroke/feather/native-zoom latency,
   missing real authored-SDR native coverage, two-to-three-level trial masks
   and existing suite failures are recorded in the
-  [phase 3 exit audit](../technical/viewport-phase3-exit-audit-2026-10-03.md).
+  [phase 3 exit audit](../technical/archive/viewport-phase3-exit-audit-2026-10-03.md).
   These newly collected gaps have not been accepted or deferred by Steve.
   The earlier Match, Peak and SDR continuity decisions remain unchanged.
 - **Open issue P3-ZOOM-01 — SDR cross-scale colour continuity.** The four-mask
@@ -603,7 +603,7 @@ Final focused verification: 50 Node tests pass, including both zoom scheduling m
 Work starts from clean `5d5ae6d64739fddc993452d0969588618a78eb39` on
 `viewport-bounded-preview-phase-2-wip`. The inspected order is Detail diagnosis,
 GPU masks/region luminance, controls/Match, then navigation/scopes. The
-[durable Detail evidence record](../technical/viewport-phase3-detail-evidence-2026-10-02.md)
+[durable Detail evidence record](../technical/archive/viewport-phase3-detail-evidence-2026-10-02.md)
 contains the path inventory, baseline isolation, implementation and provenance.
 
 Before either renderer changed, isolated primary HDR centre comparisons
@@ -666,7 +666,7 @@ regional/whole GPU checks (8,192 pixels) are exact; the fresh fixture picture
 and masks pass. A measurement-halo regression initially refused the bounded
 budget; separating display/analysis contracts repairs it. Four post-fix peak/
 robust calls pass, with unchanged HDR maximum error 0.0576% low. See
-[mask evidence](../technical/viewport-phase3-mask-evidence-2026-10-02.md).
+[mask evidence](../technical/archive/viewport-phase3-mask-evidence-2026-10-02.md).
 
 The SDR lane now uses the same regional leaf luma masks when its source is
 the ACEScg scene picture (no Match, no authored SDR base); those two cases
@@ -685,7 +685,7 @@ Detail. A tiny local-pass probe also corrected pre-existing SDR matrix/stage
 clamp differences against export. Twenty-four cases / 192 pixels pass,
 including independent local LUTs. A fresh as-saved four-mask SDR-centre
 capture (1,947,690 pixels) passes picture, masks and peak. See
-[local-control evidence](../technical/viewport-phase3-local-control-evidence-2026-10-02.md).
+[local-control evidence](../technical/archive/viewport-phase3-local-control-evidence-2026-10-02.md).
 
 ### 14.3 GPU scopes and navigation
 
@@ -698,7 +698,7 @@ one sample per action, native picture/scopes were 674.6/3,971.7 ms before and
 controlled medians; picture speed still misses its goal. The final check sees
 no CPU scope/navigation-preview requests and rejects stale auxiliary work.
 Proof/peak checks pass (10 tests). See
-[auxiliary evidence](../technical/viewport-phase3-auxiliary-evidence-2026-10-02.md).
+[auxiliary evidence](../technical/archive/viewport-phase3-auxiliary-evidence-2026-10-02.md).
 
 ### 14.4 Native-zoom source transfer
 
@@ -717,7 +717,7 @@ the handoff (HDR); 467.8/1,400.0 ms HDR and 543.8/1,442.4 ms SDR now. These
 are one operation each, not medians, and the 300 ms goal on the two smaller
 fixtures was not remeasured. The remaining tiled-render time at fifty locals
 (180–250 ms) is GPU mask creation, not local passes or encoding. See
-[zoom transfer evidence](../technical/viewport-phase3-zoom-transfer-evidence-2026-10-02.md).
+[zoom transfer evidence](../technical/archive/viewport-phase3-zoom-transfer-evidence-2026-10-02.md).
 
 One Node test, `highlight-anchor.test.js` (denoised-source anchor key), fails
 on committed `fe43970` as well as here. It is not in the earlier list of
@@ -760,7 +760,7 @@ white under a darkening local, which Match's own recipes do, previewed up
 to 0.15 darker there than it exported. The preview now follows export. As-
 saved comparisons on both fixtures pass unchanged; the fix itself was
 checked at the analysis size, not at 100% against an export. See
-[Match evidence](../technical/viewport-phase3-match-evidence-2026-10-02.md).
+[Match evidence](../technical/archive/viewport-phase3-match-evidence-2026-10-02.md).
 
 Steve approved this on October 2: a different recipe from Match is
 acceptable, and he will check matched results on screen and fine-tune from
@@ -790,7 +790,7 @@ One new Match per over-goal fixture, action to page return: primary 3.05 s
 reports' precision; CPU-certified quality is exactly unchanged. These are single observations,
 not controlled medians; both remain over goal. Six direct tonal-fit checks
 against the committed implementation and 46 focused Match tests pass. See
-[Match CPU evidence](../technical/viewport-phase3-match-cpu-evidence-2026-10-02.md).
+[Match CPU evidence](../technical/archive/viewport-phase3-match-cpu-evidence-2026-10-02.md).
 
 Steve accepted these speeds for now on October 2 and authorized committing
 this slice and moving to the next phase 3 task. The original 2 s / 4 s goals
@@ -812,7 +812,7 @@ above-white samples reaching the darkening local are recovered below 0.98.
 The native preview agrees with export: judged luminance maximum 4.445%,
 OKLab maximum 0.01838. This verifies the previously open clipping and global
 SDR Detail questions for this Sharpen case; it does not close the full Detail
-matrix. See [native SDR evidence](../technical/viewport-phase3-matched-sdr-native-evidence-2026-10-02.md).
+matrix. See [native SDR evidence](../technical/archive/viewport-phase3-matched-sdr-native-evidence-2026-10-02.md).
 
 Only comparison tools/tests and documentation changed in this verification
 slice; it remains uncommitted. Phase 3 stays open and phase 4 has not started.
@@ -832,7 +832,7 @@ inside the existing trial policy. 34 focused cache/routing/lifetime/shader
 checks pass. The fifty-local native route uses 25 analytic textures rather
 than 600, with picture/scopes at HDR 560.6/1429.6 ms and SDR 540.3/1442.1 ms.
 These are single observations and establish no speed improvement or full
-zoom-continuity exit. See [regional mask evidence](../technical/viewport-phase3-regional-mask-evidence-2026-10-02.md).
+zoom-continuity exit. See [regional mask evidence](../technical/archive/viewport-phase3-regional-mask-evidence-2026-10-02.md).
 
 Brush whole-mask feather/shift, transformed masks, authored/legacy-match SDR
 regional luminance, the full Detail matrix and broader scaling/continuity
@@ -859,7 +859,7 @@ native-patch measurement refuses 89,870,400 pixels against the unchanged
 frame's work. No accuracy limit or measurement budget was changed. This
 unmet accuracy requirement is brought to Steve under the supplied stop-for-
 decision instruction; phase 3 stays open. The full Detail matrix is not
-complete. See [Texture and peak evidence](../technical/viewport-phase3-texture-peak-evidence-2026-10-02.md).
+complete. See [Texture and peak evidence](../technical/archive/viewport-phase3-texture-peak-evidence-2026-10-02.md).
 
 Steve subsequently directed that this wide-Clarity Peak gap be marked as an
 open issue and the remaining phase 3 work continue. The 1% requirement and
@@ -882,13 +882,13 @@ fall from about 2.6 seconds to 0.83–0.84 seconds. An independent whole-GPU/
 region-GPU 50% A/B passes the existing picture metrics across 1,947,690
 visible pixels per lane. These are single observations and same-scale route
 checks, not the full performance or cross-scale continuity exit. See
-[Detail/zoom evidence](../technical/viewport-phase3-detail-zoom-evidence-2026-10-02.md).
+[Detail/zoom evidence](../technical/archive/viewport-phase3-detail-zoom-evidence-2026-10-02.md).
 
 Eligible gradients also stay on the shared GPU route through quarter turns
 and flips. All 128 compact CPU-reference combinations pass, and one native
 90-degree/horizontal-flip centre comparison passes picture/mask/Peak checks
 in both lanes. Crop, straighten and perspective remain open; see the
-[regional mask follow-up](../technical/viewport-phase3-regional-mask-evidence-2026-10-02.md).
+[regional mask follow-up](../technical/archive/viewport-phase3-regional-mask-evidence-2026-10-02.md).
 
 ### 14.11 Signed HDR Detail input and Peak candidate coverage
 
@@ -906,7 +906,7 @@ distinct from the deferred wide-Clarity budget issue. The picture passes;
 Peak fails the unchanged 1% requirement. Steve subsequently clarified that
 Peak is deferred and directed continuation of other phase 3 work. Both Peak
 issues remain open under that decision; no limit or budget is changed. See
-[Detail/zoom evidence](../technical/viewport-phase3-detail-zoom-evidence-2026-10-02.md).
+[Detail/zoom evidence](../technical/archive/viewport-phase3-detail-zoom-evidence-2026-10-02.md).
 
 ### 14.12 Independent HDR scene regions for SDR masks
 
@@ -926,7 +926,7 @@ anchor still fails picture accuracy even without locals, because bounded
 candidate evidence is unavailable for that base. This remains with deferred
 Peak/anchor work, not a complete legacy-picture sign-off. Real authored-base
 native coverage and the other phase 3 exits remain open. See
-[SDR scene-mask evidence](../technical/viewport-phase3-sdr-scene-mask-evidence-2026-10-02.md).
+[SDR scene-mask evidence](../technical/archive/viewport-phase3-sdr-scene-mask-evidence-2026-10-02.md).
 
 ### 14.13 Cross-scale zoom continuity
 
@@ -944,7 +944,7 @@ with increased pixel work and unmeasured latency/memory costs. Steve deferred
 this issue on October 2 because it is close to the limit and directed
 continuation of other phase 3 work. The requirement remains open. No tolerance was
 widened, fixture saved, or phase 4 started. See
-[cross-scale evidence](../technical/viewport-phase3-zoom-continuity-evidence-2026-10-02.md).
+[cross-scale evidence](../technical/archive/viewport-phase3-zoom-continuity-evidence-2026-10-02.md).
 
 ### 14.14 GPU gradient Fan and Fit masks
 
@@ -962,7 +962,7 @@ Fan +1 comparison passes HDR/SDR picture, mask and Peak verdicts across
 1,947,690 pixels per lane; the Fan mask differs by at most 0.51 levels.
 No fixture was saved or shader measurement pin changed. These results cover
 this control slice, not the remaining brush feather/shift or complete sprint
-exit. See [gradient Fan evidence](../technical/viewport-phase3-gradient-fan-evidence-2026-10-02.md).
+exit. See [gradient Fan evidence](../technical/archive/viewport-phase3-gradient-fan-evidence-2026-10-02.md).
 
 ### 14.15 GPU brush feather, index crops and final primary comparison
 
@@ -993,8 +993,8 @@ These are open gaps, not approved deferrals. The final Node suite has 357
 passes and its known anchor-identity failure; Python has 1,641 passes, two
 known failures and three skips, with 29 final focused checks passing.
 
-See [brush/crop evidence](../technical/viewport-phase3-brush-crop-evidence-2026-10-03.md)
-and the [exit audit](../technical/viewport-phase3-exit-audit-2026-10-03.md) for
+See [brush/crop evidence](../technical/archive/viewport-phase3-brush-crop-evidence-2026-10-03.md)
+and the [exit audit](../technical/archive/viewport-phase3-exit-audit-2026-10-03.md) for
 all issues, limitations and fixture hashes. Later changes remain uncommitted
 and unpushed. Phase 3 is not closed and phase 4 has not started.
 
@@ -1024,7 +1024,7 @@ visual evidence exists for the current cases and the trial. No limit is widened.
 controls now request live GPU feedback while held; the final drag measurements
 are recorded in the continuation evidence.
 
-See [continuation evidence](../technical/viewport-phase3-continuation-evidence-2026-10-03.md)
+See [continuation evidence](../technical/archive/viewport-phase3-continuation-evidence-2026-10-03.md)
 for exact boundaries, repeated timings, test repairs and coverage limitations.
 The existing owner decisions and all phase 3 preservation constraints remain.
 
@@ -1080,7 +1080,7 @@ not a speed waiver. Native Shift, unqualified narrow brushes, resampling
 geometry masks and primary/zoom/scope/pan targets remain surgical work.
 The broader coverage pass and owner image acceptance do not close phase 3.
 Full artifacts and before/after fault evidence are in the
-[continuation evidence](../technical/viewport-phase3-continuation-evidence-2026-10-03.md).
+[continuation evidence](../technical/archive/viewport-phase3-continuation-evidence-2026-10-03.md).
 
 After the cache repairs, `primary-cache-final-native.json` again passes
 paired-pixel, picture/tone, mask and Peak limits in both lanes and all three
@@ -1090,7 +1090,7 @@ fixture save, commit, push or phase 4 work occurs.
 
 ### 14.19 Native brush erase separation and paired measurements
 
-The [regional eraser evidence](../technical/viewport-phase3-regional-erase-evidence-2026-10-03.md)
+The [regional eraser evidence](../technical/archive/viewport-phase3-regional-erase-evidence-2026-10-03.md)
 records classifier-term diagnostics and a bounded native GPU route that
 qualifies the painted field, then applies ordered erase/repaint attenuation
 at native output coordinates. Already-qualified complete masks keep their
@@ -1116,7 +1116,7 @@ Existing deferrals remain unchanged; phase 3 is open and phase 4 has not begun.
 
 ### 14.20 Bounded native Shift Edge with zero Feather
 
-The [native Shift evidence](../technical/viewport-phase3-native-shift-evidence-2026-10-03.md)
+The [native Shift evidence](../technical/archive/viewport-phase3-native-shift-evidence-2026-10-03.md)
 records a native-coordinate Shift route with Feather zero. Full-field painted
 peak reduction uses bounded GPU bands; the viewport field carries the entire
 finite box-filter halo. Float32 prefix filtering, inversion and ordered
@@ -1154,7 +1154,7 @@ commit and next-thread prompt. No phase 4 or push is performed.
 
 ### 14.21 Bounded native Feather field, with and without Shift Edge
 
-The [native Feather evidence](../technical/viewport-phase3-native-feather-evidence-2026-10-03.md)
+The [native Feather evidence](../technical/archive/viewport-phase3-native-feather-evidence-2026-10-03.md)
 records the route that removes the CPU mask compile for native Shift Edge
 plus Feather. Export's reduced feather grid depends on the mask and frame,
 not the viewport, so it is built once as a small GPU field: native paint,
@@ -1215,7 +1215,7 @@ commit of this slice (no push).
 ### 14.22 Straighten/perspective leaf masks, wide frames and Fit bitmaps
 
 At Steve's request three changes were built together and validated in one
-combined pass; the [evidence](../technical/viewport-phase3-resampled-mask-evidence-2026-10-03.md)
+combined pass; the [evidence](../technical/archive/viewport-phase3-resampled-mask-evidence-2026-10-03.md)
 records them.
 
 **Straighten and perspective.** Export finishes a mask in source space,
@@ -1266,7 +1266,7 @@ authorized a checkpoint commit of this slice (no push).
 ### 14.23 Source-space combined and luminance masks, Peak and windowed straighten
 
 Built together on the fast checks and validated in serialized GPU passes; the
-[evidence](../technical/viewport-phase3-source-space-mask-evidence-2026-10-03.md)
+[evidence](../technical/archive/viewport-phase3-source-space-mask-evidence-2026-10-03.md)
 records them. Not committed.
 
 **Combined and luminance masks under straighten/perspective.** Export
@@ -1326,7 +1326,7 @@ and the 30-minute endurance run.
 
 ### 14.24 Coverage audit and 30-minute endurance
 
-The [evidence](../technical/viewport-phase3-coverage-endurance-evidence-2026-10-03.md)
+The [evidence](../technical/archive/viewport-phase3-coverage-endurance-evidence-2026-10-03.md)
 records both exit runs.
 
 **Coverage audit.** A new harness makes one edit at a time at 100% zoom and
@@ -1365,7 +1365,7 @@ below 100% and bounded wide Shift regions (`91e4a12`); the Denoise noise model
 measured from its sample windows only (`1ee6351`); the picture shifting by
 itself and a CPU fallback on zoom under straighten and perspective
 (`1eec092`). Causes and timings are in the
-[post-testing prompt](../technical/viewport-phase3-post-testing-next-thread-prompt-2026-10-03.md).
+[post-testing prompt](../technical/archive/viewport-phase3-post-testing-next-thread-prompt-2026-10-03.md).
 
 **Denoise is now bounded by the view** (`cf15236`). Adaptive Denoise loads no
 source of its own; a zoomed-in render reconstructs from the region it already

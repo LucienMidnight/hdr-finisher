@@ -2,7 +2,7 @@
 
 **Captured:** September 30, 2026  
 **Status:** Scoped native-drag pass and one 30-minute endurance attempt complete; wider measurement/correlation gates remain open  
-**Sprint:** [GPU Performance Review Sprint](../product/GPU_Performance_Review_Sprint_PRD_2026-09-29.md)  
+**Sprint:** [GPU Performance Review Sprint](../../product/GPU_Performance_Review_Sprint_PRD_2026-09-29.md)  
 **Revision:** `a320d3cfd66643bf92c6e8b0677563b2bef92deb` on `main`, dirty because the measurement harness and sprint document were uncommitted  
 **Policy:** Measurement only. The source project was opened through a desktop grant, was not saved, and the disposable Electron process was killed after capture.
 

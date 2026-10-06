@@ -1,7 +1,7 @@
 # Phase 4 follow-ups 3–4 — engineering Full and native 42 MP parity
 
 **Recorded:** 2026-09-19  
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)  
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)  
 **Commits:** `de6608e`, `7f3e857` on `main`  
 **Status:** complete
 

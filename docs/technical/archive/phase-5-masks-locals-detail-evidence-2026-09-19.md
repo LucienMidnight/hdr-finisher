@@ -1,7 +1,7 @@
 # Phase 5 — masks, locals and the packed Detail band cache
 
 **Recorded:** 2026-09-19
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
 **Adapter:** NVIDIA `lovelace` (RTX 4070 Ti), not a fallback, headless Edge with
 `--enable-unsafe-webgpu --enable-features=Vulkan,UseSkiaRenderer`
 **Status:** **all four exit gates met.**

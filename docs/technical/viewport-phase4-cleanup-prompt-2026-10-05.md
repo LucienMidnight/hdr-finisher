@@ -30,7 +30,7 @@ Read first, relative to the git root:
   the list of checks that still describe the old design.
 - `docs/technical/viewport-phase3-baseline-before-cleanup-2026-10-05.md`: the
   "before" record. Every driver's result and the reason for each failure.
-- `docs/technical/viewport-phase3-post-testing-next-thread-prompt-2026-10-03.md`:
+- `docs/technical/archive/viewport-phase3-post-testing-next-thread-prompt-2026-10-03.md`:
   tools and working rules.
 
 Raw baseline logs and reports are in the gitignored directory

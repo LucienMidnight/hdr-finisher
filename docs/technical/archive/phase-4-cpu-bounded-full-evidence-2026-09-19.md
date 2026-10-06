@@ -1,7 +1,7 @@
 # Phase 4 — CPU Full through a bounded path
 
 **Recorded:** 2026-09-19
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
 **Status:** **Exit gate 4 met.** All four Phase 4 exit gates are now closed.
 **Companion:** [phase-4-tiled-execution-evidence-2026-09-19.md](phase-4-tiled-execution-evidence-2026-09-19.md) (gates 1 to 3)
 **Environment:** `codebase/.venv` — Python 3.12.10. Backend only; nothing in this

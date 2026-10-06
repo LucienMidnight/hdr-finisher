@@ -1,7 +1,7 @@
 # Phase 4 follow-up 2 — tiled admission and truthful scopes
 
 **Recorded:** 2026-09-19  
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)  
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)  
 **Commit:** `a552aed` on `main`  
 **Status:** complete
 

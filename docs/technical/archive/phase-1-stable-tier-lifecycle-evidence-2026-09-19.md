@@ -1,7 +1,7 @@
 # Phase 1 exit-gate evidence — stable-tier lifecycle
 
 **Recorded:** 2026-09-19
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
 **Source state:** worktree based on `ba58d6d` (`main`), parent `83bca70`
 **Application:** HDR Finisher 0.8.12
 **Host:** Windows 10.0.26200; Node v24.14.0; Python 3.10.10

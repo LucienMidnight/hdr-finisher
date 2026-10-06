@@ -1,7 +1,7 @@
 # Phase 0 exit-gate evidence
 
 **Recorded:** 2026-09-19
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
 **Source state:** dirty worktree based on commit `83bca704dd0422dd470de37cee0b4eb4db0fbe5c` (`main`)
 **Application:** HDR Finisher 0.8.12
 **Host:** Windows 10.0.26200; Node v24.14.0; Python 3.10.10 (`C:\Users\Steve\AppData\Local\Programs\Python\Python310\python.exe`)

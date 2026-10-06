@@ -9,7 +9,7 @@ Workspace: `D:\AI\AI Projects\HDR Finisher Tool`. Git root: `ai`; executable/tes
 
 Read first, relative to the git root:
 - `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md` sections 14.23, 14.24 and 15 (the deferred, accepted and known-limit register).
-- `docs/technical/viewport-phase3-coverage-endurance-evidence-2026-10-03.md` and `viewport-phase3-source-space-mask-evidence-2026-10-03.md`.
+- `docs/technical/archive/viewport-phase3-coverage-endurance-evidence-2026-10-03.md` and `viewport-phase3-source-space-mask-evidence-2026-10-03.md`.
 
 ## Next steps, in order
 
