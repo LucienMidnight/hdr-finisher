@@ -442,7 +442,7 @@ def test_repeated_materialized_match_recomputes_and_copies_current_hdr_denoise(t
 
     changed = session.denoise.model_copy(deep=True)
     changed.hdr.controls.amount = 0.88
-    changed.hdr.analysis.preset = "photo_mixed"
+    changed.hdr.controls.luminance = 0.31
     changed_state = store.apply_edit_commands(session_id, [EditCommand(
         expected_revision=1,
         command_type="set_denoise_settings",

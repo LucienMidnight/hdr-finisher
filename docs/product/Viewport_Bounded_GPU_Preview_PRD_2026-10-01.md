@@ -1744,15 +1744,30 @@ driver checks that the app goes quiet). Fixed in `cc94373`. It may bear on
 CF-DRIFT-03 and CF-DRIFT-05; that is not measured.
 
 **Removed October 6 (Steve).** The legacy wavelet Denoise method is deleted
-(`4fb9fbd` and the commit that carries this note); the adaptive method is the
-only one. No migration: a project saved with the legacy method no longer
-opens. None of the test projects used it. Five unread wavelet fields stay in
-the saved-project schema because every existing project carries them and
-unknown fields are refused. Checks removed with it: the wavelet reference and
-tile tests, `denoise-tiled-parity`, `denoise-cache-identity`,
-`denoise-memory-trace`, the wavelet shader pin, and the `--wavelet` and `--ui`
-modes of `denoise-selector-seam`. The renderer still carries the general
-Denoise branches and budget accounting the adaptive method uses.
+(`4fb9fbd`, `464d978`); the adaptive method is the only one, and the five
+wavelet analysis fields are gone from the saved-project schema. Checks removed
+with it: the wavelet reference and tile tests, `denoise-tiled-parity`,
+`denoise-cache-identity`, `denoise-memory-trace`, the wavelet shader pin, and
+the `--wavelet` and `--ui` modes of `denoise-selector-seam`. The renderer still
+carries the general Denoise branches and budget accounting the adaptive method
+uses.
+
+**Opening older projects (Steve, October 6).** Opening a project now drops any
+field the app no longer has, and any field holding a choice the app no longer
+offers, which then takes its default; the names are logged and the next save
+writes the file without them. A running session stays strict. This replaces
+per-feature conversion code: the three open-time conversions (RAW highlight
+bypass, the HDR highlight Off mode, the legacy SDR rendering default) are
+removed. Effect on the 22 saved projects found on this machine: 18 open (4 are
+schema v1-v3, refused as before). Eleven were saved with the wavelet method and
+now use the adaptive one; in seven of those Denoise was on, so their picture
+changes. Eight predate the RAW highlight and SDR rendering fields: on opening
+they now get RAW highlight reconstruction and the current SDR rendering, so
+their picture can change too. The four protected test projects are current and
+unaffected. Still in the code for older projects, not touched: the legacy SDR
+renderer (`legacy_base_v1`), the HDR highlight `off` mode, the Film Look image
+structure move into Detail (15 of the 22 projects carry it) and the Denoise
+Fine-to-Finest carry-over.
 
 **Checks that fail because they still describe the old design (phase 4
 input).** Each is rewritten for the viewport-bounded design or retired with

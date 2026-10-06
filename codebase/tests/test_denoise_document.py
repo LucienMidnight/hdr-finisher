@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from pathlib import Path
 
 import numpy as np
@@ -60,19 +62,11 @@ def test_new_denoise_settings_default_detail_recovery_to_zero() -> None:
     assert settings.sdr.controls.detail_recovery == 0.0
 
 
-def test_denoise_analysis_accepts_planned_wavelet_methods_and_custom_scales() -> None:
-    for preset, levels in (
-        ("photo_fine", 2),
-        ("photo_mixed", 3),
-        ("render_fine", 2),
-        ("render_coarse", 4),
-        ("custom", 1),
-    ):
-        settings = DenoiseDocumentSettings.model_validate({
-            "hdr": {"analysis": {"preset": preset, "levels": levels}},
-        })
-        assert settings.hdr.analysis.preset == preset
-        assert settings.hdr.analysis.levels == levels
+def test_a_live_edit_refuses_the_removed_wavelet_fields() -> None:
+    # Strict in a running session; a saved project drops them on open instead
+    # (tests/test_project_open_tolerance.py).
+    with pytest.raises(ValueError):
+        DenoiseDocumentSettings.model_validate({"hdr": {"analysis": {"preset": "photo_fine", "levels": 2}}})
 
 
 def test_documents_saved_before_finest_keep_their_fine_setting_on_it() -> None:

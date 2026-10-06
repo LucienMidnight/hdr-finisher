@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import tempfile
 import zipfile
+
+from pydantic import ValidationError
 
 from .models import EditDocument, ProjectResponse
 from .sessions import LoadedSession, SessionStore
@@ -13,6 +16,8 @@ from .sessions import LoadedSession, SessionStore
 
 PROJECT_STATE_NAME = "edit-state.json"
 PROJECT_MANIFEST_NAME = "manifest.json"
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectError(ValueError):
@@ -85,10 +90,7 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
             if manifest.get("contains_source_pixels") is not False:
                 raise ProjectError("Invalid project manifest.")
             state_payload = json.loads(archive.read(PROJECT_STATE_NAME))
-            _preserve_legacy_raw_highlight_behavior(state_payload)
-            _migrate_legacy_highlight_off_mode(state_payload)
-            _preserve_legacy_sdr_rendering(state_payload)
-            document = EditDocument.model_validate(state_payload)
+            document = _validate_ignoring_unknown_fields(state_payload)
     except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
         raise ProjectError("The project file is malformed or unreadable.") from exc
 
@@ -140,57 +142,50 @@ def _project_path(path: Path) -> Path:
     return expanded if expanded.suffix.lower() == ".hdrfinisher" else expanded.with_suffix(".hdrfinisher")
 
 
-def _preserve_legacy_raw_highlight_behavior(state_payload: object) -> None:
-    """Keep v4 projects saved before this module visually unchanged.
+# A removed field, and a removed option of a field that still exists.
+_FORGIVEN_ERRORS = frozenset({"extra_forbidden", "literal_error", "enum"})
 
-    New imports default to opposed-color reconstruction. A project whose saved
-    RAW recipe predates the field gets an explicit bypass so opening it never
-    silently changes pixels.
+
+def _validate_ignoring_unknown_fields(state_payload: object) -> EditDocument:
+    """Validate a saved document, dropping what this version no longer knows.
+
+    A project outlives the settings it was saved with. A field the app has
+    since removed is dropped here, and so is a field holding a choice the app
+    no longer offers, which then takes its default. Removing a setting or an
+    option therefore never stops an older project opening; the next save
+    writes the file without it. Everything else is validated as strictly as a
+    live edit, and only saved files get this leniency: in a running session an
+    unknown field or choice is a bug and still fails.
     """
-    if not isinstance(state_payload, dict):
-        return
-    source = state_payload.get("source")
-    if not isinstance(source, dict):
-        return
-    settings = source.get("raw_import_settings")
-    if not isinstance(settings, dict):
-        settings = {}
-        source["raw_import_settings"] = settings
-    settings.setdefault(
-        "highlight_reconstruction",
-        {
-            "enabled": False,
-            "method": "opposed_color_v1",
-            "clipping_threshold": 1.0,
-        },
-    )
+    dropped: list[str] = []
+    while True:
+        try:
+            document = EditDocument.model_validate(state_payload)
+            break
+        except ValidationError as error:
+            unknown = [item["loc"] for item in error.errors() if item["type"] in _FORGIVEN_ERRORS]
+            removed = [location for location in unknown if _drop_field(state_payload, location)]
+            if not removed:
+                raise
+            dropped.extend(".".join(str(part) for part in location) for location in removed)
+    if dropped:
+        logger.info("Project opened with %d outdated field(s) ignored: %s", len(dropped), ", ".join(sorted(dropped)))
+    return document
 
 
-def _migrate_legacy_highlight_off_mode(state_payload: object) -> None:
-    """Move the removed UI Off mode to the section bypass without changing pixels."""
-    if not isinstance(state_payload, dict):
-        return
-    adjustments = state_payload.get("global_adjustments")
-    if not isinstance(adjustments, dict):
-        return
-    hdr = adjustments.get("hdr")
-    if not isinstance(hdr, dict) or hdr.get("highlight_compression_mode") != "off":
-        return
-    hdr["highlight_compression_mode"] = "peak_fit"
-    hdr["highlight_section_enabled"] = False
-
-
-def _preserve_legacy_sdr_rendering(state_payload: object) -> None:
-    """Keep v4 projects saved before SDR Highlight Compression pixel-identical."""
-    if not isinstance(state_payload, dict):
-        return
-    adjustments = state_payload.get("global_adjustments")
-    if not isinstance(adjustments, dict):
-        return
-    sdr = adjustments.get("sdr")
-    if not isinstance(sdr, dict):
-        return
-    sdr.setdefault("rendering_version", "legacy_base_v1")
+def _drop_field(payload: object, location: tuple) -> bool:
+    """Delete the field a validation error points at; False if it is not there."""
+    container = payload
+    for part in location[:-1]:
+        if isinstance(container, dict) and part in container:
+            container = container[part]
+        elif isinstance(container, list) and isinstance(part, int) and 0 <= part < len(container):
+            container = container[part]
+        # Any other part names a model or union member, not a level of the data.
+    if isinstance(container, dict) and location and location[-1] in container:
+        del container[location[-1]]
+        return True
+    return False
 
 
 def _sha256_file(path: Path) -> str:

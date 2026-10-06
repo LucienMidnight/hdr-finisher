@@ -891,16 +891,8 @@ class DenoiseLiveControls(BaseModel):
 class DenoiseAnalysisSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # The one method. It measures the noise and reads none of the fields
-    # below, which belonged to the removed wavelet method. They stay in the
-    # schema only because every saved project carries them and unknown fields
-    # are forbidden here.
+    # The one method; it measures the noise itself.
     algorithm_version: Literal["adaptive-atrous-v1"] = "adaptive-atrous-v1"
-    preset: Literal["photo_fine", "photo_mixed", "render_fine", "render_coarse", "custom"] = "photo_fine"
-    levels: int = Field(default=2, ge=1, le=4)
-    noise_threshold: float = Field(default=3.0, gt=0.0, le=16.0)
-    luma_sigma: float = Field(default=0.035, gt=0.0, le=2.0)
-    chroma_sigma: float = Field(default=0.035, gt=0.0, le=2.0)
 
 
 class DenoiseLaneSettings(BaseModel):
