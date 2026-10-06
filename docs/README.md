@@ -39,10 +39,11 @@ Pages carry their own verification dates where implementation freshness matters.
 
 ### I am developing HDR Finisher
 
-1. [Architecture](technical/architecture.md)
-2. [Image-processing pipeline technical contract](technical/image-processing-pipeline.md)
-3. [Development guide](technical/development.md)
-4. [Documentation maintenance](contributing/documentation.md)
+1. [Code map](technical/code-map.md): which file to open for a given change
+2. [Architecture](technical/architecture.md)
+3. [Image-processing pipeline technical contract](technical/image-processing-pipeline.md)
+4. [Development guide](technical/development.md)
+5. [Documentation maintenance](contributing/documentation.md)
 
 ### Where the repository lives
 

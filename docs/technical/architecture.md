@@ -63,6 +63,8 @@ flowchart LR
 
 The frontend deliberately has no build framework. This keeps packaging and offline operation simple, but places more state coordination in plain JavaScript.
 
+The list above is a summary. The [code map](code-map.md) lists every frontend and backend file by area.
+
 ## Session lifecycle
 
 An imported upload is copied into a temporary owned source, decoded, normalized, and stored in an in-memory session. The session contains:
