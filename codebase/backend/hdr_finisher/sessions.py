@@ -19,6 +19,7 @@ from .metadata import extract_metadata
 from .models import (
     AdjustmentState,
     DenoiseDocumentSettings,
+    DenoiseLaneSettings,
     EditCommand,
     EditDocument,
     EditStateResponse,
@@ -132,15 +133,8 @@ class LoadedSession:
             )
         self.source_fingerprint_sha256 = _sha256_file(self.source_path)
         self.source_byte_size = self.source_path.stat().st_size
-        if self.sdr_reference_image is not None:
-            # A gain-map file's SDR base is already an authored display
-            # rendition, so it starts without another highlight compressor.
-            self.adjustments.sdr.highlight_section_enabled = False
-        recommended_exposure = float(self.metadata.get("recommended_exposure_ev", 0.0) or 0.0)
-        if self.metadata.get("raw_input") and abs(recommended_exposure) >= 0.001:
-            self.adjustments.hdr.exposure = recommended_exposure
-            if self.sdr_reference_image is None:
-                self.adjustments.sdr.exposure = recommended_exposure
+        recommended_exposure = self._apply_import_defaults(self.adjustments)
+        if recommended_exposure is not None:
             self.metadata["default_exposure_applied"] = {
                 "hdr_ev": recommended_exposure,
                 "sdr_ev": 0.0 if self.sdr_reference_image is not None else recommended_exposure,
@@ -156,8 +150,30 @@ class LoadedSession:
         )
         self._sync_highlight_source_peaks()
 
-    def _sync_highlight_source_peaks(self) -> None:
-        hdr = self.adjustments.hdr
+    def _apply_import_defaults(self, adjustments: AdjustmentState) -> float | None:
+        """Set what a newly imported file starts with; returns the RAW exposure applied, if any."""
+        if self.sdr_reference_image is not None:
+            # A gain-map file's SDR base is already an authored display
+            # rendition, so it starts without another highlight compressor.
+            adjustments.sdr.highlight_section_enabled = False
+        recommended_exposure = float(self.metadata.get("recommended_exposure_ev", 0.0) or 0.0)
+        if not self.metadata.get("raw_input") or abs(recommended_exposure) < 0.001:
+            return None
+        adjustments.hdr.exposure = recommended_exposure
+        if self.sdr_reference_image is None:
+            adjustments.sdr.exposure = recommended_exposure
+        return recommended_exposure
+
+    def starting_adjustments(self) -> AdjustmentState:
+        """The grade this file had when it was imported, before any edit."""
+        adjustments = AdjustmentState()
+        self._apply_import_defaults(adjustments)
+        self._sync_highlight_source_peaks(adjustments)
+        return adjustments
+
+    def _sync_highlight_source_peaks(self, adjustments: AdjustmentState | None = None) -> None:
+        adjustments = adjustments or self.adjustments
+        hdr = adjustments.hdr
         color_handling = hdr.highlight_compression_color_handling
         grouped_channels = color_handling in {"smooth_rolloff", "path_to_white"}
         robust = hdr.highlight_compression_peak_measurement == "robust"
@@ -172,7 +188,7 @@ class LoadedSession:
         source_peak_nits = max(1.0, float(scene_linear_to_nits(float(measured), self.hdr_reference_white_nits)))
         hdr.highlight_compression_source_peak_nits = source_peak_nits
 
-        sdr = self.adjustments.sdr
+        sdr = adjustments.sdr
         if self.sdr_reference_image is not None and sdr.use_authored_base:
             sdr_measured = float(np.max(np.clip(self.sdr_reference_image, 0.0, None)))
         else:
@@ -680,6 +696,32 @@ class SessionStore:
                     "denoise": previous_denoise.model_dump(mode="json"),
                     "authored_sdr_override_consent": True,
                 },
+            )
+
+        if command_type == "revert_rendition":
+            lane = payload.get("lane")
+            if lane not in ("hdr", "sdr"):
+                raise EditCommandError("revert_rendition requires a lane of 'hdr' or 'sdr'.")
+            previous_document = session.edit_document().model_dump(mode="json")
+            # The other rendition, the shared geometry, the locals and their
+            # masks, and the source settings are left as they are.
+            adjustments = session.adjustments.model_copy(deep=True)
+            setattr(adjustments, lane, getattr(session.starting_adjustments(), lane))
+            denoise = session.denoise.model_copy(deep=True)
+            setattr(denoise, lane, DenoiseLaneSettings())
+            session.adjustments = adjustments
+            session.denoise = denoise
+            session.local_adjustments = [
+                item.model_copy(update={f"{lane}_grade": LocalGrade()}, deep=True)
+                for item in session.local_adjustments
+            ]
+            if lane == "sdr":
+                session.sdr_match = SdrMatchState()
+            session.render_cache.clear_adjusted()
+            return EditCommand(
+                expected_revision=current_revision,
+                command_type="replace_document",
+                payload={"document": previous_document},
             )
 
         if command_type == "set_denoise_settings":

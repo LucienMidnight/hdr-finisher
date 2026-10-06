@@ -945,6 +945,7 @@ class EditCommand(BaseModel):
         "delete_local",
         "reorder_locals",
         "set_sdr_match",
+        "revert_rendition",
         "undo",
         "redo",
     ]

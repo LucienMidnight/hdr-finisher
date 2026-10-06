@@ -4164,6 +4164,8 @@ async function handleDesktopCommand(command, payload = null) {
   if (command === "save") return saveProjectToPath({ saveAs: false });
   if (command === "save-as") return saveProjectToPath({ saveAs: true });
   if (command === "export") return openExportSheet();
+  if (command === "revert-hdr") return revertRendition("hdr");
+  if (command === "revert-sdr") return revertRendition("sdr");
   if (command === "undo") return queueEditCommand("undo");
   if (command === "redo") return queueEditCommand("redo");
   if (command === "rendering-mode") {
@@ -15862,6 +15864,20 @@ async function setSdrMatch() {
 }
 
 /**
+ * Put one rendition back to the state it had when the file was imported: its
+ * grade, its Denoise and its side of every local adjustment. One undo step.
+ */
+async function revertRendition(lane) {
+  if (!state.session) return false;
+  const applied = await queueEditCommand("revert_rendition", { lane });
+  if (applied) {
+    syncDesktopDocumentState();
+    status.post({ id: "edit", severity: "success", message: `${lane.toUpperCase()} rendition reverted to its original state.` });
+  }
+  return applied;
+}
+
+/**
  * Render the candidates a running Match asks for on this page's GPU.
  *
  * The backend offers one recipe at a time and waits for its pixels. An empty
@@ -16065,8 +16081,8 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       clearInteractiveStraightenPreview();
     }
     renderLocalAdjustments();
-    if (commandType === "undo" || commandType === "redo") {
-      // History responses replace the complete serialized edit document. Keep
+    if (commandType === "undo" || commandType === "redo" || commandType === "revert_rendition") {
+      // History and revert responses replace the complete serialized edit document. Keep
       // the visible controls in the same transaction as the state and preview;
       // otherwise the pixels move while sliders retain their pre-history values.
       loadDenoiseDocument(state.editDocument);
