@@ -1,6 +1,6 @@
 # Phase 4 cleanup validation comparison - October 6, 2026
 
-Status: 160/160 baseline drivers complete; 147 pass, 13 fail. Three audits complete. The green phase 4 exit is not met. No behavior/timing equivalence claim is made while the named guards and target misses remain.
+Status: 160/160 baseline drivers complete; 147 pass, 13 fail. Three audits complete. The green phase 4 exit is not met. No behavior/timing equivalence claim is made while the named guards and target misses remain. Steve closed phase 4 on October 6 as done with known issues; every finding below stays open and carried forward (PRD 16.22).
 
 ## Scope and preserved behavior
 

@@ -2,7 +2,9 @@
 
 Status: Steve approved Group A and it is implemented and validated. Group B
 remains held. Authorized validation is complete; phase 4 has not met its
-green exit. Earlier batch notes retain their historical status.
+green exit. Steve closed phase 4 on October 6 as done with known issues
+(PRD 16.22); Group B stays in place and no further cleanup is planned.
+Earlier batch notes retain their historical status.
 
 Repository: branch `viewport-bounded-preview-phase-2-wip`, HEAD `ccf2fb5`,
 clean before inventory, four commits ahead of origin. No reset, push or build.

@@ -1,7 +1,7 @@
 # Viewport-Bounded GPU Preview
 
 **Date:** October 1, 2026
-**Status:** Phases 0 and 1 closed on October 1, 2026. On October 2 Steve accepted the phase 2 report, requested commit and push, and directed the next thread to move on in the PRD. Phase 2's implementation, measurements and remaining limitations are recorded in section 13. Phase 3 started on October 2 with a measured Sharpen correction (section 14). The four-mask near-black blocker is subsequently repaired (section 14.1); Steve authorized committing these fixes and continuing the sprint. **Steve closed phase 3 on October 5, 2026, with the findings in section 15.7 carried forward; phase 4 Group A cleanup and validation are recorded in section 16; the green exit remains unmet.** Phase 1 met its mask-accuracy exit and part of its speed exit; its accepted gap to the section 6 targets remains carried to phase 3. Steve approved the section 4 limits and accepted the section 6 targets as goals on October 1. Phase 0 is recorded in section 11.
+**Status:** Phases 0 and 1 closed on October 1, 2026. On October 2 Steve accepted the phase 2 report, requested commit and push, and directed the next thread to move on in the PRD. Phase 2's implementation, measurements and remaining limitations are recorded in section 13. Phase 3 started on October 2 with a measured Sharpen correction (section 14). The four-mask near-black blocker is subsequently repaired (section 14.1); Steve authorized committing these fixes and continuing the sprint. **Steve closed phase 3 on October 5, 2026, with the findings in section 15.7 carried forward; Steve closed phase 4 on October 6, 2026 as done with known issues: the Group A cleanup and its validation are recorded in section 16, the green exit was not met, and the open findings stay carried forward (16.22).** Phase 1 met its mask-accuracy exit and part of its speed exit; its accepted gap to the section 6 targets remains carried to phase 3. Steve approved the section 4 limits and accepted the section 6 targets as goals on October 1. Phase 0 is recorded in section 11.
 **Owner decisions recorded here:** move to the pattern other raw editors use (work bounded by the viewport, masks independent of resolution, export as the exact reference); accept small preview-versus-export differences; put the app's rigor into HDR handling; move interactive work to the GPU.
 **Predecessor:** [GPU Performance Review Sprint](GPU_Performance_Review_Sprint_PRD_2026-09-29.md), section 14 (October 1 root-cause pass).
 **Primary fixture:** `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher` with `DSC00950.ARW` (read-only; never saved).
@@ -1749,7 +1749,7 @@ counter in `drag-gpu-load.js`. Test timing races, not app faults:
 `tests/tiled-admission-scope-fallback.js` and
 `tests/performance/full-tier-instrumented-tiling.js`.
 
-## 16. Phase 4 cleanup record (October 5-6, 2026; validation complete, green exit unmet)
+## 16. Phase 4 cleanup record (October 5-6, 2026; closed October 6 with known issues, green exit unmet)
 
 Steve approved inventory Group A: remove only the unused `roiPanCandidate`
 app wrapper and `admitDirect` renderer wrapper. Their active implementations
@@ -2423,3 +2423,37 @@ and 122 broad control/drag comparisons are retained, including regressions
 and improvements. These movements are not attributed to unused wrappers.
 Known route, pixel, Peak, speed and drift findings remain open. No defect fix,
 installer build or push was performed; further cleanup stays separate.
+
+### 16.22 Phase 4 closure (Steve, October 6, 2026)
+
+Steve closed phase 4 on October 6 as done with known issues. The section 7
+exit ("Removed code listed; suites green") is met in its first half only.
+
+- **Done:** the two unused wrappers are removed and listed (19 source lines).
+  Every old-design check named in 15.7 is rewritten for the current design and
+  both timing races are repaired in the tests. No check was retired or
+  loosened. Failed drivers went from 28 to 13; fast suites pass; the four
+  protected projects are unchanged.
+- **Not green, and why:** the 13 remaining failures are open findings, not
+  cleanup damage. Phase 4 did not allow defect fixes, so it could not turn
+  them green. Further cleanup or testing would not change that.
+- **Closing is not an acceptance.** Every item in 15.7 stays open with its
+  limit, including those added during phase 4: CF-ROUTE-06, 07 and 08 and
+  CF-DRIFT-02, 03, 04 and 05. The deferrals and acceptances in 15.1 and 15.2
+  keep their original scope.
+- **Unexplained and new since the baseline:** the warm latency misses
+  (CF-DRIFT-03) and the fifty-local revision and settle errors (CF-DRIFT-05).
+  The only application change is the removal of two wrappers nothing called,
+  so the cleanup is an unlikely cause; this is not verified. Steve tries the
+  app by hand before any test run is spent on them.
+- **Left in place:** Group B (`copySourceChunkStaged`, `releaseSourceStaging`,
+  `scheduleHighlightMeasurement`) and the unused `scopeHdrCeiling` wrapper.
+  They are a few lines and are not worth another validation pass. Remove them
+  only alongside a fix in the same area.
+- **No further cleanup is planned.** PRD 5.5's larger candidates
+  (cancellation, shared compiles, cache eviction, prewarming, coalescing) were
+  found to be live and stay.
+
+Nothing is pushed and no installer is built. From here the work is fixing
+carried-forward findings, with testing scaled to each change under the
+repository's `AGENTS.md` rather than a full sweep per batch.
