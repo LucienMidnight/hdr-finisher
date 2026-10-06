@@ -1761,7 +1761,7 @@ bypass, the HDR highlight Off mode, the legacy SDR rendering default) are
 removed. Effect on the 22 saved projects found on this machine: 18 open (4 are
 schema v1-v3, refused as before). Eleven were saved with the wavelet method and
 now use the adaptive one; in seven of those Denoise was on, so their picture
-changes. Eight predate the RAW highlight and SDR rendering fields: on opening
+changes. Four predate the RAW highlight and SDR rendering fields: on opening
 they now get RAW highlight reconstruction and the current SDR rendering, so
 their picture can change too. The four protected test projects are current and
 unaffected. Still in the code for older projects, not touched: the legacy SDR
