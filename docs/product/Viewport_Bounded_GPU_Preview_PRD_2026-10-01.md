@@ -2461,6 +2461,11 @@ exit ("Removed code listed; suites green") is met in its first half only.
   The only application change is the removal of two wrappers nothing called,
   so the cleanup is an unlikely cause; this is not verified. Steve tries the
   app by hand before any test run is spent on them.
+  **Done October 6:** Steve tried a heavy project with locals and Denoise. He
+  found the idle redraw loop (fixed, `cc94373`) and otherwise reports it
+  working well, with the 100% switch under about two seconds. No test run is
+  owed for CF-DRIFT-03; it stays listed and is reopened only if it is felt in
+  use.
 - **Left in place:** Group B (`copySourceChunkStaged`, `releaseSourceStaging`,
   `scheduleHighlightMeasurement`) and the unused `scopeHdrCeiling` wrapper.
   They are a few lines and are not worth another validation pass. Remove them
