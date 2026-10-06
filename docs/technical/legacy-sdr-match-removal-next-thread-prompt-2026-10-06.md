@@ -14,8 +14,8 @@ Remove both in one pass and test once at the end.
    neutral values.
 
 When you are done Steve has: one kind of SDR Match, no legacy Match code in
-the app, a Revert button that works for the current Match, a shader without
-the dead inputs, and a short plain-language report.
+the app, "Revert HDR" and "Revert SDR" in the File menu, a shader without the
+dead inputs, and a short plain-language report.
 
 Steve's reason, in his words: this old code costs him "context bloat and agent
 confusion which compounds over time". Favour removing code over keeping it.
@@ -76,22 +76,32 @@ with a single possible value, remove the plumbing too where that is contained.
 If it turns out to be threaded through much of the renderer, stop at the entry
 point, leave the rest, and say so in the report.
 
-### 2. Revert for the current Match
+### 2. Revert HDR and Revert SDR in the File menu
 
-Today the only Revert button is the legacy one. The current Match can only be
-undone with Undo. Steve wants a Revert button regardless: after a Match, one
-click puts SDR back to what it was before that Match.
+The legacy Revert button goes with the legacy Match, and no button replaces
+it. Instead add two File menu items, "Revert HDR" and "Revert SDR" (Steve,
+October 6). He expects them to be used rarely, which is why they live in the
+menu and not in the panel.
 
-What "back" means: whatever undoing the Match step restores today (the SDR
-grade, SDR Denoise and the SDR side of local adjustments). Revert is itself
-one undo step.
+What each does: puts that rendition back to its untouched original, the state
+it has in a newly imported file, as if it had never been edited. Use that
+starting state, not bare defaults: a file that brings its own SDR picture, for
+example, starts with different SDR settings from one that does not.
 
-**One decision to put to Steve before building it:** should Revert still be
-available after the project is saved and reopened? That requires storing the
-pre-Match SDR state in the project, which is new saved state; without it,
-Revert works only until the project is closed. Ask him in plain language with
-that trade-off. If he is not reachable, build the session-only version and say
-so.
+| Reverted | Left alone |
+|---|---|
+| That rendition's whole grade | The other rendition |
+| That rendition's Denoise | Crop, rotation and the other shared geometry |
+| That rendition's side of every local adjustment's grade | The local adjustments themselves and their masks |
+| For SDR, any Match status | Source and RAW import settings |
+
+Each revert is one undo step, so Undo brings everything back. It works whether
+or not the rendition was ever matched. Nothing new is stored in the project.
+
+Follow what the app already does for other discard-my-work actions on whether
+to ask for confirmation first. If the left-hand column turns out not to match
+how the app divides settings between the renditions, tell Steve what the
+actual division is before building.
 
 ### 3. The shader inputs
 
@@ -140,7 +150,8 @@ Then run, once, after all edits:
   `tests/sdr-gamut-gpu-parity.js`, `tests/lane-roundtrip-interaction.js`,
   `tests/denoise-adaptive-parity.js` and `tests/device-loss-fallback.js`;
 - a quick open of a test project in the app: both lanes reach a ready GPU
-  picture, an edit saves, and Match then Revert works.
+  picture, an edit saves, Match works, Revert SDR and Revert HDR each return
+  their rendition to its starting state, and Undo restores it.
 
 This touches CPU export and a pinned shader, which `AGENTS.md` lists as the
 two places to take full care. That is why the set above is longer than usual.
@@ -181,7 +192,7 @@ see them; do not investigate.
 - The current Match, the current SDR rendering, and CPU export and Proof
   results do not change.
 - Small local commits, so any one can be undone alone: at least one for the
-  legacy Match removal, one for Revert, one for the shader.
+  legacy Match removal, one for the two Revert menu items, one for the shader.
 - Ask before pushing. Do not rebuild the installer.
 
 ## Questions protocol
@@ -196,5 +207,6 @@ If something here does not match the code, trust the code and tell him.
 Update the "Legacy code still present" paragraph in PRD 15.7 to say what was
 removed and what, if anything, was left. No new evidence document. End with a
 short plain-language summary for Steve: what was removed, how the before and
-after exports compared, what Revert now does, anything left behind and why,
+after exports compared, what the two Revert items do, anything left behind and
+why,
 and any decision waiting on him.
