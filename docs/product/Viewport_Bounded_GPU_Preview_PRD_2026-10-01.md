@@ -1767,18 +1767,37 @@ their picture can change too. The four protected test projects are current and
 unaffected. The rest of the old-project code went the same day: the legacy SDR
 renderer (`legacy_base_v1`) and its settings, the highlight `off` mode, the Film
 Look image-structure move into Detail and the Denoise Fine-to-Finest carry-over.
-Older projects that used them open with the current rendering and defaults. The
-render shader still declares the legacy SDR inputs, held at neutral values.
+Older projects that used them open with the current rendering and defaults.
 
 **Old-preferences code removed (Steve, October 6; `6255b81`).** The preview-tier
 migration and its notice, the Responsive-to-Faster-dragging carry-over, and the
 reading of `rendering-preferences.json` and `favorite-folders.json` are gone.
 
-**Legacy code still present, awaiting Steve.** The v1 SDR Match (the hidden
-renderer behind "Convert legacy match" and "Revert"): it runs through the CPU
-render and export, the render cache, the session commands, the saved-project
-state and the SDR panel, and one of the 22 saved projects has one active. Also
-the unused legacy SDR inputs in the pinned render shader.
+**Legacy SDR Match and legacy shader inputs removed (Steve, October 6;
+`dfd2505`, `421294e`, `134eb7d`).** The v1 SDR Match (the hidden renderer
+behind "Convert legacy match" and "Revert") is gone from the CPU render and
+export, the render cache, the session commands, the saved-project state and
+the SDR panel. There is one kind of Match; the project stores only its status
+and quality numbers. A project saved with a legacy match active opens as a
+plain SDR grade, so its SDR picture changes: one of the 22 saved projects
+(`IMG_0790`), none of the test projects. The File menu has Revert HDR and
+Revert SDR instead of a panel button: each returns one rendition (its grade,
+its Denoise, its side of every local grade, and for SDR the Match status) to
+the state of a newly imported file, as one undo step, and leaves the other
+rendition, the geometry, the masks and the source settings alone. The render
+shader no longer contains the legacy SDR base rendition or its inputs
+(parameters 12 to 14 and 60). That shader has carried no byte pin since
+October 1; the two pinned shaders (peak measurement, Denoise) are unchanged.
+Match results, preview screenshots at Fit and at 100%, and full-size HDR and
+SDR exports of the four-mask project are byte-identical before and after.
+
+**Legacy code still present.** Parameter 159 (the old "current SDR rendering"
+flag) is still sent because the pinned peak-measurement shader reads it to
+tell the SDR lane. The GPU renderer and the source transport still accept a
+source identity, now always `"source"`; it is threaded through much of both
+files and was left at the entry point. The shader's separate grain switch and
+strength (parameters 156 and 157) existed for grain inherited from a legacy
+match and now always equal Film Look's own (78 and 79).
 
 **Checks that fail because they still describe the old design (phase 4
 input).** Each is rewritten for the viewport-bounded design or retired with

@@ -130,7 +130,7 @@ retains its small idle overview fallback. See
 
 Match fits editable SDR controls to the settled HDR picture by rendering
 candidate recipes at a 768-pixel analysis size and measuring each. The fit
-stays in `sdr_match.py`. For a plain Match under GPU rendering the page
+stays in `sdr_match.py`. Under GPU rendering the page
 renders the candidates: the request thread offers a recipe through
 `sdr_match_remote.py`, the page collects it from
 `/api/session/{id}/sdr-match/candidate`, grades it as SDR from the scene
@@ -220,7 +220,7 @@ export. The bounded measurement completes inside its processing budget but
 omits the export maximum's patch. Steve authorized deferring both recorded
 Peak issues and continuing other phase 3 work; neither requirement is closed.
 
-Authored/legacy matched SDR bases now fetch a separate bounded
+An authored SDR base fetches a separate bounded
 HDR region for eligible scene-qualified masks, shared across the foreground
 tile halo union and aligned for every feather grid. Refusal retains the mask
 fallback without whole-source preparation. See
