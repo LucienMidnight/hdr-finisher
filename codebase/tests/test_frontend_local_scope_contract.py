@@ -436,7 +436,6 @@ def test_denoise_setup_fetches_a_model_and_resolve_is_reconstruction_only() -> N
     assert 'denoiseSelector.identity === proxy.identity' in preview
     assert "cancelDenoiseProcessing({ selectOriginal = true } = {})" in preview
     assert "runtime.generation += 1;" in app_script
-    assert 'const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";' in app_script
     assert "analyzeDenoiseWavelet" not in app_script
     assert "resolveDenoiseWavelet" not in app_script
 

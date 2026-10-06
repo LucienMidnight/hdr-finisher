@@ -18,7 +18,6 @@ from .adjustments import (
     apply_adjustments,
     apply_final_grain,
     apply_hdr_output_highlight_compression,
-    apply_matched_final_grain,
     apply_sdr_output_highlight_compression,
 )
 from .binaries import resolve_binary
@@ -166,14 +165,11 @@ def _render_export_branch(
         include_output_highlight_compression=False,
         local_adjustments=getattr(session, "local_adjustments", None),
         color_context=color_context,
-        sdr_match=getattr(session, "sdr_match", None),
     )
     # Output finishing resamples and sharpens for the delivered size, neither of
     # which the preview models. Running it before the limiter keeps its ringing
     # underneath the ceiling instead of on top of it.
     image = apply_output_finishing(image, settings.output_finishing, kind)
-    if kind == PreviewKind.SDR and getattr(getattr(session, "sdr_match", None), "active", False):
-        return apply_matched_final_grain(image, adjustments, getattr(session, "sdr_match"))
     image = apply_final_grain(image, adjustments, kind)
     if kind == PreviewKind.HDR:
         result = apply_hdr_output_highlight_compression(image, adjustments, color_context=color_context)
@@ -191,13 +187,11 @@ def _render_export_branch(
         measurement = {"peak": peak}
         if kind == PreviewKind.HDR:
             signal = hdr_highlight_peak_signal(image, adjustments.hdr)
-        elif not getattr(getattr(session, "sdr_match", None), "active", False):
+        else:
             reference = getattr(session, "sdr_reference_image", None)
             authored = reference is not None and adjustments.sdr.use_authored_base
             stage = sdr_highlight_stage_input(apply_geometry(reference if authored else source, adjustments.shared.geometry), adjustments, authored_reference=authored)
             signal = sdr_highlight_peak_signal(stage, adjustments.sdr)
-        else:
-            signal = None
         if signal is not None:
             robust = getattr(adjustments, lane).highlight_compression_peak_measurement == "robust"
             measurement["anchor"] = float(np.quantile(signal, .9999) if robust else np.max(signal))

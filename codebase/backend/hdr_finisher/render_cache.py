@@ -16,7 +16,7 @@ import zlib
 
 import numpy as np
 
-from .adjustments import apply_adjustments, render_matched_sdr_base
+from .adjustments import apply_adjustments
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext
 from .config import APP_DATA_DIR
 from .cpu_strips import (
@@ -50,7 +50,7 @@ from .mask_work import (
     phase as mask_phase,
     shared_work as mask_shared_work,
 )
-from .models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind, SdrMatchState
+from .models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind
 from .preview import ResizeCancelled, downsample_image
 
 
@@ -663,7 +663,6 @@ class SessionRenderCache:
     # with no peak at all, which is the one thing an exact presentation has to
     # be able to state about itself.
     _frame_scope_peaks: OrderedDict[tuple[int, str, int, str], float] = field(default_factory=OrderedDict, init=False, repr=False)
-    _matched_sdr_bases: OrderedDict[tuple[int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _scopes: OrderedDict[tuple[object, ...], Any] = field(default_factory=OrderedDict, init=False, repr=False)
     _masks: OrderedDict[tuple[int, int, str, str, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _geometry_maps: OrderedDict[tuple[int, str], tuple[tuple[float, ...], tuple[float, ...], int, int]] = field(default_factory=OrderedDict, init=False, repr=False)
@@ -692,12 +691,8 @@ class SessionRenderCache:
         if self.sdr_reference_image is not None:
             self._peak_candidates["sdr"] = source_candidates(self.sdr_reference_image)
 
-    def peak_candidates(self, kind: PreviewKind, adjustments: AdjustmentState, sdr_match: SdrMatchState) -> dict:
+    def peak_candidates(self, kind: PreviewKind, adjustments: AdjustmentState) -> dict:
         from .peak_candidates import positioned_candidates
-        if kind == PreviewKind.SDR and sdr_match.active:
-            # Materializing a matched rendition here could trigger a native
-            # render. Keep editing bounded and disclose unavailable evidence.
-            raise TileUnavailableError("Matched SDR candidate evidence is unavailable.")
         authored = kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base
         lane = "sdr" if authored else "hdr"
         image = self.sdr_reference_image if authored else self.image
@@ -713,7 +708,6 @@ class SessionRenderCache:
             self._source_epoch += 1
             self._frames.clear()
             self._frame_scope_peaks.clear()
-            self._matched_sdr_bases.clear()
             self._scopes.clear()
             self._cancel_inflight_locked()
 
@@ -741,7 +735,6 @@ class SessionRenderCache:
             self._source_ranges.clear()
             self._frames.clear()
             self._frame_scope_peaks.clear()
-            self._matched_sdr_bases.clear()
             self._scopes.clear()
             self._masks.clear()
             self._geometry_maps.clear()
@@ -768,17 +761,12 @@ class SessionRenderCache:
         kind: PreviewKind,
         long_edge: int,
         adjustments: AdjustmentState,
-        sdr_match: SdrMatchState | None = None,
         is_current: Callable[[], bool] | None = None,
     ) -> tuple[np.ndarray, str, str]:
         """Return the authoritative geometry-fixed source for a GPU grade proxy."""
         edge = max(256, int(long_edge))
         geometry = adjustments.shared.geometry
         signature = geometry.model_dump_json()
-        if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
-            source, _sdr_reference = self._proxies(edge, is_current=is_current)
-            matched = self.matched_sdr_base(source, adjustments, sdr_match, edge)
-            return downsample_image(matched, edge), "linear-srgb", signature
         source, sdr_reference = self._proxies(edge, is_current=is_current)
         use_authored_sdr = (
             kind == PreviewKind.SDR
@@ -804,17 +792,14 @@ class SessionRenderCache:
         kind: PreviewKind,
         long_edge: int,
         adjustments: AdjustmentState,
-        sdr_match: SdrMatchState | None = None,
     ) -> tuple[np.ndarray, int] | None:
         """The full-size source export measures its Denoise noise model on, and
         the source epoch it belongs to.
 
         ``None`` unless this proxy is that source at its own size: a smaller
-        level has its own noise, and the SDR-matched and authored SDR bases are
-        other pictures.
+        level has its own noise, and the authored SDR base is
+        another picture.
         """
-        if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
-            return None
         if kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base:
             return None
         if max(256, int(long_edge)) < max(self.image.shape[:2]):
@@ -827,7 +812,6 @@ class SessionRenderCache:
         kind: PreviewKind,
         long_edge: int,
         adjustments: AdjustmentState,
-        sdr_match: SdrMatchState | None = None,
         is_current: Callable[[], bool] | None = None,
     ) -> tuple[int, int, Callable[[int, int, int, int], np.ndarray]] | None:
         """The size of ``geometry_source_proxy``'s frame and a reader of
@@ -835,13 +819,11 @@ class SessionRenderCache:
 
         ``read(y0, x0, y1, x1)`` returns what that slice of the proxy would
         hold. ``None`` where only the whole-frame path reproduces the proxy:
-        the SDR-matched base, and a geometry that needs a post-geometry
+        a geometry that needs a post-geometry
         downsample.
         """
         edge = max(256, int(long_edge))
         geometry = adjustments.shared.geometry
-        if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
-            return None
         source, sdr_reference = self._proxies(edge, is_current=is_current)
         use_authored_sdr = (
             kind == PreviewKind.SDR
@@ -872,7 +854,6 @@ class SessionRenderCache:
         kind: PreviewKind,
         long_edge: int,
         adjustments: AdjustmentState,
-        sdr_match: SdrMatchState | None,
         rect: tuple[int, int, int, int],
         halo: int = 0,
         is_current: Callable[[], bool] | None = None,
@@ -892,19 +873,14 @@ class SessionRenderCache:
         signature = geometry.model_dump_json()
         halo = max(0, int(halo))
 
-        if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
-            source, _sdr_reference = self._proxies(edge, is_current=is_current)
-            base = self.matched_sdr_base(source, adjustments, sdr_match, edge)
-            working_space = "linear-srgb"
-        else:
-            source, sdr_reference = self._proxies(edge, is_current=is_current)
-            use_authored_sdr = (
-                kind == PreviewKind.SDR
-                and sdr_reference is not None
-                and adjustments.sdr.use_authored_base
-            )
-            base = sdr_reference if use_authored_sdr else source
-            working_space = "linear-srgb" if use_authored_sdr else "acescg"
+        source, sdr_reference = self._proxies(edge, is_current=is_current)
+        use_authored_sdr = (
+            kind == PreviewKind.SDR
+            and sdr_reference is not None
+            and adjustments.sdr.use_authored_base
+        )
+        base = sdr_reference if use_authored_sdr else source
+        working_space = "linear-srgb" if use_authored_sdr else "acescg"
 
         with self._lock:
             source_epoch = self._source_epoch
@@ -971,55 +947,6 @@ class SessionRenderCache:
         block = oriented[delivered[1] : delivered[3], delivered[0] : delivered[2], :3]
         luminance = np.einsum("...c,c->...", block, ACESCG_LUMA, optimize=True)
         return luminance, delivered, (width, height), source_epoch
-
-    def matched_sdr_base(
-        self,
-        source: np.ndarray,
-        adjustments: AdjustmentState,
-        sdr_match: SdrMatchState,
-        long_edge: int,
-    ) -> np.ndarray:
-        """Return the cached HDR snapshot and shoulder used as the SDR grading source."""
-        edge = max(256, int(long_edge))
-        base_signature = json.dumps(
-            {
-                "hdr": sdr_match.captured_hdr_adjustments.model_dump(mode="json") if sdr_match.captured_hdr_adjustments else None,
-                "shared": sdr_match.captured_shared_adjustments.model_dump(mode="json") if sdr_match.captured_shared_adjustments else None,
-                "locals": [item.model_dump(mode="json") for item in sdr_match.captured_locals],
-                "reference": sdr_match.captured_reference_white_nits,
-                "automatic_boundary": sdr_match.automatic_highlight_boundary_ratio,
-                "manual_boundary": sdr_match.manual_highlight_boundary_ratio,
-                "geometry": adjustments.shared.geometry.model_dump(mode="json"),
-            },
-            separators=(",", ":"),
-        )
-        base_key = (edge, base_signature)
-        with self._lock:
-            matched = self._matched_sdr_bases.get(base_key)
-            if matched is not None:
-                self._matched_sdr_bases.move_to_end(base_key)
-                return matched
-            source_epoch = self._source_epoch
-            color_context = self.color_context
-            source_long_edge = max(self.image.shape[:2])
-        matched = render_matched_sdr_base(
-            source,
-            adjustments,
-            sdr_match,
-            color_context=color_context,
-            source_pixel_scale=min(1.0, edge / source_long_edge),
-        )
-        matched.setflags(write=False)
-        with self._lock:
-            # Source replacement deliberately lets old callers finish, but an
-            # obsolete result must never repopulate the new source's cache.
-            if source_epoch == self._source_epoch:
-                self._matched_sdr_bases[base_key] = matched
-                self._matched_sdr_bases.move_to_end(base_key)
-                while len(self._matched_sdr_bases) > 2:
-                    self._matched_sdr_bases.popitem(last=False)
-                    self._evictions += 1
-        return matched
 
     def source_pair(self, long_edge: int) -> tuple[np.ndarray, np.ndarray | None]:
         """Return the matched source and authored-SDR proxy inputs used by exporters."""
@@ -1187,13 +1114,11 @@ class SessionRenderCache:
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
         _record_diagnostics: bool = True,
-        sdr_match: SdrMatchState | None = None,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         with self._lock:
             source_epoch = self._source_epoch
-        match_signature = sdr_match.model_dump_json() if sdr_match is not None else "inactive"
-        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + match_signature + repr(self.color_context.cache_key)
+        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
         key = (source_epoch, kind.value, edge, signature)
         flight_key = ("frame", *key)
         cached, flight = self._acquire_frame_flight(
@@ -1213,9 +1138,6 @@ class SessionRenderCache:
                 edge,
                 source_epoch=source_epoch,
             )
-            matched_sdr_base = None
-            if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
-                matched_sdr_base = self.matched_sdr_base(source, adjustments, sdr_match, edge)
             processed = apply_adjustments(
                 source,
                 adjustments,
@@ -1225,8 +1147,6 @@ class SessionRenderCache:
                 compiled_local_masks=compiled_masks,
                 color_context=self.color_context,
                 source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
-                sdr_match=sdr_match,
-                matched_sdr_base=matched_sdr_base,
             )
             processed = downsample_image(processed, edge)
             if is_current is not None and not is_current():
@@ -1253,7 +1173,6 @@ class SessionRenderCache:
         long_edge: int,
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
-        sdr_match: SdrMatchState | None = None,
         denoise_active: bool = False,
         budget_bytes: int = DEFAULT_STRIP_BUDGET_BYTES,
     ) -> tuple[np.ndarray, StripReport]:
@@ -1269,11 +1188,9 @@ class SessionRenderCache:
         edge = max(256, int(long_edge))
         with self._lock:
             source_epoch = self._source_epoch
-        match_signature = sdr_match.model_dump_json() if sdr_match is not None else "inactive"
         signature = (
             adjustment_signature(adjustments)
             + local_adjustment_signature(local_adjustments)
-            + match_signature
             + repr(self.color_context.cache_key)
         )
         key = (source_epoch, kind.value, edge, signature)
@@ -1283,7 +1200,6 @@ class SessionRenderCache:
             adjustments,
             kind,
             local_adjustments=local_adjustments,
-            sdr_match=sdr_match,
             denoise_active=denoise_active,
             source_width=source.shape[1],
             source_height=source.shape[0],
@@ -1328,7 +1244,6 @@ class SessionRenderCache:
                 source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
                 long_edge=edge,
                 local_adjustments=local_adjustments,
-                sdr_match=sdr_match,
                 denoise_active=denoise_active,
                 budget_bytes=budget_bytes,
                 is_current=is_current,
@@ -1364,14 +1279,12 @@ class SessionRenderCache:
         local_adjustments: list[LocalAdjustment] | None = None,
         channel_names: tuple[str, ...] | None = None,
         scope_region: tuple[float, float, float, float] | None = None,
-        sdr_match: SdrMatchState | None = None,
     ) -> Any:
         """Return a cached, single-flight scope payload for the adjusted proxy."""
         edge = max(256, int(long_edge))
         with self._lock:
             source_epoch = self._source_epoch
-        match_signature = sdr_match.model_dump_json() if sdr_match is not None else "inactive"
-        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + match_signature + repr(self.color_context.cache_key)
+        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
         requested_channels = tuple(channel_names or ("R", "G", "B", "Y"))
         region_key = tuple(round(float(value), 6) for value in scope_region) if scope_region is not None else None
         key = (source_epoch, kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits), requested_channels, region_key)
@@ -1406,7 +1319,6 @@ class SessionRenderCache:
                 is_current=is_current,
                 local_adjustments=local_adjustments,
                 _record_diagnostics=False,
-                sdr_match=sdr_match,
             )
             if is_current is not None and not is_current():
                 with self._lock:
@@ -1444,7 +1356,6 @@ class SessionRenderCache:
             source_bytes = int(self.image.nbytes) + int(self.sdr_reference_image.nbytes if self.sdr_reference_image is not None else 0)
             proxy_bytes = self._proxy_bytes_locked()
             frame_bytes = sum(int(frame.nbytes) for frame in self._frames.values())
-            matched_base_bytes = sum(int(frame.nbytes) for frame in self._matched_sdr_bases.values())
             scope_bytes = sum(len(scope.model_dump_json().encode("utf-8")) for scope in self._scopes.values())
             mask_bytes = sum(int(mask.nbytes) for mask in self._masks.values())
             source_mip = self.mip_store.diagnostics() if self.mip_store is not None else None
@@ -1453,14 +1364,12 @@ class SessionRenderCache:
                 "source_bytes": source_bytes,
                 "proxy_bytes": proxy_bytes,
                 "frame_bytes": frame_bytes,
-                "matched_sdr_base_bytes": matched_base_bytes,
-                "matched_sdr_base_entries": len(self._matched_sdr_bases),
                 "scope_bytes": scope_bytes,
                 "local_mask_bytes": mask_bytes,
                 "local_mask_entries": len(self._masks),
                 "local_mask_budget_bytes": self._mask_budget_locked(),
-                "managed_bytes": source_bytes + proxy_bytes + frame_bytes + matched_base_bytes + scope_bytes + mask_bytes,
-                "entries": len(self._source_proxies) + len(self._frames) + len(self._matched_sdr_bases) + len(self._scopes) + len(self._masks),
+                "managed_bytes": source_bytes + proxy_bytes + frame_bytes + scope_bytes + mask_bytes,
+                "entries": len(self._source_proxies) + len(self._frames) + len(self._scopes) + len(self._masks),
                 "hits": self._hits,
                 "misses": self._misses,
                 "evictions": self._evictions,
@@ -1654,7 +1563,6 @@ class SessionRenderCache:
             return (
                 self._proxy_bytes_locked()
                 + sum(int(frame.nbytes) for frame in self._frames.values())
-                + sum(int(frame.nbytes) for frame in self._matched_sdr_bases.values())
             )
 
         while self._frames and (len(self._frames) > self.max_frames or cached_bytes() > self.max_cache_bytes):

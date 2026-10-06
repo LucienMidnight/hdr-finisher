@@ -695,7 +695,7 @@ async def post_sdr_match_candidate(
 def post_sdr_match(session_id: str, request: SdrMatchActionRequest, response: Response) -> EditStateResponse:
     timing: dict[str, object] = {}
     started = perf_counter()
-    bridge = open_bridge(session_id) if request.gpu_candidates and request.action == "match" else None
+    bridge = open_bridge(session_id) if request.gpu_candidates else None
     if bridge is not None and request.verify_gpu_candidates:
         timing["verify_gpu_candidates"] = True
     try:
@@ -703,7 +703,6 @@ def post_sdr_match(session_id: str, request: SdrMatchActionRequest, response: Re
             result = store.apply_sdr_match_action(
                 session_id,
                 expected_revision=request.expected_revision,
-                action=request.action,
                 authored_sdr_override_consent=request.authored_sdr_override_consent,
                 timing=timing,
                 candidate_bridge=bridge,
@@ -780,7 +779,6 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
             preview_long_edge,
             is_current=is_current,
             local_adjustments=local_adjustments,
-            sdr_match=session.sdr_match,
             denoise_active=_denoise_is_active(session, kind),
         )
         return processed, report
@@ -790,7 +788,6 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
         preview_long_edge,
         is_current=is_current,
         local_adjustments=local_adjustments,
-        sdr_match=session.sdr_match,
     )
     return processed, None
 
@@ -950,7 +947,6 @@ def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
                 if request.local_adjustments is not None
                 else session.local_adjustments
             ) if request.include_locals else [],
-            sdr_match=session.sdr_match,
         )
         body, media_type = encode_processed_overlay_bytes(processed, adjustments, kind, session.color_context)
     except RuntimeError as exc:
@@ -987,7 +983,6 @@ def scopes(
         int(max_nits.value),
         local_adjustments=session.local_adjustments,
         channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
-        sdr_match=session.sdr_match,
     )
 
 
@@ -1032,7 +1027,6 @@ def scopes_for_adjustments(
                 request.scope_region.width,
                 request.scope_region.height,
             ) if request.scope_region is not None else None,
-            sdr_match=session.sdr_match,
         )
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})
@@ -1062,7 +1056,7 @@ def webgpu_peak_candidates(session_id: str, kind: PreviewKind, edit_revision: in
     try:
         session = store.get(session_id)
         _check_revision(session.edit_revision, edit_revision)
-        return session.render_cache.peak_candidates(kind, session.adjustments, session.sdr_match)
+        return session.render_cache.peak_candidates(kind, session.adjustments)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
@@ -1094,7 +1088,6 @@ def webgpu_proxy(
             kind,
             long_edge,
             session.adjustments,
-            session.sdr_match,
             is_current=lambda: session.edit_revision == revision,
         )
     except StaleRender:
@@ -1194,7 +1187,7 @@ def adaptive_denoise_model(
             raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
         if requested_geometry != authoritative_geometry:
             raise HTTPException(status_code=409, detail="Stale geometry denoise request dropped.")
-    request = (kind, long_edge, session.adjustments, session.sdr_match)
+    request = (kind, long_edge, session.adjustments)
     # At full size the picture's noise is the source's own, whatever the
     # geometry: one model per source, the one export measures, so a rotation or
     # a crop costs no new measurement and cannot move the result.
@@ -1263,7 +1256,6 @@ def webgpu_proxy_stream(
             kind,
             long_edge,
             session.adjustments,
-            session.sdr_match,
             is_current=lambda: session.edit_revision == revision,
         )
     except StaleRender:
@@ -1364,7 +1356,6 @@ def webgpu_source_tile(
             kind,
             long_edge,
             session.adjustments,
-            session.sdr_match,
             (x, y, x + width, y + height),
             halo,
             is_current=lambda: session.edit_revision == revision,

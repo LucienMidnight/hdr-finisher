@@ -134,7 +134,6 @@ def _session(image: np.ndarray) -> SimpleNamespace:
         hdr_reference_white_nits=context.hdr_reference_white_nits,
         color_context=context,
         local_adjustments=_four_mask_locals(),
-        sdr_match=None,
         denoise=None,
         render_cache=SessionRenderCache(image, None, color_context=context),
     )

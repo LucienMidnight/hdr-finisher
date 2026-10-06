@@ -58,8 +58,8 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "let tileOrigin = vec2i(i32(p[160]), i32(p[161]));" in shader
     assert "params[153] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px)" in shader
     assert "params[154] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold)" in shader
-    assert "params[156] = grainSectionEnabled ? 1 : 0" in shader
-    assert "params[157] = grainSectionEnabled ? (grain.look_strength ?? 100) / 100 : 0" in shader
+    assert "params[156] = filmEnabled ? 1 : 0" in shader
+    assert "params[157] = filmEnabled ? (film.look_strength ?? 100) / 100 : 0" in shader
     assert "params[158] = film.grain_view_map ? 1 : 0" in shader
     assert 'params[159] = lane === "sdr" ? 1 : 0' in shader
     assert "p[156] > 0.5 && p[157] > 0.0" in shader
@@ -405,13 +405,11 @@ def test_electron_preview_correctness_contract() -> None:
     assert "isFallbackAdapter" in webgpu_javascript
     gpu_eligibility = javascript[
         javascript.index("function gpuPreviewEligible(lane = state.currentView)"):
-        javascript.index("function gpuPreviewSourceOptions")
+        javascript.index("function normalizedPreviewResolution")
     ]
     assert "sdr_match" not in gpu_eligibility
-    assert "function gpuPreviewSourceOptions" in javascript
-    assert "gpuPreviewSourceOptions(lane)" in javascript
     sdr_match_action = javascript[
-        javascript.index("async function setSdrMatch(action)"):
+        javascript.index("async function setSdrMatch()"):
         javascript.index("function queueEditCommand")
     ]
     assert 'state.currentView === "sdr"\n      ? refinementProxyLongEdge()' in sdr_match_action
@@ -424,7 +422,6 @@ def test_electron_preview_correctness_contract() -> None:
     ]
     assert 'renderPreviewForLane("sdr", state.currentView === "sdr", options.longEdge' in match_presentation
     assert "sourceOptions?.identity" in _webgpu_source()
-    assert "sourceOptions?.inheritedGrain" in _webgpu_source()
     assert "defaultGeometry" not in gpu_eligibility
     assert "geometrySignature" not in gpu_eligibility
     assert "cached.geometrySignature === geometrySignature()" in javascript
@@ -603,7 +600,7 @@ def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     assert "spatial_only=true${pathQuery}" in mask_loader
     gpu_eligibility = javascript[
         javascript.index("function gpuPreviewEligible(lane = state.currentView)"):
-        javascript.index("function gpuPreviewSourceOptions")
+        javascript.index("function normalizedPreviewResolution")
     ]
     assert "supportsLocalAdjustments" in gpu_eligibility
     local_support = webgpu[

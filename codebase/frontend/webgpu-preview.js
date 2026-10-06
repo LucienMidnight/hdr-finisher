@@ -2013,7 +2013,7 @@
         const signature = JSON.stringify(adjustments.shared?.geometry || {});
         const proxy = await this.loadProxy(sessionId, lane, 1600, signature, revision, options.identity || "source", {isCurrent});
         if (!proxy || !isCurrent()) return null;
-        const params = buildParams(lane, adjustments, proxy.workingSpace, lane === "hdr", white, this.sourcePixelScaleFor(proxy, sourceSize), options.inheritedGrain);
+        const params = buildParams(lane, adjustments, proxy.workingSpace, lane === "hdr", white, this.sourcePixelScaleFor(proxy, sourceSize));
         const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params, locals);
         if (!anchor) return null;
         let value;
@@ -2646,7 +2646,6 @@
       const params = buildParams(
         lane, adjustments, frame.workingSpace, surface.hdr, referenceWhiteNits,
         this.sourcePixelScaleFor(frame, sourceSize),
-        sourceOptions?.inheritedGrain || null,
       );
       const surround = sourceOptions?.claritySurround || null;
       let { halo } = this.composedTileHalo(frame.width, frame.height, surroundHaloParams(params, surround),
@@ -2843,7 +2842,6 @@
       const params = buildParams(
         lane, adjustments, proxy.workingSpace, surface.hdr, referenceWhiteNits,
         this.sourcePixelScaleFor(proxy, sourceSize),
-        sourceOptions?.inheritedGrain || null,
       );
       const { spatialActive, detailActive } = this.graphActivity(params);
 
@@ -5221,7 +5219,6 @@
         surface.hdr,
         referenceWhiteNits,
         sourcePixelScale,
-        sourceOptions?.inheritedGrain || null,
       );
       // Activity and admission are decided before the anchor, because a region
       // source belongs to the tiled route and the anchor must measure the
@@ -5363,7 +5360,6 @@
           surface.hdr,
           referenceWhiteNits,
           sourcePixelScale,
-          sourceOptions?.inheritedGrain || null,
         );
         params[75] = measuredPeak;
       }
@@ -8956,7 +8952,7 @@
     return Math.max(0.0018, peak);
   }
 
-  function buildParams(lane, adjustments, workingSpace, hdrSurface, referenceWhiteNits = 203, sourcePixelScale = 1, inheritedGrain = null) {
+  function buildParams(lane, adjustments, workingSpace, hdrSurface, referenceWhiteNits = 203, sourcePixelScale = 1) {
     const params = new Float32Array(PARAM_COUNT);
     const projectReferenceWhite = Number(referenceWhiteNits) === 100 ? 100 : 203;
     const branch = adjustments[lane];
@@ -9062,25 +9058,21 @@
     params[97] = branch.detail_section_enabled !== false ? 1 : 0;
     params[98] = (Number(structureDetail.softness) || 0) / 100;
     params[99] = (Number(structureDetail.microcontrast) || 0) / 100;
-    const grain = inheritedGrain?.filmLook || film;
-    const grainSectionEnabled = inheritedGrain
-      ? inheritedGrain.filmLookSectionEnabled !== false
-      : filmEnabled;
-    params[100] = grain.grain_enabled !== false ? 1 : 0;
-    params[101] = (grain.grain_amount || 0) / 100;
-    params[102] = (grain.grain_size ?? 50) / 100;
-    params[103] = (grain.grain_softness ?? 25) / 100;
-    params[104] = blackAndWhiteOn ? 0 : (grain.grain_chroma || 0) / 100;
-    params[105] = (grain.grain_shadow_response ?? 100) / 100;
-    params[106] = (grain.grain_midtone_response ?? 100) / 100;
-    params[107] = (grain.grain_highlight_response ?? 100) / 100;
+    params[100] = film.grain_enabled !== false ? 1 : 0;
+    params[101] = (film.grain_amount || 0) / 100;
+    params[102] = (film.grain_size ?? 50) / 100;
+    params[103] = (film.grain_softness ?? 25) / 100;
+    params[104] = blackAndWhiteOn ? 0 : (film.grain_chroma || 0) / 100;
+    params[105] = (film.grain_shadow_response ?? 100) / 100;
+    params[106] = (film.grain_midtone_response ?? 100) / 100;
+    params[107] = (film.grain_highlight_response ?? 100) / 100;
     params[108] = (film.film_resolution ?? 100) / 100;
     // f32 holds integers exactly only to 2^24, so the seed travels in two
     // 16-bit halves (109 low, 176 high) and the shader reassembles it.
-    const grainSeed = (inheritedGrain?.filmGrainSeed ?? adjustments.shared?.film_grain_seed ?? 271828) >>> 0;
+    const grainSeed = (adjustments.shared?.film_grain_seed ?? 271828) >>> 0;
     params[109] = grainSeed & 0xffff;
     params[GRAIN_SEED_HIGH_INDEX] = grainSeed >>> 16;
-    params[GRAIN_FILM_TYPE_INDEX] = grain.grain_film_type === "black_and_white" ? 1 : 0;
+    params[GRAIN_FILM_TYPE_INDEX] = film.grain_film_type === "black_and_white" ? 1 : 0;
     const filmGates = {
       "65mm": [52.63, 23.01],
       "35mm": [36, 24],
@@ -9089,17 +9081,16 @@
       "16mm": [10.26, 7.49],
       super8: [5.79, 4.01],
     };
-    const gate = grain.grain_film_format === "custom"
-      ? [Math.min(500, Math.max(1, Number(grain.grain_custom_width_mm) || 36)), Math.min(500, Math.max(1, Number(grain.grain_custom_height_mm) || 24))]
-      : (filmGates[grain.grain_film_format] || filmGates["35mm"]);
+    const gate = film.grain_film_format === "custom"
+      ? [Math.min(500, Math.max(1, Number(film.grain_custom_width_mm) || 36)), Math.min(500, Math.max(1, Number(film.grain_custom_height_mm) || 24))]
+      : (filmGates[film.grain_film_format] || filmGates["35mm"]);
     params[140] = gate[0];
     params[141] = gate[1];
-    params[142] = grain.grain_capture_geometry === "horizontal_strip" ? 1
-      : grain.grain_capture_geometry === "vertical_strip" ? 2 : 0;
-    params[156] = grainSectionEnabled ? 1 : 0;
-    params[157] = grainSectionEnabled ? (grain.look_strength ?? 100) / 100 : 0;
-    // Viewer-only diagnostic: it follows this branch's checkbox even when the
-    // grain recipe itself is inherited from a captured HDR match.
+    params[142] = film.grain_capture_geometry === "horizontal_strip" ? 1
+      : film.grain_capture_geometry === "vertical_strip" ? 2 : 0;
+    params[156] = filmEnabled ? 1 : 0;
+    params[157] = filmEnabled ? (film.look_strength ?? 100) / 100 : 0;
+    // Viewer-only diagnostic.
     params[158] = film.grain_view_map ? 1 : 0;
     params[110] = branch.highlight_compression_color_handling === "smooth_rolloff" ? 2
       : branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;

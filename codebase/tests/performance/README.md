@@ -250,14 +250,10 @@ two midpoint pairs against export's geometry-fixed masks. It opens no project.
 
 `tests/luma-graph-region-reference.js --sdr-base` exercises the independent
 HDR scene-region loader with deliberately different SDR picture pixels, then
-compares its graph masks to CPU and whole-source GPU results. The native
-comparison's `--legacy-match` creates a new diagnostic archive from the
-read-only input, with an active legacy SDR base and no captured HDR locals.
-`--require-scene-region` asserts that a bounded native HDR region and GPU
-scene-qualified masks were actually used. Use a common manual highlight
-anchor to isolate these masks from the deferred legacy automatic-anchor gap;
-`--match` instead creates the newer materialized recipe and is mutually
-exclusive with `--legacy-match`. See
+compares its graph masks to CPU and whole-source GPU results. In the native
+comparison, `--require-scene-region` asserts that a bounded native HDR region
+and GPU scene-qualified masks were actually used, and `--match` fits SDR to
+the HDR grade first. See
 [SDR scene-mask evidence](../../../docs/technical/archive/viewport-phase3-sdr-scene-mask-evidence-2026-10-02.md).
 
 `tests/neutral-color-grading-reference.js` includes signed HDR input through

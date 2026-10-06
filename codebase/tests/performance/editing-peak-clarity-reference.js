@@ -63,7 +63,7 @@ const measure = async (grouped) => {
   const call = (anchorOnly) => renderer.measureEditingPeak(els.previewCanvas, state.session.session_id, lane,
     JSON.parse(JSON.stringify(state.adjustments)), sampleCurvePoints, JSON.parse(JSON.stringify(localAdjustments())),
     state.editRevision, white, { width: state.session.source.width, height: state.session.source.height },
-    { ...(gpuPreviewSourceOptions(lane) || {}), tier: 'settled', measureOnly: true, highlightAnchorOnly: anchorOnly,
+    { tier: 'settled', measureOnly: true, highlightAnchorOnly: anchorOnly,
       applicationGeneration: state.previewGeneration[lane], isCurrent: mine });
   const nits = (value) => (Number.isFinite(value) ? value / 0.18 * white : null);
   const report = { grouped };

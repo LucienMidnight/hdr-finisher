@@ -100,7 +100,6 @@ function sameBuffer(left, right) {
       return {
         revision: state.editRevision,
         generation: state.previewGeneration.sdr,
-        active: match.active,
         status: match.materialized_status,
         metrics: match.materialized_metrics,
         highlightEnabled: state.adjustments.sdr.highlight_section_enabled,
@@ -121,7 +120,6 @@ function sameBuffer(left, right) {
         denoiseCopied: JSON.stringify(state.denoise.sdr) === JSON.stringify(state.denoise.hdr),
         grainCopied: state.adjustments.sdr.film_look.grain_amount === state.adjustments.hdr.film_look.grain_amount
           && state.adjustments.sdr.film_look.grain_size === state.adjustments.hdr.film_look.grain_size,
-        sourceOptions: gpuPreviewSourceOptions("sdr"),
         gpuEligible: gpuPreviewEligible("sdr"),
         gpuRendered: rendered,
         gpuRefusal: state.lastGpuDraftRefusal,
@@ -134,12 +132,12 @@ function sameBuffer(left, right) {
         recipe: JSON.stringify(state.adjustments.sdr),
       };
     });
-    if (matched.active || !["matched", "needs_review"].includes(matched.status)
+    if (!["matched", "needs_review"].includes(matched.status)
       || !matched.highlightEnabled
       || matched.highlightMode !== "peak_fit" || matched.lumaPoints !== 5
       || !matched.lumaNeutral || !matched.rgbCurvesUsable || matched.localPoints !== 5
       || !matched.localCurvesNeutral || !matched.localTonalMaterialized || !matched.localMaskPreserved
-      || !matched.denoiseCopied || !matched.grainCopied || matched.sourceOptions !== null
+      || !matched.denoiseCopied || !matched.grainCopied
       || !matched.gpuEligible || !matched.gpuRendered || matched.acceptedLane !== "sdr"
       || matched.acceptedGeneration !== matched.generation || matched.acceptedTransport !== "WebGPU"
       || !matched.helperEligibilityCorrect) {
@@ -147,12 +145,6 @@ function sameBuffer(left, right) {
     }
     if (matched.metrics.p95_luma_error > 0.05 || matched.metrics.p95_oklab_error > 0.05) {
       throw new Error(`Committed match exceeded its safety gate: ${JSON.stringify(matched.metrics)}`);
-    }
-
-    const diagnosticsResponse = await page.request.get(`${baseUrl}/api/session/${session.session_id}/diagnostics`);
-    const diagnostics = await diagnosticsResponse.json();
-    if (diagnostics.render_cache.matched_sdr_base_entries !== 0) {
-      throw new Error(`A hidden matched base was cached: ${JSON.stringify(diagnostics.render_cache)}`);
     }
 
     interactionRequests.tracking = true;
@@ -231,13 +223,12 @@ function sameBuffer(left, right) {
         undoState,
         redone,
         restored: JSON.stringify(state.adjustments.sdr) === matchedRecipe,
-        active: state.editDocument.sdr_match.active,
         status: state.editDocument.sdr_match.materialized_status,
       };
     }, matched.recipe);
     if (!history.undoState.undone || history.undoState.status !== null
       || history.undoState.sdr !== authored.beforeSdr || !history.redone || !history.restored
-      || history.active || !history.status) {
+      || !history.status) {
       throw new Error(`Match Undo/Redo was not atomic: ${JSON.stringify(history)}`);
     }
 
@@ -270,7 +261,6 @@ function sameBuffer(left, right) {
       exposureInteraction: { ...exposureResult, requests: interactionRequests },
       undoRedo: history.undoState.undone && history.redone && history.restored,
       resetRemovedEffect: !sameBuffer(firstBytes, resetBytes),
-      matchedBaseEntries: diagnostics.render_cache.matched_sdr_base_entries,
     }));
   } finally {
     await browser.close();

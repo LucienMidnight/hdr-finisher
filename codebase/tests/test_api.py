@@ -313,7 +313,6 @@ def test_materialized_sdr_match_uses_the_ordinary_acescg_webgpu_source() -> None
     matched = store.apply_sdr_match_action(
         session_id,
         expected_revision=session.edit_revision,
-        action="match",
         authored_sdr_override_consent=True,
     )
     proxy = client.get(
@@ -322,9 +321,8 @@ def test_materialized_sdr_match_uses_the_ordinary_acescg_webgpu_source() -> None
     )
 
     assert proxy.status_code == 200
-    assert matched.document.sdr_match.active is False
+    assert matched.document.sdr_match.materialized_status in {"matched", "needs_review"}
     assert proxy.headers["x-working-space"] == "acescg"
-    assert store.get(session_id).render_cache.diagnostics()["matched_sdr_base_entries"] == 0
 
 
 def test_interactive_scopes_use_uncommitted_local_adjustments() -> None:

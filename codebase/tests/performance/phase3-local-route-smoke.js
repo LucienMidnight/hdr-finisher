@@ -133,7 +133,7 @@ print(json.dumps({k:v for k,v in r.items() if not k.startswith('_')}))
   const pending=state.gpuPreview.renderScopeProxy(state.session.session_id,state.currentView,state.adjustments,
    sampleCurvePoints,960,localAdjustments(),state.editRevision,projectReferenceWhiteNits(),
    {width:state.session.source.width,height:state.session.source.height},
-   {...gpuPreviewSourceOptions(),applicationGeneration:accepted.generation,isCurrent:()=>current});
+   {applicationGeneration:accepted.generation,isCurrent:()=>current});
   current=false;
   return !await pending && state.acceptedPresentation===accepted;
  });

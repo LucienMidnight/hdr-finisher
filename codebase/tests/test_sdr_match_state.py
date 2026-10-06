@@ -16,7 +16,7 @@ from hdr_finisher.models import (
     EditCommand,
     EditDocument,
     PreviewKind,
-    SDRMatchRevertState,
+    SDRMatchQualityMetrics,
     SdrMatchState,
 )
 from hdr_finisher.projects import ProjectError, open_project, save_project
@@ -36,21 +36,11 @@ def _store_with_source(tmp_path: Path) -> tuple[SessionStore, str]:
     return store, payload.session_id
 
 
-def _active_match_state(store: SessionStore, session_id: str, *, grain_source: str = "captured_hdr") -> SdrMatchState:
-    session = store.get(session_id)
+def _matched_state() -> SdrMatchState:
     return SdrMatchState(
-        active=True,
-        grain_source=grain_source,
-        captured_hdr_adjustments=session.adjustments.hdr.model_copy(deep=True),
-        captured_shared_adjustments=session.adjustments.shared.model_copy(deep=True),
-        captured_reference_white_nits=session.hdr_reference_white_nits,
-        captured_source_fingerprint_sha256=session.source_fingerprint_sha256,
-        automatic_highlight_boundary_ratio=0.8,
-        signature="test-match-signature",
-        revert_state=SDRMatchRevertState(
-            sdr_adjustments=session.adjustments.sdr.model_copy(deep=True),
-            sdr_denoise=session.denoise.sdr.model_copy(deep=True),
-            authored_sdr_base_active=session.sdr_reference_image is not None,
+        materialized_status="matched",
+        materialized_metrics=SDRMatchQualityMetrics(
+            median_luma_error=0.001, p95_luma_error=0.01, median_oklab_error=0.002, p95_oklab_error=0.02
         ),
     )
 
@@ -63,6 +53,7 @@ def _match_command(
     state: SdrMatchState,
     adjustments: AdjustmentState | None = None,
     consent: bool = False,
+    replaces_authored: bool = False,
 ) -> EditCommand:
     session = store.get(session_id)
     return EditCommand(
@@ -73,11 +64,12 @@ def _match_command(
             "global_adjustments": (adjustments or session.adjustments).model_dump(mode="json"),
             "local_adjustments": [item.model_dump(mode="json") for item in session.local_adjustments],
             "authored_sdr_override_consent": consent,
+            "replaces_authored_sdr": replaces_authored,
         },
     )
 
 
-def test_schema_v4_has_neutral_detail_and_inactive_match_defaults(tmp_path: Path) -> None:
+def test_schema_v4_has_neutral_detail_and_no_match_recorded(tmp_path: Path) -> None:
     store, session_id = _store_with_source(tmp_path)
     document = store.get(session_id).edit_document()
 
@@ -87,11 +79,9 @@ def test_schema_v4_has_neutral_detail_and_inactive_match_defaults(tmp_path: Path
     assert document.sdr_match == SdrMatchState()
 
 
-def test_sdr_match_grain_source_invariant() -> None:
-    with pytest.raises(ValidationError, match="inactive SDR Match state cannot select"):
-        SdrMatchState(grain_source="captured_hdr")
-    with pytest.raises(ValidationError, match="active SDR Match state requires a grain source"):
-        SdrMatchState(active=True)
+def test_match_status_and_metrics_are_stored_together() -> None:
+    with pytest.raises(ValidationError, match="stored together"):
+        SdrMatchState(materialized_status="matched")
 
 
 def test_schema_v3_is_rejected_by_model_and_project_gate(tmp_path: Path) -> None:
@@ -117,7 +107,7 @@ def test_schema_v3_is_rejected_by_model_and_project_gate(tmp_path: Path) -> None
 
 def test_set_sdr_match_is_one_deterministic_undo_step(tmp_path: Path) -> None:
     store, session_id = _store_with_source(tmp_path)
-    state = _active_match_state(store, session_id)
+    state = _matched_state()
     target = store.get(session_id).adjustments.model_copy(deep=True)
     target.sdr.exposure = 0.75
 
@@ -127,7 +117,7 @@ def test_set_sdr_match_is_one_deterministic_undo_step(tmp_path: Path) -> None:
     )
     session = store.get(session_id)
     assert changed.revision == 1
-    assert changed.document.sdr_match.grain_source == "captured_hdr"
+    assert changed.document.sdr_match.materialized_status == "matched"
     assert changed.document.global_adjustments.sdr.exposure == 0.75
     assert len(session.undo_history) == 1
     assert session.undo_history[0].forward.command_type == "set_sdr_match"
@@ -138,7 +128,7 @@ def test_set_sdr_match_is_one_deterministic_undo_step(tmp_path: Path) -> None:
         [EditCommand(expected_revision=1, command_type="undo")],
     )
     assert undone.revision == 2
-    assert undone.document.sdr_match.active is False
+    assert undone.document.sdr_match == SdrMatchState()
     assert undone.document.global_adjustments.sdr.exposure == 0.0
 
     redone = store.apply_edit_commands(
@@ -209,9 +199,9 @@ def test_automatic_transition_tracks_project_reference_white(reference_white: in
     np.testing.assert_allclose(mapped, 0.90, atol=1e-6)
 
 
-def test_v4_project_persists_active_match_state(tmp_path: Path) -> None:
+def test_v4_project_persists_the_match_result(tmp_path: Path) -> None:
     store, session_id = _store_with_source(tmp_path)
-    state = _active_match_state(store, session_id)
+    state = _matched_state()
     store.apply_edit_commands(
         session_id,
         [_match_command(store, session_id, expected_revision=0, state=state)],
@@ -228,157 +218,67 @@ def test_v4_project_persists_active_match_state(tmp_path: Path) -> None:
     assert reopened.edit_document().schema_version == 4
 
 
-def test_inherited_grain_requires_atomic_override_but_other_film_controls_do_not(tmp_path: Path) -> None:
+def test_an_old_project_with_a_legacy_match_opens_as_a_plain_sdr_grade(tmp_path: Path) -> None:
     store, session_id = _store_with_source(tmp_path)
-    inherited = _active_match_state(store, session_id)
-    store.apply_edit_commands(
-        session_id,
-        [_match_command(store, session_id, expected_revision=0, state=inherited)],
-    )
+    session = store.get(session_id)
+    session.adjustments.sdr.exposure = 0.4
+    document = session.edit_document().model_dump(mode="json")
+    document["sdr_match"] = {
+        "active": True,
+        "stale": False,
+        "grain_source": "captured_hdr",
+        "algorithm_version": "hdr-to-sdr-match-v1",
+        "captured_hdr_adjustments": document["global_adjustments"]["hdr"],
+        "captured_shared_adjustments": document["global_adjustments"]["shared"],
+        "captured_locals": [],
+        "captured_reference_white_nits": 203,
+        "captured_source_fingerprint_sha256": session.source_fingerprint_sha256,
+        "automatic_highlight_boundary_ratio": 0.8,
+        "manual_highlight_boundary_ratio": None,
+        "signature": "legacy",
+        "revert_state": {"sdr_adjustments": document["global_adjustments"]["sdr"]},
+        "materialized_status": None,
+        "materialized_metrics": None,
+    }
+    project = tmp_path / "legacy-match.hdrfinisher"
+    with zipfile.ZipFile(project, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({
+            "format": "HDR Finisher Project",
+            "schema_version": 4,
+            "contains_source_pixels": False,
+        }))
+        archive.writestr("edit-state.json", json.dumps(document))
 
-    ordinary = store.get(session_id).adjustments.model_copy(deep=True)
-    ordinary.sdr.film_look.grain_size = 63.0
-    with pytest.raises(EditCommandError, match="switch to an override"):
-        store.apply_edit_commands(
-            session_id,
-            [EditCommand(
-                expected_revision=1,
-                command_type="set_global_adjustments",
-                payload={"adjustments": ordinary.model_dump(mode="json")},
-            )],
-        )
-    assert store.get(session_id).edit_revision == 1
-
-    non_grain = store.get(session_id).adjustments.model_copy(deep=True)
-    non_grain.sdr.film_look.look_strength = 72.0
-    store.apply_edit_commands(
-        session_id,
-        [EditCommand(
-            expected_revision=1,
-            command_type="set_global_adjustments",
-            payload={"adjustments": non_grain.model_dump(mode="json")},
-        )],
-    )
-    assert store.get(session_id).sdr_match.grain_source == "captured_hdr"
-
-    override = _active_match_state(store, session_id, grain_source="sdr_override")
-    override_target = store.get(session_id).adjustments.model_copy(deep=True)
-    override_target.sdr.film_look.grain_size = 63.0
-    result = store.apply_edit_commands(
-        session_id,
-        [_match_command(
-            store,
-            session_id,
-            expected_revision=2,
-            state=override,
-            adjustments=override_target,
-        )],
-    )
-    assert result.document.sdr_match.grain_source == "sdr_override"
-    assert result.document.global_adjustments.sdr.film_look.grain_size == 63.0
+    reopened = open_project(store, project)
+    assert reopened.sdr_match == SdrMatchState()
+    assert reopened.adjustments.sdr.exposure == 0.4
 
 
-@pytest.mark.parametrize(("field_name", "value"), (
-    ("grain_enabled", False),
-    ("grain_amount", 1.0),
-    ("grain_size", 63.0),
-    ("grain_softness", 26.0),
-    ("grain_chroma", 1.0),
-    ("grain_film_format", "16mm"),
-    ("grain_film_type", "black_and_white"),
-    ("grain_capture_geometry", "horizontal_strip"),
-    ("grain_custom_width_mm", 37.0),
-    ("grain_custom_height_mm", 25.0),
-    ("grain_shadow_response", 101.0),
-    ("grain_midtone_response", 101.0),
-    ("grain_highlight_response", 101.0),
-))
-def test_every_sdr_grain_field_is_guarded_while_inherited(
-    tmp_path: Path,
-    field_name: str,
-    value: object,
-) -> None:
-    store, session_id = _store_with_source(tmp_path)
-    inherited = _active_match_state(store, session_id)
-    store.apply_edit_commands(
-        session_id,
-        [_match_command(store, session_id, expected_revision=0, state=inherited)],
-    )
-    target = store.get(session_id).adjustments.model_copy(deep=True)
-    setattr(target.sdr.film_look, field_name, value)
-
-    with pytest.raises(EditCommandError, match="switch to an override"):
-        store.apply_edit_commands(
-            session_id,
-            [EditCommand(
-                expected_revision=1,
-                command_type="set_global_adjustments",
-                payload={"adjustments": target.model_dump(mode="json")},
-            )],
-        )
-
-
-def test_explicit_revert_is_one_state_replacement_and_restores_sdr(tmp_path: Path) -> None:
-    store, session_id = _store_with_source(tmp_path)
-    before = store.get(session_id).adjustments.model_copy(deep=True)
-    state = _active_match_state(store, session_id)
-    matched = before.model_copy(deep=True)
-    matched.sdr.exposure = 1.25
-    store.apply_edit_commands(
-        session_id,
-        [_match_command(store, session_id, expected_revision=0, state=state, adjustments=matched)],
-    )
-
-    reverted = store.apply_edit_commands(
-        session_id,
-        [_match_command(
-            store,
-            session_id,
-            expected_revision=1,
-            state=SdrMatchState(),
-            adjustments=before,
-        )],
-    )
-    assert reverted.revision == 2
-    assert reverted.document.sdr_match.active is False
-    assert reverted.document.global_adjustments.sdr == before.sdr
-    assert len(store.get(session_id).undo_history) == 2
-
-
-def test_authored_sdr_requires_consent_before_activation(tmp_path: Path) -> None:
+def test_replacing_an_authored_sdr_rendition_requires_consent(tmp_path: Path) -> None:
     store, session_id = _store_with_source(tmp_path)
     session = store.get(session_id)
     session.sdr_reference_image = np.zeros_like(session.image)
-    state = _active_match_state(store, session_id)
+    state = _matched_state()
 
     with pytest.raises(EditCommandError, match="explicit consent"):
         store.apply_edit_commands(
             session_id,
-            [_match_command(store, session_id, expected_revision=0, state=state)],
+            [_match_command(store, session_id, expected_revision=0, state=state, replaces_authored=True)],
         )
+    with pytest.raises(EditCommandError, match="explicit consent"):
+        store.apply_sdr_match_action(session_id, expected_revision=0)
     assert session.edit_revision == 0
-    assert session.sdr_match.active is False
+    assert session.sdr_match == SdrMatchState()
     assert session.undo_history == []
 
     changed = store.apply_edit_commands(
         session_id,
-        [_match_command(store, session_id, expected_revision=0, state=state, consent=True)],
+        [_match_command(
+            store, session_id, expected_revision=0, state=state, consent=True, replaces_authored=True
+        )],
     )
-    assert changed.document.sdr_match.active is True
+    assert changed.document.sdr_match.materialized_status == "matched"
 
-
-def test_match_snapshot_must_belong_to_loaded_source(tmp_path: Path) -> None:
-    store, session_id = _store_with_source(tmp_path)
-    state = _active_match_state(store, session_id).model_copy(
-        update={"captured_source_fingerprint_sha256": "0" * 64}
-    )
-
-    with pytest.raises(EditCommandError, match="does not belong"):
-        store.apply_edit_commands(
-            session_id,
-            [_match_command(store, session_id, expected_revision=0, state=state)],
-        )
-    assert store.get(session_id).edit_revision == 0
 
 
 def test_match_action_materializes_visible_controls_and_is_one_undo_step(tmp_path: Path) -> None:
@@ -390,12 +290,8 @@ def test_match_action_materializes_visible_controls_and_is_one_undo_step(tmp_pat
     session.denoise.sdr.enabled = True
     session.denoise.sdr.controls.amount = 0.17
 
-    matched = store.apply_sdr_match_action(
-        session_id, expected_revision=0, action="match"
-    )
+    matched = store.apply_sdr_match_action(session_id, expected_revision=0)
     assert matched.revision == 1
-    assert matched.document.sdr_match.active is False
-    assert matched.document.sdr_match.algorithm_version == "hdr-to-sdr-materialized-v2"
     assert matched.document.sdr_match.materialized_status in {"matched", "needs_review"}
     assert matched.document.global_adjustments.sdr.use_authored_base is False
     assert matched.document.global_adjustments.sdr.highlight_section_enabled is True
@@ -413,7 +309,6 @@ def test_match_action_materializes_visible_controls_and_is_one_undo_step(tmp_pat
         PreviewKind.SDR,
         256,
         local_adjustments=session.local_adjustments,
-        sdr_match=session.sdr_match,
     )
     assert np.isfinite(rendered).all()
     assert float(rendered.min()) >= 0.0
@@ -436,7 +331,7 @@ def test_repeated_materialized_match_recomputes_and_copies_current_hdr_denoise(t
     session.denoise.sdr.enabled = True
     session.denoise.sdr.controls.amount = 0.24
 
-    matched = store.apply_sdr_match_action(session_id, expected_revision=0, action="match")
+    matched = store.apply_sdr_match_action(session_id, expected_revision=0)
     assert matched.document.denoise.sdr.controls.amount == 0.62
 
     changed = session.denoise.model_copy(deep=True)
@@ -447,31 +342,12 @@ def test_repeated_materialized_match_recomputes_and_copies_current_hdr_denoise(t
         command_type="set_denoise_settings",
         payload={"denoise": changed.model_dump(mode="json")},
     )])
-    assert changed_state.document.sdr_match.active is False
+    assert changed_state.document.sdr_match == matched.document.sdr_match
     assert changed_state.document.denoise.sdr.controls.amount == 0.62
 
-    rematched = store.apply_sdr_match_action(session_id, expected_revision=2, action="match")
-    assert rematched.document.sdr_match.active is False
+    rematched = store.apply_sdr_match_action(session_id, expected_revision=2)
     assert rematched.document.denoise.sdr == rematched.document.denoise.hdr
     assert rematched.document.denoise.sdr.controls.amount == 0.88
 
     undone = store.apply_edit_commands(session_id, [EditCommand(expected_revision=3, command_type="undo")])
     assert undone.document.denoise.sdr.controls.amount == 0.62
-
-
-def test_legacy_match_conversion_clears_hidden_renderer_and_undo_restores_it(tmp_path: Path) -> None:
-    store, session_id = _store_with_source(tmp_path)
-    legacy = _active_match_state(store, session_id)
-    store.apply_edit_commands(
-        session_id,
-        [_match_command(store, session_id, expected_revision=0, state=legacy)],
-    )
-
-    converted = store.apply_sdr_match_action(session_id, expected_revision=1, action="convert")
-    assert converted.document.sdr_match.active is False
-    assert converted.document.sdr_match.algorithm_version == "hdr-to-sdr-materialized-v2"
-
-    restored = store.apply_edit_commands(
-        session_id, [EditCommand(expected_revision=2, command_type="undo")]
-    )
-    assert restored.document.sdr_match.model_dump() == legacy.model_dump()

@@ -78,34 +78,7 @@ async function main() {
 
   const manifest = { project, lanes: [] };
   try {
-    let openedProject = project;
-    if (args.includes('--legacy-match')) {
-      if (args.includes('--match')) throw new Error('--legacy-match and --match are mutually exclusive');
-      openedProject = path.join(work, `legacy-match-input-${Date.now()}.hdrfinisher`);
-      // A new diagnostic archive exercises the old independent SDR base.
-      // The source fixture is only read; captured locals are deliberately empty.
-      execFileSync(pythonExecutable(), ['-c', `
-import json,sys,zipfile
-from pathlib import Path
-sys.path.insert(0,str(Path('backend').resolve()))
-sys.path.insert(0,str(Path('tests/performance').resolve()))
-from hdr_finisher.models import EditDocument,SdrMatchState,SDRMatchRevertState
-from reference_session import write_project_archive
-d=EditDocument.model_validate(json.loads(zipfile.ZipFile(sys.argv[1]).read('edit-state.json')))
-d.sdr_match=SdrMatchState(active=True,grain_source='sdr_override',
-    captured_hdr_adjustments=d.global_adjustments.hdr.model_copy(deep=True),
-    captured_shared_adjustments=d.global_adjustments.shared.model_copy(deep=True),
-    captured_reference_white_nits=d.hdr_reference_white_nits,
-    captured_source_fingerprint_sha256=d.source.fingerprint_sha256,
-    automatic_highlight_boundary_ratio=.8,signature='phase3-regional-scene-diagnostic',
-    revert_state=SDRMatchRevertState(sdr_adjustments=d.global_adjustments.sdr.model_copy(deep=True),
-        sdr_denoise=d.denoise.sdr.model_copy(deep=True)))
-write_project_archive(d.model_dump(mode='json'),Path(sys.argv[2]))
-`, project, openedProject], {cwd:ROOT,stdio:'pipe'});
-      manifest.project = openedProject;
-      report.legacyMatchInput = openedProject;
-    }
-    await c.open(page, openedProject, false);
+    await c.open(page, project, false);
     report.viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }));
     if (args.includes('--luma-graph')) {
       report.lumaGraph = await page.evaluate(async ([OPERATOR, OPERAND]) => {

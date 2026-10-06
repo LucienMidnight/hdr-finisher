@@ -9,7 +9,7 @@ import pytest
 import hdr_finisher.render_cache as render_cache_module
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.finishing import apply_geometry
-from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind, SDRMatchRevertState, SdrMatchState
+from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind
 from hdr_finisher.preview import downsample_image
 from hdr_finisher.render_cache import (
     SessionRenderCache,
@@ -23,45 +23,6 @@ from hdr_finisher.render_cache import (
     encode_rgba_proxy_rows,
     scope_region_view,
 )
-
-
-def test_source_replacement_cannot_reinsert_an_obsolete_matched_sdr_base(monkeypatch) -> None:
-    old_source = np.full((32, 48, 3), 0.18, dtype=np.float32)
-    new_source = np.full((32, 48, 3), 0.72, dtype=np.float32)
-    cache = SessionRenderCache(old_source, None)
-    adjustments = AdjustmentState()
-    match = SdrMatchState(
-        active=True,
-        grain_source="captured_hdr",
-        captured_hdr_adjustments=adjustments.hdr.model_copy(deep=True),
-        captured_shared_adjustments=adjustments.shared.model_copy(deep=True),
-        captured_reference_white_nits=203,
-        captured_source_fingerprint_sha256="0" * 64,
-        automatic_highlight_boundary_ratio=0.8,
-        signature="source-race",
-        revert_state=SDRMatchRevertState(sdr_adjustments=adjustments.sdr.model_copy(deep=True)),
-    )
-    started = Event()
-    release = Event()
-
-    def delayed_match(source, *_args, **_kwargs):
-        started.set()
-        assert release.wait(2)
-        return source.copy()
-
-    monkeypatch.setattr(render_cache_module, "render_matched_sdr_base", delayed_match)
-    completed: list[np.ndarray] = []
-    worker = Thread(target=lambda: completed.append(cache.matched_sdr_base(old_source, adjustments, match, 256)))
-    worker.start()
-    assert started.wait(2)
-    cache.replace_source(new_source, None)
-    release.set()
-    worker.join(2)
-
-    current = cache.matched_sdr_base(new_source, adjustments, match, 256)
-
-    assert completed and np.all(completed[0] == np.float32(0.18))
-    assert np.all(current == np.float32(0.72))
 
 
 def test_invalidated_singleflight_worker_cannot_detach_its_replacement(monkeypatch) -> None:
@@ -113,63 +74,6 @@ def test_adjusted_proxy_is_downsampled_before_processing_and_reused() -> None:
     assert first.shape == (400, 600, 3)
     assert second is first
     assert not first.flags.writeable
-
-
-def test_matched_sdr_base_survives_independent_sdr_trim_cache_clears() -> None:
-    image = np.full((64, 96, 3), 0.18, dtype=np.float32)
-    adjustments = AdjustmentState()
-    match = SdrMatchState(
-        active=True,
-        grain_source="captured_hdr",
-        captured_hdr_adjustments=adjustments.hdr.model_copy(deep=True),
-        captured_shared_adjustments=adjustments.shared.model_copy(deep=True),
-        captured_reference_white_nits=203,
-        captured_source_fingerprint_sha256="0" * 64,
-        automatic_highlight_boundary_ratio=0.8,
-        signature="cache-test",
-        revert_state=SDRMatchRevertState(sdr_adjustments=adjustments.sdr.model_copy(deep=True)),
-    )
-    cache = SessionRenderCache(image, None)
-
-    first = cache.adjusted_frame(adjustments, PreviewKind.SDR, 256, sdr_match=match)
-    cache.clear_adjusted()
-    trimmed = adjustments.model_copy(deep=True)
-    trimmed.sdr.exposure = 0.25
-    second = cache.adjusted_frame(trimmed, PreviewKind.SDR, 256, sdr_match=match)
-
-    assert cache.diagnostics()["matched_sdr_base_entries"] == 1
-    assert not np.array_equal(first, second)
-
-
-def test_matched_sdr_base_is_the_stable_webgpu_source_across_sdr_trims() -> None:
-    image = np.linspace(0.02, 1.2, 64 * 96 * 3, dtype=np.float32).reshape(64, 96, 3)
-    adjustments = AdjustmentState()
-    match = SdrMatchState(
-        active=True,
-        grain_source="captured_hdr",
-        captured_hdr_adjustments=adjustments.hdr.model_copy(deep=True),
-        captured_shared_adjustments=adjustments.shared.model_copy(deep=True),
-        captured_reference_white_nits=203,
-        captured_source_fingerprint_sha256="1" * 64,
-        automatic_highlight_boundary_ratio=0.8,
-        signature="gpu-source-test",
-        revert_state=SDRMatchRevertState(sdr_adjustments=adjustments.sdr.model_copy(deep=True)),
-    )
-    cache = SessionRenderCache(image, None)
-
-    first, first_space, first_geometry = cache.geometry_source_proxy(
-        PreviewKind.SDR, 256, adjustments, match
-    )
-    trimmed = adjustments.model_copy(deep=True)
-    trimmed.sdr.exposure = 0.75
-    second, second_space, second_geometry = cache.geometry_source_proxy(
-        PreviewKind.SDR, 256, trimmed, match
-    )
-
-    assert first is second
-    assert first_space == second_space == "linear-srgb"
-    assert first_geometry == second_geometry == adjustments.shared.geometry.model_dump_json()
-    assert cache.diagnostics()["matched_sdr_base_entries"] == 1
 
 
 def test_scope_request_counts_one_top_level_miss_then_one_hit() -> None:
@@ -844,7 +748,6 @@ def test_geometry_tiles_served_from_a_warm_mip_match_the_cold_path(tmp_path) -> 
         PreviewKind.HDR,
         256,
         adjustments,
-        None,
         (10, 20, 90, 120),
         halo=16,
     )
@@ -854,7 +757,6 @@ def test_geometry_tiles_served_from_a_warm_mip_match_the_cold_path(tmp_path) -> 
         PreviewKind.HDR,
         256,
         adjustments,
-        None,
         (10, 20, 90, 120),
         halo=16,
     )

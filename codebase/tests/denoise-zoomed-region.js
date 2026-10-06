@@ -192,7 +192,7 @@ function assert(condition, message) {
       await state.gpuPreview.loadProxy(
         state.session.session_id, lane, refinementProxyLongEdge(),
         JSON.stringify(state.adjustments.shared.geometry || {}), state.editRevision,
-        gpuPreviewSourceOptions(lane)?.identity || "source", {},
+        "source", {},
       );
       invalidatePreview(lane, { markDirty: false });
       debouncePreview(lane);

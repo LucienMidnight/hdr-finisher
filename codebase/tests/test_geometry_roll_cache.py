@@ -154,7 +154,7 @@ def test_streamed_row_chunks_never_roll_the_frame(image, counted):
 
     counted["ranges"] = counted["rotations"] = 0
     _first, _space, _signature, placement = cache.geometry_source_tile(
-        PreviewKind.HDR, edge, adjustments, None, (0, 0, 10_000, 40)
+        PreviewKind.HDR, edge, adjustments, (0, 0, 10_000, 40)
     )
     assert placement["resample_stage"] == "roll"
     height = placement["output_height"]
@@ -164,7 +164,7 @@ def test_streamed_row_chunks_never_roll_the_frame(image, counted):
     collected = []
     for top in strips:
         tile, _space, _signature, _placement = cache.geometry_source_tile(
-            PreviewKind.HDR, edge, adjustments, None, (0, top, 10_000, top + 40)
+            PreviewKind.HDR, edge, adjustments, (0, top, 10_000, top + 40)
         )
         collected.append(tile)
     assert counted["rotations"] == 0
@@ -179,7 +179,7 @@ def test_a_new_source_drops_the_held_range(image):
     cache = SessionRenderCache(image, None)
     adjustments = straightened_state()
     edge = max(image.shape[:2])
-    cache.geometry_source_tile(PreviewKind.HDR, edge, adjustments, None, (0, 0, 10_000, 40))
+    cache.geometry_source_tile(PreviewKind.HDR, edge, adjustments, (0, 0, 10_000, 40))
     assert cache._source_ranges
 
     cache.replace_source(image[:, ::-1].copy(), None)

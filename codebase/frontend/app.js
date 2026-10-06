@@ -288,22 +288,6 @@ const defaultDenoiseDocument = () => ({
   sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1" } },
 });
 
-const SDR_MATCH_GRAIN_FIELDS = Object.freeze([
-  "grain_enabled",
-  "grain_amount",
-  "grain_size",
-  "grain_softness",
-  "grain_chroma",
-  "grain_film_format",
-  "grain_film_type",
-  "grain_capture_geometry",
-  "grain_custom_width_mm",
-  "grain_custom_height_mm",
-  "grain_shadow_response",
-  "grain_midtone_response",
-  "grain_highlight_response",
-]);
-
 const state = {
   session: null,
   capabilities: {},
@@ -361,7 +345,6 @@ const state = {
   globalEditSyncPending: null,
   globalEditHistoryGroup: null,
   globalEditHistorySequence: 0,
-  sdrMatchGrainOverridePending: false,
   documentDirty: false,
   denoise: defaultDenoiseDocument(),
   denoiseDocumentSessionId: null,
@@ -911,23 +894,6 @@ function gpuPreviewEligible(lane = state.currentView) {
   return state.renderingMode !== "cpu"
     && Boolean(state.gpuPreview?.available)
     && state.gpuPreview.supportsLocalAdjustments(lane, state.compareWithoutLocals ? [] : localAdjustments());
-}
-
-function gpuPreviewSourceOptions(lane = state.currentView) {
-  const match = state.editDocument?.sdr_match;
-  if (lane !== "sdr" || !match?.active) return null;
-  const boundary = match.manual_highlight_boundary_ratio ?? match.automatic_highlight_boundary_ratio;
-  const inheritedGrain = match.grain_source === "captured_hdr"
-    ? {
-        filmLook: match.captured_hdr_adjustments?.film_look || null,
-        filmLookSectionEnabled: match.captured_hdr_adjustments?.film_look_section_enabled !== false,
-        filmGrainSeed: match.captured_shared_adjustments?.film_grain_seed,
-      }
-    : null;
-  return {
-    identity: [match.algorithm_version, match.signature, match.captured_reference_white_nits, boundary].join(":"),
-    inheritedGrain,
-  };
 }
 
 /** @returns {PreviewResolution} */
@@ -1524,7 +1490,6 @@ const els = {
   sdrMatchHdrBands: document.getElementById("sdr-match-hdr-bands"),
   sdrMatchEntireActions: document.getElementById("sdr-match-entire-actions"),
   sdrMatchEntire: document.getElementById("sdr-match-entire"),
-  sdrMatchRevert: document.getElementById("sdr-match-revert"),
   sdrMatchEntireStatus: document.getElementById("sdr-match-entire-status"),
   detailSdrActions: document.getElementById("detail-sdr-actions"),
   blackAndWhiteSdrActions: document.getElementById("black-and-white-sdr-actions"),
@@ -2354,7 +2319,6 @@ function initializePreviewScheduler() {
         projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
         {
-          ...(gpuPreviewSourceOptions(state.currentView) || {}),
           tier: "settled",
           tileSize: Number(options.tileSize) || undefined,
           viewport: options.viewport || null,
@@ -3527,10 +3491,7 @@ function bindEvents() {
     ));
   });
   els.sdrMatchHdrColors.addEventListener("click", matchHdrColorsToSdr);
-  els.sdrMatchEntire?.addEventListener("click", () => setSdrMatch(
-    state.editDocument?.sdr_match?.active ? "convert" : "match"
-  ));
-  els.sdrMatchRevert?.addEventListener("click", () => setSdrMatch("revert"));
+  els.sdrMatchEntire?.addEventListener("click", () => setSdrMatch());
   els.detailMatchHdr?.addEventListener("click", () => matchLaneObject("detail"));
   els.blackAndWhiteMatchHdr?.addEventListener("click", matchHdrBlackAndWhiteToSdr);
   els.filmLookReset?.addEventListener("click", resetFilmLook);
@@ -5226,7 +5187,6 @@ async function measureExactScopePeakInner(lane, key) {
       projectReferenceWhiteNits(),
       { width: state.session.source.width, height: state.session.source.height },
       {
-        ...(gpuPreviewSourceOptions(lane) || {}),
         tier: "settled",
         measureOnly: true,
         applicationGeneration: state.previewGeneration[lane],
@@ -5321,7 +5281,6 @@ async function measureExactHighlightAnchor({ lane, key, used }) {
         projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
         {
-          ...(gpuPreviewSourceOptions(lane) || {}),
           tier: "settled",
           measureOnly: true,
           highlightAnchorOnly: true,
@@ -5922,7 +5881,7 @@ async function runGpuScopeRequest(request) {
         request.longEdge, request.include_locals ? localAdjustments() : [],
         request.edit_revision, projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
-        { ...gpuPreviewSourceOptions(lane), applicationGeneration: accepted.generation, isCurrent },
+        { applicationGeneration: accepted.generation, isCurrent },
       ).catch((error) => {
         // A newer generation stopping this one's source load is not a failure;
         // the scope that replaces it is already on its way.
@@ -9087,20 +9046,6 @@ function resolveAdjustmentPath(path) {
   return path?.startsWith("current.") ? `${state.currentView}.${path.slice("current.".length)}` : path;
 }
 
-function prepareSdrMatchGrainOverride() {
-  const match = state.editDocument?.sdr_match;
-  if (!match?.active || match.grain_source !== "captured_hdr") return false;
-  const captured = match.captured_hdr_adjustments?.film_look;
-  const target = state.adjustments?.sdr?.film_look;
-  if (!captured || !target) return false;
-  SDR_MATCH_GRAIN_FIELDS.forEach((field) => {
-    target[field] = JSON.parse(JSON.stringify(captured[field]));
-  });
-  match.grain_source = "sdr_override";
-  state.sdrMatchGrainOverridePending = true;
-  return true;
-}
-
 // Select elements always report strings; numeric paths must not send "4000" where the backend expects 4000.
 function readControlValue(control) {
   if (control.type === "checkbox") return control.checked;
@@ -9114,10 +9059,6 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
     beginGlobalDetailInteraction(resolvedPath);
     state.previewScheduler?.beginInteraction();
   }
-  const grainField = resolvedPath.startsWith("sdr.film_look.")
-    ? resolvedPath.slice("sdr.film_look.".length)
-    : null;
-  if (grainField && SDR_MATCH_GRAIN_FIELDS.includes(grainField)) prepareSdrMatchGrainOverride();
   setValueByPath(state.adjustments, path, value);
   // Only one film look diagnostic map can be on screen at a time.
   if (value === true && /film_look\.(halation|grain)_view_map$/.test(resolvedPath)) {
@@ -10302,8 +10243,7 @@ async function setDenoiseEnabled(enabled) {
     return;
   }
   const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
-  const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
-  const expectedIdentity = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${JSON.stringify(state.adjustments.shared?.geometry || {})}:${sourceIdentity}`;
+  const expectedIdentity = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${JSON.stringify(state.adjustments.shared?.geometry || {})}:source`;
   if (!runtime.dirty && denoise?.cacheReady && denoise.identity === expectedIdentity) {
     state.gpuPreview.selectDenoiseSelectorSource(true);
     runtime.status = "ready";
@@ -10323,7 +10263,7 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   const longEdge = options.longEdge || refinementProxyLongEdge();
   const key = JSON.stringify([
     state.session.session_id, lane, longEdge, geometrySignature(),
-    gpuPreviewSourceOptions(lane)?.identity || "source", settings.analysis,
+    "source", settings.analysis,
   ]);
   // Pan, enable and the first edit can all ask for the same setup. Sharing it
   // keeps them from repeatedly replacing the selector and measuring again.
@@ -10355,14 +10295,13 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
   runtime.error = "";
   if (lane === state.currentView) renderDenoiseControls();
   try {
-    const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
     const ready = await state.gpuPreview.analyzeDenoiseProxy(
       state.session.session_id,
       lane,
       JSON.parse(JSON.stringify(state.adjustments)),
       options.longEdge || refinementProxyLongEdge(),
       state.editRevision,
-      sourceIdentity,
+      "source",
       denoiseRendererControls(settings.controls),
     );
     if (generation !== runtime.generation) return false;
@@ -11278,8 +11217,7 @@ async function renderGpuDraftInner(
     : state.previewGeneration[lane];
   const requestedGeometrySignature = geometrySignature();
   if (state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal) {
-    const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
-    const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:${sourceIdentity}`;
+    const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:source`;
     const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
     if (state.denoiseRuntime[lane].dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
       // At 100% on a large frame this is several seconds with the previous
@@ -11300,7 +11238,6 @@ async function renderGpuDraftInner(
     : JSON.parse(JSON.stringify(localAdjustments()));
   const maskOverlay = gpuLumaMaskOverlayOptions();
   const sourceOptions = {
-    ...(gpuPreviewSourceOptions(lane) || {}),
     tier,
     applicationGeneration: generation,
     viewport: request.viewport || null,
@@ -11312,11 +11249,10 @@ async function renderGpuDraftInner(
     noiseView: denoiseNoiseViewActive(lane),
     // Adaptive reconstruction reads ungraded source pixels. A slider changes
     // the render, but leaves these pixels useful to its replacement. Keep the
-    // load alive while the photo, geometry and source base remain the same.
+    // load alive while the photo and geometry remain the same.
     isSourceCurrent: state.denoise?.[lane]?.enabled
       ? () => !geometryDraftActive() && state.session?.session_id === sessionId
         && requestedGeometrySignature === geometrySignature()
-        && (sourceOptions.identity || "source") === (gpuPreviewSourceOptions(lane)?.identity || "source")
       : null,
     onSourceProgress: (progress) => {
       if (progress.state !== "building" || !sourceOptions.isCurrent() || !hideStatus) return;
@@ -12203,21 +12139,13 @@ function renderLaneChrome() {
   els.blackAndWhiteSdrActions?.classList.toggle("hidden", lane !== "sdr");
   const match = state.editDocument?.sdr_match;
   els.sdrMatchEntireActions?.classList.toggle("hidden", lane !== "sdr");
-  if (els.sdrMatchEntire) {
-    els.sdrMatchEntire.textContent = match?.active ? "Convert legacy match" : "Match entire HDR grade";
-    els.sdrMatchEntire.disabled = !state.session;
-  }
-  els.sdrMatchRevert?.classList.toggle("hidden", !match?.active);
+  if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = !state.session;
   if (els.sdrMatchEntireStatus) {
-    els.sdrMatchEntireStatus.textContent = match?.active
-      ? match.stale
-        ? "Legacy HDR match active · captured HDR has changed"
-        : "Legacy HDR match active"
-      : match?.materialized_status === "needs_review"
-        ? "Match needs review · editable SDR controls populated"
-        : match?.materialized_status === "matched"
-          ? "Matched into editable SDR controls"
-          : "";
+    els.sdrMatchEntireStatus.textContent = match?.materialized_status === "needs_review"
+      ? "Match needs review · editable SDR controls populated"
+      : match?.materialized_status === "matched"
+        ? "Matched into editable SDR controls"
+        : "";
   }
   syncControlsFromState();
   drawToneEqualizerEditor(lane);
@@ -12530,14 +12458,13 @@ async function preloadInactiveLane(lane, generation) {
   state.inactiveSourceController?.abort();
   state.inactiveSourceController = controller;
   try {
-    const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
     await state.gpuPreview.loadProxy(
       state.session.session_id,
       lane,
       settledProxyLongEdge(),
       geometrySignature(),
       state.editRevision,
-      sourceIdentity,
+      "source",
       { signal: controller.signal, isCurrent: () => !controller.signal.aborted
         && generation === state.previewGeneration[lane] },
     );
@@ -12705,7 +12632,6 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
         null,
         projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
-        gpuPreviewSourceOptions(lane),
       );
       if (result && lane !== state.currentView && generation === state.previewGeneration[lane]) {
         state.gpuPreparedLane[lane] = true;
@@ -12870,7 +12796,7 @@ async function refreshNavigationThumbnail() {
       blob = await state.gpuPreview.renderNavigationProxy(sessionId, lane, state.adjustments, sampleCurvePoints,
         request.includeLocals ? localAdjustments() : [], request.editRevision, projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
-        { ...gpuPreviewSourceOptions(lane), applicationGeneration: request.generation, isCurrent });
+        { applicationGeneration: request.generation, isCurrent });
     } else {
       const response = await fetch(`/api/session/${sessionId}/preview/${lane}?purpose=navigation`, {
         method: "POST",
@@ -13643,7 +13569,6 @@ async function saveCurrentGroupPreset() {
 function applyGroupPreset(preset) {
   const context = state.groupPresetContext;
   if (!context || preset.groupId !== context.groupId || !preset.values || typeof preset.values !== "object") return;
-  if (context.lane === "sdr" && context.group === "film-look") prepareSdrMatchGrainOverride();
   // A preset outlives the settings it was saved with: a setting the app no
   // longer has is left out, so an older preset still applies.
   const defaults = context.group === "denoise" ? { denoise: defaultDenoiseDocument() } : defaultAdjustments();
@@ -13774,7 +13699,6 @@ function matchHdrColorsToSdr() {
 
 function resetFilmLook() {
   const lane = state.currentView;
-  if (lane === "sdr") prepareSdrMatchGrainOverride();
   state.adjustments[lane].film_look = defaultFilmLook();
   state.adjustments[lane].film_look_section_enabled = true;
   syncControlsFromState();
@@ -13785,7 +13709,6 @@ function resetFilmLook() {
 
 function matchHdrFilmLookToSdr() {
   if (!state.session) return;
-  prepareSdrMatchGrainOverride();
   const topLevelEnabled = state.adjustments.sdr.film_look_section_enabled;
   state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look));
   state.adjustments.sdr.film_look_section_enabled = topLevelEnabled;
@@ -15839,26 +15762,24 @@ function appendLocalMaskComparisonLegend() {
   els.localMaskTreeSummary.append(legend);
 }
 
-async function setSdrMatch(action) {
+async function setSdrMatch() {
   if (!state.session) return false;
   if (await syncGlobalEditState() === false) return false;
   const authored = state.editDocument?.source?.luminance?.sdr_rendition === "authored";
   let consent = false;
-  if (action === "match" && authored) {
+  if (authored) {
     consent = await window.HDRDialogs.confirm(
       "This source contains an authored SDR rendition. Match will replace it with an editable generated SDR rendition. Undo restores the authored grade.",
       { title: "Replace authored SDR rendition", confirmLabel: "Continue" },
     );
     if (!consent) return false;
   }
-  const verb = action === "revert" ? "Reverting legacy SDR match" : action === "convert" ? "Converting legacy SDR match" : "Matching HDR grade";
-  setIndeterminatePreviewMessage(`${verb} · analyzing settled HDR proxy`);
+  setIndeterminatePreviewMessage("Matching HDR grade · analyzing settled HDR proxy");
   if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = true;
-  if (els.sdrMatchRevert) els.sdrMatchRevert.disabled = true;
   try {
-    // A plain Match explores its candidates on this page's GPU while the
+    // Match explores its candidates on this page's GPU while the
     // request waits; the backend still owns the fit and its final CPU check.
-    const candidateRenderer = action === "match" && state.renderingMode !== "cpu" && state.gpuPreview?.available
+    const candidateRenderer = state.renderingMode !== "cpu" && state.gpuPreview?.available
       ? (state.sdrMatchCandidateRenderer || "gpu") : "cpu";
     let matchFinished = false;
     const request = fetch(`/api/session/${state.session.session_id}/sdr-match`, {
@@ -15866,7 +15787,6 @@ async function setSdrMatch(action) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         expected_revision: state.editRevision,
-        action,
         authored_sdr_override_consent: consent,
         gpu_candidates: candidateRenderer !== "cpu",
         verify_gpu_candidates: candidateRenderer === "verify",
@@ -15888,7 +15808,6 @@ async function setSdrMatch(action) {
     state.adjustments = result.document.global_adjustments;
     loadDenoiseDocument(state.editDocument);
     state.documentDirty = Boolean(result.dirty);
-    state.sdrMatchGrainOverridePending = false;
     // Match only changes the SDR rendition. Preserve the already-presented HDR
     // lane, especially in side-by-side mode, instead of blanking both panes.
     state.previewControllers.sdr?.abort();
@@ -15939,7 +15858,6 @@ async function setSdrMatch(action) {
   } finally {
     hidePreviewMessage();
     renderLaneChrome();
-    if (els.sdrMatchRevert) els.sdrMatchRevert.disabled = false;
   }
 }
 
@@ -16206,26 +16124,15 @@ async function syncGlobalEditState() {
   const generation = state.globalEditGeneration;
   const historyGroup = state.globalEditHistoryGroup;
   const adjustments = JSON.parse(JSON.stringify(state.adjustments));
-  const matchOverride = state.sdrMatchGrainOverridePending;
-  const commandType = matchOverride ? "set_sdr_match" : "set_global_adjustments";
-  const payload = matchOverride
-    ? {
-        match_state: JSON.parse(JSON.stringify(state.editDocument.sdr_match)),
-        global_adjustments: adjustments,
-        local_adjustments: JSON.parse(JSON.stringify(state.editDocument.local_adjustments || [])),
-        authored_sdr_override_consent: true,
-      }
-    : { adjustments };
   // A plain global save only re-renders if the backend's document differs from
-  // the optimistic values already drawn; an SDR-match override always does.
-  const pending = queueEditCommand(commandType, payload, null, {
-    globalEditGeneration: generation, historyGroup, refreshPreview: matchOverride ? true : "if-changed",
+  // the optimistic values already drawn.
+  const pending = queueEditCommand("set_global_adjustments", { adjustments }, null, {
+    globalEditGeneration: generation, historyGroup, refreshPreview: "if-changed",
   });
   state.globalEditSyncPending = pending;
   const applied = await pending;
   if (state.session?.session_id !== sessionId) return false;
   if (state.globalEditSyncPending === pending) state.globalEditSyncPending = null;
-  if (applied && matchOverride) state.sdrMatchGrainOverridePending = false;
   if (!applied) state.globalEditDirty = true;
   if (!applied) return false;
   return state.globalEditDirty || state.globalEditSyncPending ? syncGlobalEditState() : true;
@@ -16244,7 +16151,6 @@ async function refreshEditState({ preserveLocalDraft = false } = {}) {
   state.editRevision = result.revision;
   state.editDocument = result.document;
   recordAcknowledgedLocals(result.document);
-  state.sdrMatchGrainOverridePending = false;
   loadDenoiseDocument(state.editDocument);
   if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
   state.documentDirty = state.globalEditDirty || Boolean(result.dirty);

@@ -16,7 +16,7 @@ function fixture() {
     exactScopePeakKey: lane => [state.session.session_id, lane, state.editRevision, state.previewGeneration[lane]].join('|'),
     previewTargetLongEdge: () => 8000, performance: { now: () => 1 }, els: { previewCanvas: {} },
     sampleCurvePoints: () => {}, localAdjustments: () => [], projectReferenceWhiteNits: () => 203,
-    gpuPreviewSourceOptions: () => ({}), requiredProcessingLongEdge: () => state.requestedEdge,
+    requiredProcessingLongEdge: () => state.requestedEdge,
     recordEditingMeasurement: () => {} });
   vm.runInContext(source.slice(begin, end), context);
   return { state, jobs, cache, inflight, run: options => context.measureExactScopePeak(options) };

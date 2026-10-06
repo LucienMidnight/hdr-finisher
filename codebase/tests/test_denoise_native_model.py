@@ -58,10 +58,6 @@ def test_smaller_levels_and_other_bases_keep_their_own_model() -> None:
     assert authored.native_denoise_source(PreviewKind.SDR, 900, adjustments) is None
     assert authored.native_denoise_source(PreviewKind.HDR, 900, adjustments)[0] is image
 
-    matched = SimpleNamespace(active=True)
-    assert cache.native_denoise_source(PreviewKind.SDR, 900, AdjustmentState(), matched) is None
-    assert cache.native_denoise_source(PreviewKind.HDR, 900, AdjustmentState(), matched)[0] is image
-
 
 def test_a_new_source_is_a_new_epoch() -> None:
     cache = SessionRenderCache(_noisy_source(300, 400), None)
@@ -169,7 +165,7 @@ def test_intermediate_models_are_per_geometry_size_and_source(monkeypatch) -> No
 
     cache = SessionRenderCache(_noisy_source(600, 900), None)
     session = SimpleNamespace(edit_revision=0, adjustments=AdjustmentState(),
-                              sdr_match=None, render_cache=cache)
+                              render_cache=cache)
     monkeypatch.setattr(main.store, "get", lambda _id: session)
     calls = []
     def estimate(*args):

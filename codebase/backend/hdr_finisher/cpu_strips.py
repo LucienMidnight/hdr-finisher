@@ -52,7 +52,7 @@ from .adjustments import (
 from .color_context import RenderColorContext
 from .detail import detail_is_neutral
 from .finishing import apply_geometry_region, geometry_output_dimensions, geometry_resample_stage
-from .models import AdjustmentState, LocalAdjustment, PreviewKind, SdrMatchState
+from .models import AdjustmentState, LocalAdjustment, PreviewKind
 
 # One strip's intermediates, as a multiple of the strip's own RGB float32 size.
 # `apply_adjustments` keeps several full-size temporaries alive at once -- the
@@ -180,7 +180,6 @@ def strip_execution_refusals(
     kind: PreviewKind,
     *,
     local_adjustments: Sequence[LocalAdjustment] | None = None,
-    sdr_match: SdrMatchState | None = None,
     denoise_active: bool = False,
     source_width: int | None = None,
     source_height: int | None = None,
@@ -221,8 +220,6 @@ def strip_execution_refusals(
     # refusal any more; the GPU side lifted the same two in the same phase.
     if denoise_active:
         reasons.append("denoise")
-    if sdr_match is not None and sdr_match.active:
-        reasons.append("matched SDR")
 
     geometry = adjustments.shared.geometry
     if geometry_resample_stage(geometry) == "roll":
@@ -303,7 +300,6 @@ def render_in_strips(
     source_pixel_scale: float = 1.0,
     long_edge: int | None = None,
     local_adjustments: Sequence[LocalAdjustment] | None = None,
-    sdr_match: SdrMatchState | None = None,
     denoise_active: bool = False,
     budget_bytes: int = DEFAULT_STRIP_BUDGET_BYTES,
     is_current: Callable[[], bool] | None = None,
@@ -322,7 +318,6 @@ def render_in_strips(
         adjustments,
         kind,
         local_adjustments=local_adjustments,
-        sdr_match=sdr_match,
         denoise_active=denoise_active,
         source_width=source_width,
         source_height=source_height,

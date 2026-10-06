@@ -790,26 +790,6 @@ class LocalAdjustment(BaseModel):
     sdr_grade: LocalGrade = Field(default_factory=LocalGrade)
 
 
-class CapturedHDRLocalAdjustment(BaseModel):
-    """The ordered HDR side of a local adjustment captured by SDR Match."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(min_length=1, max_length=128)
-    name: str = Field(min_length=1, max_length=120)
-    enabled: bool
-    opacity: float = Field(ge=0.0, le=1.0)
-    mask: MaskExpression
-    hdr_grade: LocalGrade
-
-
-class SDRLocalGradeSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(min_length=1, max_length=128)
-    sdr_grade: LocalGrade
-
-
 class DenoiseLiveControls(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -848,17 +828,6 @@ class DenoiseDocumentSettings(BaseModel):
     sdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
 
 
-class SDRMatchRevertState(BaseModel):
-    """Independent SDR state retained by the first successful Match."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    sdr_adjustments: SDRAdjustments
-    sdr_denoise: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
-    local_grades: list[SDRLocalGradeSnapshot] = Field(default_factory=list, max_length=256)
-    authored_sdr_base_active: bool = False
-
-
 class SDRMatchQualityMetrics(BaseModel):
     """Diagnostics for a materialized match; never participates in rendering."""
 
@@ -871,66 +840,17 @@ class SDRMatchQualityMetrics(BaseModel):
 
 
 class SdrMatchState(BaseModel):
-    """Legacy snapshot state plus non-rendering diagnostics for materialized matches."""
+    """How the last Match went; never participates in rendering."""
 
     model_config = ConfigDict(extra="forbid")
 
-    active: bool = False
-    stale: bool = False
-    grain_source: Literal["captured_hdr", "sdr_override"] | None = None
-    algorithm_version: Literal["hdr-to-sdr-match-v1", "hdr-to-sdr-materialized-v2"] = "hdr-to-sdr-match-v1"
-    captured_hdr_adjustments: HDRAdjustments | None = None
-    captured_shared_adjustments: SharedAdjustments | None = None
-    captured_locals: list[CapturedHDRLocalAdjustment] = Field(default_factory=list, max_length=256)
-    captured_reference_white_nits: Literal[100, 203] | None = None
-    captured_source_fingerprint_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    automatic_highlight_boundary_ratio: float | None = Field(default=None, ge=0.60, le=0.90)
-    manual_highlight_boundary_ratio: float | None = Field(default=None, ge=0.50, le=0.95)
-    signature: str | None = Field(default=None, min_length=1, max_length=256)
-    revert_state: SDRMatchRevertState | None = None
     materialized_status: Literal["matched", "needs_review"] | None = None
     materialized_metrics: SDRMatchQualityMetrics | None = None
 
     @model_validator(mode="after")
-    def validate_active_state(self) -> "SdrMatchState":
-        if not self.active:
-            if self.grain_source is not None:
-                raise ValueError("inactive SDR Match state cannot select a grain source")
-            dormant_values = (
-                self.captured_hdr_adjustments,
-                self.captured_shared_adjustments,
-                self.captured_reference_white_nits,
-                self.captured_source_fingerprint_sha256,
-                self.automatic_highlight_boundary_ratio,
-                self.manual_highlight_boundary_ratio,
-                self.signature,
-                self.revert_state,
-            )
-            if self.captured_locals or any(value is not None for value in dormant_values):
-                raise ValueError("inactive SDR Match state cannot retain a captured recipe or Revert state")
-            if (self.materialized_status is None) != (self.materialized_metrics is None):
-                raise ValueError("materialized SDR Match status and metrics must be stored together")
-            if self.materialized_status is not None and self.algorithm_version != "hdr-to-sdr-materialized-v2":
-                raise ValueError("materialized SDR Match diagnostics require the v2 algorithm")
-            return self
-        if self.algorithm_version != "hdr-to-sdr-match-v1":
-            raise ValueError("only legacy v1 SDR Match state may activate the hidden renderer")
-        if self.materialized_status is not None or self.materialized_metrics is not None:
-            raise ValueError("an active legacy SDR Match cannot contain materialization diagnostics")
-        if self.grain_source is None:
-            raise ValueError("active SDR Match state requires a grain source")
-        required = {
-            "captured_hdr_adjustments": self.captured_hdr_adjustments,
-            "captured_shared_adjustments": self.captured_shared_adjustments,
-            "captured_reference_white_nits": self.captured_reference_white_nits,
-            "captured_source_fingerprint_sha256": self.captured_source_fingerprint_sha256,
-            "automatic_highlight_boundary_ratio": self.automatic_highlight_boundary_ratio,
-            "signature": self.signature,
-            "revert_state": self.revert_state,
-        }
-        missing = [name for name, value in required.items() if value is None]
-        if missing:
-            raise ValueError(f"active SDR Match state is missing: {', '.join(missing)}")
+    def validate_status_and_metrics(self) -> "SdrMatchState":
+        if (self.materialized_status is None) != (self.materialized_metrics is None):
+            raise ValueError("materialized SDR Match status and metrics must be stored together")
         return self
 
 
@@ -1041,7 +961,6 @@ class SdrMatchActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_revision: int = Field(ge=0)
-    action: Literal["match", "convert", "revert"]
     authored_sdr_override_consent: bool = False
     # The page will render Match candidates on its GPU (sdr_match_remote).
     gpu_candidates: bool = False

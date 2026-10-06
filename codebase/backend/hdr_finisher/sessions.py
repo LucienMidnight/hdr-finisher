@@ -52,76 +52,7 @@ class EditCommandError(ValueError):
     pass
 
 
-_SDR_GRAIN_FIELDS = (
-    "grain_enabled",
-    "grain_amount",
-    "grain_size",
-    "grain_softness",
-    "grain_chroma",
-    "grain_film_format",
-    "grain_film_type",
-    "grain_capture_geometry",
-    "grain_custom_width_mm",
-    "grain_custom_height_mm",
-    "grain_shadow_response",
-    "grain_midtone_response",
-    "grain_highlight_response",
-)
 from .adjustments import apply_adjustments
-
-
-def _sdr_grain_recipe(adjustments: AdjustmentState) -> tuple[object, ...]:
-    look = adjustments.sdr.film_look
-    return tuple(getattr(look, field_name) for field_name in _SDR_GRAIN_FIELDS)
-
-
-def _hdr_match_signature(
-    adjustments: AdjustmentState,
-    local_adjustments: list[LocalAdjustment],
-    denoise: DenoiseDocumentSettings,
-    reference_white_nits: int,
-    source_fingerprint: str,
-) -> str:
-    shared = adjustments.shared.model_dump(mode="json")
-    # Geometry remains live in both renditions; diagnostics never affect the capture.
-    shared.pop("geometry", None)
-    for field_name in (
-        "overlay_mode", "false_color_band_anchor", "false_color_ceiling_nits",
-        "overlay_opacity", "overlay_threshold",
-    ):
-        shared.pop(field_name, None)
-    payload = {
-        "hdr": adjustments.hdr.model_dump(mode="json"),
-        "hdr_denoise": denoise.hdr.model_dump(mode="json"),
-        "shared": shared,
-        "locals": [
-            {
-                "id": item.id,
-                "name": item.name,
-                "enabled": item.enabled,
-                "opacity": item.opacity,
-                "mask": item.mask.model_dump(mode="json"),
-                "hdr_grade": item.hdr_grade.model_dump(mode="json"),
-            }
-            for item in local_adjustments
-        ],
-        "reference_white_nits": reference_white_nits,
-        "source_fingerprint": source_fingerprint,
-    }
-    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(serialized).hexdigest()
-
-
-def _refresh_sdr_match_staleness(session: "LoadedSession") -> None:
-    if not session.sdr_match.active:
-        return
-    session.sdr_match.stale = session.sdr_match.signature != _hdr_match_signature(
-        session.adjustments,
-        session.local_adjustments,
-        session.denoise,
-        session.hdr_reference_white_nits,
-        session.source_fingerprint_sha256,
-    )
 
 
 def _source_mip_identity(session: "LoadedSession", lane: str = "hdr") -> SourceMipIdentity:
@@ -535,16 +466,13 @@ class SessionStore:
         session_id: str,
         *,
         expected_revision: int,
-        action: str,
         authored_sdr_override_consent: bool = False,
         timing: dict[str, object] | None = None,
         candidate_bridge: RemoteCandidateBridge | None = None,
     ) -> EditStateResponse:
-        """Materialize a normal SDR recipe, or explicitly manage a legacy v1 match.
+        """Fit the SDR grade to the HDR grade and write it as ordinary SDR settings.
 
-        ``candidate_bridge`` lets the page's GPU render the candidates of a
-        plain Match.  Convert analyses a captured recipe whose locals are not
-        the session's, so it keeps the CPU renderer.
+        ``candidate_bridge`` lets the page's GPU render the candidates.
         """
         with self._lock:
             session = self.get(session_id)
@@ -553,94 +481,45 @@ class SessionStore:
             current_adjustments = session.adjustments.model_copy(deep=True)
             current_locals = [item.model_copy(deep=True) for item in session.local_adjustments]
             current_denoise = session.denoise.model_copy(deep=True)
-            current_match = session.sdr_match.model_copy(deep=True)
             reference_white = session.hdr_reference_white_nits
             has_authored_sdr = session.sdr_reference_image is not None
 
-        if action == "revert":
-            if not current_match.active or current_match.revert_state is None:
-                raise EditCommandError("There is no active legacy SDR Match to revert.")
-            target_adjustments = current_adjustments.model_copy(deep=True)
-            target_adjustments.sdr = current_match.revert_state.sdr_adjustments.model_copy(deep=True)
-            target_denoise = current_denoise.model_copy(deep=True)
-            target_denoise.sdr = current_match.revert_state.sdr_denoise.model_copy(deep=True)
-            saved = {item.id: item.sdr_grade for item in current_match.revert_state.local_grades}
-            target_locals = [
-                item.model_copy(update={"sdr_grade": saved.get(item.id, LocalGrade()).model_copy(deep=True)}, deep=True)
-                for item in current_locals
-            ]
-            target_match = SdrMatchState()
-        elif action in {"match", "convert"}:
-            if action == "match" and current_match.active:
-                raise EditCommandError("Convert or revert the active legacy SDR Match first.")
-            if action == "convert" and not current_match.active:
-                raise EditCommandError("There is no active legacy SDR Match to convert.")
-            if action == "match" and has_authored_sdr and not authored_sdr_override_consent:
-                raise EditCommandError("Replacing the authored SDR rendition requires explicit consent.")
+        if has_authored_sdr and not authored_sdr_override_consent:
+            raise EditCommandError("Replacing the authored SDR rendition requires explicit consent.")
 
-            analysis_adjustments = current_adjustments.model_copy(deep=True)
-            if action == "convert":
-                assert current_match.captured_hdr_adjustments is not None
-                assert current_match.captured_shared_adjustments is not None
-                analysis_adjustments.hdr = current_match.captured_hdr_adjustments.model_copy(deep=True)
-                analysis_adjustments.shared = current_match.captured_shared_adjustments.model_copy(deep=True)
-                # Geometry was deliberately live in legacy v1 and remains live
-                # when its captured recipe is materialized.
-                analysis_adjustments.shared.geometry = current_adjustments.shared.geometry.model_copy(deep=True)
-                analysis_locals = [
-                    LocalAdjustment(
-                        id=item.id,
-                        name=item.name,
-                        enabled=item.enabled,
-                        opacity=item.opacity,
-                        mask=item.mask.model_copy(deep=True),
-                        hdr_grade=item.hdr_grade.model_copy(deep=True),
-                        sdr_grade=LocalGrade(),
-                    )
-                    for item in current_match.captured_locals
-                ]
-                analysis_reference_white = int(current_match.captured_reference_white_nits or reference_white)
-            else:
-                analysis_locals = [item.model_copy(deep=True) for item in current_locals]
-                analysis_reference_white = reference_white
-
-            source_started = perf_counter()
-            source, _ = session.render_cache.source_pair(MATCH_ANALYSIS_EDGE)
-            if timing is not None:
-                timing["source_proxy_ms"] = round((perf_counter() - source_started) * 1000.0, 3)
-            try:
-                materialized = materialize_sdr_match(
-                    source,
-                    analysis_adjustments,
-                    analysis_locals,
-                    reference_white_nits=analysis_reference_white,
-                    source_pixel_scale=min(1.0, 768 / max(session.image.shape[:2])),
-                    timing=timing,
-                    candidate_bridge=candidate_bridge if action == "match" else None,
-                )
-            except SDRMatchMaterializationError as exc:
-                raise EditCommandError(str(exc)) from exc
-
-            target_adjustments = current_adjustments.model_copy(deep=True)
-            target_adjustments.sdr = materialized.adjustments.sdr.model_copy(deep=True)
-            translated_by_id = {item.id: item.sdr_grade for item in materialized.local_adjustments}
-            target_locals = [
-                item.model_copy(
-                    update={"sdr_grade": translated_by_id.get(item.id, LocalGrade()).model_copy(deep=True)},
-                    deep=True,
-                )
-                for item in current_locals
-            ]
-            target_denoise = current_denoise.model_copy(deep=True)
-            if action == "match":
-                target_denoise.sdr = current_denoise.hdr.model_copy(deep=True)
-            target_match = SdrMatchState(
-                algorithm_version="hdr-to-sdr-materialized-v2",
-                materialized_status=materialized.status,
-                materialized_metrics=materialized.quality,
+        source_started = perf_counter()
+        source, _ = session.render_cache.source_pair(MATCH_ANALYSIS_EDGE)
+        if timing is not None:
+            timing["source_proxy_ms"] = round((perf_counter() - source_started) * 1000.0, 3)
+        try:
+            materialized = materialize_sdr_match(
+                source,
+                current_adjustments.model_copy(deep=True),
+                [item.model_copy(deep=True) for item in current_locals],
+                reference_white_nits=reference_white,
+                source_pixel_scale=min(1.0, 768 / max(session.image.shape[:2])),
+                timing=timing,
+                candidate_bridge=candidate_bridge,
             )
-        else:
-            raise EditCommandError(f"Unsupported SDR Match action '{action}'.")
+        except SDRMatchMaterializationError as exc:
+            raise EditCommandError(str(exc)) from exc
+
+        target_adjustments = current_adjustments.model_copy(deep=True)
+        target_adjustments.sdr = materialized.adjustments.sdr.model_copy(deep=True)
+        translated_by_id = {item.id: item.sdr_grade for item in materialized.local_adjustments}
+        target_locals = [
+            item.model_copy(
+                update={"sdr_grade": translated_by_id.get(item.id, LocalGrade()).model_copy(deep=True)},
+                deep=True,
+            )
+            for item in current_locals
+        ]
+        target_denoise = current_denoise.model_copy(deep=True)
+        target_denoise.sdr = current_denoise.hdr.model_copy(deep=True)
+        target_match = SdrMatchState(
+            materialized_status=materialized.status,
+            materialized_metrics=materialized.quality,
+        )
 
         command = EditCommand(
             expected_revision=expected_revision,
@@ -651,7 +530,7 @@ class SessionStore:
                 "local_adjustments": [item.model_dump(mode="json") for item in target_locals],
                 "denoise": target_denoise.model_dump(mode="json"),
                 "authored_sdr_override_consent": authored_sdr_override_consent,
-                "replaces_authored_sdr": action == "match" and has_authored_sdr,
+                "replaces_authored_sdr": has_authored_sdr,
             },
         )
         commit_started = perf_counter()
@@ -708,8 +587,6 @@ class SessionStore:
             session.history_bytes -= removed.byte_size
         session.edit_revision += 1
         session.dirty = True
-        if session.sdr_match.active and command.command_type != "set_sdr_match":
-            _refresh_sdr_match_staleness(session)
 
     def _execute_command(self, session: LoadedSession, command: EditCommand) -> EditCommand:
         current_revision = session.edit_revision
@@ -724,22 +601,6 @@ class SessionStore:
             if document.interpretation_override != previous.interpretation_override:
                 raise EditCommandError(
                     "Source interpretation changes must use the interpretation endpoint so pixels are reloaded."
-                )
-            if (
-                document.sdr_match.active
-                and document.sdr_match.captured_source_fingerprint_sha256 != session.source_fingerprint_sha256
-            ):
-                raise EditCommandError("The SDR Match snapshot does not belong to the loaded source.")
-            if not previous.sdr_match.active and document.sdr_match.active and session.sdr_reference_image is not None:
-                raise EditCommandError("Activate SDR Match through set_sdr_match so authored-SDR consent is explicit.")
-            if (
-                previous.sdr_match.active
-                and previous.sdr_match.grain_source == "captured_hdr"
-                and document.sdr_match.grain_source == "captured_hdr"
-                and _sdr_grain_recipe(document.global_adjustments) != _sdr_grain_recipe(previous.global_adjustments)
-            ):
-                raise EditCommandError(
-                    "SDR grain inherited from a Match must switch to an override through set_sdr_match."
                 )
             session.adjustments = document.global_adjustments
             session.local_adjustments = document.local_adjustments
@@ -772,14 +633,6 @@ class SessionStore:
         if command_type == "set_global_adjustments":
             previous = session.adjustments
             updated = AdjustmentState.model_validate(payload.get("adjustments"))
-            if (
-                session.sdr_match.active
-                and session.sdr_match.grain_source == "captured_hdr"
-                and _sdr_grain_recipe(updated) != _sdr_grain_recipe(previous)
-            ):
-                raise EditCommandError(
-                    "SDR grain inherited from a Match must switch to an override through set_sdr_match."
-                )
             session.adjustments = updated
             session.render_cache.clear_adjusted()
             return EditCommand(
@@ -807,21 +660,11 @@ class SessionStore:
             local_ids = [item.id for item in local_adjustments]
             if len(local_ids) != len(set(local_ids)):
                 raise EditCommandError("Local adjustment UUIDs must be unique.")
-            activating = not session.sdr_match.active and match_state.active
             replacing_authored = bool(payload.get("replaces_authored_sdr", False))
-            if activating and session.sdr_reference_image is not None and not bool(
-                payload.get("authored_sdr_override_consent", False)
-            ):
-                raise EditCommandError("Replacing the authored SDR rendition requires explicit consent.")
             if replacing_authored and session.sdr_reference_image is not None and not bool(
                 payload.get("authored_sdr_override_consent", False)
             ):
                 raise EditCommandError("Replacing the authored SDR rendition requires explicit consent.")
-            if (
-                match_state.active
-                and match_state.captured_source_fingerprint_sha256 != session.source_fingerprint_sha256
-            ):
-                raise EditCommandError("The SDR Match snapshot does not belong to the loaded source.")
             session.sdr_match = match_state
             session.adjustments = adjustments
             session.local_adjustments = local_adjustments
@@ -916,8 +759,6 @@ class SessionStore:
         session.history_bytes -= entry.byte_size
         inverse = entry.inverse.model_copy(update={"expected_revision": session.edit_revision})
         self._execute_command(session, inverse)
-        if inverse.command_type != "set_sdr_match":
-            _refresh_sdr_match_staleness(session)
         session.redo_history.append(entry)
         session.edit_revision += 1
         session.dirty = True
@@ -928,8 +769,6 @@ class SessionStore:
         entry = session.redo_history.pop()
         forward = entry.forward.model_copy(update={"expected_revision": session.edit_revision})
         self._execute_command(session, forward)
-        if forward.command_type != "set_sdr_match":
-            _refresh_sdr_match_staleness(session)
         session.undo_history.append(entry)
         session.history_bytes += entry.byte_size
         session.edit_revision += 1
@@ -960,8 +799,6 @@ class SessionStore:
             )
             session.analysis = analysis
             session.interpretation_override = override
-            if session.sdr_match.active:
-                session.sdr_match.stale = True
             if session.adjustments.hdr.highlight_compression_peak_measurement != "manual":
                 session._sync_highlight_source_peaks()
             session.preview_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
