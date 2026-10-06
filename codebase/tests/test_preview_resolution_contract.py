@@ -63,7 +63,7 @@ def test_gpu_memory_budget_reaches_the_renderer_and_never_gates_a_tier() -> None
 
     # The renderer receives the stored budget even when it is constructed after
     # preferences have already loaded.
-    init = javascript[javascript.index("async function initializeGpuPreview()") : javascript.index("function clearLegacyUiPreferences()")]
+    init = javascript[javascript.index("async function initializeGpuPreview()") : javascript.index("function initializeLocalOverlayColor()")]
     assert 'state.gpuPreview.setMemoryBudget(state.gpuMemoryBudget ?? "auto")' in init
 
     # No code path disables or hides the preview-resolution selector.
@@ -168,8 +168,7 @@ def test_preview_preferences_migrate_unknown_values_to_the_default() -> None:
     A stored resolution the current build no longer offers is normalized to the
     default before it reaches the renderer, and a stored value the selector does
     not carry also falls back, so a preference file from another build cannot
-    select a tier this build cannot present. The legacy UI keys are removed at
-    startup rather than reinterpreted. The ROI preference is likewise
+    select a tier this build cannot present.  The ROI preference is likewise
     normalized: anything that is not "refinement" is the shipped whole-frame
     behavior.
     """
@@ -179,7 +178,4 @@ def test_preview_preferences_migrate_unknown_values_to_the_default() -> None:
     assert 'const preferredPreviewResolution = preferences.previewResolution === "auto"' in javascript
     assert 'const selectablePreviewResolution = preferredPreviewResolution;' in javascript
     assert 'state.previewResolutionOverride = selectablePreviewResolution !== "auto";' in javascript
-    assert "clearLegacyUiPreferences();" in javascript
-    assert '"hdr-finisher:high-quality-preview:v1",' in javascript
-    assert '"hdr-finisher:compare-layout:v1",' in javascript
     assert 'state.roiPreviewMode = value === "refinement" ? "refinement" : "fit";' in javascript

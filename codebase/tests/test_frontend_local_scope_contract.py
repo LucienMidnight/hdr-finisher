@@ -73,7 +73,6 @@ def test_startup_is_ephemeral_and_all_grade_groups_begin_collapsed() -> None:
     assert group_sections and all("collapsed" in section for section in group_sections)
     assert len(group_toggles) == len(group_sections)
     assert set(group_toggles) == {"false"}
-    assert "clearLegacyUiPreferences();" in javascript
     assert "localStorage.setItem" not in javascript
     assert "localStorage.getItem" not in javascript
     assert "localStorage" not in proofing

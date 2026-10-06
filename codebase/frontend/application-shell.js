@@ -4,17 +4,6 @@
   const STORAGE_KEY = "hdr-finisher:application-preferences:v1";
   const PROJECT_URL = "https://github.com/LucienMidnight/hdr-finisher";
   const PREVIEW_RESOLUTIONS = new Set(["1024", "2048", "4096", "full"]);
-  // P5 (Preview Responsiveness Tuning Sprint): the Responsive / Balanced /
-  // Precise preference became one opt-in, "Faster dragging on slower
-  // hardware". It migrates without a prompt: Precise and Balanced become the
-  // default (off), Responsive turns it on. The legacy 1K tier, which migrated
-  // to Responsive, turns it on as well.
-  const LEGACY_PREVIEW_PREFERENCES = new Set(["responsive", "balanced", "precise"]);
-  const migratedFasterDragging = (value) => {
-    if (typeof value.fasterDragging === "boolean") return value.fasterDragging;
-    if (LEGACY_PREVIEW_PREFERENCES.has(value.previewPreference)) return value.previewPreference === "responsive";
-    return Number(value.schemaVersion) < 3 && String(value.previewResolution) === "1024";
-  };
   // Diagnostic only. Direct and Tiled are required to produce identical pixels,
   // so this exists to make that comparable on the same grade rather than to
   // give the two routes different jobs.
@@ -28,7 +17,6 @@
     renderingMode: "auto",
     previewResolution: "auto",
     fasterDragging: false,
-    previewMigration: { previousTier: null, noticeShown: false },
     maximumGpuMemoryGiB: "auto",
     executionOverride: "auto",
     roiPreview: "fit",
@@ -172,16 +160,8 @@
     schemaVersion: 3,
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
-    previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) && Number(value.schemaVersion) >= 3
-      ? String(value.previewResolution) : "auto",
-    fasterDragging: migratedFasterDragging(value),
-    // Migrated into fasterDragging above; not written back.
-    previewPreference: undefined,
-    previewMigration: { previousTier: PREVIEW_RESOLUTIONS.has(String(value.previewMigration?.previousTier))
-      ? String(value.previewMigration.previousTier)
-      : Number(value.schemaVersion) < 3 && PREVIEW_RESOLUTIONS.has(String(value.previewResolution))
-        ? String(value.previewResolution) : null,
-      noticeShown: value.previewMigration?.noticeShown === true },
+    previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) ? String(value.previewResolution) : "auto",
+    fasterDragging: value.fasterDragging === true,
     maximumGpuMemoryGiB: normalizeGpuMemoryGiB(value.maximumGpuMemoryGiB),
     executionOverride: EXECUTION_OVERRIDES.has(value.executionOverride) ? value.executionOverride : "auto",
     roiPreview: ROI_PREVIEW_MODES.has(value.roiPreview) ? value.roiPreview : "fit",
@@ -1070,12 +1050,6 @@
     if (byId("settings-faster-dragging")) byId("settings-faster-dragging").checked = value;
   }
 
-  function acknowledgePreviewMigration() {
-    if (!shell.preferences?.previewMigration?.previousTier || shell.preferences.previewMigration.noticeShown) return;
-    shell.preferences.previewMigration.noticeShown = true;
-    persistPreferences();
-  }
-
   async function listGradingPresets(groupId) {
     if (shell.desktop?.listGradingPresets) return shell.desktop.listGradingPresets(groupId);
     const presets = shell.preferences.gradingPresets[groupId];
@@ -1112,7 +1086,6 @@
     setRenderingModePreference,
     setPreviewResolutionPreference,
     setFasterDragging,
-    acknowledgePreviewMigration,
     listGradingPresets,
     saveGradingPreset,
     deleteGradingPreset,

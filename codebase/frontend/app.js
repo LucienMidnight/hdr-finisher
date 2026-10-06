@@ -251,13 +251,6 @@ const WAVEFORM_HORIZONTAL_KERNELS = {
   2: { weights: [1, 4, 6, 4, 1], total: 16 },
   3: { weights: [1, 6, 15, 20, 15, 6, 1], total: 64 },
 };
-const LEGACY_UI_PREFERENCE_KEYS = new Set([
-  "hdr-finisher:high-quality-preview:v1",
-  "hdr-finisher:scope-zoom:v1",
-  "hdr-finisher:compare-layout:v1",
-  "hdr-finisher-source-collapsed",
-  "hdr-finisher-chrome-proof-v1",
-]);
 const COMPARE_LAYOUTS = new Set(["single", "split-vertical", "split-horizontal", "side-horizontal", "side-vertical"]);
 const waveformCanvasCache = new WeakMap();
 // Session-bound fallback brush rasters use local IDs or mask objects as keys.
@@ -1654,8 +1647,6 @@ const els = {
   scopeView: document.getElementById("scope-view"),
   technicalView: document.getElementById("technical-view"),
   previewFasterDragging: document.getElementById("preview-faster-dragging"),
-  previewMigrationNotice: document.getElementById("preview-migration-notice"),
-  previewMigrationDismiss: document.getElementById("preview-migration-dismiss"),
   previewQualityStatus: document.getElementById("preview-quality-status"),
   exportSheet: document.getElementById("export-sheet"),
   exportConfirmButton: document.getElementById("export-confirm-button"),
@@ -2042,7 +2033,6 @@ const exportOptionTooltips = {
 boot();
 
 async function boot() {
-  clearLegacyUiPreferences();
   initializeLocalOverlayColor();
   initializePreviewPreferences();
   initializeInstrumentShell();
@@ -2129,17 +2119,6 @@ async function rebuildGpuPreview(reason = "") {
     state.gpuFailurePolicy?.record(error, { init: true });
     markPreviewUnavailable(`WebGPU device rebuild failed: ${error?.message || error}`);
     return false;
-  }
-}
-
-function clearLegacyUiPreferences() {
-  try {
-    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
-    keys
-      .filter((key) => LEGACY_UI_PREFERENCE_KEYS.has(key) || key?.startsWith("hdr-finisher-layout:"))
-      .forEach((key) => localStorage.removeItem(key));
-  } catch {
-    // Startup defaults do not depend on browser storage being available.
   }
 }
 
@@ -2519,7 +2498,6 @@ function initializePreviewScheduler() {
       previewResolution: state.previewResolutionOverride ? normalizedPreviewResolution() : "auto",
       previewPreference: dragLatencyPreference(),
       fasterDragging: state.fasterDragging,
-      previousPreviewTier: state.appPreferences?.previewMigration?.previousTier || null,
       previewLatency: state.previewLatencyController?.snapshot() || null,
       previewMaxDimension: requiredProcessingLongEdge(),
       previewDimensions: previewResolutionDimensions(),
@@ -3281,10 +3259,6 @@ function bindEvents() {
     window.HDRApplicationShell?.setFasterDragging?.(enabled);
     state.fasterDragging = enabled;
     renderReadouts();
-  });
-  els.previewMigrationDismiss?.addEventListener("click", () => {
-    els.previewMigrationNotice?.classList.add("hidden");
-    window.HDRApplicationShell?.acknowledgePreviewMigration?.();
   });
   els.scopeDetail?.addEventListener("change", async () => {
     state.scopeQuality = SCOPE_QUALITY_PROFILES[els.scopeDetail.value] ? els.scopeDetail.value : DEFAULT_SCOPE_QUALITY;
@@ -4344,8 +4318,6 @@ async function initializeApplicationShell() {
       const selectablePreviewResolution = preferredPreviewResolution;
       state.fasterDragging = preferences.fasterDragging === true;
       if (els.previewFasterDragging) els.previewFasterDragging.checked = state.fasterDragging;
-      els.previewMigrationNotice?.classList.toggle("hidden",
-        !preferences.previewMigration?.previousTier || preferences.previewMigration.noticeShown === true);
       if (options.initial) {
         state.previewResolutionOverride = selectablePreviewResolution !== "auto";
         if (state.previewResolutionOverride) state.previewResolution = selectablePreviewResolution;
@@ -4685,7 +4657,6 @@ function previewOutputEntries() {
     ["Faster dragging", state.fasterDragging ? "On · softer while dragging" : "Off · full detail while dragging"],
     ["Legacy override", state.previewResolutionOverride ? previewResolutionLabel() : "Off"],
     ["Controller", JSON.stringify(state.previewLatencyController?.snapshot()?.decisions || {})],
-    ["Migrated tier", state.appPreferences?.previewMigration?.previousTier || "None"],
     ["Viewport", viewport ? `${viewport.x},${viewport.y} · ${viewport.width} × ${viewport.height}` : "Fit"],
     ["Processing scale", live?.processingScale ?? (state.session
       ? (requiredProcessingLongEdge() / Math.max(state.session.source.width, state.session.source.height)).toFixed(3) : "Waiting")],

@@ -62,7 +62,6 @@ class MediaBrowserStore:
     def __init__(self, root: Path | None = None) -> None:
         self.root = (root or APP_DATA_DIR).resolve()
         self.pinned_path = self.root / "pinned-folders.json"
-        self.legacy_favorites_path = self.root / "favorite-folders.json"
         self.recents_path = self.root / "recent-folders.json"
         self.thumbnail_root = self.root / "thumbnails"
         self._lock = RLock()
@@ -133,8 +132,6 @@ class MediaBrowserStore:
     def pinned(self) -> list[dict[str, Any]]:
         with self._lock:
             values = self._read_paths(self.pinned_path)
-            if not values and not self.pinned_path.exists():
-                values = self._read_paths(self.legacy_favorites_path)
         return [
             {"name": Path(value).name or value, "path": value, "available": Path(value).is_dir()}
             for value in values
@@ -147,8 +144,6 @@ class MediaBrowserStore:
         normalized = str(resolved)
         with self._lock:
             values = self._read_paths(self.pinned_path)
-            if not values and not self.pinned_path.exists():
-                values = self._read_paths(self.legacy_favorites_path)
             if normalized not in values:
                 values.append(normalized)
                 self._write_paths(self.pinned_path, values)
@@ -158,8 +153,6 @@ class MediaBrowserStore:
         normalized = str(Path(value).expanduser().resolve(strict=False))
         with self._lock:
             values = [item for item in self._read_paths(self.pinned_path) if item != normalized]
-            if not self.pinned_path.exists():
-                values = [item for item in self._read_paths(self.legacy_favorites_path) if item != normalized]
             self._write_paths(self.pinned_path, values)
         return self.pinned()
 

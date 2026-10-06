@@ -76,15 +76,6 @@ function packagedExecutable() {
   const userDataDirectory = process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA
     || fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finisher-electron-test-"));
 
-  // This migration driver seeds browser localStorage itself. Desktop owns
-  // preferences in the main process, so seed the equivalent legacy fixture
-  // before launch, only in the fresh disposable profile this runner created.
-  if (!process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA
-    && path.resolve(testPath) === path.resolve(__dirname, "performance/phase4-preview.js")) {
-    fs.writeFileSync(path.join(userDataDirectory, "application-preferences.json"),
-      JSON.stringify({ schemaVersion: 2, previewResolution: "2048" }));
-  }
-
   // The §8 reference setup names a 2560x1440 viewport. The app restores its
   // window bounds from `window-state.json` in userData and a runtime resize
   // does not stick (the app re-applies the restored bounds when it shows the

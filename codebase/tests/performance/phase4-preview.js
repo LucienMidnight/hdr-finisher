@@ -12,27 +12,17 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
     args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer"] });
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-    await context.addInitScript(() => {
-      const key = "hdr-finisher:application-preferences:v1";
-      if (!localStorage.getItem(key)) localStorage.setItem(key,
-        JSON.stringify({ schemaVersion: 2, previewResolution: "2048" }));
-    });
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(url, { waitUntil: "networkidle" });
-    const migration = await page.evaluate(() => ({ preferences: window.HDRApplicationShell.preferences(),
+    const start = await page.evaluate(() => ({ preferences: window.HDRApplicationShell.preferences(),
       normalTierSelector: Boolean(document.querySelector("#preview-resolution")),
-      diagnosticTierSelector: Boolean(document.querySelector("#settings-preview-resolution")),
-      notice: !document.querySelector("#preview-migration-notice").classList.contains("hidden") }));
-    // P5: the 2K tier migrated to Balanced, which is now the default (off).
-    assert.equal(migration.preferences.fasterDragging, false);
-    assert.equal(migration.preferences.previewResolution, "auto");
-    assert.equal(migration.preferences.previewMigration.previousTier, "2048");
-    assert.equal(migration.normalTierSelector, false);
-    assert.equal(migration.diagnosticTierSelector, true);
-    assert.equal(migration.notice, true);
-    await page.evaluate(() => document.querySelector("#preview-migration-dismiss").click());
+      diagnosticTierSelector: Boolean(document.querySelector("#settings-preview-resolution")) }));
+    assert.equal(start.preferences.fasterDragging, false);
+    assert.equal(start.preferences.previewResolution, "auto");
+    assert.equal(start.normalTierSelector, false);
+    assert.equal(start.diagnosticTierSelector, true);
     await page.evaluate(() => {
       const faster = document.querySelector("#preview-faster-dragging");
       faster.checked = true;
@@ -40,10 +30,8 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
     });
     await page.waitForFunction(() => window.HDRApplicationShell.preferences().fasterDragging === true);
     await page.reload({ waitUntil: "networkidle" });
-    const roundTrip = await page.evaluate(() => ({ faster: state.fasterDragging,
-      migration: window.HDRApplicationShell.preferences().previewMigration }));
+    const roundTrip = await page.evaluate(() => ({ faster: state.fasterDragging }));
     assert.equal(roundTrip.faster, true);
-    assert.equal(roundTrip.migration.noticeShown, true);
     await page.evaluate(() => {
       const override = document.querySelector("#settings-preview-resolution");
       override.value = "4096";

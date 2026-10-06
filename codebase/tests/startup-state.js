@@ -38,7 +38,6 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
       proofFormat: document.querySelector("#chrome-proof-format")?.value,
       proofTarget: document.querySelector("#chrome-proof-target")?.value,
       proofWatermark: document.querySelector("#chrome-proof-watermark-toggle")?.checked,
-      stalePreferences: Object.keys(localStorage).filter((key) => key.startsWith("hdr-finisher")),
     }));
 
     const expected = {
@@ -51,7 +50,6 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
       proofFormat: "jpeg_ultrahdr",
       proofTarget: "auto",
       proofWatermark: true,
-      stalePreferences: [],
     };
     if (JSON.stringify(startup) !== JSON.stringify(expected)) {
       throw new Error(`Startup did not return to defaults. Expected ${JSON.stringify(expected)}, received ${JSON.stringify(startup)}.`);

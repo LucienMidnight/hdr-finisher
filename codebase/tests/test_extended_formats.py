@@ -514,19 +514,6 @@ def test_media_browser_keeps_only_three_recent_locations_in_mru_order(tmp_path: 
     ]
 
 
-def test_media_browser_migrates_legacy_favorites_to_pinned(tmp_path: Path) -> None:
-    app_data = tmp_path / "app-data"
-    folder = tmp_path / "legacy-pin"
-    app_data.mkdir()
-    folder.mkdir()
-    (app_data / "favorite-folders.json").write_text(json.dumps([str(folder)]), encoding="utf-8")
-    browser = MediaBrowserStore(app_data)
-
-    assert browser.pinned()[0]["path"] == str(folder)
-    browser.add_pin(str(tmp_path))
-    assert (app_data / "pinned-folders.json").is_file()
-
-
 def test_media_browser_uses_redirected_platform_user_folders(tmp_path: Path, monkeypatch) -> None:
     from hdr_finisher import media_browser
 

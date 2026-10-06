@@ -71,7 +71,6 @@ const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
   renderingMode: "auto",
   previewResolution: "auto",
   fasterDragging: false,
-  previewMigration: { previousTier: null, noticeShown: false },
   maximumGpuMemoryGiB: "auto",
   folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
   shortcuts: {},
@@ -102,15 +101,7 @@ function cleanShortcutMap(value) {
 }
 
 function sanitizeApplicationPreferences(value = {}) {
-  const legacyTiers = ["1024", "2048", "4096", "full"];
-  const oldTier = legacyTiers.includes(String(value.previewResolution)) ? String(value.previewResolution) : null;
-  const migrating = Number(value.schemaVersion) < 3 && Boolean(oldTier);
-  // P5 (Preview Responsiveness Tuning Sprint): the three-way preview response
-  // became one opt-in. Precise and Balanced migrate to off, Responsive (and the
-  // legacy 1K tier that migrated to it) to on, without a prompt.
-  const fasterDragging = typeof value.fasterDragging === "boolean" ? value.fasterDragging
-    : ["responsive", "balanced", "precise"].includes(value.previewPreference) ? value.previewPreference === "responsive"
-      : migrating && oldTier === "1024";
+  const tiers = ["1024", "2048", "4096", "full"];
   const presets = value.shortcutPresets && typeof value.shortcutPresets === "object" && !Array.isArray(value.shortcutPresets)
     ? Object.fromEntries(Object.entries(value.shortcutPresets).filter(([name, shortcuts]) => (
       typeof name === "string" && name.trim() && name.length <= 80 && shortcuts && typeof shortcuts === "object"
@@ -120,11 +111,8 @@ function sanitizeApplicationPreferences(value = {}) {
     schemaVersion: 3,
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
-    previewResolution: !migrating && oldTier ? oldTier : "auto",
-    fasterDragging,
-    previewMigration: { previousTier: legacyTiers.includes(String(value.previewMigration?.previousTier))
-      ? String(value.previewMigration.previousTier) : migrating ? oldTier : null,
-      noticeShown: value.previewMigration?.noticeShown === true },
+    previewResolution: tiers.includes(String(value.previewResolution)) ? String(value.previewResolution) : "auto",
+    fasterDragging: value.fasterDragging === true,
     maximumGpuMemoryGiB: (() => {
       if (value.maximumGpuMemoryGiB === "auto") return "auto";
       const numeric = Number(value.maximumGpuMemoryGiB);
@@ -157,10 +145,6 @@ function loadApplicationPreferences() {
     applicationPreferences = sanitizeApplicationPreferences(JSON.parse(fs.readFileSync(applicationPreferencesPath(), "utf8")));
   } catch {
     applicationPreferences = sanitizeApplicationPreferences(DEFAULT_APPLICATION_PREFERENCES);
-    try {
-      const legacy = JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "rendering-preferences.json"), "utf8"));
-      if (["auto", "gpu", "cpu"].includes(legacy.renderingMode)) applicationPreferences.renderingMode = legacy.renderingMode;
-    } catch {}
   }
   renderingMode = applicationPreferences.renderingMode;
 }
