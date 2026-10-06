@@ -5874,6 +5874,10 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
 
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
   if (!state.session || geometryDraftActive()) return Promise.resolve(false);
+  // Scopes describe the lane on screen. A request left over from the lane just
+  // switched away from could only be a whole-picture CPU grade, and its answer
+  // is discarded on arrival.
+  if (lane !== state.currentView) return Promise.resolve(false);
   // A live GPU scope during a drag reads the presented canvas, not the
   // backend's copy, so it does not wait for a save round trip. Waiting put its
   // readback on the GPU beside the next drag frame. The save still runs at
@@ -5991,22 +5995,34 @@ async function runGpuScopeRequest(request) {
     // settlement. Live input keeps the last scope until its settled request;
     // it never starts an extra grading graph beside the gesture's tiles.
     if (tier === "interactive") return false;
-    while (isCurrent() && (state.gpuDraftInFlight || state.gpuPreview.activeRenderCount > 0)) {
-      await new Promise((resolve) => window.setTimeout(resolve, 16));
-    }
+    const renderProxy = async () => {
+      while (isCurrent() && (state.gpuDraftInFlight || state.gpuPreview.activeRenderCount > 0)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 16));
+      }
+      if (!isCurrent()) return null;
+      return state.gpuPreview.renderScopeProxy(
+        request.sessionId, lane, state.adjustments, sampleCurvePoints,
+        request.longEdge, request.include_locals ? localAdjustments() : [],
+        request.edit_revision, projectReferenceWhiteNits(),
+        { width: state.session.source.width, height: state.session.source.height },
+        { ...gpuPreviewSourceOptions(lane), applicationGeneration: accepted.generation, isCurrent },
+      ).catch((error) => {
+        // A newer generation stopping this one's source load is not a failure;
+        // the scope that replaces it is already on its way.
+        if (error?.superseded || !isCurrent() || request.edit_revision !== state.editRevision) return null;
+        throw error;
+      });
+    };
+    const startedAt = performance.now();
+    let rendered = await renderProxy();
     if (!isCurrent()) return false;
-    const rendered = await state.gpuPreview.renderScopeProxy(
-      request.sessionId, lane, state.adjustments, sampleCurvePoints,
-      request.longEdge, request.include_locals ? localAdjustments() : [],
-      request.edit_revision, projectReferenceWhiteNits(),
-      { width: state.session.source.width, height: state.session.source.height },
-      { ...gpuPreviewSourceOptions(lane), applicationGeneration: accepted.generation, isCurrent },
-    ).catch((error) => {
-      // A newer generation stopping this one's source load is not a failure;
-      // the scope that replaces it is already on its way.
-      if (error?.superseded || !isCurrent() || request.edit_revision !== state.editRevision) return null;
-      throw error;
-    });
+    // A pan or catch-up pass of the same generation can start meanwhile and
+    // take this pass's masks. That is not the GPU refusing the scope, and no
+    // later request replaces it: wait for that pass and ask once more.
+    const refusal = state.gpuPreview.lastRenderRefusal;
+    if (!rendered && refusal?.at >= startedAt && String(refusal.reason).startsWith("superseded")) {
+      rendered = await renderProxy();
+    }
     if (!isCurrent()) return false;
     if (!rendered) {
       // The accepted tiled picture is current, but an auxiliary GPU graph
