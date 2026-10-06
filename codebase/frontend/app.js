@@ -5427,7 +5427,12 @@ async function measureExactHighlightAnchor({ lane, key, used }) {
       // so it is kept as evidence; `used` then belongs to that earlier input
       // and the frame is redrawn.
       recordEditingMeasurement(lane, {anchor: measured});
-      if (result.highlightAnchor.key !== key
+      // One redraw per measured key: if the redraw asks again under a key the
+      // measurement can never answer, repeating it would never settle.
+      const mismatched = result.highlightAnchor.key !== key;
+      if (mismatched && state.lastMismatchedAnchorKey === result.highlightAnchor.key) return measured;
+      if (mismatched) state.lastMismatchedAnchorKey = result.highlightAnchor.key;
+      if (mismatched
         || Math.abs(measured / Math.max(Number(used) || measured, 1e-9) - 1) > 0.0001) {
         invalidatePreview(lane, { markDirty: false });
         debouncePreview(lane);

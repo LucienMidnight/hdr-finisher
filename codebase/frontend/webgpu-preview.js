@@ -2198,8 +2198,13 @@
       const measurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
       const measures = (lane === "hdr" || params[159] > 0.5) && params[74] === 1 && measurement !== "manual";
       if (!measures) return null;
+      // A denoise reconstruction carries no session or source identity of its
+      // own. Name it by the source it was made from, or its key never matches
+      // the editing measurement's and the render asks for the anchor forever.
+      const selector = this.denoiseSourceSelector;
+      const origin = selector?.original && proxy === selector.resolved ? selector.original : proxy;
       const key = JSON.stringify([
-        [proxy.sessionId, proxy.geometrySignature, proxy.sourceIdentity],
+        [origin.sessionId, origin.geometrySignature, origin.sourceIdentity],
         this.highlightSourceToken(proxy), lane, params[159], measurement,
         params[2], params[4], params[8], params[9], params[110],
         ...params.slice(10, 12), ...params.slice(61, 73),
