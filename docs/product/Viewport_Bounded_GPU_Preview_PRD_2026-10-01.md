@@ -1734,6 +1734,14 @@ column) without confirming the item first.
 | CF-ROUTE-07 | Same settled-render overlap enters CPU settle branch once for `coalesced-by-newer-render` in two repeats. Zero CPU picture HTTP requests in these warm runs; original branch-level guard remains red. See 16.8 |
 | CF-ROUTE-08 | Execution readout reports Direct while accepted viewer execution is Tiled at 100%, 200% and Full/Fit under 1 GiB. Both repeats agree; the readout reads the last renderer plan, which can belong to auxiliary work. See 16.9 |
 
+| CF-ROUTE-09 | Found October 6 on Steve's DSC00264 project (42 MP, Denoise and Highlight Compression on). After the first sharp frame at 100%, the app streams the whole native source (`proxy-stream`, long edge 7968, about 330 MB, 0.8 s) and presents the view a second time, about 2.2 s after the click on a first visit and 1-1.5 s later. The first sharp frame is at 0.1-0.3 s. Why the whole source is fetched is not yet established; removing it would make a pan at 100% fetch each newly exposed strip instead. One instrumented run each; not fixed |
+| CF-SPEED-06 | Same trace: on a first 100% visit the 16-patch highlight anchor measurement runs twice in a row (about 0.3 s each). One run; not fixed |
+
+**Closed October 6.** With adaptive Denoise and Highlight Compression both on,
+the picture and scopes never settled while idle (found by Steve by hand; no
+driver checks that the app goes quiet). Fixed in `cc94373`. It may bear on
+CF-DRIFT-03 and CF-DRIFT-05; that is not measured.
+
 **Checks that fail because they still describe the old design (phase 4
 input).** Each is rewritten for the viewport-bounded design or retired with
 the reason recorded; none is deleted only to make a run green.
