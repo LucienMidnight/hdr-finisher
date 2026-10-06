@@ -117,21 +117,11 @@
   const {
     BLACK_AND_WHITE_PARAM,
     PEAK_REDUCTION_SHADER_SOURCE,
-    DENOISE_SHADER_SOURCE,
     ADAPTIVE_DENOISE_SHADER_SOURCE,
     SHADER_SOURCE,
     LUMA_MASK_SHADER_SOURCE,
   } = shaderSources();
 
-  const DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1";
-  // Preserve progressively more structure at medium/coarse Haar scales. Full
-  // strength at all levels makes a three-level resolve visibly tile into 8x8
-  // blocks when Amount and Luminance approach 100%.
-  const DENOISE_LEVEL_WEIGHTS = Object.freeze([1.0, 0.55, 0.25, 0.1]);
-  // Large enough that one 42 MP frame is tens of tiles rather than hundreds of
-  // textures, small enough that the reusable analysis scratch chain stays a
-  // couple of megabytes. Rounded up to the wavelet alignment when used.
-  const DENOISE_TILE_SIZE = 1024;
   // Adaptive denoise: the WebGPU half of backend/hdr_finisher/denoise_adaptive.py.
   // Five undecimated B3 bands in an orthonormal luminance/opponent basis, each
   // scaled by a local Wiener gain against a per-pixel noise map from a model the
@@ -174,89 +164,13 @@
     }));
   }
 
-  // The Haar grid a denoise tile must land on. Level 0 consumes 2x2 source
-  // blocks, level 1 consumes 2x2 blocks of those, and so on, so a tile that
-  // starts on a multiple of 2^levels decomposes exactly as the whole image
-  // does at that position -- and needs no halo, because no stage of a Haar
-  // transform reads outside its own block.
+  // The grid a tile's halo and a region's origin are rounded to while Denoise
+  // is on: 2 ** levels, and Denoise is set up with one level.
   function denoiseTileAlignment(levels) {
     if (!Number.isInteger(levels) || levels < 1 || levels > 4) {
-      throw new Error("Wavelet analysis supports one through four decimated scales.");
+      throw new Error("Denoise alignment supports one through four levels.");
     }
     return 2 ** levels;
-  }
-
-  function denoiseSpans(extent, step) {
-    const spans = [];
-    for (let offset = 0; offset < extent; offset += step) {
-      spans.push({ offset, length: Math.min(step, extent - offset) });
-    }
-    // A one-pixel trailing span has no 2x2 block to transform. Folding it into
-    // the previous span leaves every origin on the grid and still covers the
-    // image exactly once.
-    if (spans.length > 1 && spans.at(-1).length < 2) {
-      spans[spans.length - 2].length += spans.at(-1).length;
-      spans.pop();
-    }
-    return spans;
-  }
-
-  function alignedDenoiseTiles(width, height, tileSize, levels) {
-    if (width <= 0 || height <= 0) throw new Error("Denoise tiling requires a positive image size.");
-    if (!(tileSize > 0)) throw new Error("Denoise tile size must be positive.");
-    const alignment = denoiseTileAlignment(levels);
-    const step = Math.ceil(tileSize / alignment) * alignment;
-    const columns = denoiseSpans(width, step);
-    const rows = denoiseSpans(height, step);
-    const tiles = [];
-    for (const row of rows) {
-      for (const column of columns) {
-        tiles.push({
-          x: column.offset,
-          y: row.offset,
-          width: column.length,
-          height: row.length,
-          key: `${column.offset},${row.offset},${column.length},${row.length}`,
-        });
-      }
-    }
-    return tiles;
-  }
-
-  /**
-   * The identity an analysis result is cached under.
-   *
-   * Excludes the live reconstruction controls on purpose: they consume
-   * evidence and never create it, so including them would make every slider
-   * drag a cache miss -- the exact behaviour the wavelet cache exists to
-   * avoid. Kept byte-for-byte in step with `denoise_cache_identity()` in
-   * `backend/hdr_finisher/denoise_tiles.py`.
-   */
-  function denoiseCacheIdentity(sourceIdentity, settings, tile = null) {
-    const number = (value) => Number(value).toPrecision(6).replace(/\.?0+e/, "e").replace(/\.?0+$/, "");
-    const parts = [
-      sourceIdentity,
-      DENOISE_ALGORITHM_VERSION,
-      `levels=${Math.trunc(settings.levels)}`,
-      `noise=${number(settings.noiseThreshold)}`,
-      `luma_sigma=${number(settings.lumaSigma)}`,
-      `chroma_sigma=${number(settings.chromaSigma)}`,
-      `luma_strength=${number(settings.lumaStrength)}`,
-      `chroma_strength=${number(settings.chromaStrength)}`,
-    ];
-    if (tile) parts.push(`tile=${tile.key}`);
-    return parts.join("|");
-  }
-
-  // Extents of one tile's band chain: entry 0 is the tile itself, entry i is
-  // the extent at scale 2^i.
-  function denoiseExtentChain(width, height, levels) {
-    const chain = [{ width, height }];
-    for (let index = 0; index < levels; index += 1) {
-      const previous = chain[index];
-      chain.push({ width: Math.ceil(previous.width / 2), height: Math.ceil(previous.height / 2) });
-    }
-    return chain;
   }
 
   const DEVICE_LIMIT_NAMES = [
@@ -937,8 +851,6 @@
       this.denoiseSourceSelector = null;
       this.denoiseSelectorGeneration = 0;
       this.denoiseCounters = this.emptyDenoiseCounters();
-      this.denoiseTileSize = DENOISE_TILE_SIZE;
-      this.denoisePipelines = null;
       this.adapterInfo = null;
       this.resourceGeneration = 0;
       this.activeRenderCount = 0;
@@ -1700,21 +1612,6 @@
         analysisScratchBytes: 0,
         resolveScratchBytes: 0,
       };
-    }
-
-    /**
-     * Cover a denoise source with tiles the Haar grid agrees with.
-     *
-     * Mirrors `backend/hdr_finisher/denoise_tiles.py` exactly, including the
-     * absorbed short trailing span, because the CPU reference and this renderer
-     * must agree on what a tile is before they can agree on what is cached.
-     */
-    static alignedDenoiseTiles(width, height, tileSize, levels) {
-      return alignedDenoiseTiles(width, height, tileSize, levels);
-    }
-
-    static denoiseCacheIdentity(sourceIdentity, settings, tile = null) {
-      return denoiseCacheIdentity(sourceIdentity, settings, tile);
     }
 
     recordStage(stage, detail = {}) {
@@ -6083,21 +5980,6 @@
       return true;
     }
 
-    async ensureDenoisePipelines() {
-      if (this.denoisePipelines) return this.denoisePipelines;
-      const module = this.device.createShaderModule({ code: DENOISE_SHADER_SOURCE });
-      const compilation = await module.getCompilationInfo();
-      const errors = compilation.messages.filter((message) => message.type === "error");
-      if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
-      const [analysis, resolve, resolveTwoLevel] = await Promise.all([
-        this.device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "analyzeMain" } }),
-        this.device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "resolveMain" } }),
-        this.device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "resolveTwoLevelMain" } }),
-      ]);
-      this.denoisePipelines = { analysis, resolve, resolveTwoLevel };
-      return this.denoisePipelines;
-    }
-
     createDenoiseTexture(width, height, label) {
       const texture = this.device.createTexture({
         label,
@@ -6109,220 +5991,24 @@
     }
 
     /**
-     * Analyse the proxy tile by tile into a cache of Haar evidence.
-     *
-     * Tiling buys two things. The transient low-band chain becomes one tile's
-     * worth instead of the whole image's, so analysis scratch stops following
-     * the source; and evidence becomes a set of per-tile textures rather than
-     * one monolithic band per level, which is what lets a cache evict it.
-     *
-     * It costs nothing in accuracy. A tile origin is a multiple of 2^levels, so
-     * its block grid is the whole image's block grid, and a Haar stage never
-     * reads outside its own block. The result is the same coefficients, not
-     * approximately the same ones.
+     * Set Denoise up for a frame: fetch its noise model. No source is loaded
+     * for it. A render reconstructs from the source it loads for itself, which
+     * zoomed in is only the part on screen.
      */
-    async analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, preset = {}, sourceIdentity = "source", controls = {}) {
+    async analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, sourceIdentity = "source", controls = {}) {
       if (!this.available || !sessionId) return false;
       const generation = ++this.denoiseSelectorGeneration;
       const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
-      // Adaptive needs a noise model and nothing else: no source is loaded for
-      // it. A render reconstructs from the source it loads for itself, which
-      // zoomed in is only the part on screen.
-      const original = preset?.algorithm === ADAPTIVE_DENOISE_ALGORITHM_VERSION
-        ? null
-        : await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, {
-          isCurrent: () => generation === this.denoiseSelectorGeneration && this.sessionId === sessionId,
-        });
-      if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) return false;
-      if (preset?.algorithm === ADAPTIVE_DENOISE_ALGORITHM_VERSION) {
-        const frame = { identity: `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}` };
-        return this.analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, {
-          amount: controls.amount ?? 0.5,
-          luminance: controls.luminance ?? 0.5,
-          colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
-          detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0,
-          finestNoise: controls.finestNoise ?? controls.finest_noise ?? controls.fineNoise ?? controls.fine_noise ?? 0.5,
-          fineNoise: controls.fineNoise ?? controls.fine_noise ?? 0.5,
-          mediumNoise: controls.mediumNoise ?? controls.medium_noise ?? 0.5,
-          coarseNoise: controls.coarseNoise ?? controls.coarse_noise ?? 0.5,
-        });
-      }
-      if (!original) return false;
-      const pipelines = await this.ensureDenoisePipelines();
-      const settings = {
-        name: "Photo / Fine",
-        levels: 2,
-        noiseThreshold: 3.0,
-        lumaSigma: 0.035,
-        chromaSigma: 0.035,
-        lumaStrength: 1.0,
-        chromaStrength: 1.25,
-        ...preset,
-      };
-      if (!Number.isInteger(settings.levels) || settings.levels < 1 || settings.levels > 4) {
-        throw new Error("Wavelet analysis supports one through four decimated scales.");
-      }
-      const startedAt = performance.now();
-      this.denoiseCounters.analysisCalls += 1;
-      this.recordStage("denoise-analysis", { state: "started", generation, longEdge });
-
-      const tileSize = Math.max(64, Number(this.denoiseTileSize) || DENOISE_TILE_SIZE);
-      const tiles = alignedDenoiseTiles(original.width, original.height, tileSize, settings.levels);
-      const alignment = denoiseTileAlignment(settings.levels);
-      const step = Math.ceil(tileSize / alignment) * alignment;
-      // One scratch chain, sized to the largest tile, reused by every tile.
-      // Passes in a command buffer execute in order with implicit barriers, so
-      // reuse across tiles is safe without a fence per tile.
-      const scratchChain = denoiseExtentChain(step, step, settings.levels);
-      const scratch = [];
-      const evidenceAllocated = [];
-      const tileEvidence = [];
-      let paramBuffer = null;
-      let cacheInstalled = false;
-      try {
-        for (let index = 1; index <= settings.levels; index += 1) {
-          scratch.push(this.createDenoiseTexture(
-            scratchChain[index].width,
-            scratchChain[index].height,
-            `denoise-analysis-scratch-${index}`,
-          ));
-        }
-        const slot = 256;
-        paramBuffer = this.device.createBuffer({
-          size: Math.max(slot, tiles.length * settings.levels * slot),
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
-        const slots = new Float32Array((paramBuffer.size / 4));
-
-        const encoder = this.device.createCommandEncoder();
-        let dispatches = 0;
-        tiles.forEach((tile, tileIndex) => {
-          const chain = denoiseExtentChain(tile.width, tile.height, settings.levels);
-          const levels = [];
-          let source = original.texture;
-          let originX = tile.x;
-          let originY = tile.y;
-          for (let index = 0; index < settings.levels; index += 1) {
-            const valid = chain[index];
-            const out = chain[index + 1];
-            const evidence = ["h", "v", "d"].map((axis) =>
-              this.createDenoiseTexture(out.width, out.height, `denoise-${axis}-${index}-${tile.key}`));
-            evidenceAllocated.push(...evidence);
-            const base = (tileIndex * settings.levels + index) * (slot / 4);
-            const scale = 0.5 ** (index + 1);
-            slots.set([
-              settings.lumaSigma * scale * settings.lumaStrength,
-              settings.chromaSigma * scale * settings.chromaStrength,
-              settings.chromaSigma * scale * settings.chromaStrength,
-              settings.noiseThreshold,
-              out.width, out.height, originX, originY,
-              valid.width, valid.height, 0, 0,
-            ], base);
-            const bindGroup = this.device.createBindGroup({
-              layout: pipelines.analysis.getBindGroupLayout(0),
-              entries: [
-                { binding: 0, resource: source.createView() },
-                { binding: 1, resource: scratch[index].texture.createView() },
-                { binding: 2, resource: evidence[0].texture.createView() },
-                { binding: 3, resource: evidence[1].texture.createView() },
-                { binding: 4, resource: evidence[2].texture.createView() },
-                { binding: 5, resource: { buffer: paramBuffer, offset: (tileIndex * settings.levels + index) * slot, size: 48 } },
-              ],
-            });
-            const pass = encoder.beginComputePass();
-            pass.setPipeline(pipelines.analysis);
-            pass.setBindGroup(0, bindGroup);
-            pass.dispatchWorkgroups(Math.ceil(out.width / 8), Math.ceil(out.height / 8));
-            pass.end();
-            dispatches += 1;
-            levels.push({ evidence, width: out.width, height: out.height });
-            source = scratch[index].texture;
-            originX = 0;
-            originY = 0;
-          }
-          tileEvidence.push({ tile, levels, chain });
-        });
-        this.device.queue.writeBuffer(paramBuffer, 0, slots);
-        this.device.queue.submit([encoder.finish()]);
-        await this.device.queue.onSubmittedWorkDone();
-        if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) {
-          this.recordStage("denoise-analysis", { state: "stale", generation });
-          return false;
-        }
-
-        const resolveChain = denoiseExtentChain(step, step, settings.levels);
-        const resolveScratch = [];
-        for (let index = 1; index < settings.levels; index += 1) {
-          resolveScratch.push(this.createDenoiseTexture(
-            resolveChain[index].width,
-            resolveChain[index].height,
-            `denoise-resolve-scratch-${index}`,
-          ));
-        }
-        const previous = this.denoiseSourceSelector;
-        const evidenceByteSize = evidenceAllocated.reduce((sum, item) => sum + item.byteSize, 0);
-        const analysisScratchBytes = scratch.reduce((sum, item) => sum + item.byteSize, 0);
-        const resolveScratchBytes = resolveScratch.reduce((sum, item) => sum + item.byteSize, 0);
-        const cache = {
-          algorithmVersion: DENOISE_ALGORITHM_VERSION,
-          settings,
-          identity: denoiseCacheIdentity(original.identity, settings),
-          tileSize: step,
-          tiles: tileEvidence,
-          // Retained so the existing diagnostics keep reporting a per-level
-          // view of the evidence even though it is now stored per tile.
-          levels: Array.from({ length: settings.levels }, (_, index) => ({
-            sourceWidth: denoiseExtentChain(original.width, original.height, settings.levels)[index].width,
-            sourceHeight: denoiseExtentChain(original.width, original.height, settings.levels)[index].height,
-            evidence: tileEvidence.flatMap((entry) => entry.levels[index].evidence),
-          })),
-          resolveScratch,
-          resolveParamBuffer: null,
-          byteSize: evidenceByteSize + resolveScratchBytes,
-          textureCount: evidenceAllocated.length + resolveScratch.length,
-        };
-        this.denoiseSourceSelector = {
-          identity: original.identity,
-          original,
-          resolved: null,
-          selected: previous?.identity === original.identity ? previous.selected : "original",
-          cache,
-          generation,
-        };
-        cacheInstalled = true;
-        this.destroyDenoiseSelector(previous);
-        this.denoiseCounters.allocations += cache.textureCount;
-        this.denoiseCounters.allocatedBytes += cache.byteSize;
-        this.denoiseCounters.analysisDispatches += dispatches;
-        this.denoiseCounters.analysisTiles += tiles.length;
-        this.denoiseCounters.evidenceBytes = evidenceByteSize;
-        this.denoiseCounters.analysisScratchBytes = analysisScratchBytes;
-        this.denoiseCounters.resolveScratchBytes = resolveScratchBytes;
-        this.recordAllocation("denoise-wavelet-cache", cache.byteSize, { textures: cache.textureCount, longEdge });
-        this.recordStage("denoise-analysis", {
-          state: "ready",
-          generation,
-          durationMs: performance.now() - startedAt,
-          tiles: tiles.length,
-          dispatches,
-          evidenceBytes: evidenceByteSize,
-          analysisScratchBytes,
-        });
-      } catch (error) {
-        this.recordStage("denoise-analysis", { state: "error", generation, durationMs: performance.now() - startedAt });
-        throw error;
-      } finally {
-        for (const item of scratch) item.texture.destroy();
-        paramBuffer?.destroy();
-        if (!cacheInstalled) {
-          for (const item of evidenceAllocated) item.texture.destroy();
-        }
-      }
-      return this.resolveDenoiseProxy({
+      const frame = { identity: `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}` };
+      return this.analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, {
         amount: controls.amount ?? 0.5,
         luminance: controls.luminance ?? 0.5,
         colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
         detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0,
+        finestNoise: controls.finestNoise ?? controls.finest_noise ?? controls.fineNoise ?? controls.fine_noise ?? 0.5,
+        fineNoise: controls.fineNoise ?? controls.fine_noise ?? 0.5,
+        mediumNoise: controls.mediumNoise ?? controls.medium_noise ?? 0.5,
+        coarseNoise: controls.coarseNoise ?? controls.coarse_noise ?? 0.5,
       });
     }
 
@@ -6652,29 +6338,6 @@
     }
 
     /**
-     * Reconstruct from cached evidence. Runs no analysis, by construction:
-     * nothing here touches the analysis pipeline, so a drag of any live control
-     * cannot issue an analysis dispatch however often it fires.
-     *
-     * `region` reconstructs only part of the frame, which is what makes zoom
-     * and pan cheap. It must start on the wavelet grid for the same reason a
-     * tile must.
-     */
-    /**
-     * Reconstruct the denoised picture from cached evidence.
-     *
-     * With no `destination` this fills the selector's whole-frame resolved
-     * texture, which is what an interactive control drag wants: one texture the
-     * renderer keeps binding as its source.
-     *
-     * With one, it fills a caller-owned texture that covers only `region`,
-     * which is what tiled execution wants: the resolved picture is then bounded
-     * by a tile rather than by the image, and the whole-frame resolved
-     * texture -- 340 MB on a 42 MP frame -- is never allocated at all. The
-     * reconstruction still reads the original at its true frame position, so
-     * the result is the same pixels either way; only where they land differs.
-     */
-    /**
      * Hand the tiled path new Denoise controls without reconstructing the
      * whole frame.
      *
@@ -6686,16 +6349,13 @@
      */
     setDenoiseControls(controls = {}) {
       const selector = this.denoiseSourceSelector;
-      const adaptive = selector?.cache?.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION;
-      if (!selector?.cache || (!selector.original && !adaptive) || selector.selected !== "resolved") return false;
+      if (!selector?.cache || selector.selected !== "resolved") return false;
       const weights = ["amount", "luminance", "colorNoise", "detailRecovery"].map((name) => {
         const value = Number(controls[name] ?? 0.5);
         if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
         return value;
       });
-      const sizes = selector.cache.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION
-        ? adaptiveDenoiseSizes(controls)
-        : {};
+      const sizes = adaptiveDenoiseSizes(controls);
       selector.controls = {
         amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes,
       };
@@ -6709,14 +6369,13 @@
       // source cache has replaced (and freed) the one the selector holds.
       const live = this.proxies.get(selector.identity);
       if (live && live !== selector.original) selector.original = live;
-      const adaptive = selector.cache.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION;
-      if (!source && (!selector.original || (adaptive && !selector.resolved))) {
-        // Adaptive with no whole-frame reconstruction in use: there is nothing
+      if (!source && (!selector.original || !selector.resolved)) {
+        // No whole-frame reconstruction in use: there is nothing
         // to reconstruct ahead of time. The controls are what a tiled render
         // reads, and a Direct render reconstructs once it has loaded its frame
         // (`ensureDenoiseResolved`). Reconstructing here regardless filled a
         // frame-sized texture at Full that no tiled render ever reads.
-        return adaptive && selector.selected === "resolved" && this.setDenoiseControls(controls);
+        return selector.selected === "resolved" && this.setDenoiseControls(controls);
       }
       const generation = ++this.denoiseSelectorGeneration;
       const startedAt = performance.now();
@@ -6726,213 +6385,10 @@
         if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
         return value;
       });
-      if (selector.cache.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION) {
-        return this.resolveAdaptiveDenoise(
-          selector, weights, adaptiveDenoiseSizes(controls), generation, startedAt, region, destination, sharedEncoder,
-          source || selector.original,
-        );
-      }
-      const pipelines = await this.ensureDenoisePipelines();
-      const cache = selector.cache;
-      const levelCount = cache.settings.levels;
-      const alignment = denoiseTileAlignment(levelCount);
-      if (region && ((region.x % alignment) || (region.y % alignment))) {
-        throw new Error(`A denoise resolve region must start on the ${alignment}px wavelet grid.`);
-      }
-      const overlaps = (tile) => !region || (
-        tile.x < region.x + region.width && tile.x + tile.width > region.x
-        && tile.y < region.y + region.height && tile.y + tile.height > region.y
+      return this.resolveAdaptiveDenoise(
+        selector, weights, adaptiveDenoiseSizes(controls), generation, startedAt, region, destination, sharedEncoder,
+        source || selector.original,
       );
-      const active = cache.tiles.filter((entry) => overlaps(entry.tile));
-      if (!active.length) return false;
-
-    // Where the destination's own (0, 0) sits in frame coordinates. A
-    // whole-frame destination is the identity.
-      const destinationOrigin = destination
-        ? { x: Math.max(0, Math.floor(region?.x || 0)), y: Math.max(0, Math.floor(region?.y || 0)) }
-        : { x: 0, y: 0 };
-      const candidateIsNew = !destination && !selector.resolved;
-      const candidate = destination || selector.resolved
-        || this.createDenoiseTexture(selector.original.width, selector.original.height, "denoise-resolved");
-      let paramBuffer = null;
-      try {
-        const slot = 256;
-        paramBuffer = this.device.createBuffer({
-          size: Math.max(slot, active.length * Math.max(1, levelCount) * slot),
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
-        const slots = new Float32Array(paramBuffer.size / 4);
-        // A tiled generation is one submission, because that is what makes
-        // replacement atomic. When the caller hands over its encoder, the
-        // reconstruction joins that submission instead of making one of its
-        // own, and the caller frees the parameter buffer after its own submit.
-        const encoder = sharedEncoder || this.device.createCommandEncoder();
-        let dispatches = 0;
-
-        active.forEach((entry, entryIndex) => {
-          const { tile, levels, chain } = entry;
-          if (levelCount === 2) {
-            const base = entryIndex * levelCount * (slot / 4);
-            slots.set([
-              ...weights, 0, 1, 0, 0, tile.width, tile.height, tile.x, tile.y,
-              destinationOrigin.x, destinationOrigin.y, 0, 0,
-            ], base);
-            const fine = levels[0].evidence;
-            const medium = levels[1].evidence;
-            const bindGroup = this.device.createBindGroup({
-              layout: pipelines.resolveTwoLevel.getBindGroupLayout(2),
-              entries: [
-                { binding: 0, resource: fine[0].texture.createView() },
-                { binding: 1, resource: fine[1].texture.createView() },
-                { binding: 2, resource: fine[2].texture.createView() },
-                { binding: 3, resource: medium[0].texture.createView() },
-                { binding: 4, resource: medium[1].texture.createView() },
-                { binding: 5, resource: medium[2].texture.createView() },
-                { binding: 6, resource: selector.original.texture.createView() },
-                { binding: 7, resource: candidate.texture.createView() },
-                { binding: 8, resource: { buffer: paramBuffer, offset: entryIndex * levelCount * slot, size: 64 } },
-              ],
-            });
-            const pass = encoder.beginComputePass();
-            pass.setPipeline(pipelines.resolveTwoLevel);
-            pass.setBindGroup(2, bindGroup);
-            pass.dispatchWorkgroups(Math.ceil(tile.width / 8), Math.ceil(tile.height / 8));
-            pass.end();
-            dispatches += 1;
-            return;
-          }
-          let reconstructedLow = null;
-          for (let index = levelCount - 1; index >= 0; index -= 1) {
-            const finalPass = index === 0;
-            const out = chain[index];
-            const output = finalPass ? candidate : cache.resolveScratch[index - 1];
-            const levelWeight = DENOISE_LEVEL_WEIGHTS[Math.min(index, DENOISE_LEVEL_WEIGHTS.length - 1)];
-            const base = (entryIndex * levelCount + index) * (slot / 4);
-            slots.set([
-              weights[0] * levelWeight, weights[1], weights[2], weights[3],
-              reconstructedLow ? 1 : 0, finalPass ? 1 : 0, 0, 0,
-              out.width, out.height, finalPass ? tile.x : 0, finalPass ? tile.y : 0,
-              // Only the final pass writes into the caller's destination. The
-              // intermediate levels write into whole scratch textures of their
-              // own and are already at their own origin.
-              finalPass ? destinationOrigin.x : 0, finalPass ? destinationOrigin.y : 0, 0, 0,
-            ], base);
-            const dummyLow = reconstructedLow || levels[index].evidence[0];
-            const bindGroup = this.device.createBindGroup({
-              layout: pipelines.resolve.getBindGroupLayout(1),
-              entries: [
-                { binding: 0, resource: dummyLow.texture.createView() },
-                { binding: 1, resource: levels[index].evidence[0].texture.createView() },
-                { binding: 2, resource: levels[index].evidence[1].texture.createView() },
-                { binding: 3, resource: levels[index].evidence[2].texture.createView() },
-                { binding: 4, resource: selector.original.texture.createView() },
-                { binding: 5, resource: output.texture.createView() },
-                { binding: 6, resource: { buffer: paramBuffer, offset: (entryIndex * levelCount + index) * slot, size: 64 } },
-              ],
-            });
-            const pass = encoder.beginComputePass();
-            pass.setPipeline(pipelines.resolve);
-            pass.setBindGroup(1, bindGroup);
-            pass.dispatchWorkgroups(Math.ceil(out.width / 8), Math.ceil(out.height / 8));
-            pass.end();
-            dispatches += 1;
-            reconstructedLow = output;
-          }
-        });
-
-        this.device.queue.writeBuffer(paramBuffer, 0, slots);
-        if (sharedEncoder) {
-          this.denoiseCounters.resolveDispatches += dispatches;
-          this.denoiseCounters.resolveTiles += active.length;
-          const encoded = paramBuffer;
-          paramBuffer = null;
-          return { encoded: true, dispatches, tiles: active.length, paramBuffer: encoded };
-        }
-        this.device.queue.submit([encoder.finish()]);
-        await this.device.queue.onSubmittedWorkDone();
-        if (generation !== this.denoiseSelectorGeneration || selector !== this.denoiseSourceSelector) {
-          if (candidateIsNew) candidate.texture.destroy();
-          this.recordStage("denoise-resolve", { state: "stale", generation });
-          return false;
-        }
-        if (candidateIsNew) {
-          selector.resolved = {
-            ...candidate,
-            workingSpace: selector.original.workingSpace,
-            pixelFormat: "rgba16float",
-            geometrySignature: selector.original.geometrySignature,
-            identity: selector.original.identity,
-          };
-        }
-        // A bounded destination is the caller's own texture for one tile. It
-        // is not the selector's resolved picture, so it does not become the
-        // selected source and does not claim a resolved region: saying it did
-        // would tell the renderer a whole frame is denoised when one tile is.
-        if (destination) {
-          this.denoiseCounters.resolveDispatches += dispatches;
-          this.denoiseCounters.resolveTiles += active.length;
-          this.recordStage("denoise-resolve", {
-            state: "ready",
-            generation,
-            durationMs: performance.now() - startedAt,
-            tiles: active.length,
-            dispatches,
-            region: `${region.x},${region.y},${region.width},${region.height}`,
-            destination: "bounded",
-          });
-          return true;
-        }
-        // The swap is the last thing that happens, and only on success. A
-        // half-finished reconstruction can never become the presented result.
-        selector.selected = "resolved";
-        selector.resolvedVersion = ++this.denoiseResolveVersion;
-        selector.controls = {
-          amount: weights[0],
-          luminance: weights[1],
-          colorNoise: weights[2],
-          detailRecovery: weights[3],
-        };
-        // A region is honoured at tile granularity: a tile is the smallest unit
-        // whose evidence indexing lines up, so the rectangle actually rewritten
-        // is the union of the tiles the request touches. Report that rather
-        // than the request, or a caller cannot tell what is now current.
-        selector.resolvedRegion = region
-          ? active.reduce((union, entry) => {
-            const { tile } = entry;
-            const x = Math.min(union.x, tile.x);
-            const y = Math.min(union.y, tile.y);
-            return {
-              x,
-              y,
-              width: Math.max(union.x + union.width, tile.x + tile.width) - x,
-              height: Math.max(union.y + union.height, tile.y + tile.height) - y,
-            };
-          }, { ...active[0].tile })
-          : null;
-        this.denoiseCounters.atomicSwaps += 1;
-        this.denoiseCounters.resolveDispatches += dispatches;
-        this.denoiseCounters.resolveTiles += active.length;
-        if (candidateIsNew) {
-          this.denoiseCounters.allocations += 1;
-          this.denoiseCounters.allocatedBytes += candidate.byteSize;
-          this.recordAllocation("denoise-resolved", candidate.byteSize, { generation });
-        }
-        this.recordStage("denoise-resolve", {
-          state: "ready",
-          generation,
-          durationMs: performance.now() - startedAt,
-          tiles: active.length,
-          dispatches,
-          region: region ? `${region.x},${region.y},${region.width},${region.height}` : "whole",
-        });
-        return true;
-      } catch (error) {
-        if (candidateIsNew) candidate.texture.destroy();
-        this.recordStage("denoise-resolve", { state: "error", generation, durationMs: performance.now() - startedAt });
-        throw error;
-      } finally {
-        paramBuffer?.destroy();
-      }
     }
 
     async prepareDenoiseSelectorSeam(sessionId, lane, adjustments, longEdge, editRevision = 0, variant = "resolved-a", sourceIdentity = "source") {

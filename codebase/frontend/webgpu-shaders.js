@@ -2,7 +2,6 @@
   "use strict";
 
   const PEAK_HISTOGRAM_BINS = 4096;
-  const DENOISE_LEVEL_WEIGHTS = Object.freeze([1.0, 0.55, 0.25, 0.1]);
 
   // BW-01 Black & White, in WGSL for both the render and the peak shaders
   // (each names its parameter array differently). Mirrors
@@ -228,155 +227,6 @@ fn finishedPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   let sdrV2 = peakParams[0] < 0.5 && peakParams[159] > 0.5;
   recordPeak(peakSignalOf(rgb, sdrV2));
 }`;
-  const DENOISE_SHADER_SOURCE = `
-// rect: (outWidth, outHeight, sourceOriginX, sourceOriginY) and valid:
-// (sourceValidWidth, sourceValidHeight, ...) turn this into a tiled kernel.
-// The Haar block grid is what a tile has to respect, so a tile origin is always
-// a multiple of 2^levels and the parity arithmetic below is unchanged by it.
-// Clamping is to the *valid* sub-rect rather than to the bound texture, because
-// level 1 and above read a reusable scratch texture that is larger than the
-// tile's own low band; clamping to the allocation would invent edge pixels that
-// the whole-image run never sees.
-struct AnalysisParams { sigmaThreshold: vec4f, rect: vec4f, valid: vec4f, };
-@group(0) @binding(0) var analysisSource: texture_2d<f32>;
-@group(0) @binding(1) var analysisLow: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(2) var analysisH: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(3) var analysisV: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(4) var analysisD: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(5) var<uniform> analysisParams: AnalysisParams;
-
-fn loadClamped(source: texture_2d<f32>, p: vec2i) -> vec3f {
-  let valid = vec2i(i32(analysisParams.valid.x), i32(analysisParams.valid.y));
-  let origin = vec2i(i32(analysisParams.rect.z), i32(analysisParams.rect.w));
-  let size = min(valid, vec2i(textureDimensions(source)) - origin);
-  return textureLoad(source, origin + clamp(p, vec2i(0), size - vec2i(1)), 0).rgb;
-}
-fn components(rgb: vec3f) -> vec3f {
-  let y = dot(rgb, vec3f(0.2722287, 0.6740818, 0.0536895));
-  return vec3f(y, rgb.r - y, rgb.b - y);
-}
-fn magnitude(c: vec3f, sigma: vec3f) -> f32 {
-  let scaled = c / sigma;
-  return sqrt(scaled.x * scaled.x + dot(scaled.yz, scaled.yz));
-}
-fn evidence(c: vec3f, mag: f32, total: f32) -> vec4f {
-  let ratio = mag / analysisParams.sigmaThreshold.w;
-  let confidence = 1.0 / (1.0 + ratio * ratio * ratio * ratio);
-  let directional = clamp((mag / max(total, 1e-6) - 0.5) / 0.4, 0.0, 1.0);
-  let threshold = clamp(4.0 * confidence * (1.0 - confidence), 0.0, 1.0);
-  return vec4f(c * confidence, max(directional, threshold));
-}
-@compute @workgroup_size(8, 8)
-fn analyzeMain(@builtin(global_invocation_id) id: vec3u) {
-  let outSize = vec2u(u32(analysisParams.rect.x), u32(analysisParams.rect.y));
-  if (id.x >= outSize.x || id.y >= outSize.y) { return; }
-  let p = vec2i(id.xy) * 2;
-  let a = loadClamped(analysisSource, p);
-  let b = loadClamped(analysisSource, p + vec2i(1, 0));
-  let c = loadClamped(analysisSource, p + vec2i(0, 1));
-  let d = loadClamped(analysisSource, p + vec2i(1, 1));
-  let h = components((a - b + c - d) * 0.25);
-  let v = components((a + b - c - d) * 0.25);
-  let diagonal = components((a - b - c + d) * 0.25);
-  let sigma = analysisParams.sigmaThreshold.xyz;
-  let mh = magnitude(h, sigma);
-  let mv = magnitude(v, sigma);
-  let md = magnitude(diagonal, sigma);
-  let total = mh + mv + md;
-  textureStore(analysisLow, vec2i(id.xy), vec4f((a + b + c + d) * 0.25, 1.0));
-  textureStore(analysisH, vec2i(id.xy), evidence(h, mh, total));
-  textureStore(analysisV, vec2i(id.xy), evidence(v, mv, total));
-  textureStore(analysisD, vec2i(id.xy), evidence(diagonal, md, total));
-}
-
-// rect: (outWidth, outHeight, originX, originY). The origin applies to the
-// output store and to the original read, and is zero for the intermediate
-// passes that write into a tile-local scratch. Evidence is always read at
-// tile-local coordinates, because evidence is stored per tile.
-// The rect is (width, height, x, y) in frame coordinates. The origin is where
-// the destination texture's own (0, 0) sits in those coordinates, so a
-// reconstruction can read the whole-frame original at its true position while
-// writing into a texture that covers only one tile. Whole-frame destinations
-// leave it at zero, which makes reading and writing the same coordinate again.
-struct ResolveParams { weights: vec4f, flags: vec4f, rect: vec4f, origin: vec4f, };
-@group(1) @binding(0) var resolveLow: texture_2d<f32>;
-@group(1) @binding(1) var resolveH: texture_2d<f32>;
-@group(1) @binding(2) var resolveV: texture_2d<f32>;
-@group(1) @binding(3) var resolveD: texture_2d<f32>;
-@group(1) @binding(4) var resolveOriginal: texture_2d<f32>;
-@group(1) @binding(5) var resolveOutput: texture_storage_2d<rgba16float, write>;
-@group(1) @binding(6) var<uniform> resolveParams: ResolveParams;
-
-fn componentRgb(value: vec3f) -> vec3f {
-  let red = value.x + value.y;
-  let blue = value.x + value.z;
-  let green = (value.x - 0.2722287 * red - 0.0536895 * blue) / 0.6740818;
-  return vec3f(red, green, blue);
-}
-fn weightedDetailWith(packed: vec4f, weights: vec4f) -> vec3f {
-  let recovery = 1.0 - weights.w * packed.w;
-  let c = packed.xyz * vec3f(weights.y, weights.z, weights.z) * recovery;
-  return componentRgb(c) * weights.x;
-}
-fn weightedDetail(packed: vec4f) -> vec3f {
-  return weightedDetailWith(packed, resolveParams.weights);
-}
-@compute @workgroup_size(8, 8)
-fn resolveMain(@builtin(global_invocation_id) id: vec3u) {
-  let outSize = vec2u(u32(resolveParams.rect.x), u32(resolveParams.rect.y));
-  if (id.x >= outSize.x || id.y >= outSize.y) { return; }
-  let p = vec2i(id.xy);
-  let frameAt = p + vec2i(i32(resolveParams.rect.z), i32(resolveParams.rect.w));
-  let storeAt = frameAt - vec2i(i32(resolveParams.origin.x), i32(resolveParams.origin.y));
-  let q = p / 2;
-  // A tile origin is a multiple of 2^levels, so local and global parity agree
-  // at every level and the sign pattern is the whole-image one.
-  let sx = select(1.0, -1.0, (p.x & 1) == 1);
-  let sy = select(1.0, -1.0, (p.y & 1) == 1);
-  var residual = vec3f(0.0);
-  if (resolveParams.flags.x > 0.5) { residual = textureLoad(resolveLow, q, 0).rgb; }
-  residual += sx * weightedDetail(textureLoad(resolveH, q, 0));
-  residual += sy * weightedDetail(textureLoad(resolveV, q, 0));
-  residual += sx * sy * weightedDetail(textureLoad(resolveD, q, 0));
-  var rgb = residual;
-  if (resolveParams.flags.y > 0.5) { rgb = textureLoad(resolveOriginal, frameAt, 0).rgb - residual; }
-  textureStore(resolveOutput, storeAt, vec4f(rgb, 1.0));
-}
-
-@group(2) @binding(0) var directH0: texture_2d<f32>;
-@group(2) @binding(1) var directV0: texture_2d<f32>;
-@group(2) @binding(2) var directD0: texture_2d<f32>;
-@group(2) @binding(3) var directH1: texture_2d<f32>;
-@group(2) @binding(4) var directV1: texture_2d<f32>;
-@group(2) @binding(5) var directD1: texture_2d<f32>;
-@group(2) @binding(6) var directOriginal: texture_2d<f32>;
-@group(2) @binding(7) var directOutput: texture_storage_2d<rgba16float, write>;
-@group(2) @binding(8) var<uniform> directParams: ResolveParams;
-
-@compute @workgroup_size(8, 8)
-fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
-  let outSize = vec2u(u32(directParams.rect.x), u32(directParams.rect.y));
-  if (id.x >= outSize.x || id.y >= outSize.y) { return; }
-  let p = vec2i(id.xy);
-  let frameAt = p + vec2i(i32(directParams.rect.z), i32(directParams.rect.w));
-  let storeAt = frameAt - vec2i(i32(directParams.origin.x), i32(directParams.origin.y));
-  let q0 = p / 2;
-  let q1 = q0 / 2;
-  let sx0 = select(1.0, -1.0, (p.x & 1) == 1);
-  let sy0 = select(1.0, -1.0, (p.y & 1) == 1);
-  let sx1 = select(1.0, -1.0, (q0.x & 1) == 1);
-  let sy1 = select(1.0, -1.0, (q0.y & 1) == 1);
-  let weights = directParams.weights;
-  var residual = ${DENOISE_LEVEL_WEIGHTS[1]} * sx1 * weightedDetailWith(textureLoad(directH1, q1, 0), weights);
-  residual += ${DENOISE_LEVEL_WEIGHTS[1]} * sy1 * weightedDetailWith(textureLoad(directV1, q1, 0), weights);
-  residual += ${DENOISE_LEVEL_WEIGHTS[1]} * sx1 * sy1 * weightedDetailWith(textureLoad(directD1, q1, 0), weights);
-  residual += sx0 * weightedDetailWith(textureLoad(directH0, q0, 0), weights);
-  residual += sy0 * weightedDetailWith(textureLoad(directV0, q0, 0), weights);
-  residual += sx0 * sy0 * weightedDetailWith(textureLoad(directD0, q0, 0), weights);
-  let rgb = textureLoad(directOriginal, frameAt, 0).rgb - residual;
-  textureStore(directOutput, storeAt, vec4f(rgb, 1.0));
-}`;
-
   const ADAPTIVE_DENOISE_SHADER_SOURCE = `
 // scratch: (originX, originY, width, height) in frame pixels
 // frame:   (frameWidth, frameHeight, level, axis)   axis 0 = horizontal
@@ -2996,7 +2846,6 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
   const HDRWebGPUShaders = Object.freeze({
     BLACK_AND_WHITE_PARAM,
     PEAK_REDUCTION_SHADER_SOURCE,
-    DENOISE_SHADER_SOURCE,
     ADAPTIVE_DENOISE_SHADER_SOURCE,
     SHADER_SOURCE,
     LUMA_MASK_SHADER_SOURCE,

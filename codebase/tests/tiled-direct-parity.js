@@ -409,13 +409,9 @@ const MAX_DIFFERING_FRACTION = 0.0005;
       }
     });
 
-    // Denoise was the tile scheduler's last refusal. Direct reads a whole-frame
-    // resolved texture -- 340 MB on a 42 MP frame, which is what used to put a
-    // denoised Full over any budget; Tiled reconstructs one tile at a time from
-    // the same cached evidence. Those are two different routes to the same
-    // pixels, so this is the parity that replaces the refusal, and it runs at
-    // both tile sizes because reconstruction is indexed off the frame's wavelet
-    // grid and a misaligned tile would reconstruct against the wrong parity.
+    // Direct reads a whole-frame reconstruction; Tiled reconstructs one tile
+    // at a time from the source it loaded. Those are two routes to the same
+    // pixels, so this parity runs at both tile sizes.
     const denoiseSetup = await page.evaluate(async () => {
       const analyzed = await state.gpuPreview.analyzeDenoiseProxy(
         state.session.session_id,
@@ -423,7 +419,6 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         JSON.parse(JSON.stringify(state.adjustments)),
         requiredProcessingLongEdge(),
         state.editRevision,
-        { levels: 2, noiseThreshold: 3.0, lumaSigma: 0.035, chromaSigma: 0.035 },
         "source",
         { amount: 0.8, luminance: 0.7, colorNoise: 0.6, detailRecovery: 0.3 },
       );

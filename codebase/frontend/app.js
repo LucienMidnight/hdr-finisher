@@ -295,9 +295,6 @@ const defaultDenoiseDocument = () => ({
   sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
 });
 
-// The one Denoise method. It measures the noise in the photo itself.
-const DENOISE_ADAPTIVE_ALGORITHM = "adaptive-atrous-v1";
-
 const SDR_MATCH_GRAIN_FIELDS = Object.freeze([
   "grain_enabled",
   "grain_amount",
@@ -2490,23 +2487,6 @@ function initializePreviewScheduler() {
         variant,
       ) || Promise.resolve(false)
     ),
-    analyzeDenoiseWavelet: async (preset = {}, longEdge = settledProxyLongEdge()) => {
-      const ready = await state.gpuPreview?.analyzeDenoiseProxy?.(
-        state.session?.session_id,
-        state.currentView,
-        JSON.parse(JSON.stringify(state.adjustments)),
-        Number(longEdge),
-        state.editRevision,
-        preset,
-      );
-      if (!ready) return false;
-      return renderGpuDraft(state.currentView, { longEdge: Number(longEdge), tier: "settled" });
-    },
-    resolveDenoiseWavelet: async (controls = {}, longEdge = settledProxyLongEdge()) => {
-      const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls);
-      if (!ready) return false;
-      return renderGpuDraft(state.currentView, { longEdge: Number(longEdge), tier: "settled" });
-    },
     selectDenoiseSelectorSeam: async (enabled, longEdge = settledProxyLongEdge()) => {
       if (!state.gpuPreview?.selectDenoiseSelectorSource?.(enabled)) return false;
       return renderGpuDraft(state.currentView, { longEdge: Number(longEdge), tier: "settled" });
@@ -10423,7 +10403,6 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
       JSON.parse(JSON.stringify(state.adjustments)),
       options.longEdge || refinementProxyLongEdge(),
       state.editRevision,
-      { algorithm: DENOISE_ADAPTIVE_ALGORITHM },
       sourceIdentity,
       denoiseRendererControls(settings.controls),
     );

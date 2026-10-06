@@ -161,8 +161,8 @@ function classify(rows) {
           await row(stateReport, controlPath, 'control', () => setControl(controlPath, plan.alternative), () => setControl(controlPath, plan.original));
         }
 
-        // Denoise has no data-path controls. Exercise both algorithms explicitly
-        // through the same handlers as the UI, in the disposable session only.
+        // Denoise has no data-path controls. Exercise it explicitly through
+        // the same handlers as the UI, in the disposable session only.
         if (args.includes('--include-denoise')) {
           const original = await page.evaluate(() => structuredClone(state.denoise[state.currentView]));
           const configure = settings => page.evaluate(async settings => {
@@ -174,7 +174,7 @@ function classify(rows) {
             if (settings.enabled && state.denoiseRuntime[state.currentView].status !== 'ready')
               throw Error(state.denoiseRuntime[state.currentView].error || 'Denoise is not ready');
           }, settings);
-          for (const algorithm of ['adaptive-atrous-v1', 'compact-haar-residual-v1']) {
+          for (const algorithm of ['adaptive-atrous-v1']) {
             const enabled = structuredClone(original);
             enabled.enabled = true;
             enabled.analysis.algorithm_version = algorithm;
@@ -190,19 +190,6 @@ function classify(rows) {
                   throw Error(state.denoiseRuntime[state.currentView].error || 'Denoise is not ready');
               }, { key, value });
               await row(stateReport, `Denoise ${algorithm}: ${key}`, 'denoise', () => edit(alternative), () => edit(value));
-            }
-            if (algorithm === 'compact-haar-residual-v1') {
-              for (const [key, alternative] of [['levels', enabled.analysis.levels === 2 ? 3 : 2],
-                ['noise_threshold', enabled.analysis.noise_threshold === 3 ? 4 : 3],
-                ['luma_sigma', enabled.analysis.luma_sigma === 0.035 ? 0.04 : 0.035],
-                ['chroma_sigma', enabled.analysis.chroma_sigma === 0.035 ? 0.04 : 0.035]]) {
-                const edit = value => page.evaluate(async ({ key, value }) => {
-                  updateCustomDenoiseAnalysis(key, value, false);
-                  if (!await persistDenoiseSettings() || !await recalculateDenoise())
-                    throw Error(state.denoiseRuntime[state.currentView].error || 'Denoise recalculation failed');
-                }, { key, value });
-                await row(stateReport, `Denoise ${algorithm}: ${key}`, 'denoise', () => edit(alternative), () => configure(enabled));
-              }
             }
             const exposure = await page.evaluate(() => getValueByPath(state.adjustments, 'current.exposure'));
             await row(stateReport, `Denoise ${algorithm}: grade edit`, 'denoise',

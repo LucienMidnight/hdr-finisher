@@ -10,7 +10,6 @@ const { HDRWebGPUShaders } = require("../frontend/webgpu-shaders.js");
 // measurement and Denoise. A change to one of them fails here.
 const EXPECTED_SHA256 = Object.freeze({
   PEAK_REDUCTION_SHADER_SOURCE: "2ee99c34c3f21654730ff6b19a64335c0cdb6e2c9f7500a354a1a67319fdf7eb",
-  DENOISE_SHADER_SOURCE: "8107942837fab77bbf2feb6a3873063d3b6270d79c51cb6cf194b980e365480d",
   ADAPTIVE_DENOISE_SHADER_SOURCE: "818ec2ddb4523a1208eaa31f2a3bfe943e89d9ec6449e9866ff741bc49a3c807",
 });
 

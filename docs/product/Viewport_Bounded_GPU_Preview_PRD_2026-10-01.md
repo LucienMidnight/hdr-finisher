@@ -1704,13 +1704,14 @@ column) without confirming the item first.
 | CF-PIX-05 | Local Sharpen Threshold 0, 10 and 100 give identical pixels; the synthetic source may be insensitive | Moderate | `tests/webgpu-shader-compilation.js` |
 | CF-PIX-06 | Spatial film effects at tile size 512: 20 pixels differ, largest 4 levels, against byte-exact | Moderate | `tests/tiled-film-parity.js` |
 | CF-PIX-07 | Diffusion against bloom disagreement 1.252 against 1.25 | Low (the harness is known to be sensitive) | `tests/performance/tier-film-consistency.js` |
+| CF-PIX-08 | Found October 6. On the Direct route, turning Show noise off sometimes does not restore the graded picture exactly: 2 of 5 runs at `359d329` (before that day's fixes), 1 of 3 after them. Not investigated | Moderate (intermittent) | `tests/denoise-noise-view.js` |
 | CF-PEAK-01 | Clarity 100 / 1.5% on the 42 MP four-mask fixture: worst anchor patch 0.516% against 0.50%, one run. Does not reopen P3-PEAK-01 by itself | Moderate | `tests/performance/editing-peak-clarity-reference.js` |
 
 **Speed.**
 
 | ID | What was measured | Check |
 |---|---|---|
-| CF-SPEED-01 | Exposure drag at 200% on the heavy project: baseline 2.4 frames a second (49.6 at Fit) against 30 / 20 floors. Phase 4 counter follow-up: 0.2 at 200%, 50.0 Fit; original-probe control 1.4 at 200%. Open, unattributed; see 16.5 | `tests/performance/drag-gpu-load.js` **October 6:** cause found, not fixed. At 200% each drag frame is drawn in about 8 ms, but 139 of 155 were discarded on completion because the slider had moved again. Adaptive Denoise drags already let a frame finish; applying that to every drag gave 49.7 fps at 200% (Fit unchanged at 49.3) in an uncommitted two-line experiment. Waiting on Steve, as it changes how a drag behaves |
+| CF-SPEED-01 | Exposure drag at 200% on the heavy project: baseline 2.4 frames a second (49.6 at Fit) against 30 / 20 floors. Phase 4 counter follow-up: 0.2 at 200%, 50.0 Fit; original-probe control 1.4 at 200%. Open, unattributed; see 16.5 | `tests/performance/drag-gpu-load.js` **October 6:** cause found, not fixed. At 200% each drag frame is drawn in about 8 ms, but 139 of 155 were discarded on completion because the slider had moved again. Adaptive Denoise drags already let a frame finish; applying that to every drag gave 49.7 fps at 200% (Fit unchanged at 49.3) in an uncommitted two-line experiment. Steve, October 6: saved for later; the 200% drag is fine for him as it is |
 | CF-SPEED-02 | Warm luminance Feather p95 1,005.6 ms against 1,000 ms | `tests/performance/luma-feather-latency.js` |
 | CF-SPEED-03 | First feedback of about 0.75-1.0 s on the colour-wheel pad, brush Feather and Shift Edge, and the luminance rails; straighten and perspective drag-and-Apply 1.4-1.7 s | `heavy-project-drag-review.js` |
 | CF-SPEED-04 | Headline latency: cold 100% zoom feedback 850 ms against 150 ms; warm 200% slider feedback p95 85 ms against 50 ms | `headline-latency.js` |
@@ -1726,15 +1727,15 @@ column) without confirming the item first.
 | ID | What was measured |
 |---|---|
 | CF-ROUTE-01 | An Exposure edit after rotation, flip or straighten falls back to a CPU picture (`dirty-edit-with-stale-geometry`): three on the four-mask audit, five on fifty-local **October 6:** fixed in `b245000`. The refusal was a stale note: a draft dropped for an edit-revision mismatch recorded no reason, so the settle pass read the geometry commit's earlier refusal as its own |
-| CF-ROUTE-02 | CPU mask requests beyond the deferred P3-FALLBACK-01: 121 primary, 36 four-mask, 402 fifty-local, including 512-edge masks and mask tiles **October 6:** explained, no fix. With legacy Denoise never used in the session, the only CPU mask request found is the deferred P3-FALLBACK-01 (primary and fifty-local, both lanes, edits and pan). Once legacy Denoise has been enabled, even if turned off again, gradient, luminance and combination masks and pans go to the CPU for the rest of the session; that reproduces the audit counts and goes with the legacy removal below |
-| CF-ROUTE-03 | Whole native source fetched by enabling legacy Denoise and by a few colour rows: 13-14 requests an audit |
+| CF-ROUTE-02 | CPU mask requests beyond the deferred P3-FALLBACK-01: 121 primary, 36 four-mask, 402 fifty-local, including 512-edge masks and mask tiles **October 6:** explained, no fix. With legacy Denoise never used in the session, the only CPU mask request found is the deferred P3-FALLBACK-01 (primary and fifty-local, both lanes, edits and pan). Once legacy Denoise has been enabled, even if turned off again, gradient, luminance and combination masks and pans go to the CPU for the rest of the session; that reproduces the audit counts and goes with the legacy removal below Legacy Denoise was removed the same day, so that cause is gone; no audit re-run. |
+| CF-ROUTE-03 | Whole native source fetched by enabling legacy Denoise and by a few colour rows: 13-14 requests an audit **October 6:** the legacy Denoise part is gone with the method; the colour rows are not looked at. |
 | CF-ROUTE-04 | CPU scope requests: nine on fifty-local, six for HDR during switches to SDR in the endurance run **October 6:** fixed in `3397578`: a scope scheduled for the lane just left ran as a discarded CPU scope, and a 100% scope pass interrupted by a pan or catch-up pass was read as a GPU refusal. The other five fifty-local rows are legacy Denoise rows |
 | CF-ROUTE-05 | 35 HTTP 409 responses in the endurance run; probably superseded work, bodies not captured |
 | CF-ROUTE-06 | Phase 4 explicit 1 GiB Full test: minimum graph requires Tiled, but 25 interactive drafts reach renderer refusal (`tiled-refused:interactive render`) rather than the preserved pre-dispatch guard; source/parameter preparation precedes refusal. No app fix; see 16.8 **October 6:** fixed in `a0168a8`: the pre-dispatch refusal dropped in `9c8315e` is restored for whole-frame tiled drag frames. `full-tier-tone-cost` passes |
 | CF-ROUTE-07 | Same settled-render overlap enters CPU settle branch once for `coalesced-by-newer-render` in two repeats. Zero CPU picture HTTP requests in these warm runs; original branch-level guard remains red. See 16.8 **October 6:** fixed in `a0168a8`: `coalesced-by-newer-render` is now treated as the supersession it is |
 | CF-ROUTE-08 | Execution readout reports Direct while accepted viewer execution is Tiled at 100%, 200% and Full/Fit under 1 GiB. Both repeats agree; the readout reads the last renderer plan, which can belong to auxiliary work. See 16.9 |
 
-| CF-ROUTE-09 | Found October 6 on Steve's DSC00264 project (42 MP, Denoise and Highlight Compression on). After the first sharp frame at 100%, the app streams the whole native source (`proxy-stream`, long edge 7968, about 330 MB, 0.8 s) and presents the view a second time, about 2.2 s after the click on a first visit and 1-1.5 s later. The first sharp frame is at 0.1-0.3 s. Why the whole source is fetched is not yet established; removing it would make a pan at 100% fetch each newly exposed strip instead. One instrumented run each; not fixed **October 6:** cause established, not changed. It is the catch-up pass: with no hard-edged mask in the project it draws the whole frame about a second after the view pass so later pans need no fetch. Projects with a hard-edged mask already skip it and fetch strips on pan. Waiting on Steve |
+| CF-ROUTE-09 | Found October 6 on Steve's DSC00264 project (42 MP, Denoise and Highlight Compression on). After the first sharp frame at 100%, the app streams the whole native source (`proxy-stream`, long edge 7968, about 330 MB, 0.8 s) and presents the view a second time, about 2.2 s after the click on a first visit and 1-1.5 s later. The first sharp frame is at 0.1-0.3 s. Why the whole source is fetched is not yet established; removing it would make a pan at 100% fetch each newly exposed strip instead. One instrumented run each; not fixed **October 6:** cause established, not changed. It is the catch-up pass: with no hard-edged mask in the project it draws the whole frame about a second after the view pass so later pans need no fetch. Projects with a hard-edged mask already skip it and fetch strips on pan. Explained to Steve October 6; left as it is unless he asks for the change |
 | CF-SPEED-06 | Same trace: on a first 100% visit the 16-patch highlight anchor measurement runs twice in a row (about 0.3 s each). One run; not fixed **October 6:** not reproduced. The 16-patch measurement ran once, at open. After the 100% click there are two small whole-picture fetches of about 0.3 s each, for the scopes (960) and the navigation thumbnail (512) |
 
 **Closed October 6.** With adaptive Denoise and Highlight Compression both on,
@@ -1742,12 +1743,16 @@ the picture and scopes never settled while idle (found by Steve by hand; no
 driver checks that the app goes quiet). Fixed in `cc94373`. It may bear on
 CF-DRIFT-03 and CF-DRIFT-05; that is not measured.
 
-**To remove (Steve, October 6).** The legacy Denoise method: its results are
-poor and it is old code, so it is to be deleted, leaving the adaptive method
-as the only one. Not started. No migration: the app is before 1.0 and has no
-outside users, so a project saved with the legacy method may break and no
-compatibility code is kept for it (Steve, October 6). It would also retire the whole-source fetch that enabling legacy Denoise
-causes (part of CF-ROUTE-03).
+**Removed October 6 (Steve).** The legacy wavelet Denoise method is deleted
+(`4fb9fbd` and the commit that carries this note); the adaptive method is the
+only one. No migration: a project saved with the legacy method no longer
+opens. None of the test projects used it. Five unread wavelet fields stay in
+the saved-project schema because every existing project carries them and
+unknown fields are refused. Checks removed with it: the wavelet reference and
+tile tests, `denoise-tiled-parity`, `denoise-cache-identity`,
+`denoise-memory-trace`, the wavelet shader pin, and the `--wavelet` and `--ui`
+modes of `denoise-selector-seam`. The renderer still carries the general
+Denoise branches and budget accounting the adaptive method uses.
 
 **Checks that fail because they still describe the old design (phase 4
 input).** Each is rewritten for the viewport-bounded design or retired with

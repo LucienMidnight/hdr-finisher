@@ -46,7 +46,6 @@
     "test:bw-parity": "node tests/run-in-electron.js tests/bw-parity.js",
     "test:clarity-map-parity": "node tests/run-in-electron.js tests/clarity-map-parity.js",
     "test:grain-parity": "node tests/run-in-electron.js tests/grain-parity.js",
-    "test:denoise-tiled-parity": "node tests/run-in-electron.js tests/denoise-tiled-parity.js",
     "test:tiled-cpu-detail-parity": "node tests/run-in-electron.js tests/tiled-cpu-detail-parity.js",
     "test:webgpu-shader": "node tests/webgpu-shader-compilation.js",
     "test:webgpu-memory": "node --test tests/webgpu-memory-diagnostics.test.js",

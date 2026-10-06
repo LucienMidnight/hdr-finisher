@@ -406,30 +406,23 @@ def test_denoise_phase_zero_selector_remains_lazy_and_outside_the_base_shader() 
     assert "prepareDenoiseSelectorSeam" in app_script
     assert "selectDenoiseSelectorSeam" in app_script
 
-def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_only() -> None:
+def test_denoise_setup_fetches_a_model_and_resolve_is_reconstruction_only() -> None:
     preview = _webgpu_source()
     app_script = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
-    assert 'DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1"' in preview
-    assert "analyzeDenoiseProxy(" in preview
+    # One method. The wavelet method's analysis, shader and identity are gone.
+    for removed in ("compact-haar-residual-v1", "ensureDenoisePipelines", "alignedDenoiseTiles"):
+        assert removed not in preview
+    assert "analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, sourceIdentity = \"source\", controls = {})" in preview
     # Reconstruction has a bounded destination and a shared encoder, so
     # a tiled generation can rebuild one tile at a time into a tile-sized
     # texture and still submit once. The whole-frame signature is still the
     # default: omitting both is the interactive drag path, unchanged.
     assert "resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null, source = null } = {})" in preview
     assert 'const weights = ["amount", "luminance", "colorNoise", "detailRecovery"]' in preview
-    assert "settings.lumaSigma * scale" in preview
     assert 'recordStage("denoise-analysis"' in preview
     assert 'recordStage("denoise-resolve"' in preview
-    assert 'recordStage("denoise-analysis", { state: "error"' in preview
     assert 'recordStage("denoise-resolve", { state: "error"' in preview
-    assert "if (!cacheInstalled) {" in preview
-    assert "for (const item of evidenceAllocated) item.texture.destroy();" in preview
-    # Reconstruction scratch and the parameter buffer live outside
-    # the failed-analysis cleanup: the scratch now belongs to the installed
-    # cache and is released by destroyDenoiseSelector, and the parameter buffer
-    # is a single offset-bound allocation released in every path.
-    assert "for (const item of selector.cache?.resolveScratch || []) item.texture?.destroy();" in preview
     assert "paramBuffer?.destroy();" in preview
 
     # The reconstruction-only contract, asserted on behaviour rather than on the
@@ -445,8 +438,8 @@ def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_
     assert "cancelDenoiseProcessing({ selectOriginal = true } = {})" in preview
     assert "runtime.generation += 1;" in app_script
     assert 'const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";' in app_script
-    assert "analyzeDenoiseWavelet" in app_script
-    assert "resolveDenoiseWavelet" in app_script
+    assert "analyzeDenoiseWavelet" not in app_script
+    assert "resolveDenoiseWavelet" not in app_script
 
 def test_denoise_exposes_one_method_and_its_live_controls() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
@@ -473,7 +466,7 @@ def test_denoise_exposes_one_method_and_its_live_controls() -> None:
     assert "updateCustomDenoiseAnalysis" not in app_script
     # The live controls still reach the renderer's reconstruction, but through
     # the coalescing queue rather than one call per input event.
-    assert "state.gpuPreview?.resolveDenoiseProxy?.(controls)" in app_script
+    assert "state.gpuPreview?.resolveDenoiseProxy?.(controls, region ? { region } : {})" in app_script
     assert "denoiseInputQueue().submit(" in app_script
     assert "state.gpuPreview.analyzeDenoiseProxy" in app_script
     assert "updateRangeVisual(input)" in app_script
