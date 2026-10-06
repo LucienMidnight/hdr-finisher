@@ -140,48 +140,6 @@ function assert(condition, message) {
       return;
     }
 
-    const sdrToneMappers = await page.evaluate(async () => {
-      const comparisons = {};
-      const neutralBands = defaultAdjustments().sdr.tone_equalizer_nodes;
-      state.adjustments.sdr.rendering_version = "legacy_base_v1";
-      state.adjustments.sdr.tone_equalizer_nodes = neutralBands;
-      state.adjustments.sdr.highlight_recovery = 0;
-      for (const mapper of ["filmic", "aces", "reinhard"]) {
-        state.adjustments.sdr.tone_mapper = mapper;
-        invalidatePreview("sdr");
-        if (await syncGlobalEditState() === false) throw new Error(`${mapper} state did not synchronize.`);
-        if (!await renderGpuDraft("sdr", { longEdge: settledProxyLongEdge() })) {
-          throw new Error(`${mapper} GPU draft did not render.`);
-        }
-        let presented = false;
-        for (let attempt = 0; attempt < 12 && !presented; attempt += 1) {
-          presented = await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "sdr" });
-          if (!presented) await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-        if (!presented) throw new Error(`${mapper} GPU histogram was not presented.`);
-        const gpu = JSON.parse(JSON.stringify(state.lastScope));
-        const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=sdr&mode=histogram&long_edge=${settledProxyLongEdge()}&max_nits=${state.scopeMaxNits}&bins=256&columns=256&channels=rgb`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ edit_revision: state.editRevision, include_locals: true, generation: 1, tier: "settled" }),
-        });
-        if (!response.ok) throw new Error(`CPU ${mapper} histogram failed with HTTP ${response.status}`);
-        comparisons[mapper] = { gpu, cpu: await response.json() };
-      }
-      return comparisons;
-    });
-    for (const [mapper, pair] of Object.entries(sdrToneMappers)) {
-      const peakRelative = Math.abs(pair.gpu.peak_value - pair.cpu.peak_value) / Math.max(1e-6, pair.cpu.peak_value);
-      const distributionError = Math.max(...pair.gpu.channels.map((channel, index) => {
-        const leftTotal = channel.bins.reduce((sum, value) => sum + value, 0) || 1;
-        const right = pair.cpu.channels[index].bins;
-        const rightTotal = right.reduce((sum, value) => sum + value, 0) || 1;
-        return channel.bins.reduce((sum, value, bin) => sum + Math.abs(value / leftTotal - right[bin] / rightTotal), 0) / channel.bins.length;
-      }));
-      report[`sdrToneMapper:${mapper}`] = { peakRelative, distributionError };
-      assert(peakRelative <= 0.03, `${mapper} GPU peak differs from CPU by ${(peakRelative * 100).toFixed(2)}%.`);
-      assert(distributionError <= 0.025, `${mapper} GPU distribution differs from CPU by ${distributionError.toFixed(4)}.`);
-    }
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
     console.log(JSON.stringify({ browser: await browser.version(), report, pageErrors }, null, 2));
   } finally {

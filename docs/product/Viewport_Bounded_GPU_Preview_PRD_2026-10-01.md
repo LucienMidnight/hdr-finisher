@@ -1764,10 +1764,11 @@ now use the adaptive one; in seven of those Denoise was on, so their picture
 changes. Four predate the RAW highlight and SDR rendering fields: on opening
 they now get RAW highlight reconstruction and the current SDR rendering, so
 their picture can change too. The four protected test projects are current and
-unaffected. Still in the code for older projects, not touched: the legacy SDR
-renderer (`legacy_base_v1`), the HDR highlight `off` mode, the Film Look image
-structure move into Detail (15 of the 22 projects carry it) and the Denoise
-Fine-to-Finest carry-over.
+unaffected. The rest of the old-project code went the same day: the legacy SDR
+renderer (`legacy_base_v1`) and its settings, the highlight `off` mode, the Film
+Look image-structure move into Detail and the Denoise Fine-to-Finest carry-over.
+Older projects that used them open with the current rendering and defaults. The
+render shader still declares the legacy SDR inputs, held at neutral values.
 
 **Checks that fail because they still describe the old design (phase 4
 input).** Each is rewritten for the viewport-bounded design or retired with

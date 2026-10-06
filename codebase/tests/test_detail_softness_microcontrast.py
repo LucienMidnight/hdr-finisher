@@ -27,30 +27,6 @@ def _textured(seed: int = 3) -> np.ndarray:
     return (0.05 + 0.3 * rng.random((48, 64, 3))).astype(np.float32)
 
 
-@pytest.mark.parametrize("branch_type", [HDRAdjustments, SDRAdjustments])
-def test_an_old_image_structure_moves_into_detail_as_it_was_in_effect(branch_type) -> None:
-    branch = branch_type(film_look={
-        "look_strength": 50, "image_structure_enabled": True, "image_softness": 20, "microcontrast": -40,
-    })
-    assert branch.detail.softness == 10
-    assert branch.detail.microcontrast == -20
-    assert "image_softness" not in branch.film_look.model_dump()
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [{"image_structure_enabled": False}, {"film_look_section_enabled": False}],
-)
-def test_image_structure_that_was_off_is_not_carried_over(overrides) -> None:
-    look = {"image_softness": 20, "microcontrast": 30, **{k: v for k, v in overrides.items() if k != "film_look_section_enabled"}}
-    payload = {"film_look": look}
-    if "film_look_section_enabled" in overrides:
-        payload["film_look_section_enabled"] = overrides["film_look_section_enabled"]
-    branch = HDRAdjustments(**payload)
-    assert branch.detail.softness == 0
-    assert branch.detail.microcontrast == 0
-
-
 def test_film_look_no_longer_accepts_image_structure_fields() -> None:
     with pytest.raises(ValidationError):
         FilmLookAdjustments(image_softness=10)

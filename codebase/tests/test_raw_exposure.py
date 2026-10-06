@@ -88,7 +88,6 @@ def test_loaded_authored_sdr_reference_starts_without_extra_highlight_recovery(t
         metadata={},
     )
 
-    assert session.adjustments.sdr.highlight_recovery == 0.0
     assert session.adjustments.sdr.highlight_section_enabled is False
 
 

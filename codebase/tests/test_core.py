@@ -325,13 +325,11 @@ def test_sdr_curves_apply_only_to_sdr_branch() -> None:
     image = np.ones((1, 1, 3), dtype=np.float32) * 0.5
     adjustments = AdjustmentState.model_validate(
         {
-            "hdr": {"exposure": 0, "highlight_compression_mode": "off", "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
+            "hdr": {"exposure": 0, "highlight_section_enabled": False, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
             "sdr": {
                 "exposure": 0,
-                "highlight_recovery": 0.25,
                 "shadow": 0,
                 "contrast": 0,
-                "tone_mapper": "aces",
                 "luma_curve": [[0.0, 0.0], [0.18, 0.2], [0.45, 0.35], [0.72, 0.55], [1.0, 0.8]],
                 "red_curve": [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]],
                 "green_curve": [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]],
@@ -357,7 +355,7 @@ def test_hdr_curves_can_bias_individual_channels() -> None:
         {
             "hdr": {
                 "exposure": 0,
-                "highlight_compression_mode": "off",
+                "highlight_section_enabled": False,
                 "shadow_lift": 0,
                 "white_balance_kelvin": 6500,
                 "tint": 0,
@@ -366,7 +364,7 @@ def test_hdr_curves_can_bias_individual_channels() -> None:
                 "green_curve": [[0.0, 0.0], [0.2, 0.2], [0.45, 0.45], [0.7, 0.65], [1.0, 0.9]],
                 "blue_curve": [[0.0, 0.0], [0.2, 0.2], [0.45, 0.45], [0.7, 0.65], [1.0, 0.9]],
             },
-            "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
+            "sdr": {"exposure": 0, "shadow": 0, "contrast": 0},
         }
     )
 

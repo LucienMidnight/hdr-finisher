@@ -68,10 +68,3 @@ def test_a_live_edit_refuses_the_removed_wavelet_fields() -> None:
     with pytest.raises(ValueError):
         DenoiseDocumentSettings.model_validate({"hdr": {"analysis": {"preset": "photo_fine", "levels": 2}}})
 
-
-def test_documents_saved_before_finest_keep_their_fine_setting_on_it() -> None:
-    old = DenoiseLiveControls.model_validate({"fine_noise": 0.76, "medium_noise": 0.16})
-    assert old.finest_noise == 0.76 and old.fine_noise == 0.76
-    both = DenoiseLiveControls.model_validate({"finest_noise": 0.9, "fine_noise": 0.3})
-    assert (both.finest_noise, both.fine_noise) == (0.9, 0.3)
-    assert DenoiseLiveControls().finest_noise == 0.5

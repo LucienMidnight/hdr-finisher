@@ -144,7 +144,7 @@ def test_strip_report_carries_the_exact_peak_of_the_pixels_it_presented(kind):
 
 
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
-@pytest.mark.parametrize("mode", ["off", "peak_fit", "soft_ceiling", "clip"])
+@pytest.mark.parametrize("mode", ["peak_fit", "soft_ceiling", "clip"])
 @pytest.mark.parametrize("measurement", ["maximum", "robust", "manual"])
 @pytest.mark.parametrize("color_handling", ["smooth_rolloff", "path_to_white", "luminance"])
 def test_every_highlight_configuration_is_exact(kind, mode, measurement, color_handling):
@@ -270,18 +270,6 @@ def test_grain_view_map_is_exact_in_strips():
     strips, report = render_in_strips(image, state, PreviewKind.HDR, budget_bytes=4096)
 
     assert report.plan.strip_count > 1
-    np.testing.assert_array_equal(strips, reference)
-
-
-def test_legacy_sdr_rendering_is_exact():
-    state = _graded_state()
-    state.sdr.rendering_version = "legacy_base_v1"
-    image = _source()
-
-    reference = apply_adjustments(image, state, PreviewKind.SDR)
-    strips, report = render_in_strips(image, state, PreviewKind.SDR, budget_bytes=4096)
-
-    assert report.anchor is None, "the legacy curve has no Peak Fit anchor to measure"
     np.testing.assert_array_equal(strips, reference)
 
 

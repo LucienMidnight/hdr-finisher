@@ -103,7 +103,6 @@ function sameBuffer(left, right) {
         active: match.active,
         status: match.materialized_status,
         metrics: match.materialized_metrics,
-        renderingVersion: state.adjustments.sdr.rendering_version,
         highlightEnabled: state.adjustments.sdr.highlight_section_enabled,
         highlightMode: state.adjustments.sdr.highlight_compression_mode,
         lumaPoints: luma.length,
@@ -136,7 +135,7 @@ function sameBuffer(left, right) {
       };
     });
     if (matched.active || !["matched", "needs_review"].includes(matched.status)
-      || matched.renderingVersion !== "highlight_v2" || !matched.highlightEnabled
+      || !matched.highlightEnabled
       || matched.highlightMode !== "peak_fit" || matched.lumaPoints !== 5
       || !matched.lumaNeutral || !matched.rgbCurvesUsable || matched.localPoints !== 5
       || !matched.localCurvesNeutral || !matched.localTonalMaterialized || !matched.localMaskPreserved

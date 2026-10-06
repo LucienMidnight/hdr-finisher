@@ -555,7 +555,6 @@ def _translate_color_grading_wheels(
 def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndarray) -> SDRAdjustments:
     hdr = adjustments.hdr
     sdr = SDRAdjustments(use_authored_base=False)
-    sdr.rendering_version = "highlight_v2"
     sdr.highlight_section_enabled = True
     sdr.highlight_compression_mode = "peak_fit"
     sdr.highlight_compression_start_percent = 90.0

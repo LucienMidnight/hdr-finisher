@@ -424,7 +424,7 @@ def _measure_sdr_anchor(
     pointwise stages ahead of it rather than the whole graph.
     """
     sdr = adjustments.sdr
-    if sdr.rendering_version == "legacy_base_v1" or not sdr.highlight_section_enabled:
+    if not sdr.highlight_section_enabled:
         return None
     if str(getattr(sdr, "highlight_compression_mode", "peak_fit")) != "peak_fit":
         return None

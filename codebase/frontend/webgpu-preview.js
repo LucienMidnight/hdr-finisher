@@ -6005,7 +6005,7 @@
         luminance: controls.luminance ?? 0.5,
         colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
         detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0,
-        finestNoise: controls.finestNoise ?? controls.finest_noise ?? controls.fineNoise ?? controls.fine_noise ?? 0.5,
+        finestNoise: controls.finestNoise ?? controls.finest_noise ?? 0.5,
         fineNoise: controls.fineNoise ?? controls.fine_noise ?? 0.5,
         mediumNoise: controls.mediumNoise ?? controls.medium_noise ?? 0.5,
         coarseNoise: controls.coarseNoise ?? controls.coarse_noise ?? 0.5,
@@ -8964,16 +8964,12 @@
     params[0] = lane === "hdr" ? 1 : 0;
     params[1] = workingSpace === "linear-srgb" ? 1 : 0;
     const toneEnabled = branch.tone_section_enabled !== false;
-    const sdrHighlightV2 = lane === "sdr" && branch.rendering_version !== "legacy_base_v1";
-    const highlightEnabled = (lane === "hdr" || sdrHighlightV2) && branch.highlight_section_enabled !== false;
+    const highlightEnabled = branch.highlight_section_enabled !== false;
     const primariesEnabled = branch.primaries_section_enabled !== false;
     const colorEnabled = branch.color_section_enabled !== false;
     const colorActive = colorEnabled && !colorSettingsNeutral(colorSource);
-    const baseEnabled = lane !== "sdr" || branch.base_section_enabled !== false;
     params[2] = toneEnabled ? branch.exposure || 0 : 0;
-    params[3] = lane === "hdr" || sdrHighlightV2
-      ? (highlightEnabled ? branch.highlight_compression_softness || 0 : 0)
-      : (toneEnabled ? branch.highlight_recovery || 0 : 0);
+    params[3] = highlightEnabled ? branch.highlight_compression_softness || 0 : 0;
     params[4] = toneEnabled ? (lane === "hdr" ? branch.shadow_lift || 0 : branch.shadow || 0) : 0;
     params[5] = primariesEnabled ? branch.lift || 0 : 0;
     params[6] = primariesEnabled ? branch.gamma || 0 : 0;
@@ -8982,9 +8978,9 @@
     params[9] = branch.contrast_pivot || (lane === "hdr" ? 0.1845 : 0.5);
     params[10] = colorActive ? colorSource.white_balance_kelvin || 6500 : 6500;
     params[11] = colorActive ? colorSource.tint || 0 : 0;
-    params[12] = baseEnabled ? (branch.tone_mapper === "aces" ? 1 : branch.tone_mapper === "reinhard" ? 2 : 0) : 0;
-    params[13] = baseEnabled ? branch.tone_contrast ?? 1 : 1;
-    params[14] = baseEnabled ? branch.tone_skew || 0 : 0;
+    // 12 to 14 fed the removed SDR base rendition; the shader still declares
+    // them, so they hold its neutral values (0, 1, 0).
+    params[13] = 1;
     params[15] = branch.curves_section_enabled !== false && !curveSetNeutral(branch) ? 1 : 0;
     params[16] = hdrSurface ? 1 : 0;
     // The transport limit is absolute; scene-linear scale follows the project.
@@ -8999,14 +8995,14 @@
     });
     params[53] = lane === "hdr"
       ? ((branch.highlight_compression_start_nits ?? 400) * 0.18 / projectReferenceWhite)
-      : sdrHighlightV2 ? (branch.highlight_compression_start_percent ?? 50) / 100 : 0;
+      : (branch.highlight_compression_start_percent ?? 50) / 100;
     params[54] = branch.lift_pivot ?? -2;
     params[55] = branch.lift_range ?? 4;
     params[56] = branch.gamma_pivot ?? 0;
     params[57] = branch.gamma_range ?? 4.25;
     params[58] = branch.gain_pivot ?? 2;
     params[59] = branch.gain_range ?? 4;
-    params[60] = baseEnabled ? 1 : 0;
+    params[60] = 1; // the removed SDR base rendition switch, held on
     const colorMatrix = colorActive ? rgbPrimariesAdjustmentMatrix(colorSource) : IDENTITY_3X3;
     colorMatrix.forEach((value, index) => { params[61 + index] = value; });
     params[70] = colorActive ? colorSource.saturation || 0 : 0;
@@ -9019,17 +9015,17 @@
     ["reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas"].forEach((name, index) => {
       params[BLACK_AND_WHITE_PARAM + 1 + index] = blackAndWhiteOn ? (Number(blackAndWhite[name]) || 0) / 100 : 0;
     });
-    params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : sdrHighlightV2 ? 1 : 0;
+    params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : 1;
     params[74] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : branch.highlight_compression_mode === "clip" ? 3 : 0) : 0;
     params[75] = lane === "hdr"
       ? toneAdjustedHighlightPeakLinear(branch, toneEnabled, projectReferenceWhite)
-      : sdrHighlightV2 ? Math.max(0.01, (branch.highlight_compression_peak_measurement === "manual"
+      : Math.max(0.01, (branch.highlight_compression_peak_measurement === "manual"
         ? branch.highlight_compression_manual_peak_percent ?? 100
-        : branch.highlight_compression_source_peak_percent ?? 100) / 100 * (toneEnabled ? Math.pow(2, branch.exposure || 0) : 1)) : 0;
+        : branch.highlight_compression_source_peak_percent ?? 100) / 100 * (toneEnabled ? Math.pow(2, branch.exposure || 0) : 1));
     params[138] = projectReferenceWhite;
     params[139] = 203;
-    params[76] = lane === "hdr" || sdrHighlightV2 ? Math.min(1, Math.max(0, (branch.highlight_compression_peak_detail ?? 35) / 100)) : 0;
-    params[77] = lane === "hdr" || sdrHighlightV2 ? Math.min(1, Math.max(-1, (branch.highlight_compression_bias ?? 0) / 100)) * 0.6 : 0;
+    params[76] = Math.min(1, Math.max(0, (branch.highlight_compression_peak_detail ?? 35) / 100));
+    params[77] = Math.min(1, Math.max(-1, (branch.highlight_compression_bias ?? 0) / 100)) * 0.6;
     const film = branch.film_look || {};
     const filmEnabled = branch.film_look_section_enabled !== false;
     params[78] = filmEnabled ? 1 : 0;
@@ -9105,8 +9101,7 @@
     // Viewer-only diagnostic: it follows this branch's checkbox even when the
     // grain recipe itself is inherited from a captured HDR match.
     params[158] = film.grain_view_map ? 1 : 0;
-    params[110] = lane !== "hdr" && !sdrHighlightV2 ? 0
-      : branch.highlight_compression_color_handling === "smooth_rolloff" ? 2
+    params[110] = branch.highlight_compression_color_handling === "smooth_rolloff" ? 2
       : branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
     const grading = branch.color_grading || {};
     params[111] = branch.color_grading_section_enabled !== false ? 1 : 0;
@@ -9136,7 +9131,7 @@
     params[153] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
     params[154] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold) || 0) / 100) * 0.50;
     params[155] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
-    params[159] = sdrHighlightV2 ? 1 : 0;
+    params[159] = lane === "sdr" ? 1 : 0;
     // Direct renders the whole output, so its tile origin is the origin.
     params[TILE_ORIGIN_X_INDEX] = 0;
     params[TILE_ORIGIN_Y_INDEX] = 0;

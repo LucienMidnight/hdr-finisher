@@ -204,7 +204,6 @@ class LoadedSession:
         if self.sdr_reference_image is not None:
             # A gain-map file's SDR base is already an authored display
             # rendition, so it starts without another highlight compressor.
-            self.adjustments.sdr.highlight_recovery = 0.0
             self.adjustments.sdr.highlight_section_enabled = False
         recommended_exposure = float(self.metadata.get("recommended_exposure_ev", 0.0) or 0.0)
         if self.metadata.get("raw_input") and abs(recommended_exposure) >= 0.001:

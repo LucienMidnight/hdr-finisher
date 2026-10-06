@@ -15,7 +15,7 @@ from .color import (
 )
 from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
 from .finishing import apply_geometry
-from .models import AdjustmentState, LocalAdjustment, LocalGrade, PreviewKind, SdrMatchState, ToneMapper
+from .models import AdjustmentState, LocalAdjustment, LocalGrade, PreviewKind, SdrMatchState
 from .detail import apply_detail
 from . import film_grain
 from .sdr_gamut import compress_to_srgb_gamut
@@ -29,15 +29,6 @@ _TONE_EQUALIZER_MIN_TARGET_STEP = np.float32(1e-3)
 SDR_DISPLAY_REFERENCE_WHITE = np.float32(100.0 / 203.0)
 SDR_SCENE_MIDDLE_GRAY = np.float32(0.18)
 SDR_SCENE_TO_DISPLAY_SCALE = np.float32(SDR_DISPLAY_REFERENCE_WHITE / SDR_SCENE_MIDDLE_GRAY)
-# Keep every selectable SDR rendering curve on the same exposure convention:
-# scene-linear 0.18 maps to the app's 100-nit reference white. The Reinhard
-# scale has a closed-form solution; the ACES-style fit scale solves the same
-# anchor for the rational curve below.
-SDR_REINHARD_INPUT_SCALE = np.float32(
-    SDR_DISPLAY_REFERENCE_WHITE
-    / (SDR_SCENE_MIDDLE_GRAY * (np.float32(1.0) - SDR_DISPLAY_REFERENCE_WHITE))
-)
-SDR_ACES_FIT_INPUT_SCALE = np.float32(2.0294105241641414)
 FILM_GRAIN_GATE_DIMENSIONS_MM: dict[str, tuple[float, float]] = {
     "65mm": (52.63, 23.01),
     "35mm": (36.0, 24.0),
@@ -438,8 +429,6 @@ def apply_hdr_output_highlight_compression(
     compressed = compress_hdr_output_highlights(
         image, adjustments, color_context=color_context, anchor=anchor
     )
-    if hdr.highlight_compression_mode == "off":
-        return compressed
     return clip_hdr_output_target(compressed, adjustments, color_context=color_context, anchor=anchor)
 
 
@@ -822,9 +811,7 @@ def apply_sdr_output_highlight_compression(
     is what output finishing and grain need bounding by.
     """
     sdr = adjustments.sdr
-    if sdr.rendering_version == "legacy_base_v1" or not sdr.highlight_section_enabled:
-        return image
-    if sdr.highlight_compression_mode == "off":
+    if not sdr.highlight_section_enabled:
         return image
     return np.clip(image, 0.0, 1.0).astype(np.float32, copy=False)
 
@@ -844,22 +831,14 @@ def _apply_sdr_adjustments(
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = _sdr_pre_highlight(image, adjustments)
-    if sdr.rendering_version == "legacy_base_v1":
-        tone_mapper = sdr.tone_mapper if sdr.base_section_enabled else ToneMapper.FILMIC
-        tone_contrast = sdr.tone_contrast if sdr.base_section_enabled else 1.0
-        tone_skew = sdr.tone_skew if sdr.base_section_enabled else 0.0
-        result = _tone_map_sdr(result, tone_mapper, tone_contrast, tone_skew)
-        if sdr.tone_section_enabled:
-            result = _apply_sdr_highlight_recovery(result, sdr.highlight_recovery)
-    else:
-        # Neutral SDR placement: scene 0.18 is the 100-nit diffuse-white anchor
-        # on the normalized 203-nit SDR canvas. The explicit highlight stage is
-        # solely responsible for fitting the remaining scene headroom.
-        if sdr.highlight_section_enabled:
-            result = _compress_sdr_highlights(
-                result, sdr, peak_override=None if highlight_anchor is None else highlight_anchor.sdr_peak
-            )
-        result = _compress_to_srgb_gamut(result)
+    # Neutral SDR placement: scene 0.18 is the 100-nit diffuse-white anchor
+    # on the normalized 203-nit SDR canvas. The explicit highlight stage is
+    # solely responsible for fitting the remaining scene headroom.
+    if sdr.highlight_section_enabled:
+        result = _compress_sdr_highlights(
+            result, sdr, peak_override=None if highlight_anchor is None else highlight_anchor.sdr_peak
+        )
+    result = _compress_to_srgb_gamut(result)
     return _apply_sdr_post_highlight_tail(
         result,
         image,
@@ -968,8 +947,6 @@ def _sdr_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.nd
             sdr.black_and_white,
             guide=_black_and_white_guide(image, sdr.black_and_white, _sdr_before_black_and_white, adjustments),
         )
-    if sdr.rendering_version == "legacy_base_v1":
-        return result
     # Neutral SDR placement: scene 0.18 is the 100-nit diffuse-white anchor
     # on the normalized 203-nit SDR canvas. The explicit highlight stage is
     # solely responsible for fitting the remaining scene headroom.
@@ -994,10 +971,7 @@ def _sdr_reference_before_black_and_white(image: np.ndarray, adjustments: Adjust
     """The authored-reference path up to Black & White, in display-linear sRGB."""
     sdr = adjustments.sdr
     result = image
-    if sdr.rendering_version == "legacy_base_v1":
-        result = np.clip(result, 0.0, 1.0)
-    else:
-        result = np.clip(result, 0.0, None)
+    result = np.clip(result, 0.0, None)
     if sdr.tone_section_enabled:
         result *= np.float32(2.0 ** sdr.exposure)
     if sdr.tone_section_enabled and sdr.shadow != 0:
@@ -1048,17 +1022,7 @@ def _apply_sdr_adjustments_to_reference(
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = _sdr_reference_pre_highlight(image, adjustments)
-    if sdr.rendering_version == "legacy_base_v1":
-        if sdr.base_section_enabled:
-            result = _retone_map_sdr_reference(
-                result,
-                sdr.tone_mapper,
-                sdr.tone_contrast,
-                sdr.tone_skew,
-            )
-        if sdr.tone_section_enabled:
-            result = _apply_sdr_highlight_recovery(result, sdr.highlight_recovery)
-    elif sdr.highlight_section_enabled:
+    if sdr.highlight_section_enabled:
         result = _compress_sdr_highlights(
             result, sdr, peak_override=None if highlight_anchor is None else highlight_anchor.sdr_peak
         )
@@ -1328,26 +1292,6 @@ def _sample_tone_equalizer_target_ev(
     return mapped.astype(np.float32, copy=False)
 
 
-def _apply_sdr_highlight_recovery(image: np.ndarray, strength: float) -> np.ndarray:
-    """Redistribute SDR highlights without imposing a sub-white ceiling."""
-    if strength <= 0.0:
-        return image
-    result = np.clip(image.astype(np.float32, copy=False), 0.0, None)
-    luma = _linear_luma(result)
-    pivot = SDR_DISPLAY_REFERENCE_WHITE
-    span = np.float32(1.0) - pivot
-    position = np.clip((luma - pivot) / span, 0.0, 1.0).astype(np.float32)
-    # This endpoint-preserving Hermite shoulder is identity at reference white
-    # and display white. Its derivative stays positive across the supported
-    # 0..4 range, so exposure continues to reveal ordered highlight detail
-    # instead of accumulating pixels at a strength-dependent gray ceiling.
-    amount = np.float32(2.5 * (1.0 - np.exp(-0.5 * np.clip(strength, 0.0, 4.0))))
-    recovered_position = position - amount * position * position * (np.float32(1.0) - position)
-    recovered_luma = pivot + span * recovered_position
-    target_luma = np.where(luma > pivot, recovered_luma, luma)
-    ratio = np.where(luma > 1e-8, target_luma / np.maximum(luma, 1e-8), 0.0).astype(np.float32)
-    return result * ratio[..., None]
-
 
 def sdr_highlight_peak_signal(display_linear: np.ndarray, sdr: object) -> np.ndarray | None:
     """Return the per-pixel signal SDR Peak Fit reduces, or ``None`` when it does not measure.
@@ -1501,7 +1445,7 @@ def _compress_sdr_highlights(
     """
     mode = str(getattr(sdr, "highlight_compression_mode", "peak_fit"))
     softness = float(getattr(sdr, "highlight_compression_softness", 0.0))
-    if mode == "off" or (mode == "soft_ceiling" and softness <= 0.0):
+    if mode == "soft_ceiling" and softness <= 0.0:
         return image
 
     result = image.astype(np.float32, copy=True)
@@ -1608,7 +1552,7 @@ def _compress_scene_highlights(
     clip_transport_max: float | None = None,
 ) -> np.ndarray:
     """Compress luminance above ``start_nits`` smoothly toward ``target_nits``."""
-    if mode == "off" or (mode == "soft_ceiling" and softness <= 0.0):
+    if mode == "soft_ceiling" and softness <= 0.0:
         return image
     result = image.astype(np.float32, copy=False)
     luma = _acescg_luma(result)
@@ -1708,93 +1652,6 @@ def _compress_scene_highlights(
     target_luma = np.where(positive_luma > start, start + compressed_excess, positive_luma)
     ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
     return np.where(positive_luma[..., None] > start, result * ratio[..., None], result)
-
-
-def _tone_map_sdr(
-    image: np.ndarray,
-    tone_mapper: ToneMapper,
-    tone_contrast: float = 1.0,
-    tone_skew: float = 0.0,
-) -> np.ndarray:
-    """Render scene-linear ACEScg into display-linear sRGB."""
-    result = np.clip(image.astype(np.float32, copy=False), 0.0, None)
-    luma = _acescg_luma(result)
-    mapped_luma = _map_sdr_luma(luma, tone_mapper, tone_contrast, tone_skew)
-    ratio = np.where(luma > 1e-8, mapped_luma / np.maximum(luma, 1e-8), 0.0).astype(np.float32)
-    display_rgb = acescg_to_linear_srgb(result * ratio[..., None])
-    return _compress_to_srgb_gamut(display_rgb)
-
-
-def _retone_map_sdr_reference(
-    image: np.ndarray,
-    tone_mapper: ToneMapper,
-    tone_contrast: float = 1.0,
-    tone_skew: float = 0.0,
-) -> np.ndarray:
-    """Apply Base Rendition controls to an authored display-linear SDR image.
-
-    The embedded SDR rendition is already tone mapped. Treat it as the output
-    of the neutral filmic curve, invert that curve to recover a stable scene
-    luminance estimate, then apply the selected curve. This makes the neutral
-    defaults an exact identity while keeping the controls meaningful for HEIC
-    sources that contain their own SDR rendition.
-    """
-    result = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
-    if tone_mapper == ToneMapper.FILMIC and tone_contrast == 1.0 and tone_skew == 0.0:
-        return result
-
-    luma = _linear_luma(result)
-    bounded_luma = np.clip(luma, 1e-7, 1.0 - 1e-7)
-    scene_middle_gray = SDR_SCENE_MIDDLE_GRAY
-    reference_log_odds = np.log(
-        SDR_DISPLAY_REFERENCE_WHITE / (np.float32(1.0) - SDR_DISPLAY_REFERENCE_WHITE)
-    )
-    encoded_log_odds = np.log(bounded_luma / (1.0 - bounded_luma))
-    scene_luma = scene_middle_gray * np.exp(
-        np.clip((encoded_log_odds - reference_log_odds) / 1.1, -32.0, 32.0)
-    )
-    scene_luma = np.where(luma > 0.0, scene_luma, 0.0).astype(np.float32)
-    mapped_luma = _map_sdr_luma(scene_luma, tone_mapper, tone_contrast, tone_skew)
-    ratio = np.where(luma > 1e-8, mapped_luma / np.maximum(luma, 1e-8), 0.0).astype(np.float32)
-    return np.clip(result * ratio[..., None], 0.0, 1.0)
-
-
-def _map_sdr_luma(
-    luma: np.ndarray,
-    tone_mapper: ToneMapper,
-    tone_contrast: float = 1.0,
-    tone_skew: float = 0.0,
-) -> np.ndarray:
-    """Map non-negative scene luminance into the normalized SDR range."""
-    if tone_mapper == ToneMapper.REINHARD:
-        scaled_luma = luma * SDR_REINHARD_INPUT_SCALE
-        mapped_luma = scaled_luma / (1.0 + scaled_luma)
-    elif tone_mapper == ToneMapper.ACES:
-        a, b, c, d, e = 2.51, 0.03, 2.43, 0.59, 0.14
-        scaled_luma = luma * SDR_ACES_FIT_INPUT_SCALE
-        mapped_luma = (scaled_luma * (a * scaled_luma + b)) / (
-            scaled_luma * (c * scaled_luma + d) + e
-        )
-        mapped_luma /= a / c
-    else:
-        # Scene 0.18 is the app's 100-nit diffuse-white anchor. Map it to the
-        # matching fraction of the 203-nit display canvas, then preserve that
-        # anchor while contrast and skew shape the surrounding response.
-        scene_middle_gray = SDR_SCENE_MIDDLE_GRAY
-        base_power = np.float32(1.1 * np.clip(tone_contrast, 0.5, 1.5))
-        skew = np.float32(np.clip(tone_skew, -1.0, 1.0))
-        shadow_power = base_power * np.exp2(np.float32(-0.75) * skew)
-        highlight_power = base_power * np.exp2(np.float32(0.75) * skew)
-        log_exposure = np.log(np.maximum(luma, 1e-8) / scene_middle_gray)
-        highlight_blend = _smoothstep(-0.5, 0.5, log_exposure)
-        local_power = shadow_power * (1.0 - highlight_blend) + highlight_power * highlight_blend
-        reference_log_odds = np.log(
-            SDR_DISPLAY_REFERENCE_WHITE / (np.float32(1.0) - SDR_DISPLAY_REFERENCE_WHITE)
-        )
-        log_odds = reference_log_odds + local_power * log_exposure
-        mapped_luma = 1.0 / (1.0 + np.exp(-np.clip(log_odds, -32.0, 32.0)))
-        mapped_luma = np.where(luma > 0.0, mapped_luma, 0.0)
-    return np.clip(mapped_luma, 0.0, 1.0).astype(np.float32)
 
 
 def _compress_to_srgb_gamut(image: np.ndarray) -> np.ndarray:

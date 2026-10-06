@@ -15,7 +15,6 @@
     },
     "sdr": {
       "exposure": -0.1,
-      "highlight_recovery": 0.75,
       "saturation": 0.04,
       "tone_equalizer_smoothing": 0.75,
       "tone_equalizer_nodes": [

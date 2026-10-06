@@ -592,8 +592,6 @@ const state = {
       blue_curve: defaultCurvePoints(),
     },
     sdr: {
-      rendering_version: "highlight_v2",
-      base_section_enabled: true,
       use_authored_base: true,
       tone_section_enabled: true,
       highlight_section_enabled: true,
@@ -602,7 +600,6 @@ const state = {
       primaries_section_enabled: true,
       curves_section_enabled: true,
       exposure: 0,
-      highlight_recovery: 0.6,
       highlight_compression_start_percent: 50,
       highlight_compression_softness: 0,
       highlight_compression_mode: "peak_fit",
@@ -612,8 +609,6 @@ const state = {
       highlight_compression_peak_detail: 35,
       highlight_compression_bias: 0,
       highlight_compression_color_handling: "smooth_rolloff",
-      tone_contrast: 1,
-      tone_skew: 0,
       shadow: 0,
       tone_equalizer_nodes: defaultToneEqualizerNodes(),
       tone_equalizer_influence_radius: 1.5,
@@ -641,7 +636,6 @@ const state = {
       blue_purity: 0,
       tint_hue: 0,
       tint_purity: 0,
-      tone_mapper: "filmic",
       luma_curve: defaultCurvePoints(),
       red_curve: defaultCurvePoints(),
       green_curve: defaultCurvePoints(),
@@ -1356,8 +1350,6 @@ const defaultAdjustments = () => ({
     blue_curve: defaultCurvePoints(),
   },
   sdr: {
-    rendering_version: "highlight_v2",
-    base_section_enabled: true,
     use_authored_base: true,
     tone_section_enabled: true,
     highlight_section_enabled: true,
@@ -1376,7 +1368,6 @@ const defaultAdjustments = () => ({
     vignette: defaultVignette(),
     detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10, softness: 0, microcontrast: 0 },
     exposure: 0,
-    highlight_recovery: 0.6,
     highlight_compression_start_percent: 50,
     highlight_compression_softness: 0,
     highlight_compression_mode: "peak_fit",
@@ -1386,8 +1377,6 @@ const defaultAdjustments = () => ({
     highlight_compression_peak_detail: 35,
     highlight_compression_bias: 0,
     highlight_compression_color_handling: "smooth_rolloff",
-    tone_contrast: 1,
-    tone_skew: 0,
     shadow: 0,
     tone_equalizer_nodes: defaultToneEqualizerNodes(),
     tone_equalizer_influence_radius: 1.5,
@@ -1415,7 +1404,6 @@ const defaultAdjustments = () => ({
     blue_purity: 0,
     tint_hue: 0,
     tint_purity: 0,
-    tone_mapper: "filmic",
     luma_curve: defaultCurvePoints(),
     red_curve: defaultCurvePoints(),
     green_curve: defaultCurvePoints(),
@@ -10218,7 +10206,7 @@ function renderDenoiseControls() {
     [els.denoiseLuminance, els.denoiseLuminanceValue, settings.controls.luminance],
     [els.denoiseColor, els.denoiseColorValue, settings.controls.color_noise],
     [els.denoiseDetail, els.denoiseDetailValue, settings.controls.detail_recovery],
-    [els.denoiseFinest, els.denoiseFinestValue, settings.controls.finest_noise ?? settings.controls.fine_noise ?? 0.5],
+    [els.denoiseFinest, els.denoiseFinestValue, settings.controls.finest_noise ?? 0.5],
     [els.denoiseFine, els.denoiseFineValue, settings.controls.fine_noise ?? 0.5],
     [els.denoiseMedium, els.denoiseMediumValue, settings.controls.medium_noise ?? 0.5],
     [els.denoiseCoarse, els.denoiseCoarseValue, settings.controls.coarse_noise ?? 0.5],
@@ -10450,8 +10438,7 @@ function denoiseRendererControls(controls) {
     luminance: controls.luminance,
     colorNoise: controls.color_noise,
     detailRecovery: controls.detail_recovery,
-    // Fine covered ~1-4 px before Finest was split from it.
-    finestNoise: controls.finest_noise ?? controls.fine_noise ?? 0.5,
+    finestNoise: controls.finest_noise ?? 0.5,
     fineNoise: controls.fine_noise ?? 0.5,
     mediumNoise: controls.medium_noise ?? 0.5,
     coarseNoise: controls.coarse_noise ?? 0.5,
@@ -13371,8 +13358,6 @@ function formatControlValue(path, value) {
   if (path.endsWith("_range") || (path.endsWith("_pivot") && !path.endsWith("contrast_pivot"))) return `${numeric.toFixed(2)} EV`;
   if (path === "shared.overlay_opacity") return `${Math.round(numeric * 100)}%`;
   if (path === "shared.overlay_threshold") return `${Math.round(numeric)} nit`;
-  if (path === "sdr.tone_contrast") return numeric.toFixed(2);
-  if (path === "sdr.tone_skew") return numeric > 0 ? `+${numeric.toFixed(2)}` : numeric.toFixed(2);
   if (path.endsWith("contrast_pivot")) return numeric.toFixed(path.startsWith("hdr.") ? 4 : 3);
   if (path.endsWith("contrast") || path.endsWith("lift") || path.endsWith("gain") || path.endsWith("gamma") || path.endsWith("shadow_lift")) return numeric.toFixed(3);
   return numeric.toFixed(2);
@@ -13429,7 +13414,7 @@ function renderControlState() {
   }
   renderGeometryResetState(defaults);
   for (const lane of ["hdr", "sdr"]) {
-    const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve") && !key.endsWith("_section_enabled") && !["highlight_compression_source_peak_nits", "highlight_compression_source_peak_percent", "rendering_version", "base_section_enabled", "tone_mapper", "tone_contrast", "tone_skew", "highlight_recovery"].includes(key));
+    const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve") && !key.endsWith("_section_enabled") && !["highlight_compression_source_peak_nits", "highlight_compression_source_peak_percent"].includes(key));
     const modified = keys.some((key) => !valuesEqual(state.adjustments[lane]?.[key], defaults[lane][key]))
       || laneCurvesModified(lane, defaults);
     const button = els.viewButtons.find((item) => item.dataset.kind === lane);
@@ -13688,16 +13673,18 @@ function applyGroupPreset(preset) {
   const context = state.groupPresetContext;
   if (!context || preset.groupId !== context.groupId || !preset.values || typeof preset.values !== "object") return;
   if (context.lane === "sdr" && context.group === "film-look") prepareSdrMatchGrainOverride();
+  // A preset outlives the settings it was saved with: a setting the app no
+  // longer has is left out, so an older preset still applies.
+  const defaults = context.group === "denoise" ? { denoise: defaultDenoiseDocument() } : defaultAdjustments();
   context.paths.forEach((path) => {
-    if (Object.hasOwn(preset.values, path)) setGroupPresetPathValue(context, path, JSON.parse(JSON.stringify(preset.values[path])));
+    if (!Object.hasOwn(preset.values, path)) return;
+    const value = JSON.parse(JSON.stringify(preset.values[path]));
+    const known = getValueByPath(defaults, path);
+    const plain = (item) => Boolean(item) && typeof item === "object" && !Array.isArray(item);
+    setGroupPresetPathValue(context, path, plain(value) && plain(known)
+      ? Object.fromEntries(Object.entries(value).filter(([key]) => Object.hasOwn(known, key)))
+      : value);
   });
-  if (context.group === "film-look") {
-    // Film Look presets saved before NEXT-01 #2 still carry Image Structure.
-    // Those controls are Detail's now, and a preset may only change its own
-    // group, so they are dropped rather than moved.
-    const look = state.adjustments[context.lane]?.film_look;
-    if (look) for (const key of ["image_structure_enabled", "image_softness", "microcontrast"]) delete look[key];
-  }
   if (context.group === "denoise") {
     const runtime = state.denoiseRuntime[context.lane];
     runtime.dirty = true;

@@ -97,7 +97,6 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     if result.status == "matched":
         assert result.quality.p95_luma_error <= 0.03
         assert result.quality.p95_oklab_error <= 0.04
-    assert result.adjustments.sdr.rendering_version == "highlight_v2"
     assert result.adjustments.sdr.use_authored_base is False
     assert result.adjustments.sdr.highlight_section_enabled is True
     assert result.adjustments.sdr.highlight_compression_mode == "peak_fit"

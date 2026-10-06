@@ -397,7 +397,6 @@ def test_match_action_materializes_visible_controls_and_is_one_undo_step(tmp_pat
     assert matched.document.sdr_match.active is False
     assert matched.document.sdr_match.algorithm_version == "hdr-to-sdr-materialized-v2"
     assert matched.document.sdr_match.materialized_status in {"matched", "needs_review"}
-    assert matched.document.global_adjustments.sdr.rendering_version == "highlight_v2"
     assert matched.document.global_adjustments.sdr.use_authored_base is False
     assert matched.document.global_adjustments.sdr.highlight_section_enabled is True
     assert matched.document.global_adjustments.sdr.highlight_compression_mode == "peak_fit"
@@ -471,7 +470,6 @@ def test_legacy_match_conversion_clears_hidden_renderer_and_undo_restores_it(tmp
     converted = store.apply_sdr_match_action(session_id, expected_revision=1, action="convert")
     assert converted.document.sdr_match.active is False
     assert converted.document.sdr_match.algorithm_version == "hdr-to-sdr-materialized-v2"
-    assert converted.document.global_adjustments.sdr.base_section_enabled is True
 
     restored = store.apply_edit_commands(
         session_id, [EditCommand(expected_revision=2, command_type="undo")]

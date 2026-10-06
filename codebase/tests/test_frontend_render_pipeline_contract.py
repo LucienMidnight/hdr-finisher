@@ -61,7 +61,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "params[156] = grainSectionEnabled ? 1 : 0" in shader
     assert "params[157] = grainSectionEnabled ? (grain.look_strength ?? 100) / 100 : 0" in shader
     assert "params[158] = film.grain_view_map ? 1 : 0" in shader
-    assert "params[159] = sdrHighlightV2 ? 1 : 0" in shader
+    assert 'params[159] = lane === "sdr" ? 1 : 0' in shader
     assert "p[156] > 0.5 && p[157] > 0.0" in shader
     assert "detailHorizontalFragmentMain" in shader
     assert "detailVerticalFragmentMain" in shader

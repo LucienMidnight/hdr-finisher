@@ -118,7 +118,6 @@ def test_adjusted_proxy_is_downsampled_before_processing_and_reused() -> None:
 def test_matched_sdr_base_survives_independent_sdr_trim_cache_clears() -> None:
     image = np.full((64, 96, 3), 0.18, dtype=np.float32)
     adjustments = AdjustmentState()
-    adjustments.sdr.base_section_enabled = False
     match = SdrMatchState(
         active=True,
         grain_source="captured_hdr",
@@ -145,7 +144,6 @@ def test_matched_sdr_base_survives_independent_sdr_trim_cache_clears() -> None:
 def test_matched_sdr_base_is_the_stable_webgpu_source_across_sdr_trims() -> None:
     image = np.linspace(0.02, 1.2, 64 * 96 * 3, dtype=np.float32).reshape(64, 96, 3)
     adjustments = AdjustmentState()
-    adjustments.sdr.base_section_enabled = False
     match = SdrMatchState(
         active=True,
         grain_source="captured_hdr",

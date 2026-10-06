@@ -26,22 +26,22 @@ HDR_FIELD_ORDER = (
     "tint_hue", "tint_purity", "luma_curve", "red_curve", "green_curve", "blue_curve",
 )
 SDR_FIELD_ORDER = (
-    "rendering_version", "base_section_enabled", "use_authored_base", "tone_section_enabled",
+    "use_authored_base", "tone_section_enabled",
     "highlight_section_enabled", "tone_equalizer_section_enabled", "color_section_enabled",
     "primaries_section_enabled", "curves_section_enabled", "detail_section_enabled",
     "black_and_white_section_enabled", "film_look_section_enabled",
     "color_grading_section_enabled", "vignette_section_enabled", "film_look", "color_grading",
-    "vignette", "detail", "black_and_white", "exposure", "highlight_recovery",
+    "vignette", "detail", "black_and_white", "exposure",
     "highlight_compression_start_percent", "highlight_compression_softness",
     "highlight_compression_mode", "highlight_compression_peak_measurement",
     "highlight_compression_source_peak_percent", "highlight_compression_manual_peak_percent",
     "highlight_compression_peak_detail", "highlight_compression_bias",
-    "highlight_compression_color_handling", "tone_contrast", "tone_skew", "shadow",
+    "highlight_compression_color_handling", "shadow",
     "tone_equalizer_nodes", "tone_equalizer_influence_radius", "tone_equalizer_smoothing",
     "lift", "gamma", "gain", "lift_pivot", "lift_range", "gamma_pivot", "gamma_range",
     "gain_pivot", "gain_range", "contrast", "contrast_pivot", "white_balance_kelvin", "tint",
     "saturation", "vibrance", "red_hue", "red_purity", "green_hue", "green_purity",
-    "blue_hue", "blue_purity", "tint_hue", "tint_purity", "tone_mapper", "luma_curve",
+    "blue_hue", "blue_purity", "tint_hue", "tint_purity", "luma_curve",
     "red_curve", "green_curve", "blue_curve",
 )
 
@@ -53,7 +53,7 @@ def test_branch_serialization_order_and_adjustment_signature_are_stable() -> Non
     assert tuple(adjustments.sdr.model_dump()) == SDR_FIELD_ORDER
     signature = adjustment_signature(adjustments)
     assert hashlib.sha256(signature.encode()).hexdigest() == (
-        "e75b6b7a29dffdfd13925e16f6bb4ed3189afabdabbe9ed22bd5b8aecec8a785"
+        "75d9b7c0d98d6a60456fa465066c4f55c39fe4a411ec27fb0e626324da58568b"
     )
     assert AdjustmentState.model_validate(adjustments.model_dump(mode="json")) == adjustments
 

@@ -35,12 +35,6 @@ class ScopeMaxNits(str, Enum):
     NITS_10000 = "10000"
 
 
-class ToneMapper(str, Enum):
-    FILMIC = "filmic"
-    ACES = "aces"
-    REINHARD = "reinhard"
-
-
 class OverlayMode(str, Enum):
     OFF = "off"
     FALSE_COLOR = "false_color"
@@ -331,46 +325,9 @@ class BranchDetailAdjustments(DetailAdjustments):
     microcontrast: float = Field(default=0.0, ge=-100.0, le=100.0)
 
 
-_LEGACY_IMAGE_STRUCTURE_FIELDS = ("image_structure_enabled", "image_softness", "microcontrast")
-
-
-def move_image_structure_into_detail(value: object) -> object:
-    """Carry a saved Film Look Image Structure into Detail.
-
-    Image Structure was scaled by Look Strength and switched off with Film
-    Look; Detail's controls are neither. So the values carried over are the
-    ones that were in effect: scaled by Look Strength, and only when Image
-    Structure and Film Look were both on.
-    """
-    if not isinstance(value, dict):
-        return value
-    look = value.get("film_look")
-    if not isinstance(look, dict) or not any(field in look for field in _LEGACY_IMAGE_STRUCTURE_FIELDS):
-        return value
-    normalized = dict(value)
-    look = dict(look)
-    structure_enabled = bool(look.pop("image_structure_enabled", True))
-    softness = float(look.pop("image_softness", 0.0) or 0.0)
-    microcontrast = float(look.pop("microcontrast", 0.0) or 0.0)
-    normalized["film_look"] = look
-    in_effect = structure_enabled and bool(normalized.get("film_look_section_enabled", True))
-    if in_effect and (softness != 0.0 or microcontrast != 0.0):
-        strength = float(look.get("look_strength", 100.0)) / 100.0
-        detail = dict(normalized.get("detail") or {})
-        detail.setdefault("softness", round(softness * strength, 4))
-        detail.setdefault("microcontrast", round(microcontrast * strength, 4))
-        normalized["detail"] = detail
-    return normalized
-
-
 class _BranchAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
     _serialized_field_order: ClassVar[tuple[str, ...]]
-
-    @model_validator(mode="before")
-    @classmethod
-    def carry_image_structure_into_detail(cls, value: object) -> object:
-        return move_image_structure_into_detail(value)
 
     tone_section_enabled: bool = True
     highlight_section_enabled: bool = True
@@ -390,7 +347,7 @@ class _BranchAdjustments(BaseModel):
     black_and_white: BlackAndWhiteAdjustments = Field(default_factory=BlackAndWhiteAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_compression_softness: float = Field(default=0.0, ge=0.0, le=100.0)
-    highlight_compression_mode: Literal["off", "peak_fit", "soft_ceiling", "clip"] = "peak_fit"
+    highlight_compression_mode: Literal["peak_fit", "soft_ceiling", "clip"] = "peak_fit"
     highlight_compression_peak_measurement: Literal["maximum", "robust", "manual"] = "maximum"
     highlight_compression_peak_detail: float = Field(default=35.0, ge=0.0, le=100.0)
     highlight_compression_bias: float = Field(default=0.0, ge=-100.0, le=100.0)
@@ -503,8 +460,6 @@ class HDRAdjustments(_BranchAdjustments):
             return value
         if "highlight_compression_mode" not in value or "highlight_section_enabled" in value:
             return value
-        if value.get("highlight_compression_mode") == "off":
-            return value
         normalized = dict(value)
         normalized["highlight_section_enabled"] = True
         return normalized
@@ -518,32 +473,23 @@ class HDRAdjustments(_BranchAdjustments):
 
 class SDRAdjustments(_BranchAdjustments):
     _serialized_field_order: ClassVar[tuple[str, ...]] = (
-        "rendering_version", "base_section_enabled", "use_authored_base",
+        "use_authored_base",
         *_COMMON_BRANCH_FIELD_ORDER,
-        "highlight_recovery", "highlight_compression_start_percent",
+        "highlight_compression_start_percent",
         "highlight_compression_softness", "highlight_compression_mode",
         "highlight_compression_peak_measurement", "highlight_compression_source_peak_percent",
         "highlight_compression_manual_peak_percent", "highlight_compression_peak_detail",
         "highlight_compression_bias", "highlight_compression_color_handling",
-        "tone_contrast", "tone_skew", "shadow",
+        "shadow",
         *_COMMON_TONE_FIELD_ORDER,
-        "tone_mapper",
         *_CURVE_FIELD_ORDER,
     )
 
-    # Projects saved before the SDR highlight-compression pipeline retain their
-    # original base-rendition rendering. New edits use the neutral v2 placement.
-    rendering_version: Literal["legacy_base_v1", "highlight_v2"] = "highlight_v2"
-    base_section_enabled: bool = True
     use_authored_base: bool = True
-    highlight_recovery: float = Field(default=0.6, ge=0.0, le=4.0)
     highlight_compression_start_percent: float = Field(default=50.0, ge=1.0, le=99.0)
     highlight_compression_source_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)
     highlight_compression_manual_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)
-    tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
-    tone_skew: float = Field(default=0.0, ge=-1.0, le=1.0)
     shadow: float = Field(default=0.0, ge=-2.0, le=2.0)
-    tone_mapper: ToneMapper = ToneMapper.FILMIC
 
 
 class SharedAdjustments(BaseModel):
@@ -877,15 +823,6 @@ class DenoiseLiveControls(BaseModel):
     fine_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     medium_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     coarse_noise: float = Field(default=0.5, ge=0.0, le=1.0)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _finest_follows_fine(cls, data: Any) -> Any:
-        # Fine used to cover ~1-4 px on its own; a document saved then keeps
-        # its look by giving the new finest band the same setting.
-        if isinstance(data, dict) and "fine_noise" in data and "finest_noise" not in data:
-            return {**data, "finest_noise": data["fine_noise"]}
-        return data
 
 
 class DenoiseAnalysisSettings(BaseModel):

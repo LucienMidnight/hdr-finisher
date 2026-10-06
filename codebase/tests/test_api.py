@@ -92,8 +92,8 @@ def test_upload_creates_session(monkeypatch) -> None:
                 badge_message="mock",
             ),
             adjustments={
-                "hdr": {"exposure": 0, "highlight_compression_mode": "off", "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
-                "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
+                "hdr": {"exposure": 0, "highlight_section_enabled": False, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
+                "sdr": {"exposure": 0, "shadow": 0, "contrast": 0},
                 "shared": {},
             },
             preview={"long_edge": 1600, "format": "png"},
@@ -132,8 +132,8 @@ def test_real_png_upload_preview_and_scopes() -> None:
         f"/api/session/{session_id}/preview/hdr",
         json={
             "adjustments": {
-                "hdr": {"exposure": 0, "highlight_compression_mode": "off", "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
-                "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
+                "hdr": {"exposure": 0, "highlight_section_enabled": False, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
+                "sdr": {"exposure": 0, "shadow": 0, "contrast": 0},
                 "shared": {},
             }
         },
@@ -1059,8 +1059,8 @@ def test_overlay_endpoint_returns_png_when_enabled() -> None:
         f"/api/session/{session_id}/overlay/sdr",
         json={
             "adjustments": {
-                "hdr": {"exposure": 0, "highlight_compression_mode": "off", "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
-                "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
+                "hdr": {"exposure": 0, "highlight_section_enabled": False, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
+                "sdr": {"exposure": 0, "shadow": 0, "contrast": 0},
                 "shared": {
                     "overlay_mode": "zebra",
                     "overlay_opacity": 0.72,
@@ -1089,8 +1089,8 @@ def test_real_exr_upload_preview_and_scopes() -> None:
         f"/api/session/{session_id}/preview/hdr",
         json={
             "adjustments": {
-                "hdr": {"exposure": 0, "highlight_compression_mode": "off", "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
-                "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
+                "hdr": {"exposure": 0, "highlight_section_enabled": False, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
+                "sdr": {"exposure": 0, "shadow": 0, "contrast": 0},
                 "shared": {},
             }
         },
@@ -1131,8 +1131,8 @@ def test_interpretation_endpoint_returns_updated_session(monkeypatch) -> None:
                         badge_message="override applied",
                     ),
                     adjustments={
-                        "hdr": {"exposure": 0, "highlight_compression_mode": "off", "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
-                        "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
+                        "hdr": {"exposure": 0, "highlight_section_enabled": False, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
+                        "sdr": {"exposure": 0, "shadow": 0, "contrast": 0},
                         "shared": {},
                     },
                     preview={"long_edge": 1600, "format": "png"},
