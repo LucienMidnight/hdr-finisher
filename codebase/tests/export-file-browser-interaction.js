@@ -14,6 +14,9 @@ async function main() {
     if (message.type() === "error" && !/409 \(Conflict\)/i.test(message.text())) browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", async (response) => {
+    if (response.status() === 422) browserErrors.push(`${response.url()}: ${await response.text()}`);
+  });
 
   const outputDirectory = path.resolve("output", "export-file-browser-interaction");
   const runId = Date.now();

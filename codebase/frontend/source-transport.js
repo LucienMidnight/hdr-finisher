@@ -113,7 +113,7 @@
       if (isCurrent && isCurrent() === false) throw supersededError(message);
     };
     const url = `/api/session/${sessionId}/${endpoint}/${lane}`
-      + `?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
+      + `?long_edge=${Math.max(256, longEdge)}&format=rgba16f&edit_revision=${editRevision}`
       + `&geometry_signature=${encodeURIComponent(geometrySignature)}`
       + (sourceIdentity === "perspective-draft" ? "&perspective_draft_base=true" : "");
     const response = await fetch(url, { signal });
@@ -304,7 +304,7 @@
       if (isCurrent && isCurrent() === false) throw supersededError(message);
     };
     const query = (rect) => `/api/session/${sessionId}/source-tile/${lane}`
-      + `?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
+      + `?long_edge=${Math.max(256, longEdge)}&format=rgba16f&edit_revision=${editRevision}`
       + `&geometry_signature=${encodeURIComponent(geometrySignature)}`
       + `&x=${rect.x}&y=${rect.y}&width=${rect.width}&height=${rect.height}`
       + (rect.epoch === undefined ? "" : `&source_epoch=${rect.epoch}`);
@@ -438,7 +438,7 @@
       if (isCurrent && isCurrent() === false) throw supersededError(message);
     };
     const query = (rect, epoch) => `/api/session/${sessionId}/source-tile/${lane}`
-      + `?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
+      + `?long_edge=${Math.max(256, longEdge)}&format=rgba16f&edit_revision=${editRevision}`
       + `&geometry_signature=${encodeURIComponent(geometrySignature)}`
       + `&x=${rect.x}&y=${rect.y}&width=${rect.width}&height=${rect.height}&halo=0`
       + (epoch === undefined ? "" : `&source_epoch=${epoch}`);
@@ -601,7 +601,7 @@
     startedAt,
   }) {
     const response = await fetch(
-      `/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
+      `/api/session/${sessionId}/proxy/${lane}?long_edge=${Math.max(256, longEdge)}&format=rgba16f&edit_revision=${editRevision}`
         + `&geometry_signature=${encodeURIComponent(geometrySignature)}`
         + (sourceIdentity === "perspective-draft" ? "&perspective_draft_base=true" : ""),
       { signal },
