@@ -63,6 +63,15 @@ in phase 2 fails tests for reasons that have nothing to do with behaviour.
   features (list in 5.1), and recommended leaving them. Steve accepted the
   phase 1 report with that recommendation. They may be retired later only
   if Steve says so or an output test replaces them.
+- **October 8: one full driver sweep, after phase 4.** Steve asked for the
+  long tests to be saved for the end. This replaces the sweeps sections 6
+  and 12 ask for after phase 2 and after phase 3. Phases 2 and 3 are
+  guarded by their per-commit checks and, for phase 3, the exact
+  before-and-after comparison of the numbers. The cost: a failure found by
+  the one sweep has to be traced back through three phases, which is why
+  each commit moves one area only.
+- **October 8: phase 4 has Steve's go-ahead.** He asked for phases 2 to 5 to
+  be done together.
 - **October 6: no new framework, build step or language before 1.0.** The
   frontend stays plain JavaScript loaded by `<script>` tags.
 - **October 6: the backend is not part of this sprint.**
