@@ -1,3 +1,28 @@
+# HDR Finisher 0.8.13 — draft for review
+
+Prepared October 7, 2026. This draft does not announce a published release.
+
+- Editing previews process the visible area at the detail needed for the current zoom, including native detail at 100% and above. GPU memory admission and tiled rendering keep large-image editing bounded.
+- Denoise uses one adaptive method, with bounded viewport work and cached tiles during grading. The earlier wavelet method has been removed.
+- Perspective has a responsive GPU draft. Apply rebuilds the authoritative preview; leaving the tool cancels unapplied changes.
+- The viewer stays inside its panel in narrow windows. GPU scopes remain current across lane switches, and interrupted preview work no longer triggers avoidable CPU settling.
+- Revert HDR and Revert SDR in the File menu restore the selected lane to its untouched starting state.
+- Tiny images export without rejected preview requests. Technical processing labels follow the frame on screen, and display capability changes rebuild the preview surface.
+
+## Project compatibility
+
+Before 1.0, retired adjustment fields and preferences are ignored rather than migrated. Older projects using wavelet Denoise open with the current adaptive method; retired SDR Match recipes are not preserved. Review those projects after opening.
+
+## Known limitations
+
+This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. Physical display and delivery-path qualification remains incomplete.
+
+Preview/export and cross-scale differences, a few pixel-parity checks, and measured responsiveness target misses remain recorded in the viewport-preview PRD. This release does not claim that every guard passes. Linux HDR can show gradient banding on the documented KDE/Wayland NVIDIA path; X11/Xwayland uses SDR simulation. RAW and Experimental DNG Import retain their documented compatibility limits.
+
+See [Known limitations](docs/known-limitations.md) for current support status.
+
+---
+
 # HDR Finisher 0.8.12
 
 HDR Finisher 0.8.12 tightens the frontend pipeline and makes local mask controls respond directly and predictably while editing.

@@ -31,6 +31,13 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <!-- Draft for review, October 7, 2026; no release tag or package published. -->
+    <release version="0.8.13" date="2026-10-07" type="development">
+      <description>
+        <p>Adds viewport-bounded GPU editing, adaptive Denoise, responsive Perspective drafts, and lane-specific Revert commands. Improves scope ownership, tiny-image previews, accepted-frame processing labels, and display capability changes.</p>
+        <p>Preview parity and timing limitations remain documented. Retired pre-1.0 adjustment fields are ignored; review older projects using wavelet Denoise or legacy SDR Match.</p>
+      </description>
+    </release>
     <release version="0.8.12" date="2026-09-13">
       <description><p>Fixes frontend pipeline synchronization and improves transformed path drawing, feather feedback, and four-handle luminance range controls.</p></description>
     </release>
