@@ -820,7 +820,7 @@ The preceding open-work paragraph is historical. Commit `a0168a8` restored the c
 
 ### PERF-07 — The tiled path clears the canvas on a tier change and leaves it black
 
-**Status:** Open. Reported 2026-09-21, diagnosed, not fixed.
+**Status:** Closed as an out-of-date failure on October 7, 2026. One fresh `tier-change-blank-canvas` run on today's viewport design passes: 4K to Full in 974 ms, all 10 compositor samples painted, zero blank or hidden samples, WebGPU accepted, zero CPU picture requests or fallback branches. Current retained presentation replaces the frame after new work rather than exposing its working surface. This closes the old reported route on the named check, not a physical-display certification of every drag. The September investigation below remains historical; its proposed cause was not confirmed.
 **Area:** `frontend/webgpu-preview.js` `renderTiledTo`
 
 Switching to Full and dragging shows one black frame; every drag after that is
