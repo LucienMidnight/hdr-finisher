@@ -141,7 +141,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `local-adjustments-ui.js` | The list of local adjustments and their grade controls | `defaultLocalGrade`, `bindLocalAdjustmentEvents`, `renderLocalAdjustments` |
 | `mask-controls.js` | Mask tree editor and per-mask panels | `renderMaskTreeEditor`, `renderPathControls`, `createLuminanceRangeControl` |
 | `mask-gestures.js` | Pointer work on the mask canvas | `bindLocalMaskCanvas`, `updateGradientGesture`, `pathTargetAtPointer`, `handlePathCanvasKeydown` |
-| `path-geometry.js` | Path and feather maths (no page access) | `activePathNodes`, `uniformFeatherNodes`, `flattenPathNodes`, `validPathGeometry` |
+| `path-geometry.js` | Path and feather maths (no page access); moved October 8 | `codebase/frontend/path-geometry.js`: `activePathNodes`, `uniformFeatherNodes`, `flattenPathNodes`, `validPathGeometry`, `splitPathSegment` |
 | `mask-overlay.js` | Drawing masks and gizmos over the image | `renderLocalMaskOverlay`, `drawMaskExpression`, `drawBrushMaskOverlay`, `drawPathMaskGizmo` |
 | `sdr-match-ui.js` | SDR Match | `setSdrMatch`, `serveSdrMatchCandidates`, `presentMatchedSdrPreview` |
 | `edit-commands.js` | Sending edits to the backend in order | `queueEditCommand`, `syncGlobalEditState`, `refreshEditState` |
