@@ -25,6 +25,8 @@ For work done by coding agents this costs three things:
 - **Testing.** `app.js` cannot be loaded outside the running page, so 14 unit
   tests cut functions out of it as text, and about 950 other assertions check
   that exact lines of code exist instead of checking what the app does.
+  (That was the position on October 6. Phase 1 dealt with it on October 7;
+  the real count was 1,708. See 5.1.)
 
 ## 2. Status
 
@@ -52,9 +54,15 @@ in phase 2 fails tests for reasons that have nothing to do with behaviour.
 
   This is a deliberate, scoped exception to the `AGENTS.md` rule "never
   delete or loosen a check to get a pass". It covers wording-only checks
-  retired under phase 1 of this sprint and nothing else. Phase 1 adds one
-  line to `AGENTS.md` saying so, so later threads do not have to find this
-  document to know it.
+  retired under phase 1 of this sprint and nothing else. Phase 1 added one
+  line to `AGENTS.md` saying so (October 7), so later threads do not have to
+  find this document to know it. `AGENTS.md` is not tracked by git: the line
+  is on Steve's workstation only, and this section is the record of it.
+- **October 8: the seven "only guard" tests stay as they are.** Phase 1
+  kept the wording checks of seven tests because nothing else checks those
+  features (list in 5.1), and recommended leaving them. Steve accepted the
+  phase 1 report with that recommendation. They may be retired later only
+  if Steve says so or an output test replaces them.
 - **October 6: no new framework, build step or language before 1.0.** The
   frontend stays plain JavaScript loaded by `<script>` tags.
 - **October 6: the backend is not part of this sprint.**
@@ -102,12 +110,15 @@ inventing a different structure.
 
 ## 5. Phase 1: tests stop depending on where code sits
 
+**Done October 7, 2026.** The plan below is kept as what was asked for; 5.1
+records what was done. A thread starting phase 2 needs only 5.1.
+
 ### Goal
 
 After this phase, moving a function from one frontend file to another, with
 no other change, fails no test.
 
-### What is there now
+### What was there on October 6
 
 - `tests/test_frontend_*_contract.py` and
   `tests/test_preview_resolution_contract.py` read frontend files as text and
@@ -183,13 +194,48 @@ How the kept checks find their text:
 `AGENTS.md` has the line recording the October 6 exception. That file is
 not tracked by git, so the line exists on this workstation only.
 
+Checks run: `node --test tests/*.test.js` (419 pass) and
+`.venv/Scripts/python.exe -m pytest tests -q` (1,555 pass, 3 skipped; 25
+fewer than before, the retired tests). No GPU check: no app code changed.
+Commits `7369aa2`, `5349b80` and `8b2c0c7`.
+
+Proof of the goal: in a throwaway copy, six functions were moved out of
+`app.js` and one helper out of `webgpu-preview.js` into new files listed in
+`index.html`. No unit or contract test failed because of the move. This
+proves the tests; it does not prove the app runs with code moved, which is
+still phase 2's first job (section 6).
+
+**How "has a behavioural check" was judged.** Per feature, not per
+assertion: a test's wording checks were retired when a GPU check or unit
+test exercises that feature (curve editor, exposure bands, local
+adjustments, masks, geometry tools, Denoise, scopes, SDR Match, export,
+media browser, preview tiers, and so on). A retired check may therefore
+have been the only trace of one small detail inside a feature that is
+otherwise covered. If a regression of that kind turns up, the retired text
+is in the diff of commit `5349b80`.
+
+**What later phases need to know.**
+
+- A moved function needs no test change, provided its new file has a
+  `<script>` line in `index.html`. Both helpers take their file list from
+  there.
+- A name must be declared once in the page's shared scope. If a move would
+  leave two top-level declarations with the same name, the helpers fail
+  with a message naming both files. `buildGpuScopePayload` is already
+  declared in both `app.js` and `scope-analysis.js`; no test asks for it
+  today.
+- Phase 3 adds the new renderer files to `PARTS` in
+  `tests/frontend-source.js`.
+- Kept checks still pin exact text. Moving code never fails them; editing a
+  pinned line does, and that is their job.
+
 Not covered: checks that slice a method out of the renderer class by its
 neighbours (`denoise-source-load-ownership`, `tiled-cancellation-cleanup`).
 The class is not being divided in this sprint.
 
 **Wording checks kept because nothing else checks the feature.** Each is
-location-proof now, so none blocks phase 2. Steve decides whether to retire
-them, keep them, or have an output test written.
+location-proof now, so none blocks phase 2. Decision (section 3, October 8):
+they stay as they are.
 
 | Test | Feature it is the only automated trace of |
 |---|---|
@@ -221,6 +267,10 @@ the curve editor opens `curve-editor.js` and little else.
   function) needs everything it touches to be loaded already. Find that code
   before moving anything near it.
 - `proofing-ui.js` loads after `app.js` today and uses things from it.
+- Since phase 1 the tests do not care which frontend file a function is in
+  (5.1). A test that fails after a move is telling you something else: the
+  new file has no `<script>` line, a name is now declared twice, or the move
+  changed the code.
 - The small modules also export themselves for Node so unit tests can load
   them. A moved cluster that touches no page element (`path-geometry.js` is
   the clearest case) can do the same, which lets its tests load it directly
@@ -266,7 +316,10 @@ class file holds only the class.
 These functions do not touch the GPU. They decide how a frame will be
 rendered and turn the project's adjustments into the numbers the shaders
 read. Several unit tests already exercise them; check how those tests reach
-them today before choosing how the new files expose them.
+them today before choosing how the new files expose them. Since phase 1
+they reach `webgpu-preview.js` through `frontendSource` in
+`tests/frontend-source.js`; adding the two new files to its `PARTS` list
+makes every one of those tests load them.
 
 ### Strict testing applies
 
@@ -358,7 +411,7 @@ Estimate the time and ask Steve before running.
 |---|---|---|
 | A moved piece loads before something it needs | The app fails to start, or one panel is dead | `startup-state.js` after every commit; self-contained clusters first |
 | Two threads edit the same big file | Lost work or a tangled commit | One thread at a time; check `git status` before starting |
-| A retired check was the only guard on something | A later regression goes unnoticed | The "only guard" list goes to Steve before removal |
+| A retired check was the only guard on something | A later regression goes unnoticed | Phase 1 kept seven tests' wording checks for this reason (5.1). Coverage was judged per feature, so a small detail may be unguarded; the retired text is in commit `5349b80` |
 | A new file is missing from the packaged app | Works in development, broken in the installer | Confirm how packaging collects frontend files in the first commit of phase 2; installer check at the next release point |
 | A move is mixed with an edit | A behaviour change hides inside a large diff | Move-only rule; one area per commit |
 | A shader setting lands in the wrong position | Wrong image, no error | Before-and-after comparison of the numbers in phases 3 and 4 |
@@ -367,7 +420,8 @@ Estimate the time and ask Steve before running.
 
 - No frontend JavaScript file other than the shader text and the renderer
   class is much over 1,500 lines.
-- Moving a function between frontend files fails no test.
+- Moving a function between frontend files fails no test. (Met October 7;
+  see 5.1.)
 - The code map describes the layout as it is.
 - The full driver sweep at the end of phase 2, and again after phase 3 (and
   phase 4 if run), shows nothing new failing.
