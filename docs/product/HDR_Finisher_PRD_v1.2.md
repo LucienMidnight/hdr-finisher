@@ -908,7 +908,7 @@ all at the Full tier, or deferred until the user actually switches lanes.
 
 ### PERF-05 — Tiled encode fails validation under GPU instrumentation
 
-**Status:** Not reproduced 2026-09-21. Harness added, no fix shipped.
+**Status:** Closed as out of date on October 7, 2026, by code inspection. `ensureScopePeakTarget` is now a bounded pool of two targets; acquisition requires `!busy` and an unmapped read buffer, then reserves it. Excess overlap omits the optional measurement. `HDRScopeReadback.readPeak` unmaps and releases the busy flag in `finally`. The pool arrived in `689d6ac`; the old singleton/no-guard account below no longer describes the code. No change or instrumentation run in this quick pass.
 `tests/performance/full-tier-instrumented-tiling.js`
 (`npm run test:full-tier-instrumented-tiling`).
 
