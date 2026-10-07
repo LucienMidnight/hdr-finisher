@@ -1,7 +1,7 @@
 # Codebase Modularization Sprint
 
 **Date:** October 6, 2026
-**Status:** Not started. Phase 0 (code map, documentation archive) is done.
+**Status:** Phases 0 and 1 are done. Phase 2 has not started.
 **To do before v1.0.** Steve wants this structural work finished before the
 1.0 release. After 1.0 there are outside users and saved projects to protect,
 and a reorganisation of this size becomes much more expensive to validate.
@@ -33,7 +33,7 @@ Update this table in the same commit that finishes a phase.
 | Phase | What | State |
 |---|---|---|
 | 0 | Code map with target layout; dated records archived | Done October 6 |
-| 1 | Tests stop depending on where code sits | Not started |
+| 1 | Tests stop depending on where code sits | Done October 7 (see 5.1) |
 | 2 | `app.js` divided by feature | Not started |
 | 3 | Standalone helpers moved out of `webgpu-preview.js` | Not started |
 | 4 | The 190 shader settings get names from one list | Not started; needs Steve's go-ahead (section 8) |
@@ -148,6 +148,58 @@ One short note: how many assertions were retired, how many kept, and the
 ### Checks
 
 Fast checks only. No GPU checks: this phase changes tests, not the app.
+
+### 5.1 Record (October 7, 2026)
+
+The contract files held 1,708 assertions, not about 950.
+
+| What | Count | Outcome |
+|---|---|---|
+| Page structure, styles, desktop shell and backend text | 622 | Kept as they were |
+| Shader maths | 118 | Kept; read from the whole frontend |
+| Numbers and limits in frontend scripts | 117 | Kept; read from the whole frontend |
+| Text the user reads (messages, labels) | 17 | Kept; read from the whole frontend |
+| Wording only, feature has a behavioural check | 801 | Retired |
+| Wording only, no behavioural check found | 33 | Kept for Steve's decision (below) |
+
+25 tests that held nothing else were removed with them (106 to 87 in the
+seven inventory files, 10 to 4 in `test_preview_resolution_contract.py`).
+
+How the kept checks find their text:
+
+- `tests/frontend_source.py` gives the Python tests every script
+  `index.html` loads as one text, and any function or constant by name.
+- `tests/frontend-source.js` does the same for the Node tests. The 14 tests
+  that cut functions out of `app.js` between two markers now name the
+  functions; each old range was checked to rebuild to the same code. The 20
+  tests that read `webgpu-preview.js` go through one list of the files the
+  renderer is made of (`PARTS`), which phase 3 extends.
+- The two helpers were compared on all 1,141 declarations in the frontend
+  and return the same text.
+- Also converted: the scope checks in `test_histogram_correctness.py` and
+  `test_scope_correctness.py`, and the optional source patch in
+  `desktop/tests/preview-diagnostic.js` and `preview-restore.js`.
+
+`AGENTS.md` has the line recording the October 6 exception. That file is
+not tracked by git, so the line exists on this workstation only.
+
+Not covered: checks that slice a method out of the renderer class by its
+neighbours (`denoise-source-load-ownership`, `tiled-cancellation-cleanup`).
+The class is not being divided in this sprint.
+
+**Wording checks kept because nothing else checks the feature.** Each is
+location-proof now, so none blocks phase 2. Steve decides whether to retire
+them, keep them, or have an output test written.
+
+| Test | Feature it is the only automated trace of |
+|---|---|
+| `test_help_tooltips_are_portaled_and_clamped_to_the_visible_app_bounds` | Help tooltips stay inside the window |
+| `test_default_shortcuts_are_conservative_and_warn_about_macos_system_bindings` | The default keyboard shortcut table and the macOS warning |
+| `test_tint_controls_follow_darktable_hue_mapping` | Tint slider colours |
+| `test_macos_uses_the_native_application_menu_without_renderer_duplicates` | macOS menu handling (cannot be run on the Windows workstation) |
+| `test_desktop_source_open_handoffs_surface_failures` | An error message when a file handed over by the desktop shell fails to open |
+| `test_project_open_shows_immediate_loading_feedback` | "Opening project" status shown at once |
+| `test_left_metadata_panel_renders_complete_camera_and_lens_identity` | Camera and lens rows in the Metadata panel |
 
 ## 6. Phase 2: `app.js` divided by feature
 

@@ -190,11 +190,17 @@ Finding the right GPU check: they are named for the feature, such as
 `brush-mask-interaction.js`, `gpu-scope-parity.js`, `tiled-direct-parity.js`,
 `sdr-match-gpu-interaction.js`, `denoise-adaptive-parity.js`.
 
-Two kinds of test read source code as text, and both break when code moves:
+Two kinds of test read source code as text. Since the sprint's phase 1
+(October 7, 2026) neither depends on which frontend file the code is in:
 
 - `test_frontend_*_contract.py` and `test_preview_resolution_contract.py`
-  assert that exact lines of code exist (about 950 assertions).
-- 14 of the `*.test.js` files cut a named function out of `app.js` as text and
-  run it, because `app.js` cannot be loaded outside the page.
+  check page structure and styles, and pin numbers, limits and shader maths
+  as text. They read frontend scripts through `tests/frontend_source.py`,
+  which searches every script `index.html` loads.
+- Some `*.test.js` files lift a function out of the frontend and run it,
+  because `app.js` cannot be loaded outside the page. They ask for it by name
+  through `tests/frontend-source.js`.
 
-The sprint's phase 1 deals with both.
+A new frontend file is picked up by both once it has its `<script>` line in
+`index.html`. When `webgpu-preview.js` is divided, add the new files to
+`PARTS` in `tests/frontend-source.js`.
