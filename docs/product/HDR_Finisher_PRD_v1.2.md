@@ -887,6 +887,8 @@ rather than the fetch.
 
 ### PERF-04 — Background settle work at Full is cheap to feel and expensive to run
 
+**October 7 code-only verdict: still applies in part; no fix.** `prepareInactivePreview` schedules preparation of the unseen lane; `preloadInactiveLane` calls `loadProxy` at `settledProxyLongEdge`, so explicit Full can still load native whole-source data for that lane. It now waits for true idle (`previewIdleNow`) rather than competing with queued foreground work. The old counts below are not current measurements: routine scopes now prefer GPU analysis and cap their analysis source through the whole-image pipe. The remaining question is whether to suppress native inactive-lane preparation at Full; that is a scheduling choice for a later pass.
+
 `prepareInactivePreview()` and `debounceOverlayAndScopes()` both run after the
 presented frame and neither is awaited, so they do not delay the preview
 image. They are still real machine cost on the same CPU: measured per settled
