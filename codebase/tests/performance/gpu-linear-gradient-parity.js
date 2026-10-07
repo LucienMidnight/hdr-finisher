@@ -63,7 +63,7 @@ const url = urlIndex >= 0 ? process.argv[urlIndex + 1] : "http://127.0.0.1:8799"
       if (cpu.width !== analytic.width || cpu.height !== analytic.height) {
         throw new Error(`Frames differ in size: ${cpu.width}x${cpu.height} against ${analytic.width}x${analytic.height}`);
       }
-      // Reported, not gated: how far apart the two masks themselves are.
+      // How far apart the two masks themselves are, in levels of 255.
       let maxMaskLevels = 0;
       for (let index = 0; index < cpu.mask.length; index += 1) {
         maxMaskLevels = Math.max(maxMaskLevels, Math.abs(cpu.mask[index] - analytic.mask[index]) * 255);
@@ -81,7 +81,10 @@ const url = urlIndex >= 0 ? process.argv[urlIndex + 1] : "http://127.0.0.1:8799"
     });
     assert.equal(pageErrors.length, 0, pageErrors.join(" | "));
     assert.ok(comparison.maskEvents.some((event) => event.kind === "gpu-linear-gradient"));
-    assert.ok(comparison.maxDelta <= 1 / 255 + 1e-12, JSON.stringify(comparison));
+    // PRD 4.2: a gradient mask is within 2 of 255 levels (Steve, October 7,
+    // 2026; this was a picture gate of 1/255). The picture difference is
+    // still reported as maxDelta.
+    assert.ok(comparison.maxMaskLevels <= 2, JSON.stringify(comparison));
     console.log(JSON.stringify(comparison));
   } finally {
     await browser.close();
