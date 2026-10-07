@@ -55,16 +55,16 @@ function assert(condition, message) {
     };
     // A patch from the middle of the visible viewer: status rows cover its top
     // edge and the navigator its bottom-right corner.
-    const png = async () => {
+    const patch = async () => {
       const frame = await page.locator("#dropzone").boundingBox();
-      const clip = {
+      return {
         x: Math.round(frame.x + frame.width * 0.2),
         y: Math.round(frame.y + frame.height * 0.4),
         width: Math.round(frame.width * 0.35),
         height: Math.round(frame.height * 0.25),
       };
-      return (await page.screenshot({ clip })).toString("base64");
     };
+    const png = async (clip = null) => (await page.screenshot({ clip: clip || await patch() })).toString("base64");
     const digest = (data) => crypto.createHash("sha256").update(data).digest("hex");
     // Mean and spread of the capture's luma, decoded in the page because the
     // test tree carries no PNG decoder.
@@ -139,7 +139,13 @@ function assert(condition, message) {
       await page.evaluate((value) => applyExecutionOverride(value), route);
       await setAmount(1);
       await settled();
-      const graded = await png();
+      // A passing notice ("Source imported.") widens the status row, and in
+      // this narrow window the viewer with it; when it expires the viewer
+      // narrows and the picture moves. Compare only once it has gone.
+      await page.waitForFunction(
+        () => !document.querySelector("#viewer-status-dock .status-success"), null, { timeout: 60000 });
+      const clip = await patch();
+      const graded = await png(clip);
 
       await page.click("#denoise-show-noise");
       await settled();
@@ -167,7 +173,11 @@ function assert(condition, message) {
       const hidden = await control();
       assert(hidden.pressed === "false" && hidden.label === "Show noise" && !hidden.badge,
         `${route}: the noise view did not switch off: ${JSON.stringify(hidden)}`);
-      assert(digest(await png()) === digest(graded),
+      const restoredClip = await patch();
+      assert(JSON.stringify(restoredClip) === JSON.stringify(clip),
+        `${route}: the viewer moved between the two captures, so they cannot be compared: `
+        + JSON.stringify({ clip, restoredClip }));
+      assert(digest(await png(clip)) === digest(graded),
         `${route}: turning the noise view off did not restore the graded picture exactly.`);
     }
     await page.evaluate(() => applyExecutionOverride(null));
