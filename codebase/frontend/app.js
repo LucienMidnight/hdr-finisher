@@ -4541,17 +4541,17 @@ function lumaBandLabel(lower, upper) {
 function previewExecutionMode() {
   // The four modes in PRD 8. Execution is a renderer decision; it is tracked
   // separately from the tier so neither can be read off the other.
-  const gpu = state.acceptedPresentation?.transport === "WebGPU" || Boolean(state.gpuPreview?.available);
-  const tiled = state.gpuPreview?.lastRenderPlan?.decision?.mode === "tiled";
+  const accepted = state.acceptedPresentation;
+  const gpu = accepted ? accepted.transport === "WebGPU" : Boolean(state.gpuPreview?.available);
+  const tiled = accepted ? accepted.execution === "tiled" : state.gpuPreview?.lastRenderPlan?.decision?.mode === "tiled";
   if (!gpu) return "direct-cpu";
   return tiled ? "tiled-gpu" : "direct-gpu";
 }
 
 function previewExecutionLabel() {
-  const transport = state.acceptedPresentation?.transport;
-  const engine = transport === "WebGPU" ? "GPU" : state.gpuPreview?.available ? "GPU" : "CPU";
-  const plan = state.gpuPreview?.lastRenderPlan;
-  const mode = plan?.decision?.mode === "tiled" ? "Tiled" : "Direct";
+  const execution = previewExecutionMode();
+  const engine = execution === "direct-cpu" ? "CPU" : "GPU";
+  const mode = execution === "tiled-gpu" ? "Tiled" : "Direct";
   const budget = state.gpuMemoryBudget === "auto" || state.gpuMemoryBudget === undefined
     ? (window.HDRGpuBudget?.autoLabel?.(state.gpuPreview?.gpuBudget) || "Auto")
     : `${state.gpuMemoryBudget} GiB`;
@@ -4579,9 +4579,8 @@ function technicalSummaryEntries() {
     : accepted.exact ? "Full detail"
       : accepted.coarse ? "Softer while dragging" : "Placeholder";
   const setting = state.fasterDragging ? " · faster dragging on" : "";
-  const plan = state.gpuPreview?.lastRenderPlan;
-  const gpu = accepted?.transport === "WebGPU" || Boolean(state.gpuPreview?.available);
-  const route = !gpu ? "On the processor (CPU)" : plan?.decision?.mode === "tiled" ? "In tiles" : "Whole image";
+  const execution = previewExecutionMode();
+  const route = execution === "direct-cpu" ? "On the processor (CPU)" : execution === "tiled-gpu" ? "In tiles" : "Whole image";
   const memory = state.gpuMemoryBudget === "auto" || state.gpuMemoryBudget === undefined
     ? (window.HDRGpuBudget?.autoLabel?.(state.gpuPreview?.gpuBudget) || "Auto")
     : `${state.gpuMemoryBudget} GiB`;

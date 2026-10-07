@@ -47,7 +47,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 - Editing preview is viewport-bounded, with selectable processing resolutions including Full. CPU preview remains available for an unavailable or lost GPU. The October 5 audits also record CPU picture, mask, scope and whole-source work that is still under investigation (PRD 15.7).
 - Native zoom uses source-resolution viewport processing; magnified views below 100% use stepped processing sizes. Preview/export and cross-scale agreement have the specific limitations recorded in PRD 15.1, 15.2 and 15.7.
 - WebGPU is the settled authoring preview where parity and device support are validated; explicit proof and export remain backend-authoritative.
-- The Technical Execution readout can say Direct GPU while the viewer is showing a Tiled GPU frame, because it reads the last auxiliary render plan (PRD CF-ROUTE-08).
+- Technical Processing and Execution describe the accepted viewer frame; auxiliary renders do not change those route labels (CF-ROUTE-08 fixed October 7).
 - Routine scopes analyze the current preview proxy, not every full-source pixel. Tiny source-resolution features can be reduced by proxy downsampling.
 - With a 1 GiB preview budget, Full tiled slider overlap can enter the CPU settle branch for superseded/coalesced work, and guaranteed tiled interactive drafts are refused after source preparation. These Phase 4 findings remain open (PRD CF-ROUTE-06/07); warm runs sent no CPU picture request.
 - An SDR-compatible representation is not true HDR output.
