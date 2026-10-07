@@ -39,16 +39,35 @@ const url = urlIndex >= 0 ? process.argv[urlIndex + 1] : "http://127.0.0.1:8799"
       const edge = 1024;
       const renderAndRead = async (analytic) => {
         gpu.gpuAnalyticMasksEnabled = analytic;
-        const result = await window.HDRFinisherPerformance.renderTiledTier(edge);
-        if (!result?.rendered) throw new Error(`Tiled render refused: ${JSON.stringify(result?.refusals)}`);
-        await gpu.device.queue.onSubmittedWorkDone();
-        const capture = await gpu.readPresentationRegion(els.previewCanvas.width, els.previewCanvas.height);
-        return { values: Array.from(capture.values), width: capture.width, height: capture.height };
+        // Both mask routes store their tiles under the same key.
+        for (const entry of gpu.maskTiles.values()) entry.texture.destroy();
+        gpu.maskTiles.clear();
+        // Forcing the route schedules an ordinary Fit redraw, which can land
+        // after this render and leave its smaller frame on screen. Render
+        // again until the frame read back is the one that was asked for.
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const result = await window.HDRFinisherPerformance.renderTiledTier(edge);
+          if (!result?.rendered) throw new Error(`Tiled render refused: ${JSON.stringify(result?.refusals)}`);
+          await gpu.device.queue.onSubmittedWorkDone();
+          const capture = await gpu.readPresentationRegion(result.width, result.height);
+          if (capture?.width !== result.width || capture.height !== result.height) continue;
+          const mask = await gpu.readLocalMaskRegion("analytic-gradient-parity", 0, 0, result.width, result.height);
+          if (mask.error || mask.coveredPixels !== result.width * result.height) continue;
+          return { values: Array.from(capture.values), width: capture.width, height: capture.height,
+            mask: Array.from(mask.values), maskSources: mask.sources };
+        }
+        throw new Error("The tiled frame did not stay on screen long enough to read");
       };
       const cpu = await renderAndRead(false);
-      for (const entry of gpu.maskTiles.values()) entry.texture.destroy();
-      gpu.maskTiles.clear();
       const analytic = await renderAndRead(true);
+      if (cpu.width !== analytic.width || cpu.height !== analytic.height) {
+        throw new Error(`Frames differ in size: ${cpu.width}x${cpu.height} against ${analytic.width}x${analytic.height}`);
+      }
+      // Reported, not gated: how far apart the two masks themselves are.
+      let maxMaskLevels = 0;
+      for (let index = 0; index < cpu.mask.length; index += 1) {
+        maxMaskLevels = Math.max(maxMaskLevels, Math.abs(cpu.mask[index] - analytic.mask[index]) * 255);
+      }
       let maxDelta = 0;
       let differing = 0;
       for (let index = 0; index < cpu.values.length; index += 1) {
@@ -56,7 +75,8 @@ const url = urlIndex >= 0 ? process.argv[urlIndex + 1] : "http://127.0.0.1:8799"
         if (delta) differing += 1;
         maxDelta = Math.max(maxDelta, delta);
       }
-      return { width: cpu.width, height: cpu.height, maxDelta, differing,
+      return { width: cpu.width, height: cpu.height, maxDelta, differing, maxMaskLevels,
+        maskSources: [cpu.maskSources, analytic.maskSources],
         samples: cpu.values.length, maskEvents: gpu.performanceMetrics.maskEvents || [] };
     });
     assert.equal(pageErrors.length, 0, pageErrors.join(" | "));
