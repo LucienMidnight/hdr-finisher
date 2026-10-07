@@ -857,6 +857,9 @@ input[type="text"] {
   container-type: inline-size;
   display: grid;
   grid-row: 1;
+  /* Without this the column is as wide as the status row wants to be, and
+     the viewer overflows the panel in a narrow window. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--panel-header-h) auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
