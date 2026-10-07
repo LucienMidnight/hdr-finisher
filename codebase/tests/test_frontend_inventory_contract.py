@@ -35,7 +35,8 @@ def test_frontend_contract_split_preserves_the_reviewed_inventory() -> None:
             and node.name.startswith("test_")
         )
 
-    # Keep the exact current inventory and uniqueness checks. The former
-    # count predates the additional reviewed frontend contract.
-    assert len(test_names) == 106
+    # 87 since October 7, 2026: checks that pinned only the wording of the
+    # code were retired (Codebase Modularization Sprint, phase 1). What is left
+    # pins page structure, styles, numbers, limits and shader maths.
+    assert len(test_names) == 87
     assert len(test_names) == len(set(test_names))

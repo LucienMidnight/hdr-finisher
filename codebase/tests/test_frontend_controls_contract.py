@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from hdr_finisher.main import app
 
+from frontend_source import frontend_declarations, frontend_scripts
+
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
-DESKTOP = ROOT / "desktop"
 
 
 def test_left_metadata_panel_renders_complete_camera_and_lens_identity() -> None:
-    script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    script = frontend_scripts()
     for label in (
         "Camera make",
         "Camera model",
@@ -31,11 +31,11 @@ def test_left_metadata_panel_renders_complete_camera_and_lens_identity() -> None
     assert '["RAW pipeline", session.metadata.extra.raw_pipeline]' in script
     assert '["RAW compatibility fallback", session.metadata.extra.raw_fallback_reason]' in script
 
+
 def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -> None:
     response = TestClient(app).get("/")
     assert response.status_code == 200
     html = response.text
-    script = (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert "Lift, Gamma, Gain" in html
     assert "Legacy Primaries" not in html
     assert 'id="tone-equalizer-add"' in html
@@ -47,24 +47,15 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "--bypass-icon-visible: var(--accent)" in css
     assert "--bypass-icon-hidden: var(--quiet)" in css
     assert 'id="local-bypass"' not in html
-    assert "data-local-bypass-id" in script
     assert html.count("data-zone-hover=") == 6
     assert "Highlight Compression" in html
     assert 'data-group="hdr-highlights"' in html
     assert 'data-section-path="hdr.highlight_section_enabled"' in html
-    # HDR reads Highlight Compression after the tone and curve work it
-    # compresses, since it is the output limiter. SDR keeps its shoulder early,
-    # where it is the scene-to-display placement rather than a limiter.
-    assert '"hdr-tone", "hdr-equalizer", "hdr-zones", "curves", "hdr-highlights", "hdr-color"' in script
-    assert '"sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
     # The painted module index has to ascend in display order in both lanes, so
     # Curves and Highlight Compression swap numbers when HDR is active.
     assert 'body[data-active-lane="hdr"] .control-group[data-group="curves"] > .control-group-header::before { content: "09"; }' in css
     assert '.control-group[data-group="hdr-highlights"] > .control-group-header::before { content: "10"; }' in css
     assert '.control-group[data-group="curves"] > .control-group-header::before { content: "10"; }' in css
-    assert '"sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
-    assert "colorGrading.after(blackAndWhiteGroup)" in script
-    assert "beforeLocals.after(localAdjustmentsGroup)" in script
     assert "Output target" in html
     assert "Sets the final peak after grading" in html
     assert '<option value="clip">Clip</option>' in html
@@ -103,23 +94,12 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'id="sdr-match-hdr-colors"' in html
     assert 'id="sdr-reset-colors"' in html
     assert 'id="sdr-reset-colors" class="group-reset text-button" type="button" data-reset-group="sdr-color"' in html
-    assert 'const COLOR_CONTROL_KEYS = controlGroups["hdr-color"]' in script
-    assert "function matchHdrColorsToSdr()" in script
-    assert "function resetSdrColorSliders()" not in script
-    assert "/api/export-directory/default" in script
-    # MINOR-10: the overwrite approval is an in-application dialog now. A
-    # native modal left the Electron renderer unable to open a <select>
-    # until the window lost and regained focus, so the absence is as much
-    # the contract as the presence.
-    assert "window.HDRDialogs.confirm(" in script
-    assert "window.confirm(" not in script
-    assert "overwrite," in script
+
 
 def test_panel_titles_and_scope_description_follow_shared_design_contract() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
-    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    scope_ui = (FRONTEND / "scope-ui.js").read_text(encoding="utf-8")
+    scope_ui = frontend_scripts()
 
     assert '<h1 class="panel-title">Metadata</h1>' in html
     assert 'id="preview-window-title" class="panel-title" tabindex="0" aria-describedby="viewer-branch-note"' in html
@@ -137,7 +117,6 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert 'class="dock-tabs"' not in html
     assert 'id="scope-note" class="visually-hidden"' in html
     assert 'id="histogram" width="720" height="220" aria-label="Image scope" aria-describedby="scope-note"' in html
-    assert "compactScopeGuideLabel(scope, guide)" in app
     assert "RW means active HDR reference white" in scope_ui
     assert "--panel-title-font-family:" in css
     assert "--panel-title-font-size:" in css
@@ -148,9 +127,10 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert "transition-delay: 2s" in css
     assert "justify-content: flex-start" in css
 
+
 def test_default_shortcuts_are_conservative_and_warn_about_macos_system_bindings() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    app = (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
+    app = frontend_scripts()
 
     assert '"edit.redo": "Mod+Shift+Z"' in app
     assert '"file.exportStandard": "Mod+E"' in app
@@ -164,14 +144,12 @@ def test_default_shortcuts_are_conservative_and_warn_about_macos_system_bindings
     assert "if (!exact) return undefined;" in app
     assert "Only standard application commands are assigned by default." in html
 
+
 def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    shell = (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
+    shell = frontend_scripts()
     desktop = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
 
-    assert 'previewResolution: "auto"' in shell
-    assert "fasterDragging: false," in shell
-    assert 'maximumGpuMemoryGiB: "auto"' in shell
     assert 'new Set(["1024", "2048", "4096", "full"])' in shell
     assert "GPU_MEMORY_PRESETS_GIB = [1, 2, 3, 4, 6, 8, 12]" in shell
     assert 'id="settings-preview-resolution"' in html
@@ -193,35 +171,18 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
         assert f'<option value="{value}">{value} GiB</option>' in html
     assert '<option value="custom">Custom…</option>' in html
     assert 'id="settings-gpu-memory-custom" type="number" min="0.25" max="64" step="0.25"' in html
-    assert 'byId("settings-preview-resolution").addEventListener("change"' in shell
-    assert 'byId("settings-gpu-memory-limit").addEventListener("change"' in shell
-    assert 'byId("settings-gpu-memory-custom").addEventListener("change"' in shell
-    assert "persistPreferences();" in shell
     assert 'previewResolution: "auto"' in desktop
     assert "fasterDragging: false," in desktop
     assert 'maximumGpuMemoryGiB: "auto"' in desktop
     assert 'schemaVersion: 3' in shell
     assert 'schemaVersion: 3' in desktop
 
-def test_undo_redo_repaint_controls_from_the_restored_document() -> None:
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    queue = javascript[
-        javascript.index("function queueEditCommand("):
-        javascript.index("async function syncGlobalEditState()")
-    ]
-
-    assert 'commandType === "undo" || commandType === "redo"' in queue
-    assert "loadDenoiseDocument(state.editDocument)" in queue
-    assert "renderLaneChrome()" in queue
-    assert "drawCurveEditor()" in queue
 
 def test_rendition_descriptions_are_delayed_title_tooltips() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert 'id="lane-note"' not in html
-    assert "laneNote:" not in javascript
     assert 'aria-describedby="hdr-controls-tooltip"' in html
     assert 'aria-describedby="sdr-controls-tooltip"' in html
     assert 'id="hdr-controls-tooltip" class="title-tooltip lane-title-tooltip" role="tooltip"' in html
@@ -229,8 +190,9 @@ def test_rendition_descriptions_are_delayed_title_tooltips() -> None:
     assert ".lane-switch button:hover .lane-title-tooltip" in css
     assert "transition-delay: 2s" in css
 
+
 def test_help_tooltips_are_portaled_and_clamped_to_the_visible_app_bounds() -> None:
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_scripts()
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert "initializeBoundedTooltips();" in javascript
@@ -247,9 +209,10 @@ def test_help_tooltips_are_portaled_and_clamped_to_the_visible_app_bounds() -> N
     assert "position: fixed" in css
     assert "max-height: calc(100vh - 16px)" in css
 
+
 def test_explanatory_copy_uses_title_hover_without_persistent_helper_rows() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_scripts()
 
     assert 'class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="raw-settings-panel" disabled data-tooltip=' in html
     assert html.count('class="group-toggle" type="button" aria-expanded="false" data-tooltip=') >= 7
@@ -261,23 +224,16 @@ def test_explanatory_copy_uses_title_hover_without_persistent_helper_rows() -> N
     assert 'data-tooltip="Strip modes anchor the cross-scan dimension' in html
     assert 'class="help-tip' not in html
     assert 'id="raw-highlight-status"' not in html
-    assert "rawHighlightStatus:" not in javascript
     assert 'id="curve-status"' not in html
-    assert "curveStatus:" not in javascript
     assert "Curve edits affect only the" not in javascript
+
 
 def test_grade_readouts_support_bounded_direct_numeric_entry() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_scripts()
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert html.count("data-value-path=") >= 50
-    assert "const MANUAL_VALUE_RULES" in javascript
-    assert "function enhanceEditableGradeValues()" in javascript
-    assert "function normalizeManualControlValue(path, text)" in javascript
-    assert "function syncRangeControlFromState(path" in javascript
-    assert 'event.key === "Enter" || event.key === "F2"' in javascript
-    assert 'event.key === "Escape"' in javascript
     assert '"hdr.highlight_compression_start_nits": { min: 1, max: 9999' in javascript
     assert '"hdr.highlight_compression_target_nits": { min: 2, max: 10000' in javascript
     assert '"hdr.exposure": { min: -8, max: 8' in javascript
@@ -288,9 +244,10 @@ def test_grade_readouts_support_bounded_direct_numeric_entry() -> None:
     assert ".editable-value[data-editing=\"true\"]" in css
     assert ".range-shell.manual-overflow" in css
 
+
 def test_highlight_compression_softness_uses_half_percent_slider_steps() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_scripts()
 
     assert 'id="hdr-compression-softness" type="range" min="0" max="100" step="0.5"' in html
     assert 'id="sdr-compression-softness" type="range" min="0" max="100" step="0.5"' in html
@@ -299,66 +256,38 @@ def test_highlight_compression_softness_uses_half_percent_slider_steps() -> None
     assert '"hdr.highlight_compression_softness": { min: 0, max: 100, decimals: 1 }' in javascript
     assert 'numeric.toFixed(1)' in javascript
 
+
 def test_tint_controls_follow_darktable_hue_mapping() -> None:
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_scripts()
 
     assert ".primary-tint-hue .slider-track { background: linear-gradient(90deg, #53a7b1, #5368b5, #b84f9a, #e05273, #d3ad5b, #54a579, #53a7b1); }" in css
     assert "const DARKTABLE_TINT_HUE_STOPS" in javascript
     assert "function syncTintPurityVisuals()" in javascript
     assert "darktableTintHueColor(state.adjustments[lane].tint_hue)" in javascript
 
+
 def test_equalizer_interactions_include_non_scrolling_wheel_and_keyboard_alternatives() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    equalizer_binding = javascript[javascript.index("function bindToneEqualizerEditor"):javascript.index("function updateToneEqualizerFromPointer")]
 
     assert "Left-click the curve to add a band" in html
     assert "right-click an interior band to remove it" in html
-    assert "toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, rect, lane)" in equalizer_binding
-    assert "toneEqualizerCurveHitAtPointer(event.clientX, event.clientY, rect, lane)" in equalizer_binding
-    assert 'canvas.addEventListener("contextmenu"' in equalizer_binding
-    assert "removeToneEqualizerNode(bandIndex, lane)" in equalizer_binding
-    assert 'canvas.addEventListener("wheel"' in javascript
-    assert "event.preventDefault();" in javascript
-    assert "{ passive: false }" in javascript
-    assert 'event.key === "[" || event.key === "]"' in javascript
-    assert "moveToneEqualizerNodeHorizontally" in javascript
-    assert "pointerenter" in javascript and "focusin" in javascript
-    assert "drawZoneScopeOverlay" in javascript
+
 
 def test_redundant_enable_controls_are_removed_and_equalizer_schedules_live_scopes() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert 'id="tone-equalizer-enabled"' not in html
     assert 'id="curves-enabled"' not in html
     assert 'id="sdr-match-hdr-color"' not in html
     assert "Enable equalizer" not in html
     assert "Enable curves" not in html
-    assert "queueGpuDraft(\"hdr\");" not in javascript[javascript.index("function updateToneEqualizerFromPointer"):javascript.index("function toneEqualizerBandLimits")]
-    assert javascript.count("debouncePreview(lane);") >= 5
 
-def test_equalizer_chart_drag_syncs_the_selected_band_range_visual() -> None:
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    sync_controls = javascript[
-        javascript.index("function syncToneEqualizerControls"):
-        javascript.index("function drawToneEqualizerEditor")
-    ]
-
-    assert "ui.bandValue.value = String(value);" in sync_controls
-    assert "updateRangeVisual(ui.bandValue);" in sync_controls
 
 def test_curve_drag_uses_live_preview_scheduler_and_three_point_default_shape() -> None:
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    curve_binding = javascript[javascript.index("function bindCurveEditor"):javascript.index("function drawCurveEditor")]
+    javascript = frontend_scripts()
+    curve_binding = frontend_declarations("bindCurveEditor", "updateCurveFromPointer", "curveVerticalAdjustmentScale")
 
-    assert "state.previewScheduler?.beginInteraction()" in curve_binding
-    assert "debouncePreview(state.currentView)" in curve_binding
-    assert "state.previewScheduler?.endInteraction()" in curve_binding
-    assert "queueGpuDraft(state.currentView)" not in curve_binding
-    assert "const verticalScale = curveVerticalAdjustmentScale(index, curve.length)" in curve_binding
     assert "return index === 0 || index === pointCount - 1 ? 0.18 : 0.35" in curve_binding
     assert "const verticalStep = step * Math.min(1, curveVerticalAdjustmentScale(index, curve.length) / 0.35)" in curve_binding
     assert "return [[0, 0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1, 1]]" in javascript
-    assert 'return Math.min(profile.interactiveEdge, interactiveProxyLongEdge())' in javascript

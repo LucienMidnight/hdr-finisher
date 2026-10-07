@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -9,8 +7,7 @@ from hdr_finisher.color import linear_bt2020_to_acescg
 from hdr_finisher.models import PreviewKind, ScopeMode
 from hdr_finisher.scopes import _linear_srgb_to_signal, build_scope_from_processed
 
-
-ROOT = Path(__file__).resolve().parents[1]
+from frontend_source import frontend_scripts
 
 
 def _populated_bin(channel) -> int:
@@ -88,10 +85,7 @@ def test_hdr_histogram_flags_transport_primary_above_pq_limit_even_with_legal_lu
 
 
 def test_gpu_histogram_contract_matches_cpu_domain_and_normalization() -> None:
-    javascript = "\n".join((
-        (ROOT / "frontend" / "app.js").read_text(encoding="utf-8"),
-        (ROOT / "frontend" / "scope-analysis.js").read_text(encoding="utf-8"),
-    ))
+    javascript = frontend_scripts()
 
     assert "linearSrgbToScopeSignal" in javascript
     assert "hdrWaveformRec2020(r, g, b)" in javascript

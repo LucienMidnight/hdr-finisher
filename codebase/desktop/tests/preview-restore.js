@@ -18,8 +18,7 @@ const { _electron: electron } = require("playwright");
     page.on("pageerror", (error) => console.error("Renderer error:", error.message));
     await page.waitForFunction(() => typeof state !== "undefined" && state.acceptedPresentation, null, { timeout: 90000 });
     if (process.env.HDR_FINISHER_TEST_SOURCE_PATCH === "1") {
-      const source = fs.readFileSync(path.join(root, "frontend/app.js"), "utf8");
-      const restore = source.slice(source.indexOf("async function showCachedPreview("), source.indexOf("function prepareInactivePreview("));
+      const restore = require("../../tests/frontend-source.js").declaration("showCachedPreview");
       await page.evaluate(`globalThis.showCachedPreview = (${restore}); void 0;`);
     }
     await page.evaluate(() => applyPreviewResolution("4096"));

@@ -1,10 +1,7 @@
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { test } = require('node:test');
-const { frontendSource } = require('./frontend-source.js');
-const source = frontendSource('webgpu-preview.js');
-const start = source.indexOf('  function buildTiledLocalState(');
-const end = source.indexOf('  /**', start);
+const { declarations } = require('./frontend-source.js');
 
 function fixture() {
   let builds = 0, masks = 0;
@@ -16,7 +13,7 @@ function fixture() {
     buildLocalParams: (local, lane, scale) => { builds++; return new Float32Array([local[lane + '_grade'].exposure, scale]); },
     gpuMaskRenderPayload: mask => { masks++; return mask; },
   });
-  vm.runInContext(source.slice(start, end), context);
+  vm.runInContext(declarations('buildTiledLocalState', 'detailBandIdentity'), context);
   return { context, count: () => ({ builds, masks }),
     run: (locals, lane = 'hdr', scale = 2) => context.buildTiledLocalState('source', [0.1, 0.2], locals, lane, scale) };
 }

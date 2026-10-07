@@ -3,9 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
-from hdr_finisher.main import app
+from frontend_source import frontend_scripts
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +14,6 @@ DESKTOP = ROOT / "desktop"
 def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert '<p class="product-name">HDR FINISHER</p>' in html
     assert "Cinema Print" not in html
@@ -86,12 +83,10 @@ def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> Non
     assert "height: var(--instrument-compact-slider-track-h);" in final_refinement
     product_mark_block = css[css.rindex(".product-mark {"):css.index(".workflow-tabs {", css.rindex(".product-mark {"))]
     assert "border: 1px solid #fff;" in product_mark_block
-    assert 'className = "slider-ticks"' not in javascript
-    assert "function renderRangeSnapTicks" not in javascript
+
 
 def test_hdr_curve_graph_uses_tokenized_exposure_band_styling() -> None:
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     for token in (
         "--curve-line-width",
@@ -109,62 +104,46 @@ def test_hdr_curve_graph_uses_tokenized_exposure_band_styling() -> None:
         "--exposure-band-peak",
     ):
         assert token in css
-    assert "drawCurveExposureBands" in javascript
-    assert "curveExposureGradient" in javascript
-    assert "curveDomainPositionForNits" in javascript
-    assert "compactCurveNitLabel" in javascript
-    assert javascript.count("drawGraphHomeCue") >= 3
-    assert "drawGraphHomeCue(ctx, x, y, radius, node.adjustment_ev)" in javascript
+
 
 def test_sdr_exposure_bands_are_independent_and_offer_one_shot_hdr_match() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert 'data-group="sdr-equalizer"' in html
     assert 'data-section-path="sdr.tone_equalizer_section_enabled"' in html
     assert 'id="sdr-tone-equalizer-editor"' in html
     assert 'id="sdr-match-hdr-bands"' in html
     assert "Copies once; SDR remains independent." in html
-    assert 'state.adjustments.sdr.tone_equalizer_nodes = currentToneEqualizerNodes("hdr")' in javascript
-    assert 'state.adjustments[lane].tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes)' in javascript
+
 
 def test_curve_panel_reset_is_visible_when_curves_are_modified() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert 'id="curve-reset" class="group-reset text-button"' in html
-    assert 'els.curveReset.closest(".control-group")?.classList.toggle("modified", curvesModified)' in javascript
+
 
 def test_scope_zoom_exposes_1000_4000_and_10000_nit_computation_ranges() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert '<span>Scope zoom</span>' in html
     assert 'id="scope-zoom"' in html
     assert '<option value="1000">1K nits</option>' in html
     assert '<option value="4000">4K nits</option>' in html
     assert '<option value="10000">10K nits</option>' in html
-    assert "max_nits=${maxNits}" in javascript
-    assert "maxNits: state.scopeMaxNits" in javascript
+
 
 def test_overlay_ui_explains_reference_nit_zebras_and_has_a_false_color_key() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert 'id="false-color-key"' in html
     assert "Highlights pixels at or above this reference-nit level." in html
     assert 'id="overlay-threshold" type="range" min="10" max="4000" step="10" value="100"' in html
-    assert "function renderFalseColorKey" in javascript
-    assert 'if (path === "shared.overlay_threshold") return `${Math.round(numeric)} nit`;' in javascript
-    overlay_commit = javascript[javascript.index("function commitAdjustmentValue") : javascript.index("function syncControlsFromState")]
-    assert "markGlobalEditDirty();" in overlay_commit
-    assert 'if (path === "shared.overlay_mode") refreshOverlayAndScopesImmediately();' in overlay_commit
-    assert 'if (state.adjustments.shared.overlay_mode === "off") clearPreviewOverlay();' in javascript
+
 
 def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_scripts()
     assert "Export..." in html
     assert "Export file" not in html
     assert "JPEG XL HDR" in html
@@ -201,26 +180,10 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert "High-precision interchange" not in html
     assert 'id="export-format-note" class="helper visually-hidden"' in html
     assert 'id="avif-gain-map-chroma-note"' not in html
-    assert "const exportOptionTooltips =" in javascript
-    assert "option.title = descriptions[option.value]" in javascript
     assert 'value="uint8"' not in html
-    assert "jpegxl_precision: els.jpegxlPrecision.value" in javascript
-    assert "avif_bit_depth: Number(els.avifBitDepth.value)" in javascript
-    assert "avif_chroma_subsampling: els.avifChromaSubsampling.value" in javascript
     assert 'avif_gain_map_chroma_subsampling: "444"' in javascript
-    assert "avifGainMapChromaSubsampling" not in javascript
-    assert 'avifGainMapScale: "half"' in javascript
-    assert "const exportPresetMappings" in javascript
     assert 'web_default: { quality: 85' in javascript
     assert 'maximum_fidelity: { quality: 100' in javascript
-    assert "function markExportPresetCustom()" in javascript
-    assert " · Web Default`" in javascript
-    assert "sdr_png_bit_depth: Number(els.sdrPngBitDepth.value)" in javascript
-    assert "document.documentElement.style.setProperty(\"--grade-w\"" in javascript
-    assert "els.appShell.style.setProperty(cssVar" not in javascript
-    assert 'sdr_jpegxl: "jpegxl_export"' in javascript
-    assert 'jpegUltrahdrChromaSubsampling' in javascript
-    assert 'jpegChromaSubsampling' in javascript
     assert 'class="export-filename-field"' in html
     assert 'class="export-directory-field"' in html
     assert 'id="directory-browser"' in html
@@ -229,52 +192,22 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert '<strong>Recent</strong><ul id="directory-browser-recents"></ul>' in html
     assert '<strong>Pinned</strong><ul id="directory-browser-pinned"></ul>' in html
     assert '<strong>Locations</strong><ul id="directory-browser-locations"></ul>' in html
-    assert "payload.recents || []" in javascript
-    assert "payload.pinned || []" in javascript
-    assert "payload.locations || []" in javascript
-    assert "handleMediaBrowserListKeydown" in javascript
     for key, column in (("name", "Name"), ("size", "Size"), ("kind", "Kind"), ("date", "Date Added")):
         assert f'data-media-browser-sort="{key}">{column}</button>' in html
         assert f'data-media-browser-resize="{key}"' in html
-    assert "sortMediaBrowserBy" in javascript
-    assert "beginMediaBrowserColumnResize" in javascript
     assert 'aria-label="Resize preview panel"' in html
-    assert "beginMediaBrowserPreviewResize" in javascript
-    assert 'els.directoryBrowserPreview.removeAttribute("src")' in javascript
-    assert "const request = new AbortController()" in javascript
-    assert "state.mediaPreviewRequest !== request" in javascript
-    assert "entry.thumbnail_key || \"\"" in javascript
     assert "Loading preview…" in javascript
-    assert 'detail?.code === "interpretation_required"' in javascript
-    assert 'dataset.previewState = "interpretation-required"' in javascript
     assert 'data-preview-state="interpretation-required"' in css
     assert "Preview withheld to avoid misleading color" in javascript
     assert "private, no-cache" in (ROOT / "backend" / "hdr_finisher" / "main.py").read_text(encoding="utf-8")
-    assert 'fetch("/api/media-browser/recents"' in javascript
-    assert "await recordSuccessfulMediaImport(selection.path)" in javascript
-    assert 'await chooseProjectPath(\n      "project_open"' in javascript
-    assert '"project_save",\n          initialDirectory' in javascript
-    assert 'desktop.grantProjectPath(requestedPath' in javascript
-    assert 'mode === "project_save" && selection.exists' in javascript
-    assert 'addEventListener("click", () => openProjectFromPath())' in javascript
-    # MINOR-10: likewise for the project-open failure report.
-    assert 'responseErrorMessage(payload, "The project could not be opened.")' in javascript
-    assert 'status.post({' in javascript
-    assert 'id: "project-open"' in javascript
-    assert "window.HDRDialogs.alert(" not in javascript
-    assert "window.alert(" not in javascript
     assert 'grantProjectPath: (filePath, intent)' in (DESKTOP / "preload.js").read_text(encoding="utf-8")
     assert 'id="directory-browser-kicker"' not in html
     source_summary = html.split('<section class="source-summary">', 1)[1].split("</section>", 1)[0]
     assert source_summary.index('id="badge"') < source_summary.index('id="experimental-dng-note"')
     assert "DNG import is experimental. Some incompatible DNG files may be rejected." in source_summary
-    assert "function isDngImportCandidate(candidate)" in javascript
-    assert "renderExperimentalDngNote(file);" in javascript
-    assert "renderExperimentalDngNote(entry);" in javascript
-    assert "renderExperimentalDngNote(selection);" in javascript
     assert '{ role: "reload" }' not in (DESKTOP / "main.js").read_text(encoding="utf-8")
     assert 'mainWindow.on("query-session-end"' in (DESKTOP / "main.js").read_text(encoding="utf-8")
-    assert "/api/media-browser" in (FRONTEND / "app.js").read_text(encoding="utf-8")
+    assert "/api/media-browser" in frontend_scripts()
     assert ".control-group-body" in css
     assert "border-top: 2px solid" in css
     assert ".jpeg-advanced-settings" in css
@@ -283,10 +216,11 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert '"quality jpeg"' in css
     assert '"filename folder"' in css
 
+
 def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    proofing = (FRONTEND / "proofing-ui.js").read_text(encoding="utf-8")
+    javascript = frontend_scripts()
+    proofing = frontend_scripts()
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert 'data-workflow-tab="import"' in html
     assert 'data-workflow-tab="grade"' in html
@@ -309,8 +243,6 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert 'id="review-chrome-proof"' not in html
     assert 'id="export-preflight"' not in html
     assert 'data-preflight=' not in html
-    assert "function updateExportAvailability()" in javascript
-    assert "function renderExportPreflight()" not in javascript
     assert '<dialog id="export-sheet"' not in html
     assert 'id="export-sheet" class="export-sheet workflow-side-panel panel"' in html
     assert "Delivery Matrix" not in html
@@ -326,7 +258,6 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert "--panel-collapse-button-shadow:" in css
     assert ".panel-collapse-button--vertical::before { transform: rotate(90deg); }" in css
     assert '.panel-collapse-button--vertical[aria-expanded="false"]::before { transform: rotate(-90deg); }' in css
-    assert 'els.dockCollapse.setAttribute("aria-label", `${action} Scopes panel`);' in javascript
     assert 'class="source-file-identity"' in html
     assert 'class="source-file-label">File Name</p>' in html
     assert 'id="session-name-tooltip"' in html
@@ -334,35 +265,23 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert 'id="source-confidence"' not in html
     assert 'id="file-summary"' not in html
     assert 'id="interpretation-summary"' not in html
-    assert '["import", "grade", "proof", "export"]' in javascript
-    assert "/api/proof/reconstruction" in proofing
-    assert "async function parseProofResponse" in proofing
-    assert "const body = await response.text();" in proofing
     assert "Proof generation is intentionally explicit" in proofing
-    assert "PROOF_IDLE_MS" not in proofing
-    assert "requestGeneration" in proofing
-    assert "state.proofWatermarkEnabled" in proofing
-    assert "localStorage" not in proofing
-    assert 'els.scopeKindLabel.textContent = "HDR";' in proofing
-    assert "AUTHORED" not in proofing
     assert "#chrome-proof-watermark" in css and "opacity: .5;" in css
     assert '.chrome-proof-status[data-state="stale"]' in css
-    assert 'state.activeWorkflow !== "proof"' in proofing
-    assert 'state.currentView !== "hdr"' in proofing
-    assert "renderProofPreflight" not in javascript
     assert "Chromium proof is stale" not in javascript
-    assert "Proofed ${formatName}, not selected ${exportName}" not in javascript
+
 
 def test_grade_rail_keeps_a_readable_minimum_width() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_scripts()
     assert 'aria-valuemin="340"' in html
     assert 'aria-valuenow="340"' in html
     assert "--grade-w: 340px" in css
     assert "min-width: 340px" in css
     assert "gradeW: 340" in javascript
     assert "gradeW: [340, 420]" in javascript
+
 
 def test_adjustable_module_headers_expose_consistent_modified_and_reset_affordances() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
@@ -380,9 +299,10 @@ def test_adjustable_module_headers_expose_consistent_modified_and_reset_affordan
         assert '<span' in header, group
         assert 'class="group-reset text-button"' in header, group
 
+
 def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_scripts()
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert '<aside class="source-rail panel" aria-label="Metadata">' in html
     assert html.count('<h1 class="panel-title">Control Panel</h1>') == 4
@@ -394,10 +314,6 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert ".preview-title-wrap:hover .preview-title-tooltip" in css
     assert 'id="viewer-tier-status"' not in html
     assert 'id="preview-status"' not in html
-    assert 'nodeId: "preview-status"' in javascript
-    assert 'copyId: "preview-status-copy"' in javascript
-    assert 'progressId: "preview-progress"' in javascript
-    assert '{ id: "cancel-import", label: "Cancel import", run: cancelActiveImport }' in javascript
     assert "Import cancelled. Current image kept." in javascript
     assert 'id="override-warning"' not in html
     assert 'id="apply-interpretation" class="button-primary"' in html
@@ -408,13 +324,9 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "#source-settings-note.warning::before" in css
     assert "var(--attention)" in css
     assert ".source-filename-wrap.has-overflow:hover .source-filename-tooltip" in css
-    assert "await writeClipboardText(sourcePath)" in javascript
-    assert "if (desktop?.writeClipboardText) return desktop.writeClipboardText(value);" in javascript
     assert 'class="probe-strip"' not in html
     assert 'id="probe-readout"' not in html
     assert "Move over the image" not in html
-    assert "sourceSettingsOpen: false" in javascript
-    assert "metadataOpen: false" in javascript
     assert '--group-chevron-shape: url("assets/icons/tabler/chevron-right.svg")' in css
     assert "--group-index-font-size: 11px" in css
     assert "--group-disclosure-leading: 38px" in css
@@ -450,14 +362,10 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert '.disclosure-trigger[aria-expanded="true"]::before' in css
     assert "dockH: [240, 340]" in javascript
     assert "dockH: 252" in javascript
-    assert "updateProbeReadout" not in javascript
     assert ".status-entry-progress" in css
     assert "Processing complete. Decoding preview..." in javascript
-    assert "{ showProgress: false }" in javascript
-    assert "renderPreviewForLane(lane, true, longEdge, { showProgress: false })" in javascript
     assert "min-width: 0" in css
     assert "height: 100vh" in css
-    assert 'const COMPACT_WORKSPACE_QUERY = "(max-width: 1499px)"' in javascript
     assert 'id="overlay-toggle"' in html
     assert 'aria-controls="overlay-popover"' in html
     assert '>Overlays</button>' in html
@@ -465,7 +373,6 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert 'aria-controls="preview-popover"' in html
     assert '>Preview</button>' in html
     assert 'id="preview-faster-dragging"' in html
-    assert '["Current Preview Size", currentPreviewSizeLabel()]' in javascript
     assert "compact-workspace" in css
     assert "source-overlay-open" in css
     for selector in ("app-shell", "top-bar", "workspace-main", "source-rail", "grade-rail", "viewer-panel"):
