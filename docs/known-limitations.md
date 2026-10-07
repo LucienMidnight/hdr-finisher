@@ -113,8 +113,13 @@ October 6 cleanup validation observed new warm latency target misses
 (CF-DRIFT-03), reproduced on confirmation and unattributed to cleanup. Successful
 measurement recorder exits do not mean all speed targets passed. See PRD16.17.
 
-The completed fifty-local cleanup audit retains a revision mismatch and two
-120-second settle failures (CF-DRIFT-05). The rotated SDR Denoise 15-second
-outlier did not repeat (575 ms), but remains an intermittent observation
-(CF-DRIFT-04). The full sweep has 13 retained failed guards; phase 4 has not
-met its green exit. See viewport PRD16.21 and the final cleanup comparison.
+The October 6 fifty-local cleanup audit recorded a revision mismatch and two
+120-second settle failures (CF-DRIFT-05), and a rotated SDR Denoise 15-second
+outlier (CF-DRIFT-04). All of those rows used the legacy wavelet Denoise
+method, which has since been removed. An October 7 narrow repeat on the
+fifty-local project (SDR only; saved, flip, perspective and both; adaptive
+Denoise rows included) completed 1,363 rows with no page error, no settle
+timeout and every row on WebGPU, so both items are closed. The HDR lane and
+the other geometry states were not repeated. The full sweep has 13 retained
+failed guards; phase 4 has not met its green exit. See viewport PRD 15.7 and
+16.21 and the final cleanup comparison.
