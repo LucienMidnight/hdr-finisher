@@ -674,13 +674,7 @@ Type landed on `feature/denoise-clumpy-noise`.
   Microcontrast now sit in Detail's panel but run in the film stage. Decide
   the best place for them, and review the order and grouping of every stage
   (Detail vs locals vs Film Look, where B&W and Color sit) before v1.
-- **DISPLAY-01 — HDR preview stuck in SDR after moving between monitors.**
-  Reported by Steve 2026-09-27: dragging the window from an HDR monitor to an
-  SDR one switches the HDR preview to its SDR rendering, as it should, but
-  moving it back to the HDR monitor leaves it stuck in SDR. Zooming a little
-  brings HDR back, so the display-capability change (the
-  `(dynamic-range: high)` media query / canvas HDR configuration) is probably
-  not triggering a re-render or surface reconfigure on its own. Look into it.
+- **DISPLAY-01 — Fixed October 7, physical monitor check pending.** Both browser media-query changes and desktop display notifications already reconfigured surfaces, but `settlePreview` could return early for the accepted exact frame. They now invalidate that frame without marking the edits dirty before settling. `tests/display-capability-change.js` passes simulated HDR/SDR/HDR changes: each accepts a newer WebGPU frame and the extended surface follows the capability. Steve still needs to move the window between his two monitors and back without zooming.
 - **DETAIL-01 — Texture vs Microcontrast.** They look and behave very
   differently (Texture is a luminance band in log space; Microcontrast is a
   colour high-pass at 0.06% of the diagonal). Look at both behaviours in a

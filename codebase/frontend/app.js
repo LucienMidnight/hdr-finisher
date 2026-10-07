@@ -3697,7 +3697,10 @@ function bindEvents() {
         clearGpuSurfaceHdr();
         state.gpuPreview?.invalidateSurfaces?.();
         renderReadouts();
-        if (state.session) settlePreview(state.currentView).catch(() => null);
+        if (state.session) {
+          invalidatePreview(state.currentView, { markDirty: false });
+          settlePreview(state.currentView).catch(() => null);
+        }
       });
     });
   }
@@ -4168,7 +4171,10 @@ async function initializeDesktopBridge() {
     clearGpuSurfaceHdr();
     state.gpuPreview?.invalidateSurfaces?.();
     renderReadouts();
-    if (state.session) settlePreview(state.currentView).catch(() => null);
+    if (state.session) {
+      invalidatePreview(state.currentView, { markDirty: false });
+      settlePreview(state.currentView).catch(() => null);
+    }
   });
   await desktop.rendererReady();
   state.desktopEnvironment = await desktop.environment();
