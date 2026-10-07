@@ -121,6 +121,47 @@ def test_upload_decode_failure_returns_json_detail(monkeypatch) -> None:
     assert not observed["source_path"].exists()
 
 
+def test_perspective_draft_proxy_is_bounded_and_does_not_commit_geometry() -> None:
+    upload = client.post("/api/session", files={"file": ("draft.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session_id = upload.json()["session"]["session_id"]
+    adjustments = upload.json()["session"]["adjustments"]
+    geometry = adjustments["shared"]["geometry"]
+    geometry.update(rotation=90, flip_horizontal=True, straighten_angle=3,
+                    perspective_horizontal=20, perspective_vertical=-8, perspective_rotate=2,
+                    crop={"x": .1, "y": .05, "width": .8, "height": .85})
+    saved = client.post(f"/api/session/{session_id}/edit-commands", json={"commands": [{
+        "expected_revision": 0, "command_type": "set_global_adjustments",
+        "payload": {"adjustments": adjustments},
+    }]})
+    assert saved.status_code == 200
+    session = store.get(session_id)
+    committed = session.adjustments.model_dump(mode="json")
+    revision = session.edit_revision
+    neutral = dict(committed["shared"]["geometry"])
+    neutral.update(perspective_horizontal=0, perspective_vertical=0, perspective_rotate=0,
+                   straighten_angle=0, crop={"x": 0, "y": 0, "width": 1, "height": 1})
+    signature = json.dumps(neutral, separators=(",", ":"))
+    params = {"long_edge": 512, "edit_revision": revision, "geometry_signature": signature}
+    # A draft-only request does not loosen the committed proxy's signature check.
+    for route in ("proxy", "proxy-stream"):
+        assert client.get(f"/api/session/{session_id}/{route}/hdr", params=params).status_code == 409
+    params["perspective_draft_base"] = True
+    proxy = client.get(f"/api/session/{session_id}/proxy/hdr", params=params)
+    streamed = client.get(f"/api/session/{session_id}/proxy-stream/hdr", params=params)
+    assert proxy.status_code == streamed.status_code == 200
+    assert (int(proxy.headers["x-image-width"]), int(proxy.headers["x-image-height"])) == (12, 16)
+    assert proxy.content == streamed.content
+    assert proxy.headers["x-geometry-signature"] == signature
+    assert int(proxy.headers["x-edit-revision"]) == revision
+    for route in ("proxy", "proxy-stream"):
+        assert client.get(f"/api/session/{session_id}/{route}/hdr", params={**params, "long_edge": 2048}).status_code == 422
+        assert client.get(f"/api/session/{session_id}/{route}/hdr", params={**params, "geometry_signature": "{}"}).status_code == 409
+        assert client.get(f"/api/session/{session_id}/{route}/hdr", params={**params, "edit_revision": revision - 1}).status_code == 409
+    assert session.edit_revision == revision
+    assert session.adjustments.model_dump(mode="json") == committed
+
+
 def test_real_png_upload_preview_and_scopes() -> None:
     upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200

@@ -114,7 +114,8 @@
     };
     const url = `/api/session/${sessionId}/${endpoint}/${lane}`
       + `?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
-      + `&geometry_signature=${encodeURIComponent(geometrySignature)}`;
+      + `&geometry_signature=${encodeURIComponent(geometrySignature)}`
+      + (sourceIdentity === "perspective-draft" ? "&perspective_draft_base=true" : "");
     const response = await fetch(url, { signal });
     let texture = null;
     let reader = null;
@@ -601,7 +602,8 @@
   }) {
     const response = await fetch(
       `/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
-        + `&geometry_signature=${encodeURIComponent(geometrySignature)}`,
+        + `&geometry_signature=${encodeURIComponent(geometrySignature)}`
+        + (sourceIdentity === "perspective-draft" ? "&perspective_draft_base=true" : ""),
       { signal },
     );
     if (!response.ok) {
@@ -742,7 +744,7 @@
         if (options.regionOnly) return null;
       }
       if (longEdge * longEdge * 8 > renderer.maxSourceChunkBytes) {
-        if (renderer.sourceTransportMode !== "strips") {
+        if (sourceIdentity === "perspective-draft" || renderer.sourceTransportMode !== "strips") {
           const streaming = await renderer.loadProxyStreaming(
             sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
             {
@@ -753,6 +755,7 @@
           );
           if (streaming) return streaming;
         }
+        if (sourceIdentity === "perspective-draft") throw new Error("Perspective draft source transfer unavailable");
         const streamed = await renderer.loadProxyStreamed(
           sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
           { signal, isCurrent },

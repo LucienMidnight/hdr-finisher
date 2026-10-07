@@ -5156,6 +5156,8 @@
       const resourceGeneration = this.resourceGeneration;
       this.activeRenderCount += 1;
       let proxyPin = null;
+      let draftPresentation = null;
+      let draftReturned = false;
       try {
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
@@ -5814,10 +5816,19 @@
       this.configureSurface(canvas, context, lane === "hdr" && !sourceOptions?.forceSdrSurface);
       try {
       this.device.queue.writeBuffer(intermediate.compositeParamBuffer, 0, params);
+      // Perspective keeps one bounded graded, uncropped GPU image. The
+      // caller owns this texture; slider movement only resamples it.
+      if (sourceOptions?.retainPresentation) {
+        draftPresentation = this.device.createTexture({
+          label: "Perspective draft base",
+          size: [proxy.width, proxy.height], format: surface.format,
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        });
+      }
       const pass = encoder.beginRenderPass({
         ...(gpuTiming ? { timestampWrites: { querySet: gpuTiming.querySet, endOfPassWriteIndex: 1 } } : {}),
         colorAttachments: [{
-          view: context.getCurrentTexture().createView(),
+          view: (draftPresentation || context.getCurrentTexture()).createView(),
           clearValue: { r: 0, g: 0, b: 0, a: 1 },
           loadOp: "clear",
           storeOp: "store",
@@ -5915,7 +5926,10 @@
         gpuTiming?.resolveBuffer.destroy();
         gpuTiming?.readBuffer.destroy();
       }
+      draftReturned = true;
       return {
+        presentationTexture: draftPresentation,
+        presentationFormat: surface.format,
         width: proxy.width,
         height: proxy.height,
         hdr: surface.hdr,
@@ -5925,6 +5939,7 @@
         processedLongEdge: proxy.longEdge,
       };
       } finally {
+        if (!draftReturned) draftPresentation?.destroy();
         if (proxyPin) this.gpuAllocator.unpin(proxyPin);
         this.finishActiveRender();
       }

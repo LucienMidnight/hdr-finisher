@@ -41,7 +41,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
         openPerspectiveMode();
         state.perspectiveGuidesTouched.vertical = true;
         state.perspectiveGuidesDirty = true;
-        window.pendingGuideCommit = commitPerspectiveMode();
+        window.pendingGuideCommit = solvePerspectiveGuides();
       });
       await request;
       await page.evaluate((action) => {
@@ -56,7 +56,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
       assert.equal(await page.evaluate(() => window.pendingGuideCommit), false, `${action}: stale/failed Apply succeeded`);
       const result = await page.evaluate(() => ({ mode: state.perspectiveMode,
         horizontal: state.adjustments.shared.geometry.perspective_horizontal, revision: state.editRevision }));
-      assert.equal(result.mode, action !== "cancel", `${action}: draft lifetime changed`);
+      assert.equal(result.mode, !["cancel", "reset"].includes(action), `${action}: draft lifetime changed`);
       assert.equal(result.horizontal, ["slider", "reopen"].includes(action) ? 31 : 0, `${action}: stale solve overwrote geometry`);
       assert.equal(result.revision, initial, `${action}: committed a rejected draft`);
       await page.unroute("**/perspective-solve", handler);
@@ -161,8 +161,8 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     assert.equal(cropReset.straighten_angle, 0);
     assert.equal(cropReset.rotation, 0);
     assert.equal(cropReset.crop.width, 1);
-    assert.equal(cropReset.perspective_horizontal, 25, "Crop Reset erased Perspective");
-    assert.equal(cropReset.perspective_rotate, 7);
+    assert.equal(cropReset.perspective_horizontal, 0, "Crop Reset changed the committed Perspective reset");
+    assert.equal(cropReset.perspective_rotate, 0);
     await page.evaluate(() => syncGlobalEditState());
 
     // A source replacement must retire every old tool and reject a grading

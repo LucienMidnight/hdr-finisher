@@ -22,6 +22,8 @@ function contextFor(fetch) {
     console: { error: () => {} },
     els: { perspectiveStatus },
     fetch,
+    status: { post: () => {}, clear: () => {} },
+    renderViewerStatus: () => {},
     localAdjustments: () => [],
     mediaQueryMatch: () => false,
     perspectiveDraftLongEdge: () => 1024,
@@ -35,7 +37,7 @@ function contextFor(fetch) {
       session: { session_id: "session-1" },
     },
   });
-  vm.runInContext(definition("renderPerspectiveDraftPreview"), context);
+  vm.runInContext(definition("setPerspectiveStatus") + definition("renderPerspectiveDraftPreview"), context);
   return { context, perspectiveStatus };
 }
 

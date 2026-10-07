@@ -1065,6 +1065,20 @@ def webgpu_peak_candidates(session_id: str, kind: PreviewKind, edit_revision: in
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+def _perspective_draft_base(session, long_edge: int):
+    """A bounded, uncommitted base for the interactive GPU perspective warp."""
+    if long_edge > 1024:
+        raise HTTPException(status_code=422, detail="Perspective draft base is limited to 1024 pixels.")
+    adjustments = session.adjustments.model_copy(deep=True)
+    geometry = adjustments.shared.geometry
+    geometry.perspective_horizontal = 0
+    geometry.perspective_vertical = 0
+    geometry.perspective_rotate = 0
+    geometry.straighten_angle = 0
+    geometry.crop = geometry.crop.model_copy(update={"x": 0, "y": 0, "width": 1, "height": 1})
+    return adjustments
+
+
 @app.get("/api/session/{session_id}/proxy/{kind}")
 def webgpu_proxy(
     session_id: str,
@@ -1073,6 +1087,7 @@ def webgpu_proxy(
     format: str = Query(default="rgba16f", pattern="^(rgba16f|rgba32f)$"),
     edit_revision: int | None = Query(default=None, ge=0),
     geometry_signature: str | None = Query(default=None),
+    perspective_draft_base: bool = Query(default=False),
 ) -> Response:
     try:
         session = store.get(session_id)
@@ -1081,13 +1096,14 @@ def webgpu_proxy(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    adjustments = _perspective_draft_base(session, long_edge) if perspective_draft_base else session.adjustments
     _guard_preview_resources(session, long_edge)
     revision = session.edit_revision
     try:
         proxy, working_space, authoritative_geometry_signature = session.render_cache.geometry_source_proxy(
             kind,
             long_edge,
-            session.adjustments,
+            adjustments,
             is_current=lambda: session.edit_revision == revision,
         )
     except StaleRender:
@@ -1097,7 +1113,7 @@ def webgpu_proxy(
             requested_geometry = json.loads(geometry_signature)
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
-        authoritative_geometry = session.adjustments.shared.geometry.model_dump(mode="json")
+        authoritative_geometry = adjustments.shared.geometry.model_dump(mode="json")
         if requested_geometry != authoritative_geometry:
             raise HTTPException(status_code=409, detail="Stale geometry proxy request dropped.")
         accepted_geometry_signature = geometry_signature
@@ -1232,6 +1248,7 @@ def webgpu_proxy_stream(
     format: str = Query(default="rgba16f", pattern="^(rgba16f|rgba32f)$"),
     edit_revision: int | None = Query(default=None, ge=0),
     geometry_signature: str | None = Query(default=None),
+    perspective_draft_base: bool = Query(default=False),
 ) -> Response:
     """Stream one whole-frame GPU proxy as bounded row strips.
 
@@ -1249,13 +1266,14 @@ def webgpu_proxy_stream(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    adjustments = _perspective_draft_base(session, long_edge) if perspective_draft_base else session.adjustments
     _guard_preview_resources(session, long_edge)
     revision = session.edit_revision
     try:
         proxy, working_space, authoritative_geometry_signature = session.render_cache.geometry_source_proxy(
             kind,
             long_edge,
-            session.adjustments,
+            adjustments,
             is_current=lambda: session.edit_revision == revision,
         )
     except StaleRender:
@@ -1265,7 +1283,7 @@ def webgpu_proxy_stream(
             requested_geometry = json.loads(geometry_signature)
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
-        authoritative_geometry = session.adjustments.shared.geometry.model_dump(mode="json")
+        authoritative_geometry = adjustments.shared.geometry.model_dump(mode="json")
         if requested_geometry != authoritative_geometry:
             raise HTTPException(status_code=409, detail="Stale geometry proxy request dropped.")
         accepted_geometry_signature = geometry_signature

@@ -68,6 +68,7 @@ function shell({ previewResolution = "4096" } = {}) {
       extract("function normalizedPreviewResolution(", "function previewResolutionLabel("),
       extract("function previewTargetLongEdge(", "function previewResolutionDimensions("),
       extract("function deriveViewerState(", "function viewerState("),
+      extract("function finishPerspectivePresentation(", "\nfunction "),
       extract("function acceptPresentation(", "\nfunction "),
       extract("function residentAuthoringLongEdge(", "function bootstrapProxyLongEdge("),
       "globalThis.api = { acceptPresentation, deriveViewerState, residentAuthoringLongEdge, previewTargetLongEdge };",

@@ -479,7 +479,13 @@ const state = {
   perspectiveGuides: null,
   perspectiveGuidesTouched: { vertical: false, horizontal: false },
   perspectiveGuidesDirty: false,
-  perspectiveResetPending: false,
+  perspectivePhase: "",
+  perspectiveApplyOperation: null,
+  perspectiveFailedDraft: null,
+  perspectiveGpuDraft: null,
+  perspectiveGpuDraftPromise: null,
+  perspectiveGpuDraftFailed: false,
+  perspectiveDraftFrame: null,
   perspectiveGuideDrag: null,
   perspectiveSolveController: null,
   perspectivePreviewController: null,
@@ -1079,11 +1085,14 @@ function viewerStatusLabel(viewer = viewerState()) {
 
 function renderViewerStatus() {
   const viewer = viewerState();
-  const label = viewerStatusLabel(viewer);
+  const label = state.perspectiveApplyOperation && state.perspectivePhase === "applying"
+    ? `Applying perspective — ${previewResolutionLabel(viewer.tier)}`
+    : state.perspectiveMode ? "Perspective draft — Apply or Cancel" : viewerStatusLabel(viewer);
   if (els.previewQualityStatus) els.previewQualityStatus.textContent = label;
   // Ready is the quiet state. Active viewer work occupies the same fixed status
   // slot as import/render progress instead of opening a second row beneath it.
-  state.viewerTierStatusEntry = viewer.status === "ready" ? null : {
+  state.viewerTierStatusEntry = viewer.status === "ready" && !state.perspectiveMode
+    && !(state.perspectiveApplyOperation && state.perspectivePhase === "applying") ? null : {
     nodeId: "viewer-tier-status",
     severity: viewer.status === "unavailable" ? "error" : "progress",
     message: label,
@@ -1216,6 +1225,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   }
   renderCurrentPreviewSize();
   renderReadouts();
+  finishPerspectivePresentation();
   renderViewerStatus();
   // The coordinator keeps the same record, so its follow-up decisions (pan
   // candidate, catch-up freshness) read one source of truth.
@@ -1223,6 +1233,9 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
 }
 
 function markPreviewUnavailable(reason) {
+  if (state.perspectiveApplyOperation?.signature === geometrySignature()) {
+    setPerspectiveStatus(`Perspective saved, but the preview failed: ${reason}. Change preview tier or try again.`, "previewFailed");
+  }
   // Unavailable keeps the last valid presentation on screen. It reports that
   // the selected tier could not be produced; it never blanks the viewer.
   state.previewUnavailableReason = String(reason || "").trim() || "Preview failed to render";
@@ -1743,6 +1756,7 @@ const els = {
   perspectiveRotateValue: document.getElementById("perspective-rotate-value"),
   perspectiveStatus: document.getElementById("perspective-status"),
   perspectiveApply: document.getElementById("perspective-apply"),
+  perspectiveApplyStatus: document.getElementById("perspective-apply-status"),
   perspectiveCancel: document.getElementById("perspective-cancel"),
   colorGradingReset: document.getElementById("color-grading-reset"),
   colorGradingMatchHdr: document.getElementById("color-grading-match-hdr"),
@@ -3479,6 +3493,12 @@ function bindEvents() {
       if (!group) return;
       const collapsed = group.classList.toggle("collapsed");
       button.setAttribute("aria-expanded", String(!collapsed));
+      if (group.dataset.group === "perspective" && collapsed) abandonPerspectiveDraft();
+      else if (group.dataset.group === "perspective" && state.perspectiveFailedDraft) {
+        openPerspectiveMode();
+        schedulePerspectiveDraftPreview();
+      }
+      else if (group.dataset.group !== "perspective" && !collapsed) abandonPerspectiveDraft();
       if (group === els.localAdjustmentGroup) setGradeMode(collapsed ? "global" : "local");
       renderVignetteCenter();
     });
@@ -7855,6 +7875,7 @@ function bindCropEditor() {
 
 function bindPerspectiveEditor() {
   const activateTool = (orientation) => {
+    if (state.perspectiveApplyOperation?.saving) return;
     openPerspectiveMode();
     state.perspectiveTool = state.perspectiveTool === orientation ? null : orientation;
     renderPerspectiveControls();
@@ -7863,10 +7884,11 @@ function bindPerspectiveEditor() {
   els.perspectiveVerticalTool?.addEventListener("click", () => activateTool("vertical"));
   els.perspectiveHorizontalTool?.addEventListener("click", () => activateTool("horizontal"));
   const sliderInput = (key, control) => {
+    if (state.perspectiveApplyOperation?.saving) return;
     const value = Number(control.value);
     openPerspectiveMode();
     state.adjustments.shared.geometry[key] = value;
-    state.perspectiveResetPending = false;
+    setPerspectiveStatus("Unapplied perspective draft. Apply to keep it; leaving this module cancels it.", "unapplied");
     renderPerspectiveControls();
     schedulePerspectiveDraftPreview();
   };
@@ -7882,7 +7904,42 @@ function bindPerspectiveEditor() {
   window.addEventListener("pointerup", endPerspectiveGuideDrag);
   window.addEventListener("pointercancel", endPerspectiveGuideDrag);
   window.addEventListener("resize", renderPerspectiveGuides);
+  // Other modules may already be expanded. Release preview ownership before
+  // their handlers change values, including keyboard and programmatic input.
+  const leaveForControl = (event) => {
+    const group = event.target.closest?.(".control-group");
+    if (group && group.dataset.group !== "perspective") abandonPerspectiveDraft();
+  };
+  for (const event of ["pointerdown", "keydown", "input", "change", "click"]) {
+    document.addEventListener(event, leaveForControl, true);
+  }
   renderPerspectiveControls();
+}
+
+function setPerspectiveStatus(message, phase = state.perspectivePhase) {
+  state.perspectivePhase = phase;
+  if (els.perspectiveStatus) els.perspectiveStatus.textContent = message;
+  if (els.perspectiveApplyStatus) {
+    els.perspectiveApplyStatus.textContent = ({ unapplied: "Unapplied", preparing: "Preparing draft",
+      applying: "Applying…", applied: "Applied", failed: "Apply failed", previewFailed: "Preview failed" })[phase] || "";
+    els.perspectiveApplyStatus.dataset.phase = phase;
+  }
+  const reset = els.groupResets?.find((button) => button.dataset.resetGroup === "perspective");
+  const resetRetry = phase === "failed" && Boolean(state.perspectiveApplyOperation?.signature) && state.globalEditDirty;
+  reset?.classList.toggle("perspective-reset-retry", resetRetry);
+  if (reset) reset.textContent = resetRetry ? "Retry Reset" : "Reset";
+  if (phase === "failed" || phase === "previewFailed") {
+    status.post({ id: "perspective", severity: "error", message });
+  } else status.clear("perspective");
+  renderViewerStatus();
+}
+
+function clearPerspectiveGpuDraft() {
+  state.perspectiveGpuDraft?.destroy();
+  state.perspectiveGpuDraft = null;
+  state.perspectiveGpuDraftPromise = null;
+  state.perspectiveGpuDraftFailed = false;
+  state.perspectiveDraftFrame = null;
 }
 
 function defaultPerspectiveGuides() {
@@ -7903,14 +7960,25 @@ function openPerspectiveMode() {
   if (state.cropMode) closeCropMode(true);
   if (state.rotateDraftGeometry) closeRotateMode(false);
   state.perspectiveMode = true;
+  state.perspectiveApplyOperation = null;
+  clearPerspectiveGpuDraft();
   suspendGeometryPreviewWork();
   state.perspectiveDraftGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
   state.perspectiveGuides = defaultPerspectiveGuides();
   state.perspectiveGuidesTouched = { vertical: false, horizontal: false };
   state.perspectiveGuidesDirty = false;
-  state.perspectiveResetPending = false;
   state.perspectiveTool = null;
+  if (state.perspectiveFailedDraft) {
+    const failed = state.perspectiveFailedDraft;
+    Object.assign(state.adjustments.shared.geometry, failed.geometry);
+    state.perspectiveGuides = failed.guides;
+    state.perspectiveGuidesTouched = failed.touched;
+    state.perspectiveGuidesDirty = failed.dirty;
+    state.perspectiveTool = failed.tool;
+    state.perspectiveFailedDraft = null;
+  }
   if (state.gradeMode === "local") setGradeMode("global");
+  setPerspectiveStatus("Unapplied perspective draft. Apply to keep it; leaving this module cancels it.", "unapplied");
   renderPerspectiveControls();
 }
 
@@ -7946,7 +8014,7 @@ function openRotateMode() {
   renderGeometryToolState();
 }
 
-function closePerspectiveMode(commit) {
+function closePerspectiveMode(commit, { saved = false } = {}) {
   if (!state.perspectiveMode) return;
   const original = state.perspectiveDraftGeometry;
   const changed = original && !valuesEqual(original, state.adjustments.shared.geometry);
@@ -7957,15 +8025,24 @@ function closePerspectiveMode(commit) {
   window.clearTimeout(state.perspectivePreviewTimer);
   state.perspectivePreviewTimer = 0;
   state.perspectiveMode = false;
+  clearPerspectiveGpuDraft();
   state.perspectiveTool = null;
   state.perspectiveGuideDrag = null;
   state.perspectiveGuides = null;
   state.perspectiveGuidesDirty = false;
-  state.perspectiveResetPending = false;
   state.perspectiveDraftGeometry = null;
   els.perspectiveEditorOverlay?.classList.add("hidden");
   els.perspectiveEditorOverlay?.setAttribute("aria-hidden", "true");
-  if (!commit && original) state.adjustments.shared.geometry = original;
+  if (!commit && original) {
+    // This module owns only its three values. Preserve independent crop/roll
+    // changes made while its draft was open.
+    for (const key of ["perspective_horizontal", "perspective_vertical", "perspective_rotate"]) {
+      state.adjustments.shared.geometry[key] = original[key];
+    }
+    state.perspectiveApplyOperation = null;
+    state.perspectiveFailedDraft = null;
+    setPerspectiveStatus("Unapplied perspective changes cancelled.", "");
+  }
   if (state.perspectivePreviewUrl) {
     URL.revokeObjectURL(state.perspectivePreviewUrl);
     state.perspectivePreviewUrl = null;
@@ -7976,8 +8053,8 @@ function closePerspectiveMode(commit) {
     state.geometryTransformHandoffSignature = geometrySignature();
     state.geometryPresentationPending = true;
     state.gpuPreparedLane = { hdr: false, sdr: false };
-    invalidatePreview("hdr");
-    invalidatePreview("sdr");
+    invalidatePreview("hdr", { markDirty: !saved });
+    invalidatePreview("sdr", { markDirty: !saved });
     debouncePreview(state.currentView);
   } else {
     if (state.globalEditDirty || state.geometryPresentationPending) {
@@ -7990,15 +8067,29 @@ function closePerspectiveMode(commit) {
   }
 }
 
-// Used wherever navigating away (switching tools, lanes, or workflow tabs)
-// would otherwise silently discard an open Perspective draft. A pending Reset
-// is a deliberate, complete action -- discarding it via the same path as an
-// unrelated tool switch would resurrect the old values the user just cleared,
-// so commit it instead of throwing it away. A genuine in-progress edit (never
-// reset) keeps the prior discard-on-navigate behavior.
 function abandonPerspectiveDraft() {
   if (!state.perspectiveMode) return;
-  closePerspectiveMode(state.perspectiveResetPending);
+  const operation = state.perspectiveApplyOperation;
+  if (operation?.saving) { operation.leaveRequested = true; return; }
+  const failed = operation?.failed ? {
+    geometry: Object.fromEntries(["perspective_horizontal", "perspective_vertical", "perspective_rotate"]
+      .map((key) => [key, state.adjustments.shared.geometry[key]])),
+    guides: JSON.parse(JSON.stringify(state.perspectiveGuides)),
+    touched: { ...state.perspectiveGuidesTouched }, dirty: state.perspectiveGuidesDirty, tool: state.perspectiveTool,
+  } : null;
+  closePerspectiveMode(false);
+  if (failed) {
+    state.perspectiveFailedDraft = failed;
+    setPerspectiveStatus("Perspective could not be applied. Reopen Perspective to retry your draft.", "failed");
+  }
+}
+
+function failPerspectiveApply(operation, message) {
+  operation.saving = false;
+  operation.failed = true;
+  setPerspectiveStatus(message, "failed");
+  renderPerspectiveControls();
+  if (operation.leaveRequested) abandonPerspectiveDraft();
 }
 
 function renderPerspectiveControls() {
@@ -8020,12 +8111,16 @@ function renderPerspectiveControls() {
     button?.classList.toggle("active", active);
     button?.setAttribute("aria-pressed", String(active));
   }
-  if (els.perspectiveApply) els.perspectiveApply.disabled = !state.perspectiveMode;
-  // Once Reset has cleared the draft, Cancel has nothing of the user's to discard
-  // except the reset itself -- pressing it would silently bring back the old,
-  // just-rejected values, so keep it disabled until a new edit is made.
-  if (els.perspectiveCancel) els.perspectiveCancel.disabled = !state.perspectiveMode || state.perspectiveResetPending;
-  if (els.perspectiveGuideApply) els.perspectiveGuideApply.disabled = !state.perspectiveGuidesDirty;
+  const saving = Boolean(state.perspectiveApplyOperation?.saving);
+  if (els.perspectiveApply) els.perspectiveApply.disabled = !state.perspectiveMode || saving;
+  if (els.perspectiveCancel) els.perspectiveCancel.disabled = !state.perspectiveMode || saving;
+  if (els.perspectiveGuideApply) els.perspectiveGuideApply.disabled = !state.perspectiveGuidesDirty || saving;
+  for (const control of [els.perspectiveHorizontal, els.perspectiveVertical, els.perspectiveRotate,
+    els.perspectiveVerticalTool, els.perspectiveHorizontalTool]) {
+    if (control) control.disabled = !state.session || saving;
+  }
+  const reset = els.groupResets.find((button) => button.dataset.resetGroup === "perspective");
+  if (reset) reset.disabled = !state.session || saving;
 }
 
 function renderPerspectiveGuides() {
@@ -8125,8 +8220,7 @@ function movePerspectiveGuideWithKeyboard(event) {
 function markPerspectiveGuidesDirty(orientation) {
   state.perspectiveGuidesTouched[orientation] = true;
   state.perspectiveGuidesDirty = true;
-  state.perspectiveResetPending = false;
-  if (els.perspectiveStatus) els.perspectiveStatus.textContent = "Guide placement changed. Click Apply Guides to solve the correction.";
+  setPerspectiveStatus("Guide placement changed. Click Apply Guides to solve the correction.", "unapplied");
   renderPerspectiveControls();
 }
 
@@ -8219,29 +8313,120 @@ async function solvePerspectiveGuides() {
 }
 
 async function commitPerspectiveMode() {
+  if (!state.perspectiveMode || state.perspectiveApplyOperation?.saving) return false;
   const draft = state.perspectiveDraftGeometry;
-  if (state.perspectiveGuidesDirty && !await applyPerspectiveGuides()) return false;
-  if (!state.perspectiveMode || state.perspectiveDraftGeometry !== draft) return false;
-  closePerspectiveMode(true);
+  const sessionId = state.session.session_id;
+  const operation = { sessionId, saving: true, signature: null };
+  state.perspectiveApplyOperation = operation;
+  setPerspectiveStatus("Applying perspective…", "applying");
+  renderPerspectiveControls();
+  if (state.perspectiveGuidesDirty && !await applyPerspectiveGuides()) {
+    if (state.perspectiveApplyOperation === operation) {
+      failPerspectiveApply(operation, els.perspectiveStatus.textContent || "Perspective guides could not be solved. Try again.");
+    }
+    return false;
+  }
+  if (!state.perspectiveMode || state.perspectiveDraftGeometry !== draft
+    || state.session?.session_id !== sessionId || state.perspectiveApplyOperation !== operation) return false;
+  const adjustments = JSON.parse(JSON.stringify(state.adjustments));
+  const dirtyBefore = state.globalEditDirty;
+  const generation = state.globalEditGeneration;
+  state.globalEditDirty = false;
+  const saved = await queueEditCommand("set_global_adjustments", { adjustments }, null,
+    { globalEditGeneration: generation, refreshPreview: false });
+  if (state.session?.session_id !== sessionId || state.perspectiveApplyOperation !== operation) return false;
+  operation.saving = false;
+  if (!saved) {
+    state.globalEditDirty ||= dirtyBefore;
+    failPerspectiveApply(operation, "Perspective could not be saved. Your draft is still here; try Apply again or Cancel.");
+    return false;
+  }
+  operation.signature = geometrySignature();
+  setPerspectiveStatus("Perspective saved. Preparing the corrected preview…", "applying");
+  closePerspectiveMode(true, { saved: true });
+  // A no-change Apply needs no new frame; an already accepted matching one
+  // can complete immediately. Changed geometry completes in acceptPresentation.
+  finishPerspectivePresentation();
   return true;
+}
+
+function finishPerspectivePresentation() {
+  const operation = state.perspectiveApplyOperation;
+  const accepted = state.acceptedPresentation;
+  if (!operation || operation.saving || !operation.signature || state.perspectiveMode
+    || operation.sessionId !== state.session?.session_id || operation.signature !== geometrySignature()) return;
+  if (accepted?.lane === state.currentView && accepted.geometrySignature === operation.signature
+    && accepted.generation === state.previewGeneration[state.currentView] && accepted.exact) {
+    state.perspectiveApplyOperation = null;
+    setPerspectiveStatus("Perspective applied.", "applied");
+  }
 }
 
 function schedulePerspectiveDraftPreview() {
   window.clearTimeout(state.perspectivePreviewTimer);
-  state.perspectivePreviewTimer = window.setTimeout(renderPerspectiveDraftPreview, 90);
+  // A warm GPU draft draws on the next frame. CPU fallback stays debounced.
+  state.perspectivePreviewTimer = window.setTimeout(renderPerspectiveDraftPreview,
+    state.gpuPreview?.available && state.renderingMode !== "cpu" ? 0 : 90);
 }
 
 function perspectiveDraftLongEdge() {
-  // Perspective changes the source sampling geometry, so unlike ordinary
-  // grading it cannot reuse the resident GPU proxy. The transient endpoint is
-  // CPU-backed; asking it to rebuild a saved Full/4K tier for every slider
-  // event makes the control appear frozen. Keep the transaction preview
-  // bounded to 1K, then render the selected authoring tier once on Apply.
+  // Keep the reusable GPU base and CPU fallback bounded during the draft.
+  // Apply renders the authoritative graph at the selected authoring tier.
   return Math.min(previewTargetLongEdge(), 1024);
+}
+
+async function renderPerspectiveGpuDraft() {
+  const draft = state.perspectiveDraftGeometry;
+  const sessionId = state.session.session_id;
+  const lane = state.currentView;
+  const signature = geometrySignature();
+  const isCurrent = () => state.perspectiveMode && state.perspectiveDraftGeometry === draft
+    && state.session?.session_id === sessionId && state.currentView === lane;
+  try {
+    if (!state.perspectiveGpuDraft && !state.perspectiveGpuDraftPromise) {
+      if (!state.perspectiveApplyOperation?.saving) setPerspectiveStatus("Preparing the GPU perspective draft…", "preparing");
+      state.perspectiveGpuDraftPromise = window.HDRPerspectiveDraft.prepare(state.gpuPreview,
+        sessionId, lane, state.adjustments, sampleCurvePoints, perspectiveDraftLongEdge(),
+        state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())), state.editRevision,
+        projectReferenceWhiteNits(), state.session.source, isCurrent).then((prepared) => {
+          if (!isCurrent()) { prepared?.destroy(); return null; }
+          state.perspectiveGpuDraft = prepared;
+          return prepared;
+        });
+    }
+    const prepared = state.perspectiveGpuDraft || await state.perspectiveGpuDraftPromise;
+    if (!isCurrent() || signature !== geometrySignature()) return true;
+    if (!prepared) { state.perspectiveGpuDraftFailed = true; return false; }
+    const result = prepared.draw(state.adjustments.shared.geometry, els.previewCanvas);
+    if (!result) { clearPerspectiveGpuDraft(); state.perspectiveGpuDraftFailed = true; return false; }
+    state.perspectiveDraftFrame = { ...result, signature: geometrySignature() };
+    els.previewImage.style.display = "none";
+    els.previewCanvas.style.display = "block";
+    els.emptyState.style.display = "none";
+    setGpuSurfaceHdr(lane, result.hdr);
+    setZoomMode(state.zoomMode);
+    syncOverlayPlacement();
+    hidePreviewMessage();
+    renderPerspectiveGuides();
+    renderControlState();
+    if (!state.perspectiveApplyOperation?.saving) {
+      setPerspectiveStatus("GPU perspective draft. Apply to keep it; leaving this module cancels it.", "unapplied");
+    }
+    return true;
+  } catch (error) {
+    if (!isCurrent()) return true;
+    console.warn("Perspective GPU draft unavailable; using CPU preview.", error);
+    clearPerspectiveGpuDraft();
+    state.perspectiveGpuDraftFailed = true;
+    return false;
+  }
 }
 
 async function renderPerspectiveDraftPreview() {
   if (!state.session || !state.perspectiveMode) return;
+  if (state.gpuPreview?.available && state.renderingMode !== "cpu" && !state.perspectiveGpuDraftFailed) {
+    if (await renderPerspectiveGpuDraft() || !state.perspectiveMode) return;
+  }
   state.perspectivePreviewController?.abort();
   const controller = new AbortController();
   state.perspectivePreviewController = controller;
@@ -8271,14 +8456,14 @@ async function renderPerspectiveDraftPreview() {
   } catch (error) {
     if (error?.name === "AbortError" || !isCurrent()) return;
     console.error(error);
-    els.perspectiveStatus.textContent = error?.message || "Perspective preview failed.";
+    setPerspectiveStatus(error?.message || "Perspective preview failed.", "previewFailed");
     return;
   }
   if (!response || !isCurrent()) return;
   if (!response.ok) {
     const payload = await safeJson(response);
     if (!isCurrent()) return;
-    els.perspectiveStatus.textContent = responseErrorMessage(payload, "Perspective preview failed.");
+    setPerspectiveStatus(responseErrorMessage(payload, "Perspective preview failed."), "previewFailed");
     return;
   }
   const blob = await response.blob();
@@ -8289,6 +8474,9 @@ async function renderPerspectiveDraftPreview() {
   const previous = state.perspectivePreviewUrl;
   state.perspectivePreviewUrl = url;
   if (previous) URL.revokeObjectURL(previous);
+  if (!state.perspectiveApplyOperation?.saving) {
+    setPerspectiveStatus("Perspective draft (CPU preview). Apply to keep it; leaving this module cancels it.", "unapplied");
+  }
   renderPerspectiveGuides();
   renderControlState();
   void ensureGeometryCoordinateMap();
@@ -11616,6 +11804,9 @@ function setIndeterminatePreviewMessage(message) {
 }
 
 function setPreviewError(message) {
+  if (state.perspectiveApplyOperation?.signature === geometrySignature()) {
+    setPerspectiveStatus(`Perspective saved, but the preview failed: ${message}. Change preview tier or try again.`, "previewFailed");
+  }
   state.previewStatusEntry = {
     nodeId: "preview-status",
     copyId: "preview-status-copy",
@@ -12287,10 +12478,13 @@ function clearPreviewCache() {
   state.perspectiveSolveController?.abort();
   state.perspectiveSolveController = null;
   state.perspectiveMode = false;
+  clearPerspectiveGpuDraft();
+  state.perspectiveApplyOperation = null;
+  state.perspectiveFailedDraft = null;
+  setPerspectiveStatus("Choose a guide tool or move a slider.", "");
   state.perspectiveDraftGeometry = null;
   state.perspectiveGuides = null;
   state.perspectiveGuidesDirty = false;
-  state.perspectiveResetPending = false;
   state.perspectiveTool = null;
   state.perspectiveGuideDrag = null;
   state.rotateDraftGeometry = null;
@@ -12921,7 +13115,7 @@ function applyZoomGeometry() {
     updateZoomReadout();
     return;
   }
-  if (state.geometryPresentationPending) {
+  if (state.geometryPresentationPending && !state.perspectiveDraftFrame) {
     updateZoomReadout();
     syncOverlayPlacement();
     return;
@@ -12983,9 +13177,12 @@ function applyZoomGeometry() {
   // transaction's original geometry because that is the bitmap currently
   // receiving the CSS transform. A committed handoff returns above while its
   // old bitmap is still mounted.
-  const sourceFrame = sourcePixelFrameDimensions(
-    state.rotateDraftGeometry || state.adjustments?.shared?.geometry,
-  );
+  const draftFrame = state.perspectiveDraftFrame?.signature === geometrySignature
+    ? state.perspectiveDraftFrame : null;
+  const draftScale = Math.min(1, perspectiveDraftLongEdge() / Math.max(state.session.source.width, state.session.source.height));
+  const sourceFrame = draftFrame
+    ? { width: draftFrame.width / draftScale, height: draftFrame.height / draftScale }
+    : sourcePixelFrameDimensions(state.rotateDraftGeometry || state.adjustments?.shared?.geometry);
   const sourceWidth = sourceFrame?.width
     || (referenceAspect >= 1 ? referenceLongEdge : referenceLongEdge * referenceAspect);
   const sourceHeight = sourceFrame?.height
@@ -13626,27 +13823,28 @@ function resetControlGroup(group) {
   if (!paths.length) return;
   const defaults = defaultAdjustments();
   if (group === "perspective") {
-    openPerspectiveMode();
-    state.perspectiveSolveController?.abort();
-    state.perspectiveSolveController = null;
-    // perspective_horizontal, perspective_vertical, and perspective_rotate are
-    // exclusively owned by this module, so Reset can zero all three outright.
-    // Straighten stays untouched: it belongs to Crop & Rotate.
-    state.adjustments.shared.geometry.perspective_horizontal = defaults.shared.geometry.perspective_horizontal;
-    state.adjustments.shared.geometry.perspective_vertical = defaults.shared.geometry.perspective_vertical;
-    state.adjustments.shared.geometry.perspective_rotate = defaults.shared.geometry.perspective_rotate;
-    state.perspectiveGuideDrag = null;
-    state.perspectiveGuides = defaultPerspectiveGuides();
-    state.perspectiveGuidesTouched = { vertical: false, horizontal: false };
-    state.perspectiveGuidesDirty = false;
-    // Cancel would otherwise silently discard this reset and bring back the
-    // old values -- disable it until the user makes a further edit.
-    state.perspectiveResetPending = true;
-    renderPerspectiveGuides();
-    if (els.perspectiveStatus) els.perspectiveStatus.textContent = "Perspective values reset. Apply this draft, or make a new adjustment.";
+    if (state.perspectiveApplyOperation?.saving) return;
+    if (state.perspectiveMode) closePerspectiveMode(false);
+    state.perspectiveFailedDraft = null;
+    const changed = paths.some((path) => !valuesEqual(getValueByPath(state.adjustments, path), getValueByPath(defaults, path)));
+    paths.forEach((path) => setValueByPath(state.adjustments, path, getValueByPath(defaults, path)));
+    if (!changed && !state.globalEditDirty) {
+      setPerspectiveStatus("Perspective reset.", "applied");
+      renderPerspectiveControls();
+      return;
+    }
+    const signature = geometrySignature();
+    state.perspectiveApplyOperation = { sessionId: state.session?.session_id, saving: false, signature };
+    state.geometryTransformHandoffSignature = signature;
+    state.geometryPresentationPending = true;
+    state.gpuPreparedLane = { hdr: false, sdr: false };
+    syncControlsFromState();
+    setPerspectiveStatus("Perspective reset. Updating the preview…", "applying");
     renderPerspectiveControls();
     renderControlState();
-    schedulePerspectiveDraftPreview();
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+    debouncePreview(state.currentView);
     return;
   }
   if (group === "geometry") {
@@ -16150,6 +16348,9 @@ async function syncGlobalEditState() {
   if (state.session?.session_id !== sessionId) return false;
   if (state.globalEditSyncPending === pending) state.globalEditSyncPending = null;
   if (!applied) state.globalEditDirty = true;
+  if (!applied && state.perspectiveApplyOperation?.signature === geometrySignature()) {
+    setPerspectiveStatus("Perspective changes could not be saved. Try Reset again or review the edit error.", "failed");
+  }
   if (!applied) return false;
   return state.globalEditDirty || state.globalEditSyncPending ? syncGlobalEditState() : true;
 }

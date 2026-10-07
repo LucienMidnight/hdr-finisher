@@ -165,7 +165,7 @@ def test_perspective_module_is_numbered_fourth_and_exposes_draft_guided_tools() 
     assert '.control-group[data-group="perspective"] > .control-group-header::before { content: "04"; }' in css
     assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }' in css
     assert "function openPerspectiveMode()" in javascript
-    assert "function closePerspectiveMode(commit)" in javascript
+    assert "function closePerspectiveMode(commit, { saved = false } = {})" in javascript
     assert 'transient_adjustments: true' in javascript
     assert '/perspective-solve`' in javascript
 

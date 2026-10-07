@@ -9112,3 +9112,19 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 .bw-blues .slider-track { background: linear-gradient(90deg, #2b2b2b, #3f6fc4, #e6e6e6); }
 .bw-purples .slider-track { background: linear-gradient(90deg, #2b2b2b, #7b52c0, #e6e6e6); }
 .bw-magentas .slider-track { background: linear-gradient(90deg, #2b2b2b, #b84f9a, #e6e6e6); }
+
+/* Keep transaction feedback visible when Perspective is collapsed. */
+.perspective-apply-status {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+}
+.perspective-apply-status[data-phase="failed"],
+.perspective-apply-status[data-phase="previewFailed"] {
+  color: #f28b82;
+}
+
+.control-group:not(.modified) .group-reset.perspective-reset-retry {
+  visibility: visible;
+}
