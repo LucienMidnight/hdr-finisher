@@ -1,25 +1,16 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
 const test = require("node:test");
 
-const source = fs.readFileSync(path.join(__dirname, "../frontend/app.js"), "utf8");
-function extract(start, end) {
-  const first = source.indexOf(start);
-  const last = source.indexOf(end, first);
-  assert.ok(first >= 0 && last > first);
-  return source.slice(first, last);
-}
+const { declarations } = require("./frontend-source.js");
 function scaleFor(width, height, geometry = {}, zoomMode = "fit", zoomPercent = 100) {
   const state = { session: { source: { width, height } }, adjustments: { shared: { geometry } },
     previewResolutionOverride: false, zoomMode, zoomPercent, compareLayout: "single" };
   const context = vm.createContext({ state, window: { devicePixelRatio: 1 },
     els: { dropzone: { getBoundingClientRect: () => ({ width: 1200, height: 800 }) } },
     previewTargetLongEdge: () => Math.max(width, height) });
-  vm.runInContext(extract("function requiredProcessingLongEdge(", "function previewResolutionDimensions(")
-    + extract("function displayedLongEdge(", "function residentAuthoringLongEdge(")
-    + "globalThis.edge = requiredProcessingLongEdge();", context);
+  vm.runInContext(declarations("requiredProcessingLongEdge", "steppedProcessingLongEdge", "displayedLongEdge")
+    + "\nglobalThis.edge = requiredProcessingLongEdge();", context);
   return context.edge;
 }
 

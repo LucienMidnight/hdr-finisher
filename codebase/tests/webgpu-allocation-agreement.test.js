@@ -12,6 +12,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
+const { frontendSource } = require("./frontend-source.js");
 
 // Kept in step with webgpu-preview.js, where 160 and 161 carry the tile origin
 // and 166 the Show noise view flag, and 167-174 describe the Clarity map.
@@ -92,10 +93,7 @@ function createRecordingDevice() {
 }
 
 function loadPreviewModule() {
-  const source = fs.readFileSync(
-    path.join(__dirname, "../frontend/webgpu-preview.js"),
-    "utf8",
-  );
+  const source = frontendSource("webgpu-preview.js");
   // The renderer's halo math is the declared processing-scale contract, which
   // the page loads as its own script. The harness mirrors that script set.
   const graphScaleSource = fs.readFileSync(

@@ -5,12 +5,11 @@
 // otherwise they keep the established fallback.
 
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
+const { frontendSource } = require("./frontend-source.js");
 
-const read = (name) => fs.readFileSync(path.join(__dirname, "../frontend", name), "utf8");
+const read = (name) => frontendSource(name);
 
 function loadPreview() {
   const context = vm.createContext({

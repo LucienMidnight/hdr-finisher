@@ -1,11 +1,7 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
-const source = fs.readFileSync(path.join(__dirname, '../frontend/app.js'), 'utf8');
-const start = source.indexOf('async function renderPreviewForLane(');
-const end = source.indexOf('async function renderPreviewForLaneInner(', start);
+const { declarations } = require('./frontend-source.js');
 function fixture() {
   const jobs = [];
   const context = vm.createContext({
@@ -17,7 +13,7 @@ function fixture() {
     syncGlobalEditState: async () => true,
     renderPreviewForLaneInner: () => new Promise((resolve, reject) => jobs.push({ resolve, reject })),
   });
-  vm.runInContext(source.slice(start, end), context);
+  vm.runInContext(declarations('renderPreviewForLane'), context);
   return { context, jobs, render: () => vm.runInContext('renderPreviewForLane("hdr", true, 1606)', context) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -62,9 +58,7 @@ for (const stale of [false, true]) {
       PREVIEW_WATCHDOG_MAX_REARMS: 20, PREVIEW_WATCHDOG_INTERVAL_MS: 1000,
       window: { setInterval: callback => { tick = callback; return 1; } },
     });
-    const begin = source.indexOf('function installPreviewWatchdog(');
-    const finish = source.indexOf('function stopPreviewWatchdog(', begin);
-    vm.runInContext(source.slice(begin, finish), context);
+    vm.runInContext(declarations('installPreviewWatchdog'), context);
     vm.runInContext('installPreviewWatchdog()', context); tick();
     assert.equal(schedules, stale ? 1 : 0);
   });

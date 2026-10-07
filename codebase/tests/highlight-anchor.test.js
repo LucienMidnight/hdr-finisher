@@ -18,6 +18,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
+const { frontendSource } = require("./frontend-source.js");
 
 const dispatched = [];
 const context = vm.createContext({
@@ -31,7 +32,7 @@ const context = vm.createContext({
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/render-failure.js"), "utf8"), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/graph-scale.js"), "utf8"), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8"), context);
-vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/webgpu-preview.js"), "utf8"), context);
+vm.runInContext(frontendSource("webgpu-preview.js"), context);
 const Preview = context.window.HDRWebGPUPreview;
 
 const ADJUSTMENTS = { hdr: { highlight_compression_peak_measurement: "maximum", exposure: 0.4 } };

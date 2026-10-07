@@ -1,17 +1,8 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
 
-const source = fs.readFileSync(path.join(__dirname, '../frontend/app.js'), 'utf8');
-function definition(name) {
-  const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
-  assert.ok(start >= 0);
-  const tail = source.slice(start);
-  const end = tail.search(/\n(?:async )?function /);
-  return end < 0 ? tail : tail.slice(0, end);
-}
+const { declaration: definition } = require('./frontend-source.js');
 function fixture(outcomes) {
   const calls = { gpu: 0, cpu: [], scheduled: [] };
   const context = vm.createContext({

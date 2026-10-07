@@ -1,8 +1,9 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {test}=require('node:test');
+const { frontendSource } = require('./frontend-source.js');
 function fixture(){
  const context=vm.createContext({window:{},performance:{now:()=>0},console,AbortController,TextEncoder,Blob,setTimeout,clearTimeout,setInterval,clearInterval,btoa:s=>Buffer.from(s,'binary').toString('base64')});
- for(const file of ['mask-loader.js','mask-raster.js','gpu-brush-mask.js','webgpu-shaders.js','webgpu-preview.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend',file),'utf8'),context);
+ for(const file of ['mask-loader.js','mask-raster.js','gpu-brush-mask.js','webgpu-shaders.js','webgpu-preview.js'])vm.runInContext(frontendSource(file),context);
  const helper=context.window.HDRGpuBrushMask,renderer=new context.window.HDRWebGPUPreview(null),textures=[],requests=[];
  renderer.device={};renderer.maskSourceSize={sessionId:'session',width:3000,height:2000};renderer.gpuAnalyticMasksEnabled=true;
  renderer.retainLocalMask=()=>{};

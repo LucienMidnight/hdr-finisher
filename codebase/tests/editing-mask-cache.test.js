@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 const {test} = require('node:test');
+const { frontendSource } = require('./frontend-source.js');
 const context = vm.createContext({window:{}, document:{}, navigator:{}, console});
 for (const file of ['graph-scale.js', 'webgpu-shaders.js', 'webgpu-preview.js']) {
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend', file), 'utf8'), context);
+  vm.runInContext(frontendSource(file), context);
 }
 const proto = context.window.HDRWebGPUPreview.prototype;
 

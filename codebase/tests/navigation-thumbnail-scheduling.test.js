@@ -1,13 +1,12 @@
-const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../frontend/app.js'), 'utf8');
+const { declarations } = require('./frontend-source.js');
 function fixture() {
   const state={currentView:'sdr',previewGeneration:{sdr:3},gpuPreview:{activeRenderCount:0},
     acceptedPresentation:{lane:'sdr',exact:true,generation:3,geometrySignature:'geometry',processedLongEdge:7362}};
   const context=vm.createContext({state,geometrySignature:()=> 'geometry',requiredProcessingLongEdge:()=>7362});
-  vm.runInContext(source.slice(source.indexOf('function navigationThumbnailWorkReady'),source.indexOf('async function refreshNavigationThumbnail')),context);
+  vm.runInContext(declarations('navigationThumbnailWorkReady'),context);
   return {state,ready:context.navigationThumbnailWorkReady};
 }
 test('CPU navigation overview waits for native presentation and active GPU work',()=>{

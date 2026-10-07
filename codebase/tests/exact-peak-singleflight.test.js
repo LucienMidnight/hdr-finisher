@@ -1,11 +1,7 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
-const source = fs.readFileSync(path.join(__dirname, '../frontend/app.js'), 'utf8');
-const begin = source.indexOf('async function measureExactScopePeak(');
-const end = source.indexOf('/**\n * Resolve Peak Fit', begin);
+const { declarations } = require('./frontend-source.js');
 function fixture() {
   const jobs = [], cache = new Map(), inflight = new Map();
   const state = { session: { session_id: 'one', source: { width: 8000, height: 5000 } },
@@ -18,7 +14,7 @@ function fixture() {
     sampleCurvePoints: () => {}, localAdjustments: () => [], projectReferenceWhiteNits: () => 203,
     requiredProcessingLongEdge: () => state.requestedEdge,
     recordEditingMeasurement: () => {} });
-  vm.runInContext(source.slice(begin, end), context);
+  vm.runInContext(declarations('measureExactScopePeak', 'measureExactScopePeakInner'), context);
   return { state, jobs, cache, inflight, run: options => context.measureExactScopePeak(options) };
 }
 const result = { rendered: true, metrics: { exactPeak: 3, exactPeakLongEdge: 8000, tileCount: 100 } };

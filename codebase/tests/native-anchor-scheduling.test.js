@@ -1,15 +1,14 @@
-const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../frontend/app.js'), 'utf8');
+const { declarations } = require('./frontend-source.js');
 function fixture() {
   const timers = new Map(), jobs = []; let serial = 0;
   const state = { session: {session_id:'one'}, currentView:'hdr', previewGeneration:{hdr:1},
     acceptedPresentation:{exact:true,generation:1}, gpuPreview:{requestedCanonicalHighlightKeys:new Set()}, previewScheduler:{} };
   const context = vm.createContext({state, window:{setTimeout:fn => {timers.set(++serial,fn);return serial;},clearTimeout:id => timers.delete(id)},
     measureExactHighlightAnchor:r => jobs.push(r)});
-  vm.runInContext(source.slice(source.indexOf('const pendingHighlightAnchors'), source.indexOf('async function measureExactHighlightAnchor')), context);
+  vm.runInContext(declarations('pendingHighlightAnchors', 'scheduleExactHighlightAnchor'), context);
   return {state,jobs,schedule:context.scheduleExactHighlightAnchor, tick:() => {const batch=[...timers.values()];timers.clear();batch.forEach(fn=>fn());}};
 }
 test('Native anchors coalesce latest inputs and wait for foreground presentation', () => {

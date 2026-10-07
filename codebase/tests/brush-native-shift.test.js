@@ -1,8 +1,9 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {test}=require('node:test');
+const { frontendSource } = require('./frontend-source.js');
 function fixture(){
  const context=vm.createContext({window:{},performance:{now:()=>0},console,setTimeout,clearTimeout,setInterval,clearInterval});
- for(const file of ['mask-raster.js','gpu-brush-mask.js','webgpu-shaders.js','webgpu-preview.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend',file),'utf8'),context);
+ for(const file of ['mask-raster.js','gpu-brush-mask.js','webgpu-shaders.js','webgpu-preview.js'])vm.runInContext(frontendSource(file),context);
  const helper=context.window.HDRGpuBrushMask,renderer=new context.window.HDRWebGPUPreview(null);
  const mask={operator:'leaf',leaf:{type:'brush',mask_feather:0,mask_shift_edge:.005,strokes:[]}};
  const batch={local:{id:'brush',mask},localIndex:3,tiles:[{key:'tile'}]},proxy={width:4000,height:2667,region:{x:1300,y:900,width:1000,height:800}};

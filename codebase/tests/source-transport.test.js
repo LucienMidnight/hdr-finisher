@@ -11,11 +11,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
+const { frontendSource } = require("./frontend-source.js");
 
-const source = fs.readFileSync(
-  path.join(__dirname, "../frontend/webgpu-preview.js"),
-  "utf8",
-);
+const source = frontendSource("webgpu-preview.js");
 const transportSource = fs.readFileSync(
   path.join(__dirname, "../frontend/source-transport.js"),
   "utf8",

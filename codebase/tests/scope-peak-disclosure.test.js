@@ -1,18 +1,15 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 const {test} = require('node:test');
-const source = fs.readFileSync(path.join(__dirname, '../frontend/app.js'), 'utf8');
-const begin = source.indexOf('function applyAcceptedCpuScopePeak(');
-const end = source.indexOf('function editingMeasurementRecipe()', begin);
+const {declarations} = require('./frontend-source.js');
+const peakSource = declarations('applyAcceptedCpuScopePeak', 'applyEditingScopePeak', 'recordDisplayedScopePeak');
 
 test('a refused editing measurement cannot become an exact peak through CPU fallback', () => {
   const state = {scopeExactPeak:true, previewGeneration:{hdr:1}, acceptedPresentation:{
     lane:'hdr', generation:1, geometrySignature:'{}', exact:true, scopePeak:600, processedLongEdge:1600,
   }};
   const context = vm.createContext({state, geometrySignature:()=>'{}', projectReferenceWhiteNits:()=>203});
-  vm.runInContext(source.slice(begin, end), context);
+  vm.runInContext(peakSource, context);
   const payload = {preview_kind:'hdr', peak_value:500, stats:[{label:'Peak', value:'500 nit'}]};
   context.applyEditingScopePeak(payload, {peak:null, refusals:['bounded measurement unavailable']}, 'hdr');
   context.applyAcceptedCpuScopePeak(payload, {lane:'hdr'});
@@ -32,7 +29,7 @@ test('the displayed fallback peak is sent to delivery in its reference units', (
     projectReferenceWhiteNits: () => 203,
     recordEditingMeasurement: (lane, values) => recorded.push({lane, peak:values.peak}),
   });
-  vm.runInContext(source.slice(begin, end), context);
+  vm.runInContext(peakSource, context);
   context.recordDisplayedScopePeak({peak_value:2459.9817, peak_exact:false}, {tier:'settled',lane:'hdr'});
   context.recordDisplayedScopePeak({peak_value:.52, peak_exact:false}, {tier:'settled',lane:'sdr'});
   assert.equal(recorded.length, 2);
@@ -44,7 +41,7 @@ test('the displayed fallback peak is sent to delivery in its reference units', (
 test('live, regional and missing peaks cannot replace delivery evidence', () => {
   let count = 0;
   const context = vm.createContext({recordEditingMeasurement: () => count++});
-  vm.runInContext(source.slice(begin, end), context);
+  vm.runInContext(peakSource, context);
   context.recordDisplayedScopePeak({peak_value:600}, {tier:'interactive',lane:'hdr'});
   context.recordDisplayedScopePeak({peak_value:600}, {tier:'settled',lane:'hdr',scopeRegion:{x:0}});
   context.recordDisplayedScopePeak({}, {tier:'settled',lane:'hdr'});

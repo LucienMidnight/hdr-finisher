@@ -17,6 +17,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
+const { frontendSource } = require("./frontend-source.js");
 
 const { HDRGraphScale: Scale } = require("../frontend/graph-scale.js");
 const { HDRViewportRequest: Request } = require("../frontend/viewport-request.js");
@@ -29,7 +30,7 @@ function loadPreview() {
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/graph-scale.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8"), context);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/webgpu-preview.js"), "utf8"), context);
+  vm.runInContext(frontendSource("webgpu-preview.js"), context);
   return context.window.HDRWebGPUPreview;
 }
 

@@ -10,25 +10,15 @@
 // entries so each request re-fetched a frame it already held.
 //
 // app.js is a single browser script that touches the DOM at load, so these
-// tests lift the functions out of the source and run them in a bare context
-// with the surrounding shell stubbed. Every extraction is asserted, so a rename
-// breaks the test loudly instead of silently testing nothing.
+// tests lift the functions out of the source by name and run them in a bare
+// context with the surrounding shell stubbed. A missing name fails the test
+// loudly instead of silently testing nothing.
 
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
 
-const source = fs.readFileSync(path.join(__dirname, "../frontend/app.js"), "utf8");
-
-function extract(startMarker, endMarker) {
-  const start = source.indexOf(startMarker);
-  assert.ok(start >= 0, `could not find ${startMarker} in app.js`);
-  const end = source.indexOf(endMarker, start);
-  assert.ok(end > start, `could not find ${endMarker} after ${startMarker} in app.js`);
-  return source.slice(start, end);
-}
+const { declarations } = require("./frontend-source.js");
 
 // 6000 x 4000 source, straightened by 1.8 degrees. The backend returns a frame
 // trimmed to the largest inscribed rectangle, so a 4096 request presents 4011.
@@ -65,12 +55,11 @@ function shell({ previewResolution = "4096" } = {}) {
     [
       'const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096", "full"]);',
       'const DEFAULT_PREVIEW_RESOLUTION = "1024";',
-      extract("function normalizedPreviewResolution(", "function previewResolutionLabel("),
-      extract("function previewTargetLongEdge(", "function previewResolutionDimensions("),
-      extract("function deriveViewerState(", "function viewerState("),
-      extract("function finishPerspectivePresentation(", "\nfunction "),
-      extract("function acceptPresentation(", "\nfunction "),
-      extract("function residentAuthoringLongEdge(", "function bootstrapProxyLongEdge("),
+      declarations(
+        "normalizedPreviewResolution", "previewTargetLongEdge", "requiredProcessingLongEdge",
+        "steppedProcessingLongEdge", "deriveViewerState", "finishPerspectivePresentation",
+        "acceptPresentation", "residentAuthoringLongEdge",
+      ),
       "globalThis.api = { acceptPresentation, deriveViewerState, residentAuthoringLongEdge, previewTargetLongEdge };",
     ].join("\n"),
     context,

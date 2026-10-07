@@ -1,14 +1,13 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
+const { frontendSource } = require('./frontend-source.js');
 
 function fixture() {
   const context = vm.createContext({ window: {}, performance: { now: () => 0 }, console,
     AbortController, setTimeout, clearTimeout, setInterval, clearInterval });
   for (const name of ['mask-loader.js', 'mask-raster.js', 'webgpu-shaders.js', 'webgpu-preview.js']) {
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend', name), 'utf8'), context);
+    vm.runInContext(frontendSource(name), context);
   }
   const renderer = new context.window.HDRWebGPUPreview(null);
   const textures = [], passes = [], writes = [];

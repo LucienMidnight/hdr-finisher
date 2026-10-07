@@ -3,34 +3,22 @@
 // app.js is a single browser script that touches the DOM at load, so it cannot
 // be required directly. deriveViewerState is deliberately pure — it takes a
 // snapshot and returns a status — so this suite lifts that function and the two
-// constants it depends on out of the source and evaluates them in a bare
-// context. The extraction is asserted, so a rename breaks the test loudly
-// instead of silently testing nothing.
+// constants it depends on out of the source by name and evaluates them in a
+// bare context. A missing name fails the test loudly instead of silently
+// testing nothing.
 
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
 
-const source = fs.readFileSync(path.join(__dirname, "../frontend/app.js"), "utf8");
-
-function extract(startMarker, endMarker) {
-  const start = source.indexOf(startMarker);
-  const end = source.indexOf(endMarker);
-  assert.ok(start >= 0, `could not find ${startMarker} in app.js`);
-  assert.ok(end > start, `could not find ${endMarker} after ${startMarker} in app.js`);
-  return source.slice(start, end);
-}
+const { declarations } = require("./frontend-source.js");
 
 const context = vm.createContext({});
 vm.runInContext(
   [
     'const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096", "full"]);',
     'const DEFAULT_PREVIEW_RESOLUTION = "1024";',
-    extract("function normalizedPreviewResolution(", "function previewResolutionLabel("),
-    extract("function deriveViewerState(", "function viewerState("),
-    extract("function viewerStatusLabel(", "function renderViewerStatus("),
+    declarations("normalizedPreviewResolution", "deriveViewerState", "viewerStatusLabel"),
     'function previewResolutionLabel(value) { return value === "display" ? "Display exact" : value === "full" ? "Full" : `${Math.round(Number(value) / 1024)}K`; }',
     "globalThis.normalizedPreviewResolution = normalizedPreviewResolution;",
     "globalThis.deriveViewerState = deriveViewerState;",

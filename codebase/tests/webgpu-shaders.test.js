@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { frontendSource } = require("./frontend-source.js");
 
 const { HDRWebGPUShaders } = require("../frontend/webgpu-shaders.js");
 
@@ -45,7 +46,7 @@ test("every local pass and the mask probe read the mask through one function", (
 });
 
 test("the renderer depends on the shader module without retaining shader bodies", () => {
-  const renderer = fs.readFileSync(path.join(__dirname, "../frontend/webgpu-preview.js"), "utf8");
+  const renderer = frontendSource("webgpu-preview.js");
   const markup = fs.readFileSync(path.join(__dirname, "../frontend/index.html"), "utf8");
 
   assert.match(renderer, /HDRWebGPUShaders/);
