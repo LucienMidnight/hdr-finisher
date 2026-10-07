@@ -814,6 +814,10 @@ will tile", which `admitDirect()` could supply but only with the halo and
 graph-activity inputs that today are derived inside `render()`. Tracked as
 PERF-06.
 
+### PERF-06 — Closed October 7: whole-frame tiled drag work is refused before dispatch
+
+The preceding open-work paragraph is historical. Commit `a0168a8` restored the cheap `pre-dispatch-tiled` refusal for guaranteed tiled whole-frame interactive passes, before source and parameter preparation, and treats `coalesced-by-newer-render` as superseded work. Current code retains both guards; viewport region passes and opted-in softer drafts remain eligible. Its three recorded `full-tier-tone-cost` runs passed. This quick pass is code-only, with no repeat of that cost test.
+
 ### PERF-07 — The tiled path clears the canvas on a tier change and leaves it black
 
 **Status:** Open. Reported 2026-09-21, diagnosed, not fixed.
