@@ -247,7 +247,9 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
       const reversed = await read();
 
       locals.splice(0, locals.length, first);
-      first.hdr_grade.detail.sharpen_radius_px = 0.3;
+      // The minimum radius produces almost no sharpening band on this tiny fixture.
+      // Use the ordinary radius so threshold qualification has a signal to gate.
+      first.hdr_grade.detail.sharpen_radius_px = 0.8;
       first.hdr_grade.detail.sharpen_threshold = 0;
       const thresholdZero = await read();
       first.hdr_grade.detail.sharpen_threshold = 10;
