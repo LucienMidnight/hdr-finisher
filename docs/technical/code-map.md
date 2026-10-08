@@ -136,7 +136,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `project-documents.js` | Open, save, unsaved-changes prompts, desktop file open | `codebase/frontend/project-documents.js` (moved October 8); `openDesktopSelection`, `openProjectFromPath`, `saveProjectToPath` |
 | `media-browser.js` | The file browser | `codebase/frontend/media-browser.js` (moved October 8); `openMediaBrowser`, `renderMediaBrowserEntries`, `loadMediaDirectory` |
 | `export-ui.js` | Export sheet, presets, format cards | `codebase/frontend/export-ui.js` (moved October 8); `seedExportFieldsFromSession`, `exportCurrentSession`, `renderCapabilities`, `applyExportPreset` |
-| `info-panels.js` | Metadata, technical summary, capability readouts | `renderMetadata`, `technicalSummaryEntries`, `renderPresentationCapability` |
+| `info-panels.js` | Metadata, technical summary, capability readouts | `codebase/frontend/info-panels.js` (moved October 8); `renderMetadata`, `technicalSummaryEntries`, `renderPresentationCapability` |
 | `desktop-commands.js` | Menu commands, shortcuts, preferences from the shell | `initializeDesktopBridge`, `applicationCommands`, `applyGpuMemoryBudget` |
 | `local-adjustments-ui.js` | The list of local adjustments and their grade controls | `codebase/frontend/local-adjustments-ui.js` (moved October 8); `defaultLocalGrade`, `bindLocalAdjustmentEvents`, `renderLocalAdjustments` |
 | `mask-controls.js` | Mask tree editor and per-mask panels | `codebase/frontend/mask-controls.js` (moved October 8); `renderMaskTreeEditor`, `renderPathControls`, `createLuminanceRangeControl` |
