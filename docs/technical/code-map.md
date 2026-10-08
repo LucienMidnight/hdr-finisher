@@ -151,7 +151,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | Target file | Holds | Find it today |
 |---|---|---|
 | `gpu-render-plan.js` | Deciding direct or tiled rendering, memory estimates, tile halos. No GPU access. | `codebase/frontend/gpu-render-plan.js` (moved October 8); functions above `class HDRWebGPUPreview`: `buildRenderPlan`, `buildTiledPlan`, `directPreviewMemoryModel`, `detailTileHalo` |
-| `gpu-params.js` | Turning the project's adjustments into the numbers the shaders read. No GPU access. | functions below the class: `buildParams`, `buildCurves`, `buildLocalParams`, `rgbPrimariesAdjustmentMatrix` |
+| `gpu-params.js` | Turning the project's adjustments into the numbers the shaders read. No GPU access. | `codebase/frontend/gpu-params.js` (moved October 8); functions below the class: `buildParams`, `buildCurves`, `buildLocalParams`, `rgbPrimariesAdjustmentMatrix` |
 | `webgpu-preview.js` | The renderer itself | `class HDRWebGPUPreview` |
 
 Inside the class, these groups are candidates for a later split and are worth

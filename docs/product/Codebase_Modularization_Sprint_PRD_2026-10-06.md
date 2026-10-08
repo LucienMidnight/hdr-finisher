@@ -1,7 +1,7 @@
 # Codebase Modularization Sprint
 
 **Date:** October 6, 2026
-**Status:** Phases 0, 1 and 2 are done. Phases 3 to 5 remain.
+**Status:** Phases 0 to 3 are done. Phases 4 and 5 remain.
 **To do before v1.0.** Steve wants this structural work finished before the
 1.0 release. After 1.0 there are outside users and saved projects to protect,
 and a reorganisation of this size becomes much more expensive to validate.
@@ -37,7 +37,7 @@ Update this table in the same commit that finishes a phase.
 | 0 | Code map with target layout; dated records archived | Done October 6 |
 | 1 | Tests stop depending on where code sits | Done October 7 (see 5.1) |
 | 2 | `app.js` divided by feature | Done October 8 (see 6.1) |
-| 3 | Standalone helpers moved out of `webgpu-preview.js` | Not started |
+| 3 | Standalone helpers moved out of `webgpu-preview.js` | Done October 8 (see 7.1) |
 | 4 | The 190 shader settings get names from one list | Not started; needs Steve's go-ahead (section 8) |
 | 5 | Close-out | Not started |
 
@@ -379,6 +379,29 @@ and its two largest methods are the tiled and direct render paths. The code
 map lists the natural groups inside it. At the end of this phase, report in a
 few lines whether splitting the class looks worthwhile and what it would
 risk, and let Steve decide whether it becomes a follow-up.
+
+### 7.1 Record (October 8, 2026)
+
+Moved the standalone helpers above and below the renderer class into
+`gpu-render-plan.js` and `gpu-params.js` in two local commits, updating the
+code map and page scripts with each. Both files are in the tests' `PARTS`
+list. All helper bodies and the complete renderer class are unchanged;
+shared scope wiring keeps their existing calls working across the files.
+
+Captured and compared `buildParams`, `buildCurves`, `buildLocalParams`,
+`buildRenderPlan` and `buildTiledPlan` for three read-only real projects:
+the primary photograph, the four-mask project and the fifty-local project.
+All 48 global grade/curve cases, 944 local buffers and 288 direct/tiled plan
+pairs are identical before and after each move. Project archive hashes are
+unchanged. Both commits ran the Node/Python fast checks and Electron startup
+at 2560 by 1440; direct highlight parity and tiled/direct parity ran serially
+once for the completed helper group. No new failure was found. The full
+sweep remains held for phase 4.
+
+The class still has 180 methods sharing about 110 fields. Its natural groups
+could make later work easier to navigate, but dividing it risks GPU resource
+ownership, cancellation and presentation of stale frames. Leave that as a
+separate follow-up after this move-only sprint.
 
 ## 8. Phase 4: names for the 190 shader settings
 
