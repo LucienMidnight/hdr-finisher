@@ -119,7 +119,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `peak-measurement.js` | Editing peak and highlight anchor | `exactScopePeakKey`, `measureExactScopePeak`, `scheduleExactHighlightAnchor` |
 | `scope-requests.js` | Asking for scope data, GPU and CPU | `refreshScopes`, `runGpuScopeRequest`, `runScopeRequest` |
 | `scope-drawing.js` | Drawing histogram, waveform, vectorscope; scope region | `drawHistogram`, `drawWaveform`, `activeScopeRegion` |
-| `overlay-ui.js` | False colour and zebra | `requestLiveOverlay`, `refreshOverlay`, `renderFalseColorKey` |
+| `overlay-ui.js` | False colour and zebra | `codebase/frontend/overlay-ui.js` (moved October 8); `requestLiveOverlay`, `refreshOverlay`, `renderFalseColorKey` |
 | `workspace-layout.js` | Rails, dock, splitters, popovers | `initializeInstrumentShell`, `initSplitter`, `toggleOverlayPopover`, `activateDockTab` |
 | `range-controls.js` | Sliders, typed values, snapping, readouts | `enhanceRangeControls`, `bindEditableValue`, `rangeSnapProfile`, `updateControlReadouts` |
 | `adjustment-controls.js` | Reading a control, committing a value, reset and match between lanes | `resolveAdjustmentPath`, `commitAdjustmentValue`, `syncControlsFromState`, `resetControlGroup` |
