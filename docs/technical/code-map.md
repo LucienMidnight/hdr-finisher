@@ -127,7 +127,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `group-presets.js` | Saved presets per control group | `codebase/frontend/group-presets.js` (moved October 8); `groupPresetPaths`, `initializeGroupPresetControls` |
 | `curve-editor.js` | Curves; moved October 8 | `codebase/frontend/curve-editor.js`: `bindCurveEditor`, `drawCurveEditor`, `normalizeCurvePoints` |
 | `tone-equalizer.js` | Tone equalizer | `codebase/frontend/tone-equalizer.js` (moved October 8); `bindToneEqualizerEditor`, `drawToneEqualizerEditor` |
-| `denoise-ui.js` | Denoise panel | `loadDenoiseDocument`, `renderDenoiseControls`, `runLiveDenoise` |
+| `denoise-ui.js` | Denoise panel | `codebase/frontend/denoise-ui.js` (moved October 8); `loadDenoiseDocument`, `renderDenoiseControls`, `runLiveDenoise` |
 | `color-wheels.js` | Colour wheels and vignette centre | `codebase/frontend/color-wheels.js` (moved October 8); `bindColorWheels`, `bindVignetteCenter` |
 | `geometry-tools.js` | Crop, perspective, straighten, rotate | `codebase/frontend/geometry-tools.js` (moved October 8); `bindCropEditor`, `bindPerspectiveEditor`, `beginStraightenGesture`, `rotateGeometry` |
 | `lanes-compare.js` | Switching HDR/SDR, compare views | `switchLane`, `bindCompareControl`, `renderComparisonPreview` |
