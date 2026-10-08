@@ -2559,3 +2559,28 @@ bounded submissions and the exact zero-difference guard. Optional screenshots
 remain inspection artifacts only. One validation run passed every case at
 256 and 512 over 567,260 native pixels. Renderer, shaders and limits unchanged.
 Fast checks: 427 Node tests and 1,555 venv Python tests passed, three skipped.
+
+### October 8 follow-up: zoomed-out HDR highlight specks
+
+On Steve's DSC00099 repro, shrinking the scene-linear source and then applying
+Straighten/Perspective invented below-zero channels beside clipped highlights.
+Later grading turned them into saturated red/blue/cyan specks. Source shrink
+now uses nearby source bounds (`fd53925`, source mip format 2); geometry on
+reduced GPU levels uses the same principle for full frames, windows and tiles
+(`c0ce3f7`). Steve chose preview-only geometry: native 100% source paths,
+shared CPU geometry, Proof, export and camera colour conversion are unchanged.
+
+The saved geometry was checked in Electron at Fit, 12% and 100% on a project
+copy. Enlarged Fit/12% captures show clean shelf LED strips. A small blue/cyan
+speck remains on the left glass sculpture at Fit; genuine negative channels
+already exist after full-size camera-to-ACEScg conversion, before lens
+correction. Steve tested the development window and reports that it "mostly
+worked". This is not acceptance of every residual: report remaining specks
+before any colour-conversion change, because that also affects exports.
+
+Validation for the preview fix: 434 Node tests and 1,564 venv Python tests
+passed, three skipped. The actual repro's native source windows and tiles
+match the unchanged geometry reference byte-for-byte. An inspected production
+CPU export render at long edge 711 showed no matching LED specks; this is not
+general export qualification. The fix and known-limit note are committed
+locally; no push or installer rebuild was requested.
