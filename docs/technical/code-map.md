@@ -126,7 +126,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `highlight-controls.js` | Highlight compression panels | `normalizeHighlightCompressionControls`, `renderHighlightCompressionControls` |
 | `group-presets.js` | Saved presets per control group | `groupPresetPaths`, `initializeGroupPresetControls` |
 | `curve-editor.js` | Curves; moved October 8 | `codebase/frontend/curve-editor.js`: `bindCurveEditor`, `drawCurveEditor`, `normalizeCurvePoints` |
-| `tone-equalizer.js` | Tone equalizer | `bindToneEqualizerEditor`, `drawToneEqualizerEditor` |
+| `tone-equalizer.js` | Tone equalizer | `codebase/frontend/tone-equalizer.js` (moved October 8); `bindToneEqualizerEditor`, `drawToneEqualizerEditor` |
 | `denoise-ui.js` | Denoise panel | `loadDenoiseDocument`, `renderDenoiseControls`, `runLiveDenoise` |
 | `color-wheels.js` | Colour wheels and vignette centre | `bindColorWheels`, `bindVignetteCenter` |
 | `geometry-tools.js` | Crop, perspective, straighten, rotate | `bindCropEditor`, `bindPerspectiveEditor`, `beginStraightenGesture`, `rotateGeometry` |
