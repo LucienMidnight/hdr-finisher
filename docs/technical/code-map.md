@@ -111,7 +111,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 
 | Target file | Holds | Find it today (first functions) |
 |---|---|---|
-| `app-state.js` | Constants, latitude presets, `state`, `els` | top of file, `const state`, `const els` |
+| `app-state.js` | Constants, latitude presets, `state`, `els` | `codebase/frontend/app-state.js` (moved October 8; loaded after feature factories and before startup); top of file, `const state`, `const els` |
 | `app-boot.js` | Start-up and the wiring of page events | `boot`, `initializeGpuPreview`, `initializePreviewScheduler`, `bindEvents` |
 | `viewer-status.js` | Preview quality tiers and what the viewer reports | `codebase/frontend/viewer-status.js` (moved October 8); `gpuPreviewEligible`, `deriveViewerState`, `acceptPresentation`, `markRefining` |
 | `preview-pipeline.js` | Asking for a preview and showing the result | `codebase/frontend/preview-pipeline.js` (moved October 8); `debouncePreview`, `queueGpuDraft`, `settlePreview`, `renderPreviewForLane`, `renderGpuDraft`, `applyPreviewUrl`, `invalidatePreview`, `clearPreviewCache` |
