@@ -1,7 +1,7 @@
 # Codebase Modularization Sprint
 
 **Date:** October 6, 2026
-**Status:** Phases 0 and 1 are done. Phase 2 has not started.
+**Status:** Phases 0, 1 and 2 are done. Phases 3 to 5 remain.
 **To do before v1.0.** Steve wants this structural work finished before the
 1.0 release. After 1.0 there are outside users and saved projects to protect,
 and a reorganisation of this size becomes much more expensive to validate.
@@ -36,7 +36,7 @@ Update this table in the same commit that finishes a phase.
 |---|---|---|
 | 0 | Code map with target layout; dated records archived | Done October 6 |
 | 1 | Tests stop depending on where code sits | Done October 7 (see 5.1) |
-| 2 | `app.js` divided by feature | Not started |
+| 2 | `app.js` divided by feature | Done October 8 (see 6.1) |
 | 3 | Standalone helpers moved out of `webgpu-preview.js` | Not started |
 | 4 | The 190 shader settings get names from one list | Not started; needs Steve's go-ahead (section 8) |
 | 5 | Close-out | Not started |
@@ -311,6 +311,38 @@ the commit note and do not substitute a broad one.
 End of phase: this is a release-point-sized change. Tell Steve the phase is
 ready, give the estimated time for the full driver sweep, and ask before
 running it. Steve also tries the app himself.
+
+### 6.1 Record (October 8, 2026)
+
+Moved all 34 agreed feature areas into the code-map files in separate local
+commits, with the matching map row and script registration in each. `app.js`
+now holds only the original startup calls. All 843 original top-level
+functions/constants remain exactly once with unchanged bodies and values;
+new files retain their source slices and line endings. The first path move
+proved unchanged functions work across scripts in the running app.
+
+Packaging checked before the first move: both PyInstaller specifications
+collect the entire frontend directory, and Flatpak copies it recursively.
+No package was built. No CPU export, Proof, shader arithmetic, limit, budget
+or read-only project was changed.
+
+Each commit ran the 419 Node checks, the Python suite, and Electron
+`startup-state.js` at 2560 by 1440. The Python suite normally passed 1,555
+with 3 skipped. The first move recorded one unrelated decoder-cancellation
+timing failure (2.08 seconds against 2 seconds); no test was changed or
+loosened. Feature drivers ran serially for paths, curves, exposure bands,
+media browsing, perspective, highlights, Denoise, locals, masks, SDR Match,
+export, imports/projects, source panels, compare/zoom, overlays/layout,
+range controls, Peak/scopes and preview tiers. Areas without a dedicated
+short GPU check are noted in their commit messages; no broad substitute
+was run. The state move initially loaded before the Curves/Exposure Bands
+default factories; startup caught it. Loading state after those two files
+restored the original initialization order without editing any function.
+No existing app defect was fixed.
+
+The full sweep is held for the agreed phase 4 test block. Steve still needs
+to try the app. Phase 3 must preserve the shared scope between renderer
+helpers and add both new helper files to the tests' `PARTS` list.
 
 ## 7. Phase 3: helpers out of `webgpu-preview.js`
 
