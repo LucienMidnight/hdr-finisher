@@ -2530,3 +2530,25 @@ exit ("Removed code listed; suites green") is met in its first half only.
 Nothing is pushed and no installer is built. From here the work is fixing
 carried-forward findings, with testing scaled to each change under the
 repository's `AGENTS.md` rather than a full sweep per batch.
+
+### October 8 release follow-up: CF-SPEED-02
+
+The luma-feather driver waited for the create response but could read the
+local before the edit queue published it. It now waits for the selected local
+and its luminance leaf. One serial Electron run at 2560 by 1440 completed:
+Feather cold 1,072.5 ms, warm p95 962.2 ms against the unchanged 1,000 ms limit
+(worst sample 1,021.9 ms); grade warm p95 5.3 ms against 200 ms. Zero backend
+mask requests, grade mask rebuilds, untrusted releases or timeouts. The driver
+passes. This closes the broken-driver item; the occasional slow sample is
+recorded without changing the p95 criterion or application behavior.
+
+### October 8 release follow-up: CF-PIX-06 remains open
+
+The current original tiled-film driver reproduces the maximum-spatial case
+at tile size 512: 20 differing pixels, maximum four byte levels. Other retained
+cases and size 256 pass. Thus the October 7 green run did not establish a
+lasting closure; the October 8 sweep's failure is reproducible. One attempt
+to separate GPU backing pixels from screenshots was inconclusive: a WebGPU
+canvas cannot safely be read after presentation with a plain canvas draw.
+No check, shader or zero-difference criterion was changed. A further focused
+diagnostic beyond the brief's two runs is awaiting Steve's decision.

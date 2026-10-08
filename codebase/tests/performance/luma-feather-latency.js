@@ -117,6 +117,9 @@ async function strokeToSettled(page, selector, deltaX, maskRequests) {
     await page.locator("#local-add-adjustment").click();
     await page.locator('[data-local-tool="luminance_range"]').click();
     await created;
+    // The response can arrive before the edit queue publishes the new document.
+    await page.waitForFunction(() => Boolean(selectedLocal()
+      && firstMaskLeaf(selectedLocal().mask, "luminance_range")), null, { timeout: 30000 });
     // Mid-tones to highlights of the fixture, with Feather 50% and the mask
     // overlay off so the measured frames are the graded image.
     await page.evaluate(async () => {

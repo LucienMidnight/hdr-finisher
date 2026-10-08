@@ -507,6 +507,30 @@ The implementation is complete with the existing failures recorded above;
 local-adjustment and mask lists remain a separate decision. Phase 5 updates
 the current layout documents and files the closed dated records.
 
+### 8.3 Release follow-up (October 8, 2026)
+
+The two Denoise failures were driver faults. Advanced disclosure used a
+locator screenshot of an oversized canvas, including page controls; its
+visible HDR sample also clipped the noisy fixture to white. It now captures
+only visible image pixels in SDR. Opening/closing Advanced stays pixel-exact,
+and editing hidden Luminance changes the image with its stored value intact.
+Selector-seam now enables the instrumentation required by its grading-stage
+assertion and uses a native-sized source identity. Its report no longer
+references the removed exposureSamples collection. All original assertions,
+including resolved binding, atomic replacement and resource cleanup, pass.
+
+phase4-preview drops only the stale migration report field. All original
+assertions pass, including exact refinement parity, latest-generation
+presentation and native backing/CSS size; the report is written successfully.
+
+The five missing documentation links are repaired: three screenshot links
+now reach the existing codebase output through the correct relative path;
+two links to unavailable historical records are replaced with plain text.
+No shader, CPU export, Proof, limit or read-only project changed.
+
+Fast checks: 427 Node tests and 1,555 venv Python tests passed, three skipped.
+Targeted Electron drivers ran serially at 2560 by 1440. No full sweep ran.
+
 ## 9. Not in this sprint
 
 | Item | Why not |

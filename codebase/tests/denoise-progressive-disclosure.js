@@ -49,6 +49,9 @@ function assert(condition, message) {
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 300000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
+    // HDR screenshots can clip this synthetic fixture to white on an HDR
+    // display. Use the SDR rendition so noise changes remain observable.
+    await page.evaluate(() => switchLane("sdr"));
     await page.click("#zoom-actual");
 
     // 1. Layout. The adjustment groups do not expand without a session,
@@ -101,9 +104,16 @@ function assert(condition, message) {
     };
     await enableDenoise();
 
-    const capture = async () => (await page.locator("#preview-canvas").screenshot({
-      clip: { x: 0, y: 0, width: 384, height: 384 },
-    })).toString("base64");
+    // Capture only the visible image region. A locator screenshot of the
+    // oversized zoomed canvas also captures page controls lying over it.
+    const capture = async () => {
+      const clip = await page.evaluate(() => {
+        const pane = els.dropzone.getBoundingClientRect();
+        return { x: pane.x + pane.width / 2 - 192,
+          y: pane.y + pane.height / 2 - 192, width: 384, height: 384 };
+      });
+      return (await page.screenshot({ clip })).toString("base64");
+    };
     const digest = (data) => crypto.createHash("sha256").update(data).digest("hex");
     const settled = async () => {
       await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });

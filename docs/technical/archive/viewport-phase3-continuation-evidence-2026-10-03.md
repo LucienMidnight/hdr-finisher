@@ -105,9 +105,9 @@ Steve accepts these specific images without changing the general limit.
 
 | Case | Maximum levels | Pixels above two | Evidence |
 |---|---:|---:|---|
-| 228 | 2.338917 | 620 | [CPU/GPU/detail/difference](../../codebase/output/performance/review/phase3-continuation/mask-review-rounded/mask-trial-228.png) |
-| 249 | 2.088867 | 17 | [CPU/GPU/detail/difference](../../codebase/output/performance/review/phase3-continuation/mask-review-rounded/mask-trial-249.png) |
-| 421 | 2.123535 | 92 | [CPU/GPU/detail/difference](../../codebase/output/performance/review/phase3-continuation/mask-review-rounded/mask-trial-421.png) |
+| 228 | 2.338917 | 620 | [CPU/GPU/detail/difference](../../../codebase/output/performance/review/phase3-continuation/mask-review-rounded/mask-trial-228.png) |
+| 249 | 2.088867 | 17 | [CPU/GPU/detail/difference](../../../codebase/output/performance/review/phase3-continuation/mask-review-rounded/mask-trial-249.png) |
+| 421 | 2.123535 | 92 | [CPU/GPU/detail/difference](../../../codebase/output/performance/review/phase3-continuation/mask-review-rounded/mask-trial-421.png) |
 
 The acceptance applies to these unchanged PNGs (SHA-256), in case order:
 `c5f1ea5653c7e253b7a58750ba277fc58586fb1169043990aaa381b6e4e3c03a`,

@@ -134,7 +134,7 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
       dpr: window.devicePixelRatio, status: viewerStatusLabel() }));
     assert.ok(Math.abs(native.backing - native.css * native.dpr) <= 1, JSON.stringify(native));
     assert.equal(errors.length, 0, errors.join(" | "));
-    const result = { migration, roundTrip, fit, coarse, responsive: { edge: responsive.edge,
+    const result = { roundTrip, fit, coarse, responsive: { edge: responsive.edge,
       generation: responsive.generation }, parity: "byte-equal", reversal, finalState, native, errors };
     const output = path.join(__dirname, "../../output/performance/phase4-preview.json");
     fs.mkdirSync(path.dirname(output), { recursive: true });

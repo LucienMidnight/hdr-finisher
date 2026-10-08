@@ -332,7 +332,7 @@ A future denoiser must not be implemented as “one more adjustment” until its
 9. **Preserve scheduler/backpressure behavior.** New work needs revision/generation checks, cancellation, latest-wins presentation, single-flight computation, and bounded queues. No image-sized readback fallback.
 10. **Measure representative worst cases before landing.** Include 24 MP and 42 MP RAW/rendered sources; 1K/2K/4K preview; interactive, settle, lane switch, scope, proof, and export; GPU and CPU fallback; feature off and on; repeated edits; memory growth; cancellation and stale-result tests.
 
-Minimum regression expectations remain the recorded preview budget: visible-slider p95 at or below 50 ms, first usable scope at or below 100 ms, settled scope at or below 250 ms, no encoded-preview churn during supported WebGPU grading, and no stale presentations. See the [August 9 validation record](../testing/Interactive_Preview_Performance_Validation_2026-08-09.md) for the established baseline and memory evidence.
+Minimum regression expectations remain the recorded preview budget: visible-slider p95 at or below 50 ms, first usable scope at or below 100 ms, settled scope at or below 250 ms, no encoded-preview churn during supported WebGPU grading, and no stale presentations. The August 9 validation record for this baseline and memory evidence is unavailable.
 
 ### 10.3 Approved isolation shape for denoise v2
 

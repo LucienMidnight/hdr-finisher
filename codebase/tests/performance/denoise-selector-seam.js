@@ -168,7 +168,7 @@ async function main() {
   const desktopDirectory = path.resolve(__dirname, "..", "..", "desktop");
   const codebase = path.resolve(desktopDirectory, "..");
   const sourcePath = path.resolve(argument("--input", path.join(codebase, "tests", "fixtures", "hdr_headroom.tiff")));
-  const longEdge = Number(argument("--long-edge", "1024"));
+  let longEdge = Number(argument("--long-edge", "1024"));
   const repetitions = Number(argument("--repetitions", "24"));
   const gradeRepetitions = Number(argument("--grade-repetitions", "12"));
   const importTimeout = Number(argument("--import-timeout", "120000"));
@@ -234,6 +234,11 @@ async function main() {
       throw new Error(`WebGPU unavailable in Electron: ${JSON.stringify(snapshot)}`, { cause: error });
     }
     await window.waitForFunction(() => document.getElementById("preview-canvas")?.style.display !== "none", null, { timeout: 30000 });
+    // The renderer caps a requested tier at native size. The diagnostic selector
+    // must use that same identity even for the tiny default headroom fixture.
+    longEdge = await window.evaluate((edge) => Math.min(edge,
+      Math.max(state.session.source.width, state.session.source.height)), longEdge);
+    await window.evaluate(() => window.HDRFinisherPerformance.enableGpuInstrumentation(true));
     const before = await window.evaluate(viewportState);
     assert.equal(await window.evaluate((edge) => window.HDRFinisherPerformance.prepareDenoiseSelectorSeam("resolved-a", edge), longEdge), true);
     const firstKnownPixel = await window.evaluate(() => window.HDRFinisherPerformance.readDenoiseSelectorPixel());
@@ -286,11 +291,6 @@ async function main() {
       renderedHeight: before.canvasHeight,
       repetitions,
       hardware: finalSnapshot.adapter,
-      baselineExposure: {
-        preview: summarize(exposureSamples.map((sample) => sample.previewMs)),
-        firstScope: summarize(exposureSamples.map((sample) => sample.firstScopeMs)),
-        settledScope: summarize(exposureSamples.map((sample) => sample.settledScopeMs)),
-      },
       toggleToPresent: {
         medianMs: percentile(toggleMs, 0.5),
         p95Ms: percentile(toggleMs, 0.95),

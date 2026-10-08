@@ -18,11 +18,7 @@ list is done.
 
 | Item | What | Detail |
 |---|---|---|
-| Denoise checks | Two checks fail and did so before modularization: Advanced-panel picture stability and selector-seam binding. Not yet investigated | Modularization 8.2 |
 | CF-PIX-06 | The tiled film check was recorded as passing on October 7 and as failing in the October 8 sweep. Settle which | Viewport 15.7 |
-| `phase4-preview` | The check fails in its own report code, which refers to something removed on October 6 | Modularization 8.2 |
-| Broken links | Five links in the documentation point at files that are not there | Modularization 10.1 |
-| CF-SPEED-02 | The luminance Feather timing check stops before it measures anything. Repair it, then judge the 1,000 ms limit | Viewport 15.7 |
 | PERF-04 | With Full selected, the app prepares the picture for the lane not on screen. Check whether that costs anything Steve would notice, and fix it if so | PRD 11b |
 | Local and mask setting lists | The numbers sent to the shaders for local adjustments and masks are still matched by position by hand in two languages | Modularization 8.1 |
 | Explicit interfaces between feature files | Each frontend file states what it reads and what it changes, instead of everything sharing one pool of state | Modularization 9 |

@@ -343,7 +343,7 @@ Completion does not imply that genuinely clipped sensor highlights are reconstru
 
 ## References
 
-- [Phase 2 Generic RAW Highlight Feasibility](../testing/Phase2_Generic_RAW_Highlight_Feasibility_2026-08-30.md)
+- Phase 2 Generic RAW Highlight Feasibility (August 30, 2026; record unavailable)
 - [Import Pipeline Architecture](../design/Import_Pipeline_Architecture.md)
 - [rawpy RawPy API](https://letmaik.github.io/rawpy/api/rawpy.RawPy.html)
 - [rawpy postprocess parameters](https://letmaik.github.io/rawpy/api/rawpy.Params.html)
