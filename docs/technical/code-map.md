@@ -138,7 +138,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `export-ui.js` | Export sheet, presets, format cards | `seedExportFieldsFromSession`, `exportCurrentSession`, `renderCapabilities`, `applyExportPreset` |
 | `info-panels.js` | Metadata, technical summary, capability readouts | `renderMetadata`, `technicalSummaryEntries`, `renderPresentationCapability` |
 | `desktop-commands.js` | Menu commands, shortcuts, preferences from the shell | `initializeDesktopBridge`, `applicationCommands`, `applyGpuMemoryBudget` |
-| `local-adjustments-ui.js` | The list of local adjustments and their grade controls | `defaultLocalGrade`, `bindLocalAdjustmentEvents`, `renderLocalAdjustments` |
+| `local-adjustments-ui.js` | The list of local adjustments and their grade controls | `codebase/frontend/local-adjustments-ui.js` (moved October 8); `defaultLocalGrade`, `bindLocalAdjustmentEvents`, `renderLocalAdjustments` |
 | `mask-controls.js` | Mask tree editor and per-mask panels | `renderMaskTreeEditor`, `renderPathControls`, `createLuminanceRangeControl` |
 | `mask-gestures.js` | Pointer work on the mask canvas | `bindLocalMaskCanvas`, `updateGradientGesture`, `pathTargetAtPointer`, `handlePathCanvasKeydown` |
 | `path-geometry.js` | Path and feather maths (no page access); moved October 8 | `codebase/frontend/path-geometry.js`: `activePathNodes`, `uniformFeatherNodes`, `flattenPathNodes`, `validPathGeometry`, `splitPathSegment` |
