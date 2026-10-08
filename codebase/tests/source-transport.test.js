@@ -18,13 +18,10 @@ const transportSource = fs.readFileSync(
   path.join(__dirname, "../frontend/source-transport.js"),
   "utf8",
 );
-const shaderSource = fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8");
+const shaderSource = frontendSource("webgpu-shaders.js");
 // The renderer's halo math is the declared processing-scale contract, which the
 // page loads as its own script. The harness mirrors that script set.
-const graphScaleSource = fs.readFileSync(
-  path.join(__dirname, "../frontend/graph-scale.js"),
-  "utf8",
-);
+const graphScaleSource = frontendSource("graph-scale.js");
 // Phase 5 item 1: the renderer registers every cache entry with the central
 // allocator, so the harness loads that module with the renderer.
 const gpuAllocatorSource = fs.readFileSync(

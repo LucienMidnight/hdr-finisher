@@ -1,6 +1,10 @@
 (function () {
   "use strict";
 
+  const GPU_PARAMS = ((typeof window !== "undefined" && window.HDRGpuParamLayout)
+    || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRGpuParamLayout)).indices;
+
+
   /**
    * The processing-scale contract for the preview graph (sprint PRD Phase 3
    * item 3; PRD 5.9 module parity policy).
@@ -53,9 +57,9 @@
   // Film gate widths the pixels-per-mm conversion divides by, in millimetres.
   // p[140] and p[141] are the gate dimensions, p[142] selects the axis the
   // pixels-per-mm figure is taken from (0 = longer, 1 = width, 2 = height).
-  const FILM_GATE_WIDTH_INDEX = 140;
-  const FILM_GATE_HEIGHT_INDEX = 141;
-  const FILM_GATE_AXIS_INDEX = 142;
+  const FILM_GATE_WIDTH_INDEX = GPU_PARAMS.FILM_GATE_WIDTH_MM;
+  const FILM_GATE_HEIGHT_INDEX = GPU_PARAMS.FILM_GATE_HEIGHT_MM;
+  const FILM_GATE_AXIS_INDEX = GPU_PARAMS.FILM_GATE_AXIS;
 
   function finiteNumber(value, fallback) {
     const number = Number(value);
@@ -91,24 +95,24 @@
    * scale: a coarse pass and a refined pass enable the same modules (PRD 4.3).
    */
   function graphActivity(params) {
-    const filmActive = params[78] > 0.5 && params[79] > 0;
+    const filmActive = params[GPU_PARAMS.FILM_RESPONSE_ENABLED] > 0.5 && params[GPU_PARAMS.FILM_LOOK_STRENGTH] > 0;
     // Halation and bloom are the two stages that need the quarter-resolution
     // pair, because they are the two that blur on it.
     const spatialActive = filmActive
-      && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
+      && (params[GPU_PARAMS.HALATION_ENABLED] > 0.5 || (params[GPU_PARAMS.BLOOM_ENABLED] > 0.5 && params[GPU_PARAMS.BLOOM_AMOUNT] > 0));
     // Softness/Microcontrast and film resolution blur the film texture
     // directly, at full resolution. They allocate nothing, but they read past
     // the pixel they are writing just as surely, so they need a halo. Softness
     // and Microcontrast are Detail controls run in the film stage (NEXT-01
     // #2), so they count whether or not Film Look is on.
-    const structureActive = params[97] > 0.5
-      && (Math.abs(params[98]) > 0.000001 || Math.abs(params[99]) > 0.000001);
-    const filmBlurActive = structureActive || (filmActive && params[108] < 1);
+    const structureActive = params[GPU_PARAMS.STRUCTURE_ENABLED] > 0.5
+      && (Math.abs(params[GPU_PARAMS.STRUCTURE_SOFTNESS]) > 0.000001 || Math.abs(params[GPU_PARAMS.STRUCTURE_MICROCONTRAST]) > 0.000001);
+    const filmBlurActive = structureActive || (filmActive && params[GPU_PARAMS.FILM_RESOLUTION] < 1);
     return {
       spatialActive,
       filmNeighbourhoodActive: spatialActive || filmBlurActive,
-      detailActive: params[148] > 0.5
-        && (Math.abs(params[149]) > 0.000001 || Math.abs(params[150]) > 0.000001 || params[152] > 0.000001),
+      detailActive: params[GPU_PARAMS.DETAIL_ENABLED] > 0.5
+        && (Math.abs(params[GPU_PARAMS.TEXTURE_AMOUNT]) > 0.000001 || Math.abs(params[GPU_PARAMS.CLARITY_AMOUNT]) > 0.000001 || params[GPU_PARAMS.SHARPEN_AMOUNT] > 0.000001),
     };
   }
 
@@ -225,7 +229,7 @@
 
   /** Whether global Clarity runs, and so whether the frame map is needed. */
   function clarityActive(params) {
-    return params[148] > 0.5 && Math.abs(finiteNumber(params[150], 0)) > 0.000001;
+    return params[GPU_PARAMS.DETAIL_ENABLED] > 0.5 && Math.abs(finiteNumber(params[GPU_PARAMS.CLARITY_AMOUNT], 0)) > 0.000001;
   }
 
   function localClarityActive(grade) {
@@ -289,8 +293,8 @@
     // The shader caps a blur at 256 full-resolution pixels (the CPU/export
     // cap), which is 256 / grid texels.
     const blurCap = 256 / grid;
-    const bloomActive = params[92] > 0.5 && params[93] > 0;
-    const halationActive = params[85] > 0.5;
+    const bloomActive = params[GPU_PARAMS.BLOOM_ENABLED] > 0.5 && params[GPU_PARAMS.BLOOM_AMOUNT] > 0;
+    const halationActive = params[GPU_PARAMS.HALATION_ENABLED] > 0.5;
 
     // `spatialBlur`: a Gaussian sampled one texel apart out to floor(radius),
     // in quarter-resolution texels, capped at 64 by the shader exactly as it
@@ -300,7 +304,7 @@
     let blurTexels = 0;
     if (bloomActive) {
       blurTexels = Math.max(blurTexels,
-        clamp(Math.hypot(quarter[0], quarter[1]) * Math.max(finiteNumber(params[95], 0), 0) / 100, 0.25, blurCap));
+        clamp(Math.hypot(quarter[0], quarter[1]) * Math.max(finiteNumber(params[GPU_PARAMS.BLOOM_RADIUS], 0), 0) / 100, 0.25, blurCap));
     }
     if (halationActive) {
       // `filmPixelsPerMm` over the frame's quarter-resolution size.
@@ -315,7 +319,7 @@
         pixelsPerMm = quarter[0] / params[FILM_GATE_WIDTH_INDEX];
       }
       blurTexels = Math.max(blurTexels,
-        clamp(pixelsPerMm * 43.2666153 * Math.max(finiteNumber(params[88], 0), 0) / 100, 0.25, blurCap));
+        clamp(pixelsPerMm * 43.2666153 * Math.max(finiteNumber(params[GPU_PARAMS.HALATION_RADIUS], 0), 0) / 100, 0.25, blurCap));
     }
 
     // Full-resolution reads: halation's edge source from `filmPhysicalOffset`,
@@ -340,15 +344,15 @@
     );
     let direct = 0;
     if (halationActive) {
-      direct = Math.max(direct, clamp(Math.floor(physicalOffset(finiteNumber(params[88], 0), 256) / 4), 1, 16));
+      direct = Math.max(direct, clamp(Math.floor(physicalOffset(finiteNumber(params[GPU_PARAMS.HALATION_RADIUS], 0), 256) / 4), 1, 16));
     }
-    const structureActive = params[97] > 0.5
-      && (Math.abs(params[98]) > 0 || Math.abs(params[99]) > 0);
+    const structureActive = params[GPU_PARAMS.STRUCTURE_ENABLED] > 0.5
+      && (Math.abs(params[GPU_PARAMS.STRUCTURE_SOFTNESS]) > 0 || Math.abs(params[GPU_PARAMS.STRUCTURE_MICROCONTRAST]) > 0);
     if (structureActive) {
       direct = Math.max(direct, clamp(Math.round(frameDiagonal * 0.06 / 100), 1, 24));
     }
-    if (params[108] < 1) {
-      direct = Math.max(direct, physicalOffset(0.04 + 0.08 * (1 - params[108]) * params[79], 32));
+    if (params[GPU_PARAMS.FILM_RESOLUTION] < 1) {
+      direct = Math.max(direct, physicalOffset(0.04 + 0.08 * (1 - params[GPU_PARAMS.FILM_RESOLUTION]) * params[GPU_PARAMS.FILM_LOOK_STRENGTH], 32));
     }
 
     const total = Math.ceil(blurTexels) * grid + Math.ceil(direct);
@@ -363,7 +367,7 @@
   // BW-01: p[177] turns Black & White on, p[178..185] are its sliders; with
   // any slider set, each pixel's colour is the mean of a 5x5 lattice two
   // pixels apart, four pixels either side.
-  const BLACK_AND_WHITE_PARAM = 177;
+  const BLACK_AND_WHITE_PARAM = GPU_PARAMS.BLACK_AND_WHITE_ENABLED;
   const BLACK_AND_WHITE_GUIDE_REACH = 4;
   function blackAndWhiteGuideReach(params) {
     if (!(params.length > BLACK_AND_WHITE_PARAM + 8) || !(params[BLACK_AND_WHITE_PARAM] > 0.5)) return 0;

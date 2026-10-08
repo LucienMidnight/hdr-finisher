@@ -167,12 +167,20 @@ rendering (`ensureTileGraph` to `encodeTiledGeneration`), GPU masks
 
 ### Settings sent to the shaders
 
-The renderer hands the shaders one list of 190 numbers. Slot 2 is exposure,
-slot 10 is white balance, and so on. `buildParams` writes them by number and
-the shaders read them by number (`p[10]`), about 450 times; 14 slots have
-names. Adding or moving a slot means changing both sides by hand, and a
-mismatch gives a wrong image with no error. Until the sprint's phase 4 lands,
-treat any change here as strict-testing work.
+`codebase/frontend/gpu-param-layout.js` is the single list of all 190
+names and positions. `gpu-params.js`, `gpu-render-plan.js`, the renderer and
+`graph-scale.js` take their positions from it. `webgpu-shaders.js` inserts
+those same positions when constructing WGSL, so the generated shaders keep
+their original text. `tests/gpu-param-layout.test.js` checks the original
+positions, load order, bare global positions and writer/consumer agreement.
+Four reserved entries keep their positions; `DETAIL_ENABLED` is consumed by
+host-side graph routing rather than by a shader. Phase 4's long GPU checks
+and the agreed full sweep are still pending.
+
+Local grades have a separate positional prefix and reuse parts of the global
+layout at the tail. Analytic, brush and resampling masks have independent
+positional lists too. Those remaining lists were reported for a separate
+follow-up; this sprint does not rename them.
 
 ## Which checks cover what
 

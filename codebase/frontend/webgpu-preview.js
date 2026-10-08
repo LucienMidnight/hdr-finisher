@@ -1235,7 +1235,7 @@
         const anchor = this.highlightAnchorRequest(lane, adjustments, { sessionId, geometrySignature: signature, sourceIdentity: "source", identity: evidenceKey }, params, locals);
         // Rank upstream of the shoulder; native patches evaluate all later
         // neighbourhood stages. Unrelated atlas neighbours never feed Detail.
-        params[74] = 0;
+        params[GPU_PARAMS.HIGHLIGHT_MODE] = 0;
         this.uploadParamsAndCurves(lane, adjustments, curveSampler, params, locals);
         const pipelines = this.pipelineFor("rgba16float");
         const masks = [];
@@ -1270,7 +1270,7 @@
         // prefix reduction evaluates exactly that stage on these real pixels.
         let sdrAnchor = null;
         if (lane === "sdr" && anchor?.measurement === "maximum") {
-          params[74] = 1;
+          params[GPU_PARAMS.HIGHLIGHT_MODE] = 1;
           sdrAnchor = await this.measureToneAdjustedPeak({texture: source, width: side, height: side}, params, "maximum", anchor.key);
         }
         await read.mapAsync(GPUMapMode.READ);
@@ -1380,7 +1380,7 @@
 
     highlightAnchorRequest(lane, adjustments, proxy, params, locals = []) {
       const measurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
-      const measures = params[74] === 1 && measurement !== "manual";
+      const measures = params[GPU_PARAMS.HIGHLIGHT_MODE] === 1 && measurement !== "manual";
       if (!measures) return null;
       // A denoise reconstruction carries no session or source identity of its
       // own. Name it by the source it was made from, or its key never matches
@@ -1390,7 +1390,7 @@
       const key = JSON.stringify([
         [origin.sessionId, origin.geometrySignature, origin.sourceIdentity],
         this.highlightSourceToken(proxy), lane, measurement,
-        params[2], params[4], params[8], params[9], params[110],
+        params[GPU_PARAMS.EXPOSURE], params[GPU_PARAMS.SHADOW_LIFT], params[GPU_PARAMS.CONTRAST], params[GPU_PARAMS.CONTRAST_PIVOT], params[GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING],
         ...params.slice(10, 12), ...params.slice(61, 73),
         ...params.slice(BLACK_AND_WHITE_PARAM, BLACK_AND_WHITE_PARAM + 9),
         lane === "hdr" ? [adjustments.hdr, locals] : null,
@@ -1440,7 +1440,7 @@
      *              measurement and ask for a re-render if it differs.
      */
     async resolveHighlightAnchor(anchor, sourceProxy, params, { interactive = false, lane = "hdr" } = {}) {
-      const estimate = params[75];
+      const estimate = params[GPU_PARAMS.HIGHLIGHT_ANCHOR];
       // The native reduction can land between request construction and this
       // call, so consult the live cache as well as the request snapshot.
       const cached = this.peakReductionCache.has(anchor.key)
@@ -1523,7 +1523,7 @@
     scheduleHighlightMeasurement(anchor, sourceProxy, params, lane, used) {
       if (this.pendingHighlightKeys.has(anchor.key)) return this.pendingHighlightKeys.get(anchor.key);
       const snapshot = new Float32Array(params);
-      const estimate = params[75];
+      const estimate = params[GPU_PARAMS.HIGHLIGHT_ANCHOR];
       const resourceGeneration = this.resourceGeneration;
       const run = (this.pendingHighlightMeasurement || Promise.resolve()).then(async () => {
         if (resourceGeneration !== this.resourceGeneration || !sourceProxy.texture) return;
@@ -1955,7 +1955,7 @@
       // denoise grid. The source region has to cover that too.
       const contract = graphScaleContract();
       if (contract.clarityActive(params) && !surround?.global) {
-        const clarity = contract.clarityMapPlan(contract.claritySigma(frame.width, frame.height, params[151]));
+        const clarity = contract.clarityMapPlan(contract.claritySigma(frame.width, frame.height, params[GPU_PARAMS.CLARITY_RADIUS]));
         halo = Math.max(halo, clarity.reach + clarity.scale + alignment);
       }
       const referenceScale = this.featherReferenceScale?.(JSON.stringify(adjustments.shared?.geometry || {})) || 1;
@@ -2146,22 +2146,22 @@
       const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params, localAdjustments);
       const highlightAnchorOnly = Boolean(sourceOptions?.highlightAnchorOnly);
       if (anchor && !highlightAnchorOnly) {
-        params[75] = await this.resolveHighlightAnchor(anchor, proxy, params, { interactive: false, lane });
+        params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = await this.resolveHighlightAnchor(anchor, proxy, params, { interactive: false, lane });
       }
       // The finish pass is upstream of output highlights, so this sentinel
       // only changes what the tile reduction reads.  Nothing is presented by
       // an anchor-only pass.
-      if (highlightAnchorOnly) params[74] = -1;
+      if (highlightAnchorOnly) params[GPU_PARAMS.HIGHLIGHT_MODE] = -1;
 
       const overlayIndex = maskOverlay?.localId
         ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
         : -1;
       const overlayColor = Array.isArray(maskOverlay?.color) ? maskOverlay.color : [0.12, 0.72, 0.86];
-      params[131] = overlayIndex >= 0 ? 1 : 0;
-      params[132] = overlayIndex >= 0 ? gpuMaskInfluenceOpacity(activeLocals[overlayIndex].mask) : 0;
-      params[133] = Number(overlayColor[0]) || 0;
-      params[134] = Number(overlayColor[1]) || 0;
-      params[135] = Number(overlayColor[2]) || 0;
+      params[GPU_PARAMS.OVERLAY_ENABLED] = overlayIndex >= 0 ? 1 : 0;
+      params[GPU_PARAMS.OVERLAY_OPACITY] = overlayIndex >= 0 ? gpuMaskInfluenceOpacity(activeLocals[overlayIndex].mask) : 0;
+      params[GPU_PARAMS.OVERLAY_RED] = Number(overlayColor[0]) || 0;
+      params[GPU_PARAMS.OVERLAY_GREEN] = Number(overlayColor[1]) || 0;
+      params[GPU_PARAMS.OVERLAY_BLUE] = Number(overlayColor[2]) || 0;
 
       this.uploadParamsAndCurves(lane, adjustments, curveSampler, params, activeLocals);
 
@@ -3375,7 +3375,7 @@
       const activeLocals = options.activeLocals || [];
       const { detailActive, spatialActive, filmNeighbourhoodActive } = this.graphActivity(params);
       const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
-      writeClarityPlan(params, proxy.width, proxy.height, params[151]);
+      writeClarityPlan(params, proxy.width, proxy.height, params[GPU_PARAMS.CLARITY_RADIUS]);
       // Denoise reconstructs into a tile-sized texture rather than reading a
       // whole-frame resolved one. The alignment is the wavelet grid: a Haar
       // decomposition indexes from the frame's origin, so a tile that started
@@ -3456,11 +3456,11 @@
       // will read. Detail runs first, so its own reach is the largest.
       if (detailActive || localDetailActive) nodes.push({ id: "detail", halo });
       if (activeLocals.length) nodes.push({ id: "mask-feather", halo });
-      if (params[85] > 0.5) nodes.push({ id: "halation", halo });
-      if (params[92] > 0.5 && params[93] > 0) nodes.push({ id: "bloom", halo });
+      if (params[GPU_PARAMS.HALATION_ENABLED] > 0.5) nodes.push({ id: "halation", halo });
+      if (params[GPU_PARAMS.BLOOM_ENABLED] > 0.5 && params[GPU_PARAMS.BLOOM_AMOUNT] > 0) nodes.push({ id: "bloom", halo });
       if (filmNeighbourhoodActive && !spatialActive) nodes.push({ id: "softness", halo });
-      if (params[123] > 0.5 && params[124] !== 0) nodes.push("vignette");
-      if (params[156] > 0.5 && params[157] > 0) nodes.push("grain");
+      if (params[GPU_PARAMS.VIGNETTE_ENABLED] > 0.5 && params[GPU_PARAMS.VIGNETTE_AMOUNT] !== 0) nodes.push("vignette");
+      if (params[GPU_PARAMS.FILM_LOOK_ENABLED] > 0.5 && params[GPU_PARAMS.FILM_FINISH_STRENGTH] > 0) nodes.push("grain");
       const plan = scheduler.plan({
         width: proxy.width,
         height: proxy.height,
@@ -3711,22 +3711,22 @@
       (clarityFrame?.chunks || []).forEach(({ region }, index) => {
         const base = (plan.tileCount + index) * (stride / 4);
         slots.set(params, base);
-        slots[base + 160] = region.x;
-        slots[base + 161] = region.y;
-        slots[base + 162] = region.width;
-        slots[base + 163] = region.height;
-        slots[base + 164] = proxy.width;
-        slots[base + 165] = proxy.height;
+        slots[base + GPU_PARAMS.TILE_ORIGIN_X] = region.x;
+        slots[base + GPU_PARAMS.TILE_ORIGIN_Y] = region.y;
+        slots[base + GPU_PARAMS.TILE_VALID_WIDTH] = region.width;
+        slots[base + GPU_PARAMS.TILE_VALID_HEIGHT] = region.height;
+        slots[base + GPU_PARAMS.FRAME_WIDTH] = proxy.width;
+        slots[base + GPU_PARAMS.FRAME_HEIGHT] = proxy.height;
       });
       plan.tiles.forEach((tile, index) => {
         const base = index * (stride / 4);
         slots.set(params, base);
-        slots[base + 160] = tile.haloRect.x;
-        slots[base + 161] = tile.haloRect.y;
-        slots[base + 162] = tile.haloRect.width;
-        slots[base + 163] = tile.haloRect.height;
-        slots[base + 164] = proxy.width;
-        slots[base + 165] = proxy.height;
+        slots[base + GPU_PARAMS.TILE_ORIGIN_X] = tile.haloRect.x;
+        slots[base + GPU_PARAMS.TILE_ORIGIN_Y] = tile.haloRect.y;
+        slots[base + GPU_PARAMS.TILE_VALID_WIDTH] = tile.haloRect.width;
+        slots[base + GPU_PARAMS.TILE_VALID_HEIGHT] = tile.haloRect.height;
+        slots[base + GPU_PARAMS.FRAME_WIDTH] = proxy.width;
+        slots[base + GPU_PARAMS.FRAME_HEIGHT] = proxy.height;
         if (surround?.global) {
           const origin = surroundMapRect(tile.haloRect, params[CLARITY_MAP_SCALE_INDEX]);
           slots[base + CLARITY_MAP_ORIGIN_X_INDEX] = origin.x;
@@ -3738,8 +3738,8 @@
         );
         // The peak reduction reads its grid from the same slots the scope
         // passes do. Nothing else in the render graph reads them.
-        slots[base + 136] = SCOPE_PEAK_GRID;
-        slots[base + 137] = SCOPE_PEAK_GRID;
+        slots[base + GPU_PARAMS.SCOPE_WIDTH] = SCOPE_PEAK_GRID;
+        slots[base + GPU_PARAMS.SCOPE_HEIGHT] = SCOPE_PEAK_GRID;
       });
       this.device.queue.writeBuffer(this.tileCompositeParamBuffer, 0, slots);
 
@@ -3756,12 +3756,12 @@
         plan.tiles.forEach((tile, index) => {
           const offset = index * (localStride / 4);
           values.set(tiledLocalState[localIndex].params, offset);
-          values[offset + 160] = tile.haloRect.x;
-          values[offset + 161] = tile.haloRect.y;
-          values[offset + 162] = tile.haloRect.width;
-          values[offset + 163] = tile.haloRect.height;
-          values[offset + 164] = proxy.width;
-          values[offset + 165] = proxy.height;
+          values[offset + GPU_PARAMS.TILE_ORIGIN_X] = tile.haloRect.x;
+          values[offset + GPU_PARAMS.TILE_ORIGIN_Y] = tile.haloRect.y;
+          values[offset + GPU_PARAMS.TILE_VALID_WIDTH] = tile.haloRect.width;
+          values[offset + GPU_PARAMS.TILE_VALID_HEIGHT] = tile.haloRect.height;
+          values[offset + GPU_PARAMS.FRAME_WIDTH] = proxy.width;
+          values[offset + GPU_PARAMS.FRAME_HEIGHT] = proxy.height;
           writeMaskRect(values, offset, maskMatrix[index][localIndex], proxy.width, proxy.height);
           // A local builds its Clarity map inside the tile; the map starts at
           // the frame block holding the halo rectangle's first pixel.
@@ -4053,7 +4053,7 @@
               );
             }
             const globalClarityView = surround?.global && graphScaleContract().clarityActive(params)
-              ? this.encodeSurroundClarityMap(encoder, pipelines, surround, surround.global, params[151], proxy, tile.haloRect).createView()
+              ? this.encodeSurroundClarityMap(encoder, pipelines, surround, surround.global, params[GPU_PARAMS.CLARITY_RADIUS], proxy, tile.haloRect).createView()
               : clarityMapView;
             pass(localView, pipelines.detailComposite, bind(baseView, detailResultView, globalClarityView), width, height);
             localSource = graph.localTexture;
@@ -4156,10 +4156,10 @@
               { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
             );
             const patchValues = slots.slice(index * (stride / 4), index * (stride / 4) + params.length);
-            patchValues[160] = tile.rect.x;
-            patchValues[161] = tile.rect.y;
-            patchValues[162] = tile.rect.width;
-            patchValues[163] = tile.rect.height;
+            patchValues[GPU_PARAMS.TILE_ORIGIN_X] = tile.rect.x;
+            patchValues[GPU_PARAMS.TILE_ORIGIN_Y] = tile.rect.y;
+            patchValues[GPU_PARAMS.TILE_VALID_WIDTH] = tile.rect.width;
+            patchValues[GPU_PARAMS.TILE_VALID_HEIGHT] = tile.rect.height;
             const patchBuffer = this.createStorageBuffer(patchValues);
             this.device.queue.writeBuffer(patchBuffer, 0, patchValues);
             const patchView = patchTexture.createView();
@@ -4583,7 +4583,7 @@
         // scheduler alone.
         if (lane !== "sdr") return this.refuseRender("frame-anchor-unsupported-lane");
         const key = `frame:${serial}:${anchor.key}`;
-        params[75] = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, key);
+        params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, key);
         this.peakReductionCache.delete(key);
         if (resourceGeneration !== this.resourceGeneration || serial !== this.renderSerials.get(canvas)
           || sourceOptions?.isCurrent?.() === false) return this.refuseRender("peak:superseded");
@@ -4592,7 +4592,7 @@
         // An interactive frame that stopped for a whole-image reduction would
         // miss its deadline, so it carries the last measurement instead and
         // the skipped measurement runs afterwards.
-        params[75] = await this.resolveHighlightAnchor(anchor, sourceProxy, params, { interactive, lane });
+        params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = await this.resolveHighlightAnchor(anchor, sourceProxy, params, { interactive, lane });
         if (!interactive && anchor.cached === undefined) {
           if (resourceGeneration !== this.resourceGeneration) return this.refuseRender("peak:resource-generation");
           if (serial !== this.renderSerials.get(canvas)) return this.refuseRender("peak:newer-render-started");
@@ -4632,7 +4632,7 @@
           || masks.some((mask) => !mask)
         ) return this.refuseRender("superseded-after-masks");
       }
-      const measuredPeak = params[75];
+      const measuredPeak = params[GPU_PARAMS.HIGHLIGHT_ANCHOR];
       // The resize happens at presentation time, not here. Resizing a visible
       // canvas clears its presented frame, and this generation still has an
       // intermediate graph to build and passes to encode; clearing before then
@@ -4650,7 +4650,7 @@
           referenceWhiteNits,
           sourcePixelScale,
         );
-        params[75] = measuredPeak;
+        params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = measuredPeak;
       }
       const overlayIndex = maskOverlay?.localId
         ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
@@ -4658,21 +4658,21 @@
       const overlayMask = overlayIndex >= 0;
       const overlayLocal = overlayIndex >= 0 ? activeLocals[overlayIndex] : null;
       const overlayColor = Array.isArray(maskOverlay?.color) ? maskOverlay.color : [0.12, 0.72, 0.86];
-      params[131] = overlayMask && !noiseView ? 1 : 0;
-      params[132] = overlayLocal ? gpuMaskInfluenceOpacity(overlayLocal.mask) : 0;
-      params[133] = Number(overlayColor[0]) || 0;
-      params[134] = Number(overlayColor[1]) || 0;
-      params[135] = Number(overlayColor[2]) || 0;
+      params[GPU_PARAMS.OVERLAY_ENABLED] = overlayMask && !noiseView ? 1 : 0;
+      params[GPU_PARAMS.OVERLAY_OPACITY] = overlayLocal ? gpuMaskInfluenceOpacity(overlayLocal.mask) : 0;
+      params[GPU_PARAMS.OVERLAY_RED] = Number(overlayColor[0]) || 0;
+      params[GPU_PARAMS.OVERLAY_GREEN] = Number(overlayColor[1]) || 0;
+      params[GPU_PARAMS.OVERLAY_BLUE] = Number(overlayColor[2]) || 0;
       // Direct reads a whole-frame resolved source; Tiled re-derives this per
       // generation from whether it reconstructs tiles.
       params[NOISE_VIEW_INDEX] = noiseView ? (sourceProxy !== proxy ? 1 : 2) : 0;
       writeMaskRect(params, 0, overlayIndex >= 0 ? masks[overlayIndex] : null, proxy.width, proxy.height);
-      writeClarityPlan(params, proxy.width, proxy.height, params[151]);
+      writeClarityPlan(params, proxy.width, proxy.height, params[GPU_PARAMS.CLARITY_RADIUS]);
       // Direct's frame is every intermediate's size, which is what the shader
       // falls back to. The Clarity map passes read map-sized textures, so the
       // frame is stated rather than inferred.
-      params[164] = proxy.width;
-      params[165] = proxy.height;
+      params[GPU_PARAMS.FRAME_WIDTH] = proxy.width;
+      params[GPU_PARAMS.FRAME_HEIGHT] = proxy.height;
       this.uploadParamsAndCurves(lane, adjustments, curveSampler, params, activeLocals);
       if (plan.decision.mode === "tiled") {
         const refusals = this.tiledExecutionRefusals({
@@ -5958,8 +5958,8 @@
           // route, one tile and its halo on the tiled route.
           const passWidth = piece.origin.width;
           const passHeight = piece.origin.height;
-          slots[160] = piece.origin.x;
-          slots[161] = piece.origin.y;
+          slots[GPU_PARAMS.TILE_ORIGIN_X] = piece.origin.x;
+          slots[GPU_PARAMS.TILE_ORIGIN_Y] = piece.origin.y;
           writeMaskRect(slots, 0, entry, record.width, record.height);
           this.device.queue.writeBuffer(parameters, 0, slots);
           const target = this.device.createTexture({
@@ -6002,7 +6002,7 @@
               }
             }
             covered += copyWidth * copyHeight;
-            const placement = slots[MASK_RECT_INDEX + 2] > 0
+            const placement = slots[GPU_PARAMS.MASK_RECT_WIDTH] > 0
               ? (entry.soft ? ` soft ${entry.width}x${entry.height}` : " whole frame") : "";
             sources.add(`${entry.kind || "cpu-mask-tile"}${placement}`);
           } finally {
@@ -6114,8 +6114,8 @@
       resource.busy = true;
       this.activeScopeCount += 1;
       const params = new Float32Array(source.params);
-      params[136] = width;
-      params[137] = height;
+      params[GPU_PARAMS.SCOPE_WIDTH] = width;
+      params[GPU_PARAMS.SCOPE_HEIGHT] = height;
       this.device.queue.writeBuffer(resource.paramBuffer, 0, params);
       const bindGroup = this.device.createBindGroup({
         layout: this.bindGroupLayout,
@@ -7783,7 +7783,7 @@
      * has to start on.
      */
     planClarityFrameMap({ proxy, params, identity, tiles, workWidth, workHeight, alignment = 1, analysis = false }) {
-      const plan = writeClarityPlan(new Float32Array(PARAM_COUNT), proxy.width, proxy.height, params[151]);
+      const plan = writeClarityPlan(new Float32Array(PARAM_COUNT), proxy.width, proxy.height, params[GPU_PARAMS.CLARITY_RADIUS]);
       const extents = clarityMapExtents(plan, 0, 0, proxy.width, proxy.height);
       // The frame keeps its base map, which every radius shares; only the
       // finished map depends on the radius.
@@ -7939,8 +7939,8 @@
       values[CLARITY_BASE_SCALE_INDEX] = kept.scale;
       values[TILE_ORIGIN_X_INDEX] = surround.frameWidth;
       values[TILE_ORIGIN_Y_INDEX] = surround.frameHeight;
-      values[164] = proxy.width;
-      values[165] = proxy.height;
+      values[GPU_PARAMS.FRAME_WIDTH] = proxy.width;
+      values[GPU_PARAMS.FRAME_HEIGHT] = proxy.height;
       const buffer = this.createStorageBuffer(values);
       this.device.queue.writeBuffer(buffer, 0, values);
       const texture = this.device.createTexture({
@@ -8064,8 +8064,8 @@
       const values = buildLocalParams(local, lane, sourcePixelScale,this.localCurveOffsets?.get(local.id) || 0);
       if (frameWidth > 0 && frameHeight > 0) {
         writeClarityPlan(values, frameWidth, frameHeight, values[16]);
-        values[164] = frameWidth;
-        values[165] = frameHeight;
+        values[GPU_PARAMS.FRAME_WIDTH] = frameWidth;
+        values[GPU_PARAMS.FRAME_HEIGHT] = frameHeight;
         writeMaskRect(values, 0, maskEntry, frameWidth, frameHeight);
       }
       if (!buffer) {

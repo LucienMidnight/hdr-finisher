@@ -21,6 +21,24 @@ _REGEX_AFTER_WORD = {
 
 
 @lru_cache(maxsize=None)
+def _parameter_positions() -> dict[str, int]:
+    """The real named layout, used only to resolve existing numeric source pins."""
+    text = (FRONTEND / "gpu-param-layout.js").read_text(encoding="utf-8")
+    fields = re.findall(r'name: "([A-Z0-9_]+)", index: (\d+)', text)
+    assert len(fields) == 190
+    return {name: int(index) for name, index in fields}
+
+
+def _canonical_positions(text: str) -> str:
+    """Resolve names without changing the numbers, formulas or limits checked."""
+    positions = _parameter_positions()
+    def position(match: re.Match[str]) -> str:
+        return str(positions[match.group(1)])
+    text = re.sub(r'\$\{GPU_PARAMS\.([A-Z0-9_]+)\}', position, text)
+    text = re.sub(r'\bGPU_PARAMS\.([A-Z0-9_]+)\b', position, text)
+    return text.replace("window.HDRGpuParamLayout.count", str(len(positions)))
+
+@lru_cache(maxsize=None)
 def _scripts() -> tuple[tuple[str, str], ...]:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     names = re.findall(r'<script src="/static/([^"?]+\.js)', html)
@@ -30,7 +48,7 @@ def _scripts() -> tuple[tuple[str, str], ...]:
 @lru_cache(maxsize=None)
 def frontend_scripts() -> str:
     """Every script the page loads, in load order, as one text."""
-    return "\n".join(text for _, text in _scripts())
+    return _canonical_positions("\n".join(text for _, text in _scripts()))
 
 
 def _regex_may_start(text: str, index: int) -> bool:
@@ -142,7 +160,7 @@ def frontend_declaration(name: str) -> str:
     # A name shared by several modules is taken from the page's shared scope.
     chosen = [entry for entry in found if entry[1] == 0] or found
     assert len(chosen) == 1, f"{name} is declared more than once: {[entry[0] for entry in chosen]}"
-    return chosen[0][2]
+    return _canonical_positions(chosen[0][2])
 
 
 def frontend_declarations(*names: str) -> str:

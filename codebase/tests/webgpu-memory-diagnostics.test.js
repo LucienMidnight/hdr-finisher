@@ -6,11 +6,8 @@ const { test } = require("node:test");
 const { frontendSource } = require("./frontend-source.js");
 
 const source = frontendSource("webgpu-preview.js");
-const graphScaleSource = fs.readFileSync(
-  path.join(__dirname, "../frontend/graph-scale.js"),
-  "utf8",
-);
-const shaderSource = fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8");
+const graphScaleSource = frontendSource("graph-scale.js");
+const shaderSource = frontendSource("webgpu-shaders.js");
 const context = vm.createContext({
   window: {},
   performance: { now: () => 1 },

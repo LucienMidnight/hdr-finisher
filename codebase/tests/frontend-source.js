@@ -15,9 +15,24 @@ const FRONTEND = path.join(__dirname, "../frontend");
 // A script that has been divided lists its parts here, in load order. Tests
 // that load or search the original name then get all of them.
 const PARTS = {
-  "webgpu-preview.js": ["gpu-render-plan.js", "gpu-params.js", "webgpu-preview.js"],
+  "graph-scale.js": ["gpu-param-layout.js", "graph-scale.js"],
+  "webgpu-shaders.js": ["gpu-param-layout.js", "webgpu-shaders.js"],
+  "webgpu-preview.js": ["gpu-param-layout.js", "gpu-render-plan.js", "gpu-params.js", "webgpu-preview.js"],
 };
 
+// Resolve named positions through the production list before existing source pins
+// or extracted functions are evaluated. The raw-source guard is separate.
+function canonicalPositions(text) {
+  const { HDRGpuParamLayout: layout } = require("../frontend/gpu-param-layout.js");
+  const position = (_, name) => {
+    assert.ok(Object.hasOwn(layout.indices, name), `Unknown global parameter ${name}`);
+    return String(layout.indices[name]);
+  };
+  return text
+    .replace(/\$\{GPU_PARAMS\.([A-Z0-9_]+)\}/g, position)
+    .replace(/\bGPU_PARAMS\.([A-Z0-9_]+)\b/g, position)
+    .replace(/\bwindow\.HDRGpuParamLayout\.count\b/g, String(layout.count));
+}
 let scripts = null;
 
 function scriptNames() {
@@ -37,7 +52,7 @@ function allScripts() {
 }
 
 function frontendSource(name) {
-  return (PARTS[name] || [name]).map(readScript).join("\n");
+  return canonicalPositions((PARTS[name] || [name]).map(readScript).join("\n"));
 }
 
 const REGEX_AFTER_WORD = new Set([
@@ -173,11 +188,11 @@ function declaration(name) {
     chosen.length, 1,
     `${name} is declared more than once: ${chosen.map((entry) => entry.file).join(", ")}`,
   );
-  return chosen[0].text;
+  return canonicalPositions(chosen[0].text);
 }
 
 function declarations(...names) {
   return names.map(declaration).join("\n");
 }
 
-module.exports = { FRONTEND, declaration, declarations, frontendSource, scriptNames };
+module.exports = { FRONTEND, declaration, declarations, frontendSource, scriptNames, skipLiteral };

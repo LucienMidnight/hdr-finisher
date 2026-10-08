@@ -28,8 +28,8 @@ function loadPreview() {
     performance: { now: () => 1 },
     console,
   });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/graph-scale.js"), "utf8"), context);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8"), context);
+  vm.runInContext(frontendSource("graph-scale.js"), context);
+  vm.runInContext(frontendSource("webgpu-shaders.js"), context);
   vm.runInContext(frontendSource("webgpu-preview.js"), context);
   return context.window.HDRWebGPUPreview;
 }

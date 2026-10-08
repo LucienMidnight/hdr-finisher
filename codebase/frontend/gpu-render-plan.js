@@ -1,3 +1,5 @@
+const GPU_PARAMS = window.HDRGpuParamLayout.indices;
+
   // 160 and 161 carry the tile origin in global output coordinates. Direct
   // execution leaves them at zero, so its arithmetic is unchanged.
   // 160/161: tile origin; 162/163: valid tile extent; 164/165: full output
@@ -13,10 +15,10 @@
   // block size, then its origin), which every radius averages further.
   // 175 is the grain film type (0 color negative, 1 black & white) and 176
   // the high 16 bits of the grain seed, whose low half is 109.
-  const PARAM_COUNT = 190;
+  const PARAM_COUNT = window.HDRGpuParamLayout.count;
   // Slots 186-189: the frame rectangle a mask texture covers when it is one
   // small bitmap stretched over the pass (a soft mask), else zero.
-  const MASK_RECT_INDEX = 186;
+  const MASK_RECT_INDEX = GPU_PARAMS.MASK_RECT_X;
   // A soft mask is drawn from the bitmap a Fit view already holds. When none
   // is resident it is asked for at this long edge. Above the larger edge a
   // frame is magnified and its soft masks come from the small bitmap.
@@ -29,19 +31,19 @@
   const ORIENTED_LUMINANCE_BYTES = 192 * 1024 * 1024;
   const ORIENTED_LUMA_REGION_PIXELS = 24 * 1024 * 1024;
   const ORIENTED_LUMA_EXACT_PIXELS = 12 * 1024 * 1024;
-  const TILE_ORIGIN_X_INDEX = 160;
-  const TILE_ORIGIN_Y_INDEX = 161;
-  const NOISE_VIEW_INDEX = 166;
-  const GRAIN_FILM_TYPE_INDEX = 175;
-  const GRAIN_SEED_HIGH_INDEX = 176;
-  const CLARITY_MAP_SCALE_INDEX = 167;
-  const CLARITY_MAP_SIGMA_INDEX = 168;
-  const CLARITY_MAP_TAPS_INDEX = 169;
-  const CLARITY_MAP_ORIGIN_X_INDEX = 170;
-  const CLARITY_MAP_ORIGIN_Y_INDEX = 171;
-  const CLARITY_BASE_SCALE_INDEX = 172;
-  const CLARITY_BASE_ORIGIN_X_INDEX = 173;
-  const CLARITY_BASE_ORIGIN_Y_INDEX = 174;
+  const TILE_ORIGIN_X_INDEX = GPU_PARAMS.TILE_ORIGIN_X;
+  const TILE_ORIGIN_Y_INDEX = GPU_PARAMS.TILE_ORIGIN_Y;
+  const NOISE_VIEW_INDEX = GPU_PARAMS.NOISE_VIEW;
+  const GRAIN_FILM_TYPE_INDEX = GPU_PARAMS.GRAIN_FILM_TYPE;
+  const GRAIN_SEED_HIGH_INDEX = GPU_PARAMS.GRAIN_SEED_HIGH;
+  const CLARITY_MAP_SCALE_INDEX = GPU_PARAMS.CLARITY_MAP_SCALE;
+  const CLARITY_MAP_SIGMA_INDEX = GPU_PARAMS.CLARITY_MAP_SIGMA;
+  const CLARITY_MAP_TAPS_INDEX = GPU_PARAMS.CLARITY_MAP_TAPS;
+  const CLARITY_MAP_ORIGIN_X_INDEX = GPU_PARAMS.CLARITY_MAP_ORIGIN_X;
+  const CLARITY_MAP_ORIGIN_Y_INDEX = GPU_PARAMS.CLARITY_MAP_ORIGIN_Y;
+  const CLARITY_BASE_SCALE_INDEX = GPU_PARAMS.CLARITY_BASE_SCALE;
+  const CLARITY_BASE_ORIGIN_X_INDEX = GPU_PARAMS.CLARITY_BASE_ORIGIN_X;
+  const CLARITY_BASE_ORIGIN_Y_INDEX = GPU_PARAMS.CLARITY_BASE_ORIGIN_Y;
   // The map stores each value as a half-float pair (value, remainder): the
   // pair keeps near-float precision in a format the filterable binding takes.
   const CLARITY_MAP_FORMAT = "rg16float";
@@ -421,7 +423,7 @@
   function surroundHaloParams(params, surround) {
     if (!surround?.global) return params;
     const values = params.slice();
-    values[150] = 0;
+    values[GPU_PARAMS.CLARITY_AMOUNT] = 0;
     return values;
   }
 

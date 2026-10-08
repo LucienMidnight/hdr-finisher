@@ -38,7 +38,7 @@ Update this table in the same commit that finishes a phase.
 | 1 | Tests stop depending on where code sits | Done October 7 (see 5.1) |
 | 2 | `app.js` divided by feature | Done October 8 (see 6.1) |
 | 3 | Standalone helpers moved out of `webgpu-preview.js` | Done October 8 (see 7.1) |
-| 4 | The 190 shader settings get names from one list | Not started; needs Steve's go-ahead (section 8) |
+| 4 | The 190 shader settings get names from one list | Implemented; long validation pending (see 8.1) |
 | 5 | Close-out | Not started |
 
 Phases run in order. Phase 1 must finish before phase 2 starts, or every move
@@ -405,9 +405,10 @@ separate follow-up after this move-only sprint.
 
 ## 8. Phase 4: names for the 190 shader settings
 
-**Needs Steve's go-ahead before starting.** It touches every pinned shader,
-so it is the most expensive phase to validate. It can be done before 1.0 or
-left until after; nothing else in this sprint depends on it.
+**Authorized by Steve October 8.** Implementation may proceed. Before the
+long validation block, report its contents and estimated time and wait for
+Steve's answer. This phase touches every pinned shader and is the most
+expensive phase to validate.
 
 ### Problem
 
@@ -441,6 +442,34 @@ never read, or read but never written, is caught by a fast test.
 Strict. Fast checks, shader compilation, every GPU parity check for direct,
 tiled, local and scope rendering, and preview-against-export comparison.
 Estimate the time and ask Steve before running.
+
+### 8.1 Implementation record (October 8, 2026)
+
+Added `gpu-param-layout.js`: one frozen list of 190 named positions, from
+which JavaScript indices and WGSL positions are derived. All positions stay
+fixed. The three retired Denoise entries and the existing gap stay reserved;
+the Detail-enabled flag is checked against its host-side graph consumer.
+Global writers, renderer patches and graph readers now use names. The
+shader arithmetic, tolerances, limits and budgets are unchanged.
+
+The phase 3 comparison still matches every captured Float32 buffer and
+render plan for the three real projects, and their archive hashes match.
+All four generated WGSL sources are byte-identical to the original sources.
+The fast Node suite passes 427 checks, including eight new checks for the
+layout, load order and actual writer/consumer agreement. Deliberate missing
+writers, missing shader readers, unknown names, reserved uses and bare
+JavaScript positions are detected. Local writes cannot hide a missing global
+writer. Existing source pins resolve names through the production list;
+all existing assertions and the seven only-guard tests are unchanged.
+
+Python fast checks and Electron startup passed. The long strict GPU block
+and the one full sweep have not run: they require Steve's answer on contents
+and time before starting. Phase 4 is not complete until those results are
+recorded. No installer was built and nothing was pushed.
+
+Local-adjustment prefixes and the analytic, brush and resampling mask lists
+have the same positional-maintenance problem. Their separate layouts are
+unchanged; naming them requires a separate decision from Steve.
 
 ## 9. Not in this sprint
 

@@ -125,7 +125,7 @@
   // measurement across a drag runs it back through the settings it was taken
   // with and forward through the current ones.
   function highlightToneSettings(params) {
-    return { exposure: params[2] || 0, lift: params[4] || 0, contrast: params[8] || 0, pivot: params[9] || 0.1845 };
+    return { exposure: params[GPU_PARAMS.EXPOSURE] || 0, lift: params[GPU_PARAMS.SHADOW_LIFT] || 0, contrast: params[GPU_PARAMS.CONTRAST] || 0, pivot: params[GPU_PARAMS.CONTRAST_PIVOT] || 0.1845 };
   }
 
   function applyHighlightTone(value, tone) {
@@ -176,49 +176,49 @@
     const projectReferenceWhite = Number(referenceWhiteNits) === 100 ? 100 : 203;
     const branch = adjustments[lane];
     const colorSource = branch;
-    params[0] = lane === "hdr" ? 1 : 0;
-    params[1] = workingSpace === "linear-srgb" ? 1 : 0;
+    params[GPU_PARAMS.HDR_LANE] = lane === "hdr" ? 1 : 0;
+    params[GPU_PARAMS.SOURCE_LINEAR_SRGB] = workingSpace === "linear-srgb" ? 1 : 0;
     const toneEnabled = branch.tone_section_enabled !== false;
     const highlightEnabled = branch.highlight_section_enabled !== false;
     const primariesEnabled = branch.primaries_section_enabled !== false;
     const colorEnabled = branch.color_section_enabled !== false;
     const colorActive = colorEnabled && !colorSettingsNeutral(colorSource);
-    params[2] = toneEnabled ? branch.exposure || 0 : 0;
-    params[3] = highlightEnabled ? branch.highlight_compression_softness || 0 : 0;
-    params[4] = toneEnabled ? (lane === "hdr" ? branch.shadow_lift || 0 : branch.shadow || 0) : 0;
-    params[5] = primariesEnabled ? branch.lift || 0 : 0;
-    params[6] = primariesEnabled ? branch.gamma || 0 : 0;
-    params[7] = primariesEnabled ? branch.gain || 0 : 0;
-    params[8] = toneEnabled ? branch.contrast || 0 : 0;
-    params[9] = branch.contrast_pivot || (lane === "hdr" ? 0.1845 : 0.5);
-    params[10] = colorActive ? colorSource.white_balance_kelvin || 6500 : 6500;
-    params[11] = colorActive ? colorSource.tint || 0 : 0;
-    params[15] = branch.curves_section_enabled !== false && !curveSetNeutral(branch) ? 1 : 0;
-    params[16] = hdrSurface ? 1 : 0;
+    params[GPU_PARAMS.EXPOSURE] = toneEnabled ? branch.exposure || 0 : 0;
+    params[GPU_PARAMS.HIGHLIGHT_SOFTNESS] = highlightEnabled ? branch.highlight_compression_softness || 0 : 0;
+    params[GPU_PARAMS.SHADOW_LIFT] = toneEnabled ? (lane === "hdr" ? branch.shadow_lift || 0 : branch.shadow || 0) : 0;
+    params[GPU_PARAMS.LIFT] = primariesEnabled ? branch.lift || 0 : 0;
+    params[GPU_PARAMS.GAMMA] = primariesEnabled ? branch.gamma || 0 : 0;
+    params[GPU_PARAMS.GAIN] = primariesEnabled ? branch.gain || 0 : 0;
+    params[GPU_PARAMS.CONTRAST] = toneEnabled ? branch.contrast || 0 : 0;
+    params[GPU_PARAMS.CONTRAST_PIVOT] = branch.contrast_pivot || (lane === "hdr" ? 0.1845 : 0.5);
+    params[GPU_PARAMS.WHITE_BALANCE_KELVIN] = colorActive ? colorSource.white_balance_kelvin || 6500 : 6500;
+    params[GPU_PARAMS.TINT] = colorActive ? colorSource.tint || 0 : 0;
+    params[GPU_PARAMS.CURVES_ENABLED] = branch.curves_section_enabled !== false && !curveSetNeutral(branch) ? 1 : 0;
+    params[GPU_PARAMS.HDR_SURFACE] = hdrSurface ? 1 : 0;
     // The transport limit is absolute; scene-linear scale follows the project.
-    params[17] = 10000 * 0.18 / projectReferenceWhite;
-    params[18] = branch.tone_equalizer_section_enabled !== false && !toneEqualizerNeutral(branch) ? 1 : 0;
-    params[19] = Math.min(1, Math.max(0, branch.tone_equalizer_smoothing ?? 0.5));
+    params[GPU_PARAMS.HDR_DISPLAY_HEADROOM] = 10000 * 0.18 / projectReferenceWhite;
+    params[GPU_PARAMS.TONE_EQUALIZER_ENABLED] = branch.tone_equalizer_section_enabled !== false && !toneEqualizerNeutral(branch) ? 1 : 0;
+    params[GPU_PARAMS.TONE_EQUALIZER_SMOOTHING] = Math.min(1, Math.max(0, branch.tone_equalizer_smoothing ?? 0.5));
     const toneNodes = normalizedToneEqualizerNodes(branch.tone_equalizer_nodes);
-    params[20] = toneNodes.length;
+    params[GPU_PARAMS.TONE_EQUALIZER_NODE_COUNT] = toneNodes.length;
     toneNodes.forEach((node, index) => {
-      params[21 + index] = node.input_ev;
-      params[37 + index] = node.adjustment_ev;
+      params[GPU_PARAMS.TONE_EQUALIZER_INPUT_EV_0 + index] = node.input_ev;
+      params[GPU_PARAMS.TONE_EQUALIZER_ADJUSTMENT_EV_0 + index] = node.adjustment_ev;
     });
-    params[53] = lane === "hdr"
+    params[GPU_PARAMS.HIGHLIGHT_START] = lane === "hdr"
       ? ((branch.highlight_compression_start_nits ?? 400) * 0.18 / projectReferenceWhite)
       : (branch.highlight_compression_start_percent ?? 50) / 100;
-    params[54] = branch.lift_pivot ?? -2;
-    params[55] = branch.lift_range ?? 4;
-    params[56] = branch.gamma_pivot ?? 0;
-    params[57] = branch.gamma_range ?? 4.25;
-    params[58] = branch.gain_pivot ?? 2;
-    params[59] = branch.gain_range ?? 4;
+    params[GPU_PARAMS.LIFT_PIVOT] = branch.lift_pivot ?? -2;
+    params[GPU_PARAMS.LIFT_RANGE] = branch.lift_range ?? 4;
+    params[GPU_PARAMS.GAMMA_PIVOT] = branch.gamma_pivot ?? 0;
+    params[GPU_PARAMS.GAMMA_RANGE] = branch.gamma_range ?? 4.25;
+    params[GPU_PARAMS.GAIN_PIVOT] = branch.gain_pivot ?? 2;
+    params[GPU_PARAMS.GAIN_RANGE] = branch.gain_range ?? 4;
     const colorMatrix = colorActive ? rgbPrimariesAdjustmentMatrix(colorSource) : IDENTITY_3X3;
-    colorMatrix.forEach((value, index) => { params[61 + index] = value; });
-    params[70] = colorActive ? colorSource.saturation || 0 : 0;
-    params[71] = colorActive ? colorSource.vibrance || 0 : 0;
-    params[72] = colorActive ? 1 : 0;
+    colorMatrix.forEach((value, index) => { params[GPU_PARAMS.PRIMARIES_MATRIX_00 + index] = value; });
+    params[GPU_PARAMS.SATURATION] = colorActive ? colorSource.saturation || 0 : 0;
+    params[GPU_PARAMS.VIBRANCE] = colorActive ? colorSource.vibrance || 0 : 0;
+    params[GPU_PARAMS.COLOR_ENABLED] = colorActive ? 1 : 0;
     // BW-01 Black & White: on/off and Reds..Magentas / 100 (blackAndWhiteWgsl).
     const blackAndWhiteOn = branch.black_and_white_section_enabled === true;
     const blackAndWhite = branch.black_and_white || {};
@@ -226,66 +226,66 @@
     ["reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas"].forEach((name, index) => {
       params[BLACK_AND_WHITE_PARAM + 1 + index] = blackAndWhiteOn ? (Number(blackAndWhite[name]) || 0) / 100 : 0;
     });
-    params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : 1;
-    params[74] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : branch.highlight_compression_mode === "clip" ? 3 : 0) : 0;
-    params[75] = lane === "hdr"
+    params[GPU_PARAMS.HIGHLIGHT_TARGET] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : 1;
+    params[GPU_PARAMS.HIGHLIGHT_MODE] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : branch.highlight_compression_mode === "clip" ? 3 : 0) : 0;
+    params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = lane === "hdr"
       ? toneAdjustedHighlightPeakLinear(branch, toneEnabled, projectReferenceWhite)
       : Math.max(0.01, (branch.highlight_compression_peak_measurement === "manual"
         ? branch.highlight_compression_manual_peak_percent ?? 100
         : branch.highlight_compression_source_peak_percent ?? 100) / 100 * (toneEnabled ? Math.pow(2, branch.exposure || 0) : 1));
-    params[138] = projectReferenceWhite;
-    params[139] = 203;
-    params[76] = Math.min(1, Math.max(0, (branch.highlight_compression_peak_detail ?? 35) / 100));
-    params[77] = Math.min(1, Math.max(-1, (branch.highlight_compression_bias ?? 0) / 100)) * 0.6;
+    params[GPU_PARAMS.PROJECT_REFERENCE_WHITE_NITS] = projectReferenceWhite;
+    params[GPU_PARAMS.FILM_REFERENCE_WHITE_NITS] = 203;
+    params[GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL] = Math.min(1, Math.max(0, (branch.highlight_compression_peak_detail ?? 35) / 100));
+    params[GPU_PARAMS.HIGHLIGHT_BIAS] = Math.min(1, Math.max(-1, (branch.highlight_compression_bias ?? 0) / 100)) * 0.6;
     const film = branch.film_look || {};
     const filmEnabled = branch.film_look_section_enabled !== false;
-    params[78] = filmEnabled ? 1 : 0;
-    params[79] = filmEnabled ? (film.look_strength ?? 100) / 100 : 0;
-    params[80] = (film.print_strength || 0) / 100;
-    params[81] = (film.print_contrast || 0) / 100;
-    params[82] = (film.print_toe || 0) / 100;
-    params[83] = (film.print_shoulder || 0) / 100;
-    params[84] = (film.color_density || 0) / 100;
+    params[GPU_PARAMS.FILM_RESPONSE_ENABLED] = filmEnabled ? 1 : 0;
+    params[GPU_PARAMS.FILM_LOOK_STRENGTH] = filmEnabled ? (film.look_strength ?? 100) / 100 : 0;
+    params[GPU_PARAMS.FILM_PRINT_STRENGTH] = (film.print_strength || 0) / 100;
+    params[GPU_PARAMS.FILM_PRINT_CONTRAST] = (film.print_contrast || 0) / 100;
+    params[GPU_PARAMS.FILM_PRINT_TOE] = (film.print_toe || 0) / 100;
+    params[GPU_PARAMS.FILM_PRINT_SHOULDER] = (film.print_shoulder || 0) / 100;
+    params[GPU_PARAMS.FILM_COLOR_DENSITY] = (film.color_density || 0) / 100;
     // With Black & White on, Film Look adds no colour back: no per-channel
     // print response, no halation tint, no grain colour
     // (adjustments.py black_and_white_neutral_film_look).
-    params[143] = blackAndWhiteOn ? 0 : (film.red_response || 0) / 100;
-    params[144] = blackAndWhiteOn ? 0 : (film.green_response || 0) / 100;
-    params[145] = blackAndWhiteOn ? 0 : (film.blue_response || 0) / 100;
-    params[146] = (film.highlight_desaturation || 0) / 100;
-    params[147] = (film.shadow_desaturation || 0) / 100;
-    params[85] = film.halation_enabled !== false && ((((film.halation_amount || 0) > 0) && (film.halation_radius || 0) > 0) || film.halation_view_map) ? 1 : 0;
-    params[86] = (film.halation_amount || 0) / 100;
-    params[87] = (film.halation_sensitivity ?? 75) / 100;
-    params[88] = film.halation_radius ?? 0.2;
-    params[89] = (film.halation_hue_offset || 0) / 100;
-    params[90] = blackAndWhiteOn ? 0 : (film.halation_saturation ?? 75) / 100;
-    params[91] = film.halation_view_map ? 1 : 0;
-    params[92] = film.bloom_enabled !== false && (film.bloom_radius || 0) > 0 ? 1 : 0;
-    params[93] = (film.bloom_amount || 0) / 100;
-    params[94] = (film.bloom_sensitivity ?? 80) / 100;
-    params[95] = film.bloom_radius ?? 0.5;
-    params[96] = (film.bloom_highlight_detail ?? 75) / 100;
+    params[GPU_PARAMS.FILM_RED_RESPONSE] = blackAndWhiteOn ? 0 : (film.red_response || 0) / 100;
+    params[GPU_PARAMS.FILM_GREEN_RESPONSE] = blackAndWhiteOn ? 0 : (film.green_response || 0) / 100;
+    params[GPU_PARAMS.FILM_BLUE_RESPONSE] = blackAndWhiteOn ? 0 : (film.blue_response || 0) / 100;
+    params[GPU_PARAMS.FILM_HIGHLIGHT_DESATURATION] = (film.highlight_desaturation || 0) / 100;
+    params[GPU_PARAMS.FILM_SHADOW_DESATURATION] = (film.shadow_desaturation || 0) / 100;
+    params[GPU_PARAMS.HALATION_ENABLED] = film.halation_enabled !== false && ((((film.halation_amount || 0) > 0) && (film.halation_radius || 0) > 0) || film.halation_view_map) ? 1 : 0;
+    params[GPU_PARAMS.HALATION_AMOUNT] = (film.halation_amount || 0) / 100;
+    params[GPU_PARAMS.HALATION_SENSITIVITY] = (film.halation_sensitivity ?? 75) / 100;
+    params[GPU_PARAMS.HALATION_RADIUS] = film.halation_radius ?? 0.2;
+    params[GPU_PARAMS.HALATION_HUE] = (film.halation_hue_offset || 0) / 100;
+    params[GPU_PARAMS.HALATION_SATURATION] = blackAndWhiteOn ? 0 : (film.halation_saturation ?? 75) / 100;
+    params[GPU_PARAMS.HALATION_VIEW_MAP] = film.halation_view_map ? 1 : 0;
+    params[GPU_PARAMS.BLOOM_ENABLED] = film.bloom_enabled !== false && (film.bloom_radius || 0) > 0 ? 1 : 0;
+    params[GPU_PARAMS.BLOOM_AMOUNT] = (film.bloom_amount || 0) / 100;
+    params[GPU_PARAMS.BLOOM_SENSITIVITY] = (film.bloom_sensitivity ?? 80) / 100;
+    params[GPU_PARAMS.BLOOM_RADIUS] = film.bloom_radius ?? 0.5;
+    params[GPU_PARAMS.BLOOM_HIGHLIGHT_DETAIL] = (film.bloom_highlight_detail ?? 75) / 100;
     // 97-99: Detail's Softness and Microcontrast, run in the film stage where
     // Film Look's Image Structure ran (NEXT-01 #2). Detail's switch gates
     // them; Look Strength and the Film Look switch do not.
     const structureDetail = branch.detail || {};
-    params[97] = branch.detail_section_enabled !== false ? 1 : 0;
-    params[98] = (Number(structureDetail.softness) || 0) / 100;
-    params[99] = (Number(structureDetail.microcontrast) || 0) / 100;
-    params[100] = film.grain_enabled !== false ? 1 : 0;
-    params[101] = (film.grain_amount || 0) / 100;
-    params[102] = (film.grain_size ?? 50) / 100;
-    params[103] = (film.grain_softness ?? 25) / 100;
-    params[104] = blackAndWhiteOn ? 0 : (film.grain_chroma || 0) / 100;
-    params[105] = (film.grain_shadow_response ?? 100) / 100;
-    params[106] = (film.grain_midtone_response ?? 100) / 100;
-    params[107] = (film.grain_highlight_response ?? 100) / 100;
-    params[108] = (film.film_resolution ?? 100) / 100;
+    params[GPU_PARAMS.STRUCTURE_ENABLED] = branch.detail_section_enabled !== false ? 1 : 0;
+    params[GPU_PARAMS.STRUCTURE_SOFTNESS] = (Number(structureDetail.softness) || 0) / 100;
+    params[GPU_PARAMS.STRUCTURE_MICROCONTRAST] = (Number(structureDetail.microcontrast) || 0) / 100;
+    params[GPU_PARAMS.GRAIN_ENABLED] = film.grain_enabled !== false ? 1 : 0;
+    params[GPU_PARAMS.GRAIN_AMOUNT] = (film.grain_amount || 0) / 100;
+    params[GPU_PARAMS.GRAIN_SIZE] = (film.grain_size ?? 50) / 100;
+    params[GPU_PARAMS.GRAIN_SOFTNESS] = (film.grain_softness ?? 25) / 100;
+    params[GPU_PARAMS.GRAIN_CHROMA] = blackAndWhiteOn ? 0 : (film.grain_chroma || 0) / 100;
+    params[GPU_PARAMS.GRAIN_SHADOW_RESPONSE] = (film.grain_shadow_response ?? 100) / 100;
+    params[GPU_PARAMS.GRAIN_MIDTONE_RESPONSE] = (film.grain_midtone_response ?? 100) / 100;
+    params[GPU_PARAMS.GRAIN_HIGHLIGHT_RESPONSE] = (film.grain_highlight_response ?? 100) / 100;
+    params[GPU_PARAMS.FILM_RESOLUTION] = (film.film_resolution ?? 100) / 100;
     // f32 holds integers exactly only to 2^24, so the seed travels in two
     // 16-bit halves (109 low, 176 high) and the shader reassembles it.
     const grainSeed = (adjustments.shared?.film_grain_seed ?? 271828) >>> 0;
-    params[109] = grainSeed & 0xffff;
+    params[GPU_PARAMS.GRAIN_SEED_LOW] = grainSeed & 0xffff;
     params[GRAIN_SEED_HIGH_INDEX] = grainSeed >>> 16;
     params[GRAIN_FILM_TYPE_INDEX] = film.grain_film_type === "black_and_white" ? 1 : 0;
     const filmGates = {
@@ -299,46 +299,46 @@
     const gate = film.grain_film_format === "custom"
       ? [Math.min(500, Math.max(1, Number(film.grain_custom_width_mm) || 36)), Math.min(500, Math.max(1, Number(film.grain_custom_height_mm) || 24))]
       : (filmGates[film.grain_film_format] || filmGates["35mm"]);
-    params[140] = gate[0];
-    params[141] = gate[1];
-    params[142] = film.grain_capture_geometry === "horizontal_strip" ? 1
+    params[GPU_PARAMS.FILM_GATE_WIDTH_MM] = gate[0];
+    params[GPU_PARAMS.FILM_GATE_HEIGHT_MM] = gate[1];
+    params[GPU_PARAMS.FILM_GATE_AXIS] = film.grain_capture_geometry === "horizontal_strip" ? 1
       : film.grain_capture_geometry === "vertical_strip" ? 2 : 0;
-    params[156] = filmEnabled ? 1 : 0;
-    params[157] = filmEnabled ? (film.look_strength ?? 100) / 100 : 0;
+    params[GPU_PARAMS.FILM_LOOK_ENABLED] = filmEnabled ? 1 : 0;
+    params[GPU_PARAMS.FILM_FINISH_STRENGTH] = filmEnabled ? (film.look_strength ?? 100) / 100 : 0;
     // Viewer-only diagnostic.
-    params[158] = film.grain_view_map ? 1 : 0;
-    params[110] = branch.highlight_compression_color_handling === "smooth_rolloff" ? 2
+    params[GPU_PARAMS.GRAIN_VIEW_MAP] = film.grain_view_map ? 1 : 0;
+    params[GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING] = branch.highlight_compression_color_handling === "smooth_rolloff" ? 2
       : branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
     const grading = branch.color_grading || {};
-    params[111] = branch.color_grading_section_enabled !== false ? 1 : 0;
-    params[112] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;
-    params[113] = (grading.balance || 0) / 50;
+    params[GPU_PARAMS.COLOR_GRADING_ENABLED] = branch.color_grading_section_enabled !== false ? 1 : 0;
+    params[GPU_PARAMS.COLOR_GRADING_BLENDING] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;
+    params[GPU_PARAMS.COLOR_GRADING_BALANCE] = (grading.balance || 0) / 50;
     [grading.shadows || {}, grading.midtones || {}, grading.highlights || {}].forEach((wheel, index) => {
-      params[114 + index * 3] = wheel.hue || 0;
-      params[115 + index * 3] = (wheel.saturation || 0) / 400;
-      params[116 + index * 3] = wheel.luminance_ev || 0;
+      params[GPU_PARAMS.COLOR_GRADING_SHADOW_HUE + index * 3] = wheel.hue || 0;
+      params[GPU_PARAMS.COLOR_GRADING_SHADOW_SATURATION + index * 3] = (wheel.saturation || 0) / 400;
+      params[GPU_PARAMS.COLOR_GRADING_SHADOW_LUMINANCE_EV + index * 3] = wheel.luminance_ev || 0;
     });
     const vignette = branch.vignette || {};
-    params[123] = branch.vignette_section_enabled !== false ? 1 : 0;
-    params[124] = 2 * (vignette.amount || 0) / 100;
-    params[125] = 0.15 + 0.70 * (vignette.midpoint ?? 50) / 100;
+    params[GPU_PARAMS.VIGNETTE_ENABLED] = branch.vignette_section_enabled !== false ? 1 : 0;
+    params[GPU_PARAMS.VIGNETTE_AMOUNT] = 2 * (vignette.amount || 0) / 100;
+    params[GPU_PARAMS.VIGNETTE_MIDPOINT] = 0.15 + 0.70 * (vignette.midpoint ?? 50) / 100;
     const roundness = (vignette.roundness || 0) / 100;
-    params[126] = roundness >= 0 ? 2 + 6 * roundness : 2 + roundness;
-    params[127] = 0.02 + 0.98 * (vignette.feather ?? 75) / 100;
-    params[128] = (vignette.highlight_protection || 0) / 100;
-    params[129] = vignette.center_x ?? 0.5;
-    params[130] = vignette.center_y ?? 0.5;
+    params[GPU_PARAMS.VIGNETTE_ROUNDNESS] = roundness >= 0 ? 2 + 6 * roundness : 2 + roundness;
+    params[GPU_PARAMS.VIGNETTE_FEATHER] = 0.02 + 0.98 * (vignette.feather ?? 75) / 100;
+    params[GPU_PARAMS.VIGNETTE_HIGHLIGHT_PROTECTION] = (vignette.highlight_protection || 0) / 100;
+    params[GPU_PARAMS.VIGNETTE_CENTER_X] = vignette.center_x ?? 0.5;
+    params[GPU_PARAMS.VIGNETTE_CENTER_Y] = vignette.center_y ?? 0.5;
     const detail = branch.detail || {};
-    params[148] = branch.detail_section_enabled !== false ? 1 : 0;
-    params[149] = (Number(detail.texture_amount) || 0) / 100;
-    params[150] = (Number(detail.clarity_amount) || 0) / 125;
-    params[151] = Math.min(3, Math.max(0.2, Number(detail.clarity_radius_percent) || 0.75));
-    params[152] = Math.max(0, Number(detail.sharpen_amount) || 0) / 100;
-    params[153] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
-    params[154] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold) || 0) / 100) * 0.50;
-    params[155] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
+    params[GPU_PARAMS.DETAIL_ENABLED] = branch.detail_section_enabled !== false ? 1 : 0;
+    params[GPU_PARAMS.TEXTURE_AMOUNT] = (Number(detail.texture_amount) || 0) / 100;
+    params[GPU_PARAMS.CLARITY_AMOUNT] = (Number(detail.clarity_amount) || 0) / 125;
+    params[GPU_PARAMS.CLARITY_RADIUS] = Math.min(3, Math.max(0.2, Number(detail.clarity_radius_percent) || 0.75));
+    params[GPU_PARAMS.SHARPEN_AMOUNT] = Math.max(0, Number(detail.sharpen_amount) || 0) / 100;
+    params[GPU_PARAMS.SHARPEN_RADIUS] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
+    params[GPU_PARAMS.SHARPEN_THRESHOLD] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold) || 0) / 100) * 0.50;
+    params[GPU_PARAMS.SOURCE_PIXEL_SCALE] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
     // Read only by the pinned peak-measurement shader, to tell the SDR lane.
-    params[159] = lane === "sdr" ? 1 : 0;
+    params[GPU_PARAMS.SDR_PEAK_LANE] = lane === "sdr" ? 1 : 0;
     // Direct renders the whole output, so its tile origin is the origin.
     params[TILE_ORIGIN_X_INDEX] = 0;
     params[TILE_ORIGIN_Y_INDEX] = 0;
@@ -435,13 +435,13 @@
     });
     values[22] = curveOffset;
     const grading = grade.color_grading || {};
-    values[111] = 1;
-    values[112] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;
-    values[113] = (grading.balance || 0) / 50;
+    values[GPU_PARAMS.COLOR_GRADING_ENABLED] = 1;
+    values[GPU_PARAMS.COLOR_GRADING_BLENDING] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;
+    values[GPU_PARAMS.COLOR_GRADING_BALANCE] = (grading.balance || 0) / 50;
     [grading.shadows || {},grading.midtones || {},grading.highlights || {}].forEach((wheel,index)=>{
-      values[114+index*3] = wheel.hue || 0;
-      values[115+index*3] = (wheel.saturation || 0)/400;
-      values[116+index*3] = wheel.luminance_ev || 0;
+      values[GPU_PARAMS.COLOR_GRADING_SHADOW_HUE+index*3] = wheel.hue || 0;
+      values[GPU_PARAMS.COLOR_GRADING_SHADOW_SATURATION+index*3] = (wheel.saturation || 0)/400;
+      values[GPU_PARAMS.COLOR_GRADING_SHADOW_LUMINANCE_EV+index*3] = wheel.luminance_ev || 0;
     });
     return values;
   }
@@ -464,9 +464,9 @@
       && entry.frameRect.every(Number.isFinite) && entry.frameRect[2] > 0 && entry.frameRect[3] > 0
       ? entry.frameRect : [0, 0, 1, 1];
     values[offset + MASK_RECT_INDEX] = stretched ? rect[0] * frameWidth : 0;
-    values[offset + MASK_RECT_INDEX + 1] = stretched ? rect[1] * frameHeight : 0;
-    values[offset + MASK_RECT_INDEX + 2] = stretched ? rect[2] * frameWidth : 0;
-    values[offset + MASK_RECT_INDEX + 3] = stretched ? rect[3] * frameHeight : 0;
+    values[offset + GPU_PARAMS.MASK_RECT_Y] = stretched ? rect[1] * frameHeight : 0;
+    values[offset + GPU_PARAMS.MASK_RECT_WIDTH] = stretched ? rect[2] * frameWidth : 0;
+    values[offset + GPU_PARAMS.MASK_RECT_HEIGHT] = stretched ? rect[3] * frameHeight : 0;
     return stretched;
   }
 
