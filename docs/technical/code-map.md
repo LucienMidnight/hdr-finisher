@@ -130,7 +130,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `denoise-ui.js` | Denoise panel | `codebase/frontend/denoise-ui.js` (moved October 8); `loadDenoiseDocument`, `renderDenoiseControls`, `runLiveDenoise` |
 | `color-wheels.js` | Colour wheels and vignette centre | `codebase/frontend/color-wheels.js` (moved October 8); `bindColorWheels`, `bindVignetteCenter` |
 | `geometry-tools.js` | Crop, perspective, straighten, rotate | `codebase/frontend/geometry-tools.js` (moved October 8); `bindCropEditor`, `bindPerspectiveEditor`, `beginStraightenGesture`, `rotateGeometry` |
-| `lanes-compare.js` | Switching HDR/SDR, compare views | `switchLane`, `bindCompareControl`, `renderComparisonPreview` |
+| `lanes-compare.js` | Switching HDR/SDR, compare views | `codebase/frontend/lanes-compare.js` (moved October 8); `switchLane`, `bindCompareControl`, `renderComparisonPreview` |
 | `zoom-navigation.js` | Zoom, pan, navigation thumbnail | `setZoomMode`, `applyZoomGeometry`, `refreshNavigationThumbnail` |
 | `session-import.js` | Import, upload, eject, source interpretation, raw settings | `codebase/frontend/session-import.js` (moved October 8); `uploadFile`, `ejectCurrentSession`, `syncInterpretationControls`, `renderRawImportControls` |
 | `project-documents.js` | Open, save, unsaved-changes prompts, desktop file open | `codebase/frontend/project-documents.js` (moved October 8); `openDesktopSelection`, `openProjectFromPath`, `saveProjectToPath` |
