@@ -134,7 +134,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `zoom-navigation.js` | Zoom, pan, navigation thumbnail | `setZoomMode`, `applyZoomGeometry`, `refreshNavigationThumbnail` |
 | `session-import.js` | Import, upload, eject, source interpretation, raw settings | `uploadFile`, `ejectCurrentSession`, `syncInterpretationControls`, `renderRawImportControls` |
 | `project-documents.js` | Open, save, unsaved-changes prompts, desktop file open | `openDesktopSelection`, `openProjectFromPath`, `saveProjectToPath` |
-| `media-browser.js` | The file browser | `openMediaBrowser`, `renderMediaBrowserEntries`, `loadMediaDirectory` |
+| `media-browser.js` | The file browser | `codebase/frontend/media-browser.js` (moved October 8); `openMediaBrowser`, `renderMediaBrowserEntries`, `loadMediaDirectory` |
 | `export-ui.js` | Export sheet, presets, format cards | `seedExportFieldsFromSession`, `exportCurrentSession`, `renderCapabilities`, `applyExportPreset` |
 | `info-panels.js` | Metadata, technical summary, capability readouts | `renderMetadata`, `technicalSummaryEntries`, `renderPresentationCapability` |
 | `desktop-commands.js` | Menu commands, shortcuts, preferences from the shell | `initializeDesktopBridge`, `applicationCommands`, `applyGpuMemoryBudget` |
