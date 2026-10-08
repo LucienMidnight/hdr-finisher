@@ -15,7 +15,7 @@ const FRONTEND = path.join(__dirname, "../frontend");
 // A script that has been divided lists its parts here, in load order. Tests
 // that load or search the original name then get all of them.
 const PARTS = {
-  "webgpu-preview.js": ["webgpu-preview.js"],
+  "webgpu-preview.js": ["gpu-render-plan.js", "webgpu-preview.js"],
 };
 
 let scripts = null;
