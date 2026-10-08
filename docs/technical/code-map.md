@@ -129,7 +129,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `tone-equalizer.js` | Tone equalizer | `codebase/frontend/tone-equalizer.js` (moved October 8); `bindToneEqualizerEditor`, `drawToneEqualizerEditor` |
 | `denoise-ui.js` | Denoise panel | `loadDenoiseDocument`, `renderDenoiseControls`, `runLiveDenoise` |
 | `color-wheels.js` | Colour wheels and vignette centre | `bindColorWheels`, `bindVignetteCenter` |
-| `geometry-tools.js` | Crop, perspective, straighten, rotate | `bindCropEditor`, `bindPerspectiveEditor`, `beginStraightenGesture`, `rotateGeometry` |
+| `geometry-tools.js` | Crop, perspective, straighten, rotate | `codebase/frontend/geometry-tools.js` (moved October 8); `bindCropEditor`, `bindPerspectiveEditor`, `beginStraightenGesture`, `rotateGeometry` |
 | `lanes-compare.js` | Switching HDR/SDR, compare views | `switchLane`, `bindCompareControl`, `renderComparisonPreview` |
 | `zoom-navigation.js` | Zoom, pan, navigation thumbnail | `setZoomMode`, `applyZoomGeometry`, `refreshNavigationThumbnail` |
 | `session-import.js` | Import, upload, eject, source interpretation, raw settings | `uploadFile`, `ejectCurrentSession`, `syncInterpretationControls`, `renderRawImportControls` |
