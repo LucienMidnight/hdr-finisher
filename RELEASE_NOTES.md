@@ -1,6 +1,6 @@
-# HDR Finisher 0.8.13 — draft for review
+# HDR Finisher 0.9.0 — draft for review
 
-Prepared October 7, 2026. This draft does not announce a published release.
+Prepared October 7, 2026; renumbered 0.9.0 on October 8 (Steve). This draft does not announce a published release.
 
 - Editing previews process the visible area at the detail needed for the current zoom, including native detail at 100% and above. GPU memory admission and tiled rendering keep large-image editing bounded.
 - Denoise uses one adaptive method, with bounded viewport work and cached tiles during grading. The earlier wavelet method has been removed.
@@ -15,7 +15,7 @@ Before 1.0, retired adjustment fields and preferences are ignored rather than mi
 
 ## Known limitations
 
-This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. Physical display and delivery-path qualification remains incomplete.
+This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized.
 
 Preview/export and cross-scale differences, a few pixel-parity checks, and measured responsiveness target misses remain recorded in the viewport-preview PRD. This release does not claim that every guard passes. Linux HDR can show gradient banding on the documented KDE/Wayland NVIDIA path; X11/Xwayland uses SDR simulation. RAW and Experimental DNG Import retain their documented compatibility limits.
 
