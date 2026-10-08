@@ -113,7 +113,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 |---|---|---|
 | `app-state.js` | Constants, latitude presets, `state`, `els` | top of file, `const state`, `const els` |
 | `app-boot.js` | Start-up and the wiring of page events | `boot`, `initializeGpuPreview`, `initializePreviewScheduler`, `bindEvents` |
-| `viewer-status.js` | Preview quality tiers and what the viewer reports | `gpuPreviewEligible`, `deriveViewerState`, `acceptPresentation`, `markRefining` |
+| `viewer-status.js` | Preview quality tiers and what the viewer reports | `codebase/frontend/viewer-status.js` (moved October 8); `gpuPreviewEligible`, `deriveViewerState`, `acceptPresentation`, `markRefining` |
 | `preview-pipeline.js` | Asking for a preview and showing the result | `debouncePreview`, `queueGpuDraft`, `settlePreview`, `renderPreviewForLane`, `renderGpuDraft`, `applyPreviewUrl`, `invalidatePreview`, `clearPreviewCache` |
 | `preview-sizing.js` | Choosing working resolution; region-of-interest follow-ups | `codebase/frontend/preview-sizing.js` (moved October 8); `displayedLongEdge`, `interactiveScaleDecision`, `applyRoiPreview` |
 | `peak-measurement.js` | Editing peak and highlight anchor | `codebase/frontend/peak-measurement.js` (moved October 8); `exactScopePeakKey`, `measureExactScopePeak`, `scheduleExactHighlightAnchor` |
