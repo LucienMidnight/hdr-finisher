@@ -1073,6 +1073,12 @@ What the check decides:
 
 Export and Proof are not affected either way: they always use the exact mask.
 
+## 11f. Owner Note (2026-10-08): Crop and Rotate May Cost More Performance Than They Should
+
+**For Steve to explore separately, not scheduled.** Steve suspects that Crop and Rotate slow the app down more than they should. This is his impression from using the app; nothing has been measured and no cause is known.
+
+What the exploration should establish: whether a project with Crop and Rotate applied is measurably slower to edit or view than the same project without them, and if so where the time goes. Nothing changes until that is known.
+
 ---
 
 ## 12. Out of Scope for v1 (Explicit Deferrals)
