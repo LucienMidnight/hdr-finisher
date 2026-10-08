@@ -107,7 +107,7 @@ def _clamp_output_rect(rect: tuple[int, int, int, int], width: int, height: int)
     return left, top, right, bottom
 
 
-SOURCE_MIP_FORMAT_VERSION = 1
+SOURCE_MIP_FORMAT_VERSION = 2
 SOURCE_MIP_MAGIC = b"HDRMIP01"
 _SOURCE_MIP_HEADER = struct.Struct("<8sIIIIIIQI")
 _SOURCE_MIP_DTYPE_FLOAT32 = 1

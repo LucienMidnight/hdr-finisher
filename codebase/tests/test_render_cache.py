@@ -528,7 +528,8 @@ def test_source_mip_serves_disk_after_memory_is_dropped(tmp_path) -> None:
 def test_source_mip_odd_dimensions_preserve_headroom_negatives_and_edges(tmp_path) -> None:
     image = np.full((777, 1235, 3), 0.18, dtype=np.float32)
     image[10, 20] = np.float32(5000.0)
-    image[700, 1200] = np.float32(-3.0)
+    # A patch, so the negative survives averaging without relying on ringing.
+    image[696:706, 1195:1205] = np.float32(-3.0)
     identity = _mip_identity(image)
     root = tmp_path / "mips"
 
@@ -581,7 +582,7 @@ def test_source_mip_stale_versions_and_interrupted_writes_are_swept(tmp_path) ->
     stale = root / "v0" / "deadbeef"
     stale.mkdir(parents=True)
     (stale / "256.f32").write_bytes(b"old")
-    interrupted = root / "v1" / ".256.f32.1234.5678.tmp"
+    interrupted = root / f"v{identity.format_version}" / ".256.f32.1234.5678.tmp"
     interrupted.parent.mkdir(parents=True, exist_ok=True)
     interrupted.write_bytes(b"partial")
 

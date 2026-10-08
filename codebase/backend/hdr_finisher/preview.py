@@ -81,6 +81,30 @@ def _hdr_to_sdr_display(image: np.ndarray) -> np.ndarray:
     return display / (np.float32(1.0) + display)
 
 
+def _local_range(channel: np.ndarray, target_w: int, target_h: int) -> tuple[np.ndarray, np.ndarray]:
+    """Darkest and brightest source value around each output pixel.
+
+    The source is reduced in blocks of one output pixel's footprint, and each
+    output pixel takes the range of its block and the eight around it.
+    """
+    height, width = channel.shape
+    block = max(1, int(np.ceil(max(height / target_h, width / target_w))))
+    row_starts = np.arange(0, height, block)
+    column_starts = np.arange(0, width, block)
+    rows = np.minimum(((np.arange(target_h) + 0.5) * height / target_h).astype(np.intp) // block, len(row_starts) - 1)
+    columns = np.minimum(((np.arange(target_w) + 0.5) * width / target_w).astype(np.intp) // block, len(column_starts) - 1)
+    ranges = []
+    for reduce in (np.minimum, np.maximum):
+        coarse = reduce.reduceat(reduce.reduceat(channel, row_starts, axis=0), column_starts, axis=1)
+        padded = np.pad(coarse, 1, mode="edge")
+        for row_shift in range(3):
+            for column_shift in range(3):
+                shifted = padded[row_shift:row_shift + coarse.shape[0], column_shift:column_shift + coarse.shape[1]]
+                coarse = reduce(coarse, shifted)
+        ranges.append(coarse[np.ix_(rows, columns)])
+    return ranges[0], ranges[1]
+
+
 def downsample_image(
     image: np.ndarray,
     max_long_edge: int,
@@ -112,9 +136,11 @@ def downsample_image(
             Image.fromarray(channel).resize((target_w, target_h), Image.Resampling.LANCZOS),
             dtype=np.float32,
         )
-        # Filtering must not invent negative light or HDR peaks beyond the
-        # source channel's range.
-        return np.clip(resized, float(np.min(channel)), float(np.max(channel)))
+        # Filtering must not invent light the source does not hold nearby.
+        # Lanczos overshoots beside a clipped highlight; a whole-image limit
+        # leaves that overshoot in place and it shows as coloured specks.
+        low, high = _local_range(channel, target_w, target_h)
+        return np.clip(resized, low, high)
 
     resized_channels: list[np.ndarray] = []
     if channel_count > 1 and channels.shape[0] * channels.shape[1] >= PARALLEL_CHANNEL_MIN_PIXELS:
