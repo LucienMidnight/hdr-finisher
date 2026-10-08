@@ -124,7 +124,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `range-controls.js` | Sliders, typed values, snapping, readouts | `enhanceRangeControls`, `bindEditableValue`, `rangeSnapProfile`, `updateControlReadouts` |
 | `adjustment-controls.js` | Reading a control, committing a value, reset and match between lanes | `resolveAdjustmentPath`, `commitAdjustmentValue`, `syncControlsFromState`, `resetControlGroup` |
 | `highlight-controls.js` | Highlight compression panels | `codebase/frontend/highlight-controls.js` (moved October 8); `normalizeHighlightCompressionControls`, `renderHighlightCompressionControls` |
-| `group-presets.js` | Saved presets per control group | `groupPresetPaths`, `initializeGroupPresetControls` |
+| `group-presets.js` | Saved presets per control group | `codebase/frontend/group-presets.js` (moved October 8); `groupPresetPaths`, `initializeGroupPresetControls` |
 | `curve-editor.js` | Curves; moved October 8 | `codebase/frontend/curve-editor.js`: `bindCurveEditor`, `drawCurveEditor`, `normalizeCurvePoints` |
 | `tone-equalizer.js` | Tone equalizer | `codebase/frontend/tone-equalizer.js` (moved October 8); `bindToneEqualizerEditor`, `drawToneEqualizerEditor` |
 | `denoise-ui.js` | Denoise panel | `loadDenoiseDocument`, `renderDenoiseControls`, `runLiveDenoise` |
