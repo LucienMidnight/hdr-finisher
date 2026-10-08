@@ -140,7 +140,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `desktop-commands.js` | Menu commands, shortcuts, preferences from the shell | `initializeDesktopBridge`, `applicationCommands`, `applyGpuMemoryBudget` |
 | `local-adjustments-ui.js` | The list of local adjustments and their grade controls | `codebase/frontend/local-adjustments-ui.js` (moved October 8); `defaultLocalGrade`, `bindLocalAdjustmentEvents`, `renderLocalAdjustments` |
 | `mask-controls.js` | Mask tree editor and per-mask panels | `codebase/frontend/mask-controls.js` (moved October 8); `renderMaskTreeEditor`, `renderPathControls`, `createLuminanceRangeControl` |
-| `mask-gestures.js` | Pointer work on the mask canvas | `bindLocalMaskCanvas`, `updateGradientGesture`, `pathTargetAtPointer`, `handlePathCanvasKeydown` |
+| `mask-gestures.js` | Pointer work on the mask canvas | `codebase/frontend/mask-gestures.js` (moved October 8); `bindLocalMaskCanvas`, `updateGradientGesture`, `pathTargetAtPointer`, `handlePathCanvasKeydown` |
 | `path-geometry.js` | Path and feather maths (no page access); moved October 8 | `codebase/frontend/path-geometry.js`: `activePathNodes`, `uniformFeatherNodes`, `flattenPathNodes`, `validPathGeometry`, `splitPathSegment` |
 | `mask-overlay.js` | Drawing masks and gizmos over the image | `renderLocalMaskOverlay`, `drawMaskExpression`, `drawBrushMaskOverlay`, `drawPathMaskGizmo` |
 | `sdr-match-ui.js` | SDR Match | `setSdrMatch`, `serveSdrMatchCandidates`, `presentMatchedSdrPreview` |
