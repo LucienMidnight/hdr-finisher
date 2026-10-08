@@ -120,7 +120,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `scope-requests.js` | Asking for scope data, GPU and CPU | `refreshScopes`, `runGpuScopeRequest`, `runScopeRequest` |
 | `scope-drawing.js` | Drawing histogram, waveform, vectorscope; scope region | `drawHistogram`, `drawWaveform`, `activeScopeRegion` |
 | `overlay-ui.js` | False colour and zebra | `codebase/frontend/overlay-ui.js` (moved October 8); `requestLiveOverlay`, `refreshOverlay`, `renderFalseColorKey` |
-| `workspace-layout.js` | Rails, dock, splitters, popovers | `initializeInstrumentShell`, `initSplitter`, `toggleOverlayPopover`, `activateDockTab` |
+| `workspace-layout.js` | Rails, dock, splitters, popovers | `codebase/frontend/workspace-layout.js` (moved October 8); `initializeInstrumentShell`, `initSplitter`, `toggleOverlayPopover`, `activateDockTab` |
 | `range-controls.js` | Sliders, typed values, snapping, readouts | `enhanceRangeControls`, `bindEditableValue`, `rangeSnapProfile`, `updateControlReadouts` |
 | `adjustment-controls.js` | Reading a control, committing a value, reset and match between lanes | `resolveAdjustmentPath`, `commitAdjustmentValue`, `syncControlsFromState`, `resetControlGroup` |
 | `highlight-controls.js` | Highlight compression panels | `codebase/frontend/highlight-controls.js` (moved October 8); `normalizeHighlightCompressionControls`, `renderHighlightCompressionControls` |
