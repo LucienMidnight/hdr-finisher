@@ -143,7 +143,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `mask-gestures.js` | Pointer work on the mask canvas | `codebase/frontend/mask-gestures.js` (moved October 8); `bindLocalMaskCanvas`, `updateGradientGesture`, `pathTargetAtPointer`, `handlePathCanvasKeydown` |
 | `path-geometry.js` | Path and feather maths (no page access); moved October 8 | `codebase/frontend/path-geometry.js`: `activePathNodes`, `uniformFeatherNodes`, `flattenPathNodes`, `validPathGeometry`, `splitPathSegment` |
 | `mask-overlay.js` | Drawing masks and gizmos over the image | `codebase/frontend/mask-overlay.js` (moved October 8); `renderLocalMaskOverlay`, `drawMaskExpression`, `drawBrushMaskOverlay`, `drawPathMaskGizmo` |
-| `sdr-match-ui.js` | SDR Match | `setSdrMatch`, `serveSdrMatchCandidates`, `presentMatchedSdrPreview` |
+| `sdr-match-ui.js` | SDR Match | `codebase/frontend/sdr-match-ui.js` (moved October 8); `setSdrMatch`, `serveSdrMatchCandidates`, `presentMatchedSdrPreview` |
 | `edit-commands.js` | Sending edits to the backend in order | `queueEditCommand`, `syncGlobalEditState`, `refreshEditState` |
 
 ### `webgpu-preview.js`
