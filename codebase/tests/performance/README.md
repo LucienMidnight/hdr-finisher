@@ -87,6 +87,13 @@ Full-size Proof versus export on a real project (PRD section 3), by file hash:
   --project <file.hdrfinisher> --out output/performance/review/<run>/proof-identity.json
 ```
 
+Zoom worst cases. `zoom-cycle-profile.js` times Fit, magnified zooms and pans,
+split into source requests, masks and scopes; a `wheel:<percent>` entry in
+`--zooms` rolls the wheel there. Point `HDR_FINISHER_SOURCE_CACHE_DIR` at an
+empty folder to time a photo whose reduced levels have never been built.
+`source-tile-transfer-probe.js` splits one 100% view's source fetch into
+backend time and byte transfer.
+
 Section 6 baseline. `zoom-after-edit-review.js` covers zoom after a mask edit,
 `heavy-project-long-session.js --fresh-work --minutes 5 --idle-minutes 0`
 covers strokes, feather release, slider drags, pan and Match,

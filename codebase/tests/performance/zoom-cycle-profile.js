@@ -4,7 +4,7 @@
  *
  *   node tests/run-in-electron.js tests/performance/zoom-cycle-profile.js --project <file> \
  *     [--geometry straighten_angle=2] [--shift-edge 0.005] [--set path=value,...] \
- *     [--zooms fit,100,fit,100,fit,85,fit,85] [--pans 2] [--output report.json]
+ *     [--zooms fit,100,fit,wheel:100,fit,85] [--pans 2] [--output report.json]
  */
 const path = require('node:path');
 const { chromium } = require('playwright');
@@ -114,6 +114,20 @@ async function settle(page) {
       if (editBetween && zoom !== 'fit') await step('  edit at Fit', () => page.evaluate(count => {
         commitAdjustmentValue(`${state.currentView}.exposure`, Number(getValueByPath(state.adjustments, `${state.currentView}.exposure`)) + (count % 2 ? -0.05 : 0.05), { manual: true });
       }, edits++));
+      // `wheel:<percent>` rolls the wheel from the current zoom to the target,
+      // one notch every 60 ms; its times include the roll itself.
+      if (zoom.startsWith('wheel:')) {
+        await step(`Wheel ${zoom.slice(6)}%`, () => page.evaluate(async target => {
+          const from = state.zoomPercent, notches = Math.max(1, Math.ceil(Math.abs(Math.log(target / from)) / 0.22));
+          for (let notch = 1; notch <= notches; notch++) {
+            setCustomZoom(from * (target / from) ** (notch / notches), null, { continuous: true });
+            await new Promise(resolve => setTimeout(resolve, 60));
+          }
+          window.__wheelMs = notches * 60;
+        }, Number(zoom.slice(6))));
+        report.steps.at(-1).wheelMs = await page.evaluate(() => window.__wheelMs); c.write(output, report);
+        continue;
+      }
       await step(zoom === 'fit' ? 'Zoom Fit' : `Zoom ${zoom}%`, () => page.evaluate(zoom => zoom === 'fit' ? setZoomMode('fit') : setCustomZoom(Number(zoom)), zoom));
       if (zoom !== 'fit') for (let index = 0; index < pans; index++) {
         await step(`  pan ${index + 1}`, () => page.evaluate(index => {

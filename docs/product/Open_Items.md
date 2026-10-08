@@ -32,6 +32,7 @@ Deferred work and backlog in one list, in no order. None of it blocks 0.9.0.
 | CF-SPEED-01 | Exposure drag at 200% on the heavy project. A two-line fix is known | Viewport 15.7 |
 | CF-SPEED-03 | First feedback of 0.75 to 1.0 s on the colour-wheel pad, brush Feather, Shift Edge and the luminance rails; straighten drags | Viewport 15.7 |
 | CF-SPEED-04 | Cold 100% zoom feedback 850 ms against 150 ms; warm 200% slider 85 ms against 50 ms | Viewport 15.7 |
+| PAN-FETCH-01 | Measured October 9: each pan at 100% on a 42 MP photo takes about 0.4 to 0.6 s. About 0.14 s is the wait for the scroll to pause and about 0.27 s is downloading the whole new view (about 70 MB) again, including the part already on screen. At 200% and above a pan needs no download and takes about 0.16 s. Two fixes are possible: download only the newly exposed part, or keep the whole photo on the graphics card for every project. Awaiting Steve's choice | `zoom-cycle-profile.js`, `source-tile-transfer-probe.js` |
 | CF-SPEED-05 | Turning Denoise on cold while panned on the 42 MP photo shows few or no frames during a drag | Viewport 15.7 |
 | CF-DRIFT-01 | Some operations get 20 to 30% slower over a 30-minute session | Viewport 15.7 |
 | CF-DRIFT-02 | The design check disagrees with the app on switch size and border; the original reference images are missing | Viewport 15.7, 16.12 |
