@@ -25,7 +25,7 @@ confusion which compounds over time". Favour removing code over keeping it.
 Workspace: `D:\AI\AI Projects\HDR Finisher Tool`. Git root: `ai`. Run and test
 directory: `ai\codebase`. Branch: `viewport-bounded-preview-phase-2-wip`, with
 many unpushed local commits. Check HEAD and status first; do not reset.
-`docs/technical/viewport-phase4-cleanup-after-validation-2026-10-06.md` shows
+`docs/technical/archive/viewport-phase4-cleanup-after-validation-2026-10-06.md` shows
 an uncommitted edit that belongs to someone else: leave it out of your commits.
 
 **Read `ai/AGENTS.md` first and follow it.** It sets how much to test, how to

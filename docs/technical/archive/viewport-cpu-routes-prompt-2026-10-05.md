@@ -31,9 +31,9 @@ Read first, relative to the git root:
 - `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`: sections 2,
   4, 5.1, 5.4 and 6, then all of 15 (15.1 deferrals, 15.2 acceptances, 15.3
   known limits, 15.7 carry-forward list) and 16 (phase 4 so far).
-- `docs/technical/viewport-phase3-baseline-before-cleanup-2026-10-05.md`,
+- `docs/technical/archive/viewport-phase3-baseline-before-cleanup-2026-10-05.md`,
   "Coverage audit" and "Endurance".
-- `docs/technical/viewport-phase4-cleanup-inventory-2026-10-05.md`: what
+- `docs/technical/archive/viewport-phase4-cleanup-inventory-2026-10-05.md`: what
   phase 4 kept because it is still live, and why.
 
 Raw audit rows, one per audited edit with its requests and refusal reasons,

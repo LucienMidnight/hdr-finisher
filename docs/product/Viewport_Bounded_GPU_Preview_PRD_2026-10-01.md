@@ -1432,7 +1432,7 @@ fixture. Native preview against export, HDR, regions of 1,947,690 pixels:
 
 Evidence: `codebase/output/performance/review/local-isolation-2026-10-04/`,
 `codebase/output/performance/review/denoise-tile-cache-2026-10-04/`, and the
-notes in `codebase/docs/technical/denoise-followups-2026-10-04.md`. Node 427
+notes in `docs/technical/denoise-followups-2026-10-04.md`. Node 427
 and Python 1,692 pass. Nine Denoise and tiled GPU drivers pass. Three do not,
 none because of this work: `roi-pan-cache` fails the same way at `1eec092`;
 `denoise-pan-enable-drag` passes on its generated source but on the saved
@@ -1443,7 +1443,7 @@ on the rerun.
 
 ### 14.26 Editing Peak with Clarity, and luminance masks in the measurement (P3-PEAK-01, October 4-5)
 
-Brief: `docs/technical/codex-brief-p3-peak-01-2026-10-04.md`. Findings were
+Brief: `docs/technical/archive/codex-brief-p3-peak-01-2026-10-04.md`. Findings were
 put to Steve first with no product code changed; he approved the Clarity
 approach and the luminance-mask fix on October 4. Committed and pushed on
 October 5 at Steve's direction.
@@ -1635,7 +1635,7 @@ real timing and was measured again: 5 and 7 frames.
 
 ### 15.6 Current-code baseline before cleanup — October 5
 
-The [baseline evidence](../technical/viewport-phase3-baseline-before-cleanup-2026-10-05.md)
+The [baseline evidence](../technical/archive/viewport-phase3-baseline-before-cleanup-2026-10-05.md)
 records the complete automated sweep, failure classifications, broader coverage
 and repeated endurance. This adds measurements, not owner acceptances or
 phase 3 closure. Every deferral and acceptance above keeps its original scope.
@@ -1689,7 +1689,7 @@ not an acceptance of anything below: at that closure every item was open,
 kept its limit, and was carried forward by name. Later dated fixes, closures
 and owner acceptances in the rows below supersede that original status.
 The deferrals and acceptances in 15.1 and 15.2 stand with their original scope. Detail and logs for every row are in the
-[baseline evidence](../technical/viewport-phase3-baseline-before-cleanup-2026-10-05.md).
+[baseline evidence](../technical/archive/viewport-phase3-baseline-before-cleanup-2026-10-05.md).
 Steve chose to start phase 4 before these are confirmed; phase 4 must not
 delete or rewrite the code an unconfirmed item points at (see the last
 column) without confirming the item first.
@@ -1847,7 +1847,7 @@ held because of the open route/Peak findings. Live CPU work, cancellation,
 shared compiles, GPU cache eviction and Denoise input coalescing stay.
 
 Inventory and test-replacement work list:
-[cleanup inventory](../technical/viewport-phase4-cleanup-inventory-2026-10-05.md).
+[cleanup inventory](../technical/archive/viewport-phase4-cleanup-inventory-2026-10-05.md).
 Logs and reports: `codebase/output/performance/review/phase4-cleanup-2026-10-05/`.
 
 ### 16.1 Test synchronization batch
@@ -2451,7 +2451,7 @@ after the newer render, both picture calls present via WebGPU.
 Authorized Group A cleanup and its validation are complete. The phase 4
 green exit is not met. Earlier section 16 batch notes describe their status
 at the time; the final disposition supersedes their pending-work statements.
-The [complete comparison](../technical/viewport-phase4-cleanup-after-validation-2026-10-06.md)
+The [complete comparison](../technical/archive/viewport-phase4-cleanup-after-validation-2026-10-06.md)
 records all 160 named drivers, retained failed guards, all three audits,
 headline confirmations, endurance, broad control/drag movement and protected
 SHA-256 values. Only the approved unused wrappers changed application source

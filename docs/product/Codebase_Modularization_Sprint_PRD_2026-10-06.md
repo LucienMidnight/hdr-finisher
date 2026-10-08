@@ -1,7 +1,7 @@
 # Codebase Modularization Sprint
 
 **Date:** October 6, 2026
-**Status:** Phases 0 to 4 are done. Phase 5 remains.
+**Status:** All phases are complete October 8, 2026. Existing validation failures are recorded in 8.2.
 **To do before v1.0.** Steve wants this structural work finished before the
 1.0 release. After 1.0 there are outside users and saved projects to protect,
 and a reorganisation of this size becomes much more expensive to validate.
@@ -39,7 +39,7 @@ Update this table in the same commit that finishes a phase.
 | 2 | `app.js` divided by feature | Done October 8 (see 6.1) |
 | 3 | Standalone helpers moved out of `webgpu-preview.js` | Done October 8 (see 7.1) |
 | 4 | The 190 shader settings get names from one list | Done October 8 (see 8.1 and 8.2) |
-| 5 | Close-out | Not started |
+| 5 | Close-out | Done October 8 (see 10.1) |
 
 Phases run in order. Phase 1 must finish before phase 2 starts, or every move
 in phase 2 fails tests for reasons that have nothing to do with behaviour.
@@ -340,8 +340,7 @@ default factories; startup caught it. Loading state after those two files
 restored the original initialization order without editing any function.
 No existing app defect was fixed.
 
-The full sweep is held for the agreed phase 4 test block. Steve still needs
-to try the app. Phase 3 must preserve the shared scope between renderer
+The full sweep is held for the agreed phase 4 test block. Steve tried the app October 8 and reported that it was working great. Phase 3 must preserve the shared scope between renderer
 helpers and add both new helper files to the tests' `PARTS` list.
 
 ## 7. Phase 3: helpers out of `webgpu-preview.js`
@@ -535,6 +534,28 @@ the current layout documents and files the closed dated records.
   to them.
 - No release note: nothing a user can see has changed.
 
+### 10.1 Close-out record (October 8, 2026)
+
+Updated the code map to describe the current feature files, renderer helpers,
+script order and global setting list; removed the obsolete target-layout and
+monolith descriptions. Architecture's frontend components and development's
+repository layout describe the same files and shared scope.
+
+The Viewport-Bounded GPU Preview sprint was closed October 6 with known
+issues, as recorded in its final validation note. Moved the seven remaining
+October 4-or-later records into `docs/technical/archive/`. Moved the two
+Denoise notes from `codebase/docs/technical/` beside the other technical notes.
+Updated links and explicit paths in the relocated records and referring
+documents. All relocated targets and their updated links resolve; no new
+missing relative-link target was introduced. Five existing missing targets
+elsewhere in the documentation were left unchanged.
+
+Fast checks passed: 427 Node tests and 1,555 venv Python tests, with three
+skips, including the documentation-root checks. No GPU check covers these
+documentation-only changes; no broad substitute was run. The approved
+single sweep is recorded in 8.2 and was not repeated. No release note,
+installer or push. Steve's successful app check is recorded in 8.2.
+
 ## 11. What could go wrong
 
 | Risk | What it would look like | Guard |
@@ -553,6 +574,7 @@ the current layout documents and files the closed dated records.
 - Moving a function between frontend files fails no test. (Met October 7;
   see 5.1.)
 - The code map describes the layout as it is.
-- The full driver sweep at the end of phase 2, and again after phase 3 (and
-  phase 4 if run), shows nothing new failing.
+- The one full driver sweep after phase 4, as agreed October 8, identifies
+  no new application regression caused by the sprint; existing failures are
+  recorded in 8.2.
 - Steve has used the app and found nothing changed.

@@ -9,6 +9,15 @@ ai/
   codebase/
     backend/hdr_finisher/   Python application and color pipeline
     frontend/               Plain HTML/CSS/JavaScript UI
+      app.js                Startup calls
+      app-boot.js           Startup and event wiring
+      app-state.js          Shared state, constants and element references
+      *-ui.js, other files  Feature functions (see code map)
+      gpu-render-plan.js    Plans, memory estimates and halos
+      gpu-params.js         Adjustment buffers and curves
+      gpu-param-layout.js   Global shader names and fixed positions
+      webgpu-preview.js     Renderer class
+      webgpu-shaders.js     Shader sources
     tests/                  Automated tests and deterministic fixtures
     tools/                  QA, packaging, encoder, and delivery scripts
     bin/                    Optional native encoders and notices
@@ -19,9 +28,20 @@ ai/
     user-guide/             Application behavior
     concepts/               HDR, formats, and color assumptions
     setup/                  OS/display guidance
+    technical/              Architecture, development and technical notes
+      archive/              Closed dated technical records
+    product/                Sprint plans and completion records
 ```
 
 Keep automated tests under `codebase/tests/`, private test media under `codebase/local-test-media/`, and generated evidence under `codebase/output/`.
+
+Frontend scripts use the existing shared page scope and fixed script order.
+Register each new file in `frontend/index.html`. Update the [code map](code-map.md)
+with a source move. Renderer parts are listed in `tests/frontend-source.js`;
+existing numeric source pins resolve shader names through the production
+layout, while `gpu-param-layout.test.js` audits raw writers and shader readers.
+Technical documents belong under the repository's `docs/technical/`, not
+`codebase/docs/technical/`.
 
 ## Environment
 

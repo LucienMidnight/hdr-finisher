@@ -56,9 +56,15 @@ flowchart LR
 
 - `index.html`: four-stage workflow and accessible control structure.
 - `styles.css`: panel layout, resizable rails/dock, responsive behavior, visual state.
-- `app.js`: session state, scheduler integration, scopes, overlays, curves, equalizer, export UI.
-- `preview-scheduler.js`: animation-frame coalescing, tiered scope timing, settle/refinement priority, generation state.
-- `webgpu-preview.js`: settled authoring renderer using reusable buffers/bind groups and guarded half-float proxies.
+- `app.js`: original startup calls only; `app-boot.js` holds startup and event wiring.
+- `app-state.js`: shared constants, session/UI state and page-element references; feature files retain the same shared scope.
+- Feature files: curves, exposure bands, geometry, locals/masks, media/projects, export, scopes, workspace, controls and preview coordination. See the code map for each file and its entry points.
+- `preview-scheduler.js`, `render-coordinator.js` and `preview-pipeline.js`: scheduling, generation ownership and application preview coordination.
+- `gpu-render-plan.js`: direct/tiled render plans, memory estimates and tile halos.
+- `gpu-params.js`: global/local adjustment buffers, curves and mask helpers.
+- `gpu-param-layout.js`: the single frozen list of 190 global shader positions; JavaScript and generated WGSL use that list.
+- `webgpu-preview.js`: the intact renderer class, reusable GPU resources and direct/tiled execution.
+- `webgpu-shaders.js`: generated shader sources with unchanged arithmetic.
 - `proofing-ui.js`: proof artifact controls, reconstruction state, and observation workflow.
 
 The frontend deliberately has no build framework. This keeps packaging and offline operation simple, but places more state coordination in plain JavaScript.

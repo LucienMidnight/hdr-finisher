@@ -1,16 +1,8 @@
 # Code map
 
-Where things live, and where they are going. Read this before searching the
-code. Written October 6, 2026 at commit `39d3735`; line counts and function
-names are from that commit.
-
-This page does two jobs:
-
-1. **Today's map.** Which file to open for a given kind of change, and which
-   checks cover it.
-2. **Target layout.** How the two oversized frontend files will be divided.
-   The plan is in the
-   [Codebase Modularization Sprint](../product/Codebase_Modularization_Sprint_PRD_2026-10-06.md).
+Where things live after the October 8 modularization sprint. Read this before
+searching the code. The [sprint PRD](../product/Codebase_Modularization_Sprint_PRD_2026-10-06.md)
+records the moves and validation.
 
 **Keep it current.** A commit that moves code between files, or adds or
 removes a source file, updates the matching row here in the same commit.
@@ -21,11 +13,11 @@ scheduling) see [architecture](architecture.md). For testing rules see
 
 ## The three parts
 
-| Part | Folder | Size | Job |
-|---|---|---|---|
-| Backend | `codebase/backend/hdr_finisher/` | 52 files, about 27,700 lines | Python. Opens files, does the exact colour maths, exports, proofs. |
-| Frontend | `codebase/frontend/` | 34 files, about 51,000 lines | The interface and the GPU preview, in plain JavaScript. |
-| Desktop shell | `codebase/desktop/` | 10 files, about 1,600 lines | Electron window that hosts the frontend and starts the backend. |
+| Part | Folder | Job |
+|---|---|---|
+| Backend | `codebase/backend/hdr_finisher/` | Python. Opens files, does the exact colour maths, exports, proofs. |
+| Frontend | `codebase/frontend/` | The interface and the GPU preview, in plain JavaScript. |
+| Desktop shell | `codebase/desktop/` | Electron window that hosts the frontend and starts the backend. |
 
 The same image maths exists twice on purpose: once in Python (the exact
 reference used by export and Proof) and once in GPU shaders (the fast
@@ -51,22 +43,25 @@ Open the file named for the thing you are changing. Most files are focused.
 | Export and proof | `exporters.py`, `proofing.py`, `hosting_probe.py`, `test_pattern.py` |
 | Machine and tools | `capabilities.py`, `binaries.py`, `subprocess_utils.py`, `display_probe.py` |
 
-The largest are `adjustments.py` (2,681 lines) and `main.py` (2,361). Neither
+The largest are `adjustments.py` and `main.py`. Neither
 is in the sprint; see its section 9.
 
 ## Frontend today
 
 ### How the files connect
 
-There is no build step. `index.html` loads every script in a fixed order with
-plain `<script>` tags (the list is at the bottom of the file). Each small
-module wraps itself in a function, publishes one object on `window`
-(`window.HDRViewportRequest`, for example) and also exports it for Node so a
-unit test can load it directly. `app.js` loads near the end and picks those
-objects up.
+There is no build step. `index.html` loads scripts in a fixed order with
+plain `<script>` tags. Focused modules publish objects on `window` and export
+for Node where applicable. The feature files split from `app.js` share the
+existing page scope: they still call one another and read the same `state`
+and `els` objects. They do not introduce boundaries between features.
 
-A new frontend file therefore needs a `<script>` line in `index.html`, placed
-after everything it uses when it loads.
+Feature functions load before `app-state.js`, whose initialization calls
+some of their factories. `app-boot.js` holds startup and event wiring, while
+`app.js` contains only the original startup calls. Renderer helpers load
+before the renderer class; `gpu-param-layout.js` loads before every consumer
+of the global shader positions. A new file needs a `<script>` line after
+everything it uses when it loads.
 
 ### Focused modules
 
@@ -80,78 +75,59 @@ These already have one job each and can be read whole.
 | Masks | `mask-expression.js`, `mask-loader.js`, `mask-raster.js`, `mask-request-coordinator.js`, `gpu-brush-mask.js`, `gpu-mask-resample.js` |
 | Geometry | `geometry-math.js`, `geometry-resample.js` |
 | Scopes | `scope-analysis.js`, `scope-readback.js`, `scope-ui.js` |
-| Shader source text | `webgpu-shaders.js` (2,856 lines, almost all shader code) |
+| Shader source text | `webgpu-shaders.js` (mostly WGSL) |
 | Application frame | `application-shell.js`, `desktop-chrome.js`, `app-dialog.js`, `status-manager.js`, `render-failure.js` |
 | Projects and proofing | `project-io.js`, `proofing-ui.js` |
 
-### The two oversized files
+### Feature files
 
-**`app.js`, 19,176 lines.** 744 functions in one shared space. They all read
-and write one `state` object (about 220 fields) and one `els` object (the
-page's elements), and call each other freely. Two functions are about 600
-lines each: `bindEvents` and `markRefining`.
+All files below are in `codebase/frontend/`. Search for a named function in
+its feature file. Function bodies and shared state behavior were preserved
+by the move. `bindEvents` and `markRefining` remain whole in their files.
 
-**`webgpu-preview.js`, 9,521 lines.** About 1,400 lines of standalone helper
-functions at the top and bottom, and between them one class,
-`HDRWebGPUPreview`, of about 8,000 lines and 180 methods. Its two largest
-methods are `encodeTiledGeneration` (1,065 lines) and `renderTo` (789).
-
-`styles.css` (9,111 lines) and `index.html` (1,825) are also large. They are
-not in the sprint.
-
-## Target layout
-
-The names below are the agreed boundaries. A thread doing part of the split
-uses these, or changes this table first and says why.
-
-### `app.js`
-
-"Find it today" names the first function of each cluster; search for it.
-Clusters are mostly contiguous, but some areas sit in two or three places.
-
-| Target file | Holds | Find it today (first functions) |
+| File | Holds | Key declarations |
 |---|---|---|
-| `app-state.js` | Constants, latitude presets, `state`, `els` | `codebase/frontend/app-state.js` (moved October 8; loaded after feature factories and before startup); top of file, `const state`, `const els` |
-| `app-boot.js` | Start-up and the wiring of page events | `codebase/frontend/app-boot.js` (moved October 8); `boot`, `initializeGpuPreview`, `initializePreviewScheduler`, `bindEvents` |
-| `viewer-status.js` | Preview quality tiers and what the viewer reports | `codebase/frontend/viewer-status.js` (moved October 8); `gpuPreviewEligible`, `deriveViewerState`, `acceptPresentation`, `markRefining` |
-| `preview-pipeline.js` | Asking for a preview and showing the result | `codebase/frontend/preview-pipeline.js` (moved October 8); `debouncePreview`, `queueGpuDraft`, `settlePreview`, `renderPreviewForLane`, `renderGpuDraft`, `applyPreviewUrl`, `invalidatePreview`, `clearPreviewCache` |
-| `preview-sizing.js` | Choosing working resolution; region-of-interest follow-ups | `codebase/frontend/preview-sizing.js` (moved October 8); `displayedLongEdge`, `interactiveScaleDecision`, `applyRoiPreview` |
-| `peak-measurement.js` | Editing peak and highlight anchor | `codebase/frontend/peak-measurement.js` (moved October 8); `exactScopePeakKey`, `measureExactScopePeak`, `scheduleExactHighlightAnchor` |
-| `scope-requests.js` | Asking for scope data, GPU and CPU | `codebase/frontend/scope-requests.js` (moved October 8); `refreshScopes`, `runGpuScopeRequest`, `runScopeRequest` |
-| `scope-drawing.js` | Drawing histogram, waveform, vectorscope; scope region | `codebase/frontend/scope-drawing.js` (moved October 8); `drawHistogram`, `drawWaveform`, `activeScopeRegion` |
-| `overlay-ui.js` | False colour and zebra | `codebase/frontend/overlay-ui.js` (moved October 8); `requestLiveOverlay`, `refreshOverlay`, `renderFalseColorKey` |
-| `workspace-layout.js` | Rails, dock, splitters, popovers | `codebase/frontend/workspace-layout.js` (moved October 8); `initializeInstrumentShell`, `initSplitter`, `toggleOverlayPopover`, `activateDockTab` |
-| `range-controls.js` | Sliders, typed values, snapping, readouts | `codebase/frontend/range-controls.js` (moved October 8); `enhanceRangeControls`, `bindEditableValue`, `rangeSnapProfile`, `updateControlReadouts` |
-| `adjustment-controls.js` | Reading a control, committing a value, reset and match between lanes | `codebase/frontend/adjustment-controls.js` (moved October 8); `resolveAdjustmentPath`, `commitAdjustmentValue`, `syncControlsFromState`, `resetControlGroup` |
-| `highlight-controls.js` | Highlight compression panels | `codebase/frontend/highlight-controls.js` (moved October 8); `normalizeHighlightCompressionControls`, `renderHighlightCompressionControls` |
-| `group-presets.js` | Saved presets per control group | `codebase/frontend/group-presets.js` (moved October 8); `groupPresetPaths`, `initializeGroupPresetControls` |
-| `curve-editor.js` | Curves; moved October 8 | `codebase/frontend/curve-editor.js`: `bindCurveEditor`, `drawCurveEditor`, `normalizeCurvePoints` |
-| `tone-equalizer.js` | Tone equalizer | `codebase/frontend/tone-equalizer.js` (moved October 8); `bindToneEqualizerEditor`, `drawToneEqualizerEditor` |
-| `denoise-ui.js` | Denoise panel | `codebase/frontend/denoise-ui.js` (moved October 8); `loadDenoiseDocument`, `renderDenoiseControls`, `runLiveDenoise` |
-| `color-wheels.js` | Colour wheels and vignette centre | `codebase/frontend/color-wheels.js` (moved October 8); `bindColorWheels`, `bindVignetteCenter` |
-| `geometry-tools.js` | Crop, perspective, straighten, rotate | `codebase/frontend/geometry-tools.js` (moved October 8); `bindCropEditor`, `bindPerspectiveEditor`, `beginStraightenGesture`, `rotateGeometry` |
-| `lanes-compare.js` | Switching HDR/SDR, compare views | `codebase/frontend/lanes-compare.js` (moved October 8); `switchLane`, `bindCompareControl`, `renderComparisonPreview` |
-| `zoom-navigation.js` | Zoom, pan, navigation thumbnail | `codebase/frontend/zoom-navigation.js` (moved October 8); `setZoomMode`, `applyZoomGeometry`, `refreshNavigationThumbnail` |
-| `session-import.js` | Import, upload, eject, source interpretation, raw settings | `codebase/frontend/session-import.js` (moved October 8); `uploadFile`, `ejectCurrentSession`, `syncInterpretationControls`, `renderRawImportControls` |
-| `project-documents.js` | Open, save, unsaved-changes prompts, desktop file open | `codebase/frontend/project-documents.js` (moved October 8); `openDesktopSelection`, `openProjectFromPath`, `saveProjectToPath` |
-| `media-browser.js` | The file browser | `codebase/frontend/media-browser.js` (moved October 8); `openMediaBrowser`, `renderMediaBrowserEntries`, `loadMediaDirectory` |
-| `export-ui.js` | Export sheet, presets, format cards | `codebase/frontend/export-ui.js` (moved October 8); `seedExportFieldsFromSession`, `exportCurrentSession`, `renderCapabilities`, `applyExportPreset` |
-| `info-panels.js` | Metadata, technical summary, capability readouts | `codebase/frontend/info-panels.js` (moved October 8); `renderMetadata`, `technicalSummaryEntries`, `renderPresentationCapability` |
-| `desktop-commands.js` | Menu commands, shortcuts, preferences from the shell | `codebase/frontend/desktop-commands.js` (moved October 8); `initializeDesktopBridge`, `applicationCommands`, `applyGpuMemoryBudget` |
-| `local-adjustments-ui.js` | The list of local adjustments and their grade controls | `codebase/frontend/local-adjustments-ui.js` (moved October 8); `defaultLocalGrade`, `bindLocalAdjustmentEvents`, `renderLocalAdjustments` |
-| `mask-controls.js` | Mask tree editor and per-mask panels | `codebase/frontend/mask-controls.js` (moved October 8); `renderMaskTreeEditor`, `renderPathControls`, `createLuminanceRangeControl` |
-| `mask-gestures.js` | Pointer work on the mask canvas | `codebase/frontend/mask-gestures.js` (moved October 8); `bindLocalMaskCanvas`, `updateGradientGesture`, `pathTargetAtPointer`, `handlePathCanvasKeydown` |
-| `path-geometry.js` | Path and feather maths (no page access); moved October 8 | `codebase/frontend/path-geometry.js`: `activePathNodes`, `uniformFeatherNodes`, `flattenPathNodes`, `validPathGeometry`, `splitPathSegment` |
-| `mask-overlay.js` | Drawing masks and gizmos over the image | `codebase/frontend/mask-overlay.js` (moved October 8); `renderLocalMaskOverlay`, `drawMaskExpression`, `drawBrushMaskOverlay`, `drawPathMaskGizmo` |
-| `sdr-match-ui.js` | SDR Match | `codebase/frontend/sdr-match-ui.js` (moved October 8); `setSdrMatch`, `serveSdrMatchCandidates`, `presentMatchedSdrPreview` |
-| `edit-commands.js` | Sending edits to the backend in order | `codebase/frontend/edit-commands.js` (moved October 8); `queueEditCommand`, `syncGlobalEditState`, `refreshEditState` |
+| `app-state.js` | Constants, latitude presets, `state`, `els` | top of file, `const state`, `const els` |
+| `app-boot.js` | Start-up and the wiring of page events | `boot`, `initializeGpuPreview`, `initializePreviewScheduler`, `bindEvents` |
+| `viewer-status.js` | Preview quality tiers and what the viewer reports | `gpuPreviewEligible`, `deriveViewerState`, `acceptPresentation`, `markRefining` |
+| `preview-pipeline.js` | Asking for a preview and showing the result | `debouncePreview`, `queueGpuDraft`, `settlePreview`, `renderPreviewForLane`, `renderGpuDraft`, `applyPreviewUrl`, `invalidatePreview`, `clearPreviewCache` |
+| `preview-sizing.js` | Choosing working resolution; region-of-interest follow-ups | `displayedLongEdge`, `interactiveScaleDecision`, `applyRoiPreview` |
+| `peak-measurement.js` | Editing peak and highlight anchor | `exactScopePeakKey`, `measureExactScopePeak`, `scheduleExactHighlightAnchor` |
+| `scope-requests.js` | Asking for scope data, GPU and CPU | `refreshScopes`, `runGpuScopeRequest`, `runScopeRequest` |
+| `scope-drawing.js` | Drawing histogram, waveform, vectorscope; scope region | `drawHistogram`, `drawWaveform`, `activeScopeRegion` |
+| `overlay-ui.js` | False colour and zebra | `requestLiveOverlay`, `refreshOverlay`, `renderFalseColorKey` |
+| `workspace-layout.js` | Rails, dock, splitters, popovers | `initializeInstrumentShell`, `initSplitter`, `toggleOverlayPopover`, `activateDockTab` |
+| `range-controls.js` | Sliders, typed values, snapping, readouts | `enhanceRangeControls`, `bindEditableValue`, `rangeSnapProfile`, `updateControlReadouts` |
+| `adjustment-controls.js` | Reading a control, committing a value, reset and match between lanes | `resolveAdjustmentPath`, `commitAdjustmentValue`, `syncControlsFromState`, `resetControlGroup` |
+| `highlight-controls.js` | Highlight compression panels | `normalizeHighlightCompressionControls`, `renderHighlightCompressionControls` |
+| `group-presets.js` | Saved presets per control group | `groupPresetPaths`, `initializeGroupPresetControls` |
+| `curve-editor.js` | Curves | `bindCurveEditor`, `drawCurveEditor`, `normalizeCurvePoints` |
+| `tone-equalizer.js` | Tone equalizer | `bindToneEqualizerEditor`, `drawToneEqualizerEditor` |
+| `denoise-ui.js` | Denoise panel | `loadDenoiseDocument`, `renderDenoiseControls`, `runLiveDenoise` |
+| `color-wheels.js` | Colour wheels and vignette centre | `bindColorWheels`, `bindVignetteCenter` |
+| `geometry-tools.js` | Crop, perspective, straighten, rotate | `bindCropEditor`, `bindPerspectiveEditor`, `beginStraightenGesture`, `rotateGeometry` |
+| `lanes-compare.js` | Switching HDR/SDR, compare views | `switchLane`, `bindCompareControl`, `renderComparisonPreview` |
+| `zoom-navigation.js` | Zoom, pan, navigation thumbnail | `setZoomMode`, `applyZoomGeometry`, `refreshNavigationThumbnail` |
+| `session-import.js` | Import, upload, eject, source interpretation, raw settings | `uploadFile`, `ejectCurrentSession`, `syncInterpretationControls`, `renderRawImportControls` |
+| `project-documents.js` | Open, save, unsaved-changes prompts, desktop file open | `openDesktopSelection`, `openProjectFromPath`, `saveProjectToPath` |
+| `media-browser.js` | The file browser | `openMediaBrowser`, `renderMediaBrowserEntries`, `loadMediaDirectory` |
+| `export-ui.js` | Export sheet, presets, format cards | `seedExportFieldsFromSession`, `exportCurrentSession`, `renderCapabilities`, `applyExportPreset` |
+| `info-panels.js` | Metadata, technical summary, capability readouts | `renderMetadata`, `technicalSummaryEntries`, `renderPresentationCapability` |
+| `desktop-commands.js` | Menu commands, shortcuts, preferences from the shell | `initializeDesktopBridge`, `applicationCommands`, `applyGpuMemoryBudget` |
+| `local-adjustments-ui.js` | The list of local adjustments and their grade controls | `defaultLocalGrade`, `bindLocalAdjustmentEvents`, `renderLocalAdjustments` |
+| `mask-controls.js` | Mask tree editor and per-mask panels | `renderMaskTreeEditor`, `renderPathControls`, `createLuminanceRangeControl` |
+| `mask-gestures.js` | Pointer work on the mask canvas | `bindLocalMaskCanvas`, `updateGradientGesture`, `pathTargetAtPointer`, `handlePathCanvasKeydown` |
+| `path-geometry.js` | Path and feather maths (no page access) | `activePathNodes`, `uniformFeatherNodes`, `flattenPathNodes`, `validPathGeometry`, `splitPathSegment` |
+| `mask-overlay.js` | Drawing masks and gizmos over the image | `renderLocalMaskOverlay`, `drawMaskExpression`, `drawBrushMaskOverlay`, `drawPathMaskGizmo` |
+| `sdr-match-ui.js` | SDR Match | `setSdrMatch`, `serveSdrMatchCandidates`, `presentMatchedSdrPreview` |
+| `edit-commands.js` | Sending edits to the backend in order | `queueEditCommand`, `syncGlobalEditState`, `refreshEditState` |
 
-### `webgpu-preview.js`
+### Renderer and standalone helpers
 
-| Target file | Holds | Find it today |
+| File | Holds | Key declarations |
 |---|---|---|
-| `gpu-render-plan.js` | Deciding direct or tiled rendering, memory estimates, tile halos. No GPU access. | `codebase/frontend/gpu-render-plan.js` (moved October 8); functions above `class HDRWebGPUPreview`: `buildRenderPlan`, `buildTiledPlan`, `directPreviewMemoryModel`, `detailTileHalo` |
-| `gpu-params.js` | Turning the project's adjustments into the numbers the shaders read. No GPU access. | `codebase/frontend/gpu-params.js` (moved October 8); functions below the class: `buildParams`, `buildCurves`, `buildLocalParams`, `rgbPrimariesAdjustmentMatrix` |
+| `gpu-render-plan.js` | Deciding direct or tiled rendering, memory estimates, tile halos. No GPU access. | `buildRenderPlan`, `buildTiledPlan`, `directPreviewMemoryModel`, `detailTileHalo` |
+| `gpu-params.js` | Turning the project's adjustments into the numbers the shaders read. No GPU access. | `buildParams`, `buildCurves`, `buildLocalParams`, `rgbPrimariesAdjustmentMatrix` |
 | `webgpu-preview.js` | The renderer itself | `class HDRWebGPUPreview` |
 
 Inside the class, these groups are candidates for a later split and are worth
@@ -174,8 +150,8 @@ those same positions when constructing WGSL, so the generated shaders keep
 their original text. `tests/gpu-param-layout.test.js` checks the original
 positions, load order, bare global positions and writer/consumer agreement.
 Four reserved entries keep their positions; `DETAIL_ENABLED` is consumed by
-host-side graph routing rather than by a shader. Phase 4's long GPU checks
-and the agreed full sweep are still pending.
+host-side graph routing rather than by a shader. Phase 4's validation is
+recorded in the sprint PRD.
 
 Local grades have a separate positional prefix and reuse parts of the global
 layout at the tail. Analytic, brush and resampling masks have independent
@@ -190,9 +166,9 @@ scripts loaded by the page so feature moves keep its assertions intact.
 
 | Kind | Files | Speed |
 |---|---|---|
-| Frontend unit tests | `*.test.js` (57) | Seconds. Run on every change. |
-| Backend tests | `test_*.py` (83) | About a minute. Run on every change. |
-| GPU checks in the real app | other `*.js` (84), run one at a time through `run-in-electron.js` | Slow. Run only the one or two that cover the change. |
+| Frontend unit tests | `*.test.js` | Seconds. Run on every change. |
+| Backend tests | `test_*.py` | About a minute. Run on every change. |
+| GPU checks in the real app | other `*.js`, run one at a time through `run-in-electron.js` | Slow. Run only the one or two that cover the change. |
 | Timing and review drivers | `performance/` | Slow. Release points only. |
 
 Finding the right GPU check: they are named for the feature, such as
@@ -212,5 +188,8 @@ Two kinds of test read source code as text. Since the sprint's phase 1
   through `tests/frontend-source.js`.
 
 A new frontend file is picked up by both once it has its `<script>` line in
-`index.html`. When `webgpu-preview.js` is divided, add the new files to
-`PARTS` in `tests/frontend-source.js`.
+`index.html`. The renderer helper files and position list are already in
+`PARTS` in
+`tests/frontend-source.js`. Existing source pins resolve named global
+positions through the production list; the new layout guard audits raw
+production sources and compiled shader readers.

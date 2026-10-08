@@ -28,7 +28,7 @@ Read first, relative to the git root:
   (principles), 5.5 (what phase 4 is), 7 (exit: "Removed code listed; suites
   green"), and all of section 15. Section 15.7 is the carry-forward list and
   the list of checks that still describe the old design.
-- `docs/technical/viewport-phase3-baseline-before-cleanup-2026-10-05.md`: the
+- `docs/technical/archive/viewport-phase3-baseline-before-cleanup-2026-10-05.md`: the
   "before" record. Every driver's result and the reason for each failure.
 - `docs/technical/archive/viewport-phase3-post-testing-next-thread-prompt-2026-10-03.md`:
   tools and working rules.

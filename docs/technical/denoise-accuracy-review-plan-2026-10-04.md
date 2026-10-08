@@ -21,8 +21,8 @@ The recommendation is to retain the current processing-resolution policy and inv
 
 ## Read first
 
-- [Viewport preview PRD](../../../docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md): sections 2, 3, 4.1, 4.4, 4.6, 5.2, 5.4, 6, 14.10, 14.13 and 15.
-- [Current sprint continuation](../../../docs/technical/archive/viewport-phase3-post-testing-next-thread-prompt-2026-10-03.md): stepped source sizes, bounded Denoise model sampling, geometry/zoom placement, shader pins and deferred work.
+- [Viewport preview PRD](../product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md): sections 2, 3, 4.1, 4.4, 4.6, 5.2, 5.4, 6, 14.10, 14.13 and 15.
+- [Current sprint continuation](archive/viewport-phase3-post-testing-next-thread-prompt-2026-10-03.md): stepped source sizes, bounded Denoise model sampling, geometry/zoom placement, shader pins and deferred work.
 - [Investigation record](denoise-followups-2026-10-04.md): especially “PRD reconciliation” and “PRD-based investigation and proposed solutions.” Later sections preserve earlier experiments and proposals; their scene-linear thresholds are not PRD acceptance gates.
 
 Workspace: `D:/AI/AI Projects/HDR Finisher Tool`; Git root: `ai`; executable/test directory: `ai/codebase`; branch: `viewport-bounded-preview-phase-2-wip`. The working tree contains substantial earlier changes. Inspect current HEAD/status; preserve them. This plan does not approve a commit, push, installer rebuild or behavior change.
