@@ -2,6 +2,7 @@
 
 **Date:** August 16, 2026  
 **Status:** Correctness and geometry-aware GPU preview implemented through iteration 6; full-installer acceptance pending
+**Closed October 8, 2026.** Delivered and shipped in every release since 0.3. The preview design it describes was later replaced by the [Viewport-Bounded GPU Preview](Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md). Historical record only.
 **Branch:** `feature/electron-desktop-shell`  
 **Owner:** HDR Finisher engineering  
 **Related plan:** [Electron Desktop Wrapper Sprint](Electron_Desktop_Wrapper_Sprint_PRD.md)

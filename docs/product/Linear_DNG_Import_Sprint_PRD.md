@@ -1,6 +1,7 @@
 # Experimental DNG Import and Large-File Safety Sprint
 
 **Status:** Implemented on the exploration branch — experimental validation in progress
+**Closed October 8, 2026.** Experimental DNG Import shipped in 0.5.0 and is in the app, labelled experimental. The one thing left, deciding whether it can lose that label, is in [Open items](Open_Items.md). Nothing else here is pending.
 **Prepared:** 2026-08-20<br>
 **Target branch:** `explore/linear-dng-large-import`
 **Production code status:** Implemented on `explore/linear-dng-large-import`; compatibility sign-off remains evidence-gated

@@ -2,6 +2,7 @@
 
 **Date:** September 25, 2026
 **Status:** Draft for owner review. Owner decisions are recorded in Section 7. No work starts until the owner approves this document.
+**Closed October 8, 2026: replaced.** Parts of it were built in September (section 9); the rest was overtaken by the [Viewport-Bounded GPU Preview](Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md). Nothing here is waiting for approval. Historical record only.
 **Amends:** [Viewport-Driven ROI Preview Performance Sprint](Viewport_ROI_Preview_Performance_Sprint_PRD_2026-09-22.md) (tuning only; no new architecture)
 **Source:** Owner field testing of the development Electron build on 2026-09-25 (RTX 4070 Ti), checked against the code and the live app's diagnostics.
 

@@ -97,10 +97,8 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 
 ## Planned or explicitly deferred
 
-- Windows/macOS signing, notarization, and installer polish
 - Wider JPEG XL interoperability and platform acceptance
 - Wider automatic source-space/OCIO integration
-- Broader physical browser/device acceptance matrix
 - Batch automation
 
 Planned does not mean promised. Use the product requirements and issue tracker for direction, but use this page and the active code for current capability.

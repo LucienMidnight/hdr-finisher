@@ -2,6 +2,7 @@
 
 **Date:** September 22, 2026  
 **Status:** Implementation started; Phase 0 product approval and packaged-hardware evidence remain hard gates  
+**Closed October 8, 2026: replaced.** The [Viewport-Bounded GPU Preview](Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md) took over this work on October 1 and its packaged-hardware gates were withdrawn by Steve on October 8. Historical record only.
 **Owner:** HDR Finisher product and engineering  
 **Application target:** Responsive, truthful authoring preview for 24–42 MP and 8K-class sources  
 **Primary platforms:** Packaged Windows and macOS application shells, with WebGPU as the primary interactive path and a bounded CPU fallback  

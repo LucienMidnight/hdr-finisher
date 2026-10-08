@@ -3,6 +3,7 @@
 **Date:** August 14, 2026  
 **Last updated:** August 30, 2026
 **Status:** Engineering and installer hardening complete; physical delivery validation remains
+**Closed October 8, 2026.** Delivered. The physical delivery validation it still asked for was withdrawn by Steve on October 8 (no formal hardware validation). Historical record only.
 **Owner:** HDR Finisher engineering  
 **Implementation commits:** `99e2395` (Phases 0/1), `fc929e6` (Phase 2), plus the August 30 release-hardening follow-up
 **Related plan:** [Interactive Preview, Instant Scopes, and Image Pipeline Performance Sprint](Interactive_Preview_and_Scopes_Performance_Sprint_PRD.md)  

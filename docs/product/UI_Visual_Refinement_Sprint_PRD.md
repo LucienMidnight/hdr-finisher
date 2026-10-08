@@ -2,6 +2,7 @@
 
 **Date:** August 27, 2026  
 **Status:** Planned; ready for review and implementation  
+**Closed October 8, 2026.** Delivered: the fonts, dark visual system, grouped sub-rails and slider behaviour it describes are in the app. Historical record only.
 **Target branch:** `main`  
 **Primary surfaces:** desktop application shell, Control Panel, shared grading controls, local adjustments, scopes, Settings, and Help
 

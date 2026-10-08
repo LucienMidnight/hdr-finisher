@@ -548,6 +548,11 @@ pattern and is the template.
 
 ### RELEASE-0.8.13 — Finish the 0.8.13 release (reminder)
 
+**October 8, 2026 (Steve): this release is 0.9.0.** The version files, the
+draft `RELEASE_NOTES.md` and the Flatpak entry now say 0.9.0. Publishing
+waits for the 0.9 work in [Open items](Open_Items.md). The steps below are
+kept as written; read 0.9.0 for 0.8.13.
+
 Recorded 2026-09-26. The app version is already 0.8.13 (`config.py`,
 `desktop/package.json`, `package-lock.json`) and a test installer was built
 from `main` for hands-on testing. It carries the Clarity brightness map
@@ -674,7 +679,7 @@ Type landed on `feature/denoise-clumpy-noise`.
   Microcontrast now sit in Detail's panel but run in the film stage. Decide
   the best place for them, and review the order and grouping of every stage
   (Detail vs locals vs Film Look, where B&W and Color sit) before v1.
-- **DISPLAY-01 — Fixed October 7, physical monitor check pending.** Both browser media-query changes and desktop display notifications already reconfigured surfaces, but `settlePreview` could return early for the accepted exact frame. They now invalidate that frame without marking the edits dirty before settling. `tests/display-capability-change.js` passes simulated HDR/SDR/HDR changes: each accepts a newer WebGPU frame and the extended surface follows the capability. Steve still needs to move the window between his two monitors and back without zooming.
+- **DISPLAY-01 — Fixed October 7; confirmed by Steve on his two monitors (October 8).** Both browser media-query changes and desktop display notifications already reconfigured surfaces, but `settlePreview` could return early for the accepted exact frame. They now invalidate that frame without marking the edits dirty before settling. `tests/display-capability-change.js` passes simulated HDR/SDR/HDR changes: each accepts a newer WebGPU frame and the extended surface follows the capability.
 - **DETAIL-01 — Texture vs Microcontrast.** They look and behave very
   differently (Texture is a luminance band in log space; Microcontrast is a
   colour high-pass at 0.06% of the diagonal). Look at both behaviours in a
@@ -972,6 +977,10 @@ adapter, or with denoise and local masks engaged, which this run did not have.
 
 ## 11c. Full Tier Release Readiness — Deferred Hardware Validation
 
+**Withdrawn October 8, 2026 (Steve).** There is no formal hardware
+validation requirement. Steve checks Linux and macOS when a release is
+made. The section below is kept as history and asks for nothing.
+
 **Status:** Open, deferred. Recorded 2026-09-21.
 **Origin:** Phase 9 of the Stable Exact Full Preview sprint, descoped there.
 
@@ -1023,6 +1032,9 @@ Point 1 should be settled first: every GPU option produces results that are clos
 ---
 
 ## 11e. Owner Reminder (2026-10-02): Check the Luminance Mask by Eye
+
+**Done (Steve, October 8, 2026).** He has looked at feathered luminance
+masks and they are fine. Nothing changes: the trial limit stays as it is.
 
 **For Steve to do, not scheduled.** Look at a feathered luminance-range mask at 100% zoom in the SDR lane and in the HDR lane, then compare against a full-size Proof or an export of the same project, and decide whether the difference is visible.
 
@@ -1612,6 +1624,10 @@ Findings to resolve first:
 - Benchmark against the audited fixture, recording render time separately from scheduler delay.
 
 #### V1 Launch Distribution and Signing Plan
+
+**Withdrawn October 8, 2026 (Steve).** Builds ship unsigned. No signing,
+notarization or clean-machine test programme is planned. The plan below is
+kept as history and asks for nothing.
 
 Signing is not a V1 launch blocker. The first public builds may ship unsigned from the project's official GitHub Releases page while the project remains free and open source.
 

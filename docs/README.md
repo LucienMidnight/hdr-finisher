@@ -83,10 +83,11 @@ Pages carry their own verification dates where implementation freshness matters.
 
 - [Troubleshooting](troubleshooting.md)
 - [Known limitations and support status](known-limitations.md)
+- [Open items](product/Open_Items.md) — the one list of what is still to do
 - [Implementation traceability](traceability.md)
 - [Product requirements](product/HDR_Finisher_PRD_v1.2.md) — historical intent and planning, not the user manual
 - [Interactive preview and scopes performance sprint](product/Interactive_Preview_and_Scopes_Performance_Sprint_PRD.md) — implementation plan, performance budgets, and acceptance gates
-- [UI visual refinement sprint](product/UI_Visual_Refinement_Sprint_PRD.md) — planned typography, dark visual system, ultraviolet accent, shared controls, grouped sub-rails, and slider modifier contract
+- [UI visual refinement sprint](product/UI_Visual_Refinement_Sprint_PRD.md) — delivered typography, dark visual system, ultraviolet accent, shared controls, grouped sub-rails, and slider modifier contract
 - [Design work](design/README.md)
 
 ## How to read status language
