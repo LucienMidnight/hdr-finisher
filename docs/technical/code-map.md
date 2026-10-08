@@ -144,7 +144,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `path-geometry.js` | Path and feather maths (no page access); moved October 8 | `codebase/frontend/path-geometry.js`: `activePathNodes`, `uniformFeatherNodes`, `flattenPathNodes`, `validPathGeometry`, `splitPathSegment` |
 | `mask-overlay.js` | Drawing masks and gizmos over the image | `codebase/frontend/mask-overlay.js` (moved October 8); `renderLocalMaskOverlay`, `drawMaskExpression`, `drawBrushMaskOverlay`, `drawPathMaskGizmo` |
 | `sdr-match-ui.js` | SDR Match | `codebase/frontend/sdr-match-ui.js` (moved October 8); `setSdrMatch`, `serveSdrMatchCandidates`, `presentMatchedSdrPreview` |
-| `edit-commands.js` | Sending edits to the backend in order | `queueEditCommand`, `syncGlobalEditState`, `refreshEditState` |
+| `edit-commands.js` | Sending edits to the backend in order | `codebase/frontend/edit-commands.js` (moved October 8); `queueEditCommand`, `syncGlobalEditState`, `refreshEditState` |
 
 ### `webgpu-preview.js`
 
