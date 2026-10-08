@@ -11,6 +11,7 @@ const output = path.resolve(index < 0 ? 'output/performance/neutral-color-gradin
 const cases = JSON.parse(execFileSync(process.env.HDR_FINISHER_PYTHON || path.join(root, '.venv/Scripts/python.exe'), ['-c', `
 import json
 import numpy as np
+from backend.hdr_finisher.color import map_negative_acescg
 from backend.hdr_finisher.adjustments import _apply_color_grading
 from backend.hdr_finisher.models import ColorGradingAdjustments, PreviewKind
 pixels = np.array([[[-.00028979886,-.00048077852,.00236804318],[-.00001202161,-.00023974421,.001966723], [0,0,0],[-.001,-.001,-.001], [1e-8,2e-8,3e-8],[.1,.2,.3],[1,2,4],[-.01,.2,.3]]],dtype=np.float32)
@@ -22,6 +23,12 @@ for kind in [PreviewKind.HDR,PreviewKind.SDR]:
         fixture=dict(lane=kind.value,name=name,grading=grading.model_dump(),enabled=enabled,clampOutput=kind==PreviewKind.SDR and name=='active',source=pixels.reshape(-1).tolist(),expected=expected.reshape(-1).tolist())
         cases.append(fixture)
         if kind==PreviewKind.HDR:cases.append(dict(fixture,name='base/'+name,base=True))
+        if kind==PreviewKind.HDR:
+            mapped=map_negative_acescg(pixels)
+            mapped_expected=_apply_color_grading(mapped,grading,kind) if enabled else mapped
+            mapped_fixture=dict(fixture,name='mapped-source/'+name,source=mapped.reshape(-1).tolist(),expected=mapped_expected.reshape(-1).tolist())
+            cases.append(mapped_fixture)
+            cases.append(dict(mapped_fixture,name='base/mapped-source/'+name,base=True))
 print(json.dumps(cases))
 `], {cwd:root,encoding:'utf8'}));
 

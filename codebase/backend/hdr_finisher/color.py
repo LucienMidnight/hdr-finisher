@@ -181,12 +181,45 @@ def linear_bt2020_to_acescg(image: np.ndarray) -> np.ndarray:
 
 
 def aces2065_to_acescg(image: np.ndarray) -> np.ndarray:
-    return sanitize_array(_apply_fixed_linear_rgb_matrix(image, _ACES2065_TO_ACESCG))
+    return sanitize_finite_array(_apply_fixed_linear_rgb_matrix(image, _ACES2065_TO_ACESCG))
 
 
 def sanitize_array(image: np.ndarray) -> np.ndarray:
     image = np.nan_to_num(image.astype(np.float32, copy=False), nan=0.0, posinf=65504.0, neginf=0.0)
     return np.clip(image, 0.0, None)
+
+
+def sanitize_finite_array(image: np.ndarray) -> np.ndarray:
+    """Replace invalid samples without discarding signed scene-linear colour."""
+    return np.nan_to_num(image.astype(np.float32, copy=False), nan=0.0, posinf=65504.0, neginf=0.0)
+
+
+def map_negative_acescg(image: np.ndarray) -> np.ndarray:
+    """Project signed AP1 colour toward its maximum-channel neutral axis.
+
+    Finite nonnegative pixels pass through bit-for-bit, including HDR values.
+    For a negative minimum and positive maximum, contract channel differences
+    just enough to place the minimum at zero, preserving the maximum. Pixels
+    with no positive channel become black. This is a boundary projection, not
+    an output-gamut mapper or the ACES Reference Gamut Compression operator.
+    Call once after source conversion/lens correction, before source analysis.
+    """
+    result = sanitize_finite_array(image)
+    affected = np.any(result < 0.0, axis=-1)
+    if not np.any(affected):
+        return result
+    # Only affected pixels need arithmetic. Float64 prevents overflow in the
+    # span between extreme finite float32 samples and preserves tiny maxima.
+    pixels = result[affected].astype(np.float64)
+    minimum = np.min(pixels, axis=-1, keepdims=True)
+    maximum = np.max(pixels, axis=-1, keepdims=True)
+    positive = maximum[:, 0] > 0.0
+    mapped = np.zeros_like(pixels)
+    mapped[positive] = maximum[positive] * (
+        (pixels[positive] - minimum[positive]) / (maximum[positive] - minimum[positive])
+    )
+    result[affected] = mapped.astype(np.float32)
+    return result
 
 
 def detect_transfer_function(metadata: dict[str, Any], suffix: str) -> str | None:
@@ -243,7 +276,7 @@ def _searchable_metadata_text(metadata: dict[str, Any]) -> str:
 
 
 def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None, transfer_function: str | None = None, reference_white_nits: int = 203) -> np.ndarray:
-    sanitized = sanitize_array(image)
+    sanitized = sanitize_finite_array(image)
     transfer = _canonical_transfer_function(transfer_function)
 
     # Do not apply an irreversible gamut or transfer transform when the source
@@ -259,7 +292,7 @@ def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None
     if transfer == "HLG":
         return _hlg_bt2020_to_acescg(sanitized, reference_white_nits)
     if transfer == "BT.709":
-        sanitized = sanitize_array(oetf_inverse_BT709(np.clip(sanitized, 0.0, 1.0)))
+        sanitized = sanitize_finite_array(oetf_inverse_BT709(np.clip(sanitized, 0.0, 1.0)))
         transfer = "LINEAR"
     if colourspace == ACESCG_COLOURSPACE:
         return sanitized
@@ -268,13 +301,13 @@ def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None
             transfer is None and colourspace in {SRGB_COLOURSPACE, DISPLAY_P3_COLOURSPACE}
         )
         converted = RGB_to_RGB(
-            sanitized,
+            np.maximum(sanitized, 0.0) if apply_cctf_decoding else sanitized,
             colourspace,
             ACESCG_COLOURSPACE,
             chromatic_adaptation_transform="CAT02",
             apply_cctf_decoding=apply_cctf_decoding,
         )
-        return sanitize_array(converted)
+        return sanitize_finite_array(converted)
     return sanitized
 
 
@@ -383,7 +416,7 @@ def _pq_bt2020_to_acescg(image: np.ndarray, reference_white_nits: int = 203) -> 
         ACESCG_COLOURSPACE,
         chromatic_adaptation_transform="CAT02",
     )
-    return sanitize_array(converted)
+    return sanitize_finite_array(converted)
 
 
 def _hlg_bt2020_to_acescg(image: np.ndarray, reference_white_nits: int = 203, nominal_peak_nits: float = 1000.0) -> np.ndarray:
@@ -397,4 +430,4 @@ def _hlg_bt2020_to_acescg(image: np.ndarray, reference_white_nits: int = 203, no
         ACESCG_COLOURSPACE,
         chromatic_adaptation_transform="CAT02",
     )
-    return sanitize_array(converted)
+    return sanitize_finite_array(converted)

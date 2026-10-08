@@ -18,6 +18,7 @@ from .color import (
     acescg_to_linear_srgb,
     linear_bt2020_to_acescg,
     linear_srgb_to_acescg,
+    sanitize_array,
     normalize_to_acescg,
     normalize_to_acescg_bounded,
     transform_float32_bounded,
@@ -516,7 +517,7 @@ def _normalize_sdr_reference_in_strips(
         if cancelled is not None and cancelled():
             raise GainMapDecodeError("Import cancelled")
         stop = min(start + strip_rows, result.shape[0])
-        acescg = normalize_to_acescg(result[start:stop], color_space, transfer)
+        acescg = sanitize_array(normalize_to_acescg(result[start:stop], color_space, transfer))
         linear_srgb = acescg_to_linear_srgb(acescg)
         result[start:stop] = np.clip(linear_srgb, 0.0, 1.0)
     return result

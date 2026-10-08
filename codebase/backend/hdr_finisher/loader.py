@@ -10,6 +10,7 @@ import numpy as np
 from .analysis import classify_hdr
 from .color import (
     detect_color_space,
+    map_negative_acescg,
     detect_transfer_function,
     normalize_to_acescg_bounded,
     transform_float32_bounded,
@@ -36,7 +37,7 @@ EXR_COLOR_INTEROP_SPACES = {
 # constant when a change alters the decoded scene-linear pixels for the same
 # file; stale levels are then ignored and removed by version.
 SOURCE_DECODER_VERSION = "hdr-finisher-loader-v1"
-SOURCE_COLOR_TRANSFORM_VERSION = "acescg-bounded-v1"
+SOURCE_COLOR_TRANSFORM_VERSION = "acescg-negative-neutral-v2"
 
 # Display-P3 and sRGB share D65, so the hot-path linear conversion is a fixed
 # float32 matrix and does not require a general-purpose colour transform.
@@ -160,9 +161,6 @@ def load_image(
     if image.shape[2] > 3:
         image = image[..., :3]
 
-    if metadata.get("raw_input"):
-        metadata["recommended_exposure_ev"] = _recommended_raw_exposure_ev(image)
-
     overrides = overrides or {}
     for key in ("color_space", "transfer_function"):
         if overrides.get(key):
@@ -208,6 +206,15 @@ def load_image(
         metadata["linear_reference_note"] = (
             "Source 1.0 diffuse white normalized to HDR Finisher scene-linear 0.18 diffuse white."
         )
+    # Unknown/conflicting primaries must be resolved before an irreversible
+    # AP1 gamut operation. All resolved import routes share this boundary,
+    # including decoder-normalized RAW, DNG and JPEG Ultra HDR.
+    if not metadata.get("needs_color_override") and metadata.get("color_space") is not None:
+        normalized = transform_float32_bounded(
+            normalized, map_negative_acescg, cancelled=cancelled
+        )
+    if metadata.get("raw_input"):
+        metadata["recommended_exposure_ev"] = _recommended_raw_exposure_ev(normalized)
     normalize_ms = (perf_counter() - normalize_started) * 1000.0
     descriptor = SourceImageDescriptor(
         filename=path.name,

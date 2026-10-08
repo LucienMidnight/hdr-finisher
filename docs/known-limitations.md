@@ -21,7 +21,7 @@ This page prevents implemented, validated, expected, and planned behavior from b
 - ProPhoto/ROMM, Affinity wsRGB, ACES2065-1 manual selection, arbitrary ICC RGB spaces, log camera encodings, and custom OCIO spaces are not safe general inputs.
 - EXR chromaticities are optional; ambiguous files require user knowledge.
 - Multilayer EXR beauty-pass selection is not a general user feature.
-- The pipeline sanitizes negative scene-linear values to zero.
+- Resolved imports share a fixed negative-only ACEScg neutral-axis projection after colour conversion and RAW lens correction, before analysis and source mip creation. Finite nonnegative pixels pass through bit-for-bit; signed pixels move toward their maximum-channel neutral until the minimum reaches zero, and pixels with no positive channel become black. Ambiguous EXR/TIFF primaries retain signed samples until interpretation is resolved. This replaces import-time negative hard clips; denoise and grading can still create negatives and final delivery retains its output limits. Qualification on DSC00099 removed the strong 768-pixel teal hub fringe, but its 200% preview/export comparison still fails existing tone limits and exposes six additional near-black red-wall discrepancies after denoise/Detail; full visual/parity acceptance remains open. The source cache version changed, so affected saved RAW/EXR projects rebuild their source levels and may render differently (October 8, 2026).
 - HLG decoding assumes a 1,000-nit system peak.
 - TIFF acceptance depends on supported layouts/compression/codecs; unusual channel organizations may fail.
 - Apple HDR HEIC support targets the implemented auxiliary-gain metadata path, not every vendor HEIF HDR scheme.
