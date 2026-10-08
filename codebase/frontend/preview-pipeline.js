@@ -1094,6 +1094,10 @@ function prepareInactivePreview({ immediate = false } = {}) {
     }
     return;
   }
+  // Full would retain another native source just for an unseen lane. A lane
+  // switch already loads that source within its one render; explicit compare
+  // intent above can still prepare it immediately.
+  if (state.previewResolutionOverride && normalizedPreviewResolution() === "full") return;
   state.previewScheduler?.scheduleInactive(other, state.previewGeneration[other], previewIdleNow);
 }
 

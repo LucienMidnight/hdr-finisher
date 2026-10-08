@@ -911,6 +911,32 @@ all at the Full tier, or deferred until the user actually switches lanes.
 - Total backend CPU per settled edit at Full falls measurably.
 - Switching lanes after the change is not worse than one lane render.
 
+**October 8 release follow-up:** Measured the read-only 42.4 MP four-mask
+project at explicit Full, Electron 2560 by 1440, Auto GPU budget. Unseen-lane
+source preparation took 660.5 ms (first run 624.5 ms) and retained 323.4 MiB
+of additional logical GPU source textures. Process-tree working set grew
+50.1 MiB in the corrected run; this is not a physical VRAM measurement.
+Whole-card utilization averaged 15.3%, peaking at 47%, over six 100 ms
+samples; other application GPU work and the compositor can contribute.
+A completed edit measured 14.8 ms idle and 23.2 ms during preparation;
+no noticeable delay is established by that one pair. Lane switching measured
+230.7 ms prepared and 980.2 ms cold, with cold source loading included in the
+existing single render (first run 233.7 / 895.5 ms).
+
+The retained native texture is unnecessary until the lane is requested.
+Automatic unseen-lane preparation is now suppressed at explicit Full in
+single view. Explicit compare still loads immediately; dual-lane comparison
+and automatic smaller tiers keep their existing behavior. Lane switching
+uses its unchanged single render. No shader, CPU export, Proof, budget or
+read-only project changed. The project archive hash stayed unchanged.
+
+The focused phase5-inactive-lane driver checks no automatic load at Full,
+busy-editor deferral at Auto, and explicit held compare completing and
+returning to the authored lane. All assertions passed.
+Fast checks passed: 427 Node tests and 1,555 venv Python tests, three skipped.
+Raw measurements and the bounded measurement driver are under
+`codebase/output/performance/perf04-full-inactive*`; no timing sweep ran.
+
 ### PERF-05 — Tiled encode fails validation under GPU instrumentation
 
 **Status:** Closed as out of date on October 7, 2026, by code inspection. `ensureScopePeakTarget` is now a bounded pool of two targets; acquisition requires `!busy` and an unmapped read buffer, then reserves it. Excess overlap omits the optional measurement. `HDRScopeReadback.readPeak` unmaps and releases the busy flag in `finally`. The pool arrived in `689d6ac`; the old singleton/no-guard account below no longer describes the code. No change or instrumentation run in this quick pass.

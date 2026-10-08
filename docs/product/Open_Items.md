@@ -18,8 +18,7 @@ list is done.
 
 | Item | What | Detail |
 |---|---|---|
-| CF-PIX-06 | The tiled film check was recorded as passing on October 7 and as failing in the October 8 sweep. Settle which | Viewport 15.7 |
-| PERF-04 | With Full selected, the app prepares the picture for the lane not on screen. Check whether that costs anything Steve would notice, and fix it if so | PRD 11b |
+| CF-PIX-06 | October 8 failure reproduced: 20 pixels, max delta 4 at tile size 512. Further focused diagnosis awaiting Steve; shader and exact guard unchanged | Viewport 15.7 |
 | Local and mask setting lists | The numbers sent to the shaders for local adjustments and masks are still matched by position by hand in two languages | Modularization 8.1 |
 | Explicit interfaces between feature files | Each frontend file states what it reads and what it changes, instead of everything sharing one pool of state | Modularization 9 |
 | Publish | Read the draft release notes, tag `v0.9.0`, publish, push | PRD, RELEASE entry in 11a |

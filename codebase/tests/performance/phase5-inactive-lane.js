@@ -74,6 +74,34 @@ function assert(condition, message) {
     assert(deferred.calls >= 1, `The idle gate must be consulted: ${JSON.stringify(deferred)}`);
     console.log(`idle gate      deferred ${deferred.after - deferred.before}x, gate consulted ${deferred.calls}x  PASS`);
 
+    await page.evaluate(() => {
+      const control = document.querySelector("#settings-preview-resolution");
+      control.value = "full";
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.waitForFunction(() => viewerState().status === "ready"
+      && state.acceptedPresentation?.requestedTier === "full" && !state.gpuDraftInFlight,
+    null, { timeout: 180000 });
+    const fullBackgroundLoads = await page.evaluate(async () => {
+      state.previewScheduler.cancel();
+      const other = state.currentView === "hdr" ? "sdr" : "hdr";
+      state.gpuPreparedLane[other] = false;
+      state.previewCache[other] = null;
+      const originalLoad = state.gpuPreview.loadProxy;
+      let loads = 0;
+      state.gpuPreview.loadProxy = function (...args) {
+        if (args[1] === other) loads += 1;
+        return originalLoad.apply(this, args);
+      };
+      try {
+        prepareInactivePreview();
+        await new Promise((resolve) => setTimeout(resolve, 1600));
+        return loads;
+      } finally { state.gpuPreview.loadProxy = originalLoad; }
+    });
+    assert(fullBackgroundLoads === 0, "Full started an automatic unseen-lane source load");
+    console.log("Full background  no automatic unseen-lane source load  PASS");
+
     const compare = await page.evaluate(async () => {
       switch (state.currentView) {
         case "hdr": state.gpuPreparedLane.sdr = false; state.previewCache.sdr = null; break;
