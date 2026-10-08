@@ -52,6 +52,7 @@ from .mask_work import (
 )
 from .models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind
 from .preview import ResizeCancelled, downsample_image
+from .preview_geometry import limit_geometry_overshoot
 
 
 logger = logging.getLogger(__name__)
@@ -776,6 +777,9 @@ class SessionRenderCache:
         proxy = sdr_reference if use_authored_sdr else source
         working_space = "linear-srgb" if use_authored_sdr else "acescg"
         fixed = apply_geometry(proxy, geometry)
+        native = self.sdr_reference_image if use_authored_sdr else self.image
+        if edge < max(native.shape[:2]):
+            fixed = limit_geometry_overshoot(proxy, geometry, fixed)
         return downsample_image(fixed, edge), working_space, signature
 
     @property
@@ -838,14 +842,20 @@ class SessionRenderCache:
         if max(output_width, output_height) > edge:
             return None
 
+        native = self.sdr_reference_image if use_authored_sdr else self.image
+        reduced = edge < max(native.shape[:2])
+
         def read(y0: int, x0: int, y1: int, x1: int) -> np.ndarray:
-            return apply_geometry_region(
+            window = apply_geometry_region(
                 base,
                 geometry,
                 (x0, y0, x1, y1),
                 range_cache=self._source_ranges,
                 range_cache_key=(source_epoch, edge, working_space),
             )
+            if reduced:
+                window = limit_geometry_overshoot(base, geometry, window, (x0, y0))
+            return window
 
         return output_height, output_width, read
 
@@ -908,6 +918,9 @@ class SessionRenderCache:
             range_cache=self._source_ranges,
             range_cache_key=(source_epoch, edge, working_space),
         )
+        native = self.sdr_reference_image if use_authored_sdr else self.image
+        if edge < max(native.shape[:2]):
+            tile = limit_geometry_overshoot(base, geometry, tile, haloed[:2])
         placement = {
             "source_epoch": source_epoch,
             "geometry_signature": signature,

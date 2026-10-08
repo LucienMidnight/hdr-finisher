@@ -43,6 +43,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 
 ## Preview limitations
 
+- Reduced GPU source levels now limit Straighten/Perspective bicubic overshoot to nearby source values (October 8). On DSC00099 the shelf LED specks are gone at Fit and 12%, but a small blue/cyan speck remains on the glass sculpture at Fit. Negative ACEScg channels already exist after the full-size camera colour conversion, before lens correction; they are retained rather than globally clipped. Native geometry, CPU export, Proof and colour conversion are unchanged. The inspected production CPU export render at 711 pixels showed no matching LED specks; this is not a general export qualification.
 - Perspective uses a bounded GPU draft made by warping one uncropped graded image. Spatial grading and resampling can differ from the final result; Apply rebuilds the authoritative preview at the selected tier. CPU preview is the fallback. Reset saves immediately, and leaving Perspective cancels unapplied changes.
 - Editing preview is viewport-bounded, with selectable processing resolutions including Full. CPU preview remains available for an unavailable or lost GPU. The October 5 audits also record CPU picture, mask, scope and whole-source work that is still under investigation (PRD 15.7).
 - Native zoom uses source-resolution viewport processing; magnified views below 100% use stepped processing sizes. Preview/export and cross-scale agreement have the specific limitations recorded in PRD 15.1, 15.2 and 15.7.
