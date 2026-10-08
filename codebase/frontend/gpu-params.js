@@ -1,3 +1,6 @@
+  const PASS_LAYOUTS = ((typeof window !== "undefined" && window.HDRGpuPassLayouts)
+    || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRGpuPassLayouts));
+  const MASK_PARAMS = PASS_LAYOUTS.indices;
   function halfToFloat(value) {
     const sign = (value & 0x8000) ? -1 : 1;
     const exponent = (value >> 10) & 0x1f;
@@ -409,31 +412,31 @@
     const grade = local[`${lane}_grade`];
     const detail = grade.detail || {};
     const values = new Float32Array(PARAM_COUNT);
-    values[0] = lane === "hdr" ? 1 : 0;
-    values[1] = Number(local.opacity) || 0;
-    values[2] = Number(grade.exposure) || 0;
-    values[3] = Number(grade.highlights) || 0;
-    values[4] = Number(grade.midtones) || 0;
-    values[5] = Number(grade.shadows) || 0;
-    values[6] = Number(grade.blacks) || 0;
-    values[7] = Number(grade.contrast) || 0;
-    values[8] = Math.max(0.001, Number(grade.contrast_pivot) || 0.18);
-    values[9] = Number(grade.white_balance_kelvin) || 6500;
-    values[10] = Number(grade.tint) || 0;
-    values[11] = Number(grade.saturation) || 0;
-    values[12] = Number(grade.vibrance) || 0;
-    values[13] = gpuMaskInfluenceOpacity(local.mask);
-    values[14] = (Number(detail.texture_amount) || 0) / 100;
-    values[15] = (Number(detail.clarity_amount) || 0) / 125;
-    values[16] = Math.min(3, Math.max(0.2, Number(detail.clarity_radius_percent) || 0.75));
-    values[17] = Math.min(2, Math.max(0, (Number(detail.sharpen_amount) || 0) / 100));
-    values[18] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
-    values[19] = Math.min(1, Math.max(0, (Number(detail.sharpen_threshold) || 0) / 100)) * 0.5;
-    values[20] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
+    values[MASK_PARAMS.LOCAL.HDR_LANE] = lane === "hdr" ? 1 : 0;
+    values[MASK_PARAMS.LOCAL.OPACITY] = Number(local.opacity) || 0;
+    values[MASK_PARAMS.LOCAL.EXPOSURE] = Number(grade.exposure) || 0;
+    values[MASK_PARAMS.LOCAL.HIGHLIGHTS] = Number(grade.highlights) || 0;
+    values[MASK_PARAMS.LOCAL.MIDTONES] = Number(grade.midtones) || 0;
+    values[MASK_PARAMS.LOCAL.SHADOWS] = Number(grade.shadows) || 0;
+    values[MASK_PARAMS.LOCAL.BLACKS] = Number(grade.blacks) || 0;
+    values[MASK_PARAMS.LOCAL.CONTRAST] = Number(grade.contrast) || 0;
+    values[MASK_PARAMS.LOCAL.CONTRAST_PIVOT] = Math.max(0.001, Number(grade.contrast_pivot) || 0.18);
+    values[MASK_PARAMS.LOCAL.WHITE_BALANCE_KELVIN] = Number(grade.white_balance_kelvin) || 6500;
+    values[MASK_PARAMS.LOCAL.TINT] = Number(grade.tint) || 0;
+    values[MASK_PARAMS.LOCAL.SATURATION] = Number(grade.saturation) || 0;
+    values[MASK_PARAMS.LOCAL.VIBRANCE] = Number(grade.vibrance) || 0;
+    values[MASK_PARAMS.LOCAL.MASK_OPACITY] = gpuMaskInfluenceOpacity(local.mask);
+    values[MASK_PARAMS.LOCAL.TEXTURE_AMOUNT] = (Number(detail.texture_amount) || 0) / 100;
+    values[MASK_PARAMS.LOCAL.CLARITY_AMOUNT] = (Number(detail.clarity_amount) || 0) / 125;
+    values[MASK_PARAMS.LOCAL.CLARITY_RADIUS] = Math.min(3, Math.max(0.2, Number(detail.clarity_radius_percent) || 0.75));
+    values[MASK_PARAMS.LOCAL.SHARPEN_AMOUNT] = Math.min(2, Math.max(0, (Number(detail.sharpen_amount) || 0) / 100));
+    values[MASK_PARAMS.LOCAL.SHARPEN_RADIUS] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
+    values[MASK_PARAMS.LOCAL.SHARPEN_THRESHOLD] = Math.min(1, Math.max(0, (Number(detail.sharpen_threshold) || 0) / 100)) * 0.5;
+    values[MASK_PARAMS.LOCAL.SOURCE_PIXEL_SCALE] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
     ['luma_curve','red_curve','green_curve','blue_curve'].forEach((name,index)=>{
-      if (!curvePointsNeutral(grade[name])) values[21] += 1 << index;
+      if (!curvePointsNeutral(grade[name])) values[MASK_PARAMS.LOCAL.CURVE_FLAGS] += 1 << index;
     });
-    values[22] = curveOffset;
+    values[MASK_PARAMS.LOCAL.CURVE_OFFSET] = curveOffset;
     const grading = grade.color_grading || {};
     values[GPU_PARAMS.COLOR_GRADING_ENABLED] = 1;
     values[GPU_PARAMS.COLOR_GRADING_BLENDING] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;
@@ -555,14 +558,7 @@
   function buildGpuLinearGradientParams(expression, rect, width, height, geometrySignature) {
     const geometry = JSON.parse(geometrySignature), rotation = Number(geometry.rotation || 0) / 90;
     const leaf = expression.leaf;
-    return new Float32Array([
-      Number(leaf.start.x), Number(leaf.start.y), Number(leaf.end.x), Number(leaf.end.y),
-      Number(leaf.gradient_midpoint_1), Number(leaf.gradient_midpoint_2), rect.x, rect.y,
-      rotation % 2 ? height : width, rotation % 2 ? width : height,
-      expression.inverted ? 1 : 0, expression.enabled === false ? 0 : 1,
-      rotation + (geometry.flip_horizontal ? 4 : 0) + (geometry.flip_vertical ? 8 : 0),
-      Number(leaf.gradient_fan || 0),
-    ]);
+    return new Float32Array(PASS_LAYOUTS.record("GRADIENT", { START_X: Number(leaf.start.x), START_Y: Number(leaf.start.y), END_X: Number(leaf.end.x), END_Y: Number(leaf.end.y), MIDPOINT_1: Number(leaf.gradient_midpoint_1), MIDPOINT_2: Number(leaf.gradient_midpoint_2), ORIGIN_X: rect.x, ORIGIN_Y: rect.y, SOURCE_WIDTH: rotation % 2 ? height : width, SOURCE_HEIGHT: rotation % 2 ? width : height, INVERT: expression.inverted ? 1 : 0, ENABLED: expression.enabled === false ? 0 : 1, TRANSFORM: rotation + (geometry.flip_horizontal ? 4 : 0) + (geometry.flip_vertical ? 8 : 0), FAN: Number(leaf.gradient_fan || 0) }));
   }
 
   function isGpuLinearGradientMask(expression, geometrySignature) {
@@ -677,17 +673,12 @@
       weights.push((kernel[left]||0)*(1-fraction)+(kernel[left+1]||0)*fraction);
     }
     const total=weights[0]+2*weights.slice(1).reduce((sum,w)=>sum+w,0);
-    return new Float32Array([sigma,reach+1,axis,inverted?1:0,...weights.map(w=>w/total)]);
+    return new Float32Array([...PASS_LAYOUTS.record("FEATHER", { SIGMA: sigma, TAP_COUNT: reach+1, AXIS: axis, INVERT: inverted?1:0 }),...weights.flatMap(w=>PASS_LAYOUTS.record("FEATHER_WEIGHT", { WEIGHT: w/total }))]);
   }
 
   function buildGpuLumaQualificationParams(expression) {
     const leaf = expression.leaf;
-    return new Float32Array([
-      Number(leaf.fade_in_start_ev),
-      Number(leaf.full_start_ev),
-      Number(leaf.full_end_ev),
-      Number(leaf.fade_out_end_ev),
-    ]);
+    return new Float32Array(PASS_LAYOUTS.record("LUMA", { FADE_IN_START: Number(leaf.fade_in_start_ev), FULL_START: Number(leaf.full_start_ev), FULL_END: Number(leaf.full_end_ev), FADE_OUT_END: Number(leaf.fade_out_end_ev) }));
   }
 
   function gpuMaskGraphLayoutIdentity(expression) {

@@ -1,5 +1,8 @@
 (function () {
   "use strict";
+  const PASS_LAYOUTS = ((typeof window !== "undefined" && window.HDRGpuPassLayouts)
+    || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRGpuPassLayouts));
+  const MASK_PARAMS = PASS_LAYOUTS.indices;
 
   const GPU_PARAMS = ((typeof window !== "undefined" && window.HDRGpuParamLayout)
     || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRGpuParamLayout)).indices;
@@ -1729,24 +1732,24 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let denominator = max(max(abs(maximum), abs(minimum)), max(abs(y), 0.000001));
       let relativeChroma = clamp((maximum - minimum) / denominator, 0.0, 1.0);
       let vibranceWeight = pow(1.0 - relativeChroma, 2.0);
-      return neutral + chroma * max(0.0, 1.0 + p[12] * vibranceWeight) * max(0.0, 1.0 + p[11]);
+      return neutral + chroma * max(0.0, 1.0 + p[${MASK_PARAMS.LOCAL.VIBRANCE}] * vibranceWeight) * max(0.0, 1.0 + p[${MASK_PARAMS.LOCAL.SATURATION}]);
     }
 
     fn applyLocalGrade(input: vec3f) -> vec3f {
-      let hdr = p[0] > 0.5;
+      let hdr = p[${MASK_PARAMS.LOCAL.HDR_LANE}] > 0.5;
       let sourceY = max(select(lumaSrgb(input), lumaAces(input), hdr), 0.00000001);
-      let pivot = max(p[8], 0.000001);
+      let pivot = max(p[${MASK_PARAMS.LOCAL.CONTRAST_PIVOT}], 0.000001);
       let stops = log2(sourceY / pivot);
       let blacks = clamp((-stops - 3.0) / 3.0, 0.0, 1.0);
       let shadows = clamp(1.0 - abs(stops + 2.0) / 2.5, 0.0, 1.0);
       let midtones = clamp(1.0 - abs(stops) / 2.5, 0.0, 1.0);
       let highlights = clamp((stops - 0.5) / 3.0, 0.0, 1.0);
-      let zoneEv = p[6] * blacks + p[5] * shadows + p[4] * midtones + p[3] * highlights;
-      let targetStops = stops * exp2(p[7]) + zoneEv + p[2];
+      let zoneEv = p[${MASK_PARAMS.LOCAL.BLACKS}] * blacks + p[${MASK_PARAMS.LOCAL.SHADOWS}] * shadows + p[${MASK_PARAMS.LOCAL.MIDTONES}] * midtones + p[${MASK_PARAMS.LOCAL.HIGHLIGHTS}] * highlights;
+      let targetStops = stops * exp2(p[${MASK_PARAMS.LOCAL.CONTRAST}]) + zoneEv + p[${MASK_PARAMS.LOCAL.EXPOSURE}];
       var rgb = input * (pivot * exp2(clamp(targetStops, -32.0, 24.0)) / sourceY);
       if (hdr) {
-        let offset = (p[9] - 6500.0) / 6500.0;
-        rgb *= vec3f(1.0 + offset * 0.15, 1.0 + p[10] * 0.08, 1.0 - offset * 0.15);
+        let offset = (p[${MASK_PARAMS.LOCAL.WHITE_BALANCE_KELVIN}] - 6500.0) / 6500.0;
+        rgb *= vec3f(1.0 + offset * 0.15, 1.0 + p[${MASK_PARAMS.LOCAL.TINT}] * 0.08, 1.0 - offset * 0.15);
         rgb = localSaturation(rgb);
       } else {
         // Local export converts display-linear sRGB with CAT02. The shared
@@ -1756,12 +1759,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           0.06993408230751336*rgb.r + 0.9181030375085815*rgb.g + 0.011932775530201238*rgb.b,
           0.0204629926377373*rgb.r + 0.1067686633825107*rgb.g + 0.8727159106194422*rgb.b
         );
-        let offset = (p[9] - 6500.0) / 6500.0;
-        aces *= vec3f(1.0 + offset * 0.15, 1.0 + p[10] * 0.08, 1.0 - offset * 0.15);
+        let offset = (p[${MASK_PARAMS.LOCAL.WHITE_BALANCE_KELVIN}] - 6500.0) / 6500.0;
+        aces *= vec3f(1.0 + offset * 0.15, 1.0 + p[${MASK_PARAMS.LOCAL.TINT}] * 0.08, 1.0 - offset * 0.15);
         rgb = acescgToSrgb(localSaturation(aces));
       }
       // Local curves precede colour wheels and Detail, just as in export.
-      rgb = applyCurvesOffset(rgb,hdr,u32(p[21]),u32(p[22]));
+      rgb = applyCurvesOffset(rgb,hdr,u32(p[${MASK_PARAMS.LOCAL.CURVE_FLAGS}]),u32(p[${MASK_PARAMS.LOCAL.CURVE_OFFSET}]));
       rgb = applyColorGrading(rgb,hdr);
       // CPU active SDR grading clips before Detail; neutral grading skips
       // that stage so an unclipped candidate can still enter Detail.
@@ -2148,8 +2151,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(
         max(0.35, diagonal * 0.0003),
         max(0.70, diagonal * 0.0012),
-        max(0.50, diagonal * p[16] / 100.0),
-        max(0.30, p[18] * p[20])
+        max(0.50, diagonal * p[${MASK_PARAMS.LOCAL.CLARITY_RADIUS}] / 100.0),
+        max(0.30, p[${MASK_PARAMS.LOCAL.SHARPEN_RADIUS}] * p[${MASK_PARAMS.LOCAL.SOURCE_PIXEL_SCALE}])
       );
     }
 
@@ -2180,30 +2183,30 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
       let blurred = textureLoad(spatialTexture, coordinate, 0);
-      let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), DETAIL_LUMA_FLOOR);
+      let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[${MASK_PARAMS.LOCAL.HDR_LANE}] > 0.5), DETAIL_LUMA_FLOOR);
       let logY = log2(sourceY);
       var adjusted = logY;
-      if (abs(p[14]) > 0.000001) {
+      if (abs(p[${MASK_PARAMS.LOCAL.TEXTURE_AMOUNT}]) > 0.000001) {
         let edgeWeight = detailTextureEdgeWeight(vec2f(coordinate), logY, blurred.y);
-        adjusted += (blurred.x - blurred.y) * edgeWeight * p[14];
+        adjusted += (blurred.x - blurred.y) * edgeWeight * p[${MASK_PARAMS.LOCAL.TEXTURE_AMOUNT}];
       }
-      if (abs(p[15]) > 0.000001) {
+      if (abs(p[${MASK_PARAMS.LOCAL.CLARITY_AMOUNT}]) > 0.000001) {
         let band = logY - clarityBase(coordinate);
         let edgeWeight = exp(-(band / 0.75) * (band / 0.75));
-        adjusted += band * edgeWeight * p[15];
+        adjusted += band * edgeWeight * p[${MASK_PARAMS.LOCAL.CLARITY_AMOUNT}];
       }
-      if (p[17] > 0.000001) {
+      if (p[${MASK_PARAMS.LOCAL.SHARPEN_AMOUNT}] > 0.000001) {
         let edge = logY - (blurred.w + blurred.z);
-        let qualification = select(smoothRange(p[19], p[19] + 0.04, abs(edge)), 1.0, p[19] <= 0.000001);
+        let qualification = select(smoothRange(p[${MASK_PARAMS.LOCAL.SHARPEN_THRESHOLD}], p[${MASK_PARAMS.LOCAL.SHARPEN_THRESHOLD}] + 0.04, abs(edge)), 1.0, p[${MASK_PARAMS.LOCAL.SHARPEN_THRESHOLD}] <= 0.000001);
         let qualified = edge * qualification;
         let extrema = detailLocalExtrema(coordinate);
         let allowance = min(0.12 * (extrema.y - extrema.x), SHARPEN_HALO_ALLOWANCE_EV);
-        adjusted = clamp(adjusted + qualified * p[17], extrema.x - allowance, extrema.y + allowance);
+        adjusted = clamp(adjusted + qualified * p[${MASK_PARAMS.LOCAL.SHARPEN_AMOUNT}], extrema.x - allowance, extrema.y + allowance);
       }
       let delta = clamp(adjusted - logY, -16.0, 16.0);
       if (abs(delta) <= 0.0000001) { return vec4f(source, 1.0); }
       var result = source * exp2(delta);
-      result = select(clamp(result, vec3f(0.0), vec3f(1.0)), max(result, vec3f(0.0)), p[0] > 0.5);
+      result = select(clamp(result, vec3f(0.0), vec3f(1.0)), max(result, vec3f(0.0)), p[${MASK_PARAMS.LOCAL.HDR_LANE}] > 0.5);
       return vec4f(result, 1.0);
     }
 
@@ -2275,9 +2278,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let influence = clamp(localMaskValue(coordinate) * p[1] * p[13], 0.0, 1.0);
+      let influence = clamp(localMaskValue(coordinate) * p[${MASK_PARAMS.LOCAL.OPACITY}] * p[${MASK_PARAMS.LOCAL.MASK_OPACITY}], 0.0, 1.0);
       let graded = applyLocalGrade(source);
-      let candidate = select(min(graded,vec3f(1.0)),graded,p[0]>0.5);
+      let candidate = select(min(graded,vec3f(1.0)),graded,p[${MASK_PARAMS.LOCAL.HDR_LANE}]>0.5);
       return vec4f(mix(source,candidate,influence), 1.0);
     }
 
@@ -2295,7 +2298,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
       let frameUv = textureLoad(overlayMaskTexture, coordinate, 0).xy;
       let mask = textureSampleLevel(spatialTexture, spatialSampler, frameUv, 0.0).r;
-      let influence = clamp(mask * p[1] * p[13], 0.0, 1.0);
+      let influence = clamp(mask * p[${MASK_PARAMS.LOCAL.OPACITY}] * p[${MASK_PARAMS.LOCAL.MASK_OPACITY}], 0.0, 1.0);
       return vec4f(mix(source, applyLocalGrade(source), influence), 1.0);
     }
 
@@ -2303,7 +2306,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let influence = clamp(localMaskValue(coordinate) * p[1] * p[13], 0.0, 1.0);
+      let influence = clamp(localMaskValue(coordinate) * p[${MASK_PARAMS.LOCAL.OPACITY}] * p[${MASK_PARAMS.LOCAL.MASK_OPACITY}], 0.0, 1.0);
       let candidate = textureLoad(overlayMaskTexture, coordinate, 0).rgb;
       return vec4f(mix(source, candidate, influence), 1.0);
     }
@@ -2518,36 +2521,36 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     @fragment fn linearGradientFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      var coordinate = input.position.xy + vec2f(p[6], p[7]);
-      let transform = u32(p[12]);
+      var coordinate = input.position.xy + vec2f(p[${MASK_PARAMS.GRADIENT.ORIGIN_X}], p[${MASK_PARAMS.GRADIENT.ORIGIN_Y}]);
+      let transform = u32(p[${MASK_PARAMS.GRADIENT.TRANSFORM}]);
       let rotation = transform & 3u;
-      let sourceSize = vec2f(p[8], p[9]);
+      let sourceSize = vec2f(p[${MASK_PARAMS.GRADIENT.SOURCE_WIDTH}], p[${MASK_PARAMS.GRADIENT.SOURCE_HEIGHT}]);
       let outputSize = select(sourceSize, sourceSize.yx, (rotation & 1u) != 0u);
       if ((transform & 4u) != 0u) { coordinate.x = outputSize.x - coordinate.x; }
       if ((transform & 8u) != 0u) { coordinate.y = outputSize.y - coordinate.y; }
       if (rotation == 1u) { coordinate = vec2f(coordinate.y, sourceSize.y - coordinate.x); }
       else if (rotation == 2u) { coordinate = sourceSize - coordinate; }
       else if (rotation == 3u) { coordinate = vec2f(sourceSize.x - coordinate.y, coordinate.x); }
-      let uv = coordinate / max(vec2f(p[8], p[9]), vec2f(1.0));
-      let axis = vec2f(p[2] - p[0], p[3] - p[1]);
+      let uv = coordinate / max(vec2f(p[${MASK_PARAMS.GRADIENT.SOURCE_WIDTH}], p[${MASK_PARAMS.GRADIENT.SOURCE_HEIGHT}]), vec2f(1.0));
+      let axis = vec2f(p[${MASK_PARAMS.GRADIENT.END_X}] - p[${MASK_PARAMS.GRADIENT.START_X}], p[${MASK_PARAMS.GRADIENT.END_Y}] - p[${MASK_PARAMS.GRADIENT.START_Y}]);
       let denominator = max(dot(axis, axis), 0.00000001);
       let axisLength = max(sqrt(denominator), 0.00000001);
-      let perpendicular = tanh(dot(uv - vec2f(p[0], p[1]), vec2f(-axis.y, axis.x)) / (axisLength * axisLength));
-      let fanScale = clamp(1.0 + p[13] * 0.8 * perpendicular * perpendicular, 0.2, 1.8);
-      let position = dot(uv - vec2f(p[0], p[1]), axis) / denominator / fanScale;
-      let first = clamp(position / max(p[4], 0.000001), 0.0, 1.0);
-      let middle = clamp((position - p[4]) / max(p[5] - p[4], 0.000001), 0.0, 1.0);
-      let last = clamp((position - p[5]) / max(1.0 - p[5], 0.000001), 0.0, 1.0);
+      let perpendicular = tanh(dot(uv - vec2f(p[${MASK_PARAMS.GRADIENT.START_X}], p[${MASK_PARAMS.GRADIENT.START_Y}]), vec2f(-axis.y, axis.x)) / (axisLength * axisLength));
+      let fanScale = clamp(1.0 + p[${MASK_PARAMS.GRADIENT.FAN}] * 0.8 * perpendicular * perpendicular, 0.2, 1.8);
+      let position = dot(uv - vec2f(p[${MASK_PARAMS.GRADIENT.START_X}], p[${MASK_PARAMS.GRADIENT.START_Y}]), axis) / denominator / fanScale;
+      let first = clamp(position / max(p[${MASK_PARAMS.GRADIENT.MIDPOINT_1}], 0.000001), 0.0, 1.0);
+      let middle = clamp((position - p[${MASK_PARAMS.GRADIENT.MIDPOINT_1}]) / max(p[${MASK_PARAMS.GRADIENT.MIDPOINT_2}] - p[${MASK_PARAMS.GRADIENT.MIDPOINT_1}], 0.000001), 0.0, 1.0);
+      let last = clamp((position - p[${MASK_PARAMS.GRADIENT.MIDPOINT_2}]) / max(1.0 - p[${MASK_PARAMS.GRADIENT.MIDPOINT_2}], 0.000001), 0.0, 1.0);
       var value = select(1.0 - first / 3.0,
-        select(2.0 / 3.0 - middle / 3.0, (1.0 - last) / 3.0, position > p[5]),
-        position > p[4]);
-      if (p[10] > 0.5) { value = 1.0 - value; }
-      if (p[11] < 0.5) { value = 0.0; }
+        select(2.0 / 3.0 - middle / 3.0, (1.0 - last) / 3.0, position > p[${MASK_PARAMS.GRADIENT.MIDPOINT_2}]),
+        position > p[${MASK_PARAMS.GRADIENT.MIDPOINT_1}]);
+      if (p[${MASK_PARAMS.GRADIENT.INVERT}] > 0.5) { value = 1.0 - value; }
+      if (p[${MASK_PARAMS.GRADIENT.ENABLED}] < 0.5) { value = 0.0; }
       // Keep Fan coverage in float: rounding its curved profile to a byte
       // before half-float storage adds a second quantization at byte ties.
       // The neutral Fan path retains its established byte coverage.
       value = clamp(value, 0.0, 1.0);
-      if (p[13] == 0.0) { value = round(value * 255.0) / 255.0; }
+      if (p[${MASK_PARAMS.GRADIENT.FAN}] == 0.0) { value = round(value * 255.0) / 255.0; }
       return vec4f(value, value, value, 1.0);
     }
 
@@ -2565,36 +2568,36 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     fn shapeRasterCoverage(position: vec2f) -> vec2f {
-      var pixel = position + vec2f(p[1], p[2]);
+      var pixel = position + vec2f(p[${MASK_PARAMS.RASTER.ORIGIN_X}], p[${MASK_PARAMS.RASTER.ORIGIN_Y}]);
       // Export rasterizes in source space, then applies quarter turns and
       // flips. Invert those exact pixel permutations before qualification.
-      let transform = u32(p[9]);
+      let transform = u32(p[${MASK_PARAMS.RASTER.TRANSFORM}]);
       let rotation = transform & 3u;
-      let sourceSize = vec2f(p[3],p[4]);
+      let sourceSize = vec2f(p[${MASK_PARAMS.RASTER.SOURCE_WIDTH}],p[${MASK_PARAMS.RASTER.SOURCE_HEIGHT}]);
       let outputSize = select(sourceSize,sourceSize.yx,(rotation & 1u) != 0u);
       if ((transform & 4u) != 0u) { pixel.x = outputSize.x-pixel.x; }
       if ((transform & 8u) != 0u) { pixel.y = outputSize.y-pixel.y; }
       if (rotation == 1u) { pixel = vec2f(pixel.y,sourceSize.y-pixel.x); }
       else if (rotation == 2u) { pixel = sourceSize-pixel; }
       else if (rotation == 3u) { pixel = vec2f(sourceSize.x-pixel.y,pixel.x); }
-      let uv = vec2f(maskDivide(pixel.x, p[3]), maskDivide(pixel.y, p[4]));
+      let uv = vec2f(maskDivide(pixel.x, p[${MASK_PARAMS.RASTER.SOURCE_WIDTH}]), maskDivide(pixel.y, p[${MASK_PARAMS.RASTER.SOURCE_HEIGHT}]));
       var value = 0.0;
       var attenuation = 1.0;
-      let count = u32(p[7]);
-      if (p[0] > 0.5) {
+      let count = u32(p[${MASK_PARAMS.RASTER.ITEM_COUNT}]);
+      if (p[${MASK_PARAMS.RASTER.KIND}] > 0.5) {
         var inside = false;
         var edge = 1e20;
-        let aspect = p[3] / p[4];
+        let aspect = p[${MASK_PARAMS.RASTER.SOURCE_WIDTH}] / p[${MASK_PARAMS.RASTER.SOURCE_HEIGHT}];
         let metric = vec2f(max(aspect, 1.0), max(1.0 / aspect, 1.0));
-        let outer = p[0] > 1.5;
-        let stride = select(2u,4u,outer);
-        let start = select(10u,11u,outer);
+        let outer = p[${MASK_PARAMS.RASTER.KIND}] > 1.5;
+        let stride = select(${PASS_LAYOUTS.layouts.PATH_POINT.count}u,${PASS_LAYOUTS.layouts.PATH_POINT.count + PASS_LAYOUTS.layouts.PATH_WIDTH.count}u,outer);
+        let start = select(${PASS_LAYOUTS.layouts.RASTER.count}u,${PASS_LAYOUTS.layouts.RASTER.count + PASS_LAYOUTS.layouts.PATH_OUTER.count}u,outer);
         var transition = 0.0;
         for (var i = 0u; i < count; i++) {
           let firstIndex = start + stride * i;
           let lastIndex = start + stride * ((i + 1u) % count);
-          let first = vec2f(p[firstIndex], p[firstIndex+1u]);
-          let last = vec2f(p[lastIndex], p[lastIndex+1u]);
+          let first = vec2f(p[${PASS_LAYOUTS.offset("firstIndex", MASK_PARAMS.PATH_POINT.X)}], p[${PASS_LAYOUTS.offset("firstIndex", MASK_PARAMS.PATH_POINT.Y)}]);
+          let last = vec2f(p[${PASS_LAYOUTS.offset("lastIndex", MASK_PARAMS.PATH_POINT.X)}], p[${PASS_LAYOUTS.offset("lastIndex", MASK_PARAMS.PATH_POINT.Y)}]);
           let crossing = (first.y > uv.y) != (last.y > uv.y);
           let edgeX = maskDivide((last.x-first.x)*(uv.y-first.y), last.y-first.y+1e-12)+first.x;
           if (crossing && uv.x < edgeX) { inside = !inside; }
@@ -2603,7 +2606,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
             let a=first*metric;let delta=last*metric-a;
             let projection=clamp(dot(uv*metric-a,delta)/max(dot(delta,delta),1e-12),0.0,1.0);
             let distance=length(uv*metric-(a+projection*delta));
-            let width=p[firstIndex+2u]+projection*(p[firstIndex+3u]-p[firstIndex+2u]);
+            let width=p[${PASS_LAYOUTS.offset("firstIndex", PASS_LAYOUTS.layouts.PATH_POINT.count + MASK_PARAMS.PATH_WIDTH.WIDTH_START)}]+projection*(p[${PASS_LAYOUTS.offset("firstIndex", PASS_LAYOUTS.layouts.PATH_POINT.count + MASK_PARAMS.PATH_WIDTH.WIDTH_END)}]-p[${PASS_LAYOUTS.offset("firstIndex", PASS_LAYOUTS.layouts.PATH_POINT.count + MASK_PARAMS.PATH_WIDTH.WIDTH_START)}]);
             let t=distance/max(width,1e-6);
             let compact=clamp(1.0-t,0.0,1.0);
             let compactProfile=compact*compact*(3.0-2.0*compact);
@@ -2611,38 +2614,38 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
             if(t<.1){soft=1.0-t*t/.18;}
             else if(t>.9){soft=(1.0-t)*(1.0-t)/.18;}
             soft=select(0.0,clamp(soft,0.0,1.0),t<=1.0);
-            transition=max(transition,compactProfile+clamp(p[10],0.0,1.0)*(soft-compactProfile));
+            transition=max(transition,compactProfile+clamp(p[${PASS_LAYOUTS.layouts.RASTER.count + MASK_PARAMS.PATH_OUTER.SOFTNESS}],0.0,1.0)*(soft-compactProfile));
           }
         }
         value = select(0.0, 1.0, inside);
         if (outer) {value=select(transition,1.0,inside);}
-        else if (count > 0u && p[8] > 0.0) {
-          let feather = clamp(edge / max(p[8], 1e-6), 0.0, 1.0);
+        else if (count > 0u && p[${MASK_PARAMS.RASTER.FEATHER}] > 0.0) {
+          let feather = clamp(edge / max(p[${MASK_PARAMS.RASTER.FEATHER}], 1e-6), 0.0, 1.0);
           value = select(0.5-0.5*feather, 0.5+0.5*feather, inside);
         }
       } else {
-        let point = pixel / p[3];
-        var cursor = 10u;
+        let point = pixel / p[${MASK_PARAMS.RASTER.SOURCE_WIDTH}];
+        var cursor = ${PASS_LAYOUTS.layouts.RASTER.count}u;
         var eraseSeen = false;
         for (var i = 0u; i < count; i++) {
-          let segments = u32(p[cursor]);
-          let hardness = p[cursor+1u];
-          let flow = p[cursor+2u];
-          let opacity = p[cursor+3u];
-          let erase = p[cursor+4u] > 0.5;
-          let within = pixel.x >= p[cursor+5u] && pixel.y >= p[cursor+6u]
-            && pixel.x < p[cursor+7u] && pixel.y < p[cursor+8u];
-          cursor += 10u;
+          let segments = u32(p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.STROKE.SEGMENT_COUNT)}]);
+          let hardness = p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.STROKE.HARDNESS)}];
+          let flow = p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.STROKE.FLOW)}];
+          let opacity = p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.STROKE.OPACITY)}];
+          let erase = p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.STROKE.ERASE)}] > 0.5;
+          let within = pixel.x >= p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.STROKE.LEFT)}] && pixel.y >= p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.STROKE.TOP)}]
+            && pixel.x < p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.STROKE.RIGHT)}] && pixel.y < p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.STROKE.BOTTOM)}];
+          cursor += ${PASS_LAYOUTS.layouts.STROKE.count}u;
           var coverage = 0.0;
           for (var j = 0u; j < segments; j++) {
             if (within) {
-              let first = vec2f(p[cursor],p[cursor+1u]);
-              let last = vec2f(p[cursor+2u],p[cursor+3u]);
-              let radius = p[cursor+4u];
+              let first = vec2f(p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.SEGMENT.START_X)}],p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.SEGMENT.START_Y)}]);
+              let last = vec2f(p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.SEGMENT.END_X)}],p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.SEGMENT.END_Y)}]);
+              let radius = p[${PASS_LAYOUTS.offset("cursor", MASK_PARAMS.SEGMENT.RADIUS)}];
               let distance = maskSegmentDistance(point, first, last, 1e-8);
               coverage = max(coverage, 1.0-clamp((distance-radius*hardness)/max(radius*(1.0-hardness),1e-6),0.0,1.0));
             }
-            cursor += 5u;
+            cursor += ${PASS_LAYOUTS.layouts.SEGMENT.count}u;
           }
           let strength = min(opacity, coverage*flow);
           if (erase) { attenuation *= 1.0-strength; eraseSeen = true; }
@@ -2664,11 +2667,11 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // Feather/Invert precede Erase in export. Keep the qualified painted
     // bitmap, but evaluate post-feather attenuation at native pixel centres.
     @fragment fn brushRegionalEraseFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let tail=arrayLength(&p)-8u;
-      let frame=vec2f(p[tail],p[tail+1u]);
-      let pixel=input.position.xy+vec2f(p[tail+2u],p[tail+3u]);
-      let origin=vec2f(p[tail+4u],p[tail+5u]);
-      let extent=vec2f(p[tail+6u],p[tail+7u]);
+      let tail=arrayLength(&p)-${PASS_LAYOUTS.layouts.REGIONAL_ERASE.count}u;
+      let frame=vec2f(p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.REGIONAL_ERASE.FRAME_WIDTH)}],p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.REGIONAL_ERASE.FRAME_HEIGHT)}]);
+      let pixel=input.position.xy+vec2f(p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.REGIONAL_ERASE.ORIGIN_X)}],p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.REGIONAL_ERASE.ORIGIN_Y)}]);
+      let origin=vec2f(p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.REGIONAL_ERASE.RECT_X)}],p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.REGIONAL_ERASE.RECT_Y)}]);
+      let extent=vec2f(p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.REGIONAL_ERASE.RECT_WIDTH)}],p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.REGIONAL_ERASE.RECT_HEIGHT)}]);
       let size=vec2i(textureDimensions(sourceTexture));
       let at=(pixel/frame-origin)/extent*vec2f(size)-.5;
       let base=vec2i(floor(at));let fraction=fract(at);
@@ -2683,9 +2686,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     @fragment fn shapeRasterFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let coverage = shapeRasterCoverage(input.position.xy);
       var value = coverage.x;
-      if (p[5] > 0.5) { value = 1.0-value; }
+      if (p[${MASK_PARAMS.RASTER.INVERT}] > 0.5) { value = 1.0-value; }
       value *= coverage.y;
-      if (p[6] < 0.5) { value = 0.0; }
+      if (p[${MASK_PARAMS.RASTER.ENABLED}] < 0.5) { value = 0.0; }
       value = round(clamp(value,0.0,1.0)*255.0)/255.0;
       return vec4f(value,value,value,1.0);
     }
@@ -2693,31 +2696,31 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     @fragment fn lumaQualificationFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let luma = textureLoad(sourceTexture, pixelCoordinate(input.position.xy), 0).r;
       let ev = log2(max(luma, 0.00000001) / 0.18);
-      let rise = clamp((ev - p[0]) / max(p[1] - p[0], 0.000001), 0.0, 1.0);
-      let fall = clamp((p[3] - ev) / max(p[3] - p[2], 0.000001), 0.0, 1.0);
+      let rise = clamp((ev - p[${MASK_PARAMS.LUMA.FADE_IN_START}]) / max(p[${MASK_PARAMS.LUMA.FULL_START}] - p[${MASK_PARAMS.LUMA.FADE_IN_START}], 0.000001), 0.0, 1.0);
+      let fall = clamp((p[${MASK_PARAMS.LUMA.FADE_OUT_END}] - ev) / max(p[${MASK_PARAMS.LUMA.FADE_OUT_END}] - p[${MASK_PARAMS.LUMA.FULL_END}], 0.000001), 0.0, 1.0);
       let mask = min(rise, fall);
       return vec4f(mask, mask, mask, 1.0);
     }
 
-    // One axis of a Gaussian feather: p[0] sigma in texels, p[2] axis (0 x,
-    // 1 y), p[3] invert. Every texel within three sigma is read. The former
+    // One axis of a Gaussian feather: p[${MASK_PARAMS.LUMA.FADE_IN_START}] sigma in texels, p[${MASK_PARAMS.LUMA.FULL_END}] axis (0 x,
+    // 1 y), p[${MASK_PARAMS.LUMA.FADE_OUT_END}] invert. Every texel within three sigma is read. The former
     // pass read 25 taps a quarter-sigma apart, which skipped any feature
     // narrower than the spacing and turned a thin strip into a row of copies.
     // The edge is extended, as in the backend's blur.
     @fragment fn maskRefinementFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = vec2i(textureDimensions(sourceTexture));
       let coordinate = pixelCoordinate(input.position.xy);
-      let sigma = p[0];
+      let sigma = p[${MASK_PARAMS.FEATHER.SIGMA}];
       var value = textureLoad(sourceTexture, coordinate, 0).r;
-      if (p[1] > 0.0 && sigma >= 0.25) {
-        let direction = select(vec2i(1,0),vec2i(0,1),p[2]>.5);
-        value*=p[4];
-        for(var tap=1;tap<i32(p[1]);tap++){
-          value+=p[u32(tap)+4u]*(textureLoad(sourceTexture,clamp(coordinate+direction*tap,vec2i(0),dimensions-1),0).r
+      if (p[${MASK_PARAMS.FEATHER.TAP_COUNT}] > 0.0 && sigma >= 0.25) {
+        let direction = select(vec2i(1,0),vec2i(0,1),p[${MASK_PARAMS.FEATHER.AXIS}]>.5);
+        value*=p[${PASS_LAYOUTS.layouts.FEATHER.count + MASK_PARAMS.FEATHER_WEIGHT.WEIGHT}];
+        for(var tap=1;tap<i32(p[${MASK_PARAMS.FEATHER.TAP_COUNT}]);tap++){
+          value+=p[u32(tap)+${PASS_LAYOUTS.layouts.FEATHER.count + MASK_PARAMS.FEATHER_WEIGHT.WEIGHT}u]*(textureLoad(sourceTexture,clamp(coordinate+direction*tap,vec2i(0),dimensions-1),0).r
             +textureLoad(sourceTexture,clamp(coordinate-direction*tap,vec2i(0),dimensions-1),0).r);
         }
       } else if (sigma >= 0.25) {
-        let direction = select(vec2i(1, 0), vec2i(0, 1), p[2] > 0.5);
+        let direction = select(vec2i(1, 0), vec2i(0, 1), p[${MASK_PARAMS.FEATHER.AXIS}] > 0.5);
         let reach = min(i32(ceil(sigma * 3.0)), 64);
         var total = 0.0;
         var weightTotal = 0.0;
@@ -2729,17 +2732,17 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         }
         value = total / max(weightTotal, 0.000001);
       }
-      if (p[3] > 0.5) { value = 1.0 - value; }
+      if (p[${MASK_PARAMS.FEATHER.INVERT}] > 0.5) { value = 1.0 - value; }
       return vec4f(value, value, value, 1.0);
     }
 
-    // Area-average p[0] texels along one axis (p[1]: 0 x, 1 y) into one. A
+    // Area-average p[${MASK_PARAMS.FEATHER.SIGMA}] texels along one axis (p[${MASK_PARAMS.FEATHER.TAP_COUNT}]: 0 x, 1 y) into one. A
     // thin feature keeps its share of the average instead of being missed.
     @fragment fn maskDownsampleFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = vec2i(textureDimensions(sourceTexture));
       let output = vec2i(input.position.xy);
-      let factor = i32(p[0]);
-      let alongY = p[1] > 0.5;
+      let factor = i32(p[${MASK_PARAMS.DOWNSAMPLE.FACTOR}]);
+      let alongY = p[${MASK_PARAMS.DOWNSAMPLE.AXIS}] > 0.5;
       let start = select(output.x, output.y, alongY) * factor;
       let stop = min(start + factor, select(dimensions.x, dimensions.y, alongY));
       var total = 0.0;
@@ -2753,10 +2756,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(value, value, value, 1.0);
     }
 
-    // Bilinear upsample of a mask reduced by p[0] in both axes; p[1] inverts.
+    // Bilinear upsample of a mask reduced by p[${MASK_PARAMS.DOWNSAMPLE.FACTOR}] in both axes; p[${MASK_PARAMS.DOWNSAMPLE.AXIS}] inverts.
     @fragment fn maskUpsampleFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let reduced = vec2i(textureDimensions(sourceTexture));
-      let position = input.position.xy / p[0] - vec2f(0.5);
+      let position = input.position.xy / p[${MASK_PARAMS.UPSAMPLE.FACTOR}] - vec2f(0.5);
       let origin = floor(position);
       let fraction = position - origin;
       let base = vec2i(origin);
@@ -2766,18 +2769,18 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let c = textureLoad(sourceTexture, clamp(base + vec2i(0, 1), vec2i(0), last), 0).r;
       let d = textureLoad(sourceTexture, clamp(base + vec2i(1, 1), vec2i(0), last), 0).r;
       var value = mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
-      if (p[1] > 0.5) { value = 1.0 - value; }
+      if (p[${MASK_PARAMS.UPSAMPLE.INVERT}] > 0.5) { value = 1.0 - value; }
       return vec4f(value, value, value, 1.0);
     }
 
     @fragment fn maskCombineFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let coordinate = pixelCoordinate(input.position.xy);
-      let left = clamp(textureLoad(sourceTexture, coordinate, 0).r * p[1], 0.0, 1.0);
-      let right = clamp(textureLoad(operandTexture, coordinate, 0).r * p[2], 0.0, 1.0);
+      let left = clamp(textureLoad(sourceTexture, coordinate, 0).r * p[${MASK_PARAMS.COMBINE.LEFT_OPACITY}], 0.0, 1.0);
+      let right = clamp(textureLoad(operandTexture, coordinate, 0).r * p[${MASK_PARAMS.COMBINE.RIGHT_OPACITY}], 0.0, 1.0);
       var value = max(left, right);
-      if (p[0] > 0.5 && p[0] < 1.5) { value = left * right; }
-      if (p[0] > 1.5) { value = left * (1.0 - right); }
-      if (p[3] > 0.5) { value = 1.0 - value; }
+      if (p[${MASK_PARAMS.COMBINE.OPERATOR}] > 0.5 && p[${MASK_PARAMS.COMBINE.OPERATOR}] < 1.5) { value = left * right; }
+      if (p[${MASK_PARAMS.COMBINE.OPERATOR}] > 1.5) { value = left * (1.0 - right); }
+      if (p[${MASK_PARAMS.COMBINE.INVERT}] > 0.5) { value = 1.0 - value; }
       return vec4f(value, value, value, 1.0);
     }
   `;

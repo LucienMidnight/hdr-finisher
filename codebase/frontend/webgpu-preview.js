@@ -1256,7 +1256,7 @@
         let current = a;
         for (const {local, entry} of masks) {
           const values = buildLocalParams(local, lane, 1,this.localCurveOffsets?.get(local.id) || 0);
-          values[14] = values[15] = values[17] = 0;
+          values[MASK_PARAMS.LOCAL.TEXTURE_AMOUNT] = values[MASK_PARAMS.LOCAL.CLARITY_AMOUNT] = values[MASK_PARAMS.LOCAL.SHARPEN_AMOUNT] = 0;
           const buffer = this.createStorageBuffer(values); buffers.push(buffer);
           this.device.queue.writeBuffer(buffer, 0, values);
           const target = current === a ? b : a;
@@ -2714,7 +2714,7 @@
         // The whole region is the answer; keep it out of the scratch release.
         for (const name of ["texture", "baseTexture", "refinedTexture"]) if (entry[name] === texture) entry[name] = null;
       } else {
-        const values = new Float32Array([rect.x - x, rect.y - y, 0, 0]);
+        const values = new Float32Array(PASS_LAYOUTS.record("CROP", { ORIGIN_X: rect.x - x, ORIGIN_Y: rect.y - y, RESERVED_2: 0, RESERVED_3: 0 }));
         buffer = this.createStorageBuffer(values);
         this.device.queue.writeBuffer(buffer, 0, values);
         texture = this.createMaskTexture(rect.width, rect.height);
@@ -2739,8 +2739,7 @@
         if (!operand || !current()) { release(); return null; }
         const opacity = child.operator === "leaf" ? Math.min(1, Math.max(0, Number(child.leaf?.mask_opacity ?? 1))) : 1;
         if (!result) { result = {texture: operand.texture, opacity}; continue; }
-        const values = new Float32Array([gpuMaskOperatorCode(expression.operator), result.opacity, opacity,
-          index === children.length - 1 && expression.inverted ? 1 : 0]);
+        const values = new Float32Array(PASS_LAYOUTS.record("COMBINE", { OPERATOR: gpuMaskOperatorCode(expression.operator), LEFT_OPACITY: result.opacity, RIGHT_OPACITY: opacity, INVERT: index === children.length - 1 && expression.inverted ? 1 : 0 }));
         const buffer = this.createStorageBuffer(values), target = this.createMaskTexture(rect.width, rect.height);
         this.device.queue.writeBuffer(buffer, 0, values);
         const encoder = this.device.createCommandEncoder();
@@ -2842,8 +2841,8 @@
             if (!tile) { refused = true; break; }
             const line = texture(1, rect.height), encoder = device.createCommandEncoder();
             [pipelines.bandMaximum, pipelines.bandMinimum].forEach((reduction, index) => {
-              draw(encoder, reduction, tile.texture, line, new Float32Array([0, rect.height, 0, rect.width]));
-              draw(encoder, pipelines.maximum, line, one, new Float32Array([1]));
+              draw(encoder, reduction, tile.texture, line, new Float32Array(PASS_LAYOUTS.record("BAND_MAXIMUM", { TOP: 0, BOTTOM: rect.height, LEFT: 0, RIGHT: rect.width })));
+              draw(encoder, pipelines.maximum, line, one, new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
               encoder.copyTextureToTexture({texture: one}, {texture: lists[index], origin: [0, i]}, [1, 1]);
             });
             device.queue.submit([encoder.finish()]);
@@ -2855,7 +2854,7 @@
           scratch.buffers.push(buffer);
           const encoder = device.createCommandEncoder();
           lists.forEach((list, index) => {
-            draw(encoder, pipelines.maximum, list, one, new Float32Array([1]));
+            draw(encoder, pipelines.maximum, list, one, new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
             encoder.copyTextureToTexture({texture: one}, {texture: pair, origin: [index, 0]}, [1, 1]);
           });
           encoder.copyTextureToBuffer({texture: pair}, {buffer, bytesPerRow: 256}, [2, 1]);
@@ -3106,7 +3105,8 @@
       if(!entry){
         const raster=window.HDRMaskRaster.parameters(spatial,{...rect,x:rect.x+frame.x,y:rect.y+frame.y},frame.width,frame.height,frame.geometrySignature);
         if(!raster)return null;
-        const values=new Float32Array([...raster,proxy.width,proxy.height,rect.x,rect.y,...(soft.frameRect||[0,0,1,1])]);
+        const region=soft.frameRect||[0,0,1,1];
+        const values=new Float32Array([...raster,...PASS_LAYOUTS.record("REGIONAL_ERASE", { FRAME_WIDTH: proxy.width, FRAME_HEIGHT: proxy.height, ORIGIN_X: rect.x, ORIGIN_Y: rect.y, RECT_X: region[0], RECT_Y: region[1], RECT_WIDTH: region[2], RECT_HEIGHT: region[3] })]);
         const buffer=this.createStorageBuffer(values),texture=this.createMaskTexture(rect.width,rect.height);
         this.device.queue.writeBuffer(buffer,0,values);
         const encoder=this.device.createCommandEncoder();
@@ -7252,12 +7252,7 @@
           const right = encodeNode(node.children[childIndex]);
           const target = entry.nodeTextures[textureIndex++];
           const finalChild = childIndex === node.children.length - 1;
-          const values = new Float32Array([
-            gpuMaskOperatorCode(node.expression.operator),
-            result.opacity,
-            right.opacity,
-            finalChild && node.expression.inverted ? 1 : 0,
-          ]);
+          const values = new Float32Array(PASS_LAYOUTS.record("COMBINE", { OPERATOR: gpuMaskOperatorCode(node.expression.operator), LEFT_OPACITY: result.opacity, RIGHT_OPACITY: right.opacity, INVERT: finalChild && node.expression.inverted ? 1 : 0 }));
           const parameterBuffer = this.createStorageBuffer(values);
           parameterBuffers.push(parameterBuffer);
           this.device.queue.writeBuffer(parameterBuffer, 0, values);
@@ -7468,11 +7463,11 @@
       } else {
         const reduced = this.lumaFeatherScratch(entry, plan.factor);
         const values = [
-          [plan.factor, 0, 0, 0],
-          [plan.factor, 1, 0, 0],
+          PASS_LAYOUTS.record("DOWNSAMPLE", { FACTOR: plan.factor, AXIS: 0, RESERVED_2: 0, RESERVED_3: 0 }),
+          PASS_LAYOUTS.record("DOWNSAMPLE", { FACTOR: plan.factor, AXIS: 1, RESERVED_2: 0, RESERVED_3: 0 }),
           lumaBlurParams(plan,0,false),
           lumaBlurParams(plan,1,false),
-          [plan.factor, inverted ? 1 : 0, 0, 0],
+          PASS_LAYOUTS.record("UPSAMPLE", { FACTOR: plan.factor, INVERT: inverted ? 1 : 0, RESERVED_2: 0, RESERVED_3: 0 }),
         ];
         values.forEach((value, index) => this.device.queue.writeBuffer(reduced.buffers[index], 0, new Float32Array(value)));
         // Area-average across, then down (the first pass writes into the
@@ -7519,7 +7514,7 @@
           var<workgroup> carry: f32;
           @compute @workgroup_size(128) fn sumRows(
             @builtin(workgroup_id) group: vec3u, @builtin(local_invocation_index) lane: u32) {
-            let size=textureDimensions(source); let vertical=params[0]>.5;
+            let size=textureDimensions(source); let vertical=params[${MASK_PARAMS.LUMA_BOX.AXIS}]>.5;
             let length=select(size.x,size.y,vertical); let row=group.x;
             if(lane==0u){carry=0.0;} workgroupBarrier();
             for(var start=0u;start<length;start+=128u){
@@ -7536,9 +7531,9 @@
           }
           @compute @workgroup_size(8,8) fn box(@builtin(global_invocation_id) id: vec3u){
             let size=textureDimensions(source); if(any(id.xy>=size)){return;}
-            let vertical=params[0]>.5; let length=i32(select(size.x,size.y,vertical));
+            let vertical=params[${MASK_PARAMS.LUMA_BOX.AXIS}]>.5; let length=i32(select(size.x,size.y,vertical));
             let position=i32(select(id.x,id.y,vertical)); let row=select(id.y,id.x,vertical);
-            let radius=i32(params[1]); let left=max(0,position-radius); let right=min(length-1,position+radius);
+            let radius=i32(params[${MASK_PARAMS.LUMA_BOX.RADIUS}]); let left=max(0,position-radius); let right=min(length-1,position+radius);
             var total=prefix[row*u32(length)+u32(right)];
             if(left>0){total-=prefix[row*u32(length)+u32(left-1)];}
             let first=vec2i(select(vec2u(0,row),vec2u(row,0),vertical));
@@ -7565,7 +7560,7 @@
       let source=entry.baseTexture,index=0;
       for(const axis of [0,1])for(const radius of lumaBoxRadii(plan.sigma)){
         const target=scratch.textures[index%2],buffer=scratch.buffers[index];
-        device.queue.writeBuffer(buffer,0,new Float32Array([axis,radius,0,0]));
+        device.queue.writeBuffer(buffer,0,new Float32Array(PASS_LAYOUTS.record("LUMA_BOX", { AXIS: axis, RADIUS: radius, RESERVED_2: 0, RESERVED_3: 0 })));
         for(let stage=0;stage<2;stage++){
           const pipeline=this.lumaBoxPipelines[stage];
           const entries=[{binding:0,resource:source.createView()},
@@ -7579,7 +7574,7 @@
         }
         source=target;index++;
       }
-      device.queue.writeBuffer(entry.verticalBuffer,0,new Float32Array([0,0,0,inverted?1:0]));
+      device.queue.writeBuffer(entry.verticalBuffer,0,new Float32Array(PASS_LAYOUTS.record("FEATHER", { SIGMA: 0, TAP_COUNT: 0, AXIS: 0, INVERT: inverted?1:0 })));
       this.encodeMaskPass(encoder,this.maskPipelines.refine,
         this.createMaskBindGroup(source,entry.verticalBuffer),entry.refinedTexture);
     }
@@ -8063,7 +8058,7 @@
       let buffer = this.localParamBuffers.get(key);
       const values = buildLocalParams(local, lane, sourcePixelScale,this.localCurveOffsets?.get(local.id) || 0);
       if (frameWidth > 0 && frameHeight > 0) {
-        writeClarityPlan(values, frameWidth, frameHeight, values[16]);
+        writeClarityPlan(values, frameWidth, frameHeight, values[MASK_PARAMS.LOCAL.CLARITY_RADIUS]);
         values[GPU_PARAMS.FRAME_WIDTH] = frameWidth;
         values[GPU_PARAMS.FRAME_HEIGHT] = frameHeight;
         writeMaskRect(values, 0, maskEntry, frameWidth, frameHeight);

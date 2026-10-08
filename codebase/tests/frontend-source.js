@@ -15,6 +15,10 @@ const FRONTEND = path.join(__dirname, "../frontend");
 // A script that has been divided lists its parts here, in load order. Tests
 // that load or search the original name then get all of them.
 const PARTS = {
+  "mask-raster.js": ["gpu-param-layout.js", "mask-raster.js"],
+  "gpu-brush-mask.js": ["gpu-param-layout.js", "gpu-brush-mask.js"],
+  "gpu-mask-resample.js": ["gpu-param-layout.js", "gpu-mask-resample.js"],
+
   "graph-scale.js": ["gpu-param-layout.js", "graph-scale.js"],
   "webgpu-shaders.js": ["gpu-param-layout.js", "webgpu-shaders.js"],
   "webgpu-preview.js": ["gpu-param-layout.js", "gpu-render-plan.js", "gpu-params.js", "webgpu-preview.js"],
@@ -28,6 +32,19 @@ function canonicalPositions(text) {
     assert.ok(Object.hasOwn(layout.indices, name), `Unknown global parameter ${name}`);
     return String(layout.indices[name]);
   };
+  const { HDRGpuPassLayouts: passes } = require("../frontend/gpu-param-layout.js");
+  const maskPosition = (_, layout, name) => {
+    assert.ok(Object.hasOwn(passes.indices[layout], name), `Unknown ${layout} parameter ${name}`);
+    return String(passes.indices[layout][name]);
+  };
+  text = text
+    .replace(/\$\{PASS_LAYOUTS\.offset\("(\w+)", MASK_PARAMS\.(\w+)\.(\w+)\)\}/g,
+      (_, base, layout, name) => passes.offset(base, passes.indices[layout][name]))
+    .replace(/\$\{MASK_PARAMS\.(\w+)\.(\w+)\}/g, maskPosition)
+    .replace(/\bMASK_PARAMS\.(\w+)\.(\w+)\b/g, maskPosition)
+    .replace(/\bPASS_LAYOUTS\.layouts\.(\w+)\.count\b/g, (_, layout) => String(passes.layouts[layout].count));
+  text = text.replace(/\$\{PASS_LAYOUTS\.offset\("(\w+)", ([0-9+ ]+)\)\}/g, (_, base, expression) => passes.offset(base, Function("return " + expression)()));
+  text = text.replace(/\$\{([0-9+ ]+)\}/g, (_, expression) => String(Function("return " + expression)()));
   return text
     .replace(/\$\{GPU_PARAMS\.([A-Z0-9_]+)\}/g, position)
     .replace(/\bGPU_PARAMS\.([A-Z0-9_]+)\b/g, position)

@@ -24,7 +24,7 @@ _REGEX_AFTER_WORD = {
 def _parameter_positions() -> dict[str, int]:
     """The real named layout, used only to resolve existing numeric source pins."""
     text = (FRONTEND / "gpu-param-layout.js").read_text(encoding="utf-8")
-    fields = re.findall(r'name: "([A-Z0-9_]+)", index: (\d+)', text)
+    fields = re.findall(r'name: "([A-Z0-9_]+)", index: (\d+)', text.split('const indices =', 1)[0])
     assert len(fields) == 190
     return {name: int(index) for name, index in fields}
 
@@ -36,6 +36,21 @@ def _canonical_positions(text: str) -> str:
         return str(positions[match.group(1)])
     text = re.sub(r'\$\{GPU_PARAMS\.([A-Z0-9_]+)\}', position, text)
     text = re.sub(r'\bGPU_PARAMS\.([A-Z0-9_]+)\b', position, text)
+    schema = (FRONTEND / "gpu-param-layout.js").read_text(encoding="utf-8")
+    layouts = {name: {field: int(index) for field, index in re.findall(r'name: "(\w+)", index: (\d+)', body)}
+               for name, body in re.findall(r'(\w+): define\(\[([\s\S]*?)\]\)', schema)}
+    def mask_position(match: re.Match[str]) -> str:
+        return str(layouts[match.group(1)][match.group(2)])
+    text = re.sub(r'\$\{MASK_PARAMS\.(\w+)\.(\w+)\}', mask_position, text)
+    text = re.sub(r'\bMASK_PARAMS\.(\w+)\.(\w+)\b', mask_position, text)
+    text = re.sub(r'\bPASS_LAYOUTS\.layouts\.(\w+)\.count\b', lambda m: str(len(layouts[m.group(1)])), text)
+    def integer(expression: str) -> int:
+        assert re.fullmatch(r'[0-9+ ]+', expression)
+        return sum(int(term.strip()) for term in expression.split('+'))
+    text = re.sub(r'\$\{PASS_LAYOUTS\.offset\("(\w+)", ([0-9+ ]+)\)\}',
+                  lambda m: m.group(1) + (f"+{integer(m.group(2))}u" if integer(m.group(2)) else ""), text)
+    text = re.sub(r'\$\{([0-9+ ]+)\}', lambda m: str(integer(m.group(1))), text)
+    text = re.sub(r'\$\{"xyzw"\[(\d)\]\}', lambda m: "xyzw"[int(m.group(1))], text)
     return text.replace("window.HDRGpuParamLayout.count", str(len(positions)))
 
 @lru_cache(maxsize=None)

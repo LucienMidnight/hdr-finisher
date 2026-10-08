@@ -153,10 +153,15 @@ Four reserved entries keep their positions; `DETAIL_ENABLED` is consumed by
 host-side graph routing rather than by a shader. Phase 4's validation is
 recorded in the sprint PRD.
 
-Local grades have a separate positional prefix and reuse parts of the global
-layout at the tail. Analytic, brush and resampling masks have independent
-positional lists too. Those remaining lists were reported for a separate
-follow-up; this sprint does not rename them.
+Local grades retain their separate 23-slot prefix and reuse the global
+positions at the tail. `gpu-param-layout.js` now also defines those prefix
+slots and every analytic, brush and resampling mask pass record, including
+variable-length path/stroke/segment records and regional tails. Their writers
+use named entries; WGSL takes numeric positions and strides from the same
+frozen definitions. `tests/gpu-pass-layout.test.js` checks the unchanged
+positions, actual writer/shader-reader agreement and missing-use controls.
+The test source resolvers in `frontend-source.js` and `frontend_source.py`
+resolve both global and pass names through the production definitions.
 
 ## Which checks cover what
 

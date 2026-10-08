@@ -2,8 +2,8 @@
   "use strict";
 
   // One position list for global render parameters. Reserved entries stay in
-  // place so naming cannot move any value sent to a shader. Local grades and
-  // mask passes retain their independent parameter layouts.
+  // place so naming cannot move any value sent to a shader. Local and mask
+  // pass layouts below share this same source of named positions.
   const fields = Object.freeze([
     Object.freeze({ name: "HDR_LANE", index: 0 }),
     Object.freeze({ name: "SOURCE_LINEAR_SRGB", index: 1 }),
@@ -202,4 +202,240 @@
 
   if (typeof window !== "undefined") window.HDRGpuParamLayout = HDRGpuParamLayout;
   if (typeof module !== "undefined" && module.exports) module.exports = { HDRGpuParamLayout };
+
+  // Independent pass records. Variable-length masks concatenate the named
+  // headers/records below; their counts also define each stride and tail.
+  function define(fields) {
+    fields = Object.freeze(fields.map(Object.freeze));
+    const indices = Object.freeze(Object.fromEntries(fields.map(({name,index}) => [name,index])));
+    return Object.freeze({fields, indices, count: fields.length});
+  }
+  const layouts = Object.freeze({
+    LOCAL: define([
+      { name: "HDR_LANE", index: 0 },
+      { name: "OPACITY", index: 1 },
+      { name: "EXPOSURE", index: 2 },
+      { name: "HIGHLIGHTS", index: 3 },
+      { name: "MIDTONES", index: 4 },
+      { name: "SHADOWS", index: 5 },
+      { name: "BLACKS", index: 6 },
+      { name: "CONTRAST", index: 7 },
+      { name: "CONTRAST_PIVOT", index: 8 },
+      { name: "WHITE_BALANCE_KELVIN", index: 9 },
+      { name: "TINT", index: 10 },
+      { name: "SATURATION", index: 11 },
+      { name: "VIBRANCE", index: 12 },
+      { name: "MASK_OPACITY", index: 13 },
+      { name: "TEXTURE_AMOUNT", index: 14 },
+      { name: "CLARITY_AMOUNT", index: 15 },
+      { name: "CLARITY_RADIUS", index: 16 },
+      { name: "SHARPEN_AMOUNT", index: 17 },
+      { name: "SHARPEN_RADIUS", index: 18 },
+      { name: "SHARPEN_THRESHOLD", index: 19 },
+      { name: "SOURCE_PIXEL_SCALE", index: 20 },
+      { name: "CURVE_FLAGS", index: 21 },
+      { name: "CURVE_OFFSET", index: 22 }
+    ]),
+    GRADIENT: define([
+      { name: "START_X", index: 0 },
+      { name: "START_Y", index: 1 },
+      { name: "END_X", index: 2 },
+      { name: "END_Y", index: 3 },
+      { name: "MIDPOINT_1", index: 4 },
+      { name: "MIDPOINT_2", index: 5 },
+      { name: "ORIGIN_X", index: 6 },
+      { name: "ORIGIN_Y", index: 7 },
+      { name: "SOURCE_WIDTH", index: 8 },
+      { name: "SOURCE_HEIGHT", index: 9 },
+      { name: "INVERT", index: 10 },
+      { name: "ENABLED", index: 11 },
+      { name: "TRANSFORM", index: 12 },
+      { name: "FAN", index: 13 }
+    ]),
+    RASTER: define([
+      { name: "KIND", index: 0 },
+      { name: "ORIGIN_X", index: 1 },
+      { name: "ORIGIN_Y", index: 2 },
+      { name: "SOURCE_WIDTH", index: 3 },
+      { name: "SOURCE_HEIGHT", index: 4 },
+      { name: "INVERT", index: 5 },
+      { name: "ENABLED", index: 6 },
+      { name: "ITEM_COUNT", index: 7 },
+      { name: "FEATHER", index: 8 },
+      { name: "TRANSFORM", index: 9 }
+    ]),
+    PATH_POINT: define([
+      { name: "X", index: 0 },
+      { name: "Y", index: 1 }
+    ]),
+    PATH_WIDTH: define([
+      { name: "WIDTH_START", index: 0 },
+      { name: "WIDTH_END", index: 1 }
+    ]),
+    PATH_OUTER: define([
+      { name: "SOFTNESS", index: 0 }
+    ]),
+    STROKE: define([
+      { name: "SEGMENT_COUNT", index: 0 },
+      { name: "HARDNESS", index: 1 },
+      { name: "FLOW", index: 2 },
+      { name: "OPACITY", index: 3 },
+      { name: "ERASE", index: 4 },
+      { name: "LEFT", index: 5 },
+      { name: "TOP", index: 6 },
+      { name: "RIGHT", index: 7 },
+      { name: "BOTTOM", index: 8 },
+      { name: "RESERVED", index: 9, reserved: true }
+    ]),
+    SEGMENT: define([
+      { name: "START_X", index: 0 },
+      { name: "START_Y", index: 1 },
+      { name: "END_X", index: 2 },
+      { name: "END_Y", index: 3 },
+      { name: "RADIUS", index: 4 }
+    ]),
+    REGIONAL_ERASE: define([
+      { name: "FRAME_WIDTH", index: 0 },
+      { name: "FRAME_HEIGHT", index: 1 },
+      { name: "ORIGIN_X", index: 2 },
+      { name: "ORIGIN_Y", index: 3 },
+      { name: "RECT_X", index: 4 },
+      { name: "RECT_Y", index: 5 },
+      { name: "RECT_WIDTH", index: 6 },
+      { name: "RECT_HEIGHT", index: 7 }
+    ]),
+    NATIVE_BRUSH: define([
+      { name: "ORIGIN_X", index: 0 },
+      { name: "ORIGIN_Y", index: 1 },
+      { name: "SCALE_Y", index: 2 },
+      { name: "SCALE_Y_LOW", index: 3 }
+    ]),
+    LUMA: define([
+      { name: "FADE_IN_START", index: 0 },
+      { name: "FULL_START", index: 1 },
+      { name: "FULL_END", index: 2 },
+      { name: "FADE_OUT_END", index: 3 }
+    ]),
+    FEATHER: define([
+      { name: "SIGMA", index: 0 },
+      { name: "TAP_COUNT", index: 1 },
+      { name: "AXIS", index: 2 },
+      { name: "INVERT", index: 3 }
+    ]),
+    FEATHER_WEIGHT: define([
+      { name: "WEIGHT", index: 0 }
+    ]),
+    DOWNSAMPLE: define([
+      { name: "FACTOR", index: 0 },
+      { name: "AXIS", index: 1 },
+      { name: "RESERVED_2", index: 2, reserved: true },
+      { name: "RESERVED_3", index: 3, reserved: true }
+    ]),
+    UPSAMPLE: define([
+      { name: "FACTOR", index: 0 },
+      { name: "INVERT", index: 1 },
+      { name: "RESERVED_2", index: 2, reserved: true },
+      { name: "RESERVED_3", index: 3, reserved: true }
+    ]),
+    COMBINE: define([
+      { name: "OPERATOR", index: 0 },
+      { name: "LEFT_OPACITY", index: 1 },
+      { name: "RIGHT_OPACITY", index: 2 },
+      { name: "INVERT", index: 3 }
+    ]),
+    COARSE: define([
+      { name: "FACTOR", index: 0 }
+    ]),
+    FRACTIONAL: define([
+      { name: "FACTOR", index: 0 },
+      { name: "AXIS", index: 1 },
+      { name: "FRAME_WIDTH", index: 2 },
+      { name: "FRAME_HEIGHT", index: 3 },
+      { name: "HALF_WIDTH", index: 4 }
+    ]),
+    EXPAND: define([
+      { name: "FACTOR", index: 0 },
+      { name: "FRAME_WIDTH", index: 1 },
+      { name: "FRAME_HEIGHT", index: 2 }
+    ]),
+    BOX: define([
+      { name: "RADIUS", index: 0 },
+      { name: "AXIS", index: 1 }
+    ]),
+    MAXIMUM: define([
+      { name: "AXIS", index: 0 }
+    ]),
+    FINISH: define([
+      { name: "INVERT", index: 0 },
+      { name: "ENABLED", index: 1 }
+    ]),
+    SHIFT: define([
+      { name: "EDGE", index: 0 },
+      { name: "NORMALIZED", index: 1 }
+    ]),
+    BAND_MAXIMUM: define([
+      { name: "TOP", index: 0 },
+      { name: "BOTTOM", index: 1 },
+      { name: "LEFT", index: 2 },
+      { name: "RIGHT", index: 3 }
+    ]),
+    COARSE_BAND: define([
+      { name: "FACTOR", index: 0 },
+      { name: "FRAME_WIDTH", index: 1 },
+      { name: "FRAME_HEIGHT", index: 2 },
+      { name: "ORIGIN_X", index: 3 },
+      { name: "ORIGIN_Y", index: 4 }
+    ]),
+    EXPAND_WINDOW: define([
+      { name: "FACTOR", index: 0 },
+      { name: "FRAME_WIDTH", index: 1 },
+      { name: "FRAME_HEIGHT", index: 2 },
+      { name: "ORIGIN_X", index: 3 },
+      { name: "ORIGIN_Y", index: 4 }
+    ]),
+    BRUSH_BOX: define([
+      { name: "RADIUS", index: 0 },
+      { name: "AXIS", index: 1 },
+      { name: "RESERVED_2", index: 2, reserved: true },
+      { name: "RESERVED_3", index: 3, reserved: true }
+    ]),
+    LUMA_BOX: define([
+      { name: "AXIS", index: 0 },
+      { name: "RADIUS", index: 1 },
+      { name: "RESERVED_2", index: 2, reserved: true },
+      { name: "RESERVED_3", index: 3, reserved: true }
+    ]),
+    RESAMPLE: define([
+      { name: "MATRIX_00", index: 0 },
+      { name: "MATRIX_01", index: 1 },
+      { name: "MATRIX_02", index: 2 },
+      { name: "MATRIX_10", index: 3 },
+      { name: "MATRIX_11", index: 4 },
+      { name: "MATRIX_12", index: 5 },
+      { name: "MATRIX_20", index: 6 },
+      { name: "MATRIX_21", index: 7 },
+      { name: "MATRIX_22", index: 8 },
+      { name: "MINIMUM", index: 9 },
+      { name: "MAXIMUM", index: 10 }
+    ]),
+    CROP: define([
+      { name: "ORIGIN_X", index: 0 },
+      { name: "ORIGIN_Y", index: 1 },
+      { name: "RESERVED_2", index: 2, reserved: true },
+      { name: "RESERVED_3", index: 3, reserved: true }
+    ]),
+  });
+  const passIndices = Object.freeze(Object.fromEntries(Object.entries(layouts).map(([name, layout]) => [name, layout.indices])));
+  function record(name, entries) {
+    const layout = layouts[name], values = new Array(layout.count).fill(0);
+    for (const [field, value] of Object.entries(entries)) {
+      if (!Object.hasOwn(layout.indices, field)) throw new Error(`Unknown ${name} parameter ${field}`);
+      values[layout.indices[field]] = value;
+    }
+    return values;
+  }
+  const offset = (base, index, suffix = "u") => base + (index ? "+" + index + suffix : "");
+  const HDRGpuPassLayouts = Object.freeze({layouts, indices: passIndices, record, offset});
+  if (typeof window !== "undefined") window.HDRGpuPassLayouts = HDRGpuPassLayouts;
+  if (typeof module !== "undefined" && module.exports) module.exports.HDRGpuPassLayouts = HDRGpuPassLayouts;
 })();

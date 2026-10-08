@@ -1,5 +1,8 @@
 (function () {
   'use strict';
+  const PASS_LAYOUTS = ((typeof window !== "undefined" && window.HDRGpuPassLayouts)
+    || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRGpuPassLayouts));
+  const MASK_PARAMS = PASS_LAYOUTS.indices;
   // Rounded bounded bitmaps and native Shift regions. Native peak reduction
   // scans the full painted field; normalization is never inferred per tile.
   const EXTRA = `
@@ -12,7 +15,7 @@
       return (f32(i-1)+min(f32(i),length/factor))*.5-.5;
     }
     @fragment fn brushCoarse(input:VertexOut)->@location(0) vec4f {
-      let size=vec2i(textureDimensions(sourceTexture));let at=vec2i(input.position.xy);let factor=i32(p[0]);
+      let size=vec2i(textureDimensions(sourceTexture));let at=vec2i(input.position.xy);let factor=i32(p[${MASK_PARAMS.COARSE.FACTOR}]);
       let count=(size+factor-1)/factor;
       var first=(at-1)*factor;var last=min(first+factor,size);
       if(at.x==0){first.x=0;last.x=1;}if(at.y==0){first.y=0;last.y=1;}
@@ -22,8 +25,8 @@
       return vec4f(vec3f(sum/f32((last.x-first.x)*(last.y-first.y))),1.0);
     }
     @fragment fn brushFractionalBox(input:VertexOut)->@location(0) vec4f {
-      let at=vec2i(input.position.xy);let vertical=p[1]>.5;let length=select(p[2],p[3],vertical);
-      let factor=p[0];let count=i32(ceil(length/factor));let half=p[4];
+      let at=vec2i(input.position.xy);let vertical=p[${MASK_PARAMS.FRACTIONAL.AXIS}]>.5;let length=select(p[${MASK_PARAMS.FRACTIONAL.FRAME_WIDTH}],p[${MASK_PARAMS.FRACTIONAL.FRAME_HEIGHT}],vertical);
+      let factor=p[${MASK_PARAMS.FRACTIONAL.FACTOR}];let count=i32(ceil(length/factor));let half=p[${MASK_PARAMS.FRACTIONAL.HALF_WIDTH}];
       let center=brushPosition(select(at.x,at.y,vertical),length,factor);
       var sum=0.0;for(var i=0;i<count+2;i++){
         var left=f32(i-1)-.5;var right=min(f32(i),length/factor)-.5;
@@ -41,7 +44,7 @@
       return vec2f(f32(lower),clamp((position-left)/max(right-left,1e-9),0.0,1.0));
     }
     @fragment fn brushExpand(input:VertexOut)->@location(0) vec4f {
-      let at=vec2i(input.position.xy);let x=brushTap(f32(at.x),p[1],p[0]);let y=brushTap(f32(at.y),p[2],p[0]);
+      let at=vec2i(input.position.xy);let x=brushTap(f32(at.x),p[${MASK_PARAMS.EXPAND.FRAME_WIDTH}],p[${MASK_PARAMS.EXPAND.FACTOR}]);let y=brushTap(f32(at.y),p[${MASK_PARAMS.EXPAND.FRAME_HEIGHT}],p[${MASK_PARAMS.EXPAND.FACTOR}]);
       let origin=vec2i(i32(x.x),i32(y.x));
       let top=mix(textureLoad(sourceTexture,origin,0).r,textureLoad(sourceTexture,origin+vec2i(1,0),0).r,x.y);
       let bottom=mix(textureLoad(sourceTexture,origin+vec2i(0,1),0).r,textureLoad(sourceTexture,origin+vec2i(1,1),0).r,x.y);
@@ -49,17 +52,17 @@
     }
     @fragment fn brushBox(input: VertexOut) -> @location(0) vec4f {
       let size=vec2i(textureDimensions(sourceTexture));
-      let at=vec2i(input.position.xy);let radius=i32(p[0]);
+      let at=vec2i(input.position.xy);let radius=i32(p[${MASK_PARAMS.BOX.RADIUS}]);
       var sum=0.0;
       for(var i=-radius;i<=radius;i++) {
-        let offset=select(vec2i(i,0),vec2i(0,i),p[1]>0.5);
+        let offset=select(vec2i(i,0),vec2i(0,i),p[${MASK_PARAMS.BOX.AXIS}]>0.5);
         sum+=textureLoad(sourceTexture,clamp(at+offset,vec2i(0),size-1),0).r;
       }
       return vec4f(vec3f(sum/f32(2*radius+1)),1.0);
     }
     @fragment fn brushMaximum(input: VertexOut) -> @location(0) vec4f {
       let size=vec2i(textureDimensions(sourceTexture));let at=vec2i(input.position.xy);
-      let vertical=p[0]>0.5;let count=select(size.x,size.y,vertical);
+      let vertical=p[${MASK_PARAMS.MAXIMUM.AXIS}]>0.5;let count=select(size.x,size.y,vertical);
       var value=0.0;
       for(var i=0;i<count;i++) {
         value=max(value,textureLoad(sourceTexture,select(vec2i(i,at.y),vec2i(0,i),vertical),0).r);
@@ -72,9 +75,9 @@
       let blurPeak=textureLoad(blurredMaximum,vec2i(0),0).r;
       let gain=select(0.0,peak/max(blurPeak,1e-30),blurPeak>0.0);
       var value=clamp(textureLoad(sourceTexture,at,0).r*gain,0.0,peak);
-      if(p[0]>0.5){value=1.0-value;}
+      if(p[${MASK_PARAMS.FINISH.INVERT}]>0.5){value=1.0-value;}
       value*=textureLoad(operandTexture,at,0).r;
-      if(p[1]<0.5){value=0.0;}
+      if(p[${MASK_PARAMS.FINISH.ENABLED}]<0.5){value=0.0;}
       value=round(clamp(value,0.0,1.0)*255.0)/255.0;
       return vec4f(vec3f(value),1.0);
     }
@@ -85,11 +88,11 @@
     @fragment fn brushShift(input: VertexOut) -> @location(0) vec4f {
       let at=vec2i(input.position.xy);
       let peak=textureLoad(paintedMaximum,vec2i(0),0).r;
-      let threshold=select(.841345,.158655,p[0]>0.0);
+      let threshold=select(.841345,.158655,p[${MASK_PARAMS.SHIFT.EDGE}]>0.0);
       let shifted=smoothstep(threshold-.035,threshold+.035,
-        textureLoad(sourceTexture,at,0).r/select(max(peak,1e-30),1.0,p[1]>.5))*peak;
+        textureLoad(sourceTexture,at,0).r/select(max(peak,1e-30),1.0,p[${MASK_PARAMS.SHIFT.NORMALIZED}]>.5))*peak;
       let original=textureLoad(operandTexture,at,0).r;
-      let value=select(min(original,shifted),max(original,shifted),p[0]>0.0);
+      let value=select(min(original,shifted),max(original,shifted),p[${MASK_PARAMS.SHIFT.EDGE}]>0.0);
       return vec4f(vec3f(value),1.0);
     }`;
   const evenRound=n=>{const a=Math.floor(n),f=n-a;return f===.5 ? a+(a%2) : Math.round(n);};
@@ -190,43 +193,42 @@
       const row=texture(1,height),paintPeak=texture(1,1),blurPeak=texture(1,1);
       let painted=paint;
       if(recipe.shiftRadii.length){
-        pass(encoder,renderer.brushPipelines.maximum,paint,row,new Float32Array([0]));
-        pass(encoder,renderer.brushPipelines.maximum,row,paintPeak,new Float32Array([1]));
+        pass(encoder,renderer.brushPipelines.maximum,paint,row,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 0 })));
+        pass(encoder,renderer.brushPipelines.maximum,row,paintPeak,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
         let shiftedBlur=paint,target=a;
         for(const axis of [0,1])for(const radius of recipe.shiftRadii)if(radius){
-          pass(encoder,renderer.brushPipelines.box,shiftedBlur,target,new Float32Array([radius,axis]));
+          pass(encoder,renderer.brushPipelines.box,shiftedBlur,target,new Float32Array(PASS_LAYOUTS.record("BOX", { RADIUS: radius, AXIS: axis })));
           shiftedBlur=target;target=target===a?b:a;
         }
         painted=texture(width,height);
         const shiftMaxima=d.createBindGroup({layout:renderer.brushPipelines.peakLayout,entries:[
           {binding:0,resource:paintPeak.createView()},{binding:1,resource:paintPeak.createView()}]});
         pass(encoder,renderer.brushPipelines.shift,shiftedBlur,painted,
-          new Float32Array([expression.leaf.mask_shift_edge,0]),paint,shiftMaxima);
+          new Float32Array(PASS_LAYOUTS.record("SHIFT", { EDGE: expression.leaf.mask_shift_edge, NORMALIZED: 0 })),paint,shiftMaxima);
       }
       let blurred=painted,next=a;
       if(recipe.factor>1){
         const factor=recipe.factor,w=Math.ceil(width/factor)+2,h=Math.ceil(height/factor)+2;
         const ca=texture(w,h),cb=texture(w,h);
-        pass(encoder,renderer.brushPipelines.coarse,painted,ca,new Float32Array([factor]));
+        pass(encoder,renderer.brushPipelines.coarse,painted,ca,new Float32Array(PASS_LAYOUTS.record("COARSE", { FACTOR: factor })));
         blurred=ca;next=cb;
         for(const axis of [0,1])for(let i=0;i<6;i++){
-          pass(encoder,renderer.brushPipelines.fractional,blurred,next,new Float32Array([factor,axis,width,height,recipe.halfWidth]));
+          pass(encoder,renderer.brushPipelines.fractional,blurred,next,new Float32Array(PASS_LAYOUTS.record("FRACTIONAL", { FACTOR: factor, AXIS: axis, FRAME_WIDTH: width, FRAME_HEIGHT: height, HALF_WIDTH: recipe.halfWidth })));
           blurred=next;next=next===ca?cb:ca;
         }
-        pass(encoder,renderer.brushPipelines.expand,blurred,a,new Float32Array([factor,width,height]));blurred=a;
+        pass(encoder,renderer.brushPipelines.expand,blurred,a,new Float32Array(PASS_LAYOUTS.record("EXPAND", { FACTOR: factor, FRAME_WIDTH: width, FRAME_HEIGHT: height })));blurred=a;
       }else for(const axis of [0,1])for(const radius of recipe.radii)if(radius) {
-        pass(encoder,renderer.brushPipelines.box,blurred,next,new Float32Array([radius,axis]));
+        pass(encoder,renderer.brushPipelines.box,blurred,next,new Float32Array(PASS_LAYOUTS.record("BOX", { RADIUS: radius, AXIS: axis })));
         blurred=next;next=next===a?b:a;
       }
-      pass(encoder,renderer.brushPipelines.maximum,painted,row,new Float32Array([0]));
-      pass(encoder,renderer.brushPipelines.maximum,row,paintPeak,new Float32Array([1]));
-      pass(encoder,renderer.brushPipelines.maximum,blurred,row,new Float32Array([0]));
-      pass(encoder,renderer.brushPipelines.maximum,row,blurPeak,new Float32Array([1]));
+      pass(encoder,renderer.brushPipelines.maximum,painted,row,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 0 })));
+      pass(encoder,renderer.brushPipelines.maximum,row,paintPeak,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
+      pass(encoder,renderer.brushPipelines.maximum,blurred,row,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 0 })));
+      pass(encoder,renderer.brushPipelines.maximum,row,blurPeak,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
       let result=texture(width,height,'r16float');
       const maxima=d.createBindGroup({layout:renderer.brushPipelines.peakLayout,entries:[
         {binding:0,resource:paintPeak.createView()},{binding:1,resource:blurPeak.createView()}]});
-      pass(encoder,renderer.brushPipelines.finish,blurred,result,new Float32Array([
-        expression.inverted?1:0,expression.enabled===false?0:1]),erase,maxima);
+      pass(encoder,renderer.brushPipelines.finish,blurred,result,new Float32Array(PASS_LAYOUTS.record("FINISH", { INVERT: expression.inverted?1:0, ENABLED: expression.enabled===false?0:1 })),erase,maxima);
       const crop=recipe.crop;
       if(crop.x||crop.y||crop.width!==width||crop.height!==height){
         const cropped=texture(crop.width,crop.height,'r16float');
@@ -287,9 +289,9 @@
     @group(0) @binding(2) var<storage,read_write> sums:array<f32>;
     @group(0) @binding(3) var<uniform> settings:vec4u;
     @compute @workgroup_size(64) fn prefix(@builtin(global_invocation_id) id:vec3u) {
-      let size=textureDimensions(source);let vertical=settings.y!=0u;
+      let size=textureDimensions(source);let vertical=settings.${"xyzw"[MASK_PARAMS.BRUSH_BOX.AXIS]}!=0u;
       let length=select(size.x,size.y,vertical);let lines=select(size.y,size.x,vertical);
-      if(id.x>=lines){return;}let radius=settings.x;let stride=length+2u*radius+1u;
+      if(id.x>=lines){return;}let radius=settings.${"xyzw"[MASK_PARAMS.BRUSH_BOX.RADIUS]};let stride=length+2u*radius+1u;
       let offset=id.x*stride;var sum=0.0;sums[offset]=0.0;
       for(var i=0u;i<length+2u*radius;i++){
         let index=clamp(i32(i)-i32(radius),0,i32(length)-1);
@@ -299,29 +301,29 @@
     }
     @compute @workgroup_size(8,8) fn box(@builtin(global_invocation_id) id:vec3u) {
       let size=textureDimensions(source);if(any(id.xy>=size)){return;}
-      let vertical=settings.y!=0u;let length=select(size.x,size.y,vertical);
+      let vertical=settings.${"xyzw"[MASK_PARAMS.BRUSH_BOX.AXIS]}!=0u;let length=select(size.x,size.y,vertical);
       let index=select(id.x,id.y,vertical);let line=select(id.y,id.x,vertical);
-      let radius=settings.x;let width=2u*radius+1u;let offset=line*(length+2u*radius+1u)+index;
+      let radius=settings.${"xyzw"[MASK_PARAMS.BRUSH_BOX.RADIUS]};let width=2u*radius+1u;let offset=line*(length+2u*radius+1u)+index;
       textureStore(destination,vec2i(id.xy),vec4f((sums[offset+width]-sums[offset])/f32(width)));
     }`;
   function nativeBrushParameters(expression,rect,width,height,signature) {
     const values=window.HDRMaskRaster.parameters(expression,{x:0,y:0,width,height},width,height,signature);
     if(!values)return null;
     // A stroke wholly outside the frame is omitted from the packed list.
-    if(values[7]!==(expression.leaf.strokes||[]).filter(stroke=>stroke.points?.length).length)return null;
-    values[1]=rect.x;values[2]=rect.y;
-    const w=values[3],h=values[4],f=Math.fround;
+    if(values[MASK_PARAMS.RASTER.ITEM_COUNT]!==(expression.leaf.strokes||[]).filter(stroke=>stroke.points?.length).length)return null;
+    values[MASK_PARAMS.RASTER.ORIGIN_X]=rect.x;values[MASK_PARAMS.RASTER.ORIGIN_Y]=rect.y;
+    const w=values[MASK_PARAMS.RASTER.SOURCE_WIDTH],h=values[MASK_PARAMS.RASTER.SOURCE_HEIGHT],f=Math.fround;
     const originX=f(.5/w),originY=f(.5/h);
     const scaleY=f(f(1.5/w)-originX)/f(f(1.5/h)-originY);
     const point=p=>[p.x-originX,(p.y-originY)*scaleY];
-    let cursor=10;
+    let cursor=PASS_LAYOUTS.layouts.RASTER.count;
     for(const stroke of expression.leaf.strokes||[]){
       const points=stroke.points||[];if(!points.length)continue;
       const segments=points.length===1?[[points[0],points[0]]]:points.slice(1).map((p,i)=>[points[i],p]);
-      cursor+=10;
-      for(const [a,b] of segments){const first=point(a),last=point(b);values.set([...first,last[0]-first[0],last[1]-first[1]],cursor);cursor+=5;}
+      cursor+=PASS_LAYOUTS.layouts.STROKE.count;
+      for(const [a,b] of segments){const first=point(a),last=point(b);values.set(PASS_LAYOUTS.record("SEGMENT", { START_X: first[0], START_Y: first[1], END_X: last[0]-first[0], END_Y: last[1]-first[1] }).slice(MASK_PARAMS.SEGMENT.START_X,MASK_PARAMS.SEGMENT.RADIUS),cursor);cursor+=PASS_LAYOUTS.layouts.SEGMENT.count;}
     }
-    return new Float32Array([...values,originX,originY,scaleY,scaleY-f(scaleY)]);
+    return new Float32Array([...values,...PASS_LAYOUTS.record("NATIVE_BRUSH", { ORIGIN_X: originX, ORIGIN_Y: originY, SCALE_Y: scaleY, SCALE_Y_LOW: scaleY-f(scaleY) })]);
   }
   async function generateShiftRegion(renderer,expression,width,height,signature,rect,isCurrent=()=>true) {
     const recipe=shiftRegionPlan(expression,width,height,signature,rect,renderer.device.limits.maxTextureDimension2D);
@@ -352,8 +354,8 @@
         // final band are zero and cannot introduce a larger painted peak.
         const encoder=d.createCommandEncoder();
         pass(encoder,renderer.brushPipelines.nativePaint,rows,band,values);
-        pass(encoder,renderer.brushPipelines.maximum,band,rows,new Float32Array([0]));
-        pass(encoder,renderer.brushPipelines.maximum,rows,peak,new Float32Array([1]));
+        pass(encoder,renderer.brushPipelines.maximum,band,rows,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 0 })));
+        pass(encoder,renderer.brushPipelines.maximum,rows,peak,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
         encoder.copyTextureToTexture({texture:peak},{texture:peaks,origin:[0,i]},[1,1]);
         d.queue.submit([encoder.finish()]);
         await d.queue.onSubmittedWorkDone();
@@ -361,7 +363,7 @@
       if(!isCurrent())return null;
       const r=recipe.region,paint=texture(r.width,r.height),erase=texture(r.width,r.height),a=texture(r.width,r.height),b=texture(r.width,r.height);
       const encoder=d.createCommandEncoder();
-      pass(encoder,renderer.brushPipelines.maximum,peaks,peak,new Float32Array([1]));
+      pass(encoder,renderer.brushPipelines.maximum,peaks,peak,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
       const maxima=d.createBindGroup({layout:renderer.brushPipelines.peakLayout,entries:[0,1].map(binding=>({binding,resource:peak.createView()}))});
       const values=nativeBrushParameters(recipe.spatial,r,width,height,signature);
       if(!values)return null;
@@ -372,9 +374,9 @@
       if(scratchBytes>d.limits.maxStorageBufferBindingSize)return null;
       const scratch=d.createBuffer({size:scratchBytes,usage:GPUBufferUsage.STORAGE});buffers.push(scratch);
       const [input,target]=boxPasses(renderer,encoder,a,b,recipe.radii,r,scratch,buffers);
-      pass(encoder,renderer.brushPipelines.shift,input,target,new Float32Array([expression.leaf.mask_shift_edge,1]),paint,maxima);
+      pass(encoder,renderer.brushPipelines.shift,input,target,new Float32Array(PASS_LAYOUTS.record("SHIFT", { EDGE: expression.leaf.mask_shift_edge, NORMALIZED: 1 })),paint,maxima);
       const finished=texture(r.width,r.height,'r16float'),result=texture(rect.width,rect.height,'r16float');
-      pass(encoder,renderer.brushPipelines.finish,target,finished,new Float32Array([expression.inverted?1:0,expression.enabled===false?0:1]),erase,maxima);
+      pass(encoder,renderer.brushPipelines.finish,target,finished,new Float32Array(PASS_LAYOUTS.record("FINISH", { INVERT: expression.inverted?1:0, ENABLED: expression.enabled===false?0:1 })),erase,maxima);
       encoder.copyTextureToTexture({texture:finished,origin:[rect.x-r.x,rect.y-r.y]},{texture:result},[rect.width,rect.height]);
       d.queue.submit([encoder.finish()]);await d.queue.onSubmittedWorkDone();
       if(!isCurrent())return null;
@@ -392,7 +394,7 @@
     const d=renderer.device,pipelines=renderer.brushPrefix;
     for(const axis of [0,1])for(const radius of radii)if(radius){
       const settings=d.createBuffer({size:16,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});buffers.push(settings);
-      d.queue.writeBuffer(settings,0,new Uint32Array([radius,axis,0,0]));
+      d.queue.writeBuffer(settings,0,new Uint32Array(PASS_LAYOUTS.record("BRUSH_BOX", { RADIUS: radius, AXIS: axis, RESERVED_2: 0, RESERVED_3: 0 })));
       const bind=d.createBindGroup({layout:pipelines.prefix.getBindGroupLayout(0),entries:[
         {binding:0,resource:input.createView()},{binding:1,resource:target.createView()},{binding:2,resource:{buffer:scratch}},{binding:3,resource:{buffer:settings}}]});
       for(const [pipeline,x,y] of [[pipelines.prefix,Math.ceil((axis?r.width:r.height)/64),1],[pipelines.box,Math.ceil(r.width/8),Math.ceil(r.height/8)]]){
@@ -407,19 +409,19 @@
     ensurePipelines(renderer);
     if(!renderer.brushPipelines.nativePaint){
       const source=window.HDRWebGPUShaders.LUMA_MASK_SHADER_SOURCE;
-      if(!source.includes('let delta = last - first;')||!source.includes('let point = pixel / p[3];'))return false;
+      if(!source.includes('let delta = last - first;')||!source.includes(`let point = pixel / p[${MASK_PARAMS.RASTER.SOURCE_WIDTH}];`))return false;
       // This module follows export's native display metric; the qualified
       // rounded bitmap pipelines above retain their original raster.
       const code=source
         .replace('let delta = last - first;','let delta = last;')
-        .replace('let point = pixel / p[3];',`
-        let tail=arrayLength(&p)-4u;
-        let normY=maskDivide(pixel.y,p[4]);let originY=p[tail+1u];
+        .replace(`let point = pixel / p[${MASK_PARAMS.RASTER.SOURCE_WIDTH}];`,`
+        let tail=arrayLength(&p)-${PASS_LAYOUTS.layouts.NATIVE_BRUSH.count}u;
+        let normY=maskDivide(pixel.y,p[${MASK_PARAMS.RASTER.SOURCE_HEIGHT}]);let originY=p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.NATIVE_BRUSH.ORIGIN_Y)}];
         let deltaY=normY-originY;let back=deltaY-normY;
         let deltaLow=(normY-(deltaY-back))-(originY+back);
-        let product=deltaY*p[tail+2u];
-        let residual=fma(deltaY,p[tail+2u],-product)+deltaLow*p[tail+2u]+deltaY*p[tail+3u];
-        let point=vec2f(maskDivide(pixel.x,p[3])-p[tail],product+residual);`);
+        let product=deltaY*p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.NATIVE_BRUSH.SCALE_Y)}];
+        let residual=fma(deltaY,p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.NATIVE_BRUSH.SCALE_Y)}],-product)+deltaLow*p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.NATIVE_BRUSH.SCALE_Y)}]+deltaY*p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.NATIVE_BRUSH.SCALE_Y_LOW)}];
+        let point=vec2f(maskDivide(pixel.x,p[${MASK_PARAMS.RASTER.SOURCE_WIDTH}])-p[${PASS_LAYOUTS.offset("tail", MASK_PARAMS.NATIVE_BRUSH.ORIGIN_X)}],product+residual);`);
       const module=d.createShaderModule({code});
       for(const [key,entryPoint] of [['nativePaint','brushPaintFragmentMain'],['nativeErase','brushEraseFragmentMain']]){
         renderer.brushPipelines[key]=d.createRenderPipeline({layout:renderer.maskPipelineLayout,
@@ -454,22 +456,22 @@
   const NATIVE=`
     @fragment fn brushBandMaximum(input:VertexOut)->@location(0) vec4f {
       let y=i32(input.position.y);var value=0.0;
-      if(y>=i32(p[0])&&y<i32(p[1])){
-        for(var x=i32(p[2]);x<i32(p[3]);x++){value=max(value,textureLoad(sourceTexture,vec2i(x,y),0).r);}
+      if(y>=i32(p[${MASK_PARAMS.BAND_MAXIMUM.TOP}])&&y<i32(p[${MASK_PARAMS.BAND_MAXIMUM.BOTTOM}])){
+        for(var x=i32(p[${MASK_PARAMS.BAND_MAXIMUM.LEFT}]);x<i32(p[${MASK_PARAMS.BAND_MAXIMUM.RIGHT}]);x++){value=max(value,textureLoad(sourceTexture,vec2i(x,y),0).r);}
       }
       return vec4f(vec3f(clamp(value,0.0,1.0)),1.0);
     }
     // One minus the row minimum, so the shared maximum reduction yields a minimum.
     @fragment fn brushBandMinimum(input:VertexOut)->@location(0) vec4f {
       let y=i32(input.position.y);var value=0.0;
-      if(y>=i32(p[0])&&y<i32(p[1])){
-        for(var x=i32(p[2]);x<i32(p[3]);x++){value=max(value,1.0-textureLoad(sourceTexture,vec2i(x,y),0).r);}
+      if(y>=i32(p[${MASK_PARAMS.BAND_MAXIMUM.TOP}])&&y<i32(p[${MASK_PARAMS.BAND_MAXIMUM.BOTTOM}])){
+        for(var x=i32(p[${MASK_PARAMS.BAND_MAXIMUM.LEFT}]);x<i32(p[${MASK_PARAMS.BAND_MAXIMUM.RIGHT}]);x++){value=max(value,1.0-textureLoad(sourceTexture,vec2i(x,y),0).r);}
       }
       return vec4f(vec3f(clamp(value,0.0,1.0)),1.0);
     }
     @fragment fn brushCoarseBand(input:VertexOut)->@location(0) vec4f {
-      let frame=vec2i(i32(p[1]),i32(p[2]));let origin=vec2i(i32(p[3]),i32(p[4]));
-      let size=vec2i(textureDimensions(sourceTexture));let at=vec2i(input.position.xy);let factor=i32(p[0]);
+      let frame=vec2i(i32(p[${MASK_PARAMS.COARSE_BAND.FRAME_WIDTH}]),i32(p[${MASK_PARAMS.COARSE_BAND.FRAME_HEIGHT}]));let origin=vec2i(i32(p[${MASK_PARAMS.COARSE_BAND.ORIGIN_X}]),i32(p[${MASK_PARAMS.COARSE_BAND.ORIGIN_Y}]));
+      let size=vec2i(textureDimensions(sourceTexture));let at=vec2i(input.position.xy);let factor=i32(p[${MASK_PARAMS.COARSE_BAND.FACTOR}]);
       let count=(frame+factor-1)/factor;
       var first=(at-1)*factor;var last=min(first+factor,frame);
       if(at.x==0){first.x=0;last.x=1;}if(at.y==0){first.y=0;last.y=1;}
@@ -487,8 +489,8 @@
       return max(0.0,min(right,center+half)-max(left,center-half));
     }
     @fragment fn brushFractionalBoxWindow(input:VertexOut)->@location(0) vec4f {
-      let at=vec2i(input.position.xy);let vertical=p[1]>.5;let length=select(p[2],p[3],vertical);
-      let factor=p[0];let count=i32(ceil(length/factor));let half=p[4];
+      let at=vec2i(input.position.xy);let vertical=p[${MASK_PARAMS.FRACTIONAL.AXIS}]>.5;let length=select(p[${MASK_PARAMS.FRACTIONAL.FRAME_WIDTH}],p[${MASK_PARAMS.FRACTIONAL.FRAME_HEIGHT}],vertical);
+      let factor=p[${MASK_PARAMS.FRACTIONAL.FACTOR}];let count=i32(ceil(length/factor));let half=p[${MASK_PARAMS.FRACTIONAL.HALF_WIDTH}];
       let center=brushPosition(select(at.x,at.y,vertical),length,factor);
       let lower=clamp(i32(floor(center-half+.5)),1,count);
       let upper=clamp(i32(floor(center+half+.5))+2,1,count);
@@ -511,8 +513,8 @@
       return vec2f(f32(lower),clamp((position-left)/max(right-left,1e-9),0.0,1.0));
     }
     @fragment fn brushExpandWindow(input:VertexOut)->@location(0) vec4f {
-      let at=floor(input.position.xy)+vec2f(p[3],p[4]);
-      let x=brushTapWindow(at.x,p[1],p[0]);let y=brushTapWindow(at.y,p[2],p[0]);
+      let at=floor(input.position.xy)+vec2f(p[${MASK_PARAMS.EXPAND_WINDOW.ORIGIN_X}],p[${MASK_PARAMS.EXPAND_WINDOW.ORIGIN_Y}]);
+      let x=brushTapWindow(at.x,p[${MASK_PARAMS.EXPAND_WINDOW.FRAME_WIDTH}],p[${MASK_PARAMS.EXPAND_WINDOW.FACTOR}]);let y=brushTapWindow(at.y,p[${MASK_PARAMS.EXPAND_WINDOW.FRAME_HEIGHT}],p[${MASK_PARAMS.EXPAND_WINDOW.FACTOR}]);
       let origin=vec2i(i32(x.x),i32(y.x));
       let top=mix(textureLoad(sourceTexture,origin,0).r,textureLoad(sourceTexture,origin+vec2i(1,0),0).r,x.y);
       let bottom=mix(textureLoad(sourceTexture,origin+vec2i(0,1),0).r,textureLoad(sourceTexture,origin+vec2i(1,1),0).r,x.y);
@@ -554,14 +556,14 @@
   // them, so the shifted field is zero beyond them plus the Shift reach.
   function paintBounds(values,width,height,signature) {
     const geometry=JSON.parse(signature),rotation=Number(geometry.rotation||0)/90;
-    const sourceWidth=values[3],sourceHeight=values[4];
-    let cursor=10,left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
-    for(let i=0;i<values[7];i++){
-      if(!(values[cursor+4]>.5)){
-        left=Math.min(left,values[cursor+5]);top=Math.min(top,values[cursor+6]);
-        right=Math.max(right,values[cursor+7]);bottom=Math.max(bottom,values[cursor+8]);
+    const sourceWidth=values[MASK_PARAMS.RASTER.SOURCE_WIDTH],sourceHeight=values[MASK_PARAMS.RASTER.SOURCE_HEIGHT];
+    let cursor=PASS_LAYOUTS.layouts.RASTER.count,left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
+    for(let i=0;i<values[MASK_PARAMS.RASTER.ITEM_COUNT];i++){
+      if(!(values[cursor+MASK_PARAMS.STROKE.ERASE]>.5)){
+        left=Math.min(left,values[cursor+MASK_PARAMS.STROKE.LEFT]);top=Math.min(top,values[cursor+MASK_PARAMS.STROKE.TOP]);
+        right=Math.max(right,values[cursor+MASK_PARAMS.STROKE.RIGHT]);bottom=Math.max(bottom,values[cursor+MASK_PARAMS.STROKE.BOTTOM]);
       }
-      cursor+=10+5*values[cursor];
+      cursor+=PASS_LAYOUTS.layouts.STROKE.count+PASS_LAYOUTS.layouts.SEGMENT.count*values[cursor+MASK_PARAMS.STROKE.SEGMENT_COUNT];
     }
     if(!(right>left&&bottom>top))return null;
     const output=(sx,sy)=>{
@@ -615,7 +617,7 @@
     if(!base)return null;
     const started=performance.now(),pipelines=renderer.brushPipelines,{coarse,factor}=recipe;
     const scratch=nativeScratch(renderer,isCurrent),{d,texture,draw,release,settle,buffers}=scratch;
-    const at=(x,y)=>{const values=base.slice();values[1]=x;values[2]=y;return values;};
+    const at=(x,y)=>{const values=base.slice();values[MASK_PARAMS.RASTER.ORIGIN_X]=x;values[MASK_PARAMS.RASTER.ORIGIN_Y]=y;return values;};
     let set=null,bands=0;
     try{
       const [paintPeak,sourcePeak,blurPeak,one]=[0,1,2,3].map(()=>texture(1,1));
@@ -629,10 +631,10 @@
         for(let i=0;i<count;i++){
           const encoder=d.createCommandEncoder();
           draw(encoder,pipelines.nativePaint,line,band,at(bounds.x+(i%across)*columns,bounds.y+Math.floor(i/across)*rows));
-          draw(encoder,pipelines.maximum,band,line,new Float32Array([0]));
-          draw(encoder,pipelines.maximum,line,one,new Float32Array([1]));
+          draw(encoder,pipelines.maximum,band,line,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 0 })));
+          draw(encoder,pipelines.maximum,line,one,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
           encoder.copyTextureToTexture({texture:one},{texture:list,origin:[0,i]},[1,1]);
-          if(i===count-1)draw(encoder,pipelines.maximum,list,paintPeak,new Float32Array([1]));
+          if(i===count-1)draw(encoder,pipelines.maximum,list,paintPeak,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
           d.queue.submit([encoder.finish()]);
           if(!await settle(count>1))return null;
         }
@@ -676,30 +678,29 @@
           if(recipe.shiftActive){
             draw(encoder,pipelines.normalize,set.paint,set.a,new Float32Array([0]),{extra:paintMaxima});
             const [blurred,target]=boxPasses(renderer,encoder,set.a,set.b,recipe.shiftRadii,r,set.scratch,buffers);
-            draw(encoder,pipelines.shift,blurred,target,new Float32Array([recipe.shift,1]),{operand:set.paint,extra:paintMaxima});
+            draw(encoder,pipelines.shift,blurred,target,new Float32Array(PASS_LAYOUTS.record("SHIFT", { EDGE: recipe.shift, NORMALIZED: 1 })),{operand:set.paint,extra:paintMaxima});
             field=target;free=blurred;
           }
           // Halo pixels of an interior tile are incomplete; reduce only its own.
-          const valid=new Float32Array([Math.max(v0,r.y)-r.y,Math.min(v1,r.y+r.height)-r.y,
-            Math.max(u0,r.x)-r.x,Math.min(u1,r.x+r.width)-r.x]);
+          const valid=new Float32Array(PASS_LAYOUTS.record("BAND_MAXIMUM", { TOP: Math.max(v0,r.y)-r.y, BOTTOM: Math.min(v1,r.y+r.height)-r.y, LEFT: Math.max(u0,r.x)-r.x, RIGHT: Math.min(u1,r.x+r.width)-r.x }));
           const reduce=(source,list)=>{
             draw(encoder,pipelines.bandMaximum,source,set.line,valid);
-            draw(encoder,pipelines.maximum,set.line,one,new Float32Array([1]));
+            draw(encoder,pipelines.maximum,set.line,one,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
             encoder.copyTextureToTexture({texture:one},{texture:list,origin:[0,bands]},[1,1]);
           };
           reduce(field,sourceList);
           if(coarse){
             const first=v0?v0/factor+1:0,last=Math.ceil(v1/factor)+(v1===height?1:0);
             const firstColumn=whole?0:u0?u0/factor+1:0,lastColumn=whole?coarse.width-1:Math.ceil(u1/factor)+(u1===width?1:0);
-            draw(encoder,pipelines.coarseBand,field,grid,new Float32Array([factor,width,height,r.x,r.y]),
+            draw(encoder,pipelines.coarseBand,field,grid,new Float32Array(PASS_LAYOUTS.record("COARSE_BAND", { FACTOR: factor, FRAME_WIDTH: width, FRAME_HEIGHT: height, ORIGIN_X: r.x, ORIGIN_Y: r.y })),
               {scissor:[firstColumn,first,lastColumn-firstColumn+1,last-first+1]});
           }else{
             const [blurred]=boxPasses(renderer,encoder,field,free,recipe.radii,r,set.scratch,buffers);
             reduce(blurred,blurList);
           }
           if(++bands===count){
-            draw(encoder,pipelines.maximum,sourceList,sourcePeak,new Float32Array([1]));
-            if(blurList)draw(encoder,pipelines.maximum,blurList,blurPeak,new Float32Array([1]));
+            draw(encoder,pipelines.maximum,sourceList,sourcePeak,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
+            if(blurList)draw(encoder,pipelines.maximum,blurList,blurPeak,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
           }
           d.queue.submit([encoder.finish()]);
           if(!await settle(count>1))return null;
@@ -709,7 +710,7 @@
       if(bounds&&coarse){
         let encoder=d.createCommandEncoder();
         for(const axis of [0,1])for(let i=0;i<6;i++){
-          draw(encoder,pipelines.fractionalWindow,grid,spare,new Float32Array([factor,axis,width,height,recipe.halfWidth]));
+          draw(encoder,pipelines.fractionalWindow,grid,spare,new Float32Array(PASS_LAYOUTS.record("FRACTIONAL", { FACTOR: factor, AXIS: axis, FRAME_WIDTH: width, FRAME_HEIGHT: height, HALF_WIDTH: recipe.halfWidth })));
           [grid,spare]=[spare,grid];
         }
         d.queue.submit([encoder.finish()]);
@@ -721,12 +722,12 @@
         encoder=d.createCommandEncoder();
         for(let i=0;i<count;i++){
           const x=(i%across)*columns,y=Math.floor(i/across)*rows;
-          draw(encoder,pipelines.expandWindow,grid,band,new Float32Array([factor,width,height,x,y]));
-          draw(encoder,pipelines.bandMaximum,band,line,new Float32Array([0,Math.min(rows,height-y),0,Math.min(columns,width-x)]));
-          draw(encoder,pipelines.maximum,line,one,new Float32Array([1]));
+          draw(encoder,pipelines.expandWindow,grid,band,new Float32Array(PASS_LAYOUTS.record("EXPAND_WINDOW", { FACTOR: factor, FRAME_WIDTH: width, FRAME_HEIGHT: height, ORIGIN_X: x, ORIGIN_Y: y })));
+          draw(encoder,pipelines.bandMaximum,band,line,new Float32Array(PASS_LAYOUTS.record("BAND_MAXIMUM", { TOP: 0, BOTTOM: Math.min(rows,height-y), LEFT: 0, RIGHT: Math.min(columns,width-x) })));
+          draw(encoder,pipelines.maximum,line,one,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
           encoder.copyTextureToTexture({texture:one},{texture:list,origin:[0,i]},[1,1]);
         }
-        draw(encoder,pipelines.maximum,list,blurPeak,new Float32Array([1]));
+        draw(encoder,pipelines.maximum,list,blurPeak,new Float32Array(PASS_LAYOUTS.record("MAXIMUM", { AXIS: 1 })));
         d.queue.submit([encoder.finish()]);
       }
       const fieldWidth=coarse?coarse.width:3,fieldHeight=(coarse?coarse.height:0)+1;
@@ -752,18 +753,18 @@
     if(!base)return null;
     const started=performance.now(),pipelines=renderer.brushPipelines,r=recipe.region;
     const scratch=nativeScratch(renderer,isCurrent),{d,texture,draw,buffers}=scratch;
-    const at=(x,y)=>{const values=base.slice();values[1]=x;values[2]=y;return values;};
+    const at=(x,y)=>{const values=base.slice();values[MASK_PARAMS.RASTER.ORIGIN_X]=x;values[MASK_PARAMS.RASTER.ORIGIN_Y]=y;return values;};
     try{
       const peaks=[0,1,2].map(()=>texture(1,1)),encoder=d.createCommandEncoder();
       peaks.forEach((peak,i)=>encoder.copyTextureToTexture(
         {texture:field.texture,origin:[i,field.height-1]},{texture:peak},[1,1]));
       const paintMaxima=scratch.maxima(peaks[0],peaks[0]),finalMaxima=scratch.maxima(peaks[1],peaks[2]);
-      const finish=new Float32Array([expression.inverted?1:0,expression.enabled===false?0:1]);
+      const finish=new Float32Array(PASS_LAYOUTS.record("FINISH", { INVERT: expression.inverted?1:0, ENABLED: expression.enabled===false?0:1 }));
       const erase=texture(r.width,r.height),result=texture(rect.width,rect.height,'r16float');
       if(recipe.coarse){
         const expanded=texture(rect.width,rect.height);
         draw(encoder,pipelines.nativeErase,expanded,erase,at(rect.x,rect.y));
-        draw(encoder,pipelines.expandWindow,field.texture,expanded,new Float32Array([recipe.factor,width,height,rect.x,rect.y]));
+        draw(encoder,pipelines.expandWindow,field.texture,expanded,new Float32Array(PASS_LAYOUTS.record("EXPAND_WINDOW", { FACTOR: recipe.factor, FRAME_WIDTH: width, FRAME_HEIGHT: height, ORIGIN_X: rect.x, ORIGIN_Y: rect.y })));
         draw(encoder,pipelines.finish,expanded,result,finish,{operand:erase,extra:finalMaxima});
       }else{
         const paint=texture(r.width,r.height),a=texture(r.width,r.height),b=texture(r.width,r.height);
@@ -777,7 +778,7 @@
         if(recipe.shiftActive){
           draw(encoder,pipelines.normalize,paint,a,new Float32Array([0]),{extra:paintMaxima});
           const [blurred,target]=boxPasses(renderer,encoder,a,b,recipe.shiftRadii,r,prefix,buffers);
-          draw(encoder,pipelines.shift,blurred,target,new Float32Array([recipe.shift,1]),{operand:paint,extra:paintMaxima});
+          draw(encoder,pipelines.shift,blurred,target,new Float32Array(PASS_LAYOUTS.record("SHIFT", { EDGE: recipe.shift, NORMALIZED: 1 })),{operand:paint,extra:paintMaxima});
           shifted=target;free=blurred;
         }
         const [blurred]=boxPasses(renderer,encoder,shifted,free,recipe.radii,r,prefix,buffers);

@@ -18,7 +18,6 @@ list is done.
 
 | Item | What | Detail |
 |---|---|---|
-| Local and mask setting lists | The numbers sent to the shaders for local adjustments and masks are still matched by position by hand in two languages | Modularization 8.1 |
 | Explicit interfaces between feature files | Each frontend file states what it reads and what it changes, instead of everything sharing one pool of state | Modularization 9 |
 | Publish | Read the draft release notes, tag `v0.9.0`, publish, push | PRD, RELEASE entry in 11a |
 

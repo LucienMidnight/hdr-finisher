@@ -531,6 +531,42 @@ No shader, CPU export, Proof, limit or read-only project changed.
 Fast checks: 427 Node tests and 1,555 venv Python tests passed, three skipped.
 Targeted Electron drivers ran serially at 2560 by 1440. No full sweep ran.
 
+### 8.4 Local and mask position lists (October 8, 2026)
+
+Part B names the existing local prefix and analytic, brush and resampling
+pass records in `gpu-param-layout.js`. The global tail remains shared;
+positions and all unused padding stay in place. Path coordinates, outer
+widths, stroke headers, segments, feather weights and regional/native tails
+have named records and strides. JavaScript writes named entries and WGSL
+gets its exact original numeric text from the same definitions. Both test
+source resolvers preserve existing numeric/formula assertions.
+
+The read-only primary photograph, four-mask and fifty-local recipes were
+replayed against preserved pre-change sources. All 48 global buffers,
+48 curve buffers, 944 local buffers, 116 raster buffers, 60 gradient buffers,
+60 luma buffers, 133 feather/exact-box buffers, 64 native-brush buffers and
+472 resampling buffers matched byte for byte. Archive hashes stayed fixed.
+All 13 shader-text comparisons matched: the four main shader sources,
+brush source fragments and complete assembled/native modules, resampling/crop
+source and inline luma compute source. No shader math, CPU export, Proof, tolerance, limit or budget changed.
+
+Seven fast checks pin every pass position and inspect real writers and
+shader readers; missing writers/readers, unknown names, reserved reads and
+bare shader/host positions are detected. Node: 434 passed. Venv Python:
+1,555 passed, three skipped. An initial Python run failed because its source
+resolver expected only the global list; the resolver now reads each list
+separately, retaining all original assertions.
+
+Targeted Electron checks ran serially at 2560 by 1440: shader compilation
+and local Detail, local-grade GPU/export (24 cases), native raster masks
+(93 cases), resampled masks (112 regions under existing guards), and native
+brush Feather (114 regions) passed. The direct/tiled driver passed standard
+256/512 and maximum-radius 256 with zero differences, then refused its
+maximum-radius 512 capture because two Direct screenshots changed within
+one renderer generation. That capture-stability failure remains recorded;
+no guard was loosened, no rerun or unrelated repair was made. Full sweep,
+installer, push and part C remain held for Steve's decision.
+
 ## 9. Not in this sprint
 
 | Item | Why not |
