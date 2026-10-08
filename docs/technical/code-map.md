@@ -121,7 +121,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `scope-drawing.js` | Drawing histogram, waveform, vectorscope; scope region | `drawHistogram`, `drawWaveform`, `activeScopeRegion` |
 | `overlay-ui.js` | False colour and zebra | `codebase/frontend/overlay-ui.js` (moved October 8); `requestLiveOverlay`, `refreshOverlay`, `renderFalseColorKey` |
 | `workspace-layout.js` | Rails, dock, splitters, popovers | `codebase/frontend/workspace-layout.js` (moved October 8); `initializeInstrumentShell`, `initSplitter`, `toggleOverlayPopover`, `activateDockTab` |
-| `range-controls.js` | Sliders, typed values, snapping, readouts | `enhanceRangeControls`, `bindEditableValue`, `rangeSnapProfile`, `updateControlReadouts` |
+| `range-controls.js` | Sliders, typed values, snapping, readouts | `codebase/frontend/range-controls.js` (moved October 8); `enhanceRangeControls`, `bindEditableValue`, `rangeSnapProfile`, `updateControlReadouts` |
 | `adjustment-controls.js` | Reading a control, committing a value, reset and match between lanes | `resolveAdjustmentPath`, `commitAdjustmentValue`, `syncControlsFromState`, `resetControlGroup` |
 | `highlight-controls.js` | Highlight compression panels | `codebase/frontend/highlight-controls.js` (moved October 8); `normalizeHighlightCompressionControls`, `renderHighlightCompressionControls` |
 | `group-presets.js` | Saved presets per control group | `codebase/frontend/group-presets.js` (moved October 8); `groupPresetPaths`, `initializeGroupPresetControls` |
