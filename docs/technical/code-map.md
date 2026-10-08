@@ -185,6 +185,8 @@ follow-up; this sprint does not rename them.
 ## Which checks cover what
 
 All in `codebase/tests/`. Rules for how much to run are in `AGENTS.md`.
+Desktop checks live in `codebase/desktop/tests/`; their smoke test reads the
+scripts loaded by the page so feature moves keep its assertions intact.
 
 | Kind | Files | Speed |
 |---|---|---|

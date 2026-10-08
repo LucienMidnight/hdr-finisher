@@ -1,7 +1,7 @@
 # Codebase Modularization Sprint
 
 **Date:** October 6, 2026
-**Status:** Phases 0 to 3 are done. Phases 4 and 5 remain.
+**Status:** Phases 0 to 4 are done. Phase 5 remains.
 **To do before v1.0.** Steve wants this structural work finished before the
 1.0 release. After 1.0 there are outside users and saved projects to protect,
 and a reorganisation of this size becomes much more expensive to validate.
@@ -38,7 +38,7 @@ Update this table in the same commit that finishes a phase.
 | 1 | Tests stop depending on where code sits | Done October 7 (see 5.1) |
 | 2 | `app.js` divided by feature | Done October 8 (see 6.1) |
 | 3 | Standalone helpers moved out of `webgpu-preview.js` | Done October 8 (see 7.1) |
-| 4 | The 190 shader settings get names from one list | Implemented; long validation pending (see 8.1) |
+| 4 | The 190 shader settings get names from one list | Done October 8 (see 8.1 and 8.2) |
 | 5 | Close-out | Not started |
 
 Phases run in order. Phase 1 must finish before phase 2 starts, or every move
@@ -462,14 +462,51 @@ JavaScript positions are detected. Local writes cannot hide a missing global
 writer. Existing source pins resolve names through the production list;
 all existing assertions and the seven only-guard tests are unchanged.
 
-Python fast checks and Electron startup passed. The long strict GPU block
-and the one full sweep have not run: they require Steve's answer on contents
-and time before starting. Phase 4 is not complete until those results are
-recorded. No installer was built and nothing was pushed.
+Python fast checks and Electron startup passed. The long validation was subsequently authorized and completed; see 8.2.
+No installer was built and nothing was pushed.
 
 Local-adjustment prefixes and the analytic, brush and resampling mask lists
 have the same positional-maintenance problem. Their separate layouts are
 unchanged; naming them requires a separate decision from Steve.
+
+### 8.2 Validation record (October 8, 2026)
+
+Steve tried the development app and reported that it was working great,
+then authorized the proposed long validation block. Ran the selected full
+sweep once: compilation and all parity/reference/local/scope/preview-export
+checks first, then the remaining interaction, routing and desktop checks,
+serially at 2560 by 1440. Coverage audits, endurance and broad timing sweeps
+were excluded. All three read-only project hashes remained unchanged.
+
+The old plan contained 151 entries, two of which reference Denoise drivers
+removed before this sprint (commit `464d978`). Of the 149 current drivers,
+138 passed and 11 failed after the two invocation corrections below.
+Nine failed drivers had already failed in the previous sweep: Black & White
+parity, scope parity, tiled-film parity, editing-peak clarity reference,
+local design QA, drag GPU load, luma-feather latency, phase4-preview and
+tier-film consistency. `phase4-preview` completed its assertions but its
+report references the `migration` variable removed before this sprint in
+`6255b81`. These unrelated failures and their assertions were left alone.
+
+Two Denoise checks newly failed relative to the older sweep: Advanced-panel
+picture stability and selector-seam binding. Each was run once against an
+isolated pre-modularization frontend snapshot from `30d2e51^`, served to the
+unchanged driver through a temporary adapter. Both reproduced the same
+failure, establishing that they already occur before phases 2 to 4.
+No new application regression was identified in this sprint.
+
+The old Electron runner did not invoke the main-script entry point of
+perspective-preview-ownership. Its assertions passed once through a temporary
+entry-point adapter. Desktop smoke still fetched only `app.js` for two source
+assertions, a location dependency missed in phase 1. Updated only that source
+loader to read the scripts the page loads; both assertions are unchanged.
+The complete desktop smoke then passed once. The fast Node/Python checks and
+startup passed after this loader correction. No second full sweep was run.
+
+The exact helper captures and four generated WGSL sources remain identical.
+The implementation is complete with the existing failures recorded above;
+local-adjustment and mask lists remain a separate decision. Phase 5 updates
+the current layout documents and files the closed dated records.
 
 ## 9. Not in this sprint
 

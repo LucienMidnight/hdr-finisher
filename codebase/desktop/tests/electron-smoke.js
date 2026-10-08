@@ -274,7 +274,10 @@ async function main() {
       assert.equal(await window.locator("#hdr-presentation-warning").isVisible(), true);
       assert.match(await window.locator("#hdr-presentation-warning").textContent(), /Non-authoritative SDR preview/i);
     }
-    const frontendSource = await window.evaluate(() => fetch("/static/app.js").then((response) => response.text()));
+    const frontendSource = await window.evaluate(async () => {
+      const sources = [...document.scripts].map((script) => script.src).filter(Boolean);
+      return (await Promise.all(sources.map((source) => fetch(source).then((response) => response.text())))).join("\n");
+    });
     assert.match(frontendSource, /Windows shell integrations and catalog applications/);
     assert.doesNotMatch(frontendSource, /That dropped file type is not supported by HDR Finisher/);
 
