@@ -954,11 +954,26 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let m0 = sourceSpan / max(stopSpan * (1.0 + curveBias), 0.000001);
       let m1 = p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}] * sourceSpan / max(stopSpan * (1.0 - curveBias), 0.000001);
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 1.5) {
-        return vec3f(
+        let perChannel = vec3f(
           peakFitChannel(input.r, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
           peakFitChannel(input.g, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
           peakFitChannel(input.b, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1)
         );
+        // Per-channel mapping leaves a small secondary channel behind while
+        // its primary shrinks, turning hard-compressed saturated red magenta.
+        // As the brightest channel's compression grows, move to a hue-keeping
+        // form: the middle channel holds its relative position and a
+        // below-zero channel shrinks with the brightest. The 0.5 and 2.0 stop
+        // edges are SDR_ROLLOFF_HUE_KEEP_*_STOPS in adjustments.py.
+        let low = min(min(input.r, input.g), input.b);
+        let safeHigh = max(channelPeak, 0.00000001);
+        let mappedHigh = peakFitChannel(channelPeak, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1);
+        var mappedLow = peakFitChannel(low, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1);
+        if (low < 0.0) { mappedLow = low * mappedHigh / safeHigh; }
+        let position = (input - vec3f(low)) / max(channelPeak - low, 0.00000001);
+        let hueKept = clamp(vec3f(mappedLow) + position * (mappedHigh - mappedLow), vec3f(mappedLow), vec3f(mappedHigh));
+        let hueWeight = smoothstep(0.5, 2.0, log2(safeHigh / max(mappedHigh, 0.00000001)));
+        return mix(perChannel, hueKept, hueWeight);
       }
       let u = clamp((log2(signal) - effectiveStartStop) / sourceSpan, 0.0, 1.0);
       let w = clamp(u + curveBias * u * (1.0 - u), 0.0, 1.0);

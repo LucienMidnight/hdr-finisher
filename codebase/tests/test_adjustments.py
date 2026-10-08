@@ -1798,6 +1798,19 @@ def test_sdr_smooth_color_rolloff_reduces_peak_color_separation_without_lifting_
     assert float(np.ptp(output)) < float(np.ptp(image[0, 0]) / np.max(image[0, 0]))
 
 
+def test_sdr_smooth_color_rolloff_keeps_saturated_red_out_of_magenta() -> None:
+    # DSC00099 LED-lit wall: red far above white, green below zero in sRGB.
+    image = np.array([[[16.361, -0.171, 0.106], [39.631, 5.091, -0.687]]], dtype=np.float32)
+    output = _compress_sdr_highlights(image, SDRAdjustments(), peak_override=39.631)
+    red = output[0, 0]
+
+    assert 0.0 < red[0] < 1.0
+    np.testing.assert_allclose(red[1:] / red[0], image[0, 0, 1:] / image[0, 0, 0], atol=2e-3)
+    assert output[0, 1, 0] == pytest.approx(1.0, abs=1e-6)
+    assert np.all(output <= 1.0)
+    assert np.all(np.abs(output) <= np.abs(image) + 1e-6)
+
+
 def test_authored_sdr_highlight_bypass_is_identity_before_normal_sdr_output_clamp() -> None:
     reference = np.array([[[0.05, 0.18, 0.75], [0.2, 0.5, 1.0]]], dtype=np.float32)
     state = AdjustmentState(sdr=SDRAdjustments(highlight_section_enabled=False))

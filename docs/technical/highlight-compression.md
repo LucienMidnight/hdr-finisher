@@ -66,6 +66,8 @@ Highlight Color selects both the compression signal and the color trajectory. Th
 
 Values below the effective shoulder remain unchanged. Negative wide-gamut components are retained rather than clipped; gamut handling remains the responsibility of the later output path.
 
+SDR adds a hue-keeping form on top of the per-channel mapping. Mapping each linear-sRGB channel alone leaves a small secondary channel untouched while its primary shrinks, so a saturated red whose red channel is compressed many-fold turns magenta, and a below-zero (outside-sRGB) channel grows relative to it; the later gamut step preserves that wrong hue. The hue-keeping form maps the brightest and weakest channel through the curve, holds the middle channel at its relative position between them, and scales a below-zero channel by the same factor as the brightest. The two forms blend by how many stops the pixel's brightest channel is compressed: purely per-channel up to `0.5` stops, fully hue-keeping from `2.0` stops (`SDR_ROLLOFF_HUE_KEEP_START_STOPS` / `SDR_ROLLOFF_HUE_KEEP_FULL_STOPS`, mirrored as literals in `sdrPeakFit`). Mild compression stays per-channel on purpose: there, channels under the shoulder are untouched, which is what lets HDR and SDR develop the same film grain. HDR Smooth color rolloff is unchanged (October 8, 2026, DSC00099).
+
 ### Preserve color
 
 - Signal: non-negative ACEScg luminance using AP1 weights `[0.2722287, 0.6740818, 0.0536895]`.
@@ -133,7 +135,8 @@ Important invariants:
 - values at or below the effective start remain unchanged;
 - the authoritative CPU preview/export path measures Peak Fit after all creative stages;
 - Smooth color rolloff never lifts a weak BT.2020 channel and anchors the brightest transport channel at Target Peak;
-- SDR Smooth color rolloff never lifts a weak linear-sRGB channel and anchors the measured source channel at display white;
+- SDR Smooth color rolloff never raises a positive linear-sRGB channel, never grows a below-zero one, and anchors the measured source channel at display white;
+- SDR Smooth color rolloff keeps channel ratios for a pixel whose brightest channel is compressed by two stops or more;
 - the Neutralize peak endpoint is white at Target Peak.
 
 ## WebGPU implementation and parameter map

@@ -29,6 +29,10 @@ _TONE_EQUALIZER_MIN_TARGET_STEP = np.float32(1e-3)
 SDR_DISPLAY_REFERENCE_WHITE = np.float32(100.0 / 203.0)
 SDR_SCENE_MIDDLE_GRAY = np.float32(0.18)
 SDR_SCENE_TO_DISPLAY_SCALE = np.float32(SDR_DISPLAY_REFERENCE_WHITE / SDR_SCENE_MIDDLE_GRAY)
+# Stops of brightest-channel compression over which SDR Smooth color rolloff
+# moves from per-channel mapping to its hue-keeping form. Shared with WGSL.
+SDR_ROLLOFF_HUE_KEEP_START_STOPS = 0.5
+SDR_ROLLOFF_HUE_KEEP_FULL_STOPS = 2.0
 FILM_GRAIN_GATE_DIMENSIONS_MM: dict[str, tuple[float, float]] = {
     "65mm": (52.63, 23.01),
     "35mm": (36.0, 24.0),
@@ -1393,11 +1397,30 @@ def _compress_sdr_highlights(
             return np.where(signal > params.effective_start, mapped, signal), u
 
         if smooth_rolloff:
-            for channel_index in range(3):
-                channel = result[..., channel_index]
-                mapped, _ = map_signal(channel)
-                result[..., channel_index] = np.where(channel > params.effective_start, mapped, channel)
-            return result
+            # Each channel takes the shoulder alone. That leaves a small
+            # secondary channel untouched while its primary shrinks, so once
+            # the primary is compressed many-fold a saturated red has turned
+            # magenta. As the brightest channel's compression grows, move to a
+            # hue-keeping form: the middle channel holds its relative position
+            # between the mapped brightest and weakest, and a below-zero
+            # (outside-sRGB) channel shrinks with the brightest. Mild
+            # compression stays purely per-channel, so channels under the
+            # shoulder are untouched there and both lanes develop one grain.
+            high = np.max(result, axis=-1, keepdims=True)
+            low = np.min(result, axis=-1, keepdims=True)
+            per_channel, _ = map_signal(result)
+            mapped_high, _ = map_signal(high)
+            mapped_low, _ = map_signal(low)
+            safe_high = np.maximum(high, np.float32(1e-8))
+            mapped_low = np.where(low < 0.0, low * mapped_high / safe_high, mapped_low)
+            position = (result - low) / np.maximum(high - low, np.float32(1e-8))
+            hue_kept = np.clip(mapped_low + position * (mapped_high - mapped_low), mapped_low, mapped_high)
+            compression_stops = np.log2(safe_high / np.maximum(mapped_high, np.float32(1e-8)))
+            hue_weight = _smoothstep(
+                SDR_ROLLOFF_HUE_KEEP_START_STOPS, SDR_ROLLOFF_HUE_KEEP_FULL_STOPS, compression_stops
+            )
+            mapped = per_channel + hue_weight * (hue_kept - per_channel)
+            return np.where(high > params.effective_start, mapped, result).astype(np.float32, copy=False)
 
         target_signal, progress = map_signal(compression_signal)
         active = compression_signal[..., None] > params.effective_start
