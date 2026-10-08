@@ -131,7 +131,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `color-wheels.js` | Colour wheels and vignette centre | `codebase/frontend/color-wheels.js` (moved October 8); `bindColorWheels`, `bindVignetteCenter` |
 | `geometry-tools.js` | Crop, perspective, straighten, rotate | `codebase/frontend/geometry-tools.js` (moved October 8); `bindCropEditor`, `bindPerspectiveEditor`, `beginStraightenGesture`, `rotateGeometry` |
 | `lanes-compare.js` | Switching HDR/SDR, compare views | `codebase/frontend/lanes-compare.js` (moved October 8); `switchLane`, `bindCompareControl`, `renderComparisonPreview` |
-| `zoom-navigation.js` | Zoom, pan, navigation thumbnail | `setZoomMode`, `applyZoomGeometry`, `refreshNavigationThumbnail` |
+| `zoom-navigation.js` | Zoom, pan, navigation thumbnail | `codebase/frontend/zoom-navigation.js` (moved October 8); `setZoomMode`, `applyZoomGeometry`, `refreshNavigationThumbnail` |
 | `session-import.js` | Import, upload, eject, source interpretation, raw settings | `codebase/frontend/session-import.js` (moved October 8); `uploadFile`, `ejectCurrentSession`, `syncInterpretationControls`, `renderRawImportControls` |
 | `project-documents.js` | Open, save, unsaved-changes prompts, desktop file open | `codebase/frontend/project-documents.js` (moved October 8); `openDesktopSelection`, `openProjectFromPath`, `saveProjectToPath` |
 | `media-browser.js` | The file browser | `codebase/frontend/media-browser.js` (moved October 8); `openMediaBrowser`, `renderMediaBrowserEntries`, `loadMediaDirectory` |
