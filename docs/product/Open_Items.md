@@ -18,7 +18,6 @@ list is done.
 
 | Item | What | Detail |
 |---|---|---|
-| CF-PIX-06 | October 8 failure reproduced: 20 pixels, max delta 4 at tile size 512. Further focused diagnosis awaiting Steve; shader and exact guard unchanged | Viewport 15.7 |
 | Local and mask setting lists | The numbers sent to the shaders for local adjustments and masks are still matched by position by hand in two languages | Modularization 8.1 |
 | Explicit interfaces between feature files | Each frontend file states what it reads and what it changes, instead of everything sharing one pool of state | Modularization 9 |
 | Publish | Read the draft release notes, tag `v0.9.0`, publish, push | PRD, RELEASE entry in 11a |

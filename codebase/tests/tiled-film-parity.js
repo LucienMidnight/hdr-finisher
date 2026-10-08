@@ -114,39 +114,74 @@ const MAX_CHANNEL_DELTA = 0;
       }
     };
     await presentedFrame();
+    // Capture the submitted surface before its WebGPU swapchain expires.
+    // Browser screenshots resample the 1004-pixel backing into a fractional
+    // CSS width and can differ even when both rendered surfaces are identical.
+    await page.evaluate(() => {
+      const context = els.previewCanvas.getContext("webgpu");
+      const device = state.gpuPreview.device;
+      const configure = context.configure.bind(context);
+      context.configure = (config) => configure({ ...config, usage: (config.usage || GPUTextureUsage.RENDER_ATTACHMENT) | GPUTextureUsage.COPY_SRC });
+      context.configure(context.getConfiguration());
+      const current = context.getCurrentTexture.bind(context);
+      let pending = null;
+      context.getCurrentTexture = () => { pending = current(); return pending; };
+      const submit = device.queue.submit.bind(device.queue);
+      window.__parityRawFrames = [];
+      device.queue.submit = (commands) => {
+        submit(commands);
+        if (!pending) return;
+        const texture = pending;
+        pending = null;
+        const width = texture.width, height = texture.height, format = texture.format;
+        const pixelBytes = format === "rgba16float" ? 8 : 4;
+        const rowBytes = Math.ceil(width * pixelBytes / 256) * 256;
+        const buffer = device.createBuffer({size: rowBytes * height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+        const encoder = device.createCommandEncoder();
+        encoder.copyTextureToBuffer({texture}, {buffer, bytesPerRow: rowBytes}, {width, height});
+        submit([encoder.finish()]);
+        window.__parityRawPending = (async () => {
+          await buffer.mapAsync(GPUMapMode.READ);
+          const padded = new Uint8Array(buffer.getMappedRange());
+          const data = new Uint8Array(width * height * pixelBytes);
+          for (let y=0; y<height; y++) data.set(padded.subarray(y*rowBytes, y*rowBytes+width*pixelBytes), y*width*pixelBytes);
+          buffer.unmap(); buffer.destroy();
+          let nonzero=0; for (const byte of data) if (byte) nonzero++;
+          const id = window.__parityRawFrames.push({width,height,format,pixelBytes,data}) - 1;
+          return {id,width,height,format,nonzero};
+        })();
+      };
+    });
     let lastFrame = null;
     const capture = async () => {
       const mark = await presentedFrame();
-      await page.waitForTimeout(250);
-      const shot = (await page.locator("#preview-canvas").screenshot()).toString("base64");
+      const raw = await page.evaluate(() => window.__parityRawPending);
+      if (!raw || !raw.nonzero) throw new Error("No nonblank submitted surface was captured");
+      const shot = process.env.HDR_FINISHER_DUMP_PARITY
+        ? (await page.locator("#preview-canvas").screenshot()).toString("base64") : null;
       lastFrame = { mark, after: await presentedFrame() };
-      return shot;
+      return { ...raw, shot };
     };
 
-    const compare = async (a, b) => page.evaluate(async ({ left, right }) => {
-      const decode = async (base64) => {
-        const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
-        const surface = document.createElement("canvas");
-        surface.width = bitmap.width;
-        surface.height = bitmap.height;
-        const context = surface.getContext("2d");
-        context.drawImage(bitmap, 0, 0);
-        return context.getImageData(0, 0, bitmap.width, bitmap.height);
-      };
-      const first = await decode(left);
-      const second = await decode(right);
-      if (first.width !== second.width || first.height !== second.height) return { error: "captured sizes differ" };
+    const compare = async (a, b) => page.evaluate(({ left, right }) => {
+      const first = window.__parityRawFrames[left.id];
+      const second = window.__parityRawFrames[right.id];
+      if (first.width !== second.width || first.height !== second.height || first.format !== second.format) {
+        return { error: "captured sizes or formats differ" };
+      }
       let differing = 0;
       let maxDelta = 0;
-      for (let index = 0; index < first.data.length; index += 4) {
+      for (let index = 0; index < first.data.length; index += first.pixelBytes) {
         let delta = 0;
-        for (let channel = 0; channel < 3; channel += 1) {
+        // Compare every byte of RGB, including both bytes of half-float HDR.
+        // Alpha is opaque. No tone mapping or conversion enters the comparison.
+        for (let channel = 0; channel < first.pixelBytes * 3 / 4; channel += 1) {
           delta = Math.max(delta, Math.abs(first.data[index + channel] - second.data[index + channel]));
         }
         if (delta > maxDelta) maxDelta = delta;
         if (delta > 0) differing += 1;
       }
-      return { width: first.width, height: first.height, samples: first.data.length / 4, differing, maxDelta };
+      return { width: first.width, height: first.height, samples: first.width * first.height, differing, maxDelta };
     }, { left: a, right: b });
 
     const renderDirect = async () => {
@@ -187,8 +222,8 @@ const MAX_CHANNEL_DELTA = 0;
         // The two presented frames, for inspecting where they differ.
         fs.mkdirSync(process.env.HDR_FINISHER_DUMP_PARITY, { recursive: true });
         const slug = label.replace(/[^a-z0-9]+/gi, "-");
-        fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_PARITY, `film-${slug}-${tileSize}-direct.png`), Buffer.from(directShot, "base64"));
-        fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_PARITY, `film-${slug}-${tileSize}-tiled.png`), Buffer.from(tiledShot, "base64"));
+        fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_PARITY, `film-${slug}-${tileSize}-direct.png`), Buffer.from(directShot.shot, "base64"));
+        fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_PARITY, `film-${slug}-${tileSize}-tiled.png`), Buffer.from(tiledShot.shot, "base64"));
       }
       const comparison = await compare(directShot, tiledShot);
       if (comparison.error) throw new Error(`${label} tileSize ${tileSize}: ${comparison.error}`);

@@ -2542,13 +2542,20 @@ mask requests, grade mask rebuilds, untrusted releases or timeouts. The driver
 passes. This closes the broken-driver item; the occasional slow sample is
 recorded without changing the p95 criterion or application behavior.
 
-### October 8 release follow-up: CF-PIX-06 remains open
+### October 8 release follow-up: CF-PIX-06 closed
 
-The current original tiled-film driver reproduces the maximum-spatial case
-at tile size 512: 20 differing pixels, maximum four byte levels. Other retained
-cases and size 256 pass. Thus the October 7 green run did not establish a
-lasting closure; the October 8 sweep's failure is reproducible. One attempt
-to separate GPU backing pixels from screenshots was inconclusive: a WebGPU
-canvas cannot safely be read after presentation with a plain canvas draw.
-No check, shader or zero-difference criterion was changed. A further focused
-diagnostic beyond the brief's two runs is awaiting Steve's decision.
+The October 8 failure was reproducible, so the October 7 pass did not
+establish lasting closure. Steve approved an additional focused diagnostic:
+copying the submitted WebGPU surface before its swapchain expired showed
+byte-identical RGB in every case, including maximum spatial film effects.
+Browser screenshots still differed at 20 pixels by four byte levels, this
+time at tile size 256 rather than 512. Their fractional CSS resampling was
+the fault; the screenshot width was 1,006 against a 1,004-pixel backing.
+
+The driver now reads the submitted GPU texture directly, checks for a
+nonblank frame, compares every RGB byte (including both half-float bytes),
+and retains presentation stability, all scenarios, cross-tile grain checks,
+bounded submissions and the exact zero-difference guard. Optional screenshots
+remain inspection artifacts only. One validation run passed every case at
+256 and 512 over 567,260 native pixels. Renderer, shaders and limits unchanged.
+Fast checks: 427 Node tests and 1,555 venv Python tests passed, three skipped.
