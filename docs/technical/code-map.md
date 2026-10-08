@@ -118,7 +118,7 @@ Clusters are mostly contiguous, but some areas sit in two or three places.
 | `preview-sizing.js` | Choosing working resolution; region-of-interest follow-ups | `displayedLongEdge`, `interactiveScaleDecision`, `applyRoiPreview` |
 | `peak-measurement.js` | Editing peak and highlight anchor | `codebase/frontend/peak-measurement.js` (moved October 8); `exactScopePeakKey`, `measureExactScopePeak`, `scheduleExactHighlightAnchor` |
 | `scope-requests.js` | Asking for scope data, GPU and CPU | `refreshScopes`, `runGpuScopeRequest`, `runScopeRequest` |
-| `scope-drawing.js` | Drawing histogram, waveform, vectorscope; scope region | `drawHistogram`, `drawWaveform`, `activeScopeRegion` |
+| `scope-drawing.js` | Drawing histogram, waveform, vectorscope; scope region | `codebase/frontend/scope-drawing.js` (moved October 8); `drawHistogram`, `drawWaveform`, `activeScopeRegion` |
 | `overlay-ui.js` | False colour and zebra | `codebase/frontend/overlay-ui.js` (moved October 8); `requestLiveOverlay`, `refreshOverlay`, `renderFalseColorKey` |
 | `workspace-layout.js` | Rails, dock, splitters, popovers | `codebase/frontend/workspace-layout.js` (moved October 8); `initializeInstrumentShell`, `initSplitter`, `toggleOverlayPopover`, `activateDockTab` |
 | `range-controls.js` | Sliders, typed values, snapping, readouts | `codebase/frontend/range-controls.js` (moved October 8); `enhanceRangeControls`, `bindEditableValue`, `rangeSnapProfile`, `updateControlReadouts` |
