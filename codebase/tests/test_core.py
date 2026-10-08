@@ -158,6 +158,44 @@ def test_preview_downsample_filters_high_frequency_detail_without_losing_hdr_ran
     assert float(np.std(result[..., 0])) < 0.1
 
 
+def test_preview_downsample_local_range_matches_the_plain_definition() -> None:
+    # The range each output pixel is limited to is the darkest and brightest
+    # source value in its block and the eight blocks around it. The production
+    # code computes that in whole-array steps for speed; this is the same thing
+    # written out, including short last blocks and non-finite values.
+    from hdr_finisher.preview import _local_range
+
+    rng = np.random.default_rng(23)
+    for _ in range(60):
+        height, width = int(rng.integers(1, 40)), int(rng.integers(1, 40))
+        target_h, target_w = int(rng.integers(1, height + 1)), int(rng.integers(1, width + 1))
+        channel = (rng.standard_normal((height, width)) * 3).astype(np.float32)
+        if rng.random() < 0.3:
+            channel[rng.random((height, width)) < 0.1] = np.nan
+        block = max(1, int(np.ceil(max(height / target_h, width / target_w))))
+        block_rows, block_columns = -(-height // block), -(-width // block)
+        expected = []
+        for reduce in (np.minimum, np.maximum):
+            coarse = np.empty((block_rows, block_columns), dtype=np.float32)
+            for row in range(block_rows):
+                for column in range(block_columns):
+                    cell = channel[row * block:(row + 1) * block, column * block:(column + 1) * block]
+                    coarse[row, column] = reduce.reduce(cell, axis=None)
+            padded = np.pad(coarse, 1, mode="edge")
+            spread = coarse.copy()
+            for row_shift in range(3):
+                for column_shift in range(3):
+                    spread = reduce(spread, padded[row_shift:row_shift + block_rows, column_shift:column_shift + block_columns])
+            rows = np.minimum(((np.arange(target_h) + 0.5) * height / target_h).astype(np.intp) // block, block_rows - 1)
+            columns = np.minimum(((np.arange(target_w) + 0.5) * width / target_w).astype(np.intp) // block, block_columns - 1)
+            expected.append(spread[np.ix_(rows, columns)])
+
+        low, high = _local_range(channel, target_w, target_h)
+
+        np.testing.assert_array_equal(low, expected[0])
+        np.testing.assert_array_equal(high, expected[1])
+
+
 def test_preview_downsample_parallel_channels_match_the_sequential_path(monkeypatch: pytest.MonkeyPatch) -> None:
     # Phase 5 carry-over: a large cold level resizes its three channels on a
     # small thread pool, because the first progress tick otherwise waits for a

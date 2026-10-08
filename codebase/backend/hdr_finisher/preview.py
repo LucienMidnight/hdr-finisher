@@ -89,20 +89,47 @@ def _local_range(channel: np.ndarray, target_w: int, target_h: int) -> tuple[np.
     """
     height, width = channel.shape
     block = max(1, int(np.ceil(max(height / target_h, width / target_w))))
-    row_starts = np.arange(0, height, block)
-    column_starts = np.arange(0, width, block)
-    rows = np.minimum(((np.arange(target_h) + 0.5) * height / target_h).astype(np.intp) // block, len(row_starts) - 1)
-    columns = np.minimum(((np.arange(target_w) + 0.5) * width / target_w).astype(np.intp) // block, len(column_starts) - 1)
+    rows = np.minimum(((np.arange(target_h) + 0.5) * height / target_h).astype(np.intp) // block, -(-height // block) - 1)
+    columns = np.minimum(((np.arange(target_w) + 0.5) * width / target_w).astype(np.intp) // block, -(-width // block) - 1)
     ranges = []
     for reduce in (np.minimum, np.maximum):
-        coarse = reduce.reduceat(reduce.reduceat(channel, row_starts, axis=0), column_starts, axis=1)
-        padded = np.pad(coarse, 1, mode="edge")
-        for row_shift in range(3):
-            for column_shift in range(3):
-                shifted = padded[row_shift:row_shift + coarse.shape[0], column_shift:column_shift + coarse.shape[1]]
-                coarse = reduce(coarse, shifted)
-        ranges.append(coarse[np.ix_(rows, columns)])
+        # Whole-array steps along one axis at a time. This ran per block and
+        # per neighbour before and took most of a 42 MP level's build time.
+        coarse = _block_reduce(reduce, _block_reduce(reduce, channel, block, 0), block, 1)
+        coarse = _neighbour_reduce(reduce, _neighbour_reduce(reduce, coarse, 0), 1)
+        ranges.append(coarse.take(rows, axis=0).take(columns, axis=1))
     return ranges[0], ranges[1]
+
+
+def _block_reduce(reduce: np.ufunc, values: np.ndarray, block: int, axis: int) -> np.ndarray:
+    """``reduce`` over consecutive runs of ``block`` along ``axis``; the last run may be short."""
+    if block == 1:
+        return values
+    index = [slice(None)] * values.ndim
+    index[axis] = slice(0, None, block)
+    result = values[tuple(index)].copy()
+    for offset in range(1, block):
+        index[axis] = slice(offset, None, block)
+        part = values[tuple(index)]
+        head = [slice(None)] * values.ndim
+        head[axis] = slice(0, part.shape[axis])
+        target = result[tuple(head)]
+        reduce(target, part, out=target)
+    return result
+
+
+def _neighbour_reduce(reduce: np.ufunc, values: np.ndarray, axis: int) -> np.ndarray:
+    """``reduce`` of each element with the one before and after it, edges repeated."""
+    padded = np.concatenate([values.take([0], axis=axis), values, values.take([-1], axis=axis)], axis=axis)
+    length = values.shape[axis]
+    index = [slice(None)] * values.ndim
+    parts = []
+    for start in range(3):
+        index[axis] = slice(start, start + length)
+        parts.append(padded[tuple(index)])
+    result = reduce(parts[0], parts[1])
+    reduce(result, parts[2], out=result)
+    return result
 
 
 def downsample_image(
