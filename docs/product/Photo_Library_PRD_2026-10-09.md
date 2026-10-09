@@ -411,6 +411,15 @@ Decided:
   count as unsaved work, even on the photo open in Grade.
 - **Tag management:** suggestions while typing, a list of all tags with
   counts, rename or merge a tag everywhere.
+- Decided October 9 from the mock-up:
+  - **Colour labels are included** (red, orange, green, blue), asked for by
+    Steve; they were previously parked. A small dot beside the stars, keys
+    6 to 9, the same key again clears it. They can be filtered on, and are
+    to be part of tag management when that is designed.
+  - **Stars are yellow.** Stars and colour labels are marks on a photo and
+    get their own colours, never the ultraviolet accent. The design
+    guidelines need new tokens for them.
+  - Marks sit in a strip under the thumbnail, never over the photo.
 
 Proposed:
 
@@ -1185,7 +1194,7 @@ companion, tethered shooting, printing, web galleries, slideshows, video.
   the interface becomes modular. Raised by Steve on October 9; not needed
   now.
 
-**Parked, were Claude's additions and not Steve's requests:** colour labels,
+**Parked, were Claude's additions and not Steve's requests:**
 a list layout with detail columns, a multi-photo survey view, a
 copy-from-card helper.
 

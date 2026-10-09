@@ -532,7 +532,7 @@ svg {
 }
 
 .lib-filter-stars button.on {
-  color: var(--text);
+  color: var(--star);
 }
 
 .lib-chip {
@@ -657,6 +657,7 @@ svg {
 }
 
 .marks .stars {
+  color: var(--star);
   letter-spacing: 1px;
 }
 
@@ -786,7 +787,7 @@ svg {
 }
 
 .lib-single-caption .stars {
-  color: var(--text);
+  color: var(--star);
   font-family: var(--sans);
   font-size: 12px;
   letter-spacing: 1px;
@@ -981,7 +982,7 @@ svg {
 }
 
 .details-stars button.on {
-  color: var(--text);
+  color: var(--star);
 }
 
 .details-flags {
@@ -2329,4 +2330,85 @@ img.ov-low {
   display: flex;
   color: var(--body);
   font-size: 12px;
+}
+
+/* ---------- star colour and colour labels ----------
+   New tokens the design guidelines do not have yet. Stars and labels are
+   marks on a photo, so they get their own colours and never the accent. */
+
+:root {
+  --star: #f2c94c;
+  --label-red: #e5484d;
+  --label-orange: #f2994a;
+  --label-green: #3fb96b;
+  --label-blue: #4d9cff;
+}
+
+.review-marks .stars {
+  color: var(--star);
+}
+
+.label-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.lib-filmstrip .label-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.details-labels,
+.lib-filter-labels {
+  display: flex;
+  gap: 4px;
+}
+
+.details-labels {
+  margin-top: 8px;
+}
+
+.lib-filter-labels {
+  margin-left: 10px;
+}
+
+.details-labels button,
+.lib-filter-labels button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+}
+
+.lib-filter-stars .lib-filter-labels button {
+  width: 22px;
+  height: 26px;
+}
+
+.details-labels button i,
+.lib-filter-labels button i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  opacity: .5;
+}
+
+.details-labels button:hover i,
+.lib-filter-labels button:hover i,
+.details-labels button.on i,
+.lib-filter-labels button.on i {
+  opacity: 1;
+}
+
+.details-labels button.on,
+.lib-filter-labels button.on {
+  border-color: var(--border);
+  background: var(--raised);
 }

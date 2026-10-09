@@ -39,6 +39,7 @@
       flag: roll > 0.82 ? "pick" : roll < 0.12 ? "reject" : null,
       edited: rand() > 0.8,
       copies: i === 3 ? 2 : 0,
+      label: [null, null, null, "red", null, "green", null, null, "orange", null, null, "blue", null][i % 13],
       tags: scene.tags.slice(),
     };
   });
@@ -85,7 +86,7 @@
     sel: new Set(),
     active: null,
     anchor: null,
-    filters: { minStars: 0, picked: false, unmarked: false, hideRejected: false, edited: false, rawOnly: false, text: "" },
+    filters: { minStars: 0, picked: false, unmarked: false, hideRejected: false, edited: false, rawOnly: false, text: "", labels: new Set() },
     sort: "time",
     undo: [],
     shown: [],
@@ -114,6 +115,7 @@
       (!f.unmarked || (!p.flag && !p.stars)) &&
       (!f.hideRejected || p.flag !== "reject") &&
       (!f.edited || p.edited) &&
+      (!f.labels.size || f.labels.has(p.label)) &&
       (!f.rawOnly || p.kind === "RAW") &&
       (!text || p.name.toLowerCase().includes(text) || p.tags.some((t) => t.includes(text))));
     const order = { pick: 0, null: 1, reject: 2 };
@@ -180,7 +182,7 @@
     if (p.edited) right.push(icon("edited"));
     if (p.flag === "pick") right.push(icon("flag"));
     if (p.flag === "reject") right.push(icon("reject"));
-    return `<span class="stars">${"★".repeat(p.stars)}</span><span class="right">${right.join("")}</span>`;
+    return `${labelDot(p)}<span class="stars">${"★".repeat(p.stars)}</span><span class="right">${right.join("")}</span>`;
   }
 
   // The focus and exposure maps are small images kept beside the thumbnails
@@ -188,6 +190,10 @@
   const mapSrc = (kind, p) => `photos/${kind}/${String(p.id).padStart(3, "0")}.png`;
   const MAPS = ["focus", "high", "low"];
   const overlayImgs = (p) => MAPS.map((kind) => `<img class="ov ov-${kind}" src="${mapSrc(kind, p)}" alt="" loading="lazy">`).join("");
+
+  // Colour labels: a small dot, keys 6 to 9. The same key again clears it.
+  const LABELS = ["red", "orange", "green", "blue"];
+  const labelDot = (p) => (p.label ? `<i class="label-dot" style="background:var(--label-${p.label})" title="${p.label} label"></i>` : "");
 
   function cellHtml(p) {
     return `<div class="cell" data-id="${p.id}"><div class="frame"><img src="photos/t/${String(p.id).padStart(3, "0")}.jpg" alt="" loading="lazy">${overlayImgs(p)}</div>
@@ -312,7 +318,7 @@
   function mark(change, label) {
     const list = targets();
     if (!list.length) return;
-    state.undo.push(list.map((p) => ({ p, stars: p.stars, flag: p.flag })));
+    state.undo.push(list.map((p) => ({ p, stars: p.stars, flag: p.flag, label: p.label })));
     list.forEach(change);
     sync(list);
     flash(label);
@@ -323,6 +329,10 @@
   }
 
   const setStars = (n) => mark((p) => { p.stars = n; }, n ? "★".repeat(n) : "No stars");
+  const setLabel = (label) => {
+    const clear = targets().every((p) => p.label === label);
+    mark((p) => { p.label = clear ? null : label; }, clear ? "No label" : label[0].toUpperCase() + label.slice(1) + " label");
+  };
   const setFlag = (flag) => mark((p) => { p.flag = flag; }, flag === "pick" ? "Picked" : flag === "reject" ? "Rejected" : "Unmarked");
 
   function undo() {
@@ -343,7 +353,7 @@
       refresh();
       return toast(`Restored ${last.deleted.length} from the Recycle Bin`);
     }
-    last.forEach(({ p, stars, flag }) => { p.stars = stars; p.flag = flag; });
+    last.forEach(({ p, stars, flag, label }) => { p.stars = stars; p.flag = flag; p.label = label; });
     sync(last.map((entry) => entry.p));
     computeShown();
     renderGrid(false);
@@ -458,7 +468,7 @@
     show($("single-image"), p);
     $("single-image").classList.toggle("rejected", p.flag === "reject");
     const index = state.shown.indexOf(p) + 1;
-    $("single-caption").innerHTML = `<span>${p.name}</span><span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}<span>${index} / ${state.shown.length}</span><span>${state.zoom.on ? "100%" : "Fit"}</span>`;
+    $("single-caption").innerHTML = `<span>${p.name}</span>${labelDot(p)}<span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}<span>${index} / ${state.shown.length}</span><span>${state.zoom.on ? "100%" : "Fit"}</span>`;
   }
 
   function renderReview() {
@@ -466,10 +476,10 @@
     if (!p) return;
     show($("review-image"), p);
     $("review-image").classList.toggle("rejected", p.flag === "reject");
-    $("review-marks").innerHTML = `<span>${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}${state.zoom.on ? "<span>100%</span>" : ""}`;
+    $("review-marks").innerHTML = `${labelDot(p)}<span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}${state.zoom.on ? "<span>100%</span>" : ""}`;
   }
 
-  const captionMarks = (p) => `<span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}`;
+  const captionMarks = (p) => `${labelDot(p)}<span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}`;
 
   function renderCompare() {
     const [r, c] = [byId(state.ref), current()];
@@ -638,6 +648,7 @@
     $("details").innerHTML = title + head + `
       <div class="details-section"><p class="details-kicker">Marks</p>
         <div class="details-stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-stars="${n}" class="${stars >= n ? "on" : ""}" aria-label="${n} stars">★</button>`).join("")}</div>
+        <div class="details-labels">${LABELS.map((l) => `<button type="button" data-label="${l}" class="${list.every((p) => p.label === l) ? "on" : ""}" title="${l} label" aria-label="${l} label"><i style="background:var(--label-${l})"></i></button>`).join("")}</div>
         <div class="details-flags">${[["pick", "Pick"], ["", "Unmarked"], ["reject", "Reject"]].map(([v, l]) => `<button type="button" data-flag="${v}" class="${flag !== undefined && (flag || "") === v ? "on" : ""}">${l}</button>`).join("")}</div>
       </div>
       <div class="details-section"><p class="details-kicker">Tags</p>
@@ -647,6 +658,8 @@
 
   $("details").addEventListener("click", (event) => {
     if (event.target.closest(".side-collapse")) return toggleSide("details");
+    const label = event.target.closest("[data-label]");
+    if (label) return setLabel(label.dataset.label);
     const star = event.target.closest("[data-stars]");
     const flag = event.target.closest("[data-flag]");
     if (star) {
@@ -665,13 +678,15 @@
 
   // ---------- filter bar ----------
 
-  $("filter-stars").innerHTML = [1, 2, 3, 4, 5].map((n) => `<button type="button" data-min="${n}" title="${n} stars or more">★</button>`).join("");
+  $("filter-stars").innerHTML = [1, 2, 3, 4, 5].map((n) => `<button type="button" data-min="${n}" title="${n} stars or more">★</button>`).join("") +
+    `<span class="lib-filter-labels">${LABELS.map((l) => `<button type="button" data-filter-label="${l}" title="Show ${l} labels" aria-label="Show ${l} labels"><i style="background:var(--label-${l})"></i></button>`).join("")}</span>`;
 
   function renderFilters() {
     const f = state.filters;
     document.querySelectorAll("[data-min]").forEach((b) => b.classList.toggle("on", Number(b.dataset.min) <= f.minStars));
     document.querySelectorAll("[data-filter]").forEach((b) => b.classList.toggle("on", f[b.dataset.filter]));
-    const active = (f.minStars ? 1 : 0) + (f.text ? 1 : 0) + ["picked", "unmarked", "hideRejected", "edited", "rawOnly"].filter((k) => f[k]).length;
+    document.querySelectorAll("[data-filter-label]").forEach((b) => b.classList.toggle("on", f.labels.has(b.dataset.filterLabel)));
+    const active = (f.minStars ? 1 : 0) + (f.text ? 1 : 0) + f.labels.size + ["picked", "unmarked", "hideRejected", "edited", "rawOnly"].filter((k) => f[k]).length;
     $("filter-button").textContent = active ? `Filter · ${active}` : "Filter";
     $("filter-button").setAttribute("aria-pressed", active > 0 || !$("filterbar").hidden);
     $("raw-only").setAttribute("aria-pressed", f.rawOnly);
@@ -688,10 +703,12 @@
     const f = state.filters;
     const min = event.target.closest("[data-min]");
     const chip = event.target.closest("[data-filter]");
-    if (min) f.minStars = f.minStars === Number(min.dataset.min) ? 0 : Number(min.dataset.min);
+    const tint = event.target.closest("[data-filter-label]");
+    if (tint) f.labels.has(tint.dataset.filterLabel) ? f.labels.delete(tint.dataset.filterLabel) : f.labels.add(tint.dataset.filterLabel);
+    else if (min) f.minStars = f.minStars === Number(min.dataset.min) ? 0 : Number(min.dataset.min);
     else if (chip) f[chip.dataset.filter] = !f[chip.dataset.filter];
     else if (event.target.id === "filter-clear") {
-      Object.assign(f, { minStars: 0, picked: false, unmarked: false, hideRejected: false, edited: false, rawOnly: false, text: "" });
+      Object.assign(f, { minStars: 0, picked: false, unmarked: false, hideRejected: false, edited: false, rawOnly: false, text: "", labels: new Set() });
       $("search").value = "";
     } else if (event.target.id === "filter-save") return toast("Saving a filter as a smart album comes in a later round.");
     else return;
@@ -729,10 +746,10 @@
     if (other && !other.closed) other.postMessage(message, "*");
   }
   function sync(list) {
-    tell({ lib: "marks", list: list.map((p) => ({ id: p.id, stars: p.stars, flag: p.flag })) });
+    tell({ lib: "marks", list: list.map((p) => ({ id: p.id, stars: p.stars, flag: p.flag, label: p.label })) });
   }
   function takeMarks(list) {
-    list.forEach((m) => { const p = byId(m.id); if (p) { p.stars = m.stars; p.flag = m.flag; } });
+    list.forEach((m) => { const p = byId(m.id); if (p) { p.stars = m.stars; p.flag = m.flag; p.label = m.label; } });
     computeShown();
     renderGrid(false);
     refresh();
@@ -754,7 +771,7 @@
   window.addEventListener("message", (event) => {
     const data = event.data || {};
     if (data.lib === "hello" && !POPPED) pop = pop || event.source;
-    if (data.lib === "hello") tell({ lib: "marks", list: photos.map((p) => ({ id: p.id, stars: p.stars, flag: p.flag })) });
+    if (data.lib === "hello") tell({ lib: "marks", list: photos.map((p) => ({ id: p.id, stars: p.stars, flag: p.flag, label: p.label })) });
     if (data.lib === "marks") takeMarks(data.list);
     if (data.lib === "grade") { showInGrade(byId(data.id)); window.focus(); }
     if (data.lib === "closed" && pop) { setPopped(false); toast("Library window closed. The library is docked here again."); }
@@ -1010,6 +1027,7 @@
     };
     const action = actions[key.length === 1 ? key.toLowerCase() : key];
     if (action) { event.preventDefault(); action(); } else if (/^[0-5]$/.test(key)) setStars(Number(key));
+    else if (/^[6-9]$/.test(key)) setLabel(LABELS[Number(key) - 6]);
   });
 
   // ---------- drag a box to select ----------
