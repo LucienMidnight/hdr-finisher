@@ -123,3 +123,28 @@ timeout and every row on WebGPU, so both items are closed. The HDR lane and
 the other geometry states were not repeated. The full sweep has 13 retained
 failed guards; phase 4 has not met its green exit. See viewport PRD 15.7 and
 16.21 and the final cleanup comparison.
+
+## v0.9 pre-release validation (October 9, 2026)
+
+Revision `53bccfd`: 435 Node, 1,581 Python (three skips), and 22 desktop
+unit checks passed. The development Electron sweep completed 149 current
+drivers at 2560 x 1440, sequentially: 139 passed and 10 failed. Two removed
+Denoise drivers were excluded. Three desktop preview invocations initially
+lacked their executable/project environment; all passed with those inputs
+supplied. Perspective ownership ran through its explicit main entry point.
+All three read-only project hashes remained unchanged.
+
+Seven failures recur from the October 8 sweep: Black & White parity, scope
+parity, editing-peak Clarity reference, local design QA, drag GPU load,
+luma-feather latency, and tier-film consistency. Three checks that passed
+on October 8 failed here: CPU Full-preview peak currency timed out after
+120 seconds; native-region stall timed out waiting for the injected delayed
+source-tile response; Path Feather control child order failed its UI guard.
+These three are newly observed failures, not established application
+regressions. No assertions or tolerances were changed and no application
+fix was attempted. This is not a green release validation result.
+
+Logs and results: `codebase/output/performance/review/prerelease-0.9-2026-10-09/`.
+The sweep did not include coverage audits, long editing endurance, or broad
+timing sweeps. No installer was built; packaged v0.9, other platforms, and
+physical HDR display validation remain separate release checks.
