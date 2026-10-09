@@ -100,7 +100,7 @@
   const byId = (id) => photos.find((p) => p.id === id);
   const flatPlaces = () => PLACES.flatMap((p) => [p, ...(p.children || [])]).filter((p) => p.id);
   const placeOf = (id) => flatPlaces().find((p) => p.id === id);
-  const inPlace = (place) => photos.filter((p) => (place.match ? place.match(p) : (place.scenes || []).includes(p.scene)));
+  const inPlace = (place) => !place ? [] : photos.filter((p) => (place.match ? place.match(p) : (place.scenes || []).includes(p.scene)));
 
   function computeShown() {
     const f = state.filters;
@@ -145,7 +145,8 @@
 
   $("nav").addEventListener("click", (event) => {
     if (event.target.closest(".side-collapse")) return toggleSide("nav");
-    if (event.target.closest(".nav-add")) return toast("The Add folder picker comes in a later round.");
+    const add = event.target.closest(".nav-add");
+    if (add) return add.title === "Add folder" ? openPicker() : toast("Albums come in a later round.");
     const button = event.target.closest(".nav-row");
     if (!button) return;
     const place = placeOf(button.dataset.place);
@@ -197,8 +198,11 @@
     const place = placeOf(state.place);
     const total = inPlace(place).length;
     $("empty").hidden = state.shown.length > 0 || state.view !== "grid";
-    $("empty").innerHTML = total ? "<p>No photos match the filter.</p>" : "<p>No photos here yet.</p>";
-    $("place-title").textContent = place.label;
+    $("empty").innerHTML = !place
+      ? `<h2>Add a folder to begin</h2><p>Photos stay where they are. Nothing is copied or imported.</p>
+         <button type="button" class="button-primary" id="empty-add">Add folder</button><small>or drag a folder in from Explorer</small>`
+      : total ? "<p>No photos match the filter.</p>" : "<p>No photos here yet.</p>";
+    $("place-title").textContent = place ? place.label : "Library";
     $("place-count").textContent = state.shown.length === total ? String(total) : `${state.shown.length} of ${total}`;
     renderFilmstrip();
   }
@@ -309,6 +313,14 @@
   function undo() {
     const last = state.undo.pop();
     if (!last) return;
+    if (last.deleted) {
+      last.deleted.forEach(({ p, at }) => photos.splice(at, 0, p));
+      computeShown();
+      renderNav();
+      renderGrid(false);
+      refresh();
+      return toast(`Restored ${last.deleted.length} from the Recycle Bin`);
+    }
     last.forEach(({ p, stars, flag }) => { p.stars = stars; p.flag = flag; });
     computeShown();
     renderGrid(false);
@@ -687,6 +699,8 @@
   // ---------- keyboard ----------
 
   document.addEventListener("keydown", (event) => {
+    if (document.querySelector("dialog[open]")) return;
+    if (!$("menu").hidden) { closeMenu(); if (event.key === "Escape") return; }
     const typing = event.target instanceof Element && event.target.matches("input[type=text]");
     const key = event.key;
     if (key === "Escape") {
@@ -721,6 +735,7 @@
       "[": () => chooseSide("left"),
       "]": () => chooseSide("right"),
       i: toggleDetails,
+      Delete: () => confirmDelete(targets()),
       Tab: () => {
         const open = app.dataset.nav === "collapsed" && app.dataset.details === "collapsed";
         toggleSide("nav", open);
@@ -733,6 +748,283 @@
     const action = actions[key.length === 1 ? key.toLowerCase() : key];
     if (action) { event.preventDefault(); action(); } else if (/^[0-5]$/.test(key)) setStars(Number(key));
   });
+
+  // ---------- drag a box to select ----------
+
+  let band = null;
+  let swallowClick = false;
+  $("grid").addEventListener("mousedown", (event) => {
+    if (event.button !== 0 || event.target.closest("img")) return;
+    band = { x: event.clientX, y: event.clientY, base: event.ctrlKey || event.metaKey ? new Set(state.sel) : new Set(), moved: false };
+  });
+  window.addEventListener("mousemove", (event) => {
+    if (!band) return;
+    if (Math.abs(event.clientX - band.x) + Math.abs(event.clientY - band.y) > 4) band.moved = true;
+    if (!band.moved) return;
+    const frame = $("content").getBoundingClientRect();
+    const box = {
+      left: Math.max(frame.left, Math.min(band.x, event.clientX)), right: Math.min(frame.right, Math.max(band.x, event.clientX)),
+      top: Math.max(frame.top, Math.min(band.y, event.clientY)), bottom: Math.min(frame.bottom, Math.max(band.y, event.clientY)),
+    };
+    const m = $("marquee");
+    m.hidden = false;
+    m.style.cssText = `left:${box.left - frame.left}px;top:${box.top - frame.top}px;width:${box.right - box.left}px;height:${box.bottom - box.top}px`;
+    const hits = [...$("grid").children].filter((cell) => {
+      const r = cell.getBoundingClientRect();
+      return r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
+    }).map((cell) => Number(cell.dataset.id));
+    state.sel = new Set([...band.base, ...hits]);
+    state.active = state.anchor = hits.length ? hits[hits.length - 1] : null;
+    refresh();
+  });
+  window.addEventListener("mouseup", () => {
+    if (band && band.moved) { swallowClick = true; $("marquee").hidden = true; setTimeout(() => { swallowClick = false; }, 0); }
+    band = null;
+  });
+  $("grid").addEventListener("click", (event) => { if (swallowClick) { swallowClick = false; event.stopImmediatePropagation(); } }, true);
+
+  // ---------- right-click menus ----------
+
+  const later = (what) => () => toast(`${what} comes in a later round.`);
+
+  function openMenu(x, y, items) {
+    const menu = $("menu");
+    menu.innerHTML = items.filter(Boolean).map((item, i) =>
+      item === "-" ? "<hr>" : item.header ? `<div class="menu-header">${item.header}</div>`
+        : `<button type="button" role="menuitem" data-item="${i}" class="${item.danger ? "danger" : ""}"><span>${item.label}</span>${item.key ? `<kbd>${item.key}</kbd>` : ""}</button>`).join("");
+    menu.items = items.filter(Boolean);
+    menu.hidden = false;
+    const size = menu.getBoundingClientRect();
+    menu.style.left = Math.min(x, innerWidth - size.width - 6) + "px";
+    menu.style.top = Math.min(y, innerHeight - size.height - 6) + "px";
+  }
+  function closeMenu() { $("menu").hidden = true; }
+  $("menu").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-item]");
+    if (!button) return;
+    const item = $("menu").items[Number(button.dataset.item)];
+    closeMenu();
+    (item.action || later(item.label.replace("…", "")))();
+  });
+  window.addEventListener("mousedown", (event) => { if (!event.target.closest("#menu")) closeMenu(); });
+  window.addEventListener("blur", closeMenu);
+
+  function photoMenu() {
+    const list = targets();
+    const one = list.length === 1;
+    const rejected = list.every((p) => p.flag === "reject");
+    return [
+      { header: one ? list[0].name : `${list.length} photos` },
+      one && { label: "Open in Grade", key: "Enter", action: openInGrade },
+      { label: "Put on left in compare", key: "[", action: () => chooseSide("left") },
+      { label: "Put on right in compare", key: "]", action: () => chooseSide("right") },
+      "-",
+      { label: "Pick", key: "P", action: () => setFlag("pick") },
+      { label: rejected ? "Unmark" : "Reject", key: rejected ? "U" : "X", action: () => setFlag(rejected ? null : "reject") },
+      "-",
+      { label: "Copy grade…" },
+      { label: "Paste grade…" },
+      { label: "Apply look preset…" },
+      { label: one ? "Create virtual copy" : "Create virtual copies" },
+      "-",
+      { label: "Add to album…" },
+      { label: "Create HDR previews" },
+      { label: "Export…" },
+      "-",
+      one && { label: "Rename…" },
+      { label: "Move to folder…" },
+      { label: "Show in Explorer" },
+      "-",
+      { label: one ? "Delete photo…" : `Delete ${list.length} photos…`, key: "Del", danger: true, action: () => confirmDelete(list) },
+    ];
+  }
+
+  function placeMenu(place) {
+    const top = PLACES.includes(place);
+    const rejected = inPlace(place).filter((p) => p.flag === "reject");
+    const deleteRejected = rejected.length && { label: `Delete ${rejected.length} rejected…`, danger: true, action: () => confirmDelete(rejected, place) };
+    if (place.offline) return [{ header: place.label }, { label: "Locate…" }, "-", { label: "Unpin", action: () => unpin(place) }];
+    if (place.icon === "project") return [{ header: place.label }, { label: "Show in Explorer" }, { label: "Relink photos…" }, { label: "Export project…" }, "-", { label: "Remove from list", action: () => unpin(place) }];
+    if (place.icon === "album") return [{ header: place.label }, { label: "Rename…" }, { label: "Export project…" }, "-", { label: "Delete album (photos stay)", action: () => unpin(place) }];
+    if (place.icon === "smart") return [{ header: place.label }, { label: "Edit rules…" }, { label: "Rename…" }, "-", { label: "Delete smart album", action: () => unpin(place) }];
+    if (place.note) return [{ header: place.label }, { label: "Pin this folder", action: () => { delete place.note; place.icon = "folder"; renderNav(); toast(`${place.label} pinned.`); } }, { label: "Show in Explorer" }, "-", { label: "Close", action: () => unpin(place) }];
+    return [
+      { header: place.label },
+      top ? { label: "Re-scan" } : { label: "Pin as its own entry" },
+      { label: "New folder inside…" },
+      { label: top ? "Rename label…" : "Rename folder…" },
+      !top && { label: "Move folder…" },
+      { label: "Show in Explorer" },
+      "-",
+      { label: "Create HDR previews" },
+      { label: "Export project…" },
+      deleteRejected,
+      top && "-",
+      top && { label: "Unpin", action: () => unpin(place) },
+    ];
+  }
+
+  function unpin(place) {
+    PLACES.splice(PLACES.indexOf(place), 1);
+    const gone = !placeOf(state.place);
+    if (gone) {
+      const next = flatPlaces().find((p) => !p.offline);
+      state.place = next ? next.id : null;
+      state.sel.clear();
+      state.active = null;
+      if (state.view !== "grid") state.view = "grid";
+    }
+    computeShown();
+    renderNav();
+    renderGrid(gone);
+    refresh();
+    toast(`${place.label} removed from the library. Nothing was deleted from disk.`);
+  }
+
+  document.addEventListener("contextmenu", (event) => {
+    const cell = event.target.closest("#grid .cell, #filmstrip .cell");
+    const row = event.target.closest("#nav .nav-row");
+    if (!cell && !row) return;
+    event.preventDefault();
+    if (cell) {
+      const id = Number(cell.dataset.id);
+      if (!state.sel.has(id)) select(id);
+      return openMenu(event.clientX, event.clientY, photoMenu());
+    }
+    openMenu(event.clientX, event.clientY, placeMenu(placeOf(row.dataset.place)));
+  });
+
+  // ---------- delete, always behind a confirmation ----------
+
+  function confirmDelete(list, fromPlace) {
+    if (!list.length) return;
+    const n = list.length;
+    const what = n === 1 ? "photo" : "photos";
+    const copies = list.reduce((sum, p) => sum + p.copies, 0);
+    const graded = list.filter((p) => p.edited).length;
+    const place = fromPlace || placeOf(state.place);
+    const bin = place.id !== "card";
+    const extras = [graded ? `${graded === n && n > 1 ? "their" : graded === 1 && n === 1 ? "its" : graded} saved grade${graded === 1 ? "" : "s"}` : "", copies ? `${copies} virtual ${copies === 1 ? "copy" : "copies"}` : ""].filter(Boolean);
+    $("confirm-title").textContent = `Delete ${n === 1 ? list[0].name : `${n} photos`}?`;
+    $("confirm-message").textContent =
+      `${n === 1 ? "This photo" : `These ${n} photos`} will be deleted from disk` +
+      (extras.length ? `, along with ${extras.join(" and ")}` : "") + ". Ratings and tags go with " + (n === 1 ? "it" : "them") + ".\n\n" +
+      (bin ? `${n === 1 ? "It goes" : "They go"} to the Recycle Bin and can be restored from there.`
+        : `${place.label} has no Recycle Bin. ${n === 1 ? "It" : "They"} will be gone for good.`);
+    $("confirm-actions").innerHTML = `<button type="button" data-answer="no">Cancel</button><button type="button" class="button-danger" data-answer="yes">${bin ? "Move to Recycle Bin" : "Delete for good"}</button>`;
+    $("confirm").onclick = (event) => {
+      const answer = event.target.dataset && event.target.dataset.answer;
+      if (!answer) return;
+      $("confirm").close();
+      if (answer !== "yes") return;
+      if (bin) state.undo.push({ deleted: list.map((p) => ({ p, at: photos.indexOf(p) })).sort((a, b) => a.at - b.at) });
+      list.forEach((p) => photos.splice(photos.indexOf(p), 1));
+      state.sel.clear();
+      state.active = state.anchor = null;
+      if (state.view !== "grid") state.view = "grid";
+      computeShown();
+      renderNav();
+      renderGrid(false);
+      refresh();
+      toast(bin ? `${n} ${what} moved to the Recycle Bin. Ctrl+Z restores.` : `${n} ${what} deleted.`);
+    };
+    $("confirm").showModal();
+    $("confirm").querySelector("[data-answer=no]").focus();
+  }
+
+  // ---------- Add folder picker ----------
+
+  const DISK = { name: "This PC", children: [
+    { name: "Photos (D:)", children: [
+      { name: "2026-08 Oslo", photos: 0, scenes: [6], children: [{ name: "Day 1", photos: 120 }, { name: "Day 2", photos: 94 }] },
+      { name: "2026-09 Langkawi", photos: 28, pinned: true },
+      { name: "2026-10 Studio", photos: 61, scenes: [1, 5] },
+      { name: "Archive", photos: 0, children: [{ name: "2025", photos: 4120 }, { name: "2024", photos: 3876 }] },
+    ] },
+    { name: "Memory card (E:)", children: [{ name: "DCIM", photos: 0, children: [{ name: "100MSDCF", photos: 7, scenes: [6] }] }] },
+    { name: "Pictures", children: [{ name: "Screenshots", photos: 312 }, { name: "Phone backup", photos: 1840 }] },
+    { name: "NAS (\\\\studio)", offline: true },
+  ] };
+  const picker = { path: [DISK.children[0]], chosen: null };
+  const total = (node) => (node.photos || 0) + (node.children || []).reduce((sum, c) => sum + total(c), 0);
+
+  function renderPicker() {
+    const here = picker.path[picker.path.length - 1];
+    $("picker-places").innerHTML = DISK.children.map((d, i) =>
+      `<button type="button" class="nav-row${d === picker.path[0] ? " selected" : ""}${d.offline ? " offline" : ""}" data-drive="${i}">${icon(d.name.includes("card") ? "card" : "folder")}<span class="label">${d.name}</span>${d.offline ? `<span class="note">offline</span>` : ""}</button>`).join("");
+    $("picker-crumbs").innerHTML = picker.path.map((n, i) => `<button type="button" data-crumb="${i}">${n.name}</button>`).join("<span>›</span>");
+    const rows = here.children || [];
+    $("picker-list").innerHTML = rows.length ? rows.map((n, i) =>
+      `<button type="button" class="nav-row${n === picker.chosen ? " selected" : ""}" data-row="${i}">${icon("twist", "twist" + (n.children ? "" : " none"))}${icon("folder")}<span class="label">${n.name}</span>
+        <span class="count">${n.pinned ? "pinned · " : ""}${total(n).toLocaleString()} photos</span></button>`).join("")
+      : "<p>No sub-folders here.</p>";
+    const target = picker.chosen || (picker.path.length > 1 ? here : null);
+    $("picker-target").textContent = target ? `${[...picker.path.slice(0, picker.chosen ? undefined : -1), target].map((n) => n.name).join(" › ")}  ·  ${total(target).toLocaleString()} photos, sub-folders included` : "Choose a folder";
+    $("picker-pin").disabled = $("picker-open").disabled = !target || !!target.pinned;
+    $("picker-pin").textContent = target && target.pinned ? "Already pinned" : "Pin folder";
+    picker.target = target;
+  }
+
+  function openPicker() {
+    picker.chosen = null;
+    renderPicker();
+    $("picker").showModal();
+  }
+
+  function addPlace(pin) {
+    const node = picker.target;
+    const place = { id: "added-" + Date.now(), icon: pin ? "folder" : "card", label: node.name, scenes: node.scenes || [] };
+    if (!pin) place.note = "not pinned";
+    else node.pinned = true;
+    PLACES.splice(PLACES.findIndex((p) => p.heading === "Projects"), 0, place);
+    $("picker").close();
+    goTo(place.id);
+    toast(pin ? `${node.name} pinned. Indexing ${total(node).toLocaleString()} photos in the background.` : `${node.name} opened without pinning.`);
+  }
+
+  $("picker").addEventListener("click", (event) => {
+    const here = picker.path[picker.path.length - 1];
+    const drive = event.target.closest("[data-drive]");
+    const crumb = event.target.closest("[data-crumb]");
+    const row = event.target.closest("[data-row]");
+    if (drive) {
+      const d = DISK.children[Number(drive.dataset.drive)];
+      if (d.offline) return;
+      picker.path = [d];
+      picker.chosen = null;
+    } else if (crumb) {
+      picker.path = picker.path.slice(0, Number(crumb.dataset.crumb) + 1);
+      picker.chosen = null;
+    } else if (row) picker.chosen = here.children[Number(row.dataset.row)];
+    else if (event.target.id === "picker-cancel") return $("picker").close();
+    else if (event.target.id === "picker-pin") return addPlace(true);
+    else if (event.target.id === "picker-open") return addPlace(false);
+    else return;
+    renderPicker();
+  });
+  $("picker").addEventListener("dblclick", (event) => {
+    if (!event.target.closest("[data-row]") || !picker.chosen || !picker.chosen.children) return;
+    picker.path.push(picker.chosen);
+    picker.chosen = null;
+    renderPicker();
+  });
+  $("empty").addEventListener("click", (event) => { if (event.target.id === "empty-add") openPicker(); });
+
+  // ---------- first run ----------
+
+  function firstRun() {
+    for (let i = PLACES.length - 1; i >= 0; i--) if (!PLACES[i].heading) PLACES.splice(i, 1);
+    DISK.children[0].children[1].pinned = false;
+    state.place = null;
+    state.view = "grid";
+    state.sel.clear();
+    state.active = null;
+    computeShown();
+    renderNav();
+    renderGrid(false);
+    refresh();
+  }
+  $("opt-first").addEventListener("change", () => ($("opt-first").checked ? firstRun() : location.reload()));
 
   // ---------- mock-up controls ----------
 
@@ -768,6 +1060,10 @@
   renderGrid(true);
   refresh();
   if (ask.has("select")) ask.get("select").split(",").forEach((n, i) => select(state.shown[Number(n)].id, i ? "toggle" : "single"));
+  if (ask.get("first") === "on") { $("opt-first").checked = true; firstRun(); }
+  if (ask.get("picker") === "on") { openPicker(); picker.chosen = picker.path[0].children[0]; renderPicker(); }
+  if (ask.has("delete")) confirmDelete(targets());
+  if (ask.has("menu")) openMenu(900, 300, photoMenu());
   if (ask.get("view") === "single") setView("single");
   if (ask.get("view") === "compare") setView("compare");
   if (ask.get("zoom") === "on") setZoom(true, 0.5, 0.45);

@@ -21,6 +21,7 @@
     <label class="mock-check"><input type="checkbox" id="opt-names"> File names</label>
     <label class="mock-check"><input type="checkbox" id="opt-advance"> Auto-advance</label>
     <label class="mock-check"><input type="checkbox" id="opt-slow" checked> Realistic loading</label>
+    <label class="mock-check"><input type="checkbox" id="opt-first"> First run</label>
     <button type="button" class="mock-keys-button" id="keys-button">Keys</button>
   </div>
 
@@ -132,6 +133,7 @@
           <div class="lib-content" id="content">
             <div class="lib-grid" id="grid" tabindex="0" aria-label="Photos"></div>
             <div class="lib-empty" id="empty" hidden></div>
+            <div class="lib-marquee" id="marquee" hidden></div>
             <div class="lib-single" id="single" hidden>
               <div class="lib-single-stage" id="single-stage"><img id="single-image" alt=""></div>
               <div class="lib-single-caption" id="single-caption"></div>
@@ -182,6 +184,9 @@
     <h2>Keys in this mock-up</h2>
     <dl>
       <dt>Click</dt><dd>Select. Ctrl-click adds, Shift-click selects a range.</dd>
+      <dt>Drag in the grid</dt><dd>Draw a box to select. Start on the space around a photo. Ctrl adds.</dd>
+      <dt>Right-click</dt><dd>Menu for photos, folders, projects and albums</dd>
+      <dt>Delete</dt><dd>Delete the selected photos, after a confirmation</dd>
       <dt>Double-click · Enter</dt><dd>Open in Grade (double-click works on thumbnails: grid and filmstrip)</dd>
       <dt>Arrows</dt><dd>Move. Hold Shift to extend the selection.</dd>
       <dt>1 – 5 · 0</dt><dd>Stars · clear stars</dd>
@@ -199,6 +204,33 @@
       <dt>Esc</dt><dd>Step back out</dd>
     </dl>
   </div>
+
+  <div class="lib-menu" id="menu" role="menu" hidden></div>
+
+  <dialog id="confirm" class="application-dialog app-dialog">
+    <div class="application-dialog-header"><div><h2 id="confirm-title"></h2></div></div>
+    <div class="app-dialog-content"><p id="confirm-message" class="lib-confirm-message"></p></div>
+    <div class="app-dialog-actions" id="confirm-actions"></div>
+  </dialog>
+
+  <dialog id="picker" class="application-dialog lib-picker">
+    <div class="application-dialog-header">
+      <div><h2>Add folder</h2><p class="lib-picker-sub">Photos stay where they are. Pinning a folder adds it, and its sub-folders, to the library.</p></div>
+    </div>
+    <div class="lib-picker-body">
+      <div class="lib-picker-places" id="picker-places"></div>
+      <div class="lib-picker-main">
+        <div class="lib-picker-crumbs" id="picker-crumbs"></div>
+        <div class="lib-picker-list" id="picker-list"></div>
+      </div>
+    </div>
+    <div class="app-dialog-actions lib-picker-actions">
+      <span class="lib-picker-target" id="picker-target"></span>
+      <button type="button" id="picker-cancel">Cancel</button>
+      <button type="button" id="picker-open">Open without pinning</button>
+      <button type="button" class="button-primary" id="picker-pin">Pin folder</button>
+    </div>
+  </dialog>
 
   <script src="photos/photos.js"></script>
   <script src="library.js"></script>

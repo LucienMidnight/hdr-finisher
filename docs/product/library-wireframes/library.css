@@ -712,8 +712,9 @@ svg {
 }
 
 .lib-empty {
+  position: absolute;
+  inset: 0;
   display: grid;
-  height: 100%;
   place-content: center;
   justify-items: center;
   gap: 12px;
@@ -1276,4 +1277,232 @@ svg {
 
 .lib-single-caption .flag {
   fill: currentColor;
+}
+
+/* ---------- first run ---------- */
+
+.lib-empty h2 {
+  color: var(--text);
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.lib-empty .button-primary {
+  margin-top: 6px;
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.lib-empty small {
+  color: var(--quiet);
+  font-size: 12px;
+}
+
+/* ---------- drag a box to select ---------- */
+
+.lib-marquee {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  pointer-events: none;
+}
+
+/* ---------- right-click menu (same look as the app's menus) ---------- */
+
+.lib-menu {
+  position: fixed;
+  z-index: 250;
+  display: grid;
+  min-width: 230px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: linear-gradient(180deg, var(--raised), var(--panel));
+  box-shadow: 0 12px 28px rgb(0 0 0 / 52%), inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.lib-menu[hidden] {
+  display: none;
+}
+
+.lib-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 28px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lib-menu button:hover {
+  background: var(--accent-bed);
+  color: var(--text);
+}
+
+.lib-menu button.danger {
+  color: var(--error-text);
+}
+
+.lib-menu kbd {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.lib-menu .menu-header {
+  padding: 5px 10px 6px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.lib-menu hr {
+  width: auto;
+  height: 1px;
+  margin: 4px 6px;
+  border: 0;
+  background: var(--hairline);
+}
+
+/* ---------- confirmation ---------- */
+
+.lib-confirm-message {
+  color: var(--body);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+/* ---------- Add folder picker ---------- */
+
+.lib-picker {
+  width: min(820px, calc(100vw - 56px));
+  height: min(560px, calc(100vh - 56px));
+}
+
+.lib-picker[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.lib-picker h2,
+.app-dialog h2 {
+  font-size: 16px;
+}
+
+.lib-picker-sub {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lib-picker-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.lib-picker-places {
+  flex: 0 0 190px;
+  padding: 8px 0;
+  border-right: 1px solid var(--hairline);
+}
+
+.lib-picker-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--viewer);
+}
+
+.lib-picker-crumbs {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--panel);
+  color: var(--quiet);
+  font-size: 12px;
+}
+
+.lib-picker-crumbs button {
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--body);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lib-picker-crumbs button:hover {
+  color: var(--text);
+}
+
+.lib-picker-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.lib-picker-list p {
+  padding: 18px 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lib-picker .nav-row .count {
+  font-size: 10.5px;
+}
+
+.lib-picker-actions {
+  align-items: center;
+  border-top: 1px solid var(--hairline);
+  padding-top: 14px;
+}
+
+.lib-picker-target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-picker-actions .button-primary {
+  border: 0;
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+dialog:not([open]) {
+  display: none !important;
+}
+
+#confirm[open] {
+  height: fit-content;
+}
+
+.lib-picker-actions .button-primary:not(:disabled) {
+  background: linear-gradient(180deg, var(--accent-strong), var(--accent-low));
+}
+
+.lib-picker-actions button:disabled {
+  color: var(--muted);
 }
