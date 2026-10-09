@@ -294,3 +294,16 @@ backend commands still own browsing, pinned folders and recent imports.
 `desktop/tests/standalone-browser.js` covers the actual standalone thumbnail,
 absence of editor scripts/globals, source handoff with Cancel/Discard, main
 export/project destination selection and independent secondary close.
+
+### Photo Library measurements
+
+`tests/performance/photo-library-measurements.py` is a read-only corpus probe
+for M1/M4/R1, not an application decoder. It hashes/deduplicates originals,
+records size exclusions, extracts embedded JPEG dimensions, compares current
+EXIF/LibRaw output with maker-note-enabled ExifRead and optional ExifTool, and
+times representative half/full LibRaw camera-RGB decodes in fresh processes.
+It writes only outside the source directory and caps file/pixel size and each
+child's runtime. ExifTool is a temporary measurement dependency, not bundled.
+The PRD records the method, results and limits; raw JSON is ignored local output.
+`tests/library-background-interaction.js --corpus <json> --grade-source <raw>`
+uses several actual camera formats without copying/writing the originals.

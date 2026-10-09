@@ -910,15 +910,93 @@ metadata reader or lens-matching rules as part of foundation work. If
 ExifTool wins, packaged startup, Unicode paths and helper shutdown must be
 verified before choosing it.
 
-**Measurement readiness:** M5 has an automated concurrent-thumbnail/grade
-check, with Steve's large-folder/monitor trial still outstanding. M1/M4 need
-a representative camera corpus; the checked-in fixtures are synthetic and
-cannot answer cross-camera timing or embedded-preview coverage. M2/M3/M6
-still need explicit experimental models of HDR previews, indexing and edited
-preview refresh before their numbers can set limits. T1's beside-photo
-save/autosave trial remains experimental work, not a settled sidecar format.
-No measurement-dependent cache size, database schema or preview pipeline is
-being adopted from the foundation tests.
+**Camera measurements, October 9:** Steve supplied
+`D:\Photos\HDR Test Images`, including `Test Suite Images`. The read-only
+probe found 49 RAW/DNG paths: 30 unique files after SHA-256 deduplication,
+18 duplicate copies, and one 1.78 GB line-scan DNG excluded by the explicit
+256 MiB file / 100 MP pixel guard. Of the 30, LibRaw could open 29; the merged
+`DJI_0071-2-HDR.dng` is unsupported by this baseline, not proof that the app's
+separate HDR-DNG loader cannot open it. No originals or projects were written.
+
+**M1 baseline:** 12 representative decode cases, two fresh-process samples
+per half/full mode on Steve's Ryzen 5 7600, with one decoder thread. Times
+below are medians in seconds. This uses LibRaw AHD, unity WB and linear
+camera RGB16. It excludes process/module startup, metadata comparison and
+pixel-limit preflight; OS file cache is uncontrolled. It is not the finished
+color-managed preview, an accuracy qualification, or a latency budget.
+
+| Sample | LibRaw half-size | Full size |
+|---|---:|---:|
+| DJI FC3170 native DNG, 48 MP | 0.285 | 3.600 |
+| Sony A7R III ARW, 42 MP, two size/compression cases | 0.197-0.290 | 3.183-3.235 |
+| Canon 5D III CR2, 22 MP | 0.388 | 1.952 |
+| Canon 60D CR2, 18 MP | 0.345 | 1.574 |
+| Nikon D7500 NEF, 21 MP | 0.308 | 1.731 |
+| Fujifilm X-E2S RAF, 16 MP | 0.083 | 5.941 |
+| Five converted linear DxO DNG cases, about 42 MP | 2.021-2.166 | 2.039-2.169 |
+
+On those linear DNGs, half-size **did not reduce the output dimensions**.
+The largest probe process used about 962 MiB peak memory, including imports
+and decode buffers. This is evidence to keep full decodes bounded, not an
+estimate of the eventual cached-preview memory. Half-size quality and the
+color/profile/correction cost still need a dedicated experimental trial.
+
+**M4:** all 29 LibRaw-readable files supplied a JPEG. The 13 original Sony
+ARWs had 1616x1080 previews; the two native DJI DNGs had 960x720; Fuji had
+1920x1280; the two Canon CR2s and Nikon NEF had roughly full-size JPEGs.
+Ten converted DxO DNGs also had full-size JPEGs. Across all 29, 14 reached a
+1920-pixel long edge and 13 reached 2560/3840; among the 19 camera originals,
+only 4 reached 1920 and 3 reached 2560/3840. Header-plus-JPEG extraction took
+about 0.6-17.9 ms here, before JPEG decoding/display. This small, Sony-heavy
+corpus supports a tier-1 head start but not a promise of screen-sized or
+100% embedded previews across cameras.
+
+**R1 sample comparison:** ExifTool 13.59 read metadata for all 30, including
+the LibRaw-unsupported merged DNG. Today's reader returned no body identity
+for the Fuji RAF and no lens model for the Nikon NEF. LibRaw filled the Fuji
+lens name, but not its body or the Nikon lens. Enabling ExifRead maker notes
+added Nikon tags but did not resolve its full lens name; ExifTool returned
+an AF-S Nikkor 80-400mm identity. Canon/Sony standard lens names were mostly
+already available; ExifTool additionally identified Sony's Tamron/Sigma
+maker-specific identities. These are observed reader outputs, not independently
+verified lens labels. The native DJI DNGs also have conflicting EXIF versus
+XMP camera model fields, so group provenance and explicit precedence are
+required. Do not choose an arbitrary first tag or silently treat a parse
+failure as absent metadata.
+
+ExifTool's one-process-per-file reads took roughly 0.30-0.57 seconds here,
+including startup; a future persistent-helper comparison is needed before
+assuming that cost per indexed photo. The temporary Windows tool was fetched
+from the publisher's linked SourceForge distribution and the archive SHA-256
+was verified (`44b512b25af500724ba579d0a53c8fc5851628b692dd5e5d94ae4a15c2cba9ec`).
+It is under ignored measurement output, not bundled with the application.
+Reader choice, packaged behavior and independently checked brand coverage
+remain open.
+
+**M5:** the existing Electron concurrency driver also passed with eight real
+DNG/ARW/CR2/RAF/NEF thumbnails while adjusting `DSC00264.ARW`. It covered both
+paused retries and concurrent processing. This proves functional progress,
+not an absence of perceptible stutter; Steve's large-folder/monitor trial
+still decides how it feels. Packaged helper confirmation is still deferred
+to the next requested installer build.
+
+Reproduce with `tests/performance/photo-library-measurements.py --source
+"D:\Photos\HDR Test Images" --exiftool <temporary-exe> --samples 2`. Raw rows
+and exclusions are in `codebase/output/library-measurements/corpus.json`
+(local ignored output); the script is committed. The real-file M5 driver
+takes `--corpus <that-json> --grade-source <original-RAW>`.
+
+Validation for this measurement commit: 438 JavaScript tests and 1,588 Python
+tests passed (3 skipped); the real-camera M5 Electron check passed. The
+measurement probe also completed 48 half/full decode samples without errors.
+The one unsupported merged DNG and oversized line-scan exclusion are recorded
+above; neither was treated as a passing decode.
+
+**Remaining experiments:** M2/M3/M6 need explicit HDR-preview, indexing and
+edited-preview refresh models before numbers can set limits. T1's
+beside-photo save/autosave trial remains experimental work, not a settled
+sidecar format. No cache size, database schema, reader switch or preview
+pipeline is adopted from these foundation measurements.
 
 Also to come: the wireframe for the views in 5.3.
 
