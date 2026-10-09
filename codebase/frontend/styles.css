@@ -1213,7 +1213,6 @@ body[data-active-lane="sdr"] .lane-dot {
   bottom: 40px;
   display: grid;
   gap: 4px;
-  width: 172px;
   padding: 7px;
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -1225,8 +1224,8 @@ body[data-active-lane="sdr"] .lane-dot {
 
 .navigation-thumb.hidden { display: none; }
 .navigation-thumb-title { text-align: left; font-size: 9px; letter-spacing: .12em; }
-.navigation-thumb-image-wrap { position: relative; display: block; width: 100%; }
-.navigation-thumb-image-wrap img { display: block; width: 100%; height: auto; }
+.navigation-thumb-image-wrap { position: relative; display: block; overflow: hidden; }
+.navigation-thumb-image-wrap img { display: block; width: 100%; height: 100%; }
 #navigation-thumb-viewport {
   position: absolute;
   box-sizing: border-box;
@@ -1323,6 +1322,11 @@ body[data-active-lane="sdr"] .lane-dot {
 
 .preview-stage:not([data-compare-layout="single"]) .preview-secondary-pane,
 .preview-stage:not([data-compare-layout="single"]) .comparison-label {
+  display: block;
+}
+
+/* A Before peek lays the comparison pane over the whole single view. */
+.preview-stage[data-before-peek="true"] .preview-secondary-pane {
   display: block;
 }
 
@@ -1595,6 +1599,14 @@ body[data-active-lane="sdr"] .lane-dot {
 
 .status-entry + .status-entry {
   border-left: 1px solid var(--hairline);
+}
+
+.status-entry { overflow: hidden; }
+.status-entry.status-entry-folded { display: none; }
+.status-entry.status-entry-overflow {
+  flex: 0 0 auto;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .status-entry-copy {
@@ -5495,6 +5507,11 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .proof-preview-switch { display: inline-flex; align-items: center; gap: 2px; width: max-content; padding: 2px; border: 1px solid var(--hairline); border-radius: 7px; background: var(--panel); }
 .proof-preview-switch button { border: 0; border-radius: 5px; padding: 6px 10px; background: transparent; color: var(--muted); cursor: pointer; }
 .proof-preview-switch button.active { background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--hairline); }
+.vignette-shape-overlay { position: absolute; z-index: 16; overflow: hidden; pointer-events: none; }
+.vignette-shape-overlay.hidden { display: none; }
+.vignette-shape-overlay path { fill: none; stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000); }
+.vignette-shape-overlay .vignette-shape-outer { stroke-dasharray: 6 5; }
+.vignette-overlay-actions { margin: 0 0 9px auto; }
 .vignette-center-handle { position: absolute; z-index: 17; width: 28px; height: 28px; padding: 0; border: 1px solid #fff; border-radius: 50%; background: #0009; color: #fff; font: 22px/1 var(--mono); transform: translate(-50%, -50%); cursor: move; }
 
 .highlight-compression-visual {
@@ -8705,6 +8722,50 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   background: var(--hairline);
 }
 
+.window-submenu {
+  position: relative;
+  display: grid;
+}
+
+.window-submenu-trigger::after {
+  margin-left: auto;
+  padding-left: 18px;
+  color: var(--muted);
+  content: "\203A";
+}
+
+.window-submenu-popover {
+  position: absolute;
+  z-index: 111;
+  top: -6px;
+  left: 100%;
+  display: grid;
+  width: max-content;
+  min-width: 150px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: linear-gradient(180deg, var(--raised), var(--panel));
+  box-shadow: 0 12px 28px rgb(0 0 0 / 52%), inset 0 1px 0 rgb(255 255 255 / 5%);
+  -webkit-app-region: no-drag;
+}
+
+.window-submenu-popover[hidden] {
+  display: none;
+}
+
+.window-menu-popover button[role="menuitemradio"] {
+  position: relative;
+  padding-left: 26px;
+}
+
+.window-menu-popover button[role="menuitemradio"][aria-checked="true"]::before {
+  position: absolute;
+  left: 9px;
+  color: var(--accent);
+  content: "\2713";
+}
+
 .window-drag-region {
   flex: 1 1 auto;
   min-width: 24px;
@@ -9112,18 +9173,6 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 .bw-blues .slider-track { background: linear-gradient(90deg, #2b2b2b, #3f6fc4, #e6e6e6); }
 .bw-purples .slider-track { background: linear-gradient(90deg, #2b2b2b, #7b52c0, #e6e6e6); }
 .bw-magentas .slider-track { background: linear-gradient(90deg, #2b2b2b, #b84f9a, #e6e6e6); }
-
-/* Keep transaction feedback visible when Perspective is collapsed. */
-.perspective-apply-status {
-  margin-left: auto;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--accent);
-}
-.perspective-apply-status[data-phase="failed"],
-.perspective-apply-status[data-phase="previewFailed"] {
-  color: #f28b82;
-}
 
 .control-group:not(.modified) .group-reset.perspective-reset-retry {
   visibility: visible;

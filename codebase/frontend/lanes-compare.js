@@ -37,13 +37,111 @@ function clearComparisonPreview({ keepRenderedState = false } = {}) {
     state.comparisonRenderedLane = null;
     state.comparisonRenderedGeneration = null;
     state.comparisonRenderedGeometry = null;
+    state.beforeRenderedKey = null;
   }
+}
+
+/**
+ * The picture before any grading: the grade this file was imported with, no
+ * local adjustments and no Denoise. Crop, rotation and the other shared
+ * settings stay, so Before and After line up pixel for pixel.
+ */
+async function beforeAdjustments() {
+  const sessionId = state.session.session_id;
+  if (state.beforeStartingGrade?.sessionId !== sessionId) {
+    const response = await fetch(`/api/session/${sessionId}/starting-adjustments`);
+    if (!response.ok) throw new Error("The starting grade for Before could not be loaded.");
+    state.beforeStartingGrade = { sessionId, adjustments: await response.json() };
+  }
+  const before = JSON.parse(JSON.stringify(state.beforeStartingGrade.adjustments));
+  before.shared = JSON.parse(JSON.stringify(state.adjustments.shared));
+  return before;
+}
+
+function setCompareMode(mode) {
+  const next = mode === "before" ? "before" : "lanes";
+  document.querySelectorAll("[data-compare-mode]").forEach((item) => {
+    item.setAttribute("aria-checked", String(item.dataset.compareMode === next));
+  });
+  if (state.compareMode === next) return;
+  endBeforePeek();
+  state.compareMode = next;
+  state.comparisonRenderedLane = null;
+  state.beforeRenderedKey = null;
+  renderLaneChrome();
+  renderCompareLayout();
+  if (state.compareLayout !== "single" && state.session) {
+    const other = state.currentView === "hdr" ? "sdr" : "hdr";
+    renderComparisonPreview(other, { force: true }).catch(() => null);
+  }
+  status.post({ id: "compare", severity: "success", message: next === "before"
+    ? "Comparing Before / After. Tap V to switch, hold V to peek, or use a split layout."
+    : "Comparing HDR / SDR." });
+}
+
+/**
+ * Draw the Before picture of the selected rendition into the comparison pane.
+ * It never touches the main preview, its caches or its measurements.
+ */
+async function renderBeforePreview({ force = false } = {}) {
+  if (!state.session) return false;
+  const lane = state.currentView;
+  if (!gpuPreviewEligible(lane)) {
+    status.post({ id: "compare", severity: "attention", dismissible: true,
+      message: "Before / After needs the GPU preview, which is not available right now." });
+    return false;
+  }
+  const sessionId = state.session.session_id;
+  const edge = settledProxyLongEdge();
+  const key = JSON.stringify([sessionId, lane, geometrySignature(), edge, projectReferenceWhiteNits()]);
+  if (!force && state.beforeRenderedKey === key && els.comparisonCanvas.style.display !== "none") return true;
+  els.previewSecondaryPane.dataset.lane = lane;
+  try {
+    const result = await state.gpuPreview.renderTo(
+      els.comparisonCanvas, sessionId, lane, await beforeAdjustments(), sampleCurvePoints, edge, [],
+      state.editRevision, null, projectReferenceWhiteNits(),
+      { width: state.session.source.width, height: state.session.source.height },
+      { keepProxies: true, originalSource: true },
+    );
+    if (!result || state.compareMode !== "before" || lane !== state.currentView
+      || state.session?.session_id !== sessionId) return false;
+  } catch (error) {
+    console.warn("Before preview could not be rendered.", error);
+    return false;
+  }
+  els.comparisonImage.style.display = "none";
+  els.comparisonCanvas.style.display = "block";
+  state.beforeRenderedKey = key;
+  state.comparisonRenderedLane = null;
+  applyZoomGeometry();
+  return true;
+}
+
+async function beginBeforePeek() {
+  if (!state.session || state.compareLayout !== "single" || state.beforePeekWanted) return;
+  state.beforePeekWanted = true;
+  const shown = await renderBeforePreview();
+  if (!shown || !state.beforePeekWanted) {
+    if (!shown) state.beforePeekWanted = false;
+    return;
+  }
+  els.previewStage.dataset.beforePeek = "true";
+  status.post({ id: "compare", severity: "attention", message: "Showing Before. Press V to return to your grade." });
+}
+
+function endBeforePeek() {
+  if (!state.beforePeekWanted && !els.previewStage.dataset.beforePeek) return;
+  state.beforePeekWanted = false;
+  delete els.previewStage.dataset.beforePeek;
+  if (state.compareLayout === "single") clearComparisonPreview({ keepRenderedState: true });
+  status.clear("compare");
 }
 
 async function switchLane(lane) {
   if (!["hdr", "sdr"].includes(lane)) return;
   const switchGeneration = ++state.laneSwitchGeneration;
   state.comparePendingPeek = false;
+  endBeforePeek();
   abandonPerspectiveDraft();
   if (state.rotateDraftGeometry) closeRotateMode(false);
   // A lane change is a presentation boundary. Commit the newest optimistic
@@ -124,7 +222,13 @@ function renderLaneChrome() {
   const lane = state.currentView;
   arrangeLaneControlGroups(lane);
   document.body.dataset.activeLane = lane;
-  els.previewStage.dataset.primaryLane = lane;
+  // Before / After keeps Before on the left or top and the grade on the right
+  // or bottom, which is where the layout rules put the "sdr" side.
+  const before = state.compareMode === "before";
+  els.previewStage.dataset.primaryLane = before ? "sdr" : lane;
+  els.previewStage.dataset.compareMode = before ? "before" : "lanes";
+  if (els.comparisonLabelHdr) els.comparisonLabelHdr.textContent = before ? "BEFORE" : "HDR";
+  if (els.comparisonLabelSdr) els.comparisonLabelSdr.textContent = before ? "AFTER" : "SDR";
   els.previewPrimaryPane.dataset.lane = lane;
   els.previewSecondaryPane.dataset.lane = lane === "hdr" ? "sdr" : "hdr";
   els.viewButtons.forEach((button) => {
@@ -203,6 +307,15 @@ function bindCompareControl() {
 }
 
 function beginCompareHold() {
+  if (state.compareMode === "before") {
+    // Tap V to switch to Before and tap again to return; hold V to peek.
+    if (!state.session || state.compareLayout !== "single" || state.compareHeld) return;
+    state.compareHeld = true;
+    state.beforePeekPressedAt = performance.now();
+    state.beforePeekWasShowing = Boolean(state.beforePeekWanted);
+    if (!state.beforePeekWasShowing) void beginBeforePeek();
+    return;
+  }
   if (!state.session || state.compareHoldTimer || state.comparePeekActive) return;
   if (state.compareLayout !== "single") {
     const other = state.currentView === "hdr" ? "sdr" : "hdr";
@@ -220,6 +333,13 @@ function beginCompareHold() {
 }
 
 async function endCompareHold() {
+  if (state.compareMode === "before") {
+    if (!state.compareHeld) return;
+    state.compareHeld = false;
+    const tapped = performance.now() - state.beforePeekPressedAt < 250;
+    if (state.beforePeekWasShowing || !tapped) endBeforePeek();
+    return;
+  }
   if (state.compareLayout !== "single") return;
   if (!state.compareHeld) return;
   state.compareHeld = false;
@@ -261,6 +381,7 @@ async function restoreActiveLane() {
 
 async function setCompareLayout(layout) {
   if (!COMPARE_LAYOUTS.has(layout)) return;
+  endBeforePeek();
   state.compareLayout = layout;
   state.comparePeekActive = false;
   state.comparePendingPeek = false;
@@ -290,6 +411,9 @@ function renderCompareLayout() {
 }
 
 async function renderComparisonPreview(lane, { force = false } = {}) {
+  if (state.compareMode === "before") {
+    return state.compareLayout === "single" ? false : renderBeforePreview({ force });
+  }
   if (!state.session || state.compareLayout === "single" || lane === state.currentView) return false;
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
@@ -309,7 +433,7 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
         state.adjustments,
         sampleCurvePoints,
         settledProxyLongEdge(),
-        state.compareWithoutLocals ? [] : localAdjustments(),
+        localsBypassed() ? [] : localAdjustments(),
         state.editRevision,
         null,
         projectReferenceWhiteNits(),

@@ -20,6 +20,7 @@
     maximumGpuMemoryGiB: "auto",
     executionOverride: "auto",
     roiPreview: "fit",
+    navigationWindow: "auto",
     theme: "default-dark",
     viewerFrame: { preset: "theme", customColor: "#000000" },
     folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
@@ -165,6 +166,7 @@
     maximumGpuMemoryGiB: normalizeGpuMemoryGiB(value.maximumGpuMemoryGiB),
     executionOverride: EXECUTION_OVERRIDES.has(value.executionOverride) ? value.executionOverride : "auto",
     roiPreview: ROI_PREVIEW_MODES.has(value.roiPreview) ? value.roiPreview : "fit",
+    navigationWindow: ["auto", "always", "off"].includes(value.navigationWindow) ? value.navigationWindow : "auto",
     theme: THEME_IDS.includes(value.theme) ? value.theme : "default-dark",
     viewerFrame: {
       preset: FRAME_PRESET_IDS.includes(value.viewerFrame?.preset) ? value.viewerFrame.preset : "theme",
@@ -1050,6 +1052,12 @@
     if (byId("settings-faster-dragging")) byId("settings-faster-dragging").checked = value;
   }
 
+  function setNavigationWindowPreference(value) {
+    if (!["auto", "always", "off"].includes(value) || !shell.preferences) return;
+    shell.preferences.navigationWindow = value;
+    persistPreferences();
+  }
+
   async function listGradingPresets(groupId) {
     if (shell.desktop?.listGradingPresets) return shell.desktop.listGradingPresets(groupId);
     const presets = shell.preferences.gradingPresets[groupId];
@@ -1086,6 +1094,7 @@
     setRenderingModePreference,
     setPreviewResolutionPreference,
     setFasterDragging,
+    setNavigationWindowPreference,
     listGradingPresets,
     saveGradingPreset,
     deleteGradingPreset,

@@ -152,6 +152,8 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.vignette.roundness": { min: -100, max: 100, decimals: 0 },
   "current.vignette.feather": { min: 0, max: 100, decimals: 0 },
   "current.vignette.highlight_protection": { min: 0, max: 100, decimals: 0 },
+  "current.vignette.scale_x": { min: 25, max: 300, decimals: 0 },
+  "current.vignette.scale_y": { min: 25, max: 300, decimals: 0 },
   "current.black_and_white.reds": { min: -100, max: 100, decimals: 0 },
   "current.black_and_white.oranges": { min: -100, max: 100, decimals: 0 },
   "current.black_and_white.yellows": { min: -100, max: 100, decimals: 0 },
@@ -309,7 +311,11 @@ const state = {
   // Denoise's Show noise view. View state only: never saved or exported.
   denoiseNoiseView: false,
   localOverlayColor: "#ff263d",
-  compareWithoutLocals: false,
+  navigationWindowMode: "auto",
+  compareMode: "lanes",
+  beforeRenderedKey: null,
+  beforeStartingGrade: null,
+  beforePeekWanted: false,
   localPointerGesture: null,
   localPathDraft: null,
   localPathCreatePendingId: null,
@@ -496,6 +502,7 @@ const state = {
   straightenPreviewBaseAngle: null,
   straightenPreviewFrameRect: null,
   vignettePickCenter: false,
+  vignetteShowOverlay: false,
   vignetteCenterGesture: null,
   groupPresetContext: null,
   previewCache: { hdr: null, sdr: null },
@@ -788,7 +795,7 @@ const defaultColorGrading = () => ({
   balance: 0,
 });
 
-const defaultVignette = () => ({ amount: 0, midpoint: 50, roundness: 0, feather: 75, highlight_protection: 0, center_x: 0.5, center_y: 0.5 });
+const defaultVignette = () => ({ amount: 0, midpoint: 50, roundness: 0, feather: 75, highlight_protection: 0, center_x: 0.5, center_y: 0.5, scale_x: 100, scale_y: 100 });
 // BW-01 Black & White: how bright each colour becomes in grey. All zero is the
 // plain luminance conversion, the same as Saturation -100.
 const BLACK_AND_WHITE_SLIDERS = Object.freeze(["reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas"]);
@@ -953,9 +960,16 @@ const defaultAdjustments = () => ({
     overlay_opacity: 0.5,
     overlay_threshold: 100,
     film_grain_seed: 271828,
+    local_adjustments_enabled: true,
     geometry: defaultGeometry(),
   },
 });
+
+// The Local Adjustments eye: off skips every local adjustment in the preview,
+// the scopes, Proof and export.
+function localsBypassed() {
+  return state.adjustments?.shared?.local_adjustments_enabled === false;
+}
 
 // Keep the pre-session UI state on the same schema returned by the backend.
 state.adjustments = defaultAdjustments();
@@ -990,6 +1004,8 @@ const els = {
   projectSave: document.getElementById("project-save"),
   fileInput: document.getElementById("file-input"),
   dropzone: document.getElementById("dropzone"),
+  comparisonLabelHdr: document.querySelector(".comparison-label-hdr"),
+  comparisonLabelSdr: document.querySelector(".comparison-label-sdr"),
   navigationThumb: document.getElementById("navigation-thumb"),
   navigationThumbImage: document.getElementById("navigation-thumb-image"),
   navigationThumbViewport: document.getElementById("navigation-thumb-viewport"),
@@ -1108,14 +1124,12 @@ const els = {
   gradeModeGlobal: document.getElementById("grade-mode-global"),
   gradeModeLocal: document.getElementById("grade-mode-local"),
   localAdjustmentGroup: document.getElementById("local-adjustments-group"),
-  localAdjustmentCount: document.getElementById("local-adjustment-count"),
   localPanel: document.getElementById("local-adjustments-panel"),
   localToolButtons: [...document.querySelectorAll("[data-local-tool]")],
   localEraser: document.getElementById("local-eraser"),
   localAdjustmentList: document.getElementById("local-adjustment-list"),
   localEmpty: document.getElementById("local-empty"),
   localEditor: document.getElementById("local-editor"),
-  localCompare: document.getElementById("local-compare"),
   localDuplicate: document.getElementById("local-duplicate"),
   localAddAdjustment: document.getElementById("local-add-adjustment"),
   localGizmoToggle: document.getElementById("local-gizmo-toggle"),
@@ -1321,7 +1335,6 @@ const els = {
   perspectiveRotateValue: document.getElementById("perspective-rotate-value"),
   perspectiveStatus: document.getElementById("perspective-status"),
   perspectiveApply: document.getElementById("perspective-apply"),
-  perspectiveApplyStatus: document.getElementById("perspective-apply-status"),
   perspectiveCancel: document.getElementById("perspective-cancel"),
   colorGradingReset: document.getElementById("color-grading-reset"),
   colorGradingMatchHdr: document.getElementById("color-grading-match-hdr"),
@@ -1333,6 +1346,8 @@ const els = {
   vignetteState: document.getElementById("vignette-state"),
   vignettePickCenter: document.getElementById("vignette-pick-center"),
   vignetteCenterHandle: document.getElementById("vignette-center-handle"),
+  vignetteShowOverlay: document.getElementById("vignette-show-overlay"),
+  vignetteShapeOverlay: document.getElementById("vignette-shape-overlay"),
   vignetteCenterX: document.getElementById("vignette-center-x"),
   vignetteCenterY: document.getElementById("vignette-center-y"),
   vignetteHighlightProtectionRow: document.getElementById("vignette-highlight-protection-row"),

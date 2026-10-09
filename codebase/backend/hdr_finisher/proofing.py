@@ -213,7 +213,7 @@ class ProofArtifactStore:
             adjustments=request.adjustments,
             hdr_reference_white_nits=context.hdr_reference_white_nits,
             color_context=context,
-            local_adjustments=getattr(session, "local_adjustments", None),
+            local_adjustments=request.adjustments.enabled_locals(getattr(session, "local_adjustments", None)),
             # Denoise is authored beside the grade, and the export graph reads it
             # from the session. A proof that claims to show the delivered file
             # must carry it too, or a denoised edit would be reviewed through a

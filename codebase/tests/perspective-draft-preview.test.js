@@ -14,11 +14,11 @@ function contextFor(fetch) {
     status: { post: () => {}, clear: () => {} },
     renderViewerStatus: () => {},
     localAdjustments: () => [],
+    localsBypassed: () => false,
     mediaQueryMatch: () => false,
     perspectiveDraftLongEdge: () => 1024,
     state: {
       adjustments: { shared: { geometry: {} } },
-      compareWithoutLocals: false,
       currentView: "hdr",
       editRevision: 7,
       perspectiveMode: true,

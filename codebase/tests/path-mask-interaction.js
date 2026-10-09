@@ -236,12 +236,12 @@ async function activePreviewBox(page) {
       const timeout = setTimeout(() => reject(new Error("Timed out waiting for Compare without.")), 8000);
       window.addEventListener("hdrfinisher:preview-presented", (event) => { clearTimeout(timeout); resolve(event.detail); }, { once: true });
     }));
-    await page.locator("#local-compare").click();
+    await page.locator("#local-adjustments-bypass").click();
     await previewPresented;
     const bypassedPixels = await page.locator("#preview-primary-pane").screenshot();
     assert(!appliedPixels.equals(bypassedPixels), "Path exposure produced no visible difference from Compare without.");
     previewPresented = page.evaluate(() => new Promise((resolve) => window.addEventListener("hdrfinisher:preview-presented", resolve, { once: true })));
-    await page.locator("#local-compare").click();
+    await page.locator("#local-adjustments-bypass").click();
     await previewPresented;
 
     // Segment insertion preserves the bottom straight segment, then right-click removal restores it.

@@ -121,7 +121,7 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
   const response = await fetch(`/api/session/${sessionId}/overlay/${lane}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ edit_revision: state.editRevision, include_locals: !state.compareWithoutLocals, long_edge: longEdge }),
+    body: JSON.stringify({ edit_revision: state.editRevision, include_locals: !localsBypassed(), long_edge: longEdge }),
     signal: controller.signal,
   }).catch((error) => {
     if (error.name === "AbortError") return { aborted: true };
@@ -189,6 +189,7 @@ function syncOverlayPlacement() {
   });
   renderScopeRegionOverlay();
   renderVignetteCenter();
+  renderPerspectiveGuides();
   syncLocalMaskOverlayViewport();
   queueLocalMaskOverlayRender();
 }

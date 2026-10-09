@@ -27,7 +27,23 @@
   }
 
   const menus = [...document.querySelectorAll(".window-menu")];
+  const submenus = [...document.querySelectorAll(".window-submenu")];
+  const setSubmenuOpen = (submenu, open, { focusFirst = false } = {}) => {
+    for (const candidate of submenus) {
+      const show = open && candidate === submenu;
+      candidate.querySelector(".window-submenu-popover").hidden = !show;
+      candidate.querySelector(".window-submenu-trigger").setAttribute("aria-expanded", String(show));
+    }
+    if (open && focusFirst) {
+      (submenu.querySelector('[aria-checked="true"]') || submenu.querySelector(".window-submenu-popover button"))?.focus();
+    }
+  };
+  for (const submenu of submenus) {
+    submenu.addEventListener("pointerenter", () => setSubmenuOpen(submenu, true));
+    submenu.addEventListener("pointerleave", () => setSubmenuOpen(submenu, false));
+  }
   const closeMenus = ({ restoreFocus = false } = {}) => {
+    setSubmenuOpen(null, false);
     for (const menu of menus) {
       const trigger = menu.querySelector(".window-menu-trigger");
       const popover = menu.querySelector(".window-menu-popover");
@@ -46,7 +62,7 @@
     if (wasOpen) return;
     popover.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
-    if (focusFirst) popover.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
+    if (focusFirst) popover.querySelector('[role^="menuitem"]:not(:disabled)')?.focus();
   };
 
   for (const menu of menus) {
@@ -58,9 +74,23 @@
       openMenu(menu, { focusFirst: true });
     });
     menu.querySelector(".window-menu-popover").addEventListener("keydown", (event) => {
-      const items = [...event.currentTarget.querySelectorAll('[role="menuitem"]:not(:disabled)')];
+      // Arrow keys walk whichever level holds the focus: the items of an open
+      // submenu, or the top level with submenu contents skipped.
+      const submenu = document.activeElement?.closest?.(".window-submenu");
+      const inSubmenu = Boolean(document.activeElement?.closest?.(".window-submenu-popover"));
+      const level = inSubmenu ? submenu.querySelector(".window-submenu-popover") : event.currentTarget;
+      const items = [...level.querySelectorAll('[role^="menuitem"]:not(:disabled)')]
+        .filter((item) => inSubmenu || !item.closest(".window-submenu-popover"));
       const index = items.indexOf(document.activeElement);
-      if (event.key === "Escape") {
+      if (submenu && !inSubmenu && ["ArrowRight", "Enter", " "].includes(event.key)) {
+        event.preventDefault();
+        setSubmenuOpen(submenu, true, { focusFirst: true });
+      } else if (inSubmenu && (event.key === "ArrowLeft" || event.key === "Escape")) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSubmenuOpen(submenu, false);
+        submenu.querySelector(".window-submenu-trigger").focus();
+      } else if (event.key === "Escape") {
         event.preventDefault();
         closeMenus({ restoreFocus: true });
       } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -79,9 +109,16 @@
   });
 
   menuBar?.addEventListener("click", (event) => {
-    const item = event.target.closest('[role="menuitem"]');
+    const item = event.target.closest('[role^="menuitem"]');
     if (!item || item.disabled) return;
-    if (item.dataset.desktopCommand) {
+    if (item.classList.contains("window-submenu-trigger")) {
+      setSubmenuOpen(item.closest(".window-submenu"), true);
+      return;
+    }
+    const send = (command, payload) => document.dispatchEvent(new CustomEvent("hdr:desktop-command", { detail: { command, payload } }));
+    if (item.dataset.compareMode) send("compare-mode", { mode: item.dataset.compareMode });
+    else if (item.dataset.navigationWindow) send("navigation-window", { mode: item.dataset.navigationWindow });
+    else if (item.dataset.desktopCommand) {
       document.dispatchEvent(new CustomEvent("hdr:desktop-command", { detail: { command: item.dataset.desktopCommand } }));
     } else if (item.dataset.nativeEdit) {
       void desktop.performNativeEdit?.(item.dataset.nativeEdit);

@@ -474,13 +474,6 @@ function bindLocalAdjustmentEvents() {
     if (gpuLumaMaskPreviewActive()) scheduleLocalPreview();
     queueLocalMaskOverlayRender();
   });
-  els.localCompare?.addEventListener("click", () => {
-    state.compareWithoutLocals = !state.compareWithoutLocals;
-    els.localCompare.setAttribute("aria-pressed", String(state.compareWithoutLocals));
-    invalidatePreview("hdr", { local: true });
-    invalidatePreview("sdr", { local: true });
-    debouncePreview(state.currentView);
-  });
   bindLocalMaskCanvas();
 }
 
@@ -640,7 +633,6 @@ function appendInlineLocalRenameEditor(item, local) {
 function renderLocalAdjustments() {
   if (!els.localAdjustmentList) return;
   const locals = localAdjustments();
-  if (els.localAdjustmentCount) els.localAdjustmentCount.textContent = locals.length ? String(locals.length) : "0";
   if (!state.selectedLocalId && locals.length) state.selectedLocalId = locals[0].id;
   const validMenuIds = new Set(locals.flatMap((local) => [local.id, ...subMaskRows(local.mask).map((entry) => entry.id)]));
   if (state.localAdjustmentMenuId && !validMenuIds.has(state.localAdjustmentMenuId)) {

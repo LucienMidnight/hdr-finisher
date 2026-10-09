@@ -205,8 +205,8 @@ async function renderPreviewForLane(
   if (geometryDraftActive()) return false;
   const raw = options.raw ?? !state.gpuPreview?.available;
   const key = JSON.stringify([sessionId, state.editRevision, state.previewGeneration[lane],
-    geometrySignature(), longEdge, displayWhenReady, raw, state.compareWithoutLocals,
-    state.localPreviewDirty && !state.compareWithoutLocals ? localAdjustments() : null]);
+    geometrySignature(), longEdge, displayWhenReady, raw, localsBypassed(),
+    state.localPreviewDirty && !localsBypassed() ? localAdjustments() : null]);
   const inflight = state.cpuPreviewInflight ||= new Map();
   const previous = inflight.get(lane);
   // Scheduler settle, scopes and lane preparation can ask for the same CPU
@@ -256,8 +256,8 @@ async function renderPreviewForLaneInner(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       edit_revision: state.editRevision,
-      include_locals: !state.compareWithoutLocals,
-      local_adjustments: state.localPreviewDirty && !state.compareWithoutLocals
+      include_locals: !localsBypassed(),
+      local_adjustments: state.localPreviewDirty && !localsBypassed()
         ? JSON.parse(JSON.stringify(localAdjustments()))
         : null,
       long_edge: longEdge,
@@ -369,7 +369,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       edit_revision: state.editRevision,
-      include_locals: !state.compareWithoutLocals,
+      include_locals: !localsBypassed(),
       long_edge: longEdge,
       generation,
       tier: "settled",
@@ -622,7 +622,7 @@ async function renderGpuDraftInner(
   // to know that frame's exact size first.
   if (request.viewport && !gpuFrameSizeAt(longEdge)) await ensureGeometryCoordinateMap(longEdge);
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
-  const localSnapshot = state.compareWithoutLocals
+  const localSnapshot = localsBypassed()
     ? []
     : JSON.parse(JSON.stringify(localAdjustments()));
   const maskOverlay = gpuLumaMaskOverlayOptions();
@@ -989,6 +989,8 @@ function clearPreviewCache() {
       : 0;
   }
   state.comparePeekActive = false;
+  endBeforePeek();
+  state.beforeRenderedKey = null;
   state.comparisonRenderedLane = null;
   state.comparisonRenderedGeneration = null;
   state.comparisonRenderedGeometry = null;

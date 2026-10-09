@@ -11,7 +11,7 @@ function exactScopePeakKey(lane = state.currentView) {
     geometrySignature(),
     projectReferenceWhiteNits(),
     JSON.stringify(state.adjustments?.[lane] || {}),
-    JSON.stringify(state.compareWithoutLocals ? [] : localAdjustments()),
+    JSON.stringify(localsBypassed() ? [] : localAdjustments()),
   ].join("|");
 }
 
@@ -65,7 +65,7 @@ async function measureExactScopePeakInner(lane, key) {
       lane,
       JSON.parse(JSON.stringify(state.adjustments)),
       sampleCurvePoints,
-      state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())),
+      localsBypassed() ? [] : JSON.parse(JSON.stringify(localAdjustments())),
       state.editRevision,
       projectReferenceWhiteNits(),
       { width: state.session.source.width, height: state.session.source.height },
@@ -159,7 +159,7 @@ async function measureExactHighlightAnchor({ lane, key, used }) {
         lane,
         JSON.parse(JSON.stringify(state.adjustments)),
         sampleCurvePoints,
-        state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())),
+        localsBypassed() ? [] : JSON.parse(JSON.stringify(localAdjustments())),
         state.editRevision,
         projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },

@@ -165,7 +165,6 @@ async function ejectCurrentSession() {
   state.documentDirty = false;
   state.selectedLocalId = null;
   state.projectPath = "";
-  state.compareWithoutLocals = false;
   state.currentView = "hdr";
   activateWorkflowTab("import", { focus: false });
   state.interpretationGateDismissed = false;
@@ -675,7 +674,6 @@ function retireActiveSession() {
   state.localShowMask = false;
   state.localHiddenGizmoIds.clear();
   state.denoiseNoiseView = false;
-  state.compareWithoutLocals = false;
   state.localPreviewDirty = false;
   state.localMaskCommitDepth = 0;
   state.localMaskCommitRefreshPending = false;

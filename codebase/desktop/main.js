@@ -71,6 +71,7 @@ const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
   renderingMode: "auto",
   previewResolution: "auto",
   fasterDragging: false,
+  navigationWindow: "auto",
   maximumGpuMemoryGiB: "auto",
   folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
   shortcuts: {},
@@ -113,6 +114,7 @@ function sanitizeApplicationPreferences(value = {}) {
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
     previewResolution: tiers.includes(String(value.previewResolution)) ? String(value.previewResolution) : "auto",
     fasterDragging: value.fasterDragging === true,
+    navigationWindow: ["auto", "always", "off"].includes(value.navigationWindow) ? value.navigationWindow : "auto",
     maximumGpuMemoryGiB: (() => {
       if (value.maximumGpuMemoryGiB === "auto") return "auto";
       const numeric = Number(value.maximumGpuMemoryGiB);
@@ -826,6 +828,23 @@ function buildMenu() {
         { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" },
+        { type: "separator" },
+        {
+          label: "Preview Compares",
+          submenu: [
+            { label: "HDR / SDR", type: "radio", checked: true, click: () => sendCommand("compare-mode", { mode: "lanes" }) },
+            { label: "Before / After", type: "radio", click: () => sendCommand("compare-mode", { mode: "before" }) },
+          ],
+        },
+        {
+          label: "Navigate Window",
+          submenu: ["always", "auto", "off"].map((mode) => ({
+            label: { always: "Always Show", auto: "Auto", off: "Off" }[mode],
+            type: "radio",
+            checked: (applicationPreferences?.navigationWindow || "auto") === mode,
+            click: () => sendCommand("navigation-window", { mode }),
+          })),
+        },
         { type: "separator" },
         { role: "togglefullscreen" },
       ],

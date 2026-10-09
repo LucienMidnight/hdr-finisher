@@ -27,6 +27,18 @@ def _store_with_source(tmp_path: Path) -> tuple[SessionStore, str]:
     return store, payload.session_id
 
 
+def test_starting_adjustments_endpoint_returns_the_imported_grade(tmp_path: Path, monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+    from hdr_finisher import main as main_module
+
+    store, session_id = _store_with_source(tmp_path)
+    monkeypatch.setattr(main_module, "store", store)
+    response = TestClient(main_module.app).get(f"/api/session/{session_id}/starting-adjustments")
+    assert response.status_code == 200
+    assert response.json() == store.get(session_id).starting_adjustments().model_dump(mode="json")
+    assert TestClient(main_module.app).get("/api/session/missing/starting-adjustments").status_code == 404
+
+
 def _revert(store: SessionStore, session_id: str, lane: str):
     revision = store.get(session_id).edit_revision
     return store.apply_edit_commands(session_id, [EditCommand(

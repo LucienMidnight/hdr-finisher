@@ -15,7 +15,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     assert.equal(await page.evaluate(() => Boolean(state.gpuPreview?.available)), true, "This driver must exercise WebGPU");
     const group = page.locator('[data-group="perspective"]');
     const toggle = group.locator(".group-toggle");
-    const badge = page.locator("#perspective-apply-status");
+    const phase = () => page.evaluate(() => state.perspectivePhase);
     const open = async () => {
       if (await group.evaluate((element) => element.classList.contains("collapsed"))) await toggle.click();
     };
@@ -90,7 +90,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
       "Warm sliders did not reuse their GPU base");
     assert.equal(await page.evaluate(() => state.editRevision), initial.revision, "Draft was saved without Apply");
     assert.equal((await backend()).shared.geometry.perspective_horizontal, initial.geometry.perspective_horizontal);
-    assert.equal(await badge.textContent(), "Unapplied");
+    assert.equal(await phase(), "unapplied");
     assert.match(await page.locator("#preview-quality-status").textContent(), /Perspective draft/);
 
     await toggle.click();
@@ -130,10 +130,10 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     await page.locator("#perspective-apply").click();
     await page.waitForFunction(() => Boolean(window.releasePerspectiveSave));
     await toggle.click();
-    assert.equal(await badge.textContent(), "Applying…");
+    assert.equal(await phase(), "applying");
     await page.evaluate(() => window.releasePerspectiveSave());
     await ready();
-    assert.equal(await badge.textContent(), "Applied", JSON.stringify(await page.evaluate(() => ({ detail: els.perspectiveStatus.textContent, operation: state.perspectiveApplyOperation, accepted: state.acceptedPresentation, refusal: state.lastGpuDraftRefusal, unavailable: state.previewUnavailableReason, geometry: geometrySignature() }))));
+    assert.equal(await phase(), "applied", JSON.stringify(await page.evaluate(() => ({ detail: els.perspectiveStatus.textContent, operation: state.perspectiveApplyOperation, accepted: state.acceptedPresentation, refusal: state.lastGpuDraftRefusal, unavailable: state.previewUnavailableReason, geometry: geometrySignature() }))));
     assert.equal((await backend()).shared.geometry.perspective_horizontal, 20);
 
     // Reset is committed without Apply, does not affect Crop & Rotate, and is undoable.
@@ -173,7 +173,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     await toggle.click();
     releaseFailure();
     await page.waitForFunction(() => state.perspectivePhase === "failed" && !state.perspectiveMode);
-    assert.equal(await badge.textContent(), "Apply failed");
+    assert.equal(await phase(), "failed");
     assert.equal((await backend()).shared.geometry.perspective_vertical, 0);
     await page.unroute("**/edit-commands", failSave);
     await slider("#hdr-exposure", 0.6);
@@ -196,7 +196,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     await page.locator('[data-reset-group="perspective"]').click();
     await ready();
     assert.equal((await backend()).shared.geometry.perspective_vertical, 0);
-    assert.equal(await badge.textContent(), "Applied");
+    assert.equal(await phase(), "applied");
     await page.evaluate(() => queueEditCommand("undo"));
     await ready();
     assert.equal((await backend()).shared.geometry.perspective_vertical, -17);
@@ -212,12 +212,12 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     await page.locator("#perspective-apply").click();
     await toggle.click();
     await page.waitForFunction(() => !state.perspectiveMode && state.perspectivePhase === "previewFailed", null, { timeout: 60000 });
-    assert.equal(await badge.textContent(), "Preview failed");
+    assert.equal(await phase(), "previewFailed");
     assert.equal((await backend()).shared.geometry.perspective_horizontal, 9, "Successful save was lost after preview failure");
     await page.unroute("**/preview/hdr", failPreview);
     await page.evaluate((mode) => { state.renderingMode = mode; debouncePreview(state.currentView); }, renderingMode);
     await ready();
-    assert.equal(await badge.textContent(), "Applied");
+    assert.equal(await phase(), "applied");
     await open();
 
     // Guides retain keyboard focus and solve only when explicitly requested.

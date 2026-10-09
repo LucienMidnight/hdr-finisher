@@ -250,13 +250,16 @@ async function exportCurrentSession() {
       status.post({ id: "export", severity: "error", message: responseErrorMessage(payload, "Export failed.") });
       return;
     }
-    const exportMessage = payload.message || "Export request finished.";
+    // The status bar says only that it finished. The file path is in the
+    // Export panel, and any measurement warning is spelled out there too.
     const totalExportMs = Number(payload.timings_ms?.total);
     const completedMessage = Number.isFinite(totalExportMs)
-      ? `${exportMessage} Completed in ${(totalExportMs / 1000).toFixed(1)}s.`
-      : exportMessage;
+      ? `Export completed in ${(totalExportMs / 1000).toFixed(1)}s.`
+      : "Export completed.";
     const measurementWarning = (payload.measurement_warnings || []).join(" ");
-    status.post({ id: "export", severity: measurementWarning ? "warning" : "success", message: `${completedMessage}${measurementWarning ? ` ${measurementWarning}` : ""}` });
+    status.post({ id: "export", severity: measurementWarning ? "attention" : "success",
+      message: measurementWarning ? `${completedMessage} See the Export panel for a measurement warning.` : completedMessage,
+      dismissible: Boolean(measurementWarning) });
     els.exportStatus.textContent = measurementWarning || "The completed export is available below.";
     if (payload.output_path) {
       const parsed = splitOutputPath(payload.output_path);

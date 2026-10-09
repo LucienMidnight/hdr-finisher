@@ -37,7 +37,7 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
       : { bins: 256, columns: 256 };
   const effectiveLongEdge = window.HDRWholeImagePreviewPipe.edgeFor("scopes",
     mode === "waveform" ? waveformScopeLongEdge(tier, longEdge) : longEdge);
-  const includeLocals = !state.compareWithoutLocals;
+  const includeLocals = !localsBypassed();
   const scopeRegion = activeScopeRegion();
 
   const request = {
@@ -411,7 +411,7 @@ function recordDisplayedScopePeak(payload, { tier, lane, scopeRegion }) {
 
 function editingMeasurementRecipe() {
   return JSON.stringify([state.session?.session_id, state.editRevision, state.adjustments, localAdjustments(),
-    state.denoise, state.editDocument?.sdr_match, state.compareWithoutLocals]);
+    state.denoise, state.editDocument?.sdr_match, localsBypassed()]);
 }
 
 function recordEditingMeasurement(lane, values) {
@@ -424,7 +424,7 @@ function recordEditingMeasurement(lane, values) {
 function editingMeasurementsForDelivery() {
   const recipe = editingMeasurementRecipe();
   return Object.fromEntries(Object.entries(state.editingMeasurementEvidence || {})
-    .filter(([,evidence]) => evidence.recipe === recipe && !state.compareWithoutLocals)
+    .filter(([,evidence]) => evidence.recipe === recipe && !localsBypassed())
     .map(([lane,evidence]) => [lane,evidence.values]));
 }
 

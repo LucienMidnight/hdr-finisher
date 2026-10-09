@@ -218,6 +218,9 @@ class VignetteAdjustments(BaseModel):
     highlight_protection: float = Field(default=0.0, ge=0.0, le=100.0)
     center_x: float = Field(default=0.5, ge=0.0, le=1.0)
     center_y: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Percent of the shape's natural width and height; 100 leaves it unchanged.
+    scale_x: float = Field(default=100.0, ge=25.0, le=300.0)
+    scale_y: float = Field(default=100.0, ge=25.0, le=300.0)
 
 
 class CropRectangle(BaseModel):
@@ -501,6 +504,9 @@ class SharedAdjustments(BaseModel):
     overlay_opacity: float = 0.5
     overlay_threshold: float = Field(default=100.0, ge=1.0, le=10000.0)
     film_grain_seed: int = Field(default=271828, ge=0, le=2_147_483_647)
+    # The Local Adjustments module's on/off. Off skips every local adjustment
+    # in preview, Proof and export, like the other modules' section switches.
+    local_adjustments_enabled: bool = True
     geometry: GeometryAdjustments = Field(default_factory=GeometryAdjustments)
 
 
@@ -508,6 +514,10 @@ class AdjustmentState(BaseModel):
     hdr: HDRAdjustments = Field(default_factory=HDRAdjustments)
     sdr: SDRAdjustments = Field(default_factory=SDRAdjustments)
     shared: SharedAdjustments = Field(default_factory=SharedAdjustments)
+
+    def enabled_locals(self, local_adjustments):
+        """The local adjustments a render should apply: none when the module is off."""
+        return local_adjustments if self.shared.local_adjustments_enabled else []
 
 
 class MaskPoint(BaseModel):

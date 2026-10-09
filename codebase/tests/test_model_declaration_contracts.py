@@ -53,7 +53,7 @@ def test_branch_serialization_order_and_adjustment_signature_are_stable() -> Non
     assert tuple(adjustments.sdr.model_dump()) == SDR_FIELD_ORDER
     signature = adjustment_signature(adjustments)
     assert hashlib.sha256(signature.encode()).hexdigest() == (
-        "75d9b7c0d98d6a60456fa465066c4f55c39fe4a411ec27fb0e626324da58568b"
+        "d1f27e49fffca54aab343e3de3102ef9800bdff8f79dddf3ff691375132f3e5a"
     )
     assert AdjustmentState.model_validate(adjustments.model_dump(mode="json")) == adjustments
 

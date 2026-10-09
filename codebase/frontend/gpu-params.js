@@ -331,6 +331,8 @@
     params[GPU_PARAMS.VIGNETTE_HIGHLIGHT_PROTECTION] = (vignette.highlight_protection || 0) / 100;
     params[GPU_PARAMS.VIGNETTE_CENTER_X] = vignette.center_x ?? 0.5;
     params[GPU_PARAMS.VIGNETTE_CENTER_Y] = vignette.center_y ?? 0.5;
+    params[GPU_PARAMS.VIGNETTE_SCALE_X] = (vignette.scale_x ?? 100) / 100;
+    params[GPU_PARAMS.VIGNETTE_SCALE_Y] = (vignette.scale_y ?? 100) / 100;
     const detail = branch.detail || {};
     params[GPU_PARAMS.DETAIL_ENABLED] = branch.detail_section_enabled !== false ? 1 : 0;
     params[GPU_PARAMS.TEXTURE_AMOUNT] = (Number(detail.texture_amount) || 0) / 100;

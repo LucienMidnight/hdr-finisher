@@ -4496,7 +4496,8 @@
         || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
       let sourceProxy = this.selectedDenoiseSource(proxy);
       // Export's Match analysis reads the source as decoded, not a reconstruction.
-      if (sourceOptions?.frameAnchor) sourceProxy = proxy;
+      // So does the Before view, which shows the picture without Denoise.
+      if (sourceOptions?.frameAnchor || sourceOptions?.originalSource) sourceProxy = proxy;
       proxyPin = this.gpuAllocator && proxy.allocatorEntry ? this.gpuAllocator.pin(proxy.allocatorEntry) : null;
       let masks = [];
       let masksReadyAt = proxyReadyAt;
@@ -4523,7 +4524,7 @@
       // plan and the decision describe real work rather than a generic guess.
       // Stale levels leave before admission, so the plan charges what the
       // device will actually hold for this render.
-      if (!sourceOptions?.scopeAnalysis) this.evictStaleProxies({ sessionId, lane, geometrySignature, sourceIdentity, keep: proxy.identity });
+      if (!sourceOptions?.scopeAnalysis && !sourceOptions?.keepProxies) this.evictStaleProxies({ sessionId, lane, geometrySignature, sourceIdentity, keep: proxy.identity });
       const plan = this.planRender(proxy.width, proxy.height, {
         executionOverride: this.executionOverrideFor(sourceOptions),
         // A region proxy covers only the visible area; if Direct is admitted
@@ -4558,7 +4559,7 @@
         );
         if (whole) {
           proxy = whole;
-          sourceProxy = this.selectedDenoiseSource(proxy);
+          sourceProxy = sourceOptions?.originalSource ? proxy : this.selectedDenoiseSource(proxy);
         }
       }
       // Direct grades one whole-frame texture, so adaptive Denoise fills its
@@ -4567,7 +4568,7 @@
         if (resourceGeneration !== this.resourceGeneration
           || serial !== this.renderSerials.get(canvas)
           || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
-        sourceProxy = sourceOptions?.frameAnchor ? proxy : this.selectedDenoiseSource(proxy);
+        sourceProxy = sourceOptions?.frameAnchor || sourceOptions?.originalSource ? proxy : this.selectedDenoiseSource(proxy);
       }
       // The anchor is measured before anything is encoded, so this render can
       // never await once it owns GPU resources or the canvas. A settled draft

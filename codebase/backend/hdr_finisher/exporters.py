@@ -163,7 +163,7 @@ def _render_export_branch(
         sdr_reference_image=getattr(session, "sdr_reference_image", None),
         include_grain=False,
         include_output_highlight_compression=False,
-        local_adjustments=getattr(session, "local_adjustments", None),
+        local_adjustments=adjustments.enabled_locals(getattr(session, "local_adjustments", None)),
         color_context=color_context,
     )
     # Output finishing resamples and sharpens for the delivered size, neither of

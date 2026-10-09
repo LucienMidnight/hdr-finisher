@@ -261,7 +261,7 @@ function initializePreviewScheduler() {
       canCatchUp: (lane, longEdge) => state.roiPreviewMode === "refinement" || Boolean(
         state.session && state.gpuPreview?.catchUpNeedsNoBackendMasks?.(
           state.session.session_id, lane, longEdge, geometrySignature(),
-          state.compareWithoutLocals ? [] : localAdjustments(),
+          localsBypassed() ? [] : localAdjustments(),
         ),
       ),
       // The frame is not completed, but its source can still be held on the
@@ -317,7 +317,7 @@ function initializePreviewScheduler() {
         JSON.parse(JSON.stringify(state.adjustments)),
         sampleCurvePoints,
         Number(longEdge),
-        state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())),
+        localsBypassed() ? [] : JSON.parse(JSON.stringify(localAdjustments())),
         state.editRevision,
         null,
         projectReferenceWhiteNits(),
@@ -495,6 +495,7 @@ function observeViewerSize() {
     viewerResizeFrame = requestAnimationFrame(() => {
       viewerResizeFrame = null;
       applyZoomGeometry();
+      scheduleNavigationThumbnail();
     });
   };
   if (!window.ResizeObserver) {
@@ -935,7 +936,15 @@ function bindEvents() {
   els.sectionBypasses.forEach((button) => {
     button.addEventListener("click", () => {
       const path = resolveAdjustmentPath(button.dataset.sectionPath);
-      setValueByPath(state.adjustments, path, !Boolean(getValueByPath(state.adjustments, path)));
+      setValueByPath(state.adjustments, path, getValueByPath(state.adjustments, path) === false);
+      if (path.startsWith("shared.")) {
+        // The Local Adjustments eye belongs to both renditions.
+        invalidatePreview("hdr", { local: true });
+        invalidatePreview("sdr", { local: true });
+        renderControlState();
+        debouncePreview(state.currentView);
+        return;
+      }
       invalidatePreview(path.startsWith("sdr.") ? "sdr" : "hdr");
       renderControlState();
       debouncePreview(path.startsWith("sdr.") ? "sdr" : "hdr");

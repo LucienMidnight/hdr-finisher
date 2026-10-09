@@ -212,6 +212,42 @@ def test_vignette_is_evaluated_in_cropped_output_coordinates() -> None:
     assert cropped_result[40, 40].mean() > cropped_result[0, 0].mean()
 
 
+def test_vignette_scale_stretches_each_axis_and_100_percent_is_unchanged() -> None:
+    image = np.ones((101, 101, 3), dtype=np.float32)
+    state = AdjustmentState()
+    state.hdr.vignette.amount = -100
+    state.hdr.vignette.midpoint = 25
+    state.hdr.vignette.feather = 50
+    plain = apply_adjustments(image, state, PreviewKind.HDR)
+
+    explicit = state.model_copy(deep=True)
+    explicit.hdr.vignette.scale_x = 100
+    explicit.hdr.vignette.scale_y = 100
+    np.testing.assert_array_equal(apply_adjustments(image, explicit, PreviewKind.HDR), plain)
+
+    wide = state.model_copy(deep=True)
+    wide.hdr.vignette.scale_x = 200
+    stretched = apply_adjustments(image, wide, PreviewKind.HDR)
+    # Twice as wide: the darkening that sat 20 pixels right of center now sits 40 right.
+    np.testing.assert_allclose(stretched[50, 90], plain[50, 70], rtol=1e-6)
+    # The vertical axis is untouched.
+    np.testing.assert_array_equal(stretched[:, 50], plain[:, 50])
+
+    tall = state.model_copy(deep=True)
+    tall.hdr.vignette.scale_y = 50
+    squeezed = apply_adjustments(image, tall, PreviewKind.HDR)
+    np.testing.assert_allclose(squeezed[70, 50], plain[90, 50], rtol=1e-6)
+    np.testing.assert_array_equal(squeezed[50, :], plain[50, :])
+
+
+def test_local_adjustments_module_switch_skips_every_local() -> None:
+    state = AdjustmentState()
+    locals_ = [object(), object()]
+    assert state.enabled_locals(locals_) is locals_
+    state.shared.local_adjustments_enabled = False
+    assert state.enabled_locals(locals_) == []
+
+
 def test_output_resize_preserves_aspect_and_prevents_enlargement() -> None:
     settings = OutputFinishingSettings(resize_mode="fit", width=500, height=500)
     assert resolve_output_dimensions(1200, 800, settings) == (500, 333)

@@ -1,7 +1,7 @@
 function gpuPreviewEligible(lane = state.currentView) {
   return state.renderingMode !== "cpu"
     && Boolean(state.gpuPreview?.available)
-    && state.gpuPreview.supportsLocalAdjustments(lane, state.compareWithoutLocals ? [] : localAdjustments());
+    && state.gpuPreview.supportsLocalAdjustments(lane, localsBypassed() ? [] : localAdjustments());
 }
 
 /** @returns {PreviewResolution} */
@@ -234,6 +234,8 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   }
   renderCurrentPreviewSize();
   renderReadouts();
+  // The overview follows the picture: refresh it once this frame has settled.
+  scheduleNavigationThumbnail();
   finishPerspectivePresentation();
   renderViewerStatus();
   // The coordinator keeps the same record, so its follow-up decisions (pan

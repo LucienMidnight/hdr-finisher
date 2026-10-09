@@ -3,11 +3,42 @@
 
   const SUCCESS_TIMEOUT_MS = 4000;
   const SEVERITIES = new Set(["info", "progress", "success", "error", "attention"]);
+  // When the bar is too narrow for every entry, the most urgent ones keep
+  // their place and the rest fold into a single "+N more" marker.
+  const SEVERITY_RANK = { error: 0, attention: 1, progress: 2, success: 3, info: 4 };
+  const MIN_ENTRY_WIDTH_PX = 220;
 
   function create(container, { successTimeoutMs = SUCCESS_TIMEOUT_MS, focusFallback = null, emptyMessage = null } = {}) {
     if (!container) throw new Error("A status entry container is required.");
     const entries = new Map();
     let emptyNode = null;
+    let overflowNode = null;
+    let sequence = 0;
+
+    const layoutOverflow = () => {
+      const records = [...entries.values()];
+      const width = container.clientWidth;
+      const capacity = width > 0 ? Math.max(1, Math.floor(width / MIN_ENTRY_WIDTH_PX)) : records.length;
+      const kept = new Set([...records]
+        .sort((a, b) => SEVERITY_RANK[a.entry.severity] - SEVERITY_RANK[b.entry.severity] || b.sequence - a.sequence)
+        .slice(0, capacity));
+      const folded = records.filter((record) => !kept.has(record));
+      records.forEach((record) => record.node.classList.toggle("status-entry-folded", !kept.has(record)));
+      if (!folded.length) {
+        overflowNode?.remove();
+        overflowNode = null;
+        return;
+      }
+      if (!overflowNode) {
+        overflowNode = document.createElement("section");
+        overflowNode.className = "status-entry status-info status-entry-overflow";
+        overflowNode.dataset.statusId = "overflow";
+      }
+      overflowNode.textContent = `+${folded.length} more`;
+      overflowNode.title = folded.map((record) => record.entry.message).join(" · ");
+      container.append(overflowNode);
+    };
+    if (typeof ResizeObserver === "function") new ResizeObserver(layoutOverflow).observe(container);
 
     const syncEmptyState = () => {
       if (!emptyMessage || entries.size) {
@@ -65,6 +96,7 @@
         (target || document.querySelector("#project-open, #file-open, button, [tabindex='0']"))?.focus?.();
       }
       if (syncEmpty) syncEmptyState();
+      layoutOverflow();
       return true;
     }
 
@@ -87,6 +119,7 @@
       if (normalized.copyId) copy.id = normalized.copyId;
       copy.className = "status-entry-copy";
       copy.textContent = normalized.message;
+      copy.title = normalized.message;
       node.append(copy);
 
       if (normalized.progress !== undefined && normalized.progress !== null) {
@@ -126,7 +159,7 @@
         node.append(controls);
       }
 
-      const record = { entry: normalized, node, timer: 0, remaining: successTimeoutMs, deadline: 0 };
+      const record = { entry: normalized, node, timer: 0, remaining: successTimeoutMs, deadline: 0, sequence: ++sequence };
       entries.set(normalized.id, record);
       container.append(node);
       node.addEventListener("mouseenter", () => pauseDismiss(record));
@@ -136,6 +169,7 @@
         if (!node.contains(event.relatedTarget)) resumeDismiss(record);
       });
       if (severity === "success" && normalized.persistent !== true) scheduleDismiss(record);
+      layoutOverflow();
       return node;
     }
 

@@ -318,7 +318,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
         parityMeanAbsoluteError,
         rapidDrag,
         renderedLocalCounts,
-        compareWithoutLocals: state.compareWithoutLocals,
+        compareWithoutLocals: localsBypassed(),
         maskProbe,
       };
     });

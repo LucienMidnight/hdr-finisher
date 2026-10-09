@@ -8,7 +8,7 @@ function fixture() {
     adjustments: {}, editRevision: 1, previewGeneration: { hdr: 2 }, importGeneration: 3,
     currentView: 'hdr', requestedEdge: 1600, gpuPreview: { available: true,
       measureEditingPeak: (...args) => new Promise((resolve, reject) => jobs.push({ resolve, reject, options: args.at(-1) })) } };
-  const context = vm.createContext({ state, exactScopePeakCache: cache, exactScopePeakInflight: inflight,
+  const context = vm.createContext({ localsBypassed: () => false, state, exactScopePeakCache: cache, exactScopePeakInflight: inflight,
     exactScopePeakKey: lane => [state.session.session_id, lane, state.editRevision, state.previewGeneration[lane]].join('|'),
     previewTargetLongEdge: () => 8000, performance: { now: () => 1 }, els: { previewCanvas: {} },
     sampleCurvePoints: () => {}, localAdjustments: () => [], projectReferenceWhiteNits: () => 203,

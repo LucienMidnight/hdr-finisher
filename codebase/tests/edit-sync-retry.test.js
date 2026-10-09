@@ -8,7 +8,7 @@ for (const operation of ["refreshScopes()", 'queueEditCommand("undo")']) {
   for (const scenario of ["perspective draft", "rejected sync", "deferred sync"]) {
     test(`${operation} stops retrying with ${scenario}`, async () => {
       let syncCalls = 0;
-      const context = vm.createContext({
+      const context = vm.createContext({ localsBypassed: () => false,
         state: { session: {}, currentView: "hdr", globalEditDirty: true,
           perspectiveMode: scenario === "perspective draft" },
         // Bound a regression before it can starve the test process or OOM.
@@ -26,7 +26,7 @@ for (const operation of ["refreshScopes()", 'queueEditCommand("undo")']) {
 
 test("scope refresh proceeds after one successful sync", async () => {
   let syncCalls = 0;
-  const context = vm.createContext({
+  const context = vm.createContext({ localsBypassed: () => false,
     state: { session: { session_id: "test" }, currentView: "hdr", globalEditDirty: true,
       scopeGeneration: 0, scopeMode: "histogram" },
     syncGlobalEditState: async () => { syncCalls++; context.state.globalEditDirty = false; return true; },

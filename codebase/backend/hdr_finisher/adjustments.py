@@ -1788,6 +1788,10 @@ def _apply_vignette(
     scale = np.float32(max(1.0, 0.5 * min(width, height)))
     dx = np.abs((x - np.float32(vignette.center_x * max(width - 1, 1))) / scale)
     dy = np.abs((y - np.float32(vignette.center_y * max(height - 1, 1))) / scale)
+    # Horizontal and Vertical Scale stretch the shape about its center. 100%
+    # divides by exactly one, so an unscaled vignette keeps its pixels.
+    dx /= np.float32(vignette.scale_x / 100.0)
+    dy /= np.float32(vignette.scale_y / 100.0)
     roundness = float(vignette.roundness) / 100.0
     exponent = 2.0 + 6.0 * roundness if roundness >= 0.0 else 2.0 + roundness
     radius = np.power(np.power(dx, exponent) + np.power(dy, exponent), 1.0 / exponent)

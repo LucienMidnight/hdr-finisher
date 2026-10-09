@@ -182,17 +182,14 @@ function bindPerspectiveEditor() {
 function setPerspectiveStatus(message, phase = state.perspectivePhase) {
   state.perspectivePhase = phase;
   if (els.perspectiveStatus) els.perspectiveStatus.textContent = message;
-  if (els.perspectiveApplyStatus) {
-    els.perspectiveApplyStatus.textContent = ({ unapplied: "Unapplied", preparing: "Preparing draft",
-      applying: "Applying…", applied: "Applied", failed: "Apply failed", previewFailed: "Preview failed" })[phase] || "";
-    els.perspectiveApplyStatus.dataset.phase = phase;
-  }
   const reset = els.groupResets?.find((button) => button.dataset.resetGroup === "perspective");
   const resetRetry = phase === "failed" && Boolean(state.perspectiveApplyOperation?.signature) && state.globalEditDirty;
   reset?.classList.toggle("perspective-reset-retry", resetRetry);
   if (reset) reset.textContent = resetRetry ? "Retry Reset" : "Reset";
   if (phase === "failed" || phase === "previewFailed") {
     status.post({ id: "perspective", severity: "error", message });
+  } else if (phase === "applied") {
+    status.post({ id: "perspective", severity: "success", message });
   } else status.clear("perspective");
   renderViewerStatus();
 }
@@ -650,7 +647,7 @@ async function renderPerspectiveGpuDraft() {
       if (!state.perspectiveApplyOperation?.saving) setPerspectiveStatus("Preparing the GPU perspective draft…", "preparing");
       state.perspectiveGpuDraftPromise = window.HDRPerspectiveDraft.prepare(state.gpuPreview,
         sessionId, lane, state.adjustments, sampleCurvePoints, perspectiveDraftLongEdge(),
-        state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())), state.editRevision,
+        localsBypassed() ? [] : JSON.parse(JSON.stringify(localAdjustments())), state.editRevision,
         projectReferenceWhiteNits(), state.session.source, isCurrent).then((prepared) => {
           if (!isCurrent()) { prepared?.destroy(); return null; }
           state.perspectiveGpuDraft = prepared;
@@ -708,8 +705,8 @@ async function renderPerspectiveDraftPreview() {
         adjustments: state.adjustments,
         transient_adjustments: true,
         edit_revision: state.editRevision,
-        include_locals: !state.compareWithoutLocals,
-        local_adjustments: state.compareWithoutLocals ? [] : localAdjustments(),
+        include_locals: !localsBypassed(),
+        local_adjustments: localsBypassed() ? [] : localAdjustments(),
         long_edge: perspectiveDraftLongEdge(),
         hdr_display: mediaQueryMatch("(dynamic-range: high)"),
         tier: "interactive",

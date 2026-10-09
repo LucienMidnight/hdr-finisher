@@ -69,6 +69,12 @@ function bindVignetteCenter() {
     state.vignettePickCenter = !state.vignettePickCenter;
     renderVignetteCenter();
   });
+  els.vignetteShowOverlay?.addEventListener("click", () => {
+    state.vignetteShowOverlay = !state.vignetteShowOverlay;
+    renderVignetteCenter();
+  });
+  // The outline follows every Vignette slider as it moves.
+  document.querySelector(".vignette-group")?.addEventListener("input", () => renderVignetteShape());
   const movePointerGesture = (event) => {
     const gesture = state.vignetteCenterGesture;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
@@ -129,6 +135,63 @@ function updateVignetteCenter(x, y, lane = state.currentView) {
   invalidatePreview(lane); debouncePreview(lane);
 }
 
+/**
+ * One closed outline of the vignette at `radius`, in frame pixels. It is the
+ * same shape the renderer shades: a superellipse whose corners follow
+ * Roundness and whose axes follow Horizontal and Vertical Scale.
+ */
+function vignetteOutlinePath(vignette, radius, width, height) {
+  const unit = Math.max(1, 0.5 * Math.min(width, height));
+  const roundness = (Number(vignette.roundness) || 0) / 100;
+  const exponent = Math.max(1, roundness >= 0 ? 2 + 6 * roundness : 2 + roundness);
+  const centerX = vignette.center_x * Math.max(width - 1, 1);
+  const centerY = vignette.center_y * Math.max(height - 1, 1);
+  const reachX = radius * unit * (Number(vignette.scale_x) || 100) / 100;
+  const reachY = radius * unit * (Number(vignette.scale_y) || 100) / 100;
+  const points = [];
+  for (let step = 0; step < 96; step += 1) {
+    const angle = step / 96 * 2 * Math.PI;
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    const x = centerX + Math.sign(cosine) * reachX * Math.abs(cosine) ** (2 / exponent);
+    const y = centerY + Math.sign(sine) * reachY * Math.abs(sine) ** (2 / exponent);
+    points.push(`${step ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`);
+  }
+  return `${points.join("")}Z`;
+}
+
+function renderVignetteShape() {
+  const overlay = els.vignetteShapeOverlay;
+  if (!overlay) return;
+  const groupOpen = !document.querySelector(".vignette-group")?.classList.contains("collapsed");
+  const preview = activePreviewElement();
+  const paneRect = els.previewPrimaryPane?.getBoundingClientRect();
+  const imageRect = preview?.getBoundingClientRect();
+  const frameWidth = preview instanceof HTMLCanvasElement ? preview.width : preview?.naturalWidth;
+  const frameHeight = preview instanceof HTMLCanvasElement ? preview.height : preview?.naturalHeight;
+  const visible = Boolean(state.session) && state.vignetteShowOverlay && groupOpen && state.activeWorkflow === "grade"
+    && imageRect?.width > 0 && frameWidth > 0 && frameHeight > 0;
+  overlay.classList.toggle("hidden", !visible);
+  if (els.vignetteShowOverlay) {
+    els.vignetteShowOverlay.setAttribute("aria-pressed", String(state.vignetteShowOverlay));
+    els.vignetteShowOverlay.lastElementChild.textContent = state.vignetteShowOverlay ? "Hide overlay" : "Show overlay";
+  }
+  if (!visible) return;
+  const vignette = state.adjustments[state.currentView]?.vignette || defaultVignette();
+  Object.assign(overlay.style, {
+    left: `${imageRect.left - paneRect.left}px`, top: `${imageRect.top - paneRect.top}px`,
+    width: `${imageRect.width}px`, height: `${imageRect.height}px`,
+  });
+  overlay.setAttribute("viewBox", `0 0 ${frameWidth} ${frameHeight}`);
+  overlay.setAttribute("preserveAspectRatio", "none");
+  // The same start and end the renderer uses: nothing inside the inner line,
+  // full strength outside the dashed outer line.
+  const start = 0.15 + 0.70 * (vignette.midpoint ?? 50) / 100;
+  const end = start + 0.02 + 0.98 * (vignette.feather ?? 75) / 100;
+  overlay.querySelector(".vignette-shape-inner").setAttribute("d", vignetteOutlinePath(vignette, start, frameWidth, frameHeight));
+  overlay.querySelector(".vignette-shape-outer").setAttribute("d", vignetteOutlinePath(vignette, end, frameWidth, frameHeight));
+}
+
 function renderVignetteCenter() {
   if (!els.vignetteCenterHandle) return;
   const vignette = state.adjustments[state.currentView]?.vignette || defaultVignette();
@@ -145,6 +208,7 @@ function renderVignetteCenter() {
   const visible = state.activeWorkflow === "grade" && (state.vignettePickCenter || groupOpen);
   els.vignetteCenterHandle.classList.toggle("hidden", !visible);
   els.vignettePickCenter?.setAttribute("aria-pressed", String(state.vignettePickCenter));
+  renderVignetteShape();
   const dark = vignette.amount < 0;
   els.vignetteHighlightProtectionRow?.classList.toggle("control-disabled", !dark);
   els.vignetteHighlightProtectionRow?.querySelector("input")?.toggleAttribute("disabled", !dark);

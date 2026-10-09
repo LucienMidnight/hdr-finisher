@@ -30,15 +30,64 @@ function clearNavigationThumbnail() {
   els.navigationThumb.classList.add("hidden");
 }
 
+const NAVIGATION_WINDOW_MODES = ["auto", "always", "off"];
+const NAVIGATION_WINDOW_MARGIN_PX = 12;
+
+/**
+ * Whether the Navigate window belongs on screen. Auto shows it for any view
+ * closer than Fit, because Fit is the largest view with nothing off screen.
+ */
+function navigationWindowWanted() {
+  if (!state.session || state.navigationWindowMode === "off") return false;
+  if (state.navigationWindowMode === "always") return true;
+  return state.zoomMode === "custom" && state.zoomPercent > (state.fitZoomPercent || 100) * 1.001;
+}
+
+/**
+ * The size of the overview picture for an image of this aspect ratio inside a
+ * viewer of this size. It stays a modest corner inset for ordinary pictures.
+ * A very wide strip (a line-scan panorama) or a very tall one keeps a short
+ * edge that can still be clicked, and is squeezed along its long edge once it
+ * would otherwise leave the viewer.
+ */
+function navigationWindowSize(aspect, viewWidth, viewHeight) {
+  const ratio = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  const minEdge = 28;
+  const chrome = 2 * NAVIGATION_WINDOW_MARGIN_PX + 16;
+  const widthLimit = Math.max(minEdge, Math.min(viewWidth * 0.6, viewWidth - chrome));
+  const heightLimit = Math.max(minEdge, Math.min(viewHeight * 0.5, viewHeight - chrome - 16));
+  let width = Math.min(clamp(viewWidth * 0.22, 120, 260), clamp(viewHeight * 0.3, 90, 220) * ratio);
+  let height = width / ratio;
+  if (height < minEdge) { height = minEdge; width = height * ratio; }
+  if (width < minEdge) { width = minEdge; height = width / ratio; }
+  return { width: Math.round(Math.min(width, widthLimit)), height: Math.round(Math.min(height, heightLimit)) };
+}
+
+function setNavigationWindowMode(mode) {
+  state.navigationWindowMode = NAVIGATION_WINDOW_MODES.includes(mode) ? mode : "auto";
+  document.querySelectorAll("[data-navigation-window]").forEach((item) => {
+    item.setAttribute("aria-checked", String(item.dataset.navigationWindow === state.navigationWindowMode));
+  });
+  scheduleNavigationThumbnail();
+}
+
 function updateNavigationViewport() {
-  const visible = state.session && state.zoomMode === "custom" && state.zoomPercent >= 100
-    && Boolean(els.navigationThumbImage.src);
+  const visible = navigationWindowWanted() && Boolean(els.navigationThumbImage.src);
   els.navigationThumb.classList.toggle("hidden", !visible);
   if (!visible) return;
   const preview = activePreviewElement();
   const frameWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
   const frameHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
   if (!(frameWidth > 0 && frameHeight > 0)) return;
+  // Anchor the bottom-right corner just inside the picture area, clear of its
+  // scroll bars; the top-left corner moves with the picture's shape.
+  const panel = els.navigationThumb.parentElement.getBoundingClientRect();
+  const frame = els.dropzone.getBoundingClientRect();
+  const size = navigationWindowSize(frameWidth / frameHeight, els.dropzone.clientWidth, els.dropzone.clientHeight);
+  els.navigationThumb.style.right = `${panel.right - (frame.left + els.dropzone.clientLeft + els.dropzone.clientWidth) + NAVIGATION_WINDOW_MARGIN_PX}px`;
+  els.navigationThumb.style.bottom = `${panel.bottom - (frame.top + els.dropzone.clientTop + els.dropzone.clientHeight) + NAVIGATION_WINDOW_MARGIN_PX}px`;
+  els.navigationThumbImage.parentElement.style.width = `${size.width}px`;
+  els.navigationThumbImage.parentElement.style.height = `${size.height}px`;
   const rect = visibleOutputRect(frameWidth, frameHeight)
     || { x: 0, y: 0, width: frameWidth, height: frameHeight };
   const outline = els.navigationThumbViewport.style;
@@ -51,7 +100,7 @@ function updateNavigationViewport() {
 function scheduleNavigationThumbnail() {
   updateNavigationViewport();
   window.clearTimeout(navigationThumbnail.timer);
-  if (!state.session || state.zoomMode !== "custom" || state.zoomPercent < 100) return;
+  if (!navigationWindowWanted()) return;
   navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
 }
 
@@ -70,7 +119,7 @@ function navigationThumbnailWorkReady() {
 }
 
 async function refreshNavigationThumbnail() {
-  if (!state.session || state.zoomMode !== "custom" || state.zoomPercent < 100) return;
+  if (!navigationWindowWanted()) return;
   // Overview work starts only after the requested picture and scopes settle.
   // The GPU route grades a separate 512-edge canvas; CPU mode keeps its small
   // fallback here, outside foreground refinement.
@@ -87,7 +136,7 @@ async function refreshNavigationThumbnail() {
   }
   const request = window.HDRWholeImagePreviewPipe.request("navigation", state.session.source.width,
     { sessionId, lane, editRevision: state.editRevision, generation: state.previewGeneration[lane],
-      geometrySignature: geometrySignature(), includeLocals: !state.compareWithoutLocals });
+      geometrySignature: geometrySignature(), includeLocals: !localsBypassed() });
   const key = JSON.stringify(request);
   if (navigationThumbnail.key === key && navigationThumbnail.url) return;
   if (navigationThumbnail.inflightKey === key && navigationThumbnail.controller) return;
@@ -100,8 +149,8 @@ async function refreshNavigationThumbnail() {
     && state.editRevision === request.editRevision && !state.globalEditDirty
     && state.previewGeneration[lane] === request.generation
     && geometrySignature() === request.geometrySignature
-    && state.zoomMode === "custom" && state.zoomPercent >= 100
-    && request.includeLocals === !state.compareWithoutLocals
+    && navigationWindowWanted()
+    && request.includeLocals === !localsBypassed()
     && !state.previewScheduler?.interacting && !state.gpuDraftInFlight;
   try {
     let blob;
@@ -114,7 +163,7 @@ async function refreshNavigationThumbnail() {
       const response = await fetch(`/api/session/${sessionId}/preview/${lane}?purpose=navigation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ edit_revision: request.editRevision, include_locals: !state.compareWithoutLocals,
+        body: JSON.stringify({ edit_revision: request.editRevision, include_locals: !localsBypassed(),
           long_edge: request.longEdge, execution: "whole", hdr_display: false }),
         signal: controller.signal,
       });
@@ -313,6 +362,7 @@ function applyZoomGeometry() {
   const deviceRatio = Math.max(1, Number(window.devicePixelRatio) || 1);
   const fitPercent = Math.min(paneWidth * deviceRatio / fitSourceWidth,
     paneHeight * deviceRatio / fitSourceHeight) * 100;
+  state.fitZoomPercent = fitPercent;
   const percent = state.zoomMode === "fit" ? fitPercent : state.zoomPercent;
   const displayWidth = Math.max(1, sourceWidth * percent / (100 * deviceRatio));
   const displayHeight = Math.max(1, sourceHeight * percent / (100 * deviceRatio));

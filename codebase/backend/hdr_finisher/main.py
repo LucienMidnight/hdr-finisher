@@ -625,6 +625,15 @@ def update_interpretation(session_id: str, override: SourceInterpretationOverrid
     return SessionSummary(session=session.to_payload())
 
 
+@app.get("/api/session/{session_id}/starting-adjustments")
+def get_starting_adjustments(session_id: str) -> dict[str, object]:
+    """The grade this file had when it was imported: the Before of Before / After."""
+    try:
+        return store.get(session_id).starting_adjustments().model_dump(mode="json")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.get("/api/session/{session_id}/edit-state", response_model=EditStateResponse)
 def get_edit_state(session_id: str) -> EditStateResponse:
     try:
@@ -763,7 +772,7 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
     did not run. The engineering-only Full selector requests this route for
     CPU previews; public tiers continue to use whole-frame execution.
     """
-    local_adjustments = (
+    local_adjustments = adjustments.enabled_locals(
         (
             request.local_adjustments
             if request.local_adjustments is not None
@@ -942,11 +951,11 @@ def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
             adjustments,
             kind,
             preview_long_edge,
-            local_adjustments=(
+            local_adjustments=adjustments.enabled_locals((
                 request.local_adjustments
                 if request.local_adjustments is not None
                 else session.local_adjustments
-            ) if request.include_locals else [],
+            ) if request.include_locals else []),
         )
         body, media_type = encode_processed_overlay_bytes(processed, adjustments, kind, session.color_context)
     except RuntimeError as exc:
@@ -981,7 +990,7 @@ def scopes(
         bins or 256,
         columns,
         int(max_nits.value),
-        local_adjustments=session.local_adjustments,
+        local_adjustments=session.adjustments.enabled_locals(session.local_adjustments),
         channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
     )
 
@@ -1015,11 +1024,11 @@ def scopes_for_adjustments(
             columns,
             int(max_nits.value),
             is_current=lambda: session.scope_tokens[kind] == token,
-            local_adjustments=(
+            local_adjustments=adjustments.enabled_locals((
                 request.local_adjustments
                 if request.local_adjustments is not None
                 else session.local_adjustments
-            ) if request.include_locals else [],
+            ) if request.include_locals else []),
             channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
             scope_region=(
                 request.scope_region.x,

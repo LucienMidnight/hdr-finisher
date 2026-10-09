@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const { declarations } = require('./frontend-source.js');
 function fixture() {
   const jobs = [];
-  const context = vm.createContext({
+  const context = vm.createContext({ localsBypassed: () => false,
     state: { session: { session_id: 'one' }, editRevision: 1, previewGeneration: { hdr: 1 },
       gpuPreview: { available: true } },
     geometryDraftActive: () => false,
@@ -49,7 +49,7 @@ test('An edit revision change is not mistaken for the same CPU request', async (
 for (const stale of [false, true]) {
   test(`Watchdog ${stale ? 'recovers obsolete' : 'does not restart active'} CPU work`, () => {
     let tick, schedules = 0;
-    const context = vm.createContext({
+    const context = vm.createContext({ localsBypassed: () => false,
       state: { session: { session_id: 'one' }, currentView: 'hdr', previewGeneration: { hdr: 2 },
         cpuPreviewInflight: new Map([['hdr', { sessionId: 'one', generation: stale ? 1 : 2 }]]),
         previewScheduler: { schedule: () => schedules++ }, previewWatchdogRearms: 0 },

@@ -49,6 +49,12 @@ async function handleDesktopCommand(command, payload = null) {
     }
     return applyRenderingMode(payload?.mode);
   }
+  if (command === "navigation-window") {
+    // The preference round trip applies it; without the shell, apply directly.
+    if (window.HDRApplicationShell) return window.HDRApplicationShell.setNavigationWindowPreference(payload?.mode);
+    return setNavigationWindowMode(payload?.mode);
+  }
+  if (command === "compare-mode") return setCompareMode(payload?.mode);
   if (command === "settings") return window.HDRApplicationShell?.openSettings();
   if (command === "help") return window.HDRApplicationShell?.openHelp();
   if (command === "check-updates") {
@@ -155,6 +161,7 @@ async function initializeApplicationShell() {
       const selectablePreviewResolution = preferredPreviewResolution;
       state.fasterDragging = preferences.fasterDragging === true;
       if (els.previewFasterDragging) els.previewFasterDragging.checked = state.fasterDragging;
+      if (preferences.navigationWindow !== state.navigationWindowMode) setNavigationWindowMode(preferences.navigationWindow);
       if (options.initial) {
         state.previewResolutionOverride = selectablePreviewResolution !== "auto";
         if (state.previewResolutionOverride) state.previewResolution = selectablePreviewResolution;

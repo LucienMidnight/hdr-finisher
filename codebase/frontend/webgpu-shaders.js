@@ -1727,7 +1727,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let dimensions = frameDimensions();
       let center = vec2f(p[${GPU_PARAMS.VIGNETTE_CENTER_X}], p[${GPU_PARAMS.VIGNETTE_CENTER_Y}]) * max(dimensions - vec2f(1.0), vec2f(1.0));
       let scale = max(1.0, 0.5 * min(dimensions.x, dimensions.y));
-      let delta = abs((vec2f(frameCoordinate(coordinate)) - center) / scale);
+      let delta = abs((vec2f(frameCoordinate(coordinate)) - center) / scale)
+        / vec2f(p[${GPU_PARAMS.VIGNETTE_SCALE_X}], p[${GPU_PARAMS.VIGNETTE_SCALE_Y}]);
       let exponent = max(p[${GPU_PARAMS.VIGNETTE_ROUNDNESS}], 1.0);
       let radius = pow(pow(delta.x, exponent) + pow(delta.y, exponent), 1.0 / exponent);
       var mask = smoothRange(p[${GPU_PARAMS.VIGNETTE_MIDPOINT}], p[${GPU_PARAMS.VIGNETTE_MIDPOINT}] + p[${GPU_PARAMS.VIGNETTE_FEATHER}], radius);

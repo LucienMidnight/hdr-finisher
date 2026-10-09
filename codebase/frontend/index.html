@@ -47,6 +47,22 @@
           <button type="button" role="menuitem" data-view-action="zoom-in">Zoom In</button>
           <button type="button" role="menuitem" data-view-action="zoom-out">Zoom Out</button>
           <span class="window-menu-separator" role="separator"></span>
+          <div class="window-submenu">
+            <button class="window-submenu-trigger" type="button" role="menuitem" aria-haspopup="menu" aria-expanded="false">Preview Compares</button>
+            <div class="window-submenu-popover" role="menu" aria-label="Preview Compares" hidden>
+              <button type="button" role="menuitemradio" aria-checked="true" data-compare-mode="lanes">HDR / SDR</button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-compare-mode="before">Before / After</button>
+            </div>
+          </div>
+          <div class="window-submenu">
+            <button class="window-submenu-trigger" type="button" role="menuitem" aria-haspopup="menu" aria-expanded="false">Navigate Window</button>
+            <div class="window-submenu-popover" role="menu" aria-label="Navigate Window" hidden>
+              <button type="button" role="menuitemradio" aria-checked="false" data-navigation-window="always">Always Show</button>
+              <button type="button" role="menuitemradio" aria-checked="true" data-navigation-window="auto">Auto</button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-navigation-window="off">Off</button>
+            </div>
+          </div>
+          <span class="window-menu-separator" role="separator"></span>
           <button type="button" role="menuitem" data-window-action="fullscreen">Toggle Full Screen</button>
         </div>
       </div>
@@ -414,6 +430,7 @@
                 <svg id="perspective-guide-svg" aria-hidden="true"></svg>
                 <div id="perspective-guide-handles"></div>
               </div>
+              <svg id="vignette-shape-overlay" class="vignette-shape-overlay hidden" aria-hidden="true"><path class="vignette-shape-outer"/><path class="vignette-shape-inner"/></svg>
               <button id="vignette-center-handle" class="vignette-center-handle hidden" type="button" aria-label="Vignette center. Arrow keys move by one percent; Shift plus arrow moves by five percent.">+</button>
             </div>
             <div id="preview-secondary-pane" class="preview-pane preview-secondary-pane" data-lane="sdr" aria-hidden="true">
@@ -672,8 +689,9 @@
       <section class="control-group collapsed local-adjustments-group" id="local-adjustments-group" data-group="local-adjustments">
         <div class="control-group-header">
           <button class="group-toggle" id="grade-mode-local" type="button" aria-expanded="false">
-            Local Adjustments <span id="local-adjustment-count">0</span>
+            Local Adjustments
           </button>
+          <button id="local-adjustments-bypass" class="section-bypass text-button" type="button" data-section-path="shared.local_adjustments_enabled" aria-pressed="true" aria-label="Toggle Local Adjustments">&#9673;</button>
         </div>
         <div id="local-adjustments-panel" class="control-group-body local-adjustments-panel" aria-label="Local adjustments">
         <div class="local-section-heading">Mask Tools</div>
@@ -693,7 +711,6 @@
         </div>
         <div class="local-stack-heading">
           <span>Adjustments</span>
-          <button id="local-compare" class="text-button" type="button" aria-pressed="false">Compare without</button>
         </div>
         <div class="local-stack-surface">
           <ol id="local-adjustment-list" class="local-adjustment-list" aria-label="Local adjustment stack"></ol>
@@ -813,7 +830,7 @@
 
       <section class="control-group collapsed" data-group="perspective">
         <div class="control-group-header">
-          <button class="group-toggle" type="button" aria-expanded="false">Perspective <span data-modified-count="perspective">Default</span><span id="perspective-apply-status" class="perspective-apply-status" aria-live="polite"></span></button>
+          <button class="group-toggle" type="button" aria-expanded="false">Perspective <span data-modified-count="perspective">Default</span></button>
           <button class="group-reset text-button" type="button" data-reset-group="perspective">Reset</button>
         </div>
         <div class="control-group-body perspective-options">
@@ -1423,10 +1440,12 @@
         </div>
         <div class="control-group-body">
           <div id="vignette-sdr-actions" class="film-look-actions hidden"><button id="vignette-match-hdr" class="button-secondary" type="button">Match HDR vignette</button><span>Copies once; SDR remains independent.</span></div>
+          <div class="local-overlay-actions vignette-overlay-actions"><button id="vignette-show-overlay" class="local-overlay-toggle" type="button" aria-pressed="false" data-tooltip="Outlines where the vignette starts and where it reaches full strength. Preview only: never exported."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show overlay</span></button></div>
           <button id="vignette-pick-center" class="button-secondary" type="button" aria-pressed="false">Pick Center in Preview</button>
           <div class="control-row" data-control-path="current.vignette.amount"><div class="control-heading"><label>Amount</label><output data-value-path="current.vignette.amount">0%</output></div><input type="range" min="-100" max="100" step="1" value="0" data-path="current.vignette.amount"></div>
           <div class="control-pair"><div class="control-row" data-control-path="current.vignette.midpoint"><div class="control-heading"><label>Midpoint</label><output data-value-path="current.vignette.midpoint">50%</output></div><input type="range" min="0" max="100" step="1" value="50" data-path="current.vignette.midpoint"></div><div class="control-row" data-control-path="current.vignette.roundness"><div class="control-heading"><label>Roundness</label><output data-value-path="current.vignette.roundness">0%</output></div><input type="range" min="-100" max="100" step="1" value="0" data-path="current.vignette.roundness"></div></div>
           <div class="control-pair"><div class="control-row" data-control-path="current.vignette.feather"><div class="control-heading"><label>Feather</label><output data-value-path="current.vignette.feather">75%</output></div><input type="range" min="0" max="100" step="1" value="75" data-path="current.vignette.feather"></div><div class="control-row" id="vignette-highlight-protection-row" data-control-path="current.vignette.highlight_protection"><div class="control-heading"><label>Highlight Protection</label><output data-value-path="current.vignette.highlight_protection">0%</output></div><input type="range" min="0" max="100" step="1" value="0" data-path="current.vignette.highlight_protection"></div></div>
+          <div class="control-pair"><div class="control-row" data-control-path="current.vignette.scale_x"><div class="control-heading"><label>Horizontal Scale</label><output data-value-path="current.vignette.scale_x">100%</output></div><input type="range" min="25" max="300" step="1" value="100" data-path="current.vignette.scale_x"></div><div class="control-row" data-control-path="current.vignette.scale_y"><div class="control-heading"><label>Vertical Scale</label><output data-value-path="current.vignette.scale_y">100%</output></div><input type="range" min="25" max="300" step="1" value="100" data-path="current.vignette.scale_y"></div></div>
           <div class="control-pair"><label>Center X <span class="percent-input"><input id="vignette-center-x" type="number" min="0" max="100" step="1" value="50"><span>%</span></span></label><label>Center Y <span class="percent-input"><input id="vignette-center-y" type="number" min="0" max="100" step="1" value="50"><span>%</span></span></label></div>
         </div>
       </section>
