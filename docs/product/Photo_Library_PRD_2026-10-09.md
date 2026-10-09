@@ -314,6 +314,10 @@ Decided:
 - Decided October 9 from the mock-up. The picker takes several folders at
   once: click, Ctrl-click and Shift-click, as for photos. Folders already
   pinned are skipped and the picker says how many.
+- Decided October 9. Clicking a pinned folder shows everything in its
+  sub-folders together, not only the photos directly in it. The grid must
+  therefore stay quick when a parent folder holds many thousands of photos
+  (see the size target, 5.19).
 
 Proposed:
 
@@ -571,9 +575,12 @@ Decided:
     and marks show under the photos.
   - Overlay colours can also be changed by clicking the colour square in
     the legend.
-  - **Overlay colours are remembered between launches.** This is a stated
-    exception to the start-neutral rule in the design guidelines: it is a
-    preference about the user's eyes and photos, not a layout.
+  - **The option-panel settings are remembered between launches:** overlay
+    colours, strength, sensitivity, which exposure warnings show, and the
+    compare layout. This is a stated exception to the start-neutral rule
+    in the design guidelines: they are preferences about the user's eyes,
+    camera and photos, not a layout. Whether an overlay is switched on is
+    not remembered.
   - Maps store only where, not what colour; the colour is applied on
     screen, so changing a colour never re-makes maps.
 
@@ -723,6 +730,18 @@ Decided:
   are grouped; each group twirls down for finer choices.
 - **Look presets:** styling presets applied from a menu and then customised,
   in the manner of DxO.
+- Decided October 9 from the mock-up:
+  - Ctrl+C copies the grade of the selected photo. Ctrl+V pastes it onto
+    the selection with the same ticks as last time, after a confirmation
+    that says how many photos change and offers "Choose what to paste".
+    Ctrl+Shift+V goes straight to the tick list.
+  - The tick list shows, for each group and setting, whether the copied
+    photo changed it (`Mod`) or left it at default, with quick choices
+    All, Modified only and None. HDR grade and SDR grade are two ticks at
+    the top.
+  - The dialog states how many photos will change, that each keeps its
+    previous grade, and what will be skipped for which photos.
+  - "Save as look preset" is offered from the same dialog.
 
 Proposed:
 

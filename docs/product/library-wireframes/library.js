@@ -328,6 +328,13 @@
   function undo() {
     const last = state.undo.pop();
     if (!last) return;
+    if (last.pasted) {
+      last.pasted.forEach(({ p, edited, before }) => { p.edited = edited; p.before = before; });
+      computeShown();
+      renderGrid(false);
+      refresh();
+      return toast(`Undid paste on ${last.pasted.length} ${last.pasted.length === 1 ? "photo" : "photos"}`);
+    }
     if (last.deleted) {
       last.deleted.forEach(({ p, at }) => photos.splice(at, 0, p));
       computeShown();
@@ -806,7 +813,12 @@
   // A key is the instant on/off. A click opens the panel, which has the same
   // on/off switch plus the slower, detailed settings.
 
+  // Remembered between launches, with the colours. Whether an overlay is on is not.
   const opts = { focus: { strength: 85, sensitivity: 50 }, exposure: { strength: 90, high: true, low: true }, compare: { layout: "side", names: true } };
+  try {
+    const saved = JSON.parse(recall("options", "{}"));
+    Object.keys(opts).forEach((kind) => Object.assign(opts[kind], saved[kind] || {}));
+  } catch (e) { /* start from the defaults */ }
   let optionsKind = null;
 
   function applyOptions() {
@@ -821,6 +833,7 @@
     app.dataset.low = opts.exposure.low ? "on" : "off";
     $("compare").dataset.layout = opts.compare.layout;
     app.dataset.compareNames = opts.compare.names ? "on" : "off";
+    remember("options", JSON.stringify(opts));
   }
 
   const isOn = (kind) => (kind === "compare" ? state.view === "compare" : app.dataset[kind] === "on");
@@ -835,7 +848,7 @@
       <hr>
       ${slider("focus", "strength", "Strength", 10, 100)}
       ${slider("focus", "sensitivity", "Sensitivity", 0, 100)}
-      ${row("Colour", "", colour("focus", "Focus"))}
+      ${row("Color", "", colour("focus", "Focus"))}
       <p class="helper">Shows where the sharp plane is, not whether it is on the right subject. At high ISO, noise can read as detail; lower the sensitivity.</p>`,
     exposure: () => `
       ${row("Show exposure overlay", "E", `<input type="checkbox" class="opt-switch" data-switch="exposure" ${isOn("exposure") ? "checked" : ""}>`)}
@@ -963,6 +976,8 @@
     if (event.ctrlKey || event.metaKey) {
       if (key.toLowerCase() === "a") { event.preventDefault(); state.sel = new Set(state.shown.map((p) => p.id)); refresh(); }
       if (key.toLowerCase() === "z") { event.preventDefault(); undo(); }
+      if (key.toLowerCase() === "c") { event.preventDefault(); copyGrade(); }
+      if (key.toLowerCase() === "v") { event.preventDefault(); pasteGrade(event.shiftKey); }
       return;
     }
     const step = state.view === "grid" && !state.review ? columns() : 0;
@@ -1069,8 +1084,10 @@
       { label: "Pick", key: "P", action: () => setFlag("pick") },
       { label: rejected ? "Unmark" : "Reject", key: rejected ? "U" : "X", action: () => setFlag(rejected ? null : "reject") },
       "-",
-      { label: "Copy grade…" },
-      { label: "Paste grade…" },
+      one && { label: "Copy grade", key: "Ctrl+C", action: copyGrade },
+      { label: "Paste grade", key: "Ctrl+V", action: () => pasteGrade(false) },
+      { label: "Paste grade, choosing what…", key: "Ctrl+Shift+V", action: () => pasteGrade(true) },
+      list.some((p) => p.before) && { label: "Restore previous grade", action: restoreGrade },
       { label: "Apply look preset…" },
       { label: one ? "Create virtual copy" : "Create virtual copies" },
       "-",
@@ -1139,6 +1156,143 @@
       return openMenu(event.clientX, event.clientY, photoMenu());
     }
     openMenu(event.clientX, event.clientY, placeMenu(placeOf(row.dataset.place)));
+  });
+
+  // ---------- copy a grade, paste chosen parts of it ----------
+  // One mechanism for copy and paste, sync and look presets: a tick list of
+  // what to bring across. Names follow the Control Panel on the Grade stage.
+
+  const PARTS = [
+    { id: "tone", label: "Tone", items: ["Tone", "Highlight Compression", "Exposure Bands", "Lift, Gamma, Gain", "Curves"] },
+    { id: "color", label: "Color", items: ["Color", "Color Grading", "Black and White"] },
+    { id: "look", label: "Look", items: ["Film Look", "Vignette"] },
+    { id: "detail", label: "Detail", items: ["Detail", "Denoise"] },
+    { id: "raw", label: "White balance and RAW development", items: ["White Balance", "RAW Development"], outside: true, rawOnly: true },
+    { id: "lens", label: "Lens corrections", items: ["Distortion", "Chromatic aberration", "Vignetting"], outside: true, off: true, rawOnly: true },
+    { id: "crop", label: "Crop and geometry", items: ["Crop & Rotate", "Perspective"], outside: true, off: true },
+    { id: "local", label: "Local adjustments and masks", items: ["Local Adjustments", "Masks"], outside: true, off: true },
+  ];
+  const partKeys = (part) => part.items.map((_, i) => `${part.id}.${i}`);
+  // Off by default: things that do not carry cleanly from one frame to another.
+  const clip = { source: null, ticks: new Set(PARTS.filter((part) => !part.off).flatMap(partKeys)), sides: { hdr: true, sdr: true }, open: new Set(), targets: [] };
+  // Which settings the copied photo actually changed (pretend, but steady per photo).
+  const isMod = (key) => clip.source && ((clip.source.id * 7 + key.length * 13 + key.charCodeAt(key.length - 1) * 5) % 5 < 2 || key === "tone.0");
+
+  function copyGrade() {
+    const list = targets();
+    if (list.length !== 1) return toast("Select one photo to copy its grade.");
+    if (!list[0].edited) return toast(`${list[0].name} has no grade yet. Nothing to copy.`);
+    clip.source = list[0];
+    toast(`Grade copied from ${clip.source.name}. Ctrl+V pastes it; Ctrl+Shift+V lets you choose what.`);
+  }
+
+  function chosenLabels() {
+    return PARTS.filter((part) => partKeys(part).some((k) => clip.ticks.has(k)))
+      .map((part) => (partKeys(part).every((k) => clip.ticks.has(k)) ? part.label : `${part.label} (part)`));
+  }
+
+  // Settings that cannot apply to some targets are skipped, and the app says which.
+  function skippedNote(list) {
+    const notRaw = list.filter((p) => p.kind !== "RAW");
+    const rawParts = PARTS.filter((part) => part.rawOnly && partKeys(part).some((k) => clip.ticks.has(k))).map((part) => part.label);
+    return notRaw.length && rawParts.length
+      ? `\n${notRaw.length} of them ${notRaw.length === 1 ? "is not a RAW file" : "are not RAW files"}: ${rawParts.join(" and ")} will be skipped for ${notRaw.length === 1 ? "it" : "them"}.` : "";
+  }
+
+  function pasteGrade(choose) {
+    if (!clip.source) return toast("Copy a grade first: select an edited photo and press Ctrl+C.");
+    const list = targets().filter((p) => p !== clip.source);
+    if (!list.length) return toast("Select the photos to paste onto.");
+    clip.targets = list;
+    if (choose) return openPaste();
+    // Plain paste repeats the last choices, after saying how many photos change.
+    const n = list.length;
+    $("confirm-title").textContent = `Paste grade onto ${n === 1 ? list[0].name : `${n} photos`}?`;
+    $("confirm-message").textContent = `From ${clip.source.name}, with the same choices as last time:\n${chosenLabels().join(", ") || "nothing ticked"}.` +
+      skippedNote(list) + `\n\n${n === 1 ? "It keeps" : "Each keeps"} its previous grade, so this can be taken back.`;
+    $("confirm-actions").innerHTML = `<button type="button" data-answer="choose">Choose what to paste…</button><button type="button" data-answer="no">Cancel</button><button type="button" class="button-primary lib-confirm-go" data-answer="yes">Paste</button>`;
+    $("confirm").onclick = (event) => {
+      const answer = event.target.dataset && event.target.dataset.answer;
+      if (!answer) return;
+      $("confirm").close();
+      if (answer === "choose") openPaste();
+      if (answer === "yes") doPaste();
+    };
+    $("confirm").showModal();
+    $("confirm").querySelector("[data-answer=yes]").focus();
+  }
+
+  function renderPaste() {
+    const n = clip.targets.length;
+    $("paste-title").textContent = `Paste grade onto ${n === 1 ? clip.targets[0].name : `${n} photos`}`;
+    $("paste-sub").textContent = `From ${clip.source.name}. Tick what to bring across.`;
+    document.querySelectorAll("#paste [data-side]").forEach((box) => { box.checked = clip.sides[box.dataset.side]; });
+    const partRow = (part) => {
+      const keys = partKeys(part);
+      const on = keys.filter((k) => clip.ticks.has(k)).length;
+      const mods = keys.filter(isMod).length;
+      const open = clip.open.has(part.id);
+      return `<label class="paste-row"><button type="button" class="twist${open ? " open" : ""}" data-twist="${part.id}" aria-label="Show the settings in ${part.label}">${icon("twist", "")}</button>
+          <input type="checkbox" data-part="${part.id}" ${on === keys.length ? "checked" : ""} data-some="${on > 0 && on < keys.length}">
+          <span class="name strong">${part.label}</span><span class="state${mods ? " mod" : ""}">${mods ? mods + " Mod" : "default"}</span></label>` +
+        (open ? keys.map((k, i) => `<label class="paste-row child"><input type="checkbox" data-key="${k}" ${clip.ticks.has(k) ? "checked" : ""}>
+          <span class="name">${part.items[i]}</span><span class="state${isMod(k) ? " mod" : ""}">${isMod(k) ? "Mod" : "default"}</span></label>`).join("") : "");
+    };
+    $("paste-list").innerHTML = `<div class="paste-kicker">Grade</div>` + PARTS.filter((part) => !part.outside).map(partRow).join("") +
+      `<div class="paste-kicker">Outside the grade · off unless ticked, because they rarely suit another frame</div>` + PARTS.filter((part) => part.outside).map(partRow).join("");
+    $("paste-list").querySelectorAll("[data-some=true]").forEach((box) => { box.indeterminate = true; });
+    const sides = clip.sides.hdr && clip.sides.sdr ? "" : clip.sides.hdr ? "\nHDR grade only: the SDR grade of each photo is left alone." : clip.sides.sdr ? "\nSDR grade only: the HDR grade of each photo is left alone." : "";
+    const nothing = !clip.ticks.size || (!clip.sides.hdr && !clip.sides.sdr);
+    $("paste-notes").textContent = nothing ? "Nothing is ticked."
+      : `${n} ${n === 1 ? "photo" : "photos"} will change and be saved straight away. ${n === 1 ? "It keeps" : "Each keeps"} its previous grade, so this can be taken back.` + sides + skippedNote(clip.targets);
+    $("paste-go").textContent = n === 1 ? "Paste" : `Paste onto ${n} photos`;
+    $("paste-go").disabled = nothing;
+  }
+
+  function openPaste() {
+    renderPaste();
+    $("paste").showModal();
+  }
+
+  function doPaste() {
+    const list = clip.targets;
+    state.undo.push({ pasted: list.map((p) => ({ p, edited: p.edited, before: p.before })) });
+    list.forEach((p) => { p.edited = true; p.before = true; });
+    computeShown();
+    renderGrid(false);
+    refresh();
+    toast(`Grade pasted onto ${list.length} ${list.length === 1 ? "photo" : "photos"} and saved. Ctrl+Z undoes it.`);
+  }
+
+  function restoreGrade() {
+    const list = targets().filter((p) => p.before);
+    list.forEach((p) => { p.before = false; });
+    refresh();
+    toast(`Previous grade restored on ${list.length} ${list.length === 1 ? "photo" : "photos"}.`);
+  }
+
+  $("paste").addEventListener("click", (event) => {
+    const twist = event.target.closest("[data-twist]");
+    const pick = event.target.closest("[data-pick]");
+    if (twist) {
+      event.preventDefault();
+      clip.open.has(twist.dataset.twist) ? clip.open.delete(twist.dataset.twist) : clip.open.add(twist.dataset.twist);
+    } else if (pick) {
+      const every = PARTS.flatMap(partKeys);
+      clip.ticks = new Set(pick.dataset.pick === "all" ? every : pick.dataset.pick === "mod" ? every.filter(isMod) : []);
+    } else if (event.target.id === "paste-cancel") return $("paste").close();
+    else if (event.target.id === "paste-preset") return toast("Look presets come in a later round: this saves the grade and these ticks under a name.");
+    else if (event.target.id === "paste-go") { $("paste").close(); return doPaste(); }
+    else return;
+    renderPaste();
+  });
+  $("paste").addEventListener("change", (event) => {
+    const t = event.target;
+    if (t.dataset.side) clip.sides[t.dataset.side] = t.checked;
+    else if (t.dataset.part) partKeys(PARTS.find((part) => part.id === t.dataset.part)).forEach((k) => (t.checked ? clip.ticks.add(k) : clip.ticks.delete(k)));
+    else if (t.dataset.key) t.checked ? clip.ticks.add(t.dataset.key) : clip.ticks.delete(t.dataset.key);
+    else return;
+    renderPaste();
   });
 
   // ---------- delete, always behind a confirmation ----------
@@ -1366,6 +1520,12 @@
   if (ask.get("first") === "on") { $("opt-first").checked = true; firstRun(); }
   if (ask.get("picker") === "on") { openPicker(); picker.chosen = picker.path[0].children.slice(0, 3); renderPicker(); }
   if (ask.has("delete")) confirmDelete(targets());
+  if (ask.has("paste")) {
+    clip.source = photos.find((p) => p.edited);
+    clip.targets = targets().filter((p) => p !== clip.source);
+    clip.open.add("tone");
+    openPaste();
+  }
   if (ask.has("menu")) openMenu(900, 300, photoMenu());
   if (ask.get("view") === "single") setView("single");
   if (ask.get("view") === "compare") setView("compare");

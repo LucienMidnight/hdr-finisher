@@ -192,6 +192,9 @@
       <dt>Click</dt><dd>Select. Ctrl-click adds, Shift-click selects a range.</dd>
       <dt>Drag in the grid</dt><dd>Draw a box to select. Start on the space around a photo. Ctrl adds.</dd>
       <dt>Right-click</dt><dd>Menu for photos, folders, projects and albums</dd>
+      <dt>Ctrl+C</dt><dd>Copy the grade of the selected photo</dd>
+      <dt>Ctrl+V</dt><dd>Paste it onto the selection, with the same choices as last time</dd>
+      <dt>Ctrl+Shift+V</dt><dd>Paste, choosing what to bring across</dd>
       <dt>Delete</dt><dd>Delete the selected photos, after a confirmation</dd>
       <dt>Double-click · Enter</dt><dd>Open in Grade (double-click works on thumbnails: grid and filmstrip)</dd>
       <dt>Arrows</dt><dd>Move. Hold Shift to extend the selection.</dd>
@@ -233,6 +236,28 @@
     <div class="application-dialog-header"><div><h2 id="confirm-title"></h2></div></div>
     <div class="app-dialog-content"><p id="confirm-message" class="lib-confirm-message"></p></div>
     <div class="app-dialog-actions" id="confirm-actions"></div>
+  </dialog>
+
+  <dialog id="paste" class="application-dialog lib-paste">
+    <div class="application-dialog-header">
+      <div><h2 id="paste-title"></h2><p class="lib-picker-sub" id="paste-sub"></p></div>
+    </div>
+    <div class="lib-paste-tools">
+      <label class="opt-check"><input type="checkbox" data-side="hdr"> HDR grade</label>
+      <label class="opt-check"><input type="checkbox" data-side="sdr"> SDR grade</label>
+      <span class="lib-filter-spacer"></span>
+      <button type="button" class="text-button" data-pick="all">All</button>
+      <button type="button" class="text-button" data-pick="mod">Modified only</button>
+      <button type="button" class="text-button" data-pick="none">None</button>
+    </div>
+    <div class="lib-paste-list" id="paste-list"></div>
+    <p class="lib-paste-notes" id="paste-notes"></p>
+    <div class="app-dialog-actions lib-picker-actions">
+      <button type="button" id="paste-preset" title="Save these choices and this grade as a named look">Save as look preset…</button>
+      <span class="lib-filter-spacer"></span>
+      <button type="button" id="paste-cancel">Cancel</button>
+      <button type="button" class="button-primary" id="paste-go"></button>
+    </div>
   </dialog>
 
   <dialog id="picker" class="application-dialog lib-picker">
