@@ -14,6 +14,39 @@ be made. The raw brainstorm, in the order it was discussed, is in git history
 
 ---
 
+## 0. Where this work happens: the `photo-library` branch
+
+**Decided by Steve, October 9. Read this before changing any code.**
+
+- **All library work, including the foundation work in section 1, is done on
+  the `photo-library` branch. Never on `main`.**
+- The branch was made on October 9, 2026 from `main` at the 0.9.0 release
+  (commit `e4274ae`). It is a branch of the same repository, not a separate
+  fork on GitHub.
+- **`main` stays releasable.** Fixes and small improvements to the released
+  app keep going to `main` as before, and nothing from the library reaches
+  users until Steve decides it should.
+- **Before starting, check where you are:** `git branch --show-current` must
+  say `photo-library`. If it does not, stop and switch; do not commit library
+  work anywhere else. Do not create further long-lived branches for library
+  work without asking Steve.
+- **Keep the branch from drifting.** Bring `main` into `photo-library`
+  regularly (at least whenever `main` gets a fix in a file the library work
+  also touches, such as `codebase/desktop/main.js`). Changes flow from `main`
+  into the branch, never the other way, until the merge below. A long gap is
+  what makes the eventual merge painful.
+- **Merging into `main` is Steve's decision** and is a release point: the
+  full sweep in `AGENTS.md` applies before it. It can happen slice by slice
+  (section 8) once a slice is finished and Steve has used it, not only at the
+  very end.
+- Everything else in `AGENTS.md` applies as usual: small local commits, ask
+  before pushing, one agent at a time in the same files.
+- This document lives on the `photo-library` branch. It is not on `main`
+  until the branch is merged or Steve asks for the document to be copied
+  across.
+
+---
+
 ## 1. Start here: foundation work that can begin now
 
 Steve asked for this at the top so agents can work on it while he and Claude
