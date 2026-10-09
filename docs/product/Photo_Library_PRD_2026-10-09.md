@@ -757,8 +757,10 @@ Proposed:
   - **Look:** film look, vignette
   - **Detail:** detail, denoise
   - **HDR side / SDR side** as a master pair
-  - **Outside the grade groups:** white balance and RAW development, lens
-    corrections, crop and geometry, local adjustments and masks
+  - **Outside the grade groups:** RAW development, lens corrections, crop
+    and geometry, local adjustments and masks. (Corrected by Steve on
+    October 9: RAW development does not expose white balance, so white
+    balance is not listed.)
 - Unticked by default, because they do not transfer cleanly between frames:
   masks and local adjustments, crop, lens corrections.
 - Settings that do not apply to the target's kind of file are skipped, and

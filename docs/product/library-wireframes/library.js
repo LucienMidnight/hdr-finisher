@@ -1167,7 +1167,7 @@
     { id: "color", label: "Color", items: ["Color", "Color Grading", "Black and White"] },
     { id: "look", label: "Look", items: ["Film Look", "Vignette"] },
     { id: "detail", label: "Detail", items: ["Detail", "Denoise"] },
-    { id: "raw", label: "White balance and RAW development", items: ["White Balance", "RAW Development"], outside: true, rawOnly: true },
+    { id: "raw", label: "RAW development", items: ["Highlight Reconstruction"], outside: true, rawOnly: true },
     { id: "lens", label: "Lens corrections", items: ["Distortion", "Chromatic aberration", "Vignetting"], outside: true, off: true, rawOnly: true },
     { id: "crop", label: "Crop and geometry", items: ["Crop & Rotate", "Perspective"], outside: true, off: true },
     { id: "local", label: "Local adjustments and masks", items: ["Local Adjustments", "Masks"], outside: true, off: true },
@@ -1207,9 +1207,11 @@
     if (choose) return openPaste();
     // Plain paste repeats the last choices, after saying how many photos change.
     const n = list.length;
-    $("confirm-title").textContent = `Paste grade onto ${n === 1 ? list[0].name : `${n} photos`}?`;
-    $("confirm-message").textContent = `From ${clip.source.name}, with the same choices as last time:\n${chosenLabels().join(", ") || "nothing ticked"}.` +
-      skippedNote(list) + `\n\n${n === 1 ? "It keeps" : "Each keeps"} its previous grade, so this can be taken back.`;
+    const labels = chosenLabels();
+    const listed = labels.length > 1 ? labels.slice(0, -1).join(", ") + (labels.length > 2 ? "," : "") + " and " + labels[labels.length - 1] : labels[0];
+    $("confirm-title").textContent = `Paste Grade From ${clip.source.name}`;
+    $("confirm-message").textContent = (labels.length ? `Paste ${listed} settings` : "Nothing is ticked to paste") +
+      (n > 1 ? ` onto ${n} photos.` : ".") + skippedNote(list).replace("\n", "\n\n");
     $("confirm-actions").innerHTML = `<button type="button" data-answer="choose">Choose what to paste…</button><button type="button" data-answer="no">Cancel</button><button type="button" class="button-primary lib-confirm-go" data-answer="yes">Paste</button>`;
     $("confirm").onclick = (event) => {
       const answer = event.target.dataset && event.target.dataset.answer;
@@ -1224,8 +1226,8 @@
 
   function renderPaste() {
     const n = clip.targets.length;
-    $("paste-title").textContent = `Paste grade onto ${n === 1 ? clip.targets[0].name : `${n} photos`}`;
-    $("paste-sub").textContent = `From ${clip.source.name}. Tick what to bring across.`;
+    $("paste-title").textContent = `Paste Grade From ${clip.source.name}`;
+    $("paste-sub").textContent = `Onto ${n === 1 ? clip.targets[0].name : `${n} photos`}. Tick what to bring across.`;
     document.querySelectorAll("#paste [data-side]").forEach((box) => { box.checked = clip.sides[box.dataset.side]; });
     const partRow = (part) => {
       const keys = partKeys(part);
