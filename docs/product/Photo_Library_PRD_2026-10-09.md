@@ -83,6 +83,21 @@ touch `codebase/desktop/main.js`).
   snapped and made full screen, and comes back in the same place next launch.
   Without the switch, nothing is different.
 
+**Implementation progress, October 9:** F1 shell code is implemented on
+`photo-library`. Windows are registered by role, keep separate bounds and
+display notifications, and receive their own window controls. The main window
+owns the app lifetime and document prompts. The developer-only switch is
+`HDR_FINISHER_DEV_LIBRARY_WINDOW=1`; the second empty page is served by the
+shared backend and uses native window controls, with F11 for full screen.
+Normal startup still opens one window. The focused Electron check covers
+secondary close, main close with a secondary open, unsaved Cancel/Discard,
+separate bounds restored after relaunch, sender/display isolation and controls.
+Physical monitor movement and Windows snap remain for Steve's manual trial.
+F2–F4 have not started. No section 5 features have been built.
+Validation: 435 JavaScript checks, 1,581 Python checks (3 skipped), 22 desktop
+unit checks, the focused multi-window Electron check and the display capability
+GPU check passed. Two old source-name assertions were updated for the refactor.
+
 ### F2. One gate for "leaving the current photo"
 
 - **Why:** the save model is changing (section 5.13). The check for unsaved

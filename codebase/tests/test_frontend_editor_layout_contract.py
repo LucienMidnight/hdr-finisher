@@ -206,7 +206,7 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert source_summary.index('id="badge"') < source_summary.index('id="experimental-dng-note"')
     assert "DNG import is experimental. Some incompatible DNG files may be rejected." in source_summary
     assert '{ role: "reload" }' not in (DESKTOP / "main.js").read_text(encoding="utf-8")
-    assert 'mainWindow.on("query-session-end"' in (DESKTOP / "main.js").read_text(encoding="utf-8")
+    assert 'if (isMain) window.on("query-session-end"' in (DESKTOP / "main.js").read_text(encoding="utf-8")
     assert "/api/media-browser" in frontend_scripts()
     assert ".control-group-body" in css
     assert "border-top: 2px solid" in css

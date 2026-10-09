@@ -138,7 +138,7 @@ def test_macos_uses_the_native_application_menu_without_renderer_duplicates() ->
     assert 'desktop.platform === "darwin"' in chrome
     assert "menuBar.hidden = true" in chrome
     assert 'Menu.setApplicationMenu(Menu.buildFromTemplate(template))' in main
-    assert main.index("buildMenu();", main.index("mainWindow = new BrowserWindow")) < main.index("mainWindow.once(\"ready-to-show\"")
+    assert main.index("buildMenu();", main.index("const window = new BrowserWindow")) < main.index("window.once(\"ready-to-show\"")
 
 
 def test_local_adjustment_rows_use_theme_tokens_for_readable_text_and_icons() -> None:

@@ -17,7 +17,7 @@ scheduling) see [architecture](architecture.md). For testing rules see
 |---|---|---|
 | Backend | `codebase/backend/hdr_finisher/` | Python. Opens files, does the exact colour maths, exports, proofs. |
 | Frontend | `codebase/frontend/` | The interface and the GPU preview, in plain JavaScript. |
-| Desktop shell | `codebase/desktop/` | Electron window that hosts the frontend and starts the backend. |
+| Desktop shell | `codebase/desktop/` | Electron windows tracked by role in `main.js`, with per-window bounds and display state; starts one shared backend. |
 
 The same image maths exists twice on purpose: once in Python (the exact
 reference used by export and Proof) and once in GPU shaders (the fast
@@ -198,3 +198,21 @@ A new frontend file is picked up by both once it has its `<script>` line in
 `tests/frontend-source.js`. Existing source pins resolve named global
 positions through the production list; the new layout guard audits raw
 production sources and compiled shader readers.
+
+### Photo Library foundation (F1)
+
+`desktop/main.js` tracks windows in `windows`, keyed by role (`main`, `library`).
+Main owns the document and app lifetime; closing a secondary closes only that
+window. Photo/document/menu commands still target main. Window controls and
+display IPC resolve the registered sender, and secondary windows cannot invoke
+main-only photo commands. Bounds persist separately in `window-state.json`
+and `window-state-library.json`. Display notifications use per-window timers.
+
+For development only, set `HDR_FINISHER_DEV_LIBRARY_WINDOW=1` before starting
+Electron. The second window loads `frontend/window-foundation.html` and
+`window-foundation.js` from the same backend, without any editor scripts.
+It has native window controls (including snap); F11 toggles full screen.
+`desktop/tests/multi-window.js` checks the second page, IPC isolation, display
+selection, window controls, both closing rules, persistence and relaunch, and
+normal single-window startup. Moving between physical monitors and Windows
+snap still need Steve's manual trial.

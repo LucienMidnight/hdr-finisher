@@ -59,7 +59,7 @@ let applicationPreferences = null;
 let updateCheckCache = null;
 let pendingOpenPaths = [];
 let rendererReady = false;
-let displayChangeTimer = null;
+const windows = new Map();
 let processDiagnostics = null;
 let windowFailure = null;
 const knownProjectPaths = new Set();
@@ -453,6 +453,9 @@ function validateSender(event) {
   if (sender.origin !== expected.origin || event.senderFrame !== event.sender.mainFrame) {
     throw new Error("Desktop request rejected from an unexpected frame.");
   }
+  const record = [...windows.values()].find((entry) => entry.window.webContents === event.sender);
+  if (!record) throw new Error("Unknown desktop window.");
+  return record;
 }
 
 function existingFileIdentity(filePath) {
@@ -471,12 +474,12 @@ function existingFileIdentity(filePath) {
   }
 }
 
-function currentDisplayState() {
-  if (!mainWindow || mainWindow.isDestroyed()) return null;
-  return serializeDisplay(screen.getDisplayMatching(mainWindow.getBounds()));
+function currentDisplayState(window = mainWindow) {
+  if (!window || window.isDestroyed()) return null;
+  return serializeDisplay(screen.getDisplayMatching(window.getBounds()));
 }
 
-function desktopEnvironment() {
+function desktopEnvironment(window = mainWindow) {
   const sessionState = process.platform === "linux"
     ? linuxSessionState({
       ozonePlatform: app.commandLine.getSwitchValue("ozone-platform")
@@ -493,27 +496,37 @@ function desktopEnvironment() {
     distributionChannel: distributionChannel({ packaged: app.isPackaged }),
     sessionType: sessionState.sessionType,
     nativeWayland: sessionState.nativeWayland,
-    currentDisplay: currentDisplayState(),
+    currentDisplay: currentDisplayState(window),
   };
 }
 
-function sendDisplayState() {
-  if (!rendererReady || !mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("desktop:display-state", desktopEnvironment());
+function sendDisplayState(record) {
+  if (!record.ready || record.window.isDestroyed()) return;
+  record.window.webContents.send("desktop:display-state", desktopEnvironment(record.window));
+}
+
+function scheduleWindowDisplayState(record) {
+  clearTimeout(record.displayTimer);
+  record.displayTimer = setTimeout(() => sendDisplayState(record), 120);
 }
 
 function scheduleDisplayState() {
-  clearTimeout(displayChangeTimer);
-  displayChangeTimer = setTimeout(sendDisplayState, 120);
+  for (const record of windows.values()) scheduleWindowDisplayState(record);
 }
 
 function registerIpc() {
   const handle = (channel, callback) => ipcMain.handle(channel, async (event, ...args) => {
-    validateSender(event);
+    const record = validateSender(event);
+    if (record.role !== "main") throw new Error("This command requires the main window.");
     return callback(...args);
   });
 
-  handle("desktop:environment", () => desktopEnvironment());
+  // Window commands resolve their sender; photo commands remain main-only.
+  const handleWindow = (channel, callback) => ipcMain.handle(channel, async (event, ...args) => {
+    const record = validateSender(event);
+    return callback(record, ...args);
+  });
+  handleWindow("desktop:environment", (record) => desktopEnvironment(record.window));
   // The active card's dedicated video memory, read once: the preview's Auto
   // memory budget is half of it (Preview Responsiveness Tuning Sprint P2).
   let videoMemory = null;
@@ -521,29 +534,32 @@ function registerIpc() {
     videoMemory = videoMemory || detectVideoMemory({ app });
     return videoMemory;
   });
-  handle("desktop:renderer-ready", async () => {
-    rendererReady = true;
-    await dispatchPendingOpenPaths();
+  handleWindow("desktop:renderer-ready", async (record) => {
+    record.ready = true;
+    if (record.role === "main") {
+      rendererReady = true;
+      await dispatchPendingOpenPaths();
+    }
+    sendDisplayState(record);
     return true;
   });
-  handle("desktop:get-window-state", () => ({
-    maximized: Boolean(mainWindow?.isMaximized()),
-    fullscreen: Boolean(mainWindow?.isFullScreen()),
+  handleWindow("desktop:get-window-state", (record) => ({
+    maximized: record.window.isMaximized(),
+    fullscreen: record.window.isFullScreen(),
   }));
-  handle("desktop:perform-window-action", (action) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return false;
-    if (action === "minimize") mainWindow.minimize();
-    else if (action === "toggle-maximize") mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
-    else if (action === "fullscreen") mainWindow.setFullScreen(!mainWindow.isFullScreen());
-    else if (action === "close") mainWindow.close();
+  handleWindow("desktop:perform-window-action", (record, action) => {
+    const window = record.window;
+    if (action === "minimize") window.minimize();
+    else if (action === "toggle-maximize") window.isMaximized() ? window.unmaximize() : window.maximize();
+    else if (action === "fullscreen") window.setFullScreen(!window.isFullScreen());
+    else if (action === "close") window.close();
     else throw new Error("Unknown window action.");
     return true;
   });
-  handle("desktop:perform-native-edit", (action) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return false;
+  handleWindow("desktop:perform-native-edit", (record, action) => {
     const method = { cut: "cut", copy: "copy", paste: "paste", "select-all": "selectAll" }[action];
     if (!method) throw new Error("Unknown edit action.");
-    mainWindow.webContents[method]();
+    record.window.webContents[method]();
     return true;
   });
   handle("desktop:perform-shell-action", async (action) => {
@@ -747,7 +763,8 @@ function registerIpc() {
     return true;
   });
   ipcMain.on("desktop:set-operation-progress", (event, progress = {}) => {
-    validateSender(event);
+    const record = validateSender(event);
+    if (record.role !== "main") return;
     const value = Number(progress.value);
     mainWindow?.setProgressBar(Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : -1, {
       mode: ["normal", "paused", "error", "indeterminate"].includes(progress.state) ? progress.state : "normal",
@@ -770,11 +787,11 @@ function sendCommand(command, payload = null) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:menu-command", { command, payload });
 }
 
-function sendWindowState() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("desktop:window-state", {
-    maximized: mainWindow.isMaximized(),
-    fullscreen: mainWindow.isFullScreen(),
+function sendWindowState(window = mainWindow) {
+  if (!window || window.isDestroyed()) return;
+  window.webContents.send("desktop:window-state", {
+    maximized: window.isMaximized(),
+    fullscreen: window.isFullScreen(),
   });
 }
 
@@ -880,8 +897,12 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function restoredBounds() {
-  const statePath = path.join(app.getPath("userData"), "window-state.json");
+function windowStatePath(role) {
+  return path.join(app.getPath("userData"), role === "main" ? "window-state.json" : `window-state-${role}.json`);
+}
+
+function restoredBounds(role) {
+  const statePath = windowStatePath(role);
   try {
     const value = JSON.parse(fs.readFileSync(statePath, "utf8"));
     const display = screen.getAllDisplays().find((candidate) => {
@@ -894,24 +915,29 @@ function restoredBounds() {
   return clampWindowBounds(DEFAULT_WINDOW_BOUNDS, primary.workArea);
 }
 
-function saveWindowBounds() {
-  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return;
-  const statePath = path.join(app.getPath("userData"), "window-state.json");
-  fs.writeFileSync(statePath, JSON.stringify(mainWindow.getNormalBounds()));
+function saveWindowBounds(record) {
+  const window = record.window;
+  if (window.isDestroyed() || window.isMinimized()) return;
+  fs.writeFileSync(windowStatePath(record.role), JSON.stringify(window.getNormalBounds()));
 }
 
-async function createWindow() {
-  forceClose = false;
-  rendererReady = false;
-  const bounds = restoredBounds();
-  mainWindow = new BrowserWindow({
-    ...bounds,
+async function createWindow(role = "main") {
+  if (windows.has(role)) return windows.get(role).window;
+  const isMain = role === "main";
+  if (isMain) {
+    forceClose = false;
+    rendererReady = false;
+  }
+  const window = new BrowserWindow({
+    ...restoredBounds(role),
     minWidth: 1100,
     minHeight: 720,
     show: false,
     ...windowChromeOptions(),
+    // The empty foundation page uses native chrome, including Windows snap.
+    ...(isMain ? {} : { frame: true }),
     backgroundColor: "#101415",
-    title: "HDR Finisher",
+    title: isMain ? "HDR Finisher" : "HDR Finisher — Library foundation",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
@@ -920,24 +946,30 @@ async function createWindow() {
       webviewTag: false,
     },
   });
-  windowFailure = processDiagnostics.attachWindow(mainWindow);
+  const record = { role, window, ready: false, displayTimer: null };
+  windows.set(role, record);
+  if (isMain) {
+    mainWindow = window;
+    windowFailure = processDiagnostics.attachWindow(window);
+  }
   buildMenu();
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  mainWindow.setMenuBarVisibility(false);
-  mainWindow.webContents.on("will-navigate", (event, url) => {
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.setMenuBarVisibility(false);
+  window.webContents.on("will-navigate", (event, url) => {
     if (new URL(url).origin !== new URL(backend.url).origin) event.preventDefault();
   });
-  mainWindow.on("close", (event) => {
-    saveWindowBounds();
-    if (forceClose) return;
+  window.webContents.on("render-process-gone", () => { record.ready = false; });
+  window.on("close", (event) => {
+    saveWindowBounds(record);
+    if (!isMain || forceClose) return;
     event.preventDefault();
     requestClose();
   });
-  mainWindow.on("query-session-end", (event) => {
-    saveWindowBounds();
+  if (isMain) window.on("query-session-end", (event) => {
+    saveWindowBounds(record);
     if (!documentState.dirty) return;
     event.preventDefault();
-    dialog.showMessageBox(mainWindow, {
+    dialog.showMessageBox(window, {
       type: "warning",
       title: "Save changes before signing out",
       message: `HDR Finisher prevented Windows from closing ${documentState.displayName}.`,
@@ -946,21 +978,26 @@ async function createWindow() {
       noLink: true,
     }).catch(() => {});
   });
-  mainWindow.on("closed", () => {
-    clearTimeout(displayChangeTimer);
-    mainWindow = null;
-    windowFailure = null;
-    if (!shuttingDown) forceClose = false;
+  window.on("closed", () => {
+    clearTimeout(record.displayTimer);
+    windows.delete(role);
+    if (isMain) {
+      mainWindow = null;
+      windowFailure = null;
+      // Main owns the app lifetime, even while a secondary window is open.
+      if (!shuttingDown) void beginShutdown();
+    }
   });
   for (const eventName of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
-    mainWindow.on(eventName, sendWindowState);
+    window.on(eventName, () => sendWindowState(window));
   }
   for (const eventName of ["move", "resize", "enter-full-screen", "leave-full-screen"]) {
-    mainWindow.on(eventName, scheduleDisplayState);
+    window.on(eventName, () => scheduleWindowDisplayState(record));
   }
-  mainWindow.once("ready-to-show", () => mainWindow.show());
-  await mainWindow.loadURL(backend.url);
-  updateWindowDocumentState();
+  window.once("ready-to-show", () => { if (!window.isDestroyed()) window.show(); });
+  await window.loadURL(isMain ? backend.url : `${backend.url}/static/window-foundation.html`);
+  if (isMain) updateWindowDocumentState();
+  return window;
 }
 
 async function dispatchPendingOpenPaths() {
@@ -1023,7 +1060,10 @@ async function beginShutdown() {
   shuttingDown = true;
   quitRequested = true;
   forceClose = true;
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+  for (const record of [...windows.values()]) {
+    saveWindowBounds(record);
+    if (!record.window.isDestroyed()) record.window.destroy();
+  }
   await stopBackend();
   app.quit();
 }
@@ -1036,7 +1076,11 @@ if (!gotLock) {
     app, crashReporter, dialog, shell,
     isShuttingDown: () => shuttingDown,
     getDocumentState: () => documentState,
-    onRendererGone: () => { rendererReady = false; },
+    onRendererGone: () => {
+      rendererReady = false;
+      const record = windows.get("main");
+      if (record) record.ready = false;
+    },
     quit: beginShutdown,
   });
   pendingOpenPaths.push(...applicationArgs(process.argv));
@@ -1084,6 +1128,9 @@ if (!gotLock) {
       }
       buildMenu();
       await createWindow();
+      if (!app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_WINDOW === "1") {
+        await createWindow("library");
+      }
     } catch (error) {
       await dialog.showMessageBox({ type: "error", title: "HDR Finisher could not start", message: "HDR Finisher could not start its image-processing backend.", detail: error.message, buttons: ["Quit"] });
       beginShutdown();
