@@ -120,8 +120,9 @@ method, which has since been removed. An October 7 narrow repeat on the
 fifty-local project (SDR only; saved, flip, perspective and both; adaptive
 Denoise rows included) completed 1,363 rows with no page error, no settle
 timeout and every row on WebGPU, so both items are closed. The HDR lane and
-the other geometry states were not repeated. The full sweep has 13 retained
-failed guards; phase 4 has not met its green exit. See viewport PRD 15.7 and
+the other geometry states were not repeated. The October 8 full sweep had 13
+retained failed guards (seven remain on October 9, below); phase 4 has not met
+its green exit. See viewport PRD 15.7 and
 16.21 and the final cleanup comparison.
 
 ## v0.9 pre-release validation (October 9, 2026)
@@ -134,15 +135,32 @@ lacked their executable/project environment; all passed with those inputs
 supplied. Perspective ownership ran through its explicit main entry point.
 All three read-only project hashes remained unchanged.
 
-Seven failures recur from the October 8 sweep: Black & White parity, scope
-parity, editing-peak Clarity reference, local design QA, drag GPU load,
-luma-feather latency, and tier-film consistency. Three checks that passed
-on October 8 failed here: CPU Full-preview peak currency timed out after
-120 seconds; native-region stall timed out waiting for the injected delayed
-source-tile response; Path Feather control child order failed its UI guard.
-These three are newly observed failures, not established application
-regressions. No assertions or tolerances were changed and no application
-fix was attempted. This is not a green release validation result.
+Seven failures recur from the October 8 morning sweep (`99f2216`) with the
+same messages: Black & White parity, scope parity, editing-peak Clarity
+reference, local design QA, drag GPU load, luma-feather latency, and
+tier-film consistency. Six other guards that failed in that sweep now pass.
+
+Three checks that passed on October 8 failed in the sweep. Follow-up the same
+day, at the same application code:
+
+- Path Feather control child order: the test was out of date. `4a83373` made
+  the readout typable, which gives it a class name the test expected to be
+  blank. The expectation was updated and the test passes.
+- Native-region stall (30-second wait for the delayed source-tile response):
+  not reproduced; four reruns passed. Intermittent and unexplained. The test
+  now prints what was fetched if that wait times out again.
+- CPU Full-preview peak currency (120-second timeout): not reproduced; one
+  rerun passed. In the failed run the peak readout held 12,000.26 nits from a
+  settled scope while the accepted Full picture reported 12,000. Intermittent,
+  CPU fallback only, cause not investigated.
+
+The sweep's driver list came from October 8 and so missed tests added on
+October 9. Run afterwards and passed: `pan-store-region-identity.js` on both
+DSC00264 projects and `view-tools-interaction.js`. Not run:
+`performance/source-tile-transfer-probe.js` (measurement only).
+
+No tolerances were changed and no application fix was attempted. With seven
+retained failures this is not a green release validation result.
 
 Logs and results: `codebase/output/performance/review/prerelease-0.9-2026-10-09/`.
 The sweep did not include coverage audits, long editing endurance, or broad
