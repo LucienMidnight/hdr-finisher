@@ -291,7 +291,17 @@ Proposed:
 Open:
 
 - How docking is done technically (section 6.1).
-- What the side panels show while the library is docked.
+- (Settled October 9, see below.)
+
+Decided on October 9 from the mock-up (`docs/product/library-wireframes`):
+
+- While the library is docked, the left panel shows folders, projects and
+  albums, and the right panel shows details of the selection (marks, tags,
+  camera data). The Control Panel and Scopes are not shown in Library.
+- Both panels collapse to a narrow rail, the same way Metadata does on the
+  other stages. One key collapses or opens both.
+- Both panels start open on every launch. Collapsed state is not
+  remembered, in line with the design guidelines.
 
 ### 5.2 Navigation
 
@@ -1054,7 +1064,9 @@ For Steve, one at a time, each with its trade-off.
 15. Metadata reader (after R1).
 16. One focus overlay or two.
 17. How docking is done (6.1).
-18. What the side panels show while the library is docked.
+18. ~~What the side panels show while the library is docked.~~ Settled
+    October 9: folders left, details right, both collapsible, reset to open
+    on launch (section 5.1).
 19. Whether existing `.hdrfinisher` projects appear in the library, after
     checking Steve's real projects.
 20. Nested tags.
@@ -1087,6 +1099,9 @@ companion, tethered shooting, printing, web galleries, slideshows, video.
 - A strength slider for an applied look preset.
 - A default preset applied to new photos, perhaps per camera.
 - Automatic HDR previews for chosen pinned folders.
+- Saved workspace layouts (which panels are open, and where), if more of
+  the interface becomes modular. Raised by Steve on October 9; not needed
+  now.
 
 **Parked, were Claude's additions and not Steve's requests:** colour labels,
 a list layout with detail columns, a multi-photo survey view, a
