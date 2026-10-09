@@ -237,3 +237,32 @@ window close does not leave a photo. Browser tab close/reload has no custom
 prompt today and remains unchanged. Undo, redo and grade reset edit the current
 photo instead of leaving it. Prompt wording and Save/Discard/Cancel remain as
 before; cancelled or unsuccessful saves do not pass the gate.
+
+### Photo Library foundation (F3): library helper
+
+`backend/hdr_finisher/library_worker.py` owns a spawned, low-priority process
+with one thumbnail decoder and a bounded priority queue. `main.py` starts and
+stops it with the server lifespan and injects it into `MediaBrowserStore`.
+The original cache keys, thumbnail pixels and file-browser API stay intact.
+Import previews also use the helper; cancelling an import cancels its helper
+job. The child uses the existing thumbnail decoder and cache, while the grading
+process only checks the cache and submits jobs. `run_app.py` calls
+`multiprocessing.freeze_support()` before app imports for PyInstaller.
+
+`/api/library-worker/status` and `/api/library-worker/pause` are backend
+commands. Separate pause reasons do not release one another. Session requests
+hold a temporary pause around grading/import/export work without changing any
+image processing implementation. Disconnecting a thumbnail request cancels
+its job. Paused uncached HTTP requests return 202 and the browser retries;
+holding them open would exhaust browser connections and prevent grading.
+Cached thumbnails remain available. A running native decode is cooperative:
+it may finish, but a cancelled result is discarded and no next decode starts
+while paused. Helper failure fails pending jobs; grading does not fall back to
+decoding those thumbnails in its own process. The child also watches its parent.
+
+`tests/test_library_worker.py` covers separate-process decode, priorities,
+pause ownership, cancellation, failure, shutdown and paused HTTP retries.
+`tests/library-background-interaction.js` checks queued thumbnail requests,
+grade rendering during a pause and concurrent thumbnail/grade work in Electron.
+Packaged-app confirmation waits for the next requested installer build; Steve's
+large-folder grading trial is still the perceptual performance check (M5).

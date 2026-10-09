@@ -25,7 +25,7 @@ client = TestClient(app)
 def test_media_browser_thumbnail_reports_structured_interpretation_requirement(monkeypatch) -> None:
     from hdr_finisher import main as main_module
 
-    def require_interpretation(_path, _size):
+    def require_interpretation(_path, _size, *, cancel_event=None):
         raise MediaBrowserInterpretationRequired(
             "The embedded ICC profile does not identify supported color primaries.",
             reason="unrecognized_color_primaries",

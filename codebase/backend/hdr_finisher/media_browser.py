@@ -59,13 +59,14 @@ class MediaBrowserInterpretationRequired(MediaBrowserError):
 
 
 class MediaBrowserStore:
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, *, thumbnail_worker=None) -> None:
         self.root = (root or APP_DATA_DIR).resolve()
         self.pinned_path = self.root / "pinned-folders.json"
         self.recents_path = self.root / "recent-folders.json"
         self.thumbnail_root = self.root / "thumbnails"
         self._lock = RLock()
         self._decode_slots = BoundedSemaphore(2)
+        self.thumbnail_worker = thumbnail_worker
 
     def list_directory(self, path: str | None, mode: str) -> dict[str, Any]:
         if mode not in {"source", "export_directory", "project_open", "project_save"}:
@@ -185,7 +186,7 @@ class MediaBrowserStore:
     def remove_favorite(self, value: str) -> list[dict[str, Any]]:
         return self.remove_pin(value)
 
-    def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False) -> Path:
+    def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False, cancel_event=None) -> Path:
         path = Path(value).expanduser().resolve(strict=True)
         if not path.is_file() or path.suffix.lower() not in SOURCE_EXTENSIONS:
             raise MediaBrowserError("Select a supported image file for a thumbnail.")
@@ -201,6 +202,8 @@ class MediaBrowserStore:
         output = self.thumbnail_root / f"{key}.jpg"
         if output.is_file():
             return output
+        if self.thumbnail_worker is not None:
+            return self.thumbnail_worker.thumbnail(str(path), edge, fast_only=fast_only, cancel_event=cancel_event)
         with self.decode_slot():
             if output.is_file():
                 return output
@@ -211,7 +214,7 @@ class MediaBrowserStore:
 
     @contextmanager
     def decode_slot(self):
-        """Share the two expensive decode slots with staged full imports."""
+        """Limit grading imports; thumbnail decoding uses separate helper slots."""
         with self._decode_slots:
             yield
 

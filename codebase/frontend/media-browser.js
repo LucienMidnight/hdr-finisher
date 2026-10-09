@@ -518,7 +518,13 @@ async function previewMediaBrowserFile(entry, button) {
     els.directoryBrowserPreviewNote.textContent = "Preview unavailable; you can still open the source.";
   };
   try {
-    const response = await fetch(previewUrl, { signal: request.signal });
+    let response;
+    do {
+      response = await fetch(previewUrl, { signal: request.signal });
+      if (response.status !== 202) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+      if (request.signal.aborted || generation !== state.mediaPreviewGeneration) return;
+    } while (true);
     if (generation !== state.mediaPreviewGeneration || state.mediaPreviewRequest !== request) return;
     if (response.status === 409) {
       const payload = await safeJson(response);

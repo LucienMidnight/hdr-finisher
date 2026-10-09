@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import atexit
+import asyncio
+from contextlib import asynccontextmanager
 from concurrent.futures import Future
-from threading import Lock
+from threading import Event, Lock
 import base64
 import binascii
 import json
@@ -13,7 +15,7 @@ import time
 from time import perf_counter
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Iterator
+from typing import Iterator, Literal
 
 import uvicorn
 import numpy as np
@@ -23,7 +25,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 from starlette.concurrency import run_in_threadpool
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from . import denoise_adaptive
 from .capabilities import probe_capabilities
@@ -33,6 +35,7 @@ from .exporters import ExportOverwriteRequired, build_export_backends
 from .folder_picker import pick_directory
 from .loader import LoaderError
 from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore
+from .library_worker import LibraryWorker
 from .import_jobs import ImportJobManager
 from .local_adjustments import spatial_mask_signature
 from .mask_softness import SOFT_ESTIMATE_LIMIT, bitmap_frame_rect, gpu_bitmap_soft_verdict, soft_mask_verdict
@@ -102,7 +105,16 @@ from .sessions import EditCommandError, RevisionConflictError, SessionStore
 from .test_pattern import build_delivery_proof_pattern
 
 
-app = FastAPI(title=APP_NAME, version=APP_VERSION)
+@asynccontextmanager
+async def library_lifecycle(_app):
+    await run_in_threadpool(library_worker.start)
+    try:
+        yield
+    finally:
+        await run_in_threadpool(library_worker.close)
+
+
+app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=library_lifecycle)
 desktop_authoring_secret = os.environ.get("HDR_FINISHER_DESKTOP_SECRET")
 desktop_control_secret = os.environ.get("HDR_FINISHER_DESKTOP_CONTROL_SECRET")
 desktop_path_grants = DesktopPathGrants()
@@ -353,7 +365,13 @@ class DesktopRequestBoundary:
                 headers["X-Content-Type-Options"] = "nosniff"
             await send(message)
 
-        await self.app(scope, receive, send_hardened)
+        # Resource scheduling only: keep the grading/export implementations
+        # unchanged, and preserve receive so disconnect cancellation still works.
+        if request.url.path == "/api/session" or request.url.path.startswith("/api/session/"):
+            with library_worker.busy():
+                await self.app(scope, receive, send_hardened)
+        else:
+            await self.app(scope, receive, send_hardened)
 
 
 app.add_middleware(DesktopRequestBoundary)
@@ -370,7 +388,9 @@ capabilities = probe_capabilities()
 export_backends = build_export_backends(capabilities)
 proof_store = ProofArtifactStore()
 evidence_store = EvidenceStore()
-media_browser_store = MediaBrowserStore()
+library_worker = LibraryWorker(MediaBrowserStore().root)
+atexit.register(library_worker.close)
+media_browser_store = MediaBrowserStore(thumbnail_worker=library_worker)
 import_jobs = ImportJobManager(store, media_browser_store, workers=1)
 atexit.register(import_jobs.close)
 external_proof_tokens: dict[str, tuple[str, float]] = {}
@@ -2271,10 +2291,41 @@ def media_browser(path: str | None = Query(default=None), mode: str = Query(defa
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+class LibraryPauseRequest(BaseModel):
+    reason: Literal["grading", "export", "manual"]
+    paused: bool
+
+
+@app.get("/api/library-worker/status")
+def library_worker_status() -> dict[str, object]:
+    return library_worker.status()
+
+
+@app.post("/api/library-worker/pause")
+def pause_library_worker(request: LibraryPauseRequest) -> dict[str, object]:
+    library_worker.pause(f"client:{request.reason}", request.paused)
+    return library_worker.status()
+
+
 @app.get("/api/media-browser/thumbnail")
-def media_browser_thumbnail(path: str = Query(), size: int = Query(default=256, ge=64, le=512)) -> FileResponse:
+async def media_browser_thumbnail(request: Request, path: str = Query(), size: int = Query(default=256, ge=64, le=512)) -> Response:
+    cancel_event = Event()
+    task = asyncio.create_task(run_in_threadpool(media_browser_store.thumbnail, path, size, cancel_event=cancel_event))
     try:
-        thumbnail = media_browser_store.thumbnail(path, size)
+        while not task.done():
+            done, _pending = await asyncio.wait([task], timeout=0.1)
+            if not done and library_worker.status()["paused"]:
+                # A paused request must not occupy all six browser connections
+                # and prevent the grading request that would release the pause.
+                cancel_event.set()
+                await asyncio.gather(task, return_exceptions=True)
+                return JSONResponse(status_code=202, content={"detail": "thumbnail_pending"},
+                                    headers={"Retry-After": "0.1", "Cache-Control": "no-store"})
+            if not done and await request.is_disconnected():
+                cancel_event.set()
+                await asyncio.gather(task, return_exceptions=True)
+                raise HTTPException(status_code=499, detail="Thumbnail request cancelled.")
+        thumbnail = task.result()
     except MediaBrowserInterpretationRequired as exc:
         raise HTTPException(
             status_code=409,
@@ -2287,6 +2338,10 @@ def media_browser_thumbnail(path: str = Query(), size: int = Query(default=256, 
         ) from exc
     except (MediaBrowserError, OSError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        cancel_event.set()
+        if not task.done():
+            task.cancel()
     return FileResponse(thumbnail, media_type="image/jpeg", headers={"Cache-Control": "private, no-cache"})
 
 

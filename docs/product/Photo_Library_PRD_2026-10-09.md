@@ -140,6 +140,23 @@ replacement GPU interaction check. No CPU export/Proof or shader changes.
   installer build (separate processes are a known trouble spot when
   packaged).
 
+**Implementation progress, October 9:** F3 helper code is implemented. A
+single low-priority decoder process starts/stops with the backend, handles
+priority and cancellation, and respects independent pause reasons. Current
+browser thumbnails and staged import previews use it. Session requests pause
+background work. Cached previews remain available; paused uncached HTTP
+requests return a retry response so thumbnail requests cannot starve grading
+of browser connections. The original thumbnail decoding and cache rules are
+unchanged. A native decode already running may finish before a pause takes
+effect; cancelled results are discarded. The packaged entry point now supports
+spawned workers, but packaged confirmation remains for the next installer
+build. M5's large-folder trial with Steve is still needed.
+
+Validation: 438 JavaScript tests and 1,588 Python tests passed (3 skipped).
+The background/grade concurrency and existing browser preview GPU checks
+passed. The first concurrency run exposed browser connection starvation
+while paused; the retry response fixed it and has an API regression check.
+
 ### F4. The browser runs on its own page
 
 - **Why:** the library has to appear both inside the main window and in its

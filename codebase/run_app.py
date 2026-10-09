@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import multiprocessing
 import sys
 from pathlib import Path
 
 if sys.version_info < (3, 12):
     raise SystemExit("HDR Finisher requires Python 3.12 or newer.")
+
+# PyInstaller must dispatch spawned library workers before importing the app
+# or parsing its normal command line (otherwise the helper relaunches the UI).
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
 
 ROOT = Path(__file__).resolve().parent
 BACKEND = ROOT / "backend"

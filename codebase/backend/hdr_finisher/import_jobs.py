@@ -122,7 +122,10 @@ class ImportJobManager:
             preview_label = "Decoding AVIF base preview" if suffix == ".avif" else "Preparing source preview"
             self._set_phase(job, "previewing", "previewing", preview_label)
             try:
-                preview_path = self.browser.thumbnail(str(job.path), 512, fast_only=True)
+                thumbnail_options = {}
+                if self.browser.thumbnail_worker is not None:
+                    thumbnail_options["cancel_event"] = job.cancel_event
+                preview_path = self.browser.thumbnail(str(job.path), 512, fast_only=True, **thumbnail_options)
             except Exception:
                 # Full development can still succeed when a codec has no cheap
                 # thumbnail path, so preview extraction is intentionally soft.
