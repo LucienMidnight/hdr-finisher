@@ -240,6 +240,22 @@ def test_vignette_scale_stretches_each_axis_and_100_percent_is_unchanged() -> No
     np.testing.assert_array_equal(squeezed[50, :], plain[50, :])
 
 
+def test_vignette_amount_reaches_200_and_keeps_doubling_the_stops() -> None:
+    image = np.ones((65, 65, 3), dtype=np.float32)
+    state = AdjustmentState()
+    state.hdr.vignette.midpoint = 0
+    state.hdr.vignette.feather = 0
+    state.hdr.vignette.amount = -100
+    two_stops = apply_adjustments(image, state, PreviewKind.HDR)
+    state.hdr.vignette.amount = -200
+    four_stops = apply_adjustments(image, state, PreviewKind.HDR)
+    # Full strength at the corner: 100 is two stops, 200 is four.
+    assert two_stops[0, 0].mean() == pytest.approx(0.25, rel=1e-5)
+    assert four_stops[0, 0].mean() == pytest.approx(0.0625, rel=1e-5)
+    with pytest.raises(ValidationError):
+        AdjustmentState.model_validate({"hdr": {"vignette": {"amount": 201}}})
+
+
 def test_local_adjustments_module_switch_skips_every_local() -> None:
     state = AdjustmentState()
     locals_ = [object(), object()]

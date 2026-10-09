@@ -16,7 +16,7 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 
 ## How typed values behave
 
-- **Bold ranges go beyond the slider.** 54 controls accept typed
+- **Bold ranges go beyond the slider.** 55 controls accept typed
   values past the ends of their slider. The slider then sits at its end and is
   marked, and the typed value is what is saved, previewed and exported.
   Dragging the slider afterwards brings the value back inside the slider's
@@ -237,7 +237,7 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 
 | Control | Slider | Typed value | Notes |
 | --- | --- | --- | --- |
-| Amount | -100 to 100 % | -100 to 100 % |  |
+| Amount | -100 to 100 % | **-200 to 200 %** | 100 is 2 EV; 200 is 4 EV. |
 | Midpoint | 0 to 100 % | 0 to 100 % |  |
 | Roundness | -100 to 100 % | -100 to 100 % |  |
 | Feather | 0 to 100 % | 0 to 100 % |  |

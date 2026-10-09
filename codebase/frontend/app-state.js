@@ -147,7 +147,7 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.color_grading.highlights.luminance_ev": { min: -1, max: 1, decimals: 2 },
   "current.color_grading.blending": { min: 0, max: 100, decimals: 0 },
   "current.color_grading.balance": { min: -100, max: 100, decimals: 0 },
-  "current.vignette.amount": { min: -100, max: 100, decimals: 0 },
+  "current.vignette.amount": { min: -200, max: 200, decimals: 0 },
   "current.vignette.midpoint": { min: 0, max: 100, decimals: 0 },
   "current.vignette.roundness": { min: -100, max: 100, decimals: 0 },
   "current.vignette.feather": { min: 0, max: 100, decimals: 0 },

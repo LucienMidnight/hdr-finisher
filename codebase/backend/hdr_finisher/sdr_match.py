@@ -979,7 +979,7 @@ def _fit_image_semantic_controls(
     def try_trial(saturation: float, vignette_amount: float) -> None:
         nonlocal candidate, quality, best_saturation, best_vignette
         sdr.saturation = float(np.clip(saturation, -1.0, 3.0))
-        sdr.vignette.amount = float(np.clip(vignette_amount, -100.0, 100.0))
+        sdr.vignette.amount = float(np.clip(vignette_amount, -200.0, 200.0))
         trial = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
         trial_quality = _quality_metrics(target, trial, body)
         if accept_trial(trial, trial_quality):

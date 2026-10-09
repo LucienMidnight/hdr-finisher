@@ -239,8 +239,11 @@ async function setSlider(page, dataPath, value) {
       // Beyond the slider's 2 EV, up to the 8 EV the grade can hold.
       exposure: await typeInto('[data-value-path="sdr.exposure"]', "5"),
       overlayOpacity: await typeInto('[data-value-path="shared.overlay_opacity"]', "37"),
+      vignetteAmount: await typeInto('[data-value-path="current.vignette.amount"]', "-250"),
+      // Last: typing in another module would cancel the Perspective draft.
       perspective: await typeInto("#perspective-rotate-value", "12.5"),
     };
+    assert(typed.vignetteAmount === "-200%", "Vignette Amount cannot be typed to its -200% limit.");
     typed.stored = await page.evaluate(() => ({ sharpen: state.adjustments.sdr.detail.sharpen_amount,
       purity: state.adjustments.sdr.red_purity, exposure: state.adjustments.sdr.exposure,
       overlayOpacity: state.adjustments.shared.overlay_opacity, perspective: Number(els.perspectiveRotate.value) }));
@@ -252,7 +255,7 @@ async function setSlider(page, dataPath, value) {
     assert(typed.stored.perspective === 12.5, "The Perspective readout does not accept a typed value.");
     await page.locator("#perspective-cancel").click();
     await page.evaluate(() => {
-      for (const [target, value] of [["sdr.detail.sharpen_amount", 0], ["sdr.red_purity", 0], ["sdr.exposure", 0]]) setValueByPath(state.adjustments, target, value);
+      for (const [target, value] of [["sdr.detail.sharpen_amount", 0], ["sdr.red_purity", 0], ["sdr.exposure", 0], ["sdr.vignette.amount", -100]]) setValueByPath(state.adjustments, target, value);
       syncControlsFromState();
       invalidatePreview("sdr");
       debouncePreview("sdr");

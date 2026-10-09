@@ -211,7 +211,8 @@ class ColorGradingAdjustments(BaseModel):
 class VignetteAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount: float = Field(default=0.0, ge=-100.0, le=100.0)
+    # The slider covers -100 to 100 (2 EV each way); typed values reach 200 (4 EV).
+    amount: float = Field(default=0.0, ge=-200.0, le=200.0)
     midpoint: float = Field(default=50.0, ge=0.0, le=100.0)
     roundness: float = Field(default=0.0, ge=-100.0, le=100.0)
     feather: float = Field(default=75.0, ge=0.0, le=100.0)
