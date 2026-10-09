@@ -90,18 +90,20 @@ def focus_map(large, size):
     level = max(34.0, float(np.percentile(pooled, 90)))
     alpha = np.clip((pooled - level) / level, 0, 1) * 235
     rgba = np.zeros(pooled.shape + (4,), dtype=np.uint8)
-    rgba[..., :3] = (85, 229, 121)
+    rgba[..., :3] = 255  # the app tints it; the map only says where
     rgba[..., 3] = alpha.astype(np.uint8)
     return Image.fromarray(rgba, "RGBA").resize(size, Image.NEAREST)
 
 
-def exposure_map(small):
-    """Blown highlights in red, blocked shadows in blue."""
+def exposure_maps(small):
+    """Blown highlights and blocked shadows, as two maps so each has its own colour."""
     rgb = np.asarray(small.convert("RGB"))
-    rgba = np.zeros(rgb.shape[:2] + (4,), dtype=np.uint8)
-    rgba[rgb.min(axis=2) >= 249] = (255, 31, 31, 225)
-    rgba[rgb.max(axis=2) <= 2] = (0, 158, 255, 215)
-    return Image.fromarray(rgba, "RGBA")
+    maps = []
+    for hit, strength in ((rgb.min(axis=2) >= 249, 225), (rgb.max(axis=2) <= 2, 215)):
+        rgba = np.zeros(rgb.shape[:2] + (4,), dtype=np.uint8)
+        rgba[hit] = (255, 255, 255, strength)
+        maps.append(Image.fromarray(rgba, "RGBA"))
+    return maps
 
 
 def main():
@@ -120,7 +122,7 @@ def main():
 
     if OUT.exists():
         shutil.rmtree(OUT)
-    for sub in ("t", "focus", "exposure"):
+    for sub in ("t", "focus", "high", "low"):
         (OUT / sub).mkdir(parents=True)
 
     rng = random.Random(7)
@@ -142,7 +144,9 @@ def main():
             small.thumbnail((SMALL, SMALL), Image.LANCZOS)
             small.save(OUT / "t" / f"{index:03d}.jpg", quality=80)
             focus_map(large, small.size).save(OUT / "focus" / f"{index:03d}.png")
-            exposure_map(small).save(OUT / "exposure" / f"{index:03d}.png")
+            high, low = exposure_maps(small)
+            high.save(OUT / "high" / f"{index:03d}.png")
+            low.save(OUT / "low" / f"{index:03d}.png")
             name = path.name
             if args.bursts > 1:
                 stem = "".join(c for c in path.stem if not c.isdigit())[:4].upper() or "IMG"

@@ -211,6 +211,18 @@
     </dl>
   </div>
 
+  <!-- Overlay colours. The maps are colourless; these tint them, so a colour can be changed at any time. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <filter id="tint-focus" color-interpolation-filters="sRGB"><feFlood result="c"/><feComposite in="c" in2="SourceAlpha" operator="in"/></filter>
+    <filter id="tint-high" color-interpolation-filters="sRGB"><feFlood result="c"/><feComposite in="c" in2="SourceAlpha" operator="in"/></filter>
+    <filter id="tint-low" color-interpolation-filters="sRGB"><feFlood result="c"/><feComposite in="c" in2="SourceAlpha" operator="in"/></filter>
+  </svg>
+  <style>
+    img.ov-focus { filter: url(#tint-focus); }
+    img.ov-high { filter: url(#tint-high); }
+    img.ov-low { filter: url(#tint-low); }
+  </style>
+
   <div class="lib-menu" id="menu" role="menu" hidden></div>
 
   <dialog id="confirm" class="application-dialog app-dialog">

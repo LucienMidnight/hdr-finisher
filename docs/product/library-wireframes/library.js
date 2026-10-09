@@ -97,6 +97,9 @@
   const remember = (key, value) => { try { localStorage.setItem("libmock-" + key, value); } catch (e) { /* fine */ } };
   const recall = (key, fallback) => { try { return localStorage.getItem("libmock-" + key) || fallback; } catch (e) { return fallback; } };
 
+  const TINT_DEFAULTS = { focus: "#55e579", high: "#ff1f1f", low: "#009eff" };
+  const tints = { focus: recall("tint-focus", TINT_DEFAULTS.focus), high: recall("tint-high", TINT_DEFAULTS.high), low: recall("tint-low", TINT_DEFAULTS.low) };
+
   const byId = (id) => photos.find((p) => p.id === id);
   const flatPlaces = () => PLACES.flatMap((p) => [p, ...(p.children || [])]).filter((p) => p.id);
   const placeOf = (id) => flatPlaces().find((p) => p.id === id);
@@ -183,7 +186,8 @@
   // The focus and exposure maps are small images kept beside the thumbnails
   // and drawn over them. They load only once an overlay is switched on.
   const mapSrc = (kind, p) => `photos/${kind}/${String(p.id).padStart(3, "0")}.png`;
-  const overlayImgs = (p) => ["focus", "exposure"].map((kind) => `<img class="ov ov-${kind}" src="${mapSrc(kind, p)}" alt="" loading="lazy">`).join("");
+  const MAPS = ["focus", "high", "low"];
+  const overlayImgs = (p) => MAPS.map((kind) => `<img class="ov ov-${kind}" src="${mapSrc(kind, p)}" alt="" loading="lazy">`).join("");
 
   function cellHtml(p) {
     return `<div class="cell" data-id="${p.id}"><div class="frame"><img src="photos/t/${String(p.id).padStart(3, "0")}.jpg" alt="" loading="lazy">${overlayImgs(p)}</div>
@@ -245,8 +249,9 @@
     if (state.sel.size > 1) parts.push(`<b>${state.sel.size}</b> selected`);
     parts.push(`<b>${count((p) => p.flag === "pick")}</b> picked`, `<b>${count((p) => p.flag === "reject")}</b> rejected`);
     const legend = [];
-    if (app.dataset.focus === "on") legend.push(`<span class="legend"><span><i style="background:#55e579"></i>sharpest detail</span></span>`);
-    if (app.dataset.exposure === "on") legend.push(`<span class="legend"><span><i style="background:var(--exposure-band-peak)"></i>blown highlights</span><span><i style="background:var(--exposure-band-low-mid)"></i>blocked shadows</span></span>`);
+    const swatch = (kind, text) => `<label title="Click the square to change this colour. Double-click to reset."><input type="color" data-tint="${kind}" value="${tints[kind]}">${text}</label>`;
+    if (app.dataset.focus === "on") legend.push(`<span class="legend">${swatch("focus", "sharpest detail")}</span>`);
+    if (app.dataset.exposure === "on") legend.push(`<span class="legend">${swatch("high", "blown highlights")}${swatch("low", "blocked shadows")}</span>`);
     $("status").innerHTML = parts.map((t) => `<span>${t}</span>`).join("") + legend.join("");
   }
 
@@ -758,7 +763,23 @@
   // ---------- overlays ----------
 
   ["single-image", "compare-ref-image", "compare-image", "review-image"].forEach((id) =>
-    $(id).insertAdjacentHTML("afterend", `<img class="stage-ov ov-focus" data-kind="focus" alt=""><img class="stage-ov ov-exposure" data-kind="exposure" alt="">`));
+    $(id).insertAdjacentHTML("afterend", MAPS.map((kind) => `<img class="stage-ov ov-${kind}" data-kind="${kind}" alt="">`).join("")));
+
+  // Overlay colours: click a square in the legend to choose another. Remembered between visits.
+  function setTint(kind, colour) {
+    tints[kind] = colour;
+    document.querySelector(`#tint-${kind} feFlood`).setAttribute("flood-color", colour);
+    remember("tint-" + kind, colour);
+  }
+  MAPS.forEach((kind) => setTint(kind, tints[kind]));
+  $("status").addEventListener("input", (event) => { if (event.target.dataset.tint) setTint(event.target.dataset.tint, event.target.value); });
+  $("status").addEventListener("dblclick", (event) => {
+    const input = event.target.closest("label") && event.target.closest("label").querySelector("[data-tint]");
+    if (!input) return;
+    event.preventDefault();
+    setTint(input.dataset.tint, TINT_DEFAULTS[input.dataset.tint]);
+    refresh();
+  });
 
   function toggleOverlay(kind) {
     const on = app.dataset[kind] !== "on";
@@ -768,9 +789,10 @@
     if (on && $("opt-slow").checked && !toggleOverlay["made" + kind + state.place]) {
       toggleOverlay["made" + kind + state.place] = true;
       [...$("grid").children].forEach((cell, i) => {
-        const o = cell.querySelector(".ov-" + kind);
-        o.style.opacity = 0;
-        setTimeout(() => { o.style.opacity = ""; }, 200 + i * 45);
+        cell.querySelectorAll(kind === "focus" ? ".ov-focus" : ".ov-high, .ov-low").forEach((o) => {
+          o.style.opacity = 0;
+          setTimeout(() => { o.style.opacity = ""; }, 200 + i * 45);
+        });
       });
     }
     refresh();

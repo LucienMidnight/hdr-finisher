@@ -1536,7 +1536,8 @@ img.stage-ov {
 }
 
 [data-focus="on"] img.ov-focus,
-[data-exposure="on"] img.ov-exposure {
+[data-exposure="on"] img.ov-high,
+[data-exposure="on"] img.ov-low {
   display: block;
 }
 
@@ -1560,12 +1561,44 @@ img.stage-ov {
   margin-left: 0;
 }
 
-.lib-status .legend i {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 5px;
-  border-radius: 1px;
+.lib-status .legend label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.lib-status .legend label:hover {
+  color: var(--body);
+}
+
+/* The colour square is the control: click it to choose another colour. */
+.lib-status .legend input[type="color"] {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+
+.lib-status .legend input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.lib-status .legend input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 2px;
+}
+
+.lib-status .legend label:hover input[type="color"] {
+  box-shadow: 0 0 0 2px var(--quiet);
 }
 
 /* ---------- the library in its own window ---------- */
