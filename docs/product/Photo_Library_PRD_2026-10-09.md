@@ -558,6 +558,24 @@ Decided:
 - **Exposure and clipping overlay:** blown highlights and blocked shadows
   shown on thumbnails, read from the RAW data.
 - Overlay first. A sharpness score comes later, if at all.
+- Decided October 9 from the mock-up:
+  - **A key is the quick switch; a click opens the options.** Clicking
+    Focus, Exposure or Compare in the toolbar does not turn it on or off.
+    It opens a small panel, in the same pattern as Overlays, Preview and
+    Frame on the Grade stage. The panel has the on/off switch and the
+    detailed settings. The key (S, E, C) stays the instant on/off.
+  - Focus options: strength, sensitivity, colour. Exposure options:
+    strength, blown highlights and blocked shadows each on or off and
+    each with its own colour. Compare options: layout (side by side, top
+    and bottom, split with a draggable divider) and whether file names
+    and marks show under the photos.
+  - Overlay colours can also be changed by clicking the colour square in
+    the legend.
+  - **Overlay colours are remembered between launches.** This is a stated
+    exception to the start-neutral rule in the design guidelines: it is a
+    preference about the user's eyes and photos, not a layout.
+  - Maps store only where, not what colour; the colour is applied on
+    screen, so changing a colour never re-makes maps.
 
 Proposed:
 
@@ -610,6 +628,12 @@ Decided:
   camera metadata say.
 - **Sidecars are the truth.** If the database is lost it is rebuilt by
   reading folders again.
+- **Preferences:** decided October 9. Personal settings that should survive
+  a restart (overlay colours first) go in the app's existing preferences
+  file, `application-preferences.json` in the app's data area, which
+  already holds settings such as remembered folders. They do not go in the
+  library database, because the database is an index that can be thrown
+  away and rebuilt, and rebuilding it must not reset anyone's preferences.
 
 Proposed:
 

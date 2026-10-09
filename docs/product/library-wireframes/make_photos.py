@@ -87,8 +87,8 @@ def focus_map(large, size):
     f = max(1, large.width // size[0])
     h, w = (lap.shape[0] // f) * f, (lap.shape[1] // f) * f
     pooled = lap[:h, :w].reshape(h // f, f, w // f, f).max(axis=(1, 3))
-    level = max(34.0, float(np.percentile(pooled, 90)))
-    alpha = np.clip((pooled - level) / level, 0, 1) * 235
+    level = max(18.0, float(np.percentile(pooled, 78)))
+    alpha = np.clip((pooled - level) / (level * 2.4), 0, 1) * 255
     rgba = np.zeros(pooled.shape + (4,), dtype=np.uint8)
     rgba[..., :3] = 255  # the app tints it; the map only says where
     rgba[..., 3] = alpha.astype(np.uint8)

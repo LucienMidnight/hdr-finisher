@@ -240,6 +240,7 @@
     renderDetails();
     renderStatus();
     renderFilters();
+    syncOptions();
   }
 
   function renderStatus() {
@@ -702,7 +703,9 @@
 
   // ---------- bar ----------
 
-  document.querySelectorAll("[data-view-button]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.viewButton)));
+  // Grid and single switch on a click. Compare, like Focus and Exposure, opens its options instead.
+  document.querySelectorAll("[data-view-button]").forEach((b) => b.addEventListener("click", () =>
+    (b.dataset.viewButton === "compare" ? openOptions("compare", b) : setView(b.dataset.viewButton))));
   $("review-button").addEventListener("click", () => setReview(true));
   $("thumb-size").addEventListener("input", () => $("grid").style.setProperty("--thumb", $("thumb-size").value + "px"));
   // ---------- pop-out: the library in its own window ----------
@@ -797,7 +800,124 @@
     }
     refresh();
   }
-  document.querySelectorAll("[data-overlay]").forEach((b) => b.addEventListener("click", () => toggleOverlay(b.dataset.overlay)));
+  document.querySelectorAll("[data-overlay]").forEach((b) => b.addEventListener("click", () => openOptions(b.dataset.overlay, b)));
+
+  // ---------- options panels ----------
+  // A key is the instant on/off. A click opens the panel, which has the same
+  // on/off switch plus the slower, detailed settings.
+
+  const opts = { focus: { strength: 85, sensitivity: 50 }, exposure: { strength: 90, high: true, low: true }, compare: { layout: "side", names: true } };
+  let optionsKind = null;
+
+  function applyOptions() {
+    app.style.setProperty("--focus-strength", opts.focus.strength / 100);
+    app.style.setProperty("--exposure-strength", opts.exposure.strength / 100);
+    // Sensitivity: how much fine detail counts as sharp.
+    const floor = ((100 - opts.focus.sensitivity) / 100) * 0.7;
+    const funcA = document.querySelector("#tint-focus feFuncA");
+    funcA.setAttribute("slope", 3);
+    funcA.setAttribute("intercept", -floor * 3);
+    app.dataset.high = opts.exposure.high ? "on" : "off";
+    app.dataset.low = opts.exposure.low ? "on" : "off";
+    $("compare").dataset.layout = opts.compare.layout;
+    app.dataset.compareNames = opts.compare.names ? "on" : "off";
+  }
+
+  const isOn = (kind) => (kind === "compare" ? state.view === "compare" : app.dataset[kind] === "on");
+  const row = (label, key, control) => `<label class="opt-row"><span>${label}${key ? `<kbd>${key}</kbd>` : ""}</span>${control}</label>`;
+  const slider = (kind, name, label, low, high) => `<div class="opt-slider"><label class="opt-row"><span>${label}</span><output>${opts[kind][name]}%</output></label>
+    <input type="range" min="${low}" max="${high}" value="${opts[kind][name]}" data-opt="${kind}.${name}"></div>`;
+  const colour = (kind, label) => `<span class="opt-colour"><input type="color" data-tint="${kind}" value="${tints[kind]}" aria-label="${label} colour"><input type="text" data-tint-text="${kind}" value="${tints[kind]}" maxlength="7" spellcheck="false"></span>`;
+
+  const PANELS = {
+    focus: () => `
+      ${row("Show focus overlay", "S", `<input type="checkbox" class="opt-switch" data-switch="focus" ${isOn("focus") ? "checked" : ""}>`)}
+      <hr>
+      ${slider("focus", "strength", "Strength", 10, 100)}
+      ${slider("focus", "sensitivity", "Sensitivity", 0, 100)}
+      ${row("Colour", "", colour("focus", "Focus"))}
+      <p class="helper">Shows where the sharp plane is, not whether it is on the right subject. At high ISO, noise can read as detail; lower the sensitivity.</p>`,
+    exposure: () => `
+      ${row("Show exposure overlay", "E", `<input type="checkbox" class="opt-switch" data-switch="exposure" ${isOn("exposure") ? "checked" : ""}>`)}
+      <hr>
+      ${slider("exposure", "strength", "Strength", 10, 100)}
+      ${row(`<span class="opt-check"><input type="checkbox" data-opt="exposure.high" ${opts.exposure.high ? "checked" : ""}> Blown highlights</span>`, "", colour("high", "Blown highlights"))}
+      ${row(`<span class="opt-check"><input type="checkbox" data-opt="exposure.low" ${opts.exposure.low ? "checked" : ""}> Blocked shadows</span>`, "", colour("low", "Blocked shadows"))}
+      <p class="helper">Read from the RAW data, before any grade, so it shows what the file really holds.</p>`,
+    compare: () => `
+      ${row("Compare", "C", `<input type="checkbox" class="opt-switch" data-switch="compare" ${isOn("compare") ? "checked" : ""}>`)}
+      <hr>
+      <div class="opt-row"><span>Layout</span></div>
+      <div class="opt-segment">${[["side", "Side by side"], ["top", "Top and bottom"], ["split", "Split"]].map(([v, l]) => `<button type="button" data-layout="${v}" class="${opts.compare.layout === v ? "on" : ""}">${l}</button>`).join("")}</div>
+      ${row(`<span class="opt-check"><input type="checkbox" data-opt="compare.names" ${opts.compare.names ? "checked" : ""}> File names and marks under photos</span>`, "", "")}
+      <p class="helper">Arrows flip the right-hand photo. [ and ] place the selected photo left or right. Zoom and position are shared. In Split, drag the divider.</p>`,
+  };
+  const TITLES = { focus: "Focus overlay", exposure: "Exposure overlay", compare: "Compare" };
+
+  function openOptions(kind, button) {
+    if (optionsKind === kind) return closeOptions();
+    optionsKind = kind;
+    const panel = $("options");
+    panel.innerHTML = `<div class="popover-heading"><span>${TITLES[kind]}</span><button type="button" class="text-button" data-close>Close</button></div>` + PANELS[kind]();
+    panel.hidden = false;
+    const at = button.getBoundingClientRect();
+    panel.style.top = at.bottom + 8 + "px";
+    panel.style.left = Math.max(8, Math.min(at.left, innerWidth - panel.offsetWidth - 8)) + "px";
+  }
+  function closeOptions() {
+    optionsKind = null;
+    $("options").hidden = true;
+  }
+  // Keep the panel's switch in step when the key is used while it is open.
+  function syncOptions() {
+    const box = optionsKind && $("options").querySelector("[data-switch]");
+    if (box) box.checked = isOn(optionsKind);
+    $("options").querySelectorAll("[data-tint]").forEach((i) => { i.value = tints[i.dataset.tint]; });
+  }
+
+  $("options").addEventListener("input", (event) => {
+    const t = event.target;
+    if (t.dataset.switch === "compare") setView(t.checked ? "compare" : "grid");
+    else if (t.dataset.switch) toggleOverlay(t.dataset.switch);
+    else if (t.dataset.opt) {
+      const [kind, name] = t.dataset.opt.split(".");
+      opts[kind][name] = t.type === "checkbox" ? t.checked : Number(t.value);
+      if (t.type === "range") t.previousElementSibling.querySelector("output").textContent = t.value + "%";
+      applyOptions();
+    } else if (t.dataset.tint) {
+      setTint(t.dataset.tint, t.value);
+      $("options").querySelector(`[data-tint-text="${t.dataset.tint}"]`).value = t.value;
+      refresh();
+    } else if (t.dataset.tintText && /^#[0-9a-f]{6}$/i.test(t.value)) {
+      setTint(t.dataset.tintText, t.value);
+      $("options").querySelector(`[data-tint="${t.dataset.tintText}"]`).value = t.value;
+      refresh();
+    }
+  });
+  $("options").addEventListener("click", (event) => {
+    if (event.target.closest("[data-close]")) return closeOptions();
+    const layout = event.target.closest("[data-layout]");
+    if (!layout) return;
+    opts.compare.layout = layout.dataset.layout;
+    $("options").querySelectorAll("[data-layout]").forEach((b) => b.classList.toggle("on", b === layout));
+    applyOptions();
+    if (state.view === "compare") refresh();
+  });
+  window.addEventListener("mousedown", (event) => {
+    if (optionsKind && !event.target.closest("#options, [data-overlay], [data-view-button='compare']")) closeOptions();
+  });
+
+  // Split compare: drag the divider.
+  let splitting = false;
+  $("split-handle").addEventListener("mousedown", (event) => { splitting = true; event.preventDefault(); event.stopPropagation(); });
+  window.addEventListener("mousemove", (event) => {
+    if (!splitting) return;
+    const box = $("compare").getBoundingClientRect();
+    $("compare").style.setProperty("--split", Math.min(95, Math.max(5, ((event.clientX - box.left) / box.width) * 100)) + "%");
+  });
+  window.addEventListener("mouseup", () => { splitting = false; });
+
+  applyOptions();
 
   // Side panels: open or collapsed to a rail, like Metadata on the other stages.
   function collapseButton(side, name) {
@@ -825,7 +945,8 @@
   document.addEventListener("keydown", (event) => {
     if (document.querySelector("dialog[open]")) return;
     if (!$("menu").hidden) { closeMenu(); if (event.key === "Escape") return; }
-    const typing = event.target instanceof Element && event.target.matches("input[type=text]");
+    if (optionsKind && event.key === "Escape") return closeOptions();
+    const typing = event.target instanceof Element && event.target.matches("input[type=text], input[type=range]");
     const key = event.key;
     if (key === "Escape") {
       if (typing) return event.target.blur();
@@ -1240,6 +1361,8 @@
   if (ask.has("focus")) { $("opt-slow").checked = false; toggleOverlay("focus"); }
   if (ask.has("exposure")) { $("opt-slow").checked = false; toggleOverlay("exposure"); }
   if (ask.get("popped") === "on") setPopped(true);
+  if (ask.has("layout")) { opts.compare.layout = ask.get("layout"); applyOptions(); }
+  if (ask.has("options")) setTimeout(() => openOptions(ask.get("options"), document.querySelector(`[data-overlay="${ask.get("options")}"], [data-view-button="${ask.get("options")}"]`)), 50);
   if (ask.get("first") === "on") { $("opt-first").checked = true; firstRun(); }
   if (ask.get("picker") === "on") { openPicker(); picker.chosen = picker.path[0].children.slice(0, 3); renderPicker(); }
   if (ask.has("delete")) confirmDelete(targets());

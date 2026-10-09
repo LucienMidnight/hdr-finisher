@@ -1632,3 +1632,259 @@ img.stage-ov {
   font-size: 9px;
   letter-spacing: .04em;
 }
+
+/* ---------- options panels: click Focus, Exposure or Compare ----------
+   Same pattern as Overlays / Preview / Frame on the Grade stage. */
+
+img.ov-focus {
+  opacity: var(--focus-strength, .85);
+}
+
+img.ov-high,
+img.ov-low {
+  opacity: var(--exposure-strength, .9);
+}
+
+[data-high="off"] img.ov-high,
+[data-low="off"] img.ov-low {
+  display: none !important;
+}
+
+.lib-options {
+  position: fixed;
+  top: auto;
+  right: auto;
+  z-index: 240;
+  width: 300px;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 52%);
+  color: var(--body);
+  font-size: 12px;
+}
+
+.lib-options[hidden] {
+  display: none;
+}
+
+.lib-options .text-button {
+  border: 0;
+  cursor: pointer;
+}
+
+.opt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 26px;
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.opt-row kbd {
+  margin-left: 6px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.opt-row output {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.opt-slider {
+  display: grid;
+  gap: 2px;
+}
+
+.opt-slider input[type="range"] {
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+
+.opt-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--instrument-slider-channel-background);
+  box-shadow: var(--instrument-slider-channel-shadow);
+}
+
+.opt-slider input[type="range"]::-webkit-slider-thumb {
+  width: 7px;
+  height: 15px;
+  margin-top: -4px;
+  border-radius: 2px;
+  background: var(--instrument-slider-thumb-background);
+  box-shadow: var(--instrument-slider-thumb-shadow);
+  appearance: none;
+}
+
+/* The app's switch: a recessed pill, ultraviolet when on. */
+.opt-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 24px;
+  margin: 0;
+  border-radius: var(--radius-pill);
+  background: var(--instrument-slider-channel-background);
+  box-shadow: var(--instrument-slider-channel-shadow);
+  appearance: none;
+  cursor: pointer;
+}
+
+.opt-switch:checked {
+  background: var(--accent);
+}
+
+.opt-switch::after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f4f5f5, #b9bfc3 60%, #8f979c);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 60%);
+  content: "";
+  transition: left 120ms ease;
+}
+
+.opt-switch:checked::after {
+  left: 22px;
+}
+
+.opt-colour {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.opt-colour input[type="color"] {
+  width: 30px;
+  height: 24px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--input);
+  cursor: pointer;
+}
+
+.opt-colour input[type="text"] {
+  width: 74px;
+  min-height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  background: var(--input);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.opt-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.opt-segment {
+  display: flex;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--segment-channel-background);
+  box-shadow: var(--depth-channel);
+}
+
+.opt-segment button {
+  flex: 1 1 0;
+  min-height: 26px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.opt-segment button.on {
+  background: var(--segment-selected-background);
+  box-shadow: var(--segment-selected-shadow);
+  color: var(--accent-strong);
+}
+
+.lib-options hr {
+  width: 100%;
+  height: 1px;
+  margin: 0;
+  border: 0;
+  background: var(--hairline);
+}
+
+/* ---------- compare layouts ---------- */
+
+.lib-compare[data-layout="top"] {
+  flex-direction: column;
+}
+
+.lib-split-handle {
+  display: none;
+}
+
+.lib-compare[data-layout="split"] {
+  position: relative;
+  --split: 50%;
+}
+
+.lib-compare[data-layout="split"] .lib-compare-pane {
+  position: absolute;
+  inset: 0;
+}
+
+.lib-compare[data-layout="split"] .lib-compare-pane:first-child {
+  z-index: 1;
+  clip-path: inset(0 calc(100% - var(--split)) 0 0);
+}
+
+.lib-compare[data-layout="split"] .lib-compare-pane:first-child .lib-single-caption {
+  justify-content: flex-start;
+  padding-left: 16px;
+}
+
+.lib-compare[data-layout="split"] .lib-compare-pane:last-child .lib-single-caption {
+  justify-content: flex-end;
+  padding-right: 16px;
+}
+
+.lib-compare[data-layout="split"] .lib-split-handle {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 26px;
+  left: calc(var(--split) - 5px);
+  display: block;
+  width: 11px;
+  cursor: ew-resize;
+}
+
+.lib-compare[data-layout="split"] .lib-split-handle::after {
+  position: absolute;
+  inset: 0 5px;
+  background: var(--text);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 55%);
+  content: "";
+}
+
+[data-compare-names="off"] .lib-compare .lib-single-caption {
+  display: none;
+}
