@@ -1303,22 +1303,39 @@
   // metadata. One run can tick several, and makes one file per photo for each.
   // Formats and presets are the ones on the Export stage today.
 
-  const FORMATS = { "AVIF gain map": "avif", "JPEG Ultra HDR": "jpg", "JPEG XL HDR": "jxl", "JPEG image": "jpg", "PNG image": "png", "JPEG XL SDR": "jxl" };
-  const PRESETS = ["Web default", "Web optimized", "Maximum fidelity"];
-  const SIZES = [["original", "Original size"], ["3840", "3840 px long edge"], ["2560", "2560 px long edge"], ["2048", "2048 px long edge"], ["1600", "1600 px long edge"]];
-  const METADATA = ["None", "Copyright only", "All except location", "All"];
+  // Every setting below is one that the Export stage has today, with the same
+  // names and choices. Only the file name pattern and sub-folder are new.
+  const FORMATS = { "AVIF + gain map": "avif", "JPEG Ultra HDR": "jpg", "JPEG XL HDR": "jxl", "JPEG XL (SDR)": "jxl", "PNG (SDR)": "png", "JPEG (SDR)": "jpg" };
+  const PRESETS = ["Web Default", "Web Optimized", "Maximum Fidelity"];
+  const PRESET_QUALITY = { "Web Default": 85, "Web Optimized": 75, "Maximum Fidelity": 100 };
+  const CHROMA = ["4:2:0", "4:2:2", "4:4:4"];
+  // The advanced settings each format has on the Export stage.
+  const ADVANCED = {
+    "AVIF + gain map": [["bitDepth", "Bit Depth", ["8-bit", "10-bit", "12-bit"], "10-bit"], ["chroma", "Chroma Subsampling", CHROMA, "4:2:0"], ["gainQuality", "Gain-map Quality", "range", 85], ["gainScale", "Gain-map Resolution", ["Half", "Full"], "Half"]],
+    "JPEG Ultra HDR": [["gainQuality", "Gain-map Quality", "range", 100], ["gainScale", "Gain-map Resolution", ["Full", "Half"], "Full"], ["chroma", "Primary JPEG Chroma", CHROMA, "4:2:0"]],
+    "JPEG XL HDR": [["precision", "Precision", ["10-bit integer", "12-bit integer", "16-bit integer", "16-bit float", "32-bit float"], "12-bit integer"]],
+    "JPEG XL (SDR)": [["precision", "Precision", ["10-bit integer", "12-bit integer", "16-bit integer", "16-bit float", "32-bit float"], "12-bit integer"]],
+    "PNG (SDR)": [["bitDepth", "Bit Depth", ["8-bit", "16-bit"], "8-bit"]],
+    "JPEG (SDR)": [["chroma", "Chroma Subsampling", CHROMA, "4:2:0"]],
+  };
   const TOKENS = ["{name}", "{date}", "{seq}", "{rating}", "{recipe}"];
+  const newRecipe = (over) => Object.assign({
+    name: "New recipe", format: "JPEG Ultra HDR", preset: "Web Default", quality: 85, dithering: "Auto", metadata: "None",
+    resize: "Long edge", longEdge: 2048, width: 2048, height: 2048, noEnlarge: true, sharpening: "Off",
+    pattern: "{name}", folder: "", advanced: false, on: true,
+  }, over);
   const recipes = [
-    { name: "HDR for web", format: "AVIF gain map", preset: "Web default", size: "2560", pattern: "{name}_HDR", folder: "HDR", metadata: "Copyright only", on: true },
-    { name: "SDR for clients", format: "JPEG image", preset: "Web default", size: "2048", pattern: "{name}", folder: "SDR", metadata: "Copyright only", on: true },
-    { name: "Full-size archive", format: "JPEG XL HDR", preset: "Maximum fidelity", size: "original", pattern: "{date}_{name}", folder: "Archive", metadata: "All except location", on: false },
+    newRecipe({ name: "HDR for web", format: "AVIF + gain map", longEdge: 2560, pattern: "{name}_HDR", folder: "HDR", metadata: "Copyright only", sharpening: "Subtle" }),
+    newRecipe({ name: "SDR for clients", format: "JPEG (SDR)", longEdge: 2048, folder: "SDR", metadata: "Copyright only", sharpening: "Standard" }),
+    newRecipe({ name: "Full-size archive", format: "JPEG XL HDR", preset: "Maximum Fidelity", quality: 100, resize: "Original cropped size", pattern: "{date}_{name}", folder: "Archive", metadata: "All except location", on: false }),
   ];
   const run = { list: [], recipe: 0, jobs: [], at: 0, timer: null, finished: false };
 
   const exportName = (recipe, p, n) => recipe.pattern
     .replaceAll("{name}", p.name.replace(/\.[^.]+$/, "")).replaceAll("{date}", "2026-09-12").replaceAll("{seq}", String(n + 1).padStart(3, "0"))
     .replaceAll("{rating}", p.stars + "star").replaceAll("{recipe}", recipe.name.replace(/\s+/g, "-")) + "." + FORMATS[recipe.format];
-  const recipeLine = (r) => `${r.format} · ${r.preset}<br>${r.size === "original" ? "original size" : r.size + " px"} · ${r.folder ? "\\" + r.folder : "no sub-folder"}`;
+  const sizeText = (r) => (r.resize === "Long edge" ? `${r.longEdge || "?"} px long edge` : r.resize === "Fit within dimensions" ? `fit ${r.width || "?"} × ${r.height || "?"} px` : "original size");
+  const recipeLine = (r) => `${r.format} · ${r.preset} · Q${r.quality}<br>${sizeText(r)} · ${r.folder ? "\\" + r.folder : "no sub-folder"}`;
 
   function renderRecipes() {
     $("export-recipes").innerHTML = recipes.map((r, i) => `<label class="recipe-row${i === run.recipe ? " selected" : ""}" data-recipe="${i}">
@@ -1333,26 +1350,44 @@
         (ungraded ? `\n${ungraded} of them ${ungraded === 1 ? "has" : "have"} no grade and will be exported with the default look.` : "");
     $("export-go").textContent = files === 1 ? "Export 1 file" : `Export ${files} files`;
     $("export-go").disabled = !files;
+    const r = recipes[run.recipe];
     const example = $("export-editor").querySelector(".recipe-example");
-    if (example && recipes[run.recipe]) example.textContent = `${$("export-folder").value}\\${recipes[run.recipe].folder ? recipes[run.recipe].folder + "\\" : ""}${exportName(recipes[run.recipe], run.list[0], 0)}`;
+    if (example && r) example.textContent = `${$("export-folder").value}\\${r.folder ? r.folder + "\\" : ""}${exportName(r, run.list[0], 0)}`;
+    const preset = $("export-editor").querySelector('[data-field="preset"]');
+    if (preset && r) preset.value = r.preset;
   }
 
   function renderEditor() {
     const r = recipes[run.recipe];
     if (!r) { $("export-editor").innerHTML = `<p class="helper">No recipes yet. Add one to begin.</p>`; return renderRecipes(); }
-    const select = (field, options) => `<select data-field="${field}">${options.map((o) => {
-      const [value, label] = Array.isArray(o) ? o : [o, o];
-      return `<option value="${value}" ${r[field] === value ? "selected" : ""}>${label}</option>`;
-    }).join("")}</select>`;
+    const select = (field, options) => `<select data-field="${field}">${options.map((o) => `<option ${String(r[field]) === o ? "selected" : ""}>${o}</option>`).join("")}</select>`;
+    const field = (label, control, cls) => `<label class="lib-export-field${cls ? " " + cls : ""}"><span>${label}</span>${control}</label>`;
+    const range = (name, label) => `<div class="lib-export-field opt-slider"><label class="opt-row"><span>${label}</span><output>${r[name]}</output></label><input type="range" min="1" max="100" value="${r[name]}" data-field="${name}" data-number></div>`;
+    const number = (name, label) => field(label, `<input type="text" inputmode="numeric" class="mono" data-field="${name}" data-number value="${r[name]}" spellcheck="false">`);
+    ADVANCED[r.format].forEach(([name, , , fallback]) => { if (r[name] === undefined) r[name] = fallback; });
+    const advanced = ADVANCED[r.format].map(([name, label, options]) => (options === "range" ? range(name, label) : field(label, select(name, options)))).join("") +
+      field("Dithering", select("dithering", ["Auto", "Off", "Subtle"])) +
+      field("Source Metadata", select("metadata", ["None", "Copyright only", "All except location", "All including location"]));
+    const size = r.resize === "Long edge" ? number("longEdge", "Long edge (px)") + `<span></span>`
+      : r.resize === "Fit within dimensions" ? number("width", "Width (px)") + number("height", "Height (px)") : "";
     $("export-editor").innerHTML = `
-      <label class="lib-export-field wide"><span>Recipe name</span><input type="text" data-field="name" value="${r.name}"></label>
-      <label class="lib-export-field"><span>Format</span>${select("format", Object.keys(FORMATS))}</label>
-      <label class="lib-export-field"><span>Quality preset</span>${select("preset", PRESETS)}</label>
-      <label class="lib-export-field"><span>Size</span>${select("size", SIZES)}</label>
-      <label class="lib-export-field"><span>Metadata written into the file</span>${select("metadata", METADATA)}</label>
-      <label class="lib-export-field wide"><span>File name pattern</span><input type="text" class="mono" data-field="pattern" value="${r.pattern}" spellcheck="false"></label>
+      ${field("Recipe name", `<input type="text" data-field="name" value="${r.name}">`, "wide")}
+      <div class="paste-kicker wide">Format</div>
+      ${field("Format", select("format", Object.keys(FORMATS)))}
+      ${field("Preset", select("preset", [...PRESETS, ...(r.preset === "Custom" ? ["Custom"] : [])]))}
+      <div class="paste-kicker wide">Encoding</div>
+      ${range("quality", "Quality")}<span></span>
+      <button type="button" class="lib-export-advanced wide" id="export-advanced">${icon("twist", r.advanced ? "twist open" : "twist")}Advanced export settings</button>
+      ${r.advanced ? advanced : ""}
+      <div class="paste-kicker wide">Output Size &amp; Sharpening</div>
+      ${field("Resize", select("resize", ["Original cropped size", "Long edge", "Fit within dimensions"]))}
+      ${field("Output Sharpening", select("sharpening", ["Off", "Subtle", "Standard", "Strong"]))}
+      ${size}
+      <label class="lib-export-field wide opt-check"><input type="checkbox" data-field="noEnlarge" ${r.noEnlarge ? "checked" : ""}> Prevent enlargement</label>
+      <div class="paste-kicker wide">Destination</div>
+      ${field("File name pattern", `<input type="text" class="mono" data-field="pattern" value="${r.pattern}" spellcheck="false">`, "wide")}
       <div class="lib-export-field wide"><div class="recipe-tokens">${TOKENS.map((t) => `<button type="button" data-token="${t}">${t}</button>`).join("")}</div></div>
-      <label class="lib-export-field wide"><span>Sub-folder inside the export folder (optional)</span><input type="text" data-field="folder" value="${r.folder}" spellcheck="false"></label>
+      ${field("Sub-folder inside the export folder (optional)", `<input type="text" data-field="folder" value="${r.folder}" spellcheck="false">`, "wide")}
       <div class="lib-export-field wide"><span>Example</span><span class="recipe-example"></span></div>
       <button type="button" class="recipe-remove" id="export-remove">Delete this recipe</button>`;
     renderRecipes();
@@ -1378,10 +1413,11 @@
     }
     if (row && !event.target.matches("input")) { event.preventDefault(); run.recipe = Number(row.dataset.recipe); return renderEditor(); }
     if (event.target.id === "export-new") {
-      recipes.push({ name: "New recipe", format: "JPEG Ultra HDR", preset: "Web default", size: "2560", pattern: "{name}", folder: "", metadata: "Copyright only", on: true });
+      recipes.push(newRecipe({}));
       run.recipe = recipes.length - 1;
       return renderEditor();
     }
+    if (event.target.closest("#export-advanced")) { recipes[run.recipe].advanced = !recipes[run.recipe].advanced; return renderEditor(); }
     if (event.target.id === "export-remove") { recipes.splice(run.recipe, 1); run.recipe = Math.max(0, run.recipe - 1); return renderEditor(); }
     if (event.target.id === "export-browse") return toast("Opens the same folder picker as Add folder.");
     if (event.target.id === "export-cancel") return $("export").close();
@@ -1389,8 +1425,21 @@
   });
   $("export").addEventListener("input", (event) => {
     const t = event.target;
+    const r = recipes[run.recipe];
     if (t.dataset.recipeOn) recipes[Number(t.dataset.recipeOn)].on = t.checked;
-    else if (t.dataset.field) recipes[run.recipe][t.dataset.field] = t.value;
+    else if (t.dataset.field) {
+      const name = t.dataset.field;
+      // Sizes are typed: keep digits only, any whole number of pixels.
+      if (t.type === "text" && t.dataset.number !== undefined) t.value = t.value.replace(/\D/g, "").slice(0, 6);
+      r[name] = t.type === "checkbox" ? t.checked : t.dataset.number !== undefined ? Number(t.value) : t.value;
+      if (t.type === "range") t.previousElementSibling.querySelector("output").textContent = t.value;
+      // As on the Export stage: a preset sets the encoding; changing the encoding by hand makes it Custom.
+      if (name === "preset" && PRESET_QUALITY[r.preset]) { r.quality = PRESET_QUALITY[r.preset]; return renderEditor(); }
+      const encoding = name === "quality" || ADVANCED[r.format].some(([n]) => n === name) || name === "dithering" || name === "metadata";
+      if (encoding && r.preset !== "Custom") { r.preset = "Custom"; if (t.type !== "range") return renderEditor(); const box = $("export-editor").querySelector('[data-field="preset"]'); if (![...box.options].some((o) => o.value === "Custom")) box.add(new Option("Custom")); }
+      if (name === "format") { ADVANCED[r.format].forEach(([n, , , fallback]) => { r[n] = fallback; }); return renderEditor(); }
+      if (name === "resize") return renderEditor();
+    }
     renderRecipes();
   });
 

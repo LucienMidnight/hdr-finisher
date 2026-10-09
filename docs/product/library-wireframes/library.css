@@ -2279,3 +2279,54 @@ img.ov-low {
   border-radius: 2px;
   background: linear-gradient(90deg, var(--accent) var(--done, 0%), var(--border) var(--done, 0%));
 }
+
+/* Export recipe editor: the Export stage's settings, in its sections. */
+.lib-export-editor .paste-kicker {
+  padding: 6px 0 0;
+}
+
+.lib-export-editor .wide {
+  grid-column: 1 / -1;
+}
+
+.lib-export-editor .paste-kicker:not(:first-of-type) {
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.lib-export-advanced {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lib-export-advanced svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 120ms ease;
+}
+
+.lib-export-advanced svg.open {
+  transform: rotate(90deg);
+}
+
+.lib-export-editor .opt-slider .opt-row {
+  min-height: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.lib-export-editor .opt-check {
+  display: flex;
+  color: var(--body);
+  font-size: 12px;
+}

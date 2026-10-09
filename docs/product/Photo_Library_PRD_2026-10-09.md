@@ -788,6 +788,19 @@ Decided:
   size, naming pattern and sub-folder.
 - **Pattern naming happens here**, on the exported files, not on originals.
 - Authored metadata (5.8) is written into exports.
+- Decided October 9 from the mock-up:
+  - **A recipe has the same settings the Export stage has today**, with the
+    same names and choices: format, preset, quality, the advanced settings
+    for that format, dithering, source metadata, resize, prevent
+    enlargement and output sharpening. A recipe adds only a name, a file
+    name pattern and an optional sub-folder.
+  - **Sizes are typed as numbers.** Long edge, and width and height for
+    "Fit within dimensions", take any whole number of pixels; there is no
+    fixed list of sizes.
+  - **Direction for the Export stage:** it will probably be retired in time,
+    with its tab opening this export window for the open photo instead of
+    a page. Not scheduled. Until then both exist and must offer the same
+    settings.
 
 Proposed:
 
