@@ -80,6 +80,9 @@
                 <button class="tool-button lib-icon-button" type="button" data-view-button="single" title="Single photo · Space" aria-label="Single photo">
                   <svg viewBox="0 0 24 24"><path d="M4 4h16v11h-16z M4 19h3 M10.5 19h3 M17 19h3"/></svg>
                 </button>
+                <button class="tool-button lib-icon-button" type="button" data-view-button="compare" title="Compare · C" aria-label="Compare">
+                  <svg viewBox="0 0 24 24"><path d="M3 5h7.5v14h-7.5z M13.5 5h7.5v14h-7.5z"/></svg>
+                </button>
                 <button class="tool-button lib-icon-button" type="button" id="review-button" title="Full-screen review · F" aria-label="Full-screen review">
                   <svg viewBox="0 0 24 24"><path d="M16 4h4v4 M14 10l6 -6 M8 20h-4v-4 M4 20l6 -6 M16 20h4v-4 M14 14l6 6 M8 4h-4v4 M4 4l6 6"/></svg>
                 </button>
@@ -132,6 +135,16 @@
             <div class="lib-single" id="single" hidden>
               <div class="lib-single-stage" id="single-stage"><img id="single-image" alt=""></div>
               <div class="lib-single-caption" id="single-caption"></div>
+              <div class="lib-compare" id="compare">
+                <div class="lib-compare-pane">
+                  <div class="lib-single-stage" id="compare-ref-stage"><img id="compare-ref-image" alt=""></div>
+                  <div class="lib-single-caption" id="compare-ref-caption"></div>
+                </div>
+                <div class="lib-compare-pane">
+                  <div class="lib-single-stage" id="compare-stage"><img id="compare-image" alt=""></div>
+                  <div class="lib-single-caption" id="compare-caption"></div>
+                </div>
+              </div>
               <div class="lib-filmstrip" id="filmstrip"></div>
             </div>
           </div>
@@ -175,6 +188,8 @@
       <dt>P · X · U</dt><dd>Pick · reject · unmark</dd>
       <dt>Space</dt><dd>Single photo and back</dd>
       <dt>Z · click photo</dt><dd>100% and back to fit. Drag to move around.</dd>
+      <dt>C</dt><dd>Compare: the current photo is pinned on the left, arrows flip the right side</dd>
+      <dt>R</dt><dd>In compare: make the right photo the new reference</dd>
       <dt>G</dt><dd>Grid</dd>
       <dt>F</dt><dd>Full-screen review</dd>
       <dt>I</dt><dd>Details panel, open or collapsed</dd>

@@ -90,6 +90,7 @@
     undo: [],
     shown: [],
     review: false,
+    ref: null,
     zoom: { on: false, fx: 0.5, fy: 0.5 },
   };
 
@@ -213,13 +214,15 @@
       cell.classList.toggle("selected", state.sel.has(p.id));
       cell.classList.toggle("active", state.active === p.id);
       cell.classList.toggle("rejected", p.flag === "reject");
+      cell.classList.toggle("reference", state.view === "compare" && state.ref === p.id);
       cell.querySelector(".marks").innerHTML = marksHtml(p);
     });
     app.dataset.view = state.view;
     $("grid").hidden = state.view !== "grid";
-    $("single").hidden = state.view !== "single";
+    $("single").hidden = state.view === "grid";
     document.querySelectorAll("[data-view-button]").forEach((b) => b.classList.toggle("active", b.dataset.viewButton === state.view));
     if (state.view === "single") renderSingle();
+    if (state.view === "compare") renderCompare();
     if (state.review) renderReview();
     renderDetails();
     renderStatus();
@@ -359,7 +362,7 @@
   }
 
   // Click to zoom on that spot, click again to fit, drag to move around.
-  function zoomable(stage, img) {
+  function zoomable(stage, photo) {
     let drag = null;
     stage.addEventListener("mousedown", (event) => {
       if (event.button !== 0) return;
@@ -371,18 +374,18 @@
       const [dx, dy] = [event.clientX - drag.x, event.clientY - drag.y];
       if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
       if (!state.zoom.on || !drag.moved) return;
-      const rect = img.getBoundingClientRect();
+      const rect = stage.querySelector("img").getBoundingClientRect();
       state.zoom.fx = Math.min(1, Math.max(0, drag.fx - dx / rect.width));
       state.zoom.fy = Math.min(1, Math.max(0, drag.fy - dy / rect.height));
-      place(img, current());
+      rezoom();
     });
     window.addEventListener("mouseup", (event) => {
       if (!drag) return;
       const moved = drag.moved;
       drag = null;
-      if (moved || !current()) return;
+      const p = photo();
+      if (moved || !p) return;
       if (state.zoom.on) return setZoom(false);
-      const p = current();
       const box = stage.getBoundingClientRect();
       const pad = stage === $("review") ? 0 : 14;
       const fit = Math.min((box.width - pad * 2) / p.w, (box.height - pad * 2) / p.h);
@@ -390,6 +393,14 @@
       const fy = (event.clientY - (box.top + box.height / 2)) / (p.h * fit) + 0.5;
       setZoom(true, Math.min(1, Math.max(0, fx)), Math.min(1, Math.max(0, fy)));
     });
+  }
+
+  // Zoom is shared: in compare both sides move together.
+  function rezoom() {
+    if (state.review) return place($("review-image"), current());
+    if (state.view === "single") return place($("single-image"), current());
+    place($("compare-ref-image"), byId(state.ref));
+    place($("compare-image"), current());
   }
 
   function current() {
@@ -414,7 +425,45 @@
     $("review-marks").innerHTML = `<span>${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}${state.zoom.on ? "<span>100%</span>" : ""}`;
   }
 
+  const captionMarks = (p) => `<span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}`;
+
+  function renderCompare() {
+    const [r, c] = [byId(state.ref), current()];
+    if (!r || !c) return;
+    show($("compare-ref-image"), r);
+    show($("compare-image"), c);
+    $("compare-ref-image").classList.toggle("rejected", r.flag === "reject");
+    $("compare-image").classList.toggle("rejected", c.flag === "reject");
+    $("compare-ref-caption").innerHTML = `<span class="tag">Reference</span><span>${r.name}</span>${captionMarks(r)}`;
+    $("compare-caption").innerHTML = `<span>${c.name}</span>${captionMarks(c)}<span>${state.shown.indexOf(c) + 1} / ${state.shown.length}</span><span>${state.zoom.on ? "100%" : "Fit"}</span>`;
+  }
+
+  // Pin the current photo as the reference and put its neighbour beside it.
+  // With two or more selected, the first is the reference and the second sits beside it.
+  function startCompare() {
+    const ids = state.shown.map((p) => p.id);
+    const picked = ids.filter((id) => state.sel.has(id));
+    const first = picked.length >= 2 ? picked[0] : current() && current().id;
+    if (first === null || first === undefined || ids.length < 2) return false;
+    const at = ids.indexOf(first);
+    state.ref = first;
+    const beside = picked.length >= 2 ? picked[1] : ids[at + 1 < ids.length ? at + 1 : at - 1];
+    state.active = state.anchor = beside;
+    state.sel = new Set([beside]);
+    return true;
+  }
+
+  // "This one is better": the right photo becomes the reference.
+  function promote() {
+    if (state.view !== "compare") return;
+    const ids = state.shown.map((p) => p.id);
+    const at = ids.indexOf(state.active);
+    state.ref = state.active;
+    select(ids[at + 1 < ids.length ? at + 1 : at - 1]);
+  }
+
   function setView(view) {
+    if (view === "compare" && !startCompare()) return toast("Compare needs at least two photos.");
     state.view = view;
     state.zoom.on = false;
     if (view === "single") current();
@@ -441,8 +490,10 @@
     } else if (document.fullscreenElement) document.exitFullscreen();
     refresh();
   }
-  zoomable($("single-stage"), $("single-image"));
-  zoomable($("review"), $("review-image"));
+  zoomable($("single-stage"), current);
+  zoomable($("review"), current);
+  zoomable($("compare-ref-stage"), () => byId(state.ref));
+  zoomable($("compare-stage"), current);
   window.addEventListener("resize", refresh);
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && state.review) setReview(false); });
 
@@ -626,10 +677,10 @@
     if (key === "Escape") {
       if (typing) return event.target.blur();
       if (!$("keys").hidden) return ($("keys").hidden = true);
-      if (state.zoom.on && (state.review || state.view === "single")) return setZoom(false);
+      if (state.zoom.on && (state.review || state.view !== "grid")) return setZoom(false);
       if (state.review) return setReview(false);
       if (app.dataset.stage === "grade") return setStage("library");
-      if (state.view === "single") return setView("grid");
+      if (state.view !== "grid") return setView("grid");
       if (!$("filterbar").hidden) return toggleFilterBar(false);
       return;
     }
@@ -650,7 +701,9 @@
       " ": () => setView(state.view === "grid" ? "single" : "grid"),
       g: () => setView("grid"),
       f: () => setReview(!state.review),
-      z: () => { if (state.review || state.view === "single") setZoom(!state.zoom.on); },
+      z: () => { if (state.review || state.view !== "grid") setZoom(!state.zoom.on); },
+      c: () => setView(state.view === "compare" ? "grid" : "compare"),
+      r: promote,
       i: toggleDetails,
       Tab: () => {
         const open = app.dataset.nav === "collapsed" && app.dataset.details === "collapsed";
@@ -700,6 +753,8 @@
   refresh();
   if (ask.has("select")) ask.get("select").split(",").forEach((n, i) => select(state.shown[Number(n)].id, i ? "toggle" : "single"));
   if (ask.get("view") === "single") setView("single");
+  if (ask.get("view") === "compare") setView("compare");
+  if (ask.get("zoom") === "on") setZoom(true, 0.5, 0.45);
   if (ask.get("view") === "grade") openInGrade();
   if (ask.get("view") === "review") { state.review = true; $("review").hidden = false; refresh(); }
 })();

@@ -1227,3 +1227,51 @@ svg {
   opacity: 1;
   transition: none;
 }
+
+/* ---------- compare: reference left, the photo being flipped right ---------- */
+
+.lib-compare {
+  display: none;
+  flex: 1 1 auto;
+  gap: 1px;
+  min-height: 0;
+  background: var(--panel);
+}
+
+[data-view="compare"] .lib-compare {
+  display: flex;
+}
+
+[data-view="compare"] #single-stage,
+[data-view="compare"] #single-caption {
+  display: none;
+}
+
+.lib-compare-pane {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--viewer);
+}
+
+.lib-single-caption .tag {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--body);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.lib-filmstrip .cell.reference {
+  box-shadow: inset 0 0 0 2px var(--body);
+}
+
+.lib-filmstrip .cell.reference.active {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.lib-single-caption .flag {
+  fill: currentColor;
+}
