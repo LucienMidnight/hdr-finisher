@@ -945,8 +945,14 @@
     { name: "Pictures", children: [{ name: "Screenshots", photos: 312 }, { name: "Phone backup", photos: 1840 }] },
     { name: "NAS (\\\\studio)", offline: true },
   ] };
-  const picker = { path: [DISK.children[0]], chosen: null };
+  const picker = { path: [DISK.children[0]], chosen: [], anchor: null };
   const total = (node) => (node.photos || 0) + (node.children || []).reduce((sum, c) => sum + total(c), 0);
+
+  // What Pin would add: the ticked folders, or the folder being looked at.
+  function pickerTargets() {
+    if (picker.chosen.length) return picker.chosen;
+    return picker.path.length > 1 ? [picker.path[picker.path.length - 1]] : [];
+  }
 
   function renderPicker() {
     const here = picker.path[picker.path.length - 1];
@@ -955,31 +961,41 @@
     $("picker-crumbs").innerHTML = picker.path.map((n, i) => `<button type="button" data-crumb="${i}">${n.name}</button>`).join("<span>›</span>");
     const rows = here.children || [];
     $("picker-list").innerHTML = rows.length ? rows.map((n, i) =>
-      `<button type="button" class="nav-row${n === picker.chosen ? " selected" : ""}" data-row="${i}">${icon("twist", "twist" + (n.children ? "" : " none"))}${icon("folder")}<span class="label">${n.name}</span>
+      `<button type="button" class="nav-row${picker.chosen.includes(n) ? " selected" : ""}" data-row="${i}">${icon("twist", "twist" + (n.children ? "" : " none"))}${icon("folder")}<span class="label">${n.name}</span>
         <span class="count">${n.pinned ? "pinned · " : ""}${total(n).toLocaleString()} photos</span></button>`).join("")
       : "<p>No sub-folders here.</p>";
-    const target = picker.chosen || (picker.path.length > 1 ? here : null);
-    $("picker-target").textContent = target ? `${[...picker.path.slice(0, picker.chosen ? undefined : -1), target].map((n) => n.name).join(" › ")}  ·  ${total(target).toLocaleString()} photos, sub-folders included` : "Choose a folder";
-    $("picker-pin").disabled = $("picker-open").disabled = !target || !!target.pinned;
-    $("picker-pin").textContent = target && target.pinned ? "Already pinned" : "Pin folder";
-    picker.target = target;
+    const targets = pickerTargets();
+    const fresh = targets.filter((n) => !n.pinned);
+    const photosIn = fresh.reduce((sum, n) => sum + total(n), 0).toLocaleString();
+    const where = picker.path.slice(0, picker.chosen.length ? undefined : -1).map((n) => n.name).join(" › ");
+    $("picker-target").textContent = !targets.length ? "Choose one or more folders"
+      : targets.length === 1 ? `${where} › ${targets[0].name}  ·  ${total(targets[0]).toLocaleString()} photos, sub-folders included`
+        : `${targets.length} folders in ${where}  ·  ${photosIn} photos, sub-folders included` + (fresh.length < targets.length ? `  ·  ${targets.length - fresh.length} already pinned` : "");
+    $("picker-pin").disabled = $("picker-open").disabled = !fresh.length;
+    $("picker-pin").textContent = targets.length && !fresh.length ? "Already pinned" : fresh.length > 1 ? `Pin ${fresh.length} folders` : "Pin folder";
+    $("picker-open").textContent = fresh.length > 1 ? `Open ${fresh.length} without pinning` : "Open without pinning";
   }
 
   function openPicker() {
-    picker.chosen = null;
+    picker.chosen = [];
+    picker.anchor = null;
     renderPicker();
     $("picker").showModal();
   }
 
-  function addPlace(pin) {
-    const node = picker.target;
-    const place = { id: "added-" + Date.now(), icon: pin ? "folder" : "card", label: node.name, scenes: node.scenes || [] };
-    if (!pin) place.note = "not pinned";
-    else node.pinned = true;
-    PLACES.splice(PLACES.findIndex((p) => p.heading === "Projects"), 0, place);
+  function addPlaces(pin) {
+    const nodes = pickerTargets().filter((n) => !n.pinned);
+    const added = nodes.map((node, i) => {
+      const place = { id: `added-${Date.now()}-${i}`, icon: pin ? "folder" : "card", label: node.name, scenes: node.scenes || [] };
+      if (pin) node.pinned = true; else place.note = "not pinned";
+      PLACES.splice(PLACES.findIndex((p) => p.heading === "Projects"), 0, place);
+      return place;
+    });
     $("picker").close();
-    goTo(place.id);
-    toast(pin ? `${node.name} pinned. Indexing ${total(node).toLocaleString()} photos in the background.` : `${node.name} opened without pinning.`);
+    goTo(added[0].id);
+    const count = nodes.reduce((sum, n) => sum + total(n), 0).toLocaleString();
+    const what = nodes.length === 1 ? nodes[0].name : `${nodes.length} folders`;
+    toast(pin ? `${what} pinned. Indexing ${count} photos in the background.` : `${what} opened without pinning.`);
   }
 
   $("picker").addEventListener("click", (event) => {
@@ -991,21 +1007,41 @@
       const d = DISK.children[Number(drive.dataset.drive)];
       if (d.offline) return;
       picker.path = [d];
-      picker.chosen = null;
+      picker.chosen = [];
     } else if (crumb) {
       picker.path = picker.path.slice(0, Number(crumb.dataset.crumb) + 1);
-      picker.chosen = null;
-    } else if (row) picker.chosen = here.children[Number(row.dataset.row)];
-    else if (event.target.id === "picker-cancel") return $("picker").close();
-    else if (event.target.id === "picker-pin") return addPlace(true);
-    else if (event.target.id === "picker-open") return addPlace(false);
+      picker.chosen = [];
+    } else if (row) {
+      // Click, Ctrl-click and Shift-click, the same as photos in the grid.
+      const at = Number(row.dataset.row);
+      const node = here.children[at];
+      if (event.ctrlKey || event.metaKey) {
+        picker.chosen = picker.chosen.includes(node) ? picker.chosen.filter((n) => n !== node) : [...picker.chosen, node];
+        picker.anchor = at;
+      } else if (event.shiftKey && picker.anchor !== null) {
+        const [from, to] = [picker.anchor, at].sort((x, y) => x - y);
+        picker.chosen = here.children.slice(from, to + 1);
+      } else {
+        picker.chosen = [node];
+        picker.anchor = at;
+      }
+    } else if (event.target.id === "picker-cancel") return $("picker").close();
+    else if (event.target.id === "picker-pin") return addPlaces(true);
+    else if (event.target.id === "picker-open") return addPlaces(false);
     else return;
     renderPicker();
   });
   $("picker").addEventListener("dblclick", (event) => {
-    if (!event.target.closest("[data-row]") || !picker.chosen || !picker.chosen.children) return;
-    picker.path.push(picker.chosen);
-    picker.chosen = null;
+    if (!event.target.closest("[data-row]") || picker.chosen.length !== 1 || !picker.chosen[0].children) return;
+    picker.path.push(picker.chosen[0]);
+    picker.chosen = [];
+    picker.anchor = null;
+    renderPicker();
+  });
+  $("picker").addEventListener("keydown", (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "a") return;
+    event.preventDefault();
+    picker.chosen = (picker.path[picker.path.length - 1].children || []).slice();
     renderPicker();
   });
   $("empty").addEventListener("click", (event) => { if (event.target.id === "empty-add") openPicker(); });
@@ -1061,7 +1097,7 @@
   refresh();
   if (ask.has("select")) ask.get("select").split(",").forEach((n, i) => select(state.shown[Number(n)].id, i ? "toggle" : "single"));
   if (ask.get("first") === "on") { $("opt-first").checked = true; firstRun(); }
-  if (ask.get("picker") === "on") { openPicker(); picker.chosen = picker.path[0].children[0]; renderPicker(); }
+  if (ask.get("picker") === "on") { openPicker(); picker.chosen = picker.path[0].children.slice(0, 3); renderPicker(); }
   if (ask.has("delete")) confirmDelete(targets());
   if (ask.has("menu")) openMenu(900, 300, photoMenu());
   if (ask.get("view") === "single") setView("single");

@@ -1506,3 +1506,13 @@ dialog:not([open]) {
 .lib-picker-actions button:disabled {
   color: var(--muted);
 }
+
+.lib-picker-actions button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.lib-picker-target {
+  line-height: 1.5;
+  white-space: normal;
+}

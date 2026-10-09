@@ -311,6 +311,9 @@ Decided:
   the whole drive tree. A pinned folder expands to its own sub-folders.
 - **Add folder** (a small + by the Folders heading, and a menu item) opens a
   folder picker for navigating drives and choosing what to pin.
+- Decided October 9 from the mock-up. The picker takes several folders at
+  once: click, Ctrl-click and Shift-click, as for photos. Folders already
+  pinned are skipped and the picker says how many.
 
 Proposed:
 

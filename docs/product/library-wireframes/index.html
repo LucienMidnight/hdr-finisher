@@ -6,7 +6,8 @@
   <title>Library mock-up · HDR Finisher</title>
   <!-- The app's real stylesheet, so colours, fonts and buttons are the real ones. -->
   <link rel="stylesheet" href="../../../codebase/frontend/styles.css">
-  <link rel="stylesheet" href="library.css">
+  <!-- Loaded with a fresh address each time so a reload always shows the latest mock-up. -->
+  <script>document.write('<link rel="stylesheet" href="library.css?' + Date.now() + '">');</script>
 </head>
 <body>
 
@@ -215,7 +216,7 @@
 
   <dialog id="picker" class="application-dialog lib-picker">
     <div class="application-dialog-header">
-      <div><h2>Add folder</h2><p class="lib-picker-sub">Photos stay where they are. Pinning a folder adds it, and its sub-folders, to the library.</p></div>
+      <div><h2>Add folder</h2><p class="lib-picker-sub">Photos stay where they are. Pinning a folder adds it, and its sub-folders, to the library. Ctrl-click or Shift-click to choose several.</p></div>
     </div>
     <div class="lib-picker-body">
       <div class="lib-picker-places" id="picker-places"></div>
@@ -233,6 +234,6 @@
   </dialog>
 
   <script src="photos/photos.js"></script>
-  <script src="library.js"></script>
+  <script>document.write('<script src="library.js?' + Date.now() + '"><\/script>');</script>
 </body>
 </html>
