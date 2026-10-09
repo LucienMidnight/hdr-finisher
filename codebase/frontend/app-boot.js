@@ -848,46 +848,7 @@ function bindEvents() {
 
   els.exportConfirmButton.addEventListener("click", exportCurrentSession);
   els.exportDirectoryBrowse.addEventListener("click", chooseExportDirectory);
-  els.directoryBrowserGo.addEventListener("click", () => loadMediaDirectory(els.directoryBrowserPath.value));
-  els.directoryBrowserUp.addEventListener("click", () => loadMediaDirectory(els.directoryBrowser.dataset.parent));
-  els.directoryBrowserPin.addEventListener("click", pinCurrentMediaFolder);
-  els.directoryBrowserList.addEventListener("keydown", handleMediaBrowserListKeydown);
-  els.directoryBrowserSortButtons.forEach((button) => {
-    button.addEventListener("click", () => sortMediaBrowserBy(button.dataset.mediaBrowserSort));
-  });
-  els.directoryBrowserColumnResizers.forEach((resizer) => {
-    resizer.addEventListener("pointerdown", beginMediaBrowserColumnResize);
-    resizer.addEventListener("pointermove", continueMediaBrowserColumnResize);
-    resizer.addEventListener("pointerup", endMediaBrowserColumnResize);
-    resizer.addEventListener("pointercancel", endMediaBrowserColumnResize);
-    resizer.addEventListener("lostpointercapture", endMediaBrowserColumnResize);
-    resizer.addEventListener("keydown", handleMediaBrowserColumnResizeKeydown);
-  });
-  els.directoryBrowserPreviewResizer.addEventListener("pointerdown", beginMediaBrowserPreviewResize);
-  els.directoryBrowserPreviewResizer.addEventListener("pointermove", continueMediaBrowserPreviewResize);
-  els.directoryBrowserPreviewResizer.addEventListener("pointerup", endMediaBrowserPreviewResize);
-  els.directoryBrowserPreviewResizer.addEventListener("pointercancel", endMediaBrowserPreviewResize);
-  els.directoryBrowserPreviewResizer.addEventListener("lostpointercapture", endMediaBrowserPreviewResize);
-  els.directoryBrowserPreviewResizer.addEventListener("keydown", handleMediaBrowserPreviewResizeKeydown);
-  els.directoryBrowserPath.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    loadMediaDirectory(els.directoryBrowserPath.value);
-  });
-  els.directoryBrowserFilename.addEventListener("input", updateProjectSaveBrowserAction);
-  els.directoryBrowserFilename.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    confirmMediaBrowserSelection();
-  });
-  [els.directoryBrowserClose, els.directoryBrowserCancel].forEach((button) => {
-    button.addEventListener("click", closeExportDirectoryBrowser);
-  });
-  els.directoryBrowserSelect.addEventListener("click", confirmMediaBrowserSelection);
-  els.directoryBrowser.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeExportDirectoryBrowser();
-  });
+  editorMediaBrowser.bindEvents();
   els.applyInterpretationButton.addEventListener("click", applyInterpretationOverride);
   els.resetInterpretationButton.addEventListener("click", resetInterpretationToAuto);
   els.ejectButton.addEventListener("click", ejectCurrentSession);

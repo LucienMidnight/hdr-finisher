@@ -324,8 +324,11 @@ def test_desktop_source_open_handoffs_surface_failures() -> None:
     assert 'showUploadError(error?.message || "Could not open that source image.");' in bridge_handler
 
     browser_handler = frontend_declaration("confirmMediaBrowserSelection")
-    assert "await openDesktopSelection({ kind: \"source\", ...selection });" in browser_handler
-    assert 'showUploadError(error?.message || "Could not open that source image.");' in browser_handler
+    assert "await callbacks.onOpenSource({ kind: \"source\", ...selection });" in browser_handler
+    assert 'callbacks.onOpenError?.(error?.message || "Could not open that source image.");' in browser_handler
+    adapter = (FRONTEND / "media-browser-editor.js").read_text(encoding="utf-8")
+    assert "onOpenSource: (selection) => openDesktopSelection(selection)" in adapter
+    assert "onOpenError: (message) => showUploadError(message)" in adapter
 
 
 def test_project_open_shows_immediate_loading_feedback() -> None:

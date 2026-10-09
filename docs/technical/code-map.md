@@ -266,3 +266,31 @@ pause ownership, cancellation, failure, shutdown and paused HTTP retries.
 grade rendering during a pause and concurrent thumbnail/grade work in Electron.
 Packaged-app confirmation waits for the next requested installer build; Steve's
 large-folder grading trial is still the perceptual performance check (M5).
+
+### Photo Library foundation (F4): independent browser
+
+`frontend/media-browser.js` exposes `HDRMediaBrowser.create` with a DOM root,
+backend address and callbacks. Each instance owns its selection, requests,
+sorting and resize state. It queries elements only inside its root and binds
+its own events. Closing cancels its preview and invalidates pending listings.
+The editor adapter, `media-browser-editor.js`, supplies source/project grants,
+open/save callbacks, export destination updates and editor status reporting.
+It is loaded after `app-state.js`; `app-boot.js` only calls `bindEvents()`.
+The old browser fields and element bindings are removed from editor state.
+
+`media-browser-standalone.html` reuses the existing browser markup/styles and
+loads only the browser and its standalone boot script. In development, set
+`HDR_FINISHER_DEV_LIBRARY_BROWSER=1` to show it in the F1 secondary window.
+The earlier `HDR_FINISHER_DEV_LIBRARY_WINDOW=1` still opens the empty F1 page.
+Normal startup still opens only Grade. This is a foundation prototype, not
+the library wireframe or a new product layout.
+
+The library's `desktop:open-source-in-main` IPC validates its registered
+sender, grants the path through the backend and sends an open request to
+Grade. Grade owns the single F2 unsaved-changes gate. The library cannot
+change Grade's document state or call its editor-only IPC. The existing
+backend commands still own browsing, pinned folders and recent imports.
+
+`desktop/tests/standalone-browser.js` covers the actual standalone thumbnail,
+absence of editor scripts/globals, source handoff with Cancel/Discard, main
+export/project destination selection and independent secondary close.

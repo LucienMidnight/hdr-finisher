@@ -173,6 +173,20 @@ while paused; the retry response fixed it and has an API regression check.
 - **Proof:** the stand-alone page shows folders and thumbnails in the F1
   second window. The import browser in the main window is unchanged.
 
+**Implementation progress, October 9:** F4 code is implemented. The current
+browser owns its state/events and takes a root, backend URL and callbacks.
+The editor supplies its integration through a small adapter. A bare backend
+page shows that same browser in the F1 second window with no editor scripts.
+Its source-open command reaches Grade through the F2 gate. This is available
+only with `HDR_FINISHER_DEV_LIBRARY_BROWSER=1`; normal startup is unchanged.
+No library wireframe, new visible library feature or saved-file format was
+introduced. The independent-page Electron check and existing browser preview
+check passed, including Cancel/Discard and the editor's destination choices.
+Validation: 438 JavaScript and 1,588 Python tests passed (3 skipped). The
+first standalone run exposed editor-adapter script ordering; fixed by loading
+it after editor state. One source-call contract was updated to verify the
+new callback handoff and error reporting. No remaining failed checks.
+
 ### F5. Rule for all new library code: a backend command first
 
 Not a task, a rule that starts now. Every library action (rate, tag, move,
@@ -865,6 +879,46 @@ target.
 | M6 | Does keeping edited-photo previews current hold up across a whole library? | The preview design (one of the two risky pieces) |
 | R1 | Which metadata reader gives reliable lens and maker-specific data per brand: what is built in, or bundling ExifTool? | Reader choice, and what the app can honestly promise per brand |
 | T1 | Trial: save today's project document beside a photo, reopen it with the photo found beside it, with autosave. | The save-model change (the other risky piece) |
+
+**R1 first pass, October 9 (reader not yet chosen):** The current RAW reader
+uses ExifRead with `details=False, extract_thumbnail=False`, then fills
+missing fields from rawpy/LibRaw. That ExifRead mode explicitly skips maker
+notes, so looking up `MakerNote` keys afterwards does not give the current
+path maker-specific coverage. [ExifRead processing options](https://github.com/ianare/exif-py#processing-options).
+
+The installed runtime is rawpy 0.27.1 / LibRaw 0.22.1 and ExifRead 3.5.1.
+Inspection of `RawPy` found `lens` but no `camera_manufacturer`, `camera_model`
+or `metadata` attributes; the current fallback therefore must not be treated
+as a complete camera identity reader. LibRaw itself has lens and vendor
+metadata structures, but the Python wrapper's exposed fields matter.
+[LibRaw structures](https://www.libraw.org/node/31),
+[rawpy API](https://letmaik.github.io/rawpy/api/rawpy.RawPy.html).
+
+ExifTool documents maker-note support for many camera brands. It is a strong
+candidate to compare against a maker-note-enabled ExifRead run, rather than
+assuming that the current quick reader is enough. This is a research
+inference, not a verified per-brand coverage claim or a decision to bundle
+it. [ExifTool official repository](https://github.com/exiftool/exiftool).
+
+The next R1 comparison needs original camera files with known lens/body
+identity: several brands, OEM and third-party/adapted lenses, compressed and
+uncompressed RAW, and converted DNG. Compare today's output, ExifRead with
+maker notes enabled, and ExifTool; record missing/wrong/ambiguous fields and
+read cost. Preserve exact identity and distinguish absent metadata from
+reader failure. Do this read-only in the helper; do not change grading's
+metadata reader or lens-matching rules as part of foundation work. If
+ExifTool wins, packaged startup, Unicode paths and helper shutdown must be
+verified before choosing it.
+
+**Measurement readiness:** M5 has an automated concurrent-thumbnail/grade
+check, with Steve's large-folder/monitor trial still outstanding. M1/M4 need
+a representative camera corpus; the checked-in fixtures are synthetic and
+cannot answer cross-camera timing or embedded-preview coverage. M2/M3/M6
+still need explicit experimental models of HDR previews, indexing and edited
+preview refresh before their numbers can set limits. T1's beside-photo
+save/autosave trial remains experimental work, not a settled sidecar format.
+No measurement-dependent cache size, database schema or preview pipeline is
+being adopted from the foundation tests.
 
 Also to come: the wireframe for the views in 5.3.
 

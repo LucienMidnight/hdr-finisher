@@ -1,3 +1,57 @@
+window.HDRMediaBrowser = Object.freeze({
+  create({ root, backendUrl, callbacks = {}, modal = true, closeOnSelect = true }) {
+    const document = root.ownerDocument;
+    const window = document.defaultView;
+    const fetch = (url, options) => window.fetch(new URL(url, backendUrl), options);
+    const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+    const safeJson = async (response) => { try { return await response.json(); } catch { return null; } };
+    const responseErrorMessage = (payload, fallback) => {
+      const detail = payload?.detail;
+      return typeof detail === "string" ? detail : detail?.message || payload?.message || fallback;
+    };
+    const state = {
+      mediaBrowserGeneration: 0,
+      mediaPreviewGeneration: 0,
+      mediaPreviewRequest: null,
+      mediaPreviewObjectUrl: null,
+      mediaBrowserEntries: [],
+      mediaBrowserSortKey: "name",
+      mediaBrowserSortDirection: "ascending",
+      mediaBrowserColumnWidths: null,
+      mediaBrowserColumnResize: null,
+      mediaBrowserPreviewWidth: null,
+      mediaBrowserPreviewResize: null,
+      mediaBrowserResolver: null,
+    };
+    const els = {
+      directoryBrowser: root,
+      directoryBrowserPath: root.querySelector("#directory-browser-path"),
+      directoryBrowserTitle: root.querySelector("#directory-browser-title"),
+      directoryBrowserGo: root.querySelector("#directory-browser-go"),
+      directoryBrowserUp: root.querySelector("#directory-browser-up"),
+      directoryBrowserPin: root.querySelector("#directory-browser-pin"),
+      directoryBrowserStatus: root.querySelector("#directory-browser-status"),
+      directoryBrowserLayout: root.querySelector(".media-browser-layout"),
+      directoryBrowserTable: root.querySelector(".media-browser-table"),
+      directoryBrowserList: root.querySelector("#directory-browser-list"),
+      directoryBrowserSortButtons: [...root.querySelectorAll("[data-media-browser-sort]")],
+      directoryBrowserColumnResizers: [...root.querySelectorAll("[data-media-browser-resize]")],
+      directoryBrowserRecents: root.querySelector("#directory-browser-recents"),
+      directoryBrowserPinned: root.querySelector("#directory-browser-pinned"),
+      directoryBrowserLocations: root.querySelector("#directory-browser-locations"),
+      directoryBrowserPreview: root.querySelector("#directory-browser-preview"),
+      directoryBrowserPreviewFrame: root.querySelector(".media-browser-preview-image-frame"),
+      directoryBrowserPreviewPane: root.querySelector(".media-browser-preview"),
+      directoryBrowserPreviewResizer: root.querySelector(".media-browser-preview-resizer"),
+      directoryBrowserSelection: root.querySelector("#directory-browser-selection"),
+      directoryBrowserPreviewNote: root.querySelector("#directory-browser-preview-note"),
+      directoryBrowserClose: root.querySelector("#directory-browser-close"),
+      directoryBrowserCancel: root.querySelector("#directory-browser-cancel"),
+      directoryBrowserSelect: root.querySelector("#directory-browser-select"),
+      directoryBrowserFilenameRow: root.querySelector("#directory-browser-filename-row"),
+      directoryBrowserFilename: root.querySelector("#directory-browser-filename"),
+    };
+    let bound = false;
 async function openMediaBrowser(mode, path = "", options = {}) {
   els.directoryBrowser.dataset.mode = mode;
   delete els.directoryBrowser.dataset.selectedPath;
@@ -34,12 +88,12 @@ async function openMediaBrowser(mode, path = "", options = {}) {
       : mode === "project_save"
         ? "Choose a folder and enter the project file name below."
     : "Files remain visible so you can confirm the destination.";
-  if (!els.directoryBrowser.open) els.directoryBrowser.showModal();
+  if (!els.directoryBrowser.open) modal ? els.directoryBrowser.showModal() : els.directoryBrowser.show();
   await loadMediaDirectory(path);
 }
 
 async function chooseProjectPath(mode, path, suggestedName = "") {
-  if (!desktop?.grantProjectPath) return null;
+  if (!callbacks.grantProjectPath) return null;
   if (state.mediaBrowserResolver) state.mediaBrowserResolver(null);
   return new Promise((resolve) => {
     state.mediaBrowserResolver = resolve;
@@ -493,7 +547,7 @@ function clearMediaBrowserPreview() {
 
 async function previewMediaBrowserFile(entry, button) {
   const generation = ++state.mediaPreviewGeneration;
-  renderExperimentalDngNote(entry);
+  callbacks.onPreviewSelected?.(entry);
   els.directoryBrowser.dataset.selectedPath = entry.path;
   els.directoryBrowserSelect.disabled = false;
   selectMediaBrowserEntry(button);
@@ -594,7 +648,11 @@ async function recordSuccessfulMediaImport(path) {
 
 function closeExportDirectoryBrowser() {
   if (els.directoryBrowser.open) els.directoryBrowser.close();
+  state.mediaBrowserGeneration += 1;
+  state.mediaPreviewGeneration += 1;
+  clearMediaBrowserPreview();
   settleMediaBrowserSelection(null);
+  callbacks.onClose?.();
 }
 
 async function confirmMediaBrowserSelection() {
@@ -605,8 +663,7 @@ async function confirmMediaBrowserSelection() {
     const directory = els.directoryBrowserList.querySelector(".selected.directory")
       ? selected
       : els.directoryBrowserPath.value.trim();
-    els.exportDirectory.value = directory;
-    els.exportStatus.textContent = `Save folder set to ${directory}`;
+    callbacks.onDirectorySelected?.(directory);
     closeExportDirectoryBrowser();
     return;
   }
@@ -614,26 +671,23 @@ async function confirmMediaBrowserSelection() {
     try {
       const requestedPath = mode === "project_open"
         ? els.directoryBrowser.dataset.selectedPath
-        : joinExportPath(els.directoryBrowserPath.value.trim(), sanitizeProjectFilename(els.directoryBrowserFilename.value));
+        : callbacks.makeProjectPath(els.directoryBrowserPath.value.trim(), els.directoryBrowserFilename.value);
       if (!requestedPath) return;
-      const selection = await desktop.grantProjectPath(requestedPath, mode === "project_open" ? "project-open" : "project-save");
+      const selection = await callbacks.grantProjectPath(requestedPath, mode === "project_open" ? "project-open" : "project-save");
       if (mode === "project_save" && selection.exists) {
-        const approved = await window.HDRDialogs.confirm(
-          `Replace the existing project?\n\n${selection.path}`,
-          { title: "Replace project", confirmLabel: "Replace", destructive: true },
-        );
+        const approved = await callbacks.confirmReplace(selection.path);
         if (!approved) {
           els.directoryBrowserStatus.textContent = "The existing project was left unchanged.";
           return;
         }
-        selection.grant = (await desktop.grantProjectPath(selection.path, "project-save")).grant;
+        selection.grant = (await callbacks.grantProjectPath(selection.path, "project-save")).grant;
       }
       const resolve = state.mediaBrowserResolver;
       state.mediaBrowserResolver = null;
       if (els.directoryBrowser.open) els.directoryBrowser.close();
       resolve?.(selection);
     } catch (error) {
-      status.post({
+      callbacks.reportError?.({
         id: mode === "project_open" ? "project-open" : "project-save",
         severity: "error",
         message: error?.message || `Could not ${mode === "project_open" ? "open" : "save"} that project.`,
@@ -641,24 +695,73 @@ async function confirmMediaBrowserSelection() {
     }
     return;
   }
-  if (!desktop) {
+  if (!callbacks.grantSourcePath) {
     closeExportDirectoryBrowser();
-    els.fileInput.click();
+    callbacks.pickSourceFile?.();
     return;
   }
   let selection;
   try {
-    selection = await desktop.grantSourcePath(selected);
+    selection = await callbacks.grantSourcePath(selected);
   } catch (error) {
     els.directoryBrowserStatus.textContent = error?.message || "Could not open that source image.";
     return;
   }
-  closeExportDirectoryBrowser();
+  if (closeOnSelect) closeExportDirectoryBrowser();
   try {
-    await openDesktopSelection({ kind: "source", ...selection });
+    await callbacks.onOpenSource({ kind: "source", ...selection });
   } catch (error) {
     console.error(error);
-    showUploadError(error?.message || "Could not open that source image.");
+    callbacks.onOpenError?.(error?.message || "Could not open that source image.");
   }
 }
 
+
+function bindEvents() {
+  if (bound) return;
+  bound = true;
+  els.directoryBrowserGo.addEventListener("click", () => loadMediaDirectory(els.directoryBrowserPath.value));
+  els.directoryBrowserUp.addEventListener("click", () => loadMediaDirectory(els.directoryBrowser.dataset.parent));
+  els.directoryBrowserPin.addEventListener("click", pinCurrentMediaFolder);
+  els.directoryBrowserList.addEventListener("keydown", handleMediaBrowserListKeydown);
+  els.directoryBrowserSortButtons.forEach((button) => {
+    button.addEventListener("click", () => sortMediaBrowserBy(button.dataset.mediaBrowserSort));
+  });
+  els.directoryBrowserColumnResizers.forEach((resizer) => {
+    resizer.addEventListener("pointerdown", beginMediaBrowserColumnResize);
+    resizer.addEventListener("pointermove", continueMediaBrowserColumnResize);
+    resizer.addEventListener("pointerup", endMediaBrowserColumnResize);
+    resizer.addEventListener("pointercancel", endMediaBrowserColumnResize);
+    resizer.addEventListener("lostpointercapture", endMediaBrowserColumnResize);
+    resizer.addEventListener("keydown", handleMediaBrowserColumnResizeKeydown);
+  });
+  els.directoryBrowserPreviewResizer.addEventListener("pointerdown", beginMediaBrowserPreviewResize);
+  els.directoryBrowserPreviewResizer.addEventListener("pointermove", continueMediaBrowserPreviewResize);
+  els.directoryBrowserPreviewResizer.addEventListener("pointerup", endMediaBrowserPreviewResize);
+  els.directoryBrowserPreviewResizer.addEventListener("pointercancel", endMediaBrowserPreviewResize);
+  els.directoryBrowserPreviewResizer.addEventListener("lostpointercapture", endMediaBrowserPreviewResize);
+  els.directoryBrowserPreviewResizer.addEventListener("keydown", handleMediaBrowserPreviewResizeKeydown);
+  els.directoryBrowserPath.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    loadMediaDirectory(els.directoryBrowserPath.value);
+  });
+  els.directoryBrowserFilename.addEventListener("input", updateProjectSaveBrowserAction);
+  els.directoryBrowserFilename.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    confirmMediaBrowserSelection();
+  });
+  [els.directoryBrowserClose, els.directoryBrowserCancel].forEach((button) => {
+    button.addEventListener("click", closeExportDirectoryBrowser);
+  });
+  els.directoryBrowserSelect.addEventListener("click", confirmMediaBrowserSelection);
+  els.directoryBrowser.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeExportDirectoryBrowser();
+  });
+}
+
+    return Object.freeze({ openMediaBrowser, chooseProjectPath, recordSuccessfulMediaImport, closeExportDirectoryBrowser, loadMediaDirectory, bindEvents });
+  },
+});

@@ -528,6 +528,13 @@ function registerIpc() {
     const record = validateSender(event);
     return callback(record, ...args);
   });
+  handleWindow("desktop:open-source-in-main", async (record, filePath) => {
+    if (record.role !== "library") throw new Error("Only the library window can request a source open.");
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
+    const selection = await grantPath(filePath, "source-open");
+    mainWindow.webContents.send("desktop:open-request", { kind: "source", ...selection });
+    return true;
+  });
   handleWindow("desktop:environment", (record) => desktopEnvironment(record.window));
   // The active card's dedicated video memory, read once: the preview's Auto
   // memory budget is half of it (Preview Responsiveness Tuning Sprint P2).
@@ -983,7 +990,9 @@ async function createWindow(role = "main") {
     window.on(eventName, () => scheduleWindowDisplayState(record));
   }
   window.once("ready-to-show", () => { if (!window.isDestroyed()) window.show(); });
-  await window.loadURL(isMain ? backend.url : `${backend.url}/static/window-foundation.html`);
+  const secondaryPage = !app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_BROWSER === "1"
+    ? "media-browser-standalone.html" : "window-foundation.html";
+  await window.loadURL(isMain ? backend.url : `${backend.url}/static/${secondaryPage}`);
   if (isMain) updateWindowDocumentState();
   return window;
 }
@@ -1121,7 +1130,7 @@ if (!gotLock) {
       }
       buildMenu();
       await createWindow();
-      if (!app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_WINDOW === "1") {
+      if (!app.isPackaged && (process.env.HDR_FINISHER_DEV_LIBRARY_WINDOW === "1" || process.env.HDR_FINISHER_DEV_LIBRARY_BROWSER === "1")) {
         await createWindow("library");
       }
     } catch (error) {

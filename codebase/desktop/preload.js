@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   setRenderingMode: (mode) => ipcRenderer.invoke("desktop:set-rendering-mode", mode),
   writeClipboardText: (value) => ipcRenderer.invoke("desktop:write-clipboard-text", value),
   openSource: () => ipcRenderer.invoke("desktop:open-source"),
+  openSourceInMain: (filePath) => ipcRenderer.invoke("desktop:open-source-in-main", filePath),
   grantSourcePath: (filePath) => ipcRenderer.invoke("desktop:grant-source-path", filePath),
   grantProjectPath: (filePath, intent) => ipcRenderer.invoke("desktop:grant-project-path", filePath, intent),
   openProject: () => ipcRenderer.invoke("desktop:open-project"),
