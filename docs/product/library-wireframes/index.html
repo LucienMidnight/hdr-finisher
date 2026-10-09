@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en" class="desktop-shell">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Library mock-up · HDR Finisher</title>
+  <!-- The app's real stylesheet, so colours, fonts and buttons are the real ones. -->
+  <link rel="stylesheet" href="../../../codebase/frontend/styles.css">
+  <link rel="stylesheet" href="library.css">
+</head>
+<body>
+
+  <!-- Mock-up controls. Not part of the app. -->
+  <div class="mock-strip" id="mock-strip">
+    <span class="mock-label">Mock-up</span>
+    <div class="mock-group" role="group" aria-label="Layout">
+      <span>Layout</span>
+      <button type="button" data-variant="a">A · Photos only</button>
+      <button type="button" data-variant="b">B · Grade panels stay</button>
+      <button type="button" data-variant="c">C · Details always</button>
+    </div>
+    <div class="mock-group" role="group" aria-label="Thumbnails">
+      <span>Thumbnails</span>
+      <button type="button" data-fit="contain">Whole photo</button>
+      <button type="button" data-fit="cover">Fill square</button>
+    </div>
+    <label class="mock-check"><input type="checkbox" id="opt-names"> File names</label>
+    <label class="mock-check"><input type="checkbox" id="opt-advance"> Auto-advance</label>
+    <label class="mock-check"><input type="checkbox" id="opt-slow" checked> Realistic loading</label>
+    <button type="button" class="mock-keys-button" id="keys-button">Keys</button>
+  </div>
+
+  <div class="mock-window" id="app" data-variant="a" data-stage="library" data-view="grid">
+
+    <header class="window-chrome" aria-label="Application menu">
+      <nav class="window-menu-bar">
+        <div class="window-menu"><button class="window-menu-trigger" type="button">File</button></div>
+        <div class="window-menu"><button class="window-menu-trigger" type="button">Edit</button></div>
+        <div class="window-menu"><button class="window-menu-trigger" type="button">View</button></div>
+        <div class="window-menu"><button class="window-menu-trigger" type="button">Window</button></div>
+        <div class="window-menu"><button class="window-menu-trigger" type="button">Help</button></div>
+      </nav>
+      <div class="window-drag-region"></div>
+      <div class="window-controls">
+        <button class="window-control" type="button" aria-label="Minimize"><img src="../../../codebase/frontend/assets/icons/tabler/minus.svg" alt=""></button>
+        <button class="window-control" type="button" aria-label="Maximize"><img src="../../../codebase/frontend/assets/icons/tabler/square.svg" alt=""></button>
+        <button class="window-control window-control-close" type="button" aria-label="Close"><img src="../../../codebase/frontend/assets/icons/tabler/x.svg" alt=""></button>
+      </div>
+    </header>
+
+    <header class="top-bar">
+      <div class="product-lockup">
+        <img class="product-mark" src="../../../codebase/frontend/assets/brand/hdr-finisher-favicon-small.svg" alt="" width="26" height="26">
+        <p class="product-name">HDR FINISHER</p>
+      </div>
+      <nav class="workflow-tabs" aria-label="Workflow stages">
+        <button class="workflow-tab active" type="button" data-stage-tab="library"><span aria-hidden="true">01</span>Library</button>
+        <button class="workflow-tab" type="button" data-stage-tab="grade"><span aria-hidden="true">02</span>Grade</button>
+        <button class="workflow-tab" type="button" data-stage-tab="proof"><span aria-hidden="true">03</span>Proof</button>
+        <button class="workflow-tab" type="button" data-stage-tab="export"><span aria-hidden="true">04</span>Export</button>
+      </nav>
+      <div class="top-actions">
+        <button class="text-button lib-autosave" id="autosave" type="button" aria-pressed="true" title="Autosave grades to the file beside each photo"><i></i><span>Autosave on</span></button>
+        <button class="text-button" type="button">Settings</button>
+        <button class="text-button" type="button">Help</button>
+      </div>
+    </header>
+
+    <div class="lib-body">
+
+      <!-- Left: pinned folders, projects, albums -->
+      <aside class="lib-nav panel" id="nav" aria-label="Library navigation"></aside>
+
+      <div class="lib-centre">
+        <main class="lib-main panel">
+          <div class="lib-bar">
+            <div class="lib-bar-title">
+              <span class="panel-title" id="place-title">Library</span>
+              <span class="lib-count" id="place-count"></span>
+            </div>
+            <div class="lib-tools">
+              <div class="lib-viewmodes" role="group" aria-label="View">
+                <button class="tool-button lib-icon-button" type="button" data-view-button="grid" title="Grid · G" aria-label="Grid">
+                  <svg viewBox="0 0 24 24"><path d="M4 4h6v6h-6z M14 4h6v6h-6z M4 14h6v6h-6z M14 14h6v6h-6z"/></svg>
+                </button>
+                <button class="tool-button lib-icon-button" type="button" data-view-button="single" title="Single photo · Space" aria-label="Single photo">
+                  <svg viewBox="0 0 24 24"><path d="M4 4h16v11h-16z M4 19h3 M10.5 19h3 M17 19h3"/></svg>
+                </button>
+                <button class="tool-button lib-icon-button" type="button" id="review-button" title="Full-screen review · F" aria-label="Full-screen review">
+                  <svg viewBox="0 0 24 24"><path d="M16 4h4v4 M14 10l6 -6 M8 20h-4v-4 M4 20l6 -6 M16 20h4v-4 M14 14l6 6 M8 4h-4v4 M4 4l6 6"/></svg>
+                </button>
+              </div>
+              <span class="lib-divider"></span>
+              <label class="lib-size" title="Thumbnail size">
+                <svg viewBox="0 0 24 24"><path d="M5 8h5v5h-5z"/></svg>
+                <input id="thumb-size" type="range" min="110" max="360" value="190" aria-label="Thumbnail size">
+                <svg viewBox="0 0 24 24"><path d="M4 5h12v12h-12z"/></svg>
+              </label>
+              <span class="lib-divider"></span>
+              <label class="lib-select">
+                <span>Sort</span>
+                <select id="sort">
+                  <option value="time">Capture time</option>
+                  <option value="name">File name</option>
+                  <option value="rating">Rating</option>
+                  <option value="pick">Pick status</option>
+                </select>
+              </label>
+              <button class="tool-button" type="button" id="raw-only" aria-pressed="false" title="Show RAW files only">RAW only</button>
+              <button class="tool-button" type="button" id="filter-button" aria-pressed="false" title="Filter · Ctrl+F">Filter</button>
+            </div>
+            <div class="lib-bar-right">
+              <button class="tool-button" type="button" id="details-button" aria-pressed="false" title="Details · I">Details</button>
+              <button class="panel-collapse-button lib-popout" type="button" id="popout" title="Move the library to its own window" aria-label="Pop out library">
+                <svg viewBox="0 0 24 24"><path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6 M11 13l9 -9 M15 4h5v5"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="lib-filterbar" id="filterbar" hidden>
+            <label class="lib-search">
+              <svg viewBox="0 0 24 24"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0 M21 21l-6 -6"/></svg>
+              <input id="search" type="text" placeholder="File name or tag" spellcheck="false">
+            </label>
+            <div class="lib-filter-stars" id="filter-stars" role="group" aria-label="Minimum rating"></div>
+            <button class="lib-chip" type="button" data-filter="picked">Picked</button>
+            <button class="lib-chip" type="button" data-filter="unmarked">Unmarked</button>
+            <button class="lib-chip" type="button" data-filter="hideRejected">Hide rejected</button>
+            <button class="lib-chip" type="button" data-filter="edited">Edited</button>
+            <button class="lib-chip" type="button" data-filter="rawOnly">RAW only</button>
+            <span class="lib-filter-spacer"></span>
+            <button class="text-button" type="button" id="filter-clear">Clear</button>
+            <button class="text-button" type="button" id="filter-save" title="Save this filter as a smart album">Save as smart album</button>
+          </div>
+
+          <div class="lib-content" id="content">
+            <div class="lib-grid" id="grid" tabindex="0" aria-label="Photos"></div>
+            <div class="lib-empty" id="empty" hidden></div>
+            <div class="lib-single" id="single" hidden>
+              <div class="lib-single-stage" id="single-stage"><img id="single-image" alt=""></div>
+              <div class="lib-single-caption" id="single-caption"></div>
+              <div class="lib-filmstrip" id="filmstrip"></div>
+            </div>
+          </div>
+
+          <div class="lib-status" id="status"></div>
+          <div class="lib-toast" id="toast" hidden></div>
+        </main>
+
+        <!-- Layout B only: the Scopes dock stays under the library -->
+        <section class="stub-dock panel" aria-hidden="true">
+          <div class="stub-dock-bar"><span class="panel-title">Scopes</span><span class="stub-note">Shows the photo open in Grade</span></div>
+          <div class="stub-dock-body"></div>
+        </section>
+      </div>
+
+      <!-- Details of the selection -->
+      <aside class="lib-details panel" id="details" aria-label="Details"></aside>
+
+      <!-- Layout B and the Grade stage: the Control Panel (a picture of it, not working) -->
+      <aside class="stub-grade panel" aria-hidden="true">
+        <div class="stub-grade-title"><span class="panel-title">Control Panel</span></div>
+        <div class="stub-grade-list"></div>
+      </aside>
+    </div>
+
+    <!-- Grade stage stand-in -->
+    <div class="grade-stage" id="grade-stage" hidden>
+      <div class="grade-viewer">
+        <div class="lib-bar"><div class="lib-bar-title"><span class="panel-title">Preview Window</span><span class="lib-count" id="grade-name"></span></div></div>
+        <div class="grade-canvas"><img id="grade-image" alt=""><p class="grade-note" id="grade-note"></p></div>
+      </div>
+      <aside class="stub-grade panel" aria-hidden="true">
+        <div class="stub-grade-title"><span class="panel-title">Control Panel</span></div>
+        <div class="stub-grade-list"></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Full-screen review -->
+  <div class="review" id="review" hidden>
+    <img id="review-image" alt="">
+    <div class="review-marks" id="review-marks"></div>
+    <div class="review-flash" id="review-flash"></div>
+  </div>
+
+  <div class="mock-keys" id="keys" hidden>
+    <h2>Keys in this mock-up</h2>
+    <dl>
+      <dt>Click</dt><dd>Select. Ctrl-click adds, Shift-click selects a range.</dd>
+      <dt>Double-click · Enter</dt><dd>Open in Grade</dd>
+      <dt>Arrows</dt><dd>Move. Hold Shift to extend the selection.</dd>
+      <dt>1 – 5 · 0</dt><dd>Stars · clear stars</dd>
+      <dt>P · X · U</dt><dd>Pick · reject · unmark</dd>
+      <dt>Space</dt><dd>Single photo and back</dd>
+      <dt>G</dt><dd>Grid</dd>
+      <dt>F</dt><dd>Full-screen review</dd>
+      <dt>I</dt><dd>Details panel</dd>
+      <dt>Ctrl+F</dt><dd>Filter bar</dd>
+      <dt>Ctrl+A · Ctrl+Z</dt><dd>Select all · undo last mark</dd>
+      <dt>Esc</dt><dd>Step back out</dd>
+    </dl>
+  </div>
+
+  <script src="photos/photos.js"></script>
+  <script src="library.js"></script>
+</body>
+</html>
