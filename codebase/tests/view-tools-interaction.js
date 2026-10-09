@@ -224,6 +224,41 @@ async function setSlider(page, dataPath, value) {
     assert(await page.evaluate(() => !localsBypassed()), "The eye did not switch Local Adjustments back on.");
     await ready(page);
 
+    // --- Typed values ---------------------------------------------------------
+    const typeInto = (selector, text) => page.evaluate(([target, value]) => {
+      const output = document.querySelector(target);
+      output.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+      if (output.dataset.editing !== "true") return null;
+      output.textContent = value;
+      output.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      return output.textContent.trim();
+    }, [selector, text]);
+    const typed = {
+      sharpen: await typeInto('[data-value-path="current.detail.sharpen_amount"]', "150"),
+      purity: await typeInto('[data-value-path="sdr.red_purity"]', "12.5"),
+      // Beyond the slider's 2 EV, up to the 8 EV the grade can hold.
+      exposure: await typeInto('[data-value-path="sdr.exposure"]', "5"),
+      overlayOpacity: await typeInto('[data-value-path="shared.overlay_opacity"]', "37"),
+      perspective: await typeInto("#perspective-rotate-value", "12.5"),
+    };
+    typed.stored = await page.evaluate(() => ({ sharpen: state.adjustments.sdr.detail.sharpen_amount,
+      purity: state.adjustments.sdr.red_purity, exposure: state.adjustments.sdr.exposure,
+      overlayOpacity: state.adjustments.shared.overlay_opacity, perspective: Number(els.perspectiveRotate.value) }));
+    report.typed = typed;
+    assert(typed.stored.sharpen === 150, "Sharpen cannot be typed up to its slider maximum of 200.");
+    assert(typed.purity === "+12.5%" && typed.stored.purity === 12.5, "A typed Purity decimal is not shown as typed.");
+    assert(typed.stored.exposure === 5, "Exposure cannot be typed beyond its slider.");
+    assert(Math.abs(typed.stored.overlayOpacity - 0.37) < 1e-9, "A percentage readout was not typed as a percentage.");
+    assert(typed.stored.perspective === 12.5, "The Perspective readout does not accept a typed value.");
+    await page.locator("#perspective-cancel").click();
+    await page.evaluate(() => {
+      for (const [target, value] of [["sdr.detail.sharpen_amount", 0], ["sdr.red_purity", 0], ["sdr.exposure", 0]]) setValueByPath(state.adjustments, target, value);
+      syncControlsFromState();
+      invalidatePreview("sdr");
+      debouncePreview("sdr");
+    });
+    await ready(page);
+
     // --- A crowded status bar ------------------------------------------------
     const crowded = await page.evaluate(() => {
       for (let index = 0; index < 14; index += 1) {

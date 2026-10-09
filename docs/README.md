@@ -62,6 +62,7 @@ Pages carry their own verification dates where implementation freshness matters.
 - [HDR grading](user-guide/grade-hdr.md)
 - [SDR fallback grading](user-guide/grade-sdr.md)
 - [Grading controls and direct-entry limits](user-guide/grading-controls-reference.md)
+- [Typed values reference: every slider and typed range](user-guide/typed-values-reference.md)
 - [Chrome Proof](user-guide/proof.md)
 - [Export and delivery](user-guide/export.md)
 

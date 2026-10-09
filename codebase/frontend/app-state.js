@@ -167,7 +167,7 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.detail.microcontrast": { min: -100, max: 100, decimals: 0 },
   "current.detail.clarity_amount": { min: -100, max: 100, decimals: 0 },
   "current.detail.clarity_radius_percent": { min: 0.2, max: 3, decimals: 2 },
-  "current.detail.sharpen_amount": { min: 0, max: 100, decimals: 0 },
+  "current.detail.sharpen_amount": { min: 0, max: 200, decimals: 0 },
   "current.detail.sharpen_radius_px": { min: 0.3, max: 3, decimals: 2 },
   "current.detail.sharpen_threshold": { min: 0, max: 100, decimals: 0 },
   "current.film_look.look_strength": { min: 0, max: 100, decimals: 0 },

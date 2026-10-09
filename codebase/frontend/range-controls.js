@@ -95,9 +95,52 @@ function enhanceEditableGradeValues() {
       range: () => "0.25 EV to 12.00 EV",
     });
   }
+  bindSliderReadouts();
 }
 
-function bindEditableValue(element, { getValue, normalize, commit, label, range }) {
+/**
+ * Readouts beside a slider that has no entry in MANUAL_VALUE_RULES: Local
+ * Adjustments, Denoise, Perspective, the overlay and export sliders. A typed
+ * value is handed to the slider itself, so it is held to the slider's range
+ * and takes the same path as a drag. Rows with several handles are left out.
+ */
+function bindSliderReadouts(root = document) {
+  root.querySelectorAll?.("output:not(.editable-value)").forEach((output) => {
+    const sliders = output.closest(".control-row")?.querySelectorAll('input[type="range"]') || [];
+    if (sliders.length !== 1) return;
+    const slider = sliders[0];
+    // A 0-1 slider shown as a percentage is typed as a percentage. The readout
+    // holds the typed text while it is being edited, so the unit is read from
+    // it only between edits.
+    let percentage = false;
+    const scale = () => {
+      if (output.dataset.editing !== "true") percentage = output.textContent.includes("%") && Number(slider.max) <= 1;
+      return percentage ? 100 : 1;
+    };
+    const decimals = () => Math.min(6, (String(Number(slider.step) || 1).split(".")[1] || "").length);
+    const shown = (value) => `${Math.round(value * scale() * 1e6) / 1e6}`;
+    bindEditableValue(output, {
+      getValue: () => Number(slider.value) * scale(),
+      normalize: (text) => {
+        const parsed = parseManualNumber(text);
+        return Number.isFinite(parsed)
+          ? normalizeManualNumber(parsed / scale(), { min: Number(slider.min), max: Number(slider.max), decimals: decimals() })
+          : null;
+      },
+      commit: ({ value }) => {
+        slider.value = String(value);
+        slider.dispatchEvent(new Event("input", { bubbles: true }));
+        slider.dispatchEvent(new Event("change", { bubbles: true }));
+      },
+      label: () => `${output.closest(".control-row")?.querySelector("label, .instrument-control-label")?.textContent?.trim() || "Slider"} value`,
+      range: () => `${shown(Number(slider.min))} to ${shown(Number(slider.max))}`,
+      disabled: () => slider.disabled,
+      needsSession: false,
+    });
+  });
+}
+
+function bindEditableValue(element, { getValue, normalize, commit, label, range, disabled = null, needsSession = true }) {
   if (!element) return;
   element.classList.add("editable-value");
   element.tabIndex = 0;
@@ -139,11 +182,11 @@ function bindEditableValue(element, { getValue, normalize, commit, label, range 
     }
   };
   const begin = () => {
-    if (editing || !state.session) return;
+    if (editing || (needsSession && !state.session)) return;
     const pairedControl = element.dataset.valuePath
       ? document.querySelector(`[data-path="${element.dataset.valuePath}"]`)
       : null;
-    if (pairedControl?.disabled) return;
+    if (pairedControl?.disabled || disabled?.()) return;
     editing = true;
     previousText = element.textContent;
     element.dataset.editing = "true";
@@ -439,7 +482,9 @@ function formatControlValue(path, value) {
   if (path.includes(".black_and_white.")) return `${numeric > 0 ? "+" : ""}${Math.round(numeric)}`;
   if (path.includes(".detail.")) return `${numeric > 0 && !path.endsWith("sharpen_threshold") ? "+" : ""}${Math.round(numeric)}`;
   if (path.endsWith("_hue")) return `${numeric > 0 ? "+" : ""}${numeric.toFixed(1)}°`;
-  if (path.endsWith("_purity") || path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(path.endsWith("_purity") ? numeric : numeric * 100)}%`;
+  // Purity is typed to one decimal, so a typed 12.5 is not shown as 13.
+  if (path.endsWith("_purity")) return `${numeric > 0 ? "+" : ""}${Number.isInteger(numeric) ? numeric : numeric.toFixed(1)}%`;
+  if (path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(numeric * 100)}%`;
   if (path.endsWith(".exposure")) return `${numeric.toFixed(2)} EV`;
   if (path.endsWith("_nits")) return `${Math.round(numeric)} nit`;
   if (path.endsWith("highlight_compression_start_percent") || path.endsWith("highlight_compression_manual_peak_percent")) return `${Math.round(numeric)}%`;

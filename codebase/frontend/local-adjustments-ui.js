@@ -800,6 +800,7 @@ function renderLocalAdjustments() {
   // Keep the shared track/fill component attached to the native thumb instead
   // of retaining the previous local adjustment's visual position.
   syncRangeVisuals(els.localEditor);
+  bindSliderReadouts(els.localAdjustmentGroup);
   updateLocalToolState();
   renderLocalMaskOverlay();
 }

@@ -1,5 +1,7 @@
 # Grading Controls Reference
 
+The full list of every number that can be typed, with its slider range and typed range, is in the [typed values reference](typed-values-reference.md).
+
 Every numeric readout in the HDR and SDR Control Panels can be edited directly. Double-click the value, type a number, and press **Enter**. You can also focus a value with the keyboard and press **Enter** or **F2**. Press **Escape** to cancel; clicking elsewhere commits the value.
 
 For on-screen sliders, hold **Ctrl** for approximately 10× finer pointer or arrow-key movement. Hold **Shift** to use the authored landing positions; the rails intentionally show no tick marks. Shift takes precedence when both modifiers are held. Curves and Exposure Bands use Ctrl for fine graph movement without Shift snapping. Exposure Bands keeps **Ctrl/Command+Left/Right** for moving the selected band horizontally. See [Application settings and shortcuts](application-settings-and-shortcuts.md#slider-and-graph-modifiers) for the full modifier contract.
