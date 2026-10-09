@@ -937,7 +937,8 @@
   const DISK = { name: "This PC", children: [
     { name: "Photos (D:)", children: [
       { name: "2026-08 Oslo", photos: 0, scenes: [6], children: [{ name: "Day 1", photos: 120 }, { name: "Day 2", photos: 94 }] },
-      { name: "2026-09 Langkawi", photos: 28, pinned: true },
+      { name: "2026-09 Langkawi", photos: 0, pinned: true, scenes: [0, 2, 3, 4], children: [
+        { name: "Day 1 Beach", photos: 7, scenes: [0] }, { name: "Day 2 Hotel", photos: 7, scenes: [2] }, { name: "Drone", photos: 14, scenes: [3, 4] }] },
       { name: "2026-10 Studio", photos: 61, scenes: [1, 5] },
       { name: "Archive", photos: 0, children: [{ name: "2025", photos: 4120 }, { name: "2024", photos: 3876 }] },
     ] },
@@ -985,8 +986,22 @@
 
   function addPlaces(pin) {
     const nodes = pickerTargets().filter((n) => !n.pinned);
-    const added = nodes.map((node, i) => {
-      const place = { id: `added-${Date.now()}-${i}`, icon: pin ? "folder" : "card", label: node.name, scenes: node.scenes || [] };
+    // The pretend disk has no real photos, so every folder borrows some of the
+    // sample ones; a folder never arrives looking empty when it claims photos.
+    let serial = 0;
+    const borrowed = (node) => node.scenes || [[...node.name].reduce((sum, c) => sum + c.charCodeAt(0), 0) % SCENES.length];
+    const asPlace = (node) => {
+      const place = { id: `added-${Date.now()}-${serial++}`, icon: "folder", label: node.name, scenes: borrowed(node) };
+      if (node.children) {
+        place.children = node.children.map(asPlace);
+        place.scenes = [...new Set([...(node.scenes || []), ...place.children.flatMap((c) => c.scenes)])];
+        place.open = true;
+      }
+      return place;
+    };
+    const added = nodes.map((node) => {
+      const place = asPlace(node);
+      if (!pin) place.icon = "card";
       if (pin) node.pinned = true; else place.note = "not pinned";
       PLACES.splice(PLACES.findIndex((p) => p.heading === "Projects"), 0, place);
       return place;
