@@ -579,6 +579,14 @@ Decided:
 - Pin a reference photo and flip through alternates beside it.
 - Zoom and pan stay locked together across both sides.
 - Side by side.
+- Decided October 9 from the mock-up:
+  - Arrow keys flip the right-hand photo only, through the photos in the
+    folder. The left-hand photo stays put.
+  - Stars, pick and reject always act on the right-hand photo.
+  - `[` puts the selected photo on the left and `]` puts it on the right.
+    This works from the grid and from the filmstrip, and opens compare if
+    it is not open. Inside compare the selected photo is the right-hand
+    one, so `[` moves it to the left and the next photo takes its place.
 
 Proposed:
 

@@ -276,7 +276,8 @@
       if (event.currentTarget.id === "grid") { state.sel.clear(); state.active = null; refresh(); }
       return;
     }
-    select(Number(cell.dataset.id), event.ctrlKey || event.metaKey ? "toggle" : event.shiftKey ? "range" : "single");
+    // In compare the selected photo is always the right-hand one.
+    select(Number(cell.dataset.id), state.view === "compare" ? "single" : event.ctrlKey || event.metaKey ? "toggle" : event.shiftKey ? "range" : "single");
   }
   $("grid").addEventListener("click", onCellClick);
   $("filmstrip").addEventListener("click", onCellClick);
@@ -285,6 +286,7 @@
 
   // ---------- marks ----------
 
+  // What marks and the details panel act on. In compare that is always the right-hand photo.
   function targets() {
     return [...state.sel].map(byId);
   }
@@ -434,26 +436,39 @@
     show($("compare-image"), c);
     $("compare-ref-image").classList.toggle("rejected", r.flag === "reject");
     $("compare-image").classList.toggle("rejected", c.flag === "reject");
-    $("compare-ref-caption").innerHTML = `<span class="tag">Reference</span><span>${r.name}</span>${captionMarks(r)}`;
+    $("compare-ref-caption").innerHTML = `<span>${r.name}</span>${captionMarks(r)}`;
     $("compare-caption").innerHTML = `<span>${c.name}</span>${captionMarks(c)}<span>${state.shown.indexOf(c) + 1} / ${state.shown.length}</span><span>${state.zoom.on ? "100%" : "Fit"}</span>`;
   }
 
-  // Pin the current photo as the reference and put its neighbour beside it.
-  // With two or more selected, the first is the reference and the second sits beside it.
-  function startCompare() {
+  // Fill the two sides. With two or more photos selected, the first goes left
+  // and the second right. Otherwise the current photo goes to the side asked
+  // for and a neighbour fills the other.
+  function startCompare(side) {
     const ids = state.shown.map((p) => p.id);
     const picked = ids.filter((id) => state.sel.has(id));
-    const first = picked.length >= 2 ? picked[0] : current() && current().id;
-    if (first === null || first === undefined || ids.length < 2) return false;
-    const at = ids.indexOf(first);
-    state.ref = first;
-    const beside = picked.length >= 2 ? picked[1] : ids[at + 1 < ids.length ? at + 1 : at - 1];
-    state.active = state.anchor = beside;
-    state.sel = new Set([beside]);
+    const now = current() && current().id;
+    if (now === null || now === undefined || ids.length < 2) return false;
+    const neighbour = (id, step) => ids[ids.indexOf(id) + step] === undefined ? ids[ids.indexOf(id) - step] : ids[ids.indexOf(id) + step];
+    let left, right;
+    if (picked.length >= 2) [left, right] = picked;
+    else if (side === "right") [left, right] = [ids.includes(state.ref) && state.ref !== now ? state.ref : neighbour(now, -1), now];
+    else [left, right] = [now, neighbour(now, 1)];
+    state.ref = left;
+    state.active = state.anchor = right;
+    state.sel = new Set([right]);
     return true;
   }
 
-  // "This one is better": the right photo becomes the reference.
+  // [ puts the selected photo on the left, ] puts it on the right. From the
+  // grid or single view that opens compare. Inside compare the selected photo
+  // is already the right-hand one, so [ moves it across and ] changes nothing.
+  function chooseSide(side) {
+    if (state.review) return;
+    if (state.view !== "compare") return setView("compare", side);
+    if (side === "left") promote();
+  }
+
+  // The right-hand photo moves to the left and the next one takes its place.
   function promote() {
     if (state.view !== "compare") return;
     const ids = state.shown.map((p) => p.id);
@@ -462,8 +477,8 @@
     select(ids[at + 1 < ids.length ? at + 1 : at - 1]);
   }
 
-  function setView(view) {
-    if (view === "compare" && !startCompare()) return toast("Compare needs at least two photos.");
+  function setView(view, side) {
+    if (view === "compare" && !startCompare(side)) return toast("Compare needs at least two photos.");
     state.view = view;
     state.zoom.on = false;
     if (view === "single") current();
@@ -703,7 +718,8 @@
       f: () => setReview(!state.review),
       z: () => { if (state.review || state.view !== "grid") setZoom(!state.zoom.on); },
       c: () => setView(state.view === "compare" ? "grid" : "compare"),
-      r: promote,
+      "[": () => chooseSide("left"),
+      "]": () => chooseSide("right"),
       i: toggleDetails,
       Tab: () => {
         const open = app.dataset.nav === "collapsed" && app.dataset.details === "collapsed";

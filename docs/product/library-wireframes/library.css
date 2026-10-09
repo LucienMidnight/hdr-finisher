@@ -1264,6 +1264,8 @@ svg {
   text-transform: uppercase;
 }
 
+/* Filmstrip in compare: the right-hand photo keeps the accent outline, the
+   left-hand photo gets a neutral one. */
 .lib-filmstrip .cell.reference {
   box-shadow: inset 0 0 0 2px var(--body);
 }
