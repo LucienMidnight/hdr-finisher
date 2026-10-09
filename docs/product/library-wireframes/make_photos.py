@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "photos"
@@ -75,7 +75,33 @@ def variants(img, count, rng):
         y = rng.randint(0, h - ch)
         out = img.crop((x, y, x + cw, y + ch))
         out = ImageEnhance.Brightness(out).enhance(rng.uniform(0.82, 1.15))
+        if i in (0, 3):  # a couple of frames per burst miss focus, as in a real run
+            out = out.filter(ImageFilter.GaussianBlur(out.width / 500))
         yield out
+
+
+def focus_map(large, size):
+    """Where the fine detail is. Stands in for the map made from the quick decode."""
+    g = np.asarray(large.convert("L"), dtype=np.float32)
+    lap = np.abs(4 * g[1:-1, 1:-1] - g[:-2, 1:-1] - g[2:, 1:-1] - g[1:-1, :-2] - g[1:-1, 2:])
+    f = max(1, large.width // size[0])
+    h, w = (lap.shape[0] // f) * f, (lap.shape[1] // f) * f
+    pooled = lap[:h, :w].reshape(h // f, f, w // f, f).max(axis=(1, 3))
+    level = max(34.0, float(np.percentile(pooled, 90)))
+    alpha = np.clip((pooled - level) / level, 0, 1) * 235
+    rgba = np.zeros(pooled.shape + (4,), dtype=np.uint8)
+    rgba[..., :3] = (85, 229, 121)
+    rgba[..., 3] = alpha.astype(np.uint8)
+    return Image.fromarray(rgba, "RGBA").resize(size, Image.NEAREST)
+
+
+def exposure_map(small):
+    """Blown highlights in red, blocked shadows in blue."""
+    rgb = np.asarray(small.convert("RGB"))
+    rgba = np.zeros(rgb.shape[:2] + (4,), dtype=np.uint8)
+    rgba[rgb.min(axis=2) >= 249] = (255, 31, 31, 225)
+    rgba[rgb.max(axis=2) <= 2] = (0, 158, 255, 215)
+    return Image.fromarray(rgba, "RGBA")
 
 
 def main():
@@ -94,7 +120,8 @@ def main():
 
     if OUT.exists():
         shutil.rmtree(OUT)
-    (OUT / "t").mkdir(parents=True)
+    for sub in ("t", "focus", "exposure"):
+        (OUT / sub).mkdir(parents=True)
 
     rng = random.Random(7)
     manifest = []
@@ -114,6 +141,8 @@ def main():
             small = img.copy()
             small.thumbnail((SMALL, SMALL), Image.LANCZOS)
             small.save(OUT / "t" / f"{index:03d}.jpg", quality=80)
+            focus_map(large, small.size).save(OUT / "focus" / f"{index:03d}.png")
+            exposure_map(small).save(OUT / "exposure" / f"{index:03d}.png")
             name = path.name
             if args.bursts > 1:
                 stem = "".join(c for c in path.stem if not c.isdigit())[:4].upper() or "IMG"

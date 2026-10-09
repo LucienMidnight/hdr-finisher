@@ -180,8 +180,13 @@
     return `<span class="stars">${"★".repeat(p.stars)}</span><span class="right">${right.join("")}</span>`;
   }
 
+  // The focus and exposure maps are small images kept beside the thumbnails
+  // and drawn over them. They load only once an overlay is switched on.
+  const mapSrc = (kind, p) => `photos/${kind}/${String(p.id).padStart(3, "0")}.png`;
+  const overlayImgs = (p) => ["focus", "exposure"].map((kind) => `<img class="ov ov-${kind}" src="${mapSrc(kind, p)}" alt="" loading="lazy">`).join("");
+
   function cellHtml(p) {
-    return `<div class="cell" data-id="${p.id}"><div class="frame"><img src="photos/t/${String(p.id).padStart(3, "0")}.jpg" alt="" loading="lazy"></div>
+    return `<div class="cell" data-id="${p.id}"><div class="frame"><img src="photos/t/${String(p.id).padStart(3, "0")}.jpg" alt="" loading="lazy">${overlayImgs(p)}</div>
       <div class="marks"></div><div class="name"><span>${p.name}</span><span>${p.kind}</span></div></div>`;
   }
 
@@ -239,7 +244,10 @@
     const parts = [`<b>${state.shown.length}</b> photos`];
     if (state.sel.size > 1) parts.push(`<b>${state.sel.size}</b> selected`);
     parts.push(`<b>${count((p) => p.flag === "pick")}</b> picked`, `<b>${count((p) => p.flag === "reject")}</b> rejected`);
-    $("status").innerHTML = parts.map((t) => `<span>${t}</span>`).join("");
+    const legend = [];
+    if (app.dataset.focus === "on") legend.push(`<span class="legend"><span><i style="background:#55e579"></i>sharpest detail</span></span>`);
+    if (app.dataset.exposure === "on") legend.push(`<span class="legend"><span><i style="background:var(--exposure-band-peak)"></i>blown highlights</span><span><i style="background:var(--exposure-band-low-mid)"></i>blocked shadows</span></span>`);
+    $("status").innerHTML = parts.map((t) => `<span>${t}</span>`).join("") + legend.join("");
   }
 
   function select(id, mode) {
@@ -300,6 +308,7 @@
     if (!list.length) return;
     state.undo.push(list.map((p) => ({ p, stars: p.stars, flag: p.flag })));
     list.forEach(change);
+    sync(list);
     flash(label);
     const advance = $("opt-advance").checked && list.length === 1;
     computeShown();
@@ -322,6 +331,7 @@
       return toast(`Restored ${last.deleted.length} from the Recycle Bin`);
     }
     last.forEach(({ p, stars, flag }) => { p.stars = stars; p.flag = flag; });
+    sync(last.map((entry) => entry.p));
     computeShown();
     renderGrid(false);
     refresh();
@@ -340,14 +350,21 @@
   function place(img, p) {
     const box = img.parentElement.getBoundingClientRect();
     img.classList.toggle("zoomed", state.zoom.on);
+    const follow = () => img.parentElement.querySelectorAll(".stage-ov").forEach((o) => {
+      const src = mapSrc(o.dataset.kind, p);
+      if (o.getAttribute("src") !== src) o.src = src;
+      o.classList.toggle("zoomed", state.zoom.on);
+      o.style.cssText = img.style.cssText;
+    });
     if (!state.zoom.on) {
       img.style.cssText = "";
-      return;
+      return follow();
     }
     const scale = ZOOM_EDGE / Math.max(p.w, p.h);
     const [w, h] = [p.w * scale, p.h * scale];
     const edge = (size, room, f) => (size <= room ? (room - size) / 2 : Math.min(0, Math.max(room - size, room / 2 - f * size)));
     img.style.cssText = `width:${w}px;height:${h}px;left:${edge(w, box.width, state.zoom.fx)}px;top:${edge(h, box.height, state.zoom.fy)}px`;
+    follow();
   }
 
   function show(img, p) {
@@ -542,23 +559,33 @@
     document.querySelectorAll("[data-stage-tab]").forEach((t) => t.classList.toggle("active", t.dataset.stageTab === stage));
   }
 
+  function showInGrade(p) {
+    $("grade-image").hidden = !p;
+    if (p) $("grade-image").src = large(p);
+    $("grade-name").textContent = p ? p.name : "";
+    const auto = $("autosave").getAttribute("aria-pressed") === "true";
+    $("grade-note").textContent = !p ? "No photo open. Double-click a photo in the Library window."
+      : auto
+        ? "Stand-in for the Grade workspace. Autosave is on: changes save beside the photo, and switching photos never asks."
+        : "Stand-in for the Grade workspace. Autosave is off: switching to another photo asks Save / Don't save / Cancel if this one has unsaved work.";
+    setStage("grade");
+  }
+
   function openInGrade() {
     const p = current();
     if (!p) return;
+    if (POPPED) {
+      tell({ lib: "grade", id: p.id });
+      return toast(`${p.name} opened in Grade in the main window.`);
+    }
     if (state.review) setReview(false);
-    $("grade-image").src = large(p);
-    $("grade-name").textContent = p.name;
-    const auto = $("autosave").getAttribute("aria-pressed") === "true";
-    $("grade-note").textContent = auto
-      ? "Stand-in for the Grade workspace. Autosave is on: changes save beside the photo, and switching photos never asks."
-      : "Stand-in for the Grade workspace. Autosave is off: switching to another photo asks Save / Don't save / Cancel if this one has unsaved work.";
-    setStage("grade");
+    showInGrade(p);
   }
 
   document.querySelectorAll("[data-stage-tab]").forEach((tab) => tab.addEventListener("click", () => {
     const stage = tab.dataset.stageTab;
-    if (stage === "library") return setStage("library");
-    if (stage === "grade") return openInGrade();
+    if (stage === "library") return popOpen() ? pop.focus() : setStage("library");
+    if (stage === "grade") return popOpen() ? setStage("grade") : openInGrade();
     toast("Proof and Export are not part of this mock-up.");
   }));
 
@@ -673,7 +700,82 @@
   document.querySelectorAll("[data-view-button]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.viewButton)));
   $("review-button").addEventListener("click", () => setReview(true));
   $("thumb-size").addEventListener("input", () => $("grid").style.setProperty("--thumb", $("thumb-size").value + "px"));
-  $("popout").addEventListener("click", () => toast("Pop-out: the library moves to its own window and this window switches to Grade. Later round."));
+  // ---------- pop-out: the library in its own window ----------
+
+  // One app, two windows. The main window stays on Grade while the library is
+  // out; marks made in either window show in the other.
+  const POPPED = new URLSearchParams(location.search).get("window") === "library";
+  // The window this library came out of (when it is the popped-out one).
+  const HOME = window.opener || (window.parent !== window ? window.parent : null);
+  let pop = null;
+  const popOpen = () => !!pop && !pop.closed;
+  function tell(message) {
+    const other = POPPED ? HOME : pop;
+    if (other && !other.closed) other.postMessage(message, "*");
+  }
+  function sync(list) {
+    tell({ lib: "marks", list: list.map((p) => ({ id: p.id, stars: p.stars, flag: p.flag })) });
+  }
+  function takeMarks(list) {
+    list.forEach((m) => { const p = byId(m.id); if (p) { p.stars = m.stars; p.flag = m.flag; } });
+    computeShown();
+    renderGrid(false);
+    refresh();
+  }
+  function setPopped(on) {
+    app.dataset.popped = on ? "on" : "off";
+    document.querySelector('[data-stage-tab="library"]').innerHTML = `<span aria-hidden="true">01</span>Library${on ? '<i class="away">in own window</i>' : ""}`;
+    if (on) showInGrade(state.active !== null ? byId(state.active) : null);
+    else pop = null;
+  }
+  $("popout").addEventListener("click", () => {
+    if (POPPED && HOME) return window.close();
+    if (POPPED) return location.assign(location.pathname + (state.place ? "?place=" + state.place : ""));
+    const address = location.pathname + "?window=library" + (state.place ? "&place=" + state.place : "");
+    pop = window.open(address, "hdrf-library", "width=1500,height=950");
+    if (!pop) return toast("The browser blocked the new window. Allow pop-ups for this page, then try again.");
+    setPopped(true);
+  });
+  window.addEventListener("message", (event) => {
+    const data = event.data || {};
+    if (data.lib === "hello" && !POPPED) pop = pop || event.source;
+    if (data.lib === "hello") tell({ lib: "marks", list: photos.map((p) => ({ id: p.id, stars: p.stars, flag: p.flag })) });
+    if (data.lib === "marks") takeMarks(data.list);
+    if (data.lib === "grade") { showInGrade(byId(data.id)); window.focus(); }
+    if (data.lib === "closed" && pop) { setPopped(false); toast("Library window closed. The library is docked here again."); }
+  });
+  setInterval(() => { if (pop && pop.closed) { setPopped(false); toast("Library window closed. The library is docked here again."); } }, 800);
+  if (POPPED) {
+    app.dataset.window = "library";
+    document.title = "Library · HDR Finisher";
+    $("popout").title = "Dock the library in the main window";
+    tell({ lib: "hello" });
+    window.addEventListener("beforeunload", () => tell({ lib: "closed" }));
+    // Some viewers load the new window over the old one instead of beside it.
+    if (!HOME) setTimeout(() => toast("This viewer cannot open a second window, so the library replaced the main one. The button at top right goes back. Open the mock-up in your own browser to try both windows."), 400);
+  }
+
+  // ---------- overlays ----------
+
+  ["single-image", "compare-ref-image", "compare-image", "review-image"].forEach((id) =>
+    $(id).insertAdjacentHTML("afterend", `<img class="stage-ov ov-focus" data-kind="focus" alt=""><img class="stage-ov ov-exposure" data-kind="exposure" alt="">`));
+
+  function toggleOverlay(kind) {
+    const on = app.dataset[kind] !== "on";
+    app.dataset[kind] = on ? "on" : "off";
+    document.querySelector(`[data-overlay="${kind}"]`).setAttribute("aria-pressed", on);
+    // Maps are made in the background, photos on screen first, the first time an overlay is used.
+    if (on && $("opt-slow").checked && !toggleOverlay["made" + kind + state.place]) {
+      toggleOverlay["made" + kind + state.place] = true;
+      [...$("grid").children].forEach((cell, i) => {
+        const o = cell.querySelector(".ov-" + kind);
+        o.style.opacity = 0;
+        setTimeout(() => { o.style.opacity = ""; }, 200 + i * 45);
+      });
+    }
+    refresh();
+  }
+  document.querySelectorAll("[data-overlay]").forEach((b) => b.addEventListener("click", () => toggleOverlay(b.dataset.overlay)));
 
   // Side panels: open or collapsed to a rail, like Metadata on the other stages.
   function collapseButton(side, name) {
@@ -735,6 +837,8 @@
       "[": () => chooseSide("left"),
       "]": () => chooseSide("right"),
       i: toggleDetails,
+      s: () => toggleOverlay("focus"),
+      e: () => toggleOverlay("exposure"),
       Delete: () => confirmDelete(targets()),
       Tab: () => {
         const open = app.dataset.nav === "collapsed" && app.dataset.details === "collapsed";
@@ -1111,6 +1215,9 @@
   renderGrid(true);
   refresh();
   if (ask.has("select")) ask.get("select").split(",").forEach((n, i) => select(state.shown[Number(n)].id, i ? "toggle" : "single"));
+  if (ask.has("focus")) { $("opt-slow").checked = false; toggleOverlay("focus"); }
+  if (ask.has("exposure")) { $("opt-slow").checked = false; toggleOverlay("exposure"); }
+  if (ask.get("popped") === "on") setPopped(true);
   if (ask.get("first") === "on") { $("opt-first").checked = true; firstRun(); }
   if (ask.get("picker") === "on") { openPicker(); picker.chosen = picker.path[0].children.slice(0, 3); renderPicker(); }
   if (ask.has("delete")) confirmDelete(targets());

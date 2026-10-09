@@ -36,6 +36,7 @@
         <div class="window-menu"><button class="window-menu-trigger" type="button">Window</button></div>
         <div class="window-menu"><button class="window-menu-trigger" type="button">Help</button></div>
       </nav>
+      <span class="lib-window-title">Library · HDR Finisher</span>
       <div class="window-drag-region"></div>
       <div class="window-controls">
         <button class="window-control" type="button" aria-label="Minimize"><img src="../../../codebase/frontend/assets/icons/tabler/minus.svg" alt=""></button>
@@ -107,6 +108,9 @@
               </label>
               <button class="tool-button" type="button" id="raw-only" aria-pressed="false" title="Show RAW files only">RAW only</button>
               <button class="tool-button" type="button" id="filter-button" aria-pressed="false" title="Filter · Ctrl+F">Filter</button>
+              <span class="lib-divider"></span>
+              <button class="tool-button" type="button" data-overlay="focus" aria-pressed="false" title="Focus overlay · S">Focus</button>
+              <button class="tool-button" type="button" data-overlay="exposure" aria-pressed="false" title="Exposure overlay · E">Exposure</button>
             </div>
             <div class="lib-bar-right">
               <button class="panel-collapse-button lib-popout" type="button" id="popout" title="Move the library to its own window" aria-label="Pop out library">
@@ -196,6 +200,7 @@
       <dt>Z · click photo</dt><dd>100% and back to fit. Drag to move around.</dd>
       <dt>C</dt><dd>Compare. Arrows flip the right photo only, and marks go to the right photo.</dd>
       <dt>[ · ]</dt><dd>Put the selected photo on the left or the right. Works from the grid, single view and compare.</dd>
+      <dt>S · E</dt><dd>Focus overlay · exposure overlay, in every view</dd>
       <dt>G</dt><dd>Grid</dd>
       <dt>F</dt><dd>Full-screen review</dd>
       <dt>I</dt><dd>Details panel, open or collapsed</dd>

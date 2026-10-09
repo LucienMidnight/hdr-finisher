@@ -1516,3 +1516,86 @@ dialog:not([open]) {
   line-height: 1.5;
   white-space: normal;
 }
+
+/* ---------- focus and exposure overlays ---------- */
+
+.cell .frame {
+  position: relative;
+}
+
+.cell img.ov,
+img.stage-ov {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+}
+
+.cell img.ov {
+  inset: 0;
+  margin: auto;
+}
+
+[data-focus="on"] img.ov-focus,
+[data-exposure="on"] img.ov-exposure {
+  display: block;
+}
+
+.lib-single-stage img.stage-ov:not(.zoomed) {
+  inset: 14px 14px 6px;
+  width: calc(100% - 28px);
+  height: calc(100% - 20px);
+}
+
+.review img.stage-ov:not(.zoomed) {
+  inset: 0;
+}
+
+.lib-status .legend {
+  margin-left: auto;
+  display: flex;
+  gap: 14px;
+}
+
+.lib-status .legend + .legend {
+  margin-left: 0;
+}
+
+.lib-status .legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 1px;
+}
+
+/* ---------- the library in its own window ---------- */
+
+.lib-window-title {
+  display: none;
+  align-items: center;
+  padding-left: 12px;
+  color: var(--body);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+[data-window="library"] .lib-window-title {
+  display: flex;
+}
+
+[data-window="library"] .top-bar,
+[data-window="library"] .window-menu-bar {
+  display: none;
+}
+
+[data-window="library"] .lib-popout svg {
+  transform: rotate(180deg);
+}
+
+.workflow-tab .away {
+  margin-left: -3px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .04em;
+}
