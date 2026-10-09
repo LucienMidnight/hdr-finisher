@@ -195,6 +195,7 @@
       <dt>Ctrl+C</dt><dd>Copy the grade of the selected photo</dd>
       <dt>Ctrl+V</dt><dd>Paste it onto the selection, with the same choices as last time</dd>
       <dt>Ctrl+Shift+V</dt><dd>Paste, choosing what to bring across</dd>
+      <dt>Ctrl+Shift+E</dt><dd>Export the selected photos</dd>
       <dt>Delete</dt><dd>Delete the selected photos, after a confirmation</dd>
       <dt>Double-click · Enter</dt><dd>Open in Grade (double-click works on thumbnails: grid and filmstrip)</dd>
       <dt>Arrows</dt><dd>Move. Hold Shift to extend the selection.</dd>
@@ -257,6 +258,43 @@
       <span class="lib-filter-spacer"></span>
       <button type="button" id="paste-cancel">Cancel</button>
       <button type="button" class="button-primary" id="paste-go"></button>
+    </div>
+  </dialog>
+
+  <dialog id="export" class="application-dialog lib-export">
+    <div class="application-dialog-header">
+      <div><h2 id="export-title"></h2><p class="lib-picker-sub">Each photo is exported with its own saved grade. Tick one or more recipes; every ticked recipe makes one file per photo.</p></div>
+    </div>
+    <div class="lib-export-body">
+      <div class="lib-export-recipes">
+        <div class="paste-kicker">Recipes</div>
+        <div id="export-recipes"></div>
+        <button type="button" class="text-button" id="export-new">+ New recipe</button>
+      </div>
+      <div class="lib-export-editor" id="export-editor"></div>
+    </div>
+    <div class="lib-export-where">
+      <label class="lib-export-field"><span>Export to</span>
+        <span class="lib-export-path"><input type="text" id="export-folder" value="D:\Exports\2026-09 Langkawi" spellcheck="false"><button type="button" id="export-browse">Browse…</button></span></label>
+      <label class="lib-export-field"><span>If a file already exists</span>
+        <select id="export-clash"><option>Ask me</option><option>Add a number</option><option>Skip it</option><option>Replace it</option></select></label>
+    </div>
+    <p class="lib-paste-notes" id="export-notes"></p>
+    <div class="app-dialog-actions lib-picker-actions">
+      <span class="lib-filter-spacer"></span>
+      <button type="button" id="export-cancel">Cancel</button>
+      <button type="button" class="button-primary" id="export-go"></button>
+    </div>
+  </dialog>
+
+  <dialog id="results" class="application-dialog lib-results">
+    <div class="application-dialog-header"><div><h2 id="results-title"></h2><p class="lib-picker-sub" id="results-sub"></p></div></div>
+    <div class="lib-paste-list" id="results-list"></div>
+    <div class="app-dialog-actions lib-picker-actions">
+      <button type="button" id="results-explorer">Show in Explorer</button>
+      <span class="lib-filter-spacer"></span>
+      <button type="button" id="results-stop">Cancel export</button>
+      <button type="button" id="results-close">Close</button>
     </div>
   </dialog>
 

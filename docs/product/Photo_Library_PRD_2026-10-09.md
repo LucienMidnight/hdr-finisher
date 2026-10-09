@@ -733,8 +733,13 @@ Decided:
 - Decided October 9 from the mock-up:
   - Ctrl+C copies the grade of the selected photo. Ctrl+V pastes it onto
     the selection with the same ticks as last time, after a confirmation
-    that says how many photos change and offers "Choose what to paste".
-    Ctrl+Shift+V goes straight to the tick list.
+    that offers "Choose what to paste". **Ctrl+V always confirms, even for
+    one photo** (Steve, October 9). Ctrl+Shift+V goes straight to the tick
+    list.
+  - Confirmation wording, set by Steve: title "Paste Grade From
+    <file name>"; body "Paste Tone, Color, Look, Detail, and RAW
+    development settings.", listing what is ticked. For more than one
+    photo the body adds "onto N photos".
   - The tick list shows, for each group and setting, whether the copied
     photo changed it (`Mod`) or left it at default, with quick choices
     All, Modified only and None. HDR grade and SDR grade are two ticks at

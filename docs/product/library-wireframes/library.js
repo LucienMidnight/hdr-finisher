@@ -253,7 +253,7 @@
     const swatch = (kind, text) => `<label title="Click the square to change this colour. Double-click to reset."><input type="color" data-tint="${kind}" value="${tints[kind]}">${text}</label>`;
     if (app.dataset.focus === "on") legend.push(`<span class="legend">${swatch("focus", "sharpest detail")}</span>`);
     if (app.dataset.exposure === "on") legend.push(`<span class="legend">${swatch("high", "blown highlights")}${swatch("low", "blocked shadows")}</span>`);
-    $("status").innerHTML = parts.map((t) => `<span>${t}</span>`).join("") + legend.join("");
+    $("status").innerHTML = parts.map((t) => `<span>${t}</span>`).join("") + exportStatus() + legend.join("");
   }
 
   function select(id, mode) {
@@ -628,7 +628,7 @@
     const flag = same((p) => p.flag);
     const tags = [...new Set(list.flatMap((p) => p.tags))];
     const head = one
-      ? `<p class="details-name">${one.name}</p><p class="details-sub">${one.kind} · ${one.w} × ${one.h} · ${one.time}</p><p class="details-sub">${one.edited ? "Edited" : "Not edited"}${one.copies ? ` · ${one.copies} virtual copies` : ""}</p>`
+      ? `<p class="details-name">${one.name}</p><p class="details-sub">${one.kind} · ${one.w} × ${one.h} · ${one.time}</p><p class="details-sub">${one.edited ? "Edited" : "Not edited"}${one.exported ? " · Exported" : ""}${one.copies ? ` · ${one.copies} virtual copies` : ""}</p>`
       : `<p class="details-name">${list.length} photos selected</p><p class="details-sub">Marks and tags apply to all of them.</p>`;
     const facts = one ? `<div class="details-section"><p class="details-kicker">Camera</p><dl class="details-facts">
         <dt>Camera</dt><dd>${one.facts.camera}</dd><dt>Lens</dt><dd>${one.facts.lens}</dd>
@@ -976,6 +976,7 @@
     if (event.ctrlKey || event.metaKey) {
       if (key.toLowerCase() === "a") { event.preventDefault(); state.sel = new Set(state.shown.map((p) => p.id)); refresh(); }
       if (key.toLowerCase() === "z") { event.preventDefault(); undo(); }
+      if (key.toLowerCase() === "e" && event.shiftKey) { event.preventDefault(); return openExport(); }
       if (key.toLowerCase() === "c") { event.preventDefault(); copyGrade(); }
       if (key.toLowerCase() === "v") { event.preventDefault(); pasteGrade(event.shiftKey); }
       return;
@@ -1093,7 +1094,7 @@
       "-",
       { label: "Add to album…" },
       { label: "Create HDR previews" },
-      { label: "Export…" },
+      { label: "Export…", key: "Ctrl+Shift+E", action: openExport },
       "-",
       one && { label: "Rename…" },
       { label: "Move to folder…" },
@@ -1295,6 +1296,162 @@
     else if (t.dataset.key) t.checked ? clip.ticks.add(t.dataset.key) : clip.ticks.delete(t.dataset.key);
     else return;
     renderPaste();
+  });
+
+  // ---------- batch export with recipes ----------
+  // A recipe is one deliverable: format, size, naming pattern, sub-folder and
+  // metadata. One run can tick several, and makes one file per photo for each.
+  // Formats and presets are the ones on the Export stage today.
+
+  const FORMATS = { "AVIF gain map": "avif", "JPEG Ultra HDR": "jpg", "JPEG XL HDR": "jxl", "JPEG image": "jpg", "PNG image": "png", "JPEG XL SDR": "jxl" };
+  const PRESETS = ["Web default", "Web optimized", "Maximum fidelity"];
+  const SIZES = [["original", "Original size"], ["3840", "3840 px long edge"], ["2560", "2560 px long edge"], ["2048", "2048 px long edge"], ["1600", "1600 px long edge"]];
+  const METADATA = ["None", "Copyright only", "All except location", "All"];
+  const TOKENS = ["{name}", "{date}", "{seq}", "{rating}", "{recipe}"];
+  const recipes = [
+    { name: "HDR for web", format: "AVIF gain map", preset: "Web default", size: "2560", pattern: "{name}_HDR", folder: "HDR", metadata: "Copyright only", on: true },
+    { name: "SDR for clients", format: "JPEG image", preset: "Web default", size: "2048", pattern: "{name}", folder: "SDR", metadata: "Copyright only", on: true },
+    { name: "Full-size archive", format: "JPEG XL HDR", preset: "Maximum fidelity", size: "original", pattern: "{date}_{name}", folder: "Archive", metadata: "All except location", on: false },
+  ];
+  const run = { list: [], recipe: 0, jobs: [], at: 0, timer: null, finished: false };
+
+  const exportName = (recipe, p, n) => recipe.pattern
+    .replaceAll("{name}", p.name.replace(/\.[^.]+$/, "")).replaceAll("{date}", "2026-09-12").replaceAll("{seq}", String(n + 1).padStart(3, "0"))
+    .replaceAll("{rating}", p.stars + "star").replaceAll("{recipe}", recipe.name.replace(/\s+/g, "-")) + "." + FORMATS[recipe.format];
+  const recipeLine = (r) => `${r.format} · ${r.preset}<br>${r.size === "original" ? "original size" : r.size + " px"} · ${r.folder ? "\\" + r.folder : "no sub-folder"}`;
+
+  function renderRecipes() {
+    $("export-recipes").innerHTML = recipes.map((r, i) => `<label class="recipe-row${i === run.recipe ? " selected" : ""}" data-recipe="${i}">
+      <input type="checkbox" data-recipe-on="${i}" ${r.on ? "checked" : ""}><span><strong>${r.name || "Untitled recipe"}</strong><small>${recipeLine(r)}</small></span></label>`).join("");
+    const on = recipes.filter((r) => r.on);
+    const n = run.list.length;
+    const files = n * on.length;
+    const ungraded = run.list.filter((p) => !p.edited).length;
+    $("export-title").textContent = `Export ${n === 1 ? run.list[0].name : `${n} photos`}`;
+    $("export-notes").textContent = !on.length ? "No recipe is ticked."
+      : `${n} ${n === 1 ? "photo" : "photos"} × ${on.length} ${on.length === 1 ? "recipe" : "recipes"} = ${files} ${files === 1 ? "file" : "files"}, about ${Math.max(1, Math.round(files * 0.2))} min. Runs in the background; you can keep working.` +
+        (ungraded ? `\n${ungraded} of them ${ungraded === 1 ? "has" : "have"} no grade and will be exported with the default look.` : "");
+    $("export-go").textContent = files === 1 ? "Export 1 file" : `Export ${files} files`;
+    $("export-go").disabled = !files;
+    const example = $("export-editor").querySelector(".recipe-example");
+    if (example && recipes[run.recipe]) example.textContent = `${$("export-folder").value}\\${recipes[run.recipe].folder ? recipes[run.recipe].folder + "\\" : ""}${exportName(recipes[run.recipe], run.list[0], 0)}`;
+  }
+
+  function renderEditor() {
+    const r = recipes[run.recipe];
+    if (!r) { $("export-editor").innerHTML = `<p class="helper">No recipes yet. Add one to begin.</p>`; return renderRecipes(); }
+    const select = (field, options) => `<select data-field="${field}">${options.map((o) => {
+      const [value, label] = Array.isArray(o) ? o : [o, o];
+      return `<option value="${value}" ${r[field] === value ? "selected" : ""}>${label}</option>`;
+    }).join("")}</select>`;
+    $("export-editor").innerHTML = `
+      <label class="lib-export-field wide"><span>Recipe name</span><input type="text" data-field="name" value="${r.name}"></label>
+      <label class="lib-export-field"><span>Format</span>${select("format", Object.keys(FORMATS))}</label>
+      <label class="lib-export-field"><span>Quality preset</span>${select("preset", PRESETS)}</label>
+      <label class="lib-export-field"><span>Size</span>${select("size", SIZES)}</label>
+      <label class="lib-export-field"><span>Metadata written into the file</span>${select("metadata", METADATA)}</label>
+      <label class="lib-export-field wide"><span>File name pattern</span><input type="text" class="mono" data-field="pattern" value="${r.pattern}" spellcheck="false"></label>
+      <div class="lib-export-field wide"><div class="recipe-tokens">${TOKENS.map((t) => `<button type="button" data-token="${t}">${t}</button>`).join("")}</div></div>
+      <label class="lib-export-field wide"><span>Sub-folder inside the export folder (optional)</span><input type="text" data-field="folder" value="${r.folder}" spellcheck="false"></label>
+      <div class="lib-export-field wide"><span>Example</span><span class="recipe-example"></span></div>
+      <button type="button" class="recipe-remove" id="export-remove">Delete this recipe</button>`;
+    renderRecipes();
+  }
+
+  function openExport() {
+    const list = targets();
+    if (!list.length) return toast("Select the photos to export.");
+    if (run.timer) return openResults();
+    run.list = list;
+    renderEditor();
+    $("export").showModal();
+  }
+
+  $("export").addEventListener("click", (event) => {
+    const row = event.target.closest("[data-recipe]");
+    const token = event.target.closest("[data-token]");
+    if (token) {
+      const input = $("export-editor").querySelector('[data-field="pattern"]');
+      input.value += token.dataset.token;
+      recipes[run.recipe].pattern = input.value;
+      return renderRecipes();
+    }
+    if (row && !event.target.matches("input")) { event.preventDefault(); run.recipe = Number(row.dataset.recipe); return renderEditor(); }
+    if (event.target.id === "export-new") {
+      recipes.push({ name: "New recipe", format: "JPEG Ultra HDR", preset: "Web default", size: "2560", pattern: "{name}", folder: "", metadata: "Copyright only", on: true });
+      run.recipe = recipes.length - 1;
+      return renderEditor();
+    }
+    if (event.target.id === "export-remove") { recipes.splice(run.recipe, 1); run.recipe = Math.max(0, run.recipe - 1); return renderEditor(); }
+    if (event.target.id === "export-browse") return toast("Opens the same folder picker as Add folder.");
+    if (event.target.id === "export-cancel") return $("export").close();
+    if (event.target.id === "export-go") { $("export").close(); startExport(); }
+  });
+  $("export").addEventListener("input", (event) => {
+    const t = event.target;
+    if (t.dataset.recipeOn) recipes[Number(t.dataset.recipeOn)].on = t.checked;
+    else if (t.dataset.field) recipes[run.recipe][t.dataset.field] = t.value;
+    renderRecipes();
+  });
+
+  // The queue: runs in the background, shows in the status line, and keeps a per-file list.
+  function startExport() {
+    const on = recipes.filter((r) => r.on);
+    run.jobs = run.list.flatMap((p, n) => on.map((r) => ({ file: `${r.folder ? r.folder + "\\" : ""}${exportName(r, p, n)}`, recipe: r.name, photo: p,
+      state: "waiting" })));
+    run.at = 0;
+    run.finished = false;
+    clearInterval(run.timer);
+    run.timer = setInterval(() => {
+      while (run.jobs[run.at] && run.jobs[run.at].state === "skipped") run.at++;
+      if (run.jobs[run.at]) { run.jobs[run.at].state = "done"; run.jobs[run.at].photo.exported = true; run.at++; }
+      if (run.at >= run.jobs.length) finishExport(false);
+      refresh();
+      if ($("results").open) renderResults();
+    }, 700);
+    toast(`Exporting ${run.jobs.length} files in the background. Progress is in the bottom bar.`);
+    refresh();
+  }
+
+  function finishExport(cancelled) {
+    clearInterval(run.timer);
+    run.timer = null;
+    run.finished = true;
+    if (cancelled) run.jobs.forEach((j) => { if (j.state === "waiting") j.state = "cancelled"; });
+    const made = run.jobs.filter((j) => j.state === "done").length;
+    const skipped = run.jobs.filter((j) => j.state === "skipped").length;
+    toast(cancelled ? `Export cancelled. ${made} files were finished and kept.` : `Export finished: ${made} files${skipped ? `, ${skipped} skipped` : ""}. Click the bottom bar for the list.`);
+  }
+
+  function exportStatus() {
+    if (!run.jobs.length) return "";
+    const done = run.jobs.filter((j) => j.state !== "waiting").length;
+    const left = Math.max(1, Math.round((run.jobs.length - done) * 0.2));
+    const text = run.timer ? `Exporting ${Math.min(done + 1, run.jobs.length)} of ${run.jobs.length} · about ${left} min left`
+      : `Export ${run.jobs.some((j) => j.state === "cancelled") ? "cancelled" : "finished"} · ${run.jobs.filter((j) => j.state === "done").length} files`;
+    return `<button type="button" class="export-progress" id="export-progress" style="--done:${(done / run.jobs.length) * 100}%" title="Show the list of files"><i></i>${text}</button>`;
+  }
+
+  function renderResults() {
+    const made = run.jobs.filter((j) => j.state === "done").length;
+    const words = { done: "done", waiting: "waiting", skipped: "skipped · HDR recipe, SDR-only photo", cancelled: "cancelled" };
+    $("results-title").textContent = run.timer ? `Exporting ${run.jobs.length} files` : "Export results";
+    $("results-sub").textContent = `${made} done · ${run.jobs.filter((j) => j.state === "skipped").length} skipped · to ${$("export-folder").value}`;
+    $("results-list").innerHTML = run.jobs.map((j, i) => {
+      const working = run.timer && i === run.at && j.state === "waiting";
+      return `<div class="result-row ${working ? "working" : j.state}"><span class="file">${j.file}</span><span class="state">${working ? "exporting…" : words[j.state]}</span></div>`;
+    }).join("");
+    $("results-stop").hidden = !run.timer;
+  }
+  function openResults() {
+    renderResults();
+    if (!$("results").open) $("results").showModal();
+  }
+  $("status").addEventListener("click", (event) => { if (event.target.closest("#export-progress")) openResults(); });
+  $("results").addEventListener("click", (event) => {
+    if (event.target.id === "results-close") $("results").close();
+    if (event.target.id === "results-explorer") toast("Opens the export folder in Explorer.");
+    if (event.target.id === "results-stop") { finishExport(true); refresh(); renderResults(); }
   });
 
   // ---------- delete, always behind a confirmation ----------
@@ -1522,6 +1679,8 @@
   if (ask.get("first") === "on") { $("opt-first").checked = true; firstRun(); }
   if (ask.get("picker") === "on") { openPicker(); picker.chosen = picker.path[0].children.slice(0, 3); renderPicker(); }
   if (ask.has("delete")) confirmDelete(targets());
+  if (ask.has("export")) openExport();
+  if (ask.has("results")) { run.list = targets(); startExport(); run.jobs.slice(0, 5).forEach((j) => { if (j.state === "waiting") j.state = "done"; }); run.at = 5; clearInterval(run.timer); refresh(); openResults(); }
   if (ask.has("paste")) {
     clip.source = photos.find((p) => p.edited);
     clip.targets = targets().filter((p) => p !== clip.source);
