@@ -90,6 +90,7 @@
     undo: [],
     shown: [],
     review: false,
+    zoom: { on: false, fx: 0.5, fy: 0.5 },
   };
 
   const remember = (key, value) => { try { localStorage.setItem("libmock-" + key, value); } catch (e) { /* fine */ } };
@@ -314,18 +315,81 @@
 
   const large = (p) => `photos/${String(p.id).padStart(3, "0")}.jpg`;
 
-  function show(img, p) {
-    if (img.dataset.id === String(p.id)) return;
-    img.dataset.id = p.id;
-    if ($("opt-slow").checked) {
-      // The small thumbnail first, the screen-sized preview a moment later.
-      img.src = `photos/t/${String(p.id).padStart(3, "0")}.jpg`;
-      img.style.width = "100%"; img.style.height = "100%";
-      setTimeout(() => { if (img.dataset.id === String(p.id)) img.src = large(p); }, 160);
-    } else {
-      img.style.width = img.style.height = "";
-      img.src = large(p);
+  // One photo in a stage: fitted, or at 100% and draggable. The zoom and the
+  // spot being looked at are kept while flipping, so the same detail can be
+  // checked across a run of frames.
+  const ZOOM_EDGE = 1600;
+
+  function place(img, p) {
+    const box = img.parentElement.getBoundingClientRect();
+    img.classList.toggle("zoomed", state.zoom.on);
+    if (!state.zoom.on) {
+      img.style.cssText = "";
+      return;
     }
+    const scale = ZOOM_EDGE / Math.max(p.w, p.h);
+    const [w, h] = [p.w * scale, p.h * scale];
+    const edge = (size, room, f) => (size <= room ? (room - size) / 2 : Math.min(0, Math.max(room - size, room / 2 - f * size)));
+    img.style.cssText = `width:${w}px;height:${h}px;left:${edge(w, box.width, state.zoom.fx)}px;top:${edge(h, box.height, state.zoom.fy)}px`;
+  }
+
+  function show(img, p) {
+    const fresh = img.dataset.id !== String(p.id);
+    const detail = state.zoom.on ? "full" : "fit";
+    if (fresh || img.dataset.detail !== detail) {
+      img.dataset.id = p.id;
+      img.dataset.detail = detail;
+      const slow = $("opt-slow").checked;
+      // Fitted: the thumbnail first, the screen-sized preview a moment later.
+      // At 100%: soft at first, sharp once the quick decode would be ready.
+      if (fresh) img.src = slow ? `photos/t/${String(p.id).padStart(3, "0")}.jpg` : large(p);
+      img.classList.toggle("soft", slow && state.zoom.on);
+      if (slow) setTimeout(() => {
+        if (img.dataset.id !== String(p.id)) return;
+        img.src = large(p);
+        if (img.dataset.detail === detail) img.classList.remove("soft");
+      }, state.zoom.on ? 420 : 160);
+    }
+    place(img, p);
+  }
+
+  function setZoom(on, fx, fy) {
+    Object.assign(state.zoom, { on, fx: fx === undefined ? state.zoom.fx : fx, fy: fy === undefined ? state.zoom.fy : fy });
+    refresh();
+  }
+
+  // Click to zoom on that spot, click again to fit, drag to move around.
+  function zoomable(stage, img) {
+    let drag = null;
+    stage.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      drag = { x: event.clientX, y: event.clientY, fx: state.zoom.fx, fy: state.zoom.fy, moved: false };
+    });
+    window.addEventListener("mousemove", (event) => {
+      if (!drag) return;
+      const [dx, dy] = [event.clientX - drag.x, event.clientY - drag.y];
+      if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+      if (!state.zoom.on || !drag.moved) return;
+      const rect = img.getBoundingClientRect();
+      state.zoom.fx = Math.min(1, Math.max(0, drag.fx - dx / rect.width));
+      state.zoom.fy = Math.min(1, Math.max(0, drag.fy - dy / rect.height));
+      place(img, current());
+    });
+    window.addEventListener("mouseup", (event) => {
+      if (!drag) return;
+      const moved = drag.moved;
+      drag = null;
+      if (moved || !current()) return;
+      if (state.zoom.on) return setZoom(false);
+      const p = current();
+      const box = stage.getBoundingClientRect();
+      const pad = stage === $("review") ? 0 : 14;
+      const fit = Math.min((box.width - pad * 2) / p.w, (box.height - pad * 2) / p.h);
+      const fx = (event.clientX - (box.left + box.width / 2)) / (p.w * fit) + 0.5;
+      const fy = (event.clientY - (box.top + box.height / 2)) / (p.h * fit) + 0.5;
+      setZoom(true, Math.min(1, Math.max(0, fx)), Math.min(1, Math.max(0, fy)));
+    });
   }
 
   function current() {
@@ -339,7 +403,7 @@
     show($("single-image"), p);
     $("single-image").classList.toggle("rejected", p.flag === "reject");
     const index = state.shown.indexOf(p) + 1;
-    $("single-caption").innerHTML = `<span>${p.name}</span><span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}<span>${index} / ${state.shown.length}</span>`;
+    $("single-caption").innerHTML = `<span>${p.name}</span><span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}<span>${index} / ${state.shown.length}</span><span>${state.zoom.on ? "100%" : "Fit"}</span>`;
   }
 
   function renderReview() {
@@ -347,11 +411,12 @@
     if (!p) return;
     show($("review-image"), p);
     $("review-image").classList.toggle("rejected", p.flag === "reject");
-    $("review-marks").innerHTML = `<span>${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}`;
+    $("review-marks").innerHTML = `<span>${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}${state.zoom.on ? "<span>100%</span>" : ""}`;
   }
 
   function setView(view) {
     state.view = view;
+    state.zoom.on = false;
     if (view === "single") current();
     $("empty").hidden = true;
     refresh();
@@ -368,6 +433,7 @@
   function setReview(on) {
     if (on && !current()) return;
     state.review = on;
+    state.zoom.on = false;
     $("review").hidden = !on;
     if (on) {
       renderReview();
@@ -375,6 +441,9 @@
     } else if (document.fullscreenElement) document.exitFullscreen();
     refresh();
   }
+  zoomable($("single-stage"), $("single-image"));
+  zoomable($("review"), $("review-image"));
+  window.addEventListener("resize", refresh);
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && state.review) setReview(false); });
 
   let flashTimer;
@@ -557,6 +626,7 @@
     if (key === "Escape") {
       if (typing) return event.target.blur();
       if (!$("keys").hidden) return ($("keys").hidden = true);
+      if (state.zoom.on && (state.review || state.view === "single")) return setZoom(false);
       if (state.review) return setReview(false);
       if (app.dataset.stage === "grade") return setStage("library");
       if (state.view === "single") return setView("grid");
@@ -580,6 +650,7 @@
       " ": () => setView(state.view === "grid" ? "single" : "grid"),
       g: () => setView("grid"),
       f: () => setReview(!state.review),
+      z: () => { if (state.review || state.view === "single") setZoom(!state.zoom.on); },
       i: toggleDetails,
       Tab: () => {
         const open = app.dataset.nav === "collapsed" && app.dataset.details === "collapsed";
