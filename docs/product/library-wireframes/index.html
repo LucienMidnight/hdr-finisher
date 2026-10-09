@@ -13,12 +13,6 @@
   <!-- Mock-up controls. Not part of the app. -->
   <div class="mock-strip" id="mock-strip">
     <span class="mock-label">Mock-up</span>
-    <div class="mock-group" role="group" aria-label="Layout">
-      <span>Layout</span>
-      <button type="button" data-variant="a">A · Photos only</button>
-      <button type="button" data-variant="b">B · Grade panels stay</button>
-      <button type="button" data-variant="c">C · Details always</button>
-    </div>
     <div class="mock-group" role="group" aria-label="Thumbnails">
       <span>Thumbnails</span>
       <button type="button" data-fit="contain">Whole photo</button>
@@ -30,7 +24,7 @@
     <button type="button" class="mock-keys-button" id="keys-button">Keys</button>
   </div>
 
-  <div class="mock-window" id="app" data-variant="a" data-stage="library" data-view="grid">
+  <div class="mock-window" id="app" data-stage="library" data-view="grid">
 
     <header class="window-chrome" aria-label="Application menu">
       <nav class="window-menu-bar">
@@ -110,7 +104,6 @@
               <button class="tool-button" type="button" id="filter-button" aria-pressed="false" title="Filter · Ctrl+F">Filter</button>
             </div>
             <div class="lib-bar-right">
-              <button class="tool-button" type="button" id="details-button" aria-pressed="false" title="Details · I">Details</button>
               <button class="panel-collapse-button lib-popout" type="button" id="popout" title="Move the library to its own window" aria-label="Pop out library">
                 <svg viewBox="0 0 24 24"><path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6 M11 13l9 -9 M15 4h5v5"/></svg>
               </button>
@@ -146,22 +139,10 @@
           <div class="lib-status" id="status"></div>
           <div class="lib-toast" id="toast" hidden></div>
         </main>
-
-        <!-- Layout B only: the Scopes dock stays under the library -->
-        <section class="stub-dock panel" aria-hidden="true">
-          <div class="stub-dock-bar"><span class="panel-title">Scopes</span><span class="stub-note">Shows the photo open in Grade</span></div>
-          <div class="stub-dock-body"></div>
-        </section>
       </div>
 
       <!-- Details of the selection -->
       <aside class="lib-details panel" id="details" aria-label="Details"></aside>
-
-      <!-- Layout B and the Grade stage: the Control Panel (a picture of it, not working) -->
-      <aside class="stub-grade panel" aria-hidden="true">
-        <div class="stub-grade-title"><span class="panel-title">Control Panel</span></div>
-        <div class="stub-grade-list"></div>
-      </aside>
     </div>
 
     <!-- Grade stage stand-in -->
@@ -195,7 +176,8 @@
       <dt>Space</dt><dd>Single photo and back</dd>
       <dt>G</dt><dd>Grid</dd>
       <dt>F</dt><dd>Full-screen review</dd>
-      <dt>I</dt><dd>Details panel</dd>
+      <dt>I</dt><dd>Details panel, open or collapsed</dd>
+      <dt>Tab</dt><dd>Collapse or open both side panels</dd>
       <dt>Ctrl+F</dt><dd>Filter bar</dd>
       <dt>Ctrl+A · Ctrl+Z</dt><dd>Select all · undo last mark</dd>
       <dt>Esc</dt><dd>Step back out</dd>

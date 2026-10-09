@@ -135,13 +135,14 @@
     };
     PLACES.forEach((p) => {
       if (p.heading) {
-        rows.push(`<div class="nav-heading"><span>${p.heading}</span>${p.add ? `<button type="button" class="nav-add" title="${p.add}" aria-label="${p.add}">${icon("plus")}</button>` : ""}</div>`);
+        rows.push(`<div class="nav-heading"><span>${p.heading}</span>${p.add ? `<button type="button" class="nav-add" title="${p.add}" aria-label="${p.add}">${icon("plus")}</button>` : ""}${rows.length ? "" : collapseButton("nav", "folders")}</div>`);
       } else row(p, 0);
     });
     $("nav").innerHTML = rows.join("");
   }
 
   $("nav").addEventListener("click", (event) => {
+    if (event.target.closest(".side-collapse")) return toggleSide("nav");
     if (event.target.closest(".nav-add")) return toast("The Add folder picker comes in a later round.");
     const button = event.target.closest(".nav-row");
     if (!button) return;
@@ -429,7 +430,7 @@
 
   function renderDetails() {
     const list = targets();
-    const title = `<div class="details-title"><span class="panel-title">Details</span></div>`;
+    const title = `<div class="details-title"><span class="panel-title">Details</span>${collapseButton("details", "details")}</div>`;
     if (!list.length) {
       $("details").innerHTML = title + `<p class="details-sub">Nothing selected.</p>`;
       return;
@@ -458,6 +459,7 @@
   }
 
   $("details").addEventListener("click", (event) => {
+    if (event.target.closest(".side-collapse")) return toggleSide("details");
     const star = event.target.closest("[data-stars]");
     const flag = event.target.closest("[data-flag]");
     if (star) {
@@ -486,7 +488,6 @@
     $("filter-button").textContent = active ? `Filter · ${active}` : "Filter";
     $("filter-button").setAttribute("aria-pressed", active > 0 || !$("filterbar").hidden);
     $("raw-only").setAttribute("aria-pressed", f.rawOnly);
-    $("details-button").setAttribute("aria-pressed", app.dataset.details === "on");
   }
 
   function filtersChanged() {
@@ -527,11 +528,18 @@
   $("thumb-size").addEventListener("input", () => $("grid").style.setProperty("--thumb", $("thumb-size").value + "px"));
   $("popout").addEventListener("click", () => toast("Pop-out: the library moves to its own window and this window switches to Grade. Later round."));
 
-  function toggleDetails() {
-    app.dataset.details = app.dataset.details === "on" ? "off" : "on";
-    renderFilters();
+  // Side panels: open or collapsed to a rail, like Metadata on the other stages.
+  function collapseButton(side, name) {
+    const open = app.dataset[side] !== "collapsed";
+    return `<button type="button" class="panel-collapse-button side-collapse" aria-expanded="${open}" title="${open ? "Collapse" : "Open"} ${name}" aria-label="${open ? "Collapse" : "Open"} ${name}"></button>`;
   }
-  $("details-button").addEventListener("click", toggleDetails);
+  function toggleSide(side, open) {
+    const collapse = open === undefined ? app.dataset[side] !== "collapsed" : !open;
+    app.dataset[side] = collapse ? "collapsed" : "open";
+    renderNav();
+    renderDetails();
+  }
+  const toggleDetails = () => toggleSide("details");
 
   let toastTimer;
   function toast(text) {
@@ -573,6 +581,11 @@
       g: () => setView("grid"),
       f: () => setReview(!state.review),
       i: toggleDetails,
+      Tab: () => {
+        const open = app.dataset.nav === "collapsed" && app.dataset.details === "collapsed";
+        toggleSide("nav", open);
+        toggleSide("details", open);
+      },
       p: () => setFlag("pick"),
       x: () => setFlag("reject"),
       u: () => setFlag(null),
@@ -583,12 +596,6 @@
 
   // ---------- mock-up controls ----------
 
-  function setVariant(v) {
-    app.dataset.variant = v;
-    remember("variant", v);
-    document.querySelectorAll("[data-variant]").forEach((b) => b.tagName === "BUTTON" && b.classList.toggle("on", b.dataset.variant === v));
-    renderFilters();
-  }
   function setFit(fit) {
     app.dataset.fit = fit;
     remember("fit", fit);
@@ -597,7 +604,6 @@
   $("mock-strip").addEventListener("click", (event) => {
     const b = event.target.closest("button");
     if (!b) return;
-    if (b.dataset.variant) setVariant(b.dataset.variant);
     if (b.dataset.fit) setFit(b.dataset.fit);
     if (b.id === "keys-button") $("keys").hidden = !$("keys").hidden;
     b.blur();
@@ -608,12 +614,12 @@
   // ---------- start ----------
 
   // The address can ask for a starting state, for example
-  // index.html?layout=b&place=trip&view=single&details=on&filter=on
+  // index.html?place=trip&view=single&details=collapsed&nav=collapsed&filter=on
   const ask = new URLSearchParams(location.search);
-  setVariant(ask.get("layout") || recall("variant", "a"));
   setFit(ask.get("fit") || recall("fit", "contain"));
   if (placeOf(ask.get("place"))) state.place = ask.get("place");
-  if (ask.get("details") === "on") app.dataset.details = "on";
+  if (ask.get("details") === "collapsed") app.dataset.details = "collapsed";
+  if (ask.get("nav") === "collapsed") app.dataset.nav = "collapsed";
   if (ask.get("filter") === "on") $("filterbar").hidden = false;
   if (ask.get("names") === "on") { $("opt-names").checked = true; app.dataset.names = "on"; }
   if (ask.has("view")) $("opt-slow").checked = false;

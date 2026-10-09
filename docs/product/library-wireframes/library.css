@@ -187,7 +187,6 @@ svg {
 .nav-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   min-height: 38px;
   margin-top: 6px;
   padding: 0 8px 0 16px;
@@ -208,6 +207,7 @@ svg {
 
 .nav-add {
   display: grid;
+  margin-left: auto;
   width: 26px;
   height: 26px;
   padding: 0;
@@ -850,15 +850,58 @@ svg {
 /* ---------- right: details ---------- */
 
 .lib-details {
-  display: none;
   flex: 0 0 300px;
   overflow-y: auto;
   padding: 0 16px 16px;
 }
 
-[data-details="on"] .lib-details,
-[data-variant="c"] .lib-details {
-  display: block;
+/* Both side panels collapse to a 44px rail, the same way Metadata does. */
+.side-collapse {
+  margin-left: auto;
+  border: 0;
+  color: var(--body);
+  cursor: pointer;
+}
+
+.lib-nav .side-collapse {
+  margin-left: 4px;
+}
+
+.lib-nav .side-collapse::before,
+[data-details="collapsed"] .lib-details .side-collapse::before {
+  transform: rotate(180deg);
+}
+
+[data-nav="collapsed"] .lib-nav .side-collapse::before,
+.lib-details .side-collapse::before {
+  transform: rotate(0deg);
+}
+
+[data-nav="collapsed"] .lib-nav,
+[data-details="collapsed"] .lib-details {
+  flex-basis: 44px;
+  padding: 0;
+  overflow: hidden;
+}
+
+[data-nav="collapsed"] .lib-nav > :not(:first-child),
+[data-nav="collapsed"] .lib-nav .nav-heading > :not(.side-collapse),
+[data-details="collapsed"] .lib-details > :not(.details-title),
+[data-details="collapsed"] .lib-details .details-title > :not(.side-collapse) {
+  display: none;
+}
+
+[data-nav="collapsed"] .lib-nav .nav-heading,
+[data-details="collapsed"] .lib-details .details-title {
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
+[data-nav="collapsed"] .lib-nav .side-collapse,
+[data-details="collapsed"] .lib-details .side-collapse {
+  margin: 0;
 }
 
 .details-title {
@@ -1003,44 +1046,17 @@ svg {
 
 /* ---------- stand-ins for the Grade panels ---------- */
 
-.stub-grade,
-.stub-dock {
-  display: none;
-  opacity: .5;
-}
-
 .stub-grade {
   flex: 0 0 var(--grade-w);
 }
 
-[data-variant="b"] .lib-body .stub-grade {
-  display: block;
-}
-
-[data-variant="b"] .stub-dock {
-  display: block;
-  flex: 0 0 200px;
-}
-
-.stub-grade-title,
-.stub-dock-bar {
+.stub-grade-title {
   display: flex;
   align-items: center;
   gap: 14px;
   min-height: 54px;
   padding: 0 16px;
   border-bottom: 1px solid var(--hairline);
-}
-
-.stub-note {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.stub-dock-body {
-  height: 130px;
-  margin: 10px 16px;
-  background: var(--deep);
 }
 
 .stub-row {
@@ -1083,11 +1099,6 @@ svg {
 
 .grade-stage[hidden] {
   display: none;
-}
-
-.grade-stage .stub-grade {
-  display: block;
-  opacity: 1;
 }
 
 .grade-viewer {
