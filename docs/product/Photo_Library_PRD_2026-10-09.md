@@ -1,1153 +1,971 @@
-# Photo Library PRD (brainstorm notes)
+# Photo Library PRD
 
-Started October 9, 2026. Status: **brainstorm, not a build brief.** These are
-working notes from a conversation between Steve and Claude. They get organised
-into proper requirements later. Nothing here is approved for implementation.
+**Date:** October 9, 2026
+**Status:** Requirements agreed in outline. **Not yet a build brief for the
+library itself.** Three things are still to come before library features are
+built: the measurements in section 7, a wireframe of the views, and the open
+decisions in section 9. The foundation work in section 1 does not depend on
+any of those and can start now.
 
-## Direction
+**How to read the labels:** *Decided* means Steve has agreed it. *Proposed*
+means Claude's suggestion, not yet confirmed. *Open* means a choice still to
+be made. The raw brainstorm, in the order it was discussed, is in git history
+(commit `9347b0e`).
+
+---
+
+## 1. Start here: foundation work that can begin now
+
+Steve asked for this at the top so agents can work on it while he and Claude
+do the measurements and the wireframe.
+
+**Correction to the brainstorm notes:** they said the Codebase Modularization
+Sprint was still running. It is not. All five phases were completed on
+October 8, 2026 (see `Codebase_Modularization_Sprint_PRD_2026-10-06.md`).
+What remains is the work that sprint deliberately left out, plus groundwork
+specific to the library.
+
+Every item below changes **nothing the user can see**. Each one is finished
+when the app behaves exactly as it does today and the stated proof exists.
+Testing follows `AGENTS.md`: fast checks on every change, plus only the GPU
+check that covers what was touched. None of these items touches CPU export,
+Proof, or a pinned shader, tolerance, limit or budget. If one turns out to,
+stop and tell Steve.
+
+Do the items one at a time when they touch the same files (F1 and F2 both
+touch `codebase/desktop/main.js`).
+
+### F1. The desktop shell can manage more than one window
+
+- **Why:** the library will be able to live in its own window. Today
+  `codebase/desktop/main.js` is written around a single window: closing,
+  unsaved-work prompts, menus, saved window position and display detection
+  all assume one.
+- **What:** restructure so the shell keeps track of windows by role (main,
+  and later library), with per-window saved position and per-window display
+  detection. Agree the closing rules in code: closing the main window ends
+  the app; closing a secondary window only closes that window.
+- **Proof:** with a developer-only switch, the shell opens a second, empty
+  window that loads a page from the backend, can be moved to another monitor,
+  snapped and made full screen, and comes back in the same place next launch.
+  Without the switch, nothing is different.
+
+### F2. One gate for "leaving the current photo"
+
+- **Why:** the save model is changing (section 5.13). The check for unsaved
+  work is currently made in several places: opening another source, opening a
+  project, closing the window, quitting, and Windows shutting down. Autosave,
+  saving to a sidecar and the "save before switching?" prompt all need a
+  single place to attach.
+- **What:** list every route that replaces or closes the open photo, then
+  route them all through one function that decides whether it may proceed.
+  Start in `frontend/project-documents.js`, `frontend/session-import.js`,
+  `frontend/edit-commands.js`, `frontend/desktop-commands.js` and the close
+  handling in `desktop/main.js`. Take stock first; the list may be longer.
+- **Proof:** a short note in the code map naming the gate and the routes
+  through it. Prompts appear exactly when they do today.
+
+### F3. A helper process for library work
+
+- **Why:** indexing folders, reading metadata, making thumbnails and decoding
+  RAW files for previews are heavy. Inside the same backend process as the
+  grade they would make grading stutter. Cheap to separate now, awkward
+  later.
+- **What:** a second backend process that starts and stops with the app, runs
+  at low priority, takes jobs with a priority and can cancel them, and can be
+  told to pause while the user is grading or exporting. As its first job,
+  move today's thumbnail making into it
+  (`backend/hdr_finisher/media_browser.py`), so the current import browser
+  keeps working unchanged but no longer decodes thumbnails inside the grading
+  process.
+- **Proof:** the import browser looks and behaves as it does now. Thumbnails
+  for a large folder load while a grade is being adjusted, without the
+  preview slowing. Confirm it also works in the packaged app at the next
+  installer build (separate processes are a known trouble spot when
+  packaged).
+
+### F4. The browser runs on its own page
+
+- **Why:** the library has to appear both inside the main window and in its
+  own window. The interface has no module system (decided against before
+  1.0) and its files share one global `state`. `frontend/media-browser.js`
+  leans on that shared state, so today it cannot run without the whole
+  editor. This is the "walls between features" work the modularization
+  sprint listed as its natural follow-up, applied to the one feature that
+  needs it first.
+- **What:** make the browser depend only on things it is handed (a place to
+  draw, the backend address, callbacks for "open this"), not on editor
+  state. Add a bare page served by the backend that shows the browser alone,
+  with none of the editor's scripts loaded.
+- **Proof:** the stand-alone page shows folders and thumbnails in the F1
+  second window. The import browser in the main window is unchanged.
+
+### F5. Rule for all new library code: a backend command first
+
+Not a task, a rule that starts now. Every library action (rate, tag, move,
+paste a grade, export) is a backend command that the interface calls. No
+logic that exists only in the interface. This is what later lets an MCP
+server (section 11) drive the app without a second implementation, and it is
+what makes library undo and the helper process practical.
+
+### Not to be started yet
+
+Anything in section 5 that shows on screen, the sidecar file format, the
+database layout, and the preview pipeline. They wait on section 7 (numbers),
+the wireframe, or section 9 (open decisions).
+
+---
+
+## 2. Purpose
 
 HDR Finisher grows from a finishing-only tool into a full editor. The name
-stays. The missing piece is a library: a place to browse, cull, rate, compare
-and batch-export photos without leaving the app.
+stays. The missing piece is a library: a place to browse, cull, rate,
+compare, organise and batch-export photos without leaving the app.
 
-Reference Steve shared: DxO PhotoLab's PhotoLibrary (folder tree on the left,
-thumbnail grid along the bottom with star ratings, split compare in the
-viewer). The useful parts are the folder-first browsing and the quick compare.
-The goal is the same jobs with far less on screen.
+Reference Steve shared: DxO PhotoLab's PhotoLibrary. The useful parts are
+folder-first browsing and quick compare. The aim is the same jobs with far
+less on screen.
 
-## What Steve asked for
+## 3. Principles
 
-- Library is a **separate window** that can be snapped or made full screen on a
-  second monitor.
-- **No import step.** Browse folders like Explorer. Add **albums** and
-  **pinned folders** on top. Albums are lists of image paths kept in the
-  database.
-- A **database** for library-level data plus **sidecar files** for per-image
-  data, so adjustments stay with the image and are easy to move around.
-- **Fast RAW thumbnails.** The current import window already does this well on
-  Windows.
-- **Batch export.**
-- **HDR and SDR preview modes.**
-- **Several browser layouts.**
-- **Tagging, star rating, pick/reject.**
-- **Sort and filter.**
-- **Focus / sharpness overlay** that reads clearly even on thumbnails.
-- Added during the session: autosave option, virtual copies, selective
-  copy/paste of grades, look presets, smart albums, full camera and lens
-  metadata, portable projects, file and folder controls, background indexing,
-  on-request HDR previews, export recipes, exposure and clipping overlay, tag
-  management, metadata authoring, full-screen review, library undo, and an
-  MCP server before 1.0. Each has its own section below.
-- **Comparison:** pin one image, flip through alternates at the same zoom, side
-  by side.
-- **Minimal look.** The tools must not clutter the screen.
-- **Entry point:** the Import button becomes **Library**. It opens the library
-  where the preview is now. A pop-out button moves the library to its own
-  window and switches the main window to Grade.
+All decided.
 
-## Technical feasibility: the separate window
+1. **No import step.** Folders are browsed where they are. Pinning a folder
+   is how it becomes part of the library.
+2. **The grade lives next to the photo.** A sidecar file beside each photo
+   holds everything about that photo. The database is an index that can be
+   rebuilt.
+3. **Browsing never changes a grade and never prompts.** A grade changes only
+   through the Grade panel, or through an explicit library command that says
+   how many photos it will change.
+4. **Single click navigates. Double-click opens in Grade.**
+5. **Minimal.** Keyboard first. Controls appear when relevant. Nothing
+   permanent on screen that is not needed.
+6. **Generic, not tuned to one camera.** The same method for every camera and
+   every supported format.
+7. **Background work stays out of the way** of grading and export.
+8. **Nothing is silently lost or overwritten.** Bulk changes keep the previous
+   state; clashes stop and ask.
+9. **Built in slices that are each useful alone**, culling first.
 
-Short answer: **one app, two windows. No second Electron instance needed.**
+## 4. Decisions made on October 9, 2026
 
-What is there today:
+| # | Topic | Decision |
+|---|---|---|
+| 1 | Windows | Library opens where the preview is; a pop-out button moves it to its own window and the main window switches to Grade. "Library" replaces "Import". |
+| 2 | Navigation | Pinned folders are the navigation. The whole drive tree is not shown. Folders are added through an "Add folder" picker. |
+| 3 | Clicks | Single click selects and navigates. Double-click (or Enter) opens the photo in Grade. |
+| 4 | Sidecars | One per photo, next to the photo, hidden inside the library. |
+| 5 | Autosave | A user option, on or off, quick to reach and always visible. |
+| 6 | Autosave off | A Save / Don't save / Cancel window appears only when Grade is asked to switch photos. Browsing, culling and comparing never prompt. |
+| 7 | Library commands that change grades | Paste, preset and sync save straight away whatever the autosave setting, and keep the previous grade as a "before" state. |
+| 8 | Reverts | Revert to original, revert to last saved, revert to last session, restore previous grade. |
+| 9 | Virtual copies | Included. |
+| 10 | Projects | Lean: the sidecar replaces Save / Save As. Sharing is by portable project folders, sources optional, shown in their own section like pinned folders. |
+| 11 | Projects without sources | The receiver chooses merge or keep separate. A simple manual relink is enough. |
+| 12 | Background indexing | On by default for pinned folders and opened projects, with an advanced setting to turn it off. Uses spare processor capacity; uses the graphics card only when idle. |
+| 13 | Ratings from other apps | Ignored for now. |
+| 14 | RAW + JPEG pairs | Two separate items, with a "RAW only" filter. No stacking. |
+| 15 | Grid and HDR | Grid is SDR by default. HDR previews are created on request. If measurement shows it is fast enough, prefer a simple HDR toggle. |
+| 16 | HDR preview size | Screen-sized previews are built as well as thumbnails, with a resolution limit. Never full-size. |
+| 17 | Comfort cap | The HDR grid is limited to 1000 nits by default, adjustable. |
+| 18 | Preview cache | User-set size limit. Oldest removed first, in batches. |
+| 19 | Zoom and focus | Generic three-tier method (section 5.9). Nothing depends on the camera's embedded JPEG. |
+| 20 | File controls | Rename and move folders, create folder, move and rename photos, delete photos with confirmation, delete all rejected, show in Explorer, multi-select of photos and folders. No deleting whole folders. No batch rename of originals. |
+| 21 | Added features | Export recipes, exposure and clipping overlay, tag management, metadata authoring, full-screen review, library undo. |
+| 22 | Unreadable files | Hidden for now. |
+| 23 | Size target | There must be one. Number set after measuring. |
+| 24 | Claude's ten feedback points | All agreed (slices, early trials, helper process, minimal UI, "before" safety net, look mismatch, overlay before score, sync conflicts, light testing, groundwork first). |
+| 25 | AI features | Version 2 at the earliest. An MCP server is wanted before 1.0 (section 11). |
 
-- The desktop shell (`codebase/desktop/main.js`) starts one Python backend and
-  opens one window that loads the interface from it.
-- The existing file browser, pinned folders, recents and thumbnail cache all
-  live in the backend (`backend/hdr_finisher/media_browser.py`), not in the
-  window. A second window can use them as they are.
+---
 
-How the two-window version would work:
+## 5. Requirements
 
-- The shell opens a second window that loads a library page from the same
-  backend. Both windows talk to the same backend, so they see the same pins,
-  thumbnails, ratings and albums.
-- The library is built once as a self-contained piece of the interface. Docked
-  mode shows it inside the main window; popped-out mode shows the same piece
-  in its own window. One library, two places to put it.
-- The windows tell each other things ("open this photo in Grade", "rating
-  changed", "export finished") through the shell or the backend.
-- Windows snapping, maximise and full screen on a second monitor come for free
-  with a normal window. The app should remember which monitor the library was
-  on and how big it was.
+### 5.1 Windows and entry point
 
-Work this creates:
+Decided:
 
-- The shell is written around a single window (close handling, unsaved-changes
-  prompts, menus, display detection). It needs to learn about a second one.
-  Moderate work, well understood.
-- Rules to settle: closing the main window closes the library; closing the
-  library window just puts it away (or re-docks it).
-- Each window has its own graphics context. The library window showing HDR
-  images on a different monitor needs its own HDR display detection, because
-  the two monitors can have different brightness and HDR ability.
-- Memory: a second window costs some RAM and video memory. The library should
-  hold only small previews, not full-resolution working images.
+- **Library** replaces **Import** in the main window. It opens in the area
+  where the preview is now.
+- A **pop-out** button moves the library to its own window. The main window
+  switches to Grade. The library window can be snapped, maximised or made
+  full screen on a second monitor, and remembers its monitor and size.
+- One app, two windows. No second copy of the app is started.
+- Closing the main window closes the app. Closing the library window puts
+  the library away or re-docks it.
 
-Risk: low for the window itself. The harder parts are below (previews of
-edited images, HDR in the grid, and the save model).
+Proposed:
 
-## Thumbnails and previews
+- The library is built once and shown in either place.
+- The library window detects the HDR ability and brightness of the monitor
+  it is on, separately from the main window.
 
-Today: RAW files use the small JPEG the camera embeds in the file. Thumbnails
-are made on demand, capped at 512 px, cached on disk by path + size +
-modified time, and two are decoded at a time. Thumbnails are SDR on purpose.
+Open:
 
-Where thumbnails live (clarified October 9 after Steve asked):
+- How docking is done technically (section 6.1).
+- What the side panels show while the library is docked.
 
-- **Never next to the photos.** The only file the app adds to a photo folder
-  is the sidecar. Thumbnails, larger previews and focus maps go in one cache
-  folder in the app's own data area, as they do today.
-- **Made when first looked at**, then reused. Background indexing does not
-  make thumbnails unless an "prepare thumbnails ahead" option is switched on.
-- The cache is disposable. Deleting it loses nothing; thumbnails are made
-  again when needed. Projects and sidecars moved to another machine do not
-  carry thumbnails; that machine makes its own.
-- To settle: a size limit with oldest-unused removed first; whether the cache
-  location can be moved to another drive; and that today's cache is keyed by
-  file path, so a moved or renamed photo gets its thumbnail remade (keying by
-  photo ID or content would avoid that).
+### 5.2 Navigation
 
-### HDR in the grid (Steve's direction, October 9)
+Decided:
 
-- **The grid is SDR by default.** Automatic HDR thumbnails would be slow and
-  heavy, because an unedited RAW has to be developed to get an HDR picture.
-- **"Create HDR previews" is a command the user runs** on a folder, album or
-  selection. It works in the background; each thumbnail switches to HDR the
-  moment its preview is ready. The user can go and do something else, come
-  back, browse the folder in HDR, make picks and then edit.
-- **Cache limit set by the user.** Previews stay until the limit is reached,
-  then the oldest are removed first, **in batches** (clear a good margin
-  below the limit in one go) so the app is not constantly deleting and
+- The left side shows **pinned folders**, **projects** and **albums**, not
+  the whole drive tree. A pinned folder expands to its own sub-folders.
+- **Add folder** (a small + by the Folders heading, and a menu item) opens a
+  folder picker for navigating drives and choosing what to pin.
+
+Proposed:
+
+- The picker is built from today's import browser, which already navigates
+  drives and stores pins.
+- Right-click a pinned folder: unpin, rename its label, show in Explorer,
+  re-scan. Right-click any sub-folder: pin it as its own entry.
+- Drag to reorder pins. Drag a folder in from Explorer to pin it.
+- A pin whose drive is unplugged stays listed, greyed out.
+- "Open without pinning" for a memory card or one-off folder, shown as a
+  temporary entry.
+- First run: an empty state with one "Add a folder" prompt.
+
+### 5.3 Views
+
+Decided:
+
+- Several layouts, a full-screen review mode, and a minimal look.
+- Views are designed properly with a wireframe or mock-up before building.
+
+Proposed starting set for the wireframe:
+
+- Grid of thumbnails, with a size slider.
+- Single photo with a filmstrip.
+- Compare (section 5.11).
+- Full-screen review: one key hides everything but the photo, on either
+  monitor, with rating and pick keys still working.
+- Each window remembers its layout. Optional one-line details under
+  thumbnails.
+
+### 5.4 Selection, and file and folder controls
+
+**Stated plainly so it is not skipped: the library is not read-only. It
+changes files and folders on disk.** All decided unless marked.
+
+Selection:
+
+- Multi-select photos and multi-select folders: Ctrl-click, Shift-click for a
+  range, select all, drag a box around thumbnails.
+- Commands apply to the whole selection (rate, tag, paste a grade, export,
+  delete, create HDR previews for several folders at once).
+
+Controls included:
+
+- Rename a folder. Move a folder. Create a new folder.
+- Move photos between folders by dragging. Rename a single photo.
+- Delete photos from disk, always behind an "Are you sure?" window.
+- Delete all rejected, behind the same window.
+- Show in Explorer.
+
+Left out: deleting a whole folder; batch rename of originals (pattern naming
+belongs to export, section 5.16).
+
+What each control must get right:
+
+- **Everything attached travels.** Moving or renaming carries the sidecar, so
+  grades, marks, tags and virtual copies stay attached. The database, pins,
+  albums and cached previews follow to the new location without re-indexing.
+- **The delete window says exactly what will happen:** how many photos; that
+  their sidecars, grades and virtual copies go too; and whether they go to
+  the Recycle Bin or are gone for good. Network drives and many removable
+  drives have no Recycle Bin, and the window must say so. Recycle Bin
+  wherever one exists.
+- Deleting a virtual copy is a smaller action (one grade removed, photo
+  kept) and is worded differently so the two are never confused.
+- Moving between drives is copy-then-delete. Confirm the copy before removing
+  anything, show progress, and survive interruption without losing files.
+- Clashes and failures (same name at the destination, file open elsewhere,
+  read-only location): stop and ask. Never overwrite silently. Report which
+  items were not done.
+- The photo open in Grade: a move or rename keeps the session attached or
+  asks to close it first. Deleting it asks first.
+- A folder being indexed, exported from or having previews built: the
+  operation waits, or the job is cancelled cleanly.
+
+### 5.5 Culling marks
+
+Decided:
+
+- Star rating 0 to 5. Pick, reject or unmarked. Tags.
+- Marks work on a multi-selection.
+- **Marks always save at once**, whatever the autosave setting, and never
+  count as unsaved work, even on the photo open in Grade.
+- **Tag management:** suggestions while typing, a list of all tags with
+  counts, rename or merge a tag everywhere.
+
+Proposed:
+
+- Keyboard first: number keys for stars, single keys for pick and reject,
+  arrows to move, optional auto-advance after marking.
+- Small marks on thumbnails only where something is set.
+- Nested tags (family > kids): open.
+
+### 5.6 Sort, filter and search
+
+Decided: the library has sorting and filtering, including a quick "RAW only"
+filter.
+
+Proposed:
+
+- **Sort by** capture time, file name, rating, pick status, file type, date
+  modified, edited or not; ascending or descending.
+- **Filter by** rating, pick status, tags, state (section 5.7), file type,
+  camera, lens, ISO, focal length, aperture, shutter speed, date range, is a
+  virtual copy.
+- **Text search** on file name and tags.
+- On the first visit to a large folder the grid appears at once sorted by
+  name, then settles into capture order as details arrive.
+- One thin filter bar, hidden until called up, showing active filters as
+  small chips. Common filters on keys.
+
+### 5.7 Albums and smart albums
+
+Decided:
+
+- **Albums:** hand-picked sets. Photos stay where they are on disk.
+- **Smart albums:** defined by rules, for example tagged "kids" and "beach"
+  and state is edited. They cover everything the database has indexed and
+  tie into the filter and tag systems.
+
+Proposed:
+
+- **A smart album is a saved filter.** One rule engine for the filter bar and
+  smart albums. Build a filter, then "Save as smart album".
+- Rules: match all or any, plus "is not". Optional limit to chosen pinned
+  folders. Nested rule groups later if needed.
+- Always current. Stored as rules, not paths, and exportable.
+- **State** definitions:
+  - *Not edited:* known to the library, no grade adjustments saved.
+  - *Edited:* has saved grade adjustments that differ from the defaults.
+    Rating or tagging alone does not make a photo edited.
+  - *Exported:* exported at least once. Also "edited since last export".
+- **Album names are also written into each photo's sidecar**, so albums
+  rebuild on another machine and a lost database loses nothing. (Open.)
+
+### 5.8 Metadata
+
+Decided:
+
+- **Viewing:** show all the camera and lens information that can be reliably
+  read, especially for RAW. Generic across brands.
+- **Authoring:** title, caption, creator, copyright and usage notes, entered
+  once as a template and written into exported files.
+
+What exists today: camera maker and model, lens and lens maker, ISO, shutter
+speed, aperture and focal length are read when an image is opened, and camera
+and lens are matched for lens corrections.
+
+Proposed:
+
+- Standard fields are reliable everywhere. **Lens identity is the unreliable
+  part:** many cameras keep it in maker-specific notes, often as a code that
+  must be looked up, and adapted or manual lenses report nothing or something
+  wrong.
+- **Show the truth.** Unknown is shown as unknown, never guessed.
+- A manual lens name per photo or selection, for adapted and vintage lenses.
+- Read once per file in the background and kept in the database. The same
+  pass feeds sort, filter and smart albums.
+- A quiet details panel: short summary by default, "show all" for the rest.
+- Maker-specific extras where available: focus distance and mode, picture
+  profile, stabilisation, drive mode, shutter type, serial numbers, crop mode.
+- Privacy options on export (strip location, strip serial numbers).
+
+Open: which reader to use (section 7, research item R1).
+
+### 5.9 Thumbnails, previews and zoom
+
+Decided:
+
+- **Nothing is written next to photos except the sidecar.** Thumbnails,
+  previews and focus maps live in one cache in the app's data area.
+- Made when first looked at, then reused. The cache is disposable.
+- **User-set cache size limit.** When reached, the least recently used are
+  removed first, **in batches**, so the app is not constantly deleting and
   remaking.
+- **The grid is SDR by default.**
+- **"Create HDR previews"** is a command run on a folder, album, selection or
+  several folders at once. It works in the background and each thumbnail
+  switches to HDR as its preview becomes ready.
+- HDR previews are built at **screen size** as well as thumbnail size, with a
+  **resolution limit**; full-size images are never stored as previews.
+- **Comfort cap:** the HDR grid is limited to 1000 nits by default,
+  adjustable.
+- If measurement shows it is fast enough, **prefer a simple HDR toggle** that
+  builds previews for whatever is on screen. The command then remains as the
+  way to prepare a folder ahead of time.
+- **Generic method.** The same steps for every camera and format. No feature
+  may depend on the camera's embedded JPEG, whose size varies from full size
+  to tiny to absent.
 
-Claude's additions, proposed:
+The three tiers (decided as the approach, numbers to be measured):
 
-- These previews show **HDR Finisher's rendering**, not the camera's JPEG:
-  the default look for unedited photos, the user's grade for edited ones. So
-  the same command also answers "the browsing look does not match the opened
-  look".
-- **Build a screen-sized HDR preview, not only a thumbnail,** and shrink the
-  thumbnail from it. Picking between similar shots happens in single view and
-  compare, and that is where instant HDR matters most. **Agreed by Steve,
-  October 9, with a resolution limit:** never store full-size (for example
-  8K) HDR images as previews.
-  - Proposed limit: 2560 pixels on the long edge by default, with a setting
-    (for example 1920 / 2560 / 3840). Final numbers after the speed and disk
-    measurement.
-  - The preview covers "fit to window". Zooming in past it, such as a 100%
-    focus check, falls back to the camera's embedded full-size JPEG or
-    develops that one photo on demand.
-  - Smaller limit means more photos fit in the cache before old ones are
-    cleared.
-- "Oldest" should mean least recently looked at, not first created.
-- The job follows the background rules: low priority, gives way to grading
-  and export, uses the graphics card only when it is idle. Progress, pause
-  and cancel. Survives closing the app and carries on next time (idea).
-- A photo whose grade changes gets its HDR preview remade.
-- While the job runs the grid is a mix of SDR and HDR tiles. Acceptable; a
-  small mark on tiles that are ready would help.
-- The library's HDR/SDR switch still decides whether ready HDR previews are
-  shown.
-- **Comfort cap. Agreed by Steve, October 9: the HDR grid is limited to
-  1000 nits by default**, user-adjustable. Keeps a wall of highlights
-  comfortable. No effect on a display that peaks lower. To settle: whether
-  brighter highlights are rolled off smoothly or simply clipped (lean: rolled
-  off), and whether the cap applies to the grid only (lean: yes; single view
-  and compare show the true image).
-- **Must test later (Steve):** seconds per RAW and disk space per preview, on
-  Steve's real files. Do not promise how long a folder takes before then.
-- **If it proves fast enough, prefer a simple HDR toggle** for the grid that
-  builds previews automatically for whatever is on screen, instead of making
-  users build them folder by folder. The explicit command then stays as the
-  way to prepare a folder ahead of time. Decide after the measurement.
-- Multi-select of folders (see File and folder controls) lets the command run
-  on several folders at once.
+1. **Embedded JPEG, instantly**, as a head start. For each file the app
+   checks what is actually there and uses it only if it is big enough for the
+   size being shown. No per-camera lists.
+2. **Quick plain decode** of the RAW: no grade, no denoise, simplest
+   reconstruction. This is what everything relies on. It serves zooming in,
+   focus maps and exposure maps. A reduced-size decode covers "fit to
+   window" and the maps; a full decode is only for a true 100% view.
+3. **Full HDR Finisher rendering**, only for Grade and for HDR previews.
 
-### Zooming in for a focus check: what other apps do
+Files that are not RAW follow the same steps with their own quick decode.
 
-Steve asked, October 9. From Claude's general knowledge of these apps, not
-re-checked against current versions.
+Proposed:
 
-- **Lightroom Classic:** keeps screen-sized "standard" previews. Zooming to
-  100% in the Library builds a full-size "1:1" preview on demand, which is
-  the familiar "Loading..." pause. 1:1 previews can be built ahead for a
-  folder and are thrown away after a set time to save disk.
-- **Capture One:** keeps previews at a size the user sets. Zooming past that
-  size loads the full image on demand.
-- **Photo Mechanic:** never develops the RAW. It shows the JPEG the camera
-  embedded, which is why it is the fastest culler. Its 100% view is only as
-  good as that embedded JPEG.
-- **FastRawViewer:** decodes the actual RAW quickly for each photo as it is
-  viewed, so the focus check is on real sensor data.
-- **DxO PhotoLab:** shows a quick preview, then renders its corrections on
-  demand when zoomed in, with a visible wait.
+- HDR previews show HDR Finisher's rendering: the default look for unedited
+  photos, the user's grade for edited ones. This also removes the mismatch
+  between the browsing look and the opened look.
+- Edited photos always get a preview of their grade, saved when work on the
+  photo settles, even when HDR previews have not been requested.
+- Preview size limit: 2560 pixels on the long edge by default, with a
+  setting (for example 1920 / 2560 / 3840).
+- One stored file that serves both the HDR and SDR preview modes (a small
+  gain-map image; the app already makes gain maps).
+- The grid draws only what is on screen and drops requests for thumbnails
+  that have scrolled away.
+- **Read ahead:** while flipping through photos, decode the next and previous
+  in the background. Keep only a few decoded photos in memory.
+- The comfort cap rolls bright highlights off smoothly and applies to the
+  grid only; single view and compare show the true image.
+- The preview job has progress, pause and cancel, gives way to grading and
+  export, and carries on after the app is restarted.
+- A photo whose grade changes gets its previews remade.
+- Cache keyed so a moved or renamed photo keeps its previews. Cache location
+  movable to another drive.
 
-So the common pattern is what these notes already propose: a cached
-screen-sized preview for browsing, full resolution only on demand, optionally
-prepared ahead. Nobody keeps full-size previews of everything permanently.
+### 5.10 Overlays: focus, and exposure
 
-**The embedded JPEG cannot be relied on.** Its size varies by camera and
-model: some embed a full-size one, some only a small one (around 1600 pixels
-wide), some formats none at all. So no feature may depend on it. See the
-generic rule below.
+Decided:
 
-### Proposed approach for zoom and focus: three tiers
+- **Focus overlay:** shows where focus landed and whether a photo is sharp,
+  readable even on thumbnails, without zooming to 200%. Reference:
+  FastRawViewer's focus peaking.
+- **Exposure and clipping overlay:** blown highlights and blocked shadows
+  shown on thumbnails, read from the RAW data.
+- Overlay first. A sharpness score comes later, if at all.
 
-After Steve asked whether FastRawViewer's method is the most performant
-(October 9). Claude's view, to be confirmed by measurement:
+Proposed:
 
-- Pulling out the embedded JPEG is always the fastest thing possible, because
-  nothing is developed. But it is only useful at 100% when the camera embeds
-  a large one, and it is the camera's sharpened, noise-reduced picture.
-- FastRawViewer's method (a quick, plain decode of the RAW) is the fastest
-  way to see **true** detail. As Steve noted, it is needed anyway whenever
-  the embedded JPEG is too small. So plan around it, and treat a large
-  embedded JPEG as a bonus.
+- Sharpness cannot be measured from a thumbnail, which has already lost the
+  detail. It is measured once from the tier 2 decode, saved as a small map in
+  the cache, and drawn over the thumbnail. The same holds for exposure.
+- One key each to toggle, in grid, single view and compare.
+- For exposure, also show how much highlight range a photo really holds,
+  which is what decides whether it is worth grading in HDR.
+- Maps are made in the background, on-screen photos first, only once the
+  overlay has been switched on.
+- Honest limits to state in the app's help: the overlay shows where the sharp
+  plane is, not whether it is on the right subject; high-ISO noise can look
+  like detail and needs an allowance.
 
-**Requirement from Steve, October 9: the solution must be generic, not suited
-to one camera.**
+Open: one focus overlay or two (strong edges and fine detail).
 
-- The same method for every camera and every supported format. Nothing is
-  designed around what a particular camera happens to embed.
-- The quick plain decode (tier 2) is the method everything can rely on. Focus
-  maps always come from it, so the overlay and any sharpness figure mean the
-  same thing on every camera.
-- The embedded JPEG is only ever a head start. For each file the app checks
-  what is actually there and uses it if it is big enough for the size being
-  shown; if not, it goes straight to tier 2. No per-camera lists or special
-  cases.
-- Files that are not RAW (EXR, TIFF, HEIC, AVIF, JXL, JPEG, PNG) follow the
-  same three steps with their own quick decode.
-- Measurements and testing use a spread of cameras and formats: several
-  brands, compressed and uncompressed RAW, low and very high pixel counts.
-  Steve's own files are one sample among them, not the target.
+### 5.11 Compare
 
-Tiers:
+Decided:
 
-1. **Embedded JPEG, instantly**, as the picture shown first at any size.
-2. **Quick plain RAW decode** for zooming in and for focus maps. No grade, no
-   denoise, simplest reconstruction. Swaps in when ready.
-3. **Full HDR Finisher rendering** only for Grade and for HDR previews.
+- Pin a reference photo and flip through alternates beside it.
+- Zoom and pan stay locked together across both sides.
+- Side by side.
 
-Why tier 2 is worth building well:
+Proposed:
 
-- Focus judged on real sensor data, the same way on every camera, without
-  the camera's own sharpening flattering a soft shot.
-- It is the first step of making an HDR preview anyway, so the work is
-  shared.
-- **Read ahead:** while comparing, decode the next and previous photos in the
-  background so flipping feels instant even if one decode takes a moment.
-  Keep only a few decoded photos in memory; they are large.
-- A lower-resolution decode is much quicker than a full one and is enough for
-  "fit to window" and for the focus map; the full decode is only for a true
-  100% view.
-- Later option: do the decode on the graphics card, in keeping with GPU
-  first.
+- A split view with a draggable divider as an option.
+- Mark stars, pick and reject without leaving compare.
+- Uses the tiers in 5.9 with read-ahead so flipping is instant.
+- Comparing two virtual copies of one photo is a natural use.
 
-Honest limit: FastRawViewer is a specialist tool tuned for exactly this. We
-should not expect to match its speed at first. Measure decode time, quick and
-full, across the spread of cameras and formats before fixing the design.
+### 5.12 Where the data lives
 
-What a library needs beyond that:
+Decided:
 
-- **A grid that only draws what is on screen**, so a folder of thousands scrolls
-  smoothly. Requests for thumbnails that scrolled away get dropped.
-- **More than two decodes at once**, with what is on screen first.
-- **Bigger previews** for the single-image view and compare. Most cameras embed
-  a large JPEG (often full resolution) in the RAW. That gives an instant 100%
-  view for checking focus, without developing the RAW.
-- **Edited images must show their edit.** The camera's embedded JPEG shows the
-  camera's look, not HDR Finisher's. Once a photo has adjustments, the library
-  needs a preview rendered by HDR Finisher and saved to the cache. Idea: save
-  it when the photo is closed or when the grade settles.
-- **Unedited images:** camera JPEG (instant, but not our look) or our default
-  rendering (correct, but each one takes real time)? Probably camera JPEG
-  first, upgraded in the background. Open question.
-- **HDR previews.** Idea worth testing: store the cached preview as a small
-  gain-map image. One file then serves both SDR and HDR preview modes, and the
-  app already knows how to make gain maps.
-- A whole grid in HDR may be hard on the eyes. Possible rule: grid is SDR by
-  default with a toggle; single view and compare follow the HDR/SDR mode.
-- "Works well on Windows" has to be re-checked on macOS and Linux.
+- **Sidecar:** one small file next to each photo. Holds that photo's
+  adjustments, rating, pick status, tags and virtual copies. Hidden while
+  browsing in the library.
+- **Database:** one file in the app's data area. Holds pins, albums, smart
+  album rules, layout preferences, and a searchable copy of what sidecars and
+  camera metadata say.
+- **Sidecars are the truth.** If the database is lost it is rebuilt by
+  reading folders again.
 
-## Where the data lives
+Proposed:
 
-Proposal: **sidecar files are the truth; the database is a fast index that can
-be rebuilt from them.**
+- The sidecar is the same kind of document as today's `.hdrfinisher` project
+  file, which already holds only settings and points at its photo. It looks
+  for its photo beside itself first.
+- Named with the photo's full file name plus an ending
+  (`DSC02339.ARW.<ending>`), so a RAW and a JPEG of the same name each get
+  their own, and it sorts beside its photo in Explorer.
+- Created only when a photo is first rated, tagged or edited. Looking at a
+  folder writes nothing.
+- Each photo gets a small ID in its sidecar, and each virtual copy its own
+  ID, so albums and returned projects can find them after files move.
+- Plain, readable text, written whole in one step.
+- Folders that cannot be written (memory cards, read-only shares): keep that
+  photo's data in the database and say so.
+- **Two sidecars for one photo** (a returned project, a cloud or network
+  conflict copy, an orphan): detect it, never pick a winner silently, and
+  bring the other in as virtual copies.
+- Moving a photo in Explorer without its sidecar leaves an orphan. Offer to
+  reconnect orphans by ID. Later nicety.
+- Per the pre-1.0 rule: no migration code.
 
-- **Sidecar** (one small file next to each image): adjustments, rating,
-  pick/reject, tags. Travels with the photo when the folder is moved, copied
-  or backed up.
-- **Database** (one file in the app's data folder): albums, pinned folders,
-  layout preferences, and a searchable copy of what the sidecars and camera
-  metadata say, so sort and filter are instant.
-- If the database is lost or damaged, nothing that matters is lost. It gets
-  rebuilt by reading folders again. Only albums need care (see below).
+### 5.13 Saving, reverting and undo
 
-Useful fact: today's project file (`.hdrfinisher`) is **already nearly a
-sidecar.** It holds only settings, never pixels, and points at the original
-image by path plus a fingerprint. The sidecar could be the same document saved
-next to the photo under a predictable name, looking for its photo beside itself
-first. That reuses what exists instead of inventing a second format.
+Decided:
 
-Things to work out:
+- **Autosave is an option**, quick to reach, with its state always visible.
+  - *On:* adjustments save to the sidecar a moment after the last change, and
+    always on leaving the photo or closing the app. No prompts.
+  - *Off:* nothing is written until the user saves.
+- **Only one photo is open in Grade at a time**, so only one photo can ever
+  have unsaved work.
+- **Autosave off:** double-click asks Grade to switch photos. If the open
+  photo has unsaved work, the switch is held and a window offers Save, Don't
+  save or Cancel. The same check covers closing the app, closing the main
+  window, and opening another virtual copy of the same photo.
+- **Library commands that change grades** (paste, look preset, sync) save
+  straight away whatever the autosave setting, after a confirmation that
+  says how many photos will change.
+- **"Before" safety net:** before such a command rewrites a grade, the
+  previous grade is kept in that photo's sidecar. It outlasts a restart.
+- **Reverts**, in Grade and on a library selection:
+  - Revert to original: clear all adjustments.
+  - Revert to last saved: drop unsaved work on the open photo.
+  - Revert to last session.
+  - Restore previous grade: bring back the "before" state.
+- **Undo for library actions:** ratings, picks, tags, album changes, moves
+  and renames. A multi-photo action is undone as one step. Deletes are undone
+  from the Recycle Bin.
 
-- **Sidecar location. Decided by Steve, October 9: next to the photo.** One
-  small file beside each rated or edited photo. Easy to keep track of and move
-  together in Explorer. The library hides sidecars while browsing, so they
-  never show as items in the grid.
-- **Sidecar naming.** Proposed: the photo's full file name plus our ending
-  (`DSC02339.ARW.hdrfinisher`). Keeping the `.ARW` part means a RAW and a JPEG
-  with the same name each get their own sidecar, and the sidecar sorts right
-  beside its photo in Explorer.
-- Moving a photo in Explorer without its sidecar leaves an orphan sidecar
-  behind. The library could notice orphans and offer to reconnect them using
-  the photo ID. Later nicety.
-- **When a sidecar is created.** Only when the photo gets a rating, tag or
-  edit. Just looking at a folder writes nothing.
-- **Folders that cannot be written** (memory cards, read-only network drives):
-  fall back to keeping that photo's data in the database, and say so.
-- **Albums and moved files.** An album is a list of paths. If photos are moved
-  in Explorer, the paths go stale. Fix: give each photo a small ID inside its
-  sidecar, so the album can find it again when the new folder is browsed. A
-  photo with no sidecar has no ID, so adding to an album might need to create
-  one.
-- **Other apps' ratings. Decided by Steve, October 9: ignore them for now.**
-  HDR Finisher keeps its own ratings and neither reads nor writes the stars
-  that Lightroom, DxO or the camera store. May be revisited later.
-- **More than one version of a photo** (virtual copies). Not asked for; the
-  sidecar naming should not rule it out.
-- **Moving, renaming and deleting inside the library** should carry the sidecar
-  along. Delete goes to the Recycle Bin.
-- Per the pre-1.0 rule, no migration code. Existing saved projects keep opening
-  as they do now; whether they show up in the library is an open question.
+Proposed:
 
-## The save model changes (important)
+- A **session** is one run of the app. The first time a photo's grade changes
+  in a run, its grade from before that change is kept. "Revert to last
+  session" returns to it.
+- A revert is itself kept as a "before" state, so it can be taken back.
+- If the photo open in Grade is among the targets of a library command, the
+  change lands there as ordinary unsaved work.
+- The library shows and exports the **saved** grade of the open photo. A
+  batch export that includes it says so and offers to save first.
+- With autosave off, keep a hidden recovery copy of the open photo's unsaved
+  work, offered back after a crash.
 
-Today the app works like a document editor: open one image, Save / Save As a
-project, get an unsaved-changes warning. A library does not fit that on its
-own, because flipping between photos has to be quick and safe.
+### 5.14 Virtual copies
 
-**Decided by Steve, October 9: autosave is an option the user switches on or
-off.**
+Decided: several independent grades of one photo with no duplicate of the
+image file.
 
-- **Autosave on:** adjustments save themselves to the sidecar a moment after
-  the last change, and always when leaving the photo or closing the app. No
-  Save prompts. This is the Lightroom / DxO feel.
-- **Autosave off:** nothing is written until the user saves. For careful work
-  (a professional job, trying a run of ideas) where the saved grade should
-  only change on purpose.
-- Steve switches between the two depending on the job, so the switch must be
-  quick to reach and its state always visible (a small indicator, not buried
-  in Settings).
+Proposed:
 
-**Decided by Steve, October 9: with autosave off, the prompt appears only when
-switching the photo in Grade.**
+- Each copy has its own adjustments, crop, rating, pick status and tags; is
+  its own thumbnail with a small corner mark beside its original; can join
+  albums on its own; and exports as its own file with a name suffix.
+- Create from the current grade or from a clean start. Optional name.
+- Stored in the sidecar, so copies travel with the photo. (Lightroom keeps
+  them only in its catalog.)
+- Sort and filter treat a copy as an item.
+- Deleting a photo removes its copies; the confirmation says so.
 
-- Only **one photo is open in Grade at a time**, and only that photo can have
-  unsaved work. So there is never a pile of unsaved photos.
-- **Single click in the library** selects and navigates. It never loads a
-  photo into Grade and never prompts.
-- **Double-click (or Enter)** asks Grade to switch to that photo. If the photo
-  in Grade has unsaved work, the switch is held and a window asks: Save,
-  Don't save, or Cancel. Cancel leaves everything as it was.
-- **Browsing, culling and comparing change no adjustments**, so they never
-  prompt. Intent of the rule: the grade of a photo changes only through
-  something done in the Grade panel.
-- The same check applies to the other ways of leaving the open photo: closing
-  the app, closing the main window, opening a different virtual copy of the
-  same photo.
+### 5.15 Copying grades, and look presets
 
-Details to work out:
+Decided:
 
-- **Ratings, picks, tags and album membership always save at once**, whatever
-  the autosave setting. They are library marks, not adjustments, and marking
-  the photo that is open in Grade does not count as unsaved work.
-- **Library commands that change grades** (paste a grade onto a selection,
-  apply a look preset, sync) are the exception to "only the Grade panel".
-  **Decided by Steve, October 9: they save straight away**, whatever the
-  autosave setting, with a confirmation naming how many photos will change
-  and one undo for the whole action. If the photo open in Grade is among
-  them, the change lands there as ordinary unsaved work instead.
-- **"Before" safety net (decided):** before such a command rewrites a photo's
-  grade, the previous grade is kept in that photo's sidecar. It survives a
-  restart, unlike undo.
-- **Revert commands (Steve's addition):**
-  - *Revert to original:* clear all adjustments, back to the untouched photo.
-  - *Revert to last saved:* drop unsaved work on the open photo.
-  - *Restore previous grade:* bring back the "before" state kept by the last
-    library command.
-  - Available in Grade and on a library selection. Reverting is itself kept
-    as a "before" state, so a revert can be taken back.
-  - *Revert to last session* (Steve, October 9): with autosave on, "last
-    saved" is only seconds old and does little, so offer this as well. A
-    session is to be defined in whatever way is simple. Proposed: a session is
-    one run of the app. The first time a photo's grade changes in a run, its
-    grade from before that change is kept as the session-start state. "Revert
-    to last session" returns to it, so a day's work on a photo can be thrown
-    away even after visiting other photos in between. Costs nothing for photos
-    that are not touched.
-  - To settle: how many "before" states to keep (one, or a short list), and
-    whether the session-start state is kept after the app closes (lean: yes,
-    until the next session changes that photo).
-- **Thumbnail and export for the open photo with unsaved work:** the library
-  shows and exports the saved grade. Batch export that includes it should say
-  so and offer to save first.
-- **Crash safety with autosave off:** keep a hidden recovery copy of the one
-  open photo's unsaved work, offered back on next launch. Not the same as
-  saving.
-- Should the setting be global, or remembered per pinned folder (so a client
-  job folder is always manual)? Idea only.
-- Virtual copies (below) are the other way to "try a bunch of adjustments"
-  safely, and work with autosave on.
-- Existing Save / Save As project feature: still open what it becomes.
+- **Selective copy and paste** of grades from inside the library, onto one
+  photo or many. A checkbox list chooses what is brought across. Adjustments
+  are grouped; each group twirls down for finer choices.
+- **Look presets:** styling presets applied from a menu and then customised,
+  in the manner of DxO.
 
-## Projects, and sharing grades between people and machines
+Proposed:
 
-Steve leans (October 9) toward **the sidecar replacing the Save / Save As
-project file**, provided grades can still be shared between users and
-machines. His idea: a Save As that gives the saved file a unique ID so it can
-be shared without confusing the local machine.
-
-Claude's thoughts, proposed and not yet confirmed:
-
-Sharing is really three different jobs, and two are already covered.
-
-1. **Same photo, another machine** (Steve's desktop to laptop, or sending a
-   job to someone). Copy the photo and its sidecar together. The sidecar
-   finds its photo beside itself, so it just works. This is the main payoff
-   of keeping sidecars next to photos. Nothing extra to build.
-2. **Share a look, not a photo.** That is a look preset, exported as a file.
-   Already in these notes.
-3. **Share the grade for a photo the other person already has**, without
-   sending the photo again. This is the gap, and where Steve's idea fits.
-
-For job 3, rather than a second sidecar with a new ID:
-
-- **Export grade...** writes a standalone grade file, named and saved anywhere.
-  It is a copy of the grade, not a live sidecar. The app never treats it as
-  the home of a photo's grade, so there is no "which one is current?" on the
-  local machine.
-- **Import grade...** onto a photo adds it as a **new virtual copy** with a
-  fresh ID. It never overwrites the grade already there. That delivers what
-  Steve's unique ID is for: an incoming grade can never collide with or
-  replace local work, even when file names match.
-- The grade file carries the photo's fingerprint. If it is imported onto a
-  different photo, the app warns and offers to apply it anyway as a look.
-- Why not a renamed sidecar with a new ID: two sidecar-like files sitting
-  beside one photo is exactly the confusion to avoid, and the ID that matters
-  for albums belongs to the photo, which is the same photo on both machines.
-  The IDs that need to be unique are the virtual copies', and import can
-  issue those.
-- The exported file must be self-contained: no machine-specific paths, and
-  nothing that depends on presets or files only the sender has.
-- Choice on export: include rating, pick and tags, or grade only.
-
-### Steve's refinement: portable projects (October 9)
-
-Steve proposed calling the export/import a **project**, modelled on DaVinci
-Resolve. This supersedes the single "grade file" idea above; a one-photo
-project does that job.
-
-- **Export project** from a folder, an album, a selection or a single photo.
-  The result is a **project folder**: sidecars, a small project index if
-  needed, and optionally the source images (RAW, EXR and so on).
-- Resolve parallel: project without media versus archive with media.
-- **In the UI, projects sit in their own small section and behave like pinned
-  folders.** A project is a mini library that is easy to hand over.
-- Use: sending work between machines or people, and corporate jobs where a
-  batch of images is converted to HDR as one deliverable.
-
-Claude's thoughts, proposed and not yet confirmed:
-
-- **It fits what is already decided.** With sidecars next to photos, a project
-  that includes sources is just a folder of photos and sidecars plus one index
-  file. Opening it needs no import step, only pinning and indexing. Keep it
-  that thin: *a project is a pinned folder with a project file in it.*
-- **What the index holds:** project name, the albums and photo order inside
-  the project, smart album rules, and the export settings and look presets
-  the job uses, so a corporate batch is self-contained. Grades stay in the
-  sidecars. The index is never the only home of anything about one photo.
-- **Double-clicking the project file in Explorer opens the app on that
-  project.** This gives back "open a file as a working document".
-- **Exporting is a copy.** Afterwards the project folder and the original
-  folders are separate and can drift apart, as in Resolve. Say so at export.
-- **Coming back:** when a colleague returns a project, "merge into my library"
-  matches photos by ID and fingerprint and brings the returned grades in as
-  new virtual copies. Nothing local is overwritten.
-- **One mechanism for every "two sidecars, one photo" case:** a returned
-  project, a NAS or cloud conflict copy, an orphan sidecar. Detect it, never
-  pick a winner silently, bring the other one in as virtual copies.
-- **Sidecars-only projects are the harder half.** The receiver must point the
-  app at the originals. **Decided by Steve, October 9: the user chooses, merge
-  or keep separate.**
-  - *Merge:* each grade lands beside its original as a new virtual copy. The
-    project folder was only the delivery package. Offer to create an album so
-    the set stays together.
-  - *Keep separate:* the project stays its own mini library pointing at photos
-    elsewhere. This is the one place a grade does not live beside its photo,
-    so the project must show clearly when its photos are missing.
-- **Relinking missing sources (Steve, October 9).** Needs a reasonable manual
-  path, not a polished one: Steve expects most people to use AI for this.
-  - Point at a folder. The app searches it and its sub-folders and matches by
-    file name, confirmed by fingerprint.
-  - A plain list of what is still missing, with found / missing / wrong-file
-    status per photo.
-  - Pick a single file by hand for the stragglers. A fingerprint mismatch
-    warns but can be overridden (re-exported or renamed sources).
-  - Work can continue with some photos still missing; they show as offline.
-  - A relink step already exists for today's single-image projects and can be
-    the starting point.
-  - Keep the project index and sidecars as plain readable text so an AI
-    assistant, or a person with a text editor, can repair paths directly.
-- **Exporting from an album that spans folders, with sources:** copies the
-  photos (disk space; show the size first) and can hit two different photos
-  with the same file name. Needs a rule (keep sub-folders, or rename).
-- **Which virtual copies travel:** all, or only the selected ones.
-- **Single photo by email:** option to pack the project folder into one file.
-- **Naming.** "Project" today means the single-image `.hdrfinisher` file.
-  Project index and sidecar should have different endings so Explorer can
-  tell them apart. To settle.
-- **Keep projects optional.** Everyday work is pinned folders and albums;
-  nobody should feel they must create a project first.
-- **Build order:** late. With-sources projects come nearly free once sidecars
-  and pins exist; sidecars-only and merge-back are the real work.
-
-Related gap this exposes: **albums and pins live in each machine's database
-and do not travel.** Idea: also record album names in each photo's sidecar.
-Then albums rebuild themselves on a second machine, and a lost database loses
-nothing at all. Smart albums would still need an export of their rules.
-
-Existing `.hdrfinisher` project files: the sidecar would be the same kind of
-document, so they should keep opening. Check Steve's real projects before
-promising that.
-
-## Virtual copies
-
-Requested by Steve, October 9 (a favourite Lightroom feature).
-
-- Several independent grades of one photo, with no duplicate of the image
-  file. Each copy appears in the grid as its own thumbnail with a small corner
-  mark, sitting beside its original.
-- Each copy has its own adjustments, crop, rating, pick status and tags, can
-  go in albums on its own, and exports as its own file (name suffix).
-- Create from the current grade ("duplicate") or from a clean start. Optional
-  name per copy ("B&W", "client crop").
-- **Do better than Lightroom here:** Lightroom keeps virtual copies only in
-  its catalog, so they are lost if the catalog is. Ours should live in the
-  sidecar and travel with the photo.
-- Storage choice to make: one sidecar per photo holding all its copies (fewer
-  files, moves as one piece), or one sidecar file per copy (closest to today's
-  project file, but more files). Lean: one sidecar holding all copies.
-- Each copy needs its own ID (albums point at a specific copy) and its own
-  cached preview.
-- Sort and filter treat a copy as an item. Option to collapse copies under
-  the original as a stack.
-- Compare view is a natural fit: two grades of the same photo side by side.
-- Deleting the original photo from the library removes its copies too. Say so
-  in the confirmation.
-- Related later idea: snapshots (named saved states inside one copy). Not
-  requested.
-
-## Selective copy and paste of grades
-
-Requested by Steve, October 9. Works from inside the library, on a selection.
-
-- Copy the grade from one photo. Paste onto one or many.
-- **Paste Special** opens a checkbox list of what to bring across. Adjustments
-  are grouped to keep it short; each group twirls down for finer choices.
-- A plain paste repeats the last set of ticks without opening the list.
-- The app already splits the grade into 22 preset groups (tone, highlights,
-  equalizer, colour, zones, curves, colour grading, film look, vignette,
-  detail, black and white, denoise, each for HDR and for SDR, plus SDR base).
-  Those are the natural twirl-down level. Suggested top level:
+- **One mechanism.** A look preset is a selective copy saved with a name.
+  Copy and paste, sync and presets share one checkbox list and one set of
+  rules.
+- The twirl-down level is the 22 preset groups the app already has (tone,
+  highlights, equalizer, colour, zones, curves, colour grading, film look,
+  vignette, detail, black and white, denoise, for HDR and for SDR, plus SDR
+  base). Top level:
   - **Tone:** tone, highlights, equalizer, zones, curves
   - **Colour:** colour, colour grading, black and white
   - **Look:** film look, vignette
   - **Detail:** detail, denoise
-  - **HDR side / SDR side** as a master pair of ticks, so "HDR grade only" is
-    one click
+  - **HDR side / SDR side** as a master pair
   - **Outside the grade groups:** white balance and RAW development, lens
     corrections, crop and geometry, local adjustments and masks
-- Why this is tricky (Steve called it):
-  - **Masks and local adjustments** are placed on the picture. Pasted onto a
-    different frame they land in the wrong place. Gradients and whole-image
-    ranges carry over reasonably; brushed masks do not. Default: unticked.
-  - **Crop** across different orientations or sizes. Default: unticked.
-  - **Lens corrections** belong to the lens, not the look. Default: unticked.
-  - **Image-dependent settings** (anything "auto" or matched to the picture,
-    such as SDR match): copy the setting so it re-runs on the target, or copy
-    the resulting numbers? Needs a rule per control.
-  - **Different kinds of source** (RAW versus an HDR JPEG): some settings do
-    not apply to the target. Skip those and say which.
-  - **White balance** as a number only makes sense between shots in the same
-    light. Its own tick.
-- Pasting onto many photos edits photos that are not open. So it needs:
-  progress, one undo for the whole paste, and thumbnails that refresh in the
-  background afterwards.
-- "Sync" (make the rest of the selection match the active photo) is the same
-  feature with a different entry point.
+- Unticked by default, because they do not transfer cleanly between frames:
+  masks and local adjustments, crop, lens corrections.
+- Settings that do not apply to the target's kind of file are skipped, and
+  the app says which.
+- A plain paste repeats the last set of ticks. A preset only touches the
+  groups it contains.
+- Presets: apply in Grade or to a library selection; update from current;
+  save as new; folders and favourites; export and import as files; a small
+  built-in starter set, designed with Steve.
+- Preview on hover before thumbnails of every preset, which cost a render
+  each.
 
-## Look presets
+### 5.16 Export
 
-Raised by Steve, October 9. DxO-style colour styling presets, applied from a
-menu and then customised.
+Decided:
 
-- Today presets exist **per panel** (one for curves, one for film look, and so
-  on), saved as small files. There is no preset for a whole look.
-- A look preset is a saved grade covering several panels at once.
-- **One mechanism for three features:** a look preset is a selective copy that
-  was saved with a name. The same checkbox list decides what a preset
-  contains. Copy/paste, sync and presets then share one picker and one set of
-  rules, which keeps the tricky part in one place.
-- A preset only touches the groups it contains and leaves the rest of the
-  grade alone. A colour-style preset would not change exposure or crop.
-- Apply from: a menu in Grade, and right-click on a selection in the library
-  (many photos at once).
-- Customising: after applying, the values are ordinary slider values and can
-  be changed freely. "Update preset from current" and "Save as new preset".
-- Presets carry both an HDR and an SDR side where that makes sense.
-- Organising: folders, favourites, rename, delete, export and import as files
-  for sharing.
-- A small set of built-in starter styles shipped with the app. Needs Steve's
-  eye to design. Film look already has its own stocks; work out how the two
-  relate so there are not two competing "looks" menus.
-- Browsing presets: DxO shows a thumbnail of each preset on the current
-  photo. Appealing, but each thumbnail is a render. Cheaper first step: live
-  preview on hover, one at a time.
-- Later ideas: a strength slider for an applied preset (hard to do honestly
-  across mixed controls); a default preset applied to new photos, perhaps per
-  camera.
+- **Batch export** of a selection, each photo with its own grade.
+- **Export recipes, several at once:** one run can produce more than one
+  deliverable, for example an HDR AVIF and an SDR JPEG, each with its own
+  size, naming pattern and sub-folder.
+- **Pattern naming happens here**, on the exported files, not on originals.
+- Authored metadata (5.8) is written into exports.
 
-## Browsing without import
+Proposed:
 
-- **Pinned folders are the navigation** (added by Steve mid-session). The left
-  side does not show the whole drive tree. It shows only the folders Steve has
-  pinned, each one expandable to its own sub-folders, plus albums. Pin
-  `Photos\2026` and the tree starts there; the rest of the drive stays out of
-  sight.
-- **Adding a folder:** an "Add folder" control (a small + beside the Folders
-  heading, and a menu item) opens a folder-picker window for navigating drives
-  and choosing what to pin. The current import browser already does this kind
-  of navigation and already stores pins, so the picker can be built from it.
-- Right-click a pinned folder: unpin, rename the label, show in Explorer,
-  re-scan. Right-click any sub-folder: pin it as its own top-level entry.
-- Drag to reorder pins. A pin whose drive is unplugged stays listed, greyed
-  out, so it comes back when the drive does (the current browser already keeps
-  unavailable pins visible).
-- Also accept a folder dragged in from Explorer as a new pin.
-- Still needed: a way to look at a folder once without pinning it (a card just
-  plugged in, a one-off download). Idea: the same picker with an "Open without
-  pinning" choice, shown as a temporary entry until closed.
-- First run has no pins. Empty state: one clear "Add a folder" prompt, perhaps
-  offering Pictures as a suggestion.
-- Folders are read live from disk. No "add to catalog".
-- The database learns about a folder the first time it is opened, and keeps
-  what it learned.
-- Consequence to accept: **searching and filtering "everything" only covers
-  folders the app has seen.** Pinned folders could be indexed in the background
-  (including sub-folders) and watched for changes, which makes pins the way to
-  say "this is part of my library" without an import step.
-- Optional later: a simple "copy from card to a dated folder" helper. Not an
-  import catalog, just a file copy.
+- A background queue with progress, a time estimate, cancel, and a per-file
+  result list. It must not block grading. Needs a memory plan for large
+  files.
+- A record of what was exported and when, feeding the "exported" and "edited
+  since last export" states.
+- Recipes can be saved, and carried inside a project (5.17).
+- The exact CPU export is called, not changed. It stays under the strict
+  testing rule.
 
-## File and folder controls
+### 5.17 Projects and sharing
 
-**Required by Steve, October 9. Stated plainly so it is not skipped when this
-becomes a build brief.** The library is not read-only: it can change files and
-folders on disk.
+Decided (item 10 is a lean, the rest agreed):
 
-Must have:
+- The sidecar replaces Save / Save As for everyday work.
+- **Export project** from a folder, an album, a selection or a single photo
+  produces a **project folder**: sidecars, a small project index if needed,
+  and optionally the source images. The model is DaVinci Resolve's project
+  with or without media.
+- Projects have their own small section and behave like pinned folders. A
+  project is a mini library that is easy to hand over. Typical use: moving
+  work between machines or people, and corporate batches converted to HDR as
+  one deliverable.
+- **A project without sources:** the receiver chooses.
+  - *Merge:* each grade lands beside its original as a new virtual copy.
+  - *Keep separate:* the project stays its own mini library pointing at
+    photos elsewhere.
+- **Relinking missing sources** needs a reasonable manual path, not a
+  polished one. Most people will use AI for it.
 
-- **Rename a folder.**
-- **Move a folder** (drag onto another folder, or a Move command).
-- **Delete photos from disk**, always behind an "Are you sure?" window.
-- **Multi-select photos** and **multi-select folders.** Ctrl-click, Shift-click
-  for a range, select all, drag a box around thumbnails. Commands then apply
-  to the whole selection (rate, tag, paste a grade, export, delete, create HDR
-  previews for three folders at once).
+Proposed:
 
-What each one has to get right:
+- Kept thin: *a project is a pinned folder with a project file in it.* With
+  sources included it needs no import, only pinning and indexing.
+- The index holds the project name, its albums and photo order, smart album
+  rules, and the export recipes and look presets the job uses. Grades stay in
+  sidecars.
+- Double-clicking the project file in Explorer opens the app on that
+  project.
+- Exporting is a copy. Afterwards the project and the originals can drift
+  apart; the export window says so.
+- Merging a returned project matches photos by ID and fingerprint. Nothing
+  local is overwritten. Merge offers to create an album for the set.
+- A project kept separate is the one case where a grade does not live beside
+  its photo, so it must show clearly when its photos are missing.
+- Manual relink: point at a folder; the app searches it and its sub-folders,
+  matching by file name and confirming by fingerprint; a plain list of what
+  is still missing; pick single files by hand; a fingerprint mismatch warns
+  but can be overridden; work continues with some photos offline. Today's
+  single-image relink is the starting point.
+- Exporting with sources from an album that spans folders copies the photos
+  (show the size first) and needs a rule for two photos with the same name.
+- Choose which virtual copies travel. Option to pack a project into one file
+  for sending.
+- Projects stay optional. Nobody has to create one to work.
+- Existing `.hdrfinisher` files should keep opening, since the sidecar is the
+  same kind of document. Check Steve's real projects before promising it.
 
-- **Everything attached travels with the file.** Moving or renaming carries
-  the sidecar, so grades, ratings, tags and virtual copies stay attached. The
-  database, pins, albums and cached thumbnails are updated to the new
-  location so nothing has to be re-indexed or rebuilt.
-- **Delete confirmation says exactly what will happen:** how many photos; that
-  their sidecars, grades and virtual copies go too; and whether they go to
-  the Recycle Bin or are **gone for good**. Network drives and many removable
-  drives have no Recycle Bin, so the window must say so in that case.
-  Default: Recycle Bin wherever one exists.
-- Deleting a virtual copy is a different, smaller action (removes one grade,
-  leaves the photo) and must be worded differently so the two are never
-  confused.
-- **Moving between drives** is really copy-then-delete. Check the copy
-  succeeded before removing anything, show progress, and survive being
-  interrupted without losing files.
-- **Clashes and failures:** a file of the same name already at the
-  destination, a file open in another program, a read-only location. Stop and
-  ask; never overwrite silently. Report clearly which items were not done.
-- The photo currently open in Grade: moving or renaming it must keep the
-  session attached, or ask to close it first. Deleting it asks first.
-- A folder that is being indexed, exported from, or having previews built:
-  the operation waits or the job is cancelled cleanly.
-- Undo where the system allows it (rename, move). Delete is undone from the
-  Recycle Bin.
-- For the future MCP server: an AI assistant can never delete from disk
-  without a person confirming.
+### 5.18 Background indexing
 
-**Also included (decided by Steve, October 9):**
+Decided:
 
-- Create a new folder.
-- Move photos between folders by dragging (the sidecar travels).
-- Rename a single photo (the sidecar is renamed with it).
-- Delete all rejected: one command for everything marked reject in the
-  current folder or album, behind the same "Are you sure?" window.
-- Show in Explorer.
+- Pinned folders and opened projects are indexed in the background,
+  sub-folders included, **on by default**. An advanced setting turns it off.
+- It uses processor capacity that is not busy. Anything needing the graphics
+  card runs only when the card is mostly idle.
 
-**Left out (decided by Steve, October 9):**
+Proposed:
 
-- Deleting a whole folder.
-- Batch rename in the library. Any pattern naming belongs to **export**
-  (naming the exported files), not to renaming originals.
+- Runs in the helper process (F3) at low priority on a limited number of
+  threads. Slows or pauses while the user grades, exports or scrolls.
+- The basic pass needs no graphics card: file list, capture details,
+  existing sidecars. Thumbnails, focus maps and exposure maps are separate,
+  later in the queue, and made only when wanted.
+- Order: the folder on screen, then recently used pins, then the rest.
+- Watch pinned folders for changes. Network drives report changes
+  unreliably, so also re-check a folder when it is opened and offer a manual
+  re-scan.
+- An unplugged drive keeps its index; its photos show as offline.
+- A small progress indicator with pause. Searches and smart albums say when
+  indexing is still running.
+- Advanced settings: on or off, how much processor to use, pause on battery,
+  pins to leave out.
 
-## Background indexing
+### 5.19 Size and speed targets
 
-**Decided by Steve, October 9: pinned folders (and opened projects) are
-indexed in the background, sub-folders included, on by default.** An advanced
-setting lets people turn it off.
+Decided: the library is designed to a stated size, so performance is planned
+and not hoped for. The number is set after measuring what each indexed photo
+costs in database size, memory and time, and may change.
 
-- Pinning a folder means "this is part of my library". Search, filters and
-  smart albums cover everything under the pins.
-- **Stay out of the way** (Steve): use processor capacity that is not busy; if
-  anything needs the graphics card, do it only when the card is mostly idle.
-  - Runs in the separate library helper process, at low priority, on a
-    limited number of processor threads.
-  - Slows or pauses while the user is grading, exporting or scrolling the
-    library, and resumes when the app is quiet.
-  - The basic pass needs no graphics card at all: file list, capture details,
-    existing sidecars.
-  - Heavier passes are separate and later in the queue: thumbnails (only when
-    looked at, or optionally ahead of time), focus maps (only when that
-    feature is on). Any that use the graphics card wait for it to be idle and
-    always give way to the grade preview.
-- Order of work: the folder on screen first, then recently used pins, then
-  the rest.
-- **Keeping up to date:** watch pinned folders for new, changed, moved and
-  deleted files. Network drives often do not report changes reliably, so also
-  re-check a folder when it is opened and offer a manual "re-scan".
-- A drive that is unplugged keeps its index; its photos show as offline.
-- **Visible but quiet:** a small progress indicator ("indexing 2026, 3,200 of
-  18,000") with pause. Smart albums and searches say when indexing is still
-  running, so a partial result is never mistaken for a complete one.
-- Laptops: pause on battery by default. Idea only.
-- Advanced settings: indexing on / off, how much processor to use, pause on
-  battery, which pins to leave out.
-- Measure on Steve's real photo drive early: time for the first full pass and
-  database size.
+Proposed targets to define once numbers exist: photos indexed while staying
+quick; time for first thumbnails in a folder; time to flip between photos in
+compare; time and disk per HDR preview; first full index of a large drive.
 
-## Sort and filter
+---
 
-Added by Steve mid-session.
+## 6. Technical approach
 
-- **Sort by:** capture time, file name, rating, pick status, file type, date
-  modified, edited or not. Ascending or descending.
-- **Filter by:** star rating (at least / exactly), pick / reject / unmarked,
-  tags, colour label, edited / unedited, exported / not yet, file type (RAW,
-  JPEG, HDR formats), camera, lens, ISO range, focal length, date range.
-- **Text search** on file name and tags.
-- Capture time and camera details have to be read from each file. On the first
-  visit to a big folder the grid appears at once sorted by name, then settles
-  into capture order as the details arrive. After that it is instant, from the
-  database.
-- Filters work inside the current folder or album first. Across pinned folders
-  second.
-- **Minimal UI:** one thin filter bar, hidden until called up, showing only
-  active filters as small chips. Common filters on keys (for example "picks
-  only", "3 stars and up").
-- **RAW + JPEG pairs. Decided by Steve, October 9: two separate items**, each
-  with its own rating and grade, plus a quick **RAW only** filter to hide the
-  duplicates. No stacking of pairs.
+Notes for whoever turns this into build briefs. Proposed unless stated.
 
-## Smart albums
+### 6.1 Two windows
 
-Requested by Steve, October 9.
+- The shell starts one backend and opens windows that load pages from it.
+  Both windows see the same pins, marks and previews because those live in
+  the backend.
+- **Docking is the open question.** Two candidates:
+  - The library is its own page, shown inside the main window in a frame.
+    Simple to layer with the rest of the interface. Popping out reloads it in
+    a new window and restores its state.
+  - The library is its own page in a native view that the shell places over
+    the preview area and can hand to another window. State survives the
+    move untouched, but menus and dialogs of the main window cannot draw over
+    it and its position must be kept in step with the layout.
+  - Either way the library is a separate page that does not share the
+    editor's `state` (F4).
+- The windows tell each other things ("open this photo", "rating changed",
+  "export finished") through the shell or the backend.
 
-- An album defined by **rules**, not by a hand-picked list. Example: tagged
-  "kids" and "beach", and state is edited.
-- **A smart album is a saved filter.** Same rules, same engine as the filter
-  bar. Build a filter, press "Save as smart album". One system to build and
-  to learn.
-- Always current: a photo that starts matching appears, one that stops
-  matching leaves. No manual upkeep.
-- Covers **the photos the database has indexed**. That makes background
-  indexing of pinned folders close to a requirement; otherwise a smart album
-  silently misses folders never opened.
-- Optional limit to chosen pinned folders ("only inside 2026").
-- Rule building: match **all** or **any** of the rules, plus "is not". Keep
-  nested groups for later unless needed.
-- Rule fields: tags, rating, pick status, colour label, **state**, file type,
-  camera, lens, focal length, aperture, ISO, shutter speed, capture date
-  (including "last 30 days"), folder, is a virtual copy, sharpness score.
-- **State needs a clear definition.** Proposed:
-  - *Indexed, not edited:* known to the library, no grade adjustments saved.
-  - *Edited:* has saved grade adjustments that differ from the defaults.
-    Rating or tagging alone does not make a photo "edited".
-  - *Exported:* has been exported at least once. Possibly also "edited since
-    last export".
-- Stored in the database as rules, not paths, so moving files does not break
-  them. Worth being able to export and import the rule sets.
-- Shown beside ordinary albums with a different small icon. Ordinary albums
-  stay for hand-picked sets.
+### 6.2 Processes
 
-## Metadata
+- Grading backend: as today.
+- Library helper (F3): indexing, metadata, thumbnails, quick decodes, maps
+  and preview building, at low priority.
+- Open: where the database is written from, given two processes. One writer
+  is the simplest rule.
 
-Requested by Steve, October 9: show all the camera and lens information that
-can be reliably read, especially for RAW.
+### 6.3 What already exists and can be reused
 
-What exists today: the app already reads camera maker and model, lens and
-lens maker, ISO, shutter speed, aperture and focal length when an image is
-opened, and already matches camera and lens for lens corrections.
+- Folder listing, places, pins and recents:
+  `backend/hdr_finisher/media_browser.py`, `frontend/media-browser.js`.
+- Thumbnail cache keyed by path, size and modified time, with embedded-JPEG
+  extraction for RAW.
+- Staged opening of a source: quick preview first, full quality after
+  (`backend/hdr_finisher/import_jobs.py`).
+- The project document and its relink step
+  (`backend/hdr_finisher/projects.py`).
+- Per-panel grade presets in 22 groups (`frontend/group-presets.js`, preset
+  handling in `desktop/main.js`).
+- Camera and lens reading (`backend/hdr_finisher/metadata.py`).
+- Gain-map creation, for the proposed preview format.
 
-Needs investigating (a research task before design):
+### 6.4 Testing
 
-- **Standard fields are reliable** across brands: camera maker and model,
-  capture date and time, ISO, shutter, aperture, focal length, exposure
-  compensation, metering, flash, orientation, pixel size, GPS if present.
-- **Lens identity is the unreliable part.** Many cameras do not write a plain
-  lens name in the standard place. The real answer sits in each maker's
-  private notes, in a different form for every brand, and often as a code
-  number that has to be looked up. Adapted and manual lenses report nothing
-  or something wrong.
-- **Maker-specific extras** worth having when available: focus distance,
-  focus mode and focus point, picture profile, stabilisation, drive mode,
-  shutter type, serial numbers, shutter count, 35 mm-equivalent focal length,
-  crop mode.
-- Options for reading it:
-  - The reader the app uses now. Already included, no new dependency, but
-    limited on maker notes and lens look-up.
-  - The RAW decoder's own reporting. Already included; gives some lens data.
-  - ExifTool. The reference tool for this, by far the best lens and
-    maker-note coverage. A separate program to bundle and license-check, and
-    slower per file unless run in one long-lived batch.
-- Generic, not built around one camera (Steve, October 9). Test on a sample
-  from every brand the app supports. Record what is reliable per brand
-  rather than promising everything everywhere.
-- **Show the truth:** an unknown value is shown as unknown, never guessed.
-  Where a lens is identified by look-up rather than read directly, that
-  should be visible somewhere.
-- Manual lens name override per photo or per selection, for adapted and
-  vintage lenses. Saved in the sidecar; feeds filters and smart albums.
-- Read once per file, in the background, stored in the database. This is the
-  same pass that feeds sort, filter and smart albums.
-- Display: a quiet info panel in the library. Short summary by default (camera,
-  lens, focal length, aperture, shutter, ISO, date), "show all" for the full
-  list. A one-line overlay under thumbnails as an option.
-- Privacy on export (strip GPS, strip serial numbers) belongs with export
-  settings. Note only.
+Most of the library is new code beside the image pipeline, not inside it, so
+it should rarely reach the strict areas. Batch export calls the exact export
+without changing it. New library behaviour needs its own fast checks (data
+rules, sidecar reading and writing, file operations on throwaway folders).
+Anything that deletes or moves files is tested on temporary copies only.
 
-## Culling tools
+---
 
-- Stars 0 to 5, pick / reject / unmarked, tags, maybe colour labels.
-- Keyboard first: number keys for stars, single keys for pick and reject, arrow
-  keys to move, optional auto-advance after marking.
-- Works on a multi-selection.
-- On screen: small marks on thumbnails only where something is set. Controls
-  appear on hover or by key, not as permanent toolbars.
+## 7. Measurements and research before the design is fixed
 
-## Compare
+To be done by Steve and Claude while the foundation work proceeds. Use a
+spread of cameras and formats: several brands, compressed and uncompressed
+RAW, low and very high pixel counts. Steve's files are one sample, not the
+target.
 
-- Pin a reference image. Arrow through candidates on the other side.
-- **Zoom and pan stay locked together** so the same spot is checked on every
-  candidate (the focus check in Steve's DxO screenshot).
-- Side by side as the main mode. Split with a draggable divider as an option.
-- Mark pick / reject / stars without leaving compare.
-- Speed is the whole point. For RAW that favours the camera's embedded
-  full-size JPEG for instant 100% views, then swapping in HDR Finisher's own
-  rendering when ready. Trade-off: the instant view is the camera's look and
-  SDR only.
-- Later: compare more than two (survey view).
+| # | Question | Decides |
+|---|---|---|
+| M1 | How long does the quick plain decode take, reduced size and full size? | Whether zoom and compare feel instant; how much read-ahead is needed |
+| M2 | How long, and how much disk, per HDR preview at 1920 / 2560 / 3840? | Preview size limit; HDR toggle versus per-folder command; default cache size |
+| M3 | What does one indexed photo cost in database size, memory and time? How long is a first full index of a large drive? | The size target (5.19) |
+| M4 | How large is the embedded JPEG across cameras, and how often is it big enough? | How much the tier 1 head start is worth |
+| M5 | Does thumbnail work in the helper process disturb the grade preview? | Limits for background work |
+| M6 | Does keeping edited-photo previews current hold up across a whole library? | The preview design (one of the two risky pieces) |
+| R1 | Which metadata reader gives reliable lens and maker-specific data per brand: what is built in, or bundling ExifTool? | Reader choice, and what the app can honestly promise per brand |
+| T1 | Trial: save today's project document beside a photo, reopen it with the photo found beside it, with autosave. | The save-model change (the other risky piece) |
 
-## Focus and sharpness overlay
+Also to come: the wireframe for the views in 5.3.
 
-Added by Steve mid-session. Reference: FastRawViewer's focus peaking, which
-paints the sharp areas of a photo in a highlight colour.
+---
 
-- Goal: see where focus landed, and whether the photo is sharp at all, without
-  zooming to 200%. Readable even at thumbnail size.
-- A toggle (one key) that paints in-focus areas with a highlight colour, in the
-  grid, single view and compare.
-- **How it has to work:** a small thumbnail has already lost the fine detail
-  that shows focus, so sharpness cannot be measured from the thumbnail. It is
-  measured once from a large version (the camera's full-size embedded JPEG, or
-  the RAW itself), saved as a small "focus map" in the cache, and then drawn
-  over the thumbnail. After the first pass it costs nothing to show.
-- FastRawViewer splits this into two overlays: strong edges and fine detail.
-  Fine detail is the better sign of critical focus. Could offer one or both.
-- **A sharpness score per photo** falls out of the same measurement. Uses:
-  sort by sharpness, and mark the sharpest frame in a run of near-identical
-  shots (like the brick and bee series in Steve's screenshot).
-- Honest limits:
-  - The score only means something between similar shots. A soft portrait and
-    a brick wall cannot be ranked against each other.
-  - High-ISO noise can look like detail and fool it. Needs a noise allowance.
-  - The camera's embedded JPEG is already sharpened by the camera. Measuring
-    from the RAW is more truthful but slower. Open question.
-  - It shows where the sharp plane is, not whether it is on the right subject.
-    A sharp background behind a soft eye still lights up.
-- First pass over a folder takes time (reading a large preview per photo). Run
-  it in the background, on-screen photos first, only when the overlay or the
-  sharpness sort is switched on.
-- Later idea: group near-duplicates automatically and suggest the sharpest.
+## 8. Build order
 
-## Layouts
+Proposed. Each slice is usable on its own.
 
-- Grid (thumbnails only).
-- Single image with a filmstrip.
-- Compare.
-- List with detail columns, maybe.
-- Thumbnail size slider. Info overlay on / off.
-- Each window remembers its layout.
+| Slice | Contents | What Steve can do afterwards |
+|---|---|---|
+| 0 | Foundation work, section 1 | Nothing new; the ground is ready |
+| 1 | Docked library: pinned folders and the Add folder picker, grid, single view, full-screen review, ratings, picks, tags, multi-select, basic sort and filter, double-click to Grade through the one gate, sidecars holding marks, the database, undo for marks | Cull real shoots |
+| 2 | Pop-out window, background indexing, metadata panel, full filter bar, tag management, albums | Use two monitors; find photos across the library |
+| 3 | Grades in sidecars, autosave option, "before" state, reverts, virtual copies | Stop using Save / Save As |
+| 4 | Quick decode, compare, focus and exposure overlays | Pick the sharpest frame fast |
+| 5 | File and folder controls, delete all rejected | Tidy up without Explorer |
+| 6 | Smart albums | Rule-based sets |
+| 7 | Selective copy and paste, sync, look presets | Grade a set quickly |
+| 8 | Batch export, recipes, naming patterns, metadata authoring | Deliver a job |
+| 9 | HDR previews, comfort cap, HDR/SDR switch in the library | Browse in HDR |
+| 10 | Portable projects, relink, merge, conflict handling | Hand work to someone else |
 
-## HDR / SDR preview modes
+The MCP server (section 11) and SDR-only grading (section 12) are separate
+and each gets its own PRD. SDR-only grading should be settled before slice 3,
+because it affects what the sidecar records.
 
-- One switch in the library: show as HDR or as SDR.
-- Edited photos: show the HDR grade or the SDR grade the user made.
-- Unedited photos: what "HDR" means before any grading needs defining
-  (default rendering? or SDR until graded?).
-- The library window uses the brightness limits of the monitor it is on.
+---
 
-## Batch work
+## 9. Open decisions
 
-- **Batch export** of a selection: each photo with its own grade, using a
-  shared export preset (format, size, destination, naming).
-- Export is the exact CPU path, which is slow per image. So: a background
-  queue with progress, a time estimate, cancel, and a clear per-file result
-  list. Must not block grading. Needs a memory plan for large files.
-- **Copy and paste a grade** across a selection: see "Selective copy and
-  paste of grades".
-- Exact export stays under the "still strict" testing rule.
+For Steve, one at a time, each with its trade-off.
 
-## Docked and popped out
+1. File endings for the sidecar and for the project index, so Explorer can
+   tell them apart.
+2. Virtual copies: all in the photo's one sidecar (Claude's lean), or one
+   file per copy.
+3. Whether album names are also written into sidecars (Claude's lean: yes).
+4. How many "before" states to keep: one, or a short list.
+5. Whether the session-start state is kept after the app closes (lean: yes,
+   until a later session changes that photo).
+6. Whether the autosave setting is global, or can be remembered per pinned
+   folder or project.
+7. Copy and paste of image-dependent settings (anything automatic or matched
+   to the picture): re-run on the target, or copy the numbers. A rule per
+   control.
+8. Look presets and film look: one "looks" menu or two.
+9. Definition of "edited" (proposed in 5.7).
+10. What "HDR" means for an unedited photo (proposed: HDR Finisher's default
+    rendering).
+11. Comfort cap details: smooth roll-off or clip; grid only or everywhere.
+12. HDR preview size limit and default cache size (after M2).
+13. HDR toggle versus per-folder command (after M2).
+14. The size target (after M3).
+15. Metadata reader (after R1).
+16. One focus overlay or two.
+17. How docking is done (6.1).
+18. What the side panels show while the library is docked.
+19. Whether existing `.hdrfinisher` projects appear in the library, after
+    checking Steve's real projects.
+20. Nested tags.
+21. Whether a project can be packed into one file.
+22. The build order in section 8.
 
-- **Library** replaces **Import** in the main window.
-- Docked: the library takes the preview area. Double-click (or Enter) opens the
-  photo in Grade.
-- Pop out: the library moves to its own window; the main window switches to
-  Grade.
-- Decided: single click selects and navigates only. Double-click or Enter
-  opens the photo in Grade, docked or popped out. See the save model section.
-- What the side panels show while the library is docked (photo details? quick
-  export? nothing?) is open.
-- The backend's staged open (quick preview first, full quality after) already
-  exists and helps here.
+---
 
-## Claude's feedback (October 9)
+## 10. Not planned
 
-Given when Steve asked for suggestions. **Steve agreed with all ten points on
-October 9**, so treat them as direction: build in slices with culling first,
-trial the two risky pieces early, run library work in a separate helper
-process, keyboard-first minimal UI, focus overlay before any score, and start
-after the modularization sprint. Colour labels, the list layout, the survey
-view and the card-copy helper are parked unless Steve asks for them.
+**Decided out:** stacks for bursts and near-duplicates; "open in another
+app" and linking files processed elsewhere; batch rename of originals;
+deleting whole folders; reading or writing other apps' ratings (for now);
+showing unreadable files (hidden for now; some formats may be shown greyed
+out later).
 
-1. **This is a second product's worth of work.** The list now covers most of
-   Lightroom's Library module. The risk is a long build with nothing usable
-   until the end. Build in slices that are each useful alone, culling first:
-   pinned folders, grid, ratings and picks, sort and filter, double-click to
-   Grade. Steve could cull real shoots with that while the rest is built.
-2. **The hard parts are not the ones that look hard.** The second window is
-   easy. The two risky pieces are (a) keeping thumbnails of edited photos
-   up to date at library scale, and (b) changing the save model under the
-   existing project feature. Worth a small trial of each before committing to
-   a design.
-3. **Keep the library's background work away from grading.** Indexing folders,
-   reading metadata, making thumbnails and measuring focus are all heavy. If
-   they run inside the same backend process as the grade, Grade may stutter
-   while a folder is being scanned. Suggest a separate helper process for
-   library work from the start. Cheap early, awkward to retrofit.
-4. **Minimal UI versus a long tool list is the real design problem.** Suggest
-   keyboard first, controls that appear only when relevant, and one command
-   search box for everything else. Also prune: colour labels, the list layout,
-   the multi-photo survey view and the card-copy helper were Claude's
-   additions, not Steve's requests. Cut them unless wanted.
-5. **Batch changes need a safety net that outlasts undo.** Undo is gone after a
-   restart. Suggest that any library command that rewrites grades (paste,
-   preset, sync) first keeps each photo's previous grade in its sidecar as a
-   "before" state that can be restored later.
-6. **Browsing look versus opened look.** In an HDR tool, browsing the camera's
-   SDR JPEGs and then seeing a different picture on opening will feel wrong
-   more than it would in an SDR editor. Worth testing early whether a quick
-   default rendering for on-screen thumbnails is affordable.
-7. **Focus overlay first, sharpness score later.** The overlay is honest: it
-   shows what it found and Steve judges. A score invites trusting a number
-   that noise and subject matter can fool.
-8. **Sidecars on synced or network folders** (OneDrive, NAS) can be written by
-   two machines or mid-sync. Always write whole files in one step (the project
-   save already does) and decide what happens on a conflict.
-9. **Good news on testing.** Most of the library is new code beside the image
-   pipeline, not inside it. It should rarely touch the "still strict" areas;
-   batch export only calls the exact export, it does not change it.
-10. **Timing.** The Codebase Modularization Sprint (started October 6) makes
-    the interface easier to split into a mountable library piece. Finish that
-    first.
+**Not planned for now:** face recognition, maps, cloud sync, phone
+companion, tethered shooting, printing, web galleries, slideshows, video.
 
-## MCP server for HDR Finisher (separate item, before 1.0)
+**Version 2 at the earliest:** AI search by content and automatic tagging.
 
-Raised by Steve, October 9. An MCP server lets an AI assistant operate the app
-directly. It is its own piece of work and deserves its own PRD; noted here
-because the library should be built ready for it.
+**Ideas noted, not currently planned:**
 
-- Likely first uses: relink missing sources, find photos ("kids at the beach,
-  edited, 4 stars and up"), tag and rate in bulk, build albums and smart
-  albums, apply a look preset to a set, queue a batch export, report what is
-  in a project.
-- The app already has the right shape: the interface talks to a local backend
-  through commands. An MCP server would be a thin layer exposing chosen
-  commands, not a second way of doing things.
-- **What that asks of the library design now:**
-  - Every library action is a backend command first and a button second. No
-    logic that exists only in the interface.
-  - Actions that change many photos keep the same guards for an AI as for a
-    person: a count of what will change, the "before" state, one undo.
-  - Plain, readable sidecar and project files.
-  - Decide what an assistant may never do without a person confirming
-    (deleting files, overwriting exports, writing outside pinned folders and
-    projects).
-- Open: read-only tools first and writing tools later? Does the app have to be
-  open for the server to work?
-
-## Gap check against other photo libraries (October 9)
-
-Steve asked what major features other libraries have that are missing here.
-Claude's list, from general knowledge of Lightroom, Capture One, DxO, Photo
-Mechanic and FastRawViewer.
-
-**Steve's decisions, October 9:**
-
-- **In:** export recipes (1), exposure and clipping overlay (2), tag
-  management (3), descriptive details / metadata authoring (4), full-screen
-  review (7), undo for library actions (8).
-- **Out:** stacks (5), working with other apps (6).
-- **Unreadable files: hidden for now.** Some formats may be shown greyed out
-  in the future.
-- **Size target: yes, there must be one.** The number is not set yet. Set it
-  after measuring how much each indexed photo weighs (database size, memory,
-  speed), and expect to change it.
-- **AI features** (search by content, automatic tagging): version 2 at the
-  earliest.
-- **Views** (including full screen) get designed properly later, with a
-  wireframe or mock-up.
-- Undo matters more because of multi-select: one slip can change many photos.
-  It should cover ratings, picks, tags, album changes, moves and renames, and
-  undo a multi-photo action as one step. Deletes are undone from the Recycle
-  Bin.
-- Not yet decided, from the smaller list: duplicate finding, watermark on
-  export, edit history or snapshots.
-
-Worth serious thought:
-
-1. **Export recipes, several at once.** One export run that produces more
-   than one deliverable, for example an HDR AVIF and an SDR JPEG, each with
-   its own size, naming pattern and sub-folder. Capture One's strongest
-   library feature and a natural fit for an HDR tool, where two versions are
-   usually wanted. Includes naming patterns on export (Steve's stated home
-   for batch naming) and a record of what was exported, so "edited since last
-   export" can be filtered and re-exported.
-2. **Exposure and clipping overlay.** The sibling of the focus overlay: show
-   blown highlights and blocked shadows on thumbnails, read from the RAW
-   data. For an HDR tool it could also show how much highlight range a photo
-   really holds, which is what decides whether it is worth grading in HDR.
-   Uses the same quick RAW decode.
-3. **Tag management.** Tagging is in the notes but not the upkeep: suggestions
-   while typing, a list of all tags with counts, renaming or merging a tag
-   everywhere, and perhaps nested tags (family > kids). Without this, tags go
-   stale fast and smart albums built on them stop working.
-4. **Descriptive details for professional work.** Title, caption, creator,
-   copyright and usage notes, entered once as a template and written into
-   exported files. Expected for corporate delivery.
-5. **Stacks for bursts and near-duplicates.** Group a run of similar shots
-   under one thumbnail (by hand, or automatically by capture time), pick the
-   keeper, collapse the rest. Pairs naturally with the focus overlay.
-   Different from RAW + JPEG pairs, which Steve decided against stacking.
-6. **Working with other apps.** "Open in..." to send a photo to another
-   program, and keeping a file that came out of another program (for example
-   a DNG processed elsewhere) linked to the RAW it came from.
-7. **Full-screen review.** One key hides everything but the photo, on either
-   monitor, with rating and pick keys still working. Cheap, and fits the
-   minimal aim.
-8. **Undo for library actions** generally (a rating, a tag, a move), not only
-   for grade changes.
-
-Smaller, easy to forget:
-
-- What the library does with files it cannot open (videos, PSD, documents):
-  hide them, or show them greyed out so a folder's contents are not a
-  mystery.
-- A stated size target, for example "stays quick with 100,000 indexed
-  photos", so performance is designed for rather than hoped for.
 - Finding duplicate files.
 - Watermark on export.
-- Edit history list or named snapshots inside one photo (the "before" state
-  is a first step toward this).
+- Edit history list, or named snapshots inside one photo. (The "before"
+  state is a first step toward this.)
+- A sharpness score per photo, for sorting and for marking the sharpest of
+  a run. Only after the overlay has proved itself.
+- A strength slider for an applied look preset.
+- A default preset applied to new photos, perhaps per camera.
+- Automatic HDR previews for chosen pinned folders.
 
-Common elsewhere but deliberately not planned: faces, maps, AI search by
-content ("dog on a beach") and automatic tagging, cloud sync, phone app,
-tethering, printing, web galleries, slideshows, video. Note that AI search
-and auto-tagging are becoming standard in other libraries; the MCP server is
-a possible route to them without building them in.
+**Parked, were Claude's additions and not Steve's requests:** colour labels,
+a list layout with detail columns, a multi-photo survey view, a
+copy-from-card helper.
 
-## Not planned for now
+---
 
-Face recognition, maps, cloud sync, phone companion, tethered shooting, video,
-stacks for bursts, "open in another app" and linking files processed
-elsewhere, batch rename of originals, deleting whole folders. AI search and
-automatic tagging: version 2 at the earliest.
+## 11. Related: MCP server before 1.0
 
-## Open decisions for Steve
+Raised by Steve. An MCP server lets an AI assistant operate the app
+directly. It is its own piece of work and needs its own PRD. It is recorded
+here because the library must be built ready for it.
 
-To be asked one at a time, each with its trade-off.
+- Likely first uses: relink missing sources, find photos by description of
+  their marks and details, tag and rate in bulk, build albums and smart
+  albums, apply a look preset to a set, queue a batch export, report what is
+  in a project.
+- The app already has the right shape: the interface talks to a local
+  backend through commands. The server would be a thin layer over chosen
+  commands.
+- What it asks of the library now:
+  - Rule F5: every action is a backend command first.
+  - Bulk changes keep the same guards for an assistant as for a person: a
+    count of what will change, the "before" state, one undo.
+  - Sidecars and project files are plain and readable.
+  - **An assistant can never delete from disk without a person confirming.**
+    Also to settle: overwriting exports, and writing outside pinned folders
+    and projects.
+- Open: read-only tools first and writing tools later; whether the app must
+  be open for the server to work.
 
-1. ~~Save model~~ **Decided:** autosave is a user option, on or off.
-   **Decided:** with autosave off, a Save prompt appears only when
-   double-click switches the photo in Grade. Browsing never prompts.
-   **Decided:** library commands that change grades (paste, preset, sync)
-   save straight away, keeping the previous grade as a "before" state.
-   Follow-up: how many "before" states to keep, and what "revert to last
-   saved" means when autosave is on.
-2. ~~Sidecar location~~ **Decided:** next to each photo, hidden inside the
-   library.
-3. ~~Unedited RAW thumbnails~~ **Direction:** camera's embedded JPEG by
-   default; HDR Finisher's own rendering arrives through "Create HDR
-   previews".
-4. ~~Grid in HDR~~ **Direction:** grid is SDR by default; HDR previews are
-   made on request per folder, album or selection, kept in a user-limited
-   cache cleared oldest-first in batches. **Decided:** also build
-   screen-sized HDR previews, limited in resolution (proposed 2560 long edge).
-   Grid comfort cap 1000 nits by default. After measuring speed, consider a
-   plain HDR toggle instead of per-folder builds.
-5. ~~Search scope~~ **Decided:** pinned folders are indexed in the
-   background by default, with an advanced setting to turn it off.
-6. ~~Ratings from other apps~~ **Decided:** ignored for now.
-7. ~~Single or double click~~ **Decided:** single click navigates the
-   library; double-click opens in Grade.
-8. ~~RAW + JPEG pairs~~ **Decided:** two separate items, with a RAW only
-   filter.
-9. Projects: Steve leans to the sidecar replacing Save / Save As, with
-   sharing through portable project folders (sources optional).
-   **Decided:** a sidecars-only project offers merge or keep separate, with a
-   simple manual relink. To confirm: whether album names are also written
-   into sidecars.
-10. Focus overlay: measure from the camera's embedded JPEG (fast) or from the
-    RAW (more truthful, slower)?
-11. Virtual copies: one sidecar holding all copies, or one file per copy?
-12. Copy/paste of image-dependent settings: re-run on the target, or copy the
-    numbers?
-13. Look presets and film look: one "looks" menu or two?
-14. Metadata reader: stay with what is built in, or bundle ExifTool for much
-    better lens and maker-specific coverage?
-15. Definition of "edited" for filters and smart albums.
-16. Build order. Suggested first slice: docked folder grid with ratings,
-    pick/reject, sort and filter. Then pop-out window. Then compare. Then
-    batch export.
+---
+
+## 12. Related: grading in SDR without any HDR
+
+Raised by Steve on October 9, after the rest of this document was organised.
+Now that the app is becoming general-purpose, people should be able to grade
+a photo in SDR only, with no HDR grade at all. **This is a change to Grade,
+not to the library, and needs its own PRD.** It is recorded here because the
+library must not be built on the assumption that every photo has an HDR
+grade.
+
+Not yet discussed in any detail. Questions for that PRD:
+
+- Today the SDR grade follows from the HDR grade. What does an SDR-only photo
+  start from, and which panels does it show?
+- Is SDR-only chosen per photo, per virtual copy, or as an app-wide way of
+  working? Can a photo be switched later, and what happens to its grade?
+- What does someone without an HDR monitor see on first launch?
+
+Where it touches this document:
+
+- **Sidecar (5.12):** records whether a photo, or a virtual copy, is graded
+  for HDR and SDR or for SDR only.
+- **Previews (5.9):** "Create HDR previews", the HDR/SDR switch and the
+  comfort cap have nothing to show for SDR-only photos. They stay SDR, and
+  the grid should not look broken because of it.
+- **Copy and paste, look presets (5.15):** pasting between an SDR-only photo
+  and an HDR one. The "HDR side / SDR side" ticks already point the right
+  way; the skipped-settings message covers the rest.
+- **Export recipes (5.16):** an HDR recipe run on an SDR-only photo is
+  skipped, with a clear line in the results.
+- **Filters and smart albums (5.6, 5.7):** "SDR only" becomes a useful state
+  to filter on.
+- **Virtual copies (5.14):** an HDR grade and an SDR-only grade of the same
+  photo as two copies is a natural use.
+
+---
+
+## Appendix A. What other apps do when you zoom in
+
+From Claude's general knowledge of these apps, not re-checked against current
+versions.
+
+| App | At 100% |
+|---|---|
+| Lightroom Classic | Keeps screen-sized previews. Builds a full-size "1:1" preview on demand (the "Loading..." pause). These can be built ahead for a folder and are discarded after a set time. |
+| Capture One | Keeps previews at a size the user sets. Loads the full image on demand past that size. |
+| Photo Mechanic | Never develops the RAW. Shows the camera's embedded JPEG, so its 100% view is only as good as that. |
+| FastRawViewer | Quickly decodes the actual RAW for each photo viewed, so the focus check is on real sensor data. |
+| DxO PhotoLab | Shows a quick preview, then renders its corrections on demand when zoomed, with a visible wait. |
+
+The common pattern is the one in 5.9: a cached screen-sized preview for
+browsing, full resolution only on demand, optionally prepared ahead. Nobody
+keeps full-size previews of everything permanently. FastRawViewer is a
+specialist tuned for exactly this; HDR Finisher should not expect to match
+its speed at first.
