@@ -451,27 +451,30 @@ async function saveProjectToPath({ saveAs = false } = {}) {
 }
 
 async function confirmUnsavedTransition(actionLabel) {
-  if (!state.session || !state.documentDirty) return true;
-  let choice = "cancel";
-  if (desktop?.confirmUnsavedTransition) {
-    choice = await desktop.confirmUnsavedTransition({ actionLabel });
-  } else {
-    // One three-way question, not two yes-or-no ones. Asking "save?" and then
-    // "discard?" makes Cancel the answer to a question the user was never
-    // shown, and it put two native modals in a row on the path that broke the
-    // renderer's <select> handling.
-    choice = await window.HDRDialogs.choose(
-      `Save changes before you ${actionLabel}?`,
-      [
-        { label: "Cancel", value: "cancel", cancel: true },
-        { label: "Discard", value: "discard", destructive: true },
-        { label: "Save", value: "save", primary: true },
-      ],
-      { title: "Unsaved changes" },
-    ) || "cancel";
-  }
-  if (choice === "discard") return true;
-  if (choice === "save") return await saveProjectToPath({ saveAs: false });
-  return false;
+  return window.HDRPhotoTransition.leaveCurrentPhoto({
+    dirty: Boolean(state.session && state.documentDirty),
+    save: () => saveProjectToPath({ saveAs: false }),
+    choose: async () => {
+      let choice = "cancel";
+      if (desktop?.confirmUnsavedTransition) {
+        choice = await desktop.confirmUnsavedTransition({ actionLabel });
+      } else {
+        // One three-way question, not two yes-or-no ones. Asking "save?" and then
+        // "discard?" makes Cancel the answer to a question the user was never
+        // shown, and it put two native modals in a row on the path that broke the
+        // renderer's <select> handling.
+        choice = await window.HDRDialogs.choose(
+          `Save changes before you ${actionLabel}?`,
+          [
+            { label: "Cancel", value: "cancel", cancel: true },
+            { label: "Discard", value: "discard", destructive: true },
+            { label: "Save", value: "save", primary: true },
+          ],
+          { title: "Unsaved changes" },
+        ) || "cancel";
+      }
+      return choice;
+    },
+  });
 }
 

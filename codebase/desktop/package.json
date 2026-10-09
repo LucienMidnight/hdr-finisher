@@ -38,6 +38,7 @@
       "main.js",
       "preload.js",
       "lib/**/*.js",
+      { "from": "../frontend", "to": "shared", "filter": ["photo-transition.js"] },
       "package.json"
     ],
     "extraResources": [

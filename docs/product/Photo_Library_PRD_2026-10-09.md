@@ -93,7 +93,7 @@ Normal startup still opens one window. The focused Electron check covers
 secondary close, main close with a secondary open, unsaved Cancel/Discard,
 separate bounds restored after relaunch, sender/display isolation and controls.
 Physical monitor movement and Windows snap remain for Steve's manual trial.
-F2–F4 have not started. No section 5 features have been built.
+No section 5 features have been built.
 Validation: 435 JavaScript checks, 1,581 Python checks (3 skipped), 22 desktop
 unit checks, the focused multi-window Electron check and the display capability
 GPU check passed. Two old source-name assertions were updated for the refactor.
@@ -112,6 +112,14 @@ GPU check passed. Two old source-name assertions were updated for the refactor.
   handling in `desktop/main.js`. Take stock first; the list may be longer.
 - **Proof:** a short note in the code map naming the gate and the routes
   through it. Prompts appear exactly when they do today.
+
+**Implementation progress, October 9:** F2 is implemented. The shared
+`leaveCurrentPhoto` policy in `frontend/photo-transition.js` is used by the
+editor and desktop shell, including synchronous Windows session-end handling.
+The code map lists all routes and the deliberate non-transitions. Existing
+prompts are unchanged. Validation passed: 438 JavaScript checks, 1,581 Python
+checks (3 skipped), the focused multi-window Electron check and the session
+replacement GPU interaction check. No CPU export/Proof or shader changes.
 
 ### F3. A helper process for library work
 

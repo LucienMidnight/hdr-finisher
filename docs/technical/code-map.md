@@ -216,3 +216,24 @@ It has native window controls (including snap); F11 toggles full screen.
 selection, window controls, both closing rules, persistence and relaunch, and
 normal single-window startup. Moving between physical monitors and Windows
 snap still need Steve's manual trial.
+
+### Photo Library foundation (F2): leaving the current photo
+
+`frontend/photo-transition.js` owns `leaveCurrentPhoto`, shared by the editor
+and Electron (`desktop/main.js`). The desktop bundle includes this same file
+under `shared/`, with no second policy implementation. The existing renderer
+adapter `confirmUnsavedTransition` supplies the prompt and save callbacks.
+
+Routes: desktop source picker and drag/drop/Explorer source opens via
+`openDesktopSelection`; browser file input and byte drops via `importByteFile`
+and `uploadFile` (including its ownership recheck); project picker, menu,
+shortcut and Explorer/second-instance project opens via `openProjectFromPath`;
+eject via `ejectCurrentSession`; test-pattern replacement via `app-boot.js`;
+main-window close and app Quit via `requestClose`; Windows shutdown/restart/
+sign-out via the synchronous `systemExit` mode. The existing post-save close
+continuation stays in `desktop:set-document-state`. RAW re-development keeps
+the photo and grade and continues without a leave-photo prompt. Secondary
+window close does not leave a photo. Browser tab close/reload has no custom
+prompt today and remains unchanged. Undo, redo and grade reset edit the current
+photo instead of leaving it. Prompt wording and Save/Discard/Cancel remain as
+before; cancelled or unsuccessful saves do not pass the gate.

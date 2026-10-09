@@ -22,6 +22,8 @@ const { windowChromeOptions } = require("./lib/window-chrome");
 const { installProcessDiagnostics } = require("./lib/process-diagnostics");
 const { detectVideoMemory } = require("./lib/video-memory");
 
+const { leaveCurrentPhoto } = require(app.isPackaged ? "./shared/photo-transition" : "../frontend/photo-transition");
+
 if (!app.isPackaged) app.setVersion(require("./package.json").version);
 
 const APP_ID = process.env.FLATPAK_ID || "org.hdrfinisher.app";
@@ -669,21 +671,7 @@ function registerIpc() {
     return selection;
   });
   handle("desktop:confirm-unsaved-transition", async (options = {}) => {
-    if (!documentState.dirty) return "discard";
-    const actionLabel = typeof options.actionLabel === "string" && options.actionLabel.length <= 80
-      ? options.actionLabel
-      : "continue";
-    const choice = await dialog.showMessageBox(mainWindow, {
-      type: "warning",
-      title: "Save changes?",
-      message: `Save changes to ${documentState.displayName}?`,
-      detail: `Unsaved editing changes will be lost if you ${actionLabel}.`,
-      buttons: ["Save", "Discard", "Cancel"],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
-    });
-    return ["save", "discard", "cancel"][choice.response] || "cancel";
+    return choosePhotoTransition(options.actionLabel);
   });
   handle("desktop:choose-export-directory", async (initialPath) => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -967,7 +955,7 @@ async function createWindow(role = "main") {
   });
   if (isMain) window.on("query-session-end", (event) => {
     saveWindowBounds(record);
-    if (!documentState.dirty) return;
+    if (leaveCurrentPhoto({ dirty: documentState.dirty, systemExit: true })) return;
     event.preventDefault();
     dialog.showMessageBox(window, {
       type: "warning",
@@ -1017,41 +1005,46 @@ async function dispatchPendingOpenPaths() {
   }
 }
 
-async function requestClose() {
-  if (windowFailure?.hasFailed()) {
-    // Save is implemented in the renderer. Offering it after that process
-    // exits would leave the user waiting forever for an impossible reply.
-    await windowFailure.showFailure();
-    return;
-  }
-  if (!documentState.dirty) {
-    if (quitRequested) {
-      beginShutdown();
-      return;
-    }
-    forceClose = true;
-    mainWindow.close();
-    return;
-  }
+async function choosePhotoTransition(actionLabel = "continue", closing = false) {
+  if (!documentState.dirty) return "discard";
+  const label = typeof actionLabel === "string" && actionLabel.length <= 80 ? actionLabel : "continue";
   const choice = await dialog.showMessageBox(mainWindow, {
     type: "warning",
     title: "Save changes?",
     message: `Save changes to ${documentState.displayName}?`,
-    detail: "Unsaved editing changes will be lost if you close now.",
+    detail: closing ? "Unsaved editing changes will be lost if you close now."
+      : `Unsaved editing changes will be lost if you ${label}.`,
     buttons: ["Save", "Discard", "Cancel"],
     defaultId: 0,
     cancelId: 2,
     noLink: true,
   });
-  if (choice.response === 0) {
-    mainWindow.pendingCloseAfterSave = true;
-    sendCommand("save");
-  } else if (choice.response === 1) {
-    if (quitRequested) beginShutdown();
-    else {
-      forceClose = true;
-      mainWindow.close();
-    }
+  return ["save", "discard", "cancel"][choice.response] || "cancel";
+}
+
+async function requestClose() {
+  if (windowFailure?.hasFailed()) {
+    // Saving is unavailable after a renderer failure; preserve the existing
+    // explicit failure dialog rather than waiting for an impossible reply.
+    await windowFailure.showFailure();
+    return;
+  }
+  const allowed = await leaveCurrentPhoto({
+    dirty: documentState.dirty,
+    choose: () => choosePhotoTransition("close now", true),
+    save: () => {
+      // Completion arrives via desktop:set-document-state. A failed/cancelled
+      // save must not close the window.
+      mainWindow.pendingCloseAfterSave = true;
+      sendCommand("save");
+      return false;
+    },
+  });
+  if (!allowed) return;
+  if (quitRequested) beginShutdown();
+  else {
+    forceClose = true;
+    mainWindow.close();
   }
 }
 
