@@ -330,6 +330,14 @@ Decided:
 
 - Several layouts, a full-screen review mode, and a minimal look.
 - Views are designed properly with a wireframe or mock-up before building.
+- Decided October 9 from the mock-up. In single view and full-screen
+  review, a click on the photo (or Z) zooms to 100% on that spot, drag
+  moves around, and zoom and position are kept while flipping between
+  photos.
+- Decided October 9. Double-click opens in Grade on thumbnails only: in the
+  grid and in the filmstrip. On the large photo in single view it does not
+  open Grade, and in full-screen review a double-click does nothing. Enter
+  opens the current photo in Grade from the grid and single view.
 
 Proposed starting set for the wireframe:
 

@@ -278,7 +278,7 @@
   $("grid").addEventListener("click", onCellClick);
   $("filmstrip").addEventListener("click", onCellClick);
   $("grid").addEventListener("dblclick", (event) => { if (event.target.closest(".cell")) openInGrade(); });
-  $("single-stage").addEventListener("dblclick", openInGrade);
+  $("filmstrip").addEventListener("dblclick", (event) => { if (event.target.closest(".cell")) openInGrade(); });
 
   // ---------- marks ----------
 
