@@ -64,6 +64,8 @@
       // Asked when the catch-up is due: whether completing the frame is worth
       // starting at all (see the region route in app.js).
       this.canCatchUp = typeof options.canCatchUp === "function" ? options.canCatchUp : null;
+      // Told when a due catch-up is declined, with the lane and long edge.
+      this.onCatchUpDeclined = typeof options.onCatchUpDeclined === "function" ? options.onCatchUpDeclined : null;
       this.onRefusal = typeof options.onRefusal === "function" ? options.onRefusal : null;
       this.onError = typeof options.onError === "function" ? options.onError : null;
       this.onFollowUpStart = typeof options.onFollowUpStart === "function" ? options.onFollowUpStart : null;
@@ -607,7 +609,10 @@
         if (this.activeLane !== lane) return;
         if (!this.sessionId) return;
         if (targetGeneration !== st.editGeneration) return;
-        if (this.canCatchUp && !this.canCatchUp(lane, targetEdge)) return;
+        if (this.canCatchUp && !this.canCatchUp(lane, targetEdge)) {
+          if (this.onCatchUpDeclined) this.onCatchUpDeclined(lane, targetEdge);
+          return;
+        }
         if (this.onFollowUpStart) this.onFollowUpStart(lane, "catch-up");
         void this.submit({
           lane,

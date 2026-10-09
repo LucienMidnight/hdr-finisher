@@ -264,6 +264,9 @@ function initializePreviewScheduler() {
           state.compareWithoutLocals ? [] : localAdjustments(),
         ),
       ),
+      // The frame is not completed, but its source can still be held on the
+      // device so the pans that follow fetch nothing.
+      onCatchUpDeclined: (lane, longEdge) => { void holdSourceForPanning(lane, longEdge); },
       catchUpDelayMs: ROI_CATCH_UP_DELAY_MS,
       panDelayMs: ROI_PAN_DELAY_MS,
     })

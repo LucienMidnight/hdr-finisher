@@ -443,6 +443,7 @@ const state = {
   detailInteractionRestore: null,
   previewScheduler: null,
   inactiveSourceController: null,
+  panSourceController: null,
   gpuPreparedLane: { hdr: false, sdr: false },
   scopeZoneOverlay: null,
   lastExportPath: "",

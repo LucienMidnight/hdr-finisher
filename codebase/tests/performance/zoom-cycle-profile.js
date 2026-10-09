@@ -4,7 +4,11 @@
  *
  *   node tests/run-in-electron.js tests/performance/zoom-cycle-profile.js --project <file> \
  *     [--geometry straighten_angle=2] [--shift-edge 0.005] [--set path=value,...] \
- *     [--zooms fit,100,fit,wheel:100,fit,85] [--pans 2] [--output report.json]
+ *     [--zooms fit,100,fit,wheel:100,fit,85] [--pans 2] [--idle 2500] [--output report.json]
+ *
+ * `--idle` waits that long after each zoom in, as a user looking at the picture
+ * does, so background work that follows a settled view (the whole-source hold
+ * for panning) has happened before the pans.
  */
 const path = require('node:path');
 const { chromium } = require('playwright');
@@ -14,6 +18,7 @@ const project = path.resolve(opt('--project', ''));
 const output = path.resolve(opt('--output', 'output/performance/review/zoom-cycle-profile.json'));
 const zooms = opt('--zooms', 'fit,100,fit,100,fit,85,fit,85').split(',');
 const pans = Number(opt('--pans', 2));
+const idle = Number(opt('--idle', 0));
 
 async function settle(page) {
   await page.waitForTimeout(60);
@@ -129,6 +134,13 @@ async function settle(page) {
         continue;
       }
       await step(zoom === 'fit' ? 'Zoom Fit' : `Zoom ${zoom}%`, () => page.evaluate(zoom => zoom === 'fit' ? setZoomMode('fit') : setCustomZoom(Number(zoom)), zoom));
+      if (zoom !== 'fit' && idle > 0) {
+        await page.waitForTimeout(idle);
+        const held = await page.evaluate(() => [...state.gpuPreview.proxies.values()].filter(proxy => proxy.panStore)
+          .map(proxy => ({ lane: proxy.lane, edge: proxy.longEdge, megabytes: Math.round(proxy.byteSize / 2 ** 20) })));
+        report.steps.at(-1).panStores = held; c.write(output, report);
+        console.log(`   held for panning ${JSON.stringify(held)}`);
+      }
       if (zoom !== 'fit') for (let index = 0; index < pans; index++) {
         await step(`  pan ${index + 1}`, () => page.evaluate(index => {
           const pane = els.dropzone, dx = (index % 2 ? -1 : 1) * Math.round(pane.clientWidth * 0.6), dy = (index % 2 ? -1 : 1) * Math.round(pane.clientHeight * 0.6);

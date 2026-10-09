@@ -175,6 +175,9 @@
       // A lane keeps its source levels until the central budget asks for them
       // back; this cap only stops pathological key growth.
       this.proxyLevelCapPerLane = 6;
+      // The whole-frame store a pan copies from is held only while everything
+      // resident, the store included, stays under this share of the budget.
+      this.panStoreBudgetShare = 0.7;
       // Tiled execution. The admission planner uses it when Direct
       // does not fit; the diagnostic hook can still invoke it explicitly.
       this.tileGraph = null;
@@ -6843,6 +6846,29 @@
       return sourceTransport().loadRegion(this, {
         sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, region, options,
       });
+    }
+
+    /**
+     * Keep the whole frame's source on the device so a pan copies its region
+     * instead of fetching it (PAN-FETCH-01). Only when it fits beside what is
+     * already held with room to spare: a store that pushed out the tiles and
+     * masks on screen would cost more than the fetch it saves. Resolves to
+     * whether the store is resident.
+     */
+    async holdSourceForPanning(sessionId, lane, longEdge, geometrySignature, editRevision, frame, options = {}) {
+      const transport = sourceTransport();
+      if (this.proxies.has(transport.panStoreKey(sessionId, lane, longEdge, geometrySignature, "source"))) return true;
+      // The whole frame under its own key already serves every region.
+      if (this.wholeSourceResident(sessionId, lane, longEdge, geometrySignature)) return false;
+      const bytes = Math.max(0, Number(frame?.width) || 0) * Math.max(0, Number(frame?.height) || 0) * 8;
+      if (!this.gpuAllocator || !bytes
+        || this.gpuAllocator.usedBytes() + bytes > this.memoryBudgetBytes() * this.panStoreBudgetShare) {
+        this.recordStage("pan-store-skipped", { lane, longEdge, bytes });
+        return false;
+      }
+      return Boolean(await transport.loadPanStore(this, {
+        sessionId, lane, longEdge, geometrySignature, editRevision, options,
+      }));
     }
 
     async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", editRevision = 0, sourceIdentity = "source", options = {}) {

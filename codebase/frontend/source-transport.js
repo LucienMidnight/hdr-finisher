@@ -427,6 +427,35 @@
     return proxy;
   }
 
+  /** Where the whole frame held for panning lives in the renderer's source cache. */
+  function panStoreKey(sessionId, lane, longEdge, geometrySignature, sourceIdentity) {
+    return `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}:pan-store`;
+  }
+
+  /**
+   * Stream the whole frame into the source cache as a store that region
+   * passes copy from. It is never bound by a pass, so a frame with a
+   * hard-edged mask stays on the region route and only its fetch goes away.
+   */
+  async function loadPanStore(renderer, {
+    sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity = "source", options = {},
+  }) {
+    const key = panStoreKey(sessionId, lane, longEdge, geometrySignature, sourceIdentity);
+    if (renderer.proxies.has(key)) return renderer.proxies.get(key);
+    if (renderer.proxyInflight.has(key)) return renderer.proxyInflight.get(key);
+    const pending = loadStreaming(renderer, {
+      sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, options,
+    });
+    renderer.proxyInflight.set(key, pending);
+    try {
+      const proxy = await pending;
+      if (proxy) proxy.panStore = true;
+      return proxy;
+    } finally {
+      renderer.proxyInflight.delete(key);
+    }
+  }
+
   /** Fill a viewport-sized source texture from bounded per-strip requests. */
   async function loadRegion(renderer, {
     sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, region, options = {},
@@ -472,6 +501,12 @@
     delivered.height = Math.max(0, Math.min(region.y + region.height, outputHeight) - delivered.y);
     if (!(delivered.width > 0 && delivered.height > 0)) return null;
     if (delivered.width * delivered.height >= outputWidth * outputHeight * 0.9) return null;
+
+    // The whole frame held for panning (`holdSourceForPanning`) is these same
+    // pixels: the region is then copied on the device and nothing is fetched.
+    const held = renderer.proxies.get(panStoreKey(sessionId, lane, longEdge, geometrySignature, sourceIdentity));
+    const store = held && held.pixelFormat === pixelFormat
+      && held.width === outputWidth && held.height === outputHeight ? held : null;
 
     const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
     let texture;
@@ -547,9 +582,18 @@
           assertCurrent("ROI source region stream was superseded");
         }
       };
+      if (store) {
+        const encoder = renderer.device.createCommandEncoder();
+        encoder.copyTextureToTexture(
+          { texture: store.texture, origin: { x: delivered.x, y: delivered.y } },
+          { texture },
+          { width: delivered.width, height: delivered.height },
+        );
+        renderer.device.queue.submit([encoder.finish()]);
+      }
       // Every lane stops before the partial texture is released: a copy into
       // a destroyed texture must not be left in flight.
-      await Promise.all(Array.from({ length: ringSize }, (_, slot) => lane(slot).catch((error) => {
+      await Promise.all(Array.from({ length: store ? 0 : ringSize }, (_, slot) => lane(slot).catch((error) => {
         failure ||= error;
       })));
       if (failure) throw failure;
@@ -580,6 +624,7 @@
     });
     renderer.recordStage("proxy-request", {
       lane, longEdge, cacheHit: false, route: "region", chunkCount, region: { ...delivered },
+      fromPanStore: Boolean(store),
       durationMs: renderer.sourceTransportMetrics.totalMs,
       timeToFirstTileMs: firstTileMs, bytes: transferredBytes,
     });
@@ -817,6 +862,8 @@
     loadStreaming,
     loadStrips,
     loadRegion,
+    panStoreKey,
+    loadPanStore,
     loadWholeFrame,
     loadProxy,
   });

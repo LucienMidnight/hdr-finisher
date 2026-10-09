@@ -1101,6 +1101,36 @@ function prepareInactivePreview({ immediate = false } = {}) {
   state.previewScheduler?.scheduleInactive(other, state.previewGeneration[other], previewIdleNow);
 }
 
+/**
+ * Once a magnified view has settled on the region route, stream the whole
+ * frame's source to the device in the background. Later pans copy their
+ * region from it instead of downloading it again (PAN-FETCH-01). The renderer
+ * declines when the store would crowd the memory budget.
+ */
+async function holdSourceForPanning(lane, longEdge) {
+  // The view may have left this size since the catch-up was armed.
+  if (!state.session || lane !== state.currentView || !gpuPreviewEligible(lane)
+    || requiredProcessingLongEdge() !== longEdge || !state.gpuPreview?.holdSourceForPanning) return;
+  const sessionId = state.session.session_id;
+  const signature = geometrySignature();
+  const controller = new AbortController();
+  state.panSourceController?.abort();
+  state.panSourceController = controller;
+  try {
+    await state.gpuPreview.holdSourceForPanning(
+      sessionId, lane, longEdge, signature, state.editRevision, approximateGpuFrameSizeAt(longEdge),
+      { signal: controller.signal, isCurrent: () => !controller.signal.aborted
+        && state.session?.session_id === sessionId && state.currentView === lane
+        && geometrySignature() === signature && requiredProcessingLongEdge() === longEdge },
+    );
+  } catch (error) {
+    // An edit or a zoom ends the stream early; the next settled view asks again.
+    if (!controller.signal.aborted) console.debug("Whole-source hold for panning skipped.", error);
+  } finally {
+    if (state.panSourceController === controller) state.panSourceController = null;
+  }
+}
+
 async function preloadInactiveLane(lane, generation) {
   if (!state.session || generation !== state.previewGeneration[lane] || !state.gpuPreview?.available) return;
   if (state.compareLayout !== "single" && lane !== state.currentView) {

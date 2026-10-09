@@ -92,7 +92,9 @@ split into source requests, masks and scopes; a `wheel:<percent>` entry in
 `--zooms` rolls the wheel there. Point `HDR_FINISHER_SOURCE_CACHE_DIR` at an
 empty folder to time a photo whose reduced levels have never been built.
 `source-tile-transfer-probe.js` splits one 100% view's source fetch into
-backend time and byte transfer.
+backend time and byte transfer. `--idle 2500` pauses after each zoom in so the
+whole-source store for panning is resident before the pans, as it is in use;
+without it the pans measure the fetch route.
 
 Section 6 baseline. `zoom-after-edit-review.js` covers zoom after a mask edit,
 `heavy-project-long-session.js --fresh-work --minutes 5 --idle-minutes 0`

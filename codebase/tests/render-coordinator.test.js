@@ -285,6 +285,26 @@ test("a catch-up armed for an older generation never dispatches", async () => {
   assert.equal(dispatches.length, 0);
 });
 
+test("a declined catch-up reports its lane and size and dispatches nothing", async () => {
+  // The app uses the report to hold the whole source for panning instead.
+  const { coordinator, timers, dispatches } = makeCoordinator({ sessionId: "s1", roiMode: "refinement" });
+  const declined = [];
+  coordinator.canCatchUp = () => false;
+  coordinator.onCatchUpDeclined = (lane, longEdge) => declined.push({ lane, longEdge });
+  coordinator.armCatchUp("hdr", { longEdge: 1000 });
+  timers.fireAll();
+  await flush();
+  assert.deepEqual(declined, [{ lane: "hdr", longEdge: 1000 }]);
+  assert.equal(dispatches.length, 0);
+
+  coordinator.canCatchUp = () => true;
+  coordinator.armCatchUp("hdr", { longEdge: 1000 });
+  timers.fireAll();
+  await flush();
+  assert.equal(declined.length, 1, "an accepted catch-up is not reported as declined");
+  assert.equal(dispatches.length, 1);
+});
+
 test("a view that moves while its zoom pass renders still gets the part now on screen", async () => {
   // A zoom anchors its scroll after the request is made. The pan note is
   // refused then (no accepted tiled frame yet), and used to be lost: the app
