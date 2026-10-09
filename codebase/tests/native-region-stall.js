@@ -391,7 +391,15 @@ function establishedConnections(port) {
       // A fixed 150 ms pause can finish before the current renderer dispatches.
       await page.waitForFunction((cursor) => window.__hdrFetchProbe.fetches.slice(cursor)
         .some((r) => r.url.includes("/source-tile/") && r.status === 200
-          && r.deliveredAt === undefined), fetchCursor, { timeout: 30000 });
+          && r.deliveredAt === undefined), fetchCursor, { timeout: 30000 }).catch(async (e) => {
+        // This wait has timed out once with an empty log; say what was fetched.
+        console.log(`No delayed source tile in pair ${index}:`, JSON.stringify(await page.evaluate((cursor) => ({
+          fetches: window.__hdrFetchProbe.fetches.slice(Math.max(0, cursor - 6)).map((r) => [r.id >= cursor, r.url.slice(0, 160), r.status, r.state, r.deliveredAt !== undefined]),
+          proxies: [...state.gpuPreview.proxies].map(([k, p]) => [k.slice(-60), Boolean(p.region), Boolean(p.panStore), p.width, p.height]),
+          zoom: state.zoomPercent, edge: requiredProcessingLongEdge(), viewer: viewerState().status,
+        }), fetchCursor)));
+        throw e;
+      });
       await page.evaluate((value) => setCustomZoom(value), second);
       // Keep the superseding view in place until withheld headers are handed
       // to the app. Returning to the first zoom before delivery masks currency.

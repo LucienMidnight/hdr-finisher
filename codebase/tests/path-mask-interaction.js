@@ -183,7 +183,7 @@ async function activePreviewBox(page) {
       step: input.step,
     }));
     assert(featherDom.shell && featherDom.rail && featherDom.fill, `Path Feather is missing its enhanced rail/fill: ${JSON.stringify(featherDom)}`);
-    assert(featherDom.order[0] === "instrument-control-label" && featherDom.order[1] === "range-shell" && featherDom.order[2] === "",
+    assert(featherDom.order[0] === "instrument-control-label" && featherDom.order[1] === "range-shell" && featherDom.order[2] === "editable-value",
       `Path Feather child order does not match the local sliders: ${JSON.stringify(featherDom.order)}`);
     assert(featherDom.instrumentStep === "1" && featherDom.step === "0.1", `Path Feather precision enhancement is wrong: ${JSON.stringify(featherDom)}`);
     await feather.fill("20");
