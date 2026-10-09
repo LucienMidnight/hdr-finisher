@@ -461,7 +461,10 @@ def _linear_gradient(leaf: MaskLeaf, image: np.ndarray, x: np.ndarray, y: np.nda
 
 
 def _luminance_range(leaf: MaskLeaf, image: np.ndarray) -> np.ndarray:
-    luma = np.einsum("...c,c->...", image[..., :3], ACESCG_LUMA, optimize=True)
+    # Not ``optimize=True``: that hands the sum to the BLAS library, whose last
+    # digit depends on where a pixel sits in the array, so a region of the
+    # picture and the whole picture could round to different mask levels.
+    luma = np.einsum("...c,c->...", image[..., :3], ACESCG_LUMA, optimize=False)
     ev = np.log2(np.maximum(luma, np.float32(1e-8)) / np.float32(0.18))
     rise_width = max(leaf.full_start_ev - leaf.fade_in_start_ev, 1e-6)
     fall_width = max(leaf.fade_out_end_ev - leaf.full_end_ev, 1e-6)
