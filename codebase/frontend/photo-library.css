@@ -23,8 +23,8 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-folder-row .expand-folder { display: grid; place-items: center; flex: 0 0 var(--panel-collapse-button-size); width: var(--panel-collapse-button-size); padding: 0; }
 .expand-folder::before { content: ""; width: var(--panel-collapse-button-icon-size); height: var(--panel-collapse-button-icon-size); background: currentColor; mask: var(--group-chevron-shape) center / contain no-repeat; }
 .expand-folder[aria-expanded="true"]::before { transform: rotate(90deg); }
-.library-centre { display: grid; grid-template-rows: auto minmax(0,1fr) auto; min-width: 0; min-height: 0; background: var(--viewer); }
-.library-toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--hairline); }
+.library-centre { display: grid; grid-template-rows: auto auto minmax(0,1fr) auto; min-width: 0; min-height: 0; background: var(--viewer); }
+.library-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--hairline); }
 .library-toolbar .place { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .library-toolbar input { width: 100px; }
 .library-toolbar button[aria-pressed="true"] { color: var(--accent); background: var(--accent-bed); }
@@ -53,7 +53,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 #details dd { margin: 2px 0 0; }
 .library.review { grid-template-columns: minmax(0,1fr); }
 .library.review .library-nav, .library.review .library-details, .library.review .library-toolbar, .library.review .library-footer,
-.library.review #filmstrip, .library.review #single-caption { display: none; }
+.library.review .library-filterbar, .library.review #filmstrip, .library.review #single-caption { display: none; }
 .library.review #library-single, .library.review .library-centre { grid-template-rows: minmax(0,1fr); }
 .library.review #single-stage { padding: 0; }
 /* Use the existing file browser's rows, sidebar, preview and design tokens. */
@@ -97,3 +97,15 @@ body { margin: 0; color: var(--body); background: var(--app); }
 #library-tag-suggestions [aria-selected="true"] { background: var(--raised); color: var(--text); }
 .library-culling .library-storage-warning { color: var(--attention); }
 #library-selection-box { position: absolute; border: 1px solid var(--accent); background: var(--accent-bed); opacity: .5; z-index: 2; pointer-events: none; }
+
+.library-sort-label, .library-filterbar { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.library-filterbar { flex-wrap: wrap; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--hairline); }
+.library-filterbar input { width: 180px; }
+.library-filterbar select, .library-sort-label select { width: auto; }
+.library-centre:has(.library-filterbar[hidden]) { grid-template-rows: auto minmax(0,1fr) auto; }
+.library.review .library-centre { grid-template-rows: minmax(0,1fr); }
+
+#single-stage { position: relative; touch-action: none; cursor: zoom-in; }
+#single-stage.zoomed { cursor: grab; }
+#single-stage.zoomed:active { cursor: grabbing; }
+#single-stage #native-picture { position: absolute; object-fit: fill; pointer-events: none; }

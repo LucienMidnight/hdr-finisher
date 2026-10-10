@@ -1,9 +1,9 @@
 # Photo Library PRD
 
 **Date:** October 9, 2026
-**Status:** Slice 1 is authorized by the October 10 brief. Stage A (looking
-at photos) and Stage B (culling) are implemented on `photo-library` and
-ready for Steve to try. Stage C (find, HDR, sharpness) remains to be built. The
+**Status:** Slice 1 is authorized by the October 10 brief. Stages A (looking
+at photos), B (culling), and C (find, HDR, sharpness) are implemented on
+`photo-library` and ready for Steve to try. The
 October 10 decisions below supersede the older preview proposals.
 
 **How to read the labels:** *Decided* means Steve has agreed it. *Proposed*
@@ -1999,7 +1999,7 @@ and the basic file facts in the details rail. Every Grade source extension
 is routed, but the format probe is representative rather than exhaustive.
 Stage A has no Library CPU fallback. The picker’s Ctrl/Shift multi-folder
 selection follows the mock-up and can be adjusted after Steve tries it.
-Stage C's sort/filter, HDR switching and native zoom remain outstanding.
+Stage C additions are recorded below.
 
 **Slice 1, Stage B — October 10 implementation:** the grid and filmstrip
 support click, Ctrl-click, Shift-click, Shift-arrows, Ctrl+A and box selection.
@@ -2044,6 +2044,61 @@ and reload persistence. The Stage A check covers the existing 3,001-photo
 virtual grid, real formats, first-picture delivery and Grade Cancel/Discard.
 A review-found edge case now selects the next readable photo when an
 unreadable first file is hidden.
+
+**Slice 1, Stage C — October 10 implementation:** sort by capture time,
+file name, rating, pick status or file type in either direction. The grid
+starts by name; capture dates arrive in small low-priority helper batches
+using the existing `exifread` dependency, without decoding photos or adding
+a reader. Missing or unreadable dates stay last, ordered by name. Sorting
+preserves the selected photo. The Filter bar combines minimum rating, pick
+status (including hide rejected), colour label, file type and file-name/tag
+search; RAW only is available directly on the toolbar. Clear removes all
+filters. These basic controls reuse shared buttons, selects and colour
+tokens. The full + Filter rule builder remains a later slice.
+
+H or HDR switches visible grid, filmstrip, single and review pictures.
+Scene caches are reused; the switch does not request a new photo decode.
+Pictures now render directly into WebGPU canvases, preserving the existing
+renderer’s Display P3 float16 extended HDR surface instead of copying
+through an ordinary SDR canvas. The Library HDR starting look targets
+1000 nits. Displays without HDR support use the renderer’s SDR surface.
+Physical brightness and comfort remain for Steve to judge on his display.
+
+Click the single/review picture, press Z, or use 100% to enter native zoom.
+Drag pans; arrows retain zoom and normalized position across photos. Click
+or Z returns to fit. One source pixel maps to one display pixel, accounting
+for display scaling. The reduced picture remains enlarged while native
+pixels arrive. Full RAW demosaic is requested only for zoom and uses the
+same quick Library route without Grade’s corrections. Fit and native views
+share the same starting look. Only the visible crop is uploaded and graded
+on the GPU; native requests are cancelled when superseded.
+
+The helper retains one decoded native source for panning and drops it on
+photo replacement or when Grade/export pauses Library work. Native crop
+files share the existing 2 GiB cache and eviction policy. A crop is bounded
+to 4096 pixels per dimension; unusually larger physical viewports retain
+the enlarged browsing picture outside that crop. The first native decode
+can take time, and retaining one large source adds helper RAM usage. It is
+not a second full-resolution GPU image. Preview cache version 2 adds source
+dimensions; earlier disposable cache entries can be regenerated. Projects,
+original photos, sidecars, Grade opening, export, Proof, shaders and pinned
+rendering limits are unchanged.
+
+**Loading feedback:** the empty grid says “Reading folder…” while its scan
+is pending, then reports an empty/read error or no filter matches accurately.
+The Add folder picker’s directories-first ordering is covered explicitly.
+Whether Steve also wants folder tiles ahead of photos in the recursive grid
+is awaiting his clarification; no such tiles are claimed here.
+
+Validation: 452 JavaScript checks and 1,616 Python checks passed, with the
+same three existing skips. Focused Electron checks at 2560×1440 cover
+loading feedback, folder-first picker rows, sort direction, combined filters,
+HDR switches without decoding again, native click/Z zoom and panning,
+retained zoom on flips and review, and Stage B culling/restart behavior.
+Native zoom also drew disposable copies of 42 MP ARW/linear DNG and HEIC;
+original photos were not modified. During development an EXIF test fixture
+needed its tag placed in the correct EXIF directory, and a test edit’s text
+encoding was corrected; neither check was removed or loosened.
 
 Proposed. Each slice is usable on its own.
 

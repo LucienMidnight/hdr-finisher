@@ -32,21 +32,25 @@ window.HDRLibraryPictures = (() => {
     })();
     return ready;
   }
-  function show(meta, canvas, signal, isCurrent) {
+  function show(meta, canvas, signal, isCurrent, hdr = false) {
     const pending = queue.catch(() => {}).then(async () => {
       if (signal.aborted || !isCurrent()) return;
       const gpu = await initialize();
       if (signal.aborted || !isCurrent()) return;
-      surface.width = meta.width; surface.height = meta.height;
+      if (canvas.width !== meta.width) canvas.width = meta.width;
+      if (canvas.height !== meta.height) canvas.height = meta.height;
       gpu.librarySignal = signal;
-      const result = await gpu.renderTo(surface, meta.key, "sdr", meta.adjustments,
+      const adjustments = structuredClone(meta.adjustments);
+      adjustments.hdr.highlight_compression_target_nits = 1000;
+      const result = await gpu.renderTo(canvas, meta.key, hdr ? "hdr" : "sdr", adjustments,
         sampleCurvePoints, meta.edge, [], 0, null, meta.white,
         { width: meta.width, height: meta.height }, { scopeAnalysis: true, isCurrent });
       await gpu.waitForSubmittedWork();
-      if (!result?.rendered && result?.execution !== "direct") throw new Error("The library picture could not be drawn.");
       if (signal.aborted || !isCurrent()) return;
-      canvas.width = meta.width; canvas.height = meta.height;
-      canvas.getContext("2d").drawImage(surface, 0, 0);
+      if (!result?.rendered && result?.execution !== "direct") throw new Error("The library picture could not be drawn.");
+      canvas.dataset.rendition = hdr ? "hdr" : "sdr";
+      canvas.dataset.surface = gpu.surfaceKeys.get(canvas);
+      canvas.dataset.peakNits = hdr ? "1000" : "203";
       return result;
     });
     queue = pending;
