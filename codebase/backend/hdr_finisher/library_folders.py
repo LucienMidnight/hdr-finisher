@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from .desktop_security import SOURCE_EXTENSIONS
+from .library_pictures import SIDECAR_SUFFIX
 
 
 def checked_folder(value):
@@ -37,6 +38,7 @@ def scan_folder(value, cancelled=lambda: False):
         if cancelled():
             raise CancelledError()
         directories[:] = [name for name in directories if not Path(parent, name).is_symlink()]
+        names = set(files)
         for name in files:
             path = Path(parent, name)
             if path.suffix.lower() not in SOURCE_EXTENSIONS or path.is_symlink():
@@ -46,6 +48,7 @@ def scan_folder(value, cancelled=lambda: False):
             except OSError:
                 continue
             photos.append({"path": str(path), "name": name, "type": path.suffix[1:].upper(),
-                "bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns})
+                "bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns,
+                "sidecar": name + SIDECAR_SUFFIX in names})
     photos.sort(key=lambda item: (item["name"].casefold(), item["path"].casefold()))
     return {"path": str(root), "photos": photos, "unreadable_folders": unreadable_folders}

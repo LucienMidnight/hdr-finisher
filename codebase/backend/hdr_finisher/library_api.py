@@ -8,11 +8,12 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from .library_pictures import LibraryPictureCache
-from .library_marks import LibraryMarks, MarkChange
+from .library_marks import LibraryMarks, MarkChange, NameTaken
+from .library_index import LibraryIndex
 
 
 class PictureRequest(BaseModel):
@@ -47,10 +48,58 @@ class MarksRequest(BaseModel):
     change: MarkChange
 
 
+class NameRequest(BaseModel):
+    name: str
+
+
+class TagRenameRequest(BaseModel):
+    tag: str
+    name: str
+    merge: bool = False
+
+
+class TagsRequest(BaseModel):
+    tags: list[str] = Field(min_length=1, max_length=500)
+    into: str | None = None
+
+
+class AlbumRequest(BaseModel):
+    name: str
+    paths: list[str] = Field(default_factory=list)
+    new_name: str | None = None
+
+
+class CollectionRequest(BaseModel):
+    kind: Literal["album", "tag"]
+    name: str
+
+
+class IndexRequest(BaseModel):
+    action: Literal["pause", "resume", "rescan", "enable", "disable"]
+
+
+class PreferencesRequest(BaseModel):
+    label_names: dict[Literal["red", "orange", "green", "blue"], str]
+
+    @field_validator("label_names")
+    @classmethod
+    def clean_label_names(cls, values):
+        return {label: " ".join(name.split())[:60] for label, name in values.items()}
+
+
 def create_library_router(worker, browser):
     router = APIRouter(prefix="/api/library")
     cache = LibraryPictureCache(browser.root)
     marks = LibraryMarks(browser.root)
+    index = LibraryIndex(marks, browser, worker)
+
+    def command(operation, *arguments):
+        try:
+            return operation(*arguments)
+        except NameTaken as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except (ValueError, OSError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     async def helper_result(request, command, **arguments):
         job_id, future = await run_in_threadpool(worker.submit_library, command, **arguments)
@@ -76,7 +125,32 @@ def create_library_router(worker, browser):
 
     @router.get("/pins")
     def pins():
+        if index._thread is None:
+            index.kick()  # The first Library page starts background indexing.
         return {"pinned": browser.pinned()}
+
+    @router.get("/index")
+    def index_status():
+        return index.status()
+
+    @router.post("/index")
+    def index_command(request: IndexRequest):
+        if request.action in {"pause", "resume"}:
+            index.pause(request.action == "pause")
+        elif request.action == "rescan":
+            index.pause(False)
+            index.kick()
+        else:
+            command(lambda: index.set_preferences(background_indexing=request.action == "enable"))
+        return index.status()
+
+    @router.get("/preferences")
+    def preferences():
+        return index.preferences()
+
+    @router.post("/preferences")
+    def set_preferences(request: PreferencesRequest):
+        return command(lambda: index.set_preferences(label_names=request.label_names))
 
     @router.post("/pins")
     def add_pins(command: PinsRequest):
@@ -87,6 +161,7 @@ def create_library_router(worker, browser):
             previous = {item["path"] for item in browser.pinned()}
             for path in paths:
                 browser.add_pin(path)
+            index.kick()
             return {"pinned": browser.pinned(), "skipped": sum(path in previous for path in paths)}
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -104,16 +179,31 @@ def create_library_router(worker, browser):
         result = await helper_result(request, "scan", path=command.path, priority=0)
         if isinstance(result, Response):
             return result
-        records = await run_in_threadpool(marks.read, [photo["path"] for photo in result["photos"]])
+        return await run_in_threadpool(listing, result, result["path"])
+
+    def listing(result, root=None):
+        if root is not None:
+            index.remember_scan(root, result["photos"])
+        records = marks.read([photo["path"] for photo in result["photos"]])
         by_path = {row["path"]: row for row in records["photos"]}
         for photo in result["photos"]:
             photo.update(by_path[photo["path"]])
         result.update(warnings=records["warnings"], undo_available=records["undo_available"])
         return result
 
+    @router.post("/collection")
+    def collection(request: CollectionRequest):
+        """The photos of an album or tag, wherever they are in the library."""
+        paths = marks.album_paths(request.name) if request.kind == "album" else marks.tag_paths(request.name)
+        photos, missing = index.photos(paths)
+        return listing({"path": "", "photos": photos, "unreadable_folders": [], "missing": missing})
+
     @router.post("/metadata")
     async def metadata(command: MetadataRequest, request: Request):
-        return await helper_result(request, "metadata", paths=command.paths, priority=90)
+        result = await helper_result(request, "metadata", paths=command.paths, priority=90)
+        if not isinstance(result, Response):
+            await run_in_threadpool(index.remember_facts, result["photos"])
+        return result
 
     @router.post("/marks")
     def change_marks(command: MarksRequest):
@@ -130,8 +220,48 @@ def create_library_router(worker, browser):
             raise HTTPException(status_code=400, detail=str(error)) from error
 
     @router.get("/tags")
-    def tag_suggestions(q: str = ""):
-        return {"tags": marks.tags(q)}
+    def tag_suggestions(q: str = "", all: bool = False):
+        return {"tags": marks.tags(q, None if all else 20)}
+
+    @router.post("/tags/create")
+    def tag_create(request: NameRequest):
+        return command(marks.tag_create, request.name)
+
+    @router.post("/tags/rename")
+    def tag_rename(request: TagRenameRequest):
+        return command(marks.tag_rename, request.tag, request.name, request.merge)
+
+    @router.post("/tags/merge")
+    def tag_merge(request: TagsRequest):
+        return command(marks.tag_merge, request.tags, request.into or "")
+
+    @router.post("/tags/remove")
+    def tag_remove(request: TagsRequest):
+        return command(marks.tag_remove, request.tags)
+
+    @router.get("/albums")
+    def albums():
+        return {"albums": marks.albums()}
+
+    @router.post("/albums/create")
+    def album_create(request: AlbumRequest):
+        return command(marks.album_create, request.name, request.paths)
+
+    @router.post("/albums/add")
+    def album_add(request: AlbumRequest):
+        return command(marks.album_change, request.name, request.paths, True)
+
+    @router.post("/albums/remove")
+    def album_remove(request: AlbumRequest):
+        return command(marks.album_change, request.name, request.paths, False)
+
+    @router.post("/albums/rename")
+    def album_rename(request: AlbumRequest):
+        return command(marks.album_rename, request.name, request.new_name or "")
+
+    @router.post("/albums/delete")
+    def album_delete(request: AlbumRequest):
+        return command(marks.album_delete, request.name)
 
     @router.post("/tree")
     async def tree(command: FolderRequest, request: Request):

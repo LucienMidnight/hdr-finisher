@@ -240,18 +240,22 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
     jobs: dict[str, Event] = {}
     stopping = Event()
     sequence = 0
-    state = {"paused": paused}
+    state = {"paused": paused, "foreground": 0}
+
+    def lane(job):
+        if job["command"] in {"picture", "native"}:
+            return "picture"
+        return "index" if job.get("background") else "main"
 
     def reply(message):
         with write_lock:
             connection.send(message)
 
-    def decode(picture_jobs=False):
+    def decode(kind="main"):
         while not stopping.is_set():
             with condition:
                 while not stopping.is_set():
-                    candidates = [(item, index) for index, item in enumerate(queue)
-                        if (item[2]["command"] in {"picture", "native"}) == picture_jobs]
+                    candidates = [(item, index) for index, item in enumerate(queue) if lane(item[2]) == kind]
                     if candidates and not state["paused"]:
                         _, index = min(candidates)
                         _priority, _sequence, job = queue.pop(index)
@@ -261,8 +265,21 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
                 if stopping.is_set():
                     return
                 cancelled = jobs.get(job["id"])
-            if cancelled is None or cancelled.is_set():
-                continue
+                if cancelled is None or cancelled.is_set():
+                    continue
+                if kind != "index":
+                    state["foreground"] += 1
+
+            def yielding():
+                # Background indexing waits for visible work, grading and export.
+                while not cancelled.is_set() and not stopping.is_set():
+                    with condition:
+                        if not state["paused"] and not state["foreground"] and all(lane(item[2]) == "index" for item in queue):
+                            break
+                    time.sleep(0.05)
+                return cancelled.is_set() or stopping.is_set()
+
+            check = yielding if kind == "index" else cancelled.is_set
             try:
                 if job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
@@ -272,10 +289,10 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "metadata":
                     from .library_metadata import read_metadata
-                    result = {"id": job["id"], "result": read_metadata(job["paths"], cancelled.is_set)}
+                    result = {"id": job["id"], "result": read_metadata(job["paths"], check)}
                 elif job["command"] in {"scan", "tree"}:
                     operation = scan_folder if job["command"] == "scan" else folder_tree
-                    result = {"id": job["id"], "result": operation(job["path"], cancelled.is_set)}
+                    result = {"id": job["id"], "result": operation(job["path"], check)}
                 else:
                     output = browser.thumbnail(job["path"], job["size"], fast_only=job["fast_only"])
                     result = {"id": job["id"], "path": str(output)}
@@ -286,6 +303,8 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
                 result = {"id": job["id"], "error": str(exc)}
             with condition:
                 jobs.pop(job["id"], None)
+                if kind != "index":
+                    state["foreground"] -= 1
             if not cancelled.is_set() and not stopping.is_set():
                 try:
                     reply(result)
@@ -296,8 +315,11 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
     # Keep the existing import decoder single-threaded. Library pictures use the
     # bounded six-lane route proven by the quick-open trial, on the same pause gate.
     for index in range(6):
-        Thread(target=decode, args=(True,), name=f"hdr-library-picture-{index}", daemon=True).start()
-    reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1, "picture_workers": 6})
+        Thread(target=decode, args=("picture",), name=f"hdr-library-picture-{index}", daemon=True).start()
+    # Unvisited pinned folders are indexed on their own lane, so a long
+    # background scan never queues ahead of the folder the user just clicked.
+    Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()
+    reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1, "picture_workers": 6, "index_workers": 1})
     try:
         while _parent_is_alive(parent_pid):
             if not connection.poll(0.25):
