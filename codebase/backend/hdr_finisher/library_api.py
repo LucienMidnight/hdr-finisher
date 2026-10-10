@@ -91,6 +91,14 @@ def create_library_router(worker, browser):
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @router.post("/pins/remove")
+    def remove_pin(command: FolderRequest):
+        # Missing/offline folders must still be removable from preferences.
+        try:
+            return {"pinned": browser.remove_pin(command.path)}
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @router.post("/scan")
     async def scan(command: FolderRequest, request: Request):
         result = await helper_result(request, "scan", path=command.path, priority=0)

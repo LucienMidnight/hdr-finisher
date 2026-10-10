@@ -6,7 +6,18 @@
   const state = { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
     pins: [], cells: new Map(), filmCells: new Map(), prefetch: new Map(), size: 190,
     selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0 };
-  const postParent = (action, detail = {}) => parent.postMessage({ type: "hdr-library", action, ...detail }, location.origin);
+  const standalone = parent === window, libraryDesktop = standalone ? window.hdrFinisherDesktop : null;
+  const postParent = (action, detail = {}) => {
+    if (!standalone) parent.postMessage({ type: "hdr-library", action, ...detail }, location.origin);
+    else if (libraryDesktop) {
+      const task = action === "open-source" ? libraryDesktop.openSourceInMain(detail.path)
+        : action === "choose-source" ? libraryDesktop.chooseSourceInMain()
+        : action === "review" ? libraryDesktop.getWindowState().then(current => {
+          if (current.fullscreen !== detail.enabled) return libraryDesktop.performWindowAction("fullscreen");
+        }) : null;
+      task?.catch(error => status(error.message));
+    }
+  };
   const status = (message) => { $("library-status").textContent = message; };
   const aborted = (error) => error?.name === "AbortError";
   const sleep = (ms, signal) => new Promise((resolve, reject) => {
@@ -368,6 +379,7 @@
     const expand = document.createElement("button"); expand.className = "expand-folder"; expand.setAttribute("aria-expanded", "false"); expand.setAttribute("aria-label", `Expand ${folder.name}`);
     const name = document.createElement("button"); name.className = "folder-name"; name.textContent = folder.name; name.title = folder.path;
     name.addEventListener("click", () => browse(folder.path));
+    bindFolderMenu(row, folder.path);
     expand.addEventListener("click", async () => {
       const open = expand.getAttribute("aria-expanded") === "true";
       expand.setAttribute("aria-expanded", String(!open)); children.hidden = open;
@@ -381,9 +393,60 @@
     const result = await api("/api/library/pins"); state.pins = result.pinned;
     $("folders").replaceChildren(...state.pins.map((pin) => folderRow(pin))); paintGrid();
   }
+  const folderMenu = document.createElement("div");
+  folderMenu.id = "library-folder-menu"; folderMenu.className = "window-menu-popover library-folder-menu";
+  folderMenu.setAttribute("role", "menu"); folderMenu.setAttribute("aria-label", "Folder actions"); folderMenu.hidden = true;
+  let menuOrigin = null;
+  function closeFolderMenu(restoreFocus = false) {
+    folderMenu.hidden = true;
+    if (restoreFocus && menuOrigin?.isConnected) menuOrigin.focus({ preventScroll: true });
+    menuOrigin = null;
+  }
+  function bindFolderMenu(element, path) {
+    element.addEventListener("contextmenu", event => showFolderMenu(event, path));
+    element.addEventListener("keydown", event => {
+      if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) showFolderMenu(event, path);
+    });
+  }
+  function showFolderMenu(event, path = "") {
+    event.preventDefault(); event.stopPropagation(); closeFolderMenu();
+    menuOrigin = event.target.closest("button") || $("add-folder");
+    const key = value => /^[a-z]:|^\\\\/i.test(value) ? value.toLowerCase() : value;
+    const pinned = state.pins.find(pin => key(pin.path) === key(path));
+    const actions = path ? [{ label: pinned ? "Unpin folder" : "Pin folder", run: async () => {
+      await api(pinned ? "/api/library/pins/remove" : "/api/library/pins", pinned ? { path: pinned.path } : { paths: [path] });
+      await refreshPins();
+      status(pinned ? "Folder unpinned. Photos stay where they are." : "Folder pinned.");
+    }}] : [{ label: "Add folder…", run: openPicker }];
+    folderMenu.replaceChildren(...actions.map(action => {
+      const button = document.createElement("button"); button.type = "button"; button.setAttribute("role", "menuitem"); button.textContent = action.label;
+      button.addEventListener("click", async () => {
+        closeFolderMenu(true);
+        try { await action.run(); } catch (error) { if (state.picker) $("picker-status").textContent = error.message; else status(error.message); }
+      }); return button;
+    }));
+    ($("folder-picker").open ? $("folder-picker") : document.body).append(folderMenu);
+    const bounds = menuOrigin.getBoundingClientRect();
+    folderMenu.hidden = false;
+    const x = event.type === "contextmenu" ? event.clientX : bounds.left;
+    const y = event.type === "contextmenu" ? event.clientY : bounds.bottom;
+    folderMenu.style.left = `${Math.max(0, Math.min(x, innerWidth - folderMenu.offsetWidth))}px`;
+    folderMenu.style.top = `${Math.max(0, Math.min(y, innerHeight - folderMenu.offsetHeight))}px`;
+    folderMenu.querySelector("button").focus({ preventScroll: true });
+  }
+  $("folders").addEventListener("contextmenu", event => showFolderMenu(event));
+  document.addEventListener("pointerdown", event => { if (!folderMenu.contains(event.target)) closeFolderMenu(); });
+  document.addEventListener("keydown", event => {
+    if (folderMenu.hidden) return;
+    if (["Escape", "Tab"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); closeFolderMenu(true); }
+    else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) { event.preventDefault(); folderMenu.querySelector("button").focus(); }
+  }, true);
+  window.addEventListener("blur", () => closeFolderMenu());
+  window.addEventListener("resize", () => closeFolderMenu());
   async function pickerBrowse(path = "") {
     const picker = state.picker; if (!picker) return;
-    picker.controller?.abort(); clearPickerPreview();
+    if (picker.displayed) picker.scrollPositions.set(picker.displayed, $("picker-list").scrollTop);
+    closeFolderMenu(); picker.controller?.abort(); clearPickerPreview();
     const controller = new AbortController(); picker.controller = controller;
     picker.current = ""; picker.selection.clear(); $("picker-pin").disabled = true;
     $("picker-status").textContent = "Reading folder…";
@@ -391,11 +454,11 @@
       const result = await api(`/api/media-browser?mode=export_directory&path=${encodeURIComponent(path)}`, undefined, controller.signal);
       if (state.picker !== picker || controller.signal.aborted) return;
       picker.current = result.current; picker.parent = result.parent; picker.entries = result.entries; picker.selection = new Set(); picker.anchor = -1;
-      $("picker-path").value = result.current; $("picker-up").disabled = !result.parent; $("picker-status").textContent = "Pin this folder, or select folders below.";
+      if (document.activeElement !== $("picker-path")) $("picker-path").value = result.current; $("picker-up").disabled = !result.parent; $("picker-status").textContent = "Pin this folder, or select folders below.";
       $("picker-places").replaceChildren(...[...result.drives, ...result.locations, ...result.pinned].map((place) => {
         const button = document.createElement("button"); button.type = "button"; button.textContent = place.name; button.title = place.path; button.addEventListener("click", () => pickerBrowse(place.path)); return button;
       }));
-      $("picker-list").scrollTop = 0;
+      picker.displayed = result.current;
       $("picker-list").replaceChildren(...picker.entries.map((folder, index) => {
         const button = document.createElement("button"); button.type = "button"; button.title = folder.path;
         button.className = `directory-browser-entry ${folder.kind}${folder.supported ? " supported" : ""}`;
@@ -421,8 +484,11 @@
           [...$("picker-list").children].forEach((element, i) => { element.setAttribute("aria-selected", String(picker.selection.has(i))); element.classList.toggle("selected", picker.selection.has(i)); });
           $("picker-status").textContent = `${picker.selection.size} folders selected`;
         });
-        if (folder.kind === "directory") button.addEventListener("dblclick", () => pickerBrowse(folder.path)); return button;
+        if (folder.kind === "directory") {
+          button.addEventListener("dblclick", () => pickerBrowse(folder.path)); bindFolderMenu(button, folder.path);
+        } return button;
       }));
+      $("picker-list").scrollTop = picker.scrollPositions.get(result.current) || 0;
     } catch (error) { if (!aborted(error) && state.picker === picker) $("picker-status").textContent = error.message; }
     finally { if (state.picker === picker && picker.controller === controller) $("picker-pin").disabled = !picker.current; }
   }
@@ -463,7 +529,7 @@
       image.alt = `Preview of ${entry.name}`; image.src = picker.previewUrl;
     } catch (error) { if (!aborted(error) && current()) $("picker-preview-note").textContent = error.message; }
   }
-  function openPicker() { state.picker = { selection: new Set() }; $("folder-picker").showModal(); pickerBrowse(state.path); }
+  function openPicker() { state.picker = { selection: new Set(), scrollPositions: new Map() }; $("folder-picker").showModal(); pickerBrowse(state.path); }
   $("picker-pin").addEventListener("click", async () => {
     const picker = state.picker; if (!picker?.current) return;
     const paths = picker.selection.size ? [...picker.selection].map((index) => picker.entries[index].path) : [picker.current];
@@ -472,7 +538,7 @@
     catch (error) { $("picker-status").textContent = error.message; }
     finally { $("picker-pin").disabled = false; }
   });
-  $("folder-picker").addEventListener("close", () => { state.picker?.controller?.abort(); clearPickerPreview(); state.picker = null; });
+  $("folder-picker").addEventListener("close", () => { closeFolderMenu(); state.picker?.controller?.abort(); clearPickerPreview(); state.picker = null; });
   $("picker-cancel").addEventListener("click", () => $("folder-picker").close());
   $("picker-go").addEventListener("click", () => pickerBrowse($("picker-path").value));
   $("picker-path").addEventListener("keydown", (event) => { if (event.key === "Enter") pickerBrowse(event.target.value); });
@@ -504,6 +570,7 @@
     if (event.origin !== location.origin || event.source !== parent || event.data?.type !== "hdr-library-host") return;
     if (event.data.action === "active") setActive(event.data.enabled);
     if (event.data.action === "add-folder") openPicker();
+    if (event.data.action === "restore") void restoreState(event.data.state).catch(error => status(error.message));
   });
   window.addEventListener("keydown", (event) => {
     if ($("folder-picker").open || event.target.matches("input,textarea,select,[contenteditable]")) return;
@@ -565,6 +632,54 @@
     if (suppressGridClick) { suppressGridClick = false; return; }
     if (!event.target.closest(".library-cell,button")) { state.selection.clear(); updateDetails(); paintGrid(); }
   });
+  function portableState() {
+    return { path: state.path, selected: selected()?.path, selection: [...state.selection], anchor: state.photos[state.anchor]?.path,
+      sort: state.sort, descending: state.descending, filters: state.filters, size: state.size, view: state.view,
+      hdr: state.hdr, zoom: state.zoom, zoomX: state.zoomX, zoomY: state.zoomY,
+      gridScroll: grid.scrollTop, filmScroll: film.scrollLeft, filterOpen: !$("library-filterbar").hidden,
+      leftClosed: library.classList.contains("library-left-closed"), rightClosed: library.classList.contains("library-right-closed") };
+  }
+  async function restoreState(saved) {
+    if (!saved) return;
+    state.sort = saved.sort || "time"; state.descending = !!saved.descending; state.filters = saved.filters || {};
+    state.size = saved.size || 190; state.hdr = !!saved.hdr; state.zoom = !!saved.zoom;
+    state.zoomX = saved.zoomX ?? .5; state.zoomY = saved.zoomY ?? .5;
+    $("library-sort").value = state.sort; $("thumbnail-size").value = state.size;
+    $("sort-dir").textContent = state.descending ? "↓" : "↑";
+    $("sort-dir").setAttribute("aria-label", state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending");
+    $("hdr-button").setAttribute("aria-pressed", String(state.hdr)); $("zoom-button").setAttribute("aria-pressed", String(state.zoom));
+    $("raw-only").setAttribute("aria-pressed", String(!!state.filters.raw));
+    for (const name of ["rating", "pick", "label", "type", "search"]) $("filter-" + name).value = state.filters[name] || "";
+    $("library-filterbar").hidden = !saved.filterOpen; $("filter-button").setAttribute("aria-pressed", String(!!saved.filterOpen));
+    collapse("left", !!saved.leftClosed); collapse("right", !!saved.rightClosed);
+    await refreshPins();
+    if (saved.path) await browse(saved.path);
+    state.index = state.photos.findIndex(photo => photo.path === saved.selected);
+    if (state.index < 0 && state.photos.length) state.index = 0;
+    const paths = new Set(state.photos.map(photo => photo.path));
+    state.selection = new Set((saved.selection || []).filter(path => paths.has(path)));
+    state.anchor = state.photos.findIndex(photo => photo.path === saved.anchor);
+    setView(saved.view === "single" ? "single" : "grid"); updateDetails();
+    grid.scrollTop = saved.gridScroll || 0; film.scrollLeft = saved.filmScroll || 0; paintGrid(); paintFilm();
+  }
+  $("popout-library").addEventListener("click", async () => {
+    if (!standalone) { if (state.review) setReview(false); postParent("pop-out", { state: portableState() }); return; }
+    if (libraryDesktop) await libraryDesktop.dockLibrary(portableState()).catch(error => status(error.message));
+  });
+  if (standalone) {
+    $("popout-library").textContent = "Dock Library";
+    $("popout-library").title = "Return Library to the main window";
+    libraryDesktop?.onLibraryWindowChanged(message => {
+      if (message.action === "close") void libraryDesktop.dockLibrary(portableState()).catch(error => status(error.message));
+    });
+    libraryDesktop?.onDisplayStateChanged(() => {
+      state.displayEpoch += 1;
+      if (state.view === "single") showSingle(); else { clearCells(state.cells); paintGrid(); }
+    });
+    window.addEventListener("keydown", event => {
+      if (event.key === "F11" && libraryDesktop) { event.preventDefault(); void libraryDesktop.performWindowAction("fullscreen"); }
+    });
+  }
   // Read-only status for the focused interaction driver; no test-only behavior.
   window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, count: state.photos.length,
     selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
@@ -572,8 +687,10 @@
   (async () => {
     try {
       const options = await api("/api/library/options"); state.timing = options.timing;
-      await refreshPins(); const first = state.pins.find((pin) => pin.available);
-      if (first) await browse(first.path);
+      const saved = libraryDesktop ? (await libraryDesktop.getLibraryWindow()).state : null;
+      if (saved) await restoreState(saved);
+      else { await refreshPins(); const first = state.pins.find((pin) => pin.available); if (first) await browse(first.path); }
+      await libraryDesktop?.rendererReady();
       postParent("ready");
     } catch (error) { status(error.message); }
   })();

@@ -18,7 +18,8 @@ const { _electron: electron } = require("playwright");
     const main = app.windows().find((page) => page !== library);
     assert.ok(library && main);
     for (const page of [main, library]) page.on("pageerror", (error) => errors.push(error.message));
-    await main.waitForSelector("#empty-import-button");
+    await main.waitForSelector("#library-frame");
+    await main.waitForFunction(() => state.activeWorkflow === "import" && !!document.getElementById("library-frame").contentWindow.HDRLibrary);
     await library.waitForSelector("#directory-browser[open]");
     assert.deepEqual(await library.evaluate(() => [...document.scripts].map((s) => new URL(s.src).pathname)),
       ["/static/media-browser.js", "/static/media-browser-standalone.js"]);

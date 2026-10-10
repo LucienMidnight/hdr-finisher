@@ -62,6 +62,7 @@ let updateCheckCache = null;
 let pendingOpenPaths = [];
 let rendererReady = false;
 const windows = new Map();
+let libraryWindowState = null;
 let processDiagnostics = null;
 let windowFailure = null;
 const knownProjectPaths = new Set();
@@ -516,6 +517,13 @@ function scheduleDisplayState() {
   for (const record of windows.values()) scheduleWindowDisplayState(record);
 }
 
+function checkedLibraryState(snapshot) {
+  // A UI snapshot grants no filesystem access and contains no pixel buffers.
+  const text = JSON.stringify(snapshot);
+  if (!snapshot || typeof snapshot !== "object" || text.length > 2_000_000) throw new Error("Invalid Library state.");
+  return JSON.parse(text);
+}
+
 function registerIpc() {
   const handle = (channel, callback) => ipcMain.handle(channel, async (event, ...args) => {
     const record = validateSender(event);
@@ -532,8 +540,28 @@ function registerIpc() {
     if (record.role !== "library") throw new Error("Only the library window can request a source open.");
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
     const selection = await grantPath(filePath, "source-open");
+    mainWindow.show(); mainWindow.focus();
     mainWindow.webContents.send("desktop:open-request", { kind: "source", ...selection });
     return true;
+  });
+  handle("desktop:pop-out-library", async (snapshot) => {
+    if (!windows.has("library")) libraryWindowState = checkedLibraryState(snapshot);
+    const window = await createWindow("library"); window.show(); window.focus(); return true;
+  });
+  handleWindow("desktop:get-library-window", () => ({ detached: windows.has("library"), state: libraryWindowState }));
+  handleWindow("desktop:dock-library", (record, snapshot) => {
+    if (record.role !== "library") throw new Error("Only Library can dock itself.");
+    libraryWindowState = checkedLibraryState(snapshot);
+    record.allowClose = true; record.window.close(); return true;
+  });
+  handle("desktop:focus-library", () => {
+    const window = windows.get("library")?.window;
+    if (window && !window.isDestroyed()) { window.show(); window.focus(); }
+  });
+  handleWindow("desktop:choose-source-in-main", (record) => {
+    if (record.role !== "library") throw new Error("Only Library can request the grading browser.");
+    mainWindow?.show(); mainWindow?.focus();
+    mainWindow?.webContents.send("desktop:library-window", { action: "choose-source" }); return true;
   });
   handleWindow("desktop:environment", (record) => desktopEnvironment(record.window));
   // The active card's dedicated video memory, read once: the preview's Auto
@@ -929,10 +957,10 @@ async function createWindow(role = "main") {
     minHeight: 720,
     show: false,
     ...windowChromeOptions(),
-    // The empty foundation page uses native chrome, including Windows snap.
+    // Library uses native chrome, including Windows snap.
     ...(isMain ? {} : { frame: true }),
     backgroundColor: "#101415",
-    title: isMain ? "HDR Finisher" : "HDR Finisher — Library foundation",
+    title: isMain ? "HDR Finisher" : "HDR Finisher — Library",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
@@ -956,7 +984,14 @@ async function createWindow(role = "main") {
   window.webContents.on("render-process-gone", () => { record.ready = false; });
   window.on("close", (event) => {
     saveWindowBounds(record);
-    if (!isMain || forceClose) return;
+    if (!isMain) {
+      if (!record.allowClose && !forceClose && !shuttingDown && record.ready && !record.window.webContents.isCrashed()
+          && record.window.webContents.getURL().includes("/library")) {
+        event.preventDefault(); record.window.webContents.send("desktop:library-window", { action: "close" });
+      }
+      return;
+    }
+    if (forceClose) return;
     event.preventDefault();
     requestClose();
   });
@@ -976,6 +1011,9 @@ async function createWindow(role = "main") {
   window.on("closed", () => {
     clearTimeout(record.displayTimer);
     windows.delete(role);
+    if (!isMain && !shuttingDown && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("desktop:library-window", { action: "docked", state: libraryWindowState });
+    }
     if (isMain) {
       mainWindow = null;
       windowFailure = null;
@@ -991,8 +1029,10 @@ async function createWindow(role = "main") {
   }
   window.once("ready-to-show", () => { if (!window.isDestroyed()) window.show(); });
   const secondaryPage = !app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_BROWSER === "1"
-    ? "media-browser-standalone.html" : "window-foundation.html";
-  await window.loadURL(isMain ? backend.url : `${backend.url}/static/${secondaryPage}`);
+    ? "/static/media-browser-standalone.html"
+    : !app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_WINDOW === "1"
+      ? "/static/window-foundation.html" : "/library";
+  await window.loadURL(isMain ? backend.url : `${backend.url}${secondaryPage}`);
   if (isMain) updateWindowDocumentState();
   return window;
 }

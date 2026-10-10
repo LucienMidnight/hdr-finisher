@@ -9193,3 +9193,8 @@ body.library-review .library-host { display: block; position: fixed; inset: 0; z
 body[data-workflow="import"] .app-shell > :is(.source-rail, .source-splitter, .workspace-main, .grade-rail, .grade-splitter) { visibility: hidden; pointer-events: none; }
 
 body[data-workflow="import"] #viewer-status-dock { display: none; }
+
+.library-away { padding-top: 15vh; text-align: center; color: var(--body); }
+.library-away[hidden] { display: none; }
+
+.library-host iframe[hidden] { display: none; }

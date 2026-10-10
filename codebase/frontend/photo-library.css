@@ -109,3 +109,5 @@ body { margin: 0; color: var(--body); background: var(--app); }
 #single-stage.zoomed { cursor: grab; }
 #single-stage.zoomed:active { cursor: grabbing; }
 #single-stage #native-picture { position: absolute; object-fit: fill; pointer-events: none; }
+
+.library-folder-menu { position: fixed; border-radius: var(--radius-2); }

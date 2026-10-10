@@ -2100,6 +2100,44 @@ original photos were not modified. During development an EXIF test fixture
 needed its tag placed in the correct EXIF directory, and a test edit’s text
 encoding was corrected; neither check was removed or loosened.
 
+**October 10 follow-up — folder navigation and Slice 2 window:** the Add
+folder picker remembers the list scroll position for each folder visited during
+that dialog session. Returning with Up restores that position after the parent
+rows arrive. Right-click a folder in the picker or the pinned tree to pin or
+unpin it; Shift+F10 also opens the menu, and Escape dismisses it. Right-click
+the pinned-list background to Add folder. The menu uses the existing window
+menu styles and design tokens. Unpin removes only the saved shortcut, including
+for offline folders; it does not delete or move anything.
+
+Slice 2 has started with **Pop out** on the Library toolbar. The separate
+Library window reuses the same page and backend, has native window controls,
+and retains independent saved bounds. The docked page pauses its requests
+while detached. Folder, selected photo, multi-selection, sort, filters,
+thumbnail size, grid/filmstrip scroll, collapsed rails and fit/native zoom
+position transfer between windows. Closing with X or Dock Library returns
+to the docked Library. Review exits before popping out; F11 and Review work
+in the separate window. The window receives its own display-change events.
+Physical HDR behavior across two different monitors still needs Steve's test.
+
+With a photo already open, popping out switches the main window to Grade;
+otherwise the main window shows a Show Library button until a photo is opened.
+Opening a photo from the separate window uses the existing source grant and
+main-window unsaved-photo gate. Main still owns app shutdown. UI state is
+transferred within the running app; app restart starts in the docked Library.
+Background indexing, the fuller metadata panel, full filter rules, tag
+management and albums are still outstanding in Slice 2.
+
+Validation: 452 JavaScript checks, 22 desktop checks and 1,616 Python checks
+passed (three existing skips), plus the new offline-unpin backend check.
+Focused disposable Electron checks cover parent scroll restoration, modal
+pinning, tree unpinning, Escape, window state transfer, the paused docked page,
+docking with the button and X, saved bounds and untouched source files.
+Driver setup fixes were needed for Electron module resolution, iframe startup,
+initial picker loading and the keyboard target. The existing secondary-window
+source-handoff check also passed its original Cancel/Discard assertions after
+its obsolete Import-button startup wait was updated to the current Library.
+No checks were loosened.
+
 Proposed. Each slice is usable on its own.
 
 | Slice | Contents | What Steve can do afterwards |
