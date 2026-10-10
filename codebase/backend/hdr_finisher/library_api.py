@@ -34,7 +34,7 @@ def create_library_router(worker, browser):
     cache = LibraryPictureCache(browser.root)
 
     async def helper_result(request, command, **arguments):
-        job_id, future = worker.submit_library(command, **arguments)
+        job_id, future = await run_in_threadpool(worker.submit_library, command, **arguments)
         try:
             while not future.done():
                 if worker.status()["paused"]:

@@ -358,7 +358,7 @@ class DesktopRequestBoundary:
         async def send_hardened(message) -> None:
             if message["type"] == "http.response.start" and desktop_authoring_secret:
                 headers = MutableHeaders(scope=message)
-                ancestor_policy = "'self'" if request.url.path == "/static/photo-library.html" else "'none'"
+                ancestor_policy = "'self'" if request.url.path == "/library" else "'none'"
                 headers["Content-Security-Policy"] = (
                     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
                     "img-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:; "
@@ -2421,6 +2421,13 @@ def root() -> HTMLResponse:
     html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
     html = html.replace("__HDR_FINISHER_ASSET_VERSION__", _asset_version())
     return HTMLResponse(content=html, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/library")
+def library_page() -> HTMLResponse:
+    html = (FRONTEND_DIR / "photo-library.html").read_text(encoding="utf-8")
+    return HTMLResponse(content=html.replace("__HDR_FINISHER_ASSET_VERSION__", _asset_version()),
+                        headers={"Cache-Control": "no-store"})
 
 
 @app.get("/launcher")

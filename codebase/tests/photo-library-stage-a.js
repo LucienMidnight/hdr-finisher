@@ -10,6 +10,7 @@ const folder = fs.mkdtempSync(path.join(output, "photos-"));
 const fixture = path.join(root, "tests", "fixtures", "sdr_gradient.png");
 for (let index = 0; index < 3000; index++) fs.copyFileSync(fixture, path.join(folder, `photo-${String(index).padStart(4,"0")}.png`));
 fs.mkdirSync(path.join(folder, "nested"));
+fs.mkdirSync(path.join(folder, "empty-folder"));
 fs.copyFileSync(fixture, path.join(folder, "nested", "nested.png"));
 fs.writeFileSync(path.join(folder, "broken.png"), "unreadable test file");
 fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
@@ -21,8 +22,13 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     page.on("pageerror", error => { errors.push(error.message); console.log("[pageerror]", error.message); });
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
     await page.waitForFunction(() => typeof state !== "undefined" && state.activeWorkflow === "import");
-    const library = page.frame({ url: /photo-library\.html/ }); assert.ok(library);
+    const library = page.frame({ url: /\/library(?:\?|$)/ }); assert.ok(library);
     await library.waitForFunction(() => Boolean(window.HDRLibrary));
+    const framePage = await page.request.get(library.url());
+    assert.equal(framePage.headers()["cache-control"], "no-store");
+    assert.ok(framePage.headers()["content-security-policy"].includes("frame-ancestors 'self'"));
+    assert.equal(await library.evaluate(() => [...document.querySelectorAll("script[src],link[rel=stylesheet]")].every(element => new URL(element.src || element.href).searchParams.has("v"))), true);
+    assert.ok(!(await framePage.text()).includes("__HDR_FINISHER_ASSET_VERSION__"));
     await library.evaluate(async folder => {
       const response = await fetch("/api/library/pins", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths: [folder] }) });
       if (!response.ok) throw new Error(await response.text());
@@ -38,11 +44,30 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     await library.locator("#picker-path").fill(folder);
     await library.locator("#picker-go").click();
     await library.waitForFunction(() => document.querySelector("#picker-list button"));
+    await library.waitForFunction(() => document.querySelectorAll("#picker-list .file").length === 3002);
+    const folders = library.locator("#picker-list .directory");
+    await folders.nth(0).click(); await folders.nth(1).click({ modifiers: ["Control"] });
+    assert.equal(await library.locator('#picker-list .directory[aria-selected="true"]').count(), 2);
+    await folders.nth(0).click({ modifiers: ["Control"] }); await folders.nth(1).click({ modifiers: ["Control"] });
+    assert.equal(await library.locator('#picker-list .directory[aria-selected="true"]').count(), 0);
+    await library.locator("#picker-list .file.supported").filter({ hasText: "photo-0000.png" }).click();
+    await library.waitForFunction(() => { const image = document.getElementById("picker-preview"); return !image.hidden && image.naturalWidth > 0; });
+    assert.equal(await library.locator("#picker-preview-name").textContent(), "photo-0000.png");
+    const bounds = await library.locator("#picker-list").boundingBox();
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    await page.mouse.wheel(0, 700);
+    await library.waitForFunction(() => document.getElementById("picker-list").scrollTop > 0);
+    assert.equal(await library.evaluate(() => { const dialog = document.getElementById("folder-picker"); return dialog.scrollHeight <= dialog.clientHeight; }), true);
     await page.screenshot({ path: path.join(output, "picker.png") });
     const scanned = page.waitForResponse(response => response.url().endsWith("/api/library/scan") && response.request().method() === "POST");
     await library.locator("#picker-pin").click();
     await scanned;
     await library.waitForFunction(() => !document.getElementById("folder-picker").open);
+    const icon = await library.evaluate(() => {
+      const button = document.querySelector(".expand-folder"), style = getComputedStyle(button, "::before");
+      return { width: style.width, token: getComputedStyle(button).getPropertyValue("--panel-collapse-button-icon-size").trim(), colour: style.backgroundColor, foreground: getComputedStyle(button).color };
+    });
+    assert.equal(icon.width, icon.token); assert.equal(icon.colour, icon.foreground); assert.notEqual(icon.colour, "rgb(0, 0, 0)");
     await library.waitForSelector("#grid-space canvas[data-picture-key]", { timeout: 60000 });
     await library.waitForFunction(() => document.querySelectorAll("#grid-space canvas").length > 0 && [...document.querySelectorAll("#grid-space canvas")].every(canvas => canvas.dataset.pictureKey), null, { timeout: 60000 });
     await page.screenshot({ path: path.join(output, "grid.png") });
@@ -127,6 +152,25 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
         console.log("[library format]", path.basename(source), cached.route);
       }
     } else console.log("[library format] local real samples unavailable; synthetic route checks only");
+    // Cold real-folder startup must draw pixels while other photos are still queued.
+    if (fs.existsSync("D:/Photos/HDR Test Images")) {
+      let firstPixels = null, firstMeta = null, finished = 0, active = 0, peak = 0;
+      const started = Date.now();
+      const pending = new Set();
+      const request = req => {
+        if (req.url().includes("/api/library/picture")) { pending.add(req); peak = Math.max(peak, ++active); }
+        if (req.url().includes("/api/library/pixels/") && firstPixels == null) firstPixels = Date.now() - started;
+      };
+      const done = req => { if (pending.delete(req)) active--; };
+      const response = res => { if (res.url().endsWith("/api/library/picture")) { firstMeta ??= Date.now() - started; finished++; } };
+      page.on("request", request); page.on("requestfinished", done); page.on("requestfailed", done); page.on("response", response);
+      await library.evaluate(() => HDRLibrary.browse("D:/Photos/HDR Test Images"));
+      await library.waitForSelector("#grid-space canvas[data-picture-key]", { timeout: 60000 });
+      assert.ok(firstPixels != null); assert.ok(peak <= 4, `Picture request peak ${peak}`);
+      assert.ok(finished < await library.evaluate(() => HDRLibrary.getSnapshot().visible), "First picture must precede the rest of the visible decodes");
+      console.log("[library cold folder] first metadata", firstMeta, "ms; first pixels requested", firstPixels, "ms; first completed picture", Date.now() - started, "ms; maximum picture requests", peak);
+      page.off("request", request); page.off("requestfinished", done); page.off("requestfailed", done); page.off("response", response);
+    }
     assert.deepEqual(errors, []);
     console.log("Stage A passed: folder picker, recursive folders, read-only browse, virtual grid/cache, single/filmstrip, arrows, review, Grade and Cancel/Discard gate.");
   } finally { await browser.close(); }

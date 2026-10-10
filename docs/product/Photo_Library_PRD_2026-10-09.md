@@ -1968,6 +1968,31 @@ DJI RAW, linear DxO DNG, HEIC, AVIF, TIFF, EXR and JPEG. Its linear DNG import
 failure was fixed and covered by a regression check that forbids Grade's
 corrected decoder. The tests changed no originals or existing sidecars.
 
+**October 10 follow-up after Steve's first use:** picture requests now run
+through a cancellable priority queue with four active requests, reserving
+browser connections for pixel delivery and navigation. Previously, many
+slow visible-photo requests blocked even the first ready picture's pixels;
+the diagnostic saw a 40.9-second wait for their delivery. The focused
+read-only real-folder check now requested the first pixels at 0.9 seconds
+and finished the first picture at 1.4 seconds, while other photos remained
+queued. Helper startup also runs outside the backend event loop. These are
+observations on the checked folder, not a promise for every source or drive.
+
+Add folder again lists file names, sizes, types and dates, with a selected
+photo preview through the existing browser thumbnail endpoint. Folder
+multi-selection remains separate from photo previewing. Its list and
+places sidebar scroll inside a bounded dialog. File rows and preview styles
+reuse the existing browser; arrows and collapse controls use the shared
+colour, icon-size and button tokens. The Library page now versions its
+assets like the main page to prevent stale scripts and styles.
+
+Follow-up validation: 444 JavaScript tests and 1,594 Python tests passed
+(three existing skips). The focused Electron check additionally covers
+file previews, mouse-wheel scroll, Ctrl multi-folder selection, tokenized
+icons, fresh asset URLs and real-folder first-picture delivery. Its first
+attempt stopped because the test inspected pins before refreshing them;
+the corrected setup passed without changing the product behavior or checks.
+
 Still to judge in use: responsiveness on Steve's actual large shoots,
 quick colour/brightness, decoder waits where no embedded picture exists,
 and the basic file facts in the details rail. Every Grade source extension

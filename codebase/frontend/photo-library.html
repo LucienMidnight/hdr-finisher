@@ -1,42 +1,43 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Library · HDR Finisher</title><link rel="stylesheet" href="/static/styles.css"><link rel="stylesheet" href="/static/photo-library.css"></head>
+<title>Library · HDR Finisher</title><link rel="stylesheet" href="/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__"><link rel="stylesheet" href="/static/photo-library.css?v=__HDR_FINISHER_ASSET_VERSION__"></head>
 <body><div id="library" class="library">
-<aside class="library-nav" aria-label="Folders"><div class="library-heading"><span class="panel-title">Folders</span><button id="add-folder" class="text-button" title="Add folder" aria-label="Add folder">+</button><button id="collapse-left" class="text-button library-collapse" aria-label="Collapse folders" aria-expanded="true">‹</button></div><div id="folders"></div></aside>
+<aside class="library-nav" aria-label="Folders"><div class="library-heading"><span class="panel-title">Folders</span><button id="add-folder" class="text-button" title="Add folder" aria-label="Add folder">+</button><button id="collapse-left" class="panel-collapse-button library-collapse" aria-label="Collapse folders" aria-expanded="true"></button></div><div id="folders"></div></aside>
 <section class="library-centre"><div class="library-toolbar"><span id="place-title" class="panel-title place">Library</span><button id="grid-view" class="tool-button" aria-pressed="true" title="Grid · G">Grid</button><button id="single-view" class="tool-button" aria-pressed="false" title="Single photo · Space">Single</button><button id="review-view" class="tool-button" title="Full-screen review · F">Review</button><input id="thumbnail-size" type="range" min="140" max="360" value="190" aria-label="Thumbnail size"><button id="open-image" class="text-button">Open image…</button></div>
 <div id="library-grid" role="listbox" aria-label="Photos" tabindex="0"><div id="grid-space"></div><div id="library-empty"><p id="empty-message">Add a folder to start browsing.</p><button id="empty-add" class="button-primary">Add a folder</button></div></div>
 <div id="library-single" hidden><div id="single-stage"><canvas id="single-picture" aria-label="Selected photo"></canvas></div><div id="single-caption"></div><div id="filmstrip" role="listbox" aria-label="Filmstrip" tabindex="0"><div id="film-space"></div></div></div>
 <div id="library-status" class="library-footer" role="status" aria-live="polite">Photos stay where they are.</div></section>
-<aside class="library-details" aria-label="Details"><div class="library-heading"><span class="panel-title">Details</span><button id="collapse-right" class="text-button library-collapse" aria-label="Collapse details" aria-expanded="true">›</button></div><div id="details">Select a photo.</div></aside></div>
+<aside class="library-details" aria-label="Details"><div class="library-heading"><span class="panel-title">Details</span><button id="collapse-right" class="panel-collapse-button library-collapse" aria-label="Collapse details" aria-expanded="true"></button></div><div id="details">Select a photo.</div></aside></div>
 <output id="library-diagnostic" hidden></output>
 <dialog id="folder-picker" class="application-dialog library-picker" aria-labelledby="picker-title"><div class="application-dialog-header"><div><h2 id="picker-title">Add folder</h2><p>Photos stay where they are. Ctrl-click or Shift-click to choose several folders. Double-click to look inside.</p></div></div>
-<div class="picker-path"><button id="picker-up" class="text-button">Up</button><input id="picker-path" type="text" aria-label="Folder path"><button id="picker-go" class="text-button">Go</button></div><div class="picker-body"><div id="picker-places"></div><div id="picker-list" role="listbox" aria-label="Folders" aria-multiselectable="true"></div></div>
+<div class="picker-path"><button id="picker-up" class="text-button">Up</button><input id="picker-path" type="text" aria-label="Folder path"><button id="picker-go" class="text-button">Go</button></div><div class="picker-body media-browser-layout"><div id="picker-places" class="media-browser-sidebar"></div><div class="media-browser-table"><div class="media-browser-list-header"><span>Name</span><span>Size</span><span>Kind</span><span>Date added</span></div><div id="picker-list" class="directory-browser-list" role="listbox" aria-label="Folders and files" aria-multiselectable="true"></div></div><div class="media-browser-preview"><div class="media-browser-preview-image-frame"><img id="picker-preview" hidden alt=""></div><strong id="picker-preview-name">Select a photo to preview.</strong><span id="picker-preview-note">Photo files stay in their folders.</span></div></div>
 <div class="app-dialog-actions"><span id="picker-status" role="status"></span><button id="picker-cancel" class="button-secondary">Cancel</button><button id="picker-pin" class="button-primary">Pin folder</button></div></dialog>
-<script src="/static/mask-request-coordinator.js"></script>
-<script src="/static/presentation-gate.js"></script>
-<script src="/static/render-failure.js"></script>
-<script src="/static/latest-work-queue.js"></script>
-<script src="/static/viewport-request.js"></script>
-<script src="/static/gpu-param-layout.js"></script>
-<script src="/static/graph-scale.js"></script>
-<script src="/static/gpu-allocator.js"></script>
-<script src="/static/gpu-budget.js"></script>
-<script src="/static/webgpu-shaders.js"></script>
-<script src="/static/source-transport.js"></script>
-<script src="/static/mask-loader.js"></script>
-<script src="/static/scope-readback.js"></script>
-<script src="/static/scope-analysis.js"></script>
-<script src="/static/geometry-math.js"></script>
-<script src="/static/mask-expression.js"></script>
-<script src="/static/mask-raster.js"></script>
-<script src="/static/gpu-mask-resample.js"></script>
-<script src="/static/gpu-brush-mask.js"></script>
-<script src="/static/whole-image-preview-pipe.js"></script>
-<script src="/static/gpu-render-plan.js"></script>
-<script src="/static/gpu-params.js"></script>
-<script src="/static/webgpu-preview.js"></script>
-<script src="/static/curve-editor.js"></script>
-<script src="/static/library-layout.js"></script>
-<script src="/static/library-gpu.js"></script>
-<script src="/static/photo-library.js"></script>
+<script src="/static/mask-request-coordinator.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/presentation-gate.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/render-failure.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/latest-work-queue.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/viewport-request.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/gpu-param-layout.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/graph-scale.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/gpu-allocator.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/gpu-budget.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/webgpu-shaders.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/source-transport.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/mask-loader.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/scope-readback.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/scope-analysis.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/geometry-math.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/mask-expression.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/mask-raster.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/gpu-mask-resample.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/gpu-brush-mask.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/whole-image-preview-pipe.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/gpu-render-plan.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/gpu-params.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/webgpu-preview.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/curve-editor.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/library-layout.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/library-gpu.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/library-request-queue.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/photo-library.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
 </body></html>
