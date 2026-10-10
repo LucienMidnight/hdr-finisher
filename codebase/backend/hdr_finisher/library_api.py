@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from .library_pictures import LibraryPictureCache
+from .library_marks import LibraryMarks, MarkChange
 
 
 class PictureRequest(BaseModel):
@@ -29,9 +30,15 @@ class PinsRequest(BaseModel):
     paths: list[str] = Field(max_length=100)
 
 
+class MarksRequest(BaseModel):
+    paths: list[str]
+    change: MarkChange
+
+
 def create_library_router(worker, browser):
     router = APIRouter(prefix="/api/library")
     cache = LibraryPictureCache(browser.root)
+    marks = LibraryMarks(browser.root)
 
     async def helper_result(request, command, **arguments):
         job_id, future = await run_in_threadpool(worker.submit_library, command, **arguments)
@@ -74,7 +81,33 @@ def create_library_router(worker, browser):
 
     @router.post("/scan")
     async def scan(command: FolderRequest, request: Request):
-        return await helper_result(request, "scan", path=command.path, priority=0)
+        result = await helper_result(request, "scan", path=command.path, priority=0)
+        if isinstance(result, Response):
+            return result
+        records = await run_in_threadpool(marks.read, [photo["path"] for photo in result["photos"]])
+        by_path = {row["path"]: row for row in records["photos"]}
+        for photo in result["photos"]:
+            photo.update(by_path[photo["path"]])
+        result.update(warnings=records["warnings"], undo_available=records["undo_available"])
+        return result
+
+    @router.post("/marks")
+    def change_marks(command: MarksRequest):
+        try:
+            return marks.change(command.paths, command.change)
+        except (ValueError, OSError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @router.post("/undo")
+    def undo_marks():
+        try:
+            return marks.undo()
+        except (ValueError, OSError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @router.get("/tags")
+    def tag_suggestions(q: str = ""):
+        return {"tags": marks.tags(q)}
 
     @router.post("/tree")
     async def tree(command: FolderRequest, request: Request):
