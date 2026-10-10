@@ -22,7 +22,7 @@ from .models import AdjustmentState
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
-PICTURE_VERSION = "library-scene-v1"
+PICTURE_VERSION = "library-scene-v2"
 CACHE_LIMIT_BYTES = 2 * 1024**3
 _CACHE_LOCKS = [RLock() for _ in range(64)]
 _TRIM_LOCK = RLock()
@@ -49,6 +49,9 @@ class LibraryPictureCache:
         self.root = Path(root) / "library-pictures"
         self.limit = limit
         self._known_bytes = None
+        self._native_lock = RLock()
+        self._native_source = None
+        self._native_paused = False
 
     def file(self, key):
         if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
@@ -69,7 +72,7 @@ class LibraryPictureCache:
             destination.unlink(missing_ok=True)
             return None
 
-    def build(self, path, edge, quality="quick", cancelled=None):
+    def build(self, path, edge, quality="quick", cancelled=None, decoded=None):
         path = Path(path).resolve(strict=True)
         if path.suffix.lower() not in SOURCE_EXTENSIONS:
             raise ValueError("Unsupported library file type.")
@@ -80,27 +83,14 @@ class LibraryPictureCache:
                 return cached
             started = perf_counter()
             check_cancelled(cancelled)
-            pixels, reference, metadata = decode_picture(path, edge, quality)
+            pixels, reference, metadata = decoded if decoded is not None else decode_picture(path, edge, quality)
             check_cancelled(cancelled)
             # A file changed during decoding must never publish under the old identity.
             if picture_key(path, edge, quality) != key:
                 raise ValueError("Photo changed while its library picture was being read.")
-            sample = pixels[::max(1, int(np.ceil(max(pixels.shape[:2]) / 256)))].copy()
-            exposure = loader._recommended_raw_exposure_ev(sample) if metadata.pop("raw_input", False) else 0.
-            analysis = classify_hdr(sample, {}, path.suffix.lower())
-            grade = AdjustmentState()
-            grade.hdr.exposure = exposure
-            grade.sdr.exposure = exposure
-            if reference is not None:
-                grade.sdr.highlight_section_enabled = False
-            # The same default source-peak initialization used by the successful trial.
-            from .sessions import LoadedSession
-            from types import SimpleNamespace
-            proxy = SimpleNamespace(analysis=analysis, sdr_reference_image=reference,
-                hdr_reference_white_nits=203, adjustments=grade)
-            LoadedSession._sync_highlight_source_peaks(proxy)
-            grade.hdr.exposure += .25
-            grade.sdr.exposure += .25
+            starting_look = metadata.pop("starting_look", None)
+            grade = AdjustmentState.model_validate(starting_look) if starting_look else default_look(
+                pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
             metadata.update(path=str(path), width=pixels.shape[1], height=pixels.shape[0],
                 edge=edge, quality=quality, adjustments=grade.model_dump(mode="json"),
                 white=203, has_reference=reference is not None,
@@ -128,6 +118,44 @@ class LibraryPictureCache:
                 if self._known_bytes is None or self._known_bytes > self.limit:
                     self.trim()
             return result
+
+    def build_native(self, path, center_x, center_y, width, height, cancelled=None):
+        """One retained native source in the helper; only viewport crops reach the GPU."""
+        path = Path(path).resolve(strict=True)
+        quality = f"native:{center_x:.8f}:{center_y:.8f}:{width}:{height}"
+        edge = max(width, height)
+        with self._native_lock:
+            check_cancelled(cancelled)
+            cached = self.cached(path, edge, quality)
+            if cached:
+                return cached
+            identity = picture_key(path, 100000, "native")
+            source = self._native_source
+            if source is None or source[0] != identity:
+                self._native_source = None
+                pixels, reference, metadata = decode_picture(path, 100000, "native")
+                check_cancelled(cancelled)
+                if picture_key(path, 100000, "native") != identity:
+                    raise ValueError("Photo changed while its native picture was being read.")
+                grade = default_look(pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
+                source = (identity, pixels, reference, metadata, grade.model_dump(mode="json"))
+                if not self._native_paused:
+                    self._native_source = source
+            _, pixels, reference, metadata, grade = source
+            source_height, source_width = pixels.shape[:2]
+            width, height = min(width, source_width), min(height, source_height)
+            x = max(0, min(source_width - width, round(center_x * source_width - width / 2)))
+            y = max(0, min(source_height - height, round(center_y * source_height - height / 2)))
+            crop = pixels[y:y + height, x:x + width]
+            ref = reference[y:y + height, x:x + width] if reference is not None else None
+            facts = dict(metadata, route="native-" + metadata["route"], source_width=source_width,
+                source_height=source_height, crop_x=x, crop_y=y, starting_look=grade)
+            return self.build(path, edge, quality, cancelled, (crop, ref, facts))
+
+    def pause_native(self, paused):
+        self._native_paused = bool(paused)
+        if paused:
+            self._native_source = None
 
     def pixels(self, key, lane="hdr"):
         path = self.file(key)
@@ -161,6 +189,25 @@ class LibraryPictureCache:
                     self._known_bytes = total
                 except FileNotFoundError:
                     pass
+
+
+def default_look(pixels, reference, raw_input, suffix):
+    sample = pixels[::max(1, int(np.ceil(max(pixels.shape[:2]) / 256)))].copy()
+    exposure = loader._recommended_raw_exposure_ev(sample) if raw_input else 0.
+    analysis = classify_hdr(sample, {}, suffix)
+    grade = AdjustmentState()
+    grade.hdr.exposure = exposure
+    grade.sdr.exposure = exposure
+    if reference is not None:
+        grade.sdr.highlight_section_enabled = False
+    from .sessions import LoadedSession
+    from types import SimpleNamespace
+    proxy = SimpleNamespace(analysis=analysis, sdr_reference_image=reference,
+        hdr_reference_white_nits=203, adjustments=grade)
+    LoadedSession._sync_highlight_source_peaks(proxy)
+    grade.hdr.exposure += .25
+    grade.sdr.exposure += .25
+    return grade
 
 
 def check_cancelled(cancelled):
@@ -213,7 +260,7 @@ def decode_picture(path, edge, quality):
                 meta = raw_import._camera_linear_metadata_from_libraw(raw)
             except raw_import._CameraLinearUnsupported:
                 meta = None
-            transport = raw.postprocess(half_size=True, demosaic_algorithm=rawpy.DemosaicAlgorithm.LINEAR,
+            transport = raw.postprocess(half_size=quality != "native", demosaic_algorithm=rawpy.DemosaicAlgorithm.LINEAR,
                 use_camera_wb=meta is None, use_auto_wb=False,
                 **({"user_wb": [1.] * 4, "no_auto_scale": True} if meta else {}),
                 no_auto_bright=True, output_color=rawpy.ColorSpace.raw if meta else rawpy.ColorSpace.sRGB,
@@ -228,7 +275,8 @@ def decode_picture(path, edge, quality):
                 pixels = normalize_to_acescg(pixels, "sRGB", "LINEAR")
             # Source saturation, before display tone mapping: neutral white, no reconstruction.
             pixels[clipped] = np.max(pixels[clipped], axis=1)[:, None]
-            return pixels, None, {"route": "quick-half-raw", "raw_input": True}
+            return pixels, None, {"route": "native-raw" if quality == "native" else "quick-half-raw", "raw_input": True,
+                "source_width": transport.shape[1] * (1 if quality == "native" else 2), "source_height": transport.shape[0] * (1 if quality == "native" else 2)}
     if quality == "fast" and suffix in {".heic", ".heif", ".tif", ".tiff"}:
         # Only accept a real decoder-supported picture, never reinterpret arbitrary bytes.
         try:
@@ -254,7 +302,11 @@ def decode_picture(path, edge, quality):
         image, metadata = loader._load_hdr_like(path)
     else:
         image = reduced_bitmap(path, edge)
-        metadata = {"color_space": "sRGB", "transfer_function": "sRGB"}
+        with Image.open(path) as header:
+            width, height = header.size
+            if header.getexif().get(274) in {5, 6, 7, 8}:
+                width, height = height, width
+        metadata = {"color_space": "sRGB", "transfer_function": "sRGB", "source_width": width, "source_height": height}
     pixels = reduce_picture(image, edge)
     space = loader.detect_color_space(metadata, suffix)
     transfer = metadata.get("transfer_function") or loader.detect_transfer_function(metadata, suffix)
@@ -263,7 +315,8 @@ def decode_picture(path, edge, quality):
     reference = metadata.get("sdr_reference_image")
     if reference is not None:
         reference = reduce_picture(reference, edge)
-    return pixels, reference, {"route": "quick-" + suffix[1:], "color_unconfirmed": space is None}
+    return pixels, reference, {"route": "quick-" + suffix[1:], "color_unconfirmed": space is None,
+        "source_width": metadata.get("source_width", image.shape[1]), "source_height": metadata.get("source_height", image.shape[0])}
 
 
 def linear_dng_picture(path, inspection, edge):
@@ -276,9 +329,11 @@ def linear_dng_picture(path, inspection, edge):
         decoded = _normalize_layout(series.asarray(), getattr(series, "axes", None))
     color = color_metadata_from_mapping(inspection.metadata)
     working = normalize_camera_samples(decoded, color)
-    working = reduce_picture(crop_and_orient(working, inspection.metadata), edge)
+    working = crop_and_orient(working, inspection.metadata)
+    source_height, source_width = working.shape[:2]
+    working = reduce_picture(working, edge)
     clipped = np.any(working >= .999, axis=2)
     transform_normalized_to_acescg_in_place(working, build_color_transform(color),
         color.baseline_exposure, highlight_recovery_limit=None)
     working[clipped] = np.max(working[clipped], axis=1)[:, None]
-    return working, None, {"route": "quick-linear-dng", "raw_input": True}
+    return working, None, {"route": "quick-linear-dng", "raw_input": True, "source_width": source_width, "source_height": source_height}

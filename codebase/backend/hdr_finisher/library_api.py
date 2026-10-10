@@ -22,12 +22,24 @@ class PictureRequest(BaseModel):
     priority: int = Field(default=10, ge=0, le=100)
 
 
+class NativeRequest(BaseModel):
+    path: str
+    center_x: float = Field(default=.5, ge=0, le=1)
+    center_y: float = Field(default=.5, ge=0, le=1)
+    width: int = Field(ge=64, le=4096)
+    height: int = Field(ge=64, le=4096)
+
+
 class FolderRequest(BaseModel):
     path: str
 
 
 class PinsRequest(BaseModel):
     paths: list[str] = Field(max_length=100)
+
+
+class MetadataRequest(BaseModel):
+    paths: list[str] = Field(max_length=32)
 
 
 class MarksRequest(BaseModel):
@@ -91,6 +103,10 @@ def create_library_router(worker, browser):
         result.update(warnings=records["warnings"], undo_available=records["undo_available"])
         return result
 
+    @router.post("/metadata")
+    async def metadata(command: MetadataRequest, request: Request):
+        return await helper_result(request, "metadata", paths=command.paths, priority=90)
+
     @router.post("/marks")
     def change_marks(command: MarksRequest):
         try:
@@ -122,6 +138,10 @@ def create_library_router(worker, browser):
         if cached:
             return cached
         return await helper_result(request, "picture", **command.model_dump())
+
+    @router.post("/native")
+    async def native(command: NativeRequest, request: Request):
+        return await helper_result(request, "native", priority=0, **command.model_dump())
 
     @router.get("/pixels/{key}")
     def pixels(key: str, lane: Literal["hdr", "sdr"] = Query(default="hdr")):

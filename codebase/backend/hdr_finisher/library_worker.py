@@ -80,7 +80,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "scan", "tree"}:
+        if command not in {"picture", "native", "scan", "tree", "metadata"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -251,7 +251,7 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
             with condition:
                 while not stopping.is_set():
                     candidates = [(item, index) for index, item in enumerate(queue)
-                        if (item[2]["command"] == "picture") == picture_jobs]
+                        if (item[2]["command"] in {"picture", "native"}) == picture_jobs]
                     if candidates and not state["paused"]:
                         _, index = min(candidates)
                         _priority, _sequence, job = queue.pop(index)
@@ -267,6 +267,12 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
                 if job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
                     result = {"id": job["id"], "result": output}
+                elif job["command"] == "native":
+                    output = pictures.build_native(job["path"], job["center_x"], job["center_y"], job["width"], job["height"], cancelled.is_set)
+                    result = {"id": job["id"], "result": output}
+                elif job["command"] == "metadata":
+                    from .library_metadata import read_metadata
+                    result = {"id": job["id"], "result": read_metadata(job["paths"], cancelled.is_set)}
                 elif job["command"] in {"scan", "tree"}:
                     operation = scan_folder if job["command"] == "scan" else folder_tree
                     result = {"id": job["id"], "result": operation(job["path"], cancelled.is_set)}
@@ -302,13 +308,14 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
                     break
                 if message["command"] == "pause":
                     state["paused"] = message["paused"]
+                    pictures.pause_native(message["paused"])
                 elif message["command"] == "cancel":
                     event = jobs.pop(message["id"], None)
                     if event is not None:
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "scan", "tree"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata"}:
                     sequence += 1
                     jobs[message["id"]] = Event()
                     heapq.heappush(queue, (message["priority"], sequence, message))
