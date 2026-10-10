@@ -3108,3 +3108,30 @@ button.tag-row:hover {
 :root {
   --group-chevron-shape: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6l6 6l-6 6'/%3E%3C/svg%3E");
 }
+
+/* ---------- tiles ----------
+   Each photo sits on its own tile, a step lighter than the surround, so the
+   marks under a narrow upright photo belong to something. No lines: the gap
+   between tiles is the grid. */
+
+[data-tiles="on"] .lib-grid {
+  gap: 3px;
+}
+
+[data-tiles="on"] .lib-grid .cell:not(.selected),
+[data-tiles="on"] .lib-filmstrip .cell:not(.selected) {
+  background: var(--panel);
+}
+
+[data-tiles="on"] .lib-grid .cell:not(.selected):hover,
+[data-tiles="on"] .lib-filmstrip .cell:not(.selected):hover {
+  background: var(--raised);
+}
+
+[data-tiles="on"] .lib-filmstrip {
+  background: var(--viewer);
+}
+
+[data-tiles="on"] .cell.loading .frame {
+  background: transparent;
+}

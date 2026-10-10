@@ -3063,10 +3063,17 @@
     remember("fit", fit);
     document.querySelectorAll("button[data-fit]").forEach((b) => b.classList.toggle("on", b.dataset.fit === fit));
   }
+  // Tiles: every photo sits on its own quiet tile, so its marks have a home.
+  function setTiles(tiles) {
+    app.dataset.tiles = tiles;
+    remember("tiles", tiles);
+    document.querySelectorAll("button[data-tiles]").forEach((b) => b.classList.toggle("on", b.dataset.tiles === tiles));
+  }
   $("mock-strip").addEventListener("click", (event) => {
     const b = event.target.closest("button");
     if (!b) return;
     if (b.dataset.fit) setFit(b.dataset.fit);
+    if (b.dataset.tiles) setTiles(b.dataset.tiles);
     if (b.id === "keys-button") $("keys").hidden = !$("keys").hidden;
     if (b.id === "mock-edit") pretendEdit();
     b.blur();
@@ -3081,6 +3088,7 @@
   app.appendChild($("toast"));
   const ask = new URLSearchParams(location.search);
   setFit(ask.get("fit") || recall("fit", "contain"));
+  setTiles(ask.get("tiles") || recall("tiles", "on"));
   if (placeOf(ask.get("place"))) state.place = ask.get("place");
   if (ask.get("details") === "collapsed") app.dataset.details = "collapsed";
   if (ask.get("nav") === "collapsed") app.dataset.nav = "collapsed";
