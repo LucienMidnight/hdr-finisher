@@ -1321,15 +1321,250 @@ measurement probe also completed 48 half/full decode samples without errors.
 The one unsupported merged DNG and oversized line-scan exclusion are recorded
 above; neither was treated as a passing decode.
 
-**Remaining experiments:** M2/M3/M6 need explicit HDR-preview, indexing and
-edited-preview refresh models before numbers can set limits. T1's
-beside-photo save/autosave trial remains experimental work, not a settled
-sidecar format. No cache size, database schema, reader switch or preview
-pipeline is adopted from these foundation measurements.
+**M2, October 10 (external CPU preview instrument):** Ten representative
+RAW/non-RAW files, two default session loads each, with as-shot development,
+highlight reconstruction, automatic starting exposure and applicable lens
+correction. The unchanged renderer/exporter produced a JPEG Ultra HDR file
+(SDR base plus embedded gain map), JPEG quality 85 / gain map 100 / 4:2:0.
 
-**Status, October 10:** M2, M3, M6 and T1 are still open. The mock-up
-uses placeholder numbers for the cache limit and preview size until they
-are measured. The top menus (File, Edit, View, Window) need no mock-up
+The shipped helper currently has import-thumbnail jobs, not HDR-preview jobs.
+This instrument uses its below-normal priority and one numerical-library
+thread; preview files are rendered on the Ryzen 5 7600 CPU. It is not a
+measurement of a future GPU library-preview pipeline. Encoding, validation,
+flush and disk write are included; originals remain read-only. No alternate
+format was timed: Ultra HDR already exercises the proposed single-file idea.
+
+Cold below is default session preparation plus a freshly built reduced-source
+cache, measured as separate components. Warm retains decoded/reduced sources
+but still renders and encodes a new file; it is not a cache-hit display time.
+Persistent mip reuse is disabled in this instrument for cold builds.
+Process/module startup is excluded and OS disk cache is uncontrolled. Each
+row pools 20 observations (two per file); sizes are binary MiB.
+
+| Long edge | Cold median, seconds | Warm median, seconds | File median, MiB |
+|---|---:|---:|---:|
+| 1920 | 11.23 | 3.00 | 2.13 |
+| 2560 | 12.94 | 4.50 | 3.94 |
+| 3840 | 17.34 | 8.73 | 7.97 |
+
+| Sample at 2560 | Cold median, seconds | Warm median, seconds | File median, MiB |
+|---|---:|---:|---:|
+| DJI FC3170 native DNG, 48 MP | 105.66 | 5.05 | 2.67 |
+| Sony A7R III ARW, 42 MP, DSC02767 | 15.00 | 4.52 | 3.41 |
+| Sony A7R III ARW, 42 MP, DSC06615 | 14.69 | 4.48 | 3.43 |
+| Converted linear DxO DNG, 42 MP | 14.77 | 2.89 | 4.45 |
+| Canon 5D III CR2, 22 MP | 10.70 | 4.64 | 2.39 |
+| Fujifilm X-E2S RAF, 16 MP | 12.62 | 4.70 | 4.49 |
+| Nikon D7500 NEF, 21 MP | 7.21 | 3.43 | 8.13 |
+| DJI JPEG, 48 MP | 13.31 | 4.84 | 4.76 |
+| iPhone 16 Pro HEIC, 12 MP | 8.20 | 3.14 | 5.36 |
+| DxO TIFF, 42 MP | 7.22 | 4.26 | 3.39 |
+
+One sequential screen-sized batch of **30 distinct originals at 2560** took
+**597.95 seconds (9 minutes 58 seconds)**; median per job was 15.28 seconds,
+30/30 succeeded. This includes default source preparation for every photo.
+Peak process working set was 2.85 GiB during that batch, including full decode
+buffers; it is not a proposed preview-memory budget. The DJI default load
+alone cost about 100 seconds, showing why M1's plain decode cannot stand in
+for this measurement.
+
+Suggestions for Steve: this CPU path supports a **prepare-ahead command**, not
+an instant switch that must build uncached photos on screen. Already stored
+previews and a future GPU job need separate display/build trials. **2560** is
+a reasonable starting long edge for the measured 2560-wide window; 1920 is
+cheaper, while 3840 nearly doubles the pooled warm cost and median file size.
+This is a cost recommendation, not a visual-quality qualification. An
+adjustable **10 GiB combined preview-cache limit** would hold roughly 2,600
+median 2560 gain-map files alone, or about 2,000 with illustrative headroom
+for other cached items. Actual 2560 files ranged 2.39-8.13 MiB by sample;
+thumbnail/map/source-cache usage must be counted before promising capacity.
+No existing source-cache limit or budget is changed.
+
+Excluded from M2: the earlier oversized line-scan source and unsupported
+merged HDR DNG, virtual copies, local masks, cold disk, network drives,
+GPU file creation and display latency. The ten-file sample is Sony-heavy;
+its defaults/size distribution are not representative of all libraries.
+
+**M3, October 10 (disposable index instrument):** File stat, grouped capture
+metadata through persistent ExifTool 13.59, and existence/read/validation of
+a trial beside-photo settings document; 33 original files, one first read
+and five repeats each. All 33 supplied camera and capture fields. ExifTool
+is the temporary R1 tool, not a newly selected or bundled application reader.
+The instrument keys camera/capture by `IFD0:Model` and
+`ExifIFD:DateTimeOriginal`; grouped conflicting tags remain in the payload.
+This does not settle application field precedence.
+
+Instrument layout: SQLite photos rows hold path/file facts, camera/capture,
+rating, metadata JSON and optional settings JSON; a separate table holds tags.
+Path, rating, camera, capture and tag indexes support paged queries; this
+layout is solely a measuring instrument, not the library schema decision.
+
+| Per-photo read | Median, ms | Scope |
+|---|---:|---|
+| First read through persistent reader | 27.07 | Stat + capture fields + settings existence; no settings on originals |
+| Repeated read | 14.79 | Same work, warm reader/file cache |
+| Temporary JPEG without settings | 5.04 | Nine repeated reads of a matched copy |
+| Same JPEG with today's ZIP/JSON settings | 5.36 | Read and validate current default document; 8,810 uncompressed bytes |
+
+Reader startup was 1.05 seconds once. The matched settings increment was
+0.32 ms here; large local-mask documents were not sampled. The whole-file
+read means were 42.41 ms first / 15.02 ms warm; projections use these means,
+not the median, plus 25% edited photos and actual measured insert time.
+
+Actual synthetic databases use source-backed metadata, two tags per photo
+from a 100-tag pool, ratings 0-5, synthetic capture dates, and today's full
+default settings JSON on 25% of rows. Each scale was inserted once in batches
+of 1,000 with one commit, reopened with an 8 MiB SQLite page cache, then queried.
+Amortized insert cost was 0.38-0.47 ms per photo at these scales.
+
+| Photos | Synthetic insert, seconds | Database, MiB | Bytes/photo | Open/query process working / private, MiB | Projected full index, warm-to-first model |
+|---|---:|---:|---:|---:|---|
+| 10,000 | 3.77 | 36.91 | 3,871 | 78.2 / 94.8 | 2.6-7.2 minutes |
+| 50,000 | 19.70 | 184.82 | 3,876 | 83.0 / 99.6 | 12.9-35.8 minutes |
+| 200,000 | 94.01 | 740.27 | 3,881 | 85.8 / 102.6 | 51.9-143.2 minutes |
+
+Full index times are extrapolations, not scans of 200,000 real files and not
+cold-disk bounds or confidence intervals. They include reader startup,
+measured mean read cost, the settings increment and synthetic insert cost;
+folder traversal, other disks, network access and process/module startup
+are excluded. Memory is the open Python/SQLite instrument after queries,
+with the metadata reader shut down; it excludes the app UI, thumbnails,
+GPU textures, Grade and simultaneous indexing. Bounded page-cache memory
+must not be extrapolated as a linear per-photo RAM charge.
+
+| Warm query median, ms (11 repeats) | 10,000 | 50,000 | 200,000 |
+|---|---:|---:|---:|
+| Rating filter, first 100 IDs | 0.46 | 0.45 | 0.42 |
+| Tag filter, first 100 IDs | 0.47 | 0.46 | 0.43 |
+| Camera filter, first 100 IDs | 0.46 | 0.46 | 0.43 |
+| Capture sort, first 100 IDs | 0.46 | 0.45 | 0.42 |
+| Full-path sort, first 100 IDs | 0.45 | 0.45 | 0.42 |
+| Rating + tag, capture sorted, first 100 IDs | 0.52 | 0.71 | 12.05 |
+| Exact camera count | 0.61 | 1.29 | 3.80 |
+| Fetch 100 rows of file facts/metadata | 0.54 | 0.54 | 0.52 |
+
+The first combined filter/sort query after reopening took 1.48 / 5.59 /
+15.87 ms at those scales. Exact rating/tag counts stayed below 1 ms warm;
+the camera filter uses the largest sampled camera group. These are paged
+index operations, not sorting/materializing every photo into UI memory.
+
+Suggestion for Steve: **200,000 photos is a plausible provisional index
+size target** with paged results, given the measured 12 ms combined query
+and roughly 740 MiB database. It is not yet a promise for the complete
+library UI or every filter distribution. Confirm actual UI/thumbnail and
+large-folder behavior before making that promise; first indexing should be
+background work. Long tags, many tags, virtual copies, large masks and
+unindexed/adversarial queries remain unmeasured. The merged DNG is included
+for metadata only; the oversized line-scan exclusion remains.
+
+**M6, October 10 (external refresh/scheduling trial):** A +0.25 EV change
+in both lanes remade the gain-map file through the unchanged CPU renderer.
+Single-photo medians pool the same 20 observations per edge as M2. Batch work
+uses one below-normal process with the shipped helper's thread settings.
+
+| Long edge | Edited remake median, seconds |
+|---|---:|
+| 1920 | 3.00 |
+| 2560 | 4.50 |
+| 3840 | 8.79 |
+
+| Remake jobs at 2560 | Median per job, seconds | Observed batch total, seconds | Separate source preparation, seconds |
+|---|---:|---:|---:|
+| 50 | 4.46 | 214.01 (3 minutes 34 seconds) | 167.94 |
+| 500 | 4.45 | 2,130.96 (35 minutes 31 seconds) | 151.24 |
+
+Both batches succeeded completely. These are 50/500 actual render/encode/write
+jobs cycling **ten prepared source proxies**, not 50/500 distinct uncached
+photos or an implemented library paste command. Preparation holds those ten
+reduced sources in RAM and is excluded from the warm batch total; it must not
+be read as preparation time for 500 photos. Process working set ended at
+about 722 / 726 MiB, with roughly 2.81 GiB peak during full source preparation.
+This is an instrument allocation, not the eventual helper/cache policy.
+
+The development Electron app at 2560x1440 graded the real `DSC00264.ARW` on
+Steve's **NVIDIA GeForce RTX 4070 Ti** (Windows driver 32.0.16.1692; app adapter
+reported NVIDIA Lovelace, not fallback). Preview-file jobs used the Ryzen 5
+7600 CPU. Twenty exposure gestures were sampled idle and at batch start;
+the 500-job run sampled another twenty every five minutes through minute 35.
+
+| Trial | Idle Grade median, ms (20 gestures) | Grade median under refresh, ms | Under-refresh p95, ms |
+|---|---:|---:|---:|
+| 50 jobs, initial 20 gestures | 23.10 | 22.38 | 40.12 |
+| 500 jobs, initial + seven later samples, 160 gestures | 23.70 | 21.30 | 34.46 |
+
+Medians are calculated from the raw samples, averaging the middle pair for
+even counts; p95 uses nearest rank. Wall times include automation and 16 ms
+completion polling, not just GPU execution. Later sample medians ranged
+20.42-22.83 ms; maximum animation-frame gap within the refresh samples was
+24.3 ms, versus 18.1 ms idle. All gestures reached an exact ready presentation.
+Differences this small do not establish a speed improvement under load.
+
+Suggestion for Steve: cached exposure-change refresh can run asynchronously
+without an observed sustained Grade slowdown in these brief samples; large
+pastes still take minutes on this CPU path. Coalescing changes and prioritizing
+visible photos deserve implementation trials. This is an equivalent-priority
+external process, because F3 has no HDR-preview job yet. It does not qualify
+the shipped helper for HDR work or prove the absence of perceptible stutter;
+Steve's use remains the feel check. Source preparation responsiveness,
+uncached distinct-photo pastes, source redevelopment, large local masks,
+export overlap, cancellation and a whole-library refresh were excluded.
+
+**T1, October 10 (trial entirely outside the app):** Temporary copies of
+Canon CR2, Fuji RAF and DJI JPEG were saved beside today's project document,
+closed and reopened. Three grade changes 50 ms apart used a trial 500 ms
+debounce; leaving cancelled the timer and saved immediately. Reopening
+verified the final grade after both saves, with no duplicate delayed save.
+
+| Temporary copy | Repeated save median, ms | Project file, bytes | Last change to completed debounced save, ms |
+|---|---:|---:|---:|
+| Canon 5D III CR2 | 5.86 | 2,435 | 508.9 |
+| Fujifilm X-E2S RAF | 5.34 | 2,346 | 513.6 |
+| DJI JPEG | 5.13 | 2,343 | 514.7 |
+
+Each median covers nine saves, including the debounced and leaving saves.
+First-save single observations were 132 / 28 / 17 ms respectively, including
+initial source-fingerprint work; they are not medians. Existing serialization,
+normal reopen, source verification and temporary-file/replace saving worked
+unchanged. Today's document is a ZIP containing JSON; this trial does not
+choose plaintext JSON, an ending or the final beside-photo file format.
+
+Moving each temporary folder exposed the existing absolute source link:
+the unchanged opener requested relinking even with the photo beside it.
+A trial-only sibling resolver supplied that photo through the existing
+explicit-source opener and kept fingerprint verification. Debounce, timer
+cancellation and leaving flush are also external trial code; the app's gate
+and autosave UI are not implemented or changed. Suggestion: the steady save
+cost supports a short debounce, provided the eventual sibling lookup and
+leaving/error handling are designed. Read-only folders, concurrent writes,
+large local masks, crash/power-loss durability and disk-full errors were
+excluded; this is not a guarantee of their behavior.
+
+Reproduce from `codebase` with the `.venv` Python and
+`tests/performance/photo-library-remaining.py` in `matrix`, `index`, `trial`
+and `bulk --count 30 --result m2-screen-30.json` modes. The index mode accepts
+`--exiftool <temporary-exe>`; the earlier corpus is required. Run the M6 driver
+sequentially with `node tests/run-in-electron.js` followed by
+`tests/performance/photo-library-refresh-interaction.js --count 50` and then
+`--count 500`, with `HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440`.
+Both scripts are committed instruments; raw JSON/logs/databases and temporary
+copies stay in ignored `codebase/output/library-measurements/remaining`.
+
+Validation: 438 JavaScript and 1,588 Python fast tests passed (3 Python skips).
+Both focused M6 Electron trials completed successfully,
+sequentially at the required window size. All ten M2 cases, 33 metadata reads,
+three synthetic index sizes, 30 distinct screen previews and three T1 trials
+completed. An earlier redundant full-decode probe hit its case timeout; the
+reported cold measurements instead use explicit load/build components.
+The interaction driver's initial Windows path escaping was corrected before
+both successful trials. No application/export/Proof/shader code was changed.
+
+**Status, October 10:** M2/M3/M6 CPU/instrument baselines and T1 are recorded;
+GPU library-preview building and the complete library UI still need
+implementation-specific trials. All defaults
+and size targets above are suggestions for Steve. No reader, schema, format,
+preview pipeline or cache budget is adopted, and no visible behavior changes.
+
+The top menus (File, Edit, View, Window) need no mock-up
 (Steve, October 10); their contents follow from the commands in section 5
 and are listed in the build brief.
 
