@@ -7,18 +7,22 @@
     let commands = Promise.resolve(), draft = "", tagRequest = null, tagTimer = null, undoAvailable = false;
     const targets = () => options.photos().filter(photo => options.selection().has(photo.path));
     const marks = photo => photo.marks || empty();
-    function enqueue(route, body) {
-      commands = commands.then(async () => {
+    function enqueue(route, body, strict = false) {
+      // One command at a time. A strict caller (tags, albums) gets the result or the error.
+      const task = commands.then(async () => {
         options.status("Saving marks…");
         const result = await options.api(route, body);
         const byPath = new Map(result.photos.map(row => [row.path, row]));
         for (const photo of options.photos()) { const row = byPath.get(photo.path); if (row) Object.assign(photo, row); }
         undoAvailable = result.undo_available;
-        options.updated();
+        options.updated(result);
         options.status(result.warnings[0] || (result.photos.length ? `${result.photos.length.toLocaleString()} photos saved` : "No marks changed."));
-      }).catch(error => options.status(error.message));
-      return commands;
+        return result;
+      });
+      commands = task.catch(error => { if (!strict) options.status(error.message); });
+      return strict ? task : commands;
     }
+    const named = label => { const name = options.labelName?.(label); return name ? `${name} · ${label} label` : `${label} label`; };
     function change(patch) {
       const paths = targets().map(photo => photo.path);
       if (paths.length) return enqueue("/api/library/marks", { paths, change: patch });
@@ -35,7 +39,7 @@
       }
       if (value.label) {
         const dot = document.createElement("span"); dot.className = "library-label-dot";
-        dot.style.background = `var(--label-${value.label})`; dot.title = `${value.label} label`; dot.setAttribute("aria-label", `${value.label} label`); root.append(dot);
+        dot.style.background = `var(--label-${value.label})`; dot.title = named(value.label); dot.setAttribute("aria-label", named(value.label)); root.append(dot);
       }
       return root;
     }
@@ -66,7 +70,7 @@
       section.append(flags);
       const colours = document.createElement("div"); colours.className = "library-label-controls";
       labels.forEach((label, i) => {
-        const control = button("", `${label} label · ${i + 6}`, { label, toggle_label: true });
+        const control = button("", `${named(label)} · ${i + 6}`, { label, toggle_label: true });
         const dot = document.createElement("span"); dot.className = "library-label-dot"; dot.style.background = `var(--label-${label})`; control.append(dot);
         control.setAttribute("aria-pressed", String(list.every(photo => marks(photo).label === label))); colours.append(control);
       });
@@ -122,7 +126,8 @@
       else return false;
       return true;
     }
-    return Object.freeze({ details, strip, shortcut, undo: () => enqueue("/api/library/undo", {}), setUndo: value => { undoAvailable = value; }, settled: () => commands });
+    return Object.freeze({ details, strip, shortcut, undo: () => enqueue("/api/library/undo", {}), run: (route, body) => enqueue(route, body, true),
+      undoAvailable: () => undoAvailable, setUndo: value => { undoAvailable = value; }, settled: () => commands });
   }
   window.HDRLibraryCulling = Object.freeze({ create });
 })();

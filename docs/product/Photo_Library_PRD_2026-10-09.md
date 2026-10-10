@@ -3,7 +3,9 @@
 **Date:** October 9, 2026
 **Status:** Slice 1 is authorized by the October 10 brief. Stages A (looking
 at photos), B (culling), and C (find, HDR, sharpness) are implemented on
-`photo-library` and ready for Steve to try. The
+`photo-library` and ready for Steve to try. Slice 2 (pop-out window,
+background indexing, fuller details, filter rules, tag management, albums)
+is implemented and awaits his trial; see section 8. The
 October 10 decisions below supersede the older preview proposals.
 
 **How to read the labels:** *Decided* means Steve has agreed it. *Proposed*
@@ -546,7 +548,8 @@ Proposed:
     Rating or tagging alone does not make a photo edited.
   - *Exported:* exported at least once. Also "edited since last export".
 - **Album names are also written into each photo's sidecar**, so albums
-  rebuild on another machine and a lost database loses nothing. (Open.)
+  rebuild on another machine and a lost database loses nothing. (Decided
+  by Steve, October 10: yes.)
 
 Proposed, mocked up October 10 (not yet confirmed by Steve):
 
@@ -2138,6 +2141,80 @@ source-handoff check also passed its original Cancel/Discard assertions after
 its obsolete Import-button startup wait was updated to the current Library.
 No checks were loosened.
 
+**Slice 2, remaining parts — October 10 implementation:**
+
+*Background indexing.* Pinned folders are indexed in the background, on by
+default, including folders never opened. It starts when the Library first
+loads, after a folder is pinned, and on request. Folder walks and camera
+details run in the helper on a lane of their own, which stops between files
+whenever visible Library work is queued or Grade/export has paused the
+helper. The backend stays the only database writer. A pass records each
+file's size, date and camera details, and reads existing `.hdrf` files, so
+marks, tags and albums in unvisited folders are known. Unchanged files are
+not read again. The bottom bar shows progress at its right edge; a click
+offers Pause/Resume, Re-scan pinned folders now, and turning background
+indexing off or on. Not built: watching folders for changes (re-scan is at
+start, on pinning and on request), processor-use and battery settings,
+leaving out chosen pins, the Settings page, and dimmed offline thumbnails.
+
+*Details panel.* One selected photo shows type, size, capture time and its
+albums, then a six-line camera summary. Show all swaps it for File, Camera,
+Lens, Exposure, Location and "Written by the camera"; the choice is not
+kept between launches. A value the file does not record shows "Not
+recorded", an unidentified lens "Unknown", and details not yet read
+"Reading…". Nothing is guessed. The File group says whether a settings file
+exists. The reader is still today's ExifRead without maker notes (open
+decision 15), so lens names can be missing for some brands and there is no
+Focus and drive group. Not built: Set name for an unknown lens, title and
+caption, and the authoring template (slice 8).
+
+*Filter bar.* "+ Filter" lists Camera, Lens, ISO, Focal length, Aperture,
+Shutter speed, Capture date, File type and Tag. Choice fields offer the
+values found in the photos on screen with counts; ISO and date take a
+number or a range. Each rule can be "is not". Rules show as chips; a click
+removes one. With two or more, Match all / Match any appears. Sort gained
+Date modified. State, virtual copy and linked wait for their slices, as
+does Save as smart album (slice 6); the rule format is ready for it.
+
+*Tags and Labels window* (Manage tags and labels… in Details): every tag
+with its count, search, sort by name or most used, multi-select. Rename,
+Merge, Remove, New tag and Show photos. Renaming to an existing name stops
+and asks before merging. Changes reach every connected photo that carries
+the tag, rewrite those `.hdrf` files, and are one undo step each. Photos on
+folders that are not connected are left as they are and counted in the
+result. The four colour labels can be given a meaning, shown in tooltips.
+
+*Albums.* A section under Folders with a count per album. + makes an empty
+album or one from the selection. Photos join by right-click (Add to
+<album>) or by dragging thumbnails onto the album; Remove from <album>
+appears while looking at it. Right-click an album to rename or delete it;
+neither touches a photo file. Each is one undo step. Membership is written
+to each photo's `.hdrf` as `albums` and indexed in the database; a deleted
+database is rebuilt from those files. An empty album exists only in the
+database. In folders that cannot be written, membership stays in the
+database, as marks do. An album or tag view lists photos across the whole
+indexed library and stays current as photos join or leave.
+
+Label meanings and the indexing on/off choice are kept in
+`library-preferences.json` beside the existing pinned-folder list in the
+app data area, not in the database and not yet in
+`application-preferences.json` (that file belongs to the desktop shell;
+moving them is small if Steve prefers one file).
+
+Known limits: a tag or album command on many thousands of photos rewrites
+one settings file each and can take a while; a first index of a very large
+library follows the M3 estimates; undoing a library-wide command fails as
+a whole if one of its photos has since gone missing.
+
+Validation: 458 JavaScript, 22 desktop and the Python fast checks passed
+(three existing skips). New data checks cover tag and album commands,
+undo, unwritable folders, rebuilding from settings files, the index and
+indexing of an unvisited pinned folder through the real helper. One
+metadata check that pinned the old two-field record was updated to the
+fuller record. Focused Electron checks at 2560×1440 on disposable copies:
+the new `tests/photo-library-slice-2.js`, Stage B culling and the
+navigation/pop-out check. Physical HDR across monitors still needs Steve.
+
 Proposed. Each slice is usable on its own.
 
 | Slice | Contents | What Steve can do afterwards |
@@ -2169,7 +2246,8 @@ For Steve, one at a time, each with its trade-off.
    index ending remains open.
 2. Virtual copies: all in the photo's one sidecar (Claude's lean), or one
    file per copy.
-3. Whether album names are also written into sidecars (Claude's lean: yes).
+3. ~~Whether album names are also written into sidecars.~~ Settled
+   October 10: yes. Adding a photo to an album may create its `.hdrf` file.
 4. How many "before" states to keep: one, or a short list.
 5. Whether the session-start state is kept after the app closes (lean: yes,
    until a later session changes that photo).

@@ -30,7 +30,7 @@ class LibraryIndex:
         self._thread = None
         self._generation = 0
         self._paused = False
-        self._progress = {"state": "idle", "folder": "", "done": 0, "total": 0}
+        self._progress = {"state": "idle", "folder": "", "done": 0, "total": 0, "passes": 0}
 
     # Personal settings stay outside the database, which can be rebuilt.
 
@@ -226,7 +226,7 @@ class LibraryIndex:
                 self.remember_facts(records)
                 done += len(waiting[start:start + 32])
                 self._set(done=done)
-        self._set(state="idle", folder="", done=0, total=0)
+        self._set(state="idle", folder="", done=0, total=0, passes=self._progress["passes"] + 1)
 
     def _run(self):
         failures = 0
