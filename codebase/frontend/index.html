@@ -13,7 +13,7 @@
       <div class="window-menu">
         <button class="window-menu-trigger" type="button" aria-expanded="false" aria-haspopup="menu">File</button>
         <div class="window-menu-popover" role="menu" hidden>
-          <button type="button" role="menuitem" data-desktop-command="open-source">Import Source…</button>
+          <button type="button" role="menuitem" data-desktop-command="open-source">Open Image…</button>
           <span data-window-menu-slot="project-open"></span>
           <span class="window-menu-separator" role="separator"></span>
           <span data-window-menu-slot="project-save"></span>
@@ -98,7 +98,7 @@
       </div>
 
       <nav class="workflow-tabs" aria-label="Workflow stages">
-        <button class="workflow-tab active" type="button" data-workflow-tab="import" aria-selected="true"><span aria-hidden="true">01</span>Import</button>
+        <button class="workflow-tab active" type="button" data-workflow-tab="import" aria-selected="true"><span aria-hidden="true">01</span>Library</button>
         <button class="workflow-tab" type="button" data-workflow-tab="grade" aria-selected="false"><span aria-hidden="true">02</span>Grade</button>
         <button class="workflow-tab" type="button" data-workflow-tab="proof" aria-selected="false"><span aria-hidden="true">03</span>Proof</button>
         <button class="workflow-tab" type="button" data-workflow-tab="export" aria-selected="false"><span aria-hidden="true">04</span>Export</button>
@@ -118,6 +118,10 @@
       <button id="update-notice-open" class="button-secondary" type="button">View release</button>
       <button id="update-notice-dismiss" class="text-button" type="button" aria-label="Dismiss update notice">Dismiss</button>
     </aside>
+
+    <div id="library-host" class="library-host">
+      <iframe id="library-frame" src="/static/photo-library.html" title="Photo Library"></iframe>
+    </div>
 
     <aside class="source-rail panel" aria-label="Metadata">
       <div class="rail-title-row">
@@ -1879,6 +1883,7 @@
   <script src="/static/preview-pipeline.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app-state.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/media-browser-editor.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/library-editor.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app-boot.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/proofing-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

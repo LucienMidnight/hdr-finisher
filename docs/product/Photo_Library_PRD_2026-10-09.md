@@ -1,11 +1,10 @@
 # Photo Library PRD
 
 **Date:** October 9, 2026
-**Status:** Requirements agreed in outline. **Not yet a build brief for the
-library itself.** Three things are still to come before library features are
-built: the measurements in section 7, a wireframe of the views, and the open
-decisions in section 9. The foundation work in section 1 does not depend on
-any of those and can start now.
+**Status:** Slice 1 is authorized by the October 10 brief. Stage A (looking
+at photos) is implemented on `photo-library` and ready for Steve to try.
+Stages B (culling) and C (find, HDR, sharpness) remain to be built. The
+October 10 decisions below supersede the older preview proposals.
 
 **How to read the labels:** *Decided* means Steve has agreed it. *Proposed*
 means Claude's suggestion, not yet confirmed. *Open* means a choice still to
@@ -264,6 +263,26 @@ All decided.
 | 23 | Size target | There must be one. Number set after measuring. |
 | 24 | Claude's ten feedback points | All agreed (slices, early trials, helper process, minimal UI, "before" safety net, look mismatch, overlay before score, sync conflicts, light testing, groundwork first). |
 | 25 | AI features | Version 2 at the earliest. An MCP server is wanted before 1.0 (section 11). |
+
+### Decisions made on October 10, 2026
+
+Steve authorized Stage A of the slice 1 brief on October 10:
+
+- Build the library first; leave the known DNG colour and Canon/DJI
+  brightness faults for Steve to judge in use.
+- Give the library its own quick demosaic, with no lens correction,
+  highlight reconstruction, denoise or DNG correction opcodes. Grade and
+  export keep their existing corrected routes.
+- Draw optional HDR live from the same quick scene picture. Do not make
+  gain-map preview files or require a prepare-ahead command.
+- Lower resolution is acceptable for browsing. Source saturation uses a
+  simple hard clip to neutral white on the camera RAW and linear DNG routes.
+- Sidecars use the complete photo filename plus `.hdrf`, for example
+  `DSC02339.ARW.hdrf`. `.hdrfinisher` remains the saved-project ending.
+- Keep the library as a separate page, docked in a same-origin frame. This
+  keeps its state independent of Grade and leaves the page reusable for
+  the later pop-out window. Only this page permits same-origin framing;
+  other pages retain the existing frame prohibition.
 
 ---
 
@@ -594,79 +613,55 @@ Proposed, mocked up October 10 (not yet confirmed by Steve):
 
 ### 5.9 Thumbnails, previews and zoom
 
-Decided:
+Decided October 10, superseding the stored gain-map and prepare-ahead
+proposals:
 
-- **Nothing is written next to photos except the sidecar.** Thumbnails,
-  previews and focus maps live in one cache in the app's data area.
-- Made when first looked at, then reused. The cache is disposable.
-- **User-set cache size limit.** When reached, the least recently used are
-  removed first, **in batches**, so the app is not constantly deleting and
-  remaking.
-- **The grid is SDR by default.**
-- **"Create HDR previews"** is a command run on a folder, album, selection or
-  several folders at once. It works in the background and each thumbnail
-  switches to HDR as its preview becomes ready.
-- HDR previews are built at **screen size** as well as thumbnail size, with a
-  **resolution limit**; full-size images are never stored as previews.
-- **Comfort cap:** the HDR grid is limited to 1000 nits by default,
-  adjustable.
-- If measurement shows it is fast enough, **prefer a simple HDR toggle** that
-  builds previews for whatever is on screen. The command then remains as the
-  way to prepare a folder ahead of time.
-- **Generic method.** The same steps for every camera and format. No feature
-  may depend on the camera's embedded JPEG, whose size varies from full size
-  to tiny to absent.
+- Nothing is written beside photos except sidecars. Looking at photos
+  writes no sidecars. Pictures live in the existing app cache area and
+  can be deleted without losing work.
+- The library makes its own quick picture at first view, then reuses it.
+  Camera RAW uses a plain half-size linear demosaic. Linear DNG uses a
+  separate plain decode, without correction opcodes. Neither route runs
+  lens correction, highlight reconstruction or denoise.
+- Real embedded/decoder-supported pictures may appear first for slow
+  formats, followed by the quick picture. They are a head start; the
+  feature does not depend on an embedded JPEG being present.
+- Pictures hold reduced scene-linear data, so the graphics card can draw
+  SDR or HDR live from the same cache entry. There are no gain-map preview
+  files. Grade still opens through its normal fully corrected route.
+- The grid defaults to SDR. The optional HDR switch and its 1000-nit grid
+  comfort cap are Stage C work.
+- Stage A shows the default starting look. Showing saved grades is slice 3.
+- Only visible grid/filmstrip cells are requested. Requests are cancelled
+  when they leave the screen. Single view reads ahead to its next and
+  previous neighbours. Work uses the existing low-priority helper and
+  pause gate for Grade/export.
+- Reduced browsing pictures are acceptable. Stage A uses 512-pixel grid
+  pictures, 192-pixel filmstrip pictures, and 1280/1920/2560-pixel single
+  pictures according to the space available. Native 100% zoom is Stage C.
+- Stage A caches compressed float16 scene pixels, plus an authored SDR
+  reference where supplied, in `.npz` entries keyed by source path, size,
+  modification time, resolution, quality and picture version. No display
+  tone mapping is baked into the scene pixels.
+- The initial fixed disk limit is 2 GB. Least-recently-used entries are
+  removed in batches to leave a 10% gap; a user setting can follow later.
+  Natural 512-pixel RAW pictures checked October 10 were about 0.7–0.9 MB
+  each; a HEIC/AVIF picture with a second reference was about 2.1 MB. Tiny
+  synthetic gradients compress much more and are not a sizing estimate.
+- The drawing surface is reused rather than retaining renderer
+  intermediates for every photo visited. Source texture caching uses the
+  existing GPU allocator unchanged.
+- `HDR_FINISHER_DEV_LIBRARY_TIMING=1` enables first-picture timing on the
+  displayed photo or thumbnail under the pointer. It is hidden by default.
 
-The three tiers (decided as the approach, numbers to be measured):
+Known roughness accepted for the early usable library: quick colours on
+some DNGs and Canon/DJI brightness are not yet corrected. A format with no
+usable embedded picture must wait for its real decoder. Library pictures
+currently require WebGPU; Grade's existing CPU fallback is unchanged.
 
-1. **Embedded JPEG, instantly**, as a head start. For each file the app
-   checks what is actually there and uses it only if it is big enough for the
-   size being shown. No per-camera lists.
-2. **Quick plain decode** of the RAW: no grade, no denoise, simplest
-   reconstruction. This is what everything relies on. It serves zooming in,
-   focus maps and exposure maps. A reduced-size decode covers "fit to
-   window" and the maps; a full decode is only for a true 100% view.
-3. **Full HDR Finisher rendering**, only for Grade and for HDR previews.
-
-Files that are not RAW follow the same steps with their own quick decode.
-
-Proposed:
-
-- HDR previews show HDR Finisher's rendering: the default look for unedited
-  photos, the user's grade for edited ones. This also removes the mismatch
-  between the browsing look and the opened look.
-- Edited photos always get a preview of their grade, saved when work on the
-  photo settles, even when HDR previews have not been requested.
-- Preview size limit: 2560 pixels on the long edge by default, with a
-  setting (for example 1920 / 2560 / 3840).
-- One stored file that serves both the HDR and SDR preview modes (a small
-  gain-map image; the app already makes gain maps).
-- The grid draws only what is on screen and drops requests for thumbnails
-  that have scrolled away.
-- **Read ahead:** while flipping through photos, decode the next and previous
-  in the background. Keep only a few decoded photos in memory.
-- The comfort cap rolls bright highlights off smoothly and applies to the
-  grid only; single view and compare show the true image.
-- The preview job has progress, pause and cancel, gives way to grading and
-  export, and carries on after the app is restarted.
-- A photo whose grade changes gets its previews remade.
-- Cache keyed so a moved or renamed photo keeps its previews. Cache location
-  movable to another drive.
-
-Proposed, mocked up October 10 (not yet confirmed by Steve). Numbers wait
-for measurement M2:
-
-- **HDR button** in the grid toolbar, following the Focus and Exposure
-  pattern: H is the quick switch, a click opens the options (the switch,
-  the brightness limit, and "Create HDR previews for this folder").
-- Turning HDR on makes previews for the photos on screen. Each thumbnail
-  switches as its preview is ready and carries a small "HDR" mark in its
-  strip; the rest stay SDR. This is the simple toggle the PRD prefers and
-  depends on M2 showing it is fast enough.
-- **Create HDR previews** on a selection, folder or album prepares them
-  ahead of time. Progress shows in the bottom bar with pause and cancel;
-  previews already made are kept when it is cancelled.
-- The brightness limit is a personal setting, kept in preferences.
+Later proposals still to settle: user cache/size settings, comfort-cap
+behaviour, moved-photo cache identities and movable cache storage. The
+older "Create HDR previews" mock-up controls are superseded by live HDR.
 
 ### 5.10 Overlays: focus, and exposure
 
@@ -743,7 +738,8 @@ Proposed:
 
 Decided:
 
-- **Sidecar:** one small file next to each photo. Holds that photo's
+- **Sidecar:** decided October 10: the photo's full filename plus `.hdrf`
+  (for example `DSC02339.ARW.hdrf`). One small file next to each photo. Holds that photo's
   adjustments, rating, pick status, tags and virtual copies. Hidden while
   browsing in the library.
 - **Database:** one file in the app's data area. Holds pins, albums, smart
@@ -764,7 +760,7 @@ Proposed:
   file, which already holds only settings and points at its photo. It looks
   for its photo beside itself first.
 - Named with the photo's full file name plus an ending
-  (`DSC02339.ARW.<ending>`), so a RAW and a JPEG of the same name each get
+  (`DSC02339.ARW.hdrf`), so a RAW and a JPEG of the same name each get
   their own, and it sorts beside its photo in Explorer.
 - Created only when a photo is first rated, tagged or edited. Looking at a
   folder writes nothing.
@@ -1145,16 +1141,14 @@ Notes for whoever turns this into build briefs. Proposed unless stated.
 - The shell starts one backend and opens windows that load pages from it.
   Both windows see the same pins, marks and previews because those live in
   the backend.
-- **Docking is the open question.** Two candidates:
-  - The library is its own page, shown inside the main window in a frame.
-    Simple to layer with the rest of the interface. Popping out reloads it in
-    a new window and restores its state.
-  - The library is its own page in a native view that the shell places over
-    the preview area and can hand to another window. State survives the
-    move untouched, but menus and dialogs of the main window cannot draw over
-    it and its position must be kept in step with the layout.
-  - Either way the library is a separate page that does not share the
-    editor's `state` (F4).
+- **Stage A docking:** an independent library page in a same-origin frame
+  covers the workspace beneath the stage tabs, including its own folders
+  and details rails. The old editor workspace is hidden and inert while
+  Library is selected. The page does not share the editor's `state` (F4).
+  A small bridge passes activity, review and open-photo messages. Open-photo
+  grants the path through the desktop and invokes the existing leave gate.
+  The future pop-out can reload the same page and restore its state; native
+  view ownership is not needed for the docked stage.
 - The windows tell each other things ("open this photo", "rating changed",
   "export finished") through the shell or the backend.
 
@@ -1953,6 +1947,36 @@ The wireframe for the views in 5.3 is the mock-up in
 
 ## 8. Build order
 
+**Slice 1, Stage A — October 10 implementation:** the main window now opens
+on Library. Add folder accepts several folders; pins persist using the
+existing preferences store. Pins expand lazily, and clicking a folder lists
+supported photos recursively. Grid and filmstrip render only visible cells;
+off-screen requests are cancelled. The size slider, single view, next/previous
+read-ahead, collapsible rails and F/Escape full-screen review work. Enter or
+a thumbnail double-click opens through the existing Grade leave gate. File >
+Open Image and the Library's Open image button still open unpinned files.
+
+Validation: 440 JavaScript tests and 1,594 Python tests passed (three
+existing Python skips); the
+focused 2560×1440 Electron driver checks a disposable 3,001-photo folder,
+cache reuse, actual drawn pixels, folder picker, grid scroll, filmstrip,
+arrows, review, Grade opening and Cancel/Discard through the shared policy.
+The driver supplies deterministic dialog choices; it does not claim a new
+native-dialog audit. It also draws disposable copies of real ARW, linear
+DNG and HEIC through the docked page. A read-only format probe covered Sony/Canon/Fuji/Nikon/
+DJI RAW, linear DxO DNG, HEIC, AVIF, TIFF, EXR and JPEG. Its linear DNG import
+failure was fixed and covered by a regression check that forbids Grade's
+corrected decoder. The tests changed no originals or existing sidecars.
+
+Still to judge in use: responsiveness on Steve's actual large shoots,
+quick colour/brightness, decoder waits where no embedded picture exists,
+and the basic file facts in the details rail. Every Grade source extension
+is routed, but the format probe is representative rather than exhaustive.
+Stage A has no Library CPU fallback. The picker’s Ctrl/Shift multi-folder
+selection follows the mock-up and can be adjusted after Steve tries it.
+Stages B/C, marks/sidecar writes, sort/filter, HDR switching and native zoom
+remain outstanding; no culling controls are implied by this stage.
+
 Proposed. Each slice is usable on its own.
 
 | Slice | Contents | What Steve can do afterwards |
@@ -1979,8 +2003,9 @@ because it affects what the sidecar records.
 
 For Steve, one at a time, each with its trade-off.
 
-1. File endings for the sidecar and for the project index, so Explorer can
-   tell them apart.
+1. Sidecar ending settled October 10: `.hdrf`, appended to the full photo
+   filename. Saved projects keep `.hdrfinisher`. A future portable project
+   index ending remains open.
 2. Virtual copies: all in the photo's one sidecar (Claude's lean), or one
    file per copy.
 3. Whether album names are also written into sidecars (Claude's lean: yes).
@@ -1998,11 +2023,13 @@ For Steve, one at a time, each with its trade-off.
     rendering).
 11. Comfort cap details: smooth roll-off or clip; grid only or everywhere.
 12. HDR preview size limit and default cache size (after M2).
-13. HDR toggle versus per-folder command (after M2).
+13. ~~HDR toggle versus per-folder command.~~ Settled October 10: live HDR
+    switch from quick scene pictures; no stored gain-map previews.
 14. The size target (after M3).
 15. Metadata reader (after R1).
 16. One focus overlay or two.
-17. How docking is done (6.1).
+17. ~~How docking is done (6.1).~~ Stage A uses an independent same-origin
+    frame, chosen under the October 10 brief.
 18. ~~What the side panels show while the library is docked.~~ Settled
     October 9: folders left, details right, both collapsible, reset to open
     on launch (section 5.1).
