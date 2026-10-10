@@ -23,6 +23,7 @@
     <label class="mock-check"><input type="checkbox" id="opt-advance"> Auto-advance</label>
     <label class="mock-check"><input type="checkbox" id="opt-slow" checked> Realistic loading</label>
     <label class="mock-check"><input type="checkbox" id="opt-first"> First run</label>
+    <button type="button" id="mock-edit" disabled title="Pretends you moved a slider on the Grade stage, so the saving behaviour can be tried">Make a pretend edit</button>
     <button type="button" class="mock-keys-button" id="keys-button">Keys</button>
   </div>
 
@@ -169,7 +170,15 @@
     <!-- Grade stage stand-in -->
     <div class="grade-stage" id="grade-stage" hidden>
       <div class="grade-viewer">
-        <div class="lib-bar"><div class="lib-bar-title"><span class="panel-title">Preview Window</span><span class="lib-count" id="grade-name"></span></div></div>
+        <div class="lib-bar">
+          <div class="lib-bar-title"><span class="panel-title">Preview Window</span><span class="lib-count" id="grade-name"></span></div>
+          <div class="lib-tools"></div>
+          <div class="lib-bar-right">
+            <span class="grade-save" id="grade-save"></span>
+            <button class="tool-button" type="button" id="grade-revert" hidden title="Drop the unsaved changes">Revert to last saved</button>
+            <button class="tool-button" type="button" id="grade-save-button" hidden title="Save · Ctrl+S">Save</button>
+          </div>
+        </div>
         <div class="grade-canvas"><img id="grade-image" alt=""><p class="grade-note" id="grade-note"></p></div>
       </div>
       <aside class="stub-grade panel" aria-hidden="true">
@@ -192,6 +201,9 @@
       <dt>Click</dt><dd>Select. Ctrl-click adds, Shift-click selects a range.</dd>
       <dt>Drag in the grid</dt><dd>Draw a box to select. Start on the space around a photo. Ctrl adds.</dd>
       <dt>Right-click</dt><dd>Menu for photos, folders, projects and albums</dd>
+      <dt>T</dt><dd>Type a tag. Suggestions appear as you type; arrows and Enter choose.</dd>
+      <dt>Drag photos</dt><dd>Onto an album in the left panel to add them</dd>
+      <dt>Ctrl+S</dt><dd>On the Grade stage: save (needed only when autosave is off)</dd>
       <dt>Ctrl+C</dt><dd>Copy the grade of the selected photo</dd>
       <dt>Ctrl+V</dt><dd>Paste it onto the selection, with the same choices as last time</dd>
       <dt>Ctrl+Shift+V</dt><dd>Paste, choosing what to bring across</dd>
@@ -213,7 +225,7 @@
       <dt>I</dt><dd>Details panel, open or collapsed</dd>
       <dt>Tab</dt><dd>Collapse or open both side panels</dd>
       <dt>Ctrl+F</dt><dd>Filter bar</dd>
-      <dt>Ctrl+A · Ctrl+Z</dt><dd>Select all · undo last mark</dd>
+      <dt>Ctrl+A · Ctrl+Z</dt><dd>Select all · undo the last library action</dd>
       <dt>Esc</dt><dd>Step back out</dd>
     </dl>
   </div>
@@ -236,7 +248,7 @@
 
   <dialog id="confirm" class="application-dialog app-dialog">
     <div class="application-dialog-header"><div><h2 id="confirm-title"></h2></div></div>
-    <div class="app-dialog-content"><p id="confirm-message" class="lib-confirm-message"></p></div>
+    <div class="app-dialog-content"><p id="confirm-message" class="lib-confirm-message"></p><div id="confirm-fields" class="lib-ask-fields"></div></div>
     <div class="app-dialog-actions" id="confirm-actions"></div>
   </dialog>
 
@@ -259,6 +271,74 @@
       <span class="lib-filter-spacer"></span>
       <button type="button" id="paste-cancel">Cancel</button>
       <button type="button" class="button-primary" id="paste-go"></button>
+    </div>
+  </dialog>
+
+  <dialog id="looks" class="application-dialog lib-export lib-looks">
+    <div class="application-dialog-header">
+      <div><h2 id="looks-title"></h2><p class="lib-picker-sub">A look is a saved set of grade settings. Point at one to preview it; apply it, then adjust it in Grade like any other grade.</p></div>
+    </div>
+    <div class="lib-export-body">
+      <div class="lib-export-recipes" id="looks-list"></div>
+      <div class="lib-looks-side">
+        <div class="lib-looks-preview"><img id="looks-image" alt=""></div>
+        <div class="lib-looks-about" id="looks-about"></div>
+      </div>
+    </div>
+    <p class="lib-paste-notes" id="looks-notes"></p>
+    <div class="app-dialog-actions lib-picker-actions">
+      <button type="button" id="looks-import">Import looks…</button>
+      <span class="lib-filter-spacer"></span>
+      <button type="button" id="looks-cancel">Cancel</button>
+      <button type="button" class="button-primary" id="looks-go"></button>
+    </div>
+  </dialog>
+
+  <dialog id="rules" class="application-dialog lib-rules">
+    <div class="application-dialog-header">
+      <div><h2 id="rules-title"></h2><p class="lib-picker-sub">A smart album is a saved filter. It is always current: photos join and leave as their marks, tags and grades change. Photos stay where they are.</p></div>
+    </div>
+    <div class="lib-rules-body">
+      <label class="lib-export-field"><span>Name</span><input type="text" id="rules-name" spellcheck="false"></label>
+      <div class="rules-mode"><span>Photos that match</span>
+        <div class="opt-segment" id="rules-mode"><button type="button" data-mode="all">all</button><button type="button" data-mode="any">any</button></div>
+        <span>of these rules</span></div>
+      <div id="rules-list"></div>
+      <button type="button" class="text-button" id="rules-add">+ Add rule</button>
+      <div class="paste-kicker">Look in</div>
+      <div class="rules-folders" id="rules-folders"></div>
+    </div>
+    <p class="lib-paste-notes" id="rules-notes"></p>
+    <div class="app-dialog-actions lib-picker-actions">
+      <span class="lib-filter-spacer"></span>
+      <button type="button" id="rules-cancel">Cancel</button>
+      <button type="button" class="button-primary" id="rules-save"></button>
+    </div>
+  </dialog>
+
+  <dialog id="tags" class="application-dialog lib-paste lib-tags">
+    <div class="application-dialog-header">
+      <div><h2>Tags and Labels</h2><p class="lib-picker-sub">Changes here reach every photo in the library that carries the tag. Ctrl+Z takes the last one back.</p></div>
+    </div>
+    <div class="lib-paste-tools">
+      <label class="lib-search">
+        <svg viewBox="0 0 24 24"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0 M21 21l-6 -6"/></svg>
+        <input id="tags-search" type="text" placeholder="Find a tag" spellcheck="false">
+      </label>
+      <span class="lib-filter-spacer"></span>
+      <span class="tags-sort-label">Sort</span>
+      <button type="button" class="text-button" data-tagsort="name">Name</button>
+      <button type="button" class="text-button" data-tagsort="count">Most used</button>
+    </div>
+    <div class="lib-paste-list" id="tags-list"></div>
+    <p class="lib-paste-notes" id="tags-notes"></p>
+    <div class="app-dialog-actions lib-picker-actions">
+      <button type="button" id="tags-show">Show photos</button>
+      <button type="button" id="tags-rename">Rename…</button>
+      <button type="button" id="tags-merge">Merge…</button>
+      <button type="button" id="tags-delete">Remove…</button>
+      <span class="lib-filter-spacer"></span>
+      <button type="button" id="tags-close">Close</button>
     </div>
   </dialog>
 

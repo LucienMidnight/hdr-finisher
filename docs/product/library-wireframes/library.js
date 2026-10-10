@@ -38,7 +38,7 @@
       stars: roll > 0.7 ? 3 + Math.floor(rand() * 3) : 0,
       flag: roll > 0.82 ? "pick" : roll < 0.12 ? "reject" : null,
       edited: rand() > 0.8,
-      copies: i === 3 ? 2 : 0,
+      look: "",
       label: [null, null, null, "red", null, "green", null, null, "orange", null, null, "blue", null][i % 13],
       tags: scene.tags.slice(),
     };
@@ -60,8 +60,9 @@
     { heading: "Projects" },
     { id: "project", icon: "project", label: "Harbour Hotel HDR set", scenes: [2] },
     { heading: "Albums", add: "New album" },
-    { id: "album", icon: "album", label: "Portfolio", match: (p) => p.stars >= 4 },
-    { id: "smart", icon: "smart", label: "Picked, not edited", match: (p) => p.flag === "pick" && !p.edited },
+    // An album is a hand-picked set. A smart album is a saved set of rules.
+    { id: "album", icon: "album", label: "Portfolio", ids: new Set(photos.filter((p) => p.stars >= 4).map((p) => p.id)) },
+    { id: "smart", icon: "smart", label: "Picked, not edited", rules: { mode: "all", folders: null, list: [{ field: "pick", op: "is", value: "Picked" }, { field: "state", op: "not", value: "Edited" }] } },
   ];
 
   const ICONS = {
@@ -75,7 +76,11 @@
     flag: "M5 5a5 5 0 0 1 7 0a5 5 0 0 0 7 0v9a5 5 0 0 1 -7 0a5 5 0 0 0 -7 0v-9z M5 21v-7",
     reject: "M18 6l-12 12 M6 6l12 12",
     edited: "M4 6h8 M16 6h4 M4 12h2 M10 12h10 M4 18h10 M18 18h2 M14 4v4 M8 10v4 M16 16v4",
+    copy: "M8 8h10a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-8a2 2 0 0 1 2 -2z M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2",
   };
+  const esc = (text) => String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const cap = (text) => text[0].toUpperCase() + text.slice(1);
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + "s"}`;
   const icon = (name, cls) => `<svg viewBox="0 0 24 24" class="${cls || name}"><path d="${ICONS[name]}"/></svg>`;
 
   // ---------- state ----------
@@ -104,7 +109,73 @@
   const byId = (id) => photos.find((p) => p.id === id);
   const flatPlaces = () => PLACES.flatMap((p) => [p, ...(p.children || [])]).filter((p) => p.id);
   const placeOf = (id) => flatPlaces().find((p) => p.id === id);
-  const inPlace = (place) => !place ? [] : photos.filter((p) => (place.match ? place.match(p) : (place.scenes || []).includes(p.scene)));
+  const inPlace = (place) => !place ? [] : photos.filter((p) => (place.rules ? matches(p, place.rules) : place.ids ? place.ids.has(p.id) : (place.scenes || []).includes(p.scene)));
+  // Where a photo's image comes from, its place in capture order, and its name on screen.
+  const pic = (p) => String(p.pic === undefined ? p.id : p.pic).padStart(3, "0");
+  const ord = (p) => (p.order === undefined ? p.id : p.order);
+  const title = (p) => p.name + (p.copyOf === undefined ? "" : " · " + p.copyName);
+
+  // ---------- virtual copies ----------
+  // A further grade of one photo, with no second image file. A copy is its own
+  // item with its own grade, marks and tags, and sits beside its original.
+
+  let copySerial = 1000;
+  const copiesOf = (p) => photos.filter((c) => c.copyOf === p.id);
+  function makeCopy(from, name, clean) {
+    const root = from.copyOf === undefined ? from : byId(from.copyOf);
+    const siblings = copiesOf(root);
+    let n = 1;
+    while (siblings.some((c) => c.copyName === "Copy " + n)) n++;
+    const copy = Object.assign({}, from, {
+      id: copySerial++, pic: root.id, copyOf: root.id, copyName: name || "Copy " + n,
+      order: root.id + (siblings.length + 1) / 100,
+      tags: from.tags.slice(), edited: clean ? false : from.edited, look: clean ? "" : from.look, before: undefined, exported: false,
+    });
+    photos.splice(photos.indexOf(root) + siblings.length + 1, 0, copy);
+    return copy;
+  }
+  // Two to start with, so the idea shows without making one first.
+  (function () {
+    const root = photos[3];
+    root.edited = true;
+    Object.assign(makeCopy(root, "Black and white"), { look: "grayscale(1) contrast(1.15)", edited: true, stars: 0, flag: null, label: null });
+    Object.assign(makeCopy(root, "Warm"), { look: "sepia(.28) saturate(1.25) contrast(1.05)", edited: true, stars: 0, flag: null, label: null });
+  })();
+
+  // ---------- rules: one engine for the filter bar and smart albums ----------
+
+  const IS = [["is", "is"], ["not", "is not"]];
+  const AMOUNT = [["gte", "is at least"], ["is", "is"], ["lte", "is at most"]];
+  const same = (get) => (p, value) => get(p).toLowerCase() === value;
+  const FIELDS = {
+    rating: { label: "Rating", ops: AMOUNT, values: ["0", "1", "2", "3", "4", "5"], number: (p) => p.stars },
+    pick: { label: "Pick status", ops: IS, values: ["Picked", "Unmarked", "Rejected"], test: same((p) => (p.flag === "pick" ? "Picked" : p.flag === "reject" ? "Rejected" : "Unmarked")) },
+    label: { label: "Colour label", ops: IS, values: ["Red", "Orange", "Green", "Blue", "None"], test: same((p) => p.label || "None") },
+    tag: { label: "Tag", ops: IS, test: (p, value) => p.tags.includes(value) },
+    state: { label: "State", ops: IS, values: ["Edited", "Exported"], test: (p, value) => !!(value === "edited" ? p.edited : p.exported) },
+    type: { label: "File type", ops: IS, values: ["RAW", "JPG", "HEIC"], test: same((p) => p.kind) },
+    kind: { label: "Kind", ops: IS, values: ["Virtual copy", "Original"], test: same((p) => (p.copyOf === undefined ? "Original" : "Virtual copy")) },
+    camera: { label: "Camera", ops: IS, values: [...new Set(SCENES.map((s) => s.camera))], test: same((p) => p.facts.camera) },
+    lens: { label: "Lens", ops: IS, values: [...new Set(SCENES.map((s) => s.lens))], test: same((p) => p.facts.lens) },
+    iso: { label: "ISO", ops: AMOUNT, number: (p) => p.facts.iso },
+    name: { label: "File name", ops: [["is", "contains"], ["not", "does not contain"]], test: (p, value) => p.name.toLowerCase().includes(value) },
+  };
+  function ruleHolds(p, rule) {
+    const field = FIELDS[rule.field];
+    const value = String(rule.value).trim().toLowerCase();
+    if (field.number) {
+      const [n, v] = [field.number(p), Number(value)];
+      return rule.op === "gte" ? n >= v : rule.op === "lte" ? n <= v : n === v;
+    }
+    return field.test(p, value) === (rule.op !== "not");
+  }
+  const topFolders = () => PLACES.filter((p) => p.icon === "folder" && !p.offline);
+  function matches(p, rules) {
+    if (rules.folders && !rules.folders.some((id) => ((placeOf(id) || {}).scenes || []).includes(p.scene))) return false;
+    const live = rules.list.filter((rule) => String(rule.value).trim() !== "");
+    if (!live.length) return false;
+    return rules.mode === "any" ? live.some((rule) => ruleHolds(p, rule)) : live.every((rule) => ruleHolds(p, rule));
+  }
 
   function computeShown() {
     const f = state.filters;
@@ -120,10 +191,10 @@
       (!text || p.name.toLowerCase().includes(text) || p.tags.some((t) => t.includes(text))));
     const order = { pick: 0, null: 1, reject: 2 };
     const sorts = {
-      time: (a, b) => a.id - b.id,
-      name: (a, b) => a.name.localeCompare(b.name),
-      rating: (a, b) => b.stars - a.stars || a.id - b.id,
-      pick: (a, b) => order[a.flag] - order[b.flag] || a.id - b.id,
+      time: (a, b) => ord(a) - ord(b),
+      name: (a, b) => a.name.localeCompare(b.name) || ord(a) - ord(b),
+      rating: (a, b) => b.stars - a.stars || ord(a) - ord(b),
+      pick: (a, b) => order[a.flag] - order[b.flag] || ord(a) - ord(b),
     };
     state.shown = list.sort(sorts[state.sort]);
   }
@@ -151,7 +222,15 @@
   $("nav").addEventListener("click", (event) => {
     if (event.target.closest(".side-collapse")) return toggleSide("nav");
     const add = event.target.closest(".nav-add");
-    if (add) return add.title === "Add folder" ? openPicker() : toast("Albums come in a later round.");
+    if (add) {
+      if (add.title === "Add folder") return openPicker();
+      const at = add.getBoundingClientRect();
+      const list = targets();
+      return openMenu(at.left, at.bottom + 4, [
+        { label: list.length ? `New album from ${plural(list.length, "selected photo")}…` : "New album…", action: () => newAlbum(list) },
+        { label: "New smart album…", action: () => openRules(null) },
+      ]);
+    }
     const button = event.target.closest(".nav-row");
     if (!button) return;
     const place = placeOf(button.dataset.place);
@@ -178,7 +257,9 @@
 
   function marksHtml(p) {
     const right = [];
-    if (p.copies) right.push(`<span class="copy" title="Has virtual copies">+${p.copies}</span>`);
+    const copies = copiesOf(p).length;
+    if (copies) right.push(`<span class="copy" title="Has ${plural(copies, "virtual copy", "virtual copies")}">+${copies}</span>`);
+    if (p.copyOf !== undefined) right.push(`<span class="copy" title="Virtual copy: ${esc(p.copyName)}">${icon("copy")}</span>`);
     if (p.edited) right.push(icon("edited"));
     if (p.flag === "pick") right.push(icon("flag"));
     if (p.flag === "reject") right.push(icon("reject"));
@@ -187,17 +268,17 @@
 
   // The focus and exposure maps are small images kept beside the thumbnails
   // and drawn over them. They load only once an overlay is switched on.
-  const mapSrc = (kind, p) => `photos/${kind}/${String(p.id).padStart(3, "0")}.png`;
+  const mapSrc = (kind, p) => `photos/${kind}/${pic(p)}.png`;
   const MAPS = ["focus", "high", "low"];
   const overlayImgs = (p) => MAPS.map((kind) => `<img class="ov ov-${kind}" src="${mapSrc(kind, p)}" alt="" loading="lazy">`).join("");
 
   // Colour labels: a small dot, keys 6 to 9. The same key again clears it.
   const LABELS = ["red", "orange", "green", "blue"];
-  const labelDot = (p) => (p.label ? `<i class="label-dot" style="background:var(--label-${p.label})" title="${p.label} label"></i>` : "");
+  const labelDot = (p) => (p.label ? `<i class="label-dot" style="background:var(--label-${p.label})" title="${esc(labelTitle(p.label))}"></i>` : "");
 
   function cellHtml(p) {
-    return `<div class="cell" data-id="${p.id}"><div class="frame"><img src="photos/t/${String(p.id).padStart(3, "0")}.jpg" alt="" loading="lazy">${overlayImgs(p)}</div>
-      <div class="marks"></div><div class="name"><span>${p.name}</span><span>${p.kind}</span></div></div>`;
+    return `<div class="cell" data-id="${p.id}"><div class="frame"><img src="photos/t/${pic(p)}.jpg" alt="" loading="lazy" draggable="true">${overlayImgs(p)}</div>
+      <div class="marks"></div><div class="name"><span>${esc(title(p))}</span><span>${p.kind}</span></div></div>`;
   }
 
   function renderGrid(arriving) {
@@ -216,7 +297,9 @@
     $("empty").innerHTML = !place
       ? `<h2>Add a folder to begin</h2><p>Photos stay where they are. Nothing is copied or imported.</p>
          <button type="button" class="button-primary" id="empty-add">Add folder</button><small>or drag a folder in from Explorer</small>`
-      : total ? "<p>No photos match the filter.</p>" : "<p>No photos here yet.</p>";
+      : total ? "<p>No photos match the filter.</p>"
+        : place.ids ? "<p>This album is empty.</p><small>Drag photos onto it in the left panel, or right-click photos and choose Add to album.</small>"
+          : place.rules ? "<p>No photos match these rules yet.</p><small>Right-click the smart album to edit its rules.</small>" : "<p>No photos here yet.</p>";
     $("place-title").textContent = place ? place.label : "Library";
     $("place-count").textContent = state.shown.length === total ? String(total) : `${state.shown.length} of ${total}`;
     renderFilmstrip();
@@ -235,6 +318,7 @@
       cell.classList.toggle("rejected", p.flag === "reject");
       cell.classList.toggle("reference", state.view === "compare" && state.ref === p.id);
       cell.querySelector(".marks").innerHTML = marksHtml(p);
+      cell.querySelector(".frame img").style.filter = p.look || "";
     });
     app.dataset.view = state.view;
     $("grid").hidden = state.view !== "grid";
@@ -338,12 +422,21 @@
   function undo() {
     const last = state.undo.pop();
     if (!last) return;
+    if (last.back) {
+      last.back();
+      computeShown();
+      renderNav();
+      renderGrid(false);
+      refresh();
+      if ($("tags").open) renderTags();
+      return toast(last.text);
+    }
     if (last.pasted) {
-      last.pasted.forEach(({ p, edited, before }) => { p.edited = edited; p.before = before; });
+      last.pasted.forEach(({ p, edited, before, look }) => { p.edited = edited; p.before = before; p.look = look; });
       computeShown();
       renderGrid(false);
       refresh();
-      return toast(`Undid paste on ${last.pasted.length} ${last.pasted.length === 1 ? "photo" : "photos"}`);
+      return toast(`Undid ${last.what} on ${plural(last.pasted.length, "photo")}`);
     }
     if (last.deleted) {
       last.deleted.forEach(({ p, at }) => photos.splice(at, 0, p));
@@ -363,7 +456,7 @@
 
   // ---------- single photo and full-screen review ----------
 
-  const large = (p) => `photos/${String(p.id).padStart(3, "0")}.jpg`;
+  const large = (p) => `photos/${pic(p)}.jpg`;
 
   // One photo in a stage: fitted, or at 100% and draggable. The zoom and the
   // spot being looked at are kept while flipping, so the same detail can be
@@ -373,21 +466,21 @@
   function place(img, p) {
     const box = img.parentElement.getBoundingClientRect();
     img.classList.toggle("zoomed", state.zoom.on);
-    const follow = () => img.parentElement.querySelectorAll(".stage-ov").forEach((o) => {
+    let css = "";
+    if (state.zoom.on) {
+      const scale = ZOOM_EDGE / Math.max(p.w, p.h);
+      const [w, h] = [p.w * scale, p.h * scale];
+      const edge = (size, room, f) => (size <= room ? (room - size) / 2 : Math.min(0, Math.max(room - size, room / 2 - f * size)));
+      css = `width:${w}px;height:${h}px;left:${edge(w, box.width, state.zoom.fx)}px;top:${edge(h, box.height, state.zoom.fy)}px`;
+    }
+    // The look is drawn on the photo only, never on the overlay maps.
+    img.style.cssText = css + (p.look ? `;filter:${p.look}` : "");
+    img.parentElement.querySelectorAll(".stage-ov").forEach((o) => {
       const src = mapSrc(o.dataset.kind, p);
       if (o.getAttribute("src") !== src) o.src = src;
       o.classList.toggle("zoomed", state.zoom.on);
-      o.style.cssText = img.style.cssText;
+      o.style.cssText = css;
     });
-    if (!state.zoom.on) {
-      img.style.cssText = "";
-      return follow();
-    }
-    const scale = ZOOM_EDGE / Math.max(p.w, p.h);
-    const [w, h] = [p.w * scale, p.h * scale];
-    const edge = (size, room, f) => (size <= room ? (room - size) / 2 : Math.min(0, Math.max(room - size, room / 2 - f * size)));
-    img.style.cssText = `width:${w}px;height:${h}px;left:${edge(w, box.width, state.zoom.fx)}px;top:${edge(h, box.height, state.zoom.fy)}px`;
-    follow();
   }
 
   function show(img, p) {
@@ -399,7 +492,7 @@
       const slow = $("opt-slow").checked;
       // Fitted: the thumbnail first, the screen-sized preview a moment later.
       // At 100%: soft at first, sharp once the quick decode would be ready.
-      if (fresh) img.src = slow ? `photos/t/${String(p.id).padStart(3, "0")}.jpg` : large(p);
+      if (fresh) img.src = slow ? `photos/t/${pic(p)}.jpg` : large(p);
       img.classList.toggle("soft", slow && state.zoom.on);
       if (slow) setTimeout(() => {
         if (img.dataset.id !== String(p.id)) return;
@@ -468,7 +561,7 @@
     show($("single-image"), p);
     $("single-image").classList.toggle("rejected", p.flag === "reject");
     const index = state.shown.indexOf(p) + 1;
-    $("single-caption").innerHTML = `<span>${p.name}</span>${labelDot(p)}<span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}<span>${index} / ${state.shown.length}</span><span>${state.zoom.on ? "100%" : "Fit"}</span>`;
+    $("single-caption").innerHTML = `<span>${esc(title(p))}</span>${labelDot(p)}<span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}<span>${index} / ${state.shown.length}</span><span>${state.zoom.on ? "100%" : "Fit"}</span>`;
   }
 
   function renderReview() {
@@ -488,8 +581,8 @@
     show($("compare-image"), c);
     $("compare-ref-image").classList.toggle("rejected", r.flag === "reject");
     $("compare-image").classList.toggle("rejected", c.flag === "reject");
-    $("compare-ref-caption").innerHTML = `<span>${r.name}</span>${captionMarks(r)}`;
-    $("compare-caption").innerHTML = `<span>${c.name}</span>${captionMarks(c)}<span>${state.shown.indexOf(c) + 1} / ${state.shown.length}</span><span>${state.zoom.on ? "100%" : "Fit"}</span>`;
+    $("compare-ref-caption").innerHTML = `<span>${esc(title(r))}</span>${captionMarks(r)}`;
+    $("compare-caption").innerHTML = `<span>${esc(title(c))}</span>${captionMarks(c)}<span>${state.shown.indexOf(c) + 1} / ${state.shown.length}</span><span>${state.zoom.on ? "100%" : "Fit"}</span>`;
   }
 
   // Fill the two sides. With two or more photos selected, the first goes left
@@ -574,23 +667,119 @@
     flashTimer = setTimeout(() => el.classList.remove("show"), 350);
   }
 
-  // ---------- Grade stand-in ----------
+  // ---------- questions ----------
+  // One small window for every question: a title, a sentence, optional fields
+  // and the answers. Escape is the same as Cancel.
+
+  function askUser({ title: heading, message, fields = [], buttons }, done) {
+    $("confirm-title").textContent = heading;
+    $("confirm-message").textContent = message || "";
+    $("confirm-fields").innerHTML = fields.map((f) => `<label class="lib-export-field"><span>${f.label}</span>` + (f.options
+      ? `<select data-name="${f.name}">${f.options.map((o) => `<option ${o === f.value ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`
+      : `<input type="text" data-name="${f.name}" value="${esc(f.value || "")}" placeholder="${esc(f.placeholder || "")}" spellcheck="false">`) + `</label>`).join("");
+    $("confirm-actions").innerHTML = buttons.map(([answer, text, cls]) => `<button type="button" data-answer="${answer}" class="${cls || ""}">${text}</button>`).join("");
+    $("confirm").onclick = (event) => {
+      const answer = event.target.dataset && event.target.dataset.answer;
+      if (!answer) return;
+      const values = {};
+      $("confirm-fields").querySelectorAll("[data-name]").forEach((el) => { values[el.dataset.name] = el.value.trim(); });
+      $("confirm").close();
+      done(answer, values);
+    };
+    $("confirm").showModal();
+    const first = $("confirm-fields").querySelector("input, select") || $("confirm-actions").lastElementChild;
+    first.focus();
+    if (first.select) first.select();
+  }
+  $("confirm").addEventListener("close", () => { $("confirm-fields").innerHTML = ""; });
+  $("confirm").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || !event.target.matches("input[type=text]")) return;
+    event.preventDefault();
+    $("confirm-actions").lastElementChild.click();
+  });
+  const GO = "button-primary lib-confirm-go";
+
+  // ---------- Grade stand-in, and saving ----------
+  // Only one photo is open in Grade at a time, so only one photo can ever have
+  // unsaved work. The library always shows the saved grade.
+
+  const grade = { photo: null, dirty: false, draft: null, saving: null, edits: 0 };
+  const autosaveOn = () => $("autosave").getAttribute("aria-pressed") === "true";
+  const DRAFTS = ["brightness(1.14) contrast(1.06)", "saturate(1.35) contrast(1.08)", "sepia(.22) brightness(1.05)"];
 
   function setStage(stage) {
     app.dataset.stage = stage;
     $("grade-stage").hidden = stage !== "grade";
     document.querySelectorAll("[data-stage-tab]").forEach((t) => t.classList.toggle("active", t.dataset.stageTab === stage));
+    renderGrade();
+  }
+
+  function renderGrade() {
+    const p = grade.photo;
+    const auto = autosaveOn();
+    $("grade-image").hidden = !p;
+    if (p) {
+      $("grade-image").src = large(p);
+      $("grade-image").style.filter = (grade.draft === null ? p.look : grade.draft) || "";
+    }
+    $("grade-name").textContent = p ? title(p) : "";
+    $("grade-save").textContent = !p ? "" : grade.saving ? "Saving…" : grade.dirty ? "Unsaved changes" : auto ? "All changes saved" : "No unsaved changes";
+    $("grade-save").classList.toggle("dirty", grade.dirty && !grade.saving);
+    $("grade-save-button").hidden = $("grade-revert").hidden = !grade.dirty || auto;
+    $("mock-edit").disabled = !p || app.dataset.stage !== "grade";
+    document.querySelector('[data-stage-tab="grade"]').classList.toggle("unsaved", grade.dirty && !auto);
+    $("grade-note").textContent = !p ? "No photo open. Double-click a photo in the Library window."
+      : auto
+        ? "Stand-in for the Grade workspace. Autosave is on: changes save beside the photo a moment after you stop, and switching photos never asks. Try “Make a pretend edit” in the yellow strip."
+        : "Stand-in for the Grade workspace. Autosave is off: nothing is written until you save (Ctrl+S). Switching photos or closing the app asks first. Try “Make a pretend edit” in the yellow strip.";
+  }
+
+  function saveGrade() {
+    const p = grade.photo;
+    clearTimeout(grade.saving);
+    grade.saving = null;
+    if (!p || !grade.dirty) return renderGrade();
+    if (grade.draft !== null) p.look = grade.draft;
+    p.edited = true;
+    Object.assign(grade, { draft: null, dirty: false });
+    renderGrade();
+    refresh();
+  }
+
+  function dropGrade() {
+    clearTimeout(grade.saving);
+    Object.assign(grade, { draft: null, dirty: false, saving: null });
+    renderGrade();
+  }
+
+  // Stands in for moving a slider on the Grade stage.
+  function pretendEdit() {
+    if (!grade.photo) return;
+    grade.draft = DRAFTS[grade.edits++ % DRAFTS.length];
+    grade.dirty = true;
+    clearTimeout(grade.saving);
+    grade.saving = autosaveOn() ? setTimeout(saveGrade, 900) : null;
+    renderGrade();
+  }
+
+  // The one gate for leaving the open photo: opening another photo or virtual
+  // copy, and closing the app. Browsing, culling and comparing never come here.
+  function leaveCurrentPhoto(proceed, doing) {
+    if (!grade.photo || !grade.dirty) return proceed();
+    if (autosaveOn()) { saveGrade(); return proceed(); }
+    askUser({
+      title: "Unsaved changes",
+      message: `Save changes to ${title(grade.photo)} before ${doing}?\n\nAutosave is off, so nothing has been written yet. Save keeps the changes beside the photo. Don't save drops them, and the photo goes back to how it was last saved.`,
+      buttons: [["cancel", "Cancel"], ["drop", "Don't save"], ["save", "Save", GO]],
+    }, (answer) => {
+      if (answer === "cancel") return;
+      if (answer === "save") saveGrade(); else dropGrade();
+      proceed();
+    });
   }
 
   function showInGrade(p) {
-    $("grade-image").hidden = !p;
-    if (p) $("grade-image").src = large(p);
-    $("grade-name").textContent = p ? p.name : "";
-    const auto = $("autosave").getAttribute("aria-pressed") === "true";
-    $("grade-note").textContent = !p ? "No photo open. Double-click a photo in the Library window."
-      : auto
-        ? "Stand-in for the Grade workspace. Autosave is on: changes save beside the photo, and switching photos never asks."
-        : "Stand-in for the Grade workspace. Autosave is off: switching to another photo asks Save / Don't save / Cancel if this one has unsaved work.";
+    Object.assign(grade, { photo: p || null, dirty: false, draft: null });
     setStage("grade");
   }
 
@@ -599,23 +788,32 @@
     if (!p) return;
     if (POPPED) {
       tell({ lib: "grade", id: p.id });
-      return toast(`${p.name} opened in Grade in the main window.`);
+      return toast(`Opening ${title(p)} in Grade in the main window.`);
     }
     if (state.review) setReview(false);
-    showInGrade(p);
+    if (p === grade.photo) return setStage("grade");
+    leaveCurrentPhoto(() => showInGrade(p), "opening " + title(p));
   }
 
   document.querySelectorAll("[data-stage-tab]").forEach((tab) => tab.addEventListener("click", () => {
     const stage = tab.dataset.stageTab;
     if (stage === "library") return popOpen() ? pop.focus() : setStage("library");
-    if (stage === "grade") return popOpen() ? setStage("grade") : openInGrade();
+    // Going back to Grade returns to the photo that is open there.
+    if (stage === "grade") return grade.photo || popOpen() ? setStage("grade") : openInGrade();
     toast("Proof and Export are not part of this mock-up.");
   }));
 
   $("autosave").addEventListener("click", () => {
-    const on = $("autosave").getAttribute("aria-pressed") !== "true";
+    const on = !autosaveOn();
     $("autosave").setAttribute("aria-pressed", on);
     $("autosave").querySelector("span").textContent = on ? "Autosave on" : "Autosave off";
+    if (on && grade.dirty) saveGrade();
+    renderGrade();
+  });
+  $("grade-save-button").addEventListener("click", saveGrade);
+  $("grade-revert").addEventListener("click", dropGrade);
+  document.querySelector(".window-control-close").addEventListener("click", () => {
+    if (!POPPED) leaveCurrentPhoto(() => toast("HDR Finisher would close here."), "closing HDR Finisher");
   });
 
   document.querySelectorAll(".stub-grade-list").forEach((list) => {
@@ -625,55 +823,296 @@
 
   // ---------- details ----------
 
+  // Names for the colour labels, and the authoring template. Both are personal
+  // settings, remembered between launches.
+  const labelNames = { red: "", orange: "", green: "", blue: "" };
+  const template = { creator: "", copyright: "", usage: "" };
+  try {
+    Object.assign(labelNames, JSON.parse(recall("label-names", "{}")));
+    Object.assign(template, JSON.parse(recall("template", "{}")));
+  } catch (e) { /* start empty */ }
+  const labelTitle = (label) => (labelNames[label] ? `${labelNames[label]} · ${label} label` : `${cap(label)} label`);
+
+  // What each pretend camera wrote into its files. Anything a camera did not
+  // record is shown as not recorded, never guessed.
+  const MAKER = {
+    "Sony ILCE-7RM5": { maker: "Sony", serial: "4871236", firmware: "3.01", type: "Sony ARW, lossless compressed, 14-bit", mb: 1.05, lensMaker: "Sony", lensSerial: "1802244", comp: "−0.3 EV", program: "Aperture priority", metering: "Multi-segment", wb: "Auto", focusMode: "Continuous AF", afArea: "Tracking: Flexible Spot M", distance: "4.2 m", drive: "Continuous Hi", shutter: "Electronic", steady: "On, body and lens", profile: "Off", crop: "Full frame" },
+    "Apple iPhone 12 Pro": { maker: "Apple", firmware: "iOS 17.6", type: "HEIC, 10-bit", mb: 0.22, comp: "0 EV", program: "Program", metering: "Multi-segment", wb: "Auto", gps: "6.3041° N, 99.8523° E" },
+    "DJI Mavic 3": { maker: "DJI", serial: "1581F45TB22A", firmware: "01.00.0900", type: "DNG, uncompressed, 12-bit", mb: 1.9, lensMaker: "Hasselblad", comp: "0 EV", program: "Manual", metering: "Centre-weighted", wb: "Daylight", shutter: "Electronic", gps: "6.3718° N, 99.6712° E · 84 m" },
+  };
+  const none = (text) => `<i class="unk">${text}</i>`;
+  const dl = (rows) => `<dl class="details-facts">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
+
+  function folderPath(p) {
+    const top = PLACES.find((f) => f.children && (f.scenes || []).includes(p.scene));
+    const sub = top && top.children.find((c) => (c.scenes || []).includes(p.scene));
+    return top ? `D:\\Photos\\${top.label}${sub ? "\\" + sub.label : ""}` : "E:\\DCIM\\100MSDCF";
+  }
+
+  // The lens is the unreliable part: unknown stays unknown, and a name can be typed in.
+  function lensHtml(p) {
+    const set = `<button type="button" class="details-link" data-set-lens>${p.lensByHand ? "Change" : "Set name"}…</button>`;
+    if (p.lensByHand) return `${esc(p.lensByHand)}<br>${none("entered by hand")} ${set}`;
+    return p.facts.lens === "Unknown" ? `${none("Unknown")} ${set}` : p.facts.lens;
+  }
+
+  function allFacts(p) {
+    const m = MAKER[p.facts.camera];
+    const or = (value) => value || none("Not recorded");
+    const mp = (p.w * p.h) / 1e6;
+    const marked = p.edited || p.stars || p.flag || p.label || p.copyOf !== undefined || copiesOf(p).length;
+    return [
+      ["File", [["File name", p.name], ["Folder", folderPath(p)], ["Type", p.kind === "JPG" ? "JPEG, 8-bit" : m.type], ["Dimensions", `${p.w} × ${p.h}`],
+        ["Megapixels", mp.toFixed(1) + " MP"], ["File size", (mp * (p.kind === "JPG" ? 0.42 : m.mb)).toFixed(1) + " MB"], ["Captured", p.time + ":07"],
+        ["Settings file", marked ? "Beside the photo" : none("None yet")]]],
+      ["Camera", [["Maker", m.maker], ["Model", p.facts.camera.replace(m.maker + " ", "")], ["Serial number", or(m.serial)], ["Firmware", m.firmware]]],
+      ["Lens", [["Lens", lensHtml(p)], ["Lens maker", p.lensByHand ? none("Not recorded") : or(m.lensMaker)], ["Lens serial", p.lensByHand ? none("Not recorded") : or(m.lensSerial)], ["Focal length", p.facts.focal]]],
+      ["Exposure", [["Shutter", p.facts.shutter + " s"], ["Aperture", p.facts.aperture], ["ISO", p.facts.iso], ["Compensation", m.comp], ["Program", m.program], ["Metering", m.metering], ["White balance", m.wb], ["Flash", "Did not fire"]]],
+      ["Focus and drive", [["Focus mode", or(m.focusMode)], ["Focus area", or(m.afArea)], ["Focus distance", or(m.distance)], ["Drive mode", or(m.drive)], ["Shutter type", or(m.shutter)], ["Stabilisation", or(m.steady)], ["Picture profile", or(m.profile)], ["Crop mode", or(m.crop)]],
+        "Each camera maker records these differently. They are shown where the camera wrote them."],
+      ["Location", [["GPS", or(m.gps)]], "Location and serial numbers can be left out of exported files."],
+    ];
+  }
+
   function renderDetails() {
     const list = targets();
-    const title = `<div class="details-title"><span class="panel-title">Details</span>${collapseButton("details", "details")}</div>`;
+    const titleBar = `<div class="details-title"><span class="panel-title">Details</span>${collapseButton("details", "details")}</div>`;
     if (!list.length) {
-      $("details").innerHTML = title + `<p class="details-sub">Nothing selected.</p>`;
+      $("details").innerHTML = titleBar + `<p class="details-sub">Nothing selected.</p>`;
       return;
     }
     const one = list.length === 1 ? list[0] : null;
-    const same = (get) => (list.every((p) => get(p) === get(list[0])) ? get(list[0]) : undefined);
-    const stars = same((p) => p.stars);
-    const flag = same((p) => p.flag);
-    const tags = [...new Set(list.flatMap((p) => p.tags))];
+    const shared = (get) => (list.every((p) => get(p) === get(list[0])) ? get(list[0]) : undefined);
+    const stars = shared((p) => p.stars);
+    const flag = shared((p) => p.flag);
+    const tagCount = {};
+    list.forEach((p) => p.tags.forEach((t) => { tagCount[t] = (tagCount[t] || 0) + 1; }));
+    const copies = one ? copiesOf(one).length : 0;
+    const inAlbums = one ? PLACES.filter((a) => a.ids && a.ids.has(one.id)).map((a) => esc(a.label)) : [];
     const head = one
-      ? `<p class="details-name">${one.name}</p><p class="details-sub">${one.kind} · ${one.w} × ${one.h} · ${one.time}</p><p class="details-sub">${one.edited ? "Edited" : "Not edited"}${one.exported ? " · Exported" : ""}${one.copies ? ` · ${one.copies} virtual copies` : ""}</p>`
+      ? `<p class="details-name">${esc(one.name)}</p>` +
+        (one.copyOf === undefined ? "" : `<p class="details-sub">Virtual copy “${esc(one.copyName)}”. Its own grade, marks and tags. No second image file.</p>`) +
+        `<p class="details-sub">${one.kind} · ${one.w} × ${one.h} · ${one.time}</p>
+         <p class="details-sub">${one.edited ? "Edited" : "Not edited"}${one.exported ? " · Exported" : ""}${copies ? ` · ${plural(copies, "virtual copy", "virtual copies")}` : ""}</p>` +
+        (inAlbums.length ? `<p class="details-sub">In ${inAlbums.join(", ")}</p>` : "")
       : `<p class="details-name">${list.length} photos selected</p><p class="details-sub">Marks and tags apply to all of them.</p>`;
-    const facts = one ? `<div class="details-section"><p class="details-kicker">Camera</p><dl class="details-facts">
-        <dt>Camera</dt><dd>${one.facts.camera}</dd><dt>Lens</dt><dd>${one.facts.lens}</dd>
-        <dt>Focal length</dt><dd>${one.facts.focal}</dd><dt>Aperture</dt><dd>${one.facts.aperture}</dd>
-        <dt>Shutter</dt><dd>${one.facts.shutter} s</dd><dt>ISO</dt><dd>${one.facts.iso}</dd></dl>
-        <button type="button" class="details-more">Show all</button></div>` : "";
-    $("details").innerHTML = title + head + `
+    const tagChip = (t) => {
+      const some = tagCount[t] < list.length;
+      return `<span class="${some ? "some" : ""}" ${some ? `data-tag-all="${esc(t)}" title="On ${tagCount[t]} of the ${list.length} selected photos. Click to add it to all of them."` : ""}>${esc(t)}<button type="button" data-untag="${esc(t)}" title="Remove from the selection" aria-label="Remove tag ${esc(t)}">×</button></span>`;
+    };
+    const author = (name) => (template[name] ? esc(template[name]) : none("Not set"));
+    const facts = !one ? "" : !state.allFacts
+      ? `<div class="details-section"><p class="details-kicker">Camera</p>${dl([["Camera", one.facts.camera], ["Lens", lensHtml(one)], ["Focal length", one.facts.focal],
+          ["Aperture", one.facts.aperture], ["Shutter", one.facts.shutter + " s"], ["ISO", one.facts.iso]])}
+          <button type="button" class="details-more" data-all-facts>Show all</button></div>`
+      : allFacts(one).map(([kicker, rows, foot]) => `<div class="details-section"><p class="details-kicker">${kicker}</p>${dl(rows)}${foot ? `<p class="helper details-foot">${foot}</p>` : ""}</div>`).join("") +
+        `<div class="details-section"><p class="details-kicker">Authoring · written into exported files</p>
+          <label class="lib-export-field"><span>Title</span><input type="text" data-author="title" value="${esc(one.title || "")}" spellcheck="false"></label>
+          <label class="lib-export-field"><span>Caption</span><input type="text" data-author="caption" value="${esc(one.caption || "")}" spellcheck="false"></label>
+          ${dl([["Creator", author("creator")], ["Copyright", author("copyright")], ["Usage", author("usage")]])}
+          <button type="button" class="details-more" data-template>Edit template…</button></div>
+        <button type="button" class="details-more" data-all-facts>Show less</button>`;
+    $("details").innerHTML = titleBar + head + `
       <div class="details-section"><p class="details-kicker">Marks</p>
         <div class="details-stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-stars="${n}" class="${stars >= n ? "on" : ""}" aria-label="${n} stars">★</button>`).join("")}</div>
-        <div class="details-labels">${LABELS.map((l) => `<button type="button" data-label="${l}" class="${list.every((p) => p.label === l) ? "on" : ""}" title="${l} label" aria-label="${l} label"><i style="background:var(--label-${l})"></i></button>`).join("")}</div>
+        <div class="details-labels">${LABELS.map((l) => `<button type="button" data-label="${l}" class="${list.every((p) => p.label === l) ? "on" : ""}" title="${esc(labelTitle(l))}" aria-label="${esc(labelTitle(l))}"><i style="background:var(--label-${l})"></i></button>`).join("")}</div>
         <div class="details-flags">${[["pick", "Pick"], ["", "Unmarked"], ["reject", "Reject"]].map(([v, l]) => `<button type="button" data-flag="${v}" class="${flag !== undefined && (flag || "") === v ? "on" : ""}">${l}</button>`).join("")}</div>
       </div>
       <div class="details-section"><p class="details-kicker">Tags</p>
-        <div class="details-tags">${tags.map((t) => `<span>${t}</span>`).join("")}<input type="text" placeholder="Add tag" spellcheck="false"></div>
+        <div class="details-tags">${Object.keys(tagCount).sort().map(tagChip).join("")}<input type="text" placeholder="Add tag" spellcheck="false" autocomplete="off"></div>
+        <div class="tag-suggest" id="tag-suggest" hidden></div>
+        <button type="button" class="details-more" data-manage-tags>Manage tags and labels…</button>
       </div>` + facts;
+  }
+
+  // ---------- tags ----------
+  // Tags save at once and are never unsaved work. Every change is one undo.
+
+  const allTags = () => {
+    const known = new Map();
+    photos.forEach((p) => p.tags.forEach((t) => known.set(t, (known.get(t) || 0) + 1)));
+    return known;
+  };
+
+  function editTags(list, change, text) {
+    const before = list.map((p) => ({ p, tags: p.tags.slice() }));
+    list.forEach(change);
+    state.undo.push({ back: () => before.forEach(({ p, tags }) => { p.tags = tags; }), text });
+    renderNav();
+  }
+
+  function addTag(tag) {
+    tag = tag.trim().toLowerCase();
+    const list = targets().filter((p) => !p.tags.includes(tag));
+    if (tag && list.length) editTags(list, (p) => p.tags.push(tag), `Undid tag “${tag}” on ${plural(list.length, "photo")}`);
+    renderDetails();
+    const input = $("details").querySelector(".details-tags input");
+    if (input) { input.focus(); renderSuggest(input); }
+  }
+
+  function removeTag(tag) {
+    const list = targets().filter((p) => p.tags.includes(tag));
+    editTags(list, (p) => { p.tags = p.tags.filter((t) => t !== tag); }, `Put tag “${tag}” back on ${plural(list.length, "photo")}`);
+    renderDetails();
+  }
+
+  // Suggestions while typing: tags already in the library, most likely first.
+  let suggestAt = -1;
+  function renderSuggest(input) {
+    const box = $("tag-suggest");
+    if (!box) return;
+    const typed = input.value.trim().toLowerCase();
+    const list = targets();
+    const known = allTags();
+    const rows = [...known].filter(([t]) => t.includes(typed) && !list.every((p) => p.tags.includes(t)))
+      .sort((a, b) => (b[0].startsWith(typed) - a[0].startsWith(typed)) || b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 6);
+    suggestAt = Math.min(suggestAt, rows.length - 1);
+    box.innerHTML = rows.map(([t, n], i) => `<button type="button" data-suggest="${esc(t)}" class="${i === suggestAt ? "on" : ""}"><span>${esc(t)}</span><span class="count">${n}</span></button>`).join("") +
+      (typed && !known.has(typed) ? `<p>Enter adds the new tag “${esc(typed)}”</p>` : "");
+    box.hidden = !box.innerHTML;
   }
 
   $("details").addEventListener("click", (event) => {
     if (event.target.closest(".side-collapse")) return toggleSide("details");
-    const label = event.target.closest("[data-label]");
+    const hit = (selector) => event.target.closest(selector);
+    const label = hit("[data-label]");
+    const star = hit("[data-stars]");
+    const flag = hit("[data-flag]");
     if (label) return setLabel(label.dataset.label);
-    const star = event.target.closest("[data-stars]");
-    const flag = event.target.closest("[data-flag]");
     if (star) {
       const n = Number(star.dataset.stars);
-      setStars(targets().every((p) => p.stars === n) ? 0 : n);
-    } else if (flag) setFlag(flag.dataset.flag || null);
-    else if (event.target.closest(".details-more")) toast("The full metadata list comes in a later round.");
+      return setStars(targets().every((p) => p.stars === n) ? 0 : n);
+    }
+    if (flag) return setFlag(flag.dataset.flag || null);
+    if (hit("[data-untag]")) return removeTag(hit("[data-untag]").dataset.untag);
+    if (hit("[data-tag-all]")) return addTag(hit("[data-tag-all]").dataset.tagAll);
+    if (hit("[data-manage-tags]")) return openTags();
+    if (hit("[data-all-facts]")) { state.allFacts = !state.allFacts; return renderDetails(); }
+    const p = targets()[0];
+    if (hit("[data-set-lens]")) {
+      return askUser({ title: "Lens Name", message: `${p.name} does not say which lens was used. That is usual for adapted and manual lenses. A name typed here is kept with the photo and marked as entered by hand.`,
+        fields: [{ name: "lens", label: "Lens", value: p.lensByHand || "", placeholder: "For example Helios 44-2 58mm F2" }], buttons: [["no", "Cancel"], ["yes", "Set lens name", GO]] },
+      (answer, v) => { if (answer === "yes") { p.lensByHand = v.lens; renderDetails(); } });
+    }
+    if (hit("[data-template]")) {
+      return askUser({ title: "Authoring Template", message: "Entered once and written into every exported file. Title and caption stay per photo.",
+        fields: [{ name: "creator", label: "Creator", value: template.creator, placeholder: "Your name" }, { name: "copyright", label: "Copyright", value: template.copyright, placeholder: "© 2026 Your name" },
+          { name: "usage", label: "Usage notes", value: template.usage, placeholder: "For example: All rights reserved" }], buttons: [["no", "Cancel"], ["yes", "Save template", GO]] },
+      (answer, v) => { if (answer === "yes") { Object.assign(template, v); remember("template", JSON.stringify(template)); renderDetails(); } });
+    }
+  });
+  $("details").addEventListener("change", (event) => {
+    if (event.target.dataset.author) targets()[0][event.target.dataset.author] = event.target.value;
+  });
+  const isTagInput = (event) => event.target instanceof Element && event.target.matches(".details-tags input");
+  $("details").addEventListener("input", (event) => { if (isTagInput(event)) { suggestAt = -1; renderSuggest(event.target); } });
+  $("details").addEventListener("focusin", (event) => { if (isTagInput(event)) { suggestAt = -1; renderSuggest(event.target); } });
+  $("details").addEventListener("focusout", (event) => { if (isTagInput(event) && $("tag-suggest")) $("tag-suggest").hidden = true; });
+  $("details").addEventListener("mousedown", (event) => {
+    const pick = event.target.closest("[data-suggest]");
+    if (!pick) return;
+    event.preventDefault();
+    addTag(pick.dataset.suggest);
   });
   $("details").addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" || !event.target.matches(".details-tags input")) return;
-    const tag = event.target.value.trim().toLowerCase();
-    if (tag) targets().forEach((p) => { if (!p.tags.includes(tag)) p.tags.push(tag); });
-    renderDetails();
-    $("details").querySelector(".details-tags input").focus();
+    if (!isTagInput(event)) return;
+    const rows = $("tag-suggest").querySelectorAll("[data-suggest]");
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      suggestAt = Math.max(-1, Math.min(rows.length - 1, suggestAt + (event.key === "ArrowDown" ? 1 : -1)));
+      return renderSuggest(event.target);
+    }
+    if (event.key === "Enter") addTag(suggestAt >= 0 && rows[suggestAt] ? rows[suggestAt].dataset.suggest : event.target.value);
+  });
+
+  // Tag management: every tag in the library with its count. Rename, merge or
+  // remove a tag everywhere. Colour labels can be given a meaning here.
+  const tagsUi = { sel: new Set(), sort: "name" };
+
+  function renderTags() {
+    const known = allTags();
+    [...tagsUi.sel].forEach((t) => { if (!known.has(t)) tagsUi.sel.delete(t); });
+    const find = $("tags-search").value.trim().toLowerCase();
+    const rows = [...known].filter(([t]) => t.includes(find)).sort((a, b) => (tagsUi.sort === "count" ? b[1] - a[1] : 0) || a[0].localeCompare(b[0]));
+    $("tags-list").innerHTML = `<div class="paste-kicker">Colour labels · give each a meaning if you like</div>` +
+      LABELS.map((l, i) => `<div class="tag-row"><i class="label-dot" style="background:var(--label-${l})"></i><input type="text" data-label-name="${l}" value="${esc(labelNames[l])}" placeholder="${cap(l)} · key ${i + 6}" spellcheck="false"><span class="count">${photos.filter((p) => p.label === l).length}</span></div>`).join("") +
+      `<div class="paste-kicker">Tags</div>` +
+      (rows.length ? rows.map(([t, n]) => `<button type="button" class="tag-row${tagsUi.sel.has(t) ? " selected" : ""}" data-tag="${esc(t)}"><span class="name">${esc(t)}</span><span class="count">${n}</span></button>`).join("")
+        : `<p class="tags-none">${find ? "No tag matches." : "No tags yet. Add one from the Details panel."}</p>`);
+    const sel = [...tagsUi.sel];
+    const on = photos.filter((p) => sel.some((t) => p.tags.includes(t))).length;
+    $("tags-notes").textContent = !sel.length ? `${plural(known.size, "tag")} in the library. Click one to select it. Ctrl-click to select several, then merge them into one.`
+      : sel.length === 1 ? `“${sel[0]}” is on ${plural(on, "photo")}.` : `${sel.length} tags selected, on ${plural(on, "photo")} between them.`;
+    $("tags-show").disabled = $("tags-rename").disabled = sel.length !== 1;
+    $("tags-merge").disabled = sel.length < 2;
+    $("tags-delete").disabled = !sel.length;
+    document.querySelectorAll("[data-tagsort]").forEach((b) => b.classList.toggle("on", b.dataset.tagsort === tagsUi.sort));
+  }
+
+  function openTags() {
+    tagsUi.sel.clear();
+    $("tags-search").value = "";
+    renderTags();
+    $("tags").showModal();
+  }
+
+  // Replace some tags by one (rename and merge), or by nothing (remove).
+  function retag(olds, to, text) {
+    const list = photos.filter((p) => olds.some((t) => p.tags.includes(t)));
+    editTags(list, (p) => {
+      p.tags = p.tags.filter((t) => !olds.includes(t));
+      if (to && !p.tags.includes(to)) p.tags.push(to);
+    }, text);
+    tagsUi.sel = new Set(to ? [to] : []);
+    filtersChanged();
+    renderTags();
+  }
+
+  $("tags").addEventListener("click", (event) => {
+    const row = event.target.closest("[data-tag]");
+    const sort = event.target.closest("[data-tagsort]");
+    const sel = [...tagsUi.sel];
+    const count = (tags) => photos.filter((p) => tags.some((t) => p.tags.includes(t))).length;
+    if (row) {
+      const tag = row.dataset.tag;
+      if (event.ctrlKey || event.metaKey) tagsUi.sel.has(tag) ? tagsUi.sel.delete(tag) : tagsUi.sel.add(tag);
+      else tagsUi.sel = new Set(tagsUi.sel.has(tag) && tagsUi.sel.size === 1 ? [] : [tag]);
+    } else if (sort) tagsUi.sort = sort.dataset.tagsort;
+    else if (event.target.id === "tags-close") return $("tags").close();
+    else if (event.target.id === "tags-show") {
+      $("tags").close();
+      state.filters.text = $("search").value = sel[0];
+      $("filterbar").hidden = false;
+      filtersChanged();
+      return toast(`Showing “${sel[0]}” in ${placeOf(state.place).label}. A smart album shows a tag across the whole library.`);
+    } else if (event.target.id === "tags-rename") {
+      return askUser({ title: `Rename Tag “${sel[0]}”`, message: `${plural(count(sel), "photo")} will carry the new name.`, fields: [{ name: "name", label: "New name", value: sel[0] }], buttons: [["no", "Cancel"], ["yes", "Rename", GO]] }, (answer, v) => {
+        const name = v.name.toLowerCase();
+        if (answer !== "yes" || !name || name === sel[0]) return;
+        if (!allTags().has(name)) return retag(sel, name, `Undid rename of “${sel[0]}”`);
+        // A tag of that name exists already: stop and ask, never merge silently.
+        askUser({ title: "Merge Tags?", message: `A tag called “${name}” already exists. Merging puts “${name}” on the ${plural(count(sel), "photo")} that carry “${sel[0]}”, and “${sel[0]}” disappears.`,
+          buttons: [["no", "Cancel"], ["yes", "Merge", GO]] }, (again) => { if (again === "yes") retag(sel, name, `Undid merge of “${sel[0]}” into “${name}”`); });
+      });
+    } else if (event.target.id === "tags-merge") {
+      return askUser({ title: `Merge ${sel.length} Tags`, message: `${plural(count(sel), "photo")} will carry the name you keep. The other ${sel.length === 2 ? "name disappears" : "names disappear"}.`,
+        fields: [{ name: "keep", label: "Keep the name", options: sel.slice().sort(), value: sel[0] }], buttons: [["no", "Cancel"], ["yes", "Merge", GO]] },
+      (answer, v) => { if (answer === "yes") retag(sel.filter((t) => t !== v.keep), v.keep, `Undid merge into “${v.keep}”`); });
+    } else if (event.target.id === "tags-delete") {
+      const what = sel.length === 1 ? `“${sel[0]}”` : `${sel.length} tags`;
+      return askUser({ title: `Remove ${what}?`, message: `${cap(what)} will be taken off ${plural(count(sel), "photo")}. The photos themselves are not touched.`,
+        buttons: [["no", "Cancel"], ["yes", sel.length === 1 ? "Remove tag" : "Remove tags", "button-danger"]] },
+      (answer) => { if (answer === "yes") retag(sel, null, `Put ${what} back`); });
+    } else return;
+    renderTags();
+  });
+  $("tags-search").addEventListener("input", renderTags);
+  $("tags").addEventListener("change", (event) => {
+    const label = event.target.dataset.labelName;
+    if (!label) return;
+    labelNames[label] = event.target.value.trim();
+    remember("label-names", JSON.stringify(labelNames));
+    refresh();
   });
 
   // ---------- filter bar ----------
@@ -710,7 +1149,7 @@
     else if (event.target.id === "filter-clear") {
       Object.assign(f, { minStars: 0, picked: false, unmarked: false, hideRejected: false, edited: false, rawOnly: false, text: "", labels: new Set() });
       $("search").value = "";
-    } else if (event.target.id === "filter-save") return toast("Saving a filter as a smart album comes in a later round.");
+    } else if (event.target.id === "filter-save") return openRules(null, filterAsRules());
     else return;
     filtersChanged();
   });
@@ -757,7 +1196,7 @@
   function setPopped(on) {
     app.dataset.popped = on ? "on" : "off";
     document.querySelector('[data-stage-tab="library"]').innerHTML = `<span aria-hidden="true">01</span>Library${on ? '<i class="away">in own window</i>' : ""}`;
-    if (on) showInGrade(state.active !== null ? byId(state.active) : null);
+    if (on) grade.photo ? setStage("grade") : showInGrade(state.active !== null ? byId(state.active) : null);
     else pop = null;
   }
   $("popout").addEventListener("click", () => {
@@ -773,7 +1212,12 @@
     if (data.lib === "hello" && !POPPED) pop = pop || event.source;
     if (data.lib === "hello") tell({ lib: "marks", list: photos.map((p) => ({ id: p.id, stars: p.stars, flag: p.flag, label: p.label })) });
     if (data.lib === "marks") takeMarks(data.list);
-    if (data.lib === "grade") { showInGrade(byId(data.id)); window.focus(); }
+    if (data.lib === "grade") {
+      const p = byId(data.id);
+      window.focus();
+      if (p && p === grade.photo) setStage("grade");
+      else leaveCurrentPhoto(() => showInGrade(p), "opening " + (p ? title(p) : "another photo"));
+    }
     if (data.lib === "closed" && pop) { setPopped(false); toast("Library window closed. The library is docked here again."); }
   });
   setInterval(() => { if (pop && pop.closed) { setPopped(false); toast("Library window closed. The library is docked here again."); } }, 800);
@@ -989,6 +1433,7 @@
       return;
     }
     if ((event.ctrlKey || event.metaKey) && key.toLowerCase() === "f") { event.preventDefault(); return toggleFilterBar(true); }
+    if ((event.ctrlKey || event.metaKey) && key.toLowerCase() === "s") { event.preventDefault(); return saveGrade(); }
     if (typing || app.dataset.stage !== "library") return;
     if (event.ctrlKey || event.metaKey) {
       if (key.toLowerCase() === "a") { event.preventDefault(); state.sel = new Set(state.shown.map((p) => p.id)); refresh(); }
@@ -1013,6 +1458,11 @@
       "[": () => chooseSide("left"),
       "]": () => chooseSide("right"),
       i: toggleDetails,
+      t: () => {
+        toggleSide("details", true);
+        const input = $("details").querySelector(".details-tags input");
+        if (input) input.focus();
+      },
       s: () => toggleOverlay("focus"),
       e: () => toggleOverlay("exposure"),
       Delete: () => confirmDelete(targets()),
@@ -1068,11 +1518,13 @@
 
   const later = (what) => () => toast(`${what} comes in a later round.`);
 
+  let menuAt = { x: 0, y: 0 };
   function openMenu(x, y, items) {
     const menu = $("menu");
+    menuAt = { x, y };
     menu.innerHTML = items.filter(Boolean).map((item, i) =>
-      item === "-" ? "<hr>" : item.header ? `<div class="menu-header">${item.header}</div>`
-        : `<button type="button" role="menuitem" data-item="${i}" class="${item.danger ? "danger" : ""}"><span>${item.label}</span>${item.key ? `<kbd>${item.key}</kbd>` : ""}</button>`).join("");
+      item === "-" ? "<hr>" : item.header ? `<div class="menu-header">${esc(item.header)}</div>`
+        : `<button type="button" role="menuitem" data-item="${i}" class="${item.danger ? "danger" : ""}"><span>${esc(item.label)}</span>${item.key ? `<kbd>${item.key}</kbd>` : ""}</button>`).join("");
     menu.items = items.filter(Boolean);
     menu.hidden = false;
     const size = menu.getBoundingClientRect();
@@ -1094,8 +1546,10 @@
     const list = targets();
     const one = list.length === 1;
     const rejected = list.every((p) => p.flag === "reject");
+    const copiesOnly = list.every((p) => p.copyOf !== undefined);
+    const here = placeOf(state.place);
     return [
-      { header: one ? list[0].name : `${list.length} photos` },
+      { header: one ? title(list[0]) : `${list.length} photos` },
       one && { label: "Open in Grade", key: "Enter", action: openInGrade },
       { label: "Put on left in compare", key: "[", action: () => chooseSide("left") },
       { label: "Put on right in compare", key: "]", action: () => chooseSide("right") },
@@ -1107,18 +1561,21 @@
       { label: "Paste grade", key: "Ctrl+V", action: () => pasteGrade(false) },
       { label: "Paste grade, choosing what…", key: "Ctrl+Shift+V", action: () => pasteGrade(true) },
       list.some((p) => p.before) && { label: "Restore previous grade", action: restoreGrade },
-      { label: "Apply look preset…" },
-      { label: one ? "Create virtual copy" : "Create virtual copies" },
+      { label: "Apply look preset…", action: openLooks },
+      { label: one ? "Create virtual copy…" : "Create virtual copies…", action: createCopies },
+      one && copiesOnly && { label: "Rename copy…", action: () => renameCopy(list[0]) },
       "-",
-      { label: "Add to album…" },
+      { label: "Add to album…", action: () => openMenu(menuAt.x, menuAt.y, albumMenu(list)) },
+      here && here.ids && { label: `Remove from ${here.label}`, action: () => removeFromAlbum(here, list) },
       { label: "Create HDR previews" },
       { label: "Export…", key: "Ctrl+Shift+E", action: openExport },
       "-",
-      one && { label: "Rename…" },
-      { label: "Move to folder…" },
+      one && !copiesOnly && { label: "Rename…" },
+      !copiesOnly && { label: "Move to folder…" },
       { label: "Show in Explorer" },
       "-",
-      { label: one ? "Delete photo…" : `Delete ${list.length} photos…`, key: "Del", danger: true, action: () => confirmDelete(list) },
+      copiesOnly ? { label: one ? "Remove virtual copy…" : `Remove ${list.length} virtual copies…`, key: "Del", danger: true, action: () => confirmDelete(list) }
+        : { label: one ? "Delete photo…" : `Delete ${list.length} photos…`, key: "Del", danger: true, action: () => confirmDelete(list) },
     ];
   }
 
@@ -1128,8 +1585,8 @@
     const deleteRejected = rejected.length && { label: `Delete ${rejected.length} rejected…`, danger: true, action: () => confirmDelete(rejected, place) };
     if (place.offline) return [{ header: place.label }, { label: "Locate…" }, "-", { label: "Unpin", action: () => unpin(place) }];
     if (place.icon === "project") return [{ header: place.label }, { label: "Show in Explorer" }, { label: "Relink photos…" }, { label: "Export project…" }, "-", { label: "Remove from list", action: () => unpin(place) }];
-    if (place.icon === "album") return [{ header: place.label }, { label: "Rename…" }, { label: "Export project…" }, "-", { label: "Delete album (photos stay)", action: () => unpin(place) }];
-    if (place.icon === "smart") return [{ header: place.label }, { label: "Edit rules…" }, { label: "Rename…" }, "-", { label: "Delete smart album", action: () => unpin(place) }];
+    if (place.icon === "album") return [{ header: place.label }, { label: "Rename…", action: () => renameAlbum(place) }, { label: "Export project…" }, "-", { label: "Delete album (photos stay)", action: () => unpin(place) }];
+    if (place.icon === "smart") return [{ header: place.label }, { label: "Edit rules and name…", action: () => openRules(place) }, "-", { label: "Delete smart album", action: () => unpin(place) }];
     if (place.note) return [{ header: place.label }, { label: "Pin this folder", action: () => { delete place.note; place.icon = "folder"; renderNav(); toast(`${place.label} pinned.`); } }, { label: "Show in Explorer" }, "-", { label: "Close", action: () => unpin(place) }];
     return [
       { header: place.label },
@@ -1275,21 +1732,37 @@
     $("paste").showModal();
   }
 
-  function doPaste() {
-    const list = clip.targets;
-    state.undo.push({ pasted: list.map((p) => ({ p, edited: p.edited, before: p.before })) });
-    list.forEach((p) => { p.edited = true; p.before = true; });
+  // Every library command that rewrites grades goes through here: each photo
+  // keeps its previous grade, the change is saved at once, and it is one undo.
+  function changeGrades(list, apply, what, done) {
+    state.undo.push({ pasted: list.map((p) => ({ p, edited: p.edited, before: p.before, look: p.look })), what });
+    list.forEach((p) => { p.before = { look: p.look, edited: p.edited }; apply(p); p.edited = true; });
+    // The photo open in Grade takes the change as ordinary unsaved work.
+    const open = grade.photo && list.includes(grade.photo) && !autosaveOn();
+    if (open) { grade.draft = grade.photo.look; Object.assign(grade.photo, grade.photo.before); grade.dirty = true; renderGrade(); }
     computeShown();
     renderGrid(false);
     refresh();
-    toast(`Grade pasted onto ${list.length} ${list.length === 1 ? "photo" : "photos"} and saved. Ctrl+Z undoes it.`);
+    toast(`${done} ${plural(list.length, "photo")} and saved. Ctrl+Z undoes it.` + (open ? " The photo open in Grade has it as unsaved work." : ""));
   }
 
+  function doPaste() {
+    const source = clip.source;
+    changeGrades(clip.targets, (p) => { p.look = source.look; }, "paste", "Grade pasted onto");
+  }
+
+  // Restoring is itself kept as a previous grade, so it can be taken back.
   function restoreGrade() {
     const list = targets().filter((p) => p.before);
-    list.forEach((p) => { p.before = false; });
+    list.forEach((p) => {
+      const now = { look: p.look, edited: p.edited };
+      Object.assign(p, p.before);
+      p.before = now;
+    });
+    computeShown();
+    renderGrid(false);
     refresh();
-    toast(`Previous grade restored on ${list.length} ${list.length === 1 ? "photo" : "photos"}.`);
+    toast(`Previous grade restored on ${plural(list.length, "photo")}.`);
   }
 
   $("paste").addEventListener("click", (event) => {
@@ -1302,7 +1775,7 @@
       const every = PARTS.flatMap(partKeys);
       clip.ticks = new Set(pick.dataset.pick === "all" ? every : pick.dataset.pick === "mod" ? every.filter(isMod) : []);
     } else if (event.target.id === "paste-cancel") return $("paste").close();
-    else if (event.target.id === "paste-preset") return toast("Look presets come in a later round: this saves the grade and these ticks under a name.");
+    else if (event.target.id === "paste-preset") return saveLook();
     else if (event.target.id === "paste-go") { $("paste").close(); return doPaste(); }
     else return;
     renderPaste();
@@ -1350,7 +1823,7 @@
   const run = { list: [], recipe: 0, jobs: [], at: 0, timer: null, finished: false };
 
   const exportName = (recipe, p, n) => recipe.pattern
-    .replaceAll("{name}", p.name.replace(/\.[^.]+$/, "")).replaceAll("{date}", "2026-09-12").replaceAll("{seq}", String(n + 1).padStart(3, "0"))
+    .replaceAll("{name}", p.name.replace(/\.[^.]+$/, "") + (p.copyOf === undefined ? "" : "_" + p.copyName.replace(/\s+/g, "-"))).replaceAll("{date}", "2026-09-12").replaceAll("{seq}", String(n + 1).padStart(3, "0"))
     .replaceAll("{rating}", p.stars + "star").replaceAll("{recipe}", recipe.name.replace(/\s+/g, "-")) + "." + FORMATS[recipe.format];
   const sizeText = (r) => (r.resize === "Long edge" ? `${r.longEdge || "?"} px long edge` : r.resize === "Fit within dimensions" ? `fit ${r.width || "?"} × ${r.height || "?"} px` : "original size");
   const recipeLine = (r) => `${r.format} · ${r.preset} · Q${r.quality}<br>${sizeText(r)} · ${r.folder ? "\\" + r.folder : "no sub-folder"}`;
@@ -1362,7 +1835,7 @@
     const n = run.list.length;
     const files = n * on.length;
     const ungraded = run.list.filter((p) => !p.edited).length;
-    $("export-title").textContent = `Export ${n === 1 ? run.list[0].name : `${n} photos`}`;
+    $("export-title").textContent = `Export ${n === 1 ? title(run.list[0]) : `${n} photos`}`;
     $("export-notes").textContent = !on.length ? "No recipe is ticked."
       : `${n} ${n === 1 ? "photo" : "photos"} × ${on.length} ${on.length === 1 ? "recipe" : "recipes"} = ${files} ${files === 1 ? "file" : "files"}, about ${Math.max(1, Math.round(files * 0.2))} min. Runs in the background; you can keep working.` +
         (ungraded ? `\n${ungraded} of them ${ungraded === 1 ? "has" : "have"} no grade and will be exported with the default look.` : "");
@@ -1523,11 +1996,46 @@
 
   // ---------- delete, always behind a confirmation ----------
 
-  function confirmDelete(list, fromPlace) {
-    if (!list.length) return;
+  function afterRemoval(gone) {
+    if (gone.includes(grade.photo)) Object.assign(grade, { photo: null, dirty: false, draft: null });
+    state.sel.clear();
+    state.active = state.anchor = null;
+    if (state.view !== "grid") state.view = "grid";
+    computeShown();
+    renderNav();
+    renderGrid(false);
+    refresh();
+  }
+
+  // Removing a virtual copy is the smaller action: one grade goes, the photo stays.
+  function confirmRemoveCopies(list) {
+    const one = list.length === 1;
+    askUser({
+      title: one ? `Remove Virtual Copy “${list[0].copyName}”?` : `Remove ${list.length} Virtual Copies?`,
+      message: (one ? `This removes one grade of ${list[0].name}, with its own marks and tags.` : `This removes ${list.length} grades, each with its own marks and tags.`) +
+        ` The ${one ? "photo itself stays, with its other grades" : "photos themselves stay, with their other grades"}. Nothing is deleted from disk.`,
+      buttons: [["no", "Cancel"], ["yes", one ? "Remove copy" : "Remove copies", "button-danger"]],
+    }, (answer) => {
+      if (answer !== "yes") return;
+      const entries = list.map((p) => ({ p, at: photos.indexOf(p) })).sort((a, b) => a.at - b.at);
+      state.undo.push({ back: () => entries.forEach(({ p, at }) => photos.splice(at, 0, p)), text: `Brought back ${plural(list.length, "virtual copy", "virtual copies")}` });
+      list.forEach((p) => photos.splice(photos.indexOf(p), 1));
+      afterRemoval(list);
+      toast(`${plural(list.length, "virtual copy", "virtual copies")} removed. Ctrl+Z brings ${one ? "it" : "them"} back.`);
+    });
+  }
+
+  function confirmDelete(picked, fromPlace) {
+    if (!picked.length) return;
+    const list = picked.filter((p) => p.copyOf === undefined);
+    if (!list.length) return confirmRemoveCopies(picked);
+    // A photo takes its virtual copies with it.
+    const attached = photos.filter((c) => c.copyOf !== undefined && list.some((o) => o.id === c.copyOf));
+    const loose = picked.filter((p) => p.copyOf !== undefined && !attached.includes(p));
+    const all = [...list, ...attached, ...loose];
     const n = list.length;
     const what = n === 1 ? "photo" : "photos";
-    const copies = list.reduce((sum, p) => sum + p.copies, 0);
+    const copies = attached.length;
     const graded = list.filter((p) => p.edited).length;
     const place = fromPlace || placeOf(state.place);
     const bin = place.id !== "card";
@@ -1535,7 +2043,9 @@
     $("confirm-title").textContent = `Delete ${n === 1 ? list[0].name : `${n} photos`}?`;
     $("confirm-message").textContent =
       `${n === 1 ? "This photo" : `These ${n} photos`} will be deleted from disk` +
-      (extras.length ? `, along with ${extras.join(" and ")}` : "") + ". Ratings and tags go with " + (n === 1 ? "it" : "them") + ".\n\n" +
+      (extras.length ? `, along with ${extras.join(" and ")}` : "") + ". Ratings and tags go with " + (n === 1 ? "it" : "them") + "." +
+      (loose.length ? ` The ${plural(loose.length, "selected virtual copy", "selected virtual copies")} of other photos ${loose.length === 1 ? "is" : "are"} removed too; those photos stay.` : "") +
+      (all.includes(grade.photo) ? " One of these is open in Grade and will be closed." : "") + "\n\n" +
       (bin ? `${n === 1 ? "It goes" : "They go"} to the Recycle Bin and can be restored from there.`
         : `${place.label} has no Recycle Bin. ${n === 1 ? "It" : "They"} will be gone for good.`);
     $("confirm-actions").innerHTML = `<button type="button" data-answer="no">Cancel</button><button type="button" class="button-danger" data-answer="yes">${bin ? "Move to Recycle Bin" : "Delete for good"}</button>`;
@@ -1544,15 +2054,9 @@
       if (!answer) return;
       $("confirm").close();
       if (answer !== "yes") return;
-      if (bin) state.undo.push({ deleted: list.map((p) => ({ p, at: photos.indexOf(p) })).sort((a, b) => a.at - b.at) });
-      list.forEach((p) => photos.splice(photos.indexOf(p), 1));
-      state.sel.clear();
-      state.active = state.anchor = null;
-      if (state.view !== "grid") state.view = "grid";
-      computeShown();
-      renderNav();
-      renderGrid(false);
-      refresh();
+      if (bin) state.undo.push({ deleted: all.map((p) => ({ p, at: photos.indexOf(p) })).sort((a, b) => a.at - b.at) });
+      all.forEach((p) => photos.splice(photos.indexOf(p), 1));
+      afterRemoval(all);
       toast(bin ? `${n} ${what} moved to the Recycle Bin. Ctrl+Z restores.` : `${n} ${what} deleted.`);
     };
     $("confirm").showModal();
@@ -1688,6 +2192,319 @@
   });
   $("empty").addEventListener("click", (event) => { if (event.target.id === "empty-add") openPicker(); });
 
+  // ---------- virtual copies: create, rename ----------
+
+  function createCopies() {
+    const list = targets();
+    if (!list.length) return;
+    const one = list.length === 1;
+    askUser({
+      title: one ? `Create Virtual Copy of ${list[0].name}` : `Create ${list.length} Virtual Copies`,
+      message: "A virtual copy is another grade of the same photo. No second image file is made. The copy is kept in the settings file beside the photo, so it travels with it.",
+      fields: [{ name: "from", label: "Start from", options: ["The current grade", "A clean start"] }].concat(one ? [{ name: "name", label: "Name (optional)", placeholder: "For example Black and white" }] : []),
+      buttons: [["no", "Cancel"], ["yes", one ? "Create copy" : `Create ${list.length} copies`, GO]],
+    }, (answer, v) => {
+      if (answer !== "yes") return;
+      const made = list.map((p) => makeCopy(p, one ? v.name : "", v.from !== "The current grade"));
+      state.undo.push({ back: () => made.forEach((c) => photos.splice(photos.indexOf(c), 1)), text: `Removed ${plural(made.length, "new virtual copy", "new virtual copies")} again` });
+      computeShown();
+      renderGrid(false);
+      state.sel = new Set(made.map((c) => c.id));
+      state.active = state.anchor = made[made.length - 1].id;
+      refresh();
+      toast(`${plural(made.length, "virtual copy", "virtual copies")} created beside ${one ? "the original" : "their originals"}. Ctrl+Z undoes it.`);
+    });
+  }
+
+  function renameCopy(p) {
+    askUser({ title: "Rename Virtual Copy", fields: [{ name: "name", label: "Name", value: p.copyName }], buttons: [["no", "Cancel"], ["yes", "Rename", GO]] },
+      (answer, v) => { if (answer === "yes" && v.name) { p.copyName = v.name; renderGrid(false); refresh(); } });
+  }
+
+  // ---------- albums ----------
+  // An album is a hand-picked set. Photos stay where they are on disk, and a
+  // photo can be in several albums.
+
+  const albums = () => PLACES.filter((p) => p.ids);
+
+  function newAlbum(list) {
+    askUser({
+      title: "New Album",
+      message: (list.length ? `Starts with the ${plural(list.length, "selected photo")}. ` : "") + "An album is a hand-picked set. Photos stay where they are on disk, and one photo can be in several albums.",
+      fields: [{ name: "name", label: "Name", placeholder: "Album name" }],
+      buttons: [["no", "Cancel"], ["yes", "Create album", GO]],
+    }, (answer, v) => {
+      if (answer !== "yes") return;
+      const place = { id: "album-" + Date.now(), icon: "album", label: v.name || "Untitled album", ids: new Set(list.map((p) => p.id)) };
+      const at = PLACES.findIndex((p) => p.rules);
+      PLACES.splice(at < 0 ? PLACES.length : at, 0, place);
+      if (!list.length) return goTo(place.id);
+      renderNav();
+      refresh();
+      toast(`Album “${place.label}” created with ${plural(list.length, "photo")}.`);
+    });
+  }
+
+  function renameAlbum(place) {
+    askUser({ title: "Rename Album", fields: [{ name: "name", label: "Name", value: place.label }], buttons: [["no", "Cancel"], ["yes", "Rename", GO]] },
+      (answer, v) => { if (answer === "yes" && v.name) { place.label = v.name; renderNav(); renderGrid(false); refresh(); } });
+  }
+
+  function addToAlbum(place, list) {
+    const fresh = list.filter((p) => !place.ids.has(p.id));
+    const already = list.length - fresh.length;
+    if (!fresh.length) return toast(`${list.length === 1 ? "That photo is" : "Those photos are"} already in ${place.label}.`);
+    fresh.forEach((p) => place.ids.add(p.id));
+    state.undo.push({ back: () => fresh.forEach((p) => place.ids.delete(p.id)), text: `Took ${plural(fresh.length, "photo")} out of ${place.label} again` });
+    renderNav();
+    refresh();
+    toast(`${plural(fresh.length, "photo")} added to ${place.label}.` + (already ? ` ${already} already there.` : "") + " Ctrl+Z undoes it.");
+  }
+
+  function removeFromAlbum(place, list) {
+    list.forEach((p) => place.ids.delete(p.id));
+    state.undo.push({ back: () => list.forEach((p) => place.ids.add(p.id)), text: `Put ${plural(list.length, "photo")} back in ${place.label}` });
+    afterRemoval([]);
+    toast(`${plural(list.length, "photo")} removed from ${place.label}. Nothing was deleted from disk. Ctrl+Z undoes it.`);
+  }
+
+  function albumMenu(list) {
+    return [
+      { header: `Add ${list.length === 1 ? title(list[0]) : `${list.length} photos`} to` },
+      ...albums().map((a) => ({ label: a.label, key: list.every((p) => a.ids.has(p.id)) ? "already in" : "", action: () => addToAlbum(a, list) })),
+      albums().length ? "-" : null,
+      { label: "New album…", action: () => newAlbum(list) },
+    ];
+  }
+
+  // Drag photos onto an album in the left panel.
+  let dragging = null;
+  const clearDrop = () => $("nav").querySelectorAll(".drop").forEach((row) => row.classList.remove("drop"));
+  document.addEventListener("dragstart", (event) => {
+    const cell = event.target instanceof Element && event.target.closest("#grid .cell, #filmstrip .cell");
+    if (!cell) return;
+    const id = Number(cell.dataset.id);
+    if (!state.sel.has(id)) select(id);
+    dragging = targets();
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("text/plain", plural(dragging.length, "photo"));
+  });
+  document.addEventListener("dragend", () => { dragging = null; clearDrop(); });
+  $("nav").addEventListener("dragover", (event) => {
+    const row = event.target.closest(".nav-row");
+    const place = row && placeOf(row.dataset.place);
+    clearDrop();
+    if (!dragging || !place || !place.ids) return;
+    event.preventDefault();
+    row.classList.add("drop");
+  });
+  $("nav").addEventListener("drop", (event) => {
+    const row = event.target.closest(".nav-row");
+    const place = row && placeOf(row.dataset.place);
+    if (!dragging || !place || !place.ids) return;
+    event.preventDefault();
+    addToAlbum(place, dragging);
+  });
+
+  // ---------- smart albums ----------
+  // A smart album is a saved filter: the same rules the filter bar uses, kept
+  // under a name. It covers the whole library unless folders are unticked.
+
+  const ruleEdit = { place: null, rules: null };
+  const freshRule = (used) => {
+    const field = Object.keys(FIELDS).find((k) => !used.includes(k)) || "rating";
+    return { field, op: FIELDS[field].ops[0][0], value: FIELDS[field].values ? FIELDS[field].values[field === "rating" ? 3 : 0] : "" };
+  };
+
+  // The filter bar as it stands now, written as rules.
+  function filterAsRules() {
+    const f = state.filters;
+    const list = [];
+    if (f.minStars) list.push({ field: "rating", op: "gte", value: String(f.minStars) });
+    if (f.picked) list.push({ field: "pick", op: "is", value: "Picked" });
+    if (f.unmarked) list.push({ field: "pick", op: "is", value: "Unmarked" }, { field: "rating", op: "is", value: "0" });
+    if (f.hideRejected) list.push({ field: "pick", op: "not", value: "Rejected" });
+    if (f.edited) list.push({ field: "state", op: "is", value: "Edited" });
+    if (f.rawOnly) list.push({ field: "type", op: "is", value: "RAW" });
+    if (f.labels.size === 1) list.push({ field: "label", op: "is", value: cap([...f.labels][0]) });
+    else if (f.labels.size) ["None", ...LABELS.map(cap)].filter((l) => !f.labels.has(l.toLowerCase())).forEach((l) => list.push({ field: "label", op: "not", value: l }));
+    const text = f.text.trim().toLowerCase();
+    if (text) list.push(allTags().has(text) ? { field: "tag", op: "is", value: text } : { field: "name", op: "is", value: text });
+    const here = placeOf(state.place);
+    const top = here && topFolders().find((t) => t === here || (t.children || []).includes(here));
+    if (!list.length) list.push(freshRule([]));
+    return { mode: "all", folders: top ? [top.id] : null, list };
+  }
+
+  function openRules(place, start) {
+    ruleEdit.place = place;
+    ruleEdit.rules = JSON.parse(JSON.stringify(place ? place.rules : start || { mode: "all", folders: null, list: [freshRule([])] }));
+    $("rules-name").value = place ? place.label : "";
+    renderRules();
+    $("rules").showModal();
+    $("rules-name").focus();
+  }
+
+  function renderRules() {
+    const r = ruleEdit.rules;
+    $("rules-title").textContent = ruleEdit.place ? "Edit Smart Album" : "New Smart Album";
+    $("rules-save").textContent = ruleEdit.place ? "Save" : "Create smart album";
+    document.querySelectorAll("#rules-mode [data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === r.mode));
+    const options = (list, chosen) => list.map(([value, text]) => `<option value="${esc(value)}" ${value === chosen ? "selected" : ""}>${esc(text)}</option>`).join("");
+    $("rules-list").innerHTML = r.list.map((rule, i) => {
+      const f = FIELDS[rule.field];
+      const value = f.values ? `<select data-r="value">${options(f.values.map((v) => [v, v]), rule.value)}</select>`
+        : `<input type="text" data-r="value" value="${esc(rule.value)}" ${rule.field === "tag" ? 'list="rules-tags" placeholder="A tag"' : f.number ? 'inputmode="numeric" placeholder="A number"' : 'placeholder="Some text"'} spellcheck="false">`;
+      return `<div class="rule-row" data-rule="${i}"><select data-r="field">${options(Object.keys(FIELDS).map((k) => [k, FIELDS[k].label]), rule.field)}</select>
+        <select data-r="op">${options(f.ops, rule.op)}</select>${value}<button type="button" data-r="remove" title="Remove this rule" aria-label="Remove this rule">×</button></div>`;
+    }).join("") + `<datalist id="rules-tags">${[...allTags().keys()].sort().map((t) => `<option value="${esc(t)}">`).join("")}</datalist>`;
+    $("rules-folders").innerHTML = topFolders().map((f) => `<label class="opt-check"><input type="checkbox" data-folder="${f.id}" ${!r.folders || r.folders.includes(f.id) ? "checked" : ""}> ${esc(f.label)}</label>`).join("") +
+      `<span class="helper">All ticked means everywhere in the library, including folders pinned later.</span>`;
+    renderRuleNotes();
+  }
+
+  function renderRuleNotes() {
+    const r = ruleEdit.rules;
+    const live = r.list.filter((rule) => String(rule.value).trim() !== "");
+    const n = photos.filter((p) => matches(p, r)).length;
+    $("rules-notes").textContent = !live.length ? "Add at least one rule." : r.folders && !r.folders.length ? "No folder is ticked, so nothing can match."
+      : `${plural(n, "photo")} ${n === 1 ? "matches" : "match"} now.` + (live.length < r.list.length ? " A rule with nothing filled in is ignored." : "");
+    $("rules-save").disabled = !live.length;
+  }
+
+  $("rules").addEventListener("input", (event) => {
+    const t = event.target;
+    const r = ruleEdit.rules;
+    if (t.dataset.folder) {
+      const ticked = [...$("rules-folders").querySelectorAll("[data-folder]")].filter((box) => box.checked).map((box) => box.dataset.folder);
+      r.folders = ticked.length === topFolders().length ? null : ticked;
+    } else if (t.dataset.r) {
+      const rule = r.list[Number(t.closest("[data-rule]").dataset.rule)];
+      if (t.dataset.r === "field") {
+        Object.assign(rule, { field: t.value, op: FIELDS[t.value].ops[0][0], value: FIELDS[t.value].values ? FIELDS[t.value].values[0] : "" });
+        return renderRules();
+      }
+      rule[t.dataset.r] = t.value;
+    }
+    renderRuleNotes();
+  });
+  $("rules").addEventListener("click", (event) => {
+    const r = ruleEdit.rules;
+    const mode = event.target.closest("[data-mode]");
+    if (mode) r.mode = mode.dataset.mode;
+    else if (event.target.dataset.r === "remove") r.list.splice(Number(event.target.closest("[data-rule]").dataset.rule), 1);
+    else if (event.target.id === "rules-add") r.list.push(freshRule(r.list.map((rule) => rule.field)));
+    else if (event.target.id === "rules-cancel") return $("rules").close();
+    else if (event.target.id === "rules-save") {
+      const name = $("rules-name").value.trim() || "Untitled smart album";
+      let place = ruleEdit.place;
+      if (place) Object.assign(place, { label: name, rules: r });
+      else PLACES.push(place = { id: "smart-" + Date.now(), icon: "smart", label: name, rules: r });
+      $("rules").close();
+      state.place = null;
+      return goTo(place.id);
+    } else return;
+    renderRules();
+  });
+
+  // ---------- look presets ----------
+  // A look is a selective copy saved under a name: the same tick list and the
+  // same rules as copy and paste. A look only touches the groups it contains.
+
+  const LOOKS = [
+    { folder: "My looks", name: "Langkawi beach", parts: ["Tone", "Color", "Look", "Detail"], css: "saturate(1.3) contrast(1.08) brightness(1.04)", fav: true },
+    { folder: "My looks", name: "Hotel interiors", parts: ["Tone", "Color"], css: "brightness(1.1) contrast(.95) saturate(.92)" },
+    { folder: "Starter set", name: "Clean contrast", parts: ["Tone"], css: "contrast(1.14) saturate(1.05)", builtin: true },
+    { folder: "Starter set", name: "Warm evening", parts: ["Tone", "Color"], css: "sepia(.28) saturate(1.25) contrast(1.05)", builtin: true, fav: true },
+    { folder: "Starter set", name: "Cool shade", parts: ["Color"], css: "hue-rotate(-12deg) saturate(.9) brightness(1.03)", builtin: true },
+    { folder: "Starter set", name: "Soft matte", parts: ["Tone", "Look"], css: "contrast(.86) brightness(1.08) saturate(.85)", builtin: true },
+    { folder: "Starter set", name: "Faded colour film", parts: ["Color", "Look"], css: "sepia(.18) contrast(.92) saturate(.8) brightness(1.05)", builtin: true },
+    { folder: "Starter set", name: "Black and white", parts: ["Color"], css: "grayscale(1) contrast(1.15)", builtin: true },
+  ];
+  const looksUi = { at: 0, targets: [] };
+
+  // Preview on hover: one photo, redrawn with the look under the pointer.
+  function showLook(look) {
+    $("looks-image").src = large(looksUi.targets[0]);
+    $("looks-image").style.filter = look.css;
+  }
+
+  function renderLooks() {
+    const n = looksUi.targets.length;
+    const look = LOOKS[looksUi.at];
+    const folders = [...new Set(LOOKS.map((l) => l.folder))];
+    const groups = [["Favourites", LOOKS.filter((l) => l.fav)], ...folders.map((folder) => [folder, LOOKS.filter((l) => l.folder === folder)])];
+    $("looks-list").innerHTML = groups.filter(([, list]) => list.length).map(([name, list]) => `<div class="paste-kicker">${esc(name)}</div>` + list.map((l) => {
+      const i = LOOKS.indexOf(l);
+      return `<div class="recipe-row look-row${i === looksUi.at ? " selected" : ""}" data-look="${i}"><button type="button" class="look-fav${l.fav ? " on" : ""}" data-fav="${i}" title="${l.fav ? "Remove from favourites" : "Add to favourites"}" aria-label="Favourite">★</button>
+        <span><strong>${esc(l.name)}</strong><small>${l.parts.join(" · ")}</small></span></div>`;
+    }).join("")).join("");
+    $("looks-title").textContent = `Apply Look Preset to ${n === 1 ? title(looksUi.targets[0]) : `${n} photos`}`;
+    showLook(look);
+    $("looks-about").innerHTML = `<p class="looks-name">${esc(look.name)}</p><p>Changes ${look.parts.join(", ")}. Everything else on each photo stays as it is, including crop, lens corrections and local adjustments.</p>
+      <div class="looks-manage">` + (look.builtin
+        ? `<button type="button" data-look-do="copy">Save a copy to My looks</button><span class="helper">Built-in looks cannot be changed.</span>`
+        : `<button type="button" data-look-do="rename">Rename…</button><button type="button" data-look-do="update">Update from copied grade</button><button type="button" data-look-do="export">Export…</button><button type="button" data-look-do="delete">Delete</button>`) + `</div>`;
+    $("looks-notes").textContent = `${plural(n, "photo")} will change and be saved straight away. ${n === 1 ? "It keeps" : "Each keeps"} its previous grade, so this can be taken back.` +
+      (n > 1 ? `\nThe preview shows ${title(looksUi.targets[0])}.` : "");
+    $("looks-go").textContent = n === 1 ? "Apply" : `Apply to ${n} photos`;
+  }
+
+  function openLooks() {
+    const list = targets();
+    if (!list.length) return toast("Select the photos to apply a look to.");
+    looksUi.targets = list;
+    renderLooks();
+    $("looks").showModal();
+  }
+
+  $("looks-list").addEventListener("mouseover", (event) => {
+    const row = event.target.closest("[data-look]");
+    if (row) showLook(LOOKS[Number(row.dataset.look)]);
+  });
+  $("looks-list").addEventListener("mouseleave", () => showLook(LOOKS[looksUi.at]));
+  $("looks").addEventListener("click", (event) => {
+    const fav = event.target.closest("[data-fav]");
+    const row = event.target.closest("[data-look]");
+    const act = event.target.dataset.lookDo;
+    const look = LOOKS[looksUi.at];
+    if (fav) LOOKS[Number(fav.dataset.fav)].fav = !LOOKS[Number(fav.dataset.fav)].fav;
+    else if (row) looksUi.at = Number(row.dataset.look);
+    else if (act === "copy") { LOOKS.unshift(Object.assign({}, look, { folder: "My looks", name: look.name + " copy", builtin: false, fav: false })); looksUi.at = 0; }
+    else if (act === "rename") return askUser({ title: "Rename Look", fields: [{ name: "name", label: "Name", value: look.name }], buttons: [["no", "Cancel"], ["yes", "Rename", GO]] },
+      (answer, v) => { if (answer === "yes" && v.name) { look.name = v.name; renderLooks(); } });
+    else if (act === "update") {
+      if (!clip.source) return toast("Copy a grade first (Ctrl+C on an edited photo). The look then takes its settings.");
+      look.css = clip.source.look || look.css;
+      toast(`“${look.name}” now holds the grade copied from ${title(clip.source)}. Photos that already use it are not changed.`);
+    } else if (act === "export") return toast("Saves this look as a small file you can keep or send to someone.");
+    else if (act === "delete") return askUser({ title: `Delete Look “${look.name}”?`, message: "Photos that used this look keep their grades. Only the saved look is removed.", buttons: [["no", "Cancel"], ["yes", "Delete look", "button-danger"]] },
+      (answer) => { if (answer === "yes") { LOOKS.splice(looksUi.at, 1); looksUi.at = 0; renderLooks(); } });
+    else if (event.target.id === "looks-import") return toast("Reads look files saved from here or from another machine.");
+    else if (event.target.id === "looks-cancel") return $("looks").close();
+    else if (event.target.id === "looks-go") {
+      $("looks").close();
+      return changeGrades(looksUi.targets, (p) => { p.look = look.css; }, `look “${look.name}”`, `“${look.name}” applied to`);
+    } else return;
+    renderLooks();
+  });
+
+  // From the paste window: the copied grade and the ticks, saved under a name.
+  function saveLook() {
+    const parts = chosenLabels().map((label) => label.replace(" (part)", ""));
+    if (!parts.length) return toast("Tick what the look should contain first.");
+    askUser({
+      title: "Save as Look Preset",
+      message: `Saves the ticked settings from ${title(clip.source)}: ${parts.join(", ")}. The look can then be applied to any photo or selection.`,
+      fields: [{ name: "name", label: "Name", placeholder: "Look name" }, { name: "folder", label: "Folder", value: "My looks" }],
+      buttons: [["no", "Cancel"], ["yes", "Save look", GO]],
+    }, (answer, v) => {
+      if (answer !== "yes") return;
+      LOOKS.unshift({ folder: v.folder || "My looks", name: v.name || "Untitled look", parts, css: clip.source.look || "contrast(1.1) saturate(1.12)" });
+      toast(`Look “${LOOKS[0].name}” saved. Apply it with right-click, Apply look preset.`);
+    });
+  }
+
   // ---------- first run ----------
 
   function firstRun() {
@@ -1716,6 +2533,7 @@
     if (!b) return;
     if (b.dataset.fit) setFit(b.dataset.fit);
     if (b.id === "keys-button") $("keys").hidden = !$("keys").hidden;
+    if (b.id === "mock-edit") pretendEdit();
     b.blur();
   });
   $("opt-names").addEventListener("change", () => { app.dataset.names = $("opt-names").checked ? "on" : "off"; });
@@ -1725,6 +2543,7 @@
 
   // The address can ask for a starting state, for example
   // index.html?place=trip&view=single&details=collapsed&nav=collapsed&filter=on
+  app.appendChild($("toast"));
   const ask = new URLSearchParams(location.search);
   setFit(ask.get("fit") || recall("fit", "contain"));
   if (placeOf(ask.get("place"))) state.place = ask.get("place");
@@ -1755,6 +2574,12 @@
     openPaste();
   }
   if (ask.has("menu")) openMenu(900, 300, photoMenu());
+  if (ask.has("allfacts")) { state.allFacts = true; refresh(); }
+  if (ask.has("looks")) openLooks();
+  if (ask.has("tags")) openTags();
+  if (ask.has("rules")) openRules(placeOf("smart"));
+  if (ask.has("copy")) createCopies();
+  if (ask.has("unsaved")) { $("autosave").click(); openInGrade(); pretendEdit(); setStage("library"); select(state.shown[1].id); openInGrade(); }
   if (ask.get("view") === "single") setView("single");
   if (ask.get("view") === "compare") setView("compare");
   if (ask.get("zoom") === "on") setZoom(true, 0.5, 0.45);

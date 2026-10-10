@@ -428,6 +428,24 @@ Proposed:
 - Small marks on thumbnails only where something is set.
 - Nested tags (family > kids): open.
 
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **Typing a tag:** T moves to the tag box. Tags already in the library are
+  suggested as you type, most used first, each with its count. Arrows and
+  Enter choose one; Enter on new text makes a new tag.
+- With several photos selected, a tag carried by only some of them shows
+  with a dashed outline; clicking it adds it to all. A small x takes a tag
+  off the selection.
+- **Tags and Labels window**, opened from the Details panel: every tag with
+  its count, a search box, sort by name or most used. Click selects, Ctrl-
+  click selects several. Rename, Merge, Remove and Show photos act on the
+  selection. Renaming to a name that already exists stops and asks before
+  merging. Each change is one undo step.
+- **Colour labels can be given a meaning** in the same window (for example
+  red = "to retouch"). The name shows in tooltips. The four colours and
+  keys do not change. Names are a personal setting, kept in preferences.
+- A tag exists only while at least one photo carries it.
+
 ### 5.6 Sort, filter and search
 
 Decided: the library has sorting and filtering, including a quick "RAW only"
@@ -470,6 +488,23 @@ Proposed:
 - **Album names are also written into each photo's sidecar**, so albums
   rebuild on another machine and a lost database loses nothing. (Open.)
 
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **New album** from the + by the Albums heading: empty, or from the
+  selected photos. Photos are added by right-click, Add to album, or by
+  dragging thumbnails onto the album in the left panel. Remove from album
+  takes photos out without touching the files. Each is one undo step.
+- The Details panel says which albums a photo is in.
+- **Smart album window:** a name, "match all / any of these rules", and
+  rule rows of field, comparison and value. Fields in the mock-up: rating,
+  pick status, colour label, tag, state, file type, virtual copy or
+  original, camera, lens, ISO, file name. "Look in" ticks limit it to chosen
+  pinned folders; all ticked means the whole library. The window shows how
+  many photos match as the rules change.
+- **Save as smart album** on the filter bar opens the same window with the
+  current filter already written as rules, limited to the folder being
+  looked at.
+
 ### 5.8 Metadata
 
 Decided:
@@ -499,6 +534,22 @@ Proposed:
 - Privacy options on export (strip location, strip serial numbers).
 
 Open: which reader to use (section 7, research item R1).
+
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **Show all** in the Details panel swaps the six-line summary for the full
+  list in groups: File, Camera, Lens, Exposure, Focus and drive, Location,
+  Authoring. Show less goes back. The choice is not remembered between
+  launches.
+- Anything the camera did not write shows as "Not recorded"; a lens the
+  file does not identify shows as "Unknown". Neither is ever filled in by
+  guessing.
+- **Set name** beside an unknown lens takes a typed lens name, kept with
+  the photo and marked "entered by hand".
+- The File group says whether a settings file exists beside the photo yet.
+- **Authoring:** title and caption are typed per photo. Creator, copyright
+  and usage notes come from one template, edited in a small window and kept
+  in preferences.
 
 ### 5.9 Thumbnails, previews and zoom
 
@@ -714,6 +765,24 @@ Proposed:
 - With autosave off, keep a hidden recovery copy of the open photo's unsaved
   work, offered back after a crash.
 
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **Where the save state shows on Grade:** beside the photo name, as "All
+  changes saved", "Saving…", "Unsaved changes" or "No unsaved changes".
+  With autosave off and unsaved work, Save (Ctrl+S) and Revert to last
+  saved appear there, and the Grade tab carries a small dot that stays
+  visible from the Library.
+- **The prompt** follows the app's existing unsaved-changes window: title
+  "Unsaved changes", body "Save changes to <file> before opening <file>?"
+  with one line on what Save and Don't save do, and buttons Cancel, Don't
+  save, Save. Escape is Cancel. The same window appears on closing the app.
+- Going to the Library tab and back never asks; the Grade tab returns to
+  the photo that is open. Opening the photo that is already open never
+  asks.
+- Turning autosave on while there is unsaved work saves it at once.
+- Thumbnails show the saved grade, so an unsaved change is not seen in the
+  library until it is saved.
+
 ### 5.14 Virtual copies
 
 Decided: several independent grades of one photo with no duplicate of the
@@ -729,6 +798,21 @@ Proposed:
   them only in its catalog.)
 - Sort and filter treat a copy as an item.
 - Deleting a photo removes its copies; the confirmation says so.
+
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **Create virtual copy** from the right-click menu asks two things: start
+  from the current grade or a clean start, and an optional name. Without a
+  name the copy is "Copy 1", "Copy 2" and so on.
+- A copy sits straight after its original in every sort order. Its mark is
+  in the strip under the thumbnail (a small copy symbol; the original shows
+  "+2"), never on the photo. Its name follows the file name.
+- A new copy starts with the original's stars, pick status, label and tags.
+- **Remove virtual copy** has its own window, which says one grade is
+  removed, the photo stays, and nothing is deleted from disk. It is undone
+  with Ctrl+Z, not from the Recycle Bin.
+- Deleting a photo names how many virtual copies go with it.
+- Exported files add the copy's name to the file name.
 
 ### 5.15 Copying grades, and look presets
 
@@ -786,6 +870,20 @@ Proposed:
   built-in starter set, designed with Steve.
 - Preview on hover before thumbnails of every preset, which cost a render
   each.
+
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **Apply Look Preset window:** looks listed under Favourites, then the
+  user's folders, then the built-in starter set, each with the groups it
+  contains. Pointing at a look previews it on the first selected photo;
+  clicking selects it. A star marks a favourite.
+- The window says how many photos will change and that each keeps its
+  previous grade. Applying is one undo step, like paste.
+- A user's look can be renamed, updated from the copied grade, exported and
+  deleted. A built-in look cannot be changed; "Save a copy" makes one that
+  can.
+- **Save as look preset** in the paste window asks for a name and a folder
+  and lists the ticked groups the look will contain.
 
 ### 5.16 Export
 
