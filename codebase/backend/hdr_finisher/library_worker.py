@@ -79,6 +79,25 @@ class LibraryWorker:
                 raise RuntimeError("Library helper is unavailable.") from exc
         return job_id, future
 
+    def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
+        if command not in {"picture", "scan", "tree"}:
+            raise ValueError("Unknown library helper command.")
+        self.start()
+        job_id = uuid4().hex
+        future = Future()
+        with self._lock:
+            if self._closed or self._failure:
+                raise RuntimeError(self._failure or "Library helper is closed.")
+            if len(self._pending) >= 256:
+                raise RuntimeError("Library helper queue is full.")
+            self._pending[job_id] = future
+            try:
+                self._connection.send({**arguments, "command": command, "id": job_id, "priority": priority})
+            except (EOFError, OSError) as exc:
+                self._pending.pop(job_id, None)
+                raise RuntimeError("Library helper is unavailable.") from exc
+        return job_id, future
+
     def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False,
                   cancel_event: Event | None = None) -> Path:
         job_id, future = self.submit_thumbnail(value, size, fast_only=fast_only,
@@ -140,7 +159,9 @@ class LibraryWorker:
                     future = self._pending.pop(message["id"], None)
                 if future is None or future.done():
                     continue
-                if "path" in message:
+                if "result" in message:
+                    future.set_result(message["result"])
+                elif "path" in message:
                     future.set_result(Path(message["path"]))
                 else:
                     from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired
@@ -209,6 +230,9 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
     priority = _lower_priority()
     from .media_browser import MediaBrowserStore, MediaBrowserInterpretationRequired
     from .launcher import _parent_is_alive
+    from .library_pictures import LibraryPictureCache
+    from .library_folders import scan_folder, folder_tree
+    pictures = LibraryPictureCache(root)
     browser = MediaBrowserStore(Path(root))
     condition = Condition()
     write_lock = RLock()
@@ -222,20 +246,33 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
         with write_lock:
             connection.send(message)
 
-    def decode():
+    def decode(picture_jobs=False):
         while not stopping.is_set():
             with condition:
-                while not stopping.is_set() and (not queue or state["paused"]):
+                while not stopping.is_set():
+                    candidates = [(item, index) for index, item in enumerate(queue)
+                        if (item[2]["command"] == "picture") == picture_jobs]
+                    if candidates and not state["paused"]:
+                        _, index = min(candidates)
+                        _priority, _sequence, job = queue.pop(index)
+                        heapq.heapify(queue)
+                        break
                     condition.wait(timeout=0.25)
                 if stopping.is_set():
                     return
-                _priority, _sequence, job = heapq.heappop(queue)
                 cancelled = jobs.get(job["id"])
             if cancelled is None or cancelled.is_set():
                 continue
             try:
-                output = browser.thumbnail(job["path"], job["size"], fast_only=job["fast_only"])
-                result = {"id": job["id"], "path": str(output)}
+                if job["command"] == "picture":
+                    output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
+                    result = {"id": job["id"], "result": output}
+                elif job["command"] in {"scan", "tree"}:
+                    operation = scan_folder if job["command"] == "scan" else folder_tree
+                    result = {"id": job["id"], "result": operation(job["path"], cancelled.is_set)}
+                else:
+                    output = browser.thumbnail(job["path"], job["size"], fast_only=job["fast_only"])
+                    result = {"id": job["id"], "path": str(output)}
             except MediaBrowserInterpretationRequired as exc:
                 result = {"id": job["id"], "error": str(exc), "reason": exc.reason,
                           "profile_name": exc.profile_name}
@@ -250,7 +287,11 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
                     return
 
     Thread(target=decode, name="hdr-library-decode", daemon=True).start()
-    reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1})
+    # Keep the existing import decoder single-threaded. Library pictures use the
+    # bounded six-lane route proven by the quick-open trial, on the same pause gate.
+    for index in range(6):
+        Thread(target=decode, args=(True,), name=f"hdr-library-picture-{index}", daemon=True).start()
+    reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1, "picture_workers": 6})
     try:
         while _parent_is_alive(parent_pid):
             if not connection.poll(0.25):
@@ -267,7 +308,7 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] == "thumbnail":
+                elif message["command"] in {"thumbnail", "picture", "scan", "tree"}:
                     sequence += 1
                     jobs[message["id"]] = Event()
                     heapq.heappush(queue, (message["priority"], sequence, message))

@@ -36,6 +36,7 @@ from .folder_picker import pick_directory
 from .loader import LoaderError
 from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore
 from .library_worker import LibraryWorker
+from .library_api import create_library_router
 from .import_jobs import ImportJobManager
 from .local_adjustments import spatial_mask_signature
 from .mask_softness import SOFT_ESTIMATE_LIMIT, bitmap_frame_rect, gpu_bitmap_soft_verdict, soft_mask_verdict
@@ -357,10 +358,11 @@ class DesktopRequestBoundary:
         async def send_hardened(message) -> None:
             if message["type"] == "http.response.start" and desktop_authoring_secret:
                 headers = MutableHeaders(scope=message)
+                ancestor_policy = "'self'" if request.url.path == "/static/photo-library.html" else "'none'"
                 headers["Content-Security-Policy"] = (
                     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
                     "img-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:; "
-                    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+                    f"object-src 'none'; base-uri 'none'; frame-ancestors {ancestor_policy}"
                 )
                 headers["X-Content-Type-Options"] = "nosniff"
             await send(message)
@@ -391,6 +393,7 @@ evidence_store = EvidenceStore()
 library_worker = LibraryWorker(MediaBrowserStore().root)
 atexit.register(library_worker.close)
 media_browser_store = MediaBrowserStore(thumbnail_worker=library_worker)
+app.include_router(create_library_router(library_worker, media_browser_store))
 import_jobs = ImportJobManager(store, media_browser_store, workers=1)
 atexit.register(import_jobs.close)
 external_proof_tokens: dict[str, tuple[str, float]] = {}
