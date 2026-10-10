@@ -1244,8 +1244,7 @@ svg {
   display: flex;
 }
 
-[data-view="compare"] #single-stage,
-[data-view="compare"] #single-caption {
+[data-view="compare"] #single-stage {
   display: none;
 }
 
@@ -3224,4 +3223,15 @@ button.tag-row:hover {
 .lib-strip-handle:hover::after,
 .lib-strip-handle:active::after {
   background: var(--accent);
+}
+
+/* Single view has no caption line: the name and marks are in the Details
+   panel and under the filmstrip thumbnail. The photo gets the space. */
+#single-stage {
+  padding-bottom: 14px;
+}
+
+#single-stage img.stage-ov:not(.zoomed) {
+  inset: 14px;
+  height: calc(100% - 28px);
 }

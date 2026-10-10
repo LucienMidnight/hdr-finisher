@@ -593,8 +593,6 @@
     if (!p) return;
     show($("single-image"), p);
     $("single-image").classList.toggle("rejected", p.flag === "reject");
-    const index = state.shown.indexOf(p) + 1;
-    $("single-caption").innerHTML = `<span>${esc(title(p))}</span>${labelDot(p)}<span class="stars">${"★".repeat(p.stars)}</span>${p.flag ? icon(p.flag === "pick" ? "flag" : "reject") : ""}<span>${index} / ${state.shown.length}</span><span>${state.zoom.on ? "100%" : "Fit"}</span>`;
   }
 
   function renderReview() {
