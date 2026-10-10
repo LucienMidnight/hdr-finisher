@@ -1730,6 +1730,163 @@ fast and preview-size work helps opening, but neither normal threading nor
 GPU drawing makes the unchanged file encoder instantaneous. No preview
 format, pipeline, cache or UX decision is adopted by this trial.
 
+**M2/M6 quick-open trial, October 10 (test-only, no adoption):**
+At 1600 pixels, six concurrent opens presented **7.01 camera RAW photos/s
+in SDR and 7.13 in HDR**. The full 29-file corpus reached 8.10 / 8.17 photos/s
+because its ten linear DNGs used their embedded JPEG, not their linear pixels.
+This is a switched-off driver/helper, not a library implementation. Grade,
+CPU export, Proof, pinned shaders, limits, project format and shipped cache
+policies are unchanged. Tests ran in development Electron at 2560x1440 on the
+existing NVIDIA Lovelace adapter. Disk was warm. No pixels were written to disk
+between source request and presentation; PNGs were saved only for comparisons.
+
+1. **Request to screen, ms.** One fresh-source sample per file per lane, with
+new test source identities and no persistent source cache. Prefetched means
+prepared in helper RAM, then uploaded anew; it does not mean already GPU-resident.
+Completion waits for GPU submission and two animation frames, a compositor
+opportunity rather than a physical display scanout timestamp. The initial
+camera-DNG SDR frame includes shader warm-up (2,349 ms total); the resumed
+TIFF comparison also starts a new renderer (2,371 ms SDR, 1,760 ms in draw).
+Batch rates below
+use already-initialized shaders. Single-file formats have one sample, so their
+median and worst are the same. All totals include transport and frame waiting.
+
+| Format | Fresh SDR median / worst | Fresh HDR median / worst | Prefetched SDR median / worst | Prefetched HDR median / worst | SDR CPU quick / upload / GPU color / draw medians |
+|---|---:|---:|---:|---:|---:|
+| ARW | 436 / 533 | 428 / 509 | 73 / 85 | 73 / 79 | 360.1 / 47.6 / 6.4 / 11.1 |
+| CR2 | 557 / 588 | 557 / 582 | 73 / 73 | 70 / 70 | 488.0 / 46.1 / 6.4 / 11.4 |
+| NEF | 497 / 497 | 490 / 490 | 71 / 71 | 73 / 73 | 423.0 / 47.9 / 6.3 / 10.1 |
+| RAF | 284 / 284 | 264 / 264 | 73 / 73 | 79 / 79 | 190.2 / 62.3 / 6.6 / 11.1 |
+| Camera DNG | 1464 / 2349 | 613 / 640 | 73 / 79 | 77 / 79 | 506.7 / 56.5 / 5.9 / 887.0 |
+| Linear DNG (JPEG) | 319 / 335 | 312 / 328 | 72 / 79 | 71 / 79 | 247.4 / 45.5 / 6.6 / 11.4 |
+| JPG | 408 / 408 | 317 / 317 | 67 / 67 | 91 / 91 | 321.2 / 53.3 / 9.4 / 16.7 |
+| HEIC | 2262 / 2262 | 2263 / 2263 | 61 / 61 | 79 / 79 | 2162.6 / 49.8 / 0.0 / 13.5 |
+| TIF | 2371 / 2371 | 610 / 610 | 68 / 68 | 73 / 73 | 535.8 / 54.2 / 6.0 / 1759.7 |
+
+CPU quick includes header/unpack, half-size demosaic, resizing, sampled meter
+and peaks, and half-float packing. Independent stage medians need not sum.
+RAW uses a separate LibRaw half-size linear demosaic with clipped highlights.
+The ordinary camera route retains Grade's camera scale/WB/matrix; unsupported
+camera-bridge DNGs use LibRaw camera-WB linear sRGB. The GPU applies WB/matrix,
+transfer decoding and negative-gamut mapping, then the existing GPU grade.
+CPU bilinear reduction before upload keeps transfer small. No lens, highlight
+reconstruction, denoise or DNG corrective opcodes run on the quick route.
+A serialized global-grade fixture adds +0.25 EV in both lanes. Real saved
+project loading and complex saved recipes were not qualified by this instrument.
+
+2. **End-to-end photos/s**, counting each GPU-completed/compositor-ready picture:
+
+| Corpus / lane | 1 open | 4 opens | 6 opens |
+|---|---:|---:|---:|
+| 19 camera originals / SDR | 2.46 | 5.63 | 7.01 |
+| 19 camera originals / HDR | 2.53 | 5.78 | 7.13 |
+| Full 29 / SDR | 2.88 | 7.11 | 8.10 |
+| Full 29 / HDR | 2.91 | 6.97 | 8.17 |
+
+3. **Hand-over and size.** In the six-open camera SDR batch, helper-to-GPU upload
+was 57.5 ms median at 1600; GPU source color conversion took another 13.6 ms and
+drawing 22.3 ms. At 960 these were 25.4 / 5.5 / 8.2 ms and throughput increased
+from 7.01 to 8.94 photos/s. Median packed fit picture: 13.28 MiB (row-padded
+RGBA16F); 960: 4.92 MiB; thumbnail: 384 KiB. These are transfer-buffer sizes,
+not a proposed cache budget. A prefetched 1600 picture generally took about
+70-85 ms to upload, grade and reach a presentation opportunity. Initial opens
+are dominated by CPU preparation; after parallel opening, transfer and drawing
+become a substantial part of the remaining time.
+
+4. **HDR cost.** The same inputs are used for both lanes. HDR uses the existing
+HDR grade and rgba16float presentation surface instead of SDR bgra8unorm.
+It needs no extra source open, readback, gain-map encoder or stored file.
+The measured rate difference was small; this run does not establish a hardware
+scanout/monitor luminance result. Embedded JPEG linear-DNG previews retain only
+their SDR information: an HDR canvas cannot restore the missing linear headroom.
+
+5. **Grid and placeholder.** Thirty distinct source paths (the 29 plus DJI JPEG),
+new helper results, six opens, 256-pixel graded SDR thumbnails: first 113.9 ms,
+all 2,141.4 ms. Camera embedded-JPEG first-picture samples at 1600 were 157.7 ms
+median / 198.4 worst, including GPU grade/presentation. RAW replacement timings
+are the fresh-source table. These two moments were measured separately, not as
+a combined placeholder-then-replacement scheduling policy.
+
+6. **Grade interaction.** Same DSC00264.ARW exposure sequence as before: twenty
+gestures per condition, exact-ready generation completion, 16 ms polling.
+Background work used six quick-open threads and a second GPU device in the
+same renderer, with all 29 sources reopened in each of eight rounds. The helper
+was normal priority (a conservative test, not the shipped helper scheduler).
+
+| Condition | Gesture median, ms | p95, ms | RAF p95 / max gap, ms |
+|---|---:|---:|---:|
+| Idle | 19.32 | 27.53 | 6.1 / 18.2 |
+| Busy | 20.41 | 41.09 | 12.1 / 24.3 |
+The batch was still active after sampling, with 1 pictures presented.
+All sampled Grade gestures reached exact ready. Steve still needs to judge the
+feel; this is one beginning-of-batch sample, not sustained interaction evidence.
+
+7. **Picture difference.** Grade left, quick right; SDR top and HDR bottom in
+each linked image. These PNGs are SDR screen captures and clip HDR values; they
+do not preserve HDR luminance. Numbers use linear GPU picture readback: SDR
+8-bit sRGB mean / p99 absolute code error, and HDR mean absolute linear error
+divided by mean absolute Grade HDR. Where dimensions differ, quick pixels are
+nearest-sampled to reference dimensions; no geometric registration hides the
+correction differences. These are look differences, not shader accuracy checks.
+
+| Photo / local image | SDR mean / p99 code error | HDR relative mean error, % |
+|---|---:|---:|
+| [DJI_0071-2.DNG](../../codebase/output/library-quick-open-trial/00-DJI_0071-2.DNG.png) | 16.106 / 46 | 15.803 |
+| [DSC02767.ARW](../../codebase/output/library-quick-open-trial/09-DSC02767.ARW.png) | 11.969 / 78 | 28.599 |
+| [DSC06615.ARW](../../codebase/output/library-quick-open-trial/14-DSC06615.ARW.png) | 13.097 / 49 | 9.757 |
+| [DSC00264_DxO-optical-corr-only.dng](../../codebase/output/library-quick-open-trial/02-DSC00264_DxO-optical-corr-only.dng.png) | 18.445 / 67 | 46.290 |
+| [2L1B8631.CR2](../../codebase/output/library-quick-open-trial/24-2L1B8631.CR2.png) | 6.925 / 34 | 12.899 |
+| [Fujifilm_X-E2S_DSCF6495.RAF](../../codebase/output/library-quick-open-trial/26-Fujifilm_X-E2S_DSCF6495.RAF.png) | 5.082 / 29 | 7.027 |
+| [Nikon_D7500_DSC_3931.NEF](../../codebase/output/library-quick-open-trial/27-Nikon_D7500_DSC_3931.NEF.png) | 1.517 / 7 | 0.959 |
+| [DJI_0071.JPG](../../codebase/output/library-quick-open-trial/29-DJI_0071.JPG.png) | 0.452 / 5 | 0.469 |
+| [iphone_16_pro_IMG_3324.HEIC](../../codebase/output/library-quick-open-trial/30-iphone_16_pro_IMG_3324.HEIC.png) | 2.125 / 17 | 2.788 |
+| [DSC04375_DxO_clipped_target.tif](../../codebase/output/library-quick-open-trial/31-DSC04375_DxO_clipped_target.tif.png) | 0.384 / 4 | 0.448 |
+
+Quick pictures omit corrected geometry and highlight recovery. DJI shows both
+geometry/color changes; the linear DxO DNG JPEG has a baked camera rendering
+and lost HDR latitude. The same automatic exposure meter is retained on a
+256-edge CPU sample (about 1.4 ms median); sampled source peaks cost about
+18 ms instead of full preview classification. The badge is not needed to draw.
+Brightness is close for Sony/Fuji/Nikon (meter EV differences 0-0.004), but this
+**does not fully meet exact Grade brightness matching**: Canon differs by
+0.245 EV and DJI by 0.458 EV; removing corrections/reconstruction and using the
+LibRaw DNG color route changes the metered source. Do not adopt this as a
+Grade-identical preview. The TIFF keeps Grade's unresolved color interpretation
+without inventing a profile; it is not color-qualified. HEIC retains its
+gain-map HDR reconstruction and authored SDR reference, so its approximately
+2.3-second decode is still expensive. JPEG uses reduced libjpeg decode; TIFF
+and HEIC use their existing decoders, followed by early trial reduction.
+
+Context comparison: the bare-memory six-thread 13.2 camera photos/s was **not**
+reproduced end to end (7.01/7.13). This is a different endpoint and includes
+resizing, metering/packing, IPC, GPU preparation/grading and presentation waits.
+The faster mixed-corpus rate uses JPEGs for linear DNGs and does not contradict
+the approximately 2-second linear-pixel decode benchmark. No new bare-decoder
+measurement here contradicts Claude's timings. The 2.3-second first SDR frame
+is GPU warm-up, not a return of the DJI correction warp.
+
+Excluded: local masks, virtual copies, network drives, cold disk, export
+overlap, oversized line-scan DNG, unsupported merged HDR DNG, other GPUs,
+full linear-DNG HDR decoding, persistent cache/store policy, real saved-project
+loading, combined placeholder/replacement scheduling and sustained gestures.
+Uncompressed 42 MP Sony files are 82 MB each; a slow disk would cap the rate
+before the processor. The final measurement ran without fast-test contention.
+Exploratory bulk-prefetch had a failed bridge request (cause not isolated);
+final per-photo prefetch completed. The TIFF initially refused unknown color
+metadata and was repaired to mirror Grade's existing unresolved interpretation.
+Validation: 438 Node tests passed; 1,588 pytest passed, three skipped; measure,
+ten-photo compare and interaction drivers completed sequentially in Electron.
+Reproduce from codebase: set HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440, then
+run `node tests/run-in-electron.js tests/performance/photo-library-quick-open-trial.js`
+with `--mode measure`, `--mode compare`, or `--mode interaction` (one at a time).
+
+Suggestion for Steve: **quick RAW browsing is feasible; replacing every stored
+HDR preview is not established**. The one decision is whether the Library may
+show this approximate quick picture, including a baked SDR JPEG for linear
+DNGs, in exchange for immediate browsing without preparing files. If it must
+match Grade's brightness/corrections and preserve linear-DNG HDR, keep stored
+previews for those cases. Nothing is adopted by this trial.
+
 **T1, October 10 (trial entirely outside the app):** Temporary copies of
 Canon CR2, Fuji RAF and DJI JPEG were saved beside today's project document,
 closed and reopened. Three grade changes 50 ms apart used a trial 500 ms
