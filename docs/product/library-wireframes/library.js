@@ -363,6 +363,7 @@
     renderFilters();
     syncOptions();
     syncSizeSlider();
+    syncStripScroll();
   }
 
   function renderStatus() {
@@ -1299,6 +1300,40 @@
   });
   window.addEventListener("mouseup", () => { stripDrag = null; });
   $("strip-handle").addEventListener("dblclick", () => { setStrip(80); refresh(); });
+
+  // The filmstrip's scrollbar sits along its top edge. The mouse wheel scrolls
+  // the strip and never changes which photo is selected.
+  function syncStripScroll() {
+    const [strip, bar] = [$("filmstrip"), $("strip-scroll")];
+    const thumb = bar.firstElementChild;
+    const spare = strip.scrollWidth - strip.clientWidth;
+    bar.classList.toggle("idle", spare <= 1);
+    if (spare <= 1) return;
+    thumb.style.width = Math.max(36, (bar.clientWidth * strip.clientWidth) / strip.scrollWidth) + "px";
+    thumb.style.left = ((bar.clientWidth - thumb.offsetWidth) * strip.scrollLeft) / spare + "px";
+  }
+  $("filmstrip").addEventListener("scroll", syncStripScroll);
+  const wheelStrip = (event) => {
+    event.preventDefault();
+    $("filmstrip").scrollLeft += Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+  };
+  $("filmstrip").addEventListener("wheel", wheelStrip, { passive: false });
+  $("strip-scroll").addEventListener("wheel", wheelStrip, { passive: false });
+  let barDrag = null;
+  $("strip-scroll").addEventListener("mousedown", (event) => {
+    const [strip, bar] = [$("filmstrip"), $("strip-scroll")];
+    const thumb = bar.firstElementChild;
+    const room = bar.clientWidth - thumb.offsetWidth;
+    if (room <= 0) return;
+    event.preventDefault();
+    const scale = (strip.scrollWidth - strip.clientWidth) / room;
+    // A click beside the thumb brings the thumb under the pointer first.
+    if (event.target !== thumb) strip.scrollLeft = (event.clientX - bar.getBoundingClientRect().left - thumb.offsetWidth / 2) * scale;
+    barDrag = { x: event.clientX, from: strip.scrollLeft, scale };
+    bar.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", (event) => { if (barDrag) $("filmstrip").scrollLeft = barDrag.from + (event.clientX - barDrag.x) * barDrag.scale; });
+  window.addEventListener("mouseup", () => { barDrag = null; $("strip-scroll").classList.remove("dragging"); });
   // ---------- pop-out: the library in its own window ----------
 
   // One app, two windows. The main window stays on Grade while the library is

@@ -3235,3 +3235,56 @@ button.tag-row:hover {
   inset: 14px;
   height: calc(100% - 28px);
 }
+
+/* ---------- filmstrip scrollbar, along the top edge ---------- */
+
+.lib-strip-scroll {
+  position: relative;
+  flex: 0 0 auto;
+  height: 11px;
+  border-top: 1px solid var(--hairline);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+[data-tiles="on"] .lib-strip-scroll {
+  background: var(--viewer);
+}
+
+.lib-strip-scroll i {
+  position: absolute;
+  top: 3px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  transition: background 120ms ease;
+}
+
+.lib-strip-scroll:hover i,
+.lib-strip-scroll.dragging i {
+  background: var(--muted);
+}
+
+/* Everything fits: the track stays so nothing jumps, the thumb goes. */
+.lib-strip-scroll.idle {
+  cursor: default;
+}
+
+.lib-strip-scroll.idle i {
+  display: none;
+}
+
+.lib-filmstrip {
+  border-top: 0;
+}
+
+/* The resize handle now sits wholly above the scrollbar. */
+.lib-strip-handle {
+  height: 7px;
+  margin: -7px 0 0;
+}
+
+.lib-strip-handle::after {
+  inset: auto 0 -1px;
+  height: 2px;
+}
