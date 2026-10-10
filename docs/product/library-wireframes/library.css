@@ -3182,3 +3182,46 @@ button.tag-row:hover {
   height: 111px;
   padding: 3px;
 }
+
+/* ---------- filmstrip size ----------
+   Set by the size slider while in single view or compare, or by dragging
+   the strip's top edge. Everything in the strip follows one number. */
+
+.lib-filmstrip {
+  --strip: 80px;
+  height: calc(var(--strip) + 43px);
+}
+
+[data-tiles="on"] .lib-filmstrip {
+  height: calc(var(--strip) + 31px);
+}
+
+.lib-filmstrip .cell {
+  width: calc(var(--strip) * 1.45);
+}
+
+.lib-filmstrip .cell .frame {
+  height: var(--strip);
+}
+
+.lib-strip-handle {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
+  height: 9px;
+  margin: -4px 0 -5px;
+  cursor: ns-resize;
+}
+
+.lib-strip-handle::after {
+  position: absolute;
+  inset: 4px 0;
+  background: transparent;
+  content: "";
+  transition: background 120ms ease;
+}
+
+.lib-strip-handle:hover::after,
+.lib-strip-handle:active::after {
+  background: var(--accent);
+}

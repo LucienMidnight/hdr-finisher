@@ -362,6 +362,7 @@
     renderStatus();
     renderFilters();
     syncOptions();
+    syncSizeSlider();
   }
 
   function renderStatus() {
@@ -1269,7 +1270,37 @@
   document.querySelectorAll("[data-view-button]").forEach((b) => b.addEventListener("click", () =>
     (b.dataset.viewButton === "compare" ? openOptions("compare", b) : setView(b.dataset.viewButton))));
   $("review-button").addEventListener("click", () => setReview(true));
-  $("thumb-size").addEventListener("input", () => $("grid").style.setProperty("--thumb", $("thumb-size").value + "px"));
+  // One size slider. In the grid it sizes the thumbnails; in single view and
+  // compare it sizes the filmstrip, which can also be dragged by its top edge.
+  const sizes = { grid: 190, strip: 80 };
+  const STRIP = [44, 260];
+  function setStrip(height) {
+    sizes.strip = Math.round(Math.max(STRIP[0], Math.min(STRIP[1], height)));
+    $("filmstrip").style.setProperty("--strip", sizes.strip + "px");
+  }
+  function syncSizeSlider() {
+    const grid = state.view === "grid";
+    const slider = $("thumb-size");
+    [slider.min, slider.max] = grid ? [140, 360] : STRIP;
+    slider.value = grid ? sizes.grid : sizes.strip;
+    slider.setAttribute("aria-label", grid ? "Thumbnail size" : "Filmstrip size");
+    slider.parentElement.title = grid ? "Thumbnail size" : "Filmstrip size";
+  }
+  $("thumb-size").addEventListener("input", () => {
+    const value = Number($("thumb-size").value);
+    if (state.view === "grid") { sizes.grid = value; return $("grid").style.setProperty("--thumb", value + "px"); }
+    setStrip(value);
+    refresh();
+  });
+  let stripDrag = null;
+  $("strip-handle").addEventListener("mousedown", (event) => { stripDrag = { y: event.clientY, from: sizes.strip }; event.preventDefault(); });
+  window.addEventListener("mousemove", (event) => {
+    if (!stripDrag) return;
+    setStrip(stripDrag.from + (stripDrag.y - event.clientY));
+    refresh();
+  });
+  window.addEventListener("mouseup", () => { stripDrag = null; });
+  $("strip-handle").addEventListener("dblclick", () => { setStrip(80); refresh(); });
   // ---------- pop-out: the library in its own window ----------
 
   // One app, two windows. The main window stays on Grade while the library is
