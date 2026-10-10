@@ -55,9 +55,9 @@
       { id: "studio-1", icon: "folder", label: "Lego", scenes: [1] },
       { id: "studio-2", icon: "folder", label: "Drinks", scenes: [5] },
     ] },
-    { id: "client", icon: "folder", label: "Client work (NAS)", offline: true },
+    { id: "client", icon: "folder", label: "Client work (NAS)", offline: true, scenes: [5] },
     { id: "card", icon: "card", label: "Memory card (E:)", scenes: [6], note: "not pinned" },
-    { heading: "Projects" },
+    { heading: "Projects", add: "Open project" },
     { id: "project", icon: "project", label: "Harbour Hotel HDR set", scenes: [2] },
     { heading: "Albums", add: "New album" },
     // An album is a hand-picked set. A smart album is a saved set of rules.
@@ -75,6 +75,7 @@
     plus: "M12 5v14 M5 12h14",
     flag: "M5 5a5 5 0 0 1 7 0a5 5 0 0 0 7 0v9a5 5 0 0 1 -7 0a5 5 0 0 0 -7 0v-9z M5 21v-7",
     reject: "M18 6l-12 12 M6 6l12 12",
+    link: "M9 15l6 -6 M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464 M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463",
     edited: "M4 6h8 M16 6h4 M4 12h2 M10 12h10 M4 18h10 M18 18h2 M14 4v4 M8 10v4 M16 16v4",
     copy: "M8 8h10a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-8a2 2 0 0 1 2 -2z M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2",
   };
@@ -91,7 +92,7 @@
     sel: new Set(),
     active: null,
     anchor: null,
-    filters: { minStars: 0, picked: false, unmarked: false, hideRejected: false, edited: false, rawOnly: false, text: "", labels: new Set() },
+    filters: { minStars: 0, picked: false, unmarked: false, hideRejected: false, edited: false, rawOnly: false, text: "", labels: new Set(), rules: [] },
     sort: "time",
     undo: [],
     shown: [],
@@ -109,7 +110,14 @@
   const byId = (id) => photos.find((p) => p.id === id);
   const flatPlaces = () => PLACES.flatMap((p) => [p, ...(p.children || [])]).filter((p) => p.id);
   const placeOf = (id) => flatPlaces().find((p) => p.id === id);
-  const inPlace = (place) => !place ? [] : photos.filter((p) => (place.rules ? matches(p, place.rules) : place.ids ? place.ids.has(p.id) : (place.scenes || []).includes(p.scene)));
+  const inPlace = (place) => !place ? [] : photos.filter((p) => (place.rules ? matches(p, place.rules) : place.ids ? place.ids.has(p.id) : inFolder(p, place)));
+  // A photo is in a folder if it sits there directly or in one of its sub-folders.
+  // Photos that have been moved carry their folder; the rest come from the sample sets.
+  function inFolder(p, place) {
+    const moved = p.folder !== undefined && place.icon !== "project";
+    const here = moved ? p.folder === place.id : (place.children ? place.ownScenes || [] : place.scenes || []).includes(p.scene);
+    return here || (place.children || []).some((c) => inFolder(p, c));
+  }
   // Where a photo's image comes from, its place in capture order, and its name on screen.
   const pic = (p) => String(p.pic === undefined ? p.id : p.pic).padStart(3, "0");
   const ord = (p) => (p.order === undefined ? p.id : p.order);
@@ -129,7 +137,7 @@
     const copy = Object.assign({}, from, {
       id: copySerial++, pic: root.id, copyOf: root.id, copyName: name || "Copy " + n,
       order: root.id + (siblings.length + 1) / 100,
-      tags: from.tags.slice(), edited: clean ? false : from.edited, look: clean ? "" : from.look, before: undefined, exported: false,
+      tags: from.tags.slice(), edited: clean ? false : from.edited, look: clean ? "" : from.look, before: undefined, exported: false, link: undefined, session: undefined, hdr: false,
     });
     photos.splice(photos.indexOf(root) + siblings.length + 1, 0, copy);
     return copy;
@@ -158,11 +166,20 @@
     camera: { label: "Camera", ops: IS, values: [...new Set(SCENES.map((s) => s.camera))], test: same((p) => p.facts.camera) },
     lens: { label: "Lens", ops: IS, values: [...new Set(SCENES.map((s) => s.lens))], test: same((p) => p.facts.lens) },
     iso: { label: "ISO", ops: AMOUNT, number: (p) => p.facts.iso },
+    focal: { label: "Focal length", ops: IS, values: [...new Set(SCENES.map((s) => s.focal))], test: same((p) => p.facts.focal) },
+    aperture: { label: "Aperture", ops: IS, values: [...new Set(SCENES.map((s) => s.aperture))], test: same((p) => p.facts.aperture) },
+    shutter: { label: "Shutter speed", ops: IS, values: [...new Set(SCENES.map((s) => s.shutter))], test: same((p) => p.facts.shutter) },
+    date: { label: "Capture date", ops: [["gte", "is on or after"], ["lte", "is on or before"]], order: () => "2026-09-12" },
+    linked: { label: "Linked", ops: IS, values: ["Yes", "No"], test: same((p) => (p.link ? "Yes" : "No")) },
     name: { label: "File name", ops: [["is", "contains"], ["not", "does not contain"]], test: (p, value) => p.name.toLowerCase().includes(value) },
   };
   function ruleHolds(p, rule) {
     const field = FIELDS[rule.field];
     const value = String(rule.value).trim().toLowerCase();
+    if (field.order) {
+      const at = field.order(p);
+      return rule.op === "gte" ? at >= value : rule.op === "lte" ? at <= value : at === value;
+    }
     if (field.number) {
       const [n, v] = [field.number(p), Number(value)];
       return rule.op === "gte" ? n >= v : rule.op === "lte" ? n <= v : n === v;
@@ -171,7 +188,7 @@
   }
   const topFolders = () => PLACES.filter((p) => p.icon === "folder" && !p.offline);
   function matches(p, rules) {
-    if (rules.folders && !rules.folders.some((id) => ((placeOf(id) || {}).scenes || []).includes(p.scene))) return false;
+    if (rules.folders && !rules.folders.some((id) => placeOf(id) && inFolder(p, placeOf(id)))) return false;
     const live = rules.list.filter((rule) => String(rule.value).trim() !== "");
     if (!live.length) return false;
     return rules.mode === "any" ? live.some((rule) => ruleHolds(p, rule)) : live.every((rule) => ruleHolds(p, rule));
@@ -188,6 +205,7 @@
       (!f.edited || p.edited) &&
       (!f.labels.size || f.labels.has(p.label)) &&
       (!f.rawOnly || p.kind === "RAW") &&
+      f.rules.every((rule) => ruleHolds(p, rule)) &&
       (!text || p.name.toLowerCase().includes(text) || p.tags.some((t) => t.includes(text))));
     const order = { pick: 0, null: 1, reject: 2 };
     const sorts = {
@@ -196,7 +214,13 @@
       rating: (a, b) => b.stars - a.stars || ord(a) - ord(b),
       pick: (a, b) => order[a.flag] - order[b.flag] || ord(a) - ord(b),
     };
+    Object.assign(sorts, {
+      type: (a, b) => a.kind.localeCompare(b.kind) || ord(a) - ord(b),
+      modified: (a, b) => (b.edited ? 1 : 0) - (a.edited ? 1 : 0) || ord(a) - ord(b),
+      edited: (a, b) => (b.edited ? 1 : 0) - (a.edited ? 1 : 0) || ord(a) - ord(b),
+    });
     state.shown = list.sort(sorts[state.sort]);
+    if (state.sortDown) state.shown.reverse();
   }
 
   // ---------- navigation rail ----------
@@ -208,7 +232,7 @@
       rows.push(`<button type="button" class="nav-row${p.id === state.place ? " selected" : ""}${p.offline ? " offline" : ""}" style="--depth:${depth}" data-place="${p.id}">
         ${icon("twist", "twist" + (p.children ? (p.open ? " open" : "") : " none"))}${icon(p.icon)}
         <span class="label">${p.label}</span>
-        <span class="${p.note || p.offline ? "note" : "count"}">${p.offline ? "offline" : p.note || count}</span></button>`);
+        <span class="${p.note || p.offline || (p.missing && p.missing.size) ? "note" : "count"}">${p.offline ? "offline" : p.note || (p.missing && p.missing.size ? p.missing.size + " missing" : count)}</span></button>`);
       if (p.children && p.open) p.children.forEach((c) => row(c, depth + 1));
     };
     PLACES.forEach((p) => {
@@ -224,6 +248,7 @@
     const add = event.target.closest(".nav-add");
     if (add) {
       if (add.title === "Add folder") return openPicker();
+      if (add.title === "Open project") return openProject();
       const at = add.getBoundingClientRect();
       const list = targets();
       return openMenu(at.left, at.bottom + 4, [
@@ -234,7 +259,7 @@
     const button = event.target.closest(".nav-row");
     if (!button) return;
     const place = placeOf(button.dataset.place);
-    if (place.offline) return toast("This drive is not connected. Its photos stay listed and show as offline.");
+    if (place.offline) toast("This drive is not connected. Its photos stay listed, and marks and tags still work.");
     if (place.children && (event.target.closest(".twist") || place.id === state.place)) place.open = !place.open;
     else if (place.children) place.open = true;
     goTo(place.id);
@@ -258,6 +283,8 @@
   function marksHtml(p) {
     const right = [];
     const copies = copiesOf(p).length;
+    if (p.link) right.push(`<span class="copy" title="Linked with ${plural(mates(p).length - 1, "other photo")}: a grade change to one reaches all">${icon("link")}</span>`);
+    if (p.hdr && app.dataset.hdr === "on") right.push(`<span class="hdr-tag" title="Showing its HDR preview">HDR</span>`);
     if (copies) right.push(`<span class="copy" title="Has ${plural(copies, "virtual copy", "virtual copies")}">+${copies}</span>`);
     if (p.copyOf !== undefined) right.push(`<span class="copy" title="Virtual copy: ${esc(p.copyName)}">${icon("copy")}</span>`);
     if (p.edited) right.push(icon("edited"));
@@ -311,6 +338,7 @@
 
   // Repaint marks and selection without rebuilding the thumbnails.
   function refresh() {
+    const here = placeOf(state.place);
     document.querySelectorAll(".cell").forEach((cell) => {
       const p = byId(Number(cell.dataset.id));
       cell.classList.toggle("selected", state.sel.has(p.id));
@@ -318,7 +346,10 @@
       cell.classList.toggle("rejected", p.flag === "reject");
       cell.classList.toggle("reference", state.view === "compare" && state.ref === p.id);
       cell.querySelector(".marks").innerHTML = marksHtml(p);
-      cell.querySelector(".frame img").style.filter = p.look || "";
+      // The grid shows the saved grade, and the HDR preview where one exists and HDR is on.
+      cell.querySelector(".frame img").style.filter = [p.look, p.hdr && app.dataset.hdr === "on" ? `brightness(${(1 + 0.28 * hdr.cap / 1000).toFixed(2)}) contrast(1.06)` : ""].filter(Boolean).join(" ");
+      cell.classList.toggle("offline", !!(here && here.offline));
+      cell.classList.toggle("missing", !!(here && here.missing && here.missing.has(p.id)));
     });
     app.dataset.view = state.view;
     $("grid").hidden = state.view !== "grid";
@@ -343,7 +374,7 @@
     const swatch = (kind, text) => `<label title="Click the square to change this colour. Double-click to reset."><input type="color" data-tint="${kind}" value="${tints[kind]}">${text}</label>`;
     if (app.dataset.focus === "on") legend.push(`<span class="legend">${swatch("focus", "sharpest detail")}</span>`);
     if (app.dataset.exposure === "on") legend.push(`<span class="legend">${swatch("high", "blown highlights")}${swatch("low", "blocked shadows")}</span>`);
-    $("status").innerHTML = parts.map((t) => `<span>${t}</span>`).join("") + exportStatus() + legend.join("");
+    $("status").innerHTML = parts.map((t) => `<span>${t}</span>`).join("") + exportStatus() + jobsStatus() + legend.join("");
   }
 
   function select(id, mode) {
@@ -433,6 +464,7 @@
     }
     if (last.pasted) {
       last.pasted.forEach(({ p, edited, before, look }) => { p.edited = edited; p.before = before; p.look = look; });
+      if (last.also) last.also();
       computeShown();
       renderGrid(false);
       refresh();
@@ -722,7 +754,7 @@
       $("grade-image").src = large(p);
       $("grade-image").style.filter = (grade.draft === null ? p.look : grade.draft) || "";
     }
-    $("grade-name").textContent = p ? title(p) : "";
+    $("grade-name").textContent = p ? title(p) + (p.link ? ` · linked with ${plural(mates(p).length - 1, "other photo")}` : "") : "";
     $("grade-save").textContent = !p ? "" : grade.saving ? "Saving…" : grade.dirty ? "Unsaved changes" : auto ? "All changes saved" : "No unsaved changes";
     $("grade-save").classList.toggle("dirty", grade.dirty && !grade.saving);
     $("grade-save-button").hidden = $("grade-revert").hidden = !grade.dirty || auto;
@@ -739,8 +771,16 @@
     clearTimeout(grade.saving);
     grade.saving = null;
     if (!p || !grade.dirty) return renderGrade();
+    if (!p.session) p.session = { look: p.look, edited: p.edited };
     if (grade.draft !== null) p.look = grade.draft;
     p.edited = true;
+    // Linked photos share one grade: saving one reaches the others.
+    const others = mates(p).filter((o) => o !== p);
+    others.forEach((o) => {
+      if (!o.session) o.session = { look: o.look, edited: o.edited };
+      Object.assign(o, { before: { look: o.look, edited: o.edited }, look: p.look, edited: true });
+    });
+    if (others.length) toast(`Saved, and applied to ${plural(others.length, "linked photo")}.`);
     Object.assign(grade, { draft: null, dirty: false });
     renderGrade();
     refresh();
@@ -790,6 +830,9 @@
       tell({ lib: "grade", id: p.id });
       return toast(`Opening ${title(p)} in Grade in the main window.`);
     }
+    const here = placeOf(state.place) || {};
+    if (here.offline) return toast(`${p.name} is on a drive that is not connected. Connect it to open the photo in Grade.`);
+    if (here.missing && here.missing.has(p.id)) return toast(`${p.name} is missing. Right-click the project and choose Relink photos.`);
     if (state.review) setReview(false);
     if (p === grade.photo) return setStage("grade");
     leaveCurrentPhoto(() => showInGrade(p), "opening " + title(p));
@@ -844,8 +887,8 @@
   const dl = (rows) => `<dl class="details-facts">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
 
   function folderPath(p) {
-    const top = PLACES.find((f) => f.children && (f.scenes || []).includes(p.scene));
-    const sub = top && top.children.find((c) => (c.scenes || []).includes(p.scene));
+    const top = PLACES.find((f) => f.icon === "folder" && f.children && inFolder(p, f));
+    const sub = top && top.children.find((c) => inFolder(p, c));
     return top ? `D:\\Photos\\${top.label}${sub ? "\\" + sub.label : ""}` : "E:\\DCIM\\100MSDCF";
   }
 
@@ -1147,7 +1190,9 @@
     document.querySelectorAll("[data-min]").forEach((b) => b.classList.toggle("on", Number(b.dataset.min) <= f.minStars));
     document.querySelectorAll("[data-filter]").forEach((b) => b.classList.toggle("on", f[b.dataset.filter]));
     document.querySelectorAll("[data-filter-label]").forEach((b) => b.classList.toggle("on", f.labels.has(b.dataset.filterLabel)));
-    const active = (f.minStars ? 1 : 0) + (f.text ? 1 : 0) + f.labels.size + ["picked", "unmarked", "hideRejected", "edited", "rawOnly"].filter((k) => f[k]).length;
+    const active = (f.minStars ? 1 : 0) + (f.text ? 1 : 0) + f.labels.size + f.rules.length + ["picked", "unmarked", "hideRejected", "edited", "rawOnly"].filter((k) => f[k]).length;
+    const opText = (rule) => FIELDS[rule.field].ops.find(([op]) => op === rule.op)[1];
+    $("filter-rules").innerHTML = f.rules.map((rule, i) => `<button type="button" class="lib-chip on" data-rule-chip="${i}" title="Click to remove this filter">${FIELDS[rule.field].label} ${opText(rule)} ${esc(rule.value)} ×</button>`).join("");
     $("filter-button").textContent = active ? `Filter · ${active}` : "Filter";
     $("filter-button").setAttribute("aria-pressed", active > 0 || !$("filterbar").hidden);
     $("raw-only").setAttribute("aria-pressed", f.rawOnly);
@@ -1165,11 +1210,14 @@
     const min = event.target.closest("[data-min]");
     const chip = event.target.closest("[data-filter]");
     const tint = event.target.closest("[data-filter-label]");
-    if (tint) f.labels.has(tint.dataset.filterLabel) ? f.labels.delete(tint.dataset.filterLabel) : f.labels.add(tint.dataset.filterLabel);
+    const ruleChip = event.target.closest("[data-rule-chip]");
+    if (event.target.id === "filter-add") return addFilterMenu(event.target);
+    if (ruleChip) f.rules.splice(Number(ruleChip.dataset.ruleChip), 1);
+    else if (tint) f.labels.has(tint.dataset.filterLabel) ? f.labels.delete(tint.dataset.filterLabel) : f.labels.add(tint.dataset.filterLabel);
     else if (min) f.minStars = f.minStars === Number(min.dataset.min) ? 0 : Number(min.dataset.min);
     else if (chip) f[chip.dataset.filter] = !f[chip.dataset.filter];
     else if (event.target.id === "filter-clear") {
-      Object.assign(f, { minStars: 0, picked: false, unmarked: false, hideRejected: false, edited: false, rawOnly: false, text: "", labels: new Set() });
+      Object.assign(f, { minStars: 0, picked: false, unmarked: false, hideRejected: false, edited: false, rawOnly: false, text: "", labels: new Set(), rules: [] });
       $("search").value = "";
     } else if (event.target.id === "filter-save") return openRules(null, filterAsRules());
     else return;
@@ -1178,6 +1226,35 @@
   $("search").addEventListener("input", () => { state.filters.text = $("search").value; filtersChanged(); });
   $("raw-only").addEventListener("click", () => { state.filters.rawOnly = !state.filters.rawOnly; filtersChanged(); });
   $("sort").addEventListener("change", () => { state.sort = $("sort").value; filtersChanged(); });
+
+  // "+ Filter": pick a field, then a value. Each one becomes a chip on the bar.
+  function addFilterMenu(button) {
+    const at = button.getBoundingClientRect();
+    const here = inPlace(placeOf(state.place));
+    const add = (rule) => { state.filters.rules.push(rule); filtersChanged(); };
+    const fields = ["camera", "lens", "iso", "focal", "aperture", "shutter", "date", "type", "tag", "state", "kind", "linked"];
+    openMenu(at.left, at.bottom + 4, [{ header: "Filter by" }, ...fields.map((key) => ({ label: FIELDS[key].label + "…", action: () => {
+      const field = FIELDS[key];
+      if (key === "date") {
+        return askUser({ title: "Capture Date", message: "Leave one end empty for an open range.", fields: [{ name: "from", label: "From", placeholder: "2026-09-01" }, { name: "to", label: "To", placeholder: "2026-09-30" }], buttons: [["no", "Cancel"], ["yes", "Filter", GO]] },
+          (answer, v) => { if (answer !== "yes") return; if (v.from) add({ field: key, op: "gte", value: v.from }); if (v.to) add({ field: key, op: "lte", value: v.to }); });
+      }
+      if (field.number) {
+        return askUser({ title: field.label, fields: [{ name: "op", label: field.label, options: field.ops.map(([, text]) => text) }, { name: "value", label: "Value", placeholder: "For example 800" }], buttons: [["no", "Cancel"], ["yes", "Filter", GO]] },
+          (answer, v) => { if (answer === "yes" && v.value) add({ field: key, op: field.ops.find(([, text]) => text === v.op)[0], value: v.value.replace(/\D/g, "") }); });
+      }
+      // Values that occur in this folder, each with its count.
+      const values = (field.values || [...allTags().keys()].sort()).map((value) => [value, here.filter((p) => ruleHolds(p, { field: key, op: "is", value })).length]).filter(([, n]) => n);
+      if (!values.length) return toast(`Nothing here to filter by ${field.label.toLowerCase()}.`);
+      openMenu(at.left, at.bottom + 4, [{ header: field.label }, ...values.map(([value, n]) => ({ label: value, key: String(n), action: () => add({ field: key, op: "is", value }) }))]);
+    } }))]);
+  }
+  $("sort-dir").addEventListener("click", () => {
+    state.sortDown = !state.sortDown;
+    $("sort-dir").classList.toggle("down", state.sortDown);
+    $("sort-dir").title = state.sortDown ? "Descending. Click for ascending." : "Ascending. Click for descending.";
+    filtersChanged();
+  });
 
   function toggleFilterBar(focus) {
     $("filterbar").hidden = focus ? false : !$("filterbar").hidden;
@@ -1320,6 +1397,8 @@
   }
 
   const isOn = (kind) => (kind === "compare" ? state.view === "compare" : app.dataset[kind] === "on");
+  // HDR in the grid: off by default. The brightness limit is a personal setting.
+  const hdr = { cap: Number(recall("hdr-cap", "1000")) };
   const row = (label, key, control) => `<label class="opt-row"><span>${label}${key ? `<kbd>${key}</kbd>` : ""}</span>${control}</label>`;
   const slider = (kind, name, label, low, high) => `<div class="opt-slider"><label class="opt-row"><span>${label}</span><output>${opts[kind][name]}%</output></label>
     <input type="range" min="${low}" max="${high}" value="${opts[kind][name]}" data-opt="${kind}.${name}"></div>`;
@@ -1348,7 +1427,14 @@
       ${row(`<span class="opt-check"><input type="checkbox" data-opt="compare.names" ${opts.compare.names ? "checked" : ""}> File names and marks under photos</span>`, "", "")}
       <p class="helper">Arrows flip the right-hand photo. [ and ] place the selected photo left or right. Zoom and position are shared. In Split, drag the divider.</p>`,
   };
-  const TITLES = { focus: "Focus overlay", exposure: "Exposure overlay", compare: "Compare" };
+  PANELS.hdr = () => `
+      ${row("Show HDR previews", "H", `<input type="checkbox" class="opt-switch" data-switch="hdr" ${isOn("hdr") ? "checked" : ""}>`)}
+      <hr>
+      <div class="opt-slider"><label class="opt-row"><span>Brightness limit in the grid</span><output>${hdr.cap} nits</output></label>
+        <input type="range" min="400" max="1600" step="50" value="${hdr.cap}" data-hdr-cap></div>
+      <button type="button" class="opt-action" data-hdr-make>Create HDR previews for this folder</button>
+      <p class="helper">Turning HDR on makes previews for the photos on screen. A photo without one stays SDR until it is ready. The limit keeps a bright grid comfortable; single view and compare show the true image.</p>`;
+  const TITLES = { focus: "Focus overlay", exposure: "Exposure overlay", compare: "Compare", hdr: "HDR previews" };
 
   function openOptions(kind, button) {
     if (optionsKind === kind) return closeOptions();
@@ -1373,7 +1459,13 @@
 
   $("options").addEventListener("input", (event) => {
     const t = event.target;
-    if (t.dataset.switch === "compare") setView(t.checked ? "compare" : "grid");
+    if (t.dataset.switch === "hdr") toggleHdr();
+    else if (t.dataset.hdrCap !== undefined) {
+      hdr.cap = Number(t.value);
+      remember("hdr-cap", t.value);
+      t.previousElementSibling.querySelector("output").textContent = t.value + " nits";
+      refresh();
+    } else if (t.dataset.switch === "compare") setView(t.checked ? "compare" : "grid");
     else if (t.dataset.switch) toggleOverlay(t.dataset.switch);
     else if (t.dataset.opt) {
       const [kind, name] = t.dataset.opt.split(".");
@@ -1392,6 +1484,7 @@
   });
   $("options").addEventListener("click", (event) => {
     if (event.target.closest("[data-close]")) return closeOptions();
+    if (event.target.closest("[data-hdr-make]")) { closeOptions(); return makeHdr(inPlace(placeOf(state.place))); }
     const layout = event.target.closest("[data-layout]");
     if (!layout) return;
     opts.compare.layout = layout.dataset.layout;
@@ -1400,7 +1493,7 @@
     if (state.view === "compare") refresh();
   });
   window.addEventListener("mousedown", (event) => {
-    if (optionsKind && !event.target.closest("#options, [data-overlay], [data-view-button='compare']")) closeOptions();
+    if (optionsKind && !event.target.closest("#options, [data-overlay], [data-view-button='compare'], #hdr-button")) closeOptions();
   });
 
   // Split compare: drag the divider.
@@ -1486,6 +1579,7 @@
         if (input) input.focus();
       },
       s: () => toggleOverlay("focus"),
+      h: toggleHdr,
       e: () => toggleOverlay("exposure"),
       Delete: () => confirmDelete(targets()),
       Tab: () => {
@@ -1583,17 +1677,22 @@
       { label: "Paste grade", key: "Ctrl+V", action: () => pasteGrade(false) },
       { label: "Paste grade, choosing what…", key: "Ctrl+Shift+V", action: () => pasteGrade(true) },
       list.some((p) => p.before) && { label: "Restore previous grade", action: restoreGrade },
+      list.some((p) => p.session) && { label: "Revert to last session…", action: () => revert("session") },
+      list.some((p) => p.edited) && { label: "Revert to original…", action: () => revert("original") },
+      list.length > 1 && { label: "Link grades…", action: linkPhotos },
+      list.some((p) => p.link) && { label: "Unlink", action: unlinkPhotos },
       { label: "Apply look preset…", action: openLooks },
       { label: one ? "Create virtual copy…" : "Create virtual copies…", action: createCopies },
       one && copiesOnly && { label: "Rename copy…", action: () => renameCopy(list[0]) },
       "-",
       { label: "Add to album…", action: () => openMenu(menuAt.x, menuAt.y, albumMenu(list)) },
-      here && here.ids && { label: `Remove from ${here.label}`, action: () => removeFromAlbum(here, list) },
-      { label: "Create HDR previews" },
+      here && here.icon === "album" && { label: `Remove from ${here.label}`, action: () => removeFromAlbum(here, list) },
+      { label: "Create HDR previews", action: () => makeHdr(list) },
+      { label: "Export project…", action: () => exportProject(one ? title(list[0]) : `${list.length} photos`, list) },
       { label: "Export…", key: "Ctrl+Shift+E", action: openExport },
       "-",
-      one && !copiesOnly && { label: "Rename…" },
-      !copiesOnly && { label: "Move to folder…" },
+      one && !copiesOnly && { label: "Rename…", action: () => renamePhoto(list[0]) },
+      !copiesOnly && { label: "Move to folder…", action: () => askMove(list) },
       { label: "Show in Explorer" },
       "-",
       copiesOnly ? { label: one ? "Remove virtual copy…" : `Remove ${list.length} virtual copies…`, key: "Del", danger: true, action: () => confirmDelete(list) }
@@ -1606,20 +1705,20 @@
     const rejected = inPlace(place).filter((p) => p.flag === "reject");
     const deleteRejected = rejected.length && { label: `Delete ${rejected.length} rejected…`, danger: true, action: () => confirmDelete(rejected, place) };
     if (place.offline) return [{ header: place.label }, { label: "Locate…" }, "-", { label: "Unpin", action: () => unpin(place) }];
-    if (place.icon === "project") return [{ header: place.label }, { label: "Show in Explorer" }, { label: "Relink photos…" }, { label: "Export project…" }, "-", { label: "Remove from list", action: () => unpin(place) }];
-    if (place.icon === "album") return [{ header: place.label }, { label: "Rename…", action: () => renameAlbum(place) }, { label: "Export project…" }, "-", { label: "Delete album (photos stay)", action: () => unpin(place) }];
+    if (place.icon === "project") return [{ header: place.label }, { label: "Show in Explorer" }, { label: "Relink photos…", action: () => openRelink(place) }, { label: "Export project…", action: () => exportProject(place.label, inPlace(place)) }, "-", { label: "Remove from list", action: () => unpin(place) }];
+    if (place.icon === "album") return [{ header: place.label }, { label: "Rename…", action: () => renameAlbum(place) }, { label: "Create HDR previews", action: () => makeHdr(inPlace(place)) }, { label: "Export project…", action: () => exportProject(place.label, inPlace(place)) }, "-", { label: "Delete album (photos stay)", action: () => unpin(place) }];
     if (place.icon === "smart") return [{ header: place.label }, { label: "Edit rules and name…", action: () => openRules(place) }, "-", { label: "Delete smart album", action: () => unpin(place) }];
     if (place.note) return [{ header: place.label }, { label: "Pin this folder", action: () => { delete place.note; place.icon = "folder"; renderNav(); toast(`${place.label} pinned.`); } }, { label: "Show in Explorer" }, "-", { label: "Close", action: () => unpin(place) }];
     return [
       { header: place.label },
-      top ? { label: "Re-scan" } : { label: "Pin as its own entry" },
-      { label: "New folder inside…" },
-      { label: top ? "Rename label…" : "Rename folder…" },
-      !top && { label: "Move folder…" },
+      top ? { label: "Re-scan", action: () => startIndexing(Math.max(40, inPlace(place).length * 60)) } : { label: "Pin as its own entry" },
+      { label: "New folder inside…", action: () => newFolder(place) },
+      { label: top ? "Rename label…" : "Rename folder…", action: () => renameFolder(place, top) },
+      !top && { label: "Move folder…", action: () => moveFolder(place) },
       { label: "Show in Explorer" },
       "-",
-      { label: "Create HDR previews" },
-      { label: "Export project…" },
+      { label: "Create HDR previews", action: () => makeHdr(inPlace(place)) },
+      { label: "Export project…", action: () => exportProject(place.label, inPlace(place)) },
       deleteRejected,
       top && "-",
       top && { label: "Unpin", action: () => unpin(place) },
@@ -1699,7 +1798,7 @@
 
   function pasteGrade(choose) {
     if (!clip.source) return toast("Copy a grade first: select an edited photo and press Ctrl+C.");
-    const list = targets().filter((p) => p !== clip.source);
+    const list = withLinked(targets()).filter((p) => p !== clip.source);
     if (!list.length) return toast("Select the photos to paste onto.");
     clip.targets = list;
     if (choose) return openPaste();
@@ -1757,8 +1856,15 @@
   // Every library command that rewrites grades goes through here: each photo
   // keeps its previous grade, the change is saved at once, and it is one undo.
   function changeGrades(list, apply, what, done) {
-    state.undo.push({ pasted: list.map((p) => ({ p, edited: p.edited, before: p.before, look: p.look })), what });
-    list.forEach((p) => { p.before = { look: p.look, edited: p.edited }; apply(p); p.edited = true; });
+    const entry = { pasted: list.map((p) => ({ p, edited: p.edited, before: p.before, look: p.look })), what };
+    state.undo.push(entry);
+    list.forEach((p) => {
+      // The grade a photo had at the start of this run of the app, for Revert to last session.
+      if (!p.session) p.session = { look: p.look, edited: p.edited };
+      p.before = { look: p.look, edited: p.edited };
+      p.edited = true;
+      apply(p);
+    });
     // The photo open in Grade takes the change as ordinary unsaved work.
     const open = grade.photo && list.includes(grade.photo) && !autosaveOn();
     if (open) { grade.draft = grade.photo.look; Object.assign(grade.photo, grade.photo.before); grade.dirty = true; renderGrade(); }
@@ -1766,6 +1872,7 @@
     renderGrid(false);
     refresh();
     toast(`${done} ${plural(list.length, "photo")} and saved. Ctrl+Z undoes it.` + (open ? " The photo open in Grade has it as unsaved work." : ""));
+    return entry;
   }
 
   function doPaste() {
@@ -2164,6 +2271,7 @@
     const count = nodes.reduce((sum, n) => sum + total(n), 0).toLocaleString();
     const what = nodes.length === 1 ? nodes[0].name : `${nodes.length} folders`;
     toast(pin ? `${what} pinned. Indexing ${count} photos in the background.` : `${what} opened without pinning.`);
+    if (pin) startIndexing(nodes.reduce((sum, n) => sum + total(n), 0));
   }
 
   $("picker").addEventListener("click", (event) => {
@@ -2247,7 +2355,7 @@
   // An album is a hand-picked set. Photos stay where they are on disk, and a
   // photo can be in several albums.
 
-  const albums = () => PLACES.filter((p) => p.ids);
+  const albums = () => PLACES.filter((p) => p.icon === "album");
 
   function newAlbum(list) {
     askUser({
@@ -2299,8 +2407,9 @@
     ];
   }
 
-  // Drag photos onto an album in the left panel.
+  // Drag photos onto an album to add them, or onto a folder to move them there.
   let dragging = null;
+  const canDrop = (place) => !!place && (place.icon === "album" || ((place.icon === "folder" || place.icon === "card") && !place.offline && place.id !== state.place));
   const clearDrop = () => $("nav").querySelectorAll(".drop").forEach((row) => row.classList.remove("drop"));
   document.addEventListener("dragstart", (event) => {
     const cell = event.target instanceof Element && event.target.closest("#grid .cell, #filmstrip .cell");
@@ -2316,16 +2425,16 @@
     const row = event.target.closest(".nav-row");
     const place = row && placeOf(row.dataset.place);
     clearDrop();
-    if (!dragging || !place || !place.ids) return;
+    if (!dragging || !canDrop(place)) return;
     event.preventDefault();
     row.classList.add("drop");
   });
   $("nav").addEventListener("drop", (event) => {
     const row = event.target.closest(".nav-row");
     const place = row && placeOf(row.dataset.place);
-    if (!dragging || !place || !place.ids) return;
+    if (!dragging || !canDrop(place)) return;
     event.preventDefault();
-    addToAlbum(place, dragging);
+    if (place.icon === "album") addToAlbum(place, dragging); else movePhotos(dragging, place);
   });
 
   // ---------- smart albums ----------
@@ -2352,6 +2461,7 @@
     else if (f.labels.size) ["None", ...LABELS.map(cap)].filter((l) => !f.labels.has(l.toLowerCase())).forEach((l) => list.push({ field: "label", op: "not", value: l }));
     const text = f.text.trim().toLowerCase();
     if (text) list.push(allTags().has(text) ? { field: "tag", op: "is", value: text } : { field: "name", op: "is", value: text });
+    f.rules.forEach((rule) => list.push(Object.assign({}, rule)));
     const here = placeOf(state.place);
     const top = here && topFolders().find((t) => t === here || (t.children || []).includes(here));
     if (!list.length) list.push(freshRule([]));
@@ -2390,7 +2500,8 @@
     const live = r.list.filter((rule) => String(rule.value).trim() !== "");
     const n = photos.filter((p) => matches(p, r)).length;
     $("rules-notes").textContent = !live.length ? "Add at least one rule." : r.folders && !r.folders.length ? "No folder is ticked, so nothing can match."
-      : `${plural(n, "photo")} ${n === 1 ? "matches" : "match"} now.` + (live.length < r.list.length ? " A rule with nothing filled in is ignored." : "");
+      : `${plural(n, "photo")} ${n === 1 ? "matches" : "match"} now.` + (live.length < r.list.length ? " A rule with nothing filled in is ignored." : "") +
+        (jobs.some((job) => job.name === "Indexing") ? " Indexing is still running, so more may turn up." : "");
     $("rules-save").disabled = !live.length;
   }
 
@@ -2468,6 +2579,7 @@
         ? `<span class="helper">Built-in look. To make your own version, apply it, adjust the photo in Grade, then save that grade as a look.</span>`
         : `<button type="button" data-look-do="rename">Rename…</button><button type="button" data-look-do="update">Update from copied grade</button><button type="button" data-look-do="export">Export…</button><button type="button" data-look-do="delete">Delete</button>`) + `</div>`;
     $("looks-notes").textContent = `${plural(n, "photo")} will change and be saved straight away. ${n === 1 ? "It keeps" : "Each keeps"} its previous grade, so this can be taken back.` +
+      (looksUi.linked ? `\nThat includes ${plural(looksUi.linked, "photo")} linked to the selection.` : "") +
       (n > 1 ? `\nThe preview shows ${title(looksUi.targets[0])}.` : "");
     $("looks-go").textContent = n === 1 ? "Apply" : `Apply to ${n} photos`;
   }
@@ -2475,7 +2587,8 @@
   function openLooks() {
     const list = targets();
     if (!list.length) return toast("Select the photos to apply a look to.");
-    looksUi.targets = list;
+    looksUi.targets = withLinked(list);
+    looksUi.linked = looksUi.targets.length - list.length;
     renderLooks();
     $("looks").showModal();
   }
@@ -2525,6 +2638,407 @@
       toast(`Look “${LOOKS[0].name}” saved. Apply it with right-click, Apply look preset.`);
     });
   }
+
+  // ---------- background work ----------
+  // Indexing, HDR previews and moves between drives run in the background and
+  // show in the bottom bar. Click one to pause or cancel it.
+
+  const jobs = [];
+  function startJob(job) {
+    Object.assign(job, { done: 0, paused: false });
+    jobs.push(job);
+    job.timer = setInterval(() => {
+      if (job.paused) return;
+      if (job.step) job.step(job.done);
+      job.done = Math.min(job.total, job.done + (job.by || 1));
+      if (job.done >= job.total) return endJob(job, false);
+      renderStatus();
+    }, job.rate || 450);
+    renderStatus();
+    return job;
+  }
+  function endJob(job, cancelled) {
+    clearInterval(job.timer);
+    jobs.splice(jobs.indexOf(job), 1);
+    if (job.finish) job.finish(cancelled);
+    renderStatus();
+  }
+  function jobsStatus() {
+    return jobs.map((job, i) => `<button type="button" class="export-progress" data-job="${i}" style="--done:${(job.done / job.total) * 100}%" title="Click to pause or cancel"><i></i>${job.paused ? "Paused · " : ""}${job.name} · ${job.done.toLocaleString()} of ${job.total.toLocaleString()}</button>`).join("");
+  }
+  $("status").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-job]");
+    const job = button && jobs[Number(button.dataset.job)];
+    if (!job) return;
+    const at = button.getBoundingClientRect();
+    openMenu(at.left, at.top - 96, [{ header: job.name }, { label: job.paused ? "Resume" : "Pause", action: () => { job.paused = !job.paused; renderStatus(); } }, { label: "Cancel", action: () => endJob(job, true) }]);
+  });
+
+  // A folder that background work is using: the change waits, or the work is stopped cleanly.
+  function whenFree(what, proceed) {
+    if (!jobs.length) return proceed();
+    const job = jobs[0];
+    askUser({ title: "This Folder Is Busy", message: `${job.name} is still working here. ${cap(what)} can wait until it finishes, or you can stop that work now. Nothing is left half done either way.`,
+      buttons: [["no", "Cancel"], ["wait", "Do it when finished"], ["stop", "Stop it and continue", GO]] }, (answer) => {
+      if (answer === "stop") { [...jobs].forEach((j) => endJob(j, true)); proceed(); }
+      if (answer === "wait") { const finish = job.finish; job.finish = (cancelled) => { if (finish) finish(cancelled); proceed(); }; toast(`${cap(what)} will happen when ${job.name.toLowerCase()} finishes.`); }
+    });
+  }
+
+  function startIndexing(total) {
+    if (jobs.some((job) => job.name === "Indexing")) return;
+    startJob({ name: "Indexing", total, by: Math.max(1, Math.ceil(total / 60)), rate: 280, finish: (cancelled) => toast(cancelled ? "Indexing stopped. It carries on the next time the folder is opened." : `Indexing finished: ${total.toLocaleString()} photos.`) });
+  }
+
+  // ---------- HDR previews ----------
+  // The grid is SDR unless HDR is switched on. Previews are made in the
+  // background and each thumbnail switches to HDR as its preview is ready.
+
+  function makeHdr(list, quiet) {
+    const todo = list.filter((p) => !p.hdr && !p.hdrQueued);
+    if (!todo.length) return quiet ? null : toast("These photos already have HDR previews.");
+    todo.forEach((p) => { p.hdrQueued = true; });
+    startJob({ name: "HDR previews", total: todo.length, rate: 420,
+      step: (i) => { Object.assign(todo[i], { hdr: true, hdrQueued: false }); refresh(); },
+      finish: (cancelled) => { todo.forEach((p) => { p.hdrQueued = false; }); refresh(); toast(cancelled ? "Stopped. The HDR previews already made are kept." : `HDR previews ready for ${plural(todo.length, "photo")}.`); } });
+    toast(`Making HDR previews for ${plural(todo.length, "photo")} in the background.` + (app.dataset.hdr === "on" ? "" : " Press H to see them in the grid."));
+  }
+
+  function toggleHdr() {
+    const on = app.dataset.hdr !== "on";
+    app.dataset.hdr = on ? "on" : "off";
+    $("hdr-button").setAttribute("aria-pressed", on);
+    if (on) makeHdr(state.shown, true);
+    refresh();
+  }
+  $("hdr-button").addEventListener("click", () => openOptions("hdr", $("hdr-button")));
+
+  // ---------- reverts ----------
+
+  function revert(kind) {
+    const picked = withLinked(targets());
+    const list = picked.filter((p) => (kind === "session" ? p.session : p.edited));
+    if (!list.length) return;
+    const n = list.length;
+    const original = kind === "original";
+    askUser({
+      title: original ? `Revert ${n === 1 ? title(list[0]) : `${n} Photos`} to Original?` : `Revert ${n === 1 ? title(list[0]) : `${n} Photos`} to Last Session?`,
+      message: (original ? `All adjustments are cleared on ${plural(n, "photo")}.` : `${plural(n, "photo")} ${n === 1 ? "goes" : "go"} back to the grade ${n === 1 ? "it" : "they"} had when HDR Finisher was started today.`) +
+        ` ${n === 1 ? "It keeps" : "Each keeps"} its previous grade, so this can be taken back. Marks and tags are not touched.`,
+      buttons: [["no", "Cancel"], ["yes", "Revert", GO]],
+    }, (answer) => {
+      if (answer !== "yes") return;
+      changeGrades(list, (p) => Object.assign(p, original ? { look: "", edited: false } : p.session), original ? "revert to original" : "revert to last session", original ? "Reverted to original:" : "Reverted to last session:");
+    });
+  }
+
+  // ---------- linked photos (sync) ----------
+  // Linked photos share one grade. A change to any one of them, in Grade or by
+  // a paste, a look or a revert, reaches all of them.
+
+  let linkSerial = 1;
+  const mates = (p) => (p.link ? photos.filter((o) => o.link === p.link) : [p]);
+  const withLinked = (list) => [...new Set(list.flatMap(mates))];
+  const linksNow = () => photos.map((p) => ({ p, link: p.link }));
+  const tidyLinks = () => photos.forEach((p) => { if (p.link && mates(p).length < 2) p.link = undefined; });
+
+  function linkPhotos() {
+    const list = withLinked(targets());
+    if (list.length < 2) return toast("Select two or more photos to link.");
+    const lead = list.includes(byId(state.active)) ? byId(state.active) : list[0];
+    askUser({
+      title: `Link ${list.length} Photos`,
+      message: "Linked photos share one grade. From now on a change to any one of them reaches all of them: an edit in Grade, a paste, a look or a revert.\n\nCrop, lens corrections and local adjustments are never linked. Each photo keeps its previous grade, so this can be taken back.",
+      fields: [{ name: "from", label: "Start all of them from the grade of", options: list.map(title), value: title(lead) }],
+      buttons: [["no", "Cancel"], ["yes", "Link", GO]],
+    }, (answer, v) => {
+      if (answer !== "yes") return;
+      const source = list.find((p) => title(p) === v.from) || lead;
+      const links = linksNow();
+      const id = linkSerial++;
+      list.forEach((p) => { p.link = id; });
+      tidyLinks();
+      const entry = changeGrades(list.filter((p) => p !== source), (p) => Object.assign(p, { look: source.look, edited: source.edited }), "link", `Linked. Grade of ${source.name} applied to`);
+      entry.also = () => links.forEach(({ p, link }) => { p.link = link; });
+    });
+  }
+
+  function unlinkPhotos() {
+    const list = targets().filter((p) => p.link);
+    const links = linksNow();
+    list.forEach((p) => { p.link = undefined; });
+    tidyLinks();
+    state.undo.push({ back: () => links.forEach(({ p, link }) => { p.link = link; }), text: `Linked ${plural(list.length, "photo")} again` });
+    refresh();
+    toast(`${plural(list.length, "photo")} unlinked. Each keeps the grade it has now. Ctrl+Z undoes it.`);
+  }
+
+  // ---------- file and folder controls ----------
+  // These change files on disk. Everything attached travels: the settings
+  // file, so grades, marks, tags and virtual copies. Clashes stop and ask.
+
+  const nameParts = (name) => { const dot = name.lastIndexOf("."); return [name.slice(0, dot), name.slice(dot)]; };
+
+  function renamePhoto(p, typed) {
+    const [base, ending] = nameParts(p.name);
+    askUser({ title: `Rename ${p.name}`, message: `The ending ${ending} stays. The grade, marks, tags and virtual copies stay attached.`, fields: [{ name: "name", label: "New name", value: typed || base }], buttons: [["no", "Cancel"], ["yes", "Rename", GO]] }, (answer, v) => {
+      const name = v.name + ending;
+      if (answer !== "yes" || !v.name || name === p.name) return;
+      if (state.shown.some((o) => o !== p && o.copyOf === undefined && o.name.toLowerCase() === name.toLowerCase())) {
+        return askUser({ title: "That Name Is Taken", message: `A file called ${name} is already in this folder. Nothing was renamed.`, buttons: [["no", "Cancel"], ["yes", "Choose another name", GO]] },
+          (again) => { if (again === "yes") renamePhoto(p, v.name); });
+      }
+      const all = [p, ...copiesOf(p)];
+      const old = p.name;
+      all.forEach((x) => { x.name = name; });
+      state.undo.push({ back: () => all.forEach((x) => { x.name = old; }), text: `Renamed ${name} back to ${old}` });
+      renderGrid(false);
+      refresh();
+      toast(`Renamed to ${name}. Ctrl+Z undoes it.`);
+    });
+  }
+
+  const folderChoices = () => flatPlaces().filter((f) => (f.icon === "folder" || f.icon === "card") && !f.offline)
+    .map((f) => ({ place: f, path: (PLACES.find((t) => (t.children || []).includes(f)) || { label: "" }).label + (PLACES.includes(f) ? "" : " › ") + f.label }));
+
+  function askMove(list) {
+    const choices = folderChoices().filter((c) => c.place.id !== state.place);
+    const n = list.filter((p) => p.copyOf === undefined).length || list.length;
+    askUser({ title: n === 1 ? `Move ${list[0].name}` : `Move ${n} Photos`, message: "The files are moved on disk. Grades, marks, tags and virtual copies go with them, and albums keep them.",
+      fields: [{ name: "to", label: "Move to", options: choices.map((c) => c.path) }], buttons: [["no", "Cancel"], ["yes", "Move", GO]] },
+    (answer, v) => { if (answer === "yes") movePhotos(list, choices.find((c) => c.path === v.to).place); });
+  }
+
+  function movePhotos(picked, dest) {
+    const direct = (p) => inFolder(p, dest) && !(dest.children || []).some((c) => inFolder(p, c));
+    const roots = [...new Set(picked.map((p) => (p.copyOf === undefined ? p : byId(p.copyOf))))].filter((p) => !direct(p));
+    if (!roots.length) return toast(`Already in ${dest.label}.`);
+    const onCard = (p) => PLACES.some((f) => f.icon === "card" && inFolder(p, f));
+    const far = (dest.icon === "card") !== roots.some(onCard);
+    const go = (skip, numbered) => {
+      const moving = roots.filter((p) => p !== skip);
+      const before = moving.flatMap((p) => [p, ...copiesOf(p)]).map((p) => ({ p, folder: p.folder, name: p.name }));
+      if (numbered) { const [base, ending] = nameParts(numbered.name); [numbered, ...copiesOf(numbered)].forEach((x) => { x.name = `${base} (2)${ending}`; }); }
+      const land = (p) => [p, ...copiesOf(p)].forEach((x) => { x.folder = dest.id; });
+      const done = (cancelled) => {
+        state.undo.push({ back: () => before.forEach(({ p, folder, name }) => { p.folder = folder; p.name = name; }), text: `Moved ${plural(moving.length, "photo")} back` });
+        afterRemoval([]);
+        const moved = moving.filter(direct).length;
+        toast(`${plural(moved, "photo")} moved to ${dest.label}.` + (skip ? " 1 skipped: its name was already taken." : "") + (cancelled ? ` ${moving.length - moved} not moved; they are still in the old place.` : "") + " Ctrl+Z undoes the move.");
+      };
+      if (!far) { moving.forEach(land); return done(false); }
+      // Another drive: copy, check the copy, and only then remove the original.
+      startJob({ name: `Moving to ${dest.label}`, total: moving.length, rate: 700, step: (i) => { land(moving[i]); computeShown(); renderNav(); renderGrid(false); refresh(); }, finish: done });
+      toast(`Moving ${plural(moving.length, "photo")} to another drive. Each is copied and checked before the original is removed.`);
+    };
+    if (!$("opt-clash").checked) return go(null, null);
+    $("opt-clash").checked = false;
+    const clash = roots[0];
+    askUser({
+      title: "A File With This Name Is Already There",
+      message: `${dest.label} already holds a file called ${clash.name}. Nothing has been moved or overwritten.` + (roots.length > 1 ? `\n\nThe other ${plural(roots.length - 1, "photo")} can move as normal.` : ""),
+      buttons: [["cancel", "Cancel move"], ["skip", roots.length > 1 ? "Skip this one" : "Leave it"], ["both", "Keep both", GO]],
+    }, (answer) => {
+      if (answer === "both") go(null, clash);
+      if (answer === "skip" && roots.length > 1) go(clash, null);
+    });
+  }
+
+  function newFolder(place) {
+    askUser({ title: `New Folder in ${place.label}`, message: "Creates the folder on disk.", fields: [{ name: "name", label: "Name", placeholder: "Folder name" }], buttons: [["no", "Cancel"], ["yes", "Create folder", GO]] }, (answer, v) => {
+      if (answer !== "yes" || !v.name) return;
+      if ((place.children || []).some((c) => c.label.toLowerCase() === v.name.toLowerCase())) return toast(`${place.label} already has a folder called ${v.name}. Nothing was created.`);
+      if (!place.children) Object.assign(place, { children: [], ownScenes: place.scenes || [] });
+      place.children.push({ id: "folder-" + Date.now(), icon: "folder", label: v.name, scenes: [] });
+      place.open = true;
+      renderNav();
+      toast(`Folder ${v.name} created in ${place.label}. Drag photos onto it to move them there.`);
+    });
+  }
+
+  function renameFolder(place, labelOnly) {
+    whenFree("the rename", () => askUser({
+      title: labelOnly ? "Rename Label" : `Rename Folder ${place.label}`,
+      message: labelOnly ? "Changes only the name shown in this list. The folder on disk keeps its name." : "Renames the folder on disk. The photos in it keep their grades, marks, albums and previews, and nothing is indexed again.",
+      fields: [{ name: "name", label: "Name", value: place.label }], buttons: [["no", "Cancel"], ["yes", "Rename", GO]],
+    }, (answer, v) => {
+      if (answer !== "yes" || !v.name || v.name === place.label) return;
+      const parent = PLACES.find((t) => (t.children || []).includes(place));
+      if (!labelOnly && parent.children.some((c) => c !== place && c.label.toLowerCase() === v.name.toLowerCase())) return toast(`${parent.label} already has a folder called ${v.name}. Nothing was renamed.`);
+      const old = place.label;
+      place.label = v.name;
+      state.undo.push({ back: () => { place.label = old; }, text: `Renamed ${v.name} back to ${old}` });
+      renderNav();
+      renderGrid(false);
+      refresh();
+    }));
+  }
+
+  function moveFolder(place) {
+    const parent = PLACES.find((t) => (t.children || []).includes(place));
+    const others = topFolders().filter((t) => t !== parent);
+    if (!others.length) return toast("Pin another folder first, so there is somewhere to move this one.");
+    whenFree("the move", () => askUser({
+      title: `Move Folder ${place.label}`, message: `Moves the folder and everything in it on disk: ${plural(inPlace(place).length, "photo")} with their grades, marks and virtual copies. Albums keep them.`,
+      fields: [{ name: "to", label: "Move into", options: others.map((t) => t.label) }], buttons: [["no", "Cancel"], ["yes", "Move folder", GO]],
+    }, (answer, v) => {
+      if (answer !== "yes") return;
+      const dest = others.find((t) => t.label === v.to);
+      if ((dest.children || []).some((c) => c.label.toLowerCase() === place.label.toLowerCase())) return toast(`${dest.label} already has a folder called ${place.label}. Nothing was moved.`);
+      if (!dest.children) Object.assign(dest, { children: [], ownScenes: dest.scenes || [] });
+      const at = parent.children.indexOf(place);
+      parent.children.splice(at, 1);
+      dest.children.push(place);
+      dest.open = true;
+      state.undo.push({ back: () => { dest.children.splice(dest.children.indexOf(place), 1); parent.children.splice(at, 0, place); }, text: `Moved ${place.label} back to ${parent.label}` });
+      computeShown();
+      renderNav();
+      renderGrid(false);
+      refresh();
+      toast(`${place.label} moved into ${dest.label}. Ctrl+Z moves it back.`);
+    }));
+  }
+
+  // ---------- projects: export, open, relink ----------
+
+  function exportProject(what, list) {
+    const n = list.filter((p) => p.copyOf === undefined).length || list.length;
+    const withPhotos = `Grades and source photos (${plural(n, "photo")}, about ${(n * 0.06).toFixed(1)} GB)`;
+    askUser({
+      title: `Export Project From ${what}`,
+      message: "A project is a folder that can be handed to someone else or moved to another machine. Exporting makes a copy: afterwards the project and your library can drift apart.",
+      fields: [{ name: "name", label: "Project name", value: what.replace(/\.[^.]+$/, "") }, { name: "where", label: "Save in", value: "D:\\Projects" },
+        { name: "include", label: "Include", options: ["Grades only (small; the receiver needs the photos)", withPhotos] },
+        { name: "copies", label: "Virtual copies", options: ["All virtual copies", "Only the main grade of each photo"] },
+        { name: "extras", label: "Also include", options: ["The export recipes and looks these photos use", "Nothing else"] },
+        { name: "pack", label: "Save as", options: ["A project folder", "One file, for sending"] }],
+      buttons: [["no", "Cancel"], ["yes", "Export project", GO]],
+    }, (answer, v) => {
+      if (answer !== "yes") return;
+      startJob({ name: "Exporting project", total: n, rate: v.include === withPhotos ? 500 : 120, finish: (cancelled) => toast(cancelled ? "Project export cancelled. The unfinished project folder was removed." : `Project “${v.name}” exported to ${v.where}.`) });
+    });
+  }
+
+  // Stands in for opening a project folder someone sent, with no photos in it.
+  function openProject() {
+    const name = "Riverside Wedding";
+    if (PLACES.some((f) => f.label === name)) return toast("In the app this opens a file picker. The sample project is already open.");
+    const all = inPlace(placeOf("trip-2")).filter((p) => p.copyOf === undefined);
+    if (all.length < 3) return toast("In the app this opens a file picker for a project folder.");
+    const missing = all.slice(-2);
+    const found = all.slice(0, -2);
+    askUser({
+      title: `Open Project “${name}”`,
+      message: `This project holds ${all.length} grades and no photos. ${found.length} of the photos are already in your library, matched by ID and checked by content. ${missing.length} were not found.\n\nMerge puts each grade beside its photo as a new virtual copy; nothing of yours is overwritten. Keep separate leaves the project as its own small library.`,
+      fields: [{ name: "how", label: "The grades", options: ["Merge into my library", "Keep separate"] }, { name: "album", label: "After a merge", options: ["Make an album of these photos", "No album"] }],
+      buttons: [["no", "Cancel"], ["yes", "Open project", GO]],
+    }, (answer, v) => {
+      if (answer !== "yes") return;
+      const merge = v.how === "Merge into my library";
+      const place = { id: "project-" + Date.now(), icon: "project", label: name, ids: new Set((merge ? missing : all).map((p) => p.id)), missing: new Set(missing.map((p) => p.id)) };
+      PLACES.splice(PLACES.findIndex((f) => f.heading === "Albums"), 0, place);
+      if (merge) {
+        const made = found.map((p) => Object.assign(makeCopy(p, name), { look: "sepia(.2) contrast(1.1) saturate(1.15)", edited: true }));
+        const album = v.album === "No album" ? null : { id: "album-" + Date.now(), icon: "album", label: name, ids: new Set(made.map((c) => c.id)) };
+        if (album) PLACES.splice(PLACES.findIndex((f) => f.rules) < 0 ? PLACES.length : PLACES.findIndex((f) => f.rules), 0, album);
+        state.undo.push({ back: () => { made.forEach((c) => photos.splice(photos.indexOf(c), 1)); [place, album].forEach((x) => { if (x) PLACES.splice(PLACES.indexOf(x), 1); }); if (!placeOf(state.place)) state.place = "trip-2"; }, text: `Took the merged project “${name}” out again` });
+      }
+      state.place = null;
+      goTo(place.id);
+      toast(merge ? `${plural(found.length, "grade")} merged as virtual copies. ${missing.length} are waiting for their photos here: right-click the project to relink.`
+        : `Project opened. ${missing.length} of its photos are missing: right-click the project to relink. You can keep working on the rest.`);
+    });
+  }
+
+  const relink = { place: null, rows: [] };
+  function openRelink(place) {
+    if (!place.missing || !place.missing.size) return toast(`Nothing is missing in ${place.label}.`);
+    relink.place = place;
+    relink.rows = [...place.missing].map((id) => ({ p: byId(id), state: "missing" })).filter((row) => row.p);
+    renderRelink();
+    $("relink").showModal();
+  }
+  function renderRelink() {
+    const words = { missing: "Missing", found: "Found, content matches", differs: "Name matches, content differs", forced: "Will be used although the content differs", hand: "Chosen by hand" };
+    $("relink-title").textContent = `Relink Photos in ${relink.place.label}`;
+    $("relink-list").innerHTML = relink.rows.map((row, i) => `<div class="result-row relink-row ${row.state}"><span class="file">${esc(row.p.name)}${row.where ? `<small>${esc(row.where)}</small>` : ""}</span><span class="state">${words[row.state]}</span>
+      ${row.state === "differs" ? `<button type="button" data-relink-use="${i}">Use anyway</button>` : ""}<button type="button" data-relink-pick="${i}">Choose file…</button></div>`).join("");
+    const ready = relink.rows.filter((row) => row.state !== "missing" && row.state !== "differs").length;
+    const left = relink.rows.length - ready;
+    $("relink-notes").textContent = `${plural(relink.rows.length, "photo")} missing. ${ready} ready to relink` + (left ? `, ${left} still to find. You can relink what is found and keep working with the rest offline.` : ".");
+    $("relink-go").textContent = ready ? `Relink ${ready}` : "Relink";
+    $("relink-go").disabled = !ready;
+  }
+  $("relink").addEventListener("click", (event) => {
+    const t = event.target;
+    if (t.id === "relink-close") return $("relink").close();
+    if (t.id === "relink-browse") return toast("Opens the same folder picker as Add folder.");
+    if (t.id === "relink-search") {
+      // The pretend search finds the first by name and content, the second by name only.
+      relink.rows.filter((row) => row.state === "missing").forEach((row, i) => Object.assign(row, { state: i ? "differs" : "found", where: `${$("relink-folder").value}\\2025\\${row.p.name}` }));
+    } else if (t.dataset.relinkUse) relink.rows[Number(t.dataset.relinkUse)].state = "forced";
+    else if (t.dataset.relinkPick) Object.assign(relink.rows[Number(t.dataset.relinkPick)], { state: "hand", where: `D:\\Photos\\Recovered\\${relink.rows[Number(t.dataset.relinkPick)].p.name}` });
+    else if (t.id === "relink-go") {
+      const ready = relink.rows.filter((row) => row.state !== "missing" && row.state !== "differs");
+      ready.forEach((row) => relink.place.missing.delete(row.p.id));
+      $("relink").close();
+      renderNav();
+      refresh();
+      return toast(`${plural(ready.length, "photo")} relinked.` + (relink.place.missing.size ? ` ${relink.place.missing.size} still missing.` : " Nothing is missing now."));
+    } else return;
+    renderRelink();
+  });
+
+  // ---------- library settings ----------
+
+  const prefs = { cacheGb: 20, previewEdge: "2560", indexing: true, processor: "Low", battery: true, skip: [] };
+  try { Object.assign(prefs, JSON.parse(recall("prefs", "{}"))); } catch (e) { /* defaults */ }
+
+  function renderSettings() {
+    const field = (label, control) => `<label class="lib-export-field"><span>${label}</span>${control}</label>`;
+    const pick = (name, options) => `<select data-pref="${name}">${options.map((o) => `<option ${String(prefs[name]) === o ? "selected" : ""}>${o}</option>`).join("")}</select>`;
+    const toggle = (label, attr, on, note) => `<label class="opt-row"><span>${label}${note ? `<small>${note}</small>` : ""}</span><input type="checkbox" class="opt-switch" ${attr} ${on ? "checked" : ""}></label>`;
+    $("settings-body").innerHTML = `
+      <div class="paste-kicker">Saving</div>
+      ${toggle("Autosave grades", "data-pref-autosave", autosaveOn(), "Off: Grade asks Save, Don't save or Cancel when you switch photos. Marks and tags always save at once.")}
+      <div class="paste-kicker">Previews and cache</div>
+      <div class="settings-pair">
+        ${field("Cache size limit (GB) *", `<input type="text" inputmode="numeric" class="mono" data-pref="cacheGb" value="${prefs.cacheGb}">`)}
+        ${field("HDR preview size, long edge *", pick("previewEdge", ["1920", "2560", "3840"]))}
+      </div>
+      <div class="settings-use"><i style="--done:${Math.min(100, (6.2 / prefs.cacheGb) * 100)}%"></i><span>6.2 GB of ${prefs.cacheGb} GB used. When full, the previews not looked at for longest are removed, a batch at a time.</span></div>
+      <div class="settings-pair">
+        ${field("Cache location", `<span class="lib-export-path"><input type="text" value="C:\\Users\\You\\AppData\\Local\\HDR Finisher\\Cache" spellcheck="false"><button type="button" data-settings-do="move">Change…</button></span>`)}
+        ${field("Brightness limit in the HDR grid (nits)", `<input type="text" inputmode="numeric" class="mono" data-pref-cap value="${hdr.cap}">`)}
+      </div>
+      <button type="button" class="text-button" data-settings-do="clear">Clear the cache…</button>
+      <div class="paste-kicker">Background indexing</div>
+      ${toggle("Index pinned folders and projects in the background", 'data-pref="indexing"', prefs.indexing, "Off: a folder is read only when you open it, and searches and smart albums cover only what has been opened.")}
+      <div class="settings-pair">
+        ${field("Processor use", pick("processor", ["Low", "Medium", "High"]))}
+        <label class="opt-check settings-check"><input type="checkbox" data-pref="battery" ${prefs.battery ? "checked" : ""}> Pause on battery power</label>
+      </div>
+      <div class="lib-export-field"><span>Leave these pinned folders out</span>
+        <div class="rules-folders">${PLACES.filter((f) => f.icon === "folder").map((f) => `<label class="opt-check"><input type="checkbox" data-pref-skip="${f.id}" ${prefs.skip.includes(f.id) ? "checked" : ""}> ${esc(f.label)}</label>`).join("")}</div></div>
+      <p class="helper">Indexing always gives way to grading and exporting, and uses the graphics card only when it is idle.</p>`;
+  }
+  $("settings-button").addEventListener("click", () => { renderSettings(); $("settings").showModal(); });
+  $("settings").addEventListener("input", (event) => {
+    const t = event.target;
+    if (t.dataset.prefAutosave !== undefined) return $("autosave").click();
+    if (t.dataset.prefCap !== undefined) { hdr.cap = Math.max(100, Number(t.value.replace(/\D/g, "")) || 1000); remember("hdr-cap", hdr.cap); return refresh(); }
+    if (t.dataset.prefSkip) prefs.skip = [...$("settings").querySelectorAll("[data-pref-skip]")].filter((box) => box.checked).map((box) => box.dataset.prefSkip);
+    else if (t.dataset.pref) prefs[t.dataset.pref] = t.type === "checkbox" ? t.checked : t.dataset.pref === "cacheGb" ? Math.max(1, Number(t.value.replace(/\D/g, "")) || 20) : t.value;
+    else return;
+    remember("prefs", JSON.stringify(prefs));
+  });
+  $("settings").addEventListener("click", (event) => {
+    const act = event.target.dataset.settingsDo;
+    if (event.target.id === "settings-close") return $("settings").close();
+    if (act === "move") return toast("Moves the cache to another drive. Previews already made move with it.");
+    if (act === "clear") askUser({ title: "Clear the Cache?", message: "Removes all thumbnails, previews and focus and exposure maps (6.2 GB). No photo, grade, mark or tag is touched. Everything is made again as you browse.", buttons: [["no", "Cancel"], ["yes", "Clear cache", "button-danger"]] },
+      (answer) => { if (answer === "yes") { photos.forEach((p) => { p.hdr = false; }); refresh(); toast("Cache cleared."); } });
+  });
 
   // ---------- first run ----------
 
@@ -2597,6 +3111,9 @@
   if (ask.has("menu")) openMenu(900, 300, photoMenu());
   if (ask.has("allfacts")) { state.allFacts = true; refresh(); }
   if (ask.has("looks")) openLooks();
+  if (ask.has("settings")) $("settings-button").click();
+  if (ask.has("hdr")) toggleHdr();
+  if (ask.has("project")) openProject();
   if (ask.has("tags")) openTags();
   if (ask.has("rules")) openRules(placeOf("smart"));
   if (ask.has("copy")) createCopies();

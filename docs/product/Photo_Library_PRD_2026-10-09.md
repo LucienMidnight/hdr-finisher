@@ -401,6 +401,31 @@ What each control must get right:
 - A folder being indexed, exported from or having previews built: the
   operation waits, or the job is cancelled cleanly.
 
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **Rename a photo:** a small window with the name; the file ending cannot
+  be changed. A name already used in the folder stops with "That name is
+  taken. Nothing was renamed." and offers to choose another.
+- **Move photos:** right-click, Move to folder, with a list of pinned
+  folders and their sub-folders; or drag thumbnails onto a folder in the
+  left panel. A drag moves at once with no confirmation, like Explorer, and
+  Ctrl+Z moves the photos back. (Open: should a drag ask first?)
+- **A name clash at the destination** stops with the file name and three
+  answers: Keep both (the moved file gets a number), Skip this one, Cancel
+  move. The window says nothing has been moved or overwritten yet. The
+  result line says how many moved and how many were skipped.
+- **A move to another drive** runs in the background and shows in the
+  bottom bar. Each photo is copied and checked before its original is
+  removed. Pause and cancel are on the bar; a cancelled move leaves the
+  remaining photos where they were.
+- **New folder inside**, **Rename folder** and **Move folder** on a folder's
+  right-click menu. A pinned folder's own entry offers Rename label, which
+  changes only the name shown in the list.
+- **A folder that background work is using** (indexing, HDR previews, an
+  export): the window "This folder is busy" offers Do it when finished or
+  Stop it and continue.
+- Renames and moves are each one undo step.
+
 ### 5.5 Culling marks
 
 Decided:
@@ -466,6 +491,19 @@ Proposed:
   name, then settles into capture order as details arrive.
 - One thin filter bar, hidden until called up, showing active filters as
   small chips. Common filters on keys.
+
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **Sort** adds file type, date modified and edited, and a button beside
+  it for ascending or descending.
+- **"+ Filter"** on the filter bar lists the further fields: camera, lens,
+  ISO, focal length, aperture, shutter speed, capture date, file type, tag,
+  state, virtual copy or original, linked. Choosing one offers the values
+  that occur in the folder being looked at, each with its count; ISO and
+  date ask for a number or a range. Each becomes a chip on the bar; a click
+  on the chip removes it.
+- These are the same rules smart albums use, so Save as smart album carries
+  them across unchanged.
 
 ### 5.7 Albums and smart albums
 
@@ -614,6 +652,21 @@ Proposed:
 - A photo whose grade changes gets its previews remade.
 - Cache keyed so a moved or renamed photo keeps its previews. Cache location
   movable to another drive.
+
+Proposed, mocked up October 10 (not yet confirmed by Steve). Numbers wait
+for measurement M2:
+
+- **HDR button** in the grid toolbar, following the Focus and Exposure
+  pattern: H is the quick switch, a click opens the options (the switch,
+  the brightness limit, and "Create HDR previews for this folder").
+- Turning HDR on makes previews for the photos on screen. Each thumbnail
+  switches as its preview is ready and carries a small "HDR" mark in its
+  strip; the rest stay SDR. This is the simple toggle the PRD prefers and
+  depends on M2 showing it is fast enough.
+- **Create HDR previews** on a selection, folder or album prepares them
+  ahead of time. Progress shows in the bottom bar with pause and cancel;
+  previews already made are kept when it is cancelled.
+- The brightness limit is a personal setting, kept in preferences.
 
 ### 5.10 Overlays: focus, and exposure
 
@@ -786,6 +839,14 @@ Proposed, mocked up October 10 (not yet confirmed by Steve):
 - Turning autosave on while there is unsaved work saves it at once.
 - Thumbnails show the saved grade, so an unsaved change is not seen in the
   library until it is saved.
+
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **Revert to original** and **Revert to last session** are on the photo
+  right-click menu beside Restore previous grade, and appear only when they
+  would do something. Each confirms with the number of photos, says each
+  keeps its previous grade, and is one undo step. Marks and tags are not
+  touched.
 
 ### 5.14 Virtual copies
 
@@ -973,6 +1034,26 @@ Proposed:
 - Existing `.hdrfinisher` files should keep opening, since the sidecar is the
   same kind of document. Check Steve's real projects before promising it.
 
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **Export project** from a folder, album, project or selection is one
+  window: project name, where to save, grades only or grades with source
+  photos (with the size), all virtual copies or only the main grade,
+  whether to include the recipes and looks used, and folder or single file.
+  It says that the export is a copy and the two can drift apart. It runs in
+  the background.
+- **Open project** is the + by the Projects heading. For a project with no
+  photos the window says how many photos were matched in the library and
+  how many were not, and asks Merge or Keep separate, with an option to
+  make an album after a merge.
+- **Missing photos** keep their place in the project grid as a dashed frame
+  marked "Missing", and the project's entry shows the count. The rest of
+  the project stays usable.
+- **Relink window:** a folder to search (sub-folders included) and one row
+  per missing photo with its state: Missing, Found and content matches,
+  Name matches but content differs (with "Use anyway"), or Chosen by hand.
+  What is found can be relinked while the rest stays missing.
+
 ### 5.18 Background indexing
 
 Decided:
@@ -999,6 +1080,22 @@ Proposed:
 - Advanced settings: on or off, how much processor to use, pause on battery,
   pins to leave out.
 
+Proposed, mocked up October 10 (not yet confirmed by Steve):
+
+- **Background work shows in the bottom bar**, one entry per job (indexing,
+  HDR previews, a move between drives, a project export) with a count. A
+  click offers Pause or Resume, and Cancel.
+- The smart album window says when indexing is still running, so a count
+  is not taken as final.
+- **An unplugged drive:** the pinned folder stays listed and can be opened.
+  Its thumbnails are dimmed and marked offline. Marks and tags still work.
+  Opening a photo in Grade says the drive is not connected.
+- **Library settings**, one page of the Settings window: autosave; cache
+  size limit with a "used" bar, cache location and Clear the cache; HDR
+  preview size; brightness limit; background indexing on or off, processor
+  use (low, medium, high), pause on battery, and pinned folders to leave
+  out. The starting numbers are placeholders until M2 and M3 are measured.
+
 ### 5.19 Size and speed targets
 
 Decided: the library is designed to a stated size, so performance is planned
@@ -1008,6 +1105,34 @@ costs in database size, memory and time, and may change.
 Proposed targets to define once numbers exist: photos indexed while staying
 quick; time for first thumbnails in a folder; time to flip between photos in
 compare; time and disk per HDR preview; first full index of a large drive.
+
+### 5.20 Linked photos (sync)
+
+Decided by Steve, October 10: several photos can be linked so that editing
+one changes all the others. The mark is a chain icon. (The PRD earlier used
+the word "sync" without defining it; this is the definition.)
+
+Proposed, mocked up October 10:
+
+- Select two or more photos, right-click, **Link grades**. The window asks
+  which photo's grade they all start from, and says each keeps its previous
+  grade.
+- From then on a change to any one of them reaches all: an edit in Grade
+  (applied to the others when it is saved), a paste, a look or a revert.
+  Windows that count photos include the linked ones and say so.
+- A chain icon sits in the strip under each linked thumbnail. Grade shows
+  "linked with N other photos" beside the file name.
+- **Unlink** takes the selected photos out. Each keeps the grade it has.
+  A link left with one photo ends.
+- Crop, lens corrections and local adjustments are never linked, for the
+  same reason they are unticked by default in paste.
+- A photo is in at most one link. Virtual copies can be linked like any
+  other photo. A new virtual copy does not inherit the link.
+- "Linked" is a field in filters and smart albums.
+
+Open: whether a link covers the whole grade (as mocked) or a chosen set of
+groups from the paste tick list; where the link is recorded so it travels
+with the photos (each sidecar naming its link is the likely answer).
 
 ---
 
@@ -1202,7 +1327,14 @@ beside-photo save/autosave trial remains experimental work, not a settled
 sidecar format. No cache size, database schema, reader switch or preview
 pipeline is adopted from these foundation measurements.
 
-Also to come: the wireframe for the views in 5.3.
+**Status, October 10:** M2, M3, M6 and T1 are still open. The mock-up
+uses placeholder numbers for the cache limit and preview size until they
+are measured. The top menus (File, Edit, View, Window) need no mock-up
+(Steve, October 10); their contents follow from the commands in section 5
+and are listed in the build brief.
+
+The wireframe for the views in 5.3 is the mock-up in
+`docs/product/library-wireframes`.
 
 ---
 
@@ -1266,6 +1398,14 @@ For Steve, one at a time, each with its trade-off.
 20. Nested tags.
 21. Whether a project can be packed into one file.
 22. The build order in section 8.
+23. Linked photos: whole grade or chosen groups, and where the link is
+    recorded (5.20).
+24. Whether dragging photos onto a folder moves them at once or asks first
+    (5.4).
+25. Whether marks made on an offline or read-only folder are written beside
+    the photos later, automatically, or only on request (Appendix B).
+26. Whether a new virtual copy starts with the original's marks and tags
+    (as mocked) or clean (5.14).
 
 ---
 
@@ -1383,3 +1523,34 @@ browsing, full resolution only on demand, optionally prepared ahead. Nobody
 keeps full-size previews of everything permanently. FastRawViewer is a
 specialist tuned for exactly this; HDR Finisher should not expect to match
 its speed at first.
+
+---
+
+## Appendix B. Notices for unusual situations
+
+Draft wording by Claude, October 10, for Steve to review once there is a
+coded draft. Each notice says what happened, that nothing was lost, and
+what the choices are. None of them is mocked up.
+
+| Situation | Notice |
+|---|---|
+| A folder cannot be written to (memory card, read-only share) | "Marks and grades for photos in <folder> are kept in the library, not beside the photos, because this folder cannot be written to. They will not travel with the files." Shown once per folder, and as a line in the Details panel. |
+| A drive is unplugged | "<folder> is not connected. Its photos stay listed. Marks and tags still work." Opening one in Grade: "<photo> is on a drive that is not connected." |
+| Two settings files for one photo | "<photo> has a second set of grades, usually from a returned project or a cloud conflict. Nothing was overwritten. The second set was added as virtual copies named From <file>." |
+| A settings file with no photo | "<n> settings files in <folder> have no photo. Their photos were probably moved outside HDR Finisher." Buttons: Reconnect, Leave them. |
+| A settings file that cannot be read | "The settings for <photo> could not be read. The photo is shown without a grade. The file has been left untouched." Buttons: Show in Explorer, Start a new grade (keeps the old file under another name). |
+| A settings file from a newer version | "<photo> was graded in a newer HDR Finisher. It can be viewed here but not changed, so nothing in it is lost." |
+| A file is in use by another program (rename, move, delete) | "<photo> could not be <moved> because another program is using it. Nothing was changed for this file. <n> other photos were <moved>." Buttons: Try again, Skip. |
+| The destination cannot be written to | "<folder> cannot be written to. Nothing was moved." |
+| Not enough room on the destination drive | "<drive> needs <x> GB and has <y> GB free. Nothing was moved." |
+| A move between drives was interrupted | On the next start: "A move to <folder> was interrupted. <n> photos had been copied and checked; <m> had not. Nothing was lost." Buttons: Finish the move, Leave as it is. |
+| Deleting where there is no Recycle Bin | Already in 5.4: the delete window says the photos will be gone for good. |
+| Moving or deleting the photo open in Grade | Move or rename: the photo stays open and follows the file. Delete: the delete window adds "One of these is open in Grade and will be closed." |
+| Exporting a photo with unsaved work in Grade | "<photo> has unsaved changes in Grade. Export uses the saved grade." Buttons: Save and export, Export the saved grade, Cancel. |
+| An HDR recipe on an SDR-only photo | A line in the export results: "skipped: HDR recipe, SDR-only photo". |
+| Searching or opening a smart album while indexing | "Indexing is still running, so more may turn up." |
+| A network folder | "Network folders do not always report changes. This folder is checked each time it is opened. Re-scan checks it now." Shown once, in the folder's right-click menu area. |
+| The cache drive is not connected | "The preview cache on <drive> is not connected. Thumbnails are being made in a temporary place and will be slower this session." |
+| The cache is full | No notice. The oldest previews are removed in a batch. |
+| A project photo is missing | The dashed "Missing" frame in the grid and the count on the project's entry (5.17). |
+| Pasting onto, or reverting, a linked photo | The confirmation counts the linked photos: "That includes <n> photos linked to the selection." |

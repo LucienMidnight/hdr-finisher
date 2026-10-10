@@ -2908,3 +2908,203 @@ button.tag-row:hover {
   text-transform: none;
   cursor: pointer;
 }
+
+/* ---------- sort direction, extra filters ---------- */
+
+#sort-dir svg {
+  transition: transform 120ms ease;
+}
+
+#sort-dir.down svg {
+  transform: rotate(180deg);
+}
+
+.lib-filter-rules {
+  display: contents;
+}
+
+.lib-chip.add {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+/* ---------- HDR previews, offline and missing photos ---------- */
+
+.hdr-tag {
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--body);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .06em;
+}
+
+.opt-action {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--body);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.opt-action:hover {
+  color: var(--text);
+}
+
+.nav-row.offline {
+  cursor: pointer;
+}
+
+/* A photo whose drive is unplugged stays listed, dimmed. */
+.cell.offline .frame {
+  opacity: .38;
+}
+
+.cell.offline .marks::after {
+  margin-left: 6px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 9px;
+  content: "offline";
+}
+
+/* A project photo that cannot be found: its place is kept, the picture is not shown. */
+.cell.missing .frame {
+  border: 1px dashed var(--border);
+  background: var(--panel);
+}
+
+.cell.missing .frame img {
+  visibility: hidden;
+}
+
+.cell.missing .frame::after {
+  position: absolute;
+  color: var(--attention);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  content: "Missing";
+}
+
+/* ---------- relink ---------- */
+
+.lib-relink {
+  width: min(680px, calc(100vw - 56px));
+  height: min(520px, calc(100vh - 56px));
+}
+
+.relink-path {
+  flex: 1 1 auto;
+}
+
+.relink-path input {
+  flex: 1 1 auto;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  background: var(--input);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.relink-row {
+  min-height: 40px;
+}
+
+.relink-row .file small {
+  display: block;
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.relink-row button {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.relink-row.found .state,
+.relink-row.hand .state {
+  color: var(--ready);
+}
+
+.relink-row.differs .state,
+.relink-row.forced .state,
+.relink-row.missing .state {
+  color: var(--attention);
+}
+
+/* ---------- library settings ---------- */
+
+.lib-settings {
+  width: min(640px, calc(100vw - 56px));
+  height: min(760px, calc(100vh - 56px));
+}
+
+.lib-settings .opt-row {
+  align-items: flex-start;
+}
+
+.lib-settings .opt-row small {
+  display: block;
+  max-width: 440px;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.settings-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+  gap: 16px;
+}
+
+.settings-check {
+  min-height: 28px;
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.settings-use {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.settings-use i {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent) var(--done, 0%), var(--border) var(--done, 0%));
+}
+
+.lib-settings .lib-export-path input {
+  min-width: 0;
+}
+
+/* Mock-up only. The app draws its collapse chevron from an icon file, which a
+   browser refuses to use as a mask when this page is opened straight from
+   disk. The same chevron is repeated here inline so it always shows. The real
+   app needs nothing: its shared panel-collapse button already has it. */
+:root {
+  --group-chevron-shape: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6l6 6l-6 6'/%3E%3C/svg%3E");
+}

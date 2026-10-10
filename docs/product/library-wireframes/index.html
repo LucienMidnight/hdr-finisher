@@ -23,6 +23,7 @@
     <label class="mock-check"><input type="checkbox" id="opt-advance"> Auto-advance</label>
     <label class="mock-check"><input type="checkbox" id="opt-slow" checked> Realistic loading</label>
     <label class="mock-check"><input type="checkbox" id="opt-first"> First run</label>
+    <label class="mock-check" title="Pretends the destination already holds a file of the same name, the next time photos are moved"><input type="checkbox" id="opt-clash"> Name clash on next move</label>
     <button type="button" id="mock-edit" disabled title="Pretends you moved a slider on the Grade stage, so the saving behaviour can be tried">Make a pretend edit</button>
     <button type="button" class="mock-keys-button" id="keys-button">Keys</button>
   </div>
@@ -59,7 +60,7 @@
       </nav>
       <div class="top-actions">
         <button class="text-button lib-autosave" id="autosave" type="button" aria-pressed="true" title="Autosave grades to the file beside each photo"><i></i><span>Autosave on</span></button>
-        <button class="text-button" type="button">Settings</button>
+        <button class="text-button" type="button" id="settings-button">Settings</button>
         <button class="text-button" type="button">Help</button>
       </div>
     </header>
@@ -105,13 +106,20 @@
                   <option value="name">File name</option>
                   <option value="rating">Rating</option>
                   <option value="pick">Pick status</option>
+                  <option value="type">File type</option>
+                  <option value="modified">Date modified</option>
+                  <option value="edited">Edited</option>
                 </select>
               </label>
+              <button class="tool-button lib-icon-button" type="button" id="sort-dir" title="Ascending. Click for descending." aria-label="Sort direction">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14 M6 11l6 -6l6 6"/></svg>
+              </button>
               <button class="tool-button" type="button" id="raw-only" aria-pressed="false" title="Show RAW files only">RAW only</button>
               <button class="tool-button" type="button" id="filter-button" aria-pressed="false" title="Filter · Ctrl+F">Filter</button>
               <span class="lib-divider"></span>
               <button class="tool-button" type="button" data-overlay="focus" aria-pressed="false" aria-haspopup="dialog" title="Focus overlay · S toggles, click for options">Focus</button>
               <button class="tool-button" type="button" data-overlay="exposure" aria-pressed="false" aria-haspopup="dialog" title="Exposure overlay · E toggles, click for options">Exposure</button>
+              <button class="tool-button" type="button" id="hdr-button" aria-pressed="false" aria-haspopup="dialog" title="HDR previews in the grid · H toggles, click for options">HDR</button>
             </div>
             <div class="lib-bar-right">
               <button class="panel-collapse-button lib-popout" type="button" id="popout" title="Move the library to its own window" aria-label="Pop out library">
@@ -131,6 +139,8 @@
             <button class="lib-chip" type="button" data-filter="hideRejected">Hide rejected</button>
             <button class="lib-chip" type="button" data-filter="edited">Edited</button>
             <button class="lib-chip" type="button" data-filter="rawOnly">RAW only</button>
+            <span class="lib-filter-rules" id="filter-rules"></span>
+            <button class="lib-chip add" type="button" id="filter-add" title="Filter by camera, lens, ISO, date and more">+ Filter</button>
             <span class="lib-filter-spacer"></span>
             <button class="text-button" type="button" id="filter-clear">Clear</button>
             <button class="text-button" type="button" id="filter-save" title="Save this filter as a smart album">Save as smart album</button>
@@ -219,6 +229,8 @@
       <dt>C</dt><dd>Compare. Arrows flip the right photo only, and marks go to the right photo.</dd>
       <dt>[ · ]</dt><dd>Put the selected photo on the left or the right. Works from the grid, single view and compare.</dd>
       <dt>S · E</dt><dd>Focus overlay · exposure overlay, on and off</dd>
+      <dt>H</dt><dd>HDR previews in the grid, on and off. Click HDR for the brightness limit.</dd>
+      <dt>Drag onto a folder</dt><dd>Moves the photos there on disk. Ctrl+Z moves them back.</dd>
       <dt>Click Focus, Exposure or Compare</dt><dd>Opens its options: on/off, strength, colours, layout. The key is the quick switch; the click is for the detail.</dd>
       <dt>G</dt><dd>Grid</dd>
       <dt>F</dt><dd>Full-screen review</dd>
@@ -339,6 +351,33 @@
       <button type="button" id="tags-delete">Remove…</button>
       <span class="lib-filter-spacer"></span>
       <button type="button" id="tags-close">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="settings" class="application-dialog lib-rules lib-settings">
+    <div class="application-dialog-header">
+      <div><h2>Library Settings</h2><p class="lib-picker-sub">Changes apply at once. In the app this is a page of the Settings window.</p></div>
+    </div>
+    <div class="lib-rules-body" id="settings-body"></div>
+    <div class="app-dialog-actions lib-picker-actions">
+      <span class="lib-picker-target">* Starting values are placeholders until the measurements are done.</span>
+      <button type="button" id="settings-close">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="relink" class="application-dialog lib-paste lib-relink">
+    <div class="application-dialog-header">
+      <div><h2 id="relink-title"></h2><p class="lib-picker-sub">Point at a folder. It and its sub-folders are searched by file name, and each match is checked against the photo's fingerprint.</p></div>
+    </div>
+    <div class="lib-paste-tools">
+      <span class="lib-export-path relink-path"><input type="text" id="relink-folder" value="D:\Photos\Archive" spellcheck="false"><button type="button" id="relink-browse">Browse…</button><button type="button" id="relink-search">Search this folder</button></span>
+    </div>
+    <div class="lib-paste-list" id="relink-list"></div>
+    <p class="lib-paste-notes" id="relink-notes"></p>
+    <div class="app-dialog-actions lib-picker-actions">
+      <span class="lib-filter-spacer"></span>
+      <button type="button" id="relink-close">Close</button>
+      <button type="button" class="button-primary" id="relink-go"></button>
     </div>
   </dialog>
 
