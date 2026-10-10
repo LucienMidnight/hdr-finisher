@@ -3170,3 +3170,15 @@ button.tag-row:hover {
   width: 8px;
   height: 8px;
 }
+
+/* Tiles: the space around the tiles matches the gap between them, on every
+   side, in the grid and in the filmstrip. */
+
+[data-tiles="on"] .lib-grid {
+  padding: 3px;
+}
+
+[data-tiles="on"] .lib-filmstrip {
+  height: 111px;
+  padding: 3px;
+}
