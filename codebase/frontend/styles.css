@@ -31,6 +31,12 @@
 }
 
 :root {
+  /* Photo marks use their own colours from the Library mock-up. */
+  --star: #f2c94c;
+  --label-red: #e5484d;
+  --label-orange: #f2994a;
+  --label-green: #3fb96b;
+  --label-blue: #4d9cff;
   --viewer: #07080a;
   --app: #0b0d0f;
   --panel: #101315;

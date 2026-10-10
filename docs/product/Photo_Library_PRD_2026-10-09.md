@@ -2,8 +2,8 @@
 
 **Date:** October 9, 2026
 **Status:** Slice 1 is authorized by the October 10 brief. Stage A (looking
-at photos) is implemented on `photo-library` and ready for Steve to try.
-Stages B (culling) and C (find, HDR, sharpness) remain to be built. The
+at photos) and Stage B (culling) are implemented on `photo-library` and
+ready for Steve to try. Stage C (find, HDR, sharpness) remains to be built. The
 October 10 decisions below supersede the older preview proposals.
 
 **How to read the labels:** *Decided* means Steve has agreed it. *Proposed*
@@ -1999,8 +1999,51 @@ and the basic file facts in the details rail. Every Grade source extension
 is routed, but the format probe is representative rather than exhaustive.
 Stage A has no Library CPU fallback. The picker’s Ctrl/Shift multi-folder
 selection follows the mock-up and can be adjusted after Steve tries it.
-Stages B/C, marks/sidecar writes, sort/filter, HDR switching and native zoom
-remain outstanding; no culling controls are implied by this stage.
+Stage C's sort/filter, HDR switching and native zoom remain outstanding.
+
+**Slice 1, Stage B — October 10 implementation:** the grid and filmstrip
+support click, Ctrl-click, Shift-click, Shift-arrows, Ctrl+A and box selection.
+Ratings, picks/rejects, colour labels and tags act on the whole selection.
+Marks occupy a separate strip beneath pictures. The shared stylesheet now
+contains the mock-up's dedicated yellow-star and red/orange/green/blue label
+tokens, also documented in the design guidelines.
+
+Shortcuts follow the mock-up: 0–5 for stars, P/X/U for pick/reject/unmarked,
+6–9 for colour labels (repeating a colour clears it), T for tags and Ctrl+Z
+for undo. The Details rail supplies the same controls. Tag suggestions are
+ordered by use count; arrows and Enter choose one, or Enter creates a tag.
+A dashed partial-tag chip adds that tag to all selected photos; its x removes
+it from the selection. These proposed mock-up interactions remain open to
+Steve's review. The Tags and Labels management window is not included.
+
+Marks save through backend commands without touching Grade's edit document
+or leave gate. `library.sqlite3` in the existing app data area is an index
+with one writer; pins and preferences retain their existing stores. Each
+first mark creates a plain UTF-8 `.hdrf` settings document beside the photo,
+with format `HDR Finisher Photo`, schema 1, a stable photo ID, a relative
+source filename and marks. It contains no image pixels. Whole-file atomic
+replacement preserves other settings fields. A malformed or newer sidecar
+is reported and blocks marking that selection; it is never overwritten.
+Unmarked browsing creates no sidecar or database. Existing sidecars rebuild
+the visited portion of a deleted database as folders are opened again.
+
+A command records its new marks in the database before attempting sidecars.
+Failed writes remain pending in the database and are shown in the Details
+rail and status line; stale sidecars cannot discard them on restart. Such
+marks cannot be recovered from sidecars if the database itself is deleted.
+Undo restores a whole bulk command in one step; the latest 100 culling
+commands are retained during the backend session. Grades and original photos
+are never rewritten by these commands.
+
+Validation: 447 JavaScript tests and 1,610 Python tests passed (three existing
+skips). New data checks cover atomic failures, bulk undo, reconstruction,
+read-only write failures, sidecar protection and concurrent command ordering.
+The focused Stage B Electron check uses only disposable copies and covers
+marks, suggestions/partial tags, every selection method, single view, review
+and reload persistence. The Stage A check covers the existing 3,001-photo
+virtual grid, real formats, first-picture delivery and Grade Cancel/Discard.
+A review-found edge case now selects the next readable photo when an
+unreadable first file is hidden.
 
 Proposed. Each slice is usable on its own.
 

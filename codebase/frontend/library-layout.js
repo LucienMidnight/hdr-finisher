@@ -3,7 +3,7 @@
   function gridLayout(count, width, height, scrollTop, minimumSize) {
     const columns = Math.max(1, Math.floor(Math.max(1, width - 20) / minimumSize));
     const cellWidth = Math.max(1, (width - 20) / columns);
-    const rowHeight = Math.ceil((cellWidth - 14) * .75 + 42);
+    const rowHeight = Math.ceil((cellWidth - 14) * .75 + 64);
     const rows = Math.ceil(count / columns);
     const firstRow = Math.max(0, Math.floor((scrollTop - 10) / rowHeight));
     const lastRow = Math.min(rows, Math.ceil((scrollTop + height - 10) / rowHeight));

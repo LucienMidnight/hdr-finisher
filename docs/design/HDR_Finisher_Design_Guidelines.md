@@ -2,7 +2,7 @@
 
 Status: living guideline for the shipped application
 
-Last updated: 2026-08-13
+Last updated: 2026-10-10
 
 This guideline is authoritative for current UI behavior and supersedes persistence language in older product and sprint documents.
 
@@ -96,6 +96,18 @@ Runtime tokens in `frontend/styles.css` are authoritative. Use semantic tokens r
 | Ready | `--ready` | `#8cbf9a` | Successful readiness |
 | Headroom / attention | `--headroom`, `--attention` | `#ffb020` | HDR headroom and warnings requiring review |
 | Blocking | `--blocking` | `#d4796b` | Errors and blocking state |
+
+Photo culling marks use the dedicated tokens below, adopted from the Library
+mock-up on October 10. Keep these in marks and their controls; stars and labels
+must not use the application accent. Marks sit beneath a photo, never on it.
+
+| Role | Token | Value |
+|---|---|---|
+| Star rating | `--star` | `#f2c94c` |
+| Red label | `--label-red` | `#e5484d` |
+| Orange label | `--label-orange` | `#f2994a` |
+| Green label | `--label-green` | `#3fb96b` |
+| Blue label | `--label-blue` | `#4d9cff` |
 
 Electric ultraviolet is the only ordinary active accent and stays spatially small: fills, focus, a selected tool, an index/hairline, or a tinted selected bed. It must not wash broad panels. Reserve saturated RGB colors for channel-specific scopes and curve channels. Do not reuse error red, ready green, HDR amber, or exposure-band colors as decorative accents.
 

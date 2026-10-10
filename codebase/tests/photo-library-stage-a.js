@@ -38,6 +38,7 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 3001, null, { timeout: 60000 });
     let snapshot = await library.evaluate(() => HDRLibrary.getSnapshot());
     assert.ok(snapshot.visible > 0 && snapshot.visible < 150, JSON.stringify(snapshot));
+    assert.equal(snapshot.selection.length, 1, "Hiding an unreadable first file must select the first readable photo");
     assert.equal(await page.locator(".workspace-main").isVisible(), false);
     assert.equal(await page.locator("#viewer-status-dock").isVisible(), false);
     await library.locator("#add-folder").click();

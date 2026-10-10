@@ -4,8 +4,8 @@
 <body><div id="library" class="library">
 <aside class="library-nav" aria-label="Folders"><div class="library-heading"><span class="panel-title">Folders</span><button id="add-folder" class="text-button" title="Add folder" aria-label="Add folder">+</button><button id="collapse-left" class="panel-collapse-button library-collapse" aria-label="Collapse folders" aria-expanded="true"></button></div><div id="folders"></div></aside>
 <section class="library-centre"><div class="library-toolbar"><span id="place-title" class="panel-title place">Library</span><button id="grid-view" class="tool-button" aria-pressed="true" title="Grid · G">Grid</button><button id="single-view" class="tool-button" aria-pressed="false" title="Single photo · Space">Single</button><button id="review-view" class="tool-button" title="Full-screen review · F">Review</button><input id="thumbnail-size" type="range" min="140" max="360" value="190" aria-label="Thumbnail size"><button id="open-image" class="text-button">Open image…</button></div>
-<div id="library-grid" role="listbox" aria-label="Photos" tabindex="0"><div id="grid-space"></div><div id="library-empty"><p id="empty-message">Add a folder to start browsing.</p><button id="empty-add" class="button-primary">Add a folder</button></div></div>
-<div id="library-single" hidden><div id="single-stage"><canvas id="single-picture" aria-label="Selected photo"></canvas></div><div id="single-caption"></div><div id="filmstrip" role="listbox" aria-label="Filmstrip" tabindex="0"><div id="film-space"></div></div></div>
+<div id="library-grid" role="listbox" aria-label="Photos" aria-multiselectable="true" tabindex="0"><div id="grid-space"></div><div id="library-empty"><p id="empty-message">Add a folder to start browsing.</p><button id="empty-add" class="button-primary">Add a folder</button></div></div>
+<div id="library-single" hidden><div id="single-stage"><canvas id="single-picture" aria-label="Selected photo"></canvas></div><div id="single-caption"></div><div id="filmstrip" role="listbox" aria-label="Filmstrip" aria-multiselectable="true" tabindex="0"><div id="film-space"></div></div></div>
 <div id="library-status" class="library-footer" role="status" aria-live="polite">Photos stay where they are.</div></section>
 <aside class="library-details" aria-label="Details"><div class="library-heading"><span class="panel-title">Details</span><button id="collapse-right" class="panel-collapse-button library-collapse" aria-label="Collapse details" aria-expanded="true"></button></div><div id="details">Select a photo.</div></aside></div>
 <output id="library-diagnostic" hidden></output>
@@ -39,5 +39,7 @@
 <script src="/static/library-layout.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
 <script src="/static/library-gpu.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
 <script src="/static/library-request-queue.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/library-selection.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/library-culling.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
 <script src="/static/photo-library.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
 </body></html>

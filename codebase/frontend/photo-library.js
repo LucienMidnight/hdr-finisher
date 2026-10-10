@@ -5,7 +5,7 @@
   const library = $("library"), grid = $("library-grid"), space = $("grid-space"), film = $("filmstrip");
   const state = { photos: [], index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
     pins: [], cells: new Map(), filmCells: new Map(), prefetch: new Map(), size: 190,
-    scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0 };
+    selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0 };
   const postParent = (action, detail = {}) => parent.postMessage({ type: "hdr-library", action, ...detail }, location.origin);
   const status = (message) => { $("library-status").textContent = message; };
   const aborted = (error) => error?.name === "AbortError";
@@ -33,6 +33,8 @@
       return result;
     }
   }
+  const culling = HDRLibraryCulling.create({ photos: () => state.photos, selection: () => state.selection, api, status,
+    updated: () => { updateDetails(); paintGrid(); paintFilm(); updateSingleCaption(); } });
   function selected() { return state.photos[state.index]; }
   function clearCells(map) {
     for (const cell of map.values()) { cell.controller.abort(); cell.element.remove(); }
@@ -77,11 +79,15 @@
   }
   function removeUnreadable(photo, error) {
     if (error.status !== 400) { status(error.message); return; }
-    const currentPath = selected()?.path;
+    const currentPath = selected()?.path, anchorPath = state.photos[state.anchor]?.path;
+    const wasSelected = state.selection.has(photo.path);
+    state.selection.delete(photo.path);
     state.photos = state.photos.filter((item) => item.path !== photo.path);
     state.hiddenFiles += 1;
     state.index = Math.max(0, state.photos.findIndex((item) => item.path === currentPath));
     if (!state.photos.length) state.index = -1;
+    if (wasSelected && !state.selection.size && state.index >= 0) state.selection.add(state.photos[state.index].path);
+    state.anchor = state.photos.findIndex(item => item.path === anchorPath);
     updateDetails(); paintGrid(); paintFilm();
     status(`${state.photos.length.toLocaleString()} photos · ${state.hiddenFiles} unreadable files hidden`);
   }
@@ -93,7 +99,7 @@
     const name = document.createElement("span"); name.className = "name"; name.textContent = photo.name;
     element.append(frame, name); container.append(element);
     const cell = { element, canvas, controller: new AbortController(), photo, index };
-    element.addEventListener("click", () => select(state.photos.findIndex((item) => item.path === photo.path)));
+    element.addEventListener("click", (event) => select(state.photos.findIndex((item) => item.path === photo.path), false, event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "single"));
     element.addEventListener("dblclick", () => { select(state.photos.findIndex((item) => item.path === photo.path)); openGrade(); });
     element.addEventListener("pointerenter", () => { if (state.timing && cell.meta) diagnostics(photo, cell.meta, cell.elapsed); });
     const started = performance.now();
@@ -116,8 +122,10 @@
       let cell = map.get(photo.path);
       if (!cell) { cell = makeCell(photo, container, index); map.set(photo.path, cell); }
       position(cell.element, index);
-      const active = index === state.index;
+      const active = state.selection.has(photo.path);
       cell.element.classList.toggle("active", active); cell.element.setAttribute("aria-selected", String(active));
+      cell.element.classList.toggle("rejected", photo.marks?.pick === "reject");
+      cell.element.querySelector(".library-marks")?.remove(); cell.element.append(culling.strip(photo));
     }
   }
   function paintGrid() {
@@ -139,18 +147,24 @@
     reconcile(state.filmCells, first, last, $("film-space"), (element, index) => { element.style.left = `${index * 128}px`; });
   }
   function updateDetails() {
-    const photo = selected(); const root = $("details"); root.replaceChildren();
-    if (!photo) { root.textContent = "Select a photo."; return; }
+    const photo = selected(); const root = $("details"), tagFocused = document.activeElement?.id === "library-tag-input"; root.replaceChildren();
+    if (!photo || !state.selection.size) { root.textContent = "Select a photo."; return; }
     const title = document.createElement("strong"); title.textContent = photo.name; root.append(title);
     const list = document.createElement("dl");
     for (const [label, value] of [["File type", photo.type], ["Size", `${(photo.bytes / 1024 / 1024).toFixed(1)} MB`], ["Location", photo.path]]) {
       const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = label; dd.textContent = value; list.append(dt, dd);
     }
-    root.append(list);
+    culling.details(root); root.append(list);
+    if (tagFocused) $("library-tag-input")?.focus();
   }
-  function select(index, scroll = false) {
+  function updateSingleCaption() {
+    if (!selected()) return;
+    $("single-caption").replaceChildren(document.createTextNode(selected().name), culling.strip(selected()));
+  }
+  function select(index, scroll = false, mode = "single") {
     if (!state.photos.length) return;
-    state.index = Math.max(0, Math.min(state.photos.length - 1, index)); updateDetails();
+    const next = HDRLibrarySelection.choose(state.photos.map(photo => photo.path), state.selection, state.anchor, index, mode);
+    state.index = next.index; state.selection = next.selected; state.anchor = next.anchor; updateDetails();
     if (state.view === "grid") {
       if (scroll && state.layout) {
         const top = 10 + Math.floor(state.index / state.layout.columns) * state.layout.rowHeight;
@@ -180,7 +194,7 @@
       const edge = singleEdge();
       const meta = await loadAndShow(photo, edge, $("single-picture"), controller, current, 0);
       if (!meta || !current()) return;
-      $("single-caption").textContent = photo.name;
+      updateSingleCaption();
       status(`${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
       for (const index of [state.index + 1, state.index - 1]) {
         const next = state.photos[index]; if (!next) continue;
@@ -194,7 +208,7 @@
     if (view === "single" && !selected()) return;
     state.view = view; $("library-single").hidden = view !== "single"; grid.hidden = view !== "grid";
     $("grid-view").setAttribute("aria-pressed", String(view === "grid")); $("single-view").setAttribute("aria-pressed", String(view === "single"));
-    if (view === "single") { clearCells(state.cells); select(state.index, true); }
+    if (view === "single") { clearCells(state.cells); select(state.index, true, "preserve"); }
     else { state.single?.abort(); clearPrefetch(); clearCells(state.filmCells); paintGrid(); }
   }
   function setReview(review) {
@@ -212,7 +226,7 @@
   }
   async function browse(path) {
     state.scan?.abort(); state.single?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells);
-    const controller = new AbortController(); state.scan = controller; state.path = path; state.photos = []; state.index = -1; state.hiddenFiles = 0;
+    const controller = new AbortController(); state.scan = controller; state.path = path; state.photos = []; state.index = -1; state.selection.clear(); state.anchor = -1; state.hiddenFiles = 0;
     setView("grid"); grid.scrollTop = 0; $("place-title").textContent = path.split(/[\\/]/).filter(Boolean).at(-1) || path;
     $("place-title").title = path; status("Reading folder…");
     for (const element of $("folders").querySelectorAll(".library-folder-row")) element.classList.toggle("active", element.dataset.path === path);
@@ -220,7 +234,10 @@
       const result = await api("/api/library/scan", { path }, controller.signal);
       if (controller.signal.aborted) return;
       state.photos = result.photos; state.index = result.photos.length ? 0 : -1;
+      state.selection = new Set(state.index >= 0 ? [state.photos[0].path] : []); state.anchor = state.index;
+      culling.setUndo(result.undo_available);
       status(`${result.photos.length.toLocaleString()} photos${result.unreadable_folders.length ? " · Some sub-folders could not be read" : ""}`);
+      if (result.warnings?.length) status(result.warnings[0]);
       updateDetails(); paintGrid();
     } catch (error) { if (!aborted(error)) status(error.message); }
   }
@@ -363,10 +380,17 @@
   });
   window.addEventListener("keydown", (event) => {
     if ($("folder-picker").open || event.target.matches("input,textarea,select,[contenteditable]")) return;
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
     const key = event.key.toLowerCase();
+    if (event.ctrlKey || event.metaKey) {
+      if (key === "a") { event.preventDefault(); state.selection = new Set(state.photos.map(photo => photo.path)); updateDetails(); paintGrid(); paintFilm(); }
+      if (key === "z") { event.preventDefault(); void culling.undo(); }
+      return;
+    }
+    if (event.altKey) return;
+    if (culling.shortcut(key)) { event.preventDefault(); return; }
+    if (key === "t") { event.preventDefault(); collapse("right", false); $("library-tag-input")?.focus(); return; }
     const steps = { arrowright: 1, arrowleft: -1, arrowdown: state.view === "grid" ? state.layout?.columns || 1 : 1, arrowup: state.view === "grid" ? -(state.layout?.columns || 1) : -1 };
-    if (key in steps) { event.preventDefault(); select(state.index + steps[key], true); }
+    if (key in steps) { event.preventDefault(); select(state.index + steps[key], true, event.shiftKey ? "range" : "single"); }
     else if (key === "enter") { event.preventDefault(); openGrade(); }
     else if (key === " ") { event.preventDefault(); setView(state.view === "grid" ? "single" : "grid"); }
     else if (key === "g") setView("grid");
@@ -375,9 +399,45 @@
     else if (key === "tab") { event.preventDefault(); const closed = !(library.classList.contains("library-left-closed") && library.classList.contains("library-right-closed")); collapse("left", closed); collapse("right", closed); }
     else if (key === "i") collapse("right", !library.classList.contains("library-right-closed"));
   });
+  // Box selection uses grid coordinates for all photos, including virtual rows.
+  let band = null, suppressGridClick = false;
+  const selectionBox = document.createElement("div"); selectionBox.id = "library-selection-box"; selectionBox.hidden = true; space.append(selectionBox);
+  function updateBand(event) {
+    if (!band || !state.layout) return;
+    const bounds = grid.getBoundingClientRect();
+    band.clientX = event.clientX; band.clientY = event.clientY;
+    const x = event.clientX - bounds.left, y = event.clientY - bounds.top + grid.scrollTop;
+    if (!band.moved && Math.abs(x - band.x) + Math.abs(y - band.y) < 4) return;
+    band.moved = true;
+    const box = { left: Math.min(x, band.x), right: Math.max(x, band.x), top: Math.min(y, band.y), bottom: Math.max(y, band.y) };
+    selectionBox.hidden = false; selectionBox.style.cssText = `left:${box.left}px;top:${box.top}px;width:${box.right - box.left}px;height:${box.bottom - box.top}px`;
+    const indices = HDRLibrarySelection.boxIndices(state.layout, state.photos.length, box);
+    state.selection = new Set([...band.base, ...indices.map(index => state.photos[index].path)]);
+    if (indices.length) { state.index = indices.at(-1); state.anchor = indices[0]; }
+    updateDetails(); paintGrid();
+  }
+  grid.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || event.target.closest(".library-cell,button") || !state.photos.length) return;
+    const bounds = grid.getBoundingClientRect();
+    band = { pointerId: event.pointerId, x: event.clientX - bounds.left, y: event.clientY - bounds.top + grid.scrollTop,
+      base: event.ctrlKey || event.metaKey ? new Set(state.selection) : new Set(), moved: false };
+    grid.setPointerCapture(event.pointerId); event.preventDefault();
+  });
+  grid.addEventListener("pointermove", updateBand);
+  function endBand(event) {
+    if (!band || event.pointerId !== band.pointerId) return;
+    suppressGridClick = band.moved; band = null; selectionBox.hidden = true;
+    if (grid.hasPointerCapture(event.pointerId)) grid.releasePointerCapture(event.pointerId);
+  }
+  grid.addEventListener("pointerup", endBand); grid.addEventListener("pointercancel", endBand);
+  grid.addEventListener("scroll", () => { if (band?.moved) updateBand({ clientX: band.clientX, clientY: band.clientY }); });
+  grid.addEventListener("click", event => {
+    if (suppressGridClick) { suppressGridClick = false; return; }
+    if (!event.target.closest(".library-cell,button")) { state.selection.clear(); updateDetails(); paintGrid(); }
+  });
   // Read-only status for the focused interaction driver; no test-only behavior.
   window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, count: state.photos.length,
-    selected: selected()?.path, view: state.view, review: state.review, visible: state.cells.size,
+    selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
     filmVisible: state.filmCells.size, active: state.active }) });
   (async () => {
     try {
