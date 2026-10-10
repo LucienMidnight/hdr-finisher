@@ -3135,3 +3135,38 @@ button.tag-row:hover {
 [data-tiles="on"] .cell.loading .frame {
   background: transparent;
 }
+
+/* ---------- a larger filmstrip ----------
+   The first size was too small to read marks or tell near-identical frames
+   apart. Thumbnails are now about half as large again, and the smallest grid
+   thumbnail is 140 px instead of 110. */
+
+.lib-filmstrip {
+  gap: 3px;
+  height: 128px;
+  padding: 8px 10px 10px;
+}
+
+.lib-filmstrip .cell {
+  width: 116px;
+  padding: 5px 5px 0;
+}
+
+.lib-filmstrip .cell .frame {
+  height: 80px;
+}
+
+.lib-filmstrip .cell .marks {
+  height: 20px;
+  font-size: 10px;
+}
+
+.lib-filmstrip .cell .marks svg {
+  width: 11px;
+  height: 11px;
+}
+
+.lib-filmstrip .label-dot {
+  width: 8px;
+  height: 8px;
+}
