@@ -444,7 +444,10 @@ Proposed, mocked up October 10 (not yet confirmed by Steve):
 - **Colour labels can be given a meaning** in the same window (for example
   red = "to retouch"). The name shows in tooltips. The four colours and
   keys do not change. Names are a personal setting, kept in preferences.
-- A tag exists only while at least one photo carries it.
+- **New tag** in the same window adds a tag to the list before any photo
+  carries it, so it is offered as a suggestion. (Asked for by Steve,
+  October 10.) A tag stays on the list, even on no photos, until it is
+  removed in this window.
 
 ### 5.6 Sort, filter and search
 
@@ -774,8 +777,9 @@ Proposed, mocked up October 10 (not yet confirmed by Steve):
   visible from the Library.
 - **The prompt** follows the app's existing unsaved-changes window: title
   "Unsaved changes", body "Save changes to <file> before opening <file>?"
-  with one line on what Save and Don't save do, and buttons Cancel, Don't
-  save, Save. Escape is Cancel. The same window appears on closing the app.
+  and nothing more (Steve, October 10: no explanatory text), and buttons
+  Cancel, Don't save, Save. Escape is Cancel. The same window appears on
+  closing the app.
 - Going to the Library tab and back never asks; the Grade tab returns to
   the photo that is open. Opening the photo that is already open never
   asks.
@@ -880,8 +884,9 @@ Proposed, mocked up October 10 (not yet confirmed by Steve):
 - The window says how many photos will change and that each keeps its
   previous grade. Applying is one undo step, like paste.
 - A user's look can be renamed, updated from the copied grade, exported and
-  deleted. A built-in look cannot be changed; "Save a copy" makes one that
-  can.
+  deleted. A built-in look cannot be changed and has no "save a copy"
+  button (Steve, October 10). A new look always comes from an edited
+  photo: apply a built-in look, adjust in Grade, save that grade as a look.
 - **Save as look preset** in the paste window asks for a name and a folder
   and lists the ticked groups the look will contain.
 

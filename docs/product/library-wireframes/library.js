@@ -769,7 +769,7 @@
     if (autosaveOn()) { saveGrade(); return proceed(); }
     askUser({
       title: "Unsaved changes",
-      message: `Save changes to ${title(grade.photo)} before ${doing}?\n\nAutosave is off, so nothing has been written yet. Save keeps the changes beside the photo. Don't save drops them, and the photo goes back to how it was last saved.`,
+      message: `Save changes to ${title(grade.photo)} before ${doing}?`,
       buttons: [["cancel", "Cancel"], ["drop", "Don't save"], ["save", "Save", GO]],
     }, (answer) => {
       if (answer === "cancel") return;
@@ -928,16 +928,21 @@
   // ---------- tags ----------
   // Tags save at once and are never unsaved work. Every change is one undo.
 
+  // The library's list of tags. A tag stays on the list, even on no photos,
+  // until it is removed in the Tags and Labels window.
+  let tagList = new Set(photos.flatMap((p) => p.tags));
   const allTags = () => {
-    const known = new Map();
+    const known = new Map([...tagList].map((t) => [t, 0]));
     photos.forEach((p) => p.tags.forEach((t) => known.set(t, (known.get(t) || 0) + 1)));
     return known;
   };
 
   function editTags(list, change, text) {
     const before = list.map((p) => ({ p, tags: p.tags.slice() }));
+    const listBefore = new Set(tagList);
     list.forEach(change);
-    state.undo.push({ back: () => before.forEach(({ p, tags }) => { p.tags = tags; }), text });
+    list.forEach((p) => p.tags.forEach((t) => tagList.add(t)));
+    state.undo.push({ back: () => { before.forEach(({ p, tags }) => { p.tags = tags; }); tagList = listBefore; }, text });
     renderNav();
   }
 
@@ -1036,13 +1041,13 @@
     const rows = [...known].filter(([t]) => t.includes(find)).sort((a, b) => (tagsUi.sort === "count" ? b[1] - a[1] : 0) || a[0].localeCompare(b[0]));
     $("tags-list").innerHTML = `<div class="paste-kicker">Colour labels · give each a meaning if you like</div>` +
       LABELS.map((l, i) => `<div class="tag-row"><i class="label-dot" style="background:var(--label-${l})"></i><input type="text" data-label-name="${l}" value="${esc(labelNames[l])}" placeholder="${cap(l)} · key ${i + 6}" spellcheck="false"><span class="count">${photos.filter((p) => p.label === l).length}</span></div>`).join("") +
-      `<div class="paste-kicker">Tags</div>` +
+      `<div class="paste-kicker tags-kicker"><span>Tags</span><button type="button" class="text-button" id="tags-new">+ New tag</button></div>` +
       (rows.length ? rows.map(([t, n]) => `<button type="button" class="tag-row${tagsUi.sel.has(t) ? " selected" : ""}" data-tag="${esc(t)}"><span class="name">${esc(t)}</span><span class="count">${n}</span></button>`).join("")
-        : `<p class="tags-none">${find ? "No tag matches." : "No tags yet. Add one from the Details panel."}</p>`);
+        : `<p class="tags-none">${find ? "No tag matches." : "No tags yet."}</p>`);
     const sel = [...tagsUi.sel];
     const on = photos.filter((p) => sel.some((t) => p.tags.includes(t))).length;
     $("tags-notes").textContent = !sel.length ? `${plural(known.size, "tag")} in the library. Click one to select it. Ctrl-click to select several, then merge them into one.`
-      : sel.length === 1 ? `“${sel[0]}” is on ${plural(on, "photo")}.` : `${sel.length} tags selected, on ${plural(on, "photo")} between them.`;
+      : sel.length === 1 ? (on ? `“${sel[0]}” is on ${plural(on, "photo")}.` : `“${sel[0]}” is not on any photo yet.`) : `${sel.length} tags selected, on ${plural(on, "photo")} between them.`;
     $("tags-show").disabled = $("tags-rename").disabled = sel.length !== 1;
     $("tags-merge").disabled = sel.length < 2;
     $("tags-delete").disabled = !sel.length;
@@ -1063,6 +1068,8 @@
       p.tags = p.tags.filter((t) => !olds.includes(t));
       if (to && !p.tags.includes(to)) p.tags.push(to);
     }, text);
+    olds.forEach((t) => tagList.delete(t));
+    if (to) tagList.add(to);
     tagsUi.sel = new Set(to ? [to] : []);
     filtersChanged();
     renderTags();
@@ -1078,7 +1085,22 @@
       if (event.ctrlKey || event.metaKey) tagsUi.sel.has(tag) ? tagsUi.sel.delete(tag) : tagsUi.sel.add(tag);
       else tagsUi.sel = new Set(tagsUi.sel.has(tag) && tagsUi.sel.size === 1 ? [] : [tag]);
     } else if (sort) tagsUi.sort = sort.dataset.tagsort;
-    else if (event.target.id === "tags-close") return $("tags").close();
+    else if (event.target.id === "tags-new") {
+      return askUser({ title: "New Tag", message: "The tag is added to the list and offered as a suggestion when you tag photos.", fields: [{ name: "name", label: "Name", placeholder: "Tag name" }], buttons: [["no", "Cancel"], ["yes", "Add tag", GO]] }, (answer, v) => {
+        const name = v.name.toLowerCase();
+        if (answer !== "yes" || !name) return;
+        const fresh = !tagList.has(name);
+        const listBefore = new Set(tagList);
+        tagList.add(name);
+        if (fresh) state.undo.push({ back: () => { tagList = listBefore; }, text: `Took the new tag “${name}” off the list again` });
+        tagsUi.sel = new Set([name]);
+        $("tags-search").value = "";
+        renderTags();
+        const row = [...$("tags-list").querySelectorAll("[data-tag]")].find((r) => r.dataset.tag === name);
+        if (row) row.scrollIntoView({ block: "nearest" });
+        if (!fresh) toast(`“${name}” is already on the list.`);
+      });
+    } else if (event.target.id === "tags-close") return $("tags").close();
     else if (event.target.id === "tags-show") {
       $("tags").close();
       state.filters.text = $("search").value = sel[0];
@@ -2443,7 +2465,7 @@
     showLook(look);
     $("looks-about").innerHTML = `<p class="looks-name">${esc(look.name)}</p><p>Changes ${look.parts.join(", ")}. Everything else on each photo stays as it is, including crop, lens corrections and local adjustments.</p>
       <div class="looks-manage">` + (look.builtin
-        ? `<button type="button" data-look-do="copy">Save a copy to My looks</button><span class="helper">Built-in looks cannot be changed.</span>`
+        ? `<span class="helper">Built-in look. To make your own version, apply it, adjust the photo in Grade, then save that grade as a look.</span>`
         : `<button type="button" data-look-do="rename">Rename…</button><button type="button" data-look-do="update">Update from copied grade</button><button type="button" data-look-do="export">Export…</button><button type="button" data-look-do="delete">Delete</button>`) + `</div>`;
     $("looks-notes").textContent = `${plural(n, "photo")} will change and be saved straight away. ${n === 1 ? "It keeps" : "Each keeps"} its previous grade, so this can be taken back.` +
       (n > 1 ? `\nThe preview shows ${title(looksUi.targets[0])}.` : "");
@@ -2470,7 +2492,6 @@
     const look = LOOKS[looksUi.at];
     if (fav) LOOKS[Number(fav.dataset.fav)].fav = !LOOKS[Number(fav.dataset.fav)].fav;
     else if (row) looksUi.at = Number(row.dataset.look);
-    else if (act === "copy") { LOOKS.unshift(Object.assign({}, look, { folder: "My looks", name: look.name + " copy", builtin: false, fav: false })); looksUi.at = 0; }
     else if (act === "rename") return askUser({ title: "Rename Look", fields: [{ name: "name", label: "Name", value: look.name }], buttons: [["no", "Cancel"], ["yes", "Rename", GO]] },
       (answer, v) => { if (answer === "yes" && v.name) { look.name = v.name; renderLooks(); } });
     else if (act === "update") {

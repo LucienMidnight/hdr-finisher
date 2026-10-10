@@ -2891,3 +2891,20 @@ button.tag-row:hover {
 .looks-manage button:hover {
   color: var(--text);
 }
+
+/* New tag sits on the Tags heading row. */
+.tags-kicker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 12px;
+}
+
+.tags-kicker .text-button {
+  min-height: 22px;
+  border: 0;
+  font-family: var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
