@@ -1509,6 +1509,227 @@ Steve's use remains the feel check. Source preparation responsiveness,
 uncached distinct-photo pastes, source redevelopment, large local masks,
 export overlap, cancellation and a whole-library refresh were excluded.
 
+**M2/M6 speed follow-up, October 10 (test-only GPU and opening trial):**
+The original October 10 CPU measurements above remain the baseline. The same
+ten files and thirty-photo set were copied to ignored output. This trial used
+the existing NVIDIA Lovelace / RTX 4070 Ti renderer and the unchanged single
+Ultra HDR gain-map JPEG encoder. No app path, shader, export/Proof policy,
+helper job type, cache limit, project format or visible control was changed.
+Normal numerical threading was OpenBLAS 12 with LibRaw OpenMP enabled; the
+one-thread profile set the numerical thread environment to 1. Source caches
+were disabled for the external runs; storage was warm, not cold disk.
+
+A. Already-opened 2560 build: forty samples per thread setting (ten photos,
+two opens and two builds per open). Stage timings below are inclusive:
+codec calls overlap the gain-map pipeline and validation, and must not be
+added together. Independent medians also need not sum to the total.
+
+| Measured operation | One thread, s | Normal threads, s |
+|---|---:|---:|
+| Draw HDR + SDR | 1.733 | 1.778 |
+| Prepare HDR half-float pixels | 0.198 | 0.201 |
+| SDR transfer conversion | 0.238 | 0.240 |
+| Base JPEG encode/write | 0.012 | 0.013 |
+| Gain-map filtering, JPEG and repack pipeline (inclusive) | 1.473 | 1.483 |
+| All codec commands (gain/JPEG, probes, repack) | 1.498 | 1.494 |
+| Final output validation (inclusive) | 0.307 | 0.309 |
+| Known Python byte writes / final flush | not separately instrumented | 0.028 / 0.001 |
+| **Complete build** | **4.477** | **4.531** |
+
+The initial codec combines gain-map calculation and JPEG encoding; those
+cannot be separated by this wrapper without modifying the codec. Normal
+thread medians were 0.580 s for that fused call,
+0.592 s for probe/decode commands and 0.321 s for repacking.
+Drawing was about 39% of the build, contradicting the suspicion that it was
+most of the cost. Normal threads did not materially shorten file creation.
+
+B. Already-opened GPU builds. Each cell is **unchanged / +0.25 EV**;
+each number is the median of two builds of that photo at that size. Drawing
+waits for GPU submission completion; readback covers both RGB pictures.
+Encode/write includes existing quality settings, gain-map filtering, JPEG
+packaging, validation and flushing. Total also includes half-float packing
+and bounded loopback transfer; production IPC overhead was not measured.
+First proxy upload/warm-up and opening are
+excluded here and included in the end-to-end batch below.
+
+| Photo | Long edge | Draw, ms | Readback, ms | Encode/write, s | Total, s | File, KiB |
+|---|---:|---:|---:|---:|---:|---:|
+| DJI_0071-2.DNG | 1920 | 16.5 / 16.3 | 43.0 / 42.0 | 2.11 / 2.15 | 2.29 / 2.33 | 1660 / 1649 |
+| DJI_0071-2.DNG | 2560 | 23.8 / 16.2 | 63.2 / 47.7 | 2.99 / 3.04 | 3.29 / 3.44 | 3095 / 3090 |
+| DJI_0071-2.DNG | 3840 | 75.2 / 72.2 | 139.0 / 140.1 | 5.16 / 5.14 | 5.82 / 5.79 | 6988 / 6312 |
+| DSC02767.ARW | 1920 | 16.2 / 15.4 | 37.9 / 36.2 | 2.01 / 1.98 | 2.17 / 2.14 | 2005 / 1911 |
+| DSC02767.ARW | 2560 | 38.6 / 38.4 | 57.7 / 56.2 | 2.65 / 2.66 | 2.92 / 2.93 | 3484 / 3451 |
+| DSC02767.ARW | 3840 | 89.1 / 87.8 | 131.5 / 126.8 | 4.55 / 4.56 | 5.30 / 5.17 | 8173 / 8642 |
+| DSC06615.ARW | 1920 | 13.5 / 15.5 | 34.0 / 36.0 | 1.98 / 2.01 | 2.13 / 2.17 | 2034 / 2095 |
+| DSC06615.ARW | 2560 | 25.3 / 23.0 | 56.4 / 60.0 | 2.66 / 2.66 | 2.92 / 2.92 | 3535 / 3676 |
+| DSC06615.ARW | 3840 | 76.8 / 75.4 | 123.9 / 124.1 | 4.51 / 4.52 | 5.10 / 5.12 | 8002 / 8151 |
+| DSC00264_DxO-optical-corr-only.dng | 1920 | 15.9 / 14.7 | 35.5 / 35.2 | 2.06 / 2.06 | 2.22 / 2.22 | 2347 / 2423 |
+| DSC00264_DxO-optical-corr-only.dng | 2560 | 41.3 / 40.5 | 59.1 / 59.8 | 2.82 / 2.78 | 3.10 / 3.06 | 4569 / 4700 |
+| DSC00264_DxO-optical-corr-only.dng | 3840 | 93.5 / 92.6 | 143.9 / 141.0 | 4.79 / 5.12 | 5.44 / 5.89 | 11768 / 12018 |
+| 2L1B8631.CR2 | 1920 | 15.0 / 16.7 | 34.7 / 34.3 | 2.02 / 2.01 | 2.17 / 2.17 | 1381 / 1428 |
+| 2L1B8631.CR2 | 2560 | 22.4 / 23.5 | 54.3 / 55.2 | 2.88 / 2.78 | 3.13 / 3.04 | 2407 / 2503 |
+| 2L1B8631.CR2 | 3840 | 71.6 / 69.5 | 122.7 / 121.8 | 4.79 / 4.74 | 5.38 / 5.32 | 5715 / 5982 |
+| Fujifilm_X-E2S_DSCF6495.RAF | 1920 | 18.3 / 14.0 | 36.1 / 27.4 | 2.18 / 2.03 | 2.33 / 2.18 | 2369 / 2517 |
+| Fujifilm_X-E2S_DSCF6495.RAF | 2560 | 44.6 / 43.4 | 59.9 / 57.4 | 2.83 / 2.83 | 3.11 / 3.11 | 4629 / 4848 |
+| Fujifilm_X-E2S_DSCF6495.RAF | 3840 | 100.1 / 98.6 | 130.7 / 129.6 | 4.85 / 4.84 | 5.47 / 5.47 | 12007 / 12371 |
+| Nikon_D7500_DSC_3931.NEF | 1920 | 13.2 / 15.0 | 32.3 / 33.8 | 2.06 / 2.06 | 2.21 / 2.22 | 4741 / 4760 |
+| Nikon_D7500_DSC_3931.NEF | 2560 | 21.0 / 22.6 | 56.3 / 57.3 | 2.86 / 2.88 | 3.12 / 3.14 | 8443 / 8393 |
+| Nikon_D7500_DSC_3931.NEF | 3840 | 63.4 / 63.1 | 125.4 / 127.9 | 4.72 / 4.71 | 5.30 / 5.29 | 6146 / 6082 |
+| DJI_0071.JPG | 1920 | 15.6 / 15.0 | 36.7 / 39.5 | 2.12 / 2.13 | 2.29 / 2.30 | 2782 / 2810 |
+| DJI_0071.JPG | 2560 | 24.8 / 22.8 | 63.4 / 61.6 | 3.02 / 3.05 | 3.31 / 3.33 | 4900 / 4928 |
+| DJI_0071.JPG | 3840 | 70.9 / 72.0 | 137.9 / 136.1 | 5.22 / 5.20 | 5.86 / 5.84 | 10894 / 10934 |
+| iphone_16_pro_IMG_3324.HEIC | 1920 | 16.2 / 16.9 | 38.4 / 38.7 | 2.09 / 2.09 | 2.26 / 2.27 | 3371 / 3382 |
+| iphone_16_pro_IMG_3324.HEIC | 2560 | 38.0 / 37.9 | 66.3 / 63.6 | 2.93 / 2.94 | 3.23 / 3.24 | 5483 / 5492 |
+| iphone_16_pro_IMG_3324.HEIC | 3840 | 89.1 / 87.2 | 139.6 / 141.7 | 4.96 / 4.93 | 5.63 / 5.60 | 10853 / 10845 |
+| DSC04375_DxO_clipped_target.tif | 1920 | 14.7 / 14.5 | 34.8 / 35.3 | 2.08 / 2.04 | 2.23 / 2.20 | 2013 / 1949 |
+| DSC04375_DxO_clipped_target.tif | 2560 | 21.0 / 21.3 | 55.2 / 54.8 | 2.82 / 2.75 | 3.07 / 3.00 | 3469 / 3345 |
+| DSC04375_DxO_clipped_target.tif | 3840 | 56.4 / 55.1 | 116.5 / 116.5 | 4.66 / 4.65 | 5.22 / 5.21 | 7519 / 7244 |
+
+Across the ten photos the unchanged 2560 medians were 25.4 ms
+drawing, 58.8 ms readback, 2.86 s encoding/writing,
+and **3.12 s total**. The existing gain-map guided filter alone took
+0.70 s; all Pillow JPEG saves took 0.032 s
+(codec JPEG work is additional). The GPU makes drawing fast; the file still
+takes seconds. Unchanged GPU-versus-CPU pictures had HDR relative mean
+absolute error up to 0.039% and SDR mean code error
+up to 3.20/255. This uses the existing preview approximation,
+not an exact CPU Proof result. No tolerance was changed.
+
+C. Opening candidates: two samples per shortcut per photo. **Early** reduces
+the decoded image before negative-gamut mapping, automatic exposure and HDR
+analysis. **Half** also uses LibRaw half-size and reduces camera RGB before
+color conversion and Lensfun; native CFA highlight repair is preserved.
+Both are compared against a full open reduced directly to the same size.
+SDR errors are absolute 8-bit code differences; HDR error is mean absolute
+linear error divided by mean absolute full-reference HDR value.
+
+| Photo | Full open, s | Candidate | Open, s | Long edge | SDR mean / p99 code error | HDR relative mean error, % |
+|---|---:|---|---:|---:|---:|---:|
+| DJI_0071-2.DNG | 86.01 | early | 82.68 | 2560 | 0.001 / 0 | 0.000 |
+| DSC02767.ARW | 7.69 | early | 6.38 | 2560 | 0.052 / 1 | 0.208 |
+| DSC02767.ARW | 7.69 | half | 1.85 | 2560 | 2.153 / 13 | 2.706 |
+| DSC06615.ARW | 7.57 | early | 6.38 | 2560 | 0.001 / 0 | 0.000 |
+| DSC06615.ARW | 7.57 | half | 1.92 | 2560 | 4.178 / 21 | 3.593 |
+| DSC00264_DxO-optical-corr-only.dng | 11.36 | early | 8.95 | 2560 | 0.000 / 0 | 0.487 |
+| 2L1B8631.CR2 | 4.79 | early | 4.22 | 2560 | 0.000 / 0 | 0.000 |
+| 2L1B8631.CR2 | 4.79 | half | 1.99 | 2560 | 1.444 / 13 | 0.754 |
+| Fujifilm_X-E2S_DSCF6495.RAF | 3.26 | early | 2.82 | 2560 | 0.131 / 3 | 0.082 |
+| Fujifilm_X-E2S_DSCF6495.RAF | 3.26 | half | 0.75 | 2467 | 7.875 / 45 | 11.768 |
+| Nikon_D7500_DSC_3931.NEF | 2.50 | early | 2.04 | 2560 | 0.000 / 0 | 0.000 |
+| Nikon_D7500_DSC_3931.NEF | 2.50 | half | 1.04 | 2560 | 1.884 / 9 | 1.698 |
+| DJI_0071.JPG | 8.21 | early | 1.85 | 2560 | 0.137 / 2 | 0.056 |
+| iphone_16_pro_IMG_3324.HEIC | 4.77 | early | 3.03 | 2560 | 0.000 / 0 | 0.001 |
+| DSC04375_DxO_clipped_target.tif | 1.90 | early | 1.06 | 2560 | 0.000 / 0 | 0.000 |
+
+The selected browsing candidate uses half-size only when its output reaches
+2560, otherwise early reduction. Fuji half-size was only 2448 and had much
+larger detail error; it was not used in the batches. Linear DxO DNG and
+mandatory-opcode DNG retain their existing decode/correction route. Automatic
+exposure shifts were at most 0.007 EV in the selected ten-file comparisons.
+Review sheets are in `codebase/output/library-speed-trial/compare-*-*.jpg`:
+full on the left, shortcut on the right. DJI DNG/JPEG, both Sony half-size
+sheets and Fuji early were visually reviewed. They preserve the broad
+picture at browsing size; half-size changes fine detail and corrected edges.
+These small SDR sheets and numerical HDR comparisons do not qualify every
+camera, grade or HDR display. Nothing is adopted.
+
+Opening-stage CPU times below pair the four size-eligible camera RAWs
+(both Sony files, Canon and Nikon), with eight samples per column. These are
+diagnostic medians, not additive totals. No equivalent GPU import operation
+was found: existing grading/scopes/geometry routines are not interchangeable
+with the loader's camera matrix, CFA repair, exposure quantiles, bounded
+reduction or DNG opcode semantics. GPU grading is used in every batch.
+
+| Opening operation | Full-size CPU, ms | Candidate CPU, ms | Existing GPU replacement / rough new work |
+|---|---:|---:|---|
+| Unpack/transport and other decode work | 797.4 | 370.6 | None; keep file unpacking on CPU |
+| Demosaic | 574.0 | 73.7 | None; large camera/CFA kernel and qualification work |
+| Native mosaic highlight reconstruction | 559.8 | 547.0 | None; large neighborhood/chrominance port |
+| Camera color / remaining RAW corrections | 433.2 | 78.5 | Grading color matrices exist, not arbitrary camera import; small matrix-pass integration |
+| Lensfun correction | 2092.1 | 282.3 | None; medium coordinate-map sampling integration |
+| Negative-gamut mapping | 463.3 | 57.6 | None for this import boundary; small pixel-operation port |
+| Automatic exposure | 9.2 | 4.7 | GPU scope/peak analysis exists, not this meter; medium percentile integration |
+| HDR source classification | 557.0 | 130.8 | GPU scopes exist, not loader classification; medium analysis integration |
+| Reduction | 436.8 | 212.1 | GPU geometric sampling exists, not bounded Lanczos import reduction; medium integration |
+
+A separate timing-only, cell-aligned CFA decimation probe at 1868-2466 long
+edge measured highlight reconstruction at 11.8-68.4 ms. It was never used
+to produce a preview: decimating CFA cells needs its own quality trial and
+does not justify replacing native reconstruction. Color/WB and mandatory
+DNG operations remain CPU import work; a generic preview-size color-matrix
+port is small, while exactly-once DNG warp/gain-map handling is a larger job.
+With half-size demosaic around a tenth of a second, a new GPU demosaic trial
+looks less urgent than native highlight work, lens/DNG correction and the
+roughly 0.7-second gain-map filter. These are engineering scope estimates,
+not implementation commitments.
+
+D. DJI_0071-2.DNG: two profiled full opens per thread setting and two actual
+development-app opens of fresh copied paths in a disposable app profile,
+with default cache settings. The app measurements include reaching exact ready.
+
+| DJI open | Median, s |
+|---|---:|
+| External full, one thread | 87.56 |
+| External full, normal threads | 86.01 |
+| Normal app, two opens | 91.76 |
+| Mandatory rectilinear warp, normal profile (inclusive) | 77.86 |
+| Mandatory gain-map opcode, normal profile (inclusive) | 4.40 |
+
+Actual app opens were 87.34 / 96.19 s.
+The full-resolution mandatory DNG rectilinear warp dominates, particularly
+bicubic coordinate weights and sampling. This is a real import bottleneck,
+not explained away by one thread or the earlier low-priority instrument.
+It was identified and left unchanged; fixing it is a separate decision.
+
+End-to-end at 2560, real GPU draws/readback and the same JPEG format:
+
+| Run | Total, s | Earlier CPU baseline, s |
+|---|---:|---:|
+| 30 distinct, sequential opening + build | 415.20 | 597.95 |
+| Same 30, four concurrent CPU opening workers + sequential GPU/file builds | 244.59 | not previously measured |
+| 50 cached-source +0.25 EV remakes while Grade is used | 173.33 | 214.01 |
+
+The four-worker experiment includes unpacking, reconstruction and all later
+CPU opening work concurrently, plus temporary reduced-array writes, worker
+startup and loading those arrays. It does not isolate unpacking concurrency
+alone. GPU/file builds remain sequential; normal thread settings are used.
+It changed the measured thirty-photo total by -41.1%.
+Each batch starts fresh with source caching disabled. First GPU proxy uploads
+are included. Cached-source preparation is outside the 50-remake timer;
+initial GPU source uploads and later reuse are inside it.
+
+| Grade exposure gestures | Median, ms | p95, ms | Largest RAF gap, ms |
+|---|---:|---:|---:|
+| Idle | 22.58 | 34.85 | 15.5 |
+| During GPU preview remakes | 29.70 | 48.19 | 24.3 |
+
+Twenty gestures per condition used the same exposure sequence and 16 ms
+completion polling as the earlier instrument, on DSC00264.ARW at a
+2560x1440 Electron window. Preview work used a second GPU device in the same
+renderer process as Grade. Sampling occurred once at batch start and the
+batch was still active afterwards; no sustained or whole-library claim is
+made. All sampled gestures reached exact ready. Steve's use remains the
+feel check, especially for brief upload/readback stalls.
+
+Excluded as before: local masks, denoise changes, virtual copies, network
+drives, cold disk, export overlap, oversized line-scan DNG and unsupported
+merged HDR DNG. Also excluded: new GPU import/codec shaders, a reduced-CFA
+quality pipeline, saved project recipes/complex edited grades, queueing,
+cancellation, cache policy, other GPUs, Grade during concurrent opening,
+sustained interaction sampling and
+the 500-job repeat. Only the ten representative files got shortcut picture
+comparisons; the extra twenty test throughput, not per-camera qualification.
+
+Suggestion for Steve: **prepare-ahead remains the safer choice for stored
+HDR library files on this measured route**. A simple switch would need to
+show SDR placeholders and fill HDR progressively, with seconds of waiting
+per photo and much longer for these DJI DNGs. That trades simpler controls
+for incomplete/stale HDR views while work catches up; prepare-ahead trades
+an explicit preparation step for more predictable viewing. GPU drawing is
+fast and preview-size work helps opening, but neither normal threading nor
+GPU drawing makes the unchanged file encoder instantaneous. No preview
+format, pipeline, cache or UX decision is adopted by this trial.
+
 **T1, October 10 (trial entirely outside the app):** Temporary copies of
 Canon CR2, Fuji RAF and DJI JPEG were saved beside today's project document,
 closed and reopened. Three grade changes 50 ms apart used a trial 500 ms
