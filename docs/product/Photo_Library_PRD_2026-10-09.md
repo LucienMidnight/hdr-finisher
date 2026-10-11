@@ -2417,6 +2417,14 @@ be in the slice 7 brief.
   new photo promptly, but its picture takes a long time to appear. Not
   investigated; to be covered by the later performance pass and its tests.
 
+**Grade faults for Steve to look into (not library work):**
+
+- October 11, reported by Steve: **Match entire HDR grade** needs another
+  look. Two symptoms. A few days earlier a match reported success but the
+  colours did not match. Now the automatic match fails outright. Not
+  investigated; the photos and the failure message are not yet recorded.
+  Whether the library work on this branch is involved is unknown.
+
 ---
 
 ## 9. Open decisions
