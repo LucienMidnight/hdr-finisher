@@ -2335,6 +2335,19 @@ The MCP server (section 11) and SDR-only grading (section 12) are separate
 and each gets its own PRD. SDR-only grading should be settled before slice 3,
 because it affects what the sidecar records.
 
+**Slice 3 brief, October 11:**
+`docs/technical/codex-brief-library-slice-3-2026-10-11.md`. It goes ahead
+without the SDR-only PRD: that work is expected to add one field to the
+settings file, and settings files keep fields they do not recognise. The
+brief builds to Claude's defaults for open decisions 2, 4, 5, 6, 19 and 26;
+they stay open here until Steve confirms them.
+
+**Performance to revisit once the slices are built** (Steve, in use):
+
+- October 11, slice 2b: after "Check for new photos" the bar reports the
+  new photo promptly, but its picture takes a long time to appear. Not
+  investigated; to be covered by the later performance pass and its tests.
+
 ---
 
 ## 9. Open decisions
