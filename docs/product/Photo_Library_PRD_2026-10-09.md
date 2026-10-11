@@ -2599,10 +2599,32 @@ not to the library, and needs its own PRD.** It is recorded here because the
 library must not be built on the assumption that every photo has an HDR
 grade.
 
-Not yet discussed in any detail. Questions for that PRD:
+**Code check, October 11 (read from the code, not run):** this already
+works, with rough edges. The earlier line here, that the SDR grade follows
+from the HDR grade, was wrong. The two grades are independent and both
+start from the source photo; changing an HDR control does not change the
+SDR picture. The SDR Controls tab has every grading tool. The three SDR
+export formats (JPEG, PNG, JPEG XL) render only the SDR grade. Nothing
+refuses to work on a display without HDR. So no SDR-only mode and no new
+settings-file field are needed for the library to go ahead. Proposed
+instead, as small items for the polish pass:
 
-- Today the SDR grade follows from the HDR grade. What does an SDR-only photo
-  start from, and which panels does it show?
+- Every photo opens on the HDR tab, and export defaults to JPEG Ultra HDR.
+  Remember the last tab and the last export format.
+- Match entire HDR grade replaces SDR work with no confirmation unless the
+  file carries its own SDR picture. Ask first when the SDR grade has edits.
+- Proof offers only the three HDR formats, so an SDR file cannot be
+  proofed.
+- Wording assumes HDR: the SDR tab tooltip calls SDR a gain-map fallback,
+  and an SDR export says it is rendering HDR and SDR.
+- On Windows and macOS there is no notice that the display is not HDR.
+- The unseen HDR side is still prepared in idle time, and kept Library
+  pictures always hold both sides. Cost not measured.
+
+Earlier questions, kept for reference:
+
+- What does an SDR-only photo start from, and which panels does it show?
+  (Answered above: the source, and the SDR Controls tab.)
 - Is SDR-only chosen per photo, per virtual copy, or as an app-wide way of
   working? Can a photo be switched later, and what happens to its grade?
 - What does someone without an HDR monitor see on first launch?
