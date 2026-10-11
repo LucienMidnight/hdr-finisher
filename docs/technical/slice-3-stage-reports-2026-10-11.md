@@ -2,6 +2,8 @@
 
 **Stage B accepted. Stages C and D are built and verified.** The earlier cumulative test-time stop is superseded by Steve's clarification: slow checks count per stage, and fast Python checks do not count. C and D are ready for Steve's real-photo review.
 
+**Completion commits:** C `cf0ee11`; D `292c096`. Both are local and independently undoable.
+
 **Route: the backend makes reduced kept pictures through the existing corrected source opening and export rendering functions. GPU readback and tiled rendering are unchanged.** This is the single producer for a saved grade, whether or not its photo is open in Grade. Steve's later instruction permits background completion after a save; until it completes, the Library honestly shows the default picture and the not-current mark.
 
 Branch checked before edits: `photo-library`. Repository AGENTS.md and the brief were read again. The required technical, product and design documents were also read. Source photos, existing unrelated files, Grade shaders, export/Proof outputs and pinned budgets/tolerances remain untouched. No push or installer rebuild.

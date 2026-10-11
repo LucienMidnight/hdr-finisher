@@ -186,7 +186,7 @@ Title: **Grade changed elsewhere**. Choices: **Cancel**, **Use the file's
 grade**, **Keep my grade**. Cancel keeps Grade open with **Saving paused —
 grade changed elsewhere** and a Resolve control. Leaving or closing asks
 again. Each successful choice retains the unchosen grade in durable Library
-storage as `previous_grade`; Stage C will give it the before-state home and
+storage as `previous_grade`; Stage C gives it the before-state home and
 Restore previous grade control. Keep both is built in Stage D: the outside grade becomes a virtual copy.
 Activity lists paused conflicts by folder and photo; it does not promise
 automatic conflict resolution.
@@ -540,7 +540,7 @@ and both filenames. Detection merges, renames and deletes nothing;
 links and temporary files are not read. Revisit or Re-scan after resolving
 the conflict to clear the warning. Known warnings remain while offline.
 Ordinary mark writes still update only the canonical settings file; extra
-copies were not written by the initial marks slice. Slice 3 D below now owns and writes virtual copies.
+copies are never written. Virtual copies inside the canonical settings file are now built in slice 3 D below.
 
 ### Camera details
 
