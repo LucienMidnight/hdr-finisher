@@ -369,7 +369,7 @@ class DesktopRequestBoundary:
 
         # Resource scheduling only: keep the grading/export implementations
         # unchanged, and preserve receive so disconnect cancellation still works.
-        if request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade"):
+        if request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade/"):
             with library_worker.busy():
                 await self.app(scope, receive, send_hardened)
         else:

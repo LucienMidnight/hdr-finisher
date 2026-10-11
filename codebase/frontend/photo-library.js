@@ -247,24 +247,10 @@
       } catch (error) { photo.factsAsked = false; if (!aborted(error)) console.debug("Library details:", error.message); }
     }, 200);
   }
-  async function photoMenu(event, photo) {
-    event.preventDefault();
+  function photoMenu(event, photo) {
     const index = state.photos.findIndex(item => item.path === photo.path);
     if (!state.selection.has(photo.path)) select(index); else { state.index = index; updateDetails(); }
-    const paths = [...state.selection], actions = [];
-    try {
-      const { counts } = await api("/api/library/grade-reverts", { paths });
-      const labels = { original:"Revert to original",saved:"Revert to last saved",session:"Revert to last session",previous:"Restore previous grade" };
-      for (const [target,label] of Object.entries(labels)) if (counts[target]) actions.push({label,run:async()=>{
-        if (!await HDRLibraryDialogs.ask({title:label,message:`Revert ${counts[target]} photos? Each keeps its previous grade.`,confirm:"Revert"})) return;
-        const result = await api("/api/library/grade-reverts",{paths,target});
-        if (result.session) postParent("grade-replaced", {session:result.session});
-        culling.setUndo(result.undo_available);
-        confirmChange(`Reverted ${result.count} photos. Each previous grade was kept.`, result.undo_available);
-        await pollSettings();
-      }});
-    } catch (error) { status(error.message); }
-    showMenu(event, [{ label: "Open in Grade", run: openGrade }, ...actions, { separator: true }, ...albums.menuActions([...state.selection])],
+    showMenu(event, [{ label: "Open in Grade", run: openGrade }, { separator: true }, ...albums.menuActions([...state.selection])],
       { label: "Photo actions", onError: error => status(error.message) });
   }
   function updateSingleCaption() {
@@ -708,7 +694,7 @@
   async function pollSettings() {
     if (state.active && !document.hidden) {
       try {
-        const paths = state.allPhotos.filter(photo => photo.storage === "database" || photo.edited).map(photo => photo.path);
+        const paths = state.allPhotos.filter(photo => photo.storage === "database").map(photo => photo.path);
         const result = await api("/api/library/settings-status", { paths });
         const byPath = new Map(result.photos.map(photo => [photo.path, photo]));
         let changed = false;

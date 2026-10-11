@@ -15,7 +15,6 @@
         const byPath = new Map(result.photos.map(row => [row.path, row]));
         for (const photo of options.photos()) { const row = byPath.get(photo.path); if (row) Object.assign(photo, row); }
         undoAvailable = result.undo_available;
-        if (result.session) parent.postMessage({type:"hdr-library",action:"grade-replaced",session:result.session},location.origin);
         options.updated(result);
         const verb = route === "/api/library/undo" ? "Undid the change on" : body?.change?.rating !== undefined ? "Rated"
           : body?.change?.pick === "pick" ? "Picked" : body?.change?.pick === "reject" ? "Rejected" : "Updated";
@@ -125,7 +124,7 @@
       section.append(input, suggestions);
       const databaseOnly = list.filter(photo => photo.storage === "database").length;
       if (databaseOnly) { const note = document.createElement("p"); note.className = "library-storage-warning"; note.textContent = `${databaseOnly} photos: settings files are waiting to be written. Marks are safe in the library.`; section.append(note); }
-      const undo = document.createElement("button"); undo.type = "button"; undo.className = "text-button"; undo.textContent = "Undo last change · Ctrl+Z"; undo.disabled = !undoAvailable;
+      const undo = document.createElement("button"); undo.type = "button"; undo.className = "text-button"; undo.textContent = "Undo last mark · Ctrl+Z"; undo.disabled = !undoAvailable;
       undo.addEventListener("click", () => enqueue("/api/library/undo", {})); section.append(undo); root.append(section);
     }
     function shortcut(key) {
