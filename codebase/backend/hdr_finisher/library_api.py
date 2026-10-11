@@ -157,9 +157,11 @@ class PreferencesRequest(BaseModel):
         return {label: " ".join(name.split())[:60] for label, name in values.items()}
 
 
-def create_library_router(worker, browser):
+def create_library_router(worker, browser, store=None):
     cache = LibraryPictureCache(browser.root)
     marks = LibraryMarks(browser.root)
+    if store is not None:
+        from .library_grade_api import add_grade_routes
     index = LibraryIndex(marks, browser, worker)
 
     @asynccontextmanager
@@ -172,6 +174,8 @@ def create_library_router(worker, browser):
             await run_in_threadpool(marks.writer.close)
 
     router = APIRouter(prefix="/api/library", lifespan=lifespan, route_class=LibraryRoute)
+    if store is not None:
+        add_grade_routes(router, marks, store)
 
     @router.get("/health")
     def health():

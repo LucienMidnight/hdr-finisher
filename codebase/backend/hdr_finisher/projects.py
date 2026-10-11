@@ -94,6 +94,11 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
     except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
         raise ProjectError("The project file is malformed or unreadable.") from exc
 
+    return open_document(store, document, source_path)
+
+
+def open_document(store: SessionStore, document: EditDocument, source_path: Path | None = None) -> LoadedSession:
+    """Open the same grade document from a project container or photo settings."""
     candidate = source_path
     if candidate is None and document.source.durable_path:
         candidate = Path(document.source.durable_path)

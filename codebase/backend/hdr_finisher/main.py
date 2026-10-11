@@ -393,7 +393,7 @@ evidence_store = EvidenceStore()
 library_worker = LibraryWorker(MediaBrowserStore().root)
 atexit.register(library_worker.close)
 media_browser_store = MediaBrowserStore(thumbnail_worker=library_worker)
-app.include_router(create_library_router(library_worker, media_browser_store))
+app.include_router(create_library_router(library_worker, media_browser_store, store))
 import_jobs = ImportJobManager(store, media_browser_store, workers=1)
 atexit.register(import_jobs.close)
 external_proof_tokens: dict[str, tuple[str, float]] = {}

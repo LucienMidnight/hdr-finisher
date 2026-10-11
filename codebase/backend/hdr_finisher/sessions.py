@@ -389,6 +389,8 @@ class SessionStore:
             developed.preview = current.preview
             payload = developed.to_payload()
             self._current = developed
+            if getattr(self, "grade_recovery_observer", None):
+                self.grade_recovery_observer(developed)
             return payload
 
     def current(self) -> LoadedSession | None:
@@ -421,6 +423,8 @@ class SessionStore:
         with self._lock:
             session = self.get(session_id)
             session.adjustments = adjustments
+            if getattr(self, "grade_recovery_observer", None):
+                self.grade_recovery_observer(session)
             return session
 
     def edit_state(self, session_id: str) -> EditStateResponse:
@@ -475,6 +479,8 @@ class SessionStore:
                 session.render_cache.set_color_context(session.color_context)
                 session.render_cache.clear_adjusted()
                 raise
+            if getattr(self, "grade_recovery_observer", None):
+                self.grade_recovery_observer(session)
             return session.edit_state()
 
     def apply_sdr_match_action(
@@ -853,6 +859,8 @@ class SessionStore:
             )
             session.edit_revision += 1
             session.dirty = True
+            if getattr(self, "grade_recovery_observer", None):
+                self.grade_recovery_observer(session)
             return session
 
     def next_preview_token(self, session_id: str, kind: PreviewKind) -> int:

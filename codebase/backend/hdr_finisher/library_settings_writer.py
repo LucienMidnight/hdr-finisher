@@ -165,7 +165,7 @@ class LibrarySettingsWriter:
                 if len(item["photos"]) < 3:
                     item["photos"].append(path)
             return {"waiting": count, "done": self._completed, "total": self._progress_total,
-                "attention": list(groups.values()), "busy": bool(self._busy()), "paused": self._paused,
+                "attention": list(groups.values()) + (self.marks.grades.attention() if getattr(self.marks, "grades", None) else []), "busy": bool(self._busy()), "paused": self._paused,
                 "reasons": dict(problems), "events": list(self._events),
                 "photos": list(self.marks._rows(list(paths)).values()) if paths else []}
 
@@ -267,6 +267,8 @@ class LibrarySettingsWriter:
             document["marks"] = row["marks"]
             if row["albums"] or "albums" in document:
                 document["albums"] = row["albums"]
+            if getattr(self.marks, "grades", None):
+                document = self.marks.grades.merge(path, document)
             if not self.marks._write_sidecar(source, document, revision=revision, fingerprint=current_fingerprint, owner_id=row["photo_id"]):
                 return None  # Superseded while preparing the temporary file.
             if unknown_baseline:

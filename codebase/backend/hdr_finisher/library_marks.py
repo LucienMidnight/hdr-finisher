@@ -255,6 +255,8 @@ class LibraryMarks:
                 if fingerprint is not None and self.writer.fingerprint(self._document(path)) != fingerprint:
                     return False  # External edit during preparation; reread next pass.
                 os.replace(temporary, destination)
+                if getattr(self, "grades", None):
+                    self.grades.acknowledge(str(path), document)
                 if revision is not None:
                     self.writer.acknowledge(str(path))
             return True
