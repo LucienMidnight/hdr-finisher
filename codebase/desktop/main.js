@@ -34,7 +34,7 @@ const SOURCE_FILTERS = [
 const PROJECT_FILTERS = [{ name: "HDR Finisher Project", extensions: ["hdrfinisher"] }];
 const GRADING_PRESET_GROUPS = new Set([
   "hdr-tone", "hdr-highlights", "hdr-equalizer", "hdr-color", "hdr-zones",
-  "sdr-base", "sdr-tone", "sdr-equalizer", "sdr-color", "sdr-zones",
+  "sdr-base", "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-color", "sdr-zones",
   "hdr-curves", "sdr-curves", "hdr-color-grading", "sdr-color-grading",
   "hdr-film-look", "sdr-film-look", "hdr-vignette", "sdr-vignette",
   "hdr-detail", "sdr-detail",

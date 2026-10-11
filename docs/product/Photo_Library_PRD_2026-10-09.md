@@ -2442,6 +2442,10 @@ Proposed. Each slice is usable on its own.
 | 2b · built October 11 | Keeping folders current (5.18): timed checks of pinned folders and the folder on screen, and "Check for new photos" on chosen folders | Drop photos into a pinned intake folder and see them arrive |
 | 3 | Grades in sidecars, autosave option, "before" state, reverts, virtual copies | Stop using Save / Save As |
 | 4 | Quick decode, compare, focus and exposure overlays | Pick the sharpest frame fast |
+
+Slice 4 Stage A built October 11: overlay view fields no longer count as grade
+differences or new kept pictures; SDR Highlights desktop presets are allowed.
+The separate measured-highlight-peak rounding on ordinary Grade save remains.
 | 5 | File and folder controls, delete all rejected | Tidy up without Explorer |
 | 6 | Smart albums | Rule-based sets |
 | 7 | Selective copy and paste, sync, look presets, and background pictures for grades changed in bulk (see "Carried forward to slice 7" below) | Grade a set quickly |

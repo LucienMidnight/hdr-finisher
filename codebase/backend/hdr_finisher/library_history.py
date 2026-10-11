@@ -9,6 +9,12 @@ from .library_diagnostics import log
 
 TARGETS = ("original", "saved", "session", "previous")
 
+
+def same_grade(current, target, state, document):
+    # No saved grade displays the normal starting grade, including on closed items.
+    default = state.get("default") or document.get("grade_default")
+    return grade_key(current if current is not None else default) == grade_key(target if target is not None else default)
+
 class LibraryHistory:
     def __init__(self, grades):
         self.grades = grades
@@ -41,7 +47,7 @@ class LibraryHistory:
                     if kind == "saved" and not session: continue
                     try: target = self.target(state, document, kind, session)
                     except ValueError: continue
-                    if grade_key(target) != grade_key(current): result[kind] += 1
+                    if not same_grade(current, target, state, document): result[kind] += 1
             return {"counts": result}
 
     def revert(self, values, kind):
@@ -71,7 +77,7 @@ class LibraryHistory:
                 try: target = deepcopy(targets[path]) if targets is not None else self.target(state, document, kind, session)
                 except ValueError: continue
                 if session and target is None: target = deepcopy(state.get("default"))
-                if grade_key(target) == grade_key(current): continue
+                if same_grade(current, target, state, document): continue
                 if target is not None: EditDocument.model_validate(target)
                 plans.append((path, document or None, row, state, session, current, target))
             before = {p: deepcopy(old) for p, _, _, _, _, old, _ in plans}

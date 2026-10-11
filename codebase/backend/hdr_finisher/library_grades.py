@@ -15,6 +15,11 @@ def grade_key(value):
     source = grade.get("source", {})
     for field in ("durable_path", "filename", "fingerprint_sha256", "byte_size"):
         source.pop(field, None)
+    # Viewer choices stay in the saved document, but do not change its grade.
+    shared = grade.get("global_adjustments", {}).get("shared", {})
+    for field in ("overlay_mode", "overlay_opacity", "overlay_threshold",
+                  "false_color_band_anchor", "false_color_ceiling_nits"):
+        shared.pop(field, None)
     return grade
 
 
@@ -180,7 +185,7 @@ class LibraryGrades:
             if session.edit_revision == revision:
                 session.dirty = False
             log("grade_save_queued", photo=path, action="grade retained; settings writer notified")
-            if getattr(self.marks, "kept", None):
+            if getattr(self.marks, "kept", None) and grade_key(desired) != grade_key(state.get("baseline")):
                 self.marks.kept.schedule(path, desired)
             return self.status(session_id)
 

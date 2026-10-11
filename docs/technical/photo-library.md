@@ -1065,3 +1065,26 @@ transaction and the existing per-file atomic writer. A later outside edit is
 still handled by the existing writer conflict protection. The rename-only queue
 keeps unsaved history in its existing durable database state until a later
 ordinary write; renaming does not publish it.
+
+### Slice 4 Stage A - viewer choices and SDR Highlights presets
+
+Library grade comparisons and kept-picture identities ignore Grade's five overlay
+view fields (mode, opacity, threshold and the two false-colour settings). The
+complete document is still saved and reopened unchanged. A real grade difference
+still counts as Edited. Saving only new overlay choices on a real edit does not
+queue another kept picture. Revert comparisons treat no saved grade as the
+starting grade, including for closed items. Grade drawing, export and Proof are
+unchanged. SDR Highlights is accepted by the desktop preset store.
+
+Existing kept pictures use the old identity and may be unavailable until the
+next real save regenerates them; no migration is added. No new messages or log
+events. Existing .hdrf and project rendering is unchanged.
+
+The focused UI check found an existing separate issue: ordinary Grade save can
+change measured highlight peaks by a tiny amount even without an authored edit,
+so that still can count as Edited. It is not an overlay field and is left alone
+under this brief's hard stop on Grade rendering and pinned comparisons.
+Validation: 463 Node checks; 1,755 Python checks passed, 3 skipped (3:24),
+including settings-file save/reopen and byte-identical export/Proof checks.
+Focused Electron at 2560x1440 passed on a disposable photo/profile. The driver
+was corrected to wait for file publication and synchronize command revisions.
