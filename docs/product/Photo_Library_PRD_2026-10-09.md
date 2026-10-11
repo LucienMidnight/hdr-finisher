@@ -392,6 +392,33 @@ Later on October 11, after Steve had used slices 1 to 3:
   - One Looks menu. A look is a saved paste across several groups. The
     per-panel Preset buttons stay for single groups.
   - Linked photos (5.20) become their own small slice after paste.
+- **Metadata reader: bundle ExifTool** (settles open decision 15), on
+  condition that its licence fits. It does: ExifTool is open source under
+  the same terms as Perl (GPL version 1 or later, or the Artistic
+  License), and HDR Finisher is GPL-3.0. It ships as a separate program
+  that the helper keeps running, with its licence added to
+  `THIRD_PARTY_NOTICES.md` and `codebase/bin/licenses`. Used for Library
+  details and filters, and for writing metadata at batch export. Grade's
+  lens-correction matching is unchanged. Built with the batch export
+  slice; to be confirmed in a packaged build.
+- **The Library's starting look must match Grade's starting point, and
+  Grade adds no exposure by default.** Today Grade starts each RAW at a
+  metered exposure value on the Exposure control, and the Library adds a
+  further 0.25 EV. Direction from Steve: the Exposure control starts at
+  zero, and RAW development is tuned so that the camera's JPEG, the RAW as
+  first shown, and Grade's starting point are in reasonable agreement.
+  This is Grade and RAW development work with its own brief, to be done
+  before the paste slice. Consequences:
+  - Exposure then pastes as a plain number, and the paste rule above
+    (exposure as a change) is dropped.
+  - A grade can be completed for a photo that was never opened, as far as
+    exposure is concerned.
+  - Every RAW grade saved before the change will look brighter or darker
+    afterwards, in `.hdrf` files and `.hdrfinisher` projects alike. No
+    migration (pre-1.0 rule).
+  - It changes what RAW import produces, so the strict testing rule
+    applies.
+- **The smart albums mock-up is accepted as a starting point.**
 - **Local build rule:** a backup push of a work-in-progress branch needs
   only the fast checks. The full sweep stays for merges into `main` and
   installer builds.
