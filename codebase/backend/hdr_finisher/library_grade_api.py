@@ -11,17 +11,33 @@ from .projects import open_document
 
 class GradeRequest(BaseModel):
     action: Literal["attach", "capture", "save", "check", "resolve", "load", "discard"]
-    choice: Literal["mine", "file", "cancel"] = "cancel"
+    choice: Literal["mine", "file", "both", "cancel"] = "cancel"
     document: dict | None = None
     recovery: bool = False
     preserve_recovery: bool = False
     unsaved: bool = False
     initialize: bool = False
     default_white: Literal[100, 203] = 203
+    item_key: str | None = None
 
 
 def add_grade_routes(router, marks, store):
     grades = LibraryGrades(marks, store)
+    from .library_copies import LibraryCopies
+    copies = LibraryCopies(marks)
+
+    class CopyRequest(BaseModel):
+        path: str
+        action: Literal["create", "remove"] = "create"
+        start: Literal["current", "clean"] = "current"
+        name: str = ""
+
+    @router.post("/virtual-copies")
+    def virtual_copies(request: CopyRequest):
+        try:
+            return copies.create(request.path,request.start,request.name) if request.action=="create" else copies.remove(request.path)
+        except (ValueError,OSError) as error:
+            raise HTTPException(status_code=400,detail=str(error)) from error
 
     class RevertRequest(BaseModel):
         paths: list[str]
@@ -55,7 +71,7 @@ def add_grade_routes(router, marks, store):
                         session.undo_history.clear()
                         session.redo_history.clear()
 
-                return grades.attach(session_id)
+                return grades.attach(session_id, request.item_key)
             if request.action == "capture":
                 if request.unsaved:
                     store.get(session_id).dirty = True
@@ -75,7 +91,7 @@ def add_grade_routes(router, marks, store):
                 path = grades.path(session_id)
                 state = grades._get(path)
                 document = request.document or state["default"]
-                session = open_document(store, EditDocument.model_validate(document), Path(path))
+                session = open_document(store, EditDocument.model_validate(document), marks.source_path(path))
                 new_id = str(session.session_id)
                 grades.sessions[new_id] = path
                 grades.starts[new_id] = document

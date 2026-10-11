@@ -2360,11 +2360,17 @@ unsaved recovery. Marks and unknown fields are preserved. External grade
 changes alone cause the notice in Appendix B; Cancel pauses saving, leaving
 or closing asks again, and the unchosen grade is kept safely for Stage C's
 before state. A clean Grade picks up an outside grade and says so once.
-Keep both is a candidate for Stage D when virtual copies exist; not built.
+Keep both is built in Stage D: the outside grade becomes a virtual copy and the local grade is saved.
 Stage B is built using Steve's approved backend corrected-source route. JPEG
 and 512/1024/1920, initially 1024, are provisional from the recorded measurements.
 Stage C is built: locally retained session-start, sidecar previous-grade history,
-Grade and counted Library reverts with one Undo. Stage D remains pending.
+Grade and counted Library reverts with one Undo. Stage D is built: named virtual
+copies from the current grade or clean start, independent grades/marks/albums and
+kept pictures, adjacent strip-marked items, copy/original filtering, the same
+leave gate between copies, and counted removal with Undo. Copies travel in the
+one settings file and rebuild from it. An open Grade copy must be left before
+removal, preserving its unsaved work. The brief's defaults are implemented;
+Steve's review of how they feel remains pending.
 
 **Carried forward to slice 7: pictures for grades changed in bulk.**
 Flagged by Steve on October 11 as important and probably complex. It must
@@ -2378,7 +2384,9 @@ be in the slice 7 brief.
   picture that matches its new grade, and a stale picture must never be
   shown.
 - Slice 7 will queue those pictures through slice 3's existing backend
-  producer, using the corrected source and export rendering route. That is a full
+  producer, using the corrected source and export rendering route. Virtual copies
+  use their own item ID and saved grade with the same physical source; the bulk
+  queue must distinguish them, not collapse work by source path. That is a full
   decode and render per photo: about 10 seconds per 36 MP photo at 1024
   pixels, of which about 5.5 seconds is opening the photo. Several hundred
   photos therefore take over an hour.
@@ -2602,7 +2610,7 @@ what the choices are. None of them is mocked up.
 | A folder cannot be written to (memory card, read-only share) | "Marks and grades for photos in <folder> are kept in the library, not beside the photos, because this folder cannot be written to. They will not travel with the files." Shown once per folder, and as a line in the Details panel. |
 | A drive is unplugged | "<folder> is not connected. Its photos stay listed. Marks and tags still work." Opening one in Grade: "<photo> is on a drive that is not connected." |
 | Two settings files for one photo | "<photo> has a second set of grades, usually from a returned project or a cloud conflict. Nothing was overwritten. The second set was added as virtual copies named From <file>." |
-| The same settings file's grade changed elsewhere while Grade has unsaved work | Title: "Grade changed elsewhere". "The grade for <photo> changed elsewhere while you were working. Nothing was overwritten. Choose which grade to use; the other will be kept as the previous grade." Buttons: Cancel, Use the file's grade, Keep my grade. Cancel leaves "Saving paused — grade changed elsewhere"; leaving or closing asks again. The unchosen grade is retained for Stage C. Changes only to marks, tags, albums or unknown fields do not show this notice. Keep both is a candidate for Stage D. |
+| The same settings file's grade changed elsewhere while Grade has unsaved work | Title: "Grade changed elsewhere". "The grade for <photo> changed elsewhere while you were working. Nothing was overwritten. Choose which grade to use; the other will be kept as the previous grade." Buttons: Cancel, Use the file's grade, Keep my grade. Cancel leaves "Saving paused — grade changed elsewhere"; leaving or closing asks again. The unchosen grade is retained for Stage C. Changes only to marks, tags, albums or unknown fields do not show this notice. Keep both brings the file's grade in as a virtual copy, then saves the local grade. |
 | The same settings file's grade changed elsewhere and Grade has no unsaved work | Grade loads the file's grade without a question. Once: "The grade for <photo> changed elsewhere. Grade now shows the file's grade." |
 | A settings file with no photo | "<n> settings files in <folder> have no photo. Their photos were probably moved outside HDR Finisher." Buttons: Reconnect, Leave them. |
 | A settings file that cannot be read | "The settings for <photo> could not be read. The photo is shown without a grade. The file has been left untouched." Buttons: Show in Explorer, Start a new grade (keeps the old file under another name). |

@@ -32,3 +32,14 @@ test("Filters combine rating, picks, label, tag search and file type", () => {
  assert.deepEqual(paths("name", false, { raw: true, type: "PNG" }), []);
  assert.equal(apply([{ name: "a", path: "a", type: "ORI" }], "name", false, { raw: true }).length, 1);
 });
+test("copies stay after their original in either sort direction; marks and copy filters remain independent", () => {
+  const family = [
+    {path:"a",name:"a",marks:{rating:1}},
+    {path:"a|copy|1",source_path:"a",copy_id:"1",copy_order:0,name:"a · Copy 1",marks:{rating:5}},
+    {path:"b",name:"b",marks:{rating:3}},
+  ];
+  assert.deepEqual(apply(family,"rating").map(p=>p.path),["a","a|copy|1","b"]);
+  assert.deepEqual(apply(family,"rating",true).map(p=>p.path),["b","a","a|copy|1"]);
+  assert.deepEqual(apply(family,"rating",false,{rating:"4"}).map(p=>p.path),["a|copy|1"]);
+  assert.deepEqual(apply(family,"name",false,{rules:[{field:"copy",value:"virtual copy"}]}).map(p=>p.path),["a|copy|1"]);
+});

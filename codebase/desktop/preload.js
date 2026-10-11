@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   focusLibrary: () => ipcRenderer.invoke("desktop:focus-library"),
   chooseSourceInMain: () => ipcRenderer.invoke("desktop:choose-source-in-main"),
   onLibraryWindowChanged: (callback) => subscribe("desktop:library-window", callback),
-  openSourceInMain: (filePath) => ipcRenderer.invoke("desktop:open-source-in-main", filePath),
+  openSourceInMain: (filePath, itemKey) => ipcRenderer.invoke("desktop:open-source-in-main", filePath, itemKey),
   grantSourcePath: (filePath) => ipcRenderer.invoke("desktop:grant-source-path", filePath),
   grantProjectPath: (filePath, intent) => ipcRenderer.invoke("desktop:grant-project-path", filePath, intent),
   openProject: () => ipcRenderer.invoke("desktop:open-project"),

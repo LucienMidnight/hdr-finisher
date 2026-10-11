@@ -537,12 +537,13 @@ function registerIpc() {
     const record = validateSender(event);
     return callback(record, ...args);
   });
-  handleWindow("desktop:open-source-in-main", async (record, filePath) => {
+  handleWindow("desktop:open-source-in-main", async (record, filePath, itemKey) => {
     if (record.role !== "library") throw new Error("Only the library window can request a source open.");
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
     const selection = await grantPath(filePath, "source-open");
     mainWindow.show(); mainWindow.focus();
-    mainWindow.webContents.send("desktop:open-request", { kind: "source", ...selection });
+    if (itemKey != null && (typeof itemKey !== "string" || itemKey.length > 32768)) throw new Error("Invalid Library item.");
+    mainWindow.webContents.send("desktop:open-request", { kind: "source", ...selection, itemKey });
     return true;
   });
   handle("desktop:pop-out-library", async (snapshot) => {

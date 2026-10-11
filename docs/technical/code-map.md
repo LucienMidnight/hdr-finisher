@@ -356,3 +356,14 @@ previous/session retention and one bulk Undo. `library_grade_api.py` exposes
 `/grade-reverts`; `grade-saving.js` activates open results, serializes polling and
 manual save, and keeps revert controls disabled through activation. Library menus
 use the same backend command. Existing settings writer merges `grade_history`.
+
+
+Slice 3 D saving flow: `library_copies.py` separates physical sources from virtual
+item keys. `library_grade_api.py` attaches Grade to the selected item, while
+`project-documents.js` uses the same leave gate even for copies of one source.
+`library_marks.py` translates copy rows into physical writer transactions;
+`library_grades.py` merges each item's grade/history into `virtual_copies`.
+`library_api.py` expands physical listings and independently indexes copy albums.
+`library_kept.py` keys pictures by item and saved grade but opens the shared source.
+`library-query.js` filters copies separately and sorts them beside their original.
+`grade-saving.js` offers Keep both and waits for session activation before polling.

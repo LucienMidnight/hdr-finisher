@@ -37,6 +37,10 @@
       const stars = document.createElement("span"); stars.className = "library-stars"; stars.textContent = "★".repeat(value.rating);
       if (value.rating) stars.setAttribute("aria-label", `${value.rating} stars`);
       root.append(stars);
+      if(photo.copy_id || photo.copy_count) {
+        const copy=document.createElement("span");copy.className="library-copy";copy.textContent=photo.copy_id ? "▱" : `+${photo.copy_count}`;
+        copy.title=photo.copy_id ? "Virtual copy" : `${photo.copy_count} virtual copies`;copy.setAttribute("aria-label",copy.title);root.append(copy);
+      }
       if (photo.edited) {
         const mark = document.createElement("span"); mark.className = "library-edited"; mark.textContent = "✎";
         mark.title = photo.pictureCurrent ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. Open it in Grade and save to update the picture.";

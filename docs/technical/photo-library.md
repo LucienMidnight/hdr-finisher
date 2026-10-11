@@ -187,7 +187,7 @@ grade**, **Keep my grade**. Cancel keeps Grade open with **Saving paused —
 grade changed elsewhere** and a Resolve control. Leaving or closing asks
 again. Each successful choice retains the unchosen grade in durable Library
 storage as `previous_grade`; Stage C will give it the before-state home and
-Restore previous grade control. Keep both is a candidate for Stage D only.
+Restore previous grade control. Keep both is built in Stage D: the outside grade becomes a virtual copy.
 Activity lists paused conflicts by folder and photo; it does not promise
 automatic conflict resolution.
 
@@ -540,7 +540,7 @@ and both filenames. Detection merges, renames and deletes nothing;
 links and temporary files are not read. Revisit or Re-scan after resolving
 the conflict to clear the warning. Known warnings remain while offline.
 Ordinary mark writes still update only the canonical settings file; extra
-copies are never written. Virtual copies remain a later slice.
+copies were not written by the initial marks slice. Slice 3 D below now owns and writes virtual copies.
 
 ### Camera details
 
@@ -980,4 +980,64 @@ marks or album tables are replaced. Older files without a recorded default must
 be opened once before reverting to original. Messages and decisions are in the
 running report. The full fast pass and focused on-screen revert check passed.
 The previous validation stop is superseded by Steve's per-stage slow-test rule.
-Virtual copies remain Stage D work.
+Virtual copies are built in Stage D below.
+
+
+### Slice 3 Stage D - virtual copies (October 11, 2026)
+
+`library_copies.py` owns virtual item identity and the copy list. An internal
+`<physical path>|copy|<photo_id>` key addresses each Library item; it is never
+opened as a filesystem path. Grade opening resolves the physical source and
+attaches the copy's ID and document. Opening another item of the same source
+passes the ordinary save/discard/cancel gate. Session activation is finished
+before status polling resumes. Copy names follow the filename in Grade too.
+
+The one physical `.hdrf` gains optional `virtual_copies`: a list of each copy's
+ID, name, grade, default, marks, albums and optional grade history. Unknown fields
+are retained. A small `library_copies` SQLite table keeps the observed list and
+durable pending list; the existing photos/tags/albums tables index virtual keys.
+Copy commands queue one physical settings writer transaction alongside the
+original's latest marks and grades. Whole-file atomic publication is unchanged.
+Unreadable copy data or a changed outside copy list prevents replacement and
+retains both local and file versions. Standalone marks-only callers still
+preserve unfamiliar fields without interpreting them. Existing `.hdrf` files
+need no migration; existing `library.sqlite3` keeps all grades, marks and albums,
+with the copy table added when the service starts. Sources are never duplicated.
+
+Current grade and Clean start both inherit the physical original's stars, pick,
+label and tags; new album membership starts empty. Names default to the first
+unused Copy number. Every copy uses its own grade, crop, marks, albums, history
+and kept-picture identity. Rebuild reads these from the one settings file. Copy
+and original filtering treats them independently; family sorting keeps copies
+immediately after the original in every direction. The strip shows a copy symbol
+or the original's +count. Removing a closed copy has its own confirmation and
+one Ctrl+Z restoration; a copy open in Grade is refused until another item is
+opened, so unsaved Grade work cannot be discarded. Nothing is deleted from disk.
+
+Keep both is a small extension of the grade-conflict choice: queue the outside
+grade as a new copy, then retain/save the local grade using the existing conflict
+safety net. `virtual_copy_created` and `virtual_copy_removed` log copy identity
+and action. The running report holds every new message and validation result.
+
+A further grade-status race was fixed without changing rendering: status could
+read the old settings file just before writer acknowledgement changed the
+baseline, compare those different moments, and request a false external reload.
+The check now compares against the baseline captured before reading and defers
+when acknowledgement changed it. A deterministic data test covers this race.
+
+
+Slice 3 C/D additions to the messages table:
+
+| Message | Meaning | What to do |
+|---|---|---|
+| Revert <count> photos? Each keeps its previous grade. | Counted Library grade replacement, marks retained. | Confirm or Cancel; Ctrl+Z restores the group. |
+| Reverted <count> photos. Each previous grade was kept. | The command finished. Open targets remain unsaved. | Save when ready, or Undo. |
+| Open this photo once before reverting to its starting grade. | Older sidecar has no recorded default. | Open the photo in Grade first. |
+| A grade changed since the revert; Undo was left available and nothing was overwritten. | Undo would replace a newer grade. | Review the newer grade before trying again. |
+| Virtual copy created. The photo was not duplicated. | A new independent item is queued in the same settings file. | Open or mark the copy. |
+| One grade is removed. The photo stays and nothing is deleted from disk. You can undo this with Ctrl+Z. | Separate copy-removal confirmation. | Remove or Cancel. |
+| Virtual copy removed. The photo stays. Ctrl+Z restores the copy. | Copy removed from the durable list, source retained. | Undo if needed. |
+| Open another photo or copy before removing this virtual copy. Nothing was changed. | The copy is still open in Grade. | Leave it through the normal save gate first. |
+| Virtual copies changed elsewhere. Both versions are kept; settings were left untouched. | Pending local copy list conflicts with the file. | Keep both versions and review the conflict; no automatic merge. |
+| Keep both brings the file's grade in as a virtual copy. | Extra choice in the existing Grade conflict notice. | Choose Keep both to retain both independent grades. |
+| Copy names must contain between 1 and 120 characters. | Copy name validation. | Enter a shorter nonblank name, or leave the creation name empty for the default. |

@@ -49,13 +49,17 @@ class LibraryGrades:
         finally:
             db.close()
 
-    def attach(self, session_id):
+    def attach(self, session_id, item_key=None):
         with self.store._lock, self.marks._lock:
             session = self.store.get(session_id)
             path = session.source_reference().durable_path
             if path is None:
                 raise ValueError("This photo has no original path for a settings file.")
             path = str(Path(path))
+            if item_key:
+                key = str(self.marks._path(item_key))
+                if self.marks.source_path(key) != Path(path): raise ValueError("The copy belongs to another photo.")
+                path = key
             document = self.marks._document(Path(path))
             grade = (document or {}).get("grade")
             if grade is not None:
@@ -73,7 +77,7 @@ class LibraryGrades:
             self.starts[session_id] = deepcopy(state.get("desired") if state.get("pending") else grade or state["default"])
             self._put(path, state)
             return {"grade": state.get("desired") if state.get("pending") else grade,
-                    "recovery": recovery if not state.get("pending") else None, "conflict": bool(state.get("conflict")), "path": path}
+                    "recovery": recovery if not state.get("pending") else None, "conflict": bool(state.get("conflict")), "path": path, "name": (document or {}).get("name")}
 
     def observe_documents(self, paths, documents):
         with self.marks._lock:
@@ -178,6 +182,10 @@ class LibraryGrades:
             return self.status(session_id)
 
     def merge(self, path, document):
+        if getattr(self.marks,"copies",None): self.marks.copies.merge(path,document)
+        return self.merge_item(path,document)
+
+    def merge_item(self, path, document):
         with self.marks._lock:
             state = self._get(path)
             history = deepcopy(document.get("grade_history", {}))
@@ -193,6 +201,10 @@ class LibraryGrades:
             return document
 
     def acknowledge(self, path, document):
+        if getattr(self.marks,"copies",None): self.marks.copies.acknowledge(path,document)
+        self.acknowledge_item(path,document)
+
+    def acknowledge_item(self, path, document):
         state = self._get(path)
         if state.get("pending") and grade_key(document.get("grade")) == grade_key(state.get("desired")):
             state.update(baseline=state["desired"], indexed_grade=state["desired"], pending=False)
@@ -219,12 +231,16 @@ class LibraryGrades:
             return {"session": current.to_payload().model_dump(mode="json"), "dirty": current.dirty}
         if not Path(path).parent.is_dir():
             return self.status(session_id)
+        with self.marks._lock:
+            before_read = deepcopy(self._get(path).get("baseline"))
         try:
             grade = (self.marks._document(Path(path)) or {}).get("grade")
         except (ValueError, OSError):
             return self.status(session_id)
         with self.store._lock, self.marks._lock:
             state = self._get(path)
+            if grade_key(state.get("baseline")) != grade_key(before_read):
+                return self.status(session_id)  # Writer acknowledged while this read was in flight.
             session = self.store.get(session_id)
             if grade_key(grade) != grade_key(state.get("baseline")):
                 if unsaved or session.dirty or state.get("pending") or state.get("conflict"):
@@ -245,6 +261,9 @@ class LibraryGrades:
                 return {**self.status(session_id), "changed_again": True}
             if choice == "cancel":
                 return self.status(session_id)
+            if choice == "both":
+                self.marks.copies.create(path, grade=grade or state.get("default"))
+                choice = "mine"
             if choice not in ("mine", "file"):
                 raise ValueError("Choose Keep my grade, Use the file's grade, or Cancel.")
             session = self.store.get(session_id)

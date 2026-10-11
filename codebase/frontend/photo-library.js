@@ -11,7 +11,7 @@
   const postParent = (action, detail = {}) => {
     if (!standalone) parent.postMessage({ type: "hdr-library", action, ...detail }, location.origin);
     else if (libraryDesktop) {
-      const task = action === "open-source" ? libraryDesktop.openSourceInMain(detail.path)
+      const task = action === "open-source" ? libraryDesktop.openSourceInMain(detail.path, detail.itemKey)
         : action === "choose-source" ? libraryDesktop.chooseSourceInMain()
         : action === "review" ? libraryDesktop.getWindowState().then(current => {
           if (current.fullscreen !== detail.enabled) return libraryDesktop.performWindowAction("fullscreen");
@@ -52,6 +52,7 @@
   const culling = HDRLibraryCulling.create({ confirm: confirmChange, photos: () => state.allPhotos, selection: () => state.selection, api, status,
     labelName: label => state.labelNames[label] || "",
     updated: result => {
+      if(result.copies_changed) { void reopen(); return; }
       const place = state.collection;
       if (place) {
         // An album or tag view is always current: photos join and leave with the command.
@@ -242,10 +243,14 @@
       photo.factsAsked = true;
       try {
         const result = await api("/api/library/metadata", { paths: [photo.path] }, state.scan?.signal);
-        Object.assign(photo, result.photos[0]);
+        const name=photo.name; Object.assign(photo, result.photos[0]); if(photo.copy_id)photo.name=name;
         if (selected() === photo) updateDetails();
       } catch (error) { photo.factsAsked = false; if (!aborted(error)) console.debug("Library details:", error.message); }
     }, 200);
+  }
+  async function refreshCopies() {
+    if(state.collection) await browseCollection(state.collection.kind,state.collection.name);
+    else if(state.path) await browse(state.path);
   }
   async function photoMenu(event, photo) {
     event.preventDefault();
@@ -264,6 +269,19 @@
         await pollSettings();
       }});
     } catch (error) { status(error.message); }
+    actions.push({label:"Create virtual copy",run:async()=>{
+      const answer=await HDRLibraryDialogs.ask({title:"Create virtual copy",fields:[
+        {name:"start",label:"Start from",options:[{value:"current",label:"Current grade"},{value:"clean",label:"Clean start"}],value:"current"},
+        {name:"name",label:"Name (optional)",optional:true}],confirm:"Create"});
+      if(!answer)return;
+      const result=await api('/api/library/virtual-copies',{path:photo.path,...answer});
+      culling.setUndo(result.undo_available); await refreshCopies(); confirmChange("Virtual copy created. The photo was not duplicated.",true);
+    }});
+    if(photo.copy_id)actions.push({label:"Remove virtual copy",run:async()=>{
+      if(!await HDRLibraryDialogs.ask({title:"Remove virtual copy",message:"One grade is removed. The photo stays and nothing is deleted from disk. You can undo this with Ctrl+Z.",confirm:"Remove"}))return;
+      const result=await api('/api/library/virtual-copies',{path:photo.path,action:"remove"});
+      culling.setUndo(result.undo_available);await refreshCopies();confirmChange("Virtual copy removed. The photo stays. Ctrl+Z restores the copy.",true);
+    }});
     showMenu(event, [{ label: "Open in Grade", run: openGrade }, ...actions, { separator: true }, ...albums.menuActions([...state.selection])],
       { label: "Photo actions", onError: error => status(error.message) });
   }
@@ -407,7 +425,7 @@
   function openGrade() {
     if (!selected()) return;
     if (state.review) setReview(false);
-    postParent("open-source", { path: selected().path });
+    postParent("open-source", { path: selected().source_path || selected().path, itemKey: selected().path });
   }
   const browse = path => openPlace({ path });
   const browseCollection = (kind, name) => openPlace({ kind, name });
@@ -458,7 +476,7 @@
         const result = await api("/api/library/metadata", { paths: photos.slice(start, start + 32).map(photo => photo.path) }, controller.signal);
         if (controller.signal.aborted || state.scan !== controller) return;
         const byPath = new Map(result.photos.map(photo => [photo.path, photo]));
-        for (const photo of photos.slice(start, start + 32)) Object.assign(photo, byPath.get(photo.path));
+        for (const photo of photos.slice(start, start + 32)) { const name=photo.name; Object.assign(photo, byPath.get(photo.path)); if(photo.copy_id)photo.name=name; }
         if (state.sort === "time" || state.filters.rules?.length) applyQuery();
         else if (byPath.has(selected()?.path)) updateDetails();
       } catch (error) { if (!aborted(error)) console.debug("Library capture dates:", error.message); return; }

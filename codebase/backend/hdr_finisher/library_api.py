@@ -300,6 +300,7 @@ def create_library_router(worker, browser, store=None):
         return cached_listing(result)
 
     def cached_listing(result):
+        result = {**result, "photos": [dict(photo) for photo in result["photos"]]}
         import json
         from .library_marks import Marks
         photos = result["photos"]
@@ -327,6 +328,7 @@ def create_library_router(worker, browser, store=None):
                     photo.update(edited=saved["edited"], grade_identity=saved["grade_identity"])
                 except (ValueError, OSError):
                     photo.update(edited=False)
+        if store is not None: result["photos"] = marks.copies.expand(result["photos"])
         return result
 
     @router.get("/preferences")
@@ -381,22 +383,28 @@ def create_library_router(worker, browser, store=None):
                     photo.update(edited=False)
         result.update(warnings=records["warnings"], undo_available=records["undo_available"])
         if root is not None:
-            index.checks.seed(result)
+            index.checks.seed({**result,"photos":[dict(photo) for photo in result["photos"]]})
+        if store is not None: result["photos"] = marks.copies.expand(result["photos"])
         return result
 
     @router.post("/collection")
     def collection(request: CollectionRequest):
         """The photos of an album or tag, wherever they are in the library."""
         paths = marks.album_paths(request.name) if request.kind == "album" else marks.tag_paths(request.name)
-        photos, missing = index.photos(paths)
+        physical = list(dict.fromkeys(str(marks.source_path(p)) for p in paths))
+        photos, missing = index.photos(physical)
         result = {"path": "", "photos": photos, "unreadable_folders": [], "missing": missing}
-        return cached_listing(result) if request.cached else listing(result)
+        result = cached_listing(result) if request.cached else listing(result)
+        result["photos"] = [p for p in result["photos"] if p["path"] in paths]
+        return result
 
     @router.post("/metadata")
     async def metadata(command: MetadataRequest, request: Request):
-        result = await helper_result(request, "metadata", paths=command.paths, priority=90)
+        result = await helper_result(request, "metadata", paths=list(dict.fromkeys(str(marks.source_path(p)) for p in command.paths)), priority=90)
         if not isinstance(result, Response):
             await run_in_threadpool(index.remember_facts, result["photos"])
+            facts={p["path"]:p for p in result["photos"]}
+            result["photos"]=[{**facts[str(marks.source_path(p))],"path":p} for p in command.paths if str(marks.source_path(p)) in facts]
         return result
 
     @router.post("/marks")
@@ -466,6 +474,7 @@ def create_library_router(worker, browser, store=None):
         if store is not None:
             cached = await run_in_threadpool(kept.cached, command.path)
             if cached: return cached
+        command.path = str(marks.source_path(command.path))
         try:
             cached = await run_in_threadpool(cache.cached, command.path, command.edge, command.quality)
         except (ValueError, OSError) as exc:
@@ -476,6 +485,7 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/native")
     async def native(command: NativeRequest, request: Request):
+        command.path = str(marks.source_path(command.path))
         return await helper_result(request, "native", priority=0, **command.model_dump())
 
     @router.get("/pixels/{key}")

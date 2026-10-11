@@ -1,6 +1,6 @@
 /* Settings-file saving is independent of Grade's rendering and edit commands. */
 (() => {
-  let current = null, currentPath = null, loadedGrade = false, result = {}, busy = false, saving = false, lastChange = 0, lastToken = "", asking = false, conflictShown = false;
+  let current = null, currentPath = null, currentName = null, readySession = null, loadedGrade = false, result = {}, busy = false, saving = false, lastChange = 0, lastToken = "", asking = false, conflictShown = false;
   const byId = id => document.getElementById(id);
   const autosave = () => state.appPreferences?.gradeAutosave !== false;
   async function command(action, detail = {}, id = current) {
@@ -17,6 +17,7 @@
     const visible = Boolean(current && state.session?.session_id === current);
     byId("grade-saving-controls").hidden = !visible;
     if (!visible) return;
+    if(currentName) els.sessionName.textContent = currentName;
     const dirty = state.documentDirty;
     const token = `${state.editRevision}:${state.globalEditGeneration}:${dirty}`;
     if (token !== lastToken) { lastToken = token; lastChange = performance.now(); }
@@ -52,11 +53,11 @@
       result = checked;
       if (!result.conflict) return true;
       conflictShown = true;
-      const name = state.session.source.filename;
+      const name = currentName || state.session.source.filename;
       const choice = await window.HDRDialogs.choose(
-        `The grade for ${name} changed elsewhere while you were working. Nothing was overwritten. Choose which grade to use; the other will be kept as the previous grade.`,
+        `The grade for ${name} changed elsewhere while you were working. Nothing was overwritten. Choose which grade to use; the other will be kept as the previous grade. Keep both brings the file's grade in as a virtual copy.`,
         [{ label: "Cancel", value: "cancel", cancel: true },
-         { label: "Use the file's grade", value: "file" }, { label: "Keep my grade", value: "mine", primary: true }],
+         { label: "Use the file's grade", value: "file" }, { label: "Keep my grade", value: "mine", primary: true }, { label: "Keep both", value: "both" }],
         { title: "Grade changed elsewhere" });
       result = await command("resolve", { choice: choice || "cancel", document: checked.external });
       if (!choice || choice === "cancel" || result.changed_again) return false;
@@ -99,7 +100,7 @@
       save: () => save(), choose: async () => {
         if (autosave()) return "save";
         const choice = await window.HDRDialogs.choose(
-          `Save changes to ${state.session.source.filename} before ${before}?`,
+          `Save changes to ${currentName || state.session.source.filename} before ${before}?`,
           [{ label: "Cancel", value: "cancel", cancel: true }, { label: "Don't save", value: "discard" },
            { label: "Save", value: "save", primary: true }], { title: "Unsaved changes" });
         discarded = choice === "discard";
@@ -108,9 +109,10 @@
     if (allowed && discarded) await command("discard");
     return allowed;
   }
-  async function open(session) {
-    const attached = await command("attach", { initialize: true, default_white: Number(state.appPreferences?.defaultReferenceWhiteNits) === 100 ? 100 : 203 }, session.session_id);
-    current = session.session_id; currentPath = attached.path; result = { conflict: attached.conflict };
+  async function open(session, itemKey = null) {
+    readySession = null;
+    const attached = await command("attach", { item_key: itemKey, initialize: true, default_white: Number(state.appPreferences?.defaultReferenceWhiteNits) === 100 ? 100 : 203 }, session.session_id);
+    current = session.session_id; currentPath = attached.path; currentName = attached.name ? `${session.source.filename} · ${attached.name}` : null; result = { conflict: attached.conflict };
     conflictShown = false;
     loadedGrade = true;
     if (!attached.grade) {
@@ -136,7 +138,7 @@
     return session;
   }
   async function tick() {
-    if (!current || busy || asking || state.importInProgress || state.session?.session_id !== current) return;
+    if (!current || readySession !== current || busy || asking || state.importInProgress || state.session?.session_id !== current) return;
     busy = true;
     try {
       result = await command("check", { unsaved: state.documentDirty });
@@ -155,6 +157,7 @@
     } finally { busy = false; render(); }
   }
   function activated(session, projectPath) {
+    readySession = session.session_id;
     if (projectPath || session.session_id !== current) { current = null; result = {}; }
     render();
   }
@@ -178,12 +181,12 @@
       `Unsaved work for ${photo.path.split(/[/\\]/).pop()} was kept after the app stopped. Open the photo to review it?`,
       [{ label: "Later", value: "later", cancel: true }, { label: "Open photo", value: "open", primary: true }],
       { title: "Recover unsaved work" });
-    if (choice === "open") await openDesktopSelection({ kind: "source", ...await desktop.grantSourcePath(photo.path) });
+    if (choice === "open") await openDesktopSelection({ kind: "source", ...await desktop.grantSourcePath(photo.path.split("|copy|",1)[0]), itemKey: photo.path });
   }
   async function refresh(session) {
     if (!session) return;
     const workflow = state.activeWorkflow;
-    current = session.session_id;
+    current = session.session_id; readySession = null;
     await activateDesktopSession(session, "");
     if (workflow !== "grade") activateWorkflowTab(workflow);
     state.documentDirty = Boolean(session.dirty); result = {}; render(); syncDesktopDocumentState();
@@ -208,6 +211,7 @@
   }
   byId("grade-revert-menu").addEventListener("click",()=>{ revertFlight = revertMenu().catch(error=>status.post({id:"grade-revert",severity:"error",message:error.message})); });
   window.HDRGradeSaving = { refresh, open, save, saveProject, leave, render, activated, resolve, offerRecovery,
+    item: () => currentPath, ready: () => Boolean(current && readySession === current),
     active: () => Boolean(current && state.session?.session_id === current),
     hasGrade: id => id === current && loadedGrade, conflict: () => Boolean(result.conflict) };
   byId("grade-autosave").addEventListener("click", async () => {

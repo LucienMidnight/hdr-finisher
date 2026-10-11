@@ -13,6 +13,7 @@
   // "choice" offers the values found in the photos on screen; a photo that
   // records nothing has the empty value, shown with the field's "none" wording.
   const FIELDS = Object.freeze({
+    copy: { label: "Virtual copy or original", kind: "choice", get: photo => photo.copy_id ? "Virtual copy" : "Original" },
     state: { label: "State", kind: "choice", get: photo => photo.edited ? "Edited" : "Not edited" },
     camera: { label: "Camera", kind: "choice", none: "Not recorded", get: photo => photo.camera },
     lens: { label: "Lens", kind: "choice", none: "Unknown", get: photo => photo.lens },
@@ -71,7 +72,11 @@
         && (!rules.length || (filters.any ? rules.some(rule => matches(photo, rule)) : rules.every(rule => matches(photo, rule))));
     });
     const picks = { pick: 0, unmarked: 1, reject: 2 };
-    return result.sort((a, b) => {
+    const parents = new Map(photos.filter(p=>!p.copy_id).map(p=>[p.path,p]));
+    return result.sort((left, right) => {
+      const leftKey=left.source_path || left.path,rightKey=right.source_path || right.path;
+      if(leftKey===rightKey)return Number(!!left.copy_id)-Number(!!right.copy_id) || (left.copy_order||0)-(right.copy_order||0);
+      const a=parents.get(leftKey)||left,b=parents.get(rightKey)||right;
       let order = 0;
       if (sort === "time") {
         // Unknown dates remain last in either direction. Before facts arrive, name wins.

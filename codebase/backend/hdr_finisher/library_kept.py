@@ -114,6 +114,10 @@ def jpeg_renditions(path, hdr=False):
     reconstructed = (base + scalar("OffsetSDR", 1 / 64)) * np.exp2(boost) - scalar("OffsetHDR", 1 / 64)
     return linear_srgb_to_acescg(np.maximum(reconstructed, 0) * .18)
 
+def self_source(path):
+    from .library_copies import source
+    return Path(source(path))
+
 class KeptPictures:
     def __init__(self,root,marks,worker):
         self.root=Path(root);self.marks=marks;self.worker=worker;self.cache=LibraryPictureCache(root)
@@ -148,7 +152,7 @@ class KeptPictures:
         except (OSError, ValueError, KeyError): return None
     @staticmethod
     def source_stat(path):
-        s=Path(path).stat();return [s.st_size,s.st_mtime_ns]
+        s=self_source(path).stat();return [s.st_size,s.st_mtime_ns]
     def schedule(self,path,grade=None):
         # No decode and no worker startup on the save request thread.
         def launch():
@@ -160,7 +164,7 @@ class KeptPictures:
                     old=self.jobs.get(path)
                     if old: self.worker.cancel(old)
                     stat=self.source_stat(path)
-                    job,future=self.worker.submit_library("kept",priority=80,path=path,grade=request["grade"],edge=request["edited_edge"])
+                    job,future=self.worker.submit_library("kept",priority=80,path=str(self_source(path)),grade=request["grade"],edge=request["edited_edge"])
                     self.jobs[path]=job
                 def finish(f):
                     result=None

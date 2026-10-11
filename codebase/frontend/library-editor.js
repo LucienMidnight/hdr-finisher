@@ -53,7 +53,7 @@
         await reviewQueue;
         if (!desktop) throw new Error("Opening a library path in Grade requires the desktop app.");
         const selection = await desktop.grantSourcePath(message.path);
-        await openDesktopSelection({ kind: "source", ...selection });
+        await openDesktopSelection({ kind: "source", ...selection, itemKey: message.itemKey });
       })().catch((error) => showUploadError(error.message));
     }
   });

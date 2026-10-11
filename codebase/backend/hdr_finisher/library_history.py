@@ -89,7 +89,7 @@ class LibraryHistory:
                         grades.store.replace_edit_document(str(session.session_id), model, session.edit_revision)
                     else:
                         from .projects import open_document
-                        session = open_document(grades.store, model, Path(path))
+                        session = open_document(grades.store, model, marks.source_path(path))
                         grades.sessions[str(session.session_id)] = path
                         grades.starts[str(session.session_id)] = deepcopy(target)
                     session.dirty = kind != "saved"

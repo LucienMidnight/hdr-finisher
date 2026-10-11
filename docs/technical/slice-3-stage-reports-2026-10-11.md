@@ -1,6 +1,6 @@
 # Slice 3 stage reports - October 11, 2026
 
-**Stage B accepted. Stage C is built and verified; Stage D is next.** The earlier cumulative test-time stop is superseded by Steve's clarification: slow checks count per stage, and fast Python checks do not count. No Stage C acceptance is claimed yet.
+**Stage B accepted. Stages C and D are built and verified.** The earlier cumulative test-time stop is superseded by Steve's clarification: slow checks count per stage, and fast Python checks do not count. C and D are ready for Steve's real-photo review.
 
 **Route: the backend makes reduced kept pictures through the existing corrected source opening and export rendering functions. GPU readback and tiled rendering are unchanged.** This is the single producer for a saved grade, whether or not its photo is open in Grade. Steve's later instruction permits background completion after a save; until it completes, the Library honestly shows the default picture and the not-current mark.
 
@@ -48,7 +48,7 @@ New optional `.hdrf` field: `grade_default`, used to recognise an edited grade a
 
 First Stage B full fast run: 462 JavaScript passed; 1,728 Python passed, 3 skipped in 4:47. Final full run after the faster file reader: 462 JavaScript passed; 1,729 Python passed, 3 skipped in 4:40. The focused Electron check passed again. `git diff --check` passed. Focused data checks: 31 passed in 30 seconds. Existing export/Proof checks are included unchanged in the full Python run. Focused Electron checks passed; an expanded run initially counted the dialog before its asynchronous opening, then passed after waiting for the dialog. One early new crop assertion expected 50 rows instead of the actual geometry result of 52; the assertion was corrected, without changing existing checks. Trial setup initially used the wrong crop field names, then was corrected. No application failure remains known from those checks.
 
-## Stage C - draft preserved, not complete
+## Archived first Stage C attempt - superseded by the completion below
 
 The draft implements one session-start state per app run, previous-grade retention,
 four revert choices, counted Library confirmation and one bulk Undo. Existing
@@ -87,7 +87,7 @@ final frontend-only line after the validation stop; the recent full B and C runs
 cover the unchanged backend. Its delayed-publication UI scenario still needs a
 focused rerun when the test-time allowance is extended.
 
-## Stage D - pending
+## Archived Stage D pause - superseded by the completion below
 
 Not started because C's visible validation is unresolved and the validation-time
 stop has been reached. Virtual copies and Keep both have not been built. Stage A's
@@ -100,7 +100,7 @@ no further failures (about five minutes for D's Python pass and one or two minut
 per focused UI pass); fixing failures could require more. No further slow checks
 were started after this stop.
 
-Stage B acceptance commit: `94b70c8`. C and D have no completion commits.
+Stage B acceptance commit: `94b70c8`. The historical pause ended with C completion commit `cf0ee11`; D completion is recorded below.
 
 ## What Steve should try first
 
@@ -137,7 +137,7 @@ Save a real cropped photo with separate HDR and SDR grades and a mask. Browse it
 
 New log events: `kept_picture_saved`, `kept_picture_failed`. Failure keeps the grade safe and shows the honest fallback. No broad sweep was run.
 
-Draft C messages for review (not in the checked-out app):
+C messages for review (now built):
 
 - Revert…; Revert grade; Revert to original; Revert to last saved; Revert to last session; Restore previous grade.
 - Choose a grade to restore. The current grade is kept as the previous grade.
@@ -226,7 +226,7 @@ Final C checks: 12 focused history/picture data tests passed; full Python 1,735
 passed, 3 skipped in 5:00; Node 462 passed; focused real Electron at 2560x1440
 passed four Grade reverts, unsaved/saved behavior, counted Library revert, one Undo,
 marks and unchanged source bytes. Slow debugging/checks stayed below 30 minutes;
-no broad sweep. New C messages are listed in the existing message ledger below.
+no broad sweep. New C messages are listed in the message ledger above.
 The two genuine UI faults fixed are closed-dialog CSS visibility and overlapping
 revert/status/save operations. No rendering, export, Proof or pinned change.
 
@@ -236,3 +236,168 @@ resumed and the same grid updated without revisiting. Save 19 ms; next photo
 2,371 ms; picture ready 2,685 ms (small disposable PNG, not the 36 MP trial).
 Edited first/subsequent transport 8/6 ms versus unedited 6/4 ms. The pictures
 window still has exactly two controls.
+
+
+## Stage D - completion
+
+Both copy creation choices work, with optional names and Copy 1/Copy 2 defaults.
+Copies have independent grades, crops, marks, albums, history and kept pictures,
+without duplicating the photo. The strip carries the symbol/count. They stay
+beside their original in every sort direction and can be filtered independently.
+Switching between copies of the same source uses the normal leave gate. Remove
+has a separate window and one Undo. Copies rebuild from the one settings file.
+Keep both was a small addition and is built: the outside grade becomes a new
+copy, and the local grade saves on the original item.
+
+A further real fault was exposed during this work: a status check could read an
+old settings file, then the writer acknowledged the new baseline, making that
+old read look like an outside grade. It could reload the old grade. The check
+now snapshots the baseline before the file read and defers comparison if it
+changed meanwhile. A deterministic regression test covers the exact sequence.
+Status polling also waits until Grade session activation completes. Rendering,
+export, Proof, shaders and pinned budgets/tolerances are unchanged.
+
+The visible check first selected the wrong photo: DOM insertion order is not
+visual order after Library sorting. Naming the exact disposable source fixed
+that test error. Earlier diagnostic UI failures helped expose the status race;
+no extra arbitrary sleeps were added. One temporary test generation used the
+wrong Windows text encoding; it was corrected to UTF-8 before running.
+
+The full Python pass found one regression: standalone marks-only callers began
+interpreting a previously opaque virtual-copy field. Validation now belongs to
+the installed copy service; marks-only callers preserve unknown data as before.
+The unchanged failing test and copy tests passed together (24 tests). App copy
+writes still refuse unreadable or externally changed copy data. A final focused
+check also verified that a copy made from a copy inherits the original's marks.
+
+Existing project formats are unchanged. Optional copy fields join the photo's
+existing .hdrf, and the existing database gains one small table without dropping
+grades, marks or albums. Unknown fields survive. No real photo/settings file was
+used by the tests. No push or installer rebuild.
+
+### What slice 7 will need
+
+Use the same backend producer with a physical source, virtual item ID where
+applicable, and saved grade. It already works for items not open in Grade. Add a
+durable bulk queue, visible-photo priority, Activity count and Pause/Resume,
+restart/crash/offline recovery, cancellation on newer grades and reuse of old
+matching pictures after Undo. Do not collapse different copies by physical path.
+The measured cost is about 10 seconds per 36 MP photo at 1024, including about
+5.5 seconds opening: several hundred photos take over an hour. This queue is not
+built in slice 3; the cost is also recorded in PRD section 8.
+
+## What Steve should try first - completed slice
+
+With autosave off, edit exposure on a real photo, Revert to original, then
+Restore previous grade. The window should close and the grade should change.
+Try a Library selection revert and Ctrl+Z. Create Current grade and Clean start
+copies, give them different crops/exposures and marks, switch between them with
+Cancel and Save, then remove a closed copy and Ctrl+Z. Check their pictures and
+copy-only album/filter. Review Keep both using disposable settings first. Open
+Library pictures to check GB steps and 512/1024/1920 on the next save.
+
+## Decisions for Steve - full final list
+
+1. JPEG is provisional: smaller on this camera trial, with faster reading. AVIF was the other choice but failed the 40% saving rule.
+2. Keep 512/1024/1920, initially 1024. The trade-off at 1920 is about thirteen seconds per camera picture instead of roughly ten at 1024; selecting 512 saves space and gives a smaller reminder.
+3. The two controls live in the Library pictures toolbar window. This is quick to find and can be restyled by Claude; a future full settings page would take more work now.
+4. Keep cooperative phase pauses for native decode/encode work. They avoid partial operations and source changes, but a phase already running may take seconds to yield. A separate resumable decoder would require much larger work. Foreground priority and save/next-photo independence are retained.
+5. The Library's direct JPEG reconstruction avoids command-line reader delays. It preserves the SDR base exactly and approximates the general reader's gain-map interpolation in HDR. The other choice was its roughly 1.6-second CLI read per picture. Export and Proof continue using that exact general reader.
+6. C keeps a session-start state locally immediately, adding it to the next
+   settings-file write. This preserves restart recovery without saving an unsaved
+   grade. The other choice is writing history metadata beside the photo on its
+   first edit even with autosave off. Losing the local database before the next
+   settings-file write would lose that unsaved session-start record; the saved
+   grade and already-written sidecar history remain intact. This decision
+   was accepted by Steve on resumption and is now active.
+7. The previous test-time decision is superseded: the roughly 30-minute limit
+   counts slow checks per stage; fast Python checks are excluded.
+
+8. A copy open in Grade must be left before removal. This preserves unsaved work
+   and keeps removal simple; automatically passing a leave gate and opening the
+   original would take more lifecycle work. The extra step is the trade-off.
+9. New copies inherit the physical original's marks/tags, even when made from
+   another copy, as the brief asks. Album membership starts empty so an album
+   gains only items explicitly added. The other choice is inheriting albums too;
+   that could unexpectedly increase a curated album's membership.
+10. Sorting uses the original's position for the family and puts copies directly
+    after it; filters inspect each item's own values. Sorting a copy separately
+    by its own rating would break the requested adjacency. A filtered-out original
+    still anchors its family when it is in the folder listing.
+11. An outside change to a pending copy list pauses replacement, retaining local
+    and file versions. It reports the conflict rather than guessing a merge.
+    Automatic field-by-field reconciliation or a dedicated copy-list conflict
+    window is the larger alternative; neither is built here. Local pending work
+    remains durable and the file is left intact.
+
+## Every new message for Steve's review - final list
+
+- Library pictures; Storage limit (GB); Edited-picture resolution; 512 / 1024 / 1920 pixels; Library picture settings saved.
+- This photo has a saved grade, but its Library picture is not current. Open it in Grade and save to update the picture.
+- Saved Library picture enlarged. Check detail in Grade.
+- The saved Library picture is unavailable; open and save in Grade to update it.
+- Library picture settings could not be read; nothing was changed.
+- Choose 512, 1024 or 1920 pixels.
+- Choose a storage limit of at least 1 GB.
+- The source photo changed; its Library picture was left unavailable.
+- The kept picture's gain map could not be read.
+
+New log events: `kept_picture_saved`, `kept_picture_failed`. Failure keeps the grade safe and shows the honest fallback. No broad sweep was run.
+
+C messages for review (now built):
+
+- Revert…; Revert grade; Revert to original; Revert to last saved; Revert to last session; Restore previous grade.
+- Choose a grade to restore. The current grade is kept as the previous grade.
+- Revert <count> photos? Each keeps its previous grade.
+- Reverted <count> photos. Each previous grade was kept.
+- Undo last change · Ctrl+Z.
+- That photo has no grade to restore for this choice.
+- Resolve the grade changed elsewhere before reverting.
+- The grade changed elsewhere; nothing was reverted.
+- A grade changed since the revert; Undo was left available and nothing was overwritten.
+- Open this photo once before reverting to its starting grade.
+- The grade could not be reverted.
+
+- Create virtual copy; Start from; Current grade; Clean start; Name (optional); Create.
+- Virtual copy; Virtual copy or original; Original; Copy 1 / Copy 2 (default names).
+- Virtual copy created. The photo was not duplicated.
+- Remove virtual copy; Remove.
+- One grade is removed. The photo stays and nothing is deleted from disk. You can undo this with Ctrl+Z.
+- Virtual copy removed. The photo stays. Ctrl+Z restores the copy.
+- Keep both. The conflict notice adds: Keep both brings the file's grade in as a virtual copy.
+- Virtual copies cannot be read; settings were left untouched.
+- Virtual copy IDs cannot be read; settings were left untouched.
+- Virtual copy albums cannot be read; settings were left untouched.
+- That virtual copy is no longer available. Nothing was changed.
+- Virtual copies changed elsewhere. Both versions are kept; settings were left untouched.
+- Choose Current grade or Clean start.
+- Select a virtual copy to remove.
+- Open another photo or copy before removing this virtual copy. Nothing was changed.
+- That copy already exists; nothing was overwritten.
+- The copy belongs to another photo.
+- Copy names must contain between 1 and 120 characters.
+
+New D log events: `virtual_copy_created`, `virtual_copy_removed`. Existing grade
+conflict/history and settings-writer events remain in use.
+
+## What was run and anything that failed - final additions
+
+C: focused data 12 passed; full Python 1,735 passed, 3 skipped in 5:00; Node 462
+passed; real Electron revert and delayed-picture checks passed at 2560x1440.
+The failed closed-dialog/exposure checks and stalled historical attempts are
+explained above. The resumed cause was found within the one-hour allowance.
+Slow C checks remained below 30 minutes; fast checks were excluded.
+
+D: focused copy/grade/history data 34 passed; copy/collection/folder data 31
+passed; original marks plus copy checks after the regression fix 24 passed.
+Copy/query focused Node 10 passed; full Node 463 passed. Real Electron at
+2560x1440 passed both creation choices, names, own kept picture, copy symbols,
+same-source Cancel/Save gate, independent saved grades, removal/Undo, Keep both,
+unchanged source bytes and no page errors. UI checks were serial on disposable
+sources/profiles, below the stage's 30-minute slow-check limit; no broad sweep.
+Initial D full Python: 1 failed, 1,742 passed, 3 skipped in 4:46. The failure and
+fix are explained above. Final full Python: 1,743 passed, 3 skipped in 5:02.
+Final focused copy/collection checks: 19 passed. `git diff --check` passed.
+Working-file line endings were retained (Git normalizes its stored blobs).
+No validation failure remains; no push or installer build.
+All earlier trial/setup failures remain in the historical ledger above.

@@ -96,7 +96,18 @@ class LibraryMarks:
         self._schema_ready = True
         return db
 
+    @staticmethod
+    def source_path(value):
+        from .library_copies import source
+        return Path(source(value))
+
     def _path(self, value):
+        from .library_copies import is_copy, source
+        if is_copy(value):
+            physical = self._path(source(value))
+            key = str(physical) + "|copy|" + str(value).split("|copy|",1)[1]
+            self.copies.document(key)
+            return Path(key)
         path = Path(value).expanduser().resolve()
         if not path.parent.exists() and path.suffix.lower() in SOURCE_EXTENSIONS:
             # Only known library photos may be changed while disconnected.
@@ -112,6 +123,8 @@ class LibraryMarks:
         return path.with_name(path.name + SIDECAR_SUFFIX)
 
     def _document(self, path):
+        from .library_copies import is_copy, LibraryCopies
+        if is_copy(path): return self.copies.document(str(path))
         sidecar = self._sidecar(path)
         if sidecar.is_symlink():
             raise ValueError(f"Settings for {path.name} are a link; they were left untouched.")
@@ -130,11 +143,14 @@ class LibraryMarks:
         except ValueError as error:
             raise ValueError(f"Settings for {path.name} have unreadable marks; they were left untouched.") from error
         self._albums(document, path)
+        if getattr(self, "copies", None): LibraryCopies.validate(document)
         return document
 
     def _documents(self, paths):
         # One directory read identifies absent settings without two failed file
         # opens per photo. Present files still receive full validation.
+        if any("|copy|" in str(value) for value in paths):
+            return [self._document(Path(value)) for value in paths]
         folders = {}
         for value in paths:
             folder = Path(value).parent
@@ -240,6 +256,8 @@ class LibraryMarks:
                 finally:
                     db.close()
             if getattr(self, "grades", None): self.grades.observe_documents(observed_paths, observed_documents)
+            if getattr(self, "copies", None):
+                for value, document in zip(observed_paths, observed_documents): self.copies.observe(value, document)
             return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo)}
 
     def _write_sidecar(self, path, document, *, revision=None, fingerprint=None, owner_id=None):
@@ -269,6 +287,8 @@ class LibraryMarks:
                 temporary.unlink(missing_ok=True)
 
     def _save(self, rows, documents, finalize=None):
+        if any("|copy|" in row["path"] for row in rows):
+            return self.copies.save_rows(rows, documents, finalize)
         # The pending flag is the durable queue; there is no command journal.
         db = self._connect()
         try:
@@ -352,7 +372,7 @@ class LibraryMarks:
             if "command" in entry:
                 result = entry["command"]()
                 self._undo.pop()
-                return self._result(result.get("photos", []), result.get("warnings", []), session=result.get("session"))
+                return self._result(result.get("photos", []), result.get("warnings", []), session=result.get("session"), copies_changed=result.get("copies_changed",False))
             before = deepcopy(entry["rows"])
             restored, paths, skipped = [], [], 0
             for row in before:

@@ -97,7 +97,7 @@ async function openDesktopSelection(selection) {
     return;
   }
   renderExperimentalDngNote(selection);
-  if (selection.path === state.editDocument?.source?.durable_path && window.HDRGradeSaving?.active() && !selection.replaceSessionId) {
+  if (selection.path === state.editDocument?.source?.durable_path && window.HDRGradeSaving?.active() && !selection.replaceSessionId && (selection.itemKey || selection.path) === window.HDRGradeSaving.item()) {
     activateWorkflowTab("grade"); return;
   }
   if (!await confirmUnsavedTransition(`opening ${selection.path?.split(/[/\\]/).pop() || "another photo"}`)) return;
@@ -151,7 +151,7 @@ async function openStagedDesktopSource(selection) {
         return;
       }
       const retainedProjectPath = selection.replaceSessionId ? state.projectPath : "";
-      const gradeSession = selection.replaceSessionId ? payload.session : await window.HDRGradeSaving.open(payload.session);
+      const gradeSession = selection.replaceSessionId ? payload.session : await window.HDRGradeSaving.open(payload.session, selection.itemKey);
       await activateDesktopSession(gradeSession, retainedProjectPath);
       if (!selection.replaceSessionId) await recordSuccessfulMediaImport(selection.path);
       status.post({ id: "import", severity: "success", message: "Source imported." });
