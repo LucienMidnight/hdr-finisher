@@ -23,10 +23,11 @@ from .library_index import LibraryIndex
 
 class OverlayRequest(BaseModel):
     path: str
-    kind: Literal["exposure"] = "exposure"
+    kind: Literal["exposure", "focus"] = "exposure"
     quality: Literal["half", "full"] = "half"
+    priority: int = Field(default=85,ge=82,le=85)
 class OverlaySwitch(BaseModel):
-    kind: Literal["exposure"]
+    kind: Literal["exposure", "focus"]
     enabled: bool
 
 
@@ -507,11 +508,11 @@ def create_library_router(worker, browser, store=None):
             return {"unavailable":"Overlay is measured from the original; this photo is shown with its saved grade."}
         path = str(marks.source_path(command.path))
         # A format with no source clipping limit must not imply a clean exposure map.
-        if Path(path).suffix.lower() not in {".png",".jpg",".jpeg",".tif",".tiff"} | RAW_EXTENSIONS:
+        if command.kind=="exposure" and Path(path).suffix.lower() not in {".png",".jpg",".jpeg",".tif",".tiff"} | RAW_EXTENSIONS:
             return {"unavailable":"Exposure warnings unavailable: this file has no recorded clipping limit."}
         cached = await run_in_threadpool(overlay_maps.cached,path,command.kind,command.quality)
         if cached:return cached
-        result = await helper_result(request,"overlay",path=path,kind=command.kind,quality=command.quality,priority=85)
+        result = await helper_result(request,"overlay",path=path,kind=command.kind,quality=command.quality,priority=command.priority)
         if isinstance(result,Response):return result
         if result.get("unavailable"):return result
         # Check source version again after the helper finishes, before allowing display.

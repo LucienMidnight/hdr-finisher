@@ -9,6 +9,9 @@ class ReviewPreferences(BaseModel):
     model_config = ConfigDict(extra="forbid")
     compare_layout: Literal["side", "top", "split"] = "side"
     compare_names: bool = True
+    focus_strength: float = Field(default=.65,ge=0,le=1)
+    focus_sensitivity: float = Field(default=.5,ge=0,le=1)
+    focus_color: str = Field(default="#47ff80",pattern=r"^#[0-9a-fA-F]{6}$")
     exposure_strength: float = Field(default=.65,ge=0,le=1)
     exposure_highlights: bool = True
     exposure_shadows: bool = True

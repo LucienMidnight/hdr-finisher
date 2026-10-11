@@ -1177,3 +1177,80 @@ single/native, compare and review, including instant colour/strength changes
 without map regeneration. The check caught an unresolved request model and
 missing worker command registration; both were fixed. Its initial colour
 expectation was corrected for canvas premultiplied-alpha readback rounding.
+
+### Slice 4 Stage D - focus peaking
+
+`library_focus.py` measures detail on the Library's plain linear quick decode,
+not the thumbnail or screen-toned picture. It normalizes luminance, compares
+fine (0.7px) and coarse (1.5px) Gaussian edge magnitudes, and subtracts a robust
+noise allowance estimated from the median fine-scale residual. A minimum floor
+prevents a very smooth frame's tiny variations from becoming sharp detail.
+A synthetic evenly noisy scene produces no marks. This is an edge-confidence
+map, not a lens/focus diagnosis; fine texture can be suppressed with noise.
+
+The map is maximum-pooled to at most 512 pixels on its longest edge and stored
+as one colourless byte per cell. Half-size RAW uses LibRaw's existing Library
+half decode; other formats are sampled at half dimensions before measurement.
+The grid/filmstrip use this first map. Single/compare/review then request a
+separate full-decode map on the same low-priority lane, only while on screen.
+Half/full variants share the source-version/cache checks from Stage C. Pixel
+serving also rechecks the source before delivering an old key. No new worker,
+Grade decode path, rendering formula, shader, export or Proof was changed.
+
+S switches instantly; clicking Focus opens strength, sensitivity and colour.
+Low strength selects only higher-confidence edges with faint opacity; high
+strength lowers the display threshold and makes marks bold. Sensitivity shifts
+that threshold. All three redraw the existing map immediately. Both overlays
+can run together; focus draws above exposure. Edited items get no map. Map work
+is cancelled when the photo leaves the view or the overlay turns off.
+Settings are remembered in viewing preferences; switches are off at launch.
+The new quiet notices are "S · preparing", "S · refining" (half map visible
+while full detail is measured), and "S · unavailable" with its reason as a
+tooltip. Logs use Stage C's `overlay_map_saved` event with kind/quality.
+
+Bounded measurement (three real RAWs, warm disk, one numerical thread, plain
+Library decode plus map calculation; compressed map sizes include metadata):
+
+| Photo | Half time / size | Full time / size |
+|---|---|---|
+| DSC00264.ARW, shallow-depth glass with a soft background, ISO 800 | 1.48s / 2,281 bytes | 5.96s / 1,823 bytes |
+| DSC01212.ARW, detailed building, ISO 800 | 1.59s / 43,736 bytes | 5.90s / 36,090 bytes |
+| noisy_canon_IMG_0790.CR2, ISO 3200 | 1.28s / 5,873 bytes | 3.84s / 27,260 bytes |
+
+These include decode and filter time, not cold disk, PNG transport or drawing.
+Natural photos have no focus ground-truth labels. The trial also applied known
+slight (0.7 source pixel sigma) and stronger (1.4px) blur in memory to each real
+frame. For slight blur the half-size detailed-building mean confidence was
+unchanged (15.401 to 15.428), while full fell 30% (8.400 to 5.907); the high-ISO
+frame fell only 1% at half size and 69% at full size. These are trial statistics,
+not a user-facing sharpness score. The synthetic sharp edge peak fell 203 to
+108 with slight blur, 17 with stronger blur, and zero with 3px blur. Flat and
+even-noise inputs stay clear. This supports half for browsing with full only
+for large views, rather than calling the half map reliable for close focus.
+`tests/performance/library-focus-trial.py` reproduces the small read-only trial;
+local images/JSON stay under ignored output, never beside source photos.
+
+Decisions made for Steve:
+- Use a robust per-image noise estimate rather than camera-specific ISO tables.
+  It handles many formats with no new metadata dependency, but very fine
+  texture can be treated as noise. Sensitivity can restore weaker marks.
+- Keep the small maximum-pooled map for focus too, rather than retaining every
+  sharp edge pixel. It makes thumbnails readable but can colour a small block
+  around a thin edge, especially at 100%. A denser map could reduce that cost.
+- Default focus colour is green, strength 65%, sensitivity 50%; exposure uses
+  red/blue at 65%. These are reversible starting values rather than presets
+  for each camera. Other colours may be clearer on a particular scene.
+
+Large-view maps take precedence over grid/film maps on the background lane,
+while saved grade pictures retain priority over both. This changes only new
+map ordering; existing foreground gates and budgets are unchanged.
+
+D validation: 463 Node; 1,767 Python passed, 3 skipped (3:17). Focused
+Electron at 2560x1440 passed colour/strength/sensitivity changes without new
+maps, half grid/film, full single/native/compare/review, both overlays together,
+edited-photo exclusion, remembered options and switches off after reload.
+The driver initially read preferences during a reload; waiting for navigation
+fixed that check. The first candidate failed the softness experiment and was
+replaced before implementation, without changing any pinned comparison.
+Read-only ARW, CR2 and linear-DNG exposure sample reads also passed. No other
+failing checks remain, apart from Stage A's separately documented Grade issue.

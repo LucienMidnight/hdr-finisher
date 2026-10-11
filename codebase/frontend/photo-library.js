@@ -880,7 +880,7 @@
       return;
     }
     if (event.altKey) return;
-    if (key==="e") {event.preventDefault();void overlays.toggle("exposure");return;}
+    if (key==="e"||key==="s") {event.preventDefault();void overlays.toggle(key==="e"?"exposure":"focus");return;}
     if (["c","[","]"].includes(key)) {event.preventDefault();void compare.command(key==="["?"left":key==="]"?"right":compare.enabled()?"off":"on");return;}
     if (compare.enabled() && state.view === "single" && key.startsWith("arrow")) {event.preventDefault();void compare.command("move",["arrowleft","arrowup"].includes(key)?-1:1);return;}
     if (culling.shortcut(key)) { event.preventDefault(); return; }

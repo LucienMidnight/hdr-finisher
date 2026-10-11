@@ -241,3 +241,5 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-source-overlay {image-rendering:pixelated;}
 
 #library-overlay-legend {position:fixed;bottom:30px;left:50%;transform:translateX(-50%);z-index:100;background:var(--panel);padding:5px 10px;border:1px solid var(--hairline);border-radius:3px;}
+
+.library-map-status[data-kind="focus"] {bottom:24px;}

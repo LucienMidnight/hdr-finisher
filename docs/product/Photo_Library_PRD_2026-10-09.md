@@ -2441,11 +2441,13 @@ Proposed. Each slice is usable on its own.
 | 2 | Pop-out window, background indexing, metadata panel, full filter bar, tag management, albums | Use two monitors; find photos across the library |
 | 2b · built October 11 | Keeping folders current (5.18): timed checks of pinned folders and the folder on screen, and "Check for new photos" on chosen folders | Drop photos into a pinned intake folder and see them arrive |
 | 3 | Grades in sidecars, autosave option, "before" state, reverts, virtual copies | Stop using Save / Save As |
-| 4 | Quick decode, compare, focus and exposure overlays | Pick the sharpest frame fast |
-
-Slice 4 Stage C built October 11: source-data exposure warnings, options and
-legend in every Library view; colourless maps share the existing cache limit.
-Edited items and formats without a clipping limit show an explanation.
+| 4 · built October 11 | Quick decode, compare, focus and exposure overlays | Pick the sharpest frame fast |
+| 5 | File and folder controls, delete all rejected | Tidy up without Explorer |
+| 6 | Smart albums | Rule-based sets |
+| 7 | Selective copy and paste, sync, look presets, and background pictures for grades changed in bulk (see "Carried forward to slice 7" below) | Grade a set quickly |
+| 8 | Batch export, recipes, naming patterns, metadata authoring | Deliver a job |
+| 9 | HDR previews, comfort cap, HDR/SDR switch in the library | Browse in HDR |
+| 10 | Portable projects, relink, merge, conflict handling | Hand work to someone else |
 
 Slice 4 Stage A built October 11: overlay view fields no longer count as grade
 differences or new kept pictures; SDR Highlights desktop presets are allowed.
@@ -2453,12 +2455,19 @@ The separate measured-highlight-peak rounding on ordinary Grade save remains.
 Stage B built: pinned reference, alternate navigation/marks, locked normalized
 zoom/pan, side/top/split layouts and remembered options; mixed edited/native
 100% follows the unattended decision. Real-shoot feel remains for Steve.
-| 5 | File and folder controls, delete all rejected | Tidy up without Explorer |
-| 6 | Smart albums | Rule-based sets |
-| 7 | Selective copy and paste, sync, look presets, and background pictures for grades changed in bulk (see "Carried forward to slice 7" below) | Grade a set quickly |
-| 8 | Batch export, recipes, naming patterns, metadata authoring | Deliver a job |
-| 9 | HDR previews, comfort cap, HDR/SDR switch in the library | Browse in HDR |
-| 10 | Portable projects, relink, merge, conflict handling | Hand work to someone else |
+
+Slice 4 Stage C built October 11: source-data exposure warnings, options and
+legend in every Library view; colourless maps share the existing cache limit.
+Edited items and formats without a clipping limit show an explanation.
+
+Stage D built October 11: one live camera-style focus-peaking overlay, with
+strength, sensitivity and colour; robust noise subtraction; half maps in the
+grid/filmstrip and full refinement for large single/compare/review surfaces.
+Half-size measurement did not reliably separate controlled slight softness.
+Three real RAWs measured 1.28-1.59s half versus 3.84-5.96s full; maps were
+1.8-43.7KB. See the technical note for per-photo figures and method limits.
+Both overlays are session switches with remembered viewing options; edited
+items explain why source maps are unavailable. Real-shoot judgement is Steve's.
 
 The MCP server (section 11) and SDR-only grading (section 12) are separate
 and each gets its own PRD. SDR-only grading should be settled before slice 3,

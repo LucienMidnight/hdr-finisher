@@ -372,3 +372,17 @@ Library slice 4 compare: `backend/hdr_finisher/library_review.py` (read-only
 commands and viewing preferences), `frontend/library-compare.js` (two Library
 surfaces, normalized locked zoom/pan and layouts), `tests/test_library_review.py`
 and `tests/library-compare.js` (fast command checks and focused Electron check).
+
+Library slice 4 overlays: `backend/hdr_finisher/library_overlays.py` owns
+source-data exposure masks, source-versioned compressed map files and PNG
+transport. `library_focus.py` owns the Library-only, noise-subtracted peaking
+measurement. `library_worker.py` makes half/full maps on the existing kept lane;
+`library_api.py` owns transient switches and on-demand map/pixels routes.
+`library_review.py` stores options with other Library viewing preferences.
+`frontend/library-overlays.js` owns option panels, legend and separate canvases,
+with no Grade transition or settings-file action. `photo-library.js` attaches
+only visible grid/film/single/compare surfaces and cancels work on exit.
+`test_library_overlays.py` checks source regions, focus/noise, freshness,
+cancellation and eviction; `library-exposure.js` and `library-focus.js` are the
+focused disposable Electron checks. `performance/library-focus-trial.py` is a
+bounded read-only half/full/controlled-softness trial, not a folder sweep.

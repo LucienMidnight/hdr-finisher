@@ -117,11 +117,21 @@ class OverlayMaps:
         existing=self.cached(path,kind,quality)
         if existing:return existing
         start=perf_counter();key=map_key(path,kind,quality);check_cancelled(cancelled)
-        if kind!="exposure":raise ValueError("Unknown Library overlay.")
-        try: blown,blocked=exposure_source(path,cancelled)
-        except ValueError as error: return {"unavailable":str(error)}
-        check_cancelled(cancelled)
-        data=np.stack([pool_max(blown),pool_max(blocked)],axis=2).astype(np.uint8)*255
+        if kind=="exposure":
+            try: blown,blocked=exposure_source(path,cancelled)
+            except ValueError as error: return {"unavailable":str(error)}
+            check_cancelled(cancelled)
+            data=np.stack([pool_max(blown),pool_max(blocked)],axis=2).astype(np.uint8)*255
+        elif kind=="focus":
+            from .library_focus import focus_map
+            from .library_pictures import decode_picture
+            pixels,_,info=decode_picture(Path(path),100000,"native" if quality=="full" else "quick")
+            check_cancelled(cancelled)
+            if quality=="half" and info["route"]!="quick-half-raw":pixels=pixels[::2,::2]
+            values,_noise=focus_map(pixels,cancelled)
+            data=values[:,:,None]
+            del pixels
+        else:raise ValueError("Unknown Library overlay.")
         meta={"kind":kind,"quality":quality,"path":str(path),"width":data.shape[1],"height":data.shape[0],"make_ms":round((perf_counter()-start)*1000,2)}
         self.cache.root.mkdir(parents=True,exist_ok=True)
         with NamedTemporaryFile(dir=self.cache.root,suffix='.tmp',delete=False) as f:
@@ -136,6 +146,10 @@ class OverlayMaps:
         self.cache.trim();log("overlay_map_saved",**meta)
         return meta|{"key":key,"cache_hit":False,"stored_bytes":self.file(key).stat().st_size}
     def png(self,key):
-        with np.load(self.file(key),allow_pickle=False) as stored:data=stored['values']
+        with np.load(self.file(key),allow_pickle=False) as stored:
+            data=stored['values'];meta=json.loads(str(stored['metadata']))
+        if map_key(meta['path'],meta['kind'],meta['quality'])!=key:
+            raise ValueError("The source photo changed; request its current overlay map.")
+        if data.ndim!=3 or data.shape[2] not in (1,2):raise ValueError("Overlay map could not be read.")
         channels=np.zeros((*data.shape[:2],3),dtype=np.uint8);channels[:,:,:data.shape[2]]=data
         out=BytesIO();Image.fromarray(channels).save(out,format='PNG');return out.getvalue()
