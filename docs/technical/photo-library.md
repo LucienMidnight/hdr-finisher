@@ -985,6 +985,8 @@ Virtual copies are built in Stage D below.
 
 ### Slice 3 Stage D - virtual copies (October 11, 2026)
 
+Wording and layout pass after Stage D (Claude, October 11): the Library right-click menu follows the mock-up (name header, key hints, items that open a window end in an ellipsis, Remove virtual copy last and in the warning colour; Del removes the selected copy). The create, remove and revert windows use the mock-up titles and explanations. In Grade, Revert opens a small menu of the reverts that would do something, in place of a window of buttons; with none available it reports "There is no earlier grade to go back to." The copy filter is labelled Kind. Details names a virtual copy and shows Edited or Not edited. Not built, needs backend commands: Rename copy, and creating or removing several copies in one undo step.
+
 `library_copies.py` owns virtual item identity and the copy list. An internal
 `<physical path>|copy|<photo_id>` key addresses each Library item; it is never
 opened as a filesystem path. Grade opening resolves the physical source and
@@ -1030,13 +1032,13 @@ Slice 3 C/D additions to the messages table:
 
 | Message | Meaning | What to do |
 |---|---|---|
-| Revert <count> photos? Each keeps its previous grade. | Counted Library grade replacement, marks retained. | Confirm or Cancel; Ctrl+Z restores the group. |
-| Reverted <count> photos. Each previous grade was kept. | The command finished. Open targets remain unsaved. | Save when ready, or Undo. |
+| Revert <name or count> to Original? / to Last Session? / to Last Saved? and Restore Previous Grade of <name or count>? Each says what happens, that the previous grade is kept and that marks and tags are not touched. | Counted Library grade replacement, marks retained. | Confirm or Cancel; Ctrl+Z restores the group. |
+| Reverted to original: <count> photos. Each keeps its previous grade. Ctrl+Z undoes it. (and the matching last session, last saved and previous grade wording) | The command finished. Open targets remain unsaved. | Save when ready, or Undo. |
 | Open this photo once before reverting to its starting grade. | Older sidecar has no recorded default. | Open the photo in Grade first. |
 | A grade changed since the revert; Undo was left available and nothing was overwritten. | Undo would replace a newer grade. | Review the newer grade before trying again. |
-| Virtual copy created. The photo was not duplicated. | A new independent item is queued in the same settings file. | Open or mark the copy. |
+| Virtual copy created beside the original. Ctrl+Z undoes it. | A new independent item is queued in the same settings file. | Open or mark the copy. |
 | One grade is removed. The photo stays and nothing is deleted from disk. You can undo this with Ctrl+Z. | Separate copy-removal confirmation. | Remove or Cancel. |
-| Virtual copy removed. The photo stays. Ctrl+Z restores the copy. | Copy removed from the durable list, source retained. | Undo if needed. |
+| Virtual copy removed. The photo stays. Ctrl+Z brings it back. | Copy removed from the durable list, source retained. | Undo if needed. |
 | Open another photo or copy before removing this virtual copy. Nothing was changed. | The copy is still open in Grade. | Leave it through the normal save gate first. |
 | Virtual copies changed elsewhere. Both versions are kept; settings were left untouched. | Pending local copy list conflicts with the file. | Keep both versions and review the conflict; no automatic merge. |
 | Keep both brings the file's grade in as a virtual copy. | Extra choice in the existing Grade conflict notice. | Choose Keep both to retain both independent grades. |

@@ -13,7 +13,7 @@
   // "choice" offers the values found in the photos on screen; a photo that
   // records nothing has the empty value, shown with the field's "none" wording.
   const FIELDS = Object.freeze({
-    copy: { label: "Virtual copy or original", kind: "choice", get: photo => photo.copy_id ? "Virtual copy" : "Original" },
+    copy: { label: "Kind", kind: "choice", get: photo => photo.copy_id ? "Virtual copy" : "Original" },
     state: { label: "State", kind: "choice", get: photo => photo.edited ? "Edited" : "Not edited" },
     camera: { label: "Camera", kind: "choice", none: "Not recorded", get: photo => photo.camera },
     lens: { label: "Lens", kind: "choice", none: "Unknown", get: photo => photo.lens },

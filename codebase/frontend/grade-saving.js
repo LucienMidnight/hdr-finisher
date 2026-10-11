@@ -57,7 +57,7 @@
       const choice = await window.HDRDialogs.choose(
         `The grade for ${name} changed elsewhere while you were working. Nothing was overwritten. Choose which grade to use; the other will be kept as the previous grade. Keep both brings the file's grade in as a virtual copy.`,
         [{ label: "Cancel", value: "cancel", cancel: true },
-         { label: "Use the file's grade", value: "file" }, { label: "Keep my grade", value: "mine", primary: true }, { label: "Keep both", value: "both" }],
+         { label: "Keep both", value: "both" }, { label: "Use the file's grade", value: "file" }, { label: "Keep my grade", value: "mine", primary: true }],
         { title: "Grade changed elsewhere" });
       result = await command("resolve", { choice: choice || "cancel", document: checked.external });
       if (!choice || choice === "cancel" || result.changed_again) return false;
@@ -191,6 +191,38 @@
     if (workflow !== "grade") activateWorkflowTab(workflow);
     state.documentDirty = Boolean(session.dirty); result = {}; render(); syncDesktopDocumentState();
   }
+  // The revert choices open as a menu under the button. The current grade is kept as the previous grade.
+  const revertPopover = document.createElement("div");
+  revertPopover.className = "window-menu-popover grade-revert-popover"; revertPopover.hidden = true;
+  revertPopover.setAttribute("role", "menu"); revertPopover.setAttribute("aria-label", "Revert grade");
+  document.body.append(revertPopover);
+  let answerRevert = null;
+  function closeRevert(value = null) {
+    if (!answerRevert) return;
+    revertPopover.hidden = true; byId("grade-revert-menu").setAttribute("aria-expanded", "false");
+    const answer = answerRevert; answerRevert = null; answer(value);
+  }
+  function chooseRevert(choices) {
+    return new Promise(resolve => {
+      const origin = byId("grade-revert-menu"), bounds = origin.getBoundingClientRect();
+      revertPopover.replaceChildren(...choices.map(([value, label]) => {
+        const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.setAttribute("role", "menuitem");
+        button.addEventListener("click", () => closeRevert(value)); return button;
+      }));
+      answerRevert = resolve; revertPopover.hidden = false; origin.setAttribute("aria-expanded", "true");
+      revertPopover.style.left = `${Math.max(0, Math.min(bounds.left, innerWidth - revertPopover.offsetWidth))}px`;
+      revertPopover.style.top = `${Math.max(0, Math.min(bounds.bottom + 2, innerHeight - revertPopover.offsetHeight))}px`;
+      revertPopover.querySelector("button").focus({ preventScroll: true });
+    });
+  }
+  document.addEventListener("pointerdown", event => { if (!revertPopover.contains(event.target)) closeRevert(); });
+  window.addEventListener("blur", () => closeRevert());
+  window.addEventListener("resize", () => closeRevert());
+  revertPopover.addEventListener("keydown", event => {
+    const items = [...revertPopover.querySelectorAll("button")], at = items.indexOf(document.activeElement);
+    if (["Escape", "Tab"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); closeRevert(); }
+    else if (["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); items[(at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus({ preventScroll: true }); }
+  });
   async function revertMenu(forced = null) {
     if (asking || saving) return;
     asking = true; byId("grade-revert-menu").disabled = true; byId("grade-revert-saved").disabled = true;
@@ -202,10 +234,11 @@
       const payload = await response.json();if (!response.ok) throw new Error(projectIo.responseErrorMessage(payload,"The grade could not be reverted."));return payload;
     };
     const {counts} = await request(null);
-    const names = {original:"Revert to original",saved:"Revert to last saved",session:"Revert to last session",previous:"Restore previous grade"};
-    const buttons = [{label:"Cancel",value:"cancel",cancel:true}, ...Object.entries(names).filter(([key])=>counts[key]).map(([value,label])=>({value,label}))];
-    const choice = forced || await HDRDialogs.choose("Choose a grade to restore. The current grade is kept as the previous grade.", buttons,{title:"Revert grade"});
-    if (!choice || choice === "cancel") return;
+    const names = {previous:"Restore previous grade",saved:"Revert to last saved",session:"Revert to last session",original:"Revert to original"};
+    const choices = Object.entries(names).filter(([key])=>counts[key]);
+    if (!forced && !choices.length) { status.post({id:"grade-revert",severity:"info",message:"There is no earlier grade to go back to."}); return; }
+    const choice = forced || await chooseRevert(choices);
+    if (!choice) return;
     const result = await request(choice);await refresh(result.session);
     } finally { asking = false; byId("grade-revert-menu").disabled = false; byId("grade-revert-saved").disabled = false; }
   }

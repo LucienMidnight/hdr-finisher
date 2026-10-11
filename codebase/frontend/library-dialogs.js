@@ -3,7 +3,7 @@
   "use strict";
   const make = (tag, className, text) => { const element = document.createElement(tag); if (className) element.className = className; if (text != null) element.textContent = text; return element; };
   // ask() resolves to the typed values, or null when cancelled.
-  function ask({ title, message = "", fields = [], confirm = "OK", cancel = "Cancel" }) {
+  function ask({ title, message = "", fields = [], confirm = "OK", cancel = "Cancel", danger = false }) {
     return new Promise(resolve => {
       const dialog = make("dialog", "application-dialog library-ask"), form = make("form");
       form.method = "dialog"; dialog.setAttribute("aria-label", title);
@@ -19,7 +19,7 @@
         input.dataset.optional = String(!!field.optional); input.value = field.value || ""; input.name = field.name; input.placeholder = field.placeholder || ""; input.autocomplete = "off"; input.spellcheck = false; input.maxLength = 120;
         label.append(make("span", "", field.label), input); body.append(label); inputs.push(input);
       }
-      const actions = make("div", "app-dialog-actions"), no = make("button", "button-secondary", cancel), yes = make("button", "button-primary", confirm);
+      const actions = make("div", "app-dialog-actions"), no = make("button", "button-secondary", cancel), yes = make("button", danger ? "button-danger" : "button-primary", confirm);
       no.type = "button"; yes.type = "submit"; actions.append(no, yes);
       form.append(header, ...(fields.length ? [body] : []), actions); dialog.append(form); document.body.append(dialog);
       let answer = null;
@@ -46,7 +46,9 @@
     menu.setAttribute("aria-label", label);
     menu.replaceChildren(...actions.map(action => {
       if (action.separator) return make("hr", "library-menu-separator");
-      const button = make("button", "", action.label); button.type = "button"; button.setAttribute("role", "menuitem"); button.disabled = !!action.disabled;
+      if (action.header) return make("div", "library-menu-header", action.header);
+      const button = make("button", action.danger ? "danger" : "", action.label);
+      if (action.key) button.append(make("kbd", "", action.key)); button.type = "button"; button.setAttribute("role", "menuitem"); button.disabled = !!action.disabled;
       button.addEventListener("click", async () => {
         const report = failed; closeMenu(true);
         try { await action.run(); } catch (error) { report(error); }

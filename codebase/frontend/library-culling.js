@@ -32,17 +32,25 @@
       if (paths.length) return enqueue("/api/library/marks", { paths, change: patch });
       return commands;
     }
+    const COPY_ICON = "M8 8h10a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-8a2 2 0 0 1 2 -2z M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2";
+    const EDITED_ICON = "M4 6h8 M16 6h4 M4 12h2 M10 12h10 M4 18h10 M18 18h2 M14 4v4 M8 10v4 M16 16v4";
+    function icon(path) {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "path"); line.setAttribute("d", path); svg.append(line); return svg;
+    }
     function strip(photo) {
       const value = marks(photo), root = document.createElement("span"); root.className = "library-marks";
       const stars = document.createElement("span"); stars.className = "library-stars"; stars.textContent = "★".repeat(value.rating);
       if (value.rating) stars.setAttribute("aria-label", `${value.rating} stars`);
       root.append(stars);
       if(photo.copy_id || photo.copy_count) {
-        const copy=document.createElement("span");copy.className="library-copy";copy.textContent=photo.copy_id ? "▱" : `+${photo.copy_count}`;
-        copy.title=photo.copy_id ? "Virtual copy" : `${photo.copy_count} virtual copies`;copy.setAttribute("aria-label",copy.title);root.append(copy);
+        const copy = document.createElement("span"); copy.className = "library-copy";
+        if (photo.copy_id) copy.append(icon(COPY_ICON)); else copy.textContent = `+${photo.copy_count}`;
+        copy.title = photo.copy_id ? `Virtual copy: ${photo.copy_name}` : `Has ${photo.copy_count} virtual ${photo.copy_count === 1 ? "copy" : "copies"}`;
+        copy.setAttribute("aria-label", copy.title); root.append(copy);
       }
       if (photo.edited) {
-        const mark = document.createElement("span"); mark.className = "library-edited"; mark.textContent = "✎";
+        const mark = document.createElement("span"); mark.className = "library-edited"; mark.append(icon(EDITED_ICON));
         mark.title = photo.pictureCurrent ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. Open it in Grade and save to update the picture.";
         mark.setAttribute("aria-label", mark.title); root.append(mark);
       }

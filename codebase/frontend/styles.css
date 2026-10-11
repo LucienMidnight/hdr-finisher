@@ -9146,12 +9146,14 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 /* MINOR-10: the in-application confirmation, in place of a native modal. */
 .app-dialog {
   width: min(460px, calc(100vw - 44px));
-  height: auto;
+  /* Not auto: a modal dialog is pinned top and bottom, so auto stretches it to max-height. */
+  height: fit-content;
   max-height: min(520px, calc(100vh - 44px));
   display: flex;
   flex-direction: column;
 }
 .app-dialog:not([open]) { display: none; }
+.grade-revert-popover { position: fixed; z-index: 200; border-radius: var(--radius-2); }
 .app-dialog .application-dialog-header { min-height: 0; padding-bottom: 0; }
 .app-dialog-content {
   padding: 14px 20px 4px;

@@ -92,6 +92,8 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-stars { color: var(--star); letter-spacing: 1px; }
 .library-label-dot { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; }
 .library-flag { margin-left: auto; font-size: 16px; }
+.library-copy, .library-edited { display: inline-flex; align-items: center; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+.library-marks svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .library-cell.rejected canvas { opacity: .34; }
 #single-caption { display: flex; align-items: center; justify-content: center; gap: 10px; }
 #single-caption .library-marks { display: inline-flex; }
@@ -149,8 +151,16 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-filter-note { margin: 0; color: var(--quiet); }
 
 .library-menu-separator { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--hairline); }
-.library-ask { width: min(440px, 92vw); }
-.library-ask p { font-family: var(--sans); font-size: 13px; color: var(--muted); }
+.library-menu-header { max-width: 320px; padding: 5px 10px 6px; overflow: hidden; color: var(--quiet); font-family: var(--mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.library-folder-menu { min-width: 230px; }
+.library-folder-menu button { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.library-folder-menu button.danger { color: var(--error-text); }
+.library-folder-menu kbd { color: var(--quiet); font-family: var(--mono); font-size: 10px; }
+.library-ask { width: min(440px, 92vw); height: fit-content; max-height: calc(100vh - 44px); }
+.library-ask .application-dialog-header { min-height: 0; padding: 16px 18px 14px; }
+.library-ask h2 { font-size: 16px; overflow-wrap: anywhere; }
+.library-ask p { margin: 6px 0 0; font-family: var(--sans); font-size: 13px; line-height: 1.45; color: var(--body); }
+.library-ask .app-dialog-actions .button-primary:not(:disabled) { border-color: transparent; background: linear-gradient(180deg, var(--accent-strong), var(--accent-low)); color: var(--on-accent); font-weight: 600; }
 .library-ask-body { display: grid; gap: 10px; padding: 14px 18px 4px; }
 .library-ask-field { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
 .library-ask .app-dialog-actions, .library-tags .app-dialog-actions { padding: 12px 18px; }
