@@ -665,6 +665,12 @@ proposals:
 - The grid defaults to SDR. The optional HDR switch and its 1000-nit grid
   comfort cap are Stage C work.
 - Stage A shows the default starting look. Showing saved grades is slice 3.
+- Decided by Steve, October 11: the Library picture of an edited photo is
+  a reminder of which photo and grade it is, not a culling tool, and can
+  be reduced resolution. Planned for slice 3: Grade keeps a small finished
+  picture when it saves and the Library shows that, instead of re-creating
+  the grade from the quick scene picture. Sizes are to be adjustable.
+  Details are in the slice 3 brief, Stage B.
 - Only visible grid/filmstrip cells are requested. Requests are cancelled
   when they leave the screen. Single view reads ahead to its next and
   previous neighbours. Work uses the existing low-priority helper and

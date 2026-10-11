@@ -41,7 +41,8 @@ file.
   only.
 - Library pictures are drawn by the graphics card from a reduced quick
   scene picture that has no lens correction, highlight reconstruction or
-  denoise. Today they all use the default starting look.
+  denoise. Today they all use the default starting look. That stays the
+  route for unedited photos only (see Stage B).
 - Steve is not a coder. He judges this by grading his real photos.
 
 ## Decisions already made (do not reopen)
@@ -146,26 +147,84 @@ not applied without asking.
 
 ### Stage B — the Library shows the saved grade
 
-- Grid, filmstrip, single view, review and native zoom show each photo
-  with its saved grade, in SDR and with the HDR switch on. A photo with
-  no saved grade keeps the default look.
-- An unsaved change in Grade is not shown in the Library until saved.
-  After a save, the photo's Library picture updates without the user
-  doing anything.
-- The Library still makes its picture from the quick scene picture. It
-  does not have to match Grade exactly. **Before building, list for Steve
-  which parts of a grade the Library picture will show faithfully, which
-  only roughly, and which not at all** (crop, lens corrections, local
-  adjustments and masks, denoise and detail are the likely hard ones),
-  with what each would cost to include. Build the faithful set and wait
-  for his answer on the rest.
+Direction from Steve, October 11: the Library picture of an edited photo
+is a **reminder**, not a culling tool. By the time a photo has a grade
+the pick has been made; the picture only has to show which photo and
+which grade it is. It can be small, and it does not need to be made live.
+
+So the Library does **not** re-create a grade from its quick scene
+picture. That route has no crop, lens correction, masks or denoise and
+could only approximate. Instead:
+
+- **Grade keeps a small finished picture when it saves.** Grade already
+  has the fully corrected, graded photo on screen. A reduced copy of that
+  is kept and the Library shows it. It therefore includes crop, lens
+  corrections, local adjustments and everything else, with no second
+  rendering method to keep in step.
+- The picture is of the whole framed photo, whatever zoom or pan Grade
+  was showing at the time.
+- **The user gets two controls for Library pictures, and only two**
+  (Steve, October 11): the **storage limit**, and the **resolution of
+  pictures for edited photos**.
+- **One picture per saved grade, at the chosen resolution.** The grid,
+  filmstrip, single view and review all use it; single view enlarges it
+  when it is smaller than the space. Proposed choices: 512, 1024 and
+  1920 pixels on the long edge, starting at 1024. Report the size on disk
+  per edited photo at each choice, and what making it costs at save
+  time, so Steve can confirm the choices and the starting value.
+- Changing the resolution applies to pictures made from then on.
+  Existing ones are kept as they are until the photo is next saved; they
+  are not thrown away and cannot be remade in bulk.
+- Both controls need somewhere to live now. The Library settings page is
+  not built; put the two controls where they are quick to find without
+  building that page, and say where you put them.
+- **SDR and HDR.** The grid is SDR by default, so an SDR picture is
+  always kept. The HDR grade is a different grade in this app, so with
+  the HDR switch on the Library should show the HDR one. Report what
+  keeping an HDR picture as well costs before building it; if it is
+  expensive, propose keeping it at the grid size only.
+- **Where they are kept, and the limit.** In the app's data area, never
+  beside the photo; only the settings file is written there. One storage
+  limit covers every Library picture, replacing today's fixed 2 GB. When
+  space is needed, quick pictures of unedited photos go first, because
+  they can be remade from the photo. Pictures of edited photos go last,
+  oldest-viewed first, because they can only be remade by opening the
+  photo in Grade. A photo whose picture was removed falls back as
+  described under "must match" below. The control shows how much is in
+  use.
+- **Making the picture never slows grading.** It does not have to be
+  made on every autosave. It must be current by the time the user is
+  looking at that photo in the Library again, and at an explicit save.
+- **The picture must match the saved grade or not be shown.** Each
+  picture belongs to one exact saved grade. If the saved grade is not the
+  one the picture was made from (the settings file came from another
+  machine, was changed by a sync tool, or the picture is missing), the
+  Library shows the default look with the edited mark, never a stale
+  picture. It becomes current the next time the photo is opened in Grade
+  and saved. Propose plain wording for a tooltip that says so.
+- **An unsaved change** in Grade is not shown in the Library until
+  saved.
+- **Native 100% zoom on an edited photo** shows the kept picture
+  enlarged, not the ungraded photo, and does not start a full decode.
+  Checking sharpness is a culling job; the graded photo is inspected in
+  Grade.
+- A photo with no saved grade is unchanged: quick scene picture, default
+  look, native zoom as today.
+- Stages C and D depend on this: a "before" state and a session-start
+  state keep their pictures with them, so a revert shows the right
+  picture at once; a revert to original needs no picture; each virtual
+  copy has its own. A grade changed on many photos at once without
+  opening them (paste, sync, presets) arrives in slice 7 and will need
+  pictures made in the background; do not build that now, but do not
+  block it.
 - A photo counts as **edited** when it has a saved grade that differs
   from the defaults. Marks alone do not make it edited. "State" (edited,
   not edited) becomes available in the filter bar and as a sort, and a
   small mark shows on edited thumbnails in the strip under the picture.
-- Scrolling a folder of graded photos must stay as responsive as a folder
-  of ungraded ones. Report what you measure for first picture and for
-  scrolling, graded against ungraded.
+- A folder of edited photos should scroll at least as responsively as a
+  folder of unedited ones, since a kept picture needs no decode. Report
+  what you measure for first picture and for scrolling, edited against
+  unedited.
 
 ### Stage C — the "before" state and reverts
 
