@@ -316,6 +316,46 @@ Steve authorized Stage A of the slice 1 brief on October 10:
 - Brief for the build:
   `docs/technical/codex-brief-library-background-writer-2026-10-11.md`.
 
+Later on October 11, after Steve had used slices 1 to 3:
+
+- **Slice 3 works; building continues.** UI polish and performance are
+  held for one pass after the library features are finished.
+- **The slice 3 defaults are confirmed** (open decisions 2, 4, 5, 6, 19
+  and 26): autosave is one app-wide setting, on at first run; one "before"
+  state per photo or copy; the session-start state is kept until a later
+  session changes that photo; virtual copies live in the one settings file
+  and inherit marks and tags but not albums; `.hdrfinisher` projects stay
+  out of the Library. Kept pictures are JPEG at 512, 1024 or 1920 pixels,
+  starting at 1024.
+- **Order of the remaining work** (settles open decision 22): compare and
+  overlays; file and folder controls; smart albums; an installer test
+  build (timing is Claude's call); paste, presets and linked photos; batch
+  export; portable projects. Then the polish and performance pass, then
+  the MCP server. The Match entire HDR grade fault (section 8) is looked
+  at after the library is implemented.
+- **Focus overlay:** it has a strength slider that behaves like focus
+  peaking in a camera. One overlay, not two (settles open decision 16).
+- **Dragging photos onto a folder asks first, for now** (settles open
+  decision 24). A multi-selection can be large, and one question before a
+  large move is welcome.
+- **Folder check timing is fine at 15 seconds** (settles open decision
+  27). What is slow is making the picture of a newly arrived photo; that
+  belongs to the performance pass.
+- **Settings controls are added wherever they are needed.** The Library
+  settings page is built when the first slice needs it.
+- **The dedicated Export page stays** and grows into a full page with
+  control-panel settings. This reverses the October 9 direction to retire
+  it. It should leave room for export presets, print settings and
+  watermarks. Where batch export settings live is still to be designed.
+- **No photo-count target as a product idea** (replaces decision 23 and
+  open decision 14). A library is not sized to a number of photos and the
+  app never states or enforces one. Internally, performance is tested on a
+  large library so that speed does not depend on how many photos are
+  indexed; the test size is an engineering detail, not a limit.
+- **Local build rule:** a backup push of a work-in-progress branch needs
+  only the fast checks. The full sweep stays for merges into `main` and
+  installer builds.
+
 ---
 
 ## 5. Requirements
