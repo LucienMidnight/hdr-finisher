@@ -174,3 +174,5 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-label-name input { flex: 1; min-width: 0; }
 .library-tags-note { min-height: 18px; margin: 8px 18px 0; font-size: 12px; }
 .library-spacer { flex: 1; }
+
+.library-folder-row[aria-selected="true"] { background: var(--accent-bed); outline: 1px solid var(--hairline); }

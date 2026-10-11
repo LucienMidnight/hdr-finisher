@@ -310,7 +310,7 @@ Steve authorized Stage A of the slice 1 brief on October 10:
   bottom bar, with a list of jobs and a "Needs attention" list.
 - **Pinned folders keep themselves current; other folders are read when
   opened.** Timed checks, not instant, plus a button that checks chosen
-  folders first. Not built yet; it is slice 2b. Details in section 5.18,
+  folders first. Built October 11 as slice 2b. Details in section 5.18,
   "Keeping folders current".
 - **Undo history is still lost on restart.** Not part of this work.
 - Brief for the build:
@@ -1127,9 +1127,9 @@ Proposed, mocked up October 10 (not yet confirmed by Steve):
 
 #### Keeping folders current
 
-Build step: slice 2b in section 8. Not built yet. Today a folder is read
-when the Library starts, when it is pinned, when it is clicked, and on
-Re-scan; nothing is noticed in between.
+Built October 11: slice 2b in section 8. Timed checks keep pinned folders
+and the folder on screen current between the existing opening/pinning and
+Re-scan reads. **Check for new photos** checks chosen folders first.
 
 Decided by Steve, October 11:
 
@@ -1185,7 +1185,9 @@ Proposed by Claude (the numbers are open decision 27):
   screen is still checked), indexing paused by the user, Grade or export
   busy, or the drive not connected. A drive that comes back is checked
   straight away.
-- Checks run in the helper on the indexing lane. Failures are logged and
+- Checks run alongside the index in the same helper, on one read-only lane
+  that yields to visible Library work and Grade. The index resumes in memory
+  without repeating expensive work; a stale name listing may be repeated. Failures are logged and
   reported through Activity and the health command like other indexing
   problems.
 - Not included: instant notification from Windows. It can be added later
@@ -2319,7 +2321,7 @@ Proposed. Each slice is usable on its own.
 | 0 | Foundation work, section 1 | Nothing new; the ground is ready |
 | 1 | Docked library: pinned folders and the Add folder picker, grid, single view, full-screen review, ratings, picks, tags, multi-select, basic sort and filter, double-click to Grade through the one gate, sidecars holding marks, the database, undo for marks | Cull real shoots |
 | 2 | Pop-out window, background indexing, metadata panel, full filter bar, tag management, albums | Use two monitors; find photos across the library |
-| 2b | Keeping folders current (5.18): timed checks of pinned folders and the folder on screen, and "Check for new photos" on chosen folders | Drop photos into a pinned intake folder and see them arrive |
+| 2b · built October 11 | Keeping folders current (5.18): timed checks of pinned folders and the folder on screen, and "Check for new photos" on chosen folders | Drop photos into a pinned intake folder and see them arrive |
 | 3 | Grades in sidecars, autosave option, "before" state, reverts, virtual copies | Stop using Save / Save As |
 | 4 | Quick decode, compare, focus and exposure overlays | Pick the sharpest frame fast |
 | 5 | File and folder controls, delete all rejected | Tidy up without Explorer |
@@ -2387,7 +2389,14 @@ For Steve, one at a time, each with its trade-off.
 27. How often folders are checked for changes (5.18, "Keeping folders
     current"). Proposed: the folder on screen about every 15 seconds, other
     pinned folders about every 5 minutes, slower on their own for slow
-    drives. To confirm after the check is measured on a large folder.
+    drives. Measured October 11: a local D: folder with 50,000 disposable valid
+    JPEG photos took 3.23 seconds to list; a complete unchanged check took
+    2.70 seconds with the helper already started and a warmed listing. No mapped
+    SMB share was available. Recommendation: retain the 15-second/five-minute
+    base periods; the ten-times-duration rule makes this folder wait at least
+    about 27 seconds in the foreground. Steve still decides how it feels on
+    real intake, external and network folders. This measures names/stat data,
+    not picture decoding or absence of stutter.
 
 ---
 

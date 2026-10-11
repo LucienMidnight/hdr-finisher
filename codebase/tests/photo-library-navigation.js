@@ -56,10 +56,10 @@ async function eventually(check) {
     console.log('PASS: picker returns to its previous scroll position and pins from the modal menu.');
     const pinned = library.locator('#folders .folder-name').filter({ hasText: 'folder-080' });
     await pinned.click({ button: 'right' });
-    assert.equal(await library.locator('#library-folder-menu button').textContent(), 'Unpin folder');
+    assert.equal(await library.getByRole('menuitem', { name: 'Unpin folder', exact: true }).textContent(), 'Unpin folder');
     await main.keyboard.press('Escape');
     await pinned.click({ button: 'right' });
-    await library.locator('#library-folder-menu button').click();
+    await library.getByRole('menuitem', { name: 'Unpin folder', exact: true }).click();
     await library.waitForFunction(() => !document.querySelector('#folders .library-folder-row'));
     assert.ok(fs.existsSync(child));
     await library.evaluate(async folder => {

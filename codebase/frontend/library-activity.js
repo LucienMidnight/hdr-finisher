@@ -17,11 +17,18 @@
     if (index.waiting) return "Indexing waits while Grade is busy";
     return index.total ? `Indexing ${index.folder} · ${count(index.done)} of ${count(index.total)}` : `Indexing ${index.folder} · reading folders`;
   }
+  function checkText(index) {
+    const checks = index.checks, running = checks?.running;
+    if (!running?.requested && !running?.changed && !checks?.requested?.length) return "";
+    if (index.waiting || index.checkWaiting) return "Checking folders waits while Grade is busy";
+    return `Checking for new photos${running ? " · " + running.path.split(/[\\/]/).at(-1) : ""}`;
+  }
   function summary(health) {
     const writer = health.writer, index = health.index, jobs = [];
     if (writer.waiting) jobs.push(writerText(writer));
+    if (checkText(index)) jobs.push(checkText(index));
     if (index.state === "indexing" || index.state === "retrying" || index.paused) jobs.push(indexText(index));
-    const problems = writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length;
+    const problems = writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length + (index.checks?.folders || []).filter(folder => folder.failure || folder.warnings?.length).length;
     const extra = problems ? ` · Needs attention: ${count(problems)}` : index.state === "failed" || index.state === "retrying" || health.helper.failure || health.helper.recovering ? " · Needs attention" : "";
     return (jobs[0] || "Activity") + (jobs.length > 1 ? ` +${jobs.length - 1}` : "") + extra;
   }
@@ -51,12 +58,13 @@
       writing.append(node("p", writerText(writer)));
       if (writer.waiting) writing.append(action(writer.paused ? "Resume writing" : "Pause writing", "writer-pause", "/api/library/writer", { action: writer.paused ? "resume" : "pause" }));
       panel.append(writing);
+      if (checkText(index)) panel.append(node("p", checkText(index)));
       const indexing = node("section", "", "library-activity-job"); indexing.append(node("p", indexText(index)));
       if (index.state === "indexing" || index.state === "retrying" || index.paused) indexing.append(action(index.paused ? "Resume indexing" : "Pause indexing", "index-pause", "/api/library/index", { action: index.paused ? "resume" : "pause" }));
       const rescan = action("Re-scan pinned folders now", "index-rescan", "/api/library/index", { action: "rescan" }); rescan.disabled = index.enabled === false;
       indexing.append(rescan, action(index.enabled === false ? "Turn background indexing on" : "Turn background indexing off", "index-enable", "/api/library/index", { action: index.enabled === false ? "enable" : "disable" }));
       panel.append(indexing, node("h3", "Needs attention", "panel-title"));
-      if (!writer.attention.length && !(health.conflicts || []).length && !health.helper.failure && !health.helper.recovering && index.state !== "failed" && index.state !== "retrying") panel.append(node("p", "Nothing needs attention."));
+      if (!writer.attention.length && !(health.conflicts || []).length && !health.helper.failure && !health.helper.recovering && index.state !== "failed" && index.state !== "retrying" && !(index.checks?.folders || []).some(folder => folder.failure || folder.warnings?.length)) panel.append(node("p", "Nothing needs attention."));
       for (const group of writer.attention) {
         const item = node("section", "", "library-activity-job");
         item.append(node("p", group.folder, "library-activity-folder"), node("p", `${count(group.count)} photos: ${group.explanation}. Marks are safe in the library; writing will retry automatically.`));
@@ -68,6 +76,10 @@
         item.append(node("p", conflict.folder, "library-activity-folder"), node("p", conflict.message));
         for (const file of conflict.files) item.append(node("p", file.split(/[\\/]/).at(-1)));
         panel.append(item);
+      }
+      for (const folder of index.checks?.folders || []) {
+        for (const warning of folder.warnings || []) panel.append(node("p", warning));
+        if (folder.failure) panel.append(node("p", `${folder.path}: ${folder.offline ? "Folder is not connected; photos and marks are kept" : "Folder check could not finish; it will try again"}`));
       }
       if (health.helper.recovering) panel.append(node("p", "The Library helper is restarting. Saved marks are safe; browsing will resume automatically."));
       if (health.helper.failure) panel.append(node("p", "The Library helper stopped after repeated problems. Saved marks are safe; restart the app to browse again."));

@@ -127,7 +127,7 @@
       dialog.showModal(); element.search.focus();
       await load().catch(error => note(error.message));
     }
-    return Object.freeze({ open });
+    return Object.freeze({ open, refresh: () => dialog?.open ? load() : Promise.resolve() });
   }
   window.HDRLibraryTags = Object.freeze({ create });
 })();

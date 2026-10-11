@@ -6,7 +6,7 @@
   const state = { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
     pins: [], cells: new Map(), filmCells: new Map(), prefetch: new Map(), size: 190,
     selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0,
-    collection: null, allFacts: false, labelNames: {}, indexing: null };
+    folderSelection: new Set(), folderAnchor: "", collection: null, allFacts: false, labelNames: {}, indexing: null };
   const standalone = parent === window, libraryDesktop = standalone ? window.hdrFinisherDesktop : null;
   const postParent = (action, detail = {}) => {
     if (!standalone) parent.postMessage({ type: "hdr-library", action, ...detail }, location.origin);
@@ -179,6 +179,7 @@
     for (let index = start; index < end; index += 1) {
       const photo = state.photos[index];
       let cell = map.get(photo.path);
+      if (cell && (cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns)) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
       if (!cell) { cell = makeCell(photo, container, index); map.set(photo.path, cell); }
       position(cell.element, index);
       const active = state.selection.has(photo.path);
@@ -400,6 +401,7 @@
     if (path) state.lastFolder = path;  // Where a deleted album's view returns to.
     const controller = new AbortController(); state.scan = controller; state.path = path; state.reading = true; state.scanError = ""; state.allPhotos = []; state.photos = []; state.index = -1; state.selection.clear(); state.anchor = -1; state.hiddenFiles = 0;
     setView("grid"); grid.scrollTop = 0;
+    $("check-photos").disabled = !path;
     $("place-title").textContent = place.kind === "album" ? place.name : place.kind ? `Tag · ${place.name}` : path.split(/[\\/]/).filter(Boolean).at(-1) || path;
     $("place-title").title = place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path; status(place.kind ? "Reading…" : "Reading folder…");
     for (const element of $("folders").querySelectorAll(".library-folder-row")) element.classList.toggle("active", !place.kind && element.dataset.path === path);
@@ -451,7 +453,22 @@
     if (folder.available === false) row.classList.add("unavailable");
     const expand = document.createElement("button"); expand.className = "expand-folder"; expand.setAttribute("aria-expanded", "false"); expand.setAttribute("aria-label", `Expand ${folder.name}`);
     const name = document.createElement("button"); name.className = "folder-name"; name.textContent = folder.name; name.title = folder.path;
-    name.addEventListener("click", () => browse(folder.path));
+    row.setAttribute("role", "treeitem");
+    row.setAttribute("aria-selected", String(state.folderSelection.has(folder.path)));
+    name.addEventListener("click", event => {
+      const paths = [...$("folders").querySelectorAll(".library-folder-row")].map(item => item.dataset.path);
+      if (event.shiftKey && paths.includes(state.folderAnchor)) {
+        const from = paths.indexOf(state.folderAnchor), to = paths.indexOf(folder.path);
+        if (!event.ctrlKey && !event.metaKey) state.folderSelection.clear();
+        paths.slice(Math.min(from, to), Math.max(from, to) + 1).forEach(path => state.folderSelection.add(path));
+      } else if (event.ctrlKey || event.metaKey) {
+        state.folderSelection.has(folder.path) ? state.folderSelection.delete(folder.path) : state.folderSelection.add(folder.path);
+        state.folderAnchor = folder.path;
+      } else {
+        state.folderSelection = new Set([folder.path]); state.folderAnchor = folder.path; void browse(folder.path);
+      }
+      paintFolderSelection();
+    });
     bindFolderMenu(row, folder.path);
     expand.addEventListener("click", async () => {
       const open = expand.getAttribute("aria-expanded") === "true";
@@ -466,6 +483,15 @@
     const result = await api("/api/library/pins"); state.pins = result.pinned;
     $("folders").replaceChildren(...state.pins.map((pin) => folderRow(pin))); paintGrid();
   }
+  function paintFolderSelection() {
+    for (const row of $("folders").querySelectorAll(".library-folder-row")) {
+      row.setAttribute("aria-selected", String(state.folderSelection.has(row.dataset.path)));
+    }
+  }
+  async function requestCheck(paths) {
+    await api("/api/library/checks", { paths }); await activity.refresh();
+  }
+  $("check-photos").addEventListener("click", () => { if (state.path) void requestCheck([state.path]).catch(error => status(error.message)); });
   function bindFolderMenu(element, path) {
     element.addEventListener("contextmenu", event => showFolderMenu(event, path));
     element.addEventListener("keydown", event => {
@@ -474,12 +500,14 @@
   }
   function showFolderMenu(event, path = "") {
     const key = value => /^[a-z]:|^\\\\/i.test(value) ? value.toLowerCase() : value;
+    if (path && !state.folderSelection.has(path)) { state.folderSelection = new Set([path]); paintFolderSelection(); }
     const pinned = state.pins.find(pin => key(pin.path) === key(path));
     const actions = path ? [{ label: pinned ? "Unpin folder" : "Pin folder", run: async () => {
       await api(pinned ? "/api/library/pins/remove" : "/api/library/pins", pinned ? { path: pinned.path } : { paths: [path] });
       await refreshPins();
       status(pinned ? "Folder unpinned. Photos stay where they are." : "Folder pinned.");
     }}] : [{ label: "Add folder…", run: openPicker }];
+    if (path && !state.picker) actions.unshift({ label: "Check for new photos", run: () => requestCheck([...state.folderSelection]) }, { separator: true });
     showMenu(event, actions, { label: "Folder actions", anchor: event.target.closest("button") || $("add-folder"),
       onError: error => { if (state.picker) $("picker-status").textContent = error.message; else status(error.message); } });
   }
@@ -608,8 +636,48 @@
     if (before !== next.passes) void albums.refresh().catch(error => status(error.message));
   }
   const activity = HDRLibraryActivity.create({ button: $("index-status"), panel: $("library-activity"), api, status,
-    onHealth: next => showIndexing(next.index) });
+    onHealth: next => { showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
   $("library-undo").addEventListener("click", () => { void culling.undo(); });
+  let checkEvent = 0, refreshingCheck = false;
+  const checkClient = crypto.randomUUID();
+  async function refreshCheckedFolders(checks) {
+    if (!checks || refreshingCheck || state.reading) return;
+    const events = checks.events.filter(event => event.id > checkEvent);
+    if (!events.length) return;
+    refreshingCheck = true;
+    const controller = state.scan, place = state.path, collection = state.collection;
+    try {
+      const changed = events.some(event => event.changed);
+      if (changed) { void albums.refresh().catch(error => status(error.message)); void tagWindow.refresh().catch(error => status(error.message)); }
+      if (changed && (collection || events.some(event => event.path === place || place.startsWith(event.path + "\\") || event.path.startsWith(place + "\\")))) {
+        const result = collection ? await api("/api/library/collection", { ...collection, cached: true }, controller?.signal)
+          : await api("/api/library/view", { path: place }, controller?.signal);
+        if (state.scan !== controller) return;
+        if (result.photos) {
+          const leadPhoto = selected(), lead = leadPhoto?.path, oldIndex = state.index;
+          const top = grid.scrollTop, left = film.scrollLeft;
+          state.allPhotos = result.photos;
+          if (!result.photos.some(photo => photo.path === lead)) {
+            const sorted = HDRLibraryQuery.apply(result.photos, state.sort, state.descending, state.filters);
+            const neighbour = sorted[Math.min(Math.max(0, oldIndex), sorted.length - 1)];
+            if (neighbour) { state.photos = result.photos; state.index = result.photos.indexOf(neighbour); state.selection.add(neighbour.path); }
+          }
+          applyQuery(); grid.scrollTop = top; film.scrollLeft = left; paintGrid(); paintFilm();
+          if (state.view === "single" && (selected()?.path !== lead || selected()?.bytes !== leadPhoto?.bytes || selected()?.mtime_ns !== leadPhoto?.mtime_ns)) showSingle();
+        }
+        for (const expand of $("folders").querySelectorAll('.expand-folder[aria-expanded="true"]')) {
+          const row = expand.parentElement, children = row.nextElementSibling;
+          if (!row.isConnected) continue;
+          const result = await api("/api/library/tree", { path: row.dataset.path }, controller?.signal);
+          const existing = new Map([...children.children].map(wrapper => [wrapper.firstElementChild.dataset.path, wrapper]));
+          children.replaceChildren(...result.children.map(folder => existing.get(folder.path) || folderRow(folder, Math.round(parseFloat(row.style.paddingLeft) / 14) + 1)));
+        }
+      }
+      checkEvent = events.at(-1).id;
+      status(events.map(event => event.message).join(" · "));
+    } catch (error) { if (!aborted(error)) status(error.message); }
+    finally { refreshingCheck = false; }
+  }
   let writerEvent = 0;
   async function pollSettings() {
     if (state.active && !document.hidden) {
@@ -637,7 +705,7 @@
   }
   void pollSettings();
   async function pollIndexing() {
-    if (state.active && !document.hidden) { try { await activity.refresh(); } catch (error) { console.debug("Library index:", error.message); } }
+    if (state.active && !document.hidden) { try { await api("/api/library/checks", { client: checkClient, visible: state.path }); await activity.refresh(); } catch (error) { console.debug("Library index:", error.message); } }
     setTimeout(pollIndexing, 1000);
   }
   $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintGrid(); });

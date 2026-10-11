@@ -26,3 +26,14 @@ test("retrying indexing and conflict copies remain visible in Activity", () => {
   health.helper.recovering = true;
   assert.equal(summary(health), "Activity · Needs attention");
 });
+
+test("requested folder checks show Grade wait while timed empty checks stay quiet", () => {
+  const health = rest(); health.index.checks = { running: { requested: false, path: "Intake" }, requested: [] };
+  assert.equal(summary(health), "Activity");
+  health.index.checks.running.requested = true;
+  assert.equal(summary(health), "Checking for new photos · Intake");
+  health.index.checkWaiting = true;
+  assert.equal(summary(health), "Checking folders waits while Grade is busy");
+  health.index.checks.folders = [{ failure: "drive unplugged" }];
+  assert.ok(summary(health).endsWith("Needs attention: 1"));
+});
