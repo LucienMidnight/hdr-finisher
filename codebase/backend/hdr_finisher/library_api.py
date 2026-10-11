@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import os
 from concurrent.futures import CancelledError
 from typing import Literal
@@ -43,8 +44,11 @@ class MetadataRequest(BaseModel):
     paths: list[str] = Field(max_length=32)
 
 
-class MarksRequest(BaseModel):
+class PathsRequest(BaseModel):
     paths: list[str]
+
+
+class MarksRequest(PathsRequest):
     change: MarkChange
 
 
@@ -88,10 +92,27 @@ class PreferencesRequest(BaseModel):
 
 
 def create_library_router(worker, browser):
-    router = APIRouter(prefix="/api/library")
     cache = LibraryPictureCache(browser.root)
     marks = LibraryMarks(browser.root)
     index = LibraryIndex(marks, browser, worker)
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        await run_in_threadpool(marks.writer.start, lambda: worker.status()["paused"])
+        try:
+            yield
+        finally:
+            await run_in_threadpool(marks.writer.close)
+
+    router = APIRouter(prefix="/api/library", lifespan=lifespan)
+
+    @router.post("/settings-status")
+    def settings_status(request: PathsRequest):
+        return marks.writer.status(request.paths)
+
+    @router.get("/settings-status")
+    def settings_summary():
+        return marks.writer.status()
 
     def command(operation, *arguments):
         try:

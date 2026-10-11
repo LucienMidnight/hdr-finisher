@@ -30,7 +30,7 @@
     const fact = reader(photo), waiting = pending(photo);
     const captured = photo.capture_time ? when(photo.capture_time) : waiting ? "Reading…" : NONE;
     const separator = Math.max(photo.path.lastIndexOf("\\"), photo.path.lastIndexOf("/"));
-    const settings = photo.storage === "sidecar" ? "Beside the photo" : photo.storage === "database" ? "Kept in the library only; this folder cannot be written" : "None yet";
+    const settings = photo.storage === "sidecar" ? "Beside the photo" : photo.storage === "database" ? (photo.write_reason ? `Cannot be written: ${{ locked: "settings file in use", disk_full: "drive full", unwritable: "folder cannot be written", offline: "folder not connected", unreadable: "settings file cannot be read", io: "system could not write the file" }[photo.write_reason] || "writing failed"}; marks are safe in the library` : "Waiting to be written; marks are safe in the library") : "None yet";
     const bias = photo.exposure_bias == null ? (waiting ? "Reading…" : NONE) : `${photo.exposure_bias > 0 ? "+" : ""}${Number(photo.exposure_bias.toFixed(2))} EV`;
     const place = photo.latitude == null ? (waiting ? "Reading…" : NONE) : `${photo.latitude.toFixed(5)}, ${photo.longitude.toFixed(5)}`;
     return [

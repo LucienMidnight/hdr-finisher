@@ -16,7 +16,7 @@
         for (const photo of options.photos()) { const row = byPath.get(photo.path); if (row) Object.assign(photo, row); }
         undoAvailable = result.undo_available;
         options.updated(result);
-        options.status(result.warnings[0] || (result.photos.length ? `${result.photos.length.toLocaleString()} photos saved` : "No marks changed."));
+        options.status(result.warnings[0] || (result.photos.length ? `${result.photos.length.toLocaleString()} photos saved in the library; settings files catch up in the background` : "No marks changed."));
         return result;
       });
       commands = task.catch(error => { if (!strict) options.status(error.message); });
@@ -115,7 +115,7 @@
       });
       section.append(input, suggestions);
       const databaseOnly = list.filter(photo => photo.storage === "database").length;
-      if (databaseOnly) { const note = document.createElement("p"); note.className = "library-storage-warning"; note.textContent = `${databaseOnly} photos: marks are kept only in the library because their settings files cannot be written. They will not travel with the photos.`; section.append(note); }
+      if (databaseOnly) { const note = document.createElement("p"); note.className = "library-storage-warning"; note.textContent = `${databaseOnly} photos: settings files are waiting to be written. Marks are safe in the library.`; section.append(note); }
       const undo = document.createElement("button"); undo.type = "button"; undo.className = "text-button"; undo.textContent = "Undo last mark · Ctrl+Z"; undo.disabled = !undoAvailable;
       undo.addEventListener("click", () => enqueue("/api/library/undo", {})); section.append(undo); root.append(section);
     }

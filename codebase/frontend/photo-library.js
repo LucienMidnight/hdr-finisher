@@ -612,6 +612,32 @@
     // Albums and tags found in folders never visited appear when a pass ends.
     if (before !== next.passes) void albums.refresh().catch(() => {});
   }
+  let writerEvent = 0;
+  async function pollSettings() {
+    if (state.active && !document.hidden) {
+      try {
+        const paths = state.allPhotos.filter(photo => photo.storage === "database").map(photo => photo.path);
+        const result = await api("/api/library/settings-status", { paths });
+        const byPath = new Map(result.photos.map(photo => [photo.path, photo]));
+        let changed = false;
+        for (const photo of state.allPhotos) {
+          const row = byPath.get(photo.path);
+          if (row && JSON.stringify(row.marks) === JSON.stringify(photo.marks) && JSON.stringify(row.albums) === JSON.stringify(photo.albums)
+              && (row.storage !== photo.storage || row.write_reason !== photo.write_reason)) {
+            photo.storage = row.storage; photo.write_reason = row.write_reason || ""; changed = true;
+          }
+        }
+        if (changed) updateDetails();
+        const events = result.events.filter(event => event.id > writerEvent);
+        if (events.length) {
+          writerEvent = events.at(-1).id;
+          status(events.map(event => event.message).join(" "));
+        }
+      } catch (error) { console.debug("Library settings:", error.message); }
+    }
+    setTimeout(pollSettings, 1000);
+  }
+  void pollSettings();
   async function pollIndexing() {
     if (state.active && !document.hidden) { try { showIndexing(await api("/api/library/index")); } catch (error) { console.debug("Library index:", error.message); } }
     setTimeout(pollIndexing, state.indexing?.state === "indexing" ? 1500 : 5000);

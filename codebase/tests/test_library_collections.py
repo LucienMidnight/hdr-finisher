@@ -30,7 +30,9 @@ def tagged(tmp_path):
     sources = [photo(tmp_path, f"{name}.png") for name in ("one", "two", "three")]
     store = LibraryMarks(tmp_path / "app")
     store.change(sources[:2], MarkChange(add_tag="Holiday"))
+    store.writer.drain()  # Files catch up separately from the command.
     store.change(sources[1:], MarkChange(add_tag="Beach"))
+    store.writer.drain()  # Files catch up separately from the command.
     return store, sources
 
 
@@ -41,11 +43,13 @@ def counts(store):
 def test_tag_rename_reaches_every_photo_and_undoes_as_one_step(tmp_path):
     store, sources = tagged(tmp_path)
     result = store.tag_rename("holiday", "Trips")
+    store.writer.drain()  # Files catch up separately from the command.
     assert result["changed"] == 2 and result["offline"] == 0
     assert document(sources[0])["marks"]["tags"] == ["Trips"]
     assert document(sources[1])["marks"]["tags"] == ["Beach", "Trips"]
     assert counts(store) == {"Trips": 2, "Beach": 2}
     store.undo()
+    store.writer.drain()  # Files catch up separately from the command.
     assert document(sources[0])["marks"]["tags"] == ["Holiday"]
     assert counts(store) == {"Holiday": 2, "Beach": 2}
     assert all(source.read_bytes() == b"original photo bytes" for source in sources)
@@ -55,29 +59,38 @@ def test_rename_to_existing_tag_stops_until_merge_is_confirmed(tmp_path):
     store, sources = tagged(tmp_path)
     with pytest.raises(NameTaken):
         store.tag_rename("Holiday", "beach")
+        store.writer.drain()  # Files catch up separately from the command.
     assert counts(store) == {"Holiday": 2, "Beach": 2}
     store.tag_rename("Holiday", "beach", merge=True)
+    store.writer.drain()  # Files catch up separately from the command.
     assert counts(store) == {"Beach": 3}  # The existing spelling wins.
     assert document(sources[0])["marks"]["tags"] == ["Beach"]
     assert document(sources[1])["marks"]["tags"] == ["Beach"]
     store.tag_rename("beach", "Seaside")
+    store.writer.drain()  # Files catch up separately from the command.
     assert counts(store) == {"Seaside": 3}
 
 
 def test_merge_remove_and_new_tag(tmp_path):
     store, sources = tagged(tmp_path)
     store.tag_create("Portfolio")
+    store.writer.drain()  # Files catch up separately from the command.
     assert counts(store)["Portfolio"] == 0
     with pytest.raises(ValueError):
         store.tag_create("portfolio")
+        store.writer.drain()  # Files catch up separately from the command.
     store.tag_merge(["Holiday", "Beach"], "Beach")
+    store.writer.drain()  # Files catch up separately from the command.
     assert counts(store) == {"Beach": 3, "Portfolio": 0}
     store.tag_remove(["Beach", "Portfolio"])
+    store.writer.drain()  # Files catch up separately from the command.
     assert counts(store) == {}
     assert all(document(source)["marks"]["tags"] == [] for source in sources)
     store.undo()
+    store.writer.drain()  # Files catch up separately from the command.
     assert counts(store) == {"Beach": 3, "Portfolio": 0}
     store.undo()
+    store.writer.drain()  # Files catch up separately from the command.
     assert counts(store) == {"Holiday": 2, "Beach": 2, "Portfolio": 0}
 
 
@@ -85,6 +98,7 @@ def test_tag_command_leaves_unconnected_photos_and_says_so(tmp_path):
     store, sources = tagged(tmp_path)
     sources[0].rename(tmp_path / "moved-away.png")  # Its drive is "unplugged".
     result = store.tag_rename("Holiday", "Trips")
+    store.writer.drain()  # Files catch up separately from the command.
     assert result["changed"] == 1 and result["offline"] == 1
     assert "not connected" in result["warnings"][-1]
     assert counts(store) == {"Holiday": 1, "Trips": 1, "Beach": 2}
@@ -96,6 +110,7 @@ def test_unreadable_settings_file_stops_a_tag_command_before_any_write(tmp_path)
     broken.write_text("{ not json")
     with pytest.raises(ValueError, match="left untouched"):
         store.tag_remove(["Holiday"])
+        store.writer.drain()  # Files catch up separately from the command.
     assert document(sources[0])["marks"]["tags"] == ["Holiday"]
     assert broken.read_text() == "{ not json"
 
@@ -104,18 +119,24 @@ def test_albums_are_written_to_settings_files_and_rebuilt_from_them(tmp_path):
     sources = [photo(tmp_path, f"{name}.png") for name in ("one", "two", "three")]
     store = LibraryMarks(tmp_path / "app")
     assert store.album_create("Empty")["changed"] == 0
+    store.writer.drain()  # Files catch up separately from the command.
     assert store.album_create("Best of 2026", sources[:2])["changed"] == 2
+    store.writer.drain()  # Files catch up separately from the command.
     with pytest.raises(ValueError, match="already exists"):
         store.album_create("best OF 2026")
+        store.writer.drain()  # Files catch up separately from the command.
     assert store.albums() == [{"name": "Best of 2026", "count": 2}, {"name": "Empty", "count": 0}]
     saved = document(sources[0])
     assert saved["albums"] == ["Best of 2026"] and saved["marks"]["rating"] == 0
     assert store.album_change("Best of 2026", sources[1:], True)["changed"] == 1
+    store.writer.drain()  # Files catch up separately from the command.
     assert store.album_change("Best of 2026", sources[:1], False)["changed"] == 1
+    store.writer.drain()  # Files catch up separately from the command.
     assert document(sources[0])["albums"] == []
     assert sorted(store.album_paths("best of 2026")) == sorted(str(source) for source in sources[1:])
     # Marks and album membership do not disturb each other.
     store.change(sources[1:2], MarkChange(rating=4))
+    store.writer.drain()  # Files catch up separately from the command.
     assert document(sources[1]) | {} == {**document(sources[1]), "albums": ["Best of 2026"]}
     assert store.read(sources[1:2])["photos"][0]["albums"] == ["Best of 2026"]
     # A lost database comes back from the settings files.
@@ -130,29 +151,38 @@ def test_album_rename_delete_and_undo(tmp_path):
     sources = [photo(tmp_path, f"{name}.png") for name in ("one", "two")]
     store = LibraryMarks(tmp_path / "app")
     store.album_create("Family", sources)
+    store.writer.drain()  # Files catch up separately from the command.
     store.album_create("Print")
+    store.writer.drain()  # Files catch up separately from the command.
     with pytest.raises(ValueError, match="Nothing was renamed"):
         store.album_rename("Family", "print")
+        store.writer.drain()  # Files catch up separately from the command.
     store.album_rename("Family", "Family 2026")
+    store.writer.drain()  # Files catch up separately from the command.
     assert document(sources[0])["albums"] == ["Family 2026"]
     assert [album["name"] for album in store.albums()] == ["Family 2026", "Print"]
     store.album_delete("Family 2026")
+    store.writer.drain()  # Files catch up separately from the command.
     assert store.albums() == [{"name": "Print", "count": 0}]
     assert document(sources[1])["albums"] == []
     store.undo()
+    store.writer.drain()  # Files catch up separately from the command.
     assert store.albums() == [{"name": "Family 2026", "count": 2}, {"name": "Print", "count": 0}]
     store.undo()
+    store.writer.drain()  # Files catch up separately from the command.
     assert document(sources[0])["albums"] == ["Family"]
     with pytest.raises(ValueError, match="no longer"):
         store.album_change("Missing", sources, True)
+        store.writer.drain()  # Files catch up separately from the command.
 
 
 def test_album_in_unwritable_folder_stays_in_the_library(tmp_path, monkeypatch):
     source = photo(tmp_path)
     store = LibraryMarks(tmp_path / "app")
-    monkeypatch.setattr(store, "_write_sidecar", lambda *_: (_ for _ in ()).throw(PermissionError("read-only")))
+    monkeypatch.setattr(store, "_write_sidecar", lambda *_, **kwargs: (_ for _ in ()).throw(PermissionError("read-only")))
     result = store.album_create("Card", [source])
-    assert result["photos"][0]["storage"] == "database" and result["warnings"]
+    store.writer.drain()  # Files catch up separately from the command.
+    assert result["photos"][0]["storage"] == "database" and store.writer.status()["events"]
     assert LibraryMarks(tmp_path / "app").read([source])["photos"][0]["albums"] == ["Card"]
 
 
@@ -217,7 +247,9 @@ def test_background_indexing_reaches_a_pinned_folder_never_visited(tmp_path):
     Image.new("RGB", (16, 8)).save(folder / "plain.png")
     marked = LibraryMarks(tmp_path / "elsewhere")
     marked.change([folder / "plain.png"], MarkChange(rating=5, add_tag="Birds"))
+    marked.writer.drain()  # Files catch up separately from the command.
     marked.album_create("Portfolio", [folder / "plain.png"])
+    marked.writer.drain()  # Files catch up separately from the command.
     originals = {path.name: path.read_bytes() for path in folder.iterdir()}
 
     app_data = tmp_path / "app"

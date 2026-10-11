@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from .desktop_security import SOURCE_EXTENSIONS
 from .library_pictures import SIDECAR_SUFFIX
+from .library_settings_writer import LibrarySettingsWriter
 
 
 def clean_names(values, kind="Tags"):
@@ -66,11 +67,18 @@ class LibraryMarks:
     def __init__(self, root: Path):
         self.database = Path(root) / "library.sqlite3"
         self._lock = RLock()
+        self._schema_ready = False
         self._undo = deque(maxlen=100)
+        self.writer = LibrarySettingsWriter(self)
 
     def _connect(self):
-        self.database.parent.mkdir(parents=True, exist_ok=True)
+        existed = self.database.exists()
+        if not self._schema_ready or not existed:
+            self.database.parent.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(self.database)
+        if self._schema_ready and existed:
+            return db
+        db.execute("BEGIN")
         db.execute("CREATE TABLE IF NOT EXISTS photos (path TEXT PRIMARY KEY, photo_id TEXT NOT NULL, marks TEXT NOT NULL, pending INTEGER NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS tags (tag TEXT PRIMARY KEY COLLATE NOCASE)")
         db.execute("CREATE TABLE IF NOT EXISTS photo_tags (path TEXT NOT NULL, tag TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY(path, tag))")
@@ -80,6 +88,9 @@ class LibraryMarks:
         db.execute("CREATE INDEX IF NOT EXISTS album_photos_path ON album_photos (path)")
         # File facts found by folder visits and background indexing (library_index).
         db.execute("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, bytes INTEGER NOT NULL, mtime_ns INTEGER NOT NULL, facts TEXT)")
+        db.execute("CREATE TABLE IF NOT EXISTS settings_writes (path TEXT PRIMARY KEY, revision TEXT NOT NULL, fingerprint TEXT NOT NULL, reason TEXT NOT NULL, detail TEXT NOT NULL, next_try REAL NOT NULL, attempts INTEGER NOT NULL)")
+        db.commit()
+        self._schema_ready = True
         return db
 
     @staticmethod
@@ -111,6 +122,20 @@ class LibraryMarks:
         self._albums(document, path)
         return document
 
+    def _documents(self, paths):
+        # One directory read identifies absent settings without two failed file
+        # opens per photo. Present files still receive full validation.
+        folders = {}
+        for value in paths:
+            folder = Path(value).parent
+            if folder not in folders:
+                try:
+                    folders[folder] = {entry.name for entry in folder.iterdir()}
+                except OSError:
+                    folders[folder] = None  # Individual checks retain their errors.
+        return [self._document(Path(value)) if folders[Path(value).parent] is None
+            or self._sidecar(Path(value)).name in folders[Path(value).parent] else None for value in paths]
+
     @staticmethod
     def _albums(document, path):
         try:
@@ -135,6 +160,12 @@ class LibraryMarks:
                 for album, path in db.execute(f"SELECT album, path FROM album_photos WHERE path IN ({marker})", chunk):
                     if path in rows:
                         rows[path]["albums"].append(album)
+            for start in range(0, len(paths), 800):
+                chunk = paths[start:start + 800]
+                marker = ",".join("?" for _ in chunk)
+                for path, reason in db.execute(f"SELECT path, reason FROM settings_writes WHERE path IN ({marker})", chunk):
+                    if path in rows and rows[path]["storage"] == "database":
+                        rows[path]["write_reason"] = reason
             for row in rows.values():
                 row["albums"].sort(key=str.casefold)
             return rows
@@ -153,17 +184,17 @@ class LibraryMarks:
             db.execute("INSERT OR IGNORE INTO albums VALUES (?)", (album,))
             db.execute("INSERT OR IGNORE INTO album_photos VALUES (?, ?)", (album, row["path"]))
 
-    def read(self, values):
+    def read(self, values, *, documents=None, canonical=False):
         """Rebuild visited sidecar records; unmarked browsing creates no files."""
         with self._lock:
-            paths = [str(Path(value).resolve()) for value in values]
+            paths = [str(value) for value in values] if canonical else [str(Path(value).resolve()) for value in values]
             cached = self._rows(paths)
             photos, warnings, rebuilt, removed = [], [], [], []
-            for value in paths:
+            for position, value in enumerate(paths):
                 path, row = Path(value), cached.get(value)
                 invalid = False
                 try:
-                    document = self._document(path)
+                    document = documents[position] if documents is not None else self._document(path)
                 except ValueError as error:
                     document = None
                     invalid = True
@@ -193,43 +224,52 @@ class LibraryMarks:
                     db.close()
             return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo)}
 
-    def _write_sidecar(self, path, document):
+    def _write_sidecar(self, path, document, *, revision=None, fingerprint=None, owner_id=None):
         destination, temporary = self._sidecar(path), None
         try:
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination.name}.", suffix=".tmp", dir=path.parent, delete=False) as stream:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".hdrf-settings.{destination.name}.{self.writer.owner(owner_id or document['photo_id'])}.", suffix=".tmp", dir=path.parent, delete=False) as stream:
                 temporary = Path(stream.name)
                 json.dump(document, stream, ensure_ascii=False, indent=2)
                 stream.write("\n")
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temporary, destination)
+            # Slow preparation runs without the marks lock. Recheck immediately
+            # before replacement: Undo or a newer command supersedes this file.
+            with self._lock:
+                if revision is not None and not self.writer.is_current(str(path), revision):
+                    return False
+                if fingerprint is not None and self.writer.fingerprint(self._document(path)) != fingerprint:
+                    return False  # External edit during preparation; reread next pass.
+                os.replace(temporary, destination)
+                if revision is not None:
+                    self.writer.acknowledge(str(path))
+            return True
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def _save(self, rows, documents):
-        # Commit every new mark to the index first. Interrupted/failed sidecar
-        # writes remain pending, so a stale sidecar cannot discard the marks.
+    def _save(self, rows, documents, finalize=None):
+        # The pending flag is the durable queue; there is no command journal.
         db = self._connect()
         try:
             with db:
-                for row in rows:
+                for row, document in zip(rows, documents):
+                    path = Path(row["path"])
+                    if row["storage"] == "none" and not self._sidecar(path).exists():
+                        # Undo before the first write must not create an empty file.
+                        for table in ("photos", "photo_tags", "album_photos", "settings_writes"):
+                            db.execute(f"DELETE FROM {table} WHERE path = ?", (row["path"],))
+                        row["photo_id"] = None
+                        row.pop("write_reason", None)
+                        continue
                     row["storage"] = "database"
+                    row["write_reason"] = ""
                     self._index(db, row)
-            warnings = []
-            for row, document in zip(rows, documents):
-                document["marks"] = deepcopy(row["marks"])
-                if row["albums"] or "albums" in document:
-                    document["albums"] = list(row["albums"])
-                try:
-                    self._write_sidecar(Path(row["path"]), document)
-                except OSError:
-                    warnings.append(f"{Path(row['path']).name}: marks are kept in the library because its settings file cannot be written. They will not travel with the photo.")
-                else:
-                    row["storage"] = "sidecar"
-                    with db:
-                        self._index(db, row)
-            return warnings
+                    self.writer.enqueue(db, row, document)
+                if finalize is not None:
+                    finalize(db)
+            self.writer.wake()
+            return []
         finally:
             db.close()
 
@@ -237,10 +277,10 @@ class LibraryMarks:
     def _new_document(row):
         return {"format": "HDR Finisher Photo", "schema_version": 1, "photo_id": row["photo_id"], "source": {"filename": Path(row["path"]).name}, "contains_source_pixels": False}
 
-    def _apply(self, paths, mutate):
+    def _apply(self, paths, mutate, finalize=None):
         """Validate every settings file, then save only the photos mutate() changes."""
-        documents = [self._document(Path(value)) for value in paths]  # Validate all before writing any.
-        before = self.read(paths)["photos"]
+        documents = self._documents(paths)  # Validate all before accepting any change.
+        before = self.read(paths, documents=documents, canonical=True)["photos"]
         after, changed_documents, originals = [], [], []
         for old, document in zip(before, documents):
             row = deepcopy(old)
@@ -249,8 +289,9 @@ class LibraryMarks:
                 continue
             row["albums"].sort(key=str.casefold)
             row["photo_id"] = row["photo_id"] or str(uuid4())
-            after.append(row); changed_documents.append(document or self._new_document(row)); originals.append(deepcopy(old))
-        warnings = self._save(after, changed_documents) if after else []
+            row["storage"] = "database"
+            after.append(row); changed_documents.append(document); originals.append(deepcopy(old))
+        warnings = self._save(after, changed_documents, finalize) if after or finalize else []
         return after, originals, warnings
 
     def _result(self, photos, warnings, **extra):
@@ -259,8 +300,7 @@ class LibraryMarks:
     def change(self, values, change: MarkChange):
         with self._lock:
             paths = list(dict.fromkeys(str(self._path(value)) for value in values))
-            before = self.read(paths)["photos"]
-            clear_label = change.toggle_label and all(row["marks"]["label"] == change.label for row in before)
+            clear_label = change.toggle_label and all(row["marks"]["label"] == change.label for row in self.read(paths, canonical=True)["photos"])
 
             def mutate(row):
                 marks = row["marks"]
@@ -284,25 +324,30 @@ class LibraryMarks:
                 return self._result([], [])
             entry = self._undo[-1]
             before = deepcopy(entry["rows"])
-            paths = [self._path(row["path"]) for row in before]
-            documents = [self._document(path) for path in paths]
-            current = self.read([str(path) for path in paths])["photos"]
-            for row, now in zip(before, current):
-                row["photo_id"] = now["photo_id"] or str(uuid4())
-            documents = [document or self._new_document(row) for row, document in zip(before, documents)]
-            warnings = self._save(before, documents) if before else []
-            if "tags" in entry:
-                # Tag and album commands also restore the two name lists.
-                db = self._connect()
+            restored, paths, skipped = [], [], 0
+            for row in before:
                 try:
-                    with db:
-                        for table in ("tags", "albums"):
-                            db.execute(f"DELETE FROM {table}")
-                            db.executemany(f"INSERT OR IGNORE INTO {table} VALUES (?)", [(name,) for name in entry[table]])
-                finally:
-                    db.close()
+                    path = self._path(row["path"])
+                except (FileNotFoundError, OSError):
+                    skipped += 1
+                    continue
+                paths.append(str(path))
+                restored.append(row)
+            documents = self._documents(paths)
+            current = self._rows(paths)
+            for row in restored:
+                row["photo_id"] = current.get(row["path"], {}).get("photo_id") or str(uuid4())
+            def finalize(db):
+                if "tags" in entry:
+                    for table in ("tags", "albums"):
+                        db.execute(f"DELETE FROM {table}")
+                        db.executemany(f"INSERT OR IGNORE INTO {table} VALUES (?)", [(name,) for name in entry[table]])
+            warnings = self._save(restored, documents, finalize)
+            if skipped:
+                warnings.append(f"Undid the change on {len(restored)} photos; {skipped} photos could no longer be found and were skipped.")
+            before = restored
             self._undo.pop()
-            return self._result(before, warnings)
+            return self._result(before, warnings, skipped=skipped)
 
     def tags(self, query="", limit=20):
         with self._lock:
@@ -357,17 +402,13 @@ class LibraryMarks:
                 kept.append(new)
             names[:] = kept
 
-        after, originals, warnings = self._apply(paths, mutate)
-        db = self._connect()
-        try:
-            with db:
-                for old in olds:
-                    db.execute(f"DELETE FROM {list_table} WHERE {list_column} = ? AND NOT EXISTS (SELECT 1 FROM {table} WHERE {column} = ?)", (old, old))
-                if new is not None:
-                    db.execute(f"INSERT OR IGNORE INTO {list_table} VALUES (?)", (new,))
-                    db.execute(f"UPDATE {list_table} SET {list_column} = ? WHERE {list_column} = ?", (new, new))  # A change of capitals only.
-        finally:
-            db.close()
+        def finalize(db):
+            for old in olds:
+                db.execute(f"DELETE FROM {list_table} WHERE {list_column} = ? AND NOT EXISTS (SELECT 1 FROM {table} WHERE {column} = ?)", (old, old))
+            if new is not None:
+                db.execute(f"INSERT OR IGNORE INTO {list_table} VALUES (?)", (new,))
+                db.execute(f"UPDATE {list_table} SET {list_column} = ? WHERE {list_column} = ?", (new, new))
+        after, originals, warnings = self._apply(paths, mutate, finalize)
         if offline:
             warnings.append(f"{offline} photos on folders that are not connected were not changed.")
         self._undo.append({"rows": originals, **lists})

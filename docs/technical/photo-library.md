@@ -5,10 +5,9 @@ picks, colour labels, tags and albums, how its background process works, and
 why it was built this way. It is written so that a problem can be traced to a
 specific file, rule or message.
 
-- **Checked against the code on October 11, 2026** (commit `1906506`).
-- Sections 1 to 10 describe what is built. Section 11 lists the known gaps.
-  Section 12 describes a design agreed on October 11 that is **not built
-  yet**. Do not read section 12 as current behaviour.
+- **Updated October 11, 2026: background-writer Stage A built.**
+- Sections 1 to 10 describe what is built. Section 11 lists the remaining
+  gaps. Section 12 records the Activity and diagnostics work for Stage B.
 - The Library is still being built, and its controls change often. A
   how-to-use guide will be written when they settle. Product intent lives in
   the [Photo Library PRD](../product/Photo_Library_PRD_2026-10-09.md).
@@ -166,6 +165,7 @@ open a copy, not the live file.
 | `photo_tags` | Photo and tag pair | `path`, `tag` |
 | `albums` | Album name | `name` |
 | `album_photos` | Album and photo pair | `album`, `path` |
+| `settings_writes` | Photo waiting for a settings write | `path`, current-state `revision`, preflight `fingerprint`, failure `reason` and `detail`, `next_try`, `attempts` |
 | `files` | Photo file found in a visited or indexed folder | `path`, `bytes`, `mtime_ns`, `facts` (camera details as JSON text, empty until read) |
 
 Photos are identified by their **full path**. This has consequences:
@@ -182,9 +182,13 @@ Photos are identified by their **full path**. This has consequences:
 
 `pending = 1` means: the database holds marks for this photo that have
 **not** been written to its settings file. In the code and in messages this
-is called "kept in the library". It is set for every photo in a change
-before any file is written, and cleared for each photo as its file is
-written successfully.
+is shown as "waiting to be written", or "cannot be written" with the
+reason. It is set for every photo in a change before any file is written,
+and cleared only after the current marks have replaced the settings file.
+It is the durable work list: a backend thread resumes it at startup and
+retries failures automatically. `settings_writes` holds the current state
+of that work, not commands or history. Existing database rows, including
+unwritten marks, are kept; the new table is added without replacing them.
 
 ### What is lost if the database is deleted
 
@@ -235,20 +239,42 @@ labels, tags and album membership.
 4. **Save to the database, all at once.** Every changed photo is saved in
    one step and flagged pending. This step either happens completely or not
    at all, even if the app is killed in the middle.
-5. **Write the settings files, one at a time.** For each photo:
-   - a temporary file named `.<photo name>.hdrf.<random>.tmp` is written in
-     the same folder and flushed to the disk;
-   - it then replaces the real `.hdrf` file in a single step, so a settings
-     file is never left half-written;
-   - the photo's pending flag is cleared.
+5. **Record one undo step and return.** The grid, Details, tags and albums
+   show the database change immediately. The command does not wait for files.
+6. **The backend writer brings files up to date**, one at a time:
+   - it reads the photo's current marks and albums, and rereads its settings
+     file so every other field is kept;
+   - it prepares and flushes a temporary file in the photo's folder, named
+     `.hdrf-settings.<photo name>.hdrf.<photo ID fingerprint>.<random>.tmp`;
+   - immediately before replacement, it checks that neither a newer mark
+     command nor an external file edit has superseded the work. Superseded
+     work is discarded and the latest state is read on the next pass;
+   - it replaces the real file atomically and clears pending only for that
+     same current state. Originals are never touched.
 
-   If a file cannot be written, the photo stays pending, a message is added
-   to the result, and the remaining photos carry on.
-6. **Record one undo step** for the whole command.
+Slow file preparation runs outside the lock used by library commands.
+Browsing, reading marks, further changes and Undo stay available. The writer
+waits between photos whenever Grade, import or export has paused the helper.
+Closing does not drain the queue or prompt; pending work resumes on startup.
+A completion notice reports how many photos from the last session finished.
 
-Only one command runs at a time. A second command, and anything that needs
-to read marks, waits until the first has finished all of step 5. On a large
-change the Library shows "Saving marks…" until then, with no progress count.
+### Writing failures and recovery
+
+| Case | Built handling |
+|---|---|
+| Brief file lock | Three short automatic retries, quietly; persistent locks are reported and retried later. |
+| Disk full | Writing pauses for that drive, with one message; other drives carry on. Retried after 15 seconds. |
+| Folder cannot be written | Reported once per folder, kept pending, automatically retried after 15 seconds. |
+| Folder missing or drive unplugged | Kept pending and retried; when it returns, settings are written and completion is reported. |
+| Photo missing but its folder is present | Its pending work and library entry are removed; the count is reported. |
+| Settings became unreadable | Left untouched, reported with photo names, marks kept safe; retried later. |
+| Settings changed elsewhere | Library marks and albums win, every other field is kept, and the event is reported and logged. |
+
+At startup, and when a previously missing folder becomes available, the
+writer cleans its own temporary settings files. New names identify even an
+incomplete file. Older temporary names are removed only if their document,
+source filename and photo ID prove they belong to a known library photo.
+Other temporary files and links are left untouched.
 
 ### Library-wide tag and album commands
 
@@ -276,15 +302,17 @@ every photo carrying the name and run the steps above.
 - The last **100** commands are kept.
 - Undo history is held in memory. **It is empty after the app restarts**,
   whether it was closed normally or not.
-- Undo puts back each photo's previous marks and albums through the same
-  steps as section 6, so it takes about as long as the original command.
-  For tag and album commands it also puts back the lists of tag and album
-  names.
-- If any photo in the step has gone missing, or one of its settings files
-  has become unreadable, **the whole undo is refused**, nothing changes, and
-  the step stays available to try again.
-- Undoing the first mark ever made on a photo leaves its settings file in
-  place with empty marks. The file is not deleted.
+- Undo puts back previous marks and albums in the database immediately,
+  as one transaction, together with any tag and album name-list restoration.
+  The writer then brings existing settings files up to date.
+- A newer command or Undo invalidates a prepared but unwritten file. Earlier
+  states do not each need to be written.
+- If some photos can no longer be found, the rest are undone and the skipped
+  count is reported. An unreadable settings file still stops the command
+  before changes are accepted, so it is never overwritten.
+- Undo before the first settings file was written leaves no empty file.
+  Once a settings file has been written, Undo keeps it with empty marks,
+  as before. Undo does not delete settings files.
 
 ---
 
@@ -355,8 +383,8 @@ The item at the right of the bottom bar reports the state:
 | Bottom bar text | Meaning |
 |---|---|
 | Library index up to date | No pass is running. |
-| Indexing <folder> · reading folders | Step 1 for that folder. |
-| Indexing <folder> · 1,240 of 5,000 | Step 3; the count is photos whose details are known. |
+| Indexing <folder> Ãƒâ€šÃ‚Â· reading folders | Step 1 for that folder. |
+| Indexing <folder> Ãƒâ€šÃ‚Â· 1,240 of 5,000 | Step 3; the count is photos whose details are known. |
 | Indexing waits while Grade is busy | The helper is paused by grading, import or export. |
 | Indexing paused | You paused it. It stays paused until you resume or choose Re-scan. |
 | Background indexing is off | Turned off in the same menu. Folders are still read when opened. |
@@ -388,8 +416,18 @@ lens name is missing for some cameras (PRD open decision 15).
 
 | Message | Meaning | What to do |
 |---|---|---|
-| "<photo>: marks are kept in the library because its settings file cannot be written. They will not travel with the photo." | The `.hdrf` file could not be written. The marks are safe in the database (pending). | Check that the folder can be written to and has free space, and that no sync or antivirus tool holds the file. Then change any mark on that photo; that is currently the only thing that tries again. |
-| Details: "Kept in the library only; this folder cannot be written" | The photo is pending. **This is also shown when a bulk change was interrupted**, where the folder is in fact writable (section 11). | As above. |
+| "N photos saved in the library; settings files catch up in the background" | A command returned; database marks are saved and files may still be pending. | Undo is available immediately. |
+| Details: "Waiting to be written; marks are safe in the library" | Pending, with no write failure. | Wait; the writer works automatically. |
+| Details: "Cannot be written: <reason>; marks are safe in the library" | Pending because of a lock, full drive, unwritable or missing folder, unreadable file, or another system error. | Correct the named cause; automatic retries continue. |
+| "N photos: settings files are waiting to be written. Marks are safe in the library." | Selection includes pending photos. | Check individual Settings lines for reasons. |
+| "Settings are waiting in <folder or drive>: <reason>. Marks are safe in the library; writing will retry automatically." | Grouped write failure. Reasons distinguish locks, full drives, unwritable folders, disconnected folders and system errors. | Correct the cause; no marks were lost. |
+| "Settings for <names> cannot be read and were left untouched. Marks are safe in the library." | Settings became unreadable after a command was accepted. | Repair the named file; automatic retries continue. |
+| "Settings changed elsewhere for N photos in <folder> (<names>). The library's marks were written; every other setting was kept." | A file changed between accepting marks and writing them. | Review the named files if needed. |
+| "Restored pending settings for N photos in <folder>. Earlier file changes could not be checked; the library's marks were written and every other setting was kept." | An existing pending row had no writer fingerprint. Its marks were retained and written. | None. |
+| "Finished writing settings for N photos from the last session." | Pending work resumed after restart and finished. | None. Shown once. |
+| "Finished writing settings for N photos in <folder>." | Writing succeeded after a failure or reconnection. | None. |
+| "Undid the change on N photos; M photos could no longer be found and were skipped." | Partial Undo when a photo is missing. | The available photos were restored. |
+| "N photos could no longer be found in <folder>; their library entries were removed." | A pending photo was deleted or moved outside the app while its folder remained present. | Reopen its new folder if it was moved. |
 | "Settings for <photo> cannot be read; they were left untouched." | The `.hdrf` file is not valid JSON, or could not be opened. | Open it in Notepad. Repair it, or rename it out of the way to start fresh. A command that includes this photo will stop until then. |
 | "Settings for <photo> have an unsupported format; they were left untouched." | `format` or `schema_version` is not what this version expects, usually a file from a newer version. | Use the newer version, or rename the file out of the way. |
 | "Settings for <photo> have no photo ID; they were left untouched." | `photo_id` is missing or empty. | Restore the file from a backup, or rename it out of the way. |
@@ -411,108 +449,53 @@ lens name is missing for some cameras (PRD open decision 15).
 
 ## 11. Known gaps (October 11, 2026)
 
-These are how the app behaves today. Section 12 is the agreed fix for the
-first five.
+Stage A closed interrupted writes, incorrect pending wording, delayed Undo,
+stray app temporary files, automatic retry and partial Undo. Remaining gaps:
 
-1. **An interrupted bulk change is left half-written, silently.** If the app
-   is closed or crashes during step 5 of section 6, the database has the
-   change on every photo and the remaining settings files still hold the old
-   marks. Inside the app everything looks complete. Nothing finishes the
-   remaining files; each is only written when that photo's marks are next
-   changed. Those photos would lose the change if the database were deleted.
-2. **Those photos are mislabelled** as "this folder cannot be written".
-3. **No progress and no cancel** for a large change. It cannot be undone
-   until it has finished.
-4. **A stray temporary file** (`.<photo name>.hdrf.<random>.tmp`) can be
-   left beside a photo if the app is killed at the wrong instant. It is
-   harmless and can be deleted; nothing cleans it up.
-5. **A failed write is never retried** on its own, including after a
-   read-only folder becomes writable or a drive is reconnected.
-6. **Undo does not survive a restart**, and is refused as a whole if one
-   photo is missing.
-7. **An old tag name can linger** after a rename when some of its photos
-   were not connected (section 6).
-8. **Marks cannot be changed on a photo whose drive is not connected.** The
-   PRD intends this to work.
-9. **Indexing can stop for the rest of the session.** After five failures
-   in a row to reach the helper, the indexer gives up and Re-scan does
-   nothing until the app is restarted.
-10. **Folders are not watched.** A change made outside the app is seen when
-    the folder is next opened or re-scanned.
-11. **A second settings file for one photo** (a sync conflict copy such as
-    `DSC02339.ARW (1).hdrf`) is ignored, not detected.
+1. Undo history is lost after restart (agreed, out of scope).
+2. Tag and album commands still skip unconnected photos, so old names linger.
+3. Marks cannot yet be changed on an unconnected photo (Stage C).
+4. The helper is not yet restarted automatically (Stage C).
+5. Indexing can still stop after five helper failures (Stage C).
+6. Folders are not watched (separate slice).
+7. A second settings file from a sync conflict is not yet detected (Stage C).
+8. Invalid marks in a settings file can still produce raw validation text
+   before a command is accepted (Stage C).
+9. There is no unified Activity list, Pause/Resume writer control, Try again
+   action or library-wide health command yet (Stage B). Existing indexing
+   text stays at the right of the bottom bar. Writer reports use the existing
+   Library message area; Details refreshes its state once a second.
 
----
+## 12. Reading writer diagnostics; remaining Activity work
 
-## 12. Agreed design, not built yet: files catch up in the background
+Search `logs/backend.log` for **`[library]`**. Stage A writes one JSON-detail
+line per grouped writer event, with folder/drive, count, up to three example
+paths, the system reason and what happened next.
 
-Agreed by Steve on October 11, 2026. Recorded here so the reasoning is kept
-with the behaviour it will replace.
-
-**The problem.** Section 6 makes every change wait for every file. That
-gives gaps 1 to 5 above, and it makes an accidental bulk change (five stars
-on 1,000 photos) impossible to stop.
-
-**The design.** Split library work into two kinds.
-
-*Mark changes* (ratings, picks, labels, tags, albums, renames):
-
-- The database changes at once, as now, and the command returns
-  immediately. The grid shows the result straight away.
-- Each changed photo is flagged "file needs writing". This is the existing
-  pending flag, used as a to-do list.
-- A background writer works through the flagged photos. It always writes
-  the photo's **current** marks, not the marks of a particular command.
-- **Undo is the cancel.** Ctrl+Z reverts the database at once. Files not
-  yet written are never written with the unwanted marks; files already
-  written are put back by the same writer.
-- Because the to-do list is in the database, it survives a crash or a hard
-  shutdown. The writer carries on at the next start and says so in the
-  bottom bar.
-
-*File jobs* (moves, copies, exports, previews, indexing) take real time and
-keep Pause and Cancel. Cancel stops between files, each photo is wholly in
-one place, and Undo puts back the part that was done.
-
-**Why this shape:**
-
-- Writing "the current marks" is safe to repeat and safe to interrupt, in
-  any order. No log of commands is needed, and there is nothing to replay
-  in the right sequence after a crash.
-- The database step is already all-or-nothing, so the Library is never
-  half-changed, however the app stops.
-- One mechanism covers interrupted changes, locked files, a full disk and
-  an unplugged drive: the photo simply stays on the to-do list.
-
-**The cost, accepted:** for a short time after a large change, the settings
-files lag behind what the app shows. A folder copied to another computer, or
-a drive pulled, during that time carries the older marks for some photos
-until the drive is back and the writer finishes.
-
-**Intended handling of unusual cases:**
-
-| Case | Intended behaviour |
+| Event | Meaning |
 |---|---|
-| Crash, hard shutdown, power loss | The writer resumes at the next start. Stray `.tmp` files are cleaned up. |
-| File locked by another program | Tried again a few times, then listed under "Needs attention" and retried later. |
-| Disk full | The writer pauses with one message, not one per photo. |
-| Read-only folder | Stays in the library, labelled as such, and shown differently from "waiting to be written". |
-| Drive unplugged or folder missing | Waits. Written automatically when the folder is next connected, and reported. |
-| Photo deleted or moved outside the app | Dropped from the to-do list and counted in the result. |
-| Undo when some photos are gone | The rest are undone and the skipped count is reported. |
-| Settings file changed by something else meanwhile | The library's marks and albums are written, every other field is kept, and it is reported. Never silent. |
-| Closing the app mid-write | Closes without a prompt and resumes at the next start. |
+| `writer_start` | Startup pending count and temporary cleanup count. |
+| `writer_locked`, `writer_disk_full`, `writer_unwritable`, `writer_offline`, `writer_unreadable`, `writer_io` | Distinct write failures; pending marks are kept and retried. |
+| `writer_recovered` | Writing succeeded after a problem cleared. |
+| `writer_deleted` | Missing photo in a connected folder removed from the pending list and library. |
+| `writer_baseline_unknown` | Pending marks restored when no previous file fingerprint was available; no external edit is claimed. |
+| `writer_external_change` | Library marks won; other settings were kept. |
+| `writer_recovery_finished` | Completion count for pending work from the last session. |
+| `writer_cleanup_failed` | Cleanup could not reach or remove a temporary file; it was left untouched. |
+| `writer_failed` | Unexpected writer failure; pending work is kept and the loop retries. |
+| `writer_pause`, `writer_resume` | Backend writer pause/resume hook (Activity control comes in Stage B). |
 
-**Where progress will show:** one Activity
-item at the right end of the bottom bar, where the indexing item is now. It
-shows the most important job with a count; a click lists every job with
-Pause or Cancel, and a "Needs attention" list for files that could not be
-written.
+`GET /api/library/settings-status` returns waiting count, counts by failure
+reason, pause state and recent notices. POST to the same path with `paths`
+also returns those photos' current storage state. This is the Stage A source
+for live Details and notices, not yet the Stage B library-wide health command.
 
-**Not part of this design:** Undo history is still lost when the app
-restarts.
-
-The build brief is
+Stage B will bring indexing and writing into one quiet Activity item at the
+right of the bottom bar, with progress, Pause/Resume, grouped Needs attention
+and Try again. **Writing has no Cancel: Undo is the way back.** It will also
+audit failure logging throughout marks, collections, indexing, the helper
+and picture cache. Stage C handles the remaining recovery and offline gaps.
+The full brief is
 [codex-brief-library-background-writer-2026-10-11.md](codex-brief-library-background-writer-2026-10-11.md).
 
 ---
@@ -520,12 +503,13 @@ The build brief is
 ## 13. How to check things yourself
 
 **Is a photo's change written beside it?** Select the photo and look at
-Settings in the Details panel: "Beside the photo", "Kept in the library
-only…" or "None yet". Or open the `.hdrf` file in Notepad and read `marks`.
+Settings in the Details panel: "Beside the photo", "Waiting to be writtenÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦",
+"Cannot be written: <reason>ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦" or "None yet". Or open the `.hdrf` file in Notepad and read `marks`.
 
 **Clear one photo's marks completely.** Close the app, delete that photo's
-`.hdrf` file, reopen the folder. This does not work while the photo is
-pending (section 5); change a mark on it first so that the file is written.
+`.hdrf` file, reopen the folder. Wait until the Settings line says "Beside the photo" first. Deleting a
+settings file while its photo is pending does not clear the library marks;
+the writer will recreate the file.
 
 **Rebuild the library database.**
 
@@ -541,7 +525,8 @@ pending (section 5); change a mark on it first so that the file is written.
 `library-pictures` folder.
 
 **Find stray temporary files.** In Explorer, search the photo folder for
-`*.hdrf.*.tmp`. With the app closed, any that are found can be deleted.
+`*.hdrf.*.tmp`. Startup removes provably app-owned files automatically. Do not delete
+unrecognised temporary files based only on that broad search.
 
 **The Library stops responding but Grade works.** The helper has probably
 stopped. Restart the app, then read the end of `logs\backend.log`.
@@ -555,12 +540,13 @@ Paths are from `codebase/`.
 | File | Owns |
 |---|---|
 | `backend/hdr_finisher/library_marks.py` | The database, settings files, mark, tag and album commands, undo |
+| `backend/hdr_finisher/library_settings_writer.py` | Background settings writing, retries, recovery, cleanup and writer diagnostics |
 | `backend/hdr_finisher/library_index.py` | File facts, background indexing, `library-preferences.json` |
 | `backend/hdr_finisher/library_worker.py` | The helper process, its lanes, pausing and cancelling |
 | `backend/hdr_finisher/library_folders.py` | Folder listing and the folder tree (run in the helper) |
 | `backend/hdr_finisher/library_metadata.py` | Camera details (run in the helper) |
 | `backend/hdr_finisher/library_pictures.py` | Browsing pictures and their cache |
-| `backend/hdr_finisher/library_api.py` | The `/api/library/…` commands the page calls |
+| `backend/hdr_finisher/library_api.py` | The `/api/library/ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦` commands the page calls |
 | `backend/hdr_finisher/media_browser.py` | Pinned folders (`pinned-folders.json`) |
 | `frontend/photo-library.js` and `frontend/library-*.js` | The Library page |
 
@@ -571,6 +557,11 @@ Fast checks that pin the behaviour on this page:
   unknown fields survive; a failed write stays in the database across a
   restart; an unreadable file is never overwritten; a failed write leaves
   the old file and no temporary file.
+- `tests/test_library_settings_writer.py`: actual process termination at database
+  and file boundaries; restart recovery; Undo before/during/after writing;
+  superseded writes; locks, full drives, permissions, offline folders, missing
+  photos, unreadable and external settings edits; safe temporary cleanup;
+  grouped failure logging and backend startup.
 - `tests/test_library_collections.py`: tag and album commands, photos that
   are not connected, albums in settings files, preferences outside the
   database, indexing an unvisited pinned folder.
@@ -580,6 +571,31 @@ Fast checks that pin the behaviour on this page:
 
 **Keeping this page true:** update it in the same change as any edit to how
 marks are saved, which copy wins, the settings-file fields, the database
-tables, the helper's lanes or pausing, or any message in section 10. When
-section 12 is built, move it into sections 6 and 7 and clear the matching
-gaps from section 11.
+tables, the helper's lanes or pausing, or any message in section 10. Keep
+the writer behavior in sections 6 and 7 and diagnostics in section 12
+accurate; clear the matching section 11 gaps as Stages B and C are built.
+
+
+### Stage A verification (October 11, 2026)
+
+On disposable local PNG copies on `D:`, with the backend writer running and
+folder/database setup completed before timing, full HTTP command acceptance
+was **0.26 seconds for 1,000 photos** and **2.17 seconds for 10,000 photos**
+(one-photo acceptance was 0.15 seconds). These measure saving to the library
+and returning the result, not bringing every settings file up to date.
+`tests/performance/library-mark-acceptance.py` repeats the measurement.
+
+The existing synchronous-file expectations in `test_library_marks.py` and
+`test_library_collections.py` now run a separate writer pass before checking
+files. This includes bulk marks and Undo, restart/rebuild, preservation of
+unknown fields, atomic replacement failure, tag rename/merge/remove and
+album membership/rename/delete. Write-failure assertions now check writer
+notices and retained pending state rather than a synchronous command warning.
+Their unreadable-file and original-photo protection checks remain strict.
+The unconnected-tag test retains its old behavior for Stage C.
+
+`tests/library-background-writer.js` is the focused Electron check: immediate
+Ctrl+Z while the writer waits, no empty first settings file, live Settings
+states, restoring already-written files and continued folder browsing. The
+fast suites pass; process-kill checks use the project's Python and temporary
+photos only. No Grade/export/Proof, shader or decode route was changed.
