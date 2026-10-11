@@ -2363,7 +2363,8 @@ before state. A clean Grade picks up an outside grade and says so once.
 Keep both is a candidate for Stage D when virtual copies exist; not built.
 Stage B is built using Steve's approved backend corrected-source route. JPEG
 and 512/1024/1920, initially 1024, are provisional from the recorded measurements.
-Stage C and D remain pending.
+Stage C is built: locally retained session-start, sidecar previous-grade history,
+Grade and counted Library reverts with one Undo. Stage D remains pending.
 
 **Carried forward to slice 7: pictures for grades changed in bulk.**
 Flagged by Steve on October 11 as important and probably complex. It must
@@ -2378,7 +2379,9 @@ be in the slice 7 brief.
   shown.
 - Slice 7 will queue those pictures through slice 3's existing backend
   producer, using the corrected source and export rendering route. That is a full
-  decode and render per photo: seconds each, minutes for a few hundred.
+  decode and render per photo: about 10 seconds per 36 MP photo at 1024
+  pixels, of which about 5.5 seconds is opening the photo. Several hundred
+  photos therefore take over an hour.
 - What it has to get right:
   - Until a photo's picture is made, the Library shows it honestly (the
     default look with a mark that its picture is being updated), not the

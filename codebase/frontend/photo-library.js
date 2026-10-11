@@ -247,10 +247,24 @@
       } catch (error) { photo.factsAsked = false; if (!aborted(error)) console.debug("Library details:", error.message); }
     }, 200);
   }
-  function photoMenu(event, photo) {
+  async function photoMenu(event, photo) {
+    event.preventDefault();
     const index = state.photos.findIndex(item => item.path === photo.path);
     if (!state.selection.has(photo.path)) select(index); else { state.index = index; updateDetails(); }
-    showMenu(event, [{ label: "Open in Grade", run: openGrade }, { separator: true }, ...albums.menuActions([...state.selection])],
+    const paths = [...state.selection], actions = [];
+    try {
+      const { counts } = await api("/api/library/grade-reverts", { paths });
+      const labels = { original:"Revert to original",saved:"Revert to last saved",session:"Revert to last session",previous:"Restore previous grade" };
+      for (const [target,label] of Object.entries(labels)) if (counts[target]) actions.push({label,run:async()=>{
+        if (!await HDRLibraryDialogs.ask({title:label,message:`Revert ${counts[target]} photos? Each keeps its previous grade.`,confirm:"Revert"})) return;
+        const result = await api("/api/library/grade-reverts",{paths,target});
+        if (result.session) postParent("grade-replaced", {session:result.session});
+        culling.setUndo(result.undo_available);
+        confirmChange(`Reverted ${result.count} photos. Each previous grade was kept.`, result.undo_available);
+        await pollSettings();
+      }});
+    } catch (error) { status(error.message); }
+    showMenu(event, [{ label: "Open in Grade", run: openGrade }, ...actions, { separator: true }, ...albums.menuActions([...state.selection])],
       { label: "Photo actions", onError: error => status(error.message) });
   }
   function updateSingleCaption() {
@@ -628,10 +642,10 @@
   $("picture-settings").addEventListener("click", async () => {
     try {
       const prefs = await api("/api/library/picture-settings");
-      const answer = await HDRLibraryDialogs.ask({ title: "Library pictures", message: `${(prefs.used_bytes / 1024**2).toFixed(1)} MiB in use. Resolution applies to pictures made after the next save.`, fields: [
-        { name: "limit", label: "Storage limit (MiB)", type: "number", value: String(Math.round(prefs.limit_bytes / 1024**2)) },
+      const answer = await HDRLibraryDialogs.ask({ title: "Library pictures", message: `${(prefs.used_bytes / 1024**3).toFixed(2)} GB in use. Resolution applies to pictures made after the next save.`, fields: [
+        { name: "limit", label: "Storage limit (GB)", type: "number", min: 1, step: 1, value: String(Math.round(prefs.limit_bytes / 1024**3)) },
         { name: "edge", label: "Edited-picture resolution", options: ["512", "1024", "1920"], value: String(prefs.edited_edge) }], confirm: "Save" });
-      if (answer) { await api("/api/library/picture-settings", { limit_bytes: Math.round(Number(answer.limit) * 1024**2), edited_edge: Number(answer.edge) }); status("Library picture settings saved."); }
+      if (answer) { await api("/api/library/picture-settings", { limit_bytes: Math.round(Number(answer.limit) * 1024**3), edited_edge: Number(answer.edge) }); status("Library picture settings saved."); }
     } catch (error) { status(error.message); }
   });
   $("filter-button").addEventListener("click", toggleFilters);

@@ -22,6 +22,9 @@ class LibraryGrades:
     def __init__(self, marks, store):
         self.marks, self.store = marks, store
         self.sessions = {}
+        self.starts = {}
+        from .library_history import LibraryHistory
+        self.history = LibraryHistory(self)
         store.grade_recovery_observer = self.capture_edit
         marks.grades = self
         with marks._lock:
@@ -64,6 +67,10 @@ class LibraryGrades:
             if not state.get("pending") and not state.get("conflict") and not recovery:
                 state["baseline"] = grade
             state.setdefault("default", session.edit_document().model_dump(mode="json"))
+            for field in ("session_start", "previous_grade"):
+                if field in (document or {}).get("grade_history", {}) and field not in state:
+                    state[field] = deepcopy(document["grade_history"][field])
+            self.starts[session_id] = deepcopy(state.get("desired") if state.get("pending") else grade or state["default"])
             self._put(path, state)
             return {"grade": state.get("desired") if state.get("pending") else grade,
                     "recovery": recovery if not state.get("pending") else None, "conflict": bool(state.get("conflict")), "path": path}
@@ -77,6 +84,9 @@ class LibraryGrades:
                         state = self._get(str(path)); document = document or {}
                         if "grade" not in document and not state: continue
                         state["indexed_grade"] = document.get("grade")
+                        for field in ("session_start", "previous_grade"):
+                            if field in document.get("grade_history", {}) and field not in state:
+                                state[field] = deepcopy(document["grade_history"][field])
                         if document.get("grade_default"): state["default"] = document["grade_default"]
                         db.execute("INSERT OR REPLACE INTO photo_grades VALUES (?, ?)", (str(path), json.dumps(state)))
             finally: db.close()
@@ -106,6 +116,9 @@ class LibraryGrades:
             session = self.store.get(session_id)
             state = self._get(path)
             if session.dirty:
+                if state.get("session_run") != self.history.run:
+                    state["session_start"] = deepcopy(self.starts.get(session_id, state.get("baseline") or state["default"]))
+                    state["session_run"] = self.history.run
                 state["recovery"] = session.edit_document().model_dump(mode="json")
                 self._put(path, state)
             return self.status(session_id)
@@ -167,6 +180,10 @@ class LibraryGrades:
     def merge(self, path, document):
         with self.marks._lock:
             state = self._get(path)
+            history = deepcopy(document.get("grade_history", {}))
+            for field in ("session_start", "previous_grade"):
+                if field in state: history[field] = deepcopy(state[field])
+            if history: document["grade_history"] = history
             if not state.get("pending"):
                 return document
             if self._check(path, state, document.get("grade")):
@@ -197,6 +214,9 @@ class LibraryGrades:
 
     def check(self, session_id, unsaved=False):
         path = self.path(session_id)
+        current = self.store._current
+        if current and str(current.session_id) != session_id and self.sessions.get(str(current.session_id)) == path:
+            return {"session": current.to_payload().model_dump(mode="json"), "dirty": current.dirty}
         if not Path(path).parent.is_dir():
             return self.status(session_id)
         try:

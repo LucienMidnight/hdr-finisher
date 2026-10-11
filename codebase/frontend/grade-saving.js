@@ -1,6 +1,6 @@
 /* Settings-file saving is independent of Grade's rendering and edit commands. */
 (() => {
-  let current = null, loadedGrade = false, result = {}, busy = false, saving = false, lastChange = 0, lastToken = "", asking = false, conflictShown = false;
+  let current = null, currentPath = null, loadedGrade = false, result = {}, busy = false, saving = false, lastChange = 0, lastToken = "", asking = false, conflictShown = false;
   const byId = id => document.getElementById(id);
   const autosave = () => state.appPreferences?.gradeAutosave !== false;
   async function command(action, detail = {}, id = current) {
@@ -66,7 +66,10 @@
       return true;
     } finally { asking = false; render(); syncDesktopDocumentState(); }
   }
+  let tickFlight = Promise.resolve(), revertFlight = Promise.resolve();
   async function save({ automatic = false } = {}) {
+    if (!automatic) await revertFlight;
+    if (busy && !saving && !automatic) await tickFlight;
     if (!current || busy) return false;
     busy = true; saving = true; render();
     try {
@@ -107,7 +110,7 @@
   }
   async function open(session) {
     const attached = await command("attach", { initialize: true, default_white: Number(state.appPreferences?.defaultReferenceWhiteNits) === 100 ? 100 : 203 }, session.session_id);
-    current = session.session_id; result = { conflict: attached.conflict };
+    current = session.session_id; currentPath = attached.path; result = { conflict: attached.conflict };
     conflictShown = false;
     loadedGrade = true;
     if (!attached.grade) {
@@ -137,6 +140,7 @@
     busy = true;
     try {
       result = await command("check", { unsaved: state.documentDirty });
+      if (result.session) await refresh(result.session);
       if (result.reload) {
         await load(result.grade);
         status.post({ id: "grade-external", severity: "info", message: `The grade for ${state.session.source.filename} changed elsewhere. Grade now shows the file's grade.` });
@@ -176,7 +180,34 @@
       { title: "Recover unsaved work" });
     if (choice === "open") await openDesktopSelection({ kind: "source", ...await desktop.grantSourcePath(photo.path) });
   }
-  window.HDRGradeSaving = { open, save, saveProject, leave, render, activated, resolve, offerRecovery,
+  async function refresh(session) {
+    if (!session) return;
+    const workflow = state.activeWorkflow;
+    current = session.session_id;
+    await activateDesktopSession(session, "");
+    if (workflow !== "grade") activateWorkflowTab(workflow);
+    state.documentDirty = Boolean(session.dirty); result = {}; render(); syncDesktopDocumentState();
+  }
+  async function revertMenu(forced = null) {
+    if (asking || saving) return;
+    asking = true; byId("grade-revert-menu").disabled = true; byId("grade-revert-saved").disabled = true;
+    try {
+    if (busy) await tickFlight;
+    await flush();
+    const request = async target => {
+      const response = await fetch("/api/library/grade-reverts", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({paths:[currentPath],target}) });
+      const payload = await response.json();if (!response.ok) throw new Error(projectIo.responseErrorMessage(payload,"The grade could not be reverted."));return payload;
+    };
+    const {counts} = await request(null);
+    const names = {original:"Revert to original",saved:"Revert to last saved",session:"Revert to last session",previous:"Restore previous grade"};
+    const buttons = [{label:"Cancel",value:"cancel",cancel:true}, ...Object.entries(names).filter(([key])=>counts[key]).map(([value,label])=>({value,label}))];
+    const choice = forced || await HDRDialogs.choose("Choose a grade to restore. The current grade is kept as the previous grade.", buttons,{title:"Revert grade"});
+    if (!choice || choice === "cancel") return;
+    const result = await request(choice);await refresh(result.session);
+    } finally { asking = false; byId("grade-revert-menu").disabled = false; byId("grade-revert-saved").disabled = false; }
+  }
+  byId("grade-revert-menu").addEventListener("click",()=>{ revertFlight = revertMenu().catch(error=>status.post({id:"grade-revert",severity:"error",message:error.message})); });
+  window.HDRGradeSaving = { refresh, open, save, saveProject, leave, render, activated, resolve, offerRecovery,
     active: () => Boolean(current && state.session?.session_id === current),
     hasGrade: id => id === current && loadedGrade, conflict: () => Boolean(result.conflict) };
   byId("grade-autosave").addEventListener("click", async () => {
@@ -188,11 +219,7 @@
   byId("grade-save-now").addEventListener("click", () => save());
   byId("grade-resolve-conflict").addEventListener("click", () => resolve());
   byId("grade-revert-saved").addEventListener("click", async () => {
-    await flush();
-    const checked = await command("check", { unsaved: true });
-    if (checked.conflict) { result = checked; await resolve(); return; }
-    const attached = await command("attach");
-    await load(attached.grade);
+    try { revertFlight = revertMenu("saved"); await revertFlight; } catch (error) { status.post({id:"grade-revert",severity:"error",message:error.message}); }
   });
   // Scheduling only: an active control gesture pauses Library background work.
   let picturePauseTimer;
@@ -201,5 +228,5 @@
     if (state.activeWorkflow === "grade" && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true); }
   }, true);
   for (const event of ["pointerup", "pointercancel", "blur"]) window.addEventListener(event, () => { clearTimeout(picturePauseTimer); picturePauseTimer = setTimeout(() => pausePictures(false), 300); });
-  window.setInterval(tick, 500);
+  window.setInterval(() => { if (!busy && !asking) tickFlight = tick(); }, 500);
 })();

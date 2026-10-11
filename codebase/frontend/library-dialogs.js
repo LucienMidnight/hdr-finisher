@@ -14,6 +14,8 @@
         const label = make("label", "library-ask-field"), input = make(field.options ? "select" : "input");
         if (field.options) input.replaceChildren(...field.options.map(value => new Option(value.label || value, value.value || value)));
         else input.type = field.type || "text";
+        if (field.min != null) input.min = field.min;
+        if (field.step != null) input.step = field.step;
         input.dataset.optional = String(!!field.optional); input.value = field.value || ""; input.name = field.name; input.placeholder = field.placeholder || ""; input.autocomplete = "off"; input.spellcheck = false; input.maxLength = 120;
         label.append(make("span", "", field.label), input); body.append(label); inputs.push(input);
       }

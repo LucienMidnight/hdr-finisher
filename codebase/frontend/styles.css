@@ -9149,6 +9149,7 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   display: flex;
   flex-direction: column;
 }
+.app-dialog:not([open]) { display: none; }
 .app-dialog .application-dialog-header { min-height: 0; padding-bottom: 0; }
 .app-dialog-content {
   padding: 14px 20px 4px;

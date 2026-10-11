@@ -34,6 +34,9 @@ def test_picture_preferences_preserve_unknown_and_reject_unreadable(tmp_path):
     path.write_text('{"future":17}')
     preferences(tmp_path,{"edited_edge":512})
     assert json.loads(path.read_text())["future"]==17
+    with pytest.raises(ValueError, match="1 GB"):
+        preferences(tmp_path,{"limit_bytes":1024**3-1})
+    assert preferences(tmp_path,{"limit_bytes":1024**3})["limit_bytes"]==1024**3
     path.write_text('broken')
     with pytest.raises(ValueError): preferences(tmp_path,{"edited_edge":1920})
     assert path.read_text()=='broken'

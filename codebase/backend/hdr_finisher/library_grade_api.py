@@ -23,6 +23,17 @@ class GradeRequest(BaseModel):
 def add_grade_routes(router, marks, store):
     grades = LibraryGrades(marks, store)
 
+    class RevertRequest(BaseModel):
+        paths: list[str]
+        target: Literal["original", "saved", "session", "previous"] | None = None
+
+    @router.post("/grade-reverts")
+    def grade_reverts(request: RevertRequest):
+        try:
+            return grades.history.revert(request.paths, request.target) if request.target else grades.history.available(request.paths)
+        except (ValueError, OSError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @router.get("/grade-recovery")
     def recovery():
         with marks._lock:
@@ -67,6 +78,7 @@ def add_grade_routes(router, marks, store):
                 session = open_document(store, EditDocument.model_validate(document), Path(path))
                 new_id = str(session.session_id)
                 grades.sessions[new_id] = path
+                grades.starts[new_id] = document
                 if not request.recovery and not request.preserve_recovery and not state.get("pending") and not state.get("conflict"):
                     state["baseline"] = request.document
                     grades._put(path, state)

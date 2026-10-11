@@ -350,3 +350,9 @@ our writer's scalar gain-map files for fast Library display. Source, export and
 Proof readers remain unchanged. Slice 7 adds durable bulk scheduling, not another
 picture producer. Tests: `test_library_kept.py`, `library-kept-pictures.js` and
 the read-only `performance/library-kept-backend-trial.py`.
+
+Slice 3 Stage C: `library_history.py` owns target availability, all-file preflight,
+previous/session retention and one bulk Undo. `library_grade_api.py` exposes
+`/grade-reverts`; `grade-saving.js` activates open results, serializes polling and
+manual save, and keeps revert controls disabled through activation. Library menus
+use the same backend command. Existing settings writer merges `grade_history`.

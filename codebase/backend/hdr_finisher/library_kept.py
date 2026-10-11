@@ -37,7 +37,7 @@ def preferences(root, change=None):
             if set(change)-{"edited_edge","limit_bytes"}: raise ValueError("Unknown Library picture setting.")
             candidate=value|change
             if candidate.get("edited_edge",1024) not in EDGES: raise ValueError("Choose 512, 1024 or 1920 pixels.")
-            if not isinstance(candidate.get("limit_bytes",2*1024**3),int) or candidate.get("limit_bytes",2*1024**3)<1024**2: raise ValueError("Choose a storage limit of at least 1 MiB.")
+            if not isinstance(candidate.get("limit_bytes",2*1024**3),int) or candidate.get("limit_bytes",2*1024**3)<1024**3: raise ValueError("Choose a storage limit of at least 1 GB.")
             value=candidate;atomic_json(path,value)
         return {"edited_edge":value.get("edited_edge",1024),"limit_bytes":value.get("limit_bytes",2*1024**3)}
 

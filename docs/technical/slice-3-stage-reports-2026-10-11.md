@@ -1,6 +1,6 @@
 # Slice 3 stage reports - October 11, 2026
 
-**STOPPED AT STAGE C VALIDATION: the cumulative longer checks are roughly 32 minutes, including a stalled Electron revert check. Steve instructed a stop at roughly 30 minutes. Stage C is not complete; Stage D has not started. The checked-out app is back at Stage B.**
+**Stage B accepted. Stage C is built and verified; Stage D is next.** The earlier cumulative test-time stop is superseded by Steve's clarification: slow checks count per stage, and fast Python checks do not count. No Stage C acceptance is claimed yet.
 
 **Route: the backend makes reduced kept pictures through the existing corrected source opening and export rendering functions. GPU readback and tiled rendering are unchanged.** This is the single producer for a saved grade, whether or not its photo is open in Grade. Steve's later instruction permits background completion after a save; until it completes, the Library honestly shows the default picture and the not-current mark.
 
@@ -119,19 +119,19 @@ Save a real cropped photo with separate HDR and SDR grades and a mask. Browse it
    first edit even with autosave off. Losing the local database before the next
    settings-file write would lose that unsaved session-start record; the saved
    grade and already-written sidecar history remain intact. This draft decision
-   is deferred with C, not active in the checked-out app.
-7. Extending validation is required to finish C and D. The other choice is keeping
-   the checked-out B app and its report while C's draft remains in local history.
+   was accepted by Steve on resumption and is now active.
+7. The previous test-time decision is superseded: the roughly 30-minute limit
+   counts slow checks per stage; fast Python checks are excluded.
 
 ## Every new message for Steve's review
 
-- Library pictures; Storage limit (MiB); Edited-picture resolution; 512 / 1024 / 1920 pixels; Library picture settings saved.
+- Library pictures; Storage limit (GB); Edited-picture resolution; 512 / 1024 / 1920 pixels; Library picture settings saved.
 - This photo has a saved grade, but its Library picture is not current. Open it in Grade and save to update the picture.
 - Saved Library picture enlarged. Check detail in Grade.
 - The saved Library picture is unavailable; open and save in Grade to update it.
 - Library picture settings could not be read; nothing was changed.
 - Choose 512, 1024 or 1920 pixels.
-- Choose a storage limit of at least 1 MiB.
+- Choose a storage limit of at least 1 GB.
 - The source photo changed; its Library picture was left unavailable.
 - The kept picture's gain map could not be read.
 
@@ -188,3 +188,51 @@ Draft C messages for review (not in the checked-out app):
 - Approximately 26 minutes of recorded baseline/extraction/B/C Python checks,
   plus focused UI runs and the stalled run, put the longer validation around
   32 minutes. This triggers Steve's explicit stop rule. No push or installer build.
+
+
+## Stage C resumed investigation
+
+Branch confirmed again as `photo-library`, with repository instructions and brief reread. The draft was restored preserving working-file line endings. Steve accepted decision 6: session-start is kept locally immediately and joins the next settings-file write.
+
+The dialog had a real CSS fault: `.app-dialog { display: flex }` overrides the browser's closed-dialog hiding. A click trace showed pointer-down, pointer-up and click reaching the correct button, the target POST being sent, and `dialog.open` becoming false, while computed display remained flex and the old window stayed on screen. The original 500 ms exposure assertion also ran before the successful response (one trace completed about 2.2 seconds later). Closed dialogs now explicitly hide; the check follows the response and finished Grade state, without a longer arbitrary sleep.
+
+A second app fault emerged during consecutive reverts: controls accepted another click before activation finished, or manual Save returned without saving while status polling was busy. Revert controls now remain disabled until activation finishes; manual save waits for the in-flight revert/status check. Polling does not overlap a revert.
+
+Focused history/picture data checks: 12 passed. Node suite: 462 passed. The four Grade reverts passed in diagnostic runs. The full Library scenario is still being investigated: it intermittently reads an older grade or rating after the command. No unverified controls have been accepted or committed as complete.
+
+Storage limit and usage now show GB, with minimum 1 GB and 1 GB input steps. The PRD's slice 7 note records about 10 seconds per 36 MP photo at 1024 pixels, including about 5.5 seconds of opening; several hundred take over an hour.
+
+
+## Stage C - completion
+
+The draft is restored and verified. All four Grade choices work, including
+reverting a revert and dropping unsaved work with last saved. A Library selection
+confirms the number, retains each previous grade and is one Undo step. Open targets
+remain unsaved; closed targets use the durable writer. Marks, tags, albums and
+unknown fields are preserved. Steve should try autosave off, make an exposure
+change, revert to original, restore previous, then try a selected group in Library
+and Ctrl+Z. No project format change; optional history joins existing `.hdrf`
+files on their next write, with the existing database retained.
+
+The intermittent Library failure was the check's asynchronous predicate, not a
+lost grade or mark: installed Playwright calls `const success = predicate()`
+without awaiting a returned Promise. Tracing showed it accepted a first status
+response with `storage: database`. SQLite still held the correct pending grade
+and marks. The check now awaits each status response in a bounded loop and checks
+command completion. No check or pinned tolerance was loosened. Earlier diagnostic
+failures and deliberately terminated stalled checks are recorded above.
+
+Final C checks: 12 focused history/picture data tests passed; full Python 1,735
+passed, 3 skipped in 5:00; Node 462 passed; focused real Electron at 2560x1440
+passed four Grade reverts, unsaved/saved behavior, counted Library revert, one Undo,
+marks and unchanged source bytes. Slow debugging/checks stayed below 30 minutes;
+no broad sweep. New C messages are listed in the existing message ledger below.
+The two genuine UI faults fixed are closed-dialog CSS visibility and overlapping
+revert/status/save operations. No rendering, export, Proof or pinned change.
+
+Delayed-picture follow-up (`79dba5f`) passed in real Electron: helper paused
+before save, settings reached the sidecar while the picture was missing, then
+resumed and the same grid updated without revisiting. Save 19 ms; next photo
+2,371 ms; picture ready 2,685 ms (small disposable PNG, not the 36 MP trial).
+Edited first/subsequent transport 8/6 ms versus unedited 6/4 ms. The pictures
+window still has exactly two controls.

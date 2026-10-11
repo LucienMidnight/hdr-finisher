@@ -16,6 +16,15 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     const page = await browser.newPage(), errors = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
+    const written = async photo => {
+      const deadline=Date.now()+30000;
+      while(Date.now()<deadline) {
+        const saved=await page.evaluate(photo=>fetch('/api/library/settings-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[photo]})}).then(r=>r.json()),photo);
+        if(saved.photos[0]?.storage==='sidecar') return;
+        await page.waitForTimeout(100);
+      }
+      throw new Error('Settings writer did not finish within 30 seconds.');
+    };
     const open = photo => page.evaluate(async photo => {
       await openDesktopSelection({ kind: "source", ...await desktop.grantSourcePath(photo) });
     }, photo);
@@ -30,6 +39,7 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     await page.waitForFunction(() => window.HDRGradeSaving.active());
     await page.locator("#grade-autosave").click();
     await edit(.75);
+    await page.evaluate(()=>fetch('/api/library-worker/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:'delayed-picture-check',paused:true})}));
     const started = Date.now();
     await page.evaluate(() => HDRGradeSaving.save());
     const saveMs = Date.now() - started;
@@ -38,6 +48,10 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     await page.evaluate(() => activateWorkflowTab("import"));
     const frame = page.frameLocator("#library-frame");
     await page.locator("#library-frame").evaluate((element, folder) => element.contentWindow.HDRLibrary.browse(folder), folder);
+    await written(photos[0]);
+    await frame.locator('.library-cell .library-edited').first().waitFor();
+    assert.equal(await frame.locator('.library-cell canvas[data-kept="true"]').count(),0);
+    await page.evaluate(()=>fetch('/api/library-worker/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:'delayed-picture-check',paused:false})}));
     await frame.locator('.library-cell canvas[data-kept="true"]').first().waitFor({ timeout: 60000 });
     const readyMs = Date.now() - started;
     const transport = await page.locator("#library-frame").evaluate(async (element, paths) => {
