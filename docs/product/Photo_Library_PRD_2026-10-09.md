@@ -2446,6 +2446,9 @@ Proposed. Each slice is usable on its own.
 Slice 4 Stage A built October 11: overlay view fields no longer count as grade
 differences or new kept pictures; SDR Highlights desktop presets are allowed.
 The separate measured-highlight-peak rounding on ordinary Grade save remains.
+Stage B built: pinned reference, alternate navigation/marks, locked normalized
+zoom/pan, side/top/split layouts and remembered options; mixed edited/native
+100% follows the unattended decision. Real-shoot feel remains for Steve.
 | 5 | File and folder controls, delete all rejected | Tidy up without Explorer |
 | 6 | Smart albums | Rule-based sets |
 | 7 | Selective copy and paste, sync, look presets, and background pictures for grades changed in bulk (see "Carried forward to slice 7" below) | Grade a set quickly |

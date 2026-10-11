@@ -1088,3 +1088,38 @@ Validation: 463 Node checks; 1,755 Python checks passed, 3 skipped (3:24),
 including settings-file save/reopen and byte-identical export/Proof checks.
 Focused Electron at 2560x1440 passed on a disposable photo/profile. The driver
 was corrected to wait for file publication and synchronize command revisions.
+
+### Slice 4 Stage B - compare
+
+`library_review.py` owns read-only pin/navigation commands. Compare retains a
+left reference and makes the right item the sole target of marks and Enter.
+The current folder/album sort and filters provide navigation order; movement
+skips the reference. Two virtual items remain separate even with one source.
+`library-compare.js` draws two Library surfaces with common normalized position
+and zoom, using the existing picture/native routes. Unedited sides show native
+source crops at 100%; edited sides enlarge their kept picture and say
+"Saved Library picture enlarged. Check detail in Grade." No Grade renderer,
+shader or settings-file command is involved. The right neighbours are read ahead.
+
+Compare's panel contains its switch, side/top/split layouts and file names/marks.
+The split divider can be dragged or moved by arrow keys when focused. C toggles;
+[ pins the selected item and selects its next neighbour; ] assigns the alternate.
+Compare is off at launch. Layout and caption preference live under `review` in
+`library-preferences.json`, with other preferences preserved. Leaving a view
+cancels drawing; browsing a different place keeps the reference available for
+comparison. No new settings file or database field, no grade/mark/album changes.
+
+Decisions made for Steve:
+- Navigation skips the pinned reference. The alternative revisits it on the
+  right; skipping saves a useless comparison but a one-photo folder shows it twice.
+- Zoom/pan use the same normalized place in each frame, including different
+  image dimensions. Borders can appear when one frame is smaller; scaling both
+  to the same pixel size instead would make one side's 100% claim misleading.
+- The reference can stay pinned across filter changes and places. The alternative
+  clears it on every browse; retaining it helps compare folders but can show a
+  reference that is outside the current filtered list.
+B validation: 463 Node; 1,757 Python passed, 3 skipped (3:18). Focused
+Electron at 2560x1440 passed pin/navigation, locked native zoom/pan, right-only
+marks/Undo, layouts, captions, HDR, virtual copies and mixed kept/native zoom.
+Driver waits for preference saves and pin commands were corrected. No new
+log events. The Library viewing-settings read failure is the only new notice.

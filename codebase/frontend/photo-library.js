@@ -49,7 +49,7 @@
   const { showMenu, closeMenu: closeFolderMenu, make } = HDRLibraryDialogs;
   const sameName = (a, b) => a.toLocaleLowerCase() === b.toLocaleLowerCase();
   const belongs = (photo, place) => (place.kind === "album" ? photo.albums || [] : photo.marks?.tags || []).some(name => sameName(name, place.name));
-  const culling = HDRLibraryCulling.create({ confirm: confirmChange, photos: () => state.allPhotos, selection: () => state.selection, api, status,
+  const culling = HDRLibraryCulling.create({ confirm: confirmChange, photos: () => state.allPhotos, selection: () => state.view === "single" && compare.enabled() ? new Set([selected()?.path]) : state.selection, api, status,
     labelName: label => state.labelNames[label] || "",
     updated: result => {
       if(result.copies_changed) { void reopen(); return; }
@@ -82,6 +82,7 @@
   function setActive(active) {
     state.active = active;
     if (!active) {
+      compare.cancel();
       clearCells(state.cells); clearCells(state.filmCells); clearPrefetch(); state.single?.abort();
       state.scan?.abort(); state.native?.abort();
     } else if ((state.path || state.collection) && !state.photos.length) void reopen();
@@ -337,12 +338,21 @@
       ...(chosen.some(item => item.copy_id) ? [{ separator: true }, { label: "Remove virtual copy…", key: "Del", danger: true, run: () => removeCopy(chosen) }] : [])],
       { label: "Photo actions", onError: error => status(error.message) });
   }
+  const compare = HDRLibraryCompare.create({api,status,load:loadAndShow,draw:drawPicture,strip:culling.strip,
+    selected,photos:()=>state.photos,allPhotos:()=>state.allPhotos,active:()=>state.active,
+    choose:path=>select(state.photos.findIndex(p=>p.path===path)),setView,
+    zoom:()=>({enabled:state.zoom,x:state.zoomX,y:state.zoomY}),
+    setZoom:(enabled,x,y)=>{state.zoom=enabled;state.zoomX=x;state.zoomY=y;$("zoom-button").setAttribute("aria-pressed",String(enabled));}
+  });
+  void compare.init();
   function updateSingleCaption() {
+    if (compare.enabled()) compare.captions();
     if (!selected()) return;
     $("single-caption").replaceChildren(document.createTextNode(selected().name), culling.strip(selected()));
   }
   function select(index, scroll = false, mode = "single") {
     if (!state.photos.length) return;
+    if (compare.enabled() && state.view === "single") mode = "single";
     const next = HDRLibrarySelection.choose(state.photos.map(photo => photo.path), state.selection, state.anchor, index, mode);
     state.index = next.index; state.selection = next.selected; state.anchor = next.anchor; updateDetails();
     if (state.view === "grid") {
@@ -367,6 +377,8 @@
   async function showSingle() {
     const photo = selected(); state.single?.abort(); state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; state.fitMeta = null; $("native-picture").hidden = true; clearPrefetch();
     if (!photo || !state.active || state.view !== "single") return;
+    if (compare.enabled()) { void compare.show(); return; }
+    compare.hide();
     const controller = new AbortController(); state.single = controller;
     const current = () => state.active && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
     status(`Loading ${photo.name}…`);
@@ -422,6 +434,7 @@
   }
   function toggleZoom(point) {
     if (state.view !== "single" || !selected()) return;
+    if (compare.enabled()) { compare.zoom(); return; }
     state.zoom = !state.zoom; state.native?.abort(); state.nativeLoading = false; state.nativeMeta = null;
     if (state.zoom && point && state.fitMeta) {
       const stage = $("single-stage"), meta = state.fitMeta;
@@ -460,6 +473,7 @@
   singleStage.addEventListener("pointerup", endPan); singleStage.addEventListener("pointercancel", endPan);
   function setView(view) {
     if (view === "single" && !selected()) return;
+    if (view !== "single") compare.hide();
     state.view = view; $("library-single").hidden = view !== "single"; grid.hidden = view !== "grid";
     $("zoom-button").disabled = view !== "single";
     $("grid-view").setAttribute("aria-pressed", String(view === "grid")); $("single-view").setAttribute("aria-pressed", String(view === "single"));
@@ -858,6 +872,8 @@
       return;
     }
     if (event.altKey) return;
+    if (["c","[","]"].includes(key)) {event.preventDefault();void compare.command(key==="["?"left":key==="]"?"right":compare.enabled()?"off":"on");return;}
+    if (compare.enabled() && state.view === "single" && key.startsWith("arrow")) {event.preventDefault();void compare.command("move",["arrowleft","arrowup"].includes(key)?-1:1);return;}
     if (culling.shortcut(key)) { event.preventDefault(); return; }
     if (key === "t") { event.preventDefault(); collapse("right", false); $("library-tag-input")?.focus(); return; }
     const steps = { arrowright: 1, arrowleft: -1, arrowdown: state.view === "grid" ? state.layout?.columns || 1 : 1, arrowup: state.view === "grid" ? -(state.layout?.columns || 1) : -1 };
@@ -958,7 +974,7 @@
   }
   // Read-only status for the focused interaction driver; no test-only behavior.
   window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
-    selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
+    compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
     filmVisible: state.filmCells.size, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
   (async () => {
     try {

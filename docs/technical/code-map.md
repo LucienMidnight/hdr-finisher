@@ -367,3 +367,8 @@ item keys. `library_grade_api.py` attaches Grade to the selected item, while
 `library_kept.py` keys pictures by item and saved grade but opens the shared source.
 `library-query.js` filters copies separately and sorts them beside their original.
 `grade-saving.js` offers Keep both and waits for session activation before polling.
+
+Library slice 4 compare: `backend/hdr_finisher/library_review.py` (read-only
+commands and viewing preferences), `frontend/library-compare.js` (two Library
+surfaces, normalized locked zoom/pan and layouts), `tests/test_library_review.py`
+and `tests/library-compare.js` (fast command checks and focused Electron check).

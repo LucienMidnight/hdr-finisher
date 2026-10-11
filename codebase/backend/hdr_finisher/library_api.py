@@ -174,6 +174,8 @@ def create_library_router(worker, browser, store=None):
             await run_in_threadpool(marks.writer.close)
 
     router = APIRouter(prefix="/api/library", lifespan=lifespan, route_class=LibraryRoute)
+    from .library_review import add_review_routes
+    add_review_routes(router, index, marks)
     if store is not None:
         add_grade_routes(router, marks, store)
         from .library_kept import KeptPictures, preferences as picture_preferences

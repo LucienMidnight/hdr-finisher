@@ -211,3 +211,22 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-spacer { flex: 1; }
 
 .library-folder-row[aria-selected="true"] { background: var(--accent-bed); outline: 1px solid var(--hairline); }
+
+/* Library compare is independent of Grade's viewer and shaders. */
+#library-compare { min-height:0; overflow:hidden; }
+.compare-panes { position:relative; height:100%; display:grid; grid-template-columns:1fr 1fr; gap:2px; background:var(--border); }
+.compare-side { position:relative; min-width:0; min-height:0; display:grid; grid-template-rows:minmax(0,1fr) auto auto; background:var(--viewer); }
+.compare-stage { position:relative; min-height:0; overflow:hidden; display:grid; place-items:center; }
+.compare-stage canvas { width:100%;height:100%;object-fit:contain;min-height:0; }
+.compare-caption,.compare-note { margin:0;min-height:18px;text-align:center;color:var(--muted);font:10px var(--mono); }
+#library-compare[data-layout="top"] .compare-panes {grid-template-columns:1fr;grid-template-rows:1fr 1fr;}
+#compare-divider {display:none;}
+#library-compare[data-layout="split"] .compare-panes {display:block;}
+#library-compare[data-layout="split"] .compare-side {position:absolute;inset:0;}
+#library-compare[data-layout="split"] .compare-side[data-side="left"] {z-index:2;clip-path:inset(0 calc(100% - var(--compare-split)) 0 0);}
+#library-compare[data-layout="split"] .compare-side[data-side="right"] {z-index:1;}
+#library-compare[data-layout="split"] #compare-divider {display:block;position:absolute;z-index:4;inset:0 auto 0 calc(var(--compare-split) - 5px);width:10px;cursor:ew-resize;border-inline:4px solid transparent;background:var(--accent);background-clip:content-box;}
+.library-options {min-width:240px;gap:12px;padding:14px;}
+.library-options label {display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--body);font-size:12px;}
+.library-options input[type="checkbox"] {accent-color:var(--accent);}
+.library.review #single-caption {display:none;}

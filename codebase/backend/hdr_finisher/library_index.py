@@ -73,7 +73,11 @@ class LibraryIndex:
                 current["label_names"] = {**current["label_names"], **{label: name for label, name in label_names.items() if label in LABELS}}
             self.preferences_path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.preferences_path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(current, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            try: saved = json.loads(self.preferences_path.read_text(encoding="utf-8"))
+            except FileNotFoundError: saved = {}
+            if not isinstance(saved, dict): raise ValueError("Library settings could not be read; nothing was changed.")
+            saved.update(current)
+            temporary.write_text(json.dumps(saved, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             os.replace(temporary, self.preferences_path)
         if background_indexing is not None:
             self.kick()
