@@ -82,7 +82,8 @@ def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> Non
     assert '.compact-subrail input[type="range"]::-webkit-slider-runnable-track' in final_refinement
     assert "height: var(--instrument-compact-slider-track-h);" in final_refinement
     product_mark_block = css[css.rindex(".product-mark {"):css.index(".workflow-tabs {", css.rindex(".product-mark {"))]
-    assert "border: 1px solid #fff;" in product_mark_block
+    assert "border: 0;" in product_mark_block
+    assert "background: var(--text);" in product_mark_block
 
 
 def test_hdr_curve_graph_uses_tokenized_exposure_band_styling() -> None:

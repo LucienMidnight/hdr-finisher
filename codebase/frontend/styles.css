@@ -6466,11 +6466,13 @@ body[data-workflow="export"] #export-sheet {
 
 .product-mark {
   box-sizing: border-box;
-  width: 26px;
+  width: 31px;
   height: 26px;
-  border: 1px solid #fff;
-  border-radius: var(--radius-2);
-  background: transparent;
+  border: 0;
+  border-radius: 0;
+  background: var(--text);
+  -webkit-mask: url("assets/brand/hdr-finisher-icon-simple.svg") center / auto 164% no-repeat;
+  mask: url("assets/brand/hdr-finisher-icon-simple.svg") center / auto 164% no-repeat;
 }
 
 .workflow-tabs {

@@ -26,9 +26,9 @@ function assert(condition, message) {
     await page.locator(".product-mark").screenshot({ path: logoPath });
     const logoSurface = await page.locator(".product-mark").evaluate((logo) => {
       const style = getComputedStyle(logo);
-      return { borderWidth: style.borderTopWidth, borderStyle: style.borderTopStyle, borderColor: style.borderTopColor };
+      return { borderWidth: style.borderTopWidth, mask: style.maskImage || style.webkitMaskImage };
     });
-    assert(logoSurface.borderWidth === "1px" && logoSurface.borderStyle === "solid" && logoSurface.borderColor === "rgb(255, 255, 255)", `Product mark border is incorrect: ${JSON.stringify(logoSurface)}`);
+    assert(logoSurface.borderWidth === "0px" && logoSurface.mask.includes("hdr-finisher-icon-simple.svg"), `Product mark surface is incorrect: ${JSON.stringify(logoSurface)}`);
     const buttonPath = path.join(outputDir, "button-implementation.png");
     await page.locator("#import-button").screenshot({ path: buttonPath });
     const buttonSurface = await page.locator("#import-button").evaluate((button) => {
