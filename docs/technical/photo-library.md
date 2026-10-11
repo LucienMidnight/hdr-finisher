@@ -497,20 +497,23 @@ until the drive is back and the writer finishes.
 | File locked by another program | Tried again a few times, then listed under "Needs attention" and retried later. |
 | Disk full | The writer pauses with one message, not one per photo. |
 | Read-only folder | Stays in the library, labelled as such, and shown differently from "waiting to be written". |
-| Drive unplugged or folder missing | Waits. Whether it is written automatically on return is PRD open decision 25. |
+| Drive unplugged or folder missing | Waits. Written automatically when the folder is next connected, and reported. |
 | Photo deleted or moved outside the app | Dropped from the to-do list and counted in the result. |
 | Undo when some photos are gone | The rest are undone and the skipped count is reported. |
-| Settings file changed by something else meanwhile | Needs a rule. Not decided. |
+| Settings file changed by something else meanwhile | The library's marks and albums are written, every other field is kept, and it is reported. Never silent. |
 | Closing the app mid-write | Closes without a prompt and resumes at the next start. |
 
-**Where progress will show (proposed, not yet confirmed):** one Activity
+**Where progress will show:** one Activity
 item at the right end of the bottom bar, where the indexing item is now. It
 shows the most important job with a count; a click lists every job with
 Pause or Cancel, and a "Needs attention" list for files that could not be
 written.
 
-**Still to decide:** whether Undo survives a restart; the Activity item;
-open decision 25; the rule for a settings file changed by something else.
+**Not part of this design:** Undo history is still lost when the app
+restarts.
+
+The build brief is
+[codex-brief-library-background-writer-2026-10-11.md](codex-brief-library-background-writer-2026-10-11.md).
 
 ---
 

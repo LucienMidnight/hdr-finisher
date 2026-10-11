@@ -300,9 +300,17 @@ Steve authorized Stage A of the slice 1 brief on October 10:
 - **Each complex system gets a page recording how it works and why.** The
   library's is `docs/technical/photo-library.md`, kept current in the same
   change as the code.
-- Still open from this discussion: whether Undo survives a restart; one
-  Activity item in the bottom bar for background work; the rule when a
-  settings file was changed by something else; open decision 25.
+- **Marks waiting for an unplugged drive or a read-only folder** are
+  written automatically when the folder is next connected and writable,
+  and the user is told. This settles open decision 25.
+- **A settings file changed by something else** while the library holds
+  unwritten marks for that photo: the library's marks and albums are
+  written, every other field is kept, and it is reported. Never silent.
+- **Background work shows in one Activity item** at the right end of the
+  bottom bar, with a list of jobs and a "Needs attention" list.
+- **Undo history is still lost on restart.** Not part of this work.
+- Brief for the build:
+  `docs/technical/codex-brief-library-background-writer-2026-10-11.md`.
 
 ---
 
@@ -2299,8 +2307,9 @@ For Steve, one at a time, each with its trade-off.
     recorded (5.20).
 24. Whether dragging photos onto a folder moves them at once or asks first
     (5.4).
-25. Whether marks made on an offline or read-only folder are written beside
-    the photos later, automatically, or only on request (Appendix B).
+25. ~~Whether marks made on an offline or read-only folder are written
+    beside the photos later, automatically, or only on request
+    (Appendix B).~~ Settled October 11: automatically, and reported.
 26. Whether a new virtual copy starts with the original's marks and tags
     (as mocked) or clean (5.14).
 
