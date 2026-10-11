@@ -37,6 +37,8 @@ class LibraryIndex:
         self._stop = Event()
         self._retry_seconds = 15
         self._thread = None
+        from .library_folder_checks import FolderChecks
+        self.checks = FolderChecks(self)
         self._generation = 0
         self._paused = False
         self._preferences_failure = None
@@ -154,6 +156,11 @@ class LibraryIndex:
         photos.sort(key=lambda item: (item["name"].casefold(), item["path"].casefold()))
         return photos, missing
 
+    def wait_for_grade(self):
+        while self.worker.status()["paused"]:
+            if self._stop.wait(.05):
+                raise CancelledError()
+
     # Background indexing of pinned folders, including ones never visited.
 
     def kick(self):
@@ -166,9 +173,11 @@ class LibraryIndex:
                 self._thread = Thread(target=self._run, name="hdr-library-indexer", daemon=True)
                 self._thread.start()
         self._wake.set()
+        self.checks.start()
 
     def close(self):
         self._stop.set()
+        self.checks.wake.set()
         self._wake.set()
 
     def pause(self, paused):
@@ -186,7 +195,7 @@ class LibraryIndex:
             elif self._paused and progress["state"] != "idle":
                 progress["state"] = "paused"
             helper = self.worker.status()["paused"] if self.worker is not None else False
-            return {**progress, "enabled": enabled, "paused": self._paused, "waiting": bool(helper and progress["state"] == "indexing")}
+            return {**progress, "enabled": enabled, "paused": self._paused, "waiting": bool(helper and progress["state"] == "indexing"), "checks": self.checks.status(), "checkWaiting": bool(helper)}
 
     def _set(self, **progress):
         with self._state:
@@ -201,7 +210,7 @@ class LibraryIndex:
                 if generation != self._generation:
                     raise _Restart()
                 paused = self._paused
-            if not paused:
+            if not paused and self.checks.running is None:
                 return
             time.sleep(0.25)
 
@@ -238,7 +247,11 @@ class LibraryIndex:
                 continue
             self._set(state="indexing", folder=pin["name"], done=0, total=0)
             try:
-                photos = self._job(generation, "scan", path=pin["path"])["photos"]
+                revision = self.checks.revision
+                result = self._job(generation, "scan", path=pin["path"])
+                if revision != self.checks.revision:
+                    result = self._job(generation, "scan", path=pin["path"])  # Names may have changed while this walk yielded.
+                photos = result["photos"]
             except (ValueError, OSError) as error:
                 incomplete = True
                 problem("index_scan_failed", pin["path"], error, "entries kept; retry automatically")
@@ -253,6 +266,7 @@ class LibraryIndex:
             for start in range(0, len(settings), 200):
                 self._check(generation)
                 self.marks.read(settings[start:start + 200])
+            self.checks.seed(result)
             waiting = [photo["path"] for photo in photos if not photo.get("indexed")]
             done = len(photos) - len(waiting)
             self._set(done=done, total=len(photos))

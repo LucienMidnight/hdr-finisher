@@ -127,12 +127,19 @@ class AlbumRequest(BaseModel):
 
 
 class CollectionRequest(BaseModel):
+    cached: bool = False
     kind: Literal["album", "tag"]
     name: str
 
 
 class IndexRequest(BaseModel):
     action: Literal["pause", "resume", "rescan", "enable", "disable"]
+
+
+class ChecksRequest(BaseModel):
+    paths: list[str] = Field(default_factory=list, max_length=100)
+    client: str = Field(default="", max_length=80)
+    visible: str = ""
 
 
 class WriterRequest(BaseModel):
@@ -244,6 +251,45 @@ def create_library_router(worker, browser):
             command(lambda: index.set_preferences(background_indexing=request.action == "enable"))
         return index.status()
 
+    @router.post("/checks")
+    def checks_command(request: ChecksRequest):
+        if request.client:
+            index.checks.visible(request.client, request.visible)
+        if request.paths:
+            index.checks.request(request.paths)
+        return index.checks.status()
+
+    @router.post("/view")
+    def checked_view(request: FolderRequest):
+        result = index.checks.view(request.path)
+        if result is None:
+            return {"photos": None}
+        return cached_listing(result)
+
+    def cached_listing(result):
+        import json
+        from .library_marks import Marks
+        photos = result["photos"]
+        paths = [p["path"] for p in photos]
+        with marks._lock:
+            rows = marks._rows(paths)
+            if marks.database.exists():
+                db = marks._connect()
+                try:
+                    for start in range(0, len(paths), 800):
+                        chunk = paths[start:start + 800]
+                        facts = {path: (size, modified, data) for path, size, modified, data in db.execute(
+                            "SELECT path, bytes, mtime_ns, facts FROM files WHERE path IN (" + ",".join("?" for _ in chunk) + ")", chunk)}
+                        for photo in photos[start:start + 800]:
+                            row = facts.get(photo["path"])
+                            if row and row[:2] == (photo["bytes"], photo["mtime_ns"]) and row[2]:
+                                photo.update(json.loads(row[2]), indexed=True)
+                finally:
+                    db.close()
+        for photo in photos:
+            photo.update(rows.get(photo["path"], {"marks": Marks().model_dump(), "albums": [], "storage": "none"}))
+        return result
+
     @router.get("/preferences")
     def preferences():
         return index.preferences()
@@ -289,6 +335,8 @@ def create_library_router(worker, browser):
         for photo in result["photos"]:
             photo.update(by_path[photo["path"]])
         result.update(warnings=records["warnings"], undo_available=records["undo_available"])
+        if root is not None:
+            index.checks.seed(result)
         return result
 
     @router.post("/collection")
@@ -296,7 +344,8 @@ def create_library_router(worker, browser):
         """The photos of an album or tag, wherever they are in the library."""
         paths = marks.album_paths(request.name) if request.kind == "album" else marks.tag_paths(request.name)
         photos, missing = index.photos(paths)
-        return listing({"path": "", "photos": photos, "unreadable_folders": [], "missing": missing})
+        result = {"path": "", "photos": photos, "unreadable_folders": [], "missing": missing}
+        return cached_listing(result) if request.cached else listing(result)
 
     @router.post("/metadata")
     async def metadata(command: MetadataRequest, request: Request):

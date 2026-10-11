@@ -333,11 +333,13 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     jobs: dict[str, Event] = {}
     stopping = Event()
     sequence = 0
-    state = {"paused": paused, "foreground": 0}
+    state = {"paused": paused, "foreground": 0, "checking": 0}
 
     def lane(job):
         if job["command"] in {"picture", "native"}:
             return "picture"
+        if job.get("checking"):
+            return "check"
         return "index" if job.get("background") else "main"
 
     def reply(message):
@@ -363,19 +365,24 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 cancelled = jobs.get(job["id"])
                 if cancelled is None or cancelled.is_set():
                     continue
-                if kind != "index":
+                if kind == "check":
+                    state["checking"] += 1
+                elif kind != "index":
                     state["foreground"] += 1
 
             def yielding():
                 # Background indexing waits for visible work, grading and export.
                 while not cancelled.is_set() and not stopping.is_set():
                     with condition:
-                        if not state["paused"] and not state["foreground"] and all(lane(item[2]) == "index" for item in queue):
+                        allowed = {"index", "check"} if kind == "check" else {"index"}
+                        if (not state["paused"] and not state["foreground"]
+                                and (kind == "check" or not state["checking"])
+                                and all(lane(item[2]) in allowed for item in queue)):
                             break
                     time.sleep(0.05)
                 return cancelled.is_set() or stopping.is_set()
 
-            check = yielding if kind == "index" else cancelled.is_set
+            check = yielding if kind in {"index", "check"} else cancelled.is_set
             try:
                 if job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
@@ -387,8 +394,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     from .library_metadata import read_metadata
                     result = {"id": job["id"], "result": read_metadata(job["paths"], check)}
                 elif job["command"] in {"scan", "tree"}:
-                    operation = scan_folder if job["command"] == "scan" else folder_tree
-                    result = {"id": job["id"], "result": operation(job["path"], check)}
+                    output = scan_folder(job["path"], check, fingerprints=True) if job["command"] == "scan" else folder_tree(job["path"], check)
+                    result = {"id": job["id"], "result": output}
                 else:
                     output = browser.thumbnail(job["path"], job["size"], fast_only=job["fast_only"])
                     result = {"id": job["id"], "path": str(output)}
@@ -402,7 +409,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 result = {"id": job["id"], "error": str(exc)}
             with condition:
                 jobs.pop(job["id"], None)
-                if kind != "index":
+                if kind == "check":
+                    state["checking"] -= 1
+                elif kind != "index":
                     state["foreground"] -= 1
             if not cancelled.is_set() and not stopping.is_set():
                 try:
@@ -420,6 +429,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     # Unvisited pinned folders are indexed on their own lane, so a long
     # background scan never queues ahead of the folder the user just clicked.
     Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()
+    Thread(target=decode, args=("check",), name="hdr-library-check", daemon=True).start()
     reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1, "picture_workers": 6, "index_workers": 1})
     try:
         while _parent_is_alive(parent_pid):

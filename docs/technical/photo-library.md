@@ -5,7 +5,7 @@ picks, colour labels, tags and albums, how its background process works, and
 why it was built this way. It is written so that a problem can be traced to a
 specific file, rule or message.
 
-- **Updated October 11, 2026: background-writer Stages A, B and C built.**
+- **Updated October 11, 2026: background-writer Stages A, B and C and folder-check slice 2b built.**
 - Sections 1 to 10 describe what is built. Section 11 lists the remaining
   gaps. Section 12 explains the library-wide health report and diagnostics.
 - The Library is still being built, and its controls change often. A
@@ -339,7 +339,7 @@ in a second process so that grading stays responsive.
 **How the helper behaves:**
 
 - It starts with the backend, at reduced priority (Windows "below normal").
-- It has three kinds of work, each with its own lane so that one cannot
+- It has four kinds of work, each with its own lane so that one cannot
   hold up another:
 
   | Lane | Work | At once |
@@ -347,6 +347,7 @@ in a second process so that grading stays responsive.
   | Main | Listing the folder you just opened, the folder tree, camera details for photos on screen, Import thumbnails | 1 |
   | Picture | Grid, single-view and 100% pictures | 6 |
   | Index | Background indexing of pinned folders | 1 |
+  | Check | Timed or requested folder checks using the same index commands | 1 |
 
 - **It pauses whenever Grade is working.** Every grading, import and export
   request pauses the helper until that request finishes. While paused, a
@@ -374,7 +375,7 @@ Indexing makes pinned folders searchable without visiting each one.
 
 - **When it runs:** when the Library is first shown after the app starts,
   when a folder is pinned, and when you choose Re-scan pinned folders now.
-  Folders are **not** watched for changes in between.
+  Timed checks now keep these folders current between passes (slice 2b).
 - **What a pass does**, for each pinned folder that is connected:
   1. Lists every supported photo in the folder and its subfolders, with size
      and modified date. Links are not followed.
@@ -391,6 +392,50 @@ Indexing makes pinned folders searchable without visiting each one.
   of failed work, not watching successfully indexed folders for changes.
 - Pinning or unpinning a folder, or changing the indexing setting, restarts
   the pass from the beginning.
+
+### Keeping folders current (slice 2b, October 11)
+
+The existing helper lists names, sizes and modified dates (including settings
+files). The backend compares the listing with session-only folder snapshots;
+only new or changed photos and settings go through the existing marks reader
+and camera-detail index. No database layout changed: existing `library.sqlite3`
+files and pending writes are retained. There is no filesystem watcher.
+
+- A visible folder, pinned or not, is checked about every **15 seconds**.
+  Other pins are checked about every **five minutes**, one folder at a time.
+  Each folder waits at least **ten times its own last check duration**, measured
+  after completion. Empty timed checks write nothing and have no Activity item
+  or routine log line. Health still records the last check time and duration.
+- New photos, and replacements whose size changed, wait for the same size in
+  two consecutive listings. Growing files are not decoded or reported as bad.
+- Background indexing off stops other pins; visible folders continue. User
+  indexing Pause stops timed checks, including queued work. A requested check
+  bypasses that Pause. Grade/import/export hold every check. Both docked and
+  popped-out Library pages report their visible folder; closed/hidden pages
+  stop reporting and their short visibility lease expires.
+- Disconnected folders retain their snapshots and entries. Availability is
+  checked while the scheduler runs; a reconnected pin is checked immediately.
+  Other failures retry after 15 seconds, subject to the folder's duration floor.
+- **Chosen scheduling option:** a check runs alongside the existing index in
+  the same helper, in one read-only check lane. The index yields at file/batch
+  boundaries and resumes its existing work in memory; camera details and
+  settings already read are not repeated. Visible folder/picture work and
+  Grade take priority over both. Settings writing continues independently.
+  Requested checks interrupt a timed listing by cancelling only that listing;
+  re-listing names is allowed. An index listing made stale while yielding can
+  also be repeated before expensive work begins. Helper restart and failed-index
+  recovery continue to use the Stage A to C mechanisms.
+
+**Measured before settling the periods:** the local D: drive listing of 50,000
+valid, disposable JPEG photos took **3.23 seconds**. One complete unchanged-folder
+check (helper transfer and comparison included, helper already started) took
+**2.70 seconds** on the warmed listing. No mapped SMB share was available.
+Picture payloads were not read; this is a listing measurement, not a real-photo
+browsing or Grade performance claim. Keep the 15-second/five-minute bases: this
+large folder automatically waits at least about **27 seconds** in the foreground.
+Steve's real intake-folder trial decides how it feels. Reproduce the complete
+check with `.venv/Scripts/python.exe tests/performance/library-folder-check.py
+<folder>` from `codebase`; it uses disposable app data and only reads that folder.
 
 The right end of the bottom bar now has one **Activity** item for settings
 writing and indexing. At rest it says only "Activity". A click opens the
@@ -409,6 +454,8 @@ they are not a journal of earlier commands.
 | Indexing waits while Grade is busy | Helper paused by Grade, import or export. |
 | Indexing paused | Paused by the user. |
 | Indexing is waiting to try again | An incomplete or failed pass will retry automatically; Re-scan wakes it now. |
+| Checking for new photos · <folder> | Requested check, or a timed check that found changes. |
+| Checking folders waits while Grade is busy | Requested check queued behind Grade, import or export. |
 | Activity · Needs attention / Needs attention: N | A helper/indexing problem, or N settings files with a writing problem. |
 
 The list always includes both jobs and their state, even at rest:
@@ -468,6 +515,12 @@ lens name is missing for some cameras (PRD open decision 15).
 
 | Message | Meaning | What to do |
 |---|---|---|
+| "N new photos in <folder>" | One notice for arrivals in a check. | None. |
+| "Checked <folder>: no new photos" / "Checked <folder>: library updated" | Requested completion, or changes other than arrivals. | None. |
+| "N photos still arriving" | Files are waiting for their size to settle between checks. | Wait, or check again after the copy finishes. |
+| "Checking for new photos · <folder>" / "Checking folders waits while Grade is busy" | Check running, or queued behind Grade/import/export. | Wait. |
+| "Could not check <folder>: folder is not connected; photos and marks are kept" | Requested check could not reach the folder. | Reconnect the drive; checking resumes. |
+| "Could not check <folder>: it will try again automatically" / "Folder check could not finish; it will try again" | Requested completion failure or Activity attention. | Check the folder; automatic retry continues. |
 | "Rated / Picked / Rejected / Updated N photos" · Undo | The changed photos are saved in the database; files catch up in the background. | Undo is available immediately. |
 | "Undid the change on N photos" | Undo returned; settings files catch up in the background. | None. |
 | Details: "Waiting to be written; marks are safe in the library" | Pending, with no write failure. | Wait; the writer works automatically. |
@@ -509,9 +562,7 @@ lens name is missing for some cameras (PRD open decision 15).
 Stages A, B and C closed the background-writer brief's gaps. Remaining:
 
 1. Undo history is lost after restart (agreed, out of scope).
-2. Folders are not watched. Planned as slice 2b; see the Photo Library
-   PRD, section 5.18, "Keeping folders current".
-3. Detected conflict copies are not imported as virtual copies (later slice).
+2. Detected conflict copies are not imported as virtual copies (later slice).
 
 Stage B closed unified Activity, writer Pause/Resume, grouped Try again,
 the health command, diagnostics and raw validation messages. Plain wording
@@ -536,7 +587,12 @@ Technical details remain in that command and the log, outside normal UI.
 Retry includes the exact `folder` and `reason` from an attention group.
 `POST /api/library/settings-status` with `paths` continues to supply live
 Details storage states; the GET version gives the writer summary.
-Indexing keeps `GET/POST /api/library/index`.
+Indexing keeps `GET/POST /api/library/index`. `POST /api/library/checks` accepts
+selected `paths`, or a page `client` and `visible` folder lease.
+`POST /api/library/view` refreshes from the checked snapshot and cached database
+marks/facts without rereading settings. Health `index.checks` supplies queued and
+running checks, recent completion notices, per-folder last-check timestamps,
+durations, disconnection state and unreadable-settings warnings.
 
 Search **`[library]`** in `logs/backend.log`. Every line has a stable event
 name and JSON details: the attempted operation, photo/folder or examples,
@@ -560,6 +616,8 @@ same health command includes problems found in its other process.
 | `writer_pause`, `writer_resume`, `writer_retry` | User control or Grade/import/export wait, and an explicit retry. |
 | `index_start`, `index_end`, `index_pause`, `index_resume`, `index_recovered` | Index milestones and controls. |
 | `index_offline`, `index_scan_failed`, `index_metadata_failed`, `index_failed`, `index_stopped`, `index_stop`, `index_pass_failed`, `index_<operation>_failed` | Skipped folder, failed facts/scan/database work, retries or stopping, including its reason. |
+| `folder_check_changed`, `folder_check_end` | Changes discovered (counts), or requested completion including zero arrivals and held copies; empty timed checks have no line. |
+| `folder_check_offline`, `folder_check_failed`, `folder_check_recovered`, `folder_check_availability_failed` | Folder skipped or failed, entries retained, automatic retry, and recovery. |
 | `preferences_read_failed` | Unreadable preferences; defaults used, file retained. |
 | `helper_start`, `helper_stop`, `helper_stopped`, `helper_boot_failed`, `helper_pause`, `helper_resume` | Helper lifecycle and wait gate; Grade remains unaffected. |
 | `helper_restart`, `helper_restart_exhausted` | Automatic restart with reason and count, or the three-restart limit reached; waiting reads recover or fail plainly. |
@@ -768,3 +826,25 @@ Electron check passed at 2560×1440. No check failed.
 No Grade/export/Proof, shader, picture decode, database-layout or installer
 changes. Existing database rows and pending marks are preserved. No new
 product decision is needed; Stage C ends the brief's implementation.
+
+### Slice 2b verification and wording (October 11, 2026)
+
+Backend commit: timed and requested checks use the existing index, protect
+pending marks, detect external changes, defer growing files, retain offline
+entries and report last-check health. Thirteen focused data checks passed,
+including an already-running helper scan that yielded to a requested check
+within two seconds and resumed without another invocation. Existing Stage A
+to C recovery tests were retained. Timing and the period recommendation are
+recorded above; no database migration is needed.
+
+Interface commit: the toolbar and folder menu offer **Check for new photos**;
+Ctrl-click or Shift-click selects several tree folders. New wording is listed
+in the messages table. The focused `tests/library-folder-checks.js` Electron
+check at 2560×1440 covers timed arrivals without selection/scroll movement,
+both controls, stable single view/filmstrip and a removed selected photo.
+The fast suites and final focused results are recorded with the commit.
+The final recovery/health/folder-check subset passed 39 checks, including
+removed subfolder counts and retaining pending marks.
+No broad GPU sweep, push or installer build was performed. Steve should try
+adding photos to a real pinned intake folder, including an external or network
+drive, and judge whether browsing and Grade still feel right.

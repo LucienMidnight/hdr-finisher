@@ -31,10 +31,11 @@ def folder_tree(value, cancelled=lambda: False):
 
 
 @audited("scan_folder")
-def scan_folder(value, cancelled=lambda: False):
+def scan_folder(value, cancelled=lambda: False, fingerprints=False):
     root = checked_folder(value)
     photos = []
     unreadable_folders = []
+    folders, settings = [], {}
     def inaccessible(error):
         problem("scan_folder_failed", error.filename, error, "folder skipped; remaining folders read")
         unreadable_folders.append(str(error.filename))
@@ -42,8 +43,20 @@ def scan_folder(value, cancelled=lambda: False):
         if cancelled():
             raise CancelledError()
         directories[:] = [name for name in directories if not Path(parent, name).is_symlink()]
+        folders.append(parent)
         names = set(files)
-        for name in files:
+        if fingerprints:
+            for name in files:
+                if ".hdrf" in name.casefold() and not name.endswith(".tmp"):
+                    candidate = Path(parent, name)
+                    try:
+                        info = candidate.lstat()
+                        settings[str(candidate)] = (info.st_size, info.st_mtime_ns)
+                    except OSError as error:
+                        inaccessible(error)
+        for position, name in enumerate(files):
+            if position % 32 == 0 and cancelled():
+                raise CancelledError()
             path = Path(parent, name)
             if path.suffix.lower() not in SOURCE_EXTENSIONS or path.is_symlink():
                 continue
@@ -56,4 +69,7 @@ def scan_folder(value, cancelled=lambda: False):
                 "bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns,
                 "sidecar": name + SIDECAR_SUFFIX in names})
     photos.sort(key=lambda item: (item["name"].casefold(), item["path"].casefold()))
-    return {"path": str(root), "photos": photos, "unreadable_folders": unreadable_folders}
+    result = {"path": str(root), "photos": photos, "unreadable_folders": unreadable_folders}
+    if fingerprints:
+        result.update(folders=folders, settings=settings)
+    return result

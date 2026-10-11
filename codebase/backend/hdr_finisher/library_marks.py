@@ -196,7 +196,7 @@ class LibraryMarks:
             db.execute("INSERT OR IGNORE INTO album_photos VALUES (?, ?)", (album, row["path"]))
 
     @audited("settings_read")
-    def read(self, values, *, documents=None, canonical=False):
+    def read(self, values, *, documents=None, canonical=False, connected=False):
         """Rebuild visited sidecar records; unmarked browsing creates no files."""
         with self._lock:
             paths = [str(value) for value in values] if canonical else [str(Path(value).resolve()) for value in values]
@@ -213,7 +213,7 @@ class LibraryMarks:
                     document = None
                     invalid = True
                     warnings.append(str(error))
-                if row and (row["storage"] == "database" or not path.parent.exists()):
+                if row and (row["storage"] == "database" or (not connected and not path.parent.exists())):
                     pass  # A failed sidecar write is retained across visits/restarts.
                 elif document:
                     current = {"path": value, "photo_id": document["photo_id"], "marks": Marks.model_validate(document.get("marks", {})).model_dump(), "albums": self._albums(document, path), "storage": "sidecar"}

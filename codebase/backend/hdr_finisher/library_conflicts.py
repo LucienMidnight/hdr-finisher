@@ -11,6 +11,7 @@ from .library_diagnostics import log, problem
 class LibraryConflicts:
     def __init__(self):
         self._folders = {}
+        self._documents = {}
         self._lock = RLock()
 
     def status(self):
@@ -56,7 +57,14 @@ class LibraryConflicts:
                     copies[named].append(str(entry))
                     continue  # Even an unreadable sync conflict is identifiable.
                 try:
-                    document = json.loads(entry.read_text(encoding="utf-8"))
+                    info = entry.stat()
+                    signature = (info.st_size, info.st_mtime_ns)
+                    cached = self._documents.get(str(entry))
+                    if cached and cached[0] == signature:
+                        document = cached[1]
+                    else:
+                        document = json.loads(entry.read_text(encoding="utf-8"))
+                        self._documents[str(entry)] = (signature, document)
                 except (ValueError, OSError) as error:
                     problem("settings_conflict_read_failed", entry, error, "unidentified extra file left untouched")
                     continue
