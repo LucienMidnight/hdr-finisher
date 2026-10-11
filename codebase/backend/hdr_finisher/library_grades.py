@@ -185,12 +185,12 @@ class LibraryGrades:
         if getattr(self.marks,"copies",None): self.marks.copies.merge(path,document)
         return self.merge_item(path,document)
 
-    def merge_item(self, path, document):
+    def merge_item(self, path, document, include_history=True):
         with self.marks._lock:
             state = self._get(path)
             history = deepcopy(document.get("grade_history", {}))
             for field in ("session_start", "previous_grade"):
-                if field in state: history[field] = deepcopy(state[field])
+                if field in state and (include_history or state.get("pending")): history[field] = deepcopy(state[field])
             if history: document["grade_history"] = history
             if not state.get("pending"):
                 return document
@@ -220,9 +220,13 @@ class LibraryGrades:
             session = self.store.get(session_id)
             rows = self.marks._rows([path])
             reason = rows.get(path, {}).get("write_reason", "")
+            name = {}
+            if "|copy|" in path:
+                try: name["name"] = (self.marks._document(Path(path)) or {}).get("name")
+                except (ValueError, OSError): pass  # Saving/status must still work while settings are unreadable.
             return {"conflict": bool(state.get("conflict")), "pending": bool(state.get("pending")),
                     "dirty": bool(session.dirty), "reason": reason,
-                    "revision": session.edit_revision}
+                    "revision": session.edit_revision, **name}
 
     def check(self, session_id, unsaved=False):
         path = self.path(session_id)

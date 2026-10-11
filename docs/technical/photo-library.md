@@ -985,7 +985,7 @@ Virtual copies are built in Stage D below.
 
 ### Slice 3 Stage D - virtual copies (October 11, 2026)
 
-Wording and layout pass after Stage D (Claude, October 11): the Library right-click menu follows the mock-up (name header, key hints, items that open a window end in an ellipsis, Remove virtual copy last and in the warning colour; Del removes the selected copy). The create, remove and revert windows use the mock-up titles and explanations. In Grade, Revert opens a small menu of the reverts that would do something, in place of a window of buttons; with none available it reports "There is no earlier grade to go back to." The copy filter is labelled Kind. Details names a virtual copy and shows Edited or Not edited. Not built, needs backend commands: Rename copy, and creating or removing several copies in one undo step.
+Wording and layout pass after Stage D (Claude, October 11): the Library right-click menu follows the mock-up (name header, key hints, items that open a window end in an ellipsis, Remove virtual copy last and in the warning colour; Del removes the selected copy). The create, remove and revert windows use the mock-up titles and explanations. In Grade, Revert opens a small menu of the reverts that would do something, in place of a window of buttons; with none available it reports "There is no earlier grade to go back to." The copy filter is labelled Kind. Details names a virtual copy and shows Edited or Not edited. Rename copy is now a backend command, offered in the right-click menu and Details. Create and remove accept selections, ask once, and each form one Undo step for the whole command. Duplicate names are allowed. Rename changes only the name, including the open Grade caption, without changing its save state. Bulk commands validate every settings file before accepting changes and stop as a whole on failure, matching counted reverts. Removal skips the copy open in Grade and names it in the result; originals in a mixed selection are retained.
 
 `library_copies.py` owns virtual item identity and the copy list. An internal
 `<physical path>|copy|<photo_id>` key addresses each Library item; it is never
@@ -1013,8 +1013,10 @@ and kept-picture identity. Rebuild reads these from the one settings file. Copy
 and original filtering treats them independently; family sorting keeps copies
 immediately after the original in every direction. The strip shows a copy symbol
 or the original's +count. Removing a closed copy has its own confirmation and
-one Ctrl+Z restoration; a copy open in Grade is refused until another item is
-opened, so unsaved Grade work cannot be discarded. Nothing is deleted from disk.
+one Ctrl+Z restoration; Library removal leaves a copy open in Grade in place
+and names it in the result, so unsaved Grade work cannot be discarded. A mixed
+selection removes only closed copies. Internal Undo of creation also refuses
+to remove an open copy and leaves Undo available. Nothing is deleted from disk.
 
 Keep both is a small extension of the grade-conflict choice: queue the outside
 grade as a new copy, then retain/save the local grade using the existing conflict
@@ -1036,10 +1038,22 @@ Slice 3 C/D additions to the messages table:
 | Reverted to original: <count> photos. Each keeps its previous grade. Ctrl+Z undoes it. (and the matching last session, last saved and previous grade wording) | The command finished. Open targets remain unsaved. | Save when ready, or Undo. |
 | Open this photo once before reverting to its starting grade. | Older sidecar has no recorded default. | Open the photo in Grade first. |
 | A grade changed since the revert; Undo was left available and nothing was overwritten. | Undo would replace a newer grade. | Review the newer grade before trying again. |
-| Virtual copy created beside the original. Ctrl+Z undoes it. | A new independent item is queued in the same settings file. | Open or mark the copy. |
-| One grade is removed. The photo stays and nothing is deleted from disk. You can undo this with Ctrl+Z. | Separate copy-removal confirmation. | Remove or Cancel. |
-| Virtual copy removed. The photo stays. Ctrl+Z brings it back. | Copy removed from the durable list, source retained. | Undo if needed. |
-| Open another photo or copy before removing this virtual copy. Nothing was changed. | The copy is still open in Grade. | Leave it through the normal save gate first. |
+| <count> virtual copy/copies created beside the original/their originals. Ctrl+Z undoes it. | A new independent item is queued in the same settings file. | Open or mark the copy. |
+| This removes one grade of <filename> / <count> virtual copies, with their own marks and tags. The photos stay. Nothing is deleted from disk. | Counted copy-removal confirmation; originals are retained. | Remove or Cancel. |
+| <count> virtual copy/copies removed. The photos stay. Ctrl+Z brings them back. | Copy removed from the durable list, source retained. | Undo if needed. |
+| Open another photo or copy before removing this virtual copy. Nothing was changed. | Undo of creation would remove an open copy. | Leave it through the normal save gate, then Undo again. |
 | Virtual copies changed elsewhere. Both versions are kept; settings were left untouched. | Pending local copy list conflicts with the file. | Keep both versions and review the conflict; no automatic merge. |
 | Keep both brings the file's grade in as a virtual copy. | Extra choice in the existing Grade conflict notice. | Choose Keep both to retain both independent grades. |
 | Copy names must contain between 1 and 120 characters. | Copy name validation. | Enter a shorter nonblank name, or leave the creation name empty for the default. |
+
+| Virtual copy renamed. Ctrl+Z undoes it. | A name-only command; Grade save state is unchanged. | Continue editing, or Undo. |
+| Left "<copy name>" of <filename>: it is open in Grade. | Library removal skipped that copy and removed the other selected copies. | Leave Grade through its normal save gate before removing this copy. |
+| The copy name changed since the rename; nothing was overwritten. | Undo would overwrite a newer copy name. | Review the name before trying again. |
+
+These leftovers add no settings fields or database layout. Existing `.hdrf`
+files retain their contents except for the requested changes; existing
+`library.sqlite3` needs no migration. Bulk copy acceptance uses one database
+transaction and the existing per-file atomic writer. A later outside edit is
+still handled by the existing writer conflict protection. The rename-only queue
+keeps unsaved history in its existing durable database state until a later
+ordinary write; renaming does not publish it.

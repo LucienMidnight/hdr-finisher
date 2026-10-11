@@ -221,6 +221,10 @@
     root.append(make("strong", "", one ? fileName(photo) : `${state.selection.size.toLocaleString()} photos selected`));
     if (one) {
       if (photo.copy_id) root.append(make("p", "library-details-sub", `Virtual copy \u201c${photo.copy_name}\u201d. Its own grade, marks and tags. No second image file.`));
+      if (photo.copy_id) {
+        const rename = make("button", "text-button", "Rename copy…"); rename.type = "button";
+        rename.addEventListener("click", () => renameCopy(photo).catch(error => status(error.message))); root.append(rename);
+      }
       root.append(make("p", "library-details-sub", HDRLibraryFacts.headline(photo)));
       root.append(make("p", "library-details-sub", `${photo.edited ? "Edited" : "Not edited"}${photo.copy_count ? ` \u00b7 ${plural(photo.copy_count, "virtual copy", "virtual copies")}` : ""}`));
       if (photo.albums?.length) root.append(make("p", "library-details-sub", `In ${photo.albums.join(", ")}`));
@@ -259,27 +263,39 @@
   }
   const plural = (count, one, many = one + "s") => `${count.toLocaleString()} ${count === 1 ? one : many}`;
   const fileName = photo => photo.copy_id ? (photo.source_path || photo.path).split(/[/\\]/).pop() : photo.name;
-  async function createCopy(photo) {
-    const answer = await HDRLibraryDialogs.ask({ title: `Create Virtual Copy of ${fileName(photo)}`,
+  async function createCopy(photos) {
+    const photo = photos[0], count = photos.length;
+    const answer = await HDRLibraryDialogs.ask({ title: count === 1 ? `Create Virtual Copy of ${fileName(photo)}` : `Create ${count} Virtual Copies`,
       message: "A virtual copy is another grade of the same photo. No second image file is made. The copy is kept in the settings file beside the photo, so it travels with it.",
       fields: [
         { name: "start", label: "Start from", options: [{ value: "current", label: "The current grade" }, { value: "clean", label: "A clean start" }], value: "current" },
-        { name: "name", label: "Name (optional)", optional: true, placeholder: "For example Black and white" }], confirm: "Create copy" });
+        { name: "name", label: "Name (optional)", optional: true, placeholder: "For example Black and white" }], confirm: count === 1 ? "Create copy" : `Create ${count} copies` });
     if (!answer) return;
-    const result = await api("/api/library/virtual-copies", { path: photo.path, ...answer });
+    const result = await api("/api/library/virtual-copies", { paths: photos.map(item => item.path), ...answer });
     culling.setUndo(result.undo_available); await refreshCopies();
     const made = state.photos.findIndex(item => item.path === result.path);
     if (made >= 0) select(made, true);
-    confirmChange("Virtual copy created beside the original. Ctrl+Z undoes it.", true);
+    confirmChange(`${plural(result.count, "virtual copy", "virtual copies")} created beside ${count === 1 ? "the original" : "their originals"}. Ctrl+Z undoes it.`, true);
   }
-  // Removing a virtual copy is the smaller action: one grade goes, the photo stays.
-  async function removeCopy(photo) {
-    if (!await HDRLibraryDialogs.ask({ title: `Remove Virtual Copy “${photo.copy_name}”?`,
-      message: `This removes one grade of ${fileName(photo)}, with its own marks and tags. The photo itself stays, with its other grades. Nothing is deleted from disk.`,
-      confirm: "Remove copy", danger: true })) return;
-    const result = await api("/api/library/virtual-copies", { path: photo.path, action: "remove" });
+  async function renameCopy(photo) {
+    const answer = await HDRLibraryDialogs.ask({ title: "Rename Virtual Copy",
+      fields: [{ name: "name", label: "Name", value: photo.copy_name }], confirm: "Rename" });
+    if (!answer) return;
+    const result = await api("/api/library/virtual-copies", { paths: [photo.path], action: "rename", ...answer });
     culling.setUndo(result.undo_available); await refreshCopies();
-    confirmChange("Virtual copy removed. The photo stays. Ctrl+Z brings it back.", true);
+    confirmChange("Virtual copy renamed. Ctrl+Z undoes it.", result.undo_available);
+  }
+  async function removeCopy(photos) {
+    const copies = photos.filter(photo => photo.copy_id), count = copies.length;
+    if (!count) return;
+    const photo = copies[0];
+    if (!await HDRLibraryDialogs.ask({ title: count === 1 ? `Remove Virtual Copy “${photo.copy_name}”?` : `Remove ${count} Virtual Copies?`,
+      message: count === 1 ? `This removes one grade of ${fileName(photo)}, with its own marks and tags. The photo itself stays, with its other grades. Nothing is deleted from disk.`
+        : `This removes ${count} virtual copies, with their own marks and tags. The photos stay, with their other grades. Nothing is deleted from disk. A copy open in Grade is left in place.`,
+      confirm: count === 1 ? "Remove copy" : `Remove ${count} copies`, danger: true })) return;
+    const result = await api("/api/library/virtual-copies", { paths: copies.map(photo => photo.path), action: "remove" });
+    culling.setUndo(result.undo_available); await refreshCopies();
+    confirmChange(`${plural(result.count, "virtual copy", "virtual copies")} removed. The photos stay.${result.count ? " Ctrl+Z brings them back." : ""} ${result.warnings.join(" ")}`.trim(), result.undo_available);
   }
   const REVERTS = Object.freeze({
     previous: { label: "Restore previous grade…", title: what => `Restore Previous Grade of ${what}?`, done: "Restored the previous grade of",
@@ -311,12 +327,14 @@
       const { counts } = await api("/api/library/grade-reverts", { paths });
       for (const [target, revert] of Object.entries(REVERTS)) if (counts[target]) grades.push({ label: revert.label, run: () => revertGrades(paths, target, counts[target]) });
     } catch (error) { status(error.message); }
-    if (one) grades.push({ label: "Create virtual copy…", run: () => createCopy(photo) });
+    const chosen = state.photos.filter(item => state.selection.has(item.path));
+    grades.push({ label: "Create virtual copy…", run: () => createCopy(chosen) });
+    if (one && photo.copy_id) grades.push({ label: "Rename copy…", run: () => renameCopy(photo) });
     showMenu(event, [{ header: one ? photo.name : `${paths.length.toLocaleString()} photos` },
       ...(one ? [{ label: "Open in Grade", key: "Enter", run: openGrade }] : []),
       ...(grades.length ? [...(one ? [{ separator: true }] : []), ...grades] : []),
       { separator: true }, ...albums.menuActions(paths),
-      ...(one && photo.copy_id ? [{ separator: true }, { label: "Remove virtual copy…", key: "Del", danger: true, run: () => removeCopy(photo) }] : [])],
+      ...(chosen.some(item => item.copy_id) ? [{ separator: true }, { label: "Remove virtual copy…", key: "Del", danger: true, run: () => removeCopy(chosen) }] : [])],
       { label: "Photo actions", onError: error => status(error.message) });
   }
   function updateSingleCaption() {
@@ -845,7 +863,7 @@
     const steps = { arrowright: 1, arrowleft: -1, arrowdown: state.view === "grid" ? state.layout?.columns || 1 : 1, arrowup: state.view === "grid" ? -(state.layout?.columns || 1) : -1 };
     if (key in steps) { event.preventDefault(); select(state.index + steps[key], true, event.shiftKey ? "range" : "single"); }
     else if (key === "enter") { event.preventDefault(); openGrade(); }
-    else if (key === "delete") { if (state.selection.size === 1 && selected()?.copy_id) { event.preventDefault(); removeCopy(selected()).catch(error => status(error.message)); } }
+    else if (key === "delete") { if (state.photos.some(photo => state.selection.has(photo.path) && photo.copy_id)) { event.preventDefault(); removeCopy(state.photos.filter(photo => state.selection.has(photo.path))).catch(error => status(error.message)); } }
     else if (key === " ") { event.preventDefault(); setView(state.view === "grid" ? "single" : "grid"); }
     else if (key === "z") { event.preventDefault(); toggleZoom(); }
     else if (key === "h") { event.preventDefault(); toggleHDR(); }

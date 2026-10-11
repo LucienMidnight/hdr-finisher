@@ -27,15 +27,18 @@ def add_grade_routes(router, marks, store):
     copies = LibraryCopies(marks)
 
     class CopyRequest(BaseModel):
-        path: str
-        action: Literal["create", "remove"] = "create"
+        paths: list[str]
+        action: Literal["create", "remove", "rename"] = "create"
         start: Literal["current", "clean"] = "current"
         name: str = ""
 
     @router.post("/virtual-copies")
     def virtual_copies(request: CopyRequest):
         try:
-            return copies.create(request.path,request.start,request.name) if request.action=="create" else copies.remove(request.path)
+            if request.action == "create": return copies.create_many(request.paths, request.start, request.name)
+            if request.action == "remove": return copies.remove_many(request.paths)
+            if len(request.paths) != 1: raise ValueError("Select one virtual copy to rename.")
+            return copies.rename(request.paths[0], request.name)
         except (ValueError,OSError) as error:
             raise HTTPException(status_code=400,detail=str(error)) from error
 

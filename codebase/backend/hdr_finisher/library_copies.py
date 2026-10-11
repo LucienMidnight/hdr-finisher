@@ -97,16 +97,16 @@ class LibraryCopies:
             raise ValueError("Virtual copies changed elsewhere. Both versions are kept; settings were left untouched.")
         return state, actual
 
-    def queue(self, db, path, items, document):
+    def queue(self, db, path, items, document, rename_only=()):
         state, actual = self.preflight(path,document)
-        state.update(baseline=state.get("baseline",actual) if state.get("pending") else actual,desired=deepcopy(items),pending=True)
+        state.update(baseline=state.get("baseline",actual) if state.get("pending") else actual,desired=deepcopy(items),pending=True,rename_only=list(rename_only))
         self.put(db,path,state)
 
     def merge(self, path, document):
         state, actual = self.preflight(path, document)
         items = deepcopy(state["desired"]) if state.get("pending") else actual
         for item in items:
-            self.marks.grades.merge_item(source(path)+SEPARATOR+item["photo_id"], item)
+            self.marks.grades.merge_item(source(path)+SEPARATOR+item["photo_id"], item, include_history=item["photo_id"] not in state.get("rename_only", []))
         if items or "virtual_copies" in document: document["virtual_copies"] = items
         return document
 
@@ -121,19 +121,39 @@ class LibraryCopies:
         for item in items: self.marks.grades.acknowledge_item(source(path)+SEPARATOR+item["photo_id"],item)
 
     def commit(self, path, items, document, finalize=None):
-        row = self.marks.read([path],documents=[document],canonical=True)["photos"][0]
-        row["photo_id"] = row["photo_id"] or uuid4().hex; row["storage"]="database"
-        before = self.items(path,document)
+        return self.commit_many({path: (items, document)}, finalize)
+
+    def commit_many(self, changes, finalize=None, rename_only=()):
+        rows, documents, before = [], [], {}
+        for path, (items, document) in changes.items():
+            self.preflight(path, document)
+            before[path] = self.items(path, document)
+            row = self.marks.read([path], documents=[document], canonical=True)["photos"][0]
+            row["photo_id"] = row["photo_id"] or uuid4().hex
+            row["storage"] = "database"
+            rows.append(row); documents.append(document)
         def update(db):
-            self.queue(db,path,items,document)
-            keys={i["photo_id"] for i in items}
-            for item in before:
-                if item["photo_id"] not in keys:
-                    for table in ("photos","photo_tags","album_photos"):
-                        db.execute(f"DELETE FROM {table} WHERE path=?",(path+SEPARATOR+item["photo_id"],))
-            for item in items: self.marks._index(db,self.row(path,item))
+            for path, (items, document) in changes.items():
+                self.queue(db, path, items, document, rename_only)
+                keys = {i["photo_id"] for i in items}
+                for item in before[path]:
+                    if item["photo_id"] not in keys:
+                        for table in ("photos", "photo_tags", "album_photos"):
+                            db.execute(f"DELETE FROM {table} WHERE path=?", (path+SEPARATOR+item["photo_id"],))
+                for item in items: self.marks._index(db, self.row(path, item))
             if finalize: finalize(db)
-        self.marks._save([row],[document],update)
+        if rows: self.marks._save(rows, documents, update)
+
+    def selection(self, values):
+        keys = list(dict.fromkeys(str(self.marks._path(value)) for value in values))
+        changes = {}
+        for key in keys:
+            path = source(key)
+            if path not in changes:
+                doc = self.marks._document(Path(path))
+                self.preflight(path, doc)
+                changes[path] = (self.items(path, doc), doc)
+        return keys, changes
 
     def save_rows(self, rows, documents, finalize):
         """Translate virtual mark/grade rows into the physical writer transaction."""
@@ -160,48 +180,88 @@ class LibraryCopies:
         return self.marks._save([v[0] for v in physical.values()],[v[1] for v in physical.values()],update)
 
     def create(self, value, start="current", name="", grade=None):
-        grades=self.marks.grades
-        with grades.store._lock,self.marks._lock:
-            key=str(self.marks._path(value)); path=source(key)
-            physical=self.marks._document(Path(path)); self.preflight(path,physical)
-            row=self.marks.read([path],canonical=True)["photos"][0]
-            document=self.marks._document(Path(key)) or {}
-            items=self.items(path,physical); default=document.get("grade_default") or grades._get(key).get("default")
-            if start not in ("current","clean"): raise ValueError("Choose Current grade or Clean start.")
-            session=grades.history.current(key)
-            current=session.edit_document().model_dump(mode="json") if session else grades._get(key).get("desired") if grades._get(key).get("pending") else document.get("grade")
-            chosen=deepcopy(grade if grade is not None else current if start=="current" else default)
-            if chosen is not None: EditDocument.model_validate(chosen)
-            names={i["name"] for i in items}; number=1
-            while f"Copy {number}" in names: number+=1
-            name=clean_names([name or f"Copy {number}"],"Copy names")[0]
-            item={"photo_id":uuid4().hex,"name":name,"marks":deepcopy(row["marks"]),"albums":[],"grade":chosen,"grade_default":deepcopy(default)}
-            items.append(item); self.commit(path,items,physical)
-            copy_key=path+SEPARATOR+item["photo_id"]
-            self.marks._undo.append({"command":lambda:self.remove(copy_key,undo=False)})
-            if getattr(self.marks,"kept",None): self.marks.kept.schedule(copy_key,chosen)
-            log("virtual_copy_created",photo=path,copy=item["photo_id"],start=start)
-            return {"photos":[self.row(path,item)],"path":copy_key,"warnings":[],"undo_available":True,"copies_changed":True}
+        return self.create_many([value], start, name, grade)
+
+    def create_many(self, values, start="current", name="", grade=None):
+        grades = self.marks.grades
+        with grades.store._lock, self.marks._lock:
+            if start not in ("current", "clean"): raise ValueError("Choose Current grade or Clean start.")
+            if name: name = clean_names([name], "Copy names")[0]
+            keys, changes = self.selection(values)
+            made = []
+            for key in keys:
+                path = source(key); items, physical = changes[path]
+                row = self.marks.read([path], documents=[physical], canonical=True)["photos"][0]
+                document = self.marks._document(Path(key)) or {}
+                state = grades._get(key)
+                default = document.get("grade_default") or state.get("default")
+                session = grades.history.current(key)
+                current = session.edit_document().model_dump(mode="json") if session else state.get("desired") if state.get("pending") else document.get("grade")
+                chosen = deepcopy(grade if grade is not None else current if start == "current" else default)
+                if chosen is not None: EditDocument.model_validate(chosen)
+                names = {i["name"] for i in items}; number = 1
+                while f"Copy {number}" in names: number += 1
+                item = {"photo_id":uuid4().hex, "name":name or f"Copy {number}", "marks":deepcopy(row["marks"]),
+                        "albums":[], "grade":chosen, "grade_default":deepcopy(default)}
+                items.append(item); made.append(self.row(path, item))
+            self.commit_many(changes)
+            if made:
+                self.marks._undo.append({"command":lambda:self.remove_many([row["path"] for row in made], undo=False, skip_open=False)})
+            for row in made:
+                if getattr(self.marks, "kept", None): self.marks.kept.schedule(row["path"])
+                log("virtual_copy_created", photo=source(row["path"]), copy=row["photo_id"], start=start)
+            return {"photos":made, "path":made[-1]["path"] if made else None, "count":len(made),
+                    "warnings":[], "undo_available":bool(self.marks._undo), "copies_changed":bool(made)}
+
+    def rename(self, value, name, undo=True, expected=None):
+        grades = self.marks.grades
+        with grades.store._lock, self.marks._lock:
+            name = clean_names([name], "Copy names")[0]
+            keys, changes = self.selection([value]); key = keys[0]; path = source(key)
+            if not is_copy(key): raise ValueError("Select a virtual copy to rename.")
+            items, doc = changes[path]
+            item = next(i for i in items if i["photo_id"] == key.split(SEPARATOR,1)[1])
+            old = item["name"]
+            if expected is not None and old != expected: raise ValueError("The copy name changed since the rename; nothing was overwritten.")
+            if old != name:
+                item["name"] = name; self.commit_many(changes, rename_only=[item["photo_id"]])
+                if undo: self.marks._undo.append({"command":lambda:self.rename(key, old, undo=False, expected=name)})
+                log("virtual_copy_renamed", photo=path, copy=item["photo_id"])
+            return {"photos":[self.row(path,item)], "warnings":[], "undo_available":bool(self.marks._undo), "copies_changed":old != name}
 
     def remove(self, value, undo=True):
-        grades=self.marks.grades
-        with grades.store._lock,self.marks._lock:
-            key=str(self.marks._path(value)); path=source(key)
-            if not is_copy(key): raise ValueError("Select a virtual copy to remove.")
-            if grades.history.current(key): raise ValueError("Open another photo or copy before removing this virtual copy. Nothing was changed.")
-            doc=self.marks._document(Path(path)); self.preflight(path,doc)
-            items=self.items(path,doc); identifier=key.split(SEPARATOR,1)[1]
-            position=next(i for i,p in enumerate(items) if p["photo_id"]==identifier); removed=items.pop(position)
-            self.commit(path,items,doc)
+        return self.remove_many([value], undo=undo, skip_open=False)
+
+    def remove_many(self, values, undo=True, skip_open=True):
+        grades = self.marks.grades
+        with grades.store._lock, self.marks._lock:
+            keys, changes = self.selection(values)
+            removed, warnings = [], []
+            for key in keys:
+                if not is_copy(key): continue
+                path = source(key); items, doc = changes[path]
+                identifier = key.split(SEPARATOR,1)[1]
+                position = next(i for i,p in enumerate(items) if p["photo_id"] == identifier)
+                if grades.history.current(key):
+                    if not skip_open: raise ValueError("Open another photo or copy before removing this virtual copy. Nothing was changed.")
+                    warnings.append(f'Left "{items[position]["name"]}" of {Path(path).name}: it is open in Grade.')
+                    continue
+                removed.append((path, position, deepcopy(items[position])))
+                items.pop(position)
+            changed = {p:changes[p] for p,_,_ in removed}
+            self.commit_many(changed)
             def restore():
-                document=self.marks._document(Path(path)); self.preflight(path,document)
-                current=self.items(path,document)
-                if any(i["photo_id"]==identifier for i in current): raise ValueError("That copy already exists; nothing was overwritten.")
-                current.insert(min(position,len(current)),deepcopy(removed)); self.commit(path,current,document)
-                return {"photos":[self.row(path,removed)],"copies_changed":True}
-            if undo: self.marks._undo.append({"command":restore})
-            log("virtual_copy_removed",photo=path,copy=identifier,action="photo untouched; removal undoable")
-            return {"photos":[],"warnings":[],"undo_available":bool(self.marks._undo),"copies_changed":True}
+                with grades.store._lock, self.marks._lock:
+                    _, plans = self.selection(list(changed))
+                    for path, position, item in reversed(removed):
+                        items, doc = plans[path]
+                        if any(i["photo_id"] == item["photo_id"] for i in items): raise ValueError("That copy already exists; nothing was overwritten.")
+                        items.insert(min(position,len(items)), deepcopy(item))
+                    self.commit_many(plans)
+                    return {"photos":[self.row(p,i) for p,_,i in removed], "copies_changed":True}
+            if undo and removed: self.marks._undo.append({"command":restore})
+            for path, _, item in removed: log("virtual_copy_removed", photo=path, copy=item["photo_id"], action="photo untouched; removal undoable")
+            return {"photos":[], "count":len(removed), "warnings":warnings, "undo_available":bool(self.marks._undo), "copies_changed":bool(removed)}
 
     def expand(self, photos):
         output=[]

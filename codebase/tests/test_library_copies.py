@@ -125,3 +125,75 @@ def test_status_read_started_before_writer_acknowledgement_cannot_reload_old_gra
     monkeypatch.setattr(marks,"_document",read_before_ack)
     result=grades.check(str(session.session_id))
     assert not result.get("reload") and not result["conflict"]
+
+
+def test_rename_open_copy_and_undo_preserve_everything_but_name(setup):
+    photo,store,session,marks,grades=setup;c=copies(setup);saved(setup)
+    key=c.create(photo, name="Before")["path"];other=c.create(photo,name="Shared")["path"];marks.writer.drain()
+    marks.change([key],MarkChange(rating=3,add_tag="Copy"));marks.album_create("Copies",[key]);marks.writer.drain()
+    doc=settings(photo);doc["virtual_copies"][0]["unknown"]={"keep":42};outside(photo,doc)
+    opened=open_document(store,EditDocument.model_validate(doc["virtual_copies"][0]["grade"]),photo)
+    grades.attach(str(opened.session_id),key);edit(store,opened,3)
+    grade=opened.edit_document().model_dump(mode="json");dirty=opened.dirty
+    c.rename(key,"Shared");marks.writer.drain()
+    expected=deepcopy(doc);expected["virtual_copies"][0]["name"]="Shared"
+    assert settings(photo)==expected
+    assert grades.status(str(opened.session_id))["name"]=="Shared"
+    assert opened.edit_document().model_dump(mode="json")==grade and opened.dirty==dirty
+    marks.undo();marks.writer.drain();assert settings(photo)==doc
+    for name in ("   ","x"*121):
+        with pytest.raises(ValueError,match="Copy names"):c.rename(key,name)
+    with pytest.raises(ValueError,match="Select a virtual copy"):c.rename(photo,"No")
+
+
+def test_bulk_create_remove_and_undo_are_one_step_each(setup):
+    photo,store,session,marks,grades=setup;c=copies(setup);saved(setup)
+    second=photo.with_name("second.png");second.write_bytes(photo.read_bytes())
+    baseline=len(marks._undo)
+    made=c.create_many([photo,second],name="Shared");marks.writer.drain()
+    assert made["count"]==2 and len(marks._undo)==baseline+1
+    assert settings(photo)["virtual_copies"][0]["name"]==settings(second)["virtual_copies"][0]["name"]=="Shared"
+    keys=[r["path"] for r in made["photos"]]
+    c.remove_many([photo,*keys]);marks.writer.drain()
+    assert len(marks._undo)==baseline+2
+    assert not settings(photo)["virtual_copies"] and not settings(second)["virtual_copies"]
+    marks.undo();marks.writer.drain()
+    assert len(settings(photo)["virtual_copies"])==len(settings(second)["virtual_copies"])==1
+    marks.undo();marks.writer.drain()
+    assert len(marks._undo)==baseline and not settings(photo)["virtual_copies"] and not settings(second)["virtual_copies"]
+    c.create_many([photo,second]);marks.writer.drain()
+    assert settings(photo)["virtual_copies"][0]["name"]==settings(second)["virtual_copies"][0]["name"]=="Copy 1"
+
+
+def test_bulk_remove_skips_open_copy_and_restores_order(setup):
+    photo,store,session,marks,grades=setup;c=copies(setup);saved(setup)
+    keys=[c.create(photo)["path"] for _ in range(3)];marks.writer.drain();before=settings(photo)["virtual_copies"]
+    opened=open_document(store,EditDocument.model_validate(before[1]["grade"]),photo);grades.attach(str(opened.session_id),keys[1])
+    result=c.remove_many([photo,*keys]);marks.writer.drain()
+    assert result["count"]==2 and 'Copy 2' in result["warnings"][0] and 'open in Grade' in result["warnings"][0]
+    assert settings(photo)["virtual_copies"]==[before[1]]
+    marks.undo();marks.writer.drain();assert settings(photo)["virtual_copies"]==before
+
+
+@pytest.mark.parametrize("failure",["unreadable","unwritable","external"])
+def test_bulk_middle_failure_accepts_no_partial_changes(setup,monkeypatch,failure):
+    photo,store,session,marks,grades=setup;c=copies(setup);saved(setup)
+    others=[photo.with_name(name+".png") for name in ("middle","last")]
+    for other in others:other.write_bytes(photo.read_bytes())
+    paths=[photo,*others];keys=[c.create(p)["path"] for p in paths];marks.writer.drain()
+    middle=others[0]
+    if failure=="unreadable":Path(str(middle)+".hdrf").write_text("broken")
+    elif failure=="external":
+        c.create(middle);doc=settings(middle);doc["virtual_copies"][0]["name"]="Elsewhere";outside(middle,doc)
+    else:
+        original=marks._document
+        def denied(path):
+            if source(path)==str(middle):raise PermissionError("Settings file cannot be changed")
+            return original(path)
+        monkeypatch.setattr(marks,"_document",denied)
+    states=[deepcopy(c.state(p)) for p in paths];undo=len(marks._undo)
+    files=[Path(str(p)+".hdrf").read_bytes() for p in paths]
+    for action in (lambda:c.create_many(paths),lambda:c.remove_many(keys)):
+        with pytest.raises((ValueError,OSError)):action()
+        assert [c.state(p) for p in paths]==states and len(marks._undo)==undo
+        assert [Path(str(p)+".hdrf").read_bytes() for p in paths]==files

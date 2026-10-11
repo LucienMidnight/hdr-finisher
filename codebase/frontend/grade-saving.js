@@ -17,7 +17,8 @@
     const visible = Boolean(current && state.session?.session_id === current);
     byId("grade-saving-controls").hidden = !visible;
     if (!visible) return;
-    if(currentName) els.sessionName.textContent = currentName;
+    if (Object.hasOwn(result, "name")) currentName = result.name ? `${state.session.source.filename} · ${result.name}` : null;
+    els.sessionName.textContent = currentName || state.session.source.filename;
     const dirty = state.documentDirty;
     const token = `${state.editRevision}:${state.globalEditGeneration}:${dirty}`;
     if (token !== lastToken) { lastToken = token; lastChange = performance.now(); }
