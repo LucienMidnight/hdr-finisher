@@ -1,11 +1,11 @@
 # Photo Library: How It Works
 
-This page records how the Photo Library stores and protects your ratings,
-picks, colour labels, tags and albums, how its background process works, and
+This page records how the Photo Library stores and protects your grades,
+ratings, picks, colour labels, tags and albums, how its background process works, and
 why it was built this way. It is written so that a problem can be traced to a
 specific file, rule or message.
 
-- **Updated October 11, 2026: background-writer Stages A, B and C and folder-check slice 2b built.**
+- **Updated October 11, 2026: background-writer Stages A, B and C, folder-check slice 2b, and grade-saving slice 3 Stage A built.**
 - Sections 1 to 10 describe what is built. Section 11 lists the remaining
   gaps. Section 12 explains the library-wide health report and diagnostics.
 - The Library is still being built, and its controls change often. A
@@ -24,7 +24,7 @@ Terms used here:
 
 ## 1. The idea in one paragraph
 
-Your marks and album memberships are written to a small settings file beside
+Your saved grades, marks and album memberships are written to a small settings file beside
 each photo. That file is the lasting record: it travels with the photo when
 the folder is copied, backed up or moved to another computer. The library
 database is a fast index of those files, kept so that the app can show tag
@@ -36,7 +36,7 @@ damaged, and does not move with the photos. A library that lives only in
 files is too slow to search. Keeping both, with the files as the record,
 gives a fast library that can always be rebuilt.
 
-There are three exceptions, where the database is the only record. They are
+There are exceptions, where the database is the only record. They are
 listed in section 4 and matter when you delete or lose the database.
 
 ---
@@ -60,7 +60,7 @@ checked for this page.
 
 | File or folder | What it holds | If you delete it (with the app closed) |
 |---|---|---|
-| `library.sqlite3` | The library database (section 4). Created the first time a folder is opened in the Library. | Rebuilt from the settings files as folders are visited or indexed. Three things are lost: see section 4. |
+| `library.sqlite3` | The library database (section 4). Created the first time a folder is opened in the Library. | Rebuilt from the settings files as folders are visited or indexed. Unwritten work and other exceptions are lost: see section 4. |
 | `library-preferences.json` | The meanings you gave the four colour labels, and whether background indexing is on. | Label meanings are blank again; indexing returns to on. |
 | `pinned-folders.json` | The list of pinned folders, as plain paths. | No folders are pinned. Photos and marks are untouched. |
 | `library-pictures\` | Cached browsing pictures, one `.npz` file each (section 9). | Safe at any time. Pictures are made again when next needed. |
@@ -83,8 +83,8 @@ D:\Photos\Iceland\DSC02339.ARW.hdrf
 **Why the whole file name:** a RAW and a JPEG with the same name each get
 their own file, and the file sorts next to its photo in Explorer.
 
-A settings file is created only when a photo is first marked or added to an
-album. Opening and browsing a folder writes nothing.
+A settings file is created only when a photo is first marked, added to an
+album or given a saved grade. Opening and browsing a folder writes nothing.
 
 ---
 
@@ -126,6 +126,7 @@ It is plain text and can be opened in Notepad:
 | `marks.label` | Empty, `red`, `orange`, `green` or `blue`. |
 | `marks.tags` | A list of names, each 1 to 120 characters. |
 | `albums` | A list of album names, same rules as tags. Present only once the photo has been in an album. |
+| `grade` | The existing version 4 project edit document, without source pixels: HDR and SDR settings, crop, source interpretation, RAW development, lens corrections, local adjustments and masks. Absent until a grade is saved. |
 
 Rules for names (tags and albums):
 
@@ -148,8 +149,55 @@ What the app will and will not do with a settings file:
 - **It never changes the photo.** `contains_source_pixels` is always
   `false`; the file holds settings only.
 
-Grades are not stored in the settings file yet. That arrives with a later
-slice of the Library.
+### Grade saving (slice 3, Stage A)
+
+Opening a photo loads its saved `grade` through the same document-opening
+path as a project. A photo without one uses today's defaults and creates no
+settings file just by being opened. Ctrl+S and Save on a source photo write
+its grade beside it; Save As still makes a project. Project opening and
+project saving remain available. Export and Proof use their existing paths.
+
+Autosave is one app preference, initially on and kept between launches.
+It saves after roughly a second without an edit, on leaving the photo and
+on closing. With it off, the named-photo Save / Don't save / Cancel notice
+guards photo replacement and closing. Switching Library tabs, browsing and
+opening the same photo do not prompt. Marks save independently.
+
+The visible states are **All changes saved**, **Saving…**, **Unsaved changes**
+and **No unsaved changes**. When a settings write cannot finish, the state is
+**Waiting to write settings — grade kept safely in the Library**. Activity
+uses the existing folder failure and retry notices. Whole-file replacement
+and a durable queue protect settings through interrupted and failed writes.
+
+Before every grade save, and again when the background writer prepares the
+file, the app compares the grade with the last known grade. Marks, tags,
+albums and unknown fields alone never cause a grade-conflict notice; fresh
+outside fields are preserved. An external grade change with unsaved work
+pauses saving. The notice names the photo:
+
+> The grade for <photo> changed elsewhere while you were working. Nothing
+> was overwritten. Choose which grade to use; the other will be kept as the
+> previous grade.
+
+Title: **Grade changed elsewhere**. Choices: **Cancel**, **Use the file's
+grade**, **Keep my grade**. Cancel keeps Grade open with **Saving paused —
+grade changed elsewhere** and a Resolve control. Leaving or closing asks
+again. Each successful choice retains the unchosen grade in durable Library
+storage as `previous_grade`; Stage C will give it the before-state home and
+Restore previous grade control. Keep both is a candidate for Stage D only.
+Activity lists paused conflicts by folder and photo; it does not promise
+automatic conflict resolution.
+
+With no unsaved work, Grade loads an outside grade without a question and
+says once: **The grade for <photo> changed elsewhere. Grade now shows the
+file's grade.** Recovery is retained after acknowledged edits even with
+autosave off. After an interrupted app or Windows session, the next start
+offers the named photo, then asks **Unsaved work for <photo> was kept after
+the app stopped. Restore it?** Choices: **Leave saved grade**, **Restore
+unsaved work**. It is never applied without asking.
+
+The Library still shows its default pictures until Stage B. Finished saved
+pictures, the remaining reverts and virtual copies are not built in Stage A.
 
 ---
 
@@ -167,6 +215,7 @@ open a copy, not the live file.
 | `album_photos` | Album and photo pair | `album`, `path` |
 | `settings_writes` | Photo waiting for a settings write | `path`, current-state `revision`, preflight `fingerprint`, failure `reason` and `detail`, `next_try`, `attempts` |
 | `files` | Photo file found in a visited or indexed folder | `path`, `bytes`, `mtime_ns`, `facts` (camera details as JSON text, empty until read) |
+| `photo_grades` | Photo opened for sidecar saving | `path`, `state` (JSON: known grade, queued grade, unsaved recovery, conflict and retained previous grade) |
 
 Photos are identified by their **full path**. This has consequences:
 
@@ -201,6 +250,8 @@ Everything is rebuilt from the settings files except:
 2. **Empty albums.** An album with no photos exists only in the database.
 3. **Tags that no photo carries**, such as one made with New tag and not yet
    used.
+4. **Unwritten grades, unsaved recovery and the retained previous grade.**
+   These live in `photo_grades`; a saved grade already beside its photo survives.
 
 Camera details and file sizes are also dropped, and are read again by
 indexing.
@@ -605,6 +656,8 @@ same health command includes problems found in its other process.
 | Event or family | Meaning |
 |---|---|
 | `command_start`, `command_end`, `<command>_failed` | Marks, Undo, tag and album commands; counts, context, duration, and failures. |
+| `grade_save_queued`, `grade_saved` | A grade kept in the durable queue, or written beside its photo. |
+| `grade_conflict`, `grade_conflict_resolved` | Saving paused for an external grade change, or the explicit choice and retention of the unchosen grade. |
 | `request_failed`, `request_invalid`, `helper_request_failed` | Backend/API request stopped or rejected; original technical details stay here. |
 | `settings_read_failed`, `settings_folder_failed`, `undo_skipped`, `collection_photo_missing` | Unreadable settings/folder, skipped deleted Undo photos or unavailable collection views. |
 | `settings_conflict`, `settings_conflict_cleared`, `settings_conflict_scan_failed`, `settings_conflict_read_failed` | Extra settings documents detected or no longer found; failed detection retains existing warnings and leaves files untouched. |
@@ -848,3 +901,25 @@ removed subfolder counts and retaining pending marks.
 No broad GPU sweep, push or installer build was performed. Steve should try
 adding photos to a real pinned intake folder, including an external or network
 drive, and judge whether browsing and Grade still feel right.
+
+### Slice 3 Stage A verification (October 11, 2026)
+
+The required fast suites passed: 462 Node tests and 1,723 Python tests,
+with three skips. Twenty new data checks use disposable photos and cover
+the complete grade document, mark/album/unknown-field preservation, external
+grade choices, queued-write races, offline/read-only/full/locked/unreadable
+settings recovery and restart recovery. JPEG, AVIF and JPEG XL exports and
+full-size Proof artifacts are byte-identical when the same grade is opened
+from a sidecar or project. Existing render formulas and encoders are unchanged.
+
+The focused Electron check passed at 2560×1440: opening writes nothing,
+manual and automatic save states, the Grade dot, reopening, browsing without
+prompts, exact named-photo prompt and Escape, immediate save when autosave
+is enabled, external marks without a grade notice, conflict Cancel and
+repeat notices on leaving and actual main-window close, Keep my grade,
+clean external reload and offered unsaved recovery after restart. No final
+check failed. No broad sweep, push or installer build was performed.
+
+Steve should try a real photo with both HDR and SDR edits and a mask: save,
+close and reopen it, then repeat with autosave off. The Library's displayed
+saved grade awaits Stage B and its format/resolution measurement decision.

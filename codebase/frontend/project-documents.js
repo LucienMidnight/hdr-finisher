@@ -22,6 +22,7 @@ function beginProjectOpenStatus(label) {
 }
 
 function syncProjectBadge() {
+  window.HDRGradeSaving?.render();
   if (!els.badge) return;
   const projectName = state.projectPath
     ? String(state.projectPath).split(/[/\\]/).pop()
@@ -36,7 +37,8 @@ function syncDesktopDocumentState() {
   const displayName = state.projectPath
     ? String(state.projectPath).split(/[/\\]/).pop()
     : state.session?.source?.filename || "Untitled";
-  const payload = { path: state.projectPath || "", dirty: Boolean(state.documentDirty), displayName };
+  const payload = { path: state.projectPath || "", dirty: Boolean(state.documentDirty), displayName,
+    sidecar: Boolean(window.HDRGradeSaving?.active()), conflict: Boolean(window.HDRGradeSaving?.conflict()) };
   const key = JSON.stringify(payload);
   if (key === state.desktopDocumentStateKey) return;
   state.desktopDocumentStateKey = key;
@@ -95,7 +97,10 @@ async function openDesktopSelection(selection) {
     return;
   }
   renderExperimentalDngNote(selection);
-  if (!await confirmUnsavedTransition("import another source")) return;
+  if (selection.path === state.editDocument?.source?.durable_path && window.HDRGradeSaving?.active() && !selection.replaceSessionId) {
+    activateWorkflowTab("grade"); return;
+  }
+  if (!await confirmUnsavedTransition(`opening ${selection.path?.split(/[/\\]/).pop() || "another photo"}`)) return;
   await openStagedDesktopSource(selection);
 }
 
@@ -146,7 +151,8 @@ async function openStagedDesktopSource(selection) {
         return;
       }
       const retainedProjectPath = selection.replaceSessionId ? state.projectPath : "";
-      await activateDesktopSession(payload.session, retainedProjectPath);
+      const gradeSession = selection.replaceSessionId ? payload.session : await window.HDRGradeSaving.open(payload.session);
+      await activateDesktopSession(gradeSession, retainedProjectPath);
       if (!selection.replaceSessionId) await recordSuccessfulMediaImport(selection.path);
       status.post({ id: "import", severity: "success", message: "Source imported." });
       return;
@@ -193,7 +199,7 @@ async function activateDesktopSession(session, projectPath) {
   state.zoomMode = "fit";
   state.zoomPercent = 100;
   state.zoomReferenceFrame = null;
-  if (!projectPath) await applyNewSessionPreferences();
+  if (!projectPath && !window.HDRGradeSaving?.hasGrade(session.session_id)) await applyNewSessionPreferences();
   state.interpretationGateDismissed = false;
   state.gpuPreview?.resetSession(session.session_id);
   if (state.gpuPreview?.warmDenoiseModel) {
@@ -217,6 +223,7 @@ async function activateDesktopSession(session, projectPath) {
   prepareInactivePreview();
   if (previewNeedsRefinement()) debouncePreview("hdr");
   syncDesktopDocumentState();
+  window.HDRGradeSaving?.activated(session, projectPath);
 }
 
 function documentTransitionToken() {
@@ -347,6 +354,12 @@ async function openProjectFromPath(desktopSelection = null) {
 }
 
 async function saveProjectToPath({ saveAs = false } = {}) {
+  if (!saveAs && window.HDRGradeSaving?.active()) return window.HDRGradeSaving.save();
+  if (saveAs && window.HDRGradeSaving?.active()) return window.HDRGradeSaving.saveProject();
+  return saveProjectFileToPath({ saveAs });
+}
+
+async function saveProjectFileToPath({ saveAs = false } = {}) {
   if (!state.session) return false;
   const pendingApplied = await (state.editCommandQueue || Promise.resolve(true));
   const globalsApplied = pendingApplied === false ? false : await syncGlobalEditState();
@@ -451,6 +464,7 @@ async function saveProjectToPath({ saveAs = false } = {}) {
 }
 
 async function confirmUnsavedTransition(actionLabel) {
+  if (window.HDRGradeSaving?.active()) return window.HDRGradeSaving.leave(actionLabel);
   return window.HDRPhotoTransition.leaveCurrentPhoto({
     dirty: Boolean(state.session && state.documentDirty),
     save: () => saveProjectToPath({ saveAs: false }),

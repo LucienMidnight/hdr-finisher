@@ -759,7 +759,7 @@ function renderLocalAdjustments() {
   if (els.localMoveDown) els.localMoveDown.disabled = !local || Boolean(state.selectedSubMaskId) || selectedIndex >= locals.length - 1;
   if (els.projectSave) {
     els.projectSave.disabled = !state.session;
-    els.projectSave.textContent = state.documentDirty ? "Save project *" : "Save project";
+    els.projectSave.textContent = window.HDRGradeSaving?.active() ? "Save" : state.documentDirty ? "Save project *" : "Save project";
   }
   syncDesktopDocumentState();
   if (local && !pendingSelected) {

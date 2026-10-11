@@ -33,6 +33,12 @@ async function initializeDesktopBridge() {
 }
 
 async function handleDesktopCommand(command, payload = null) {
+  if (command === "close-photo") {
+    let allowed = false;
+    try { allowed = await window.HDRGradeSaving.leave("closing the app"); }
+    finally { await desktop.completePhotoClose(allowed === true); }
+    return allowed;
+  }
   if (command === "open-source") return requestSourceImport();
   if (command === "open-project") return openProjectFromPath();
   if (command === "save") return saveProjectToPath({ saveAs: false });

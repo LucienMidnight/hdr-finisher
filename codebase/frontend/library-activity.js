@@ -67,6 +67,11 @@
       if (!writer.attention.length && !(health.conflicts || []).length && !health.helper.failure && !health.helper.recovering && index.state !== "failed" && index.state !== "retrying" && !(index.checks?.folders || []).some(folder => folder.failure || folder.warnings?.length)) panel.append(node("p", "Nothing needs attention."));
       for (const group of writer.attention) {
         const item = node("section", "", "library-activity-job");
+        if (group.reason === "grade_conflict") {
+          item.append(node("p", group.folder, "library-activity-folder"),
+            node("p", `${group.photos.map(path => path.split(/[\\/]/).at(-1)).join(", ")}: grade changed elsewhere. Saving is paused. Both grades are kept safely; resolve the choice in Grade.`));
+          panel.append(item); continue;
+        }
         item.append(node("p", group.folder, "library-activity-folder"), node("p", `${count(group.count)} photos: ${group.explanation}. Marks are safe in the library; writing will retry automatically.`));
         if (group.reason === "unreadable") item.append(node("p", group.photos.map(path => path.split(/[\\/]/).at(-1)).join(", ")));
         item.append(action("Try again", `retry:${group.folder}:${group.reason}`, "/api/library/writer", { action: "retry", folder: group.folder, reason: group.reason })); panel.append(item);

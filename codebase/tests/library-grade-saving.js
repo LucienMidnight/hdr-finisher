@@ -1,0 +1,117 @@
+/* Slice 3 Stage A: one real window, disposable originals and app profile. */
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const { chromium } = require("playwright");
+const root = path.resolve(__dirname, ".."), output = path.join(root, "output", "library-grade-saving");
+fs.mkdirSync(output, { recursive: true });
+const folder = fs.mkdtempSync(path.join(output, "photos-"));
+const photos = ["first.png", "next.png"].map(name => path.join(folder, name));
+for (const photo of photos) fs.copyFileSync(path.join(root, "tests", "fixtures", "sdr_gradient.png"), photo);
+const original = fs.readFileSync(photos[0]);
+const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
+(async () => {
+  const browser = await chromium.launch({ headless: true, channel: "msedge" });
+  try {
+    const page = await browser.newPage(), errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
+    const open = photo => page.evaluate(async photo => {
+      await openDesktopSelection({ kind: "source", ...await desktop.grantSourcePath(photo) });
+    }, photo);
+    const edit = exposure => page.evaluate(async exposure => {
+      const adjustments = structuredClone(state.adjustments);
+      adjustments.hdr.exposure = exposure;
+      adjustments.sdr.exposure = -.25;
+      adjustments.shared.geometry.crop = { x: .1, y: .1, width: .8, height: .8 };
+      await queueEditCommand("set_global_adjustments", { adjustments });
+    }, exposure);
+    const answer = text => page.locator("#app-dialog[open] button").filter({ hasText: text }).click();
+    await open(photos[0]);
+    await page.waitForFunction(() => window.HDRGradeSaving.active() && state.acceptedPresentation?.exact, null, { timeout: 60000 });
+    await page.waitForTimeout(1200);
+    assert.equal(fs.existsSync(photos[0] + ".hdrf"), false, "Looking writes no settings");
+    await page.locator("#grade-autosave").uncheck();
+    await edit(.75);
+    await page.waitForTimeout(1300);
+    assert.equal(fs.existsSync(photos[0] + ".hdrf"), false, "Autosave off writes no settings");
+    assert.equal(await page.locator("#grade-save-state").textContent(), "Unsaved changes");
+    assert.ok(await page.locator("#grade-unsaved-dot").isVisible());
+    await page.evaluate(() => activateWorkflowTab("import"));
+    assert.equal(await page.locator("#app-dialog[open]").count(), 0, "Browsing never asks");
+    await page.evaluate(() => activateWorkflowTab("grade"));
+    await page.locator("#grade-save-now").click();
+    await page.waitForFunction(() => document.getElementById("grade-save-state").textContent === "No unsaved changes");
+    const saved = read(photos[0]).grade;
+    assert.equal(saved.global_adjustments.hdr.exposure, .75);
+    await open(photos[1]);
+    await open(photos[0]);
+    assert.equal(await page.evaluate(() => state.adjustments.hdr.exposure), .75);
+    assert.deepEqual(await page.evaluate(() => state.editDocument), saved);
+    console.log("PASS: sidecar save and reopen, both grades and crop, autosave off, save state, and browsing.");
+
+    await edit(1);
+    const transition = open(photos[1]);
+    await page.locator("#app-dialog[open]").waitFor();
+    assert.equal(await page.locator("#app-dialog-title").textContent(), "Unsaved changes");
+    assert.equal(await page.locator("#app-dialog-message").textContent(), "Save changes to first.png before opening next.png?");
+    await page.keyboard.press("Escape"); await transition;
+    assert.equal(await page.evaluate(() => state.session.source.filename), "first.png");
+    await open(photos[0]); // Same photo does not ask.
+    assert.equal(await page.locator("#app-dialog[open]").count(), 0);
+    await page.locator("#grade-autosave").check();
+    await page.waitForFunction(() => document.getElementById("grade-save-state").textContent === "All changes saved");
+    assert.equal(read(photos[0]).grade.global_adjustments.hdr.exposure, 1);
+    console.log("PASS: exact prompt, Escape cancels, same-photo opening, and turning autosave on saves at once.");
+
+    await page.locator("#grade-autosave").uncheck();
+    await edit(1.5);
+    let outside = read(photos[0]);
+    outside.marks.rating = 5; outside.albums = ["External"]; outside.future = "keep";
+    fs.writeFileSync(photos[0] + ".hdrf", JSON.stringify(outside));
+    await page.waitForTimeout(1100);
+    assert.equal(await page.locator("#app-dialog[open]").count(), 0, "Outside marks are not grade conflicts");
+    await page.locator("#grade-save-now").click();
+    await page.waitForFunction(() => document.getElementById("grade-save-state").textContent === "No unsaved changes");
+    assert.equal(read(photos[0]).marks.rating, 5); assert.equal(read(photos[0]).future, "keep");
+
+    await edit(2);
+    outside = read(photos[0]); outside.grade.global_adjustments.hdr.exposure = 3;
+    fs.writeFileSync(photos[0] + ".hdrf", JSON.stringify(outside));
+    await page.locator("#app-dialog[open]").waitFor();
+    assert.equal(await page.locator("#app-dialog-title").textContent(), "Grade changed elsewhere");
+    await answer("Cancel");
+    await page.waitForFunction(() => document.getElementById("grade-save-state").textContent === "Saving paused — grade changed elsewhere");
+    const blocked = open(photos[1]);
+    await page.locator("#app-dialog[open]").waitFor(); await answer("Cancel"); await blocked;
+    assert.equal(await page.evaluate(() => state.adjustments.hdr.exposure), 2);
+    await page.evaluate(() => desktop.performWindowAction("close"));
+    await page.locator("#app-dialog[open]").waitFor();
+    assert.equal(await page.locator("#app-dialog-title").textContent(), "Grade changed elsewhere");
+    await answer("Cancel");
+    await page.waitForTimeout(200);
+    assert.equal(await page.evaluate(() => state.adjustments.hdr.exposure), 2, "Unresolved conflict repeats on actual main-window close");
+    await page.locator("#grade-resolve-conflict").click();
+    await page.locator("#app-dialog[open]").waitFor(); await answer("Keep my grade");
+    await page.waitForFunction(() => document.getElementById("grade-save-state").textContent === "No unsaved changes");
+    assert.equal(read(photos[0]).grade.global_adjustments.hdr.exposure, 2);
+    outside = read(photos[0]); outside.grade.global_adjustments.hdr.exposure = 4;
+    fs.writeFileSync(photos[0] + ".hdrf", JSON.stringify(outside));
+    await page.waitForFunction(() => state.adjustments.hdr.exposure === 4, null, { timeout: 60000 });
+    assert.equal(await page.locator("#app-dialog[open]").count(), 0, "A clean external grade is picked up without a question");
+    await edit(5);
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator("#app-dialog[open]").waitFor();
+    assert.equal(await page.locator("#app-dialog-title").textContent(), "Recover unsaved work");
+    await answer("Open photo");
+    await page.locator("#app-dialog[open] button").filter({ hasText: "Restore unsaved work" }).waitFor();
+    await answer("Restore unsaved work");
+    await page.waitForFunction(() => state.adjustments.hdr.exposure === 5 && state.documentDirty);
+    assert.equal(read(photos[0]).grade.global_adjustments.hdr.exposure, 4, "Recovery is offered; it never silently replaces the saved grade");
+    assert.equal(await page.locator("#grade-autosave").isChecked(), false, "Autosave option survives restart");
+    assert.deepEqual(fs.readFileSync(photos[0]), original);
+    await page.screenshot({ path: path.join(output, "stage-a.png") });
+    assert.deepEqual(errors, []);
+    console.log("PASS: marks preserve grades; conflict Cancel pauses and repeats on leaving and closing; resolution, clean external reload, offered recovery, originals untouched.");
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

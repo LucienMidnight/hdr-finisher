@@ -35,6 +35,7 @@ async function boot() {
   observeScopeSize();
   observeGraphEditorSizes();
   observeViewerSize();
+  void window.HDRGradeSaving?.offerRecovery().catch(error => showUploadError(error.message));
 }
 
 async function initializeGpuPreview() {

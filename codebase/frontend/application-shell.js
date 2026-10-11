@@ -163,6 +163,7 @@
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
     previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) ? String(value.previewResolution) : "auto",
     fasterDragging: value.fasterDragging === true,
+    gradeAutosave: value.gradeAutosave !== false,
     maximumGpuMemoryGiB: normalizeGpuMemoryGiB(value.maximumGpuMemoryGiB),
     executionOverride: EXECUTION_OVERRIDES.has(value.executionOverride) ? value.executionOverride : "auto",
     roiPreview: ROI_PREVIEW_MODES.has(value.roiPreview) ? value.roiPreview : "fit",
@@ -1030,6 +1031,11 @@
     return clone(shell.preferences);
   }
 
+  function setGradeAutosave(value) {
+    shell.preferences.gradeAutosave = Boolean(value);
+    persistPreferences();
+  }
+
   function setRenderingModePreference(mode) {
     if (!["auto", "gpu", "cpu"].includes(mode) || !shell.preferences) return;
     shell.preferences.renderingMode = mode;
@@ -1092,6 +1098,7 @@
     openHelp,
     checkForUpdates,
     setRenderingModePreference,
+    setGradeAutosave,
     setPreviewResolutionPreference,
     setFasterDragging,
     setNavigationWindowPreference,

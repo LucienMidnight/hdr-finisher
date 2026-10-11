@@ -117,6 +117,7 @@ function sanitizeApplicationPreferences(value = {}) {
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
     previewResolution: tiers.includes(String(value.previewResolution)) ? String(value.previewResolution) : "auto",
     fasterDragging: value.fasterDragging === true,
+    gradeAutosave: value.gradeAutosave !== false,
     navigationWindow: ["auto", "always", "off"].includes(value.navigationWindow) ? value.navigationWindow : "auto",
     maximumGpuMemoryGiB: (() => {
       if (value.maximumGpuMemoryGiB === "auto") return "auto";
@@ -708,6 +709,14 @@ function registerIpc() {
   handle("desktop:confirm-unsaved-transition", async (options = {}) => {
     return choosePhotoTransition(options.actionLabel);
   });
+  handle("desktop:complete-photo-close", (allowed) => {
+    if (!mainWindow?.pendingSidecarClose) return false;
+    mainWindow.pendingSidecarClose = false;
+    if (allowed !== true) return false;
+    if (quitRequested) void beginShutdown();
+    else { forceClose = true; mainWindow.close(); }
+    return true;
+  });
   handle("desktop:choose-export-directory", async (initialPath) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "Choose export folder",
@@ -771,6 +780,8 @@ function registerIpc() {
     documentState = {
       path: nextPath,
       dirty: Boolean(next.dirty),
+      sidecar: Boolean(next.sidecar),
+      conflict: Boolean(next.conflict),
       displayName: safeSuggestedName(next.displayName, "Untitled"),
     };
     if (documentState.path) app.addRecentDocument(documentState.path);
@@ -997,6 +1008,7 @@ async function createWindow(role = "main") {
   });
   if (isMain) window.on("query-session-end", (event) => {
     saveWindowBounds(record);
+    if (documentState.sidecar) return; // Acknowledged edits already have durable recovery.
     if (leaveCurrentPhoto({ dirty: documentState.dirty, systemExit: true })) return;
     event.preventDefault();
     dialog.showMessageBox(window, {
@@ -1073,9 +1085,16 @@ async function choosePhotoTransition(actionLabel = "continue", closing = false) 
 
 async function requestClose() {
   if (windowFailure?.hasFailed()) {
-    // Saving is unavailable after a renderer failure; preserve the existing
-    // explicit failure dialog rather than waiting for an impossible reply.
+    // Saving is unavailable after a renderer failure; acknowledged photo
+    // edits remain in recovery rather than waiting for an impossible reply.
     await windowFailure.showFailure();
+    return;
+  }
+  if (documentState.sidecar) {
+    if (!mainWindow.pendingSidecarClose) {
+      mainWindow.pendingSidecarClose = true;
+      sendCommand("close-photo");
+    }
     return;
   }
   const allowed = await leaveCurrentPhoto({

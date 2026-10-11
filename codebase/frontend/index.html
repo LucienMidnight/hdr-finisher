@@ -99,7 +99,7 @@
 
       <nav class="workflow-tabs" aria-label="Workflow stages">
         <button class="workflow-tab active" type="button" data-workflow-tab="import" aria-selected="true"><span aria-hidden="true">01</span>Library</button>
-        <button class="workflow-tab" type="button" data-workflow-tab="grade" aria-selected="false"><span aria-hidden="true">02</span>Grade</button>
+        <button class="workflow-tab" type="button" data-workflow-tab="grade" aria-selected="false"><span aria-hidden="true">02</span>Grade <span id="grade-unsaved-dot" hidden aria-label="Unsaved changes">•</span></button>
         <button class="workflow-tab" type="button" data-workflow-tab="proof" aria-selected="false"><span aria-hidden="true">03</span>Proof</button>
         <button class="workflow-tab" type="button" data-workflow-tab="export" aria-selected="false"><span aria-hidden="true">04</span>Export</button>
       </nav>
@@ -134,6 +134,13 @@
         <div class="source-filename-wrap" id="session-name-wrap">
           <p class="top-file-name" id="session-name">No active image</p>
           <p class="title-tooltip source-filename-tooltip" id="session-name-tooltip" role="tooltip">No active image</p>
+        </div>
+        <div id="grade-saving-controls" hidden>
+          <p id="grade-save-state" role="status" aria-live="polite"></p>
+          <label class="checkbox-row"><input id="grade-autosave" type="checkbox" checked> Autosave</label>
+          <button id="grade-save-now" class="text-button" type="button" hidden>Save</button>
+          <button id="grade-revert-saved" class="text-button" type="button" hidden>Revert to last saved</button>
+          <button id="grade-resolve-conflict" class="text-button" type="button" hidden>Resolve grade conflict</button>
         </div>
         <button id="copy-source-path" class="text-button source-copy-path" type="button" disabled>Copy path</button>
       </div>
@@ -1867,6 +1874,7 @@
   <script src="/static/export-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/session-import.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/project-documents.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/grade-saving.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/info-panels.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/desktop-commands.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/lanes-compare.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

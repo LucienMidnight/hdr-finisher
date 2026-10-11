@@ -295,6 +295,33 @@ backend commands still own browsing, pinned folders and recent imports.
 absence of editor scripts/globals, source handoff with Cancel/Discard, main
 export/project destination selection and independent secondary close.
 
+### Photo Library slice 3 Stage A: grades beside photos
+
+`backend/hdr_finisher/library_grades.py` owns per-photo baseline comparison,
+queued grades, paused conflicts, unsaved recovery and the retained unchosen
+grade. `library_grade_api.py` provides attach/save/check/resolve/load/recovery
+commands. `photo_grades` is added to the existing Library database without
+replacing marks or album rows. Session edit observers retain acknowledged
+unsaved work locally. `library_settings_writer.py` merges the grade at the
+actual whole-file write and rechecks external changes; marks continue saving
+through a grade conflict. Existing writer failure handling and Activity apply.
+
+`projects.open_document` is the shared existing project/session construction
+path, also used by sidecar opening; exporters, Proof and shaders are unchanged.
+`frontend/grade-saving.js` owns the visible state, idle autosave, conflict and
+recovery choices and the existing leave-photo gate. `project-documents.js`
+attaches imported source sessions and keeps Save As project creation available.
+The desktop close handshake waits for this gate; Windows session ending keeps
+acknowledged edits in recovery without blocking shutdown. `application-shell.js`
+and desktop preferences persist app-wide autosave. `library-activity.js` names
+paused grade conflicts without implying that retries choose a winner.
+
+`tests/test_library_grades.py` checks document round trips, preservation,
+conflict choices, queue races, offline/failure recovery and identical project
+versus sidecar Export/Proof output. `tests/library-grade-saving.js` is the
+focused Electron check for controls, transitions, close cancellation, external
+changes and offered restart recovery, using disposable photos only.
+
 ### Photo Library measurements
 
 `tests/performance/photo-library-measurements.py` is a read-only corpus probe
