@@ -142,7 +142,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "native", "scan", "tree", "metadata", "kept"}:
+        if command not in {"picture", "native", "scan", "tree", "metadata", "kept", "overlay"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -338,7 +338,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     def lane(job):
         if job["command"] in {"picture", "native"}:
             return "picture"
-        if job["command"] == "kept":
+        if job["command"] in {"kept", "overlay"}:
             return "kept"
         if job.get("checking"):
             return "check"
@@ -386,7 +386,11 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
 
             check = yielding if kind in {"index", "check", "kept"} else cancelled.is_set
             try:
-                if job["command"] == "kept":
+                if job["command"] == "overlay":
+                    from .library_overlays import OverlayMaps
+                    output = OverlayMaps(root).build(job["path"],job["kind"],job["quality"],cancelled=check)
+                    result = {"id":job["id"],"result":output}
+                elif job["command"] == "kept":
                     from .library_kept import produce
                     output = produce(root, job["path"], job["grade"], job["edge"], cancelled=check)
                     result = {"id": job["id"], "result": output}
@@ -455,7 +459,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept", "overlay"}:
                     sequence += 1
                     jobs[message["id"]] = Event()
                     heapq.heappush(queue, (message["priority"], sequence, message))

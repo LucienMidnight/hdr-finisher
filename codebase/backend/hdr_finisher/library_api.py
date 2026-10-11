@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 import os
+from pathlib import Path
 from concurrent.futures import CancelledError
 from typing import Literal
 
@@ -18,6 +19,15 @@ from starlette.concurrency import run_in_threadpool
 from .library_pictures import LibraryPictureCache
 from .library_marks import LibraryMarks, MarkChange, NameTaken
 from .library_index import LibraryIndex
+
+
+class OverlayRequest(BaseModel):
+    path: str
+    kind: Literal["exposure"] = "exposure"
+    quality: Literal["half", "full"] = "half"
+class OverlaySwitch(BaseModel):
+    kind: Literal["exposure"]
+    enabled: bool
 
 
 class LibraryRoute(APIRoute):
@@ -484,6 +494,33 @@ def create_library_router(worker, browser, store=None):
         if cached:
             return cached
         return await helper_result(request, "picture", **command.model_dump())
+
+    from .library_overlays import OverlayMaps
+    from .raw_import import RAW_EXTENSIONS
+    overlay_maps = OverlayMaps(browser.root)
+    @router.post("/overlay-switch")
+    def overlay_switch(command: OverlaySwitch):
+        return command.model_dump() # Viewing state is transient, never a grade or preference.
+    @router.post("/overlay-map")
+    async def overlay_map(command: OverlayRequest, request: Request):
+        if store is not None and kept.request(command.path)["edited"]:
+            return {"unavailable":"Overlay is measured from the original; this photo is shown with its saved grade."}
+        path = str(marks.source_path(command.path))
+        # A format with no source clipping limit must not imply a clean exposure map.
+        if Path(path).suffix.lower() not in {".png",".jpg",".jpeg",".tif",".tiff"} | RAW_EXTENSIONS:
+            return {"unavailable":"Exposure warnings unavailable: this file has no recorded clipping limit."}
+        cached = await run_in_threadpool(overlay_maps.cached,path,command.kind,command.quality)
+        if cached:return cached
+        result = await helper_result(request,"overlay",path=path,kind=command.kind,quality=command.quality,priority=85)
+        if isinstance(result,Response):return result
+        if result.get("unavailable"):return result
+        # Check source version again after the helper finishes, before allowing display.
+        current = await run_in_threadpool(overlay_maps.cached,path,command.kind,command.quality)
+        return current or JSONResponse({"detail":"library_pending"},status_code=202)
+    @router.get("/overlay-pixels/{key}")
+    def overlay_pixels(key: str):
+        try:return Response(overlay_maps.png(key),media_type="image/png",headers={"Cache-Control":"private, no-store"})
+        except (ValueError,OSError):raise HTTPException(404,"Overlay map unavailable; it will be made again.")
 
     @router.post("/native")
     async def native(command: NativeRequest, request: Request):

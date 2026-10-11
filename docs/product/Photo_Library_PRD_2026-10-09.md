@@ -2443,6 +2443,10 @@ Proposed. Each slice is usable on its own.
 | 3 | Grades in sidecars, autosave option, "before" state, reverts, virtual copies | Stop using Save / Save As |
 | 4 | Quick decode, compare, focus and exposure overlays | Pick the sharpest frame fast |
 
+Slice 4 Stage C built October 11: source-data exposure warnings, options and
+legend in every Library view; colourless maps share the existing cache limit.
+Edited items and formats without a clipping limit show an explanation.
+
 Slice 4 Stage A built October 11: overlay view fields no longer count as grade
 differences or new kept pictures; SDR Highlights desktop presets are allowed.
 The separate measured-highlight-peak rounding on ordinary Grade save remains.

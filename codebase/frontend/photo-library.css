@@ -230,3 +230,14 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-options label {display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--body);font-size:12px;}
 .library-options input[type="checkbox"] {accent-color:var(--accent);}
 .library.review #single-caption {display:none;}
+
+/* Library-only source-data warnings. */
+.picture-frame {position:relative;}
+.library-map-status {position:absolute;bottom:5px;right:5px;z-index:5;background:#17191de0;color:var(--muted);font-size:11px;padding:2px 5px;pointer-events:auto;border-radius:3px;}
+#library-overlay-legend {display:flex;gap:12px;margin-left:8px;font-size:12px;}
+#library-overlay-legend[hidden] {display:none;}
+#library-overlay-legend label {display:flex;gap:5px;align-items:center;}
+#library-overlay-legend input[type=color],.library-options input[type=color] {width:24px;height:22px;padding:0;border:0;cursor:pointer;}
+.library-source-overlay {image-rendering:pixelated;}
+
+#library-overlay-legend {position:fixed;bottom:30px;left:50%;transform:translateX(-50%);z-index:100;background:var(--panel);padding:5px 10px;border:1px solid var(--hairline);border-radius:3px;}

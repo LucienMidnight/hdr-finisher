@@ -191,7 +191,7 @@ class LibraryPictureCache:
             self._known_bytes = total
             if total <= self.limit:
                 return
-            for _, size, path in sorted(entries, key=lambda entry: (entry[2].suffix != ".npz", entry[0])):
+            for _, size, path in sorted(entries, key=lambda entry: (0 if entry[2].name.endswith(".map.npz") else 1 if entry[2].suffix == ".npz" else 2, entry[0])):
                 if total <= self.limit * .9:
                     break
                 try:

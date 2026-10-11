@@ -1123,3 +1123,57 @@ Electron at 2560x1440 passed pin/navigation, locked native zoom/pan, right-only
 marks/Undo, layouts, captions, HDR, virtual copies and mixed kept/native zoom.
 Driver waits for preference saves and pin commands were corrected. No new
 log events. The Library viewing-settings read failure is the only new notice.
+
+### Slice 4 Stage C - exposure overlay
+
+`library_overlays.py` reads RAW sensor samples with per-channel black/white
+levels and file orientation, before tone mapping or highlight recovery. Linear
+DNG samples use their recorded black/white normalization; bitmap warnings use
+integer code limits. Blown means at the recorded ceiling in any channel;
+blocked means all channels at or within 0.1% of black (at least one integer
+code). Tiny 512-edge maps retain warnings by maximum pooling, not averaging.
+Floating/HDR formats with no trustworthy clipping limit show unavailable.
+
+`library_worker.py` makes maps on its existing low-priority kept-picture lane,
+yielding to Grade, export, checks and visible pictures. `library_api.py` owns
+switch/map/pixels commands. `library-overlays.js` draws separate coloured
+canvases above the Library pictures and native crops, in grid/film/single,
+compare and review. E is instant; the toolbar button opens options. The legend
+stays visible in review and its colour squares are editable. Strength, colours
+and warning choices are saved in the same viewing preferences. Switch state
+is transient; it writes no grade, settings file or database field.
+
+Maps are compressed colourless `.map.npz` entries beside quick/kept pictures
+in the existing cache, under the same configured storage limit. Their keys
+include path, source size/mtime, map version, kind and quality. Source changes
+invalidate them; cancellation prevents publication. Cache trimming removes
+maps before quick pictures and then edited pictures. No cache migration:
+existing picture entries stay valid. A lost map is remade on demand.
+
+New messages: "E · preparing", "E · unavailable" with the reason in its
+tooltip, and "Overlay is measured from the original; this photo is shown with
+its saved grade." Edited items never decode an original for this overlay.
+Formats without a source clipping ceiling say so, rather than claiming no
+warnings. `overlay_map_saved` logs dimensions, source, quality and make time.
+
+Decisions made for Steve:
+- Blocked means the first 0.1% above the recorded black level, rather than
+  only exact zero. It catches near-black areas but some intentional dark areas
+  will be marked. This threshold is local to Library and easy to change.
+- For SDR bitmaps the warning is about clipped stored codes, not recoverable
+  sensor data. HDR/floating formats without a ceiling show unavailable. The
+  alternative would guess a white point and could wrongly declare detail lost.
+- If highlight and shadow warnings land in the same small map cell, highlights
+  take priority. Larger maps could separate them but cost more storage.
+
+Highlight headroom numbers are deferred as requested: they need a defined
+reference white, trustworthy sensor saturation metadata and a separate
+measurement/display decision; neither SDR previews nor clipped stored codes
+alone establish recoverable highlight stops.
+
+C validation: 463 Node; 1,762 Python passed, 3 skipped (3:32). Focused
+Electron at 2560x1440 passed on disposable known-region photos in grid, film,
+single/native, compare and review, including instant colour/strength changes
+without map regeneration. The check caught an unresolved request model and
+missing worker command registration; both were fixed. Its initial colour
+expectation was corrected for canvas premultiplied-alpha readback rounding.

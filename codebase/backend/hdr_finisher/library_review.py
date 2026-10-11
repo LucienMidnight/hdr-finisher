@@ -1,7 +1,7 @@
 """Read-only compare commands and personal Library viewing preferences."""
 import json
 from typing import Literal
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from fastapi import HTTPException
 from .library_kept import atomic_json
 
@@ -9,6 +9,11 @@ class ReviewPreferences(BaseModel):
     model_config = ConfigDict(extra="forbid")
     compare_layout: Literal["side", "top", "split"] = "side"
     compare_names: bool = True
+    exposure_strength: float = Field(default=.65,ge=0,le=1)
+    exposure_highlights: bool = True
+    exposure_shadows: bool = True
+    exposure_highlight_color: str = Field(default="#ff4050",pattern=r"^#[0-9a-fA-F]{6}$")
+    exposure_shadow_color: str = Field(default="#4080ff",pattern=r"^#[0-9a-fA-F]{6}$")
 
 class CompareRequest(BaseModel):
     action: Literal["on", "off", "left", "right", "move"]

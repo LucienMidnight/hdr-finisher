@@ -28,6 +28,7 @@
     const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
     signal?.addEventListener("abort", stop, { once: true });
   });
+  let overlays = null;
   const pictureRequests = HDRLibraryRequestQueue.create();
   async function api(route, body, signal) {
     for (;;) {
@@ -36,7 +37,7 @@
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
         return { response, result: await response.json() };
       };
-      const { response, result } = await ((route === "/api/library/picture" || route === "/api/library/native")
+      const { response, result } = await ((route === "/api/library/picture" || route === "/api/library/native" || route === "/api/library/overlay-map")
         ? pictureRequests.submit(request, signal, body.priority) : request());
       if (response.status === 202) { await sleep(150, signal); continue; }
       if (!response.ok) {
@@ -113,6 +114,7 @@
     canvas.closest(".library-cell")?.querySelector(".library-edited")?.setAttribute("title", meta.kept ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. Open it in Grade and save to update the picture.");
     canvas.dataset.pictureKey = meta.key;
     canvas.dataset.picturePath = photo.path;
+    overlays?.attach(photo,canvas,meta,controller,isCurrent);
     return meta;
   }
   async function drawPicture(meta, canvas, controller, isCurrent) {
@@ -345,6 +347,12 @@
     setZoom:(enabled,x,y)=>{state.zoom=enabled;state.zoomX=x;state.zoomY=y;$("zoom-button").setAttribute("aria-pressed",String(enabled));}
   });
   void compare.init();
+  overlays = HDRLibraryOverlays.create({api,status,active:()=>state.active, surfaces:()=>[
+    ...[...state.cells.values(),...state.filmCells.values()].filter(s=>s.meta).map(s=>({...s,current:()=>state.active&&s.element.isConnected&&!s.controller.signal.aborted})),
+    ...(state.view==="single"&&!compare.enabled()&&state.fitMeta?[{photo:selected(),canvas:$("single-picture"),meta:state.fitMeta,controller:state.single,current:()=>state.active&&state.view==="single"&&!compare.enabled()}]:[]),
+    ...(compare.enabled()&&state.view==="single"?compare.surfaces().filter(s=>s.meta).map(s=>({...s,canvas:s.fit,current:()=>state.active&&compare.enabled()&&s.fit.isConnected&&!s.controller.signal.aborted})):[])
+  ]});
+  void overlays.init();
   function updateSingleCaption() {
     if (compare.enabled()) compare.captions();
     if (!selected()) return;
@@ -872,6 +880,7 @@
       return;
     }
     if (event.altKey) return;
+    if (key==="e") {event.preventDefault();void overlays.toggle("exposure");return;}
     if (["c","[","]"].includes(key)) {event.preventDefault();void compare.command(key==="["?"left":key==="]"?"right":compare.enabled()?"off":"on");return;}
     if (compare.enabled() && state.view === "single" && key.startsWith("arrow")) {event.preventDefault();void compare.command("move",["arrowleft","arrowup"].includes(key)?-1:1);return;}
     if (culling.shortcut(key)) { event.preventDefault(); return; }
@@ -974,7 +983,7 @@
   }
   // Read-only status for the focused interaction driver; no test-only behavior.
   window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
-    compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
+    overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
     filmVisible: state.filmCells.size, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
   (async () => {
     try {
