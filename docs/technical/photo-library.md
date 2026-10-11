@@ -1254,3 +1254,33 @@ fixed that check. The first candidate failed the softness experiment and was
 replaced before implementation, without changing any pinned comparison.
 Read-only ARW, CR2 and linear-DNG exposure sample reads also passed. No other
 failing checks remain, apart from Stage A's separately documented Grade issue.
+
+### Slice 4 exposure precision follow-up - October 12
+
+The final source-reader check found that Pillow reduces colour 16-bit PNGs to
+8-bit RGB, which can round a stored 65500 to screen code 255 and falsely mark
+it blown. Only the Library exposure reader now uses the existing imagecodecs
+PNG decoder for 16-bit samples, keeps orientation and excludes alpha. RGB/RGBA
+and grayscale 16-bit regression checks preserve headroom and mark only the true
+ceiling/black regions. Grade, picture drawing, export and Proof are unchanged.
+Overlay map version is now v2; earlier overlay maps are remade on demand without
+migration. Existing Library pictures stay valid, and old maps are normal first-
+to-evict disposable cache entries. There are no new messages or log events.
+
+The same source-reader correction makes RAW shadows colour-aware: all samples
+in a Bayer/X-Trans pattern cell must be near black before calling it blocked.
+A single dark colour channel in a bright coloured subject is no longer enough.
+Highlights still warn for any clipped sensor sample. A synthetic mosaic check
+and read-only ARW/CR2 sample reads cover this distinction.
+
+Decisions made for Steve:
+- RAW shadow warnings require all sensor colours in a pattern cell near black,
+  rather than any one dark channel. This avoids false warnings on saturated
+  colours; noisy deep shadows may get fewer warnings because some samples
+  remain above the threshold. The near-black 0.1% threshold is unchanged.
+
+Precision follow-up validation: 463 Node; 1,770 Python passed, 3 skipped
+(3:17). The focused exposure Electron check at 2560x1440 passed, including a
+near-white RGB16 PNG with no false clipping, all Library views and live colour/
+strength reuse. No check failed in this correction. Its initial regression
+confirmed the ordinary decoder's uint16-to-uint8 loss before changing the reader.

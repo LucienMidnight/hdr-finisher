@@ -88,3 +88,28 @@ def test_large_map_priority_stays_below_saved_pictures():
     assert OverlayRequest(path='a',kind='focus',priority=82).priority==82
     assert OverlayRequest(path='a').priority==85
     with pytest.raises(ValueError):OverlayRequest(path='a',priority=80)
+
+
+def test_rgb16_png_near_white_is_not_falsely_clipped_and_alpha_is_ignored(tmp_path):
+    import imagecodecs
+    from hdr_finisher.library_overlays import exposure_source
+    values=np.full((20,30,4),65500,dtype=np.uint16);values[:,:,3]=65535
+    values[0,0,:3]=65535;values[-1,-1,:3]=0
+    p=tmp_path/'colour16.png';p.write_bytes(imagecodecs.png_encode(values))
+    blown,blocked=exposure_source(p)
+    assert blown.sum()==1 and blown[0,0] and blocked.sum()==1 and blocked[-1,-1]
+
+
+def test_gray16_png_exposure_uses_the_full_stored_range(tmp_path):
+    import imagecodecs
+    from hdr_finisher.library_overlays import exposure_source
+    p=tmp_path/'gray16.png';p.write_bytes(imagecodecs.png_encode(np.asarray([[65500,65535],[32768,0]],dtype=np.uint16)))
+    blown,blocked=exposure_source(p);assert blown.tolist()==[[False,True],[False,False]]
+    assert blocked.tolist()==[[False,False],[False,True]]
+
+
+def test_mosaiced_raw_shadow_needs_all_colours_not_one_dark_channel():
+    values=np.full((12,16),500,dtype=np.uint16);values[::2,::2]=64;values[6:10,8:12]=64
+    blown,blocked=exposure_regions(values,64,4095,np.asarray([[0,1],[3,2]]))
+    assert not blown.any() and blocked.sum()==16 and blocked[6:10,8:12].all()
+    assert not blocked[:6].any()

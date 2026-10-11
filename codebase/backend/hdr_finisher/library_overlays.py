@@ -11,7 +11,7 @@ from .library_pictures import LibraryPictureCache, check_cancelled
 from .library_diagnostics import log
 from .raw_import import RAW_EXTENSIONS
 
-VERSION="library-overlay-v1"
+VERSION="library-overlay-v2"
 
 
 def map_key(path,kind,quality="half"):
@@ -27,13 +27,30 @@ def pool_max(values,edge=512):
     return padded.reshape(shape[0]//sy,sy,shape[1]//sx,sx).max(axis=(1,3))
 
 
-def exposure_regions(samples,black,white):
+def exposure_regions(samples,black,white,pattern=None):
     samples=np.asarray(samples);black=np.asarray(black);white=np.asarray(white)
     blown=samples>=white
     unit=1 if samples.dtype.kind in "ui" else 1e-6
     blocked=samples<=black+np.maximum(unit,(white-black)*.001)
     if samples.ndim==3: blown=blown.any(axis=2);blocked=blocked.all(axis=2)
+    elif pattern is not None:
+        # A dark colour channel in a bright coloured subject is not a blocked shadow.
+        sy,sx=pattern.shape;h,w=blocked.shape;ph=int(np.ceil(h/sy))*sy;pw=int(np.ceil(w/sx))*sx
+        padded=np.pad(blocked,((0,ph-h),(0,pw-w)),constant_values=False)
+        cells=padded.reshape(ph//sy,sy,pw//sx,sx).all(axis=(1,3))
+        blocked=np.repeat(np.repeat(cells,sy,axis=0),sx,axis=1)[:h,:w]
     return blown,blocked
+
+
+def orient_samples(values,orientation):
+    if orientation==2:return np.fliplr(values)
+    if orientation==3:return np.rot90(values,2)
+    if orientation==4:return np.flipud(values)
+    if orientation==5:return values.swapaxes(0,1)
+    if orientation==6:return np.rot90(values,3)
+    if orientation==7:return np.flipud(np.fliplr(values.swapaxes(0,1)))
+    if orientation==8:return np.rot90(values)
+    return values
 
 
 def exposure_source(path,cancelled=None):
@@ -64,7 +81,7 @@ def exposure_source(path,cancelled=None):
                 black=np.asarray(raw.black_level_per_channel)[:samples.shape[2]]
                 levels=raw.camera_white_level_per_channel
                 white=np.asarray(levels if levels and all(v>0 for v in levels) else [raw.white_level]*4)[:samples.shape[2]]
-            blown,blocked=exposure_regions(samples,black,white)
+            blown,blocked=exposure_regions(samples,black,white,raw.raw_pattern if samples.ndim==2 else None)
             # LibRaw flip values correspond to its default output orientation.
             rotations={3:2,5:1,6:3};turns=rotations.get(raw.sizes.flip,0)
             if turns: blown=np.rot90(blown,turns);blocked=np.rot90(blocked,turns)
@@ -73,11 +90,17 @@ def exposure_source(path,cancelled=None):
         from .loader import is_ultrahdr_jpeg
         if path.suffix.lower() in {".jpg",".jpeg"} and is_ultrahdr_jpeg(path):
             raise ValueError("Exposure warnings unavailable: this HDR file has no recorded sensor clipping limit.")
-        with Image.open(path) as image:
-            image=ImageOps.exif_transpose(image)
-            samples=np.asarray(image) if image.mode in {"I","I;16","I;16B","I;16L"} else np.asarray(image.convert("RGB"))
-        white=65535 if samples.dtype.itemsize>1 else 255
-        return exposure_regions(samples,0,white)
+        with path.open("rb") as source: header=source.read(26)
+        if path.suffix.lower()==".png" and len(header)>24 and header[24]==16:
+            # Pillow reduces RGB16 PNG to RGB8; that would falsely clip near-white.
+            import imagecodecs
+            samples=imagecodecs.png_decode(path.read_bytes())
+            if samples.ndim==3:samples=samples[:,:,:3] if samples.shape[2]>=3 else samples[:,:,0]
+            with Image.open(path) as image:orientation=int(image.getexif().get(274,1))
+            samples=orient_samples(samples,orientation)
+            return exposure_regions(samples,0,65535)
+        with Image.open(path) as image:samples=np.asarray(ImageOps.exif_transpose(image).convert("RGB"))
+        return exposure_regions(samples,0,255)
     if path.suffix.lower() in {".tif",".tiff"}:
         import tifffile
         with tifffile.TiffFile(path) as tif:
