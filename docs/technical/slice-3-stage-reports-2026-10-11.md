@@ -1,5 +1,7 @@
 # Slice 3 stage reports - October 11, 2026
 
+**STOPPED AT STAGE C VALIDATION: the cumulative longer checks are roughly 32 minutes, including a stalled Electron revert check. Steve instructed a stop at roughly 30 minutes. Stage C is not complete; Stage D has not started. The checked-out app is back at Stage B.**
+
 **Route: the backend makes reduced kept pictures through the existing corrected source opening and export rendering functions. GPU readback and tiled rendering are unchanged.** This is the single producer for a saved grade, whether or not its photo is open in Grade. Steve's later instruction permits background completion after a save; until it completes, the Library honestly shows the default picture and the not-current mark.
 
 Branch checked before edits: `photo-library`. Repository AGENTS.md and the brief were read again. The required technical, product and design documents were also read. Source photos, existing unrelated files, Grade shaders, export/Proof outputs and pinned budgets/tolerances remain untouched. No push or installer rebuild.
@@ -46,13 +48,59 @@ New optional `.hdrf` field: `grade_default`, used to recognise an edited grade a
 
 First Stage B full fast run: 462 JavaScript passed; 1,728 Python passed, 3 skipped in 4:47. Final full run after the faster file reader: 462 JavaScript passed; 1,729 Python passed, 3 skipped in 4:40. The focused Electron check passed again. `git diff --check` passed. Focused data checks: 31 passed in 30 seconds. Existing export/Proof checks are included unchanged in the full Python run. Focused Electron checks passed; an expanded run initially counted the dialog before its asynchronous opening, then passed after waiting for the dialog. One early new crop assertion expected 50 rows instead of the actual geometry result of 52; the assertion was corrected, without changing existing checks. Trial setup initially used the wrong crop field names, then was corrected. No application failure remains known from those checks.
 
-## Stage C - pending
+## Stage C - draft preserved, not complete
 
-Not yet started; Stage B's final validation is finishing.
+The draft implements one session-start state per app run, previous-grade retention,
+four revert choices, counted Library confirmation and one bulk Undo. Existing
+whole-file settings writing is reused. It leaves marks/albums and unknown fields
+alone. An open photo gets ordinary unsaved work, except last-saved revert drops
+unsaved work. History is kept locally immediately and joins the next settings-file
+write; autosave off does not write the unsaved grade. Matching old pictures are
+identity-keyed files already retained by Stage B.
+
+Six new data checks passed: first-change session retention across restart without
+autosaving, restoring a revert, last-saved discard, closed-photo revert and Undo,
+marks/unknown fields retained, history rebuilt from a settings file, a new run's
+first edit, all-file preflight, refusing Undo after an outside grade change, and
+an open session revert. Full fast checks passed: 462 JavaScript; 1,735 Python,
+3 skipped in 4:47. The first focused data run had one test-fixture error
+(`LibraryMarks` has no `root` attribute); using its database's parent fixed it.
+The subsequent six history checks passed in 2.77 seconds.
+
+The visible check is unresolved. Two attempts clicked the revert choice but still
+saw the old exposure and an open dialog. The third waited explicitly for the
+dialog and finished grade, then stalled for roughly four minutes and was stopped.
+That is a failed/incomplete validation, not a successful Stage C. The exact cause
+has not been determined; it must be resolved before C is accepted.
+
+Draft commit `d30520a` preserves all C code and checks. Revert commit `52a3557`
+returns the current app to B, so Steve is not given unvalidated revert controls.
+No draft is discarded. Original line endings were restored after Git's revert
+normalised some working files. No real photos, grades or settings files were used
+for those UI/data checks.
+
+A one-line B follow-up retains polling for edited photos after their settings file
+has been written. Otherwise a background picture finishing later could remain
+not-current until revisiting. This correction was found in C, remains in the B
+app, and passed the final 462 JavaScript checks. Python was not rerun for this
+final frontend-only line after the validation stop; the recent full B and C runs
+cover the unchanged backend. Its delayed-publication UI scenario still needs a
+focused rerun when the test-time allowance is extended.
 
 ## Stage D - pending
 
-Virtual copies and the size of Keep both are not yet assessed.
+Not started because C's visible validation is unresolved and the validation-time
+stop has been reached. Virtual copies and Keep both have not been built. Stage A's
+existing conflict notice and retention of the unchosen grade remain available.
+
+To resume: resolve C's dialog/UI check, restore its draft, and finish its report
+and acceptance commit. Then implement D and run its full fast checks plus one
+focused UI check. Allow at least another 6-10 minutes of validation if there are
+no further failures (about five minutes for D's Python pass and one or two minutes
+per focused UI pass); fixing failures could require more. No further slow checks
+were started after this stop.
+
+Stage B acceptance commit: `94b70c8`. C and D have no completion commits.
 
 ## What Steve should try first
 
@@ -65,6 +113,15 @@ Save a real cropped photo with separate HDR and SDR grades and a mask. Browse it
 3. The two controls live in the Library pictures toolbar window. This is quick to find and can be restyled by Claude; a future full settings page would take more work now.
 4. Keep cooperative phase pauses for native decode/encode work. They avoid partial operations and source changes, but a phase already running may take seconds to yield. A separate resumable decoder would require much larger work. Foreground priority and save/next-photo independence are retained.
 5. The Library's direct JPEG reconstruction avoids command-line reader delays. It preserves the SDR base exactly and approximates the general reader's gain-map interpolation in HDR. The other choice was its roughly 1.6-second CLI read per picture. Export and Proof continue using that exact general reader.
+6. Draft C keeps a session-start state locally immediately, adding it to the next
+   settings-file write. This preserves restart recovery without saving an unsaved
+   grade. The other choice is writing history metadata beside the photo on its
+   first edit even with autosave off. Losing the local database before the next
+   settings-file write would lose that unsaved session-start record; the saved
+   grade and already-written sidecar history remain intact. This draft decision
+   is deferred with C, not active in the checked-out app.
+7. Extending validation is required to finish C and D. The other choice is keeping
+   the checked-out B app and its report while C's draft remains in local history.
 
 ## Every new message for Steve's review
 
@@ -79,3 +136,55 @@ Save a real cropped photo with separate HDR and SDR grades and a mask. Browse it
 - The kept picture's gain map could not be read.
 
 New log events: `kept_picture_saved`, `kept_picture_failed`. Failure keeps the grade safe and shows the honest fallback. No broad sweep was run.
+
+Draft C messages for review (not in the checked-out app):
+
+- Revert…; Revert grade; Revert to original; Revert to last saved; Revert to last session; Restore previous grade.
+- Choose a grade to restore. The current grade is kept as the previous grade.
+- Revert <count> photos? Each keeps its previous grade.
+- Reverted <count> photos. Each previous grade was kept.
+- Undo last change · Ctrl+Z.
+- That photo has no grade to restore for this choice.
+- Resolve the grade changed elsewhere before reverting.
+- The grade changed elsewhere; nothing was reverted.
+- A grade changed since the revert; Undo was left available and nothing was overwritten.
+- Open this photo once before reverting to its starting grade.
+- The grade could not be reverted.
+
+## What was run and anything that failed - complete ledger
+
+- Required branch/document reads: `photo-library`, repository AGENTS.md, brief,
+  technical description, required PRD sections, wireframes and design guidelines.
+- Initial baseline: JavaScript 462 passed; Python 1,723 passed, 3 skipped, 4:24.
+- Writer extraction: focused export/Proof/lifecycle/parity/sidecar checks 73 passed,
+  1:59; JavaScript 462 passed; Python 1,723 passed, 3 skipped, 4:37. Writer-body
+  AST comparisons matched. Those focused checks remain unchanged and are also in
+  every later full Python run.
+- B focused data checks: final 31 passed, 30 seconds. An initial new crop expectation
+  was wrong (50 versus 52), corrected without changing rendering or existing pins.
+- B full passes: JavaScript 462; Python 1,728 passed, 3 skipped, 4:47. After the
+  in-process JPEG reader: JavaScript 462; Python 1,729 passed, 3 skipped, 4:40.
+- B focused Electron: passed the kept-picture/zoom/HDR/settings/next-photo flow.
+  The expanded test first counted dialog controls too early, then passed after
+  waiting. Final timings and limits are above. All runs used 2560x1440, serially,
+  disposable sources and app profiles. No broad GPU sweep.
+- Read-only 36 MP JPEG/AVIF trial at three edges: numbers above. Two setup attempts
+  used wrong crop field names; corrected before collecting the reported results.
+- Existing-reader versus Library-reader comparison at all three edges: SDR exact
+  to 1e-6; HDR mean relative error roughly 0.39%. New fast reader data check passed.
+- C focused data: first run 25 passed and one fixture error in 29 seconds; corrected
+  history-only run six passed in 2.77 seconds. C full checks: JavaScript 462;
+  Python 1,735 passed, 3 skipped, 4:47.
+- C Electron: two failed exposure/dialog assertions; third stalled and was stopped.
+  C is not accepted. Its draft was preserved then reverted from the current app.
+- Final JavaScript after the B polling follow-up: 462 passed, no failures, 3 seconds.
+  No extra full Python/GPU pass after reaching the stop threshold.
+- `git diff --check`: passed. Git warned that it would normalise some endings;
+  each affected working file's previous endings were restored. Unrelated logo
+  and older brief files were left untouched.
+- One read-only tool call's automatic approval review timed out; a retry succeeded.
+  Earlier shell/glob invocation issues were corrected. Nothing remains blocked by
+  permission review. No source photo or real app settings were modified.
+- Approximately 26 minutes of recorded baseline/extraction/B/C Python checks,
+  plus focused UI runs and the stalled run, put the longer validation around
+  32 minutes. This triggers Steve's explicit stop rule. No push or installer build.

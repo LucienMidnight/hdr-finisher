@@ -961,3 +961,15 @@ and all trial/check results are in `slice-3-stage-reports-2026-10-11.md`. Slice 
 can call the same producer for unopened photos; its durable bulk queue, Activity,
 Pause/Resume, restart/offline recovery and visible-photo priority remain future
 work. The latest-grade/source checks and cooperative foreground gates are built.
+
+### Slice 3 validation stop (October 11, 2026)
+
+Stage B is committed (`94b70c8`). A follow-up keeps edited pictures in the status
+poll after their settings write, so delayed background completion is observed.
+Stage C's backend/history draft passed fast data checks and the full fast suite,
+but its Electron dialog/revert check failed and then stalled. The cumulative
+longer validation reached Steve's roughly 30-minute limit. Draft `d30520a` is
+preserved in local history; `52a3557` reverts it so the checked-out app stays at B.
+Stage C and D are not built/accepted. The running report records every result,
+message, decision and what needs to be resumed. The draft's optional
+`grade_history` field is not part of the currently checked-out writer.

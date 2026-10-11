@@ -694,7 +694,7 @@
   async function pollSettings() {
     if (state.active && !document.hidden) {
       try {
-        const paths = state.allPhotos.filter(photo => photo.storage === "database").map(photo => photo.path);
+        const paths = state.allPhotos.filter(photo => photo.storage === "database" || photo.edited).map(photo => photo.path);
         const result = await api("/api/library/settings-status", { paths });
         const byPath = new Map(result.photos.map(photo => [photo.path, photo]));
         let changed = false;
