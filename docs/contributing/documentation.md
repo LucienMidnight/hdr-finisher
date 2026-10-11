@@ -64,6 +64,18 @@ Update [Color Pipeline](../concepts/color-pipeline.md) in the same change as any
 
 Add numerical examples/tests. Do not rely on a screenshot to document a transform.
 
+## Photo Library changes
+
+Update [Photo Library: how it works](../technical/photo-library.md) in the same change as any modification to:
+
+- How marks, tags or albums are saved, or the order of those steps
+- Which copy wins between a settings file and the database
+- Settings-file fields or the database tables
+- The helper's lanes, pausing or failure behavior
+- Any Library message a user can see
+
+Record the reason for a rule beside the rule. Keep what is built separate from what is only agreed.
+
 ## Screenshots and diagrams
 
 - Store intentionally curated design/documentation images under `docs/design/` or a dedicated documented asset directory.

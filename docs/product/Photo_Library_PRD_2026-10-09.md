@@ -286,6 +286,24 @@ Steve authorized Stage A of the slice 1 brief on October 10:
   the later pop-out window. Only this page permits same-origin framing;
   other pages retain the existing frame prohibition.
 
+### Decisions made on October 11, 2026
+
+- **Mark changes save to the library at once; settings files catch up in
+  the background; Undo is the cancel.** Ratings, picks, labels, tags, albums
+  and renames no longer wait for every `.hdrf` file. Unwritten files are
+  tracked in the database, so an interrupted change is finished at the next
+  start. Moves, copies, exports, previews and indexing keep Pause and
+  Cancel. Accepted cost: for a short time after a large change the files
+  lag behind what the app shows. Not built yet. The design, its reasoning
+  and the unusual cases are in
+  [Photo Library: how it works](../technical/photo-library.md), section 12.
+- **Each complex system gets a page recording how it works and why.** The
+  library's is `docs/technical/photo-library.md`, kept current in the same
+  change as the code.
+- Still open from this discussion: whether Undo survives a restart; one
+  Activity item in the bottom bar for background work; the rule when a
+  settings file was changed by something else; open decision 25.
+
 ---
 
 ## 5. Requirements

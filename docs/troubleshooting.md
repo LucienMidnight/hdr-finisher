@@ -139,6 +139,15 @@ For JPEG Ultra HDR:
 
 The non-Windows picker uses Python Tk. Install/use a Python build with Tk support, or enter an existing destination path manually. Current non-Windows picker behavior is not part of the validated package matrix.
 
+## Ratings, tags or albums in the Library are missing, wrong or not saved
+
+Marks are kept in a small `.hdrf` file beside each photo and indexed in the library database. Start with [Photo Library: how it works](technical/photo-library.md):
+
+- [Messages and what they mean](technical/photo-library.md#10-messages-and-what-they-mean) for any message about settings files or the library helper.
+- [Which copy wins](technical/photo-library.md#5-which-copy-wins) when a photo shows different marks from its `.hdrf` file.
+- [Known gaps](technical/photo-library.md#11-known-gaps-october-11-2026) if a large change was interrupted by a crash or shutdown.
+- [How to check things yourself](technical/photo-library.md#13-how-to-check-things-yourself) to rebuild the library database safely.
+
 ## The app is slow or uses substantial memory
 
 Full-resolution float32 RGB images are large, and HDR/SDR processing can create multiple arrays. The viewer uses proxies, but export is full resolution.

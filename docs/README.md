@@ -42,8 +42,9 @@ Pages carry their own verification dates where implementation freshness matters.
 1. [Code map](technical/code-map.md): which file to open for a given change
 2. [Architecture](technical/architecture.md)
 3. [Image-processing pipeline technical contract](technical/image-processing-pipeline.md)
-4. [Development guide](technical/development.md)
-5. [Documentation maintenance](contributing/documentation.md)
+4. [Photo Library: how it works](technical/photo-library.md)
+5. [Development guide](technical/development.md)
+6. [Documentation maintenance](contributing/documentation.md)
 
 ### Where the repository lives
 
@@ -83,6 +84,7 @@ Pages carry their own verification dates where implementation freshness matters.
 ## Support and project truth
 
 - [Troubleshooting](troubleshooting.md)
+- [Photo Library: how it works](technical/photo-library.md) — where ratings, tags and albums are kept, what happens when the app is interrupted, and what each message means
 - [Known limitations and support status](known-limitations.md)
 - [Open items](product/Open_Items.md) — the one list of what is still to do
 - [Implementation traceability](traceability.md)
