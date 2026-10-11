@@ -1,48 +1,55 @@
 # Slice 3 stage reports - October 11, 2026
 
-**STOPPED AT STAGE B: the proposed shared gain-map writer needs a change in protected export code. Steve's instruction requires stopping before that change. No Stage B, C or D implementation has been made.**
+**STOPPED AT STAGE B: kept pictures need finished HDR/SDR readback for tiled Grade rendering. That requires a further protected-rendering change, outside the encode-only writer extraction Steve approved. Stage B is not built; C and D remain pending.**
 
 Branch confirmed with `git branch --show-current`: `photo-library`.
-Read repository AGENTS.md, the slice 3 brief, the library technical description,
-required PRD sections, design guidelines and the relevant wireframe behavior.
-Stage A remains the built starting point.
+Repository AGENTS.md and the brief were read again before continuing. The library
+technical description, required PRD sections, design guidelines and wireframes
+were read during the initial investigation. Stage A remains the built starting point.
 
-## Stage B - blocker and proposed change
+## Approved prerequisite - shared gain-map writers
 
-Grade can read finished pixels through its existing GPU picture readback.
-The JPEG and AVIF export commands, however, keep their complete gain-map
-writing routines inside nested `prepare` / `write` functions. Their public
-entry point first renders both grades through the CPU export route. It does
-not accept a pair of finished pictures from Grade.
+Steve answered "sure" to the proposed encode-only extraction. It is now built:
+the existing JPEG and AVIF writing bodies are callable with finished HDR and SDR
+pixels. Export still renders its two branches exactly as before, then calls those
+same writing bodies. Encoder arguments, gain-map filtering, metadata policy,
+validation and whole-file export lifecycle are unchanged. Grade, Proof, shaders,
+decode routes and pinned tolerances, limits and budgets are unchanged.
 
-The relevant code is in `codebase/backend/hdr_finisher/exporters.py`:
-`AVIFGainMapExportBackend.export` (lines 383-469) and
-`JPEGUltraHDRExportBackend.export` (lines 472-558). Both call
-`_render_export_branch` before constructing their writer. The lower-level
-pixel conversion, JPEG preparation, gain-map command and filtering helpers
-are available, but the complete encode-only operation is not.
+This removes the first blocker; it does not complete Stage B. The incomplete
+Library integration was removed when the next protected boundary was found.
+Only the approved writer extraction and this report remain in the change.
 
-The proposed small prerequisite is to extract each existing nested writer
-into a callable that accepts the finished HDR pixels, finished SDR pixels,
-reference white, encoding settings, output path and metadata. Existing export
-commands would render exactly as today and call these same writers. Library
-picture commands would pass Grade's finished pixels to them. This would keep
-one gain-map writing implementation and avoid a second CPU grade render for
-Library pictures. Encoder arguments, numerical constants, filtering, validation,
-rendering, Proof and shaders would stay as they are. Even this refactor touches
-export code, so it has not been made.
+## Stage B - new blocker
 
-Copying the nested writing pipelines into Library code would leave two
-implementations to keep in step. Calling the current export entry point would
-render the grade again instead of encoding the finished Grade picture. Neither
-is the proposed solution to the brief's requirement to reuse existing writing.
-No production monkeypatch of the export renderer is proposed.
+The existing GPU finished-picture readback works only with a Direct whole-frame
+result. It cannot read a complete finished grade from Tiled rendering:
 
-After permission for that exact extraction, validation should cover the
-existing JPEG/AVIF writer tests and project/sidecar Export/Proof identity,
-plus the required fast suites and Stage B's focused Electron check. Do not
-change or relax a pinned check. Estimate that focused work before running it;
-stop again if slow validation would exceed roughly 30 minutes.
+- `webgpu-preview.js`, `renderTo`: admission may select Tiled; an auxiliary
+  whole-picture request explicitly refuses that route (`auxiliary render`).
+- `renderScopeProxy` explicitly returns a source only for Direct execution.
+- `analyzeScope`, including its picture mode, needs the Direct film/spatial
+  textures recorded in `scopeSources`.
+- Tiled rendering processes tiles and retains their final display-mapped
+  presentation. It does not expose a whole-frame pair of finished linear HDR
+  and SDR pictures to the existing picture readback.
+
+This matters because the brief requires the complete framed grade, including
+local adjustments and denoise, in both lanes. Reading a display-mapped canvas
+cannot preserve the authored HDR information. Omitting the readback request or
+using the visible viewport cannot supply the required pair either. Forcing Direct
+could bypass the existing memory admission and is not an acceptable workaround.
+The existing CPU raw-preview response is display-encoded RGBA8, so it is not a
+substitute for finished linear HDR pixels. A new CPU production route would also
+need separate scrutiny for the brief's requirement to keep the fully corrected
+Grade result rather than approximate it.
+
+The proposed next prerequisite is to extend Grade's existing finished-picture
+readback to cover a whole framed Tiled result. Temporary readback resources must
+be accounted for within the existing memory budget; no pinned budget, tolerance,
+rendered grade, export or Proof behavior should change. This requires editing
+protected rendering code and direct checks of Tiled readback and resource lifetime.
+Steve's approval was for the writer extraction, so this extension has not been made.
 
 ### Measurements and provisional choices
 
@@ -54,65 +61,61 @@ Neither is marked confirmed by measurements.
 
 Proposed location for the two controls: a Library toolbar button labelled
 "Library pictures" opening one small window with storage limit, space in use,
-and edited-picture resolution. This is a proposal; it is not built.
+and edited-picture resolution. This is not built.
 
 ### What slice 7 will need
 
-Stage B should expose a backend picture request identified by photo path,
+Stage B must expose a backend picture request identified by photo path,
 item/copy ID and exact saved-grade identity, with a replaceable producer of
 finished HDR/SDR pixels. Its interface must not require the photo to be the
 one open in Grade. Stage B would supply the foreground producer only.
 
-Slice 7 must add the background producer through the existing fully corrected
-photo route, and a durable queue that gives way to Grade/export and visible
-Library work. It needs Activity counts and Pause/Resume, recovery after restart
-and unplugged drives, latest-grade-only publication, and retention of previous
-pictures for Undo and Restore previous grade. A grade change must invalidate
-its old picture immediately; a stale result must not be published. Background
-production is not built by this slice. These needs remain recorded in PRD
-section 8, "Carried forward to slice 7".
-
-### Messages for review
-
-No new application messages were added. Proposed missing-picture tooltip:
-"This photo has a saved grade, but its Library picture is not current. Open it
-in Grade and save to update the picture."
+Slice 7 needs a background producer through the existing fully corrected photo
+route, with a durable queue that gives way to Grade/export and visible Library
+work. It needs Activity counts and Pause/Resume, restart and unplugged-drive
+recovery, latest-grade-only publication, and retention of previous pictures for
+Undo and Restore previous grade. A grade change must invalidate its old picture
+immediately; a stale result must not be published. Background production is not
+built. These needs remain recorded in PRD section 8, "Carried forward to slice 7".
 
 ### Existing data and projects
 
-No source file, settings file, database layout, preference or project was
-changed. No existing grade, mark or album was modified or discarded. Unrelated
-untracked logo and older brief files were left alone.
+No source photo, settings file, database layout, preference or project was
+changed. No existing grade, mark or album was modified or discarded. Each edited
+file retains its line endings. Unrelated untracked logo and older brief files
+were left alone. No push or installer rebuild.
 
 ## Stage C - pending
 
-Not started: Stage B is stopped and this stage needs its saved pictures for
-the session-start and previous-grade states. No stage commit or completion
-claim is made.
+Not started: Stage B is stopped and C needs its kept pictures for session-start
+and previous-grade states. No completion claim or Stage C commit is made.
 
 ## Stage D - pending
 
 Not started: it depends on the same picture storage and Stage C's safety net.
-The size of adding "Keep both" cannot yet be assessed. It remains pending,
-not rejected or silently omitted. No stage commit or completion claim is made.
+The size of adding "Keep both" has not yet been assessed. It remains pending.
+No completion claim or Stage D commit is made.
 
 ## What Steve should try first
 
-There is no new app behavior to try. Review the narrow writer-extraction
-proposal above first. Stage A remains available for grading, saving and
-reopening photos.
+Stage A remains available for grading, saving and reopening photos. There is no
+new Library behavior to try. Review the additional readback prerequisite above
+first; the writer extraction is complete, but Stages B, C and D are not.
 
 ## Decisions for Steve - full list
 
-1. Permit the encode-only writer extraction from `exporters.py` described
-   above. The trade-off is touching protected export orchestration and needing
-   focused identity checks, in exchange for sharing the existing writers with
-   Library pictures. The alternatives are duplicated writer orchestration or
-   another full export render at picture creation; neither is proposed.
-2. The supplied JPEG-versus-AVIF rule and 512/1024/1920 choices still need
-   measurements once Stage B can proceed. No contrary choice was made.
-3. Review the proposed Library pictures toolbar window and the missing-picture
-   tooltip. Claude can refine the appearance after implementation.
+1. Permit the narrow finished-picture readback extension for Tiled rendering.
+   The trade-off is touching protected Grade rendering and checking resource
+   accounting, in exchange for complete HDR/SDR reminders for all admitted
+   grades. Forcing Direct could exceed its budget; using display pixels loses
+   HDR information; leaving the picture missing would fail the save outcome.
+2. The JPEG-versus-AVIF rule and 512/1024/1920 choices await measurements when
+   Stage B can proceed. No contrary choice was made.
+3. Review the proposed Library pictures toolbar window and missing-picture
+   tooltip below. Claude can refine the appearance after implementation.
+
+Resolved: Steve permitted the encode-only JPEG/AVIF writer extraction. It is
+built and is no longer an open decision.
 
 ## Every new message for Steve's review
 
@@ -122,19 +125,29 @@ to update the picture."
 
 ## What was run and anything that failed
 
-- Branch check: confirmed `photo-library` before any changes.
-- Repository/documentation reads and scoped searches of saving, picture,
-  renderer readback and gain-map writing code.
-- `node --test tests/*.test.js`: 462 passed, no failures.
-- `.venv/Scripts/python.exe -m pytest tests -q`: 1,723 passed, 3 skipped,
-  no failures (4 minutes 24 seconds).
-- No GPU checks: no visible behavior or rendering code was changed.
-- No broad sweep, push or installer rebuild.
-- Initial sandboxed shell reads could not reach the requested working folder;
-  explicitly selecting it with approved filesystem access resolved that.
-  Some scoped searches used PowerShell glob paths that rg did not expand;
-  directory-based searches supplied the needed results. These are tool
-  invocation failures, not application check failures.
+- Branch check: confirmed `photo-library` before changes, on both attempts.
+- Required document reads and scoped searches of saving, picture readback,
+  Tiled rendering, CPU fallback and gain-map writing.
+- Focused Python checks: `test_ultrahdr_export.py`, `test_export_lifecycle.py`,
+  `test_proof_export_identity.py`, `test_export_parity.py`,
+  `test_library_grades.py`: 73 passed (1 minute 59 seconds).
+- Required JavaScript fast checks: `node --test tests/*.test.js`: 462 passed,
+  no failures (4 seconds).
+- Required Python fast checks: `.venv/Scripts/python.exe -m pytest tests -q`:
+  1,723 passed, 3 skipped, no failures (4 minutes 37 seconds).
+- AST comparison of both extracted writer bodies against HEAD: identical
+  after making reference white and metadata explicit arguments.
+- `git diff --check`: passed.
+- No GPU checks: the only retained code change is encode-only; no renderer,
+  shader or visible Library behavior has changed. The existing focused export
+  and Proof checks above exercise the protected area actually refactored.
+- No broad sweep. Slow validation has not approached the 30-minute stop point.
+- Earlier fast baseline before the extraction: 462 JavaScript passed;
+  1,723 Python passed, 3 skipped (4 minutes 24 seconds).
+- Shell access initially required approved explicit repository access. Some
+  `rg` glob paths did not expand in PowerShell; directory-based searches
+  supplied the needed results. These were tool invocation failures, not
+  application check failures.
 
-Local report commit: `docs: record slice 3 Stage B protected-export blocker`.
-The commit contains this report only; B, C and D are not built.
+Local prerequisite commit: `refactor: share finished gain-map writers`.
+The earlier report-only commit was `59ee23b`. B, C and D are not built.

@@ -926,3 +926,17 @@ check failed. No broad sweep, push or installer build was performed.
 Steve should try a real photo with both HDR and SDR edits and a mask: save,
 close and reopen it, then repeat with autosave off. The Library's displayed
 saved grade awaits Stage B and its format/resolution measurement decision.
+
+### Slice 3 Stage B prerequisite (October 11, 2026)
+
+The encode-only JPEG and AVIF gain-map writing bodies are now shared functions
+in `backend/hdr_finisher/exporters.py`: `write_jpeg_gainmap_renditions` and
+`write_avif_gainmap_renditions`. They accept finished HDR/SDR pixels, reference
+white and encoding settings. Existing export commands still render, encode,
+validate and publish through their original lifecycle, with unchanged encoder
+arguments, filtering and metadata policy. Steve approved this extraction.
+
+Stage B is not built. Existing whole-picture GPU readback accepts Direct only;
+Tiled retains a display-mapped presentation, not a complete linear HDR/SDR pair.
+Extending that protected readback requires separate approval. The running status,
+decisions and validation are in `slice-3-stage-reports-2026-10-11.md`.

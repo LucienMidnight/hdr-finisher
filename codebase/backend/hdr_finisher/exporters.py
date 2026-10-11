@@ -380,6 +380,91 @@ class SDRJPEGXLExportBackend(ExportBackend):
         )
 
 
+def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None):
+    """Encode finished renditions; also used by Library pictures. No rendering."""
+    gainmaputil = gainmaputil or resolve_binary("avifgainmaputil")
+    timings_ms = timings_ms if timings_ms is not None else {}
+    with TemporaryDirectory(prefix="hdr_finisher_export_") as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        base_y4m_path = temp_dir / "base_sdr.y4m"
+        hdr_y4m_path = temp_dir / "alternate_hdr.y4m"
+        started = perf_counter()
+        _write_sdr_y4m(
+            base_y4m_path,
+            sdr_image,
+            bit_depth=settings.avif_bit_depth,
+            chroma_subsampling=settings.avif_chroma_subsampling,
+            dithering=settings.dithering,
+        )
+        _write_hdr_y4m(
+            hdr_y4m_path,
+            hdr_image,
+            bit_depth=settings.avif_bit_depth,
+            chroma_subsampling="444",
+            reference_white_nits=reference_white_nits,
+        )
+        timings_ms["prepare_y4m"] = round((perf_counter() - started) * 1000.0, 3)
+        started = perf_counter()
+        _run_command(
+            [
+                str(gainmaputil), "combine", str(base_y4m_path), str(hdr_y4m_path),
+                str(staged_output), "--cicp-base", "1/13/1", "--cicp-alternate", "9/16/9",
+                "--depth-gain-map", "10", "--yuv-gain-map",
+                settings.avif_gain_map_chroma_subsampling, "--qgain-map",
+                str(int(settings.avif_gain_map_quality or settings.quality)), "--downscaling",
+                "1" if settings.avif_gain_map_scale == "full" else "2", "--max-headroom", "0",
+                "-q", str(int(settings.quality)), "-d", str(settings.avif_bit_depth),
+                "-y", settings.avif_chroma_subsampling,
+            ]
+        )
+        timings_ms["encode"] = round((perf_counter() - started) * 1000.0, 3)
+
+def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None):
+    """Encode finished renditions with the same writer as JPEG export."""
+    ultrahdr_app = ultrahdr_app or resolve_binary("ultrahdr_app")
+    with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_") as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        hdr_raw_path = temp_dir / "hdr_bt2020_linear_rgba_f16.raw"
+        sdr_raw_path = temp_dir / "sdr_srgb_rgba8888.raw"
+        sdr_jpeg_path = temp_dir / "sdr_primary.jpg"
+        unfiltered_path = temp_dir / "unfiltered_ultrahdr.jpg"
+        exif_path = _write_temporary_exif(temp_dir, exif_payload)
+        hdr_rgba, target_peak_nits = _prepare_hdr_linear_rgba_f16(
+            hdr_image, reference_white_nits
+        )
+        hdr_raw_path.write_bytes(hdr_rgba.tobytes(order="C"))
+        sdr_rgb = _linear_to_srgb8(sdr_image[..., :3], dither=settings.dithering)
+        sdr_rgb = _floor_ultrahdr_base(sdr_rgb, hdr_image)
+        _write_sdr_rgba8888_pixels(sdr_raw_path, sdr_rgb)
+        _write_sdr_jpeg_pixels(
+            sdr_jpeg_path,
+            sdr_rgb,
+            quality=int(settings.quality),
+            chroma_subsampling=settings.jpeg_chroma_subsampling,
+            exif_payload=exif_payload,
+        )
+        command = _build_ultrahdr_encode_command(
+            ultrahdr_app,
+            hdr_raw_path,
+            sdr_raw_path,
+            unfiltered_path,
+            sdr_jpeg_path=sdr_jpeg_path,
+            exif_path=exif_path,
+            width=int(hdr_image.shape[1]),
+            height=int(hdr_image.shape[0]),
+            quality=int(settings.quality),
+            gain_map_quality=100,
+            gain_map_scale=settings.jpeg_gain_map_scale,
+            target_peak_nits=target_peak_nits,
+        )
+        _run_command(command)
+        _denoise_ultrahdr_gain_map(
+            unfiltered_path,
+            staged_output,
+            ultrahdr_app,
+            gain_map_quality=int(settings.jpeg_gain_map_quality),
+        )
+
 class AVIFGainMapExportBackend(ExportBackend):
     name = "avif_gain_map"
 
@@ -405,40 +490,9 @@ class AVIFGainMapExportBackend(ExportBackend):
             timings_ms["render_renditions"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
             def write(staged_output: Path) -> None:
-                with TemporaryDirectory(prefix="hdr_finisher_export_") as temp_dir_name:
-                    temp_dir = Path(temp_dir_name)
-                    base_y4m_path = temp_dir / "base_sdr.y4m"
-                    hdr_y4m_path = temp_dir / "alternate_hdr.y4m"
-                    started = perf_counter()
-                    _write_sdr_y4m(
-                        base_y4m_path,
-                        sdr_image,
-                        bit_depth=settings.avif_bit_depth,
-                        chroma_subsampling=settings.avif_chroma_subsampling,
-                        dithering=settings.dithering,
-                    )
-                    _write_hdr_y4m(
-                        hdr_y4m_path,
-                        hdr_image,
-                        bit_depth=settings.avif_bit_depth,
-                        chroma_subsampling="444",
-                        reference_white_nits=getattr(session, "hdr_reference_white_nits", 203),
-                    )
-                    timings_ms["prepare_y4m"] = round((perf_counter() - started) * 1000.0, 3)
-                    started = perf_counter()
-                    _run_command(
-                        [
-                            str(gainmaputil), "combine", str(base_y4m_path), str(hdr_y4m_path),
-                            str(staged_output), "--cicp-base", "1/13/1", "--cicp-alternate", "9/16/9",
-                            "--depth-gain-map", "10", "--yuv-gain-map",
-                            settings.avif_gain_map_chroma_subsampling, "--qgain-map",
-                            str(int(settings.avif_gain_map_quality or settings.quality)), "--downscaling",
-                            "1" if settings.avif_gain_map_scale == "full" else "2", "--max-headroom", "0",
-                            "-q", str(int(settings.quality)), "-d", str(settings.avif_bit_depth),
-                            "-y", settings.avif_chroma_subsampling,
-                        ]
-                    )
-                    timings_ms["encode"] = round((perf_counter() - started) * 1000.0, 3)
+                write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
+                    getattr(session, "hdr_reference_white_nits", 203),
+                    gainmaputil=gainmaputil, timings_ms=timings_ms)
 
             def validate(staged_output: Path) -> str | None:
                 started = perf_counter()
@@ -496,50 +550,9 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 )
 
             def write(staged_output: Path) -> None:
-                with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_") as temp_dir_name:
-                    temp_dir = Path(temp_dir_name)
-                    hdr_raw_path = temp_dir / "hdr_bt2020_linear_rgba_f16.raw"
-                    sdr_raw_path = temp_dir / "sdr_srgb_rgba8888.raw"
-                    sdr_jpeg_path = temp_dir / "sdr_primary.jpg"
-                    unfiltered_path = temp_dir / "unfiltered_ultrahdr.jpg"
-                    exif_payload = _source_exif_payload(session, settings.metadata_policy)
-                    exif_path = _write_temporary_exif(temp_dir, exif_payload)
-                    reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
-                    hdr_rgba, target_peak_nits = _prepare_hdr_linear_rgba_f16(
-                        hdr_image, reference_white_nits
-                    )
-                    hdr_raw_path.write_bytes(hdr_rgba.tobytes(order="C"))
-                    sdr_rgb = _linear_to_srgb8(sdr_image[..., :3], dither=settings.dithering)
-                    sdr_rgb = _floor_ultrahdr_base(sdr_rgb, hdr_image)
-                    _write_sdr_rgba8888_pixels(sdr_raw_path, sdr_rgb)
-                    _write_sdr_jpeg_pixels(
-                        sdr_jpeg_path,
-                        sdr_rgb,
-                        quality=int(settings.quality),
-                        chroma_subsampling=settings.jpeg_chroma_subsampling,
-                        exif_payload=exif_payload,
-                    )
-                    command = _build_ultrahdr_encode_command(
-                        ultrahdr_app,
-                        hdr_raw_path,
-                        sdr_raw_path,
-                        unfiltered_path,
-                        sdr_jpeg_path=sdr_jpeg_path,
-                        exif_path=exif_path,
-                        width=int(hdr_image.shape[1]),
-                        height=int(hdr_image.shape[0]),
-                        quality=int(settings.quality),
-                        gain_map_quality=100,
-                        gain_map_scale=settings.jpeg_gain_map_scale,
-                        target_peak_nits=target_peak_nits,
-                    )
-                    _run_command(command)
-                    _denoise_ultrahdr_gain_map(
-                        unfiltered_path,
-                        staged_output,
-                        ultrahdr_app,
-                        gain_map_quality=int(settings.jpeg_gain_map_quality),
-                    )
+                write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
+                    getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
+                    exif_payload=_source_exif_payload(session, settings.metadata_policy))
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",
