@@ -187,6 +187,7 @@
       position(cell.element, index);
       const active = state.selection.has(photo.path);
       cell.element.classList.toggle("active", active); cell.element.setAttribute("aria-selected", String(active));
+      cell.element.classList.toggle("lead", active && index === state.index);
       cell.element.classList.toggle("rejected", photo.marks?.pick === "reject");
       cell.element.querySelector(".library-marks")?.remove(); cell.element.append(culling.strip(photo));
     }
@@ -202,15 +203,16 @@
       : state.collection ? (state.collection.kind === "album" ? "This album is empty. Right-click photos, or drag them here, to add them." : "No connected photos carry this tag.")
       : state.path ? "No readable photos in this folder." : "Add a folder to start browsing.");
     reconcile(state.cells, layout.first, layout.last, space, (element, index) => {
-      element.style.cssText = `left:${10 + (index % layout.columns) * layout.cellWidth}px;top:${10 + Math.floor(index / layout.columns) * layout.rowHeight}px;width:${layout.cellWidth}px;height:${layout.rowHeight}px`;
+      element.style.cssText = `left:${3 + (index % layout.columns) * layout.cellWidth}px;top:${3 + Math.floor(index / layout.columns) * layout.rowHeight}px;width:${layout.cellWidth - 3}px;height:${layout.rowHeight - 3}px`;
     });
   }
+  const FILM_PITCH = 119; // a 116px filmstrip tile plus the 3px gap
   function paintFilm() {
     if (!state.active || state.view !== "single" || state.review) { clearCells(state.filmCells); return; }
-    $("film-space").style.width = `${state.photos.length * 128}px`;
-    const first = Math.max(0, Math.floor(film.scrollLeft / 128));
-    const last = Math.min(state.photos.length, Math.ceil((film.scrollLeft + film.clientWidth) / 128));
-    reconcile(state.filmCells, first, last, $("film-space"), (element, index) => { element.style.left = `${index * 128}px`; });
+    $("film-space").style.width = `${state.photos.length * FILM_PITCH + 3}px`;
+    const first = Math.max(0, Math.floor((film.scrollLeft - 3) / FILM_PITCH));
+    const last = Math.min(state.photos.length, Math.ceil((film.scrollLeft + film.clientWidth) / FILM_PITCH));
+    reconcile(state.filmCells, first, last, $("film-space"), (element, index) => { element.style.left = `${3 + index * FILM_PITCH}px`; });
   }
   function updateDetails() {
     const photo = selected(); const root = $("details"), tagFocused = document.activeElement?.id === "library-tag-input"; root.replaceChildren();
@@ -327,15 +329,15 @@
     state.index = next.index; state.selection = next.selected; state.anchor = next.anchor; updateDetails();
     if (state.view === "grid") {
       if (scroll && state.layout) {
-        const top = 10 + Math.floor(state.index / state.layout.columns) * state.layout.rowHeight;
+        const top = Math.floor(state.index / state.layout.columns) * state.layout.rowHeight;
         if (top < grid.scrollTop) grid.scrollTop = top;
-        else if (top + state.layout.rowHeight > grid.scrollTop + grid.clientHeight) grid.scrollTop = top + state.layout.rowHeight - grid.clientHeight;
+        else if (top + state.layout.rowHeight + 3 > grid.scrollTop + grid.clientHeight) grid.scrollTop = top + state.layout.rowHeight + 3 - grid.clientHeight;
       }
       paintGrid();
     } else {
-      const left = state.index * 128;
+      const left = state.index * FILM_PITCH;
       if (left < film.scrollLeft) film.scrollLeft = left;
-      else if (left + 128 > film.scrollLeft + film.clientWidth) film.scrollLeft = left + 128 - film.clientWidth;
+      else if (left + FILM_PITCH + 3 > film.scrollLeft + film.clientWidth) film.scrollLeft = left + FILM_PITCH + 3 - film.clientWidth;
       paintFilm(); showSingle();
     }
   }

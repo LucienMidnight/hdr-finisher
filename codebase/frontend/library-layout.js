@@ -1,13 +1,14 @@
 (function (root) {
   "use strict";
   function gridLayout(count, width, height, scrollTop, minimumSize) {
-    const columns = Math.max(1, Math.floor(Math.max(1, width - 20) / minimumSize));
-    const cellWidth = Math.max(1, (width - 20) / columns);
-    const rowHeight = Math.ceil((cellWidth - 14) * .75 + 64);
+    // Tiles sit 3px apart with the same 3px around them. cellWidth and rowHeight are the pitch, gap included.
+    const columns = Math.max(1, Math.floor(Math.max(1, width - 3) / minimumSize));
+    const cellWidth = Math.max(4, (width - 3) / columns);
+    const rowHeight = Math.ceil((cellWidth - 17) * .75 + 48);
     const rows = Math.ceil(count / columns);
-    const firstRow = Math.max(0, Math.floor((scrollTop - 10) / rowHeight));
-    const lastRow = Math.min(rows, Math.ceil((scrollTop + height - 10) / rowHeight));
-    return { columns, cellWidth, rowHeight, totalHeight: rows * rowHeight + 20,
+    const firstRow = Math.max(0, Math.floor((scrollTop - 3) / rowHeight));
+    const lastRow = Math.min(rows, Math.ceil((scrollTop + height - 3) / rowHeight));
+    return { columns, cellWidth, rowHeight, totalHeight: rows * rowHeight + 3,
       first: Math.min(count, firstRow * columns), last: Math.min(count, Math.max(firstRow, lastRow) * columns) };
   }
   const api = Object.freeze({ gridLayout });

@@ -27,8 +27,8 @@ test("switching view preserves bulk selection and arrows clamp to the folder", (
 
 test("box selection covers virtual rows, excludes untouched columns and clamps the last row", () => {
   const layout = gridLayout(10003, 1400, 900, 0, 190);
-  const row = 500, left = 10 + layout.cellWidth;
-  const selected = boxIndices(layout, 10003, { left: left + 1, right: left + layout.cellWidth - 1, top: 10 + row * layout.rowHeight + 1, bottom: 10 + (row + 3) * layout.rowHeight - 1 });
+  const row = 500, left = 3 + layout.cellWidth;
+  const selected = boxIndices(layout, 10003, { left: left + 1, right: left + layout.cellWidth - 1, top: 3 + row * layout.rowHeight + 1, bottom: 3 + (row + 3) * layout.rowHeight - 1 });
   assert.deepEqual(selected, [3501, 3508, 3515]);
   const all = boxIndices(layout, 10003, { left: -100, right: 2000, top: -100, bottom: layout.totalHeight + 100 });
   assert.equal(all.length, 10003); assert.equal(all.at(-1), 10002);

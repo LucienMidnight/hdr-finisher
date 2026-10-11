@@ -55,12 +55,15 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-popover [aria-checked="true"]::after { content: "✓"; color: var(--accent); }
 #library-grid { position: relative; overflow-y: auto; min-height: 0; outline: 0; }
 #grid-space { position: relative; width: 100%; }
-.library-cell { position: absolute; display: flex; flex-direction: column; padding: 7px 7px 0; cursor: default; border-radius: var(--radius); overflow: hidden; }
-.library-cell.active { background: var(--accent-bed); box-shadow: inset 0 0 0 2px var(--accent); }
-.library-cell .picture-frame { display: flex; align-items: center; justify-content: center; aspect-ratio: 4 / 3; min-height: 0; overflow: hidden; width: 100%; }
+/* Each photo sits on its own tile, a step lighter than the surround. No lines: the gap between tiles is the grid. */
+.library-cell { position: absolute; display: flex; flex-direction: column; padding: 7px 7px 0; cursor: default; border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+.library-cell:hover { background: var(--raised); }
+.library-cell.active { background: var(--accent-bed); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.library-cell.lead { box-shadow: inset 0 0 0 2px var(--accent); }
+.library-cell .picture-frame { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; aspect-ratio: 4 / 3; min-height: 0; overflow: hidden; width: 100%; }
 .library-cell canvas { width: 100%; height: 100%; object-fit: contain; }
-.library-cell .name { font-size: 11px; color: var(--muted); padding: 4px 0; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
-.library-cell.loading .picture-frame { background: var(--panel); }
+.library-cell .library-marks { order: 1; }
+.library-cell .name { order: 2; flex: 0 0 16px; height: 16px; margin-top: -3px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .library-footer { position: relative; display: flex; align-items: center; gap: 12px; background: var(--panel); color: var(--muted); padding: 5px 12px; min-height: 27px; font-size: 11px; border-top: 1px solid var(--hairline); }
 #library-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #index-status { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; min-height: 0; padding: 0 4px; font-size: 11px; color: var(--muted); }
@@ -71,14 +74,18 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-activity-folder { color: var(--text); }
 #library-empty { display: grid; place-content: center; text-align: center; height: 100%; color: var(--muted); gap: 12px; }
 #library-empty button { justify-self: center; }
-#library-single { display: grid; grid-template-rows: minmax(0,1fr) 32px 138px; min-height: 0; }
-#single-stage { display: grid; place-items: center; overflow: hidden; min-height: 0; padding: 12px; }
+#library-single { display: grid; grid-template-rows: minmax(0,1fr) 26px auto; min-height: 0; }
+#single-stage { display: grid; place-items: center; overflow: hidden; min-height: 0; padding: 14px 14px 6px; }
 #single-stage canvas { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
-#single-caption { text-align: center; color: var(--muted); font-size: 12px; }
-#filmstrip { position: relative; overflow-x: auto; overflow-y: hidden; background: var(--panel); outline: none; }
-#film-space { position: relative; height: 130px; }
-#filmstrip .library-cell { height: 128px; width: 128px; top: 0; }
-#filmstrip .picture-frame { height: 78px; aspect-ratio: auto; }
+#single-caption { text-align: center; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+#filmstrip { position: relative; overflow-x: auto; overflow-y: hidden; background: var(--viewer); outline: none; }
+#film-space { position: relative; height: 111px; }
+#filmstrip .library-cell { height: 105px; width: 116px; top: 3px; padding: 5px 5px 0; }
+#filmstrip .picture-frame { height: 80px; aspect-ratio: auto; }
+#filmstrip .name { display: none; }
+#filmstrip .library-marks { height: 20px; min-height: 20px; font-size: 10px; }
+#filmstrip .library-marks svg { width: 11px; height: 11px; }
+#filmstrip .library-label-dot { width: 8px; height: 8px; }
 #details { padding: 12px; color: var(--muted); font-size: 12px; overflow: auto; overflow-wrap: anywhere; }
 #details strong { color: var(--text); display: block; margin-bottom: 12px; }
 #details dt { margin-top: 12px; color: var(--quiet); }
@@ -113,7 +120,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-copy, .library-edited { display: inline-flex; align-items: center; color: var(--muted); font-family: var(--mono); font-size: 10px; }
 .library-marks svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .library-cell.rejected canvas { opacity: .34; }
-#single-caption { display: flex; align-items: center; justify-content: center; gap: 10px; }
+#single-caption { display: flex; align-items: center; justify-content: center; gap: 14px; }
 #single-caption .library-marks { display: inline-flex; }
 .library-culling { margin-top: 12px; padding-block: 12px; border-block: 1px solid var(--hairline); }
 .library-culling p { margin: 8px 0; color: var(--muted); }

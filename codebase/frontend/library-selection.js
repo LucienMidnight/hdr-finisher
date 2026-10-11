@@ -14,11 +14,11 @@
   }
   function boxIndices(layout, count, box) {
     const result = [];
-    const firstRow = Math.max(0, Math.floor((box.top - 10) / layout.rowHeight));
-    const lastRow = Math.min(Math.ceil(count / layout.columns) - 1, Math.floor((box.bottom - 10) / layout.rowHeight));
+    const firstRow = Math.max(0, Math.floor((box.top - 3) / layout.rowHeight));
+    const lastRow = Math.min(Math.ceil(count / layout.columns) - 1, Math.floor((box.bottom - 3) / layout.rowHeight));
     for (let row = firstRow; row <= lastRow; row++) {
       for (let column = 0; column < layout.columns; column++) {
-        const left = 10 + column * layout.cellWidth, top = 10 + row * layout.rowHeight;
+        const left = 3 + column * layout.cellWidth, top = 3 + row * layout.rowHeight;
         const index = row * layout.columns + column;
         if (index < count && left < box.right && left + layout.cellWidth > box.left && top < box.bottom && top + layout.rowHeight > box.top) result.push(index);
       }
