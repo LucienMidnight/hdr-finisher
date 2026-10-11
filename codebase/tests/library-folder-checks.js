@@ -25,7 +25,7 @@ for (let i = 0; i < 120; i++) fs.copyFileSync(fixture, path.join(folder, `photo-
   // Reload uses the real pin tree and preserves no test-only scheduler state.
   await library.goto(new URL("/library", process.env.HDR_FINISHER_URL).href);
   await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 120);
-  await library.locator("#library-sort").selectOption("name");
+  await library.locator("#sort-button").click(); await library.locator('#sort-menu [data-sort="name"]').click();
   await library.evaluate(() => { document.querySelector("#library-grid").scrollTop = 950; });
   await library.locator("#grid-space .library-cell").first().click();
   const before = await library.evaluate(() => ({selected: HDRLibrary.getSnapshot().selected, selection: HDRLibrary.getSnapshot().selection, top: document.querySelector("#library-grid").scrollTop}));
@@ -33,7 +33,7 @@ for (let i = 0; i < 120; i++) fs.copyFileSync(fixture, path.join(folder, `photo-
   await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 121, null, {timeout: 45000});
   const after = await library.evaluate(() => ({selected: HDRLibrary.getSnapshot().selected, selection: HDRLibrary.getSnapshot().selection, top: document.querySelector("#library-grid").scrollTop}));
   assert.deepEqual(after, before, "timed arrival keeps selection and scroll");
-  await library.locator("#check-photos").click();
+  await library.locator("#more-button").click(); await library.locator("#check-photos").click();
   await library.waitForFunction(() => document.querySelector("#library-status").textContent.includes("no new photos"));
   fs.copyFileSync(fixture, path.join(folder, "z-menu.png"));
   const row = library.locator(".library-folder-row").filter({hasText: path.basename(folder)}).first();
@@ -49,11 +49,11 @@ for (let i = 0; i < 120; i++) fs.copyFileSync(fixture, path.join(folder, `photo-
   fs.copyFileSync(fixture, path.join(folder, "z-single.png"));
   await api("/api/library/checks", {paths: [folder]});
   await library.waitForFunction(() => document.querySelector("#library-status").textContent.includes("photos still arriving"));
-  await library.locator("#check-photos").click();
+  await library.locator("#more-button").click(); await library.locator("#check-photos").click();
   await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 123);
   assert.deepEqual(await library.evaluate(() => ({selected: HDRLibrary.getSnapshot().selected, left: document.querySelector("#filmstrip").scrollLeft})), single);
   fs.unlinkSync(single.selected);
-  await library.locator("#check-photos").click();
+  await library.locator("#more-button").click(); await library.locator("#check-photos").click();
   await library.waitForFunction(old => HDRLibrary.getSnapshot().selected !== old && HDRLibrary.getSnapshot().count === 122, single.selected);
   assert.equal(await library.evaluate(() => HDRLibrary.getSnapshot().view), "single");
   await page.screenshot({path: path.join(output, "folder-checks.png")});

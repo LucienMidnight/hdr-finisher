@@ -192,6 +192,7 @@
     }
   }
   function paintGrid() {
+    const count = state.photos.length ? String(state.photos.length) : ""; if ($("place-count").textContent !== count) $("place-count").textContent = count;
     if (!state.active || state.view !== "grid") return;
     const layout = HDRLibraryLayout.gridLayout(state.photos.length, grid.clientWidth, grid.clientHeight, grid.scrollTop, state.size);
     state.layout = layout; space.style.height = `${layout.totalHeight}px`;
@@ -698,8 +699,33 @@
     } catch (error) { status(error.message); }
   });
   $("filter-button").addEventListener("click", toggleFilters);
-  $("library-sort").addEventListener("change", event => { state.sort = event.target.value; applyQuery(); });
-  $("sort-dir").addEventListener("click", () => { state.descending = !state.descending; $("sort-dir").textContent = state.descending ? "↓" : "↑"; $("sort-dir").setAttribute("aria-label", state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending"); applyQuery(); });
+  let openPopover = null;
+  function closePopover() { if (!openPopover) return; openPopover.menu.hidden = true; openPopover.button.setAttribute("aria-expanded", "false"); openPopover = null; }
+  function togglePopover(button, menu) {
+    const opening = openPopover?.menu !== menu; closePopover(); if (!opening) return;
+    menu.hidden = false; button.setAttribute("aria-expanded", "true"); openPopover = { button, menu };
+    const bounds = button.getBoundingClientRect();
+    menu.style.left = `${Math.max(4, Math.min(bounds.left, innerWidth - menu.offsetWidth - 4))}px`; menu.style.top = `${bounds.bottom + 4}px`;
+  }
+  for (const name of ["sort", "more"]) {
+    $(name + "-button").addEventListener("click", () => togglePopover($(name + "-button"), $(name + "-menu")));
+    $(name + "-menu").addEventListener("click", event => { if (event.target.closest("button")) closePopover(); });
+  }
+  document.addEventListener("pointerdown", event => { if (openPopover && !openPopover.menu.contains(event.target) && !openPopover.button.contains(event.target)) closePopover(); });
+  document.addEventListener("keydown", event => { if (event.key === "Escape" && openPopover) { event.preventDefault(); event.stopImmediatePropagation(); const { button } = openPopover; closePopover(); button.focus(); } }, true);
+  window.addEventListener("blur", closePopover); window.addEventListener("resize", closePopover);
+  function paintSort() {
+    for (const item of $("sort-menu").querySelectorAll("[data-sort]")) {
+      item.setAttribute("aria-checked", String(item.dataset.sort === state.sort));
+      if (item.dataset.sort === state.sort) $("sort-button").title = `Sorted by ${item.textContent.toLowerCase()}`;
+    }
+    const label = state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending";
+    $("sort-dir").dataset.descending = String(state.descending); $("sort-dir").setAttribute("aria-label", label); $("sort-dir").title = label;
+  }
+  function paintSize() { const input = $("thumbnail-size"); input.parentElement.style.setProperty("--fill-w", `${(input.value - input.min) / (input.max - input.min) * 100}%`); }
+  paintSort(); paintSize();
+  $("sort-menu").addEventListener("click", event => { const item = event.target.closest("[data-sort]"); if (!item) return; state.sort = item.dataset.sort; paintSort(); applyQuery(); });
+  $("sort-dir").addEventListener("click", () => { state.descending = !state.descending; paintSort(); applyQuery(); });
   $("raw-only").addEventListener("click", () => { state.filters.raw = !state.filters.raw; $("raw-only").setAttribute("aria-pressed", String(!!state.filters.raw)); applyQuery(); });
   for (const name of ["rating", "pick", "label", "type", "search"]) $("filter-" + name).addEventListener(name === "search" ? "input" : "change", event => { state.filters[name] = event.target.value; applyQuery(); });
   $("filter-clear").addEventListener("click", () => { state.filters = {}; for (const name of ["rating", "pick", "label", "type", "search"]) $("filter-" + name).value = ""; $("raw-only").setAttribute("aria-pressed", "false"); ruleFilters.render(); applyQuery(); });
@@ -788,7 +814,7 @@
     if (state.active && !document.hidden) { try { await api("/api/library/checks", { client: checkClient, visible: state.path }); await activity.refresh(); } catch (error) { console.debug("Library index:", error.message); } }
     setTimeout(pollIndexing, 1000);
   }
-  $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintGrid(); });
+  $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintSize(); paintGrid(); });
   let gridFrame = 0, filmFrame = 0;
   grid.addEventListener("scroll", () => { if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); }); });
   film.addEventListener("scroll", () => { if (!filmFrame) filmFrame = requestAnimationFrame(() => { filmFrame = 0; paintFilm(); }); });
@@ -875,9 +901,7 @@
     state.sort = saved.sort || "time"; state.descending = !!saved.descending; state.filters = saved.filters || {};
     state.size = saved.size || 190; state.hdr = !!saved.hdr; state.zoom = !!saved.zoom;
     state.zoomX = saved.zoomX ?? .5; state.zoomY = saved.zoomY ?? .5;
-    $("library-sort").value = state.sort; $("thumbnail-size").value = state.size;
-    $("sort-dir").textContent = state.descending ? "↓" : "↑";
-    $("sort-dir").setAttribute("aria-label", state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending");
+    $("thumbnail-size").value = state.size; paintSort(); paintSize();
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr)); $("zoom-button").setAttribute("aria-pressed", String(state.zoom));
     $("raw-only").setAttribute("aria-pressed", String(!!state.filters.raw));
     for (const name of ["rating", "pick", "label", "type", "search"]) $("filter-" + name).value = state.filters[name] || "";
@@ -899,7 +923,7 @@
     if (libraryDesktop) await libraryDesktop.dockLibrary(portableState()).catch(error => status(error.message));
   });
   if (standalone) {
-    $("popout-library").textContent = "Dock Library";
+    $("popout-library").classList.add("dock"); $("popout-library").setAttribute("aria-label", "Dock Library");
     $("popout-library").title = "Return Library to the main window";
     libraryDesktop?.onLibraryWindowChanged(message => {
       if (message.action === "close") void libraryDesktop.dockLibrary(portableState()).catch(error => status(error.message));

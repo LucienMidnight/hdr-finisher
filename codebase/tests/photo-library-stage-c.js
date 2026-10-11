@@ -27,7 +27,7 @@ fs.mkdirSync(path.join(folder, "z-subfolder"));
   // Switching rendition while pictures are still arriving must settle without blank cells.
   await library.locator("#hdr-button").click(); await library.locator("#hdr-button").click();
   await library.waitForFunction(() => document.querySelectorAll("#grid-space canvas[data-picture-key]").length === 12);
-  await library.locator("#library-sort").selectOption("name");
+  await library.locator("#sort-button").click(); await library.locator('#sort-menu [data-sort="name"]').click();
   await library.locator("#sort-dir").click();
   assert.ok((await library.evaluate(() => HDRLibrary.getSnapshot().paths[0])).endsWith("photo-11.png"));
   await library.locator("#sort-dir").click();

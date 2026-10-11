@@ -67,7 +67,7 @@ async function eventually(check) {
       await HDRLibrary.browse(folder);
     }, folder);
     await library.waitForSelector('#grid-space canvas[data-picture-key]', { timeout: 60000 });
-    await library.locator('#library-sort').selectOption('name');
+    await library.locator("#sort-button").click(); await library.locator('#sort-menu [data-sort="name"]').click();
     await library.locator('#sort-dir').click();
     await library.locator('#library-grid').evaluate(element => element.scrollTop = 800);
     const before = await library.evaluate(() => ({ ...HDRLibrary.getSnapshot(), scroll: document.querySelector('#library-grid').scrollTop }));

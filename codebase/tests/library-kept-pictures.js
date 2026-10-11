@@ -67,7 +67,7 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     await frame.locator('#single-picture[data-kept="true"]').waitFor();
     await frame.locator('#zoom-button').click();
     assert.equal(await frame.locator('#native-picture').isHidden(),true);
-    await frame.locator('#picture-settings').click();
+    await frame.locator('#more-button').click();await frame.locator('#picture-settings').click();
     await frame.locator('dialog[open]').waitFor();
     assert.equal(await frame.locator('dialog[open] input,dialog[open] select').count(),2);
     await frame.locator('dialog[open]').press('Escape');
