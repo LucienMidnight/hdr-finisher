@@ -17,7 +17,6 @@
     if (control.id === "help-open") control.textContent = "HDR Finisher Help";
     slot.replaceWith(control);
   });
-  document.querySelector(".top-actions")?.remove();
   const menuBar = document.querySelector(".window-menu-bar");
   if (menuBar && usesNativeApplicationMenu) {
     menuBar.hidden = true;

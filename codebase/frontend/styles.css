@@ -554,6 +554,29 @@ output {
   min-width: 0;
 }
 
+/* Claude's Library mockup: autosave stays visible in the header. */
+.grade-autosave {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.grade-autosave i {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.grade-autosave[aria-pressed="false"] i {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--quiet);
+}
+
 .top-icon-button {
   display: inline-grid;
   width: 30px;

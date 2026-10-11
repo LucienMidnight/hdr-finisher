@@ -105,6 +105,7 @@
       </nav>
 
       <div class="top-actions">
+        <button id="grade-autosave" class="text-button grade-autosave" type="button" aria-pressed="true" title="Autosave grades to the file beside each photo"><i aria-hidden="true"></i><span>Autosave on</span></button>
         <button id="project-open" class="text-button" type="button">Open project</button>
         <button id="project-save" class="text-button" type="button" disabled>Save project</button>
         <button id="settings-open" class="text-button" type="button" aria-label="Open settings" title="Settings">Settings</button>
@@ -137,7 +138,6 @@
         </div>
         <div id="grade-saving-controls" hidden>
           <p id="grade-save-state" role="status" aria-live="polite"></p>
-          <label class="checkbox-row"><input id="grade-autosave" type="checkbox" checked> Autosave</label>
           <button id="grade-save-now" class="text-button" type="button" hidden>Save</button>
           <button id="grade-revert-saved" class="text-button" type="button" hidden>Revert to last saved</button>
           <button id="grade-resolve-conflict" class="text-button" type="button" hidden>Resolve grade conflict</button>

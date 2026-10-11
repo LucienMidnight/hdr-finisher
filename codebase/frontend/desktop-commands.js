@@ -142,6 +142,7 @@ async function initializeApplicationShell() {
       const oldDirectory = state.appPreferences?.folders?.fileSave || "";
       const themeChanged = !options.initial && preferences.theme !== state.appPreferences?.theme;
       state.appPreferences = preferences;
+      window.HDRGradeSaving?.render();
       if (themeChanged) {
         // CSS custom properties repaint immediately, but canvases (scopes,
         // curve editor, tone equalizer) only redraw when explicitly told to —

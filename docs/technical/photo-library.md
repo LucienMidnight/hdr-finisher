@@ -158,6 +158,9 @@ its grade beside it; Save As still makes a project. Project opening and
 project saving remain available. Export and Proof use their existing paths.
 
 Autosave is one app preference, initially on and kept between launches.
+Claude's mockup button sits at the top right, visible from Library and Grade:
+**Autosave on** with a filled dot, or **Autosave off** with a hollow dot.
+The photo's save state and Save/Revert actions stay beside its name.
 It saves after roughly a second without an edit, on leaving the photo and
 on closing. With it off, the named-photo Save / Don't save / Cancel notice
 guards photo replacement and closing. Switching Library tabs, browsing and

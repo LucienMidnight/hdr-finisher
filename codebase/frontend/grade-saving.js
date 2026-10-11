@@ -11,13 +11,15 @@
     return payload;
   }
   function render() {
+    const button = byId("grade-autosave");
+    button.setAttribute("aria-pressed", String(autosave()));
+    button.querySelector("span").textContent = autosave() ? "Autosave on" : "Autosave off";
     const visible = Boolean(current && state.session?.session_id === current);
     byId("grade-saving-controls").hidden = !visible;
     if (!visible) return;
     const dirty = state.documentDirty;
     const token = `${state.editRevision}:${state.globalEditGeneration}:${dirty}`;
     if (token !== lastToken) { lastToken = token; lastChange = performance.now(); }
-    byId("grade-autosave").checked = autosave();
     byId("grade-save-state").textContent = result.conflict ? "Saving paused — grade changed elsewhere"
       : result.reason ? "Waiting to write settings — grade kept safely in the Library"
       : saving || result.pending ? "Saving…" : dirty ? "Unsaved changes"
@@ -177,9 +179,10 @@
   window.HDRGradeSaving = { open, save, saveProject, leave, render, activated, resolve, offerRecovery,
     active: () => Boolean(current && state.session?.session_id === current),
     hasGrade: id => id === current && loadedGrade, conflict: () => Boolean(result.conflict) };
-  byId("grade-autosave").addEventListener("change", async event => {
-    window.HDRApplicationShell.setGradeAutosave(event.target.checked);
-    if (event.target.checked && state.documentDirty) await save();
+  byId("grade-autosave").addEventListener("click", async () => {
+    const enabled = !autosave();
+    window.HDRApplicationShell.setGradeAutosave(enabled);
+    if (enabled && current && state.documentDirty) await save();
     render();
   });
   byId("grade-save-now").addEventListener("click", () => save());
