@@ -352,6 +352,46 @@ Later on October 11, after Steve had used slices 1 to 3:
   app never states or enforces one. Internally, performance is tested on a
   large library so that speed does not depend on how many photos are
   indexed; the test size is an engineering detail, not a limit.
+- **Export has two routes, one set of settings** (supersedes the export
+  window in the mock-up and the bullet above on where batch settings
+  live):
+  - *The Export page* holds every export setting and control. It gains a
+    grid of the photos chosen for export and its own control panel. A
+    selection sent from the Library arrives there as a batch.
+  - *Quick export…* on the right-click menu of a photo or a selection asks
+    for a folder and an export preset and runs. The preset carries naming
+    rules, size, versions, format and the rest. Nothing else is asked.
+  - Export presets are made and edited on the Export page only. The page
+    must leave room for print settings and watermarks later.
+  - The Export page needs a mock-up before its brief is written.
+- **SDR-only grading needs no mode and no PRD.** It already works; see
+  section 12 for the code check and the rough edges moved to the polish
+  pass.
+- **Paste rules** (settles open decisions 7 and 8; the code check behind
+  them is summarised in section 5.15):
+  - RAW exposure pastes as a change from the copied photo's own starting
+    exposure, applied to each target's own starting exposure. To be
+    tuned in use; a better starting auto-exposure may be needed for it to
+    work well.
+  - Values measured from one photo are never pasted: the measured
+    highlight peak, the matched lens profile, the file interpretation,
+    reference white, and overlay view settings. Lens on/off switches do
+    paste.
+  - Everything else pastes as numbers, including an SDR grade produced by
+    Match entire HDR grade.
+  - A paste is recorded at once and finished in the background by the
+    same pass that makes each photo's Library picture, which is where
+    that photo's starting exposure becomes known. A photo opened in Grade
+    first is finished on the spot.
+  - No rough picture first. Photos on screen are done first; the rest
+    show the default look with an "updating" mark.
+  - Settings that do not apply to the target's kind of file are skipped
+    and reported.
+  - "Modified only" compares the copied photo with its own starting
+    grade.
+  - One Looks menu. A look is a saved paste across several groups. The
+    per-panel Preset buttons stay for single groups.
+  - Linked photos (5.20) become their own small slice after paste.
 - **Local build rule:** a backup push of a work-in-progress branch needs
   only the fast checks. The full sweep stays for merges into `main` and
   installer builds.
@@ -2464,6 +2504,20 @@ be in the slice 7 brief.
   colours did not match. Now the automatic match fails outright. Not
   investigated; the photos and the failure message are not yet recorded.
   Whether the library work on this branch is involved is unknown.
+
+**Faults found by reading the code, October 11 (none run or confirmed):**
+
+- Overlay view settings (zebra, false colour, opacity, threshold) are
+  stored inside the grade, so switching an overlay on and saving marks a
+  photo as Edited.
+- The SDR Highlights preset group is missing from the desktop app's
+  allowed list; saving or listing those presets may fail.
+- The Library's starting look adds 0.25 EV that Grade's starting grade
+  does not, so an unedited photo may look slightly brighter in the Library
+  than in Grade. Ask Steve before changing.
+- The app has 24 preset group ids, not the 22 stated in 5.15; `sdr-base`
+  has no controls behind it. White balance and tint are in the Colour
+  group.
 
 ---
 
