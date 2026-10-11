@@ -54,7 +54,9 @@ class LibraryRoute(APIRoute):
 def helper_error(error):
     if "queue is full" in str(error):
         return "The Library helper is busy. Saved marks are safe; try again in a moment."
-    return "The Library helper is unavailable. Saved marks are safe; restart the app."
+    if "repeated problems" in str(error):
+        return "The Library helper stopped after repeated problems. Saved marks are safe; restart the app to browse again."
+    return "The Library helper is restarting. Saved marks are safe; try again in a moment."
 
 
 def user_error(error, subject="The Library"):
@@ -159,6 +161,7 @@ def create_library_router(worker, browser):
         try:
             yield
         finally:
+            index.close()
             await run_in_threadpool(marks.writer.close)
 
     router = APIRouter(prefix="/api/library", lifespan=lifespan, route_class=LibraryRoute)
@@ -166,7 +169,7 @@ def create_library_router(worker, browser):
     @router.get("/health")
     def health():
         return {"writer": marks.writer.status(), "helper": {"restarts": 0, **worker.status()},
-            "index": index.status(), "problems": recent()}
+            "index": index.status(), "conflicts": marks.conflicts.status(), "problems": recent()}
 
     @router.post("/writer")
     def writer_command(request: WriterRequest):

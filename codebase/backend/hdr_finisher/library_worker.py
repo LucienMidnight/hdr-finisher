@@ -22,6 +22,11 @@ class LibraryWorker:
         self._reader = None
         self._ready = Event()
         self._pending: dict[str, Future] = {}
+        self._requests = {}
+        self._stop = Event()
+        self._restarts = 0
+        self._recovering = False
+        self._restart_limit = 3
         self._paused: set[str] = set()
         self._closed = False
         self._failure: str | None = None
@@ -33,32 +38,86 @@ class LibraryWorker:
                 raise RuntimeError("Library helper is closed.")
             if self._failure:
                 raise RuntimeError(self._failure)
-            if self._process is None:
-                context = multiprocessing.get_context("spawn")
-                parent, child = context.Pipe()
-                process = context.Process(target=_worker_main,
-                    args=(child, str(self.root), os.getpid(), bool(self._paused)),
-                    name="hdr-library", daemon=True)
-                self._connection = parent
-                self._process = process
-                try:
-                    process.start()
-                except Exception as error:
-                    log("helper_start_failed", reason=repr(error), action="library unavailable; Grade unaffected")
-                    parent.close()
-                    child.close()
-                    self._process = None
-                    self._connection = None
-                    raise
-                child.close()
-                self._reader = Thread(target=self._read_results, name="hdr-library-results", daemon=True)
+            if self._recovering:
+                return  # Queue reads without occupying a backend request thread.
+            if self._reader is None:
+                self._reader = Thread(target=self._supervise, name="hdr-library-results", daemon=True)
                 self._reader.start()
-        if not self._ready.wait(30):
-            log("helper_start_failed", reason="ready timeout after 30 seconds", action="helper closed; restart app")
-            self.close()
-            raise RuntimeError("Library helper did not start in time.")
+        if not self._ready.wait(32):
+            raise RuntimeError("Library helper is restarting; try again in a moment.")
         if self._failure:
             raise RuntimeError(self._failure)
+
+    def _launch(self):
+        with self._lock:
+            if self._closed:
+                return None
+            context = multiprocessing.get_context("spawn")
+            parent, child = context.Pipe()
+            process = context.Process(target=_worker_main,
+                    args=(child, str(self.root), os.getpid(), bool(self._paused)),
+                    name="hdr-library", daemon=True)
+            self._connection = parent
+            self._process = process
+            try:
+                process.start()
+            except Exception:
+                parent.close()
+                self._process = None
+                self._connection = None
+                raise
+            finally:
+                child.close()
+            return parent
+
+    def _supervise(self):
+        while not self._stop.is_set():
+            connection = None
+            try:
+                connection = self._launch()
+                if connection is None:
+                    return
+                self._read_results(connection)
+                return
+            except (EOFError, OSError, KeyError, RuntimeError) as error:
+                with self._lock:
+                    if self._closed:
+                        return
+                    self._ready.clear()
+                    self._recovering = True
+                    process = self._process
+                    self._connection = None
+                    log("helper_stopped", reason=repr(error), pending=len(self._pending), action="waiting requests retained; Grade unaffected")
+                # Dispose the failed generation before launching another. Never
+                # hold the control lock during process joins or restart backoff.
+                if process is not None:
+                    if process.is_alive():
+                        process.terminate()
+                    process.join(timeout=3)
+                if connection is not None:
+                    connection.close()
+                with self._lock:
+                    if self._closed:
+                        return
+                    if self._restarts >= self._restart_limit:
+                        self._failure = "Library helper stopped after repeated problems."
+                        self._recovering = False
+                        pending = list(self._pending.values())
+                        self._pending.clear()
+                        self._requests.clear()
+                        log("helper_restart_exhausted", reason=repr(error), restarts=self._restarts, action="automatic attempts stopped; restart app; Grade unaffected")
+                    else:
+                        pending = None
+                        self._restarts += 1
+                        log("helper_restart", reason=repr(error), restarts=self._restarts, action="restart automatically; replay read-only waiting requests")
+                if pending is not None:
+                    for future in pending:
+                        if not future.done():
+                            future.set_exception(RuntimeError(self._failure))
+                    self._ready.set()
+                    return
+                if self._stop.wait(min(2, .5 * self._restarts)):
+                    return
 
     def submit_thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False,
                          priority: int = 10) -> tuple[str, Future]:
@@ -74,13 +133,12 @@ class LibraryWorker:
                 raise RuntimeError("Library helper queue is full.")
             self._pending[job_id] = future
             try:
-                self._connection.send({"command": "thumbnail", "id": job_id,
-                    "path": str(value), "size": int(size), "fast_only": bool(fast_only),
-                    "priority": int(priority)})
+                self._requests[job_id] = {"command": "thumbnail", "id": job_id,
+                    "path": str(value), "size": int(size), "fast_only": bool(fast_only), "priority": int(priority)}
+                if self._connection is not None and not self._recovering:
+                    self._connection.send(self._requests[job_id])
             except (EOFError, OSError) as exc:
-                self._pending.pop(job_id, None)
-                problem("helper_send_failed", value, exc, "request refused; reader checks helper")
-                raise RuntimeError("Library helper is unavailable.") from exc
+                problem("helper_send_failed", value, exc, "request retained for automatic helper restart")
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
@@ -96,11 +154,11 @@ class LibraryWorker:
                 raise RuntimeError("Library helper queue is full.")
             self._pending[job_id] = future
             try:
-                self._connection.send({**arguments, "command": command, "id": job_id, "priority": priority})
+                self._requests[job_id] = {**arguments, "command": command, "id": job_id, "priority": priority}
+                if self._connection is not None and not self._recovering:
+                    self._connection.send(self._requests[job_id])
             except (EOFError, OSError) as exc:
-                self._pending.pop(job_id, None)
-                problem("helper_send_failed", arguments.get("path", arguments.get("paths", [])), exc, "request refused; reader checks helper")
-                raise RuntimeError("Library helper is unavailable.") from exc
+                problem("helper_send_failed", arguments.get("path", arguments.get("paths", [])), exc, "request retained for automatic helper restart")
         return job_id, future
 
     def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False,
@@ -122,6 +180,7 @@ class LibraryWorker:
     def cancel(self, job_id: str) -> bool:
         with self._lock:
             future = self._pending.pop(job_id, None)
+            self._requests.pop(job_id, None)
             if future is None:
                 return False
             future.cancel()
@@ -155,21 +214,35 @@ class LibraryWorker:
             except (EOFError, OSError) as error:
                 log("helper_control_failed", operation=message["command"], reason=str(error), action="reader fails waiting requests when pipe closes")
 
-    def _read_results(self) -> None:
+    def _read_results(self, connection) -> None:
+        started = time.monotonic()
+        ready = False
         try:
-            while True:
-                message = self._connection.recv()
+            while not self._stop.is_set():
+                if not connection.poll(.25):
+                    if not self._process.is_alive():
+                        raise RuntimeError(f"helper exited with code {self._process.exitcode}")
+                    if not ready and time.monotonic() - started > 30:
+                        raise RuntimeError("helper did not report ready within 30 seconds")
+                    continue
+                message = connection.recv()
                 if message.get("event") == "diagnostic":
                     record = message["record"]
                     log(record.pop("event"), **record)
                     continue
                 if message.get("event") == "ready":
                     log("helper_start", pid=message.get("pid"), action="helper ready")
-                    self.info = message
-                    self._ready.set()
+                    with self._lock:
+                        self.info = message
+                        ready = True
+                        self._recovering = False
+                        for job in self._requests.values():
+                            connection.send(job)
+                        self._ready.set()
                     continue
                 with self._lock:
                     future = self._pending.pop(message["id"], None)
+                    self._requests.pop(message["id"], None)
                 if future is None or future.done():
                     continue
                 if "result" in message:
@@ -185,23 +258,15 @@ class LibraryWorker:
                     else:
                         exception = MediaBrowserError(error)
                     future.set_exception(exception)
-        except (EOFError, OSError, KeyError) as exc:
-            with self._lock:
-                if not self._closed:
-                    self._failure = "Library helper stopped unexpectedly."
-                    log("helper_stopped", reason=repr(exc), pending=len(self._pending), action="requests failed; restart app; Grade unaffected")
-                pending = list(self._pending.values())
-                self._pending.clear()
-            for future in pending:
-                if not future.done():
-                    future.set_exception(RuntimeError(self._failure or "Library helper closed."))
-            self._ready.set()
+        finally:
+            if self._closed:
+                self._ready.set()
 
     def status(self) -> dict:
         with self._lock:
             return {**self.info, "running": bool(self._process and self._process.is_alive()),
                     "pending": len(self._pending), "paused": bool(self._paused),
-                    "failure": self._failure, "restarts": 0}
+                    "failure": self._failure, "restarts": self._restarts, "recovering": self._recovering}
 
     def close(self) -> None:
         with self._lock:
@@ -210,9 +275,12 @@ class LibraryWorker:
             self._send({"command": "stop"})
             log("helper_stop", pending=len(self._pending), action="app closing; pending requests cancelled")
             self._closed = True
+            self._stop.set()
+            self._ready.set()
             process, connection = self._process, self._connection
             pending = list(self._pending.values())
             self._pending.clear()
+            self._requests.clear()
         for future in pending:
             future.cancel()
         if process is not None:

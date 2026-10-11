@@ -18,6 +18,7 @@ from .desktop_security import SOURCE_EXTENSIONS
 from .library_pictures import SIDECAR_SUFFIX
 from .library_settings_writer import LibrarySettingsWriter
 from .library_diagnostics import audited, problem
+from .library_conflicts import LibraryConflicts
 
 
 def clean_names(values, kind="Tags"):
@@ -71,6 +72,7 @@ class LibraryMarks:
         self._schema_ready = False
         self._undo = deque(maxlen=100)
         self.writer = LibrarySettingsWriter(self)
+        self.conflicts = LibraryConflicts()
 
     def _connect(self):
         existed = self.database.exists()
@@ -94,9 +96,13 @@ class LibraryMarks:
         self._schema_ready = True
         return db
 
-    @staticmethod
-    def _path(value):
-        path = Path(value).expanduser().resolve(strict=True)
+    def _path(self, value):
+        path = Path(value).expanduser().resolve()
+        if not path.parent.exists() and path.suffix.lower() in SOURCE_EXTENSIONS:
+            # Only known library photos may be changed while disconnected.
+            if self._query("SELECT 1 FROM photos WHERE path=? UNION SELECT 1 FROM files WHERE path=?", (str(path), str(path))):
+                return path
+        path = path.resolve(strict=True)
         if not path.is_file() or path.suffix.lower() not in SOURCE_EXTENSIONS:
             raise ValueError("Select a supported photo to mark.")
         return path
@@ -137,7 +143,7 @@ class LibraryMarks:
                     folders[folder] = {entry.name for entry in folder.iterdir()}
                 except OSError as error:
                     problem("settings_folder_failed", folder, error, "individual settings checked instead")
-                    folders[folder] = None  # Individual checks retain their errors.
+                    folders[folder] = set() if not folder.exists() else None  # Connected errors still stop the command.
         return [self._document(Path(value)) if folders[Path(value).parent] is None
             or self._sidecar(Path(value)).name in folders[Path(value).parent] else None for value in paths]
 
@@ -196,6 +202,7 @@ class LibraryMarks:
             paths = [str(value) for value in values] if canonical else [str(Path(value).resolve()) for value in values]
             cached = self._rows(paths)
             photos, warnings, rebuilt, removed = [], [], [], []
+            self.conflicts.scan(paths)
             for position, value in enumerate(paths):
                 path, row = Path(value), cached.get(value)
                 invalid = False
@@ -206,7 +213,7 @@ class LibraryMarks:
                     document = None
                     invalid = True
                     warnings.append(str(error))
-                if row and row["storage"] == "database":
+                if row and (row["storage"] == "database" or not path.parent.exists()):
                     pass  # A failed sidecar write is retained across visits/restarts.
                 elif document:
                     current = {"path": value, "photo_id": document["photo_id"], "marks": Marks.model_validate(document.get("marks", {})).model_dump(), "albums": self._albums(document, path), "storage": "sidecar"}
@@ -270,7 +277,7 @@ class LibraryMarks:
                         row.pop("write_reason", None)
                         continue
                     row["storage"] = "database"
-                    row["write_reason"] = ""
+                    row["write_reason"] = "offline" if not path.parent.exists() else ""
                     self._index(db, row)
                     self.writer.enqueue(db, row, document)
                 if finalize is not None:
@@ -300,6 +307,9 @@ class LibraryMarks:
             row["storage"] = "database"
             after.append(row); changed_documents.append(document); originals.append(deepcopy(old))
         warnings = self._save(after, changed_documents, finalize) if after or finalize else []
+        offline = sum(not Path(row["path"]).parent.exists() for row in after)
+        if offline:
+            warnings.append(f"{offline} photos: settings files are waiting for a folder that is not connected. Marks are safe in the library.")
         return after, originals, warnings
 
     def _result(self, photos, warnings, **extra):
@@ -386,23 +396,15 @@ class LibraryMarks:
         return {"tags": [row[0] for row in self._query("SELECT tag FROM tags")], "albums": [row[0] for row in self._query("SELECT name FROM albums")]}
 
     def _carriers(self, table, column, names):
-        """Connected photos carrying any of the names, and how many are not connected."""
+        """Every library photo carrying a name, including disconnected folders."""
         found = []
         for name in names:
             found.extend(row[0] for row in self._query(f"SELECT path FROM {table} WHERE {column} = ?", (name,)))
         paths = list(dict.fromkeys(found))
-        present = []
-        for path in paths:
-            try:
-                Path(path).stat()
-                if Path(path).is_file():
-                    present.append(path)
-            except OSError as error:
-                problem("collection_change_skipped", path, error, "photo not connected; old name retained")
-        return present, len(paths) - len(present)
+        return paths, sum(not Path(path).parent.exists() for path in paths)
 
     def _rename_everywhere(self, kind, olds, new):
-        """Replace names on every connected photo; new=None removes them."""
+        """Replace names on every library photo; new=None removes them."""
         table, column, list_table, list_column = ("photo_tags", "tag", "tags", "tag") if kind == "tag" else ("album_photos", "album", "albums", "name")
         lists = self._lists()
         paths, offline = self._carriers(table, column, olds)
@@ -427,8 +429,6 @@ class LibraryMarks:
                 db.execute(f"INSERT OR IGNORE INTO {list_table} VALUES (?)", (new,))
                 db.execute(f"UPDATE {list_table} SET {list_column} = ? WHERE {list_column} = ?", (new, new))
         after, originals, warnings = self._apply(paths, mutate, finalize)
-        if offline:
-            warnings.append(f"{offline} photos on folders that are not connected were not changed.")
         self._undo.append({"rows": originals, **lists})
         return self._result(after, warnings, changed=len(after), offline=offline)
 

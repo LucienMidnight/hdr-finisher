@@ -5,7 +5,7 @@ picks, colour labels, tags and albums, how its background process works, and
 why it was built this way. It is written so that a problem can be traced to a
 specific file, rule or message.
 
-- **Updated October 11, 2026: background-writer Stages A and B built.**
+- **Updated October 11, 2026: background-writer Stages A, B and C built.**
 - Sections 1 to 10 describe what is built. Section 11 lists the remaining
   gaps. Section 12 explains the library-wide health report and diagnostics.
 - The Library is still being built, and its controls change often. A
@@ -189,6 +189,8 @@ It is the durable work list: a backend thread resumes it at startup and
 retries failures automatically. `settings_writes` holds the current state
 of that work, not commands or history. Existing database rows, including
 unwritten marks, are kept; the new table is added without replacing them.
+Offline edits use this same queue. Stage C changes no database layout and
+retains the existing `library.sqlite3`, including every pending mark.
 
 ### What is lost if the database is deleted
 
@@ -229,9 +231,11 @@ change on the next visit.
 The same steps run for one photo or ten thousand, and for ratings, picks,
 labels, tags and album membership.
 
-1. **Check the photos.** Every photo must exist and be a supported type.
-   Otherwise the whole command stops with a message and nothing changes.
-2. **Check every settings file first.** If any one is unreadable, the whole
+1. **Check the photos.** Every photo must be a supported type. Connected
+   photos must exist; a photo already known to the library can be changed
+   while its folder or drive is disconnected. Unknown missing photos are
+   refused. Files deleted from a connected folder are still treated as missing.
+2. **Check connected settings files first.** If any one is unreadable, the whole
    command stops before anything is written. *Why: half of a bulk change is
    worse than none.*
 3. **Work out what changes.** Photos whose marks would not change are left
@@ -281,11 +285,12 @@ Other temporary files and links are left untouched.
 Rename, Merge and Remove for tags, and Rename and Delete for albums, find
 every photo carrying the name and run the steps above.
 
-- **Only connected photos are changed.** A photo whose file cannot be found
-  (an unplugged drive, a missing folder) is left as it is and counted in the
-  result: "N photos on folders that are not connected were not changed."
-- Because those photos still carry the old name, **the old name stays in
-  the list** with them as its count.
+- **Every library photo is changed**, including photos in disconnected
+  folders. Their settings files wait in the same durable queue. The result
+  reports how many files are waiting for a disconnected folder.
+- The old name disappears from the list when renamed, merged or removed.
+  Connected unreadable settings still stop the whole change before acceptance.
+  A photo deleted from a connected folder is removed by the writer as before.
 - Renaming a tag to a name that already exists stops and asks before
   merging. Renaming an album to an existing name is refused.
 - Merging into an existing name keeps the spelling already in use.
@@ -307,8 +312,9 @@ every photo carrying the name and run the steps above.
   The writer then brings existing settings files up to date.
 - A newer command or Undo invalidates a prepared but unwritten file. Earlier
   states do not each need to be written.
-- If some photos can no longer be found, the rest are undone and the skipped
-  count is reported. An unreadable settings file still stops the command
+- Undo also works on known photos in disconnected folders, with their files
+  waiting for reconnection. If photos were deleted from connected folders,
+  the rest are undone and the skipped count is reported. An unreadable settings file still stops the command
   before changes are accepted, so it is never overwritten.
 - Undo before the first settings file was written leaves no empty file.
   Once a settings file has been written, Undo keeps it with empty marks,
@@ -353,10 +359,14 @@ in a second process so that grading stays responsive.
 - Requests for photos that scroll off screen are cancelled.
 - It checks four times a second that the backend is still running, and
   exits if not. It cannot be left behind after a crash.
-- **If the helper stops unexpectedly it is not restarted.** Every Library
-  request then fails with a plain helper-unavailable message until the
-  app is restarted. Grade is unaffected. Marks and tags can still be saved,
-  because the backend does that.
+- **If the helper stops unexpectedly it restarts automatically.** Waiting
+  read requests are retained and sent to the replacement helper, with their
+  priorities and the current Grade/import/export pause gate. Cancelled work
+  is not resent. Three restarts per backend session are allowed, with short
+  increasing delays. Each stop, restart and exhausted limit is logged.
+  After the limit, Activity asks for an app restart. Grade and the backend
+  settings writer stay available throughout. Closing cancels waiting requests
+  and prevents another helper from being launched.
 
 ### Background indexing
 
@@ -373,8 +383,12 @@ Indexing makes pinned folders searchable without visiting each one.
      too, so a deleted settings file is noticed.
   3. Reads camera details for files not yet read, 32 at a time.
 - A file whose size and modified date are unchanged is not read again.
-- A pinned folder that is not connected is skipped and tried again on the
-  next pass. Its existing entries are kept.
+- A pinned folder that is not connected is skipped; its existing entries
+  are kept. Incomplete passes and helper/database failures wait 15 seconds
+  and try again automatically, continuing beyond five failures. Activity
+  shows the retry wait. Recovery is logged; Re-scan wakes the wait immediately.
+  User Pause and background indexing off remain respected. This is recovery
+  of failed work, not watching successfully indexed folders for changes.
 - Pinning or unpinning a folder, or changing the indexing setting, restarts
   the pass from the beginning.
 
@@ -394,6 +408,7 @@ they are not a journal of earlier commands.
 | Indexing <folder> · N of M | Camera-details progress. |
 | Indexing waits while Grade is busy | Helper paused by Grade, import or export. |
 | Indexing paused | Paused by the user. |
+| Indexing is waiting to try again | An incomplete or failed pass will retry automatically; Re-scan wakes it now. |
 | Activity · Needs attention / Needs attention: N | A helper/indexing problem, or N settings files with a writing problem. |
 
 The list always includes both jobs and their state, even at rest:
@@ -411,8 +426,20 @@ with a count and a plain explanation. Unreadable settings also name up to
 three example photos. **Try again** brings that group forward for another
 attempt; it neither clears the problem prematurely nor overrides Pause.
 Other groups keep their schedule. A group disappears automatically only
-when its pending work clears. Helper failure and indexing stopping are
-shown here too; their automatic recovery remains Stage C.
+when its pending work clears. Helper restart, exhausted restart attempts
+and indexing retry waits are shown here too.
+
+### Settings conflict copies
+
+On folder visits, settings reads and background indexing, extra `.hdrf`
+documents are associated with a photo using their recorded source filename,
+or a recognisable sync-conflict filename. This also detects unreadable copies
+with a recognisable conflict name. Needs attention shows the photo, folder
+and both filenames. Detection merges, renames and deletes nothing;
+links and temporary files are not read. Revisit or Re-scan after resolving
+the conflict to clear the warning. Known warnings remain while offline.
+Ordinary mark writes still update only the canonical settings file; extra
+copies are never written. Virtual copies remain a later slice.
 
 ### Camera details
 
@@ -460,13 +487,17 @@ lens name is missing for some cameras (PRD open decision 15).
 | "Settings for <photo> have unreadable albums; they were left untouched." | `albums` is not a list of valid names. | Fix or remove the `albums` entry in Notepad. |
 | "Settings for <photo> have unreadable marks; they were left untouched." | A mark is invalid or unknown. Technical validation details go to the log. | Repair the settings file or rename it out of the way. |
 | "Settings for <photo> are a link; they were left untouched." | The `.hdrf` file is a link to another file. The app will not write through links. | Replace the link with a real file. |
-| "N photos on folders that are not connected were not changed." | A tag or album command skipped photos it could not find. | Connect the drive and run the command again. |
+| "N photos: settings files are waiting for a folder that is not connected. Marks are safe in the library." | Marks or collection changes were accepted on disconnected photos. | Connect the drive; writing resumes automatically. |
+| "More than one settings file was found for <photo>. All files were left untouched; nothing was merged." | A second settings document was detected; Activity shows both filenames. | Review the files; revisit or Re-scan after resolving the conflict. |
 | "A tag named <name> already exists." | A rename would join two tags. | Confirm the merge, or choose another name. |
 | "That tag is no longer in the library." / "That album is no longer in the library." | The name was removed, or renamed, since the list was shown. | Reopen the list. |
 | "Select a supported photo to mark." | A selected file is not a supported photo type. | Nothing was changed. |
-| A Windows "file not found" message when marking | A selected photo was moved, deleted or is on a drive that is not connected. Marking a photo that cannot be found is not supported yet. | Nothing was changed. Re-scan the folder or reconnect the drive. |
-| Activity: "The Library helper stopped. Saved marks are safe; restart the app to browse again." | The helper process ended. | Restart the app. Check `logs\backend.log`. |
-| "The Library helper is unavailable. Saved marks are safe; restart the app." | The helper did not report ready within 30 seconds. | Restart the app. If it repeats, check `logs\backend.log`. |
+| "<file or folder> could not be reached or changed. Saved marks are safe; check the folder and try again." | An unknown missing photo, or a photo deleted from a connected folder, cannot be marked. | Re-scan the folder; nothing was changed. |
+| Activity: "The Library helper is restarting. Saved marks are safe; browsing will resume automatically." | A helper stopped and is being replaced. | Wait; pending requests recover automatically. |
+| "The Library helper is restarting. Saved marks are safe; try again in a moment." | A request could not yet reach the replacement helper. | Try again shortly. |
+| "The Library helper stopped after repeated problems. Saved marks are safe; restart the app to browse again." | Three automatic restarts were used. | Restart the app; check `logs\backend.log` if it repeats. |
+| "Indexing could not finish. Saved marks are safe; it will try again automatically, or choose Re-scan now." | An incomplete pass or indexing failure is waiting to retry. | Wait or choose Re-scan. |
+| "Indexing stopped. Saved marks are safe; choose Re-scan to try again." | An indexing thread has stopped. | Re-scan starts it again. |
 | "The Library helper is busy. Saved marks are safe; try again in a moment." | More than 256 requests were waiting. | Normally clears on its own within seconds. |
 | "Library cache entry is unavailable; request it again." | A cached picture was removed between two steps. | None; the page asks again. |
 | "The Library could not read <photo>. Saved marks are safe; check the photo or folder and try again." | The file was modified during decoding. | None; it is read again when next shown. |
@@ -475,22 +506,18 @@ lens name is missing for some cameras (PRD open decision 15).
 
 ## 11. Known gaps (October 11, 2026)
 
-Stage A closed interrupted writes, incorrect pending wording, delayed Undo,
-stray app temporary files, automatic retry and partial Undo. Remaining gaps:
+Stages A, B and C closed the background-writer brief's gaps. Remaining:
 
 1. Undo history is lost after restart (agreed, out of scope).
-2. Tag and album commands still skip unconnected photos, so old names linger.
-3. Marks cannot yet be changed on an unconnected photo (Stage C).
-4. The helper is not yet restarted automatically (Stage C).
-5. Indexing can still stop after five helper failures (Stage C).
-6. Folders are not watched (separate slice).
-7. A second settings file from a sync conflict is not yet detected (Stage C).
+2. Folders are not watched (separate slice).
+3. Detected conflict copies are not imported as virtual copies (later slice).
 
 Stage B closed unified Activity, writer Pause/Resume, grouped Try again,
 the health command, diagnostics and raw validation messages. Plain wording
 for invalid settings was included here because Stage B explicitly requires
-technical validation text to stay out of user messages. Stage C still owns
-offline edits, helper restart, indexing recovery and conflict-copy detection.
+technical validation text to stay out of user messages. Stage C completed
+offline edits, helper restart, indexing recovery and conflict-copy detection;
+the plain invalid-settings wording remains unchanged.
 
 ## 12. Reading library health and diagnostics
 
@@ -498,8 +525,9 @@ offline edits, helper restart, indexing recovery and conflict-copy detection.
 waiting count, counts per failure reason, current folder/reason attention
 groups, pause/Grade-wait state, recent writer notices, helper running state
 and restart count, indexing state and the most recent 50 diagnostic problems.
-Activity uses this command once a second while the Library is visible. The
-helper restart count is currently zero; Stage C will implement restarts.
+Activity uses this command once a second while the Library is visible.
+Helper health includes `recovering`, the restart count and an exhausted-limit
+failure. The additive `conflicts` list supplies photo/folder and both filenames.
 The recent-problem list is held in memory; the log is the lasting record.
 Technical details remain in that command and the log, outside normal UI.
 
@@ -521,7 +549,8 @@ same health command includes problems found in its other process.
 |---|---|
 | `command_start`, `command_end`, `<command>_failed` | Marks, Undo, tag and album commands; counts, context, duration, and failures. |
 | `request_failed`, `request_invalid`, `helper_request_failed` | Backend/API request stopped or rejected; original technical details stay here. |
-| `settings_read_failed`, `settings_folder_failed`, `undo_skipped`, `collection_change_skipped`, `collection_photo_missing` | Unreadable settings/folder, skipped Undo/collection photos; remaining behavior is recorded. |
+| `settings_read_failed`, `settings_folder_failed`, `undo_skipped`, `collection_photo_missing` | Unreadable settings/folder, skipped deleted Undo photos or unavailable collection views. |
+| `settings_conflict`, `settings_conflict_cleared`, `settings_conflict_scan_failed`, `settings_conflict_read_failed` | Extra settings documents detected or no longer found; failed detection retains existing warnings and leaves files untouched. |
 | `writer_start` | Startup pending and temporary-cleanup counts. |
 | `writer_locked`, `writer_disk_full`, `writer_unwritable`, `writer_offline`, `writer_unreadable`, `writer_io` | Grouped distinct failures; pending marks retained and retried. |
 | `writer_recovered`, `writer_recovery_finished` | Successful recovery or completion of last-session work. |
@@ -531,7 +560,8 @@ same health command includes problems found in its other process.
 | `index_start`, `index_end`, `index_pause`, `index_resume`, `index_recovered` | Index milestones and controls. |
 | `index_offline`, `index_scan_failed`, `index_metadata_failed`, `index_failed`, `index_stopped`, `index_stop`, `index_pass_failed`, `index_<operation>_failed` | Skipped folder, failed facts/scan/database work, retries or stopping, including its reason. |
 | `preferences_read_failed` | Unreadable preferences; defaults used, file retained. |
-| `helper_start`, `helper_stop`, `helper_stopped`, `helper_start_failed`, `helper_boot_failed`, `helper_pause`, `helper_resume` | Helper lifecycle and wait gate; Grade remains unaffected. |
+| `helper_start`, `helper_stop`, `helper_stopped`, `helper_boot_failed`, `helper_pause`, `helper_resume` | Helper lifecycle and wait gate; Grade remains unaffected. |
+| `helper_restart`, `helper_restart_exhausted` | Automatic restart with reason and count, or the three-restart limit reached; waiting reads recover or fail plainly. |
 | `helper_send_failed`, `helper_control_failed`, `helper_reply_failed`, `helper_pipe_closed`, `helper_job_failed`, `helper_interpretation_required` | Helper communication/job problems and original reason. |
 | `scan_folder_failed`, `scan_photo_failed`, `folder_tree_failed` | Folder/photo listing failure and skipped locations. |
 | `metadata_read_failed`, `metadata_stat_failed`, `read_metadata_failed` | Failed EXIF/file access; unavailable facts do not hide the photo. |
@@ -614,7 +644,8 @@ the writer will recreate the file.
 unrecognised temporary files based only on that broad search.
 
 **The Library stops responding but Grade works.** The helper has probably
-stopped. Restart the app, then read the end of `logs\backend.log`.
+stopped. Open Activity and allow its automatic restart. If it reports
+repeated problems, restart the app and read the end of `logs\backend.log`.
 
 ---
 
@@ -627,6 +658,7 @@ Paths are from `codebase/`.
 | `backend/hdr_finisher/library_marks.py` | The database, settings files, mark, tag and album commands, undo |
 | `backend/hdr_finisher/library_settings_writer.py` | Background writing, retries, recovery, cleanup and controls |
 | `backend/hdr_finisher/library_diagnostics.py` | Shared grouped log events and recent problems |
+| `backend/hdr_finisher/library_conflicts.py` | Read-only conflict-copy detection and current attention |
 | `frontend/library-activity.js` | Unified Activity controls and Needs attention |
 | `backend/hdr_finisher/library_index.py` | File facts, background indexing, `library-preferences.json` |
 | `backend/hdr_finisher/library_worker.py` | The helper process, its lanes, pausing and cancelling |
@@ -679,7 +711,7 @@ unknown fields, atomic replacement failure, tag rename/merge/remove and
 album membership/rename/delete. Write-failure assertions now check writer
 notices and retained pending state rather than a synchronous command warning.
 Their unreadable-file and original-photo protection checks remain strict.
-The unconnected-tag test retains its old behavior for Stage C.
+Stage C replaces the unconnected-tag expectation with edits that wait for reconnection.
 
 `tests/library-background-writer.js` is the focused Electron check: immediate
 Ctrl+Z while the writer waits, no empty first settings file, live Settings
@@ -696,3 +728,42 @@ Activity and Undo in Electron at 2560×1440 using disposable PNG copies.
 The required suites pass: 460 Node checks; 1,674 Python checks, 3 skipped.
 The final audit-focused checks also pass. No Grade/export/Proof, shader,
 installer or decode-route changes were made.
+
+
+### Stage C wording and verification (October 11, 2026)
+
+New or changed messages (Stage B wording above is its historical review list):
+
+- "N photos: settings files are waiting for a folder that is not connected.
+  Marks are safe in the library."
+- "More than one settings file was found for <photo>. All files were left
+  untouched; nothing was merged." Both filenames are separate lines.
+- "The Library helper is restarting. Saved marks are safe; browsing will
+  resume automatically."
+- "The Library helper is restarting. Saved marks are safe; try again in a moment."
+- "The Library helper stopped after repeated problems. Saved marks are safe;
+  restart the app to browse again."
+- "Indexing is waiting to try again".
+- "Indexing could not finish. Saved marks are safe; it will try again
+  automatically, or choose Re-scan now."
+- "Indexing stopped · Re-scan to try again".
+- "Indexing stopped. Saved marks are safe; choose Re-scan to try again."
+
+Fast checks use disposable data for offline marks, tag rename/merge/remove,
+album membership/rename/delete, restart/reconnect, offline Undo, unknown
+missing photos, conflict reporting and clearing, automatic helper restart
+and its limit, indexing recovery beyond five failures, and Re-scan waking
+a retry wait. Existing Stage A writer/interruption checks remain unchanged.
+The changed expectations are the unconnected-tag test, process-failure test,
+index-stopping test and failed-index Activity wording. The focused Activity
+Electron check also proves both conflict names are shown, both files remain
+untouched, and attention clears after Re-scan.
+
+Verification: 461 Node checks passed; the full Python suite passed 1,688
+checks with 3 skipped. After the final Windows filename and helper-wait
+refinements, all 33 focused Stage C/worker/health checks passed. The Activity
+Electron check passed at 2560×1440. No check failed.
+
+No Grade/export/Proof, shader, picture decode, database-layout or installer
+changes. Existing database rows and pending marks are preserved. No new
+product decision is needed; Stage C ends the brief's implementation.

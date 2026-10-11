@@ -1,4 +1,4 @@
-/* Stage B Activity controls and Needs attention, disposable photo copies only. */
+/* Activity controls and Stage C conflict attention, disposable photo copies only. */
 const assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path");
 const { chromium } = require("playwright");
 const root = path.resolve(__dirname, ".."), output = path.join(root, "output", "library-background-activity");
@@ -61,7 +61,18 @@ for (let i = 0; i < 3; i++) fs.copyFileSync(path.join(root, "tests", "fixtures",
   assert.equal(await library.locator("#library-undo").isVisible(), false);
   assert.deepEqual(errors, []);
   await library.locator("#index-status").click();
-  await page.screenshot({ path: path.join(output, "stage-b.png") });
-  console.log("PASS: Activity progress, writer Pause/Resume, grouped unreadable settings and Try again, automatic attention clearing, indexing controls, Escape and bulk Undo.");
+  const conflict = path.join(folder, "photo-0.png (sync conflicted copy).hdrf");
+  fs.copyFileSync(corrupt, conflict);
+  const copiesBefore = [fs.readFileSync(corrupt, "utf8"), fs.readFileSync(conflict, "utf8")];
+  await api("/api/library/scan", {path: folder});
+  await library.waitForFunction(() => document.querySelector("#library-activity").textContent.includes("More than one settings file"));
+  const attention = await library.locator("#library-activity").textContent();
+  assert.ok(attention.includes("photo-0.png.hdrf") && attention.includes(path.basename(conflict)));
+  assert.deepEqual([fs.readFileSync(corrupt, "utf8"), fs.readFileSync(conflict, "utf8")], copiesBefore);
+  await page.screenshot({ path: path.join(output, "stage-c-conflict.png") });
+  fs.unlinkSync(conflict); // Remove only our deliberately created conflict fixture.
+  await api("/api/library/scan", {path: folder});
+  await library.waitForFunction(() => document.querySelector("#library-activity").textContent.includes("Nothing needs attention."));
+  console.log("PASS: conflict detection shows both names, leaves both files untouched, clears on re-scan; Activity progress, writer Pause/Resume, grouped unreadable settings and Try again, automatic attention clearing, indexing controls, Escape and bulk Undo.");
  } finally { await browser.close(); }
 })().catch(error => {console.error(error); process.exitCode = 1;});

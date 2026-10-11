@@ -56,8 +56,9 @@ class LibrarySettingsWriter:
         self._events.append({"id": self._serial, "message": message})
 
     def enqueue(self, db, row, document):
-        db.execute("INSERT INTO settings_writes VALUES (?, ?, ?, '', '', 0, 0) ON CONFLICT(path) DO UPDATE SET revision=excluded.revision, reason='', detail='', next_try=0, attempts=0",
-            (row["path"], str(uuid4()), self.fingerprint(document)))
+        offline = not Path(row["path"]).parent.exists()
+        db.execute("INSERT INTO settings_writes VALUES (?, ?, ?, ?, '', 0, 0) ON CONFLICT(path) DO UPDATE SET revision=excluded.revision, reason=excluded.reason, detail='', next_try=0, attempts=0",
+            (row["path"], str(uuid4()), "unknown" if offline else self.fingerprint(document), "offline" if offline else ""))
 
     def wake(self):
         self._wake.set()

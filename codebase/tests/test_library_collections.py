@@ -94,14 +94,25 @@ def test_merge_remove_and_new_tag(tmp_path):
     assert counts(store) == {"Holiday": 2, "Beach": 2, "Portfolio": 0}
 
 
-def test_tag_command_leaves_unconnected_photos_and_says_so(tmp_path):
+def test_tag_command_changes_unconnected_photos_and_says_files_wait(tmp_path):
     store, sources = tagged(tmp_path)
-    sources[0].rename(tmp_path / "moved-away.png")  # Its drive is "unplugged".
+    offline = tmp_path / "external"
+    offline.mkdir()
+    moved = offline / sources[0].name
+    sources[0].rename(moved)
+    sources[0].with_name(sources[0].name + SIDECAR_SUFFIX).rename(moved.with_name(moved.name + SIDECAR_SUFFIX))
+    store.read([moved])
+    store.read([sources[0]])  # Drop the obsolete connected path.
+    offline.rename(tmp_path / "disconnected")
     result = store.tag_rename("Holiday", "Trips")
-    store.writer.drain()  # Files catch up separately from the command.
-    assert result["changed"] == 1 and result["offline"] == 1
+    store.writer.drain()
+    assert result["changed"] == 2 and result["offline"] == 1
     assert "not connected" in result["warnings"][-1]
-    assert counts(store) == {"Holiday": 1, "Trips": 1, "Beach": 2}
+    assert counts(store) == {"Trips": 2, "Beach": 2}
+    (tmp_path / "disconnected").rename(offline)
+    store.writer.retry(str(offline), "offline")
+    store.writer.drain()
+    assert document(moved)["marks"]["tags"] == ["Trips"]
 
 
 def test_unreadable_settings_file_stops_a_tag_command_before_any_write(tmp_path):

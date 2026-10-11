@@ -89,15 +89,24 @@ def test_worker_reports_decode_errors_and_continues(worker, tmp_path):
     assert worker.thumbnail(str(source(tmp_path))).is_file()
 
 
-def test_process_failure_fails_pending_jobs_instead_of_hanging(worker, tmp_path):
+def test_process_failure_restarts_and_recovers_pending_jobs(worker, tmp_path, capsys):
     worker.pause("grading", True)
     _job_id, future = worker.submit_thumbnail(str(source(tmp_path)))
-    worker._process.terminate()
-    worker._process.join(timeout=5)
-    with pytest.raises(RuntimeError, match="stopped unexpectedly"):
-        future.result(timeout=5)
-    with pytest.raises(RuntimeError, match="stopped unexpectedly"):
-        worker.start()
+    old = worker._process
+    old.terminate()
+    old.join(timeout=5)
+    deadline = time.monotonic() + 10
+    while worker.status()["restarts"] < 1 and time.monotonic() < deadline:
+        time.sleep(.05)
+    worker.start()
+    assert worker.status()["restarts"] == 1
+    assert worker.status()["paused"]
+    assert not future.done()
+    worker.pause("grading", False)
+    assert future.result(timeout=10).is_file()
+    assert worker.info["pid"] != old.pid
+    logs = capsys.readouterr().err
+    assert "helper_stopped" in logs and "helper_restart" in logs
 
 
 def test_close_stops_process_and_cancels_pending_work(worker, tmp_path):

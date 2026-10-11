@@ -23,12 +23,19 @@ class _Restart(Exception):
     _library_control = True
 
 
+class _Retry(RuntimeError):
+    """An incomplete pass should be tried again automatically."""
+    _library_control = True
+
+
 class LibraryIndex:
     def __init__(self, marks, browser, worker):
         self.marks, self.browser, self.worker = marks, browser, worker
         self.preferences_path = Path(browser.root) / "library-preferences.json"
         self._state = RLock()
         self._wake = Event()
+        self._stop = Event()
+        self._retry_seconds = 15
         self._thread = None
         self._generation = 0
         self._paused = False
@@ -155,9 +162,13 @@ class LibraryIndex:
             return
         with self._state:
             self._generation += 1
-            if self._thread is None:
+            if self._thread is None or not self._thread.is_alive():
                 self._thread = Thread(target=self._run, name="hdr-library-indexer", daemon=True)
                 self._thread.start()
+        self._wake.set()
+
+    def close(self):
+        self._stop.set()
         self._wake.set()
 
     def pause(self, paused):
@@ -184,6 +195,8 @@ class LibraryIndex:
     def _check(self, generation):
         """Wait out a user pause; leave the pass when it is no longer wanted."""
         while True:
+            if self._stop.is_set():
+                raise CancelledError()
             with self._state:
                 if generation != self._generation:
                     raise _Restart()
@@ -198,6 +211,8 @@ class LibraryIndex:
             job_id, future = self.worker.submit_library(command, priority=95, background=True, **arguments)
             try:
                 while True:
+                    if self._stop.is_set():
+                        raise CancelledError()
                     with self._state:
                         if generation != self._generation:
                             raise _Restart()
@@ -215,17 +230,21 @@ class LibraryIndex:
         if not self.preferences()["background_indexing"]:
             self._set(state="idle", folder="", done=0, total=0)
             return
+        incomplete = False
         for pin in self.browser.pinned():
             if not pin.get("available"):
-                log("index_offline", folder=pin["path"], reason="pinned folder not connected", action="entries kept; retry next pass")
+                incomplete = True
+                log("index_offline", folder=pin["path"], reason="pinned folder not connected", action="entries kept; retry automatically")
                 continue
             self._set(state="indexing", folder=pin["name"], done=0, total=0)
             try:
                 photos = self._job(generation, "scan", path=pin["path"])["photos"]
             except (ValueError, OSError) as error:
-                problem("index_scan_failed", pin["path"], error, "entries kept; retry next pass")
+                incomplete = True
+                problem("index_scan_failed", pin["path"], error, "entries kept; retry automatically")
                 continue  # Unreadable or just unplugged; the next pass tries again.
             self.remember_scan(pin["path"], photos)
+            self.marks.conflicts.scan([photo["path"] for photo in photos])
             # Settings files rebuild marks, tags and albums for unvisited folders.
             prefix = self._prefix(pin["path"])
             with self.marks._lock:
@@ -243,16 +262,21 @@ class LibraryIndex:
                 except (ValueError, OSError) as error:
                     log("index_metadata_failed", folder=pin["path"], paths=waiting[start:start + 32], reason=str(error), action="facts unavailable; next pass retries")
                     records = []
+                    incomplete = True
                 self.remember_facts(records)
                 done += len(waiting[start:start + 32])
                 self._set(done=done)
+        if incomplete:
+            raise _Retry("some pinned folders or photo details could not be read")
         self._set(state="idle", folder="", done=0, total=0, passes=self._progress["passes"] + 1)
 
     def _run(self):
         failures = 0
-        while failures < 5:
+        while not self._stop.is_set():
             self._wake.wait()
             self._wake.clear()
+            if self._stop.is_set():
+                break
             with self._state:
                 generation = self._generation
             try:
@@ -266,15 +290,11 @@ class LibraryIndex:
             except CancelledError:
                 log("index_stop", action="helper closed; indexing stopped")
                 break  # The helper closed with the app.
-            except RuntimeError as error:
-                log("index_failed", folder=self._progress["folder"], reason=str(error), action="retry shortly" if failures < 4 else "stopped for this session")
-                failures += 1  # Helper queue full or unavailable; try again shortly.
-                time.sleep(2)
-                self._wake.set()
             except Exception as error:
-                log("index_stopped", folder=self._progress["folder"], reason=repr(error), action="indexing stopped; saved marks retained; restart app")
-                self._set(state="failed")
-                return
-        if failures >= 5:
-            log("index_stopped", reason="five helper failures", action="stopped for this session; restart app")
-        self._set(state="failed" if failures >= 5 else "idle", folder="", done=0, total=0)
+                failures += 1
+                if failures == 1 or failures % 5 == 0:
+                    log("index_failed", folder=self._progress["folder"], reason=repr(error), failures=failures, action="entries retained; retry automatically; Re-scan wakes retry")
+                self._set(state="retrying")
+                self._wake.wait(self._retry_seconds)
+                self._wake.set()
+        self._set(state="idle", folder="", done=0, total=0)

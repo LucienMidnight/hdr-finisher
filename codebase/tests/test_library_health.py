@@ -139,7 +139,7 @@ def test_cache_corruption_and_exif_fallback_leave_diagnostics(tmp_path, capsys, 
     assert "cache_corrupt" in logs and "metadata_read_failed" in logs and "bad EXIF" in logs
 
 
-def test_index_stopping_is_visible_and_logged_without_stage_c_restart(tmp_path, monkeypatch, capsys):
+def test_index_failure_retries_and_recovers_beyond_five_failures(tmp_path, monkeypatch, capsys):
     from hdr_finisher.library_index import LibraryIndex
     folder = tmp_path / "photos"
     folder.mkdir()
@@ -149,12 +149,21 @@ def test_index_stopping_is_visible_and_logged_without_stage_c_restart(tmp_path, 
         def submit_library(self, *args, **kwargs):
             raise RuntimeError("helper system failure")
     index = LibraryIndex(LibraryMarks(browser.root), browser, Broken())
-    monkeypatch.setattr("hdr_finisher.library_index.time.sleep", lambda seconds: None)
+    index._retry_seconds = .001
+    calls = []
+    def attempt(generation):
+        calls.append(generation)
+        if len(calls) <= 6:
+            raise RuntimeError("helper system failure")
+        assert index.status()["state"] == "retrying"
+        index._set(passes=1)
+        index.close()
+    monkeypatch.setattr(index, "_pass", attempt)
     index._wake.set()
     index._run()
-    assert index.status()["state"] == "failed"
+    assert len(calls) == 7 and index.status()["passes"] == 1
     logs = capsys.readouterr().err
-    assert "index_stopped" in logs and "helper system failure" in logs
+    assert "index_failed" in logs and "index_recovered" in logs and "helper system failure" in logs
 
 
 def test_helper_problems_are_forwarded_into_backend_health(tmp_path, capsys):
