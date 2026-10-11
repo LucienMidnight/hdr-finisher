@@ -142,7 +142,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "native", "scan", "tree", "metadata"}:
+        if command not in {"picture", "native", "scan", "tree", "metadata", "kept"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -338,6 +338,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     def lane(job):
         if job["command"] in {"picture", "native"}:
             return "picture"
+        if job["command"] == "kept":
+            return "kept"
         if job.get("checking"):
             return "check"
         return "index" if job.get("background") else "main"
@@ -367,14 +369,14 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     continue
                 if kind == "check":
                     state["checking"] += 1
-                elif kind != "index":
+                elif kind not in {"index", "kept"}:
                     state["foreground"] += 1
 
             def yielding():
                 # Background indexing waits for visible work, grading and export.
                 while not cancelled.is_set() and not stopping.is_set():
                     with condition:
-                        allowed = {"index", "check"} if kind == "check" else {"index"}
+                        allowed = {"index", "check"} if kind == "check" else {"index", "kept"}
                         if (not state["paused"] and not state["foreground"]
                                 and (kind == "check" or not state["checking"])
                                 and all(lane(item[2]) in allowed for item in queue)):
@@ -382,9 +384,13 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     time.sleep(0.05)
                 return cancelled.is_set() or stopping.is_set()
 
-            check = yielding if kind in {"index", "check"} else cancelled.is_set
+            check = yielding if kind in {"index", "check", "kept"} else cancelled.is_set
             try:
-                if job["command"] == "picture":
+                if job["command"] == "kept":
+                    from .library_kept import produce
+                    output = produce(root, job["path"], job["grade"], job["edge"], cancelled=check)
+                    result = {"id": job["id"], "result": output}
+                elif job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "native":
@@ -411,7 +417,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 jobs.pop(job["id"], None)
                 if kind == "check":
                     state["checking"] -= 1
-                elif kind != "index":
+                elif kind not in {"index", "kept"}:
                     state["foreground"] -= 1
             if not cancelled.is_set() and not stopping.is_set():
                 try:
@@ -430,6 +436,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     # background scan never queues ahead of the folder the user just clicked.
     Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()
     Thread(target=decode, args=("check",), name="hdr-library-check", daemon=True).start()
+    Thread(target=decode, args=("kept",), name="hdr-library-kept", daemon=True).start()
     reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1, "picture_workers": 6, "index_workers": 1})
     try:
         while _parent_is_alive(parent_pid):
@@ -448,7 +455,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept"}:
                     sequence += 1
                     jobs[message["id"]] = Event()
                     heapq.heappush(queue, (message["priority"], sequence, message))

@@ -107,6 +107,8 @@
       await drawPicture(meta, canvas, controller, isCurrent);
       if (!isCurrent()) return;
     }
+    photo.pictureCurrent = !!meta.kept;
+    canvas.closest(".library-cell")?.querySelector(".library-edited")?.setAttribute("title", meta.kept ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. Open it in Grade and save to update the picture.");
     canvas.dataset.pictureKey = meta.key;
     canvas.dataset.picturePath = photo.path;
     return meta;
@@ -179,7 +181,7 @@
     for (let index = start; index < end; index += 1) {
       const photo = state.photos[index];
       let cell = map.get(photo.path);
-      if (cell && (cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns)) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
+      if (cell && (cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.photo.grade_identity !== photo.grade_identity)) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
       if (!cell) { cell = makeCell(photo, container, index); map.set(photo.path, cell); }
       position(cell.element, index);
       const active = state.selection.has(photo.path);
@@ -316,6 +318,7 @@
   }
   async function showNative() {
     const photo = selected(); if (!photo || !state.fitMeta || !state.zoom || !state.active || state.view !== "single") return;
+    if (photo.edited) { state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; $("native-picture").hidden = true; positionZoom(); status("Saved Library picture enlarged. Check detail in Grade."); return; }
     state.native?.abort(); const controller = new AbortController(); state.native = controller; state.nativeLoading = true;
     const stage = $("single-stage"), dpr = window.devicePixelRatio || 1;
     const current = () => state.active && state.zoom && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
@@ -622,6 +625,15 @@
   }
   for (const side of ["left", "right"]) $(`collapse-${side}`).addEventListener("click", () => collapse(side, !library.classList.contains(`library-${side}-closed`)));
   function toggleFilters() { const hidden = !$("library-filterbar").hidden; $("library-filterbar").hidden = hidden; $("filter-button").setAttribute("aria-pressed", String(!hidden)); }
+  $("picture-settings").addEventListener("click", async () => {
+    try {
+      const prefs = await api("/api/library/picture-settings");
+      const answer = await HDRLibraryDialogs.ask({ title: "Library pictures", message: `${(prefs.used_bytes / 1024**2).toFixed(1)} MiB in use. Resolution applies to pictures made after the next save.`, fields: [
+        { name: "limit", label: "Storage limit (MiB)", type: "number", value: String(Math.round(prefs.limit_bytes / 1024**2)) },
+        { name: "edge", label: "Edited-picture resolution", options: ["512", "1024", "1920"], value: String(prefs.edited_edge) }], confirm: "Save" });
+      if (answer) { await api("/api/library/picture-settings", { limit_bytes: Math.round(Number(answer.limit) * 1024**2), edited_edge: Number(answer.edge) }); status("Library picture settings saved."); }
+    } catch (error) { status(error.message); }
+  });
   $("filter-button").addEventListener("click", toggleFilters);
   $("library-sort").addEventListener("change", event => { state.sort = event.target.value; applyQuery(); });
   $("sort-dir").addEventListener("click", () => { state.descending = !state.descending; $("sort-dir").textContent = state.descending ? "↓" : "↑"; $("sort-dir").setAttribute("aria-label", state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending"); applyQuery(); });
@@ -688,12 +700,17 @@
         let changed = false;
         for (const photo of state.allPhotos) {
           const row = byPath.get(photo.path);
+          if (row && (row.grade_identity !== photo.grade_identity || row.pictureCurrent !== photo.pictureCurrent)) {
+            Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity, pictureCurrent: row.pictureCurrent });
+            for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }
+            changed = true;
+          }
           if (row && JSON.stringify(row.marks) === JSON.stringify(photo.marks) && JSON.stringify(row.albums) === JSON.stringify(photo.albums)
               && (row.storage !== photo.storage || row.write_reason !== photo.write_reason)) {
             photo.storage = row.storage; photo.write_reason = row.write_reason || ""; changed = true;
           }
         }
-        if (changed) updateDetails();
+        if (changed) { applyQuery(); updateDetails(); paintGrid(); paintFilm(); if (state.view === "single") showSingle(); }
         const events = result.events.filter(event => event.id > writerEvent);
         if (events.length) {
           writerEvent = events.at(-1).id;

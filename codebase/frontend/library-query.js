@@ -13,6 +13,7 @@
   // "choice" offers the values found in the photos on screen; a photo that
   // records nothing has the empty value, shown with the field's "none" wording.
   const FIELDS = Object.freeze({
+    state: { label: "State", kind: "choice", get: photo => photo.edited ? "Edited" : "Not edited" },
     camera: { label: "Camera", kind: "choice", none: "Not recorded", get: photo => photo.camera },
     lens: { label: "Lens", kind: "choice", none: "Unknown", get: photo => photo.lens },
     iso: { label: "ISO", kind: "range", get: photo => photo.iso },
@@ -78,6 +79,7 @@
         order = compareText(a.capture_time || "", b.capture_time || "");
       } else if (sort === "rating") order = (a.marks?.rating || 0) - (b.marks?.rating || 0);
       else if (sort === "pick") order = picks[a.marks?.pick || "unmarked"] - picks[b.marks?.pick || "unmarked"];
+      else if (sort === "state") order = Number(!!a.edited) - Number(!!b.edited);
       else if (sort === "type") order = compareText(a.type, b.type);
       else if (sort === "modified") order = Math.sign((a.mtime_ns || 0) - (b.mtime_ns || 0));
       else order = compareText(a.name, b.name);

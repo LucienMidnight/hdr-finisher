@@ -36,6 +36,11 @@
       const stars = document.createElement("span"); stars.className = "library-stars"; stars.textContent = "★".repeat(value.rating);
       if (value.rating) stars.setAttribute("aria-label", `${value.rating} stars`);
       root.append(stars);
+      if (photo.edited) {
+        const mark = document.createElement("span"); mark.className = "library-edited"; mark.textContent = "✎";
+        mark.title = photo.pictureCurrent ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. Open it in Grade and save to update the picture.";
+        mark.setAttribute("aria-label", mark.title); root.append(mark);
+      }
       if (value.pick !== "unmarked") {
         const flag = document.createElement("span"); flag.className = `library-flag ${value.pick}`;
         flag.textContent = value.pick === "pick" ? "⚑" : "×"; flag.setAttribute("aria-label", value.pick === "pick" ? "Picked" : "Rejected"); root.append(flag);

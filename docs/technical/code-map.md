@@ -334,3 +334,19 @@ child's runtime. ExifTool is a temporary measurement dependency, not bundled.
 The PRD records the method, results and limits; raw JSON is ignored local output.
 `tests/library-background-interaction.js --corpus <json> --grade-source <raw>`
 uses several actual camera formats without copying/writing the originals.
+
+### Library kept-picture production (slice 3 Stage B)
+
+`library_kept.py` validates a saved EditDocument, opens its corrected source in
+an independent SessionStore, reduces it and calls the existing export branches
+and gain-map writer. `library_worker.py` hosts one low-priority kept lane with
+cooperative foreground gates. `LibraryGrades.save` queues production after its
+normal durable grade save. `KeptPictures` publishes only the latest matching
+grade/source, retaining older identity-keyed files for future history. The
+Library API provides settings, unopened-photo requests and pixel transport.
+`library-gpu.js` displays finished pixels with the existing composite shader;
+Grade's renderer is unchanged. `library_kept.jpeg_renditions` reconstructs only
+our writer's scalar gain-map files for fast Library display. Source, export and
+Proof readers remain unchanged. Slice 7 adds durable bulk scheduling, not another
+picture producer. Tests: `test_library_kept.py`, `library-kept-pictures.js` and
+the read-only `performance/library-kept-backend-trial.py`.

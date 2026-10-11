@@ -936,7 +936,28 @@ white and encoding settings. Existing export commands still render, encode,
 validate and publish through their original lifecycle, with unchanged encoder
 arguments, filtering and metadata policy. Steve approved this extraction.
 
-Stage B is not built. Existing whole-picture GPU readback accepts Direct only;
-Tiled retains a display-mapped presentation, not a complete linear HDR/SDR pair.
-Extending that protected readback requires separate approval. The running status,
-decisions and validation are in `slice-3-stage-reports-2026-10-11.md`.
+### Slice 3 Stage B - backend kept pictures (October 11, 2026)
+
+Steve approved the backend alternative. Saved edited grades now queue a separate,
+low-priority helper job through existing corrected SessionStore opening, reduced
+export renditions and the shared JPEG writer. Grade readback, shaders, export and
+Proof are unchanged. One app-data gain-map file serves all Library views. JPEG,
+512/1024/1920 with default 1024 are provisional: the 36 MP trial took 9.5 seconds
+at 1024 and JPEG was smaller than AVIF at all three sizes. A Library pictures
+window provides storage limit and edited-picture resolution, plus usage. Quick
+pictures are evicted before least-recently-viewed edited pictures.
+
+The backend verifies grade identity and source stat before publishing. Pending,
+missing or outdated pictures show the default look and edited/not-current mark.
+Unsaved work is excluded. Edited zoom enlarges the kept file without decoding the
+original. State is a filter and sort. Optional `grade_default` travels in the
+sidecar; no marks/albums tables are replaced. Known-writer JPEG files are decoded
+in process for Library display; source/export/Proof decoders stay unchanged.
+The SDR base is exact; HDR gain-map interpolation has a small display-only
+rounding difference, measured in the running report. The 1000-nit cap stays.
+
+`kept_picture_saved` and `kept_picture_failed` record production. New user messages
+and all trial/check results are in `slice-3-stage-reports-2026-10-11.md`. Slice 7
+can call the same producer for unopened photos; its durable bulk queue, Activity,
+Pause/Resume, restart/offline recovery and visible-photo priority remain future
+work. The latest-grade/source checks and cooperative foreground gates are built.

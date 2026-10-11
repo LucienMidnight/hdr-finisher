@@ -68,6 +68,33 @@ class LibraryGrades:
             return {"grade": state.get("desired") if state.get("pending") else grade,
                     "recovery": recovery if not state.get("pending") else None, "conflict": bool(state.get("conflict")), "path": path}
 
+    def observe_documents(self, paths, documents):
+        with self.marks._lock:
+            db = self.marks._connect()
+            try:
+                with db:
+                    for path, document in zip(paths, documents):
+                        state = self._get(str(path)); document = document or {}
+                        if "grade" not in document and not state: continue
+                        state["indexed_grade"] = document.get("grade")
+                        if document.get("grade_default"): state["default"] = document["grade_default"]
+                        db.execute("INSERT OR REPLACE INTO photo_grades VALUES (?, ?)", (str(path), json.dumps(state)))
+            finally: db.close()
+
+    def describe(self, paths):
+        states = {}
+        for start in range(0, len(paths), 800):
+            chunk = [str(p) for p in paths[start:start+800]]
+            for path, value in self.marks._query("SELECT path, state FROM photo_grades WHERE path IN (" + ",".join("?" for _ in chunk) + ")", chunk):
+                states[path] = json.loads(value)
+        from .library_kept import identity
+        result = {}
+        for path in paths:
+            state = states.get(str(path), {})
+            grade = state.get("desired") if state.get("pending") else state.get("indexed_grade", state.get("baseline"))
+            result[str(path)] = {"edited": grade is not None and grade_key(grade) != grade_key(state.get("default")), "grade_identity": identity(grade)}
+        return result
+
     def path(self, session_id):
         if session_id not in self.sessions:
             raise ValueError("The photo is not attached to Library saving.")
@@ -133,6 +160,8 @@ class LibraryGrades:
             if session.edit_revision == revision:
                 session.dirty = False
             log("grade_save_queued", photo=path, action="grade retained; settings writer notified")
+            if getattr(self.marks, "kept", None):
+                self.marks.kept.schedule(path, desired)
             return self.status(session_id)
 
     def merge(self, path, document):
@@ -143,12 +172,13 @@ class LibraryGrades:
             if self._check(path, state, document.get("grade")):
                 return document  # Marks still save, with the external grade intact.
             document["grade"] = state["desired"]
+            document["grade_default"] = state.get("default")
             return document
 
     def acknowledge(self, path, document):
         state = self._get(path)
         if state.get("pending") and grade_key(document.get("grade")) == grade_key(state.get("desired")):
-            state.update(baseline=state["desired"], pending=False)
+            state.update(baseline=state["desired"], indexed_grade=state["desired"], pending=False)
             if grade_key(state.get("recovery")) == grade_key(state["desired"]):
                 state.pop("recovery", None)
             self._put(path, state)

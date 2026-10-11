@@ -11,20 +11,22 @@
       words.append(make("h2", "", title)); if (message) words.append(make("p", "", message)); header.append(words);
       const body = make("div", "library-ask-body"), inputs = [];
       for (const field of fields) {
-        const label = make("label", "library-ask-field"), input = make("input");
-        input.type = "text"; input.value = field.value || ""; input.name = field.name; input.placeholder = field.placeholder || ""; input.autocomplete = "off"; input.spellcheck = false; input.maxLength = 120;
+        const label = make("label", "library-ask-field"), input = make(field.options ? "select" : "input");
+        if (field.options) input.replaceChildren(...field.options.map(value => new Option(value.label || value, value.value || value)));
+        else input.type = field.type || "text";
+        input.dataset.optional = String(!!field.optional); input.value = field.value || ""; input.name = field.name; input.placeholder = field.placeholder || ""; input.autocomplete = "off"; input.spellcheck = false; input.maxLength = 120;
         label.append(make("span", "", field.label), input); body.append(label); inputs.push(input);
       }
       const actions = make("div", "app-dialog-actions"), no = make("button", "button-secondary", cancel), yes = make("button", "button-primary", confirm);
       no.type = "button"; yes.type = "submit"; actions.append(no, yes);
       form.append(header, ...(fields.length ? [body] : []), actions); dialog.append(form); document.body.append(dialog);
       let answer = null;
-      const ready = () => { yes.disabled = inputs.some(input => !input.value.trim()); };
+      const ready = () => { yes.disabled = inputs.some(input => input.dataset.optional !== "true" && !input.value.trim()); };
       inputs.forEach(input => input.addEventListener("input", ready)); ready();
       no.addEventListener("click", () => dialog.close());
       form.addEventListener("submit", () => { answer = Object.fromEntries(inputs.map(input => [input.name, input.value.trim()])); });
       dialog.addEventListener("close", () => { dialog.remove(); resolve(answer); });
-      dialog.showModal(); (inputs[0] || yes).focus(); inputs[0]?.select();
+      dialog.showModal(); (inputs[0] || yes).focus(); inputs[0]?.select?.();
     });
   }
   // One menu at a time. It is placed inside the open dialog, if any, so it stays on top.

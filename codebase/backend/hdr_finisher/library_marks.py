@@ -202,6 +202,7 @@ class LibraryMarks:
             paths = [str(value) for value in values] if canonical else [str(Path(value).resolve()) for value in values]
             cached = self._rows(paths)
             photos, warnings, rebuilt, removed = [], [], [], []
+            observed_paths, observed_documents = [], []
             self.conflicts.scan(paths)
             for position, value in enumerate(paths):
                 path, row = Path(value), cached.get(value)
@@ -213,6 +214,8 @@ class LibraryMarks:
                     document = None
                     invalid = True
                     warnings.append(str(error))
+                if not invalid:
+                    observed_paths.append(value); observed_documents.append(document)
                 if row and (row["storage"] == "database" or (not connected and not path.parent.exists())):
                     pass  # A failed sidecar write is retained across visits/restarts.
                 elif document:
@@ -236,6 +239,7 @@ class LibraryMarks:
                             db.execute("DELETE FROM album_photos WHERE path = ?", (value,))
                 finally:
                     db.close()
+            if getattr(self, "grades", None): self.grades.observe_documents(observed_paths, observed_documents)
             return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo)}
 
     def _write_sidecar(self, path, document, *, revision=None, fingerprint=None, owner_id=None):

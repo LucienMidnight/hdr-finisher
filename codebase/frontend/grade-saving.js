@@ -194,5 +194,12 @@
     const attached = await command("attach");
     await load(attached.grade);
   });
+  // Scheduling only: an active control gesture pauses Library background work.
+  let picturePauseTimer;
+  const pausePictures = paused => fetch("/api/library-worker/pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "grade-control", paused }) }).catch(() => {});
+  document.addEventListener("pointerdown", event => {
+    if (state.activeWorkflow === "grade" && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true); }
+  }, true);
+  for (const event of ["pointerup", "pointercancel", "blur"]) window.addEventListener(event, () => { clearTimeout(picturePauseTimer); picturePauseTimer = setTimeout(() => pausePictures(false), 300); });
   window.setInterval(tick, 500);
 })();

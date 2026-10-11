@@ -56,5 +56,33 @@ window.HDRLibraryPictures = (() => {
     queue = pending;
     return pending;
   }
-  return Object.freeze({ show, initialize });
+  async function showKept(meta, canvas, signal, isCurrent, hdr = false) {
+    const task = queue.catch(() => {}).then(async () => {
+      if (signal.aborted || !isCurrent()) return;
+      const gpu = await initialize();
+      const response = await fetch(`/api/library/kept-pixels/${meta.key}?lane=${hdr ? "hdr" : "sdr"}`, { signal });
+      if (!response.ok) throw new Error("The saved Library picture is unavailable; open and save in Grade to update it.");
+      const body = await response.arrayBuffer();
+      if (signal.aborted || !isCurrent()) return;
+      const width = Number(response.headers.get("X-Image-Width")), height = Number(response.headers.get("X-Image-Height"));
+      canvas.width = width; canvas.height = height;
+      const texture = gpu.device.createTexture({ size: [width, height], format: "rgba16float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+      try {
+        gpu.device.queue.writeTexture({ texture }, body, { bytesPerRow: Number(response.headers.get("X-Bytes-Per-Row")) }, [width, height]);
+        const context = canvas.getContext("webgpu"), surface = gpu.configureSurface(canvas, context, hdr);
+        const layout = window.HDRGpuParamLayout, P = layout.indices, params = new Float32Array(layout.count);
+        params[P.HDR_LANE] = hdr ? 1 : 0; params[P.HDR_SURFACE] = surface.hdr ? 1 : 0;
+        params[P.PROJECT_REFERENCE_WHITE_NITS] = 203; params[P.FILM_REFERENCE_WHITE_NITS] = 203;
+        params[P.HDR_DISPLAY_HEADROOM] = 1000 * .18 / 203;
+        params[P.FRAME_WIDTH] = width; params[P.FRAME_HEIGHT] = height;
+        gpu.ensureStorageBuffers(params.byteLength, 4096); gpu.device.queue.writeBuffer(gpu.paramBuffer, 0, params);
+        const binding = gpu.bindGraphResources(texture.createView(), texture.createView());
+        const encoder = gpu.device.createCommandEncoder(), pass = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r:0,g:0,b:0,a:1 } }] });
+        pass.setPipeline(gpu.pipelineFor(surface.format).composite); pass.setBindGroup(0, binding); pass.draw(3); pass.end();
+        gpu.device.queue.submit([encoder.finish()]); await gpu.waitForSubmittedWork();
+        canvas.dataset.rendition = hdr ? "hdr" : "sdr"; canvas.dataset.peakNits = hdr ? "1000" : "203"; canvas.dataset.kept = "true";
+      } finally { texture.destroy(); }
+    }); queue = task; return task;
+  }
+  return Object.freeze({ show: (meta, ...args) => meta.kept ? showKept(meta, ...args) : show(meta, ...args), initialize });
 })();

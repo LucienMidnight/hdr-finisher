@@ -119,8 +119,7 @@ class LibraryPictureCache:
             with _TRIM_LOCK:
                 if self._known_bytes is not None:
                     self._known_bytes += result["stored_bytes"]
-                if self._known_bytes is None or self._known_bytes > self.limit:
-                    self.trim()
+                self.trim()
             return result
 
     @audited("cache_build_native")
@@ -177,7 +176,11 @@ class LibraryPictureCache:
         # One eviction batch only on overflow, keeping a 10% gap below the limit.
         with _TRIM_LOCK:
             entries = []
-            for path in self.root.glob("*.npz"):
+            from .library_kept import preferences
+            if (self.root.parent / "library-picture-preferences.json").exists():
+                self.limit = preferences(self.root.parent)["limit_bytes"]
+            for path in self.root.glob("*"):
+                if path.suffix not in {".npz", ".jpg", ".avif", ".json"}: continue
                 try:
                     stat = path.stat()
                     entries.append((stat.st_mtime_ns, stat.st_size, path))
@@ -188,7 +191,7 @@ class LibraryPictureCache:
             self._known_bytes = total
             if total <= self.limit:
                 return
-            for _, size, path in sorted(entries):
+            for _, size, path in sorted(entries, key=lambda entry: (entry[2].suffix != ".npz", entry[0])):
                 if total <= self.limit * .9:
                     break
                 try:

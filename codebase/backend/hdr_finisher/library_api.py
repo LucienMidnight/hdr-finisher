@@ -176,6 +176,27 @@ def create_library_router(worker, browser, store=None):
     router = APIRouter(prefix="/api/library", lifespan=lifespan, route_class=LibraryRoute)
     if store is not None:
         add_grade_routes(router, marks, store)
+        from .library_kept import KeptPictures, preferences as picture_preferences
+        marks.kept = kept = KeptPictures(browser.root, marks, worker)
+
+        @router.get("/picture-settings")
+        def picture_settings(): return kept.usage()
+
+        @router.post("/picture-settings")
+        def set_picture_settings(change: dict):
+            return command(lambda: (picture_preferences(browser.root, change), kept.cache.trim(), kept.usage())[-1])
+
+        @router.post("/kept-picture")
+        def request_kept(request: FolderRequest):
+            # Slice 7 can request the same producer for a photo not open in Grade.
+            kept.schedule(request.path)
+            return {"queued": True}
+
+        @router.get("/kept-pixels/{key}")
+        def kept_pixels(key: str, lane: Literal["hdr", "sdr"] = "sdr"):
+            body, width, height, stride = kept.pixels(key, lane)
+            return Response(body, media_type="application/octet-stream", headers={
+                "X-Image-Width": str(width), "X-Image-Height": str(height), "X-Bytes-Per-Row": str(stride)})
 
     @router.get("/health")
     def health():
@@ -192,7 +213,15 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/settings-status")
     def settings_status(request: PathsRequest):
-        return marks.writer.status(request.paths)
+        result = marks.writer.status(request.paths)
+        if store is not None:
+            states = marks.grades.describe(request.paths)
+            for photo in result["photos"]:
+                item = states.get(photo["path"], {})
+                key = kept.key(photo["path"], item.get("grade_identity", ""))
+                item["pictureCurrent"] = bool(kept.current_meta(photo["path"], item.get("grade_identity", "")))
+                photo.update(item)
+        return result
 
     @router.get("/settings-status")
     def settings_summary():
@@ -292,6 +321,12 @@ def create_library_router(worker, browser, store=None):
                     db.close()
         for photo in photos:
             photo.update(rows.get(photo["path"], {"marks": Marks().model_dump(), "albums": [], "storage": "none"}))
+            if store is not None:
+                try:
+                    saved = kept.request(photo["path"])
+                    photo.update(edited=saved["edited"], grade_identity=saved["grade_identity"])
+                except (ValueError, OSError):
+                    photo.update(edited=False)
         return result
 
     @router.get("/preferences")
@@ -338,6 +373,12 @@ def create_library_router(worker, browser, store=None):
         by_path = {row["path"]: row for row in records["photos"]}
         for photo in result["photos"]:
             photo.update(by_path[photo["path"]])
+            if store is not None:
+                try:
+                    saved = kept.request(photo["path"])
+                    photo.update(edited=saved["edited"], grade_identity=saved["grade_identity"])
+                except (ValueError, OSError):
+                    photo.update(edited=False)
         result.update(warnings=records["warnings"], undo_available=records["undo_available"])
         if root is not None:
             index.checks.seed(result)
@@ -422,6 +463,9 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/picture")
     async def picture(command: PictureRequest, request: Request):
+        if store is not None:
+            cached = await run_in_threadpool(kept.cached, command.path)
+            if cached: return cached
         try:
             cached = await run_in_threadpool(cache.cached, command.path, command.edge, command.quality)
         except (ValueError, OSError) as exc:

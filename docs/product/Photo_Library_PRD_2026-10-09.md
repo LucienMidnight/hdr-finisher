@@ -2361,22 +2361,23 @@ changes alone cause the notice in Appendix B; Cancel pauses saving, leaving
 or closing asks again, and the unchosen grade is kept safely for Stage C's
 before state. A clean Grade picks up an outside grade and says so once.
 Keep both is a candidate for Stage D when virtual copies exist; not built.
-Stage B pictures, Stage C's remaining reverts and Stage D remain unbuilt.
-The format/resolution measurements and Steve's choice precede Stage B.
+Stage B is built using Steve's approved backend corrected-source route. JPEG
+and 512/1024/1920, initially 1024, are provisional from the recorded measurements.
+Stage C and D remain pending.
 
 **Carried forward to slice 7: pictures for grades changed in bulk.**
 Flagged by Steve on October 11 as important and probably complex. It must
 be in the slice 7 brief.
 
 - From slice 3, the Library picture of an edited photo is a small finished
-  picture that Grade keeps when it saves. A photo gets one only by being
-  opened in Grade.
+  picture made in the backend after saving. The producer takes a photo
+  and saved grade and does not require it to be open in Grade.
 - Paste, sync and look presets change the grade of many photos without
   opening any of them. After such a command none of those photos has a
   picture that matches its new grade, and a stale picture must never be
   shown.
-- So slice 7 has to make those pictures in the background, through
-  Grade's fully corrected route so they are accurate. That is a full
+- Slice 7 will queue those pictures through slice 3's existing backend
+  producer, using the corrected source and export rendering route. That is a full
   decode and render per photo: seconds each, minutes for a few hundred.
 - What it has to get right:
   - Until a photo's picture is made, the Library shows it honestly (the
