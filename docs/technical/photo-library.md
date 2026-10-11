@@ -509,7 +509,8 @@ lens name is missing for some cameras (PRD open decision 15).
 Stages A, B and C closed the background-writer brief's gaps. Remaining:
 
 1. Undo history is lost after restart (agreed, out of scope).
-2. Folders are not watched (separate slice).
+2. Folders are not watched. Planned as slice 2b; see the Photo Library
+   PRD, section 5.18, "Keeping folders current".
 3. Detected conflict copies are not imported as virtual copies (later slice).
 
 Stage B closed unified Activity, writer Pause/Resume, grouped Try again,

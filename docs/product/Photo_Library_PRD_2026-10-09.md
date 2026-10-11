@@ -308,6 +308,10 @@ Steve authorized Stage A of the slice 1 brief on October 10:
   written, every other field is kept, and it is reported. Never silent.
 - **Background work shows in one Activity item** at the right end of the
   bottom bar, with a list of jobs and a "Needs attention" list.
+- **Pinned folders keep themselves current; other folders are read when
+  opened.** Timed checks, not instant, plus a button that checks chosen
+  folders first. Not built yet; it is slice 2b. Details in section 5.18,
+  "Keeping folders current".
 - **Undo history is still lost on restart.** Not part of this work.
 - Brief for the build:
   `docs/technical/codex-brief-library-background-writer-2026-10-11.md`.
@@ -1096,9 +1100,9 @@ Proposed:
   existing sidecars. Thumbnails, focus maps and exposure maps are separate,
   later in the queue, and made only when wanted.
 - Order: the folder on screen, then recently used pins, then the rest.
-- Watch pinned folders for changes. Network drives report changes
-  unreliably, so also re-check a folder when it is opened and offer a manual
-  re-scan.
+- Keeping folders current is specified under "Keeping folders current"
+  below (decided October 11). It replaces the earlier one-line proposal to
+  watch pinned folders.
 - An unplugged drive keeps its index; its photos show as offline.
 - A small progress indicator with pause. Searches and smart albums say when
   indexing is still running.
@@ -1120,6 +1124,71 @@ Proposed, mocked up October 10 (not yet confirmed by Steve):
   preview size; brightness limit; background indexing on or off, processor
   use (low, medium, high), pause on battery, and pinned folders to leave
   out. The starting numbers are placeholders until M2 and M3 are measured.
+
+#### Keeping folders current
+
+Build step: slice 2b in section 8. Not built yet. Today a folder is read
+when the Library starts, when it is pinned, when it is clicked, and on
+Re-scan; nothing is noticed in between.
+
+Decided by Steve, October 11:
+
+- **Pinned folders keep themselves current while the app is running.**
+  The example to design for: an "intake" folder is pinned, and photos are
+  dropped into it from Explorer while the Library is open. They appear in
+  the Library with no action from the user.
+- **Folders that are not pinned are read when they are opened** in the
+  Library, as today. They are not checked in the background.
+- **It does not need to be instant.** Checking every so often is enough.
+- **A button checks sooner.** It acts on the selected folder or folders
+  only, not the whole library. Those folders go to the front: ahead of
+  other background library work, or alongside it. It never waits behind a
+  long index of some other folder.
+
+Proposed by Claude (the numbers are open decision 27):
+
+- **How often.** The folder on screen is checked about every 15 seconds,
+  pinned or not, for as long as it is on screen. Every other pinned folder
+  is checked about every 5 minutes, one folder at a time.
+- **Slow drives slow themselves down.** After a check, the next one for
+  that folder waits at least ten times as long as the check took. A
+  network share or a very large parent folder is therefore checked less
+  often without a setting. Measure the check on a 50,000-photo folder on a
+  local drive and on a network share, and report it, before the numbers
+  are fixed.
+- **A check is only a listing.** It compares names, sizes and modified
+  dates with what the database holds. Only new or changed photos and
+  settings files are read. A check that finds nothing writes nothing and
+  shows nothing in Activity.
+- **What a check notices:** photos added, removed, renamed or replaced
+  outside the app, new sub-folders, and settings files added or changed by
+  something else (a sync tool, another machine).
+- **A photo still being copied in is not shown yet.** It appears once its
+  size has stopped changing between two checks, so a half-copied file never
+  shows as broken or unreadable.
+- **The grid does not jump.** New photos take their place in the current
+  sort order. The selection, the scroll position and the photo being
+  looked at stay where they are. The bar says once, quietly, how many
+  arrived ("12 new photos in Intake").
+- **The button** is "Check for new photos" on a folder's right-click menu
+  (one folder or a multi-selection) and on the toolbar for the folder on
+  screen. Re-scan pinned folders now stays in Activity as the
+  whole-library action.
+- **Priority.** A requested check runs at the same priority as pictures
+  for the screen, ahead of background indexing and periodic checks.
+  Settings writing carries on alongside it. It still gives way to Grade
+  and export, as all library work does (principle 7); if it is held for
+  that reason, Activity says so.
+- **When checks stop:** background indexing switched off (the folder on
+  screen is still checked), indexing paused by the user, Grade or export
+  busy, or the drive not connected. A drive that comes back is checked
+  straight away.
+- Checks run in the helper on the indexing lane. Failures are logged and
+  reported through Activity and the health command like other indexing
+  problems.
+- Not included: instant notification from Windows. It can be added later
+  for local drives as a way to trigger a check sooner. The timed check
+  stays as the base because network drives do not report changes reliably.
 
 ### 5.19 Size and speed targets
 
@@ -2248,6 +2317,7 @@ Proposed. Each slice is usable on its own.
 | 0 | Foundation work, section 1 | Nothing new; the ground is ready |
 | 1 | Docked library: pinned folders and the Add folder picker, grid, single view, full-screen review, ratings, picks, tags, multi-select, basic sort and filter, double-click to Grade through the one gate, sidecars holding marks, the database, undo for marks | Cull real shoots |
 | 2 | Pop-out window, background indexing, metadata panel, full filter bar, tag management, albums | Use two monitors; find photos across the library |
+| 2b | Keeping folders current (5.18): timed checks of pinned folders and the folder on screen, and "Check for new photos" on chosen folders | Drop photos into a pinned intake folder and see them arrive |
 | 3 | Grades in sidecars, autosave option, "before" state, reverts, virtual copies | Stop using Save / Save As |
 | 4 | Quick decode, compare, focus and exposure overlays | Pick the sharpest frame fast |
 | 5 | File and folder controls, delete all rejected | Tidy up without Explorer |
@@ -2312,6 +2382,10 @@ For Steve, one at a time, each with its trade-off.
     (Appendix B).~~ Settled October 11: automatically, and reported.
 26. Whether a new virtual copy starts with the original's marks and tags
     (as mocked) or clean (5.14).
+27. How often folders are checked for changes (5.18, "Keeping folders
+    current"). Proposed: the folder on screen about every 15 seconds, other
+    pinned folders about every 5 minutes, slower on their own for slow
+    drives. To confirm after the check is measured on a large folder.
 
 ---
 
