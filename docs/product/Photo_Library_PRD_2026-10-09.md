@@ -1174,11 +1174,13 @@ Proposed by Claude (the numbers are open decision 27):
   (one folder or a multi-selection) and on the toolbar for the folder on
   screen. Re-scan pinned folders now stays in Activity as the
   whole-library action.
-- **Priority.** A requested check runs at the same priority as pictures
-  for the screen, ahead of background indexing and periodic checks.
-  Settings writing carries on alongside it. It still gives way to Grade
-  and export, as all library work does (principle 7); if it is held for
-  that reason, Activity says so.
+- **Priority** (confirmed by Steve, October 11). A requested check runs
+  ahead of background indexing and periodic checks. Settings writing
+  carries on alongside it. It still gives way to Grade and export, as all
+  library work does (principle 7); if it is held for that reason,
+  Activity says so.
+- Brief for the build:
+  `docs/technical/codex-brief-library-folder-checks-2026-10-11.md`.
 - **When checks stop:** background indexing switched off (the folder on
   screen is still checked), indexing paused by the user, Grade or export
   busy, or the drive not connected. A drive that comes back is checked
