@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 from .desktop_security import SOURCE_EXTENSIONS
 from .library_pictures import SIDECAR_SUFFIX
 from .library_settings_writer import LibrarySettingsWriter
+from .library_diagnostics import audited, problem
 
 
 def clean_names(values, kind="Tags"):
@@ -118,7 +119,10 @@ class LibraryMarks:
             raise ValueError(f"Settings for {path.name} have an unsupported format; they were left untouched.")
         if not isinstance(document.get("photo_id"), str) or not document["photo_id"]:
             raise ValueError(f"Settings for {path.name} have no photo ID; they were left untouched.")
-        Marks.model_validate(document.get("marks", {}))
+        try:
+            Marks.model_validate(document.get("marks", {}))
+        except ValueError as error:
+            raise ValueError(f"Settings for {path.name} have unreadable marks; they were left untouched.") from error
         self._albums(document, path)
         return document
 
@@ -131,7 +135,8 @@ class LibraryMarks:
             if folder not in folders:
                 try:
                     folders[folder] = {entry.name for entry in folder.iterdir()}
-                except OSError:
+                except OSError as error:
+                    problem("settings_folder_failed", folder, error, "individual settings checked instead")
                     folders[folder] = None  # Individual checks retain their errors.
         return [self._document(Path(value)) if folders[Path(value).parent] is None
             or self._sidecar(Path(value)).name in folders[Path(value).parent] else None for value in paths]
@@ -184,6 +189,7 @@ class LibraryMarks:
             db.execute("INSERT OR IGNORE INTO albums VALUES (?)", (album,))
             db.execute("INSERT OR IGNORE INTO album_photos VALUES (?, ?)", (album, row["path"]))
 
+    @audited("settings_read")
     def read(self, values, *, documents=None, canonical=False):
         """Rebuild visited sidecar records; unmarked browsing creates no files."""
         with self._lock:
@@ -196,6 +202,7 @@ class LibraryMarks:
                 try:
                     document = documents[position] if documents is not None else self._document(path)
                 except ValueError as error:
+                    problem("settings_read_failed", path, error, "settings left untouched; database marks retained")
                     document = None
                     invalid = True
                     warnings.append(str(error))
@@ -277,6 +284,7 @@ class LibraryMarks:
     def _new_document(row):
         return {"format": "HDR Finisher Photo", "schema_version": 1, "photo_id": row["photo_id"], "source": {"filename": Path(row["path"]).name}, "contains_source_pixels": False}
 
+    @audited("bulk_apply", milestone=True)
     def _apply(self, paths, mutate, finalize=None):
         """Validate every settings file, then save only the photos mutate() changes."""
         documents = self._documents(paths)  # Validate all before accepting any change.
@@ -297,6 +305,7 @@ class LibraryMarks:
     def _result(self, photos, warnings, **extra):
         return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo), **extra}
 
+    @audited("change", milestone=True)
     def change(self, values, change: MarkChange):
         with self._lock:
             paths = list(dict.fromkeys(str(self._path(value)) for value in values))
@@ -318,6 +327,7 @@ class LibraryMarks:
                 self._undo.append({"rows": originals})
             return self._result(after, warnings)
 
+    @audited("undo", milestone=True)
     def undo(self):
         with self._lock:
             if not self._undo:
@@ -328,7 +338,8 @@ class LibraryMarks:
             for row in before:
                 try:
                     path = self._path(row["path"])
-                except (FileNotFoundError, OSError):
+                except (FileNotFoundError, OSError) as error:
+                    problem("undo_skipped", row["path"], error, "photo skipped; remaining photos undone")
                     skipped += 1
                     continue
                 paths.append(str(path))
@@ -380,7 +391,14 @@ class LibraryMarks:
         for name in names:
             found.extend(row[0] for row in self._query(f"SELECT path FROM {table} WHERE {column} = ?", (name,)))
         paths = list(dict.fromkeys(found))
-        present = [path for path in paths if Path(path).is_file()]
+        present = []
+        for path in paths:
+            try:
+                Path(path).stat()
+                if Path(path).is_file():
+                    present.append(path)
+            except OSError as error:
+                problem("collection_change_skipped", path, error, "photo not connected; old name retained")
         return present, len(paths) - len(present)
 
     def _rename_everywhere(self, kind, olds, new):
@@ -428,6 +446,7 @@ class LibraryMarks:
             db.close()
         return lists
 
+    @audited("tag_create", milestone=True)
     def tag_create(self, value):
         with self._lock:
             tag = clean_names([value])[0]
@@ -436,6 +455,7 @@ class LibraryMarks:
             self._undo.append({"rows": [], **self._create("tag", tag)})
             return self._result([], [], changed=0, offline=0)
 
+    @audited("tag_rename", milestone=True)
     def tag_rename(self, old, new, merge=False):
         with self._lock:
             old, new = clean_names([old])[0], clean_names([new])[0]
@@ -445,6 +465,7 @@ class LibraryMarks:
                 raise NameTaken(f"A tag named {new} already exists.")
             return self._rename_everywhere("tag", [old], new)
 
+    @audited("tag_merge", milestone=True)
     def tag_merge(self, values, into):
         with self._lock:
             into = clean_names([into])[0]
@@ -453,6 +474,7 @@ class LibraryMarks:
                 raise ValueError("Select at least two tags to merge.")
             return self._rename_everywhere("tag", olds, into)
 
+    @audited("tag_remove", milestone=True)
     def tag_remove(self, values):
         with self._lock:
             return self._rename_everywhere("tag", clean_names(values), None)
@@ -479,6 +501,7 @@ class LibraryMarks:
 
         return self._apply(paths, mutate)
 
+    @audited("album_create", milestone=True)
     def album_create(self, value, paths=()):
         with self._lock:
             name = clean_names([value], "Album names")[0]
@@ -492,6 +515,7 @@ class LibraryMarks:
             self._undo.append({"rows": originals, **lists})
             return self._result(after, warnings, changed=len(after))
 
+    @audited("album_change", milestone=True)
     def album_change(self, value, paths, add):
         with self._lock:
             name = clean_names([value], "Album names")[0]
@@ -503,6 +527,7 @@ class LibraryMarks:
                 self._undo.append({"rows": originals})
             return self._result(after, warnings, changed=len(after))
 
+    @audited("album_rename", milestone=True)
     def album_rename(self, old, new):
         with self._lock:
             old, new = clean_names([old], "Album names")[0], clean_names([new], "Album names")[0]
@@ -512,6 +537,7 @@ class LibraryMarks:
                 raise ValueError("An album with that name already exists. Nothing was renamed.")
             return self._rename_everywhere("album", [old], new)
 
+    @audited("album_delete", milestone=True)
     def album_delete(self, value):
         with self._lock:
             return self._rename_everywhere("album", clean_names([value], "Album names"), None)

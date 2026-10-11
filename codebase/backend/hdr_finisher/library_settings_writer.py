@@ -7,7 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import sys
+from .library_diagnostics import log, problem, audited
 from threading import Event, Lock, Thread
 import time
 from uuid import uuid4
@@ -33,6 +33,9 @@ class LibrarySettingsWriter:
         self._busy = lambda: False
         self._events = deque(maxlen=100)
         self._serial = 0
+        self._completed = 0
+        self._progress_total = 0
+        self._busy_state = False
         self._recovered = set()
         self._recovery_done = 0
         self._group_delays = {}
@@ -46,10 +49,7 @@ class LibrarySettingsWriter:
     def owner(photo_id):
         return hashlib.sha256(photo_id.encode()).hexdigest()[:16]
 
-    @staticmethod
-    def log(event, **fields):
-        # Desktop pipes backend stderr to logs/backend.log.
-        print("[library] " + event + " " + json.dumps(fields, ensure_ascii=False, default=str), file=sys.stderr, flush=True)
+    log = staticmethod(log)
 
     def notify(self, message):
         self._serial += 1
@@ -101,6 +101,7 @@ class LibrarySettingsWriter:
     def is_current(self, path, revision):
         return bool(self.marks._query("SELECT 1 FROM photos JOIN settings_writes USING(path) WHERE path=? AND pending=1 AND revision=?", (path, revision))) and not self._stop.is_set()
 
+    @audited("writer_cleanup")
     def cleanup(self, only_folder=None):
         """Only known-photo temps with our exact name, document and photo ID."""
         removed = 0
@@ -131,7 +132,8 @@ class LibrarySettingsWriter:
                         continue
                     try:
                         document = json.loads(temporary.read_text(encoding="utf-8"))
-                    except (OSError, ValueError):
+                    except (OSError, ValueError) as error:
+                        problem("writer_cleanup_unproven", temporary, error, "ownership cannot be proved; file left untouched")
                         continue  # Cannot prove this file belongs to us.
                     if (isinstance(document, dict) and document.get("format") == "HDR Finisher Photo"
                             and document.get("schema_version") == 1
@@ -150,9 +152,38 @@ class LibrarySettingsWriter:
         with self.marks._lock:
             waiting = self.marks._query("SELECT COUNT(*) FROM photos WHERE pending=1")
             problems = self.marks._query("SELECT reason, COUNT(*) FROM settings_writes JOIN photos USING(path) WHERE pending=1 AND reason!='' GROUP BY reason")
-            return {"waiting": waiting[0][0] if waiting else 0, "paused": self._paused,
+            count = waiting[0][0] if waiting else 0
+            if not count:
+                self._completed = self._progress_total = 0
+            self._progress_total = max(self._progress_total, self._completed + count)
+            groups = {}
+            for path, reason in self.marks._query("SELECT path, reason FROM settings_writes JOIN photos USING(path) WHERE pending=1 AND reason!=''"):
+                key = (str(Path(path).parent), reason)
+                item = groups.setdefault(key, {"folder": key[0], "reason": reason, "count": 0, "photos": [], "explanation": REASONS[reason]})
+                item["count"] += 1
+                if len(item["photos"]) < 3:
+                    item["photos"].append(path)
+            return {"waiting": count, "done": self._completed, "total": self._progress_total,
+                "attention": list(groups.values()), "busy": bool(self._busy()), "paused": self._paused,
                 "reasons": dict(problems), "events": list(self._events),
                 "photos": list(self.marks._rows(list(paths)).values()) if paths else []}
+
+    def retry(self, folder, reason):
+        """Retry only the selected live folder/reason group; retain its failure until success."""
+        with self.marks._lock:
+            paths = [path for path, why in self.marks._query("SELECT path, reason FROM settings_writes")
+                if str(Path(path).parent) == folder and why == reason]
+            if paths:
+                db = self.marks._connect()
+                try:
+                    with db:
+                        db.executemany("UPDATE settings_writes SET next_try=0, attempts=0 WHERE path=?", [(path,) for path in paths])
+                finally:
+                    db.close()
+                for path in paths:
+                    self._group_delays.pop(("disk_full", self.drive(Path(path))), None)
+            self.log("writer_retry", folder=folder, reason=reason, count=len(paths), action="retry requested; pending marks retained")
+        self.wake()
 
     @staticmethod
     def drive(source):
@@ -257,6 +288,7 @@ class LibrarySettingsWriter:
                 db.execute("DELETE FROM settings_writes WHERE path=?", (path,))
         finally:
             db.close()
+        self._completed += 1
         if path in self._recovered:
             self._recovered.remove(path)
             self._recovery_done += 1
@@ -287,6 +319,11 @@ class LibrarySettingsWriter:
 
     def drain(self):
         """One pass; also used by deterministic checks, never a mark command."""
+        self.status()  # Capture the queue size before this pass completes files.
+        busy = bool(self._busy())
+        if busy != self._busy_state:
+            self.log("writer_pause" if busy else "writer_resume", reason="Grade/import/export")
+            self._busy_state = busy
         counts, examples, visible = Counter(), {}, set()
         with self._lane:
             for path in self._pending():

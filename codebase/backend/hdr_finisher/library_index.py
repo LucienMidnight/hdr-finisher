@@ -13,12 +13,14 @@ from threading import Event, RLock, Thread
 import time
 
 from .library_metadata import FACT_FIELDS
+from .library_diagnostics import audited, log, problem
 
 LABELS = ("red", "orange", "green", "blue")
 
 
 class _Restart(Exception):
     """Pins or settings changed; begin the pass again."""
+    _library_control = True
 
 
 class LibraryIndex:
@@ -30,6 +32,7 @@ class LibraryIndex:
         self._thread = None
         self._generation = 0
         self._paused = False
+        self._preferences_failure = None
         self._progress = {"state": "idle", "folder": "", "done": 0, "total": 0, "passes": 0}
 
     # Personal settings stay outside the database, which can be rebuilt.
@@ -37,13 +40,21 @@ class LibraryIndex:
     def preferences(self):
         try:
             saved = json.loads(self.preferences_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            self._preferences_failure = None
+        except FileNotFoundError:
+            self._preferences_failure = None
+            saved = {}  # First use has no preferences.
+        except (OSError, ValueError) as error:
+            if self._preferences_failure != str(error):
+                problem("preferences_read_failed", self.preferences_path, error, "defaults used; file left untouched")
+            self._preferences_failure = str(error)
             saved = {}
         saved = saved if isinstance(saved, dict) else {}
         names = saved.get("label_names") if isinstance(saved.get("label_names"), dict) else {}
         return {"background_indexing": saved.get("background_indexing") is not False,
             "label_names": {label: " ".join(str(names.get(label) or "").split())[:60] for label in LABELS}}
 
+    @audited("index_set_preferences")
     def set_preferences(self, *, background_indexing=None, label_names=None):
         with self._state:
             current = self.preferences()
@@ -66,6 +77,7 @@ class LibraryIndex:
         root = str(root)
         return root if root.endswith(("\\", "/")) else root + os.sep
 
+    @audited("index_remember_scan")
     def remember_scan(self, root, photos):
         """Record a folder listing and attach facts already known for unchanged files."""
         prefix = self._prefix(root)
@@ -89,6 +101,7 @@ class LibraryIndex:
             finally:
                 db.close()
 
+    @audited("index_remember_facts")
     def remember_facts(self, records):
         rows = [(record["path"], record["bytes"], record["mtime_ns"], json.dumps({name: record.get(name) for name in FACT_FIELDS}))
             for record in records if record.get("mtime_ns") is not None]
@@ -104,6 +117,7 @@ class LibraryIndex:
             finally:
                 db.close()
 
+    @audited("index_photos")
     def photos(self, paths):
         """Listing rows for an album or tag; photos that are not connected are counted."""
         photos, missing = [], 0
@@ -111,7 +125,8 @@ class LibraryIndex:
             path = Path(value)
             try:
                 stat = path.stat()
-            except OSError:
+            except OSError as error:
+                problem("collection_photo_missing", value, error, "photo omitted from view; library entry kept")
                 missing += 1
                 continue
             photos.append({"path": value, "name": path.name, "type": path.suffix[1:].upper(), "bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns})
@@ -148,6 +163,7 @@ class LibraryIndex:
     def pause(self, paused):
         with self._state:
             self._paused = bool(paused)
+            log("index_pause" if paused else "index_resume", action="user control")
         self._wake.set()
 
     def status(self):
@@ -194,17 +210,20 @@ class LibraryIndex:
             finally:
                 self.worker.cancel(job_id)
 
+    @audited("index_pass")
     def _pass(self, generation):
         if not self.preferences()["background_indexing"]:
             self._set(state="idle", folder="", done=0, total=0)
             return
         for pin in self.browser.pinned():
             if not pin.get("available"):
+                log("index_offline", folder=pin["path"], reason="pinned folder not connected", action="entries kept; retry next pass")
                 continue
             self._set(state="indexing", folder=pin["name"], done=0, total=0)
             try:
                 photos = self._job(generation, "scan", path=pin["path"])["photos"]
-            except (ValueError, OSError):
+            except (ValueError, OSError) as error:
+                problem("index_scan_failed", pin["path"], error, "entries kept; retry next pass")
                 continue  # Unreadable or just unplugged; the next pass tries again.
             self.remember_scan(pin["path"], photos)
             # Settings files rebuild marks, tags and albums for unvisited folders.
@@ -221,7 +240,8 @@ class LibraryIndex:
             for start in range(0, len(waiting), 32):
                 try:
                     records = self._job(generation, "metadata", paths=waiting[start:start + 32])["photos"]
-                except (ValueError, OSError):
+                except (ValueError, OSError) as error:
+                    log("index_metadata_failed", folder=pin["path"], paths=waiting[start:start + 32], reason=str(error), action="facts unavailable; next pass retries")
                     records = []
                 self.remember_facts(records)
                 done += len(waiting[start:start + 32])
@@ -236,14 +256,25 @@ class LibraryIndex:
             with self._state:
                 generation = self._generation
             try:
+                log("index_start", generation=generation, action="scan pinned folders")
+                started = time.monotonic()
                 self._pass(generation)
+                log("index_recovered" if failures else "index_end", passes=self._progress["passes"], duration=round(time.monotonic()-started, 3))
                 failures = 0
             except _Restart:
                 self._wake.set()
             except CancelledError:
+                log("index_stop", action="helper closed; indexing stopped")
                 break  # The helper closed with the app.
-            except RuntimeError:
+            except RuntimeError as error:
+                log("index_failed", folder=self._progress["folder"], reason=str(error), action="retry shortly" if failures < 4 else "stopped for this session")
                 failures += 1  # Helper queue full or unavailable; try again shortly.
                 time.sleep(2)
                 self._wake.set()
-        self._set(state="idle", folder="", done=0, total=0)
+            except Exception as error:
+                log("index_stopped", folder=self._progress["folder"], reason=repr(error), action="indexing stopped; saved marks retained; restart app")
+                self._set(state="failed")
+                return
+        if failures >= 5:
+            log("index_stopped", reason="five helper failures", action="stopped for this session; restart app")
+        self._set(state="failed" if failures >= 5 else "idle", folder="", done=0, total=0)

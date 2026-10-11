@@ -15,6 +15,7 @@ import numpy as np
 from PIL import Image, ImageCms, ImageOps
 
 from . import loader, raw_import
+from .library_diagnostics import audited, problem
 from .analysis import classify_hdr
 from .color import map_negative_acescg, normalize_to_acescg
 from .desktop_security import SOURCE_EXTENSIONS
@@ -58,6 +59,7 @@ class LibraryPictureCache:
             raise ValueError("Invalid library picture key.")
         return self.root / (key + ".npz")
 
+    @audited("cache_cached")
     def cached(self, path, edge, quality):
         key = picture_key(path, edge, quality)
         destination = self.file(key)
@@ -68,10 +70,12 @@ class LibraryPictureCache:
                 result = json.loads(str(stored["metadata"]))
             os.utime(destination, None)
             return result | {"key": key, "cache_hit": True, "stored_bytes": destination.stat().st_size}
-        except (OSError, ValueError, EOFError):
+        except (OSError, ValueError, EOFError) as error:
+            problem("cache_corrupt", destination, error, "damaged entry removed; picture rebuilt")
             destination.unlink(missing_ok=True)
             return None
 
+    @audited("cache_build")
     def build(self, path, edge, quality="quick", cancelled=None, decoded=None):
         path = Path(path).resolve(strict=True)
         if path.suffix.lower() not in SOURCE_EXTENSIONS:
@@ -119,6 +123,7 @@ class LibraryPictureCache:
                     self.trim()
             return result
 
+    @audited("cache_build_native")
     def build_native(self, path, center_x, center_y, width, height, cancelled=None):
         """One retained native source in the helper; only viewport crops reach the GPU."""
         path = Path(path).resolve(strict=True)
@@ -157,6 +162,7 @@ class LibraryPictureCache:
         if paused:
             self._native_source = None
 
+    @audited("cache_pixels")
     def pixels(self, key, lane="hdr"):
         path = self.file(key)
         with np.load(path, allow_pickle=False) as stored:
@@ -166,6 +172,7 @@ class LibraryPictureCache:
         body, stride = encode_rgba_proxy_rows(pixels, 0, pixels.shape[0], prefer_half=True, pixel_format="rgba16float")
         return body, pixels.shape[1], pixels.shape[0], stride, "linear-srgb" if reference else "acescg"
 
+    @audited("cache_trim")
     def trim(self):
         # One eviction batch only on overflow, keeping a 10% gap below the limit.
         with _TRIM_LOCK:
@@ -174,7 +181,8 @@ class LibraryPictureCache:
                 try:
                     stat = path.stat()
                     entries.append((stat.st_mtime_ns, stat.st_size, path))
-                except FileNotFoundError:
+                except FileNotFoundError as error:
+                    problem("cache_trim_missing", path, error, "entry already removed; continue eviction")
                     continue
             total = sum(size for _, size, _ in entries)
             self._known_bytes = total
@@ -187,8 +195,8 @@ class LibraryPictureCache:
                     path.unlink()
                     total -= size
                     self._known_bytes = total
-                except FileNotFoundError:
-                    pass
+                except FileNotFoundError as error:
+                    problem("cache_trim_missing", path, error, "entry already removed; continue eviction")
 
 
 def default_look(pixels, reference, raw_input, suffix):
@@ -245,7 +253,8 @@ def decode_picture(path, edge, quality):
             try:
                 pixels = embedded_picture(path, edge)
                 return normalize_to_acescg(pixels, "sRGB", "sRGB"), None, {"route": "embedded-placeholder"}
-            except Exception:
+            except Exception as error:
+                problem("picture_embedded_fallback", path, error, "generic quick decode used")
                 pass  # No embedded picture: the generic quick decode remains available.
         if suffix == ".dng":
             from .linear_dng import inspect_dng, DngRoute
@@ -258,7 +267,8 @@ def decode_picture(path, edge, quality):
         with rawpy.imread(str(path)) as raw:
             try:
                 meta = raw_import._camera_linear_metadata_from_libraw(raw)
-            except raw_import._CameraLinearUnsupported:
+            except raw_import._CameraLinearUnsupported as error:
+                problem("picture_camera_fallback", path, error, "existing sRGB quick decode used")
                 meta = None
             transport = raw.postprocess(half_size=quality != "native", demosaic_algorithm=rawpy.DemosaicAlgorithm.LINEAR,
                 use_camera_wb=meta is None, use_auto_wb=False,
@@ -282,8 +292,8 @@ def decode_picture(path, edge, quality):
         try:
             pixels = reduced_bitmap(path, edge)
             return normalize_to_acescg(pixels, "sRGB", "sRGB"), None, {"route": "bitmap-placeholder"}
-        except Exception:
-            pass
+        except Exception as error:
+            problem("picture_bitmap_fallback", path, error, "existing full decode used")
     if suffix in {".jpg", ".jpeg"} and loader.is_ultrahdr_jpeg(path):
         image, reference, metadata = loader.decode_ultrahdr_jpeg(path)
         metadata["sdr_reference_image"] = reference

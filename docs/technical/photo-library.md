@@ -5,9 +5,9 @@ picks, colour labels, tags and albums, how its background process works, and
 why it was built this way. It is written so that a problem can be traced to a
 specific file, rule or message.
 
-- **Updated October 11, 2026: background-writer Stage A built.**
+- **Updated October 11, 2026: background-writer Stages A and B built.**
 - Sections 1 to 10 describe what is built. Section 11 lists the remaining
-  gaps. Section 12 records the Activity and diagnostics work for Stage B.
+  gaps. Section 12 explains the library-wide health report and diagnostics.
 - The Library is still being built, and its controls change often. A
   how-to-use guide will be written when they settle. Product intent lives in
   the [Photo Library PRD](../product/Photo_Library_PRD_2026-10-09.md).
@@ -354,7 +354,7 @@ in a second process so that grading stays responsive.
 - It checks four times a second that the backend is still running, and
   exits if not. It cannot be left behind after a crash.
 - **If the helper stops unexpectedly it is not restarted.** Every Library
-  request then fails with "Library helper stopped unexpectedly." until the
+  request then fails with a plain helper-unavailable message until the
   app is restarted. Grade is unaffected. Marks and tags can still be saved,
   because the backend does that.
 
@@ -378,16 +378,41 @@ Indexing makes pinned folders searchable without visiting each one.
 - Pinning or unpinning a folder, or changing the indexing setting, restarts
   the pass from the beginning.
 
-The item at the right of the bottom bar reports the state:
+The right end of the bottom bar now has one **Activity** item for settings
+writing and indexing. At rest it says only "Activity". A click opens the
+job list; Grade's own messages keep their existing place. Writing takes
+priority, and "+1" means indexing is also running or paused. Job progress
+counts describe the current session's queue, including further changes;
+they are not a journal of earlier commands.
 
-| Bottom bar text | Meaning |
+| Activity text | Meaning |
 |---|---|
-| Library index up to date | No pass is running. |
-| Indexing <folder> Ãƒâ€šÃ‚Â· reading folders | Step 1 for that folder. |
-| Indexing <folder> Ãƒâ€šÃ‚Â· 1,240 of 5,000 | Step 3; the count is photos whose details are known. |
-| Indexing waits while Grade is busy | The helper is paused by grading, import or export. |
-| Indexing paused | You paused it. It stays paused until you resume or choose Re-scan. |
-| Background indexing is off | Turned off in the same menu. Folders are still read when opened. |
+| Writing settings: 312 of 1,000 | Current settings-writing progress. |
+| Writing settings paused · N waiting | Paused by the user; marks remain safe in the database. |
+| Writing settings waits while Grade is busy · N waiting | Waiting for Grade, import or export to finish. |
+| Indexing <folder> · reading folders | Folder listing is running. |
+| Indexing <folder> · N of M | Camera-details progress. |
+| Indexing waits while Grade is busy | Helper paused by Grade, import or export. |
+| Indexing paused | Paused by the user. |
+| Activity · Needs attention / Needs attention: N | A helper/indexing problem, or N settings files with a writing problem. |
+
+The list always includes both jobs and their state, even at rest:
+"Settings files up to date", "Library index up to date", or "Background
+indexing is off". Indexing keeps Pause, Resume, Re-scan and its on/off
+control. Writing has Pause and Resume, **no Cancel**; Undo remains the way
+back. A pause lasts for this backend session, not across an app restart.
+After a successful change the Library bar confirms the changed-photo count
+("Rated N photos", "Picked N photos", "Rejected N photos" or "Updated N
+photos") and offers **Undo** immediately. Undo reports "Undid the change on
+N photos". Existing partial-result warnings take precedence over this count.
+
+**Needs attention** groups current writing problems by folder and reason,
+with a count and a plain explanation. Unreadable settings also name up to
+three example photos. **Try again** brings that group forward for another
+attempt; it neither clears the problem prematurely nor overrides Pause.
+Other groups keep their schedule. A group disappears automatically only
+when its pending work clears. Helper failure and indexing stopping are
+shown here too; their automatic recovery remains Stage C.
 
 ### Camera details
 
@@ -416,7 +441,8 @@ lens name is missing for some cameras (PRD open decision 15).
 
 | Message | Meaning | What to do |
 |---|---|---|
-| "N photos saved in the library; settings files catch up in the background" | A command returned; database marks are saved and files may still be pending. | Undo is available immediately. |
+| "Rated / Picked / Rejected / Updated N photos" · Undo | The changed photos are saved in the database; files catch up in the background. | Undo is available immediately. |
+| "Undid the change on N photos" | Undo returned; settings files catch up in the background. | None. |
 | Details: "Waiting to be written; marks are safe in the library" | Pending, with no write failure. | Wait; the writer works automatically. |
 | Details: "Cannot be written: <reason>; marks are safe in the library" | Pending because of a lock, full drive, unwritable or missing folder, unreadable file, or another system error. | Correct the named cause; automatic retries continue. |
 | "N photos: settings files are waiting to be written. Marks are safe in the library." | Selection includes pending photos. | Check individual Settings lines for reasons. |
@@ -432,18 +458,18 @@ lens name is missing for some cameras (PRD open decision 15).
 | "Settings for <photo> have an unsupported format; they were left untouched." | `format` or `schema_version` is not what this version expects, usually a file from a newer version. | Use the newer version, or rename the file out of the way. |
 | "Settings for <photo> have no photo ID; they were left untouched." | `photo_id` is missing or empty. | Restore the file from a backup, or rename it out of the way. |
 | "Settings for <photo> have unreadable albums; they were left untouched." | `albums` is not a list of valid names. | Fix or remove the `albums` entry in Notepad. |
-| A technical message beginning "1 validation error for Marks" | A value inside `marks` is outside the allowed values, or `marks` has a field this version does not know. The message names the field but not the photo. The file is left untouched. | Find the photo by the field named, then fix that entry in Notepad. |
+| "Settings for <photo> have unreadable marks; they were left untouched." | A mark is invalid or unknown. Technical validation details go to the log. | Repair the settings file or rename it out of the way. |
 | "Settings for <photo> are a link; they were left untouched." | The `.hdrf` file is a link to another file. The app will not write through links. | Replace the link with a real file. |
 | "N photos on folders that are not connected were not changed." | A tag or album command skipped photos it could not find. | Connect the drive and run the command again. |
 | "A tag named <name> already exists." | A rename would join two tags. | Confirm the merge, or choose another name. |
 | "That tag is no longer in the library." / "That album is no longer in the library." | The name was removed, or renamed, since the list was shown. | Reopen the list. |
 | "Select a supported photo to mark." | A selected file is not a supported photo type. | Nothing was changed. |
 | A Windows "file not found" message when marking | A selected photo was moved, deleted or is on a drive that is not connected. Marking a photo that cannot be found is not supported yet. | Nothing was changed. Re-scan the folder or reconnect the drive. |
-| "Library helper stopped unexpectedly." | The helper process ended. | Restart the app. Check `logs\backend.log`. |
-| "Library helper did not start in time." | The helper did not report ready within 30 seconds. | Restart the app. If it repeats, check `logs\backend.log`. |
-| "Library helper queue is full." | More than 256 requests were waiting. | Normally clears on its own within seconds. |
+| Activity: "The Library helper stopped. Saved marks are safe; restart the app to browse again." | The helper process ended. | Restart the app. Check `logs\backend.log`. |
+| "The Library helper is unavailable. Saved marks are safe; restart the app." | The helper did not report ready within 30 seconds. | Restart the app. If it repeats, check `logs\backend.log`. |
+| "The Library helper is busy. Saved marks are safe; try again in a moment." | More than 256 requests were waiting. | Normally clears on its own within seconds. |
 | "Library cache entry is unavailable; request it again." | A cached picture was removed between two steps. | None; the page asks again. |
-| "Photo changed while its library picture was being read." | The file was modified during decoding. | None; it is read again when next shown. |
+| "The Library could not read <photo>. Saved marks are safe; check the photo or folder and try again." | The file was modified during decoding. | None; it is read again when next shown. |
 
 ---
 
@@ -459,44 +485,103 @@ stray app temporary files, automatic retry and partial Undo. Remaining gaps:
 5. Indexing can still stop after five helper failures (Stage C).
 6. Folders are not watched (separate slice).
 7. A second settings file from a sync conflict is not yet detected (Stage C).
-8. Invalid marks in a settings file can still produce raw validation text
-   before a command is accepted (Stage C).
-9. There is no unified Activity list, Pause/Resume writer control, Try again
-   action or library-wide health command yet (Stage B). Existing indexing
-   text stays at the right of the bottom bar. Writer reports use the existing
-   Library message area; Details refreshes its state once a second.
 
-## 12. Reading writer diagnostics; remaining Activity work
+Stage B closed unified Activity, writer Pause/Resume, grouped Try again,
+the health command, diagnostics and raw validation messages. Plain wording
+for invalid settings was included here because Stage B explicitly requires
+technical validation text to stay out of user messages. Stage C still owns
+offline edits, helper restart, indexing recovery and conflict-copy detection.
 
-Search `logs/backend.log` for **`[library]`**. Stage A writes one JSON-detail
-line per grouped writer event, with folder/drive, count, up to three example
-paths, the system reason and what happened next.
+## 12. Reading library health and diagnostics
 
-| Event | Meaning |
+**One command:** `GET /api/library/health` returns settings-writing progress,
+waiting count, counts per failure reason, current folder/reason attention
+groups, pause/Grade-wait state, recent writer notices, helper running state
+and restart count, indexing state and the most recent 50 diagnostic problems.
+Activity uses this command once a second while the Library is visible. The
+helper restart count is currently zero; Stage C will implement restarts.
+The recent-problem list is held in memory; the log is the lasting record.
+Technical details remain in that command and the log, outside normal UI.
+
+`POST /api/library/writer` accepts `action: pause`, `resume`, or `retry`.
+Retry includes the exact `folder` and `reason` from an attention group.
+`POST /api/library/settings-status` with `paths` continues to supply live
+Details storage states; the GET version gives the writer summary.
+Indexing keeps `GET/POST /api/library/index`.
+
+Search **`[library]`** in `logs/backend.log`. Every line has a stable event
+name and JSON details: the attempted operation, photo/folder or examples,
+the original system reason and the action taken. Bulk failures from the
+same folder are grouped with a count and at most three example paths;
+10,000 unreadable settings in one read produce one summary line.
+Helper diagnostics are forwarded to the backend before logging, so the
+same health command includes problems found in its other process.
+
+| Event or family | Meaning |
 |---|---|
-| `writer_start` | Startup pending count and temporary cleanup count. |
-| `writer_locked`, `writer_disk_full`, `writer_unwritable`, `writer_offline`, `writer_unreadable`, `writer_io` | Distinct write failures; pending marks are kept and retried. |
-| `writer_recovered` | Writing succeeded after a problem cleared. |
-| `writer_deleted` | Missing photo in a connected folder removed from the pending list and library. |
-| `writer_baseline_unknown` | Pending marks restored when no previous file fingerprint was available; no external edit is claimed. |
-| `writer_external_change` | Library marks won; other settings were kept. |
-| `writer_recovery_finished` | Completion count for pending work from the last session. |
-| `writer_cleanup_failed` | Cleanup could not reach or remove a temporary file; it was left untouched. |
-| `writer_failed` | Unexpected writer failure; pending work is kept and the loop retries. |
-| `writer_pause`, `writer_resume` | Backend writer pause/resume hook (Activity control comes in Stage B). |
+| `command_start`, `command_end`, `<command>_failed` | Marks, Undo, tag and album commands; counts, context, duration, and failures. |
+| `request_failed`, `request_invalid`, `helper_request_failed` | Backend/API request stopped or rejected; original technical details stay here. |
+| `settings_read_failed`, `settings_folder_failed`, `undo_skipped`, `collection_change_skipped`, `collection_photo_missing` | Unreadable settings/folder, skipped Undo/collection photos; remaining behavior is recorded. |
+| `writer_start` | Startup pending and temporary-cleanup counts. |
+| `writer_locked`, `writer_disk_full`, `writer_unwritable`, `writer_offline`, `writer_unreadable`, `writer_io` | Grouped distinct failures; pending marks retained and retried. |
+| `writer_recovered`, `writer_recovery_finished` | Successful recovery or completion of last-session work. |
+| `writer_deleted`, `writer_baseline_unknown`, `writer_external_change` | Missing-photo removal, unknown fingerprint, or external file edits; preservation action recorded. |
+| `writer_cleanup_failed`, `writer_cleanup_unproven`, `writer_failed` | Cleanup/writer problem; unproven temporary files left untouched. |
+| `writer_pause`, `writer_resume`, `writer_retry` | User control or Grade/import/export wait, and an explicit retry. |
+| `index_start`, `index_end`, `index_pause`, `index_resume`, `index_recovered` | Index milestones and controls. |
+| `index_offline`, `index_scan_failed`, `index_metadata_failed`, `index_failed`, `index_stopped`, `index_stop`, `index_pass_failed`, `index_<operation>_failed` | Skipped folder, failed facts/scan/database work, retries or stopping, including its reason. |
+| `preferences_read_failed` | Unreadable preferences; defaults used, file retained. |
+| `helper_start`, `helper_stop`, `helper_stopped`, `helper_start_failed`, `helper_boot_failed`, `helper_pause`, `helper_resume` | Helper lifecycle and wait gate; Grade remains unaffected. |
+| `helper_send_failed`, `helper_control_failed`, `helper_reply_failed`, `helper_pipe_closed`, `helper_job_failed`, `helper_interpretation_required` | Helper communication/job problems and original reason. |
+| `scan_folder_failed`, `scan_photo_failed`, `folder_tree_failed` | Folder/photo listing failure and skipped locations. |
+| `metadata_read_failed`, `metadata_stat_failed`, `read_metadata_failed` | Failed EXIF/file access; unavailable facts do not hide the photo. |
+| `cache_corrupt`, `cache_trim_missing`, `cache_<operation>_failed`, `cache_pixels_failed` | Cache repair, eviction races or unavailable picture bytes; request/rebuild action recorded. |
+| `picture_embedded_fallback`, `picture_camera_fallback`, `picture_bitmap_fallback` | Existing decode fallback taken and why; decode routes are unchanged. |
 
-`GET /api/library/settings-status` returns waiting count, counts by failure
-reason, pause state and recent notices. POST to the same path with `paths`
-also returns those photos' current storage state. This is the Stage A source
-for live Details and notices, not yet the Stage B library-wide health command.
+The audit also checked expected non-failures: no settings/preferences on
+first use, missing EXIF fields, cancellation, waiting on a helper future,
+and a superseded prepared settings file. Those retain their quiet behavior.
+Unknown old temporary files cannot be proved app-owned; they are left alone,
+with grouped diagnostics if their document could not be read.
 
-Stage B will bring indexing and writing into one quiet Activity item at the
-right of the bottom bar, with progress, Pause/Resume, grouped Needs attention
-and Try again. **Writing has no Cancel: Undo is the way back.** It will also
-audit failure logging throughout marks, collections, indexing, the helper
-and picture cache. Stage C handles the remaining recovery and offline gaps.
-The full brief is
-[codex-brief-library-background-writer-2026-10-11.md](codex-brief-library-background-writer-2026-10-11.md).
+### Stage B wording for review
+
+All new or changed user-facing text (N/M and names stand for actual values):
+
+- "Activity"; "Needs attention"; "Nothing needs attention."
+- "Writing settings: N of M"; "+1"; "Needs attention: N".
+- "Settings files up to date".
+- "Writing settings paused · N waiting".
+- "Writing settings waits while Grade is busy · N waiting".
+- "Pause writing"; "Resume writing"; "Try again"; "Undo".
+- "Rated N photos"; "Picked N photos"; "Rejected N photos";
+  "Updated N photos"; "Undid the change on N photos".
+- "N photos: <reason>. Marks are safe in the library; writing will retry
+  automatically." Reasons: "the settings file is still in use by another
+  program", "the drive is full", "the folder cannot be written", "the folder
+  is not connected", "the settings file cannot be read and was left
+  untouched", "the system could not write the settings file". Folder and
+  unreadable-photo examples are separate lines in the same group.
+- "Indexing stopped · restart the app".
+- "The Library helper stopped. Saved marks are safe; restart the app to
+  browse again."
+- "Indexing stopped after repeated problems. Saved marks are safe; restart
+  the app to index again."
+- "The Library helper is unavailable. Saved marks are safe; restart the app."
+- "The Library helper is busy. Saved marks are safe; try again in a moment."
+- "The Library could not read <photo or the selected photos>. Saved marks
+  are safe; check the photo or folder and try again."
+- "Settings for <photo> have unreadable marks; they were left untouched."
+- "<file or folder> could not be reached or changed. Saved marks are safe;
+  check the folder and try again."
+- "Those marks could not be read. Nothing was changed; saved marks are safe."
+- "That Library request could not be understood. Nothing was changed."
+- "The Library could not finish that request. Saved marks are safe; try again."
+
+Existing indexing texts and controls moved into Activity unchanged, except
+that paused indexing is now counted as a job. Writer notices and Details
+messages from Stage A remain unchanged. No database layout changed; existing
+`library.sqlite3`, including every pending mark, is retained.
 
 ---
 
@@ -518,7 +603,7 @@ the writer will recreate the file.
 3. In the app data folder, rename `library.sqlite3` (keep it as a backup
    until you are satisfied).
 4. Start the app, open the Library and choose Re-scan pinned folders now.
-5. Wait for "Library index up to date". Folders that are not pinned are
+5. Open Activity and wait for "Library index up to date". Folders that are not pinned are
    rebuilt when you open them.
 
 **Clear the browsing pictures.** Close the app and delete the
@@ -540,7 +625,9 @@ Paths are from `codebase/`.
 | File | Owns |
 |---|---|
 | `backend/hdr_finisher/library_marks.py` | The database, settings files, mark, tag and album commands, undo |
-| `backend/hdr_finisher/library_settings_writer.py` | Background settings writing, retries, recovery, cleanup and writer diagnostics |
+| `backend/hdr_finisher/library_settings_writer.py` | Background writing, retries, recovery, cleanup and controls |
+| `backend/hdr_finisher/library_diagnostics.py` | Shared grouped log events and recent problems |
+| `frontend/library-activity.js` | Unified Activity controls and Needs attention |
 | `backend/hdr_finisher/library_index.py` | File facts, background indexing, `library-preferences.json` |
 | `backend/hdr_finisher/library_worker.py` | The helper process, its lanes, pausing and cancelling |
 | `backend/hdr_finisher/library_folders.py` | Folder listing and the folder tree (run in the helper) |
@@ -599,3 +686,13 @@ Ctrl+Z while the writer waits, no empty first settings file, live Settings
 states, restoring already-written files and continued folder browsing. The
 fast suites pass; process-kill checks use the project's Python and temporary
 photos only. No Grade/export/Proof, shader or decode route was changed.
+
+### Stage B verification (October 11, 2026)
+
+The focused health checks cover progress, pause/retry, grouped failures and
+clearing after recovery, plain validation responses, cache/EXIF fallbacks,
+and a 10,000-failure summary. `tests/library-background-activity.js` checks
+Activity and Undo in Electron at 2560×1440 using disposable PNG copies.
+The required suites pass: 460 Node checks; 1,674 Python checks, 3 skipped.
+The final audit-focused checks also pass. No Grade/export/Proof, shader,
+installer or decode-route changes were made.

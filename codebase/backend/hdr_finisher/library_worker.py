@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import Condition, Event, RLock, Thread
 import time
 from uuid import uuid4
+from .library_diagnostics import log, problem
 
 
 class LibraryWorker:
@@ -42,7 +43,8 @@ class LibraryWorker:
                 self._process = process
                 try:
                     process.start()
-                except Exception:
+                except Exception as error:
+                    log("helper_start_failed", reason=repr(error), action="library unavailable; Grade unaffected")
                     parent.close()
                     child.close()
                     self._process = None
@@ -52,6 +54,7 @@ class LibraryWorker:
                 self._reader = Thread(target=self._read_results, name="hdr-library-results", daemon=True)
                 self._reader.start()
         if not self._ready.wait(30):
+            log("helper_start_failed", reason="ready timeout after 30 seconds", action="helper closed; restart app")
             self.close()
             raise RuntimeError("Library helper did not start in time.")
         if self._failure:
@@ -76,6 +79,7 @@ class LibraryWorker:
                     "priority": int(priority)})
             except (EOFError, OSError) as exc:
                 self._pending.pop(job_id, None)
+                problem("helper_send_failed", value, exc, "request refused; reader checks helper")
                 raise RuntimeError("Library helper is unavailable.") from exc
         return job_id, future
 
@@ -95,6 +99,7 @@ class LibraryWorker:
                 self._connection.send({**arguments, "command": command, "id": job_id, "priority": priority})
             except (EOFError, OSError) as exc:
                 self._pending.pop(job_id, None)
+                problem("helper_send_failed", arguments.get("path", arguments.get("paths", [])), exc, "request refused; reader checks helper")
                 raise RuntimeError("Library helper is unavailable.") from exc
         return job_id, future
 
@@ -125,10 +130,13 @@ class LibraryWorker:
 
     def pause(self, reason: str, paused: bool) -> None:
         with self._lock:
+            was_paused = bool(self._paused)
             if paused:
                 self._paused.add(reason)
             else:
                 self._paused.discard(reason)
+            if bool(self._paused) != was_paused:
+                log("helper_pause" if self._paused else "helper_resume", reason="Grade/import/export" if reason != "manual" else "manual", action="background lanes wait" if self._paused else "background lanes resume")
             self._send({"command": "pause", "paused": bool(self._paused)})
 
     @contextmanager
@@ -144,14 +152,19 @@ class LibraryWorker:
         if self._connection is not None and not self._closed and not self._failure:
             try:
                 self._connection.send(message)
-            except (EOFError, OSError):
-                pass  # The reader fails all pending futures when the pipe closes.
+            except (EOFError, OSError) as error:
+                log("helper_control_failed", operation=message["command"], reason=str(error), action="reader fails waiting requests when pipe closes")
 
     def _read_results(self) -> None:
         try:
             while True:
                 message = self._connection.recv()
+                if message.get("event") == "diagnostic":
+                    record = message["record"]
+                    log(record.pop("event"), **record)
+                    continue
                 if message.get("event") == "ready":
+                    log("helper_start", pid=message.get("pid"), action="helper ready")
                     self.info = message
                     self._ready.set()
                     continue
@@ -176,6 +189,7 @@ class LibraryWorker:
             with self._lock:
                 if not self._closed:
                     self._failure = "Library helper stopped unexpectedly."
+                    log("helper_stopped", reason=repr(exc), pending=len(self._pending), action="requests failed; restart app; Grade unaffected")
                 pending = list(self._pending.values())
                 self._pending.clear()
             for future in pending:
@@ -187,13 +201,14 @@ class LibraryWorker:
         with self._lock:
             return {**self.info, "running": bool(self._process and self._process.is_alive()),
                     "pending": len(self._pending), "paused": bool(self._paused),
-                    "failure": self._failure}
+                    "failure": self._failure, "restarts": 0}
 
     def close(self) -> None:
         with self._lock:
             if self._closed:
                 return
             self._send({"command": "stop"})
+            log("helper_stop", pending=len(self._pending), action="app closing; pending requests cancelled")
             self._closed = True
             process, connection = self._process, self._connection
             pending = list(self._pending.values())
@@ -223,6 +238,16 @@ def _lower_priority() -> str:
 
 
 def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
+    try:
+        _worker_main_impl(connection, root, parent_pid, paused)
+    except Exception as error:
+        from . import library_diagnostics
+        library_diagnostics._sink = None
+        log("helper_boot_failed", root=root, reason=repr(error), action="helper exits; parent fails waiting requests; Grade unaffected")
+        raise
+
+
+def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> None:
     # Set these before importing numpy or any decoder. Native libraries must
     # not create a full-size thread pool in the background process.
     for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
@@ -250,6 +275,9 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
     def reply(message):
         with write_lock:
             connection.send(message)
+
+    from . import library_diagnostics
+    library_diagnostics._sink = lambda record: reply({"event": "diagnostic", "record": record})
 
     def decode(kind="main"):
         while not stopping.is_set():
@@ -297,9 +325,12 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
                     output = browser.thumbnail(job["path"], job["size"], fast_only=job["fast_only"])
                     result = {"id": job["id"], "path": str(output)}
             except MediaBrowserInterpretationRequired as exc:
+                log("helper_interpretation_required", path=job.get("path"), reason=str(exc), action="interpretation requested; photo untouched")
                 result = {"id": job["id"], "error": str(exc), "reason": exc.reason,
                           "profile_name": exc.profile_name}
             except Exception as exc:
+                if not isinstance(exc, CancelledError):
+                    log("helper_job_failed", operation=job["command"], paths=job.get("path", job.get("paths")), reason=repr(exc), action="request failed; saved marks retained")
                 result = {"id": job["id"], "error": str(exc)}
             with condition:
                 jobs.pop(job["id"], None)
@@ -308,7 +339,9 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
             if not cancelled.is_set() and not stopping.is_set():
                 try:
                     reply(result)
-                except (EOFError, OSError):
+                except (EOFError, OSError) as error:
+                    library_diagnostics._sink = None
+                    log("helper_reply_failed", operation=job["command"], path=job.get("path"), reason=str(error), action="lane exits; parent detects closed helper")
                     return
 
     Thread(target=decode, name="hdr-library-decode", daemon=True).start()
@@ -342,8 +375,9 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
                     jobs[message["id"]] = Event()
                     heapq.heappush(queue, (message["priority"], sequence, message))
                 condition.notify_all()
-    except (EOFError, OSError):
-        pass
+    except (EOFError, OSError) as error:
+        library_diagnostics._sink = None
+        log("helper_pipe_closed", reason=str(error), action="helper exits")
     finally:
         stopping.set()
         with condition:

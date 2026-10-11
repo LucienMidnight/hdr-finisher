@@ -16,7 +16,10 @@
         for (const photo of options.photos()) { const row = byPath.get(photo.path); if (row) Object.assign(photo, row); }
         undoAvailable = result.undo_available;
         options.updated(result);
-        options.status(result.warnings[0] || (result.photos.length ? `${result.photos.length.toLocaleString()} photos saved in the library; settings files catch up in the background` : "No marks changed."));
+        const verb = route === "/api/library/undo" ? "Undid the change on" : body?.change?.rating !== undefined ? "Rated"
+          : body?.change?.pick === "pick" ? "Picked" : body?.change?.pick === "reject" ? "Rejected" : "Updated";
+        const message = result.warnings[0] || (result.photos.length ? `${verb} ${result.photos.length.toLocaleString()} photos` : "No marks changed.");
+        if (options.confirm) options.confirm(message, result.undo_available); else options.status(message);
         return result;
       });
       commands = task.catch(error => { if (!strict) options.status(error.message); });

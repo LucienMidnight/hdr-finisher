@@ -20,6 +20,7 @@
     }
   };
   const status = (message) => { $("library-status").textContent = message; };
+  const confirmChange = (message, undoAvailable) => { status(message); $("library-undo").hidden = !undoAvailable; };
   const aborted = (error) => error?.name === "AbortError";
   const sleep = (ms, signal) => new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new DOMException("Cancelled", "AbortError"));
@@ -48,7 +49,7 @@
   const { showMenu, closeMenu: closeFolderMenu, make } = HDRLibraryDialogs;
   const sameName = (a, b) => a.toLocaleLowerCase() === b.toLocaleLowerCase();
   const belongs = (photo, place) => (place.kind === "album" ? photo.albums || [] : photo.marks?.tags || []).some(name => sameName(name, place.name));
-  const culling = HDRLibraryCulling.create({ photos: () => state.allPhotos, selection: () => state.selection, api, status,
+  const culling = HDRLibraryCulling.create({ confirm: confirmChange, photos: () => state.allPhotos, selection: () => state.selection, api, status,
     labelName: label => state.labelNames[label] || "",
     updated: result => {
       const place = state.collection;
@@ -601,17 +602,14 @@
   $("filter-clear").addEventListener("click", () => { state.filters = {}; for (const name of ["rating", "pick", "label", "type", "search"]) $("filter-" + name).value = ""; $("raw-only").setAttribute("aria-pressed", "false"); ruleFilters.render(); applyQuery(); });
   const ruleFilters = HDRLibraryFilters.create({ bar: $("filter-rules"), addButton: $("filter-add"), match: $("filter-match"), photos: () => state.allPhotos,
     filters: () => state.filters, changed: () => applyQuery(), reading: () => state.allPhotos.some(photo => !photo.indexed) });
-  // Background indexing shows quietly at the right of the bottom bar.
-  const indexButton = $("index-status");
+  // One health snapshot owns Activity, indexing and live writer state.
   function showIndexing(next) {
     const before = state.indexing?.passes; state.indexing = next;
-    indexButton.hidden = false;
-    indexButton.textContent = next.state === "off" ? "Background indexing is off" : next.state === "paused" ? "Indexing paused"
-      : next.state !== "indexing" ? "Library index up to date" : next.waiting ? "Indexing waits while Grade is busy"
-      : next.total ? `Indexing ${next.folder} · ${next.done.toLocaleString()} of ${next.total.toLocaleString()}` : `Indexing ${next.folder} · reading folders`;
-    // Albums and tags found in folders never visited appear when a pass ends.
-    if (before !== next.passes) void albums.refresh().catch(() => {});
+    if (before !== next.passes) void albums.refresh().catch(error => status(error.message));
   }
+  const activity = HDRLibraryActivity.create({ button: $("index-status"), panel: $("library-activity"), api, status,
+    onHealth: next => showIndexing(next.index) });
+  $("library-undo").addEventListener("click", () => { void culling.undo(); });
   let writerEvent = 0;
   async function pollSettings() {
     if (state.active && !document.hidden) {
@@ -639,17 +637,9 @@
   }
   void pollSettings();
   async function pollIndexing() {
-    if (state.active && !document.hidden) { try { showIndexing(await api("/api/library/index")); } catch (error) { console.debug("Library index:", error.message); } }
-    setTimeout(pollIndexing, state.indexing?.state === "indexing" ? 1500 : 5000);
+    if (state.active && !document.hidden) { try { await activity.refresh(); } catch (error) { console.debug("Library index:", error.message); } }
+    setTimeout(pollIndexing, 1000);
   }
-  indexButton.addEventListener("click", event => {
-    const now = state.indexing || {}, send = action => async () => showIndexing(await api("/api/library/index", { action }));
-    showMenu(event, [
-      ...(now.state === "indexing" ? [{ label: "Pause indexing", run: send("pause") }] : now.paused ? [{ label: "Resume indexing", run: send("resume") }] : []),
-      { label: "Re-scan pinned folders now", disabled: now.state === "off", run: send("rescan") },
-      { label: now.enabled === false ? "Turn background indexing on" : "Turn background indexing off", run: send(now.enabled === false ? "enable" : "disable") },
-    ], { label: "Background indexing", anchor: indexButton, onError: error => status(error.message) });
-  });
   $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintGrid(); });
   let gridFrame = 0, filmFrame = 0;
   grid.addEventListener("scroll", () => { if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); }); });
@@ -664,6 +654,7 @@
     if (event.data.action === "restore") void restoreState(event.data.state).catch(error => status(error.message));
   });
   window.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || ((!event.ctrlKey && !event.metaKey) && (event.target.closest(".library-activity") || event.target.matches("#index-status,#library-undo")))) return;
     if (document.querySelector("dialog[open]") || event.target.matches("input,textarea,select,[contenteditable]") || event.target.closest(".library-filter-panel,.library-folder-menu")) return;
     const key = event.key.toLowerCase();
     if (event.ctrlKey || event.metaKey) {

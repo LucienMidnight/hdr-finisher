@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from .desktop_security import SOURCE_EXTENSIONS
+from .library_diagnostics import audited, problem
 from .library_pictures import SIDECAR_SUFFIX
 
 
@@ -16,6 +17,7 @@ def checked_folder(value):
     return path
 
 
+@audited("folder_tree")
 def folder_tree(value, cancelled=lambda: False):
     root = checked_folder(value)
     children = []
@@ -28,11 +30,13 @@ def folder_tree(value, cancelled=lambda: False):
     return {"path": str(root), "children": sorted(children, key=lambda item: item["name"].casefold())}
 
 
+@audited("scan_folder")
 def scan_folder(value, cancelled=lambda: False):
     root = checked_folder(value)
     photos = []
     unreadable_folders = []
     def inaccessible(error):
+        problem("scan_folder_failed", error.filename, error, "folder skipped; remaining folders read")
         unreadable_folders.append(str(error.filename))
     for parent, directories, files in os.walk(root, followlinks=False, onerror=inaccessible):
         if cancelled():
@@ -45,7 +49,8 @@ def scan_folder(value, cancelled=lambda: False):
                 continue
             try:
                 stat = path.stat()
-            except OSError:
+            except OSError as error:
+                problem("scan_photo_failed", path, error, "photo skipped; remaining photos read")
                 continue
             photos.append({"path": str(path), "name": name, "type": path.suffix[1:].upper(),
                 "bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns,

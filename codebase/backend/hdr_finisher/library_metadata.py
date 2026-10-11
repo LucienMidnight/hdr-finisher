@@ -5,6 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from .desktop_security import SOURCE_EXTENSIONS
+from .library_diagnostics import audited, problem
 
 # Every fact is None when the file does not record it; nothing is guessed.
 FACT_FIELDS = ("capture_time", "camera_make", "camera", "lens_make", "lens", "iso", "shutter", "aperture",
@@ -60,7 +61,8 @@ def _facts(path, size, modified):
     try:
         with Path(path).open("rb") as handle:
             tags = exifread.process_file(handle, details=False, extract_thumbnail=False)
-    except Exception:
+    except Exception as error:
+        problem("metadata_read_failed", path, error, "facts unavailable; photo stays visible")
         # Malformed/missing EXIF never makes an otherwise readable picture disappear.
         return facts
     positive = lambda value: value if value is not None and value > 0 else None
@@ -80,6 +82,7 @@ def _facts(path, size, modified):
     return facts
 
 
+@audited("read_metadata")
 def read_metadata(paths, cancelled=lambda: False):
     photos = []
     for value in paths:
@@ -91,7 +94,7 @@ def read_metadata(paths, cancelled=lambda: False):
             if path.suffix.lower() in SOURCE_EXTENSIONS and path.is_file():
                 stat = path.stat()
                 record.update(_facts(str(path), stat.st_size, stat.st_mtime_ns), bytes=stat.st_size, mtime_ns=stat.st_mtime_ns)
-        except OSError:
-            pass
+        except OSError as error:
+            problem("metadata_stat_failed", path, error, "facts unavailable; photo stays visible")
         photos.append(record)
     return {"photos": photos}

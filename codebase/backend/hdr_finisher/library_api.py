@@ -9,12 +9,63 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
+from fastapi.routing import APIRoute
+from fastapi.exceptions import RequestValidationError
+from .library_diagnostics import log, recent
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from .library_pictures import LibraryPictureCache
 from .library_marks import LibraryMarks, MarkChange, NameTaken
 from .library_index import LibraryIndex
+
+
+class LibraryRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+        async def checked(request):
+            async def context():
+                if request.method != "POST":
+                    return dict(request.query_params)
+                try:
+                    body = await request.json()
+                except ValueError:
+                    return {"body": "unreadable JSON"}
+                if not isinstance(body, dict):
+                    return {"body": "not an object"}
+                return {key: {"count": len(value), "examples": value[:3]} if isinstance(value, list) else value
+                    for key, value in body.items() if key in {"path", "paths", "name", "tag", "tags", "folder", "action", "kind"}}
+            try:
+                return await handler(request)
+            except HTTPException as error:
+                if error.status_code != 499:
+                    log("request_failed", operation=request.url.path, context=await context(), reason=str(error.__cause__ or error.detail),
+                        action="request stopped; saved marks retained")
+                raise
+            except RequestValidationError as error:
+                log("request_invalid", operation=request.url.path, context=await context(), reason=str(error), action="request rejected; nothing changed")
+                return JSONResponse({"detail": "That Library request could not be understood. Nothing was changed."}, status_code=400)
+            except Exception as error:
+                log("request_failed", operation=request.url.path, context=await context(), reason=repr(error), action="request stopped; saved marks retained")
+                return JSONResponse({"detail": "The Library could not finish that request. Saved marks are safe; try again."}, status_code=500)
+        return checked
+
+
+def helper_error(error):
+    if "queue is full" in str(error):
+        return "The Library helper is busy. Saved marks are safe; try again in a moment."
+    return "The Library helper is unavailable. Saved marks are safe; restart the app."
+
+
+def user_error(error, subject="The Library"):
+    if isinstance(error, OSError):
+        name = error.filename or subject
+        return f"{name} could not be reached or changed. Saved marks are safe; check the folder and try again."
+    from pydantic import ValidationError
+    if isinstance(error, ValidationError):
+        return "Those marks could not be read. Nothing was changed; saved marks are safe."
+    return str(error)
+
 
 
 class PictureRequest(BaseModel):
@@ -82,6 +133,12 @@ class IndexRequest(BaseModel):
     action: Literal["pause", "resume", "rescan", "enable", "disable"]
 
 
+class WriterRequest(BaseModel):
+    action: Literal["pause", "resume", "retry"]
+    folder: str = ""
+    reason: str = ""
+
+
 class PreferencesRequest(BaseModel):
     label_names: dict[Literal["red", "orange", "green", "blue"], str]
 
@@ -104,7 +161,20 @@ def create_library_router(worker, browser):
         finally:
             await run_in_threadpool(marks.writer.close)
 
-    router = APIRouter(prefix="/api/library", lifespan=lifespan)
+    router = APIRouter(prefix="/api/library", lifespan=lifespan, route_class=LibraryRoute)
+
+    @router.get("/health")
+    def health():
+        return {"writer": marks.writer.status(), "helper": {"restarts": 0, **worker.status()},
+            "index": index.status(), "problems": recent()}
+
+    @router.post("/writer")
+    def writer_command(request: WriterRequest):
+        if request.action == "retry":
+            marks.writer.retry(request.folder, request.reason)
+        else:
+            marks.writer.pause(request.action == "pause")
+        return health()
 
     @router.post("/settings-status")
     def settings_status(request: PathsRequest):
@@ -118,12 +188,16 @@ def create_library_router(worker, browser):
         try:
             return operation(*arguments)
         except NameTaken as error:
-            raise HTTPException(status_code=409, detail=str(error)) from error
+            raise HTTPException(status_code=409, detail=user_error(error)) from error
         except (ValueError, OSError) as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
+            raise HTTPException(status_code=400, detail=user_error(error)) from error
 
     async def helper_result(request, command, **arguments):
-        job_id, future = await run_in_threadpool(worker.submit_library, command, **arguments)
+        try:
+            job_id, future = await run_in_threadpool(worker.submit_library, command, **arguments)
+        except (RuntimeError, ValueError, OSError) as error:
+            log("helper_request_failed", operation=command, paths=arguments, reason=str(error), action="request stopped; saved marks retained")
+            raise HTTPException(status_code=503, detail=helper_error(error)) from error
         try:
             while not future.done():
                 if worker.status()["paused"]:
@@ -134,9 +208,11 @@ def create_library_router(worker, browser):
                 await asyncio.sleep(.05)
             return future.result()
         except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            log("helper_request_failed", operation=command, paths=arguments, reason=str(exc), action="request stopped; restart app")
+            raise HTTPException(status_code=503, detail=helper_error(exc)) from exc
         except (ValueError, OSError, CancelledError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            log("helper_request_failed", operation=command, paths=arguments, reason=str(exc), action="request stopped; saved marks retained")
+            raise HTTPException(status_code=400, detail=f"The Library could not read {arguments.get('path', 'the selected photos')}. Saved marks are safe; check the photo or folder and try again.") from exc
         finally:
             worker.cancel(job_id)
 
@@ -185,7 +261,7 @@ def create_library_router(worker, browser):
             index.kick()
             return {"pinned": browser.pinned(), "skipped": sum(path in previous for path in paths)}
         except (OSError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=user_error(exc)) from exc
 
     @router.post("/pins/remove")
     def remove_pin(command: FolderRequest):
@@ -193,7 +269,7 @@ def create_library_router(worker, browser):
         try:
             return {"pinned": browser.remove_pin(command.path)}
         except (OSError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=user_error(exc)) from exc
 
     @router.post("/scan")
     async def scan(command: FolderRequest, request: Request):
@@ -231,14 +307,14 @@ def create_library_router(worker, browser):
         try:
             return marks.change(command.paths, command.change)
         except (ValueError, OSError) as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
+            raise HTTPException(status_code=400, detail=user_error(error)) from error
 
     @router.post("/undo")
     def undo_marks():
         try:
             return marks.undo()
         except (ValueError, OSError) as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
+            raise HTTPException(status_code=400, detail=user_error(error)) from error
 
     @router.get("/tags")
     def tag_suggestions(q: str = "", all: bool = False):
@@ -293,7 +369,7 @@ def create_library_router(worker, browser):
         try:
             cached = await run_in_threadpool(cache.cached, command.path, command.edge, command.quality)
         except (ValueError, OSError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=user_error(exc)) from exc
         if cached:
             return cached
         return await helper_result(request, "picture", **command.model_dump())
@@ -311,6 +387,7 @@ def create_library_router(worker, browser):
                 "X-Bytes-Per-Row": str(stride), "X-Working-Space": space,
                 "Cache-Control": "private, no-store"})
         except (ValueError, OSError, EOFError) as exc:
+            log("cache_pixels_failed", key=key, reason=str(exc), action="picture requested again")
             raise HTTPException(status_code=404, detail="Library cache entry is unavailable; request it again.") from exc
 
     return router
