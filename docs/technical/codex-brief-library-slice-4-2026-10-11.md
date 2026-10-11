@@ -13,6 +13,46 @@ section 4. The mock-up in `docs/product/library-wireframes` shows
 compare, both overlays, their option panels and the legend. Where this
 brief and those pages disagree, ask.
 
+## Working unattended (Steve, October 11)
+
+Steve is away while this runs. **Do not stop to wait for an answer.**
+This section overrides every "wait for Steve's answer" and "stop and
+ask" below, and the same instruction in the slice 3 leftovers brief,
+except for the hard stops listed at the end of this section.
+
+Answers to the three questions this brief raises:
+
+| Question | Build this |
+|---|---|
+| Compare with one edited and one unedited photo | Show both. Zoom and position stay locked by place in the frame. At 100% each side shows the best it has: real pixels for the unedited photo, the enlarged kept picture for the edited one, with the existing "Saved Library picture enlarged. Check detail in Grade." line under that side. |
+| Overlays on edited photos | No overlay on an edited photo. A tooltip says the overlay is measured from the original and this photo is shown with its saved grade. |
+| How the focus map is made | Measure both as asked, then build the one your measurements support. If the half-size map reliably tells sharp from slightly soft, use it everywhere. If it does not, use the half-size map in the grid and filmstrip and refine from a full decode only for the photo shown large in single view, compare or review. Report the numbers. |
+
+For anything else that comes up:
+
+- Choose the simplest behaviour that fits the PRD, the mock-up and how
+  the rest of the Library already behaves. Prefer the choice that is
+  easiest to change later, and put it in its own commit where practical.
+- Keep a running list headed "Decisions made for Steve": what you chose,
+  the alternative, the trade-off and what could break. Give the whole
+  list in the final report, one item at a time, so he can confirm or
+  reverse each.
+- Give one report at the end covering every stage, in place of a report
+  after each stage.
+
+Hard stops. For these, do not guess. Leave that one item unbuilt, record
+why in the final report, and carry on with everything that does not
+depend on it:
+
+- anything that would change Grade's rendering, export, Proof, an
+  existing shader or a pinned tolerance, limit or budget;
+- anything that would write, rename, move or delete an original photo;
+- anything that would discard or overwrite saved grades, marks or
+  albums;
+- slow tests for one stage heading past roughly 30 minutes;
+- a check that fails because of your change and that you cannot fix
+  without loosening it.
+
 ## Goal
 
 Steve can pick the best frame of a run quickly. He pins one photo, flips
