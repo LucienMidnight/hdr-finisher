@@ -63,3 +63,7 @@ codebase/local-test-media/
 
 # Desktop test and diagnostic output
 codebase/desktop/output/
+
+# Affinity design sources stay local; only exported SVGs are tracked.
+*.af
+*.af~lock~
