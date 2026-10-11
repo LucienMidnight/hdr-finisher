@@ -178,11 +178,21 @@ could only approximate. Instead:
 - Both controls need somewhere to live now. The Library settings page is
   not built; put the two controls where they are quick to find without
   building that page, and say where you put them.
-- **SDR and HDR.** The grid is SDR by default, so an SDR picture is
-  always kept. The HDR grade is a different grade in this app, so with
-  the HDR switch on the Library should show the HDR one. Report what
-  keeping an HDR picture as well costs before building it; if it is
-  expensive, propose keeping it at the grid size only.
+- **SDR and HDR from one file** (Steve, October 11). The kept picture is
+  a gain-map picture: the SDR grade as the base picture and a gain map
+  that carries it to the HDR grade. One small file then serves the grid
+  in SDR and with the HDR switch on, and matches both grades, which are
+  separate grades in this app. Use one of the two compressed gain-map
+  formats the app already writes for export (JPEG or AVIF), tuned for
+  small size. Measure both at the proposed resolutions: size on disk,
+  time to make at save, and time to show in the grid. Recommend one and
+  wait for Steve's answer. The Library's 1000-nit comfort level still
+  applies when it is shown in HDR.
+- This does not reopen the October 10 decision against gain-map preview
+  files. That decision covers quick pictures of unedited photos, which
+  stay as they are. This is only the kept picture of an edited photo.
+- Reuse the existing gain-map writing; do not change what export
+  produces (see Constraints).
 - **Where they are kept, and the limit.** In the app's data area, never
   beside the photo; only the settings file is written there. One storage
   limit covers every Library picture, replacing today's fixed 2 GB. When
@@ -213,10 +223,15 @@ could only approximate. Instead:
 - Stages C and D depend on this: a "before" state and a session-start
   state keep their pictures with them, so a revert shows the right
   picture at once; a revert to original needs no picture; each virtual
-  copy has its own. A grade changed on many photos at once without
-  opening them (paste, sync, presets) arrives in slice 7 and will need
-  pictures made in the background; do not build that now, but do not
-  block it.
+  copy has its own.
+- **Carried forward to slice 7, do not lose this.** Paste, sync and look
+  presets will change the grade of many photos that are never opened in
+  Grade, so none of them will have a matching kept picture. Slice 7 must
+  make those pictures in the background. It is recorded in the PRD,
+  section 8, "Carried forward to slice 7". Do not build it now, but
+  build Stage B so it can be added: making a kept picture for a photo
+  must be something the app can be asked to do for a photo that is not
+  open. Say in your Stage B report what slice 7 will need.
 - A photo counts as **edited** when it has a saved grade that differs
   from the defaults. Marks alone do not make it edited. "State" (edited,
   not edited) becomes available in the filter bar and as a sort, and a

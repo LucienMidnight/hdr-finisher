@@ -669,8 +669,13 @@ proposals:
   a reminder of which photo and grade it is, not a culling tool, and can
   be reduced resolution. Planned for slice 3: Grade keeps a small finished
   picture when it saves and the Library shows that, instead of re-creating
-  the grade from the quick scene picture. Sizes are to be adjustable.
-  Details are in the slice 3 brief, Stage B.
+  the grade from the quick scene picture. It is a compressed gain-map
+  picture (JPEG or AVIF, chosen after measuring), so one file serves SDR
+  and HDR. The user has two controls: the storage limit and the
+  resolution of pictures for edited photos. This does not change the
+  decision above against gain-map files for unedited photos. Details are
+  in the slice 3 brief, Stage B. Grades changed in bulk need more work in
+  slice 7; see section 8, "Carried forward to slice 7".
 - Only visible grid/filmstrip cells are requested. Requests are cancelled
   when they leave the screen. Single view reads ahead to its next and
   previous neighbours. Work uses the existing low-priority helper and
@@ -2332,7 +2337,7 @@ Proposed. Each slice is usable on its own.
 | 4 | Quick decode, compare, focus and exposure overlays | Pick the sharpest frame fast |
 | 5 | File and folder controls, delete all rejected | Tidy up without Explorer |
 | 6 | Smart albums | Rule-based sets |
-| 7 | Selective copy and paste, sync, look presets | Grade a set quickly |
+| 7 | Selective copy and paste, sync, look presets, and background pictures for grades changed in bulk (see "Carried forward to slice 7" below) | Grade a set quickly |
 | 8 | Batch export, recipes, naming patterns, metadata authoring | Deliver a job |
 | 9 | HDR previews, comfort cap, HDR/SDR switch in the library | Browse in HDR |
 | 10 | Portable projects, relink, merge, conflict handling | Hand work to someone else |
@@ -2347,6 +2352,41 @@ without the SDR-only PRD: that work is expected to add one field to the
 settings file, and settings files keep fields they do not recognise. The
 brief builds to Claude's defaults for open decisions 2, 4, 5, 6, 19 and 26;
 they stay open here until Steve confirms them.
+
+**Carried forward to slice 7: pictures for grades changed in bulk.**
+Flagged by Steve on October 11 as important and probably complex. It must
+be in the slice 7 brief.
+
+- From slice 3, the Library picture of an edited photo is a small finished
+  picture that Grade keeps when it saves. A photo gets one only by being
+  opened in Grade.
+- Paste, sync and look presets change the grade of many photos without
+  opening any of them. After such a command none of those photos has a
+  picture that matches its new grade, and a stale picture must never be
+  shown.
+- So slice 7 has to make those pictures in the background, through
+  Grade's fully corrected route so they are accurate. That is a full
+  decode and render per photo: seconds each, minutes for a few hundred.
+- What it has to get right:
+  - Until a photo's picture is made, the Library shows it honestly (the
+    default look with a mark that its picture is being updated), not the
+    old grade.
+  - The work shows as a job in Activity with a count, Pause and Resume.
+    It gives way to Grade and export, and to pictures for the screen.
+    Photos on screen are done first.
+  - The list of photos still to do survives a restart, a crash and an
+    unplugged drive, the same way settings files waiting to be written
+    do.
+  - Undo and "Restore previous grade" are instant: the previous picture
+    is kept with the "before" state, so taking a paste back needs no
+    new rendering.
+  - A second paste onto the same photos before the first has finished
+    makes one picture for the latest grade, not two.
+  - It counts toward the storage limit like other pictures of edited
+    photos.
+- To settle in that brief: whether a quick approximate picture is shown
+  first while the accurate one is made, and how much of the processor the
+  job may use.
 
 **Performance to revisit once the slices are built** (Steve, in use):
 
