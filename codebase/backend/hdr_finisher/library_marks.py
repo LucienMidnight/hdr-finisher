@@ -349,6 +349,10 @@ class LibraryMarks:
             if not self._undo:
                 return self._result([], [])
             entry = self._undo[-1]
+            if "command" in entry:
+                result = entry["command"]()
+                self._undo.pop()
+                return self._result(result.get("photos", []), result.get("warnings", []), session=result.get("session"))
             before = deepcopy(entry["rows"])
             restored, paths, skipped = [], [], 0
             for row in before:

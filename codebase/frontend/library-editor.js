@@ -37,6 +37,7 @@
     if (event.source !== frame.contentWindow || event.origin !== location.origin || event.data?.type !== "hdr-library") return;
     const message = event.data;
     if (message.action === "ready") sync();
+    else if (message.action === "grade-replaced") window.HDRGradeSaving.refresh(message.session).catch(error => showUploadError(error.message));
     else if (message.action === "review") review(Boolean(message.enabled));
     else if (message.action === "pop-out") {
       if (!desktop) { showUploadError("A separate Library window requires the desktop app."); return; }
