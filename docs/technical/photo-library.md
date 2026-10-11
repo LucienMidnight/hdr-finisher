@@ -976,9 +976,18 @@ changes prevent replacement; Undo refuses a newer outside grade. Existing matchi
 pictures remain keyed to their grade. `grade_revert` logs target/count/retention.
 
 New optional fields use existing grade documents and the existing database; no
-marks or album tables are replaced. Older files without a recorded default must
-be opened once before reverting to original. Messages and decisions are in the
-running report. The full fast pass and focused on-screen revert check passed.
+marks or album tables are replaced.
+
+For every closed item, Revert to original clears the saved grade (writes
+`grade: null`) and keeps the losing grade as `previous_grade`. This is the same
+behavior whether a starting grade was recorded or not. The item shows Not edited
+and uses the ordinary unedited Library picture; the old grade-keyed kept picture
+is no longer displayed and remains eligible for reuse on restoration. The next
+normal Grade open computes fresh defaults through its existing import path.
+Open items still revert immediately to their known defaults as unsaved work.
+Undo and Restore previous grade support the no-saved-grade state too. No source
+is loaded by a closed-item revert and no migration or new database field is added.
+The former open-once message is retired. The full fast pass and focused on-screen revert check passed.
 The previous validation stop is superseded by Steve's per-stage slow-test rule.
 Virtual copies are built in Stage D below.
 
@@ -1035,8 +1044,7 @@ Slice 3 C/D additions to the messages table:
 | Message | Meaning | What to do |
 |---|---|---|
 | Revert <name or count> to Original? / to Last Session? / to Last Saved? and Restore Previous Grade of <name or count>? Each says what happens, that the previous grade is kept and that marks and tags are not touched. | Counted Library grade replacement, marks retained. | Confirm or Cancel; Ctrl+Z restores the group. |
-| Reverted to original: <count> photos. Each keeps its previous grade. Ctrl+Z undoes it. (and the matching last session, last saved and previous grade wording) | The command finished. Open targets remain unsaved. | Save when ready, or Undo. |
-| Open this photo once before reverting to its starting grade. | Older sidecar has no recorded default. | Open the photo in Grade first. |
+| Reverted to original: <count> photos. Each keeps its previous grade. Ctrl+Z undoes it. (and the matching last session, last saved and previous grade wording) | Closed original reverts have no saved grade, show Not edited and use the ordinary picture; their next open computes fresh defaults. Open targets remain unsaved. | Open normally, restore the previous grade, or Undo. Save open changes when ready. |
 | A grade changed since the revert; Undo was left available and nothing was overwritten. | Undo would replace a newer grade. | Review the newer grade before trying again. |
 | <count> virtual copy/copies created beside the original/their originals. Ctrl+Z undoes it. | A new independent item is queued in the same settings file. | Open or mark the copy. |
 | This removes one grade of <filename> / <count> virtual copies, with their own marks and tags. The photos stay. Nothing is deleted from disk. | Counted copy-removal confirmation; originals are retained. | Remove or Cancel. |

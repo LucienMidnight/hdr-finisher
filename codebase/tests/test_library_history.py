@@ -47,7 +47,7 @@ def test_closed_photo_revert_and_one_undo_keep_marks_unknown_and_history_in_side
     store.clear()
     result=grades.history.revert([photo],"original");assert result["count"]==1
     marks.writer.drain();reverted=settings(photo)
-    assert grade_key(reverted["grade"])==grade_key(grades._get(str(photo))["default"])
+    assert reverted["grade"] is None
     assert reverted["grade_history"]["previous_grade"] == original
     assert reverted["marks"]["rating"]==4 and reverted["marks"]["tags"]==["Keep"]
     assert reverted["albums"]==["Album"] and reverted["unknown"]=={"keep":42}
@@ -64,12 +64,12 @@ def test_history_rebuilds_from_settings_file_and_next_run_replaces_start_only_on
     rebuilt_marks=LibraryMarks(tmp_path/"fresh");rebuilt_store=SessionStore();rebuilt=LibraryGrades(rebuilt_marks,rebuilt_store)
     rebuilt_marks.read([photo])
     assert rebuilt._get(str(photo))["previous_grade"]==saved_grade
-    restored=open_document(rebuilt_store,EditDocument.model_validate(settings(photo)["grade"]),photo)
+    restored=rebuilt_store.get(rebuilt_store.create_session(photo,owns_source_path=False).session_id)
     rebuilt.attach(str(restored.session_id))
     start=deepcopy(rebuilt._get(str(photo))["session_start"])
     assert rebuilt._get(str(photo))["session_start"]==start
     edit(rebuilt_store,restored,3)
-    assert rebuilt._get(str(photo))["session_start"]==settings(photo)["grade"]
+    assert grade_key(rebuilt._get(str(photo))["session_start"])==grade_key(rebuilt._get(str(photo))["default"])
 
 
 def test_bulk_preflight_and_changed_grade_undo_never_overwrite(setup):
@@ -93,3 +93,48 @@ def test_restore_session_is_unsaved_when_open_and_preserves_its_picture_identity
     assert result["session"]["dirty"]
     assert grade_key(store._current.edit_document().model_dump(mode="json"))==grade_key(default)
     assert settings(photo)["grade"]["global_adjustments"]["hdr"]["exposure"]==1
+
+
+@pytest.mark.parametrize("recorded",[True,False])
+def test_closed_original_is_no_saved_grade_and_next_open_is_fresh(setup,recorded):
+    from hdr_finisher.library_kept import KeptPictures
+    photo,store,session,marks,grades=setup
+    old=saved(setup);store.clear()
+    if not recorded:
+        doc=settings(photo);doc.pop("grade_default",None);outside(photo,doc)
+        state=grades._get(str(photo));state.pop("default",None);grades._put(str(photo),state)
+    assert grades.history.available([photo])["counts"]["original"]==1
+    assert grades.history.revert([photo],"original")["count"]==1
+    marks.writer.drain();assert settings(photo)["grade"] is None
+    assert settings(photo)["grade_history"]["previous_grade"]==old
+    kept=KeptPictures(marks.database.parent,marks,None)
+    assert not kept.request(photo)["edited"] and kept.cached(photo) is None
+    fresh_store=SessionStore();fresh=fresh_store.get(fresh_store.create_session(photo,owns_source_path=False).session_id)
+    reopened=store.get(store.create_session(photo,owns_source_path=False).session_id)
+    attached=grades.attach(str(reopened.session_id))
+    assert attached["grade"] is None
+    assert grade_key(reopened.edit_document().model_dump(mode="json"))==grade_key(fresh.edit_document().model_dump(mode="json"))
+    assert not reopened.dirty
+    marks.undo();marks.writer.drain()
+    assert grade_key(store._current.edit_document().model_dump(mode="json"))==grade_key(old)
+    assert store._current.dirty
+    fresh_store.clear()
+
+
+def test_restore_and_undo_can_return_to_no_saved_grade(setup):
+    photo,store,session,marks,grades=setup
+    old=saved(setup);store.clear()
+    grades.history.revert([photo],"original");marks.writer.drain()
+    grades.history.revert([photo],"previous");marks.writer.drain()
+    assert settings(photo)["grade"]==old and settings(photo)["grade_history"]["previous_grade"] is None
+    grades.history.revert([photo],"previous");marks.writer.drain()
+    assert settings(photo)["grade"] is None
+    marks.undo();marks.writer.drain();assert settings(photo)["grade"]==old
+
+
+def test_open_original_still_uses_known_defaults_as_unsaved_work(setup):
+    photo,store,session,marks,grades=setup;old=saved(setup)
+    default=deepcopy(grades._get(str(photo))["default"])
+    result=grades.history.revert([photo],"original")
+    assert result["session"]["dirty"] and settings(photo)["grade"]==old
+    assert grade_key(store._current.edit_document().model_dump(mode="json"))==grade_key(default)

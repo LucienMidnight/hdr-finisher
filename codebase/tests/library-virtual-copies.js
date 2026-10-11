@@ -129,6 +129,19 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     await batch.getByRole('button',{name:'Remove 2 copies',exact:true}).click();await first.waitFor({state:'hidden'});await written(photos[0]);
     await page.waitForFunction(()=>/Left "Clean".*open in Grade/.test(document.querySelector('#library-frame').contentWindow.document.querySelector('#library-status').textContent));
     await frame.locator('#library-grid').press('Control+z');await first.waitFor();await written(photos[0]);
+    // Closed-photo original revert clears the saved grade and edited picture without decoding.
+    await physical('first.png').click();await physical('first.png').click({button:'right'});await frame.getByRole('menuitem',{name:'Revert to original…',exact:true}).click();
+    batch=frame.getByRole('dialog',{name:'Revert first.png to Original?',exact:true});
+    await batch.getByRole('button',{name:'Revert',exact:true}).click();await written(photos[0]);
+    assert.equal(read(photos[0]).grade,null);assert.equal(read(photos[0]).grade_history.previous_grade.global_adjustments.hdr.exposure,3);
+    await page.waitForFunction(()=>{
+      const doc=document.querySelector('#library-frame').contentWindow.document;
+      const cell=[...doc.querySelectorAll('.library-cell')].find(el=>el.querySelector('.name')?.textContent==='first.png');
+      return cell && !cell.querySelector('.library-edited') && cell.querySelector('canvas')?.dataset.kept!=='true';
+    });
+    await physical('first.png').dblclick();await page.waitForFunction(photo=>HDRGradeSaving.ready() && HDRGradeSaving.item()===photo && state.adjustments.hdr.exposure===0 && !state.documentDirty,photos[0]);
+    await page.evaluate(()=>activateWorkflowTab('import'));await frame.locator('#library-grid').press('Control+z');
+    await page.waitForFunction(()=>state.adjustments.hdr.exposure===3 && state.documentDirty);
     assert.deepEqual(fs.readFileSync(photos[0]),original);assert.deepEqual(errors,[]);
     console.log(JSON.stringify({checks:'rename in menu and Details, duplicate names, Grade caption and save state, bulk create/Undo, mixed removal/skipped open copy/Undo, closed original clears grade/edited picture, fresh reopening/Undo, existing save gate/Keep both, sources unchanged'}));
   } catch(error) {

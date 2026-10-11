@@ -71,7 +71,7 @@ def test_copy_revert_undo_and_open_copy_removal_guard(setup):
     photo,store,session,marks,grades=setup;c=copies(setup);saved(setup)
     key=c.create(photo)["path"];marks.writer.drain();store.clear()
     grades.history.revert([key],"original");marks.writer.drain()
-    assert settings(photo)["virtual_copies"][0]["grade"]["global_adjustments"]["hdr"]["exposure"]==0
+    assert settings(photo)["virtual_copies"][0]["grade"] is None
     assert settings(photo)["grade"]["global_adjustments"]["hdr"]["exposure"]==1
     marks.undo();marks.writer.drain();doc=marks._document(Path(key))
     opened=open_document(store,EditDocument.model_validate(doc["grade"]),photo);grades.attach(str(opened.session_id),key)

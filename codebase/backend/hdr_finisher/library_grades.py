@@ -70,7 +70,10 @@ class LibraryGrades:
             # A pending grade belongs to the durable queue, not a new session.
             if not state.get("pending") and not state.get("conflict") and not recovery:
                 state["baseline"] = grade
-            state.setdefault("default", session.edit_document().model_dump(mode="json"))
+            if grade is None and not state.get("pending"):
+                state["default"] = session.edit_document().model_dump(mode="json")
+            else:
+                state.setdefault("default", session.edit_document().model_dump(mode="json"))
             for field in ("session_start", "previous_grade"):
                 if field in (document or {}).get("grade_history", {}) and field not in state:
                     state[field] = deepcopy(document["grade_history"][field])

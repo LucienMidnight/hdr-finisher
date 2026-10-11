@@ -18,13 +18,13 @@ class LibraryHistory:
         session = self.grades.store._current
         if session and self.grades.sessions.get(str(session.session_id)) == path: return session
 
-    def target(self, state, document, kind):
+    def target(self, state, document, kind, session=None):
         default = state.get("default") or document.get("grade_default")
-        if kind == "original": return deepcopy(default)
+        if kind == "original": return deepcopy(default) if session else None
         if kind == "saved": return deepcopy(document.get("grade") or default)
         field = "session_start" if kind == "session" else "previous_grade"
         if field not in state: raise ValueError("That photo has no grade to restore for this choice.")
-        return deepcopy(state[field] or default)
+        return deepcopy(state[field] if state[field] is not None or not session else default)
 
     def available(self, values):
         grades = self.grades; marks = grades.marks
@@ -36,12 +36,12 @@ class LibraryHistory:
             for path, document in zip(paths, documents):
                 document = document or {}; state = grades._get(path)
                 session = self.current(path)
-                current = session.edit_document().model_dump(mode="json") if session else state.get("desired") if state.get("pending") else document.get("grade") or state.get("default")
+                current = session.edit_document().model_dump(mode="json") if session else state.get("desired") if state.get("pending") else document.get("grade")
                 for kind in TARGETS:
                     if kind == "saved" and not session: continue
-                    try: target = self.target(state, document, kind)
+                    try: target = self.target(state, document, kind, session)
                     except ValueError: continue
-                    if target is not None and grade_key(target) != grade_key(current): result[kind] += 1
+                    if grade_key(target) != grade_key(current): result[kind] += 1
             return {"counts": result}
 
     def revert(self, values, kind):
@@ -61,15 +61,18 @@ class LibraryHistory:
                 if state.get("pending") or session:
                     if grades._check(path, state, document.get("grade")): raise ValueError("The grade changed elsewhere; nothing was reverted.")
                 else: state["baseline"] = deepcopy(document.get("grade"))
-                current = session.edit_document().model_dump(mode="json") if session else state.get("desired") if state.get("pending") else document.get("grade") or state.get("default")
-                if expected is not None and grade_key(current) != grade_key(expected[path]):
+                current = session.edit_document().model_dump(mode="json") if session else state.get("desired") if state.get("pending") else document.get("grade")
+                expected_grade = expected[path] if expected is not None else None
+                if expected is not None and session and expected_grade is None:
+                    expected_grade = state.get("default")
+                if expected is not None and grade_key(current) != grade_key(expected_grade):
                     raise ValueError("A grade changed since the revert; Undo was left available and nothing was overwritten.")
                 if kind == "saved" and not session: continue
-                try: target = deepcopy(targets[path]) if targets is not None else self.target(state, document, kind)
+                try: target = deepcopy(targets[path]) if targets is not None else self.target(state, document, kind, session)
                 except ValueError: continue
-                if target is None or grade_key(target) == grade_key(current): continue
-                EditDocument.model_validate(target)
-                if current is None: raise ValueError("Open this photo once before reverting to its starting grade.")
+                if session and target is None: target = deepcopy(state.get("default"))
+                if grade_key(target) == grade_key(current): continue
+                if target is not None: EditDocument.model_validate(target)
                 plans.append((path, document or None, row, state, session, current, target))
             before = {p: deepcopy(old) for p, _, _, _, _, old, _ in plans}
             after = {p: deepcopy(target) for p, _, _, _, _, _, target in plans}

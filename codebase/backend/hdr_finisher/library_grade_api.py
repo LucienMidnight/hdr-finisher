@@ -66,7 +66,7 @@ def add_grade_routes(router, marks, store):
                 if request.initialize:
                     session = store.get(session_id)
                     source_path = session.source_reference().durable_path
-                    settings = marks._document(Path(source_path)) if source_path is not None else None
+                    settings = marks._document(Path(request.item_key or source_path)) if source_path is not None else None
                     if not (settings or {}).get("grade") and session.hdr_reference_white_nits != request.default_white:
                         store.apply_edit_commands(session_id, [EditCommand(expected_revision=session.edit_revision,
                             command_type="set_hdr_reference_white", payload={"hdr_reference_white_nits": request.default_white})])
