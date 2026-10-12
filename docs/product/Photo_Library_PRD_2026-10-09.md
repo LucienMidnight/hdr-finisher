@@ -419,6 +419,14 @@ Later on October 11, after Steve had used slices 1 to 3:
   - It changes what RAW import produces, so the strict testing rule
     applies.
 - **The smart albums mock-up is accepted as a starting point.**
+- **File commands, the safety guarantee** (Steve, October 12): nothing is
+  ever lost or overwritten. A photo and its settings file may be apart
+  for a short time after an interruption such as a power failure; the app
+  records what it is about to do before touching anything, and at its
+  next start reunites them or reports plainly that it could not. Accepted
+  cost: until that next start a photo can sit without its settings file
+  beside it. Brief:
+  `docs/technical/codex-brief-library-slice-5-file-commands-2026-10-12.md`.
 - **Local build rule:** a backup push of a work-in-progress branch needs
   only the fast checks. The full sweep stays for merges into `main` and
   installer builds.
