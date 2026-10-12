@@ -123,7 +123,7 @@ function packagedExecutable() {
     timeout: 180000,
   });
   const window = await app.firstWindow({ timeout: 180000 });
-  await window.waitForLoadState("domcontentloaded");
+  await require("./electron-initial-load").waitForInitialLoad(app, window);
   // The launcher pid Playwright tracks is the shell on Windows; the main
   // process pid is what owns the window and the backend sidecar, so shutdown
   // is anchored to it.
@@ -190,7 +190,7 @@ function packagedExecutable() {
       try { seen = await request.headerValue("x-hdr-finisher-token"); } catch { /* gone */ }
     };
     window.on("request", capture);
-    await window.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
+    await window.reload({ waitUntil: "load" });
     for (let attempt = 0; attempt < 40 && !seen; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }

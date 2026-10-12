@@ -58,6 +58,12 @@ function install(_electron) {
     const seconds = Number(process.env.HDR_FINISHER_DIAGNOSTIC_SECONDS || 60);
     setTimeout(() => { console.log(`Diagnostic sample complete (${seconds}s)`); stop(pid); }, seconds * 1000);
   }
+  const firstWindow = app.firstWindow.bind(app);
+  app.firstWindow = async options => {
+    const page = await firstWindow(options);
+    await require('./electron-initial-load').waitForInitialLoad(app, page);
+    return page;
+  };
   return app;
  };
 }

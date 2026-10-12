@@ -1057,7 +1057,13 @@ async function createWindow(role = "main") {
     ? "/static/media-browser-standalone.html"
     : !app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_WINDOW === "1"
       ? "/static/window-foundation.html" : "/library";
-  await window.loadURL(isMain ? backend.url : `${backend.url}${secondaryPage}`);
+  try {
+    await window.loadURL(isMain ? backend.url : `${backend.url}${secondaryPage}`);
+  } catch (error) {
+    // Another same-origin navigation can supersede this page load. The
+    // backend is already ready; only genuine load failures reach startup.
+    if (error.code !== "ERR_ABORTED" || error.errno !== -3) throw error;
+  }
   if (isMain) updateWindowDocumentState();
   return window;
 }
