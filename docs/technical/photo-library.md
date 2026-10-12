@@ -1618,3 +1618,131 @@ Local completion commit notes:
   safeguard. Two attempted targeted invocations named nonexistent test files;
   no tests ran in those invocations, and the required full fast suite covered
   the real test files. No assertion was loosened, push made or installer built.
+
+## 15. Packaged Library and everyday waits — October 12, 2026
+
+Branch: `photo-library`. This was an unpacked smoke check and a focused
+measurement of everyday waits, not the full performance pass. PyInstaller
+built the current backend and `npm run pack:dir` built the unpacked desktop
+app. No installer, full sweep or push was made.
+
+### Packaged result
+
+The required smoke passed in the unpacked app: a pinned folder listed and
+drew real RAW pictures; its low-priority helper answered and indexing finished;
+a rating reached the photo's `.hdrf`; opening in Grade, explicitly saving and
+returning to the same Library produced the kept picture; an exposure map drew;
+rename and Undo worked. After normal window closure, none of the recorded
+Electron, backend or helper process IDs remained. No packaging-specific
+process-start or file-location repair was needed. The previous backend bundle
+was stale, so it was rebuilt before the smoke and again for the final source.
+
+Unpacked size: 583,922,493 bytes, 667 files (about 557 MiB). A fresh disposable
+profile, with the same copied pinned folder, took 19.5 seconds from launch to
+first Library picture packaged, against 21.7 seconds in development. These
+initial smoke timings include backend/helper startup, automatic browse and
+first GPU picture, with Library selected as soon as the host was ready; they
+precede the two frontend fixes. They are single trials, not startup budgets.
+
+### Files and measurements
+
+Six Sony ILCE-7RM3 ARWs, 7968 × 5320 (42.4 MP), about 85.5 MB each, were copied
+from `D:\test-photos-delete-later` into disposable `codebase/output/library-slow-spots`
+folders. Only the RAWs were copied, giving clean grade state. Originals and
+both permitted source folders received no writes. A separate 30-copy folder
+filled a scrollable viewport; the existing thumbnail size was 360, with 20
+virtualized cells at 2560 × 1440. Runs were serial, on warm OS disk cache, with
+fresh disposable profiles and empty Library picture caches. Before/after
+viewport runs used the same copied files; the before run served the committed
+frontend source. Detailed JSON and screenshots remain under that ignored
+output folder, rather than creating a new evidence document.
+
+Ranked observed waits (overlapping stages must not be added together):
+
+| Rank | User action and elapsed time | Where time goes; waiting or work |
+|---|---|---|
+| 1 | First saved grade returns to an already-open Library: no update after 120 seconds before; 13.7 seconds development / 16.3 seconds packaged after | Fixed discovery wait: the old page polled no paths for a previously unedited sidecar photo, although its kept picture was already ready. Remaining helper work was 9.5 / 10.7 seconds, plus foreground gating and refresh. An isolated same-camera kept build took 10.93 seconds: corrected source opening 8.74, rendering both branches 0.12, JPEG encoding 1.42, remaining preparation about 0.65. Predominantly work after the fix. |
+| 2 | Exposure maps for a whole six-photo row: normally 8.0–10.7 seconds; one final packaged navigation trial exceeded 60 seconds with four ready and two pending | The first map drew in 2.35 seconds in that trial. Recorded first-map work was 1.97 seconds; later maps queued behind the single decoder, each about 1.1–1.3 seconds of work. The final two pending jobs were not diagnosed or repaired. Earlier packaged and development trials completed all six; this is an intermittent outstanding issue, not evidence that the helper cannot start packaged. |
+| 3 | Launch to first Library picture: 19.5 seconds packaged / 21.7 development | Combined app/backend/helper startup and fresh picture/GPU preparation. This timing did not isolate every startup stage; the folder-list and picture stages below do not explain the entire launch interval. No startup fix claimed. |
+| 4 | Fresh folder: first picture 5.86 seconds, filled 20-cell viewport 6.39 seconds; after setup overlap 5.88 / 6.47 seconds | List took 0.39 / 0.41 seconds. First-source preparation dominated; the earlier six-file trial recorded about 5 seconds of decode/preparation for its first RAW. Parallel picture requests and serialized GPU draws fill the viewport. GPU initialization moved from after a picture response to beside its preparation (0.128 / 0.155 seconds in these runs). No measurable end-to-end gain in the controlled warm-disk pair. |
+| 5 | Single view: next uncached display-size photo about 2.8–3.5 seconds; entry about 3.0–4.0 seconds | About 0.8 seconds recorded decode/preparation, a roughly 3.1-second request in the baseline, and about 0.3 seconds drawing. The request's remaining time includes array conversion, compressed-cache publication, scheduling and transport; compression is inferred from the unchanged cache code, not individually timed. Work, with possible queue time. |
+| 6 | Scroll to previously unseen end of the 30-copy folder: 2.46 seconds | Waited for the new last row and all its actual picture keys, not just the old cells. Visible picture work; scrolling completed with the new setup order. No before/after claim. |
+| 7 | Compare: entry 1.65–2.13 seconds; next cached picture about 0.004 seconds, newly requested picture 1.19–1.60 seconds | Cache reuse removes most work; new compare-sized picture preparation and transport dominate the slower flip. |
+| 8 | Rename about 0.87–0.93 seconds; Undo about 0.84–1.37 seconds | The earlier 4 / 11-second waits did not reproduce. Isolated rename execution 0.84 seconds and Undo 1.06: durable record flushes about 0.50 / 0.58 seconds and content checksums about 0.18 / 0.17 seconds. Settings and move verification nest those stages. Safety work; left unchanged. |
+| 9 | Arrival bar to first picture 0.50–0.63 seconds | Baseline 0.625, final development 0.497, final packaged 0.629 seconds. In the baseline, request/preparation was about 0.58 seconds and draw 0.04. No clear slow wait reproduced after the bar. Explicit checks still used the existing stable-size guard; time waiting for arrival recognition is excluded. |
+
+### Changes and hard stop
+
+Only `frontend/photo-library.js` changed in production. Settings polling now
+includes the existing visible grid/filmstrip cells and selected photo, alongside
+the already edited/database rows. That lets the page discover a first saved
+grade without re-browse. It does not scan every photo or change the polling
+interval. GPU initialization starts with a visible photo request, overlapping
+the existing preparation; draw still uses the same renderer and reports setup
+errors through its usual path. No new messages, settings, rendering route,
+cache allocation or priority was introduced. The large variation in earlier
+first-paint samples is not claimed as a speedup; Steve should judge fresh
+folder opening in use before any more timing runs.
+
+After fixing discovery, the worst reproducible remaining grade wait is the
+corrected source opening. The brief's strict-area stop applies: no Grade,
+export, Proof, shader, decode-route, tolerance, limit or budget changed.
+Slice 5 records, flushes, checksums and verification remain intact. No further
+performance implementation was made.
+
+Choices left unbuilt, for Steve to consider one at a time:
+
+- Keep the exact saved-grade picture and its current opening cost, or consider
+  a rough picture first / another preparation route. The latter needs an
+  explicit quality and consistency decision; lens corrections and agreement
+  with Grade/export could break. It is outside this brief's strict area.
+- For slow Single flips, less cache compression could trade disk space and
+  earlier cache eviction for latency. More retained pictures or prefetching
+  would trade memory and foreground competition for faster navigation.
+- For overlays, investigate the pending-job stall before choosing more
+  concurrency or a rougher map. Concurrency can compete with Grade and raise
+  memory use; a rougher map changes what the overlay tells the user.
+
+A late file-command health refresh also reset navigation during one timing
+attempt after Undo. The driver allowed the existing refresh to settle before
+measuring subsequent views. This existing interaction is recorded for the
+full pass; no file-command safety or refresh logic was changed.
+
+### Decisions made for Steve
+
+Use clean disposable RAW copies and fresh profiles; count arrival from the
+bar's actual notification, retaining stable-size checks; use 30 copies to
+measure a genuinely filled viewport; make only the two frontend scheduling /
+discovery fixes; preserve exact kept output and all file-safety work; leave the
+remaining choices unbuilt. No push, installer or broad sweep.
+
+### Validation and local commit notes
+
+Required fast checks: 466 Node tests; 1,936 Python tests, three existing skips.
+Focused regressions cover the first saved grade replacing the default picture
+in the same Library (original bytes unchanged), and GPU setup starting while
+its visible-picture request is held. Both passed development and final
+packaged runs. The foreground/background interaction check verified Grade
+editing while thumbnail work is paused and then resumed; helper priority stayed
+below normal. The filled-viewport check also scrolled to new pictures.
+
+Existing packaged `photo-library-slice-2.js` stopped at its wording assertion:
+it expected “Library index up to date” but the current heading is “Activity”.
+It was left unchanged and not rerun. The combined final packaged camera driver
+also hit the all-six-map timeout above; a separate focused completion proved
+the required one map, grade/kept picture and normal shutdown. An initial
+normal-close instrument cleanup threw after the already closed Electron app;
+the disposable instrument was corrected without changing the production runner.
+No existing assertion or budget was loosened.
+
+- First-save discovery commit: poll the existing visible/selected photos;
+  required fast suites and saved-picture regression in development/packaged.
+  Original photo bytes stayed unchanged. Unrelated wording failure and
+  intermittent map timeout remain recorded above.
+- GPU setup scheduling commit: overlap the unchanged setup with visible photo
+  preparation; the same grouped fast suites, setup-order regression in both
+  builds, foreground pause/resume and viewport/scroll checks passed. Controlled
+  warm-disk timings showed no measurable overall gain; no budget changed.
+- Documentation commit: record packaged smoke, ranked stages, decisions and
+  hard stops here; replace PRD section 8's old arrival-only note and close F3's
+  pending packaged confirmation. No additional production code.

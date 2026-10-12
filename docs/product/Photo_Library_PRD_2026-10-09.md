@@ -149,9 +149,13 @@ background work. Cached previews remain available; paused uncached HTTP
 requests return a retry response so thumbnail requests cannot starve grading
 of browser connections. The original thumbnail decoding and cache rules are
 unchanged. A native decode already running may finish before a pause takes
-effect; cancelled results are discarded. The packaged entry point now supports
-spawned workers, but packaged confirmation remains for the next installer
-build. M5's large-folder trial with Steve is still needed.
+effect; cancelled results are discarded. The packaged entry point supports
+spawned workers. October 12 unpacked
+packaged smoke confirmed helper startup, indexing, marks, Grade save and kept
+picture, an exposure map, rename/Undo and normal process shutdown. No
+installer was built. See technical/photo-library.md section 15 for timings
+and the outstanding intermittent multi-map stall. M5's large-folder trial
+with Steve is still needed.
 
 Validation: 438 JavaScript tests and 1,588 Python tests passed (3 skipped).
 The background/grade concurrency and existing browser preview GPU checks
@@ -2569,11 +2573,33 @@ be in the slice 7 brief.
   first while the accurate one is made, and how much of the processor the
   job may use.
 
-**Performance to revisit once the slices are built** (Steve, in use):
+**Performance measured and remaining work, October 12:**
 
-- October 11, slice 2b: after "Check for new photos" the bar reports the
-  new photo promptly, but its picture takes a long time to appear. Not
-  investigated; to be covered by the later performance pass and its tests.
+- Fixed first-save discovery: the existing Library could leave an unedited
+  picture displayed for over two minutes after its first grade was saved.
+  It now polls visible/selected photos and displays the saved picture; measured
+  13.7 seconds development / 16.3 seconds packaged on a copied 42.4 MP ARW.
+- Existing GPU setup now overlaps visible photo preparation. The controlled
+  20-picture warm-disk viewport remained about 6.4 seconds, so no end-to-end
+  improvement is claimed for that scheduling change.
+- Remaining grade-picture cost is mostly corrected source opening (8.7 seconds
+  in the isolated trial), followed by JPEG encoding (1.4 seconds). Exact output
+  and the Grade/export route remain unchanged; faster approximate output needs
+  Steve's choice and is outside this brief.
+- Single flips still take about 3 seconds for a new display-size picture.
+  Cache compression, retention and prefetch choices belong to the full pass.
+  Exposure maps queue behind one decoder; one packaged navigation trial left
+  two of six maps pending beyond 60 seconds, although the first map drew in
+  2.35 seconds and earlier runs completed the row. Leave this unresolved for
+  focused diagnosis before changing concurrency or map quality.
+- Arrival bar to picture was 0.50–0.63 seconds on the copied files; the earlier
+  reported long wait did not reproduce there. Recognition still requires stable
+  size. Rename/Undo were around one second; record-first safety work was kept.
+- A late post-Undo health refresh interrupted navigation in a timing trial;
+  record this for the full pass without weakening file-command safeguards.
+
+See `docs/technical/photo-library.md`, section 15, for the single ranked list,
+packaged startup/size, before/after evidence, decisions and focused checks.
 
 **Grade faults for Steve to look into (not library work):**
 
