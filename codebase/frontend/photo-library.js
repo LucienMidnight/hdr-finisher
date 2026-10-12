@@ -881,7 +881,10 @@
             if (changed) { state.allPhotos = snapshot.photos; applyQuery(); }
           }
         }
-        const paths = state.allPhotos.filter(photo => photo.storage === "database" || photo.edited).map(photo => photo.path);
+        // A first saved grade is not yet marked edited in this page. Check only
+        // visible pictures as well, so returning from Grade discovers it.
+        const visible = new Set([...state.cells.keys(), ...state.filmCells.keys(), selected()?.path]);
+        const paths = state.allPhotos.filter(photo => photo.storage === "database" || photo.edited || visible.has(photo.path)).map(photo => photo.path);
         const result = await api("/api/library/settings-status", { paths });
         const byPath = new Map(result.photos.map(photo => [photo.path, photo]));
         let changed = false;
