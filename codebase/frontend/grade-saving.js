@@ -110,18 +110,21 @@
     if (allowed && discarded) await command("discard");
     return allowed;
   }
-  async function open(session, itemKey = null) {
+  async function open(session, itemKey = null, isCurrent = () => true) {
     readySession = null;
     const attached = await command("attach", { item_key: itemKey, initialize: true, default_white: Number(state.appPreferences?.defaultReferenceWhiteNits) === 100 ? 100 : 203 }, session.session_id);
+    if (!isCurrent()) return session;
     current = session.session_id; currentPath = attached.path; currentName = attached.name ? `${session.source.filename} · ${attached.name}` : null; result = { conflict: attached.conflict };
     conflictShown = false;
     loadedGrade = true;
     if (!attached.grade) {
       const fetched = await projectIo.fetchSession(fetch, session.session_id);
+      if (!isCurrent()) return session;
       session = fetched.payload.session;
     }
     if (attached.grade) {
       const payload = await command("load", { document: attached.grade, preserve_recovery: true });
+      if (!isCurrent()) return session;
       session = payload.session; current = session.session_id;
       // Loading a saved grade must not automatically apply an unsaved recovery.
       session.dirty = false;
@@ -131,8 +134,10 @@
         `Unsaved work for ${session.source.filename} was kept after the app stopped. Restore it?`,
         [{ label: "Leave saved grade", value: "discard", cancel: true }, { label: "Restore unsaved work", value: "restore", primary: true }],
         { title: "Recover unsaved work" });
+      if (!isCurrent()) return session;
       if (choice === "restore") {
         const payload = await command("load", { document: attached.recovery, recovery: true });
+        if (!isCurrent()) return session;
         session = payload.session; current = session.session_id;
       } else await command("discard");
     }

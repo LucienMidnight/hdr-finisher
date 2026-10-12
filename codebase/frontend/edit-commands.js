@@ -59,6 +59,7 @@ function stablePreviewJson(value) {
  * acknowledgement that matches them has nothing new to show.
  */
 function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null, historyGroup = null } = {}) {
+  if (state.gradeOpen) return Promise.resolve(false);
   const sessionId = state.session?.session_id;
   if (commandType !== "set_global_adjustments" && state.globalEditDirty) {
     return syncGlobalEditState().then((applied) => state.session?.session_id === sessionId && applied && !state.globalEditDirty

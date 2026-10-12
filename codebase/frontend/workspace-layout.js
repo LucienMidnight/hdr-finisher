@@ -455,7 +455,8 @@ function renderDockSummary() {
 
 function activateWorkflowTab(workflow, { focus = false } = {}) {
   const next = ["import", "grade", "proof", "export"].includes(workflow) ? workflow : "import";
-  if (next !== "import" && !state.session) return;
+  if (next !== "import" && !state.session && !(next === "grade" && state.gradeOpen)) return;
+  if (next === "import" && state.gradeOpen) void cancelActiveImport();
   if (next !== "grade") abandonPerspectiveDraft();
   if (next !== "grade" && state.rotateDraftGeometry) closeRotateMode(false);
   if (next !== "grade" && state.cropMode) closeCropMode(true);

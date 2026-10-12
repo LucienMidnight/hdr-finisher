@@ -16,7 +16,7 @@
     const active = state.activeWorkflow === "import" && !detached;
     away.hidden = !detached || state.activeWorkflow !== "import";
     if (detached && state.activeWorkflow === "import") desktop?.focusLibrary();
-    for (const element of document.querySelectorAll(".app-shell > .source-rail, .app-shell > .source-splitter, .app-shell > .workspace-main, .app-shell > .grade-rail, .app-shell > .grade-splitter")) element.inert = active;
+    for (const element of document.querySelectorAll(".app-shell > .source-rail, .app-shell > .source-splitter, .app-shell > .workspace-main, .app-shell > .grade-rail, .app-shell > .grade-splitter")) element.inert = active || Boolean(state.gradeOpen && element.matches(".source-rail, .grade-rail"));
     send("active", { enabled: active });
     if (active) frame.contentWindow?.focus();
   }
@@ -53,7 +53,7 @@
         await reviewQueue;
         if (!desktop) throw new Error("Opening a library path in Grade requires the desktop app.");
         const selection = await desktop.grantSourcePath(message.path);
-        await openDesktopSelection({ kind: "source", ...selection, itemKey: message.itemKey });
+        await openDesktopSelection({ kind: "source", ...selection, itemKey: message.itemKey, fromLibrary: true });
       })().catch((error) => showUploadError(error.message));
     }
   });

@@ -682,7 +682,8 @@ function retireActiveSession() {
 }
 
 async function cancelActiveImport() {
-  if (!state.importInProgress) return;
+  if (!state.importInProgress && !state.gradeOpen) return;
+  const libraryOpen = Boolean(state.gradeOpen?.fromLibrary);
   const jobId = state.activeImportJobId;
   state.importGeneration += 1;
   state.activeImportJobId = null;
@@ -694,6 +695,8 @@ async function cancelActiveImport() {
     await projectIo.cancelImportJob(fetch, jobId).catch(() => null);
   }
   finishCancelledImport();
+  finishGradeOpen();
+  if (libraryOpen) activateWorkflowTab("import");
 }
 
 function finishCancelledImport() {

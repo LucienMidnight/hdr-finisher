@@ -353,10 +353,11 @@ function renderKeyValueList(container, entries) {
 }
 
 function renderSessionChrome() {
-  const hasSession = Boolean(state.session);
+  const hasSession = Boolean(state.session) && !state.gradeOpen;
   els.ejectButton.disabled = !hasSession;
   els.workflowTabs.forEach((button) => {
-    button.disabled = button.dataset.workflowTab !== "import" && !hasSession;
+    button.disabled = button.dataset.workflowTab !== "import" && !hasSession
+      && !(button.dataset.workflowTab === "grade" && state.gradeOpen);
   });
   els.emptyImportButton.disabled = hasSession;
   document.querySelectorAll("#grade-workflow-panel input, #grade-workflow-panel select, #grade-workflow-panel button").forEach((control) => {
