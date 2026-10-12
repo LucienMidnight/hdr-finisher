@@ -113,6 +113,9 @@
   }
   async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10) {
     const started = performance.now();
+    // Set up the existing GPU while the helper prepares this visible picture.
+    // drawPicture still reports any initialization failure through its usual path.
+    void HDRLibraryPictures.initialize().catch(() => {});
     const slow = ["DNG", "HEIC", "HEIF", "TIF", "TIFF"].includes(photo.type);
     let meta = await api("/api/library/picture", { path: photo.path, edge, quality: slow ? "fast" : "quick", priority }, controller.signal);
     if (!isCurrent()) return;
