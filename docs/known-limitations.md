@@ -73,6 +73,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 ## Export limitations
 
 - JPEG Ultra HDR depends on a compatible libultrahdr build; availability is capability-gated.
+- HDR renditions need not contain pixels above SDR white. JPEG export and saved-grade Library pictures retain their separate HDR and SDR views in that case; the encoder capacity metadata has a minimal positive transition instead of the rejected zero-width range. Existing successful JPEG encodes are unchanged. Failed Library pictures retry on Library use after a 30-second cooldown, without another edit/save; replaced jobs are logged separately (October 12, 2026).
 - AVIF gain maps depend on compatible libavif command-line tools.
 - JPEG XL HDR is experimental and capability-gated. It is direct 12-bit Rec.2020/PQ and has no SDR fallback; third-party files with ambiguous precision or color signaling are rejected or require manual interpretation.
 - Gain-map browser/app support changes outside the project.

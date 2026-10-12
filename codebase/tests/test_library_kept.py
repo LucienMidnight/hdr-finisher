@@ -77,3 +77,89 @@ def test_library_jpeg_file_reader_matches_sdr_and_reconstructs_hdr(tmp_path):
     reference, base, _ = decode_ultrahdr_jpeg(path)
     np.testing.assert_allclose(jpeg_renditions(path), base, atol=1e-6)
     assert np.mean(np.abs(jpeg_renditions(path, True)-reference)) / np.mean(reference) < .01
+
+
+def test_no_headroom_kept_picture_preserves_distinct_views(setup,monkeypatch,tmp_path):
+    from hdr_finisher.color import linear_srgb_to_acescg
+    from hdr_finisher.library_kept import jpeg_renditions
+    from hdr_finisher.gainmap_decoders import decode_ultrahdr_jpeg, inspect_jpeg_gain_map
+    photo,store,session,marks,grades=setup
+    grade=saved(setup)
+    sdr=np.full((32,48,3),.4,dtype=np.float32)
+    hdr=linear_srgb_to_acescg(sdr*.18*.5)
+    monkeypatch.setattr(exporters,"_render_export_branch",lambda frame,settings,lane,adjustments: hdr.copy() if lane==PreviewKind.HDR else sdr.copy())
+    result=produce(tmp_path,photo,grade)
+    path=Path(result["temporary"])
+    try:
+        assert result["extension"]=="jpg" and result["route"]=="saved-gain-map"
+        metadata=inspect_jpeg_gain_map(path)
+        assert metadata.hdr_capacity_max>metadata.hdr_capacity_min==1
+        decoded_hdr,decoded_sdr,_=decode_ultrahdr_jpeg(path)
+        np.testing.assert_allclose(jpeg_renditions(path),decoded_sdr,atol=1e-6)
+        assert np.mean(np.abs(jpeg_renditions(path,True)-decoded_hdr))/np.mean(decoded_hdr)<.01
+        assert np.mean(np.abs(decoded_hdr-hdr))/np.mean(hdr)<.01
+        assert np.mean(np.abs(decoded_sdr-sdr))/np.mean(sdr)<.01
+    finally: path.unlink(missing_ok=True)
+
+
+def test_failed_encode_retries_after_cooldown_without_another_save(setup,monkeypatch,tmp_path):
+    from concurrent.futures import Future
+    from test_library_open_kept import wait_for
+    from hdr_finisher import library_kept
+    photo,store,session,marks,grades=setup
+    grade=saved(setup);calls=[];events=[]
+    def encode(path,*args):
+        calls.append(path)
+        if len(calls)==1: raise exporters.ExportProcessError("forced encoder failure")
+        Path(path).write_bytes(b"picture")
+    monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",encode)
+    monkeypatch.setattr(library_kept,"log",lambda event,**fields: events.append((event,fields)))
+    class RetryWorker(Worker):
+        def submit_library(self,kind,**request):
+            future=Future()
+            try: future.set_result(produce(tmp_path,request["path"],request["grade"],request["edge"]))
+            except Exception as error: future.set_exception(error)
+            return str(len(calls)),future
+        def cancel(self,job): pass
+    kept=KeptPictures(tmp_path,marks,RetryWorker())
+    try:
+        kept.ensure(photo)
+        wait_for(lambda: any(event=="kept_picture_failed" for event,_ in events) and not kept._requested)
+        for _ in range(10): kept.ensure(photo)
+        assert len(calls)==1 and kept.cached(photo) is None
+        kept._retry_after[str(photo)]=library_kept.time.monotonic()-1
+        kept.ensure(photo)
+        wait_for(lambda: kept.cached(photo) is not None)
+        assert len(calls)==2
+        assert kept.request(photo)["grade_identity"]==identity(grade)
+    finally: kept.close()
+
+
+def test_replaced_picture_job_has_a_reason_not_a_failure(setup,monkeypatch,tmp_path):
+    from concurrent.futures import Future
+    from test_library_open_kept import wait_for
+    from hdr_finisher import library_kept
+    photo,store,session,marks,grades=setup
+    saved(setup);events=[]
+    monkeypatch.setattr(library_kept,"log",lambda event,**fields: events.append((event,fields)))
+    class PendingWorker(Worker):
+        def __init__(self): self.futures=[]
+        def submit_library(self,*args,**kwargs):
+            future=Future();self.futures.append(future);return str(len(self.futures)),future
+        def cancel(self,job): self.futures[int(job)-1].cancel()
+    worker=PendingWorker();kept=KeptPictures(tmp_path,marks,worker)
+    try:
+        kept.schedule(photo)
+        wait_for(lambda: len(worker.futures)==1 and not kept._requested)
+        kept.schedule(photo)
+        wait_for(lambda: len(worker.futures)==2 and not kept._requested)
+        assert any(event=="kept_picture_replaced" and "newer" in fields["reason"] for event,fields in events)
+        assert not any(event=="kept_picture_failed" for event,_ in events)
+    finally: kept.close()
+
+
+def test_replaced_picture_is_not_a_recent_problem():
+    from hdr_finisher.library_diagnostics import log, recent
+    photo="replaced-picture-regression"
+    log("kept_picture_replaced",photo=photo,reason="replaced by a newer saved grade")
+    assert not any(row.get("photo")==photo for row in recent())

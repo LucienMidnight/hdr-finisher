@@ -96,7 +96,7 @@ window.HDRLibraryPictures = (() => {
       const gpu = await initialize();
       const started = performance.now();
       const response = await fetch(`/api/library/kept-pixels/${meta.key}?lane=${hdr ? "hdr" : "sdr"}`, { signal });
-      if (!response.ok) throw new Error("The saved Library picture is unavailable; open and save in Grade to update it.");
+      if (!response.ok) throw new Error("The saved Library picture is unavailable; the Library will try making it again.");
       const body = await response.arrayBuffer();
       HDRLibraryStopwatch("pixels_fetched", { key: meta.key, kept: true, duration_ms: performance.now() - started });
       const drawStarted = performance.now();

@@ -1036,6 +1036,14 @@ def _denoised_ultrahdr_gain_map_jpeg(
 
 def _ultrahdr_metadata_config(probe_text: str) -> str:
     metadata = parse_jpeg_gain_map_probe(probe_text)
+    capacity_max = metadata.hdr_capacity_max
+    if metadata.hdr_capacity_min == capacity_max == 1.0:
+        # A valid HDR rendition need not exceed SDR white. libultrahdr's raw
+        # encoder emits a 1/1 capacity range for it, but its JPEG repackager
+        # requires a positive range. This is the smallest step above unity
+        # retained by the CLI's six-significant-digit metadata probe. Only the
+        # display transition changes; both encoded pixel endpoints are kept.
+        capacity_max = 1.00001
     return "\n".join(
         [
             f"--maxContentBoost {_format_metadata_float(metadata.max_content_boost)}",
@@ -1044,7 +1052,7 @@ def _ultrahdr_metadata_config(probe_text: str) -> str:
             f"--offsetSdr {_format_metadata_float(metadata.offset_sdr)}",
             f"--offsetHdr {_format_metadata_float(metadata.offset_hdr)}",
             f"--hdrCapacityMin {_format_metadata_float(metadata.hdr_capacity_min)}",
-            f"--hdrCapacityMax {_format_metadata_float(metadata.hdr_capacity_max)}",
+            f"--hdrCapacityMax {_format_metadata_float(capacity_max)}",
             f"--useBaseColorSpace {1 if metadata.use_base_color_space else 0}",
             "",
         ]

@@ -585,3 +585,38 @@ def test_base_floor_keeps_hdr_shadows_recoverable() -> None:
     assert int(floored[0, 0, 0]) == 40
     # Deliberate black stays black.
     assert int(floored[3, 3, 0]) == 0
+
+
+@pytest.mark.parametrize("hdr_exposure,sdr_exposure", [(0,0),(-1,0),(0,-1)])
+def test_real_no_headroom_export_and_proof_preserve_both_renditions(tmp_path, hdr_exposure, sdr_exposure):
+    from hdr_finisher.render_cache import SessionRenderCache
+    from hdr_finisher.gainmap_decoders import decode_ultrahdr_jpeg, inspect_jpeg_gain_map
+    from hdr_finisher.models import ProofArtifactRequest
+    from hdr_finisher.proofing import ProofArtifactStore
+    capability=capability_module._ultrahdr_status()
+    if capability.status!=CapabilityStatus.AVAILABLE: pytest.skip(capability.detail)
+    adjustments=AdjustmentState()
+    adjustments.hdr.exposure=hdr_exposure;adjustments.sdr.exposure=sdr_exposure
+    session=_session(np.full((48,64,3),.04,dtype=np.float32),adjustments)
+    session.edit_revision=0;session.local_adjustments=[];session.denoise=None
+    session.render_cache=SessionRenderCache(session.image,None)
+    settings=ExportSettings(output_path=str(tmp_path/'no-headroom.jpg'))
+    backend=JPEGUltraHDRExportBackend(capability)
+    result=backend.export(session,settings)
+    assert result.accepted,result.message
+    path=Path(result.output_path)
+    metadata=inspect_jpeg_gain_map(path)
+    assert metadata.hdr_capacity_max>metadata.hdr_capacity_min==1
+    assert metadata.hdr_capacity_max==pytest.approx(1.00001,abs=1e-7)
+    hdr,sdr,_=decode_ultrahdr_jpeg(path)
+    finishing=exporter_module._finishing_adjustments_for_export(session)
+    for lane,decoded in [(PreviewKind.HDR,hdr),(PreviewKind.SDR,sdr)]:
+        expected=exporter_module._render_export_branch(session,settings,lane,finishing)
+        assert np.mean(np.abs(decoded-expected))/np.mean(expected)<.01
+    proof_store=ProofArtifactStore()
+    try:
+        proof=proof_store.create(session,ProofArtifactRequest(adjustments=adjustments,
+            format='jpeg_ultrahdr',quality=settings.quality,full_size=True),backend)
+        import hashlib
+        assert proof.sha256==hashlib.sha256(path.read_bytes()).hexdigest()
+    finally: proof_store.clear()

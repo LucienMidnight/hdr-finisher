@@ -136,7 +136,7 @@
       if (!isCurrent()) return;
     }
     photo.pictureCurrent = !!meta.kept;
-    canvas.closest(".library-cell")?.querySelector(".library-edited")?.setAttribute("title", meta.kept ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. Open it in Grade and save to update the picture.");
+    canvas.closest(".library-cell")?.querySelector(".library-edited")?.setAttribute("title", meta.kept ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. The Library will try making it again automatically.");
     canvas.dataset.pictureKey = meta.key;
     canvas.dataset.picturePath = photo.path;
     overlays?.attach(photo,canvas,meta,controller,isCurrent);

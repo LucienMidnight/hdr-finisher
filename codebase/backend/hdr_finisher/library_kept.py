@@ -18,6 +18,7 @@ from .library_diagnostics import log
 
 _LOCK=RLock()
 EDGES=(512,1024,1920)
+RETRY_SECONDS=30
 
 def identity(grade):
     return sha256(json.dumps(grade_key(grade),sort_keys=True,separators=(",",":")).encode()).hexdigest()
@@ -166,6 +167,7 @@ class KeptPictures:
     def __init__(self,root,marks,worker):
         self.root=Path(root);self.marks=marks;self.worker=worker;self.cache=LibraryPictureCache(root)
         self.jobs={};self._lock=RLock();self._closed=False
+        self._requested=set();self._retry_after={}
         self._open_producer=ThreadPoolExecutor(max_workers=1,thread_name_prefix="hdr-kept-open")
     def request(self,path):
         path=str(self.marks._path(path))
@@ -198,9 +200,20 @@ class KeptPictures:
     @staticmethod
     def source_stat(path):
         s=self_source(path).stat();return [s.st_size,s.st_mtime_ns]
+    def ensure(self,path):
+        """Retry missing edited pictures on use, with one job and a cooldown."""
+        path=str(path)
+        with self._lock:
+            if (self._closed or path in self.jobs or path in self._requested
+                    or time.monotonic()<self._retry_after.get(path,0)):
+                return
+            self._requested.add(path)
+        self.schedule(path)
+
     def schedule(self,path,grade=None,source=None):
         saved_at=time.time()
         path=str(path)
+        with self._lock: self._requested.add(path)
         # No decode and no worker startup on the save request thread.
         def launch():
             try:
@@ -211,6 +224,7 @@ class KeptPictures:
                     if self._closed: return
                     old=self.jobs.get(path)
                     if old:
+                        self.jobs.pop(path,None)
                         if isinstance(old,Event): old.set()
                         else: self.worker.cancel(old)
                     stat=self.source_stat(path)
@@ -235,30 +249,43 @@ class KeptPictures:
                         result=f.result()
                         temporary=Path(result["temporary"])
                         with self.marks._lock,self._lock:
-                            if self.jobs.get(path)!=job or self.request(path)["grade_identity"]!=request["grade_identity"] or self.source_stat(path)!=stat: return
+                            if self.jobs.get(path)!=job or self.request(path)["grade_identity"]!=request["grade_identity"] or self.source_stat(path)!=stat:
+                                log("kept_picture_replaced",photo=path,reason="saved grade or source changed while picture was being made",action="stale picture discarded")
+                                return
                             temp=Path(result["temporary"]);key=self.key(path,request["grade_identity"])
                             os.replace(temp,self.cache.root/(key+"."+result["extension"]))
                             atomic_json(self.cache.root/(key+".json"),{k:v for k,v in result.items() if k!="temporary"}|{"source_stat":stat,"saved_at":saved_at})
                             self.jobs.pop(path,None)
+                            self._retry_after.pop(path,None)
                         self.cache.trim();log("kept_picture_saved",photo=path,key=key,save_to_written_ms=(time.time()-saved_at)*1000,**result)
-                    except CancelledError:
-                        log("kept_picture_cancelled", photo=path, action="superseded or app closing")
                     except Exception as error:
-                        log("kept_picture_failed",photo=path,reason=str(error),action="grade safe; default look with not-current mark")
+                        with self._lock:
+                            replaced=self.jobs.get(path)!=job
+                            closing=self._closed
+                            if not replaced and not closing and not isinstance(error,CancelledError):
+                                self._retry_after[path]=time.monotonic()+RETRY_SECONDS
+                        if replaced or closing or isinstance(error,CancelledError):
+                            reason="app closing" if closing else "replaced by a newer saved grade" if replaced else str(error) or "job cancelled"
+                            log("kept_picture_cancelled" if closing else "kept_picture_replaced",photo=path,reason=reason,action="grade safe; cancelled job discarded")
+                        else:
+                            log("kept_picture_failed",photo=path,reason=str(error) or repr(error),action="grade safe; retry on Library use after cooldown")
                     finally:
                         with self._lock:
                             if self.jobs.get(path)==job: self.jobs.pop(path,None)
                         if result and result.get("temporary"): Path(result["temporary"]).unlink(missing_ok=True)
                 if source is not None: future.add_done_callback(lambda f: source.clear())
                 future.add_done_callback(finish)
-            except Exception as error: log("kept_picture_failed",photo=path,reason=str(error),action="grade safe; retry at next save")
+            except Exception as error:
+                with self._lock: self._retry_after[path]=time.monotonic()+RETRY_SECONDS
+                log("kept_picture_failed",photo=path,reason=str(error) or repr(error),action="grade safe; retry on Library use after cooldown")
             finally:
+                with self._lock: self._requested.discard(path)
                 if source is not None and not locals().get("future"): source.clear()
         Thread(target=launch,name="hdr-kept-request",daemon=True).start()
     def close(self):
         with self._lock:
             self._closed=True
-            for job in self.jobs.values():
+            for job in list(self.jobs.values()):
                 if isinstance(job,Event): job.set()
                 else: self.worker.cancel(job)
             self.jobs.clear()

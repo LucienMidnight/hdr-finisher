@@ -18,7 +18,7 @@ _sink = None
 def log(event, **fields):
     record = {"event": event, "time": time.time(), **fields}
     with _lock:
-        if "reason" in fields and event not in {"writer_pause", "writer_resume", "helper_pause", "helper_resume"}:
+        if "reason" in fields and event not in {"writer_pause", "writer_resume", "helper_pause", "helper_resume", "kept_picture_replaced", "kept_picture_cancelled"}:
             _recent.append(record)
     if _sink is not None:
         _sink(record)

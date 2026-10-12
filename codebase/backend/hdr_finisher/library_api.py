@@ -257,6 +257,7 @@ def create_library_router(worker, browser, store=None):
                 key = kept.key(photo["path"], item.get("grade_identity", ""))
                 item["pictureCurrent"] = bool(kept.current_meta(photo["path"], item.get("grade_identity", "")))
                 photo.update(item)
+                if item.get("edited") and not item["pictureCurrent"]: kept.ensure(photo["path"])
         return result
 
     @router.get("/settings-status")
@@ -538,6 +539,7 @@ def create_library_router(worker, browser, store=None):
         if store is not None:
             cached = await run_in_threadpool(kept.cached, command.path)
             if cached: return cached
+            await run_in_threadpool(kept.ensure, command.path)
         command.path = str(marks.source_path(command.path))
         try:
             cached = await run_in_threadpool(cache.cached, command.path, command.edge, command.quality)
