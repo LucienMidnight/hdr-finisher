@@ -23,7 +23,7 @@ def log(event, **fields):
     if _sink is not None:
         _sink(record)
     else:
-        print("[library] " + event + " " + json.dumps(fields, ensure_ascii=False, default=str), file=sys.stderr, flush=True)
+        print("[library] " + event + " " + json.dumps({"time": record["time"], **fields}, ensure_ascii=False, default=str), file=sys.stderr, flush=True)
 
 
 def recent():

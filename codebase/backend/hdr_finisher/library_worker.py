@@ -68,6 +68,7 @@ class LibraryWorker:
                 raise
             finally:
                 child.close()
+            log("helper_process_started", pid=process.pid)
             return parent
 
     def _supervise(self):
@@ -231,6 +232,7 @@ class LibraryWorker:
                     log(record.pop("event"), **record)
                     continue
                 if message.get("event") == "ready":
+                    log("helper_ready", pid=message.get("pid"))
                     log("helper_start", pid=message.get("pid"), action="helper ready")
                     with self._lock:
                         self.info = message
@@ -364,6 +366,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     condition.wait(timeout=0.25)
                 if stopping.is_set():
                     return
+                started = time.perf_counter()
+                log("helper_job_started", job=job["id"], request=job.get("trace_id"), operation=job["command"], path=job.get("path"), queue_ms=round((time.time()-job["queued_at"])*1000, 2))
                 cancelled = jobs.get(job["id"])
                 if cancelled is None or cancelled.is_set():
                     continue
@@ -372,7 +376,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 elif kind not in {"index", "kept"}:
                     state["foreground"] += 1
 
+            waited = [0.]
             def yielding():
+                wait_started = time.perf_counter()
                 # Background indexing waits for visible work, grading and export.
                 while not cancelled.is_set() and not stopping.is_set():
                     with condition:
@@ -382,6 +388,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                                 and all(lane(item[2]) in allowed for item in queue)):
                             break
                     time.sleep(0.05)
+                waited[0] += time.perf_counter()-wait_started
                 return cancelled.is_set() or stopping.is_set()
 
             check = yielding if kind in {"index", "check", "kept"} else cancelled.is_set
@@ -417,6 +424,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 if not isinstance(exc, CancelledError):
                     log("helper_job_failed", operation=job["command"], paths=job.get("path", job.get("paths")), reason=repr(exc), action="request failed; saved marks retained")
                 result = {"id": job["id"], "error": str(exc)}
+            log("helper_job_cancelled" if cancelled.is_set() or stopping.is_set() else "helper_job_finished", job=job["id"], request=job.get("trace_id"), operation=job["command"], path=job.get("path"), work_ms=round((time.perf_counter()-started-waited[0])*1000, 2), yield_ms=round(waited[0]*1000, 2))
             with condition:
                 jobs.pop(job["id"], None)
                 if kind == "check":
@@ -460,6 +468,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
                 elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept", "overlay"}:
+                    message["queued_at"] = time.time()
                     sequence += 1
                     jobs[message["id"]] = Event()
                     heapq.heappush(queue, (message["priority"], sequence, message))

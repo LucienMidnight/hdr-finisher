@@ -1,3 +1,4 @@
+const libraryAppStarted = Date.now();
 const { app, BrowserWindow, clipboard, crashReporter, dialog, ipcMain, Menu, screen, session, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const crypto = require("node:crypto");
@@ -336,6 +337,13 @@ function backendCommand() {
   });
 }
 
+function libraryStage(event, fields = {}) {
+  const directory = path.join(app.getPath("userData"), "logs");
+  fs.mkdirSync(directory, { recursive: true });
+  fs.appendFileSync(path.join(directory, "backend.log"),
+    `[library] ${event} ${JSON.stringify({ time: Date.now() / 1000, ...fields })}\n`);
+}
+
 async function startBackend() {
   const authoringSecret = randomSecret();
   const controlSecret = randomSecret();
@@ -356,6 +364,7 @@ async function startBackend() {
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  libraryStage("backend_process_started", { pid: child.pid });
   child.stderr.pipe(log, { end: false });
 
   const ready = await new Promise((resolve, reject) => {
@@ -383,6 +392,7 @@ async function startBackend() {
     });
   });
 
+  libraryStage("backend_ready");
   if (ready.protocol_version !== 1 || ready.backend_version !== app.getVersion()) {
     child.kill();
     throw new Error(`Desktop/backend version mismatch (${app.getVersion()} / ${ready.backend_version}).`);
@@ -981,6 +991,8 @@ async function createWindow(role = "main") {
       webviewTag: false,
     },
   });
+  libraryStage("window_created", { role });
+  window.webContents.on("did-finish-load", () => libraryStage("page_loaded", { role }));
   const record = { role, window, ready: false, displayTimer: null };
   windows.set(role, record);
   if (isMain) {
@@ -1174,6 +1186,8 @@ if (!gotLock) {
     if (backend && !mainWindow) createWindow();
   });
   app.whenReady().then(async () => {
+    libraryStage("app_start", { time: libraryAppStarted / 1000 });
+    libraryStage("app_ready");
     app.setAppUserModelId(APP_ID);
     loadApplicationPreferences();
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));

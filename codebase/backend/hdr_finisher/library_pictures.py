@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image, ImageCms, ImageOps
 
 from . import loader, raw_import
-from .library_diagnostics import audited, problem
+from .library_diagnostics import audited, problem, log
 from .analysis import classify_hdr
 from .color import map_negative_acescg, normalize_to_acescg
 from .desktop_security import SOURCE_EXTENSIONS
@@ -87,11 +87,14 @@ class LibraryPictureCache:
                 return cached
             started = perf_counter()
             check_cancelled(cancelled)
+            decode_started = perf_counter()
             pixels, reference, metadata = decoded if decoded is not None else decode_picture(path, edge, quality)
+            log("picture_decoded", path=str(path), key=key, duration_ms=(perf_counter()-decode_started)*1000)
             check_cancelled(cancelled)
             # A file changed during decoding must never publish under the old identity.
             if picture_key(path, edge, quality) != key:
                 raise ValueError("Photo changed while its library picture was being read.")
+            look_started = perf_counter()
             starting_look = metadata.pop("starting_look", None)
             grade = AdjustmentState.model_validate(starting_look) if starting_look else default_look(
                 pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
@@ -99,6 +102,8 @@ class LibraryPictureCache:
                 edge=edge, quality=quality, adjustments=grade.model_dump(mode="json"),
                 white=203, has_reference=reference is not None,
                 decode_ms=(perf_counter() - started) * 1000)
+            log("picture_look_prepared", path=str(path), key=key, duration_ms=(perf_counter()-look_started)*1000)
+            store_started = perf_counter()
             arrays = {"pixels": np.clip(pixels, 0, 65504).astype(np.float16),
                 "metadata": np.asarray(json.dumps(metadata))}
             if reference is not None:
@@ -120,6 +125,7 @@ class LibraryPictureCache:
                 if self._known_bytes is not None:
                     self._known_bytes += result["stored_bytes"]
                 self.trim()
+            log("picture_stored", path=str(path), key=key, duration_ms=(perf_counter()-store_started)*1000)
             return result
 
     @audited("cache_build_native")
@@ -266,7 +272,10 @@ def decode_picture(path, edge, quality):
                 return linear_dng_picture(path, inspection, edge)
             if inspection.route != DngRoute.MOSAICED_RAW_DNG:
                 raise ValueError("This DNG cannot be read by Grade.")
+        import_started = perf_counter()
         import rawpy
+        log("picture_decoder_import", path=str(path), duration_ms=(perf_counter()-import_started)*1000)
+        raw_started = perf_counter()
         with rawpy.imread(str(path)) as raw:
             try:
                 meta = raw_import._camera_linear_metadata_from_libraw(raw)
@@ -278,6 +287,8 @@ def decode_picture(path, edge, quality):
                 **({"user_wb": [1.] * 4, "no_auto_scale": True} if meta else {}),
                 no_auto_bright=True, output_color=rawpy.ColorSpace.raw if meta else rawpy.ColorSpace.sRGB,
                 gamma=(1., 1.), output_bps=16, highlight_mode=rawpy.HighlightMode.Clip)
+            log("picture_raw_processed", path=str(path), duration_ms=(perf_counter()-raw_started)*1000)
+            reduce_started = perf_counter()
             pixels = reduce_picture(transport, edge) * np.float32(1 / 65535)
             if meta:
                 matrix = meta.camera_to_acescg * (meta.as_shot_wb * 65535 / (meta.white_level - meta.black_level))[None, :]
@@ -288,6 +299,7 @@ def decode_picture(path, edge, quality):
                 pixels = normalize_to_acescg(pixels, "sRGB", "LINEAR")
             # Source saturation, before display tone mapping: neutral white, no reconstruction.
             pixels[clipped] = np.max(pixels[clipped], axis=1)[:, None]
+            log("picture_source_reduced", path=str(path), duration_ms=(perf_counter()-reduce_started)*1000)
             return pixels, None, {"route": "native-raw" if quality == "native" else "quick-half-raw", "raw_input": True,
                 "source_width": transport.shape[1] * (1 if quality == "native" else 2), "source_height": transport.shape[0] * (1 if quality == "native" else 2)}
     if quality == "fast" and suffix in {".heic", ".heif", ".tif", ".tiff"}:

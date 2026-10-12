@@ -21,6 +21,17 @@ from .library_marks import LibraryMarks, MarkChange, NameTaken
 from .library_index import LibraryIndex
 
 
+class StopwatchEvent(BaseModel):
+    stage: str = Field(max_length=64, pattern=r"^[a-z_]+$")
+    time: float
+    path: str | None = Field(default=None, max_length=4096)
+    request: str | None = Field(default=None, max_length=80)
+    key: str | None = Field(default=None, max_length=64)
+    duration_ms: float | None = None
+    queue_ms: float | None = None
+    first: bool | None = None
+    kept: bool | None = None
+
 class OverlayRequest(BaseModel):
     path: str
     kind: Literal["exposure", "focus"] = "exposure"
@@ -260,6 +271,7 @@ def create_library_router(worker, browser, store=None):
             raise HTTPException(status_code=400, detail=user_error(error)) from error
 
     async def helper_result(request, command, **arguments):
+        arguments["trace_id"] = request.headers.get("X-Library-Request")
         epoch = file_commands.epoch
         try:
             job_id, future = await run_in_threadpool(worker.submit_library, command, **arguments)
@@ -287,6 +299,13 @@ def create_library_router(worker, browser, store=None):
             raise HTTPException(status_code=400, detail=f"The Library could not read {arguments.get('path', 'the selected photos')}. Saved marks are safe; check the photo or folder and try again.") from exc
         finally:
             worker.cancel(job_id)
+
+    @router.post("/stopwatch")
+    def stopwatch(events: list[StopwatchEvent]):
+        if len(events)>64: raise HTTPException(400,"Too many timing events.")
+        for event in events:
+            log("page_" + event.stage, **event.model_dump(exclude_none=True, exclude={"stage"}))
+        return {"ok": True}
 
     @router.get("/options")
     def options():

@@ -5,6 +5,7 @@ import json, os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from time import perf_counter
+import time
 from types import SimpleNamespace
 from threading import RLock, Thread
 from PIL import Image
@@ -53,6 +54,7 @@ def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None):
     started=perf_counter();document=EditDocument.model_validate(grade)
     def check(): check_cancelled(cancelled)
     check()
+    source_started=perf_counter()
     session=SessionStore().prepare_session(Path(path),owns_source_path=False,
         raw_import_settings=document.source.raw_import_settings,
         interpretation_override=document.interpretation_override,
@@ -67,6 +69,9 @@ def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None):
         color_context=session.color_context,hdr_reference_white_nits=document.hdr_reference_white_nits)
     # Release the full decoded source before grading the small reminder.
     del session
+    source_ms=(perf_counter()-source_started)*1000
+    log("kept_source_ready", path=str(path), grade_identity=identity(grade), route="reopened-photo", duration_ms=source_ms)
+    render_started=perf_counter()
     settings=ExportSettings(quality=75,jpeg_gain_map_quality=75,jpeg_gain_map_scale="half",
         avif_bit_depth=8,avif_gain_map_quality=75,avif_gain_map_scale="half",dithering="off")
     adjustments=exporters._finishing_adjustments_for_export(frame)
@@ -74,15 +79,21 @@ def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None):
     check();hdr=exporters._render_export_branch(frame,settings,PreviewKind.HDR,adjustments)
     check();sdr=exporters._render_export_branch(frame,settings,PreviewKind.SDR,adjustments)
     check();hdr=reduce_picture(hdr,edge);sdr=reduce_picture(sdr,edge)
+    render_ms=(perf_counter()-render_started)*1000
+    log("kept_rendered", path=str(path), grade_identity=identity(grade), duration_ms=render_ms)
     directory=Path(root)/"library-pictures";directory.mkdir(parents=True,exist_ok=True)
     extension="jpg" if format=="jpeg" else "avif"
     with NamedTemporaryFile(dir=directory,prefix="kept-",suffix="."+extension,delete=False) as f: temp=Path(f.name)
     try:
         writer=exporters.write_jpeg_gainmap_renditions if format=="jpeg" else exporters.write_avif_gainmap_renditions
+        encode_started=perf_counter()
         writer(temp,hdr,sdr,settings,document.hdr_reference_white_nits);check()
+        encode_ms=(perf_counter()-encode_started)*1000
+        log("kept_encoded", path=str(path), grade_identity=identity(grade), duration_ms=encode_ms)
         return {"temporary":str(temp),"extension":extension,"grade_identity":identity(grade),
             "width":hdr.shape[1],"height":hdr.shape[0],"source_width":round(source_width*hdr.shape[1]/frame.image.shape[1]),
             "source_height":round(source_height*hdr.shape[0]/frame.image.shape[0]),"edge":edge,"white":203,
+            "source_route":"reopened-photo","source_ms":source_ms,"render_ms":render_ms,"encode_ms":encode_ms,
             "stored_bytes":temp.stat().st_size,"make_ms":round((perf_counter()-started)*1000,2),"route":"saved-gain-map"}
     except BaseException:
         temp.unlink(missing_ok=True);raise
@@ -154,6 +165,7 @@ class KeptPictures:
     def source_stat(path):
         s=self_source(path).stat();return [s.st_size,s.st_mtime_ns]
     def schedule(self,path,grade=None):
+        saved_at=time.time()
         # No decode and no worker startup on the save request thread.
         def launch():
             try:
@@ -175,9 +187,9 @@ class KeptPictures:
                             if self.jobs.get(path)!=job or self.request(path)["grade_identity"]!=request["grade_identity"] or self.source_stat(path)!=stat: return
                             temp=Path(result["temporary"]);key=self.key(path,request["grade_identity"])
                             os.replace(temp,self.cache.root/(key+"."+result["extension"]))
-                            atomic_json(self.cache.root/(key+".json"),{k:v for k,v in result.items() if k!="temporary"}|{"source_stat":stat})
+                            atomic_json(self.cache.root/(key+".json"),{k:v for k,v in result.items() if k!="temporary"}|{"source_stat":stat,"saved_at":saved_at})
                             self.jobs.pop(path,None)
-                        self.cache.trim();log("kept_picture_saved",photo=path,**result)
+                        self.cache.trim();log("kept_picture_saved",photo=path,key=key,save_to_written_ms=(time.time()-saved_at)*1000,**result)
                     except Exception as error:
                         log("kept_picture_failed",photo=path,reason=str(error),action="grade safe; default look with not-current mark")
                     finally:

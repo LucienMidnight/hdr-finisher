@@ -31,10 +31,15 @@
   let overlays = null;
   const pictureRequests = HDRLibraryRequestQueue.create();
   async function api(route, body, signal) {
+    const measured = ["/api/library/picture", "/api/library/native", "/api/library/overlay-map"].includes(route);
+    const trace = measured ? crypto.randomUUID() : null;
     for (;;) {
+      const queued = performance.now();
+      if (measured) HDRLibraryStopwatch("picture_requested", { path: body.path, request: trace });
       const request = async () => {
+        if (measured) HDRLibraryStopwatch("picture_dispatched", { path: body.path, request: trace, queue_ms: performance.now() - queued });
         const response = await fetch(route, { signal, ...(body === undefined ? {} : {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
+          method: "POST", headers: { "Content-Type": "application/json", ...(trace ? { "X-Library-Request": trace } : {}) }, body: JSON.stringify(body) }) });
         return { response, result: await response.json() };
       };
       const { response, result } = await ((route === "/api/library/picture" || route === "/api/library/native" || route === "/api/library/overlay-map")
@@ -44,6 +49,7 @@
         const error = new Error(typeof result.detail === "string" ? result.detail : "Library request failed.");
         error.status = response.status; throw error;
       }
+      if (measured) HDRLibraryStopwatch("picture_answered", { path: body.path, request: trace, key: result.key, duration_ms: performance.now() - queued, kept: !!result.kept });
       return result;
     }
   }
@@ -121,6 +127,7 @@
     if (!isCurrent()) return;
     await drawPicture(meta, canvas, controller, isCurrent);
     if (!isCurrent()) return;
+    HDRLibraryStopwatch("picture_shown", { path: photo.path, key: meta.key, kept: !!meta.kept, duration_ms: performance.now() - started });
     diagnostics(photo, meta, performance.now() - started);
     if (slow && meta.route.endsWith("-placeholder")) {
       meta = await api("/api/library/picture", { path: photo.path, edge, quality: "quick", priority: priority + 1 }, controller.signal);
@@ -541,6 +548,7 @@
       $("filter-type").replaceChildren(new Option("All file types", ""), ...[...new Set([...result.photos.map(photo => photo.type), ...(state.filters.type ? [state.filters.type] : [])])].sort().map(type => new Option(type, type)));
       $("filter-type").value = state.filters.type || "";
       if (place.kind === "smart") { state.smartFilters = result.filters; state.smartIndexing = result.indexing; $("place-title").textContent = result.name; }
+      HDRLibraryStopwatch("folder_listed", { path });
       state.reading = false; state.allPhotos = result.photos; state.photos = result.photos; state.index = result.photos.length ? 0 : -1;
       state.selection = new Set(state.index >= 0 ? [state.photos[0].path] : []); state.anchor = state.index;
       culling.setUndo(result.undo_available);
@@ -1044,6 +1052,7 @@
     });
   }
   // Read-only status for the focused interaction driver; no test-only behavior.
+  HDRLibraryStopwatch("ready");
   window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
     overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
     filmVisible: state.filmCells.size, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });

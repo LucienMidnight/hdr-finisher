@@ -1746,3 +1746,58 @@ No existing assertion or budget was loosened.
 - Documentation commit: record packaged smoke, ranked stages, decisions and
   hard stops here; replace PRD section 8's old arrival-only note and close F3's
   pending packaged confirmation. No additional production code.
+
+## 16. Library speed round 1 (October 12, 2026)
+
+### Part 1: built-in stopwatch
+
+Always-on, batched one-line events now join the existing backend Library log.
+They record app/backend/helper/page startup; page and helper queue delays;
+decode, source reduction, starting look, cache storage, pixel fetch, renderer
+setup and individual draws; saved-picture source/render/encode/publication;
+and helper pauses, resumes and cancellations. The page sends bounded metadata
+only, with paths and request/picture identifiers, never photo pixel content.
+
+Serial development and unpacked packaged launches used fresh disposable
+profiles and six copied Sony 42 MP ARWs, warm disk, at 2560 x 1440. Seconds
+below are cumulative from app start; they are observations, not launch fixes.
+
+| Event | Development | Packaged |
+|---|---:|---:|
+| App ready | 0.675 | 0.750 |
+| Backend process started | 3.255 | 3.738 |
+| Helper ready | 7.156 | 11.807 |
+| Backend ready | 7.242 | 11.823 |
+| Window created | 7.293 | 11.879 |
+| Page loaded | 9.947 | 14.278 |
+| Library page ready | 10.000 | 14.498 |
+| Folder listed | 12.085 | 19.892 |
+| First picture requested | 12.586 | 19.905 |
+| First picture answered | 13.812 | 21.139 |
+| First picture drawn | 16.212 | 24.205 |
+
+Largest intervals: backend start to ready (4.0 / 8.1 seconds), packaged
+page-ready to folder list (5.4 seconds), window to loaded page (2.7 / 2.4),
+and first answer to draw (2.4 / 3.1). Backend-to-ready includes helper startup;
+these nested stages must not be added twice. One sample per mode cannot
+establish a startup regression against section 15.
+
+First-draw cost was confirmed: roughly 2.4 / 3.1 seconds, dominated by waiting
+for GPU submitted work; later ordinary draws were about 0.02-0.04 seconds.
+Synchronous pipeline creation and highlight analysis were negligible. The log
+does not prove which GPU compilation or execution caused that completion wait.
+The shared five-second first decodes did not reproduce: packaged first four
+decoder imports took 0.12 seconds, RAW processing 0.41-0.45, reduction
+0.22-0.25, total decoded-source stages 0.80-0.82 and starting looks 0.095.
+No warm-up, source, rendering, queue redesign or launch change was made.
+
+Grouped validation: 466 Node tests passed; 1,943 Python tests passed with
+three existing skips. The combined six-map/save driver passed development
+and packaged during evaluation; the existing development folder-check
+regression passed. The saved-source experiment and its stop are recorded
+below; those checks alone do not approve that proposed route.
+
+Local commit note: add the stopwatch without changing rendering; grouped
+fast suites and focused disposable launches passed. Initial driver readiness
+and toggle-selector errors, and a mock signature mismatch introduced by the
+saved-source experiment, were corrected before those passing runs.
