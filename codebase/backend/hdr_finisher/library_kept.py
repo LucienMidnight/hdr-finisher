@@ -11,6 +11,7 @@ from concurrent.futures import CancelledError, ThreadPoolExecutor
 import time
 from PIL import Image
 import numpy as np
+from .gainmap_decoders import GainMapDecodeError
 from .library_grades import grade_key
 from .library_pictures import LibraryPictureCache, reduce_picture
 from .models import EditDocument, ExportSettings, PreviewKind
@@ -292,14 +293,27 @@ class KeptPictures:
         self._open_producer.shutdown(wait=False,cancel_futures=True)
 
     def pixels(self,key,lane):
+        from .exporters import ExportProcessError
         self.cache.file(key)
-        meta=json.loads((self.cache.root/(key+".json")).read_text())
-        path=self.cache.root/(key+"."+meta["extension"])
-        if meta["extension"] == "jpg": image = jpeg_renditions(path, lane == "hdr")
-        else:
-            from . import loader
-            image, reference, _ = loader.decode_avif(path)
-            if lane == "sdr": image = reference
+        metadata=self.cache.root/(key+".json")
+        # Publication uses this lock too: never discard a newly replaced picture.
+        with self._lock:
+            path=None
+            try:
+                meta=json.loads(metadata.read_text())
+                path=self.cache.root/(key+"."+meta["extension"])
+                if meta["extension"] == "jpg": image = jpeg_renditions(path, lane == "hdr")
+                elif meta["extension"] == "avif":
+                    from . import loader
+                    image, reference, _ = loader.decode_avif(path)
+                    if lane == "sdr": image = reference
+                else: raise ValueError("Unsupported kept picture format.")
+            except (OSError, ValueError, EOFError, KeyError, GainMapDecodeError, ExportProcessError) as error:
+                metadata.unlink(missing_ok=True)
+                if path is not None: path.unlink(missing_ok=True)
+                log("kept_picture_unreadable",key=key,reason=str(error),
+                    action="damaged entry removed; retry on Library use")
+                raise ValueError("Saved Library picture is unavailable; request it again.") from error
         if lane == "hdr":
             peak = np.maximum(np.max(image, axis=2, keepdims=True), 1e-6)
             image = image * np.minimum(1, (1000 * .18 / 203) / peak)

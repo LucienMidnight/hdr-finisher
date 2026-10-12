@@ -227,7 +227,9 @@ def create_library_router(worker, browser, store=None):
 
         @router.get("/kept-pixels/{key}")
         def kept_pixels(key: str, lane: Literal["hdr", "sdr"] = "sdr"):
-            body, width, height, stride = kept.pixels(key, lane)
+            try: body, width, height, stride = kept.pixels(key, lane)
+            except (ValueError, OSError, EOFError) as exc:
+                raise HTTPException(status_code=404, detail="Saved Library picture is unavailable; request it again.") from exc
             return Response(body, media_type="application/octet-stream", headers={
                 "X-Image-Width": str(width), "X-Image-Height": str(height), "X-Bytes-Per-Row": str(stride)})
 

@@ -163,3 +163,67 @@ def test_replaced_picture_is_not_a_recent_problem():
     photo="replaced-picture-regression"
     log("kept_picture_replaced",photo=photo,reason="replaced by a newer saved grade")
     assert not any(row.get("photo")==photo for row in recent())
+
+
+@pytest.mark.parametrize("extension", ["jpg", "avif", "npz"])
+def test_unreadable_kept_picture_is_missing_and_remade_without_another_save(setup, monkeypatch, tmp_path, extension):
+    from concurrent.futures import Future
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher import library_api
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from test_library_open_kept import wait_for
+    photo, store, session, marks, grades = setup
+    grade = saved(setup)
+    source_before = photo.read_bytes()
+    sidecar = Path(str(photo) + ".hdrf")
+    grade_before = sidecar.read_bytes()
+    class PendingWorker(Worker):
+        def __init__(self): self.requests = []
+        def submit_library(self, kind, **request):
+            future = Future()
+            self.requests.append((request, future))
+            return "remake", future
+        def cancel(self, job): pass
+    worker = PendingWorker()
+    monkeypatch.setattr(library_api, "LibraryMarks", lambda root: marks)
+    app = FastAPI()
+    app.include_router(create_library_router(worker, MediaBrowserStore(marks.database.parent), store))
+    client = TestClient(app)
+    kept = marks.kept
+    grade_id = identity(grade)
+    key = kept.key(str(photo), grade_id)
+    kept.cache.root.mkdir(parents=True, exist_ok=True)
+    picture = kept.cache.root / (key + "." + extension)
+    if extension == "npz":
+        np.savez(picture, pixels=np.ones((2, 3, 3), dtype=np.float16))
+    else:
+        picture.write_bytes(b"damaged picture")
+    metadata = kept.cache.root / (key + ".json")
+    atomic_json(metadata, {"extension": extension, "grade_identity": grade_id,
+        "source_stat": kept.source_stat(photo)})
+    try:
+        assert kept.cached(photo) and kept.current_meta(str(photo), grade_id)
+        response = client.get(f"/api/library/kept-pixels/{key}?lane=hdr")
+        assert response.status_code == 404
+        assert not picture.exists() and not metadata.exists()
+        assert kept.cached(photo) is None
+        assert kept.current_meta(str(photo), grade_id) is None
+        for _ in range(2):
+            status = client.post("/api/library/settings-status", json={"paths": [str(photo)]}).json()
+            assert not status["photos"][0]["pictureCurrent"]
+        wait_for(lambda: len(worker.requests) == 1 and not kept._requested)
+        request, future = worker.requests[0]
+        assert request["grade"] == grade
+        future.set_result(produce(marks.database.parent, request["path"], request["grade"], request["edge"]))
+        assert kept.cached(photo)["extension"] == "jpg"
+        status = client.post("/api/library/settings-status", json={"paths": [str(photo)]}).json()
+        assert status["photos"][0]["pictureCurrent"]
+        for lane in ("hdr", "sdr"):
+            response = client.get(f"/api/library/kept-pixels/{key}?lane={lane}")
+            assert response.status_code == 200 and response.content
+        assert len(worker.requests) == 1
+        assert photo.read_bytes() == source_before and sidecar.read_bytes() == grade_before
+    finally:
+        kept.close()
