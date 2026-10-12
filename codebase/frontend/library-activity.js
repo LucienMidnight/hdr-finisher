@@ -28,7 +28,8 @@
     if (writer.waiting) jobs.push(writerText(writer));
     if (checkText(index)) jobs.push(checkText(index));
     if (index.state === "indexing" || index.state === "retrying" || index.paused) jobs.push(indexText(index));
-    const problems = writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length + (index.checks?.folders || []).filter(folder => folder.failure || folder.warnings?.length).length;
+    if (health.file_commands?.jobs?.length) jobs.unshift(`File commands: ${health.file_commands.jobs[0].done} of ${health.file_commands.jobs[0].total}`);
+    const problems = (health.file_commands?.attention?.length || 0) + writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length + (index.checks?.folders || []).filter(folder => folder.failure || folder.warnings?.length).length;
     const extra = problems ? ` · Needs attention: ${count(problems)}` : index.state === "failed" || index.state === "retrying" || health.helper.failure || health.helper.recovering ? " · Needs attention" : "";
     return (jobs[0] || "Activity") + (jobs.length > 1 ? ` +${jobs.length - 1}` : "") + extra;
   }
@@ -63,8 +64,12 @@
       if (index.state === "indexing" || index.state === "retrying" || index.paused) indexing.append(action(index.paused ? "Resume indexing" : "Pause indexing", "index-pause", "/api/library/index", { action: index.paused ? "resume" : "pause" }));
       const rescan = action("Re-scan pinned folders now", "index-rescan", "/api/library/index", { action: "rescan" }); rescan.disabled = index.enabled === false;
       indexing.append(rescan, action(index.enabled === false ? "Turn background indexing on" : "Turn background indexing off", "index-enable", "/api/library/index", { action: index.enabled === false ? "enable" : "disable" }));
+      for(const job of health.file_commands?.jobs || []) {
+        const section=node("section","","library-activity-job");section.append(node("p",`${job.action}: ${job.done} of ${job.total}`),action(job.paused?"Resume move":"Pause move",`file-pause:${job.id}`,"/api/library/file-jobs",{id:job.id,action:job.paused?"resume":"pause"}),action("Cancel remaining",`file-cancel:${job.id}`,"/api/library/file-jobs",{id:job.id,action:"cancel"}));panel.append(section);
+      }
       panel.append(indexing, node("h3", "Needs attention", "panel-title"));
-      if (!writer.attention.length && !(health.conflicts || []).length && !health.helper.failure && !health.helper.recovering && index.state !== "failed" && index.state !== "retrying" && !(index.checks?.folders || []).some(folder => folder.failure || folder.warnings?.length)) panel.append(node("p", "Nothing needs attention."));
+      for(const item of health.file_commands?.attention || []) {const section=node("section","","library-activity-job");section.append(node("p",item.message),node("p",`Photo and settings locations: ${item.old} and ${item.new}`),action("Try again",`file-retry:${item.id}`,"/api/library/file-jobs",{id:item.id,action:"resume"}));panel.append(section);}
+      if (!(health.file_commands?.attention?.length) && !writer.attention.length && !(health.conflicts || []).length && !health.helper.failure && !health.helper.recovering && index.state !== "failed" && index.state !== "retrying" && !(index.checks?.folders || []).some(folder => folder.failure || folder.warnings?.length)) panel.append(node("p", "Nothing needs attention."));
       for (const group of writer.attention) {
         const item = node("section", "", "library-activity-job");
         if (group.reason === "grade_conflict") {

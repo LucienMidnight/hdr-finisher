@@ -1332,14 +1332,13 @@ untouched."; "Library settings could not be read; nothing was changed.";
 `folder_create`, `folder_create_undo`, `folder_label`, `folder_show`.
 Existing `.hdrf` files and `library.sqlite3` are unchanged.
 
-Hard stop for stages B, C rename/move, and D: existing filesystem primitives
-cannot atomically change a photo/settings pair or recycle both. A failure
-between the two actions can split them; recovery also needs to handle a
-new occupant of the original name, pending writes and stale helper replies.
-No original-changing command or confirmation is exposed until durable
-ownership/recovery and these failure checks prove this route closed.
-Cross-drive copy/check/remove and Recycle Bin/permanent-delete guarantees
-are therefore not claimed. Existing virtual-copy removal remains available.
+The earlier paired-file hard stop was superseded by Steve's October 12
+file-command brief. A photo and its settings may be separated after a stop;
+the app completes forward on restart or reports both locations without guessing.
+Moving things by hand in Explorer during that gap can orphan a grade. The app
+reports this in Needs attention and never guesses which photo it belongs to.
+Stage B is now built; folder rename/move and original deletion follow in the
+same recorded-command service. Existing virtual-copy removal remains separate.
 
 Stage C independent controls verification: 463 Node and 1,792 Python checks
 passed, three skipped. Focused folder-controls Electron passed at 2560x1440.
@@ -1377,8 +1376,8 @@ never changes the meaning of the expression saved from the filter bar.
 While indexing or waiting to retry, the count and album say: "Indexing is
 still running, so more may turn up." Smart albums have Edit rules and name
 and Delete smart album. They accept normal available commands; manual Remove
-from album and drops into them are absent. Original file controls remain
-unbuilt under the slice 5 hard stop and are absent here as elsewhere.
+from album and drops into them are absent. Photo rename/move also work in smart albums through the same backend
+commands; saved membership remains determined by the rules.
 
 Messages: "That smart album name is taken. Nothing was changed.";
 "Smart album settings could not be read; nothing was changed.";
@@ -1419,3 +1418,55 @@ to copy creation and the existing empty-unknown-rule no-op expectation; both
 were corrected without deleting or loosening an existing assertion. A nonempty
 unknown rule fails matching rather than broadening an album. No original file
 command ran against a real photo folder or a read-only test project.
+
+### Slice 5 Stage B — recorded photo commands (October 12, 2026)
+
+`POST /api/library/file-command` first previews a rename/move and returns an
+opaque token. Executing it rechecks every photo, settings fingerprint and
+indexed pending state. Renames preserve the extension. Move clashes offer
+Keep both, Skip this one and Cancel move before anything is moved. Numbered
+names reserve the photo and its full-extension settings filename together.
+RAW/JPEG sharing a stem remain independent. Windows-invalid names are refused.
+
+The sole backend owns durable JSON records in `library-file-commands`, outside
+the disposable database. Each record carries the complete current settings,
+queued marks/grades/history/copies, source file identity and checksum, index
+rows and exclusive staging names. It is flushed before originals are touched.
+Windows no-replace publication refuses a concurrent destination arrival.
+Cross-drive moves copy to a non-photo temporary name, flush and check SHA-256,
+then publish without replacement. A verified destination is locked while the
+source is removed using its verified file handle, so replacement of a pathname
+cannot make the command delete an unrelated file. Settings use the same
+checked-copy/source-removal guard. Case-only names use recorded temporary
+names. Pixels are never rewritten.
+
+Recovery runs before the settings writer, finishes only forward, and retries
+unresolved items every 15 seconds. Changed, absent, locked or occupied paths
+stay untouched and appear in Activity/Needs attention with both locations.
+Completion produces one notice. The record clears only after settings,
+index and pictures have followed. Pending settings cannot publish at the old
+path; helper replies crossing a command epoch are discarded. Quick/kept
+pictures and overlay maps retarget their cache keys without changing the grade
+identity. No `.hdrf` or SQLite layout change, and no migration, is introduced.
+
+Undo is one recorded reverse command. An occupied old name is left alone and
+reported. It never overwrites. The photo open in Grade and conflict-copy photos
+are left alone while the others proceed. Cross-drive jobs appear in Activity
+with count, Pause and Cancel remaining; both finish the current photo/settings
+pair before stopping, and Cancel leaves unstarted photos where they were.
+
+Messages include "That name is taken. Nothing was renamed."; "The destination
+is occupied. Neither location was overwritten."; "Marks or grades changed;
+preview the command again. Nothing was changed."; the prescribed open-Grade
+message; and "Finished an interrupted file command ... Settings are together
+with their photos." Logs: `file_command_complete`, `file_command_attention`,
+`file_command_notice`. Records retain the detailed checkpoint and error.
+
+Decisions made for Steve in this completion pass:
+- Leave the photo open in Grade alone; allowing it would require changing live
+  session ownership and could send later saves to an old path.
+- Pause/Cancel finishes the current photo/settings pair and stops before the
+  next. Mid-photo rollback would respond sooner but introduce extra failure
+  paths; one large RAW may therefore finish copying before the pause takes effect.
+
+Stage B validation: Node fast checks passed (466); Python fast checks passed (1,836, three skipped). The focused Electron photo-command check passed. Its first run exposed a hidden Undo button after a file change; that was fixed and the same check passed. Interruption and pending-settings checks passed; all file operations used disposable folders.

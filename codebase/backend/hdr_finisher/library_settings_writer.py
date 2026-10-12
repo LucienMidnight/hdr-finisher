@@ -100,6 +100,7 @@ class LibrarySettingsWriter:
         self.wake()
 
     def is_current(self, path, revision):
+        if getattr(self.marks, "file_commands", None) and self.marks.file_commands.blocked(path): return False
         return bool(self.marks._query("SELECT 1 FROM photos JOIN settings_writes USING(path) WHERE path=? AND pending=1 AND revision=?", (path, revision))) and not self._stop.is_set()
 
     @audited("writer_cleanup")
@@ -330,6 +331,7 @@ class LibrarySettingsWriter:
         counts, examples, visible = Counter(), {}, set()
         with self._lane:
             for path in self._pending():
+                if getattr(self.marks, "file_commands", None) and self.marks.file_commands.blocked(path): continue
                 if self._stop.is_set() or self._paused or self._busy():
                     break
                 event = self._attempt(path)

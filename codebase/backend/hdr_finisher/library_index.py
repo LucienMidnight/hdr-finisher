@@ -100,6 +100,10 @@ class LibraryIndex:
                 known = {path: (size, modified, facts) for path, size, modified, facts in
                     db.execute("SELECT path, bytes, mtime_ns, facts FROM files WHERE substr(path, 1, ?) = ?", (len(prefix), prefix))}
                 changed = []
+                files = getattr(self.marks, "file_commands", None)
+                if files:
+                    photos[:] = [p for p in photos if not files.blocked(p["path"]) and not (p["path"] in files.retired and not Path(p["path"]).exists())]
+                    known = {p:v for p,v in known.items() if not files.blocked(p)}
                 for photo in photos:
                     old = known.pop(photo["path"], None)
                     same = old is not None and old[:2] == (photo["bytes"], photo["mtime_ns"])
@@ -117,7 +121,7 @@ class LibraryIndex:
     @audited("index_remember_facts")
     def remember_facts(self, records):
         rows = [(record["path"], record["bytes"], record["mtime_ns"], json.dumps({name: record.get(name) for name in FACT_FIELDS}))
-            for record in records if record.get("mtime_ns") is not None]
+            for record in records if record.get("mtime_ns") is not None and not (getattr(self.marks, "file_commands", None) and (self.marks.file_commands.blocked(record["path"]) or record["path"] in self.marks.file_commands.retired and not Path(record["path"]).exists()))]
         for record in records:
             record["indexed"] = record.get("mtime_ns") is not None
         if not rows:
@@ -232,7 +236,9 @@ class LibraryIndex:
                         if self._paused:
                             break  # Give the lane back; ask again after Resume.
                     try:
-                        return future.result(timeout=0.25)
+                        result = future.result(timeout=0.25)
+                        self._check(generation)
+                        return result
                     except TimeoutError:
                         continue
             finally:

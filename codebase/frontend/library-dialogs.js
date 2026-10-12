@@ -16,7 +16,7 @@
         else input.type = field.type || "text";
         if (field.min != null) input.min = field.min;
         if (field.step != null) input.step = field.step;
-        input.dataset.optional = String(!!field.optional); input.value = field.value || ""; input.name = field.name; input.placeholder = field.placeholder || ""; input.autocomplete = "off"; input.spellcheck = false; input.maxLength = 120;
+        input.dataset.optional = String(!!field.optional); input.value = field.value || ""; input.name = field.name; input.placeholder = field.placeholder || ""; input.autocomplete = "off"; input.spellcheck = false; input.maxLength = field.maxLength || 255;
         label.append(make("span", "", field.label), input); body.append(label); inputs.push(input);
       }
       const actions = make("div", "app-dialog-actions"), no = make("button", "button-secondary", cancel), yes = make("button", danger ? "button-danger" : "button-primary", confirm);

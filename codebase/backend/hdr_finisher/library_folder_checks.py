@@ -101,6 +101,8 @@ class FolderChecks:
             self.index.worker.cancel(job)
 
     def check(self, path, requested=False):
+        files = getattr(self.index.marks, "file_commands", None)
+        epoch = files.epoch if files else 0
         started = self.clock()
         with self.lock:
             previous = deepcopy(self.folders.get(path, {}))
@@ -109,6 +111,7 @@ class FolderChecks:
             result = self._job("scan", path=path)
             if result.get("unreadable_folders"):
                 raise OSError("Some sub-folders could not be read; existing entries kept")
+            if files and epoch != files.epoch: raise CheckAhead()
             old = previous.get("scan", {"photos": [], "settings": {}, "folders": []})
             known = {p["path"]: p for p in old["photos"]}
             current = {p["path"]: p["bytes"] for p in result["photos"]}
@@ -156,6 +159,7 @@ class FolderChecks:
                         photo.update(facts.get(photo["path"], {}))
                 log("folder_check_changed", folder=path, added=len(added), removed=len(removed), changed=len(changed),
                     settings=len(settings_changed), action="library refreshed; originals and settings untouched")
+            if files and epoch != files.epoch: raise CheckAhead()
             # Refresh cached ancestor/descendant views from this read, without another walk.
             with self.lock:
                 for other_path, other in self.folders.items():

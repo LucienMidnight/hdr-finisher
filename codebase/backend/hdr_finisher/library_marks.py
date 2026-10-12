@@ -109,6 +109,9 @@ class LibraryMarks:
             self.copies.document(key)
             return Path(key)
         path = Path(value).expanduser().resolve()
+        files = getattr(self, "file_commands", None)
+        if files and files.blocked(path):
+            raise ValueError("A file command is in progress or needs attention. This photo was left alone.")
         if not path.parent.exists() and path.suffix.lower() in SOURCE_EXTENSIONS:
             # Only known library photos may be changed while disconnected.
             if self._query("SELECT 1 FROM photos WHERE path=? UNION SELECT 1 FROM files WHERE path=?", (str(path), str(path))):
@@ -222,6 +225,10 @@ class LibraryMarks:
             self.conflicts.scan(paths)
             for position, value in enumerate(paths):
                 path, row = Path(value), cached.get(value)
+                files = getattr(self, "file_commands", None)
+                if files and (files.blocked(value) or value in files.retired and not path.exists()):
+                    photos.append(row or {"path":value,"photo_id":None,"marks":Marks().model_dump(),"albums":[],"storage":"none"})
+                    continue
                 invalid = False
                 try:
                     document = documents[position] if documents is not None else self._document(path)
@@ -365,6 +372,15 @@ class LibraryMarks:
 
     @audited("undo", milestone=True)
     def undo(self):
+        # File Undo takes the writer lane before the marks lock, like normal commands.
+        with self._lock:
+            entry = self._undo[-1] if self._undo else None
+        if entry and entry.get("file_command"):
+            result = entry["command"]()
+            with self._lock:
+                if entry in self._undo: self._undo.remove(entry)
+                result["undo_available"] = bool(self._undo)
+            return result
         with self._lock:
             if not self._undo:
                 return self._result([], [])

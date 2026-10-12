@@ -175,12 +175,16 @@ def create_library_router(worker, browser, store=None):
         from .library_grade_api import add_grade_routes
     index = LibraryIndex(marks, browser, worker)
 
+    file_commands = None
+
     @asynccontextmanager
     async def lifespan(_app):
+        await run_in_threadpool(file_commands.start)
         await run_in_threadpool(marks.writer.start, lambda: worker.status()["paused"])
         try:
             yield
         finally:
+            file_commands._stop.set()
             index.close()
             await run_in_threadpool(marks.writer.close)
 
@@ -215,10 +219,13 @@ def create_library_router(worker, browser, store=None):
             return Response(body, media_type="application/octet-stream", headers={
                 "X-Image-Width": str(width), "X-Image-Height": str(height), "X-Bytes-Per-Row": str(stride)})
 
+    from .library_file_commands import add_file_routes
+    file_commands = add_file_routes(router, marks, browser, index, worker, store)
+
     @router.get("/health")
     def health():
         return {"writer": marks.writer.status(), "helper": {"restarts": 0, **worker.status()},
-            "index": index.status(), "conflicts": marks.conflicts.status(), "problems": recent()}
+            "index": index.status(), "file_commands": file_commands.status(), "conflicts": marks.conflicts.status(), "problems": recent()}
 
     @router.post("/writer")
     def writer_command(request: WriterRequest):
@@ -253,6 +260,7 @@ def create_library_router(worker, browser, store=None):
             raise HTTPException(status_code=400, detail=user_error(error)) from error
 
     async def helper_result(request, command, **arguments):
+        epoch = file_commands.epoch
         try:
             job_id, future = await run_in_threadpool(worker.submit_library, command, **arguments)
         except (RuntimeError, ValueError, OSError) as error:
@@ -266,6 +274,8 @@ def create_library_router(worker, browser, store=None):
                 if await request.is_disconnected():
                     raise HTTPException(status_code=499, detail="Library request cancelled.")
                 await asyncio.sleep(.05)
+            if epoch != file_commands.epoch:
+                raise HTTPException(409, "Photos changed during this read. Open the folder again.")
             return future.result()
         except RuntimeError as exc:
             log("helper_request_failed", operation=command, paths=arguments, reason=str(exc), action="request stopped; restart app")

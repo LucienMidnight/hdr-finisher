@@ -53,6 +53,7 @@
   const culling = HDRLibraryCulling.create({ confirm: confirmChange, photos: () => state.allPhotos, selection: () => state.view === "single" && compare.enabled() ? new Set([selected()?.path]) : state.selection, api, status,
     labelName: label => state.labelNames[label] || "",
     updated: result => {
+      if(result.files_changed) { void filesChanged(result); return; }
       if(result.copies_changed) { void refreshPins(); void reopen(); return; }
       if (result.smart_changed) { void smart.refresh().then(() => smart.poll()).then(result => { if (result && state.collection?.kind === "smart") { state.allPhotos = result.photos; state.smartFilters = result.filters; applyQuery(); } }); }
       const place = state.collection;
@@ -75,6 +76,15 @@
     showTag: tag => browseCollection("tag", tag), indexing: () => state.indexing?.state === "indexing",
     labelNames: () => state.labelNames,
     setLabelNames: async names => { state.labelNames = (await api("/api/library/preferences", { label_names: names })).label_names; updateDetails(); paintGrid(); paintFilm(); } });
+  async function filesChanged(result) {
+    culling.setUndo(result.undo_available); $("library-undo").hidden = !result.undo_available;
+    for(const change of result.changes || []) {
+      const remap = p => p === change.old || p.startsWith(change.old + "\\") || p.startsWith(change.old + "/") ? change.new + p.slice(change.old.length) : p;
+      state.path = remap(state.path); if(state.lastFolder) state.lastFolder=remap(state.lastFolder);
+    }
+    await refreshPins(); await reopen();
+  }
+  const fileCommands = HDRLibraryFileCommands.create({api,status,pins:()=>state.pins,changed:filesChanged});
   const reopen = () => state.collection ? browseCollection(state.collection.kind, state.collection.name) : browse(state.path);
   function selected() { return state.photos[state.index]; }
   function clearCells(map) {
@@ -170,7 +180,7 @@
     element.draggable = true;
     element.addEventListener("dragstart", event => {
       if (!state.selection.has(photo.path)) select(state.photos.findIndex(item => item.path === photo.path));
-      event.dataTransfer.setData(HDRLibraryAlbums.DRAG, String(state.selection.size)); event.dataTransfer.effectAllowed = "copy";
+      event.dataTransfer.setData(HDRLibraryAlbums.DRAG, String(state.selection.size)); event.dataTransfer.effectAllowed = "copyMove";
     });
     const started = performance.now();
     loadAndShow(photo, container === $("film-space") ? 192 : 512, canvas, cell.controller,
@@ -342,6 +352,8 @@
       ...(one ? [{ label: "Open in Grade", key: "Enter", run: openGrade }] : []),
       ...(grades.length ? [...(one ? [{ separator: true }] : []), ...grades] : []),
       { separator: true }, ...albums.menuActions(paths),
+      ...(one && !photo.copy_id ? [{label:"Rename photo…",run:()=>fileCommands.rename(photo)}] : []),
+      ...(chosen.some(p=>!p.copy_id) ? [{label:"Move to folder…",run:()=>fileCommands.move(chosen)}] : []),
       ...(chosen.some(item => item.copy_id) ? [{ separator: true }, { label: "Remove virtual copy…", key: "Del", danger: true, run: () => removeCopy(chosen) }] : [])],
       { label: "Photo actions", onError: error => status(error.message) });
   }
@@ -610,6 +622,8 @@
   $("check-photos").addEventListener("click", () => { if (state.path) void requestCheck([state.path]).catch(error => status(error.message)); });
   function bindFolderMenu(element, path) {
     element.addEventListener("contextmenu", event => showFolderMenu(event, path));
+    element.addEventListener("dragover", event => { if(!state.picker && event.dataTransfer.types.includes(HDRLibraryAlbums.DRAG)) {event.preventDefault();event.dataTransfer.dropEffect="move";} });
+    element.addEventListener("drop", event => { if(state.picker || !event.dataTransfer.types.includes(HDRLibraryAlbums.DRAG))return;event.preventDefault();event.stopPropagation();void fileCommands.move(state.photos.filter(p=>state.selection.has(p.path)),path).catch(e=>status(e.message)); });
     element.addEventListener("keydown", event => {
       if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) showFolderMenu(event, path);
     });
@@ -804,8 +818,9 @@
     const before = state.indexing?.passes; state.indexing = next;
     if (before !== next.passes) void albums.refresh().catch(error => status(error.message));
   }
+  let fileRevision = 0;
   const activity = HDRLibraryActivity.create({ button: $("index-status"), panel: $("library-activity"), api, status,
-    onHealth: next => { showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
+    onHealth: next => { if(next.file_commands && next.file_commands.revision !== fileRevision) {fileRevision=next.file_commands.revision;if(next.file_commands.changes.length)void filesChanged({...next.file_commands,undo_available:culling.undoAvailable()});} showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
   $("library-undo").addEventListener("click", () => { void culling.undo(); });
   let checkEvent = 0, refreshingCheck = false;
   const checkClient = crypto.randomUUID();

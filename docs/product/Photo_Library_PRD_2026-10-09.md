@@ -2177,20 +2177,10 @@ The wireframe for the views in 5.3 is the mock-up in
 
 **October 12 — slices 5/6 brief:** Stage A built: measured highlight peaks
 no longer count as edits; full stored grades and rendering stay unchanged.
-Slice 5 is **partially built**: New folder inside, Rename label and Show in
-Explorer; safe Undo of a new empty folder and pin labels. Photo rename/move,
-folder rename/move and original delete remain unbuilt under the brief's
-file-safety hard stop: pair-level interruption, rollback-clash and Recycle
-Bin guarantees have not been proved. No original-changing controls are exposed.
-Slice 6 is **built**: create/edit/delete saved filters, Save as smart album,
-shared all/any/is-not matching, folder scope, live counts and membership,
-and Undo. Rules survive losing the database. Available Library commands work
-inside smart albums; the original file commands stopped above remain absent.
-Final validation: 466 JavaScript and 1,800 Python checks passed, three existing
-skips. Focused disposable Electron checks passed for Stage A, the independent
-Stage C controls and Stage E. No Stage B/D original-file check was run because
-those commands remain unbuilt. See the technical Library notes for the
-50,000-photo synthetic-index measurements and unattended decisions.
+Slice 5 is **partially built**: photo Rename and Move now use durable forward
+recovery under Steve's revised October 12 guarantee. New folder inside,
+Rename label and Show in Explorer also work. Folder Rename/Move and original
+Delete are the remaining commands being completed to that guarantee.
 
 
 **Slice 1, Stage A — October 10 implementation:** the main window now opens
