@@ -2691,6 +2691,34 @@ here because the library must be built ready for it.
 
 ---
 
+## Library slice 4: Steve's review and polish reminders — October 12
+
+Steve accepted the ten slice 4 decisions. Shared normalized pan (decision 2)
+is acceptable for now; the highlight/shadow collision rule and focus noise
+filtering/map resolution (6–8) remain for his real-photo testing. Reference
+navigation, reference retention, and colour-aware RAW shadows (1, 3, 10) are
+confirmed. Keep the current defaults while completing the remaining Library
+features.
+
+Carry these reminders into the Library polish pass:
+
+- [ ] **Decision 4 — test and revisit blocked shadows.** Steve should try the
+  near-black 0.1% warning on deliberately dark areas and noisy RAW shadows;
+  revisit the threshold and usefulness of the warning during polish.
+- [ ] **Decision 5 — decide how the UI explains exposure warnings.** Review
+  how stored-code clipping, unavailable HDR/floating-point headroom, and
+  unavailable overlays on edited photos are shown and explained.
+- [ ] **Decision 9 — add overlay colour settings to the UI menu bar.** Keep
+  the present focus/exposure colours for now; make the colour settings
+  available through the menu bar during polish.
+
+These are follow-ups, not a request to change thresholds, maps, or controls
+in this slice. Decisions 6–8 also await Steve's testing: highlight priority
+when warnings share a map cell, suppression of fine texture as noise, and
+blockiness from compact focus maps at 100%.
+
+---
+
 ## 12. Related: grading in SDR without any HDR
 
 Raised by Steve on October 9, after the rest of this document was organised.

@@ -1284,3 +1284,16 @@ Precision follow-up validation: 463 Node; 1,770 Python passed, 3 skipped
 near-white RGB16 PNG with no false clipping, all Library views and live colour/
 strength reuse. No check failed in this correction. Its initial regression
 confirmed the ordinary decoder's uint16-to-uint8 loss before changing the reader.
+
+### Steve's slice 4 review — October 12
+
+Steve accepted the ten decisions, with normalized pan acceptable for now and
+real-photo testing still pending for shadow warnings, warning collisions,
+focus noise filtering, and compact-map blockiness. The PRD now carries three
+polish reminders: test/revisit near-black shadows (4), review exposure warning
+explanations in the UI (5), and add overlay colour settings to the menu bar
+(9). No implementation or defaults changed.
+
+Validation: 463 Node and 1,770 Python passed, 3 skipped (3:46); no failures.
+No Electron check covers this documentation-only change. A thread reminder
+checks for the start of Library polish and stays quiet until then.
