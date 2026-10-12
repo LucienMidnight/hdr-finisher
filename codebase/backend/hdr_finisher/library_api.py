@@ -187,6 +187,8 @@ def create_library_router(worker, browser, store=None):
     router = APIRouter(prefix="/api/library", lifespan=lifespan, route_class=LibraryRoute)
     from .library_review import add_review_routes
     add_review_routes(router, index, marks)
+    from .library_folder_commands import add_folder_command_routes
+    folder_commands = add_folder_command_routes(router, marks, browser, index)
     if store is not None:
         add_grade_routes(router, marks, store)
         from .library_kept import KeptPictures, preferences as picture_preferences
@@ -280,7 +282,7 @@ def create_library_router(worker, browser, store=None):
     def pins():
         if index._thread is None:
             index.kick()  # The first Library page starts background indexing.
-        return {"pinned": browser.pinned()}
+        return {"pinned": folder_commands.pins()}
 
     @router.get("/index")
     def index_status():
@@ -362,7 +364,7 @@ def create_library_router(worker, browser, store=None):
             for path in paths:
                 browser.add_pin(path)
             index.kick()
-            return {"pinned": browser.pinned(), "skipped": sum(path in previous for path in paths)}
+            return {"pinned": folder_commands.pins(), "skipped": sum(path in previous for path in paths)}
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=user_error(exc)) from exc
 

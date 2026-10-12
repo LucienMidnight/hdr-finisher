@@ -53,7 +53,7 @@
   const culling = HDRLibraryCulling.create({ confirm: confirmChange, photos: () => state.allPhotos, selection: () => state.view === "single" && compare.enabled() ? new Set([selected()?.path]) : state.selection, api, status,
     labelName: label => state.labelNames[label] || "",
     updated: result => {
-      if(result.copies_changed) { void reopen(); return; }
+      if(result.copies_changed) { void refreshPins(); void reopen(); return; }
       const place = state.collection;
       if (place) {
         // An album or tag view is always current: photos join and leave with the command.
@@ -616,6 +616,25 @@
       await refreshPins();
       status(pinned ? "Folder unpinned. Photos stay where they are." : "Folder pinned.");
     }}] : [{ label: "Add folder…", run: openPicker }];
+    if (path && !state.picker) {
+      const selection = [...state.folderSelection];
+      const control = async (action, name = "") => {
+        const result = await api("/api/library/folder-command", { action, paths: action === "show" ? selection : [path], name });
+        culling.setUndo(result.undo_available); await refreshPins();
+        if (action === "new") await browse(path);
+        confirmChange(action === "new" ? `Folder ${name} created. Ctrl+Z removes it while empty.` : action === "label" ? "Folder label saved. The folder on disk is unchanged." : "Opened in Explorer.", result.undo_available);
+      };
+      actions.push({ separator: true },
+        { label: "New folder inside…", disabled: selection.length !== 1, run: async () => {
+          const answer = await HDRLibraryDialogs.ask({ title: "New folder inside", fields: [{ name: "name", label: "Folder name" }], confirm: "Create folder" });
+          if (answer) await control("new", answer.name);
+        } },
+        ...(pinned ? [{ label: "Rename label…", disabled: selection.length !== 1, run: async () => {
+          const answer = await HDRLibraryDialogs.ask({ title: "Rename label", message: "Only the name in this list changes.", fields: [{ name: "name", label: "Label", value: state.pins.find(p => p.path === path)?.name }], confirm: "Save label" });
+          if (answer) await control("label", answer.name);
+        } }] : []),
+        { label: "Show in Explorer", run: () => control("show") });
+    }
     if (path && !state.picker) actions.unshift({ label: "Check for new photos", run: () => requestCheck([...state.folderSelection]) }, { separator: true });
     showMenu(event, actions, { label: "Folder actions", anchor: event.target.closest("button") || $("add-folder"),
       onError: error => { if (state.picker) $("picker-status").textContent = error.message; else status(error.message); } });

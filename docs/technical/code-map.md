@@ -386,3 +386,5 @@ only visible grid/film/single/compare surfaces and cancels work on exit.
 cancellation and eviction; `library-exposure.js` and `library-focus.js` are the
 focused disposable Electron checks. `performance/library-focus-trial.py` is a
 bounded read-only half/full/controlled-softness trial, not a folder sweep.
+
+| Independent Library folder controls | `codebase/backend/hdr_finisher/library_folder_commands.py`: new empty folder, pin label and Explorer; `frontend/photo-library.js`: menus. Original rename/move/delete remain unbuilt behind the file-safety hard stop. |

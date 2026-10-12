@@ -1311,3 +1311,38 @@ skipped. The focused measurement-identity Electron check passed at 2560x1440
 on disposable PNGs. Initial checks caught unnecessary first-save scheduling
 and driver Save-button/timing mistakes; these were corrected without weakening
 assertions. No rendering, export, Proof, shader or budget changes.
+
+### Slice 5 Stage C — independent folder controls (October 12, 2026)
+
+`POST /api/library/folder-command` supports `new`, `label` and `show`.
+New folder inside uses exclusive creation and refuses an existing name,
+including a difference only in capitals. Windows reserved names, forbidden
+characters, trailing spaces/full stops and overlong names are rejected.
+It creates only an empty folder; one Undo removes it only while it remains
+empty and retains the original identity. Rename label changes `pin_labels`
+in `library-preferences.json`, preserves other preferences, and is one Undo.
+Labels survive database loss. Show in Explorer accepts selected folders,
+checks all of them first, and uses the Windows shell. Ctrl/Shift folder
+selection already exists; only Show in Explorer applies to several here.
+
+Messages: "That name is taken. Nothing was created."; plain Windows name
+reasons; "The new folder is no longer empty or is in use; Undo left it
+untouched."; "Library settings could not be read; nothing was changed.";
+"Restored the folder label."; "Removed the empty new folder.". Logs:
+`folder_create`, `folder_create_undo`, `folder_label`, `folder_show`.
+Existing `.hdrf` files and `library.sqlite3` are unchanged.
+
+Hard stop for stages B, C rename/move, and D: existing filesystem primitives
+cannot atomically change a photo/settings pair or recycle both. A failure
+between the two actions can split them; recovery also needs to handle a
+new occupant of the original name, pending writes and stale helper replies.
+No original-changing command or confirmation is exposed until durable
+ownership/recovery and these failure checks prove this route closed.
+Cross-drive copy/check/remove and Recycle Bin/permanent-delete guarantees
+are therefore not claimed. Existing virtual-copy removal remains available.
+
+Stage C independent controls verification: 463 Node and 1,792 Python checks
+passed, three skipped. Focused folder-controls Electron passed at 2560x1440.
+The driver was corrected for transient Undo wording and explicit UTF-8 after
+a failed write; assertions on disk safety were retained. No original rename,
+move or delete was run.

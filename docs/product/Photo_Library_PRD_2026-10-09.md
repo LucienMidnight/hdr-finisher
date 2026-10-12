@@ -2167,6 +2167,16 @@ The wireframe for the views in 5.3 is the mock-up in
 
 ## 8. Build order
 
+**October 12 — slices 5/6 brief:** Stage A built: measured highlight peaks
+no longer count as edits; full stored grades and rendering stay unchanged.
+Slice 5 is **partially built**: New folder inside, Rename label and Show in
+Explorer; safe Undo of a new empty folder and pin labels. Photo rename/move,
+folder rename/move and original delete remain unbuilt under the brief's
+file-safety hard stop: pair-level interruption, rollback-clash and Recycle
+Bin guarantees have not been proved. No original-changing controls are exposed.
+Smart albums are recorded here when their checks pass.
+
+
 **Slice 1, Stage A — October 10 implementation:** the main window now opens
 on Library. Add folder accepts several folders; pins persist using the
 existing preferences store. Pins expand lazily, and clicking a folder lists
