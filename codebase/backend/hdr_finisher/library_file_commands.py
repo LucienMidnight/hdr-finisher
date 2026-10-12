@@ -68,6 +68,9 @@ class FileCommands:
 
     def plan(self,request):
         with self._lane,self.marks.writer._lane,self.marks._lock:
+            if request.action in {'folder_rename','folder_move'}:
+                from .library_file_folders import plan
+                return plan(self,request)
             if request.action not in {'rename','move'}: raise ValueError('That file command is not available.')
             if request.action=='rename' and len(request.paths)!=1: raise ValueError('Select one original photo to rename.')
             destination=Path(request.destination).resolve(strict=True) if request.action=='move' else None
@@ -134,6 +137,9 @@ class FileCommands:
             if record is None: raise ValueError('The command preview expired. Open it again; nothing was changed.')
             # Revalidate the whole selection before recording or touching originals.
             for item in record['items']:
+                if item.get('folder'):
+                    from .library_file_folders import validate
+                    validate(self,item);continue
                 if self.protected(item['old']): raise ValueError(OPEN_MESSAGE)
                 if not same(item['old'],item['stamp'],item['checksum']): raise ValueError('A photo changed; preview the command again. Nothing was changed.')
                 old=Path(item['old']);side=self.marks._sidecar(old)
@@ -204,7 +210,8 @@ class FileCommands:
         self.checkpoint(record,item,'indexed')
 
     def settings(self,record,item):
-        old,new=self.marks._sidecar(Path(item['old'])),self.marks._sidecar(Path(item['new']))
+        old=Path(item['settings_old']) if item.get('settings_old') else self.marks._sidecar(Path(item['old']))
+        new=self.marks._sidecar(Path(item['new']))
         if os.path.normcase(str(old))==os.path.normcase(str(new)) and str(old)!=str(new):
             backup=Path(item['side_old_stage'])
             if not backup.exists() and not item.get('settings_published') and old.exists():
@@ -254,7 +261,10 @@ class FileCommands:
                 if record.get('cancelled') and not item.get('phase'):
                     item['done']=True;item['cancelled']=True;self.save(record);continue
                 try:
-                    self.move_item(record,item)
+                    if item.get('folder'):
+                        from .library_file_folders import run
+                        run(self,record,item)
+                    else: self.move_item(record,item)
                     item.pop('error',None);item['done']=True;self.save(record);self.hook('cleared_item',item)
                 except (OSError,ValueError) as e:
                     item['error']=f"{item['old']} → {item.get('new','')}: {e}"
@@ -271,14 +281,16 @@ class FileCommands:
                         items=[];warnings=[]
                         for original in completed:
                             try:
-                                request=FileRequest(action='rename',paths=[original['new']],name=Path(original['old']).stem)
+                                folder=original.get('folder',False)
+                                request=FileRequest(action='folder_rename' if folder else 'rename',paths=[original['new']],name=Path(original['old']).name if folder else Path(original['old']).stem)
                                 if Path(original['new']).parent!=Path(original['old']).parent:
-                                    request=FileRequest(action='move',paths=[original['new']],destination=str(Path(original['old']).parent))
+                                    request=FileRequest(action='folder_move' if folder else 'move',paths=[original['new']],destination=str(Path(original['old']).parent))
                                 result=self.plan(request)
                                 if result.get('clashes'): raise ValueError('The old name is taken. Undo left this photo alone.')
                                 r=self.plans.pop(result['token']);prepared=r['items']
                                 for entry in prepared:
-                                    entry['payload']=document_paths(entry['payload'],entry['new'],original['old']);entry['new']=original['old']
+                                    if not entry.get('folder'): entry['payload']=document_paths(entry['payload'],entry['new'],original['old'])
+                                    entry['new']=original['old']
                                 items+=prepared;warnings+=r['warnings']
                             except (OSError,ValueError) as e: warnings.append(f"{original['new']}: {e}")
                         token=uuid4().hex;self.plans[token]={'id':token,'action':'undo','items':items,'warnings':warnings}

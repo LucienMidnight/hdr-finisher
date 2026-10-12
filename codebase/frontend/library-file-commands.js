@@ -48,7 +48,25 @@
    }
    await finish(plan,'move');
   }
-  return Object.freeze({rename,move,destination,clash});
+  async function folder(action,paths) {
+   if(action==='folder_rename') {
+    let name=paths[0].split(/[\\/]/).pop(),message='Everything inside follows the new folder name.';
+    for(;;){const answer=await ask({title:'Rename folder',message,fields:[{name:'name',label:'Folder name',value:name}],confirm:'Rename folder'});if(!answer)return;name=answer.name;
+     try{const plan=await options.api('/api/library/file-command',{action,paths,name});await folderFinish(plan,action);return;}catch(e){message=e.message;}
+    }
+   }
+   const target=await destination('Move folder');if(!target)return;
+   const plan=await options.api('/api/library/file-command',{action,paths,destination:target});
+   if(!plan.count){options.status(plan.warnings.join(' ')||'Nothing moved.');return;}
+   if(!await ask({title:'Move folders',message:`Move ${plan.count} folders, including every file inside, to ${plan.destination}? ${plan.warnings.join(' ')}`,confirm:'Move folders'}))return;
+   await folderFinish(plan,action);
+  }
+  async function folderFinish(plan,action){
+   if(!plan.count){options.status(plan.warnings.join(' ')||'Nothing changed.');return;}
+   const result=await options.api('/api/library/file-command',{action,paths:[],token:plan.token});await options.changed(result);
+   options.status(`${result.count} folders ${action==='folder_rename'?'renamed':'moved'}. ${result.warnings.join(' ')}${result.undo_available?' Ctrl+Z undoes it.':''}`);
+  }
+  return Object.freeze({rename,move,folder,destination,clash});
  }
  window.HDRLibraryFileCommands=Object.freeze({create});
 })();

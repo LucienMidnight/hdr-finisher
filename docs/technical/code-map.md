@@ -393,3 +393,5 @@ Library slices 5/6 commands:
 | --- | --- |
 | Independent Library folder controls | `codebase/backend/hdr_finisher/library_folder_commands.py`: new empty folder, pin label and Explorer; `frontend/photo-library.js`: menus. Original photo rename/move use `library_file_commands.py`, `library_file_io.py` and `library_file_state.py`: durable intent, forward recovery, verified no-replace publication, index/cache retargeting. `frontend/library-file-commands.js` owns previews and confirmations. |
 | Smart albums | `codebase/backend/hdr_finisher/library_smart_albums.py`: durable rules, undo and indexed candidates; `frontend/library-smart-albums.js`: editor/navigation/live count; `frontend/library-query.js`: shared matching/fields. |
+
+Whole-folder original Rename/Move: `library_file_folders.py`, using the durable `library_file_commands.py` record, `library_file_io.py` exclusive renames and `library_file_state.py` path retargeting. User controls are in `library-file-commands.js`; the focused driver is `library-folder-file-commands.js`.

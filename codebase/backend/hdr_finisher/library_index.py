@@ -120,13 +120,13 @@ class LibraryIndex:
 
     @audited("index_remember_facts")
     def remember_facts(self, records):
-        rows = [(record["path"], record["bytes"], record["mtime_ns"], json.dumps({name: record.get(name) for name in FACT_FIELDS}))
-            for record in records if record.get("mtime_ns") is not None and not (getattr(self.marks, "file_commands", None) and (self.marks.file_commands.blocked(record["path"]) or record["path"] in self.marks.file_commands.retired and not Path(record["path"]).exists()))]
         for record in records:
             record["indexed"] = record.get("mtime_ns") is not None
-        if not rows:
-            return
         with self.marks._lock:
+            commands = getattr(self.marks, "file_commands", None)
+            rows = [(r["path"], r["bytes"], r["mtime_ns"], json.dumps({name: r.get(name) for name in FACT_FIELDS}))
+                for r in records if r.get("mtime_ns") is not None and not (commands and (commands.blocked(r["path"]) or r["path"] in commands.retired and not Path(r["path"]).exists()))]
+            if not rows: return
             db = self.marks._connect()
             try:
                 with db:

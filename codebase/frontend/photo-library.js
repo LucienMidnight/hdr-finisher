@@ -654,6 +654,8 @@
           const answer = await HDRLibraryDialogs.ask({ title: "Rename label", message: "Only the name in this list changes.", fields: [{ name: "name", label: "Label", value: state.pins.find(p => p.path === path)?.name }], confirm: "Save label" });
           if (answer) await control("label", answer.name);
         } }] : []),
+        { label: "Rename folder…", disabled: selection.length !== 1, run: () => fileCommands.folder('folder_rename',selection) },
+        { label: "Move folder…", run: () => fileCommands.folder('folder_move',selection) },
         { label: "Show in Explorer", run: () => control("show") });
     }
     if (path && !state.picker) actions.unshift({ label: "Check for new photos", run: () => requestCheck([...state.folderSelection]) }, { separator: true });

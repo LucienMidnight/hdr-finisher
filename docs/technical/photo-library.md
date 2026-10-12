@@ -1470,3 +1470,25 @@ Decisions made for Steve in this completion pass:
   paths; one large RAW may therefore finish copying before the pause takes effect.
 
 Stage B validation: Node fast checks passed (466); Python fast checks passed (1,836, three skipped). The focused Electron photo-command check passed. Its first run exposed a hidden Undo button after a file change; that was fixed and the same check passed. Interruption and pending-settings checks passed; all file operations used disposable folders.
+
+### Stage C original folder commands (October 12 completion)
+
+Rename folder and Move folder carry every file inside, including unknown files.
+Folders move only on the same drive and are never merged. An open Grade photo
+or an unreadable/conflicting settings file leaves the whole folder alone.
+Each folder tree has a durable record before its exclusive rename, and pending
+settings are carried in it. Recovery finishes forward, without using an old
+name that another file or folder has taken. Pins, nested pins, custom labels,
+recent folders, smart-album folder scopes, albums and cached pictures follow.
+Each command has one Undo; an occupied old folder prevents that Undo.
+
+Decisions made for Steve: folder moves stay on the same drive (agreed brief
+default). A conflict or link anywhere inside leaves the whole folder alone,
+so a move cannot silently exclude part of the tree. Moving a folder also
+updates saved smart-album folder scopes, so their existing scope follows it.
+
+Stage C validation: 21 focused folder data checks passed, alongside all 36
+photo-command checks. The focused Electron folder check passed. Its first run
+checked Undo before it finished because both folder rows had the same name;
+the check now waits for the current path to return. No assertion was weakened.
+Stage C required fast suites passed: Node 466; Python 1,857, three skipped.
