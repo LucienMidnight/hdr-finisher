@@ -387,4 +387,9 @@ cancellation and eviction; `library-exposure.js` and `library-focus.js` are the
 focused disposable Electron checks. `performance/library-focus-trial.py` is a
 bounded read-only half/full/controlled-softness trial, not a folder sweep.
 
+Library slices 5/6 commands:
+
+| Area | Code and scope |
+| --- | --- |
 | Independent Library folder controls | `codebase/backend/hdr_finisher/library_folder_commands.py`: new empty folder, pin label and Explorer; `frontend/photo-library.js`: menus. Original rename/move/delete remain unbuilt behind the file-safety hard stop. |
+| Smart albums | `codebase/backend/hdr_finisher/library_smart_albums.py`: durable rules, undo and indexed candidates; `frontend/library-smart-albums.js`: editor/navigation/live count; `frontend/library-query.js`: shared matching/fields. |

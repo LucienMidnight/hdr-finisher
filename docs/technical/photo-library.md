@@ -1346,3 +1346,76 @@ passed, three skipped. Focused folder-controls Electron passed at 2560x1440.
 The driver was corrected for transient Undo wording and explicit UTF-8 after
 a failed write; assertions on disk safety were retained. No original rename,
 move or delete was run.
+
+### Slice 6 — smart albums (October 12, 2026)
+
+`library-preferences.json` now holds `smart_albums`: stable ID, name and
+saved filter expression, including rules, all/any, optional folder paths
+and the common filter controls. The database remains disposable. Create,
+edit and delete each save the preferences atomically, preserve other settings,
+touch no photo, and have one Undo. Undo refuses an outside rules change.
+No `.hdrf` or database layout changes and no migration code are introduced.
+
+`GET /api/library/smart-albums`, `POST /api/library/smart-albums` and
+`GET /api/library/smart-candidates` are backend commands. Candidates come
+only from indexed files, marks, grades and virtual copies. A database stamp
+including SQLite's change counter avoids retransferring an unchanged list.
+The page checks for changed candidates while visible; marks apply at once
+and external grade/tag changes join or leave automatically on the next check.
+The frontend's `library-query.js` is the one matching engine for the filter
+bar, smart albums and the editor's live count. Shared field definitions ensure
+every field offered by one is available in the other. File-name rules on a
+virtual copy use its original filename, rather than its copy caption.
+
+The Albums + menu offers New smart album; the filter bar offers Save as
+smart album with the current expression and folder scope. The editor has
+name, all/any, field/comparison/value, is not, folder ticks and live count.
+No folders ticked disables Save; all ticked means the indexed library when
+changed. Saved explicit scope remains explicit on opening, even if it is the
+only pin. Common quick filters remain editable required controls, so Match any
+never changes the meaning of the expression saved from the filter bar.
+While indexing or waiting to retry, the count and album say: "Indexing is
+still running, so more may turn up." Smart albums have Edit rules and name
+and Delete smart album. They accept normal available commands; manual Remove
+from album and drops into them are absent. Original file controls remain
+unbuilt under the slice 5 hard stop and are absent here as elsewhere.
+
+Messages: "That smart album name is taken. Nothing was changed.";
+"Smart album settings could not be read; nothing was changed.";
+"Smart albums changed elsewhere; Undo left them untouched.";
+"Restored smart album rules. Photos untouched."; invalid rule/comparison
+messages explain that nothing changed. Logs: `smart_album_create`,
+`smart_album_edit`, `smart_album_delete`, `smart_album_undo`. Normal API failure
+logging retains technical details outside the user interface.
+
+Disposable 50,000-photo synthetic-index trial: backend candidate retrieval
+1.50 seconds cold, 0.56 seconds cached; unchanged polling 0.11 ms. JSON
+serialization took 89 ms for a 25.5 MB snapshot. The shared engine filtered
+5,000 picked items in 41 ms; the unfiltered 50,000-item sort took 59 ms.
+These measure indexed retrieval and matching, not thumbnail loading or an
+on-screen 50,000-photo shoot. Reproduce with the two `library-smart-*` scripts
+in `tests/performance`; they touch only a new disposable output index.
+
+Decisions made for Steve:
+- Save-as retains quick filters as editable required controls alongside the
+  all/any rule list. Flattening everything into all/any rows could silently
+  change the existing filter meaning; the trade-off is a few extra controls.
+- Virtual-copy file-name rules test the original name. Matching the copy name
+  instead would be convenient for copy naming but would mislabel a File name rule.
+- An empty folder selection disables Save, rather than meaning the whole
+  library. It avoids unintentionally broad albums; empty-album scopes are not saved.
+- Original-changing commands stay unavailable until paired-file recovery,
+  rollback clashes and recycling safety are proved. Exposing partial commands
+  would make this build more useful but risk separating an original and its settings.
+
+Stage E verification: 466 Node and 1,800 Python checks passed, three existing
+skips. The focused smart-albums Electron check passed at 2560x1440 on disposable
+photos: actual editor/save-as controls, live membership after rating changes,
+edit/delete/Undo and absence of manual Remove from album. Fast checks cover
+each shared field/comparison, all/any/is-not, scope boundaries, indexed mark,
+tag and grade changes, independent virtual-copy marks, and rules surviving
+database loss/rebuild. Initial focused checks exposed an incorrect test call
+to copy creation and the existing empty-unknown-rule no-op expectation; both
+were corrected without deleting or loosening an existing assertion. A nonempty
+unknown rule fails matching rather than broadening an album. No original file
+command ran against a real photo folder or a read-only test project.

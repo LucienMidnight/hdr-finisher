@@ -189,6 +189,8 @@ def create_library_router(worker, browser, store=None):
     add_review_routes(router, index, marks)
     from .library_folder_commands import add_folder_command_routes
     folder_commands = add_folder_command_routes(router, marks, browser, index)
+    from .library_smart_albums import add_smart_album_routes
+    add_smart_album_routes(router, marks, index)
     if store is not None:
         add_grade_routes(router, marks, store)
         from .library_kept import KeptPictures, preferences as picture_preferences

@@ -28,7 +28,13 @@
       const head = make("div", "library-filter-head"); head.append(make("strong", "", field.label));
       const not = make("label", "library-filter-not"), box = make("input"); box.type = "checkbox"; box.id = "filter-rule-not";
       not.append(box, make("span", "", "is not")); head.append(not); panel.append(head);
-      if (field.kind === "choice") {
+      if (field.kind === "text") {
+        const form = make("form", "library-filter-range"), input = make("input"), comparison = make("select"), go = make("button", "button-primary", "Add");
+        input.setAttribute("aria-label", field.label); input.type = "text";
+        comparison.setAttribute("aria-label", "Comparison"); comparison.append(...["contains", "is", "starts", "ends"].map(value => new Option(value, value)));
+        go.type = "submit"; form.append(comparison, input, go); panel.append(form);
+        form.addEventListener("submit", event => { event.preventDefault(); if (input.value.trim()) add({ field: id, op: comparison.value, value: input.value.trim(), not: box.checked }); });
+      } else if (field.kind === "choice") {
         const found = query.values(options.photos(), id), list = make("div", "library-filter-values");
         for (const item of found) {
           const row = make("button", "library-filter-value"); row.type = "button"; row.dataset.value = item.value;
@@ -42,7 +48,7 @@
         const form = make("form", "library-filter-range"), from = make("input"), to = make("input"), go = make("button", "button-primary", "Add");
         const date = field.kind === "date";
         for (const [input, text] of [[from, "From"], [to, "To"]]) {
-          input.type = date ? "date" : "number"; if (!date) { input.min = "1"; input.step = "1"; }
+          input.type = date ? "date" : "number"; if (!date) { input.min = id === "rating" ? "0" : "1"; input.step = "1"; }
           input.setAttribute("aria-label", `${text} ${field.label}`); const label = make("label"); label.append(make("span", "", text), input); form.append(label);
         }
         go.type = "submit"; form.append(go);

@@ -1,7 +1,8 @@
 /* Pure sort/filter rules shared by the Library and its fast checks. */
 (() => {
   const rawTypes = new Set(["3FR", "ARW", "CR2", "CR3", "DNG", "ERF", "FFF", "IIQ", "KDC", "MEF", "MOS", "MRW", "NEF", "NRW", "ORF", "ORI", "PEF", "RAF", "RAW", "RW2", "RWL", "SRW", "X3F"]);
-  const compareText = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  const compareText = (a, b) => collator.compare(String(a), String(b));
   const trim = (value, digits = 1) => String(Number(value.toFixed(digits)));
   const format = Object.freeze({
     shutter: value => value >= 0.3 ? `${trim(value)} s` : `1/${Math.round(1 / value)} s`,
@@ -13,6 +14,10 @@
   // "choice" offers the values found in the photos on screen; a photo that
   // records nothing has the empty value, shown with the field's "none" wording.
   const FIELDS = Object.freeze({
+    rating: { label: "Rating", kind: "range", get: photo => photo.marks?.rating || 0 },
+    pick: { label: "Pick status", kind: "choice", get: photo => photo.marks?.pick || "unmarked" },
+    label: { label: "Colour label", kind: "choice", none: "No colour label", get: photo => photo.marks?.label || "" },
+    name: { label: "File name", kind: "text", get: photo => (photo.source_path || photo.path).split(/[\\/]/).at(-1) || photo.name },
     copy: { label: "Kind", kind: "choice", get: photo => photo.copy_id ? "Virtual copy" : "Original" },
     state: { label: "State", kind: "choice", get: photo => photo.edited ? "Edited" : "Not edited" },
     camera: { label: "Camera", kind: "choice", none: "Not recorded", get: photo => photo.camera },
@@ -42,9 +47,18 @@
   }
   function matches(photo, rule) {
     const field = FIELDS[rule.field];
-    if (!field) return true;
+    if (!field) return rule.value == null && rule.from == null && rule.to == null;
     let hit;
-    if (field.kind === "choice") hit = entries(photo, rule.field).some(([value]) => value === rule.value);
+    const op = rule.op || (field.kind === "text" ? "contains" : "is");
+    if (field.kind === "text" || ["contains", "starts", "ends"].includes(op)) {
+      const values = field.kind === "text" ? [field.get(photo)] : entries(photo, rule.field).map(([value]) => value);
+      const needle = String(rule.value ?? "").toLocaleLowerCase();
+      hit = values.some(value => { const text = String(value ?? "").toLocaleLowerCase(); return op === "starts" ? text.startsWith(needle) : op === "ends" ? text.endsWith(needle) : op === "is" ? text === needle : text.includes(needle); });
+    } else if (field.kind === "choice") hit = entries(photo, rule.field).some(([value]) => value === String(rule.value ?? "").toLocaleLowerCase());
+    else if (["greater", "less", "at-least", "at-most", "is"].includes(op) && rule.value != null) {
+      const value = field.get(photo), expected = field.kind === "range" ? Number(rule.value) : rule.value;
+      hit = value != null && (op === "greater" ? value > expected : op === "less" ? value < expected : op === "at-least" ? value >= expected : op === "at-most" ? value <= expected : value === expected);
+    }
     else {
       const value = field.get(photo), from = rule.from === "" || rule.from == null ? null : rule.from, to = rule.to === "" || rule.to == null ? null : rule.to;
       const number = field.kind === "range";
@@ -54,6 +68,8 @@
   }
   function describe(rule) {
     const field = FIELDS[rule.field];
+    if (!field) return "Unknown rule";
+    if (field.kind === "text" || rule.value != null && field.kind !== "choice") return `${field.label} ${rule.not ? "is not" : ""} ${rule.op || "contains"} ${rule.value}`.trim();
     if (field.kind === "choice") return `${field.label} ${rule.not ? "is not" : "is"} ${rule.label ?? rule.value}`;
     const from = rule.from === "" || rule.from == null ? null : rule.from, to = rule.to === "" || rule.to == null ? null : rule.to;
     const span = from != null && to != null ? (String(from) === String(to) ? `${from}` : `${from} to ${to}`) : from != null ? `${from} or ${field.kind === "date" ? "later" : "more"}` : `${to} or ${field.kind === "date" ? "earlier" : "less"}`;
@@ -62,9 +78,11 @@
   function apply(photos, sort = "time", descending = false, filters = {}) {
     const needle = (filters.search || "").trim().toLocaleLowerCase();
     const rules = filters.rules || [];
+    const folders = (filters.folders || []).map(path => String(path).replaceAll("\\", "/").replace(/\/$/, "").toLocaleLowerCase() + "/");
     const result = photos.filter(photo => {
       const marks = photo.marks || {}, tags = marks.tags || [];
-      return (!filters.raw || rawTypes.has(photo.type)) && (!filters.type || photo.type === filters.type)
+      const path = (photo.source_path || photo.path).replaceAll("\\", "/").toLocaleLowerCase();
+      return (!folders.length || folders.some(folder => path.startsWith(folder))) && (!filters.raw || rawTypes.has(photo.type)) && (!filters.type || photo.type === filters.type)
         && (!filters.rating || (marks.rating || 0) >= Number(filters.rating))
         && (!filters.pick || (filters.pick === "hide-rejected" ? marks.pick !== "reject" : (marks.pick || "unmarked") === filters.pick))
         && (!filters.label || marks.label === filters.label)

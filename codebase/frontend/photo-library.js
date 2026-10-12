@@ -6,7 +6,7 @@
   const state = { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
     pins: [], cells: new Map(), filmCells: new Map(), prefetch: new Map(), size: 190,
     selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0,
-    folderSelection: new Set(), folderAnchor: "", collection: null, allFacts: false, labelNames: {}, indexing: null };
+    folderSelection: new Set(), folderAnchor: "", collection: null, smartFilters: null, allFacts: false, labelNames: {}, indexing: null };
   const standalone = parent === window, libraryDesktop = standalone ? window.hdrFinisherDesktop : null;
   const postParent = (action, detail = {}) => {
     if (!standalone) parent.postMessage({ type: "hdr-library", action, ...detail }, location.origin);
@@ -54,8 +54,9 @@
     labelName: label => state.labelNames[label] || "",
     updated: result => {
       if(result.copies_changed) { void refreshPins(); void reopen(); return; }
+      if (result.smart_changed) { void smart.refresh().then(() => smart.poll()).then(result => { if (result && state.collection?.kind === "smart") { state.allPhotos = result.photos; state.smartFilters = result.filters; applyQuery(); } }); }
       const place = state.collection;
-      if (place) {
+      if (place && place.kind !== "smart") {
         // An album or tag view is always current: photos join and leave with the command.
         const shown = new Set(state.allPhotos.map(photo => photo.path));
         if (result.photos.some(row => !shown.has(row.path) && belongs(row, place))) { void reopen(); return; }
@@ -64,8 +65,12 @@
       applyQuery(); updateSingleCaption(); void albums.refresh().catch(() => {});
     } });
   const albums = HDRLibraryAlbums.create({ root: $("albums"), addButton: $("add-album"), api, status, run: culling.run,
-    selection: () => [...state.selection], open: name => browseCollection("album", name),
+    selection: () => [...state.selection], smartAction: () => smart.menuAction(), open: name => browseCollection("album", name),
     closed: () => { const back = state.lastFolder || state.pins.find(pin => pin.available)?.path; if (back) void browse(back); else void reopen(); } });
+  const smart = HDRLibrarySmartAlbums.create({ root: $("albums"), api, status, run: culling.run, pins: () => state.pins,
+    open: id => browseCollection("smart", id), closed: () => { const back = state.lastFolder || state.pins.find(pin => pin.available)?.path; if (back) void browse(back); }, });
+  void smart.refresh().catch(error => status(error.message));
+  $("filter-save-smart").addEventListener("click", () => { void smart.editor(null, { ...structuredClone(state.filters), folders: state.path ? [state.path] : [] }).catch(error => status(error.message)); });
   const tagWindow = HDRLibraryTags.create({ api, run: culling.run, undo: culling.undo, undoAvailable: culling.undoAvailable,
     showTag: tag => browseCollection("tag", tag), indexing: () => state.indexing?.state === "indexing",
     labelNames: () => state.labelNames,
@@ -506,19 +511,20 @@
   async function openPlace(place) {
     const path = place.path || "";
     state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells);
-    state.collection = place.kind ? { kind: place.kind, name: place.name } : null; albums.setActive(place.kind === "album" ? place.name : "");
+    state.collection = place.kind ? { kind: place.kind, name: place.name } : null; state.smartFilters = null; albums.setActive(place.kind === "album" ? place.name : ""); smart.setActive(place.kind === "smart" ? place.name : "");
     if (path) state.lastFolder = path;  // Where a deleted album's view returns to.
     const controller = new AbortController(); state.scan = controller; state.path = path; state.reading = true; state.scanError = ""; state.allPhotos = []; state.photos = []; state.index = -1; state.selection.clear(); state.anchor = -1; state.hiddenFiles = 0;
     setView("grid"); grid.scrollTop = 0;
     $("check-photos").disabled = !path;
-    $("place-title").textContent = place.kind === "album" ? place.name : place.kind ? `Tag · ${place.name}` : path.split(/[\\/]/).filter(Boolean).at(-1) || path;
-    $("place-title").title = place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path; status(place.kind ? "Reading…" : "Reading folder…");
+    $("place-title").textContent = place.kind === "smart" ? smart.name(place.name) || "Smart album" : place.kind === "album" ? place.name : place.kind ? `Tag · ${place.name}` : path.split(/[\\/]/).filter(Boolean).at(-1) || path;
+    $("place-title").title = place.kind === "smart" ? "Smart album · saved filter across the indexed library" : place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path; status(place.kind ? "Reading…" : "Reading folder…");
     for (const element of $("folders").querySelectorAll(".library-folder-row")) element.classList.toggle("active", !place.kind && element.dataset.path === path);
     try {
-      const result = place.kind ? await api("/api/library/collection", { kind: place.kind, name: place.name }, controller.signal) : await api("/api/library/scan", { path }, controller.signal);
+      const result = place.kind === "smart" ? await smart.open(place.name) : place.kind ? await api("/api/library/collection", { kind: place.kind, name: place.name }, controller.signal) : await api("/api/library/scan", { path }, controller.signal);
       if (controller.signal.aborted) return;
       $("filter-type").replaceChildren(new Option("All file types", ""), ...[...new Set([...result.photos.map(photo => photo.type), ...(state.filters.type ? [state.filters.type] : [])])].sort().map(type => new Option(type, type)));
       $("filter-type").value = state.filters.type || "";
+      if (place.kind === "smart") { state.smartFilters = result.filters; state.smartIndexing = result.indexing; $("place-title").textContent = result.name; }
       state.reading = false; state.allPhotos = result.photos; state.photos = result.photos; state.index = result.photos.length ? 0 : -1;
       state.selection = new Set(state.index >= 0 ? [state.photos[0].path] : []); state.anchor = state.index;
       culling.setUndo(result.undo_available);
@@ -531,7 +537,8 @@
   }
   function applyQuery() {
     const lead = selected()?.path, anchor = state.photos[state.anchor]?.path;
-    state.photos = HDRLibraryQuery.apply(state.allPhotos, state.sort, state.descending, state.filters);
+    const base = state.collection?.kind === "smart" ? HDRLibraryQuery.apply(state.allPhotos, state.sort, state.descending, state.smartFilters || {}) : state.allPhotos;
+    state.photos = HDRLibraryQuery.apply(base, state.sort, state.descending, state.filters);
     const visible = new Set(state.photos.map(photo => photo.path));
     state.selection = new Set([...state.selection].filter(path => visible.has(path)));
     state.index = state.photos.findIndex(photo => photo.path === lead);
@@ -541,7 +548,7 @@
     if (!selected() && state.view === "single") setView("grid");
     updateDetails(); paintGrid(); paintFilm();
     if (state.view === "single" && selected()?.path !== lead) showSingle();
-    if (!state.reading) status(`${state.photos.length.toLocaleString()} of ${state.allPhotos.length.toLocaleString()} photos${state.hiddenFiles ? ` · ${state.hiddenFiles} unreadable files hidden` : ""}`);
+    if (!state.reading) status(`${state.photos.length.toLocaleString()} of ${state.allPhotos.length.toLocaleString()} photos${state.hiddenFiles ? ` · ${state.hiddenFiles} unreadable files hidden` : ""}${state.collection?.kind === "smart" && state.smartIndexing ? " · Indexing is still running, so more may turn up." : ""}`);
   }
   async function readDates(controller, photos) {
     // One small low-priority batch at a time; picture connections stay available.
@@ -810,15 +817,15 @@
     const controller = state.scan, place = state.path, collection = state.collection;
     try {
       const changed = events.some(event => event.changed);
-      if (changed) { void albums.refresh().catch(error => status(error.message)); void tagWindow.refresh().catch(error => status(error.message)); }
+      if (changed) { void albums.refresh().catch(error => status(error.message)); void smart.refresh().catch(error => status(error.message)); void tagWindow.refresh().catch(error => status(error.message)); }
       if (changed && (collection || events.some(event => event.path === place || place.startsWith(event.path + "\\") || event.path.startsWith(place + "\\")))) {
-        const result = collection ? await api("/api/library/collection", { ...collection, cached: true }, controller?.signal)
+        const result = collection?.kind === "smart" ? await smart.open(collection.name) : collection ? await api("/api/library/collection", { ...collection, cached: true }, controller?.signal)
           : await api("/api/library/view", { path: place }, controller?.signal);
         if (state.scan !== controller) return;
         if (result.photos) {
           const leadPhoto = selected(), lead = leadPhoto?.path, oldIndex = state.index;
           const top = grid.scrollTop, left = film.scrollLeft;
-          state.allPhotos = result.photos;
+          state.allPhotos = result.photos; if (collection?.kind === "smart") { state.smartFilters = result.filters; state.smartIndexing = result.indexing; }
           if (!result.photos.some(photo => photo.path === lead)) {
             const sorted = HDRLibraryQuery.apply(result.photos, state.sort, state.descending, state.filters);
             const neighbour = sorted[Math.min(Math.max(0, oldIndex), sorted.length - 1)];
@@ -844,6 +851,14 @@
   async function pollSettings() {
     if (state.active && !document.hidden) {
       try {
+        if (state.collection?.kind === "smart") {
+          const place = state.collection, snapshot = await smart.poll();
+          if (snapshot && state.collection === place) {
+            const changed = snapshot.changed || JSON.stringify(state.smartFilters) !== JSON.stringify(snapshot.filters) || state.smartIndexing !== snapshot.indexing;
+            state.smartFilters = snapshot.filters; state.smartIndexing = snapshot.indexing;
+            if (changed) { state.allPhotos = snapshot.photos; applyQuery(); }
+          }
+        }
         const paths = state.allPhotos.filter(photo => photo.storage === "database" || photo.edited).map(photo => photo.path);
         const result = await api("/api/library/settings-status", { paths });
         const byPath = new Map(result.photos.map(photo => [photo.path, photo]));

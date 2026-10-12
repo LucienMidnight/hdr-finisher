@@ -61,7 +61,7 @@
     }
     options.addButton.addEventListener("click", event => {
       const paths = options.selection();
-      showMenu(event, [{ label: "New empty album…", run: () => newAlbum() },
+      showMenu(event, [options.smartAction(), { label: "New empty album…", run: () => newAlbum() },
         { label: paths.length ? `New album from ${photos(paths.length)} selected…` : "New album from selected photos…", disabled: !paths.length, run: () => newAlbum(paths) }],
         { label: "New album", anchor: options.addButton, onError: report });
     });
