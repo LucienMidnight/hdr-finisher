@@ -395,3 +395,19 @@ Library slices 5/6 commands:
 | Smart albums | `codebase/backend/hdr_finisher/library_smart_albums.py`: durable rules, undo and indexed candidates; `frontend/library-smart-albums.js`: editor/navigation/live count; `frontend/library-query.js`: shared matching/fields. |
 
 Whole-folder original Rename/Move: `library_file_folders.py`, using the durable `library_file_commands.py` record, `library_file_io.py` exclusive renames and `library_file_state.py` path retargeting. User controls are in `library-file-commands.js`; the focused driver is `library-folder-file-commands.js`.
+
+
+Original Delete and Delete all rejected: `library_file_delete.py` owns counted
+preview, route confirmation, pending settings, restored-photo and interruption
+handling. `library_recycle.py` owns explicit native Windows RecycleItem and
+checked receipt discovery, with no permanent fallback. `library_file_io.py`
+checks stable NTFS identities or recorded FAT/exFAT contents, guards verified
+source removal and refuses extra named streams on copies/settings rewrites.
+`library_api.py`, `library_index.py` and `library_folder_checks.py` discard late
+helper answers at locked acceptance; `library_file_state.py` restores indexed
+album membership/names. Frontend Delete controls and all-rejected scoping live
+in `library-file-commands.js` and `photo-library.js`; Activity gives progress and
+Needs attention locations. Data checks: `test_library_file_commands.py`,
+`test_library_file_folders.py`, `test_library_file_delete.py`,
+`test_library_file_exfat.py`. Focused Electron: `library-photo-file-commands.js`,
+`library-folder-file-commands.js`, `library-delete-file-commands.js`.

@@ -1337,8 +1337,9 @@ file-command brief. A photo and its settings may be separated after a stop;
 the app completes forward on restart or reports both locations without guessing.
 Moving things by hand in Explorer during that gap can orphan a grade. The app
 reports this in Needs attention and never guesses which photo it belongs to.
-Stage B is now built; folder rename/move and original deletion follow in the
-same recorded-command service. Existing virtual-copy removal remains separate.
+Stages B, C and D are built under that guarantee: photo and folder rename/move,
+Delete and Delete all rejected use the same recorded-command service. Existing
+virtual-copy removal retains its smaller action.
 
 Stage C independent controls verification: 463 Node and 1,792 Python checks
 passed, three skipped. Focused folder-controls Electron passed at 2560x1440.
@@ -1403,9 +1404,8 @@ Decisions made for Steve:
   instead would be convenient for copy naming but would mislabel a File name rule.
 - An empty folder selection disables Save, rather than meaning the whole
   library. It avoids unintentionally broad albums; empty-album scopes are not saved.
-- Original-changing commands stay unavailable until paired-file recovery,
-  rollback clashes and recycling safety are proved. Exposing partial commands
-  would make this build more useful but risk separating an original and its settings.
+- The earlier original-command hard stop was superseded by Steve's revised
+  October 12 guarantee. The completed commands and recovery are described below.
 
 Stage E verification: 466 Node and 1,800 Python checks passed, three existing
 skips. The focused smart-albums Electron check passed at 2560x1440 on disposable
@@ -1492,3 +1492,129 @@ photo-command checks. The focused Electron folder check passed. Its first run
 checked Undo before it finished because both folder rows had the same name;
 the check now waits for the current path to return. No assertion was weakened.
 Stage C required fast suites passed: Node 466; Python 1,857, three skipped.
+
+
+### Stage D — confirmed original Delete (October 12 completion)
+
+Delete, the Delete key and More > Delete all rejected first preview the entire
+selection, then ask once. The window counts eligible originals, their attached
+virtual copies, and separately selected copies whose originals remain. Photos,
+settings, grades and attached copies go together; selected independent copies
+use the existing settings-only removal and its Undo. Removing a selected copy
+never selects its source photo for deletion. Originals open in Grade or with
+conflicting/unreadable settings are left alone and named in the result.
+
+Delete all rejected takes every rejected item in the current place, including
+items hidden by the quick filters. For a smart album, its saved rules and folder
+scope still define that place. Preview and execution recheck the reject mark.
+
+The backend requires a matching confirmation token and route before doing any
+work. Local Windows deletion calls the explicit ITransferSource.RecycleItem
+method, never an API that falls back to permanent removal. Windows returns a
+Bin receipt which is checked against the recorded bytes. Startup can also find
+that receipt if interruption fell between recycling and recording its result.
+No other user's Bin entries are changed or emptied. If a Bin is unavailable,
+the window says "gone for good" and its button is "Delete permanently". A Bin
+failure is Needs attention; it never changes the already-confirmed route.
+The API contract is documented by [Microsoft](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-itransfersource-recycleitem).
+
+Before deletion, complete pending settings are safely prepared beside the photo.
+Photo removal is recorded before removing settings the same way. After restart,
+a leftover settings file follows a proved deletion. If the photo is restored,
+its leftover settings are retained. Restore both the photo and `.hdrf` entries
+from Windows' Bin to bring back marks, grades, albums and copies; the next folder
+check rebuilds the Library. Original Delete has no app Undo.
+
+If a permanent removal happened but the PC stopped before its completion could
+be recorded, absence alone cannot distinguish deletion from an Explorer move.
+The app retains the settings and reports both recorded locations in Needs
+attention. Likewise, a photo present after an uncertain delete is left alone
+because it may have been restored. It does not guess or repeat a deletion just
+because the record is unfinished. A deliberate Try again can retry a present
+photo; an absent unproved permanent deletion continues to need attention.
+Moving things in Explorer during a recovery gap can orphan a grade, as accepted
+in Steve's brief; that is reported, never guessed.
+
+### Filesystem and final recovery safeguards
+
+The disposable D: checks exposed exFAT's changing file IDs during rename. NTFS
+keeps strict IDs; FAT/exFAT recovery verifies recorded volume, size, modification
+time and full SHA-256 contents at the recorded staging/destination locations.
+An occupied destination is still refused even when it contains identical bytes.
+Folder recovery checks its recorded files and directories, including unknown
+files and empty folders. It never merges a tree. A partial temporary file on a
+filesystem with unstable IDs is retained and a newly recorded exclusive name
+is used; it is never reopened for overwriting on uncertain ownership.
+
+Cross-drive copies and rewritten settings refuse extra Windows named data
+streams, so data outside the main file cannot silently be discarded. Ordinary
+same-drive photo renames preserve the entire original. Late scan/metadata
+answers are checked again inside the marks lock at acceptance, including
+case-only renames for which the old spelling is still readable. Folder path
+updates preserve custom label values, smart-album names, rule text and unknown
+preferences. Recovery also restores album names if the disposable index was
+lost between the filesystem command and its rebuild.
+
+Additional messages (the command record contains the checkpoint and reason):
+
+| Situation | What Steve sees |
+| --- | --- |
+| Normal local Delete | Counts, "photos and their settings go to the Recycle Bin", "Move to Recycle Bin" button; restore both entries. |
+| No Bin | "There is no Recycle Bin ... gone for good", "Delete permanently" button. |
+| Restore during interruption | "is back. Its leftover settings were left alone." |
+| Uncertain permanent deletion | "its deletion could not be proved. Its settings were left alone in Needs attention." |
+| Present photo after uncertain delete | "It may have been restored; its settings were left alone. Delete it again only if intended." |
+| Late helper answer | "Photos changed during this read. Open the folder again." |
+| Occupied, changed, locked or missing destination | Needs attention names the recorded photo/settings/staging locations; Try again finishes forward if safe. |
+
+All original commands use `file_command_complete`, `file_command_attention` and
+`file_command_notice`; no silent permanent-delete fallback event exists.
+
+Decisions made for Steve (completion pass, one at a time):
+
+- Leave the open Grade photo, or a folder containing it, alone. This avoids a
+  later live save going to an old path; close or leave that photo first.
+- Move folders only on the same drive and never merge them. A link or conflicting
+  settings anywhere leaves the whole tree alone rather than silently omitting it.
+- Pause/Cancel finishes the current photo/settings pair. A large RAW may finish
+  copying before the pause takes effect, avoiding a second rollback operation.
+- Saved smart-album folder scopes follow folder rename/move. Their names and
+  rules remain unchanged; memberships continue to use the intended folder.
+- Delete all rejected includes quick-filter-hidden rejects in the current place.
+  Its counted confirmation makes that wider selection visible before deletion.
+- An uncertain delete retains settings and reports Needs attention. It may need
+  deliberate retry; it avoids deleting a restored photo or orphaned settings.
+- Preserve uncertain exFAT temporary files and refuse unsupported extra streams.
+  Some unusual files need attention, but their unaccounted data is retained.
+
+Final validation: required Node checks passed (466); Python checks passed
+(1,936, three existing skips). Focused Electron checks for B, C and D, native
+Windows Bin checks, interruption checkpoints and 43 disposable exFAT checks
+passed. The focused photo-command Electron check also passed after the final
+locked helper-acceptance safeguard. Checks used fixture images and
+synthetic ARW contents in disposable folders; no real photo folder or read-only
+project received a file command. No Grade rendering, export, Proof, shader,
+pinned tolerance or budget changed. No push or installer build.
+
+Failures corrected during D: the new cross-drive final guard initially compared
+the destination with the source's NTFS ID; it now uses the recorded published
+identity. The focused UI check needed the full Delete menu accessible label
+and the existing authenticated test-harness fetch for its no-Bin simulation.
+The actual D: Bin check then exposed changing exFAT IDs, leading to the verified
+contents safeguard above. No existing assertion was removed or loosened.
+
+
+Local completion commit notes:
+
+- `4c2cec9`: confirmed original Delete/Delete all rejected, explicit Bin receipts,
+  safe no-Bin route, verified exFAT recovery and preservation of uncertain temps.
+  Required fast suites passed (466 Node; 1,936 Python, three skipped); focused
+  B/C/D Electron and native Bin/exFAT checks passed. Earlier failures and fixes
+  are recorded immediately above; none remains unresolved.
+- Final safeguard commit: reject late helper scan/facts at locked acceptance,
+  rebuild album names after index loss, and complete the PRD/code-map/decision
+  notes. The same final fast suites passed, including the added race and index
+  loss checks; the focused photo-command Electron check passed after this
+  safeguard. Two attempted targeted invocations named nonexistent test files;
+  no tests ran in those invocations, and the required full fast suite covered
+  the real test files. No assertion was loosened, push made or installer built.

@@ -173,3 +173,48 @@ def test_real_pending_grade_history_and_copies_travel(tmp_path):
     assert len(saved['virtual_copies'])==1 and saved['virtual_copies'][0]['name']=='Alternative'
     assert marks.album_paths('keepers')==[str(new)] and not marks._query('SELECT * FROM settings_writes')
     marks.undo();assert photo.exists() and copies.items(str(photo))[0]['name']=='Alternative'
+
+
+def test_cross_drive_extra_streams_are_left_whole(setup):
+    import os
+    if os.name!='nt': pytest.skip('Windows named streams')
+    photo,destination,c,_=setup
+    stream=Path(str(photo)+':disposable-note');stream.write_bytes(b'additional original data')
+    c.cross_drive=lambda a,b:True
+    preview=c.plan(FileRequest(action='move',paths=[str(photo)],destination=str(destination)))
+    assert preview['count']==0 and 'additional data streams' in preview['warnings'][0]
+    assert photo.exists() and stream.read_bytes()==b'additional original data'
+
+
+def test_settings_with_extra_streams_are_not_rewritten(setup):
+    import os
+    if os.name!='nt': pytest.skip('Windows named streams')
+    photo,_,c,_=setup
+    stream=Path(str(photo)+'.hdrf:disposable-note');stream.write_bytes(b'additional settings data')
+    with pytest.raises(ValueError,match='additional data streams'): perform(c,photo,name='new')
+    assert photo.exists() and stream.read_bytes()==b'additional settings data'
+
+
+def test_late_read_rejected_inside_acceptance_lock_even_when_old_path_exists(setup):
+    photo,destination,c,_=setup;epoch=c.epoch;stat=photo.stat()
+    stale=[{'path':str(photo),'bytes':stat.st_size,'mtime_ns':stat.st_mtime_ns}]
+    perform(c,photo,name='PHOTO')
+    # Windows case-only rename leaves the old spelling readable; existence is not freshness.
+    with pytest.raises(ValueError,match='Photos changed'):
+        c.index.remember_scan(str(photo.parent),stale,epoch=epoch)
+    with pytest.raises(ValueError,match='Photos changed'):
+        c.index.remember_facts(stale,epoch=epoch)
+    assert not c.marks._query('SELECT path FROM files WHERE path=?',(str(photo),))
+
+
+def test_recovery_rebuilds_album_names_after_database_loss(setup):
+    photo,destination,c,_=setup
+    c.hook=lambda at,item: (_ for _ in ()).throw(Stop()) if at=='photo' else None
+    with pytest.raises(Stop): perform(c,photo,name='new')
+    c.marks.database.unlink()
+    marks=LibraryMarks(c.browser.root);index=LibraryIndex(marks,c.browser,None)
+    restarted=FileCommands(marks,c.browser,index)
+    for record in list(restarted.records.values()): restarted.run(record,True)
+    assert not restarted.records
+    assert marks.album_paths('keepers')==[str(photo.with_name('new.ARW'))]
+    assert any(row['name']=='keepers' for row in marks.albums())

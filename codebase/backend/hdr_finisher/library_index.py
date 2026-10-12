@@ -90,11 +90,20 @@ class LibraryIndex:
         root = str(root)
         return root if root.endswith(("\\", "/")) else root + os.sep
 
+    def accept_read(self, epoch=None, generation=None):
+        files = getattr(self.marks, 'file_commands', None)
+        if epoch is not None and files and epoch != files.epoch:
+            raise ValueError('Photos changed during this read. Open the folder again.')
+        if generation is not None:
+            with self._state:
+                if generation != self._generation: raise _Restart()
+
     @audited("index_remember_scan")
-    def remember_scan(self, root, photos):
+    def remember_scan(self, root, photos, *, epoch=None, generation=None):
         """Record a folder listing and attach facts already known for unchanged files."""
         prefix = self._prefix(root)
         with self.marks._lock:
+            self.accept_read(epoch, generation)
             db = self.marks._connect()
             try:
                 known = {path: (size, modified, facts) for path, size, modified, facts in
@@ -119,10 +128,11 @@ class LibraryIndex:
                 db.close()
 
     @audited("index_remember_facts")
-    def remember_facts(self, records):
+    def remember_facts(self, records, *, epoch=None, generation=None):
         for record in records:
             record["indexed"] = record.get("mtime_ns") is not None
         with self.marks._lock:
+            self.accept_read(epoch, generation)
             commands = getattr(self.marks, "file_commands", None)
             rows = [(r["path"], r["bytes"], r["mtime_ns"], json.dumps({name: r.get(name) for name in FACT_FIELDS}))
                 for r in records if r.get("mtime_ns") is not None and not (commands and (commands.blocked(r["path"]) or r["path"] in commands.retired and not Path(r["path"]).exists()))]
@@ -266,7 +276,7 @@ class LibraryIndex:
                 incomplete = True
                 problem("index_scan_failed", pin["path"], error, "entries kept; retry automatically")
                 continue  # Unreadable or just unplugged; the next pass tries again.
-            self.remember_scan(pin["path"], photos)
+            self.remember_scan(pin["path"], photos, generation=generation)
             self.marks.conflicts.scan([photo["path"] for photo in photos])
             # Settings files rebuild marks, tags and albums for unvisited folders.
             prefix = self._prefix(pin["path"])
@@ -287,7 +297,7 @@ class LibraryIndex:
                     log("index_metadata_failed", folder=pin["path"], paths=waiting[start:start + 32], reason=str(error), action="facts unavailable; next pass retries")
                     records = []
                     incomplete = True
-                self.remember_facts(records)
+                self.remember_facts(records, generation=generation)
                 done += len(waiting[start:start + 32])
                 self._set(done=done)
         if incomplete:

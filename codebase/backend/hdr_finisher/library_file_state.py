@@ -61,6 +61,8 @@ def retarget(marks, item, delete=False):
                     db.execute(f'DELETE FROM {table} WHERE {column}=?', (previous,))
                     if delete: continue
                     row[column]=mapped(previous,old,new)
+                    if table == 'album_photos':
+                        db.execute('INSERT OR IGNORE INTO albums (name) VALUES (?)', (row['album'],))
                     if table in {'photo_grades','library_copies'}:
                         row['state']=json.dumps(document_paths(json.loads(row['state']),old,new))
                     db.execute(f"INSERT OR REPLACE INTO {table} ({','.join(row)}) VALUES ({','.join('?' for _ in row)})",tuple(row.values()))

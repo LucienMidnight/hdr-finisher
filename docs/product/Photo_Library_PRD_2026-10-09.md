@@ -2177,10 +2177,16 @@ The wireframe for the views in 5.3 is the mock-up in
 
 **October 12 — slices 5/6 brief:** Stage A built: measured highlight peaks
 no longer count as edits; full stored grades and rendering stay unchanged.
-Slice 5 is **partially built**: photo Rename and Move now use durable forward
-recovery under Steve's revised October 12 guarantee. New folder inside,
-Rename label and Show in Explorer also work. Folder Rename/Move and original
-Delete are the remaining commands being completed to that guarantee.
+Slice 5 is **fully built** under Steve's revised October 12 guarantee: photo
+Rename/Move, folder Rename/Move, Delete and Delete all rejected durably record
+intent and recover forward or report Needs attention without overwriting.
+New folder inside, Rename label and Show in Explorer also work. Recycle Bin
+removal has no permanent fallback; no-Bin removal asks explicitly. Restore both
+photo and settings entries from Windows' Bin. Original Delete has no app Undo.
+After interruption, Explorer moves or an unproved permanent deletion can leave
+settings needing attention; the app retains them and does not guess. Slice 6
+smart albums remain built. Completion, decisions and focused validation are in
+`docs/technical/photo-library.md`.
 
 
 **Slice 1, Stage A — October 10 implementation:** the main window now opens

@@ -276,7 +276,9 @@ def create_library_router(worker, browser, store=None):
                 await asyncio.sleep(.05)
             if epoch != file_commands.epoch:
                 raise HTTPException(409, "Photos changed during this read. Open the folder again.")
-            return future.result()
+            result = future.result()
+            result['_file_epoch'] = epoch
+            return result
         except RuntimeError as exc:
             log("helper_request_failed", operation=command, paths=arguments, reason=str(exc), action="request stopped; restart app")
             raise HTTPException(status_code=503, detail=helper_error(exc)) from exc
@@ -396,6 +398,16 @@ def create_library_router(worker, browser, store=None):
         return await run_in_threadpool(listing, result, result["path"])
 
     def listing(result, root=None):
+        with marks._lock:
+            accept_helper(result)
+            return accepted_listing(result, root)
+
+    def accept_helper(result):
+        epoch = result.pop('_file_epoch', None)
+        if epoch is not None and epoch != file_commands.epoch:
+            raise HTTPException(409, 'Photos changed during this read. Open the folder again.')
+
+    def accepted_listing(result, root=None):
         if root is not None:
             index.remember_scan(root, result["photos"])
         records = marks.read([photo["path"] for photo in result["photos"]])
@@ -425,11 +437,16 @@ def create_library_router(worker, browser, store=None):
         result["photos"] = [p for p in result["photos"] if p["path"] in paths]
         return result
 
+    def accept_facts(result):
+        with marks._lock:
+            accept_helper(result)
+            index.remember_facts(result['photos'])
+
     @router.post("/metadata")
     async def metadata(command: MetadataRequest, request: Request):
         result = await helper_result(request, "metadata", paths=list(dict.fromkeys(str(marks.source_path(p)) for p in command.paths)), priority=90)
         if not isinstance(result, Response):
-            await run_in_threadpool(index.remember_facts, result["photos"])
+            await run_in_threadpool(accept_facts, result)
             facts={p["path"]:p for p in result["photos"]}
             result["photos"]=[{**facts[str(marks.source_path(p))],"path":p} for p in command.paths if str(marks.source_path(p)) in facts]
         return result

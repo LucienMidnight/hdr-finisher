@@ -132,7 +132,7 @@ class FolderChecks:
             if found:
                 self.running["changed"] = True
                 self.index.wait_for_grade()
-                self.index.remember_scan(path, result["photos"])
+                self.index.remember_scan(path, result["photos"], epoch=epoch)
                 # Reuse existing reconciliation; pending marks still win.
                 missing = sorted(removed)
                 if missing:
@@ -153,7 +153,7 @@ class FolderChecks:
                 waiting = [p["path"] for p in result["photos"] if p["path"] in added | changed and not p.get("indexed")]
                 for start in range(0, len(waiting), 32):
                     records = self._job("metadata", paths=waiting[start:start + 32])["photos"]
-                    self.index.remember_facts(records)
+                    self.index.remember_facts(records, epoch=epoch)
                     facts = {p["path"]: p for p in records}
                     for photo in result["photos"]:
                         photo.update(facts.get(photo["path"], {}))
