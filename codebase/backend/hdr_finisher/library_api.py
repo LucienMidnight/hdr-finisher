@@ -197,6 +197,7 @@ def create_library_router(worker, browser, store=None):
         finally:
             file_commands._stop.set()
             index.close()
+            if store is not None: kept.close()
             await run_in_threadpool(marks.writer.close)
 
     router = APIRouter(prefix="/api/library", lifespan=lifespan, route_class=LibraryRoute)

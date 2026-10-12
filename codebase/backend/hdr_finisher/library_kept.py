@@ -5,9 +5,10 @@ import json, os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from time import perf_counter
-import time
 from types import SimpleNamespace
-from threading import RLock, Thread
+from threading import Event, RLock, Thread
+from concurrent.futures import CancelledError, ThreadPoolExecutor
+import time
 from PIL import Image
 import numpy as np
 from .library_grades import grade_key
@@ -42,7 +43,29 @@ def preferences(root, change=None):
             value=candidate;atomic_json(path,value)
         return {"edited_edge":value.get("edited_edge",1024),"limit_bytes":value.get("limit_bytes",2*1024**3)}
 
-def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None):
+def capture_source(session):
+    """Capture source references, never the mutable Grade or a full-size copy.
+
+    Grade replaces its corrected source on interpretation changes; edits render
+    from it without modifying it. The saved document supplies all adjustments.
+    """
+    # The source cache identity retains decode-time white/interpretation/RAW
+    # settings even when Grade changes its current rendering context. Reusing
+    # pixels is safe only while those decode inputs still match. Otherwise keep
+    # the established reopened route, including its normalization behavior.
+    from .sessions import _source_mip_identity
+    cache = session.render_cache
+    if (cache.source_identity != _source_mip_identity(session)
+            or cache.image is not session.image
+            or cache.sdr_reference_image is not session.sdr_reference_image):
+        log("kept_source_fallback", path=str(session.source_path), reason="open source decode identity differs from saved grade")
+        return None
+    return {"image": session.image, "sdr_reference_image": session.sdr_reference_image,
+        "color_context": session.color_context,
+        "source_fingerprint_sha256": session.source_fingerprint_sha256}
+
+
+def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None, source=None):
     """One read-only corrected decode + reduced renditions via the export graph.
 
     Shared renderer calls only; export/Proof, their source and budgets are unchanged.
@@ -55,10 +78,20 @@ def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None):
     def check(): check_cancelled(cancelled)
     check()
     source_started=perf_counter()
-    session=SessionStore().prepare_session(Path(path),owns_source_path=False,
-        raw_import_settings=document.source.raw_import_settings,
-        interpretation_override=document.interpretation_override,
-        hdr_reference_white_nits=document.hdr_reference_white_nits,cancelled=cancelled)
+    source_route="open-photo" if source is not None else "reopened-photo"
+    if source is None:
+        session=SessionStore().prepare_session(Path(path),owns_source_path=False,
+            raw_import_settings=document.source.raw_import_settings,
+            interpretation_override=document.interpretation_override,
+            hdr_reference_white_nits=document.hdr_reference_white_nits,cancelled=cancelled)
+    else:
+        # Retain the reopened route's fingerprint protection without decoding.
+        # This small sequential read also catches a source changed before save.
+        from .sessions import _sha256_file
+        if _sha256_file(Path(path))!=source["source_fingerprint_sha256"]:
+            raise ValueError("The source photo changed; its Library picture was left unavailable.")
+        session=SimpleNamespace(**source)
+        source.clear()  # The request/queue no longer owns full-size arrays.
     check()
     if document.source.fingerprint_sha256 and session.source_fingerprint_sha256!=document.source.fingerprint_sha256:
         raise ValueError("The source photo changed; its Library picture was left unavailable.")
@@ -70,7 +103,7 @@ def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None):
     # Release the full decoded source before grading the small reminder.
     del session
     source_ms=(perf_counter()-source_started)*1000
-    log("kept_source_ready", path=str(path), grade_identity=identity(grade), route="reopened-photo", duration_ms=source_ms)
+    log("kept_source_ready", path=str(path), grade_identity=identity(grade), route=source_route, duration_ms=source_ms)
     render_started=perf_counter()
     settings=ExportSettings(quality=75,jpeg_gain_map_quality=75,jpeg_gain_map_scale="half",
         avif_bit_depth=8,avif_gain_map_quality=75,avif_gain_map_scale="half",dithering="off")
@@ -93,7 +126,7 @@ def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None):
         return {"temporary":str(temp),"extension":extension,"grade_identity":identity(grade),
             "width":hdr.shape[1],"height":hdr.shape[0],"source_width":round(source_width*hdr.shape[1]/frame.image.shape[1]),
             "source_height":round(source_height*hdr.shape[0]/frame.image.shape[0]),"edge":edge,"white":203,
-            "source_route":"reopened-photo","source_ms":source_ms,"render_ms":render_ms,"encode_ms":encode_ms,
+            "source_route":source_route,"source_ms":source_ms,"render_ms":render_ms,"encode_ms":encode_ms,
             "stored_bytes":temp.stat().st_size,"make_ms":round((perf_counter()-started)*1000,2),"route":"saved-gain-map"}
     except BaseException:
         temp.unlink(missing_ok=True);raise
@@ -132,7 +165,8 @@ def self_source(path):
 class KeptPictures:
     def __init__(self,root,marks,worker):
         self.root=Path(root);self.marks=marks;self.worker=worker;self.cache=LibraryPictureCache(root)
-        self.jobs={};self._lock=RLock()
+        self.jobs={};self._lock=RLock();self._closed=False
+        self._open_producer=ThreadPoolExecutor(max_workers=1,thread_name_prefix="hdr-kept-open")
     def request(self,path):
         path=str(self.marks._path(path))
         with self.marks._lock:
@@ -164,8 +198,9 @@ class KeptPictures:
     @staticmethod
     def source_stat(path):
         s=self_source(path).stat();return [s.st_size,s.st_mtime_ns]
-    def schedule(self,path,grade=None):
+    def schedule(self,path,grade=None,source=None):
         saved_at=time.time()
+        path=str(path)
         # No decode and no worker startup on the save request thread.
         def launch():
             try:
@@ -173,10 +208,26 @@ class KeptPictures:
                 if not request["edited"]: return
                 if grade is not None and identity(grade)!=request["grade_identity"]: return
                 with self._lock:
+                    if self._closed: return
                     old=self.jobs.get(path)
-                    if old: self.worker.cancel(old)
+                    if old:
+                        if isinstance(old,Event): old.set()
+                        else: self.worker.cancel(old)
                     stat=self.source_stat(path)
-                    job,future=self.worker.submit_library("kept",priority=80,path=str(self_source(path)),grade=request["grade"],edge=request["edited_edge"])
+                    if source is not None:
+                        job=Event()
+                        def check_open():
+                            while self.worker.status()["paused"] and not job.is_set():
+                                time.sleep(.05)
+                            return job.is_set()
+                        def build_open():
+                            try:
+                                return produce(self.root,str(self_source(path)),request["grade"],request["edited_edge"],cancelled=check_open,source=source)
+                            finally:
+                                source.clear()
+                        future=self._open_producer.submit(build_open)
+                    else:
+                        job,future=self.worker.submit_library("kept",priority=80,path=str(self_source(path)),grade=request["grade"],edge=request["edited_edge"])
                     self.jobs[path]=job
                 def finish(f):
                     result=None
@@ -190,13 +241,29 @@ class KeptPictures:
                             atomic_json(self.cache.root/(key+".json"),{k:v for k,v in result.items() if k!="temporary"}|{"source_stat":stat,"saved_at":saved_at})
                             self.jobs.pop(path,None)
                         self.cache.trim();log("kept_picture_saved",photo=path,key=key,save_to_written_ms=(time.time()-saved_at)*1000,**result)
+                    except CancelledError:
+                        log("kept_picture_cancelled", photo=path, action="superseded or app closing")
                     except Exception as error:
                         log("kept_picture_failed",photo=path,reason=str(error),action="grade safe; default look with not-current mark")
                     finally:
+                        with self._lock:
+                            if self.jobs.get(path)==job: self.jobs.pop(path,None)
                         if result and result.get("temporary"): Path(result["temporary"]).unlink(missing_ok=True)
+                if source is not None: future.add_done_callback(lambda f: source.clear())
                 future.add_done_callback(finish)
             except Exception as error: log("kept_picture_failed",photo=path,reason=str(error),action="grade safe; retry at next save")
+            finally:
+                if source is not None and not locals().get("future"): source.clear()
         Thread(target=launch,name="hdr-kept-request",daemon=True).start()
+    def close(self):
+        with self._lock:
+            self._closed=True
+            for job in self.jobs.values():
+                if isinstance(job,Event): job.set()
+                else: self.worker.cancel(job)
+            self.jobs.clear()
+        self._open_producer.shutdown(wait=False,cancel_futures=True)
+
     def pixels(self,key,lane):
         self.cache.file(key)
         meta=json.loads((self.cache.root/(key+".json")).read_text())

@@ -1824,51 +1824,96 @@ Local commit note: remove the mutual wait, add its regression and update
 the permitted wording assertion. No outstanding map/check failure observed;
 the saved-source exact-match stop below is separate.
 
-### Part 3: exact-match stop; optimization deferred
+### Part 3: guarded open-source kept picture (approved follow-up)
 
-The evaluated proposal captured references to Grade's corrected source,
-reduced it in a background producer, and called the unchanged export render
-functions and gain-map writer. A 42 MP ARW comparison was bit-for-bit equal
-in both rendered branches and the actual encoded JPEG. It reduced isolated
-production from 5.214 to 0.878 seconds. Guards covered a changed source,
-external grade changes, superseded saves and opening another photo; source
-references were released before encoding.
+Steve approved the fast route only where the open source is equivalent,
+with today's reopened route as fallback. Grade saves now capture references
+to their corrected source, reduce it off the save thread, and call the same
+export render functions and unchanged gain-map writer. No full-size duplicate
+is made. Reference release, superseded jobs, grade identity, source fingerprint
+and source size/date checks prevent stale publication. Reverts without an
+open image, virtual copies and explicit requests retain the helper route.
 
-However, a generated Ultra HDR JPEG exposes a real counterexample: open
-at 203 nits, change HDR reference white to 100, then compare both routes.
-Reopening normalizes its decoded source by 203/100; the reference-white
-command changes Grade's rendering context without rescaling its open image.
-HDR rendered arrays differ (maximum absolute difference 0.25750059,
-mean 0.20556210 reopened versus 0.10126213 open); SDR arrays are identical.
-This is a source-normalization difference, not an encoder or tolerance issue.
-The brief explicitly requires stopping on any exact-match failure. Part 3
-is deferred; its proposal is preserved under ignored output/library-round1
-and is not active in committed source. No export, Proof, decode or shader
-change was made to force agreement.
+The equivalence guard compares the source cache's immutable decode identity
+with the current inputs: content, dimensions, decode/color versions, reference
+white, interpretation and RAW recipe. It also checks that the cache and Grade
+still refer to the same source arrays. A mismatch selects the existing route.
+This is deliberately conservative: a decode-white change falls back even if
+a particular scene-linear source might otherwise be reusable. No new setting
+or user decision is required at save time.
 
-Before that stop, the proposed route measured 4.787 seconds save-to-picture
-in development and 4.707 packaged, versus section 15's 13.685 / 16.285.
-These are experimental results, not a delivered speedup or a three-second
-pass. The development split was about 2.06 seconds waiting at the Grade
-pause gate, 0.415 source/hash/reduction, 0.182 render, 0.567 encode,
-0.078 publication, and 0.768 from written to drawn; returning to Library
-and driver observation account for the remainder. Packaged had a similar
-roughly two-second pause and 0.84-second written-to-drawn interval. These
-remaining waits were reported, not chased into later rounds.
+The original exact-match stop was correct. For a generated Ultra HDR JPEG
+opened at 203 nits and changed to 100, reopening rescales the decoded source
+by 203/100 while the in-session white edit changes only rendering context.
+Unconditionally reusing the open source produced different HDR arrays
+(maximum absolute difference 0.25750059); SDR arrays matched. This existing
+behavior also means HDR Grade and export can look different after reopening
+a saved project. It is reported in known-limitations.md, not fixed here.
+The guarded route preserves today's reopened result for these cases.
 
-Save acknowledgement measured 0.361 / 0.315 seconds, against the prior
-0.055 / 0.065 sample. Making the picture was off the request thread, but
-that observed difference is unexplained; no claim of unchanged save latency
-is made. Steve should try the app before further responsiveness timing.
+Exact comparisons pass for both rendered branches and actual JPEG bytes on
+the corrected 42 MP ARW, plus generated Ultra HDR sources opened/saved at
+203/203, 100/100, 203/100 and 100/203 nits. The last two use the fallback.
+Tests also cover crop/local grades, changed decode recipe, opening another
+photo, a newer save, external grade/source changes, and release of large
+source references before encoding. No tolerance or picture math changed.
 
-Decision requested: enable the fast route only when its source is equivalent,
-preserving today's slow route for mismatching reference-white cases; or
-leave Part 3 deferred while normalization behavior is addressed separately.
-The former preserves output but does not speed up every Grade save. The
-latter requires a separate decision about a constrained source/render area.
-No push, installer, broad sweep or later-round work was performed.
+### Save acknowledgement and the unchanged Grade gate
 
-After deferring Part 3 and restoring the existing producer, final fast checks
-passed: 466 Node tests and 1,938 Python tests, three existing skips. The
-backend and unpacked Windows app were rebuilt from that committed state;
-the experimental producer is absent from the build Steve should try.
+Before enabling the guarded route, two controlled development launches using
+the existing producer measured 0.400 and 0.300 seconds for Save immediately
+after editing. Thus the earlier 0.055/0.065 section-15 samples were not a
+stable current baseline, and 0.35 seconds did not demonstrate a regression
+from this producer. A new cheap one-line save event separates lock waiting,
+recovery retention, preflight, durable registration, scheduling and status.
+
+In the instrumented existing-route run, recovery retention cost 122.89 ms
+and durable registration 160.15 ms of a 290.78 ms backend save. Lock waiting
+was 0.01 ms, preflight 0.73, scheduling 1.46 and status 5.53. Both durable
+phases include the existing SQLite transactions; they were not combined,
+deferred or weakened. This explains the cost of the current slower samples;
+the earlier isolated 60-ms samples do not establish a universal 60-ms limit.
+The guarded development run spent 1.20 ms scheduling, and the packaged run
+1.83 ms. Their backend recovery/registration phases still dominate. The
+new source route adds no meaningful save-request work or image processing;
+Save remains within the unchanged route's observed range under these
+conditions, rather than claiming a new 60-ms guarantee.
+
+The roughly two-second gate is not a post-save timer. DesktopRequestBoundary
+holds LibraryWorker.busy for every /api/session and /api/library/grade
+request, including responses. Saving does not finish or cancel outstanding
+Grade preview/proxy/scope requests. In the final development trace an HDR
+preview starting about 0.28 seconds after Save began ran 2.526 seconds,
+overlapping a 1.807-second scope request; packaged HDR preview took 2.577
+seconds and scopes 1.766. Their completion explains the approximately
+2.5-second producer gate wait after save acknowledgement. Neither the
+request boundary, preview work, scope work nor pause/release rules changed.
+
+### Final timing and validation
+
+Final serial 42 MP trials: Save acknowledged in 0.325 seconds
+development / 0.371 packaged; edited picture displayed in
+6.230 / 5.801 seconds, versus section 15's
+13.685 / 16.285. This is faster, but the three-second target is not met.
+Earlier exploratory samples were 4.787 / 4.707 seconds; current encoding
+cost explains much of that variation, rather than a new source decode.
+
+Development: source/hash/reduction 0.489 seconds, render 0.085, encode 1.476, producer gate/checks/preparation 2.513; save-to-written 4.642, written-to-drawn 1.050. These intervals overlap with frontend return and discovery; do not add them to the complete end-to-end result.
+
+Packaged: source/hash/reduction 0.422 seconds, render 0.096, encode 1.549, producer gate/checks/preparation 2.513; save-to-written 4.721, written-to-drawn 0.326. These intervals overlap with frontend return and discovery; do not add them to the complete end-to-end result.
+
+Both native runs delivered all six maps through a simultaneous folder check,
+showed the new kept picture in the same Library without re-browsing, reported
+no page errors and preserved all copied original ARW bytes. Grouped fast
+checks passed: 466 Node and 1,948 Python tests, three existing skips. Focused
+source/fallback/publication tests passed; backend and unpacked Windows app
+were rebuilt. Earlier folder-check regressions already passed in both modes;
+their behavior is unchanged in this part. No broad sweep, installer, push,
+export/Proof/decode change, or later-round optimization was performed.
+
+Local Part 3 commit note: reuse equivalent corrected sources asynchronously,
+preserve the existing fallback and guards, and measure the unchanged durable
+save cost. All grouped checks above passed. Outstanding limitations are the
+unfixed reopened-reference-white behavior and the unmet three-second display
+target. Steve should try Save and return to the same Library on his usual
+RAW edits before further responsiveness timing or gate changes.

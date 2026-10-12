@@ -2,6 +2,7 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+from time import perf_counter
 
 from .models import EditDocument
 from .library_marks import Marks
@@ -155,7 +156,9 @@ class LibraryGrades:
         return bool(state.get("conflict"))
 
     def save(self, session_id):
+        started = perf_counter()
         with self.store._lock, self.marks._lock:
+            locked = perf_counter()
             path = self.path(session_id)
             session = self.store.get(session_id)
             state = self._get(path)
@@ -163,6 +166,7 @@ class LibraryGrades:
             revision = session.edit_revision
             state["recovery"] = desired
             self._put(path, state)  # Safe before any filesystem preflight.
+        prepared = perf_counter()
         # Folder/network reads never hold the lock that Grade's edits need.
         try:
             document = self.marks._document(Path(path))
@@ -173,7 +177,9 @@ class LibraryGrades:
             unreadable = False
         if not Path(path).parent.is_dir():
             unreadable = True  # An unplugged drive has no external grade to compare.
+        preflight = perf_counter()
         with self.store._lock, self.marks._lock:
+            relocked = perf_counter()
             state = self._get(path)
             if not unreadable and self._check(path, state, (document or {}).get("grade")):
                 return self.status(session_id)
@@ -189,11 +195,21 @@ class LibraryGrades:
                 "INSERT OR REPLACE INTO photo_grades VALUES (?, ?)", (path, json.dumps(state))))
             if session.edit_revision == revision:
                 session.dirty = False
+            registered = perf_counter()
             log("grade_save_queued", photo=path, action="grade retained; settings writer notified")
             if (getattr(self.marks, "kept", None) and grade_key(desired) != grade_key(state.get("default"))
                     and grade_key(desired) != grade_key(state.get("baseline"))):
-                self.marks.kept.schedule(path, desired)
-            return self.status(session_id)
+                from .library_kept import capture_source
+                self.marks.kept.schedule(path, desired, source=capture_source(session) if "|copy|" not in path else None)
+            scheduled = perf_counter()
+            result = self.status(session_id)
+            ended = perf_counter()
+            log("grade_save_timing", photo=path, duration_ms=(ended-started)*1000,
+                lock_wait_ms=((locked-started)+(relocked-preflight))*1000,
+                recovery_ms=(prepared-locked)*1000, preflight_ms=(preflight-prepared)*1000,
+                register_ms=(registered-relocked)*1000, schedule_ms=(scheduled-registered)*1000,
+                status_ms=(ended-scheduled)*1000)
+            return result
 
     def merge(self, path, document):
         if getattr(self.marks,"copies",None): self.marks.copies.merge(path,document)

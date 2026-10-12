@@ -21,7 +21,7 @@ def test_untouched_measurements_preserved_but_not_edited(setup, tmp_path):
     assert grade_key(measured) == grade_key(default)
     assert identity(measured) == identity(default)
     calls = []
-    marks.kept = SimpleNamespace(schedule=lambda *args: calls.append(args))
+    marks.kept = SimpleNamespace(schedule=lambda *args, **kwargs: calls.append((args, kwargs)))
     grades.save(str(session.session_id)); marks.writer.drain()
     assert settings(photo)["grade"] == measured
     assert not grades.describe([photo])[str(photo)]["edited"]
@@ -32,13 +32,14 @@ def test_untouched_measurements_preserved_but_not_edited(setup, tmp_path):
     grades.save(str(session.session_id)); marks.writer.drain()
     assert grades.describe([photo])[str(photo)]["edited"]
     assert len(calls) == 1
+    assert calls[0][1]["source"]["image"] is session.image
 
 
 def test_measurements_on_real_edit_keep_picture_identity(setup):
     photo, store, session, marks, grades = setup
     original = saved(setup)
     calls = []
-    marks.kept = SimpleNamespace(schedule=lambda *args: calls.append(args))
+    marks.kept = SimpleNamespace(schedule=lambda *args, **kwargs: calls.append((args, kwargs)))
     measured = measurements(store, session)
     grades.save(str(session.session_id)); marks.writer.drain()
     assert identity(original) == identity(measured)

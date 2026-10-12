@@ -68,6 +68,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 - There is no soft proof for a specific ICC display profile.
 - There is no user-selectable chromatic adaptation method.
 - There is no mastering-display metadata editor.
+- For Ultra HDR JPEGs, changing HDR reference white can make HDR Grade and export look different after reopening a saved project: reopening rescales the source, while the in-session white edit does not. This existing behavior remains unchanged; Library uses its existing reopened-picture route when decode white differs.
 
 ## Export limitations
 
