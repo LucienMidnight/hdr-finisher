@@ -97,32 +97,51 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
     return open_document(store, document, source_path)
 
 
-def open_document(store: SessionStore, document: EditDocument, source_path: Path | None = None) -> LoadedSession:
+def open_document(store: SessionStore, document: EditDocument, source_path: Path | None = None,
+                  reuse_session_id: str | None = None) -> LoadedSession:
     """Open the same grade document from a project container or photo settings."""
+    with store._lock:
+        return _open_document(store, document, source_path, reuse_session_id)
+
+
+def _open_document(store, document, source_path, reuse_session_id):
     candidate = source_path
     if candidate is None and document.source.durable_path:
         candidate = Path(document.source.durable_path)
     if candidate is None or not candidate.expanduser().is_file():
         raise ProjectSourceRelinkRequired("The project source is missing. Select the original source to relink it.")
     resolved_source = candidate.expanduser().resolve()
-    fingerprint = _sha256_file(resolved_source)
+    reusable = store.get(reuse_session_id) if reuse_session_id else None
+    if reusable is not None and reusable.source_path.resolve() != resolved_source:
+        raise ProjectSourceRelinkRequired("The grade belongs to another source.")
+    fingerprint = reusable.source_fingerprint_sha256 if reusable is not None else _sha256_file(resolved_source)
     if document.source.fingerprint_sha256 and fingerprint != document.source.fingerprint_sha256:
         raise ProjectSourceRelinkRequired("The selected source fingerprint does not match this project.")
 
-    payload = store.create_session(
-        resolved_source,
-        original_filename=document.source.filename,
-        owns_source_path=False,
-        raw_import_settings=document.source.raw_import_settings,
-        hdr_reference_white_nits=document.hdr_reference_white_nits,
+    same_decode = reusable is not None and (
+        reusable.raw_import_settings == document.source.raw_import_settings
+        and reusable.interpretation_override == document.interpretation_override
+        and reusable.render_cache.source_identity.reference_white_nits == document.hdr_reference_white_nits
     )
-    session = store.get(payload.session_id)
-    if (
-        document.interpretation_override.color_space
-        or document.interpretation_override.transfer_function
-        or document.interpretation_override.linear_reference
-    ):
-        session = store.update_source_interpretation(payload.session_id, document.interpretation_override)
+    if same_decode:
+        session = reusable
+    else:
+        # Recovery/external grades may select another RAW recipe or source
+        # interpretation. Preserve their existing re-open semantics.
+        payload = store.create_session(
+            resolved_source,
+            original_filename=document.source.filename,
+            owns_source_path=False,
+            raw_import_settings=document.source.raw_import_settings,
+            hdr_reference_white_nits=document.hdr_reference_white_nits,
+        )
+        session = store.get(payload.session_id)
+        if (
+            document.interpretation_override.color_space
+            or document.interpretation_override.transfer_function
+            or document.interpretation_override.linear_reference
+        ):
+            session = store.update_source_interpretation(payload.session_id, document.interpretation_override)
     session.adjustments = document.global_adjustments
     session.local_adjustments = document.local_adjustments
     session.denoise = document.denoise

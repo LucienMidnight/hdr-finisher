@@ -1,7 +1,7 @@
 /* The only bridge from the independent Library page into editor state. */
 (() => {
   const frame = document.getElementById("library-frame");
-  let reviewQueue = Promise.resolve(), restoreWindow = false, detached = false;
+  let reviewQueue = Promise.resolve(), restoreWindow = false, detached = false, openRequest = 0;
   const away = document.createElement("div"); away.className = "library-away"; away.hidden = true;
   away.innerHTML = '<p>Library is open in its own window.</p><button class="button-secondary">Show Library</button>';
   frame.after(away); away.querySelector("button").addEventListener("click", () => desktop?.focusLibrary());
@@ -48,12 +48,15 @@
     }
     else if (message.action === "choose-source") requestSourceImport();
     else if (message.action === "open-source" && typeof message.path === "string") {
+      const request = ++openRequest;
       // Use the existing grant and leave-photo gate, including Cancel/Save/Discard.
       (async () => {
         await reviewQueue;
+        if (request !== openRequest) return;
         if (!desktop) throw new Error("Opening a library path in Grade requires the desktop app.");
         const selection = await desktop.grantSourcePath(message.path);
-        await openDesktopSelection({ kind: "source", ...selection, itemKey: message.itemKey, fromLibrary: true });
+        if (request !== openRequest) return;
+        await openDesktopSelection({ kind: "source", ...selection, itemKey: message.itemKey, fromLibrary: true, clickedAt: message.clickedAt, isCurrent: () => request === openRequest });
       })().catch((error) => showUploadError(error.message));
     }
   });

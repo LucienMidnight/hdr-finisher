@@ -640,6 +640,13 @@ def test_staged_tiff_import_decodes_authoritative_pixels_only_once(tmp_path: Pat
     sessions = SessionStore()
     browser = MediaBrowserStore(tmp_path / "app-data")
     manager = ImportJobManager(sessions, browser, workers=1)
+    import hdr_finisher.sessions as session_module
+    original_load = session_module.load_image
+    decoded_sources = []
+    def tracked_load(path, **kwargs):
+        decoded_sources.append(path)
+        return original_load(path, **kwargs)
+    monkeypatch.setattr(session_module, "load_image", tracked_load)
     original_thumbnail = browser.thumbnail
     thumbnail_calls: list[bool] = []
 
@@ -655,14 +662,15 @@ def test_staged_tiff_import_decodes_authoritative_pixels_only_once(tmp_path: Pat
             time.sleep(0.01)
 
         assert job.state == "ready", job.error
-        assert thumbnail_calls == [True]
+        assert thumbnail_calls == []
+        assert decoded_sources == [source]
         assert job.preview_path is None
         assert sessions.current() is not None
     finally:
         manager.close()
 
 
-def test_staged_import_job_exposes_preview_and_ready_session(tmp_path: Path) -> None:
+def test_staged_import_job_skips_unused_preview_and_exposes_ready_session(tmp_path: Path) -> None:
     source = tmp_path / "source.png"
     Image.new("RGB", (64, 32), (80, 120, 160)).save(source)
     sessions = SessionStore()
@@ -674,14 +682,15 @@ def test_staged_import_job_exposes_preview_and_ready_session(tmp_path: Path) -> 
         while job.state not in {"ready", "error"} and time.monotonic() < deadline:
             time.sleep(0.01)
         assert job.state == "ready", job.error
-        assert job.preview_path is not None
+        assert job.preview_path is None
+        assert job.payload()["preview_available"] is False
         assert job.session_id == sessions.current().session_id
         assert job.payload()["elapsed_ms"] >= 0
     finally:
         manager.close()
 
 
-def test_avif_import_reports_preview_work_and_cancel_keeps_current_session(
+def test_avif_import_reports_decode_work_and_cancel_keeps_current_session(
     tmp_path: Path, monkeypatch
 ) -> None:
     current_source = tmp_path / "current.png"
@@ -692,32 +701,35 @@ def test_avif_import_reports_preview_work_and_cancel_keeps_current_session(
     current = sessions.create_session(current_source)
     browser = MediaBrowserStore(tmp_path / "app-data")
     manager = ImportJobManager(sessions, browser, workers=1)
-    preview_started = Event()
-    release_preview = Event()
+    decode_started, release_decode, decode_finished = Event(), Event(), Event()
+    original_prepare = sessions.prepare_session
 
-    def delayed_thumbnail(*_args, **_kwargs):
-        preview_started.set()
-        assert release_preview.wait(5)
-        return tmp_path / "preview.jpg"
+    def delayed_decode(*_args, **kwargs):
+        decode_started.set()
+        try:
+            assert release_decode.wait(5)
+            return original_prepare(current_source, **kwargs)
+        finally:
+            decode_finished.set()
 
-    monkeypatch.setattr(browser, "thumbnail", delayed_thumbnail)
+    monkeypatch.setattr(sessions, "prepare_session", delayed_decode)
+    monkeypatch.setattr(browser, "thumbnail", lambda *_a, **_k: pytest.fail("unused import thumbnail requested"))
     try:
         job = manager.start(candidate, RawImportSettings())
-        assert preview_started.wait(5)
-        assert job.phase == "previewing"
-        assert job.phase_label == "Decoding AVIF base preview"
-
+        assert decode_started.wait(5)
+        assert job.phase == "decoding_avif"
+        assert job.phase_label == "Preparing full-resolution HDR from AVIF"
         manager.cancel(job.job_id)
-        release_preview.set()
+        release_decode.set()
+        assert decode_finished.wait(5)
         deadline = time.monotonic() + 5
         while job.state != "cancelled" and time.monotonic() < deadline:
             time.sleep(0.01)
-
         assert job.state == "cancelled"
         assert sessions.current() is not None
         assert sessions.current().session_id == current.session_id
     finally:
-        release_preview.set()
+        release_decode.set()
         manager.close()
 
 

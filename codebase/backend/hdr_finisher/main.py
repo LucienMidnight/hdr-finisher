@@ -520,7 +520,8 @@ def create_import_job(request: ImportJobRequest) -> dict[str, object]:
             if current.source_path.resolve() != source_path.resolve():
                 raise ValueError("RAW re-development must use the active session source.")
         return import_jobs.start(
-            source_path, request.raw_import_settings, replace_session_id=request.replace_session_id
+            source_path, request.raw_import_settings, replace_session_id=request.replace_session_id,
+            grade=store.library_grades.open_settings(source_path, request.item_key, recovery=request.recovery) if request.replace_session_id is None else None
         ).payload()
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

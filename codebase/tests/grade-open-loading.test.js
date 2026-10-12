@@ -16,12 +16,13 @@ function harness() {
     document: { querySelectorAll: () => panels }, els: {},
     fetch: async () => ({}),
     status: { post: e => events.push(e), clear() {} },
+    HDRGradeSaving: { prepare: async () => null },
     projectIo: { createImportJob: () => pending, cancelImportJob: async () => {} },
     activateWorkflowTab: tab => { c.state.activeWorkflow = tab; },
     claimSessionReplacement: () => ++c.state.importGeneration,
     retireActiveSession() {}, clearPreviewImage: () => events.push('clear'), clearComparisonPreview() {},
     drawHistogram: () => events.push('clear-scopes'), renderSourceFilename: name => events.push(name),
-    renderSessionChrome() {}, updateExportAvailability() {}, setIndeterminatePreviewMessage() {},
+    renderReadouts() {}, renderSessionChrome() {}, updateExportAvailability() {}, setIndeterminatePreviewMessage() {},
     setImportCancelVisible() {}, showUploadError: error => events.push(error),
   };
   c.window = c;
@@ -70,4 +71,55 @@ test('initial Electron page completion precedes runner actions', async () => {
     },
   });
   assert.deepEqual(events, ['page-load-complete', 'main-load-complete']);
+});
+test('restoring recovery skips the saved-grade load and asks only once before decoding', async () => {
+  const calls = [], saved = { version: 'saved' }, recovered = { version: 'recovered' };
+  let questions = 0;
+  const c = {
+    document: {}, state: { appPreferences: {} },
+    projectIo: { responseErrorMessage: () => 'error' },
+    fetch: async (url, options) => {
+      const body = JSON.parse(options.body); calls.push(body);
+      const payload = url.endsWith('open-settings') ? { recovery: true }
+        : body.action === 'attach' ? { path: 'D:/photo.png', grade: saved, recovery: recovered }
+        : { session: { session_id: 'recovered', source: { filename: 'photo.png' } } };
+      return { ok: true, json: async () => payload };
+    },
+    HDRDialogs: { choose: async () => { questions++; return 'restore'; } },
+  };
+  c.window = c;
+  vm.createContext(c);
+  const source = fs.readFileSync(path.join(__dirname, '../frontend/grade-saving.js'), 'utf8');
+  vm.runInContext(source.slice(0, source.indexOf('  async function tick()')) +
+    'window.HDRGradeSaving = { prepare, open }; })();', c);
+  const choice = await c.HDRGradeSaving.prepare({ path: 'D:/photo.png' });
+  const result = await c.HDRGradeSaving.open({ session_id: 'initial', source: { filename: 'photo.png' } }, null, () => true, choice);
+  assert.equal(questions, 1);
+  assert.equal(result.session_id, 'recovered');
+  const loads = calls.filter(call => call.action === 'load');
+  assert.equal(loads.length, 1);
+  assert.deepEqual(loads[0].document, recovered);
+  assert.equal(loads[0].recovery, true);
+  assert.equal(loads[0].reuse_source, true);
+});
+test('Electron load barrier remains blocked until main-frame completion and rejects genuine load errors', async () => {
+  const { EventEmitter } = require('node:events');
+  const { waitForInitialLoad } = require('./electron-initial-load');
+  for (const failed of [false, true]) {
+    const contents = new EventEmitter(); contents.isLoadingMainFrame = () => true;
+    let finished = false;
+    const flight = waitForInitialLoad({ evaluate: fn => fn({ BrowserWindow: { getAllWindows: () => [{ webContents: contents }] } }) },
+      { waitForURL: async () => {} }).then(() => { finished = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(finished, false);
+    if (failed) {
+      const rejection = assert.rejects(flight, /ERR_CONNECTION_REFUSED/);
+      contents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', '', true);
+      await rejection;
+    } else {
+      contents.emit('did-finish-load'); await flight;
+      assert.equal(finished, true);
+    }
+    assert.equal(contents.listenerCount('did-fail-load'), 0);
+  }
 });

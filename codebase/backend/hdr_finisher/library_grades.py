@@ -37,12 +37,26 @@ class LibraryGrades:
         from .library_history import LibraryHistory
         self.history = LibraryHistory(self)
         store.grade_recovery_observer = self.capture_edit
+        store.library_grades = self
         marks.grades = self
         with marks._lock:
             db = marks._connect()
             with db:
                 db.execute("CREATE TABLE IF NOT EXISTS photo_grades (path TEXT PRIMARY KEY, state TEXT NOT NULL)")
             db.close()
+
+    def open_settings(self, source_path, item_key=None, recovery=False):
+        """Read the same saved/pending grade attach will use, before decoding."""
+        with self.marks._lock:
+            key = str(self.marks._path(item_key or str(source_path)))
+            if self.marks.source_path(key).resolve() != Path(source_path).resolve():
+                raise ValueError("The copy belongs to another photo.")
+            state = self._get(key)
+            document = self.marks._document(Path(key)) or {}
+            grade = state.get("desired") if state.get("pending") else document.get("grade")
+            if recovery and not state.get("pending"):
+                grade = state.get("recovery") or grade
+            return EditDocument.model_validate(grade) if grade else None
 
     def capture_edit(self, session):
         if str(session.session_id) in self.sessions:
@@ -81,7 +95,7 @@ class LibraryGrades:
             # A pending grade belongs to the durable queue, not a new session.
             if not state.get("pending") and not state.get("conflict") and not recovery:
                 state["baseline"] = grade
-            if grade is None and not state.get("pending"):
+            if grade is None and not state.get("pending") and not recovery:
                 state["default"] = session.edit_document().model_dump(mode="json")
             else:
                 state.setdefault("default", session.edit_document().model_dump(mode="json"))

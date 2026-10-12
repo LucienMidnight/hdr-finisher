@@ -1917,3 +1917,73 @@ save cost. All grouped checks above passed. Outstanding limitations are the
 unfixed reopened-reference-white behavior and the unmet three-second display
 target. Steve should try Save and return to the same Library on his usual
 RAW edits before further responsiveness timing or gate changes.
+
+
+## 17. Opening Library photos in Grade (October 12, 2026)
+
+Part 1: after the existing leave-photo question, Grade appears before import
+work starts. One loading state names the photo, empties the previous picture,
+scopes and readouts, and locks edits. Returning to Library cancels the open;
+newer requests supersede older ones, including grants and grade attachment.
+Failure returns to the same Library selection with the reason. No thumbnail
+stand-in is shown.
+
+Part 2: saved or pending grades select their RAW recipe, interpretation and
+reference white before the import. The existing recovery choice is asked
+before decoding, so restored work can use its own decode settings once.
+Applying the selected grade reuses the session only when source identity and
+all decode settings agree. Its existing fingerprint verifies the grade; no
+second hash or decode is needed on the stable open path. A grade changed
+externally during the open may still need the existing safe reopen fallback.
+Conflict resolution and project opening retain their existing reopen route.
+Recovery retains its original default grade and durable unsaved work.
+
+The unused 512-pixel import thumbnail is no longer requested. Polling starts
+immediately. Attach returns its initialized clean session without another
+session fetch. Denoise-off opens do not start a full-source noise warm-up.
+Scopes and overlays start together after the first frame and do not hold the
+loading state or controls open. Pixel processing methods are unchanged.
+
+### Measurement audit and remaining work
+
+- RAW corrections, colour conversion/normalisation and negative-value mapping
+  produce the actual image; the first frame needs their exact output.
+- HDR classification, AP1/luma/BT.2020 peaks and the RAW starting exposure feed
+  initial Grade highlight settings, source metadata and export/Proof. They
+  remain before the first frame, with the same methods and values.
+- RAW transport diagnostics feed source metadata/readouts and are measured
+  from the decoder's camera-RGB buffer. Deferring them requires retaining that
+  buffer or changing their lifetime; this was not changed under the strict
+  numerical and memory-budget constraints.
+- Source peak candidates feed the exact peak-measurement endpoints. Their
+  construction remains unchanged; delayed readiness has not been validated.
+- Source hashing validates the saved source and keys its mip cache, so it
+  remains before the first frame, once on the stable open path.
+- The brief's second resize is normally a no-op when the image already fits.
+  When geometry enlarges it, resizing is required to preserve the current
+  result; removing it would not be an identical-pixels optimization.
+- Cold source mip persistence and disk pruning still run before the proxy
+  response. Deferring these needs a separate review of the shared cache's
+  ownership, cancellation and memory limits. No cache layout or queue change
+  was made. This remains an incomplete Part 2 first-frame requirement.
+
+The existing stopwatch now records the Library click, Grade-visible loading,
+backend phases, grade attachment, first frame and controls-ready events. No
+42 MP before/after timings, GPU drivers or unpacked-build checks were run,
+following Steve's fast-checks-only instruction. The under-0.5-second and
+four-second targets are therefore unverified, not claimed achieved.
+
+Fast validation: 471 Node and 1,959 Python tests passed, three existing skips.
+Focused tests compare decoded pixels, HDR measurements, grade documents and
+preview sources bit-for-bit with the previous open route, count one decode
+and one hash, reject fingerprint mismatch, preserve recovery defaults, and
+check loading, stale-open exclusion and the runner's initial-load barrier.
+Three staged-thumbnail tests were updated for the explicitly removed unused
+product; authoritative decode and cancellation assertions were retained and
+strengthened. No export/Proof algorithm, shader, tolerance, limit or budget
+changed. No installer or push.
+
+Small startup fix: both Electron runners wait for complete initial page load
+and its main-process continuation before navigation. Only ERR_ABORTED (-3)
+from window loadURL is treated as an interrupted navigation; genuine backend
+failures keep their existing dialog and shutdown handling.

@@ -62,11 +62,13 @@
     });
   }
 
-  function createImportJob(fetchFn, { grant, rawImportSettings, replaceSessionId } = {}) {
+  function createImportJob(fetchFn, { grant, rawImportSettings, replaceSessionId, itemKey, recovery } = {}) {
     return postJson(fetchFn, "/api/import-jobs", {
       grant,
       raw_import_settings: rawImportSettings || undefined,
       replace_session_id: replaceSessionId || null,
+      item_key: itemKey || undefined,
+      recovery: recovery || undefined,
     });
   }
 

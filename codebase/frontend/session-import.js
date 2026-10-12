@@ -684,16 +684,29 @@ function retireActiveSession() {
 async function cancelActiveImport() {
   if (!state.importInProgress && !state.gradeOpen) return;
   const libraryOpen = Boolean(state.gradeOpen?.fromLibrary);
+  const loadingGrade = Boolean(state.gradeOpen);
   const jobId = state.activeImportJobId;
   state.importGeneration += 1;
+  const cancelledGeneration = state.importGeneration;
   state.activeImportJobId = null;
   state.importInProgress = false;
   setImportCancelVisible(false);
+  if (loadingGrade) {
+    retireActiveSession();
+    state.session = null;
+    state.editDocument = null;
+    state.documentDirty = false;
+    state.gpuPreview?.resetSession();
+    clearPreviewImage();
+    clearComparisonPreview();
+    drawHistogram(null);
+  }
   setIndeterminatePreviewMessage("Cancelling import...");
   updateExportAvailability();
   if (jobId) {
     await projectIo.cancelImportJob(fetch, jobId).catch(() => null);
   }
+  if (cancelledGeneration !== state.importGeneration) return;
   finishCancelledImport();
   finishGradeOpen();
   if (libraryOpen) activateWorkflowTab("import");

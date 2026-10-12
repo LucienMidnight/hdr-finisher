@@ -14,6 +14,7 @@ class GradeRequest(BaseModel):
     choice: Literal["mine", "file", "both", "cancel"] = "cancel"
     document: dict | None = None
     recovery: bool = False
+    reuse_source: bool = False
     preserve_recovery: bool = False
     unsaved: bool = False
     initialize: bool = False
@@ -25,6 +26,23 @@ def add_grade_routes(router, marks, store):
     grades = LibraryGrades(marks, store)
     from .library_copies import LibraryCopies
     copies = LibraryCopies(marks)
+
+    class OpenSettingsRequest(BaseModel):
+        path: str
+        item_key: str | None = None
+
+    @router.post("/open-settings")
+    def open_settings(request: OpenSettingsRequest):
+        try:
+            source = marks.source_path(request.item_key or request.path)
+            if source.resolve() != Path(request.path).resolve():
+                raise ValueError("The copy belongs to another photo.")
+            with marks._lock:
+                key = str(marks._path(request.item_key or request.path))
+                state = grades._get(key)
+                return {"recovery": bool(state.get("recovery") and not state.get("pending"))}
+        except (ValueError, OSError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     class CopyRequest(BaseModel):
         paths: list[str]
@@ -74,7 +92,10 @@ def add_grade_routes(router, marks, store):
                         session.undo_history.clear()
                         session.redo_history.clear()
 
-                return grades.attach(session_id, request.item_key)
+                attached = grades.attach(session_id, request.item_key)
+                if not attached["grade"]:
+                    attached["session"] = store.get(session_id).to_payload()
+                return attached
             if request.action == "capture":
                 if request.unsaved:
                     store.get(session_id).dirty = True
@@ -94,7 +115,7 @@ def add_grade_routes(router, marks, store):
                 path = grades.path(session_id)
                 state = grades._get(path)
                 document = request.document or state["default"]
-                session = open_document(store, EditDocument.model_validate(document), marks.source_path(path))
+                session = open_document(store, EditDocument.model_validate(document), marks.source_path(path), reuse_session_id=session_id if request.reuse_source else None)
                 new_id = str(session.session_id)
                 grades.sessions[new_id] = path
                 grades.starts[new_id] = document

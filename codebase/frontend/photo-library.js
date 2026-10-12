@@ -527,7 +527,9 @@
   function openGrade() {
     if (!selected()) return;
     if (state.review) setReview(false);
-    postParent("open-source", { path: selected().source_path || selected().path, itemKey: selected().path });
+    const clickedAt = performance.timeOrigin + performance.now();
+    HDRLibraryStopwatch("grade_open_click", { path: selected().path });
+    postParent("open-source", { path: selected().source_path || selected().path, itemKey: selected().path, clickedAt });
   }
   const browse = path => openPlace({ path });
   const browseCollection = (kind, name) => openPlace({ kind, name });

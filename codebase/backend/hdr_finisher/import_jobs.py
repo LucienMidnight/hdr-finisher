@@ -8,7 +8,7 @@ import time
 from uuid import uuid4
 
 from .media_browser import MediaBrowserStore
-from .models import RawImportSettings, SourceInterpretationOverride
+from .models import EditDocument, RawImportSettings, SourceInterpretationOverride
 from .sessions import SessionStore
 
 
@@ -21,6 +21,7 @@ class ImportJob:
     path: Path
     raw_import_settings: RawImportSettings
     replace_session_id: str | None = None
+    grade: EditDocument | None = None
     created_at: float = field(default_factory=time.monotonic)
     state: str = "queued"
     phase: str = "queued"
@@ -67,12 +68,14 @@ class ImportJobManager:
         self._active_job_id: str | None = None
 
     def start(
-        self, path: Path, settings: RawImportSettings, replace_session_id: str | None = None
+        self, path: Path, settings: RawImportSettings, replace_session_id: str | None = None,
+        grade: EditDocument | None = None
     ) -> ImportJob:
         job = ImportJob(
             job_id=uuid4().hex,
             path=path,
-            raw_import_settings=settings,
+            raw_import_settings=grade.source.raw_import_settings if grade else settings,
+            grade=grade,
             replace_session_id=replace_session_id,
         )
         with self._lock:
@@ -119,23 +122,6 @@ class ImportJobManager:
             if not self._is_current(job):
                 return
             suffix = job.path.suffix.lower()
-            preview_label = "Decoding AVIF base preview" if suffix == ".avif" else "Preparing source preview"
-            self._set_phase(job, "previewing", "previewing", preview_label)
-            try:
-                thumbnail_options = {}
-                if self.browser.thumbnail_worker is not None:
-                    thumbnail_options["cancel_event"] = job.cancel_event
-                preview_path = self.browser.thumbnail(str(job.path), 512, fast_only=True, **thumbnail_options)
-            except Exception:
-                # Full development can still succeed when a codec has no cheap
-                # thumbnail path, so preview extraction is intentionally soft.
-                preview_path = None
-            with job.state_lock:
-                job.preview_path = preview_path
-            if not self._is_current(job):
-                return
-            with job.state_lock:
-                job.state = "preview_ready" if job.preview_path is not None else "developing"
             if suffix == ".dng":
                 label = "Experimental DNG Import: inspecting metadata and required operations"
                 phase = "inspecting_dng"
@@ -154,6 +140,9 @@ class ImportJobManager:
             self._set_phase(job, "developing", phase, label)
             interpretation_override = SourceInterpretationOverride()
             prepare_options: dict[str, object] = {}
+            if job.grade is not None:
+                interpretation_override = job.grade.interpretation_override.model_copy(deep=True)
+                prepare_options["hdr_reference_white_nits"] = job.grade.hdr_reference_white_nits
             if job.replace_session_id is not None:
                 current_session = self.sessions.get(job.replace_session_id)
                 interpretation_override = current_session.interpretation_override.model_copy(deep=True)

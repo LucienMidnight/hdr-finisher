@@ -101,6 +101,7 @@ async function openDesktopSelection(selection) {
     activateWorkflowTab("grade"); return;
   }
   if (!await confirmUnsavedTransition(`opening ${selection.path?.split(/[/\\]/).pop() || "another photo"}`)) return;
+  if (selection.isCurrent && !selection.isCurrent()) return;
   await openStagedDesktopSource(selection);
 }
 
@@ -121,108 +122,127 @@ function finishGradeOpen() {
     panel.removeAttribute("aria-busy");
   }
   renderSessionChrome();
+  renderReadouts();
 }
 
 async function openStagedDesktopSource(selection) {
   const generation = claimSessionReplacement();
   const name = selection.path?.split(/[/\\]/).pop() || "photo";
   if (!selection.replaceSessionId) {
-  state.gradeOpen = { generation, path: selection.path, name, started: performance.now(), fromLibrary: selection.fromLibrary };
-  gradeOpenStage("grade_open_click");
-  retireActiveSession();
-  state.session = null;
-  state.editDocument = null;
-  state.documentDirty = false;
-  state.renderCoordinator?.noteSource(null);
-  state.gpuPreview?.resetSession();
-  clearPreviewImage();
-  clearComparisonPreview();
-  drawHistogram(null);
-  for (const list of [els.technicalPreviewList, els.technicalSourceList, els.sourcePreviewList, els.previewOutputList]) list?.replaceChildren();
-  renderSourceFilename(name);
-  state.importInProgress = true;
-  activateWorkflowTab("grade");
-  for (const panel of document.querySelectorAll(".source-rail, .grade-rail")) { panel.inert = true; panel.setAttribute("aria-busy", "true"); }
-  renderSessionChrome();
-  status.post({ id: "import", severity: "progress", message: `Loading ${name}…`, progress: "indeterminate" });
-  gradeOpenStage("grade_open_visible");
+    state.gradeOpen = { generation, path: selection.path, name, started: Number.isFinite(selection.clickedAt) ? selection.clickedAt - performance.timeOrigin : performance.now(), fromLibrary: selection.fromLibrary };
+    gradeOpenStage("grade_open_started");
+    retireActiveSession();
+    state.session = null;
+    state.editDocument = null;
+    state.documentDirty = false;
+    state.renderCoordinator?.noteSource(null);
+    state.gpuPreview?.resetSession();
+    clearPreviewImage();
+    clearComparisonPreview();
+    drawHistogram(null);
+    for (const list of [els.technicalPreviewList, els.technicalSourceList, els.sourcePreviewList, els.previewOutputList, els.metadataList]) list?.replaceChildren();
+    renderSourceFilename(name);
+    state.importInProgress = true;
+    activateWorkflowTab("grade");
+    for (const panel of document.querySelectorAll(".source-rail, .grade-rail")) { panel.inert = true; panel.setAttribute("aria-busy", "true"); }
+    renderSessionChrome();
+    status.post({ id: "import", severity: "progress", message: `Loading ${name}…`, progress: "indeterminate" });
+    gradeOpenStage("grade_open_visible");
   }
   try {
-  if (state.activeImportJobId) {
-    await projectIo.cancelImportJob(fetch, state.activeImportJobId).catch(() => null);
-  }
-  if (generation !== state.importGeneration) return;
-  await state.byteUploadQueue.catch(() => null);
-  if (generation !== state.importGeneration) return;
-  status.post({ id: "import", severity: "progress", message: `Loading ${name}…`, progress: "indeterminate" });
-  state.importInProgress = true;
-  updateExportAvailability();
-  setIndeterminatePreviewMessage("Starting import · 0.0s elapsed");
-  setImportCancelVisible(true);
-  const { response, payload: initialJob } = await projectIo.createImportJob(fetch, {
-    grant: selection.grant,
-    rawImportSettings: selection.rawImportSettings,
-    replaceSessionId: selection.replaceSessionId,
-  });
-  let job = initialJob;
-  if (generation !== state.importGeneration) {
-    if (job?.job_id) await projectIo.cancelImportJob(fetch, job.job_id).catch(() => null);
-    return;
-  }
-  if (!response.ok || !job?.job_id) {
-    state.importInProgress = false;
-    setImportCancelVisible(false);
-    throw new Error(job?.detail || "The source file could not be opened.");
-  }
-  state.activeImportJobId = job.job_id;
-  const startedAt = performance.now();
-  while (generation === state.importGeneration && state.activeImportJobId === job.job_id) {
-    const elapsed = (performance.now() - startedAt) / 1000;
-    const label = job.phase_label || "Preparing source";
-    const reassurance = elapsed >= 10 ? " · still working normally" : "";
-    setIndeterminatePreviewMessage(`${label}${reassurance} · ${elapsed.toFixed(1)}s elapsed`);
-    if (job.state === "ready" && job.session_id) {
-      const { response: sessionResponse, payload } = await projectIo.fetchSession(fetch, job.session_id);
-      if (generation !== state.importGeneration || state.activeImportJobId !== job.job_id) return;
-      state.activeImportJobId = null;
+    if (state.activeImportJobId) {
+      await projectIo.cancelImportJob(fetch, state.activeImportJobId).catch(() => null);
+    }
+    if (generation !== state.importGeneration) return;
+    await state.byteUploadQueue.catch(() => null);
+    if (generation !== state.importGeneration) return;
+    status.post({ id: "import", severity: "progress", message: `Loading ${name}…`, progress: "indeterminate" });
+    state.importInProgress = true;
+    updateExportAvailability();
+    setIndeterminatePreviewMessage("Starting import · 0.0s elapsed");
+    setImportCancelVisible(true);
+    const recoveryChoice = selection.replaceSessionId ? null : await window.HDRGradeSaving.prepare(selection);
+    if (generation !== state.importGeneration) return;
+    const { response, payload: initialJob } = await projectIo.createImportJob(fetch, {
+      grant: selection.grant,
+      rawImportSettings: selection.rawImportSettings,
+      replaceSessionId: selection.replaceSessionId,
+      itemKey: selection.itemKey,
+      recovery: recoveryChoice === "restore",
+    });
+    let job = initialJob;
+    if (generation !== state.importGeneration) {
+      if (job?.job_id) await projectIo.cancelImportJob(fetch, job.job_id).catch(() => null);
+      return;
+    }
+    if (!response.ok || !job?.job_id) {
       state.importInProgress = false;
       setImportCancelVisible(false);
-      if (!sessionResponse.ok || !payload?.session) {
-        throw new Error(payload?.detail || "The completed source session could not be opened.");
+      throw new Error(job?.detail || "The source file could not be opened.");
+    }
+    state.activeImportJobId = job.job_id;
+    const startedAt = performance.now();
+    let firstPoll = true;
+    while (generation === state.importGeneration && state.activeImportJobId === job.job_id) {
+      const elapsed = (performance.now() - startedAt) / 1000;
+      const label = job.phase_label || "Preparing source";
+      const reassurance = elapsed >= 10 ? " · still working normally" : "";
+      setIndeterminatePreviewMessage(`${label}${reassurance} · ${elapsed.toFixed(1)}s elapsed`);
+      if (job.state === "ready" && job.session_id) {
+        const { response: sessionResponse, payload } = await projectIo.fetchSession(fetch, job.session_id);
+        if (generation !== state.importGeneration || state.activeImportJobId !== job.job_id) return;
+        state.activeImportJobId = null;
+        state.importInProgress = false;
+        setImportCancelVisible(false);
+        if (!sessionResponse.ok || !payload?.session) {
+          throw new Error(payload?.detail || "The completed source session could not be opened.");
+        }
+        for (const phase of job.phase_history || []) gradeOpenStage("grade_open_backend_stage", {
+          key: phase.phase, duration_ms: phase.duration_ms,
+        });
+        const retainedProjectPath = selection.replaceSessionId ? state.projectPath : "";
+        const gradeSession = selection.replaceSessionId ? payload.session : await window.HDRGradeSaving.open(payload.session, selection.itemKey, () => generation === state.importGeneration, recoveryChoice);
+        if (generation !== state.importGeneration) return;
+        gradeOpenStage("grade_open_attached");
+        await activateDesktopSession(gradeSession, retainedProjectPath, generation);
+        if (generation !== state.importGeneration) return;
+        gradeOpenStage("grade_open_controls");
+        finishGradeOpen();
+        if (!selection.replaceSessionId) await recordSuccessfulMediaImport(selection.path);
+        if (generation !== state.importGeneration) return;
+        status.post({ id: "import", severity: "success", message: "Source imported." });
+        return;
       }
-      const retainedProjectPath = selection.replaceSessionId ? state.projectPath : "";
-      const gradeSession = selection.replaceSessionId ? payload.session : await window.HDRGradeSaving.open(payload.session, selection.itemKey, () => generation === state.importGeneration);
-      if (generation !== state.importGeneration) return;
-      gradeOpenStage("grade_open_attached");
-      await activateDesktopSession(gradeSession, retainedProjectPath, generation);
-      if (generation !== state.importGeneration) return;
-      gradeOpenStage("grade_open_controls");
-      finishGradeOpen();
-      if (!selection.replaceSessionId) await recordSuccessfulMediaImport(selection.path);
-      status.post({ id: "import", severity: "success", message: "Source imported." });
-      return;
+      if (job.state === "error" || job.state === "cancelled") {
+        state.activeImportJobId = null;
+        state.importInProgress = false;
+        setImportCancelVisible(false);
+        if (job.state === "error") throw new Error(job.error || "The source file could not be opened.");
+        else finishCancelledImport();
+        return;
+      }
+      if (!firstPoll) await new Promise((resolve) => window.setTimeout(resolve, 250));
+      firstPoll = false;
+      const { response: poll, payload } = await projectIo.pollImportJob(fetch, job.job_id);
+      job = payload;
+      if (!poll.ok) {
+        state.activeImportJobId = null;
+        state.importInProgress = false;
+        setImportCancelVisible(false);
+        throw new Error(job?.detail || "Import progress could not be read.");
+      }
     }
-    if (job.state === "error" || job.state === "cancelled") {
-      state.activeImportJobId = null;
-      state.importInProgress = false;
-      setImportCancelVisible(false);
-      if (job.state === "error") throw new Error(job.error || "The source file could not be opened.");
-      else finishCancelledImport();
-      return;
-    }
-    await new Promise((resolve) => window.setTimeout(resolve, 250));
-    const { response: poll, payload } = await projectIo.pollImportJob(fetch, job.job_id);
-    job = payload;
-    if (!poll.ok) {
-      state.activeImportJobId = null;
-      state.importInProgress = false;
-      setImportCancelVisible(false);
-      throw new Error(job?.detail || "Import progress could not be read.");
-    }
-  }
   } catch (error) {
     if (generation !== state.importGeneration) return;
     gradeOpenStage("grade_open_failed");
+    if (!selection.replaceSessionId) {
+      retireActiveSession();
+      state.session = null;
+      state.editDocument = null;
+      state.documentDirty = false;
+      clearPreviewImage();
+      drawHistogram(null);
+    }
     state.importInProgress = false;
     finishGradeOpen();
     if (selection.fromLibrary) activateWorkflowTab("import");
@@ -263,7 +283,7 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   state.interpretationGateDismissed = false;
   state.gpuPreview?.resetSession(session.session_id);
-  if (state.gpuPreview?.warmDenoiseModel) {
+  if (state.denoise.hdr.enabled && state.gpuPreview?.warmDenoiseModel) {
     const native = Math.max(session.source.width, session.source.height);
     void state.gpuPreview.warmDenoiseModel(session.session_id, "hdr", native);
   }
@@ -275,14 +295,18 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   seedExportFieldsFromSession();
   const gpuReady = await renderGpuDraft("hdr", { hideStatus: false, longEdge: settledProxyLongEdge() });
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
+  if (!gpuReady) await refreshPreview({ progressSteps: [36, 76, 92] });
+  if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   gradeOpenStage("grade_open_first_frame");
-  await Promise.all([
-    gpuReady ? Promise.resolve(true) : refreshPreview({ progressSteps: [36, 76, 92] }),
+  void Promise.all([
     refreshOverlay(),
     refreshScopes(scopeLongEdge("settled"), { tier: "settled" }),
-  ]);
+  ]).catch(error => {
+    if (state.session?.session_id === session.session_id) console.error("Photo analysis could not finish.", error);
+  });
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   if (state.denoise.hdr.enabled) await recalculateDenoise();
+  if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   hidePreviewMessage();
   prepareInactivePreview();
   if (previewNeedsRefinement()) debouncePreview("hdr");

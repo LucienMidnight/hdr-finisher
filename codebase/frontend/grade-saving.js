@@ -110,33 +110,46 @@
     if (allowed && discarded) await command("discard");
     return allowed;
   }
-  async function open(session, itemKey = null, isCurrent = () => true) {
+  async function prepare(selection) {
+    const response = await fetch("/api/library/open-settings", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: selection.path, item_key: selection.itemKey || null }) });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(projectIo.responseErrorMessage(payload, "The photo settings could not be read."));
+    if (!payload.recovery) return null;
+    return chooseRecovery(selection.path?.split(/[/\\]/).pop() || "photo");
+  }
+  function chooseRecovery(name) {
+    return window.HDRDialogs.choose(
+      `Unsaved work for ${name} was kept after the app stopped. Restore it?`,
+      [{ label: "Leave saved grade", value: "discard", cancel: true }, { label: "Restore unsaved work", value: "restore", primary: true }],
+      { title: "Recover unsaved work" });
+  }
+  async function open(session, itemKey = null, isCurrent = () => true, recoveryChoice = null) {
     readySession = null;
     const attached = await command("attach", { item_key: itemKey, initialize: true, default_white: Number(state.appPreferences?.defaultReferenceWhiteNits) === 100 ? 100 : 203 }, session.session_id);
     if (!isCurrent()) return session;
     current = session.session_id; currentPath = attached.path; currentName = attached.name ? `${session.source.filename} · ${attached.name}` : null; result = { conflict: attached.conflict };
     conflictShown = false;
     loadedGrade = true;
-    if (!attached.grade) {
+    if (!attached.grade && attached.session) session = attached.session;
+    else if (!attached.grade) {
       const fetched = await projectIo.fetchSession(fetch, session.session_id);
       if (!isCurrent()) return session;
       session = fetched.payload.session;
     }
-    if (attached.grade) {
-      const payload = await command("load", { document: attached.grade, preserve_recovery: true });
+    if (attached.grade && recoveryChoice !== "restore") {
+      const payload = await command("load", { document: attached.grade, preserve_recovery: true, reuse_source: true });
       if (!isCurrent()) return session;
       session = payload.session; current = session.session_id;
       // Loading a saved grade must not automatically apply an unsaved recovery.
       session.dirty = false;
     }
     if (attached.recovery) {
-      const choice = await window.HDRDialogs.choose(
-        `Unsaved work for ${session.source.filename} was kept after the app stopped. Restore it?`,
-        [{ label: "Leave saved grade", value: "discard", cancel: true }, { label: "Restore unsaved work", value: "restore", primary: true }],
-        { title: "Recover unsaved work" });
+      const choice = recoveryChoice || await chooseRecovery(session.source.filename);
       if (!isCurrent()) return session;
       if (choice === "restore") {
-        const payload = await command("load", { document: attached.recovery, recovery: true });
+        const payload = await command("load", { document: attached.recovery, recovery: true, reuse_source: true });
         if (!isCurrent()) return session;
         session = payload.session; current = session.session_id;
       } else await command("discard");
@@ -249,7 +262,7 @@
     } finally { asking = false; byId("grade-revert-menu").disabled = false; byId("grade-revert-saved").disabled = false; }
   }
   byId("grade-revert-menu").addEventListener("click",()=>{ revertFlight = revertMenu().catch(error=>status.post({id:"grade-revert",severity:"error",message:error.message})); });
-  window.HDRGradeSaving = { refresh, open, save, saveProject, leave, render, activated, resolve, offerRecovery,
+  window.HDRGradeSaving = { refresh, prepare, open, save, saveProject, leave, render, activated, resolve, offerRecovery,
     item: () => currentPath, ready: () => Boolean(current && readySession === current),
     active: () => Boolean(current && state.session?.session_id === current),
     hasGrade: id => id === current && loadedGrade, conflict: () => Boolean(result.conflict) };

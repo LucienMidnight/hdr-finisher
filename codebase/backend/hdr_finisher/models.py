@@ -1330,6 +1330,8 @@ class DesktopSessionOpenRequest(BaseModel):
 
 class ImportJobRequest(BaseModel):
     grant: str
+    item_key: str | None = None
+    recovery: bool = False
     raw_import_settings: RawImportSettings = Field(default_factory=RawImportSettings)
     replace_session_id: str | None = None
 

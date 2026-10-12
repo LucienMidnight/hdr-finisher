@@ -107,6 +107,11 @@ function renderCurrentPreviewSize(options) {
 }
 
 function renderReadouts() {
+  if (state.gradeOpen) {
+    for (const list of [els.technicalPreviewList, els.technicalDisplayList, els.technicalSourceList,
+      els.previewOutputList, els.displayInfoList, els.sourcePreviewList]) list?.replaceChildren();
+    return;
+  }
   renderPresentationCapability();
   if (els.technicalPreviewList) {
     const technical = technicalSummaryEntries();
