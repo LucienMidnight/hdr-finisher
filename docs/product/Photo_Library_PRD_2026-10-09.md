@@ -427,6 +427,15 @@ Later on October 11, after Steve had used slices 1 to 3:
   cost: until that next start a photo can sit without its settings file
   beside it. Brief:
   `docs/technical/codex-brief-library-slice-5-file-commands-2026-10-12.md`.
+- **Revised order** (Steve, October 12; replaces the order above from the
+  installer test build onward). Slices 4, 5 and 6 are built. Next: a
+  packaged smoke check without an installer; the worst slow spots,
+  measured first; starting exposure and RAW tuning; paste and looks, then
+  linked photos; batch export with ExifTool, then portable projects; the
+  full polish and performance pass; then the installer and a methodical
+  bug hunt; then MCP and the Match entire HDR grade fault. Brief for the
+  first two:
+  `docs/technical/codex-brief-library-packaged-check-and-slow-spots-2026-10-12.md`.
 - **Local build rule:** a backup push of a work-in-progress branch needs
   only the fast checks. The full sweep stays for merges into `main` and
   installer builds.
