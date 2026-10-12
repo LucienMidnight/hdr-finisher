@@ -1297,3 +1297,17 @@ explanations in the UI (5), and add overlay colour settings to the menu bar
 Validation: 463 Node and 1,770 Python passed, 3 skipped (3:46); no failures.
 No Electron check covers this documentation-only change. A thread reminder
 checks for the start of Library polish and stays quiet until then.
+
+### Slice 5 Stage A — measured highlights (October 12, 2026)
+
+Library grade comparisons ignore HDR source peak nits and SDR source peak
+percent, which Grade recomputes from its source analysis. Saved documents retain
+both values unchanged. Edited state, kept-picture identity and revert availability
+share this comparison. Manual peak values and measurement modes still count as
+edits. Rendering, export and Proof are unchanged; no data layout changes.
+
+Stage A verification: 463 Node checks and 1,772 Python checks passed, three
+skipped. The focused measurement-identity Electron check passed at 2560x1440
+on disposable PNGs. Initial checks caught unnecessary first-save scheduling
+and driver Save-button/timing mistakes; these were corrected without weakening
+assertions. No rendering, export, Proof, shader or budget changes.

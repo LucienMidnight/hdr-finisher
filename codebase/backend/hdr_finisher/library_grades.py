@@ -20,6 +20,11 @@ def grade_key(value):
     for field in ("overlay_mode", "overlay_opacity", "overlay_threshold",
                   "false_color_band_anchor", "false_color_ceiling_nits"):
         shared.pop(field, None)
+    # Recomputed source measurements are not authored adjustments. Keep manual
+    # peaks and measurement modes: changing either remains a real edit.
+    adjustments = grade.get("global_adjustments", {})
+    adjustments.get("hdr", {}).pop("highlight_compression_source_peak_nits", None)
+    adjustments.get("sdr", {}).pop("highlight_compression_source_peak_percent", None)
     return grade
 
 
@@ -185,7 +190,8 @@ class LibraryGrades:
             if session.edit_revision == revision:
                 session.dirty = False
             log("grade_save_queued", photo=path, action="grade retained; settings writer notified")
-            if getattr(self.marks, "kept", None) and grade_key(desired) != grade_key(state.get("baseline")):
+            if (getattr(self.marks, "kept", None) and grade_key(desired) != grade_key(state.get("default"))
+                    and grade_key(desired) != grade_key(state.get("baseline"))):
                 self.marks.kept.schedule(path, desired)
             return self.status(session_id)
 
