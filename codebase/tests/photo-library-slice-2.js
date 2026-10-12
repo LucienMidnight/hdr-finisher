@@ -51,7 +51,7 @@ const settings = file => JSON.parse(fs.readFileSync(file + ".hdrf", "utf8"));
     await library.evaluate(folder => HDRLibrary.browse(folder), folder);
     await library.waitForSelector("#grid-space canvas[data-picture-key]");
     await library.waitForFunction(() => HDRLibrary.getSnapshot().indexing?.state === "idle" && HDRLibrary.getSnapshot().albums.includes("Trips"), null, { timeout: 60000 });
-    assert.equal(await library.locator("#index-status").textContent(), "Library index up to date");
+    assert.equal(await library.locator("#index-status").textContent(), "Activity");
     assert.equal(await library.locator('#albums .library-album-row[data-album="Trips"] .library-count').textContent(), "1");
     console.log("PASS: a pinned folder that was never opened was indexed; its album and tag were found.");
 

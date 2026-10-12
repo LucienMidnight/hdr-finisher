@@ -382,9 +382,14 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 # Background indexing waits for visible work, grading and export.
                 while not cancelled.is_set() and not stopping.is_set():
                     with condition:
+                        # Maps/kept pictures outrank folder checks. Only checks
+                        # wait for that lane, never the reverse (including a
+                        # second queued map while the first one is running).
                         allowed = {"index", "check"} if kind == "check" else {"index", "kept"}
+                        if kind == "kept":
+                            allowed.add("check")
                         if (not state["paused"] and not state["foreground"]
-                                and (kind == "check" or not state["checking"])
+                                and (kind in {"check", "kept"} or not state["checking"])
                                 and all(lane(item[2]) in allowed for item in queue)):
                             break
                     time.sleep(0.05)

@@ -1801,3 +1801,74 @@ Local commit note: add the stopwatch without changing rendering; grouped
 fast suites and focused disposable launches passed. Initial driver readiness
 and toggle-selector errors, and a mock signature mismatch introduced by the
 saved-source experiment, were corrected before those passing runs.
+
+### Part 2: exposure-map/check circular wait removed
+
+The hypothesis reproduced before the fix: a running map, second queued map
+and started folder check all stopped completing. The map lane waited for
+the active check while the check waited for that map lane to empty. The
+minimal fix makes maps/kept pictures proceed across checks; checks yield
+to that lane. Foreground Grade pauses and picture/index yielding remain.
+No ranked-queue redesign was introduced. The stale slice-2 heading assertion
+now expects the existing Activity wording; only that wording changed.
+
+The same deterministic reproduction passes after the fix. The grouped native
+driver delivered all six exposure maps during a simultaneous folder check
+in development and packaged runs. Existing folder-check regressions passed
+in both modes: timed intake, stable grid selection/scroll, toolbar/folder
+menu, stable single/filmstrip and selected-photo removal. Original copied
+ARW bytes remained unchanged. The 21 focused lane/worker/folder Python
+checks and the grouped fast suites above passed.
+
+Local commit note: remove the mutual wait, add its regression and update
+the permitted wording assertion. No outstanding map/check failure observed;
+the saved-source exact-match stop below is separate.
+
+### Part 3: exact-match stop; optimization deferred
+
+The evaluated proposal captured references to Grade's corrected source,
+reduced it in a background producer, and called the unchanged export render
+functions and gain-map writer. A 42 MP ARW comparison was bit-for-bit equal
+in both rendered branches and the actual encoded JPEG. It reduced isolated
+production from 5.214 to 0.878 seconds. Guards covered a changed source,
+external grade changes, superseded saves and opening another photo; source
+references were released before encoding.
+
+However, a generated Ultra HDR JPEG exposes a real counterexample: open
+at 203 nits, change HDR reference white to 100, then compare both routes.
+Reopening normalizes its decoded source by 203/100; the reference-white
+command changes Grade's rendering context without rescaling its open image.
+HDR rendered arrays differ (maximum absolute difference 0.25750059,
+mean 0.20556210 reopened versus 0.10126213 open); SDR arrays are identical.
+This is a source-normalization difference, not an encoder or tolerance issue.
+The brief explicitly requires stopping on any exact-match failure. Part 3
+is deferred; its proposal is preserved under ignored output/library-round1
+and is not active in committed source. No export, Proof, decode or shader
+change was made to force agreement.
+
+Before that stop, the proposed route measured 4.787 seconds save-to-picture
+in development and 4.707 packaged, versus section 15's 13.685 / 16.285.
+These are experimental results, not a delivered speedup or a three-second
+pass. The development split was about 2.06 seconds waiting at the Grade
+pause gate, 0.415 source/hash/reduction, 0.182 render, 0.567 encode,
+0.078 publication, and 0.768 from written to drawn; returning to Library
+and driver observation account for the remainder. Packaged had a similar
+roughly two-second pause and 0.84-second written-to-drawn interval. These
+remaining waits were reported, not chased into later rounds.
+
+Save acknowledgement measured 0.361 / 0.315 seconds, against the prior
+0.055 / 0.065 sample. Making the picture was off the request thread, but
+that observed difference is unexplained; no claim of unchanged save latency
+is made. Steve should try the app before further responsiveness timing.
+
+Decision requested: enable the fast route only when its source is equivalent,
+preserving today's slow route for mismatching reference-white cases; or
+leave Part 3 deferred while normalization behavior is addressed separately.
+The former preserves output but does not speed up every Grade save. The
+latter requires a separate decision about a constrained source/render area.
+No push, installer, broad sweep or later-round work was performed.
+
+After deferring Part 3 and restoring the existing producer, final fast checks
+passed: 466 Node tests and 1,938 Python tests, three existing skips. The
+backend and unpacked Windows app were rebuilt from that committed state;
+the experimental producer is absent from the build Steve should try.
