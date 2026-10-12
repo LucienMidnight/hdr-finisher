@@ -8,7 +8,7 @@ from threading import Event, RLock, Thread
 from uuid import uuid4
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict
-from .library_file_io import digest, signature, same, rename, durable, occupied
+from .library_file_io import digest, signature, same, rename, durable, occupied, relocated, stable_ids, check_streams
 from .library_file_state import snapshot, retarget, pictures, document_paths, mapped
 from .library_folder_commands import folder_name
 from .library_diagnostics import log
@@ -24,6 +24,7 @@ class FileRequest(BaseModel):
     destination: str = ''
     choices: dict[str,str] = {}
     token: str = ''
+    confirmation: str = ''
 
 
 class FileCommands:
@@ -34,6 +35,8 @@ class FileCommands:
         self.epoch=0; self.retired=set(); self.plans={}; self.jobs={}; self.events=[];self.changes=[]
         self.hook=lambda stage,item: None
         self.cross_drive=lambda a,b: Path(a).stat().st_dev != Path(b).parent.stat().st_dev
+        from . import library_recycle
+        self.recycle=library_recycle.recycle;self.recycle_find=library_recycle.find
         marks.file_commands=self
         self.records={p.stem:json.loads(p.read_text(encoding='utf-8')) for p in self.root.glob('*.json')}
 
@@ -68,6 +71,9 @@ class FileCommands:
 
     def plan(self,request):
         with self._lane,self.marks.writer._lane,self.marks._lock:
+            if request.action in {'delete','delete_rejected'}:
+                from .library_file_delete import plan
+                return plan(self,request)
             if request.action in {'folder_rename','folder_move'}:
                 from .library_file_folders import plan
                 return plan(self,request)
@@ -88,6 +94,7 @@ class FileCommands:
                     doc=self.marks._document(old)
                     row=self.marks.read([str(old)])['photos'][0]
                     side=self.marks._sidecar(old)
+                    if side.exists(): check_streams(side)
                     checksum=digest(old); stamp=signature(old)
                     name=folder_name(request.name)+old.suffix if request.action=='rename' else old.name
                     if request.action=='rename': folder_name(name)
@@ -116,10 +123,12 @@ class FileCommands:
                         payload['marks']=row['marks'];payload['albums']=row['albums']
                         if getattr(self.marks,'grades',None): payload=self.marks.grades.merge(str(old),payload)
                     if payload: payload=document_paths(payload,str(old),str(new))
+                    cross=self.cross_drive(old,new)
+                    if cross: check_streams(old)
                     identifier=uuid4().hex
                     items.append({'old':str(old),'new':str(new),'stamp':stamp,'checksum':checksum,
                         'side_stamp':signature(side) if side.exists() else None,'side_hash':digest(side) if side.exists() else None,
-                        'payload':payload,'rows':rows,'cross':self.cross_drive(old,new),
+                        'payload':payload,'rows':rows,'cross':cross,
                         'stage':str(new.parent/('.hdr-moving-'+identifier+'.tmp')),
                         'side_stage':str(new.parent/('.hdr-settings-'+identifier+'.tmp')),
                         'side_old_stage':str(old.parent/('.hdr-old-settings-'+identifier+'.tmp')),'done':False})
@@ -131,10 +140,17 @@ class FileCommands:
             self.plans[token]=record
             return {'token':token,'count':len(items),'warnings':warnings,'clashes':[], 'destination':str(destination or '')}
 
-    def execute(self,token):
+    def execute(self,token,confirmation=''):
         with self._lane,self.marks.writer._lane,self.marks._lock:
-            record=self.plans.pop(token,None)
+            record=self.plans.get(token)
             if record is None: raise ValueError('The command preview expired. Open it again; nothing was changed.')
+            if record['action'] in {'delete','delete_rejected'}:
+                expected='permanent' if any(i['new']!='Recycle Bin' for i in record['items']) else 'recycle'
+                if confirmation!=expected: raise ValueError('Confirm this deletion first. Nothing was deleted.')
+                record['confirmed']=expected
+            for path,document in record.get('copy_documents',{}).items():
+                if self.marks.copies.document(path)!=document: raise ValueError('A selected virtual copy changed. Preview again; nothing was deleted.')
+            self.plans.pop(token)
             # Revalidate the whole selection before recording or touching originals.
             for item in record['items']:
                 if item.get('folder'):
@@ -147,18 +163,32 @@ class FileCommands:
                     raise ValueError('Settings changed; preview the command again. Nothing was changed.')
                 # New pending settings supersede a preview, never silently lose a mark.
                 if snapshot(self.marks,item['old'])!=item['rows']: raise ValueError('Marks or grades changed; preview the command again. Nothing was changed.')
-            if not record['items']: return self.result(record)
+            if not record['items']:
+                result=self.result(record)
+                if record.get('copy_paths'):
+                    copies=self.marks.copies.remove_many(record['copy_paths']);result.update(copies,files_changed=True,copies_count=copies['count'],count=0)
+                return result
             self.save(record);self.invalidate();self.hook('record',record['items'][0])
         if any(i['cross'] for i in record['items']):
             Thread(target=self.run,args=(record,),name='hdr-library-file-move',daemon=True).start()
             return self.result(record,queued=True)
-        return self.run(record)
+        result=self.run(record)
+        if record.get('copy_paths'):
+            copies=self.marks.copies.remove_many(record['copy_paths']);result['copies_count']=copies['count'];result['warnings']+=copies['warnings'];result['undo_available']=copies['undo_available']
+        return result
 
     def checkpoint(self,record,item,stage):
         item['phase']=stage;self.save(record);self.hook(stage,item)
 
     def copy_checked(self,record,item,source,stage,checksum):
         stage=Path(stage)
+        if item.get('publish_stamp') and relocated(stage,item['publish_stamp'],checksum): return stage
+        if item.get('temp_stamp') and stage.exists() and not stable_ids(stage):
+            # A FAT directory-entry ID can be reused after deletion. Never reopen
+            # an interrupted staging file for writing on that filesystem.
+            item.setdefault('retained_temps',[]).append(str(stage))
+            stage=stage.parent/('.hdr-moving-'+uuid4().hex+'.tmp')
+            item['stage']=str(stage);item.pop('temp_stamp');self.save(record)
         if not item.get('temp_stamp'):
             with stage.open('xb') as f: f.flush();os.fsync(f.fileno())
             item['temp_stamp']=signature(stage);self.save(record)
@@ -170,20 +200,22 @@ class FileCommands:
             dst.flush();os.fsync(dst.fileno())
         shutil.copystat(source,stage)
         if digest(stage)!=checksum: raise ValueError('The copy could not be checked. The original was kept.')
-        item['publish_stamp']=signature(stage);self.checkpoint(record,item,'verified')
+        item['publish_stamp']=signature(stage);self.checkpoint(record,item,'verified');return stage
 
     def move_item(self,record,item):
         old,new,stage=Path(item['old']),Path(item['new']),Path(item['stage'])
         if self.protected(old): raise ValueError(OPEN_MESSAGE)
         expected=item.get('publish_stamp',item['stamp'])
         actual_spelling=any(str(p)==str(new) for p in new.parent.iterdir())
-        if not actual_spelling or not same(new,expected,item['checksum']):
+        if actual_spelling and new != old and not stable_ids(new) and (stage.exists() or not item.get('publish_stamp') and same(old,item['stamp'],item['checksum'])):
+            raise ValueError('The destination is occupied while the original is still present. Both locations were left alone.')
+        if not actual_spelling or not relocated(new,expected,item['checksum']):
             if occupied(new,old): raise ValueError('The destination is occupied. Neither location was overwritten.')
             if item['cross']:
                 if not same(old,item['stamp'],item['checksum']): raise ValueError('The original changed or is absent. Both locations were left alone.')
-                self.copy_checked(record,item,old,stage,item['checksum'])
+                stage=self.copy_checked(record,item,old,stage,item['checksum'])
             else:
-                if not same(stage,item['stamp'],item['checksum']):
+                if not relocated(stage,item['stamp'],item['checksum']):
                     if not same(old,item['stamp'],item['checksum']): raise ValueError('The original changed or is absent. Both locations were left alone.')
                     rename(old,stage);self.checkpoint(record,item,'photo_staged')
             rename(stage,new)
@@ -194,7 +226,9 @@ class FileCommands:
             with read_guard(new,item['publish_stamp'],item['checksum']):
                 remove_owned(old,item['stamp'],item['checksum'])
             self.checkpoint(record,item,'source_removed')
-        self.settings(record,item)
+        from .library_file_io import read_guard
+        with read_guard(new,item.get('publish_stamp',item['stamp']),item['checksum']):
+            self.settings(record,item)
         with self.marks._lock:
             retarget(self.marks,item)
             self.retired.add(item['old']);self.retired.discard(item['new'])
@@ -211,11 +245,11 @@ class FileCommands:
 
     def settings(self,record,item):
         old=Path(item['settings_old']) if item.get('settings_old') else self.marks._sidecar(Path(item['old']))
-        new=self.marks._sidecar(Path(item['new']))
+        new=self.marks._sidecar(Path(item.get('settings_target',item['new'])))
         if os.path.normcase(str(old))==os.path.normcase(str(new)) and str(old)!=str(new):
             backup=Path(item['side_old_stage'])
             if not backup.exists() and not item.get('settings_published') and old.exists():
-                if not same(old,item['side_stamp'],item['side_hash']): raise ValueError('The old settings changed. They were left alone.')
+                if not relocated(old,item['side_stamp'],item['side_hash']): raise ValueError('The old settings changed. They were left alone.')
                 rename(old,backup);self.checkpoint(record,item,'case_settings_staged')
             old=backup
         payload=item['payload']
@@ -228,18 +262,18 @@ class FileCommands:
         if not item.get('settings_published') or not new.exists():
             # A publish followed by a power failure can precede the checkpoint.
             if new.exists():
-                if not item.get('settings_stamp') or not same(new,item['settings_stamp'],checksum): raise ValueError('The destination settings name is taken. Both locations were left alone.')
+                if not item.get('settings_stamp') or not relocated(new,item['settings_stamp'],checksum): raise ValueError('The destination settings name is taken. Both locations were left alone.')
             else:
-                if item['side_stamp'] is not None and not same(old,item['side_stamp'],item['side_hash']): raise ValueError('The old settings changed or are absent. Both locations were left alone.')
+                if item['side_stamp'] is not None and not relocated(old,item['side_stamp'],item['side_hash']): raise ValueError('The old settings changed or are absent. Both locations were left alone.')
                 temp=Path(item['side_stage'])
                 if temp.exists():
-                    if not item.get('settings_stamp') or signature(temp)[:2]!=item['settings_stamp'][:2]: raise ValueError('The settings temporary file changed. It was left alone.')
+                    if not item.get('settings_stamp') or not relocated(temp,item['settings_stamp'],checksum): raise ValueError('The settings temporary file changed. It was left alone.')
                 else:
                     with temp.open('xb') as f: f.write(data);f.flush();os.fsync(f.fileno())
                 item['settings_stamp']=signature(temp);self.save(record)
                 rename(temp,new)
             item['settings_published']=True;self.checkpoint(record,item,'settings_published')
-        if not same(new,item['settings_stamp'],checksum): raise ValueError('The new settings changed. Both locations were left alone.')
+        if not relocated(new,item['settings_stamp'],checksum): raise ValueError('The new settings changed. Both locations were left alone.')
         if old.exists() and str(old)!=str(new):
             if item['side_stamp'] is None: raise ValueError('Unexpected settings appeared at the old location. They were left alone.')
             from .library_file_io import remove_owned,read_guard
@@ -261,7 +295,10 @@ class FileCommands:
                 if record.get('cancelled') and not item.get('phase'):
                     item['done']=True;item['cancelled']=True;self.save(record);continue
                 try:
-                    if item.get('folder'):
+                    if item.get('delete'):
+                        from .library_file_delete import run
+                        run(self,record,item,recovery)
+                    elif item.get('folder'):
                         from .library_file_folders import run
                         run(self,record,item)
                     else: self.move_item(record,item)
@@ -274,7 +311,7 @@ class FileCommands:
                 (self.root/(record['id']+'.json')).unlink(missing_ok=True);self.records.pop(record['id'],None)
                 completed=[i for i in record['items'] if not i.get('cancelled')]
                 self.changes=[{'old':i['old'],'new':i.get('new','')} for i in completed];self.epoch+=1
-                if completed and not recovery and record['action'] != 'undo':
+                if completed and not recovery and record['action'] not in {'undo','delete','delete_rejected'}:
                     def undo():
                         reverse=FileRequest(action='move',paths=[])
                         # Each prior destination can differ; combine previews into one record.
@@ -296,14 +333,22 @@ class FileCommands:
                         token=uuid4().hex;self.plans[token]={'id':token,'action':'undo','items':items,'warnings':warnings}
                         result=self.execute(token);return result
                     with self.marks._lock: self.marks._undo.append({'command':undo,'file_command':True})
-                if recovery and completed: self.notify(f'Finished an interrupted file command for {len(completed)} photos. Settings are together with their photos.')
+                if recovery and completed: self.notify(f'Finished an interrupted delete for {len(completed)} photos and their settings.' if record['action'] in {'delete','delete_rejected'} else f'Finished an interrupted file command for {len(completed)} items. Settings are together with their photos.')
                 log('file_command_complete',operation=record['action'],count=len(completed),recovery=recovery)
             return self.result(record)
+
+    def locations(self,item):
+        paths=[item['old'],item.get('new','')]
+        for child in item.get('children',[item]):
+            paths += [child['old']+'.hdrf',child['new']+'.hdrf' if not child.get('delete') else child.get('settings_receipt','Recycle Bin' if child['new']=='Recycle Bin' else 'Gone for good')]
+            paths += child.get('retained_temps',[])
+            paths += [child.get(k,'') for k in ('stage','settings_old','side_old_stage','side_stage','photo_receipt','settings_receipt')]
+        return list(dict.fromkeys(p for p in paths if p))
 
     def status(self):
         records=list(self.records.values())
         return {'revision':self.epoch,'changes':self.changes,'jobs':[{'id':r['id'],'action':r['action'],'done':sum(bool(i.get('done')) for i in r['items']),'total':len(r['items']),'paused':r.get('paused',False)} for r in records],
-                'attention':[{'id':r['id'],'old':i['old'],'new':i.get('new',''),'message':i['error']} for r in records for i in r['items'] if i.get('error')]}
+                'attention':[{'id':r['id'],'old':i['old'],'new':i.get('new',''),'message':i['error'],'locations':self.locations(i)} for r in records for i in r['items'] if i.get('error')]}
 
     def start(self):
         # Read and finish records before the settings writer/indexer is started.
@@ -328,7 +373,7 @@ def add_file_routes(router,marks,browser,index,worker,store):
     service=FileCommands(marks,browser,index,worker,store)
     @router.post('/file-command')
     def command(request:FileRequest):
-        try: return service.execute(request.token) if request.token else service.plan(request)
+        try: return service.execute(request.token,request.confirmation) if request.token else service.plan(request)
         except (OSError,ValueError) as e: raise HTTPException(400,str(e)) from e
     class Job(BaseModel):
         id:str

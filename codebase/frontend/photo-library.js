@@ -84,7 +84,7 @@
     }
     await refreshPins(); await reopen();
   }
-  const fileCommands = HDRLibraryFileCommands.create({api,status,pins:()=>state.pins,changed:filesChanged});
+  const fileCommands = HDRLibraryFileCommands.create({api,status,pins:()=>state.pins,changed:filesChanged,removeCopies:removeCopy});
   const reopen = () => state.collection ? browseCollection(state.collection.kind, state.collection.name) : browse(state.path);
   function selected() { return state.photos[state.index]; }
   function clearCells(map) {
@@ -354,6 +354,7 @@
       { separator: true }, ...albums.menuActions(paths),
       ...(one && !photo.copy_id ? [{label:"Rename photo…",run:()=>fileCommands.rename(photo)}] : []),
       ...(chosen.some(p=>!p.copy_id) ? [{label:"Move to folder…",run:()=>fileCommands.move(chosen)}] : []),
+      ...(chosen.some(item => !item.copy_id) ? [{label:'Delete…',key:'Del',danger:true,run:()=>fileCommands.remove(chosen)}] : []),
       ...(chosen.some(item => item.copy_id) ? [{ separator: true }, { label: "Remove virtual copy…", key: "Del", danger: true, run: () => removeCopy(chosen) }] : [])],
       { label: "Photo actions", onError: error => status(error.message) });
   }
@@ -619,6 +620,10 @@
   async function requestCheck(paths) {
     await api("/api/library/checks", { paths }); await activity.refresh();
   }
+  $("delete-rejected").addEventListener("click", () => {
+    const base=state.collection?.kind==='smart' ? HDRLibraryQuery.apply(state.allPhotos,state.sort,state.descending,state.smartFilters||{}) : state.allPhotos;
+    void fileCommands.remove(base.filter(p=>p.marks?.pick==='reject'),true).catch(error=>status(error.message));
+  });
   $("check-photos").addEventListener("click", () => { if (state.path) void requestCheck([state.path]).catch(error => status(error.message)); });
   function bindFolderMenu(element, path) {
     element.addEventListener("contextmenu", event => showFolderMenu(event, path));
@@ -939,7 +944,7 @@
     const steps = { arrowright: 1, arrowleft: -1, arrowdown: state.view === "grid" ? state.layout?.columns || 1 : 1, arrowup: state.view === "grid" ? -(state.layout?.columns || 1) : -1 };
     if (key in steps) { event.preventDefault(); select(state.index + steps[key], true, event.shiftKey ? "range" : "single"); }
     else if (key === "enter") { event.preventDefault(); openGrade(); }
-    else if (key === "delete") { if (state.photos.some(photo => state.selection.has(photo.path) && photo.copy_id)) { event.preventDefault(); removeCopy(state.photos.filter(photo => state.selection.has(photo.path))).catch(error => status(error.message)); } }
+    else if (key === "delete") { event.preventDefault(); fileCommands.remove(state.photos.filter(photo => state.selection.has(photo.path))).catch(error => status(error.message)); }
     else if (key === " ") { event.preventDefault(); setView(state.view === "grid" ? "single" : "grid"); }
     else if (key === "z") { event.preventDefault(); toggleZoom(); }
     else if (key === "h") { event.preventDefault(); toggleHDR(); }

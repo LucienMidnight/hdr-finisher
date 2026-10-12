@@ -6,7 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 from .desktop_security import SOURCE_EXTENSIONS
 from .library_folder_commands import folder_name
-from .library_file_io import signature, digest, same, occupied, rename, durable
+from .library_file_io import signature, digest, same, occupied, rename, durable, relocated, stable_ids, read_guard, check_streams
 from .library_file_state import snapshot, mapped, document_paths, retarget, pictures
 
 
@@ -46,9 +46,10 @@ def plan(service,request):
             if service.cross_drive(old,new): raise ValueError('Folders can only move within the same drive in this build. Nothing was moved.')
             if occupied(new,old) or str(new).casefold() in reserved: raise ValueError('That folder name is taken. Folders are never merged. Nothing was changed.')
             reserved.add(str(new).casefold());identifier=uuid4().hex
-            children=[];files=[]
+            children=[];files=[];directories=[]
             def fail(error): raise error
             for parent,dirs,names in os.walk(old,followlinks=False,onerror=fail):
+                directories.append(str(parent))
                 if any(Path(parent,n).is_symlink() for n in dirs+names): raise ValueError('This folder contains a link and was left alone.')
                 for name in names:
                     source=Path(parent,name);files.append({'path':str(source),'stamp':signature(source),'hash':digest(source)})
@@ -60,6 +61,8 @@ def plan(service,request):
                     if row['storage']=='database':
                         doc=deepcopy(doc) or service.marks._new_document(row);doc['marks']=row['marks'];doc['albums']=row['albums']
                         if getattr(service.marks,'grades',None): doc=service.marks.grades.merge(str(source),doc)
+                    side=service.marks._sidecar(source)
+                    if side.exists(): check_streams(side)
                     target=Path(mapped(str(source),str(old),str(new)));side=service.marks._sidecar(source);key=uuid4().hex
                     children.append({'old':str(source),'new':str(target),'payload':document_paths(doc,str(old),str(new)),
                         'stamp':signature(source),'checksum':digest(source),
@@ -67,7 +70,7 @@ def plan(service,request):
                         'settings_old':str(target.parent/('.hdr-old-settings-'+key+'.tmp')),
                         'side_stage':str(target.parent/('.hdr-settings-'+key+'.tmp'))})
             items.append({'old':str(old),'new':str(new),'folder':True,'cross':False,'stamp':signature(old),
-                'stage':str(old.parent/('.hdr-folder-'+identifier+'.tmp')),'files':files,'children':children,
+                'stage':str(old.parent/('.hdr-folder-'+identifier+'.tmp')),'files':files,'directories':directories,'children':children,
                 'rows':snapshot(service.marks,str(old),True),'done':False})
         except (OSError,ValueError) as e:
             if request.action=='folder_rename': raise
@@ -85,19 +88,52 @@ def validate(service,item):
 
 
 def follows(value,old,new):
-    if isinstance(value,str): return mapped(value,old,new)
-    if isinstance(value,list): return [follows(v,old,new) for v in value]
-    if isinstance(value,dict): return {mapped(k,old,new):follows(v,old,new) for k,v in value.items()}
-    return value
+    if isinstance(value,list): return [mapped(v,old,new) for v in value]
+    result=deepcopy(value)
+    if isinstance(result.get('pin_labels'),dict):
+        result['pin_labels']={mapped(k,old,new):v for k,v in result['pin_labels'].items()}
+    for album in result.get('smart_albums',[]):
+        filters=album.get('filters',{})
+        if isinstance(filters.get('folders'),list):
+            filters['folders']=[mapped(p,old,new) for p in filters['folders']]
+    return result
+
+
+def manifest_matches(service,item,root):
+    """FAT folder IDs move: verify the recorded tree, including unknown files."""
+    import hashlib
+    for directory in item['directories']:
+        p=Path(mapped(directory,item['old'],str(root)))
+        if p.is_symlink() or not p.is_dir(): return False
+    sides={c['old']+'.hdrf':c for c in item['children']}
+    for entry in item['files']:
+        target=Path(mapped(entry['path'],item['old'],str(root)))
+        if relocated(target,entry['stamp'],entry['hash']): continue
+        child=sides.get(entry['path'])
+        if child is None: return False
+        # During settings preparation, the old file can be under its recorded
+        # backup name; afterwards the complete replacement is checked instead.
+        backup=Path(child['settings_old'])
+        if relocated(backup,entry['stamp'],entry['hash']): continue
+        if child.get('settings_stamp') and child['payload']:
+            checksum=hashlib.sha256(json.dumps(child['payload'],ensure_ascii=False).encode('utf-8')).hexdigest()
+            if relocated(target,child['settings_stamp'],checksum): continue
+        return False
+    return True
 
 
 def run(service,record,item):
     old,new,stage=map(Path,(item['old'],item['new'],item['stage']))
     if service.protected(old,True) or service.protected(new,True): raise ValueError('Open another photo before changing this folder. Nothing was changed for it.')
     def identity(p):
-        try: return p.is_dir() and signature(p)[:2]==item['stamp'][:2]
+        try:
+            if not p.is_dir(): return False
+            if stable_ids(p): return signature(p)[:2]==item['stamp'][:2]
+            return signature(p)[0]==item['stamp'][0] and manifest_matches(service,item,p)
         except OSError: return False
     actual=any(str(p)==str(new) for p in new.parent.iterdir())
+    if actual and new!=old and not stable_ids(new) and (stage.exists() or old.exists() and manifest_matches(service,item,old)):
+        raise ValueError('The destination is occupied while the original folder is still present. Folders were left alone and never merged.')
     if not actual or not identity(new):
         if occupied(new,old): raise ValueError('The destination is occupied. Both locations were left alone; folders are never merged.')
         if not identity(stage):
@@ -105,12 +141,13 @@ def run(service,record,item):
             rename(old,stage);service.checkpoint(record,item,'folder_staged')
         rename(stage,new);service.checkpoint(record,item,'folder')
     for child in item['children']:
-        if not same(child['new'],child['stamp'],child['checksum']): raise ValueError(f"{child['new']}: the photo changed. Its settings were left alone.")
+        if not relocated(child['new'],child['stamp'],child['checksum']): raise ValueError(f"{child['new']}: the photo changed. Its settings were left alone.")
         side=service.marks._sidecar(Path(child['new']));backup=Path(child['settings_old'])
         if child['side_stamp'] is not None and not child.get('settings_published') and not backup.exists():
-            if not same(side,child['side_stamp'],child['side_hash']): raise ValueError(f'{side}: settings changed. They were left alone.')
+            if not relocated(side,child['side_stamp'],child['side_hash']): raise ValueError(f'{side}: settings changed. They were left alone.')
             rename(side,backup);service.checkpoint(record,child,'folder_settings_staged')
-        service.settings(record,child)
+        with read_guard(child['new'],child['stamp'],child['checksum']):
+            service.settings(record,child)
     with service.marks._lock,service.browser._lock,service.index._state:
         for p,value in zip(settings_files(service),read_settings(service)):
             adjusted=follows(value,str(old),str(new))

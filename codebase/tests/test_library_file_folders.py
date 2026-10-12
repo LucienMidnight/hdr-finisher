@@ -70,3 +70,14 @@ def test_folder_forward_when_old_name_taken_and_settings_changed(setup):
     assert restarted.status()['attention'] and side.read_bytes()==b'external settings' and (new/photo.name).exists()
     # Cannot guess even if the changed file is rewritten byte-for-byte: its stamp differs.
     assert old.joinpath('occupant.txt').read_bytes()==b'new occupant'
+
+
+def test_folder_preferences_retarget_paths_without_rewriting_human_text(setup):
+    photo,destination,c,_=setup;old=str(photo.parent);new=str(photo.parent.with_name('new'))
+    prefs={'pin_labels':{old:old},'label_names':{'red':old},'other':old,
+           'smart_albums':[{'name':old,'filters':{'folders':[old]},'rules':[{'value':old}]}]}
+    c.index.preferences_path.write_text(json.dumps(prefs))
+    command(c,photo.parent,name='new')
+    saved=json.loads(c.index.preferences_path.read_text())
+    assert saved['pin_labels']=={new:old} and saved['label_names']==prefs['label_names'] and saved['other']==old
+    assert saved['smart_albums'][0]=={**prefs['smart_albums'][0],'filters':{'folders':[new]}}

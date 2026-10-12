@@ -28,6 +28,59 @@ def same(path, stamp, checksum=None):
         return False
 
 
+def stable_ids(path):
+    if os.name!='nt': return True
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    get=kernel.GetVolumeInformationW
+    get.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_uint,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_wchar_p,ctypes.c_uint]
+    get.restype=ctypes.c_int
+    name=ctypes.create_unicode_buffer(32)
+    if not get(Path(path).anchor,None,0,None,None,None,name,len(name)): return False
+    # FAT IDs identify a directory entry and change when that entry is renamed.
+    return name.value.upper() not in {'FAT','FAT32','EXFAT'}
+
+
+def relocated(path,stamp,checksum):
+    """Recognize checked contents after an app rename on a FAT filesystem."""
+    try:
+        actual=signature(path)
+        matches=actual==stamp or not stable_ids(path) and actual[0]==stamp[0] and actual[2:]==stamp[2:]
+        return matches and digest(path)==checksum
+    except OSError: return False
+
+
+def matches_handle(path,actual,stamp):
+    return actual==stamp or not stable_ids(path) and actual[0]==stamp[0] and actual[2:]==stamp[2:]
+
+
+def check_streams(path):
+    """A byte-copy/JSON rewrite must not silently discard another data stream."""
+    if os.name!='nt': return
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    class Stream(ctypes.Structure):
+        _fields_=[('size',ctypes.c_int64),('name',ctypes.c_wchar*296)]
+    first=kernel.FindFirstStreamW;first.argtypes=[ctypes.c_wchar_p,ctypes.c_int,ctypes.POINTER(Stream),ctypes.c_uint];first.restype=ctypes.c_void_p
+    nxt=kernel.FindNextStreamW;nxt.argtypes=[ctypes.c_void_p,ctypes.POINTER(Stream)];nxt.restype=ctypes.c_int
+    close=kernel.FindClose;close.argtypes=[ctypes.c_void_p];close.restype=ctypes.c_int
+    data=Stream();handle=first(str(path),0,ctypes.byref(data),0)
+    if handle==ctypes.c_void_p(-1).value:
+        error=ctypes.get_last_error()
+        if error==38: return
+        # FAT has no named data streams. An unknown filesystem is conservatively
+        # refused if Windows cannot enumerate streams, rather than copy blindly.
+        fs=ctypes.create_unicode_buffer(32);get=kernel.GetVolumeInformationW
+        get.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_uint,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_wchar_p,ctypes.c_uint];get.restype=ctypes.c_int
+        if get(Path(path).anchor,None,0,None,None,None,fs,len(fs)) and fs.value.upper() in {'FAT','FAT32','EXFAT'}: return
+        raise ValueError('Additional file data could not be checked. This item was left alone.')
+    try:
+        while True:
+            if data.name!='::$DATA': raise ValueError('This file has additional data streams. It was left alone so none can be lost.')
+            if not nxt(handle,ctypes.byref(data)):
+                if ctypes.get_last_error()!=38: raise ctypes.WinError(ctypes.get_last_error())
+                return
+    finally: close(handle)
+
+
 def rename(source, target, replace=False):
     """Publish without replacement, including races after the name check."""
     if os.name == 'nt':
@@ -82,7 +135,7 @@ def remove_owned(path, stamp, checksum):
     fd=msvcrt.open_osfhandle(handle,os.O_RDONLY|os.O_BINARY)
     with os.fdopen(fd,'rb') as stream:
         s=os.fstat(stream.fileno())
-        if [s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns]!=stamp or hashlib.file_digest(stream,'sha256').hexdigest()!=checksum:
+        if not matches_handle(path,[s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns],stamp) or hashlib.file_digest(stream,'sha256').hexdigest()!=checksum:
             raise ValueError('The file changed. It was left untouched.')
         remove=kernel.SetFileInformationByHandle
         remove.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_void_p,ctypes.c_uint];remove.restype=ctypes.c_int
@@ -102,6 +155,6 @@ def read_guard(path, stamp, checksum):
     fd=msvcrt.open_osfhandle(handle,os.O_RDONLY|os.O_BINARY)
     with os.fdopen(fd,'rb') as stream:
         s=os.fstat(stream.fileno())
-        if [s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns]!=stamp or hashlib.file_digest(stream,'sha256').hexdigest()!=checksum:
+        if not matches_handle(path,[s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns],stamp) or hashlib.file_digest(stream,'sha256').hexdigest()!=checksum:
             raise ValueError('The checked copy changed. The original was kept.')
         yield
