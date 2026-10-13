@@ -116,3 +116,18 @@ def test_linear_dng_quick_route_uses_primary_pixels_without_grade_corrections(tm
     assert np.all(np.isfinite(picture))
     assert np.ptp(picture[0, 0]) == 0  # Source saturation becomes neutral, without reconstruction.
     assert source.read_bytes() == before
+
+
+def test_large_browse_cache_avoids_compression_without_changing_pixels(tmp_path, monkeypatch):
+    from zipfile import ZipFile, ZIP_STORED, ZIP_DEFLATED
+    source = photo(tmp_path)
+    pixels = np.random.default_rng(7).random((12, 24, 3)).astype(np.float32)
+    monkeypatch.setattr("hdr_finisher.library_pictures.decode_picture", lambda *args: (pixels, None, {"route": "test"}))
+    cache = LibraryPictureCache(tmp_path / "cache")
+    for edge, compression in [(512, ZIP_DEFLATED), (2560, ZIP_STORED)]:
+        meta = cache.build(source, edge)
+        with ZipFile(cache.file(meta["key"])) as archive:
+            assert all(entry.compress_type == compression for entry in archive.infolist())
+        with np.load(cache.file(meta["key"]), allow_pickle=False) as stored:
+            np.testing.assert_array_equal(stored["pixels"], pixels.astype(np.float16))
+        assert cache.cached(source, edge, "quick")["key"] == meta["key"]

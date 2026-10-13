@@ -114,7 +114,9 @@ class LibraryPictureCache:
             try:
                 with NamedTemporaryFile(dir=self.root, suffix=".tmp", delete=False) as handle:
                     temporary = Path(handle.name)
-                    np.savez_compressed(handle, **arrays)
+                    # Large browsing previews must not wait on deflate compression.
+                    save = np.savez if edge >= 1280 else np.savez_compressed
+                    save(handle, **arrays)
                 check_cancelled(cancelled)
                 os.replace(temporary, destination)
             finally:

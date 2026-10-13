@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const library = $("library"), grid = $("library-grid"), space = $("grid-space"), film = $("filmstrip");
   const state = { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
-    pins: [], cells: new Map(), filmCells: new Map(), prefetch: new Map(), size: 190,
+    pins: [], cells: new Map(), filmCells: new Map(), size: 190,
     selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0,
     folderSelection: new Set(), folderAnchor: "", collection: null, smartFilters: null, allFacts: false, labelNames: {}, indexing: null };
   const standalone = parent === window, libraryDesktop = standalone ? window.hdrFinisherDesktop : null;
@@ -103,10 +103,16 @@
     for (const cell of map.values()) { cell.controller.abort(); cell.element.remove(); }
     map.clear();
   }
-  function clearPrefetch() {
-    for (const controller of state.prefetch.values()) controller.abort();
-    state.prefetch.clear();
-  }
+  const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}`;
+  const recentPictures = new Map();
+  const readAhead = HDRLibraryReadAhead.create({
+    key: (photo, edge) => `${pictureIdentity(photo)}|${edge}`,
+    load: (photo, edge, signal) => {
+      const cached = recentPictures.get(pictureIdentity(photo));
+      return cached?.edge === edge ? Promise.resolve(cached) : api("/api/library/picture", { path: photo.path, edge, quality: "quick", priority: 50 }, signal);
+    },
+  });
+  function clearPrefetch() { readAhead.clear(); }
   function setActive(active) {
     state.active = active;
     if (!active) {
@@ -123,13 +129,23 @@
     $("library-diagnostic").textContent = message;
     console.info("[library-picture]", message);
   }
-  async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10) {
+  async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null) {
     const started = performance.now();
     // Set up the existing GPU while the helper prepares this visible picture.
     // drawPicture still reports any initialization failure through its usual path.
     void HDRLibraryPictures.initialize().catch(() => {});
     const slow = ["DNG", "HEIC", "HEIF", "TIF", "TIFF"].includes(photo.type);
-    let meta = await api("/api/library/picture", { path: photo.path, edge, quality: slow ? "fast" : "quick", priority }, controller.signal);
+    const response = prepared || api("/api/library/picture", { path: photo.path, edge, quality: slow ? "fast" : "quick", priority }, controller.signal);
+    // A grid or previous Single picture gives immediate feedback while the larger one loads.
+    response.catch(() => {});
+    const seed = priority === 0 ? recentPictures.get(pictureIdentity(photo)) : null;
+    if (seed) {
+      try {
+        await drawPicture(seed, canvas, controller, isCurrent);
+        if (isCurrent()) { canvas.dataset.picturePath = photo.path; canvas.dataset.pictureKey = seed.key; canvas.dataset.pictureEdge = seed.edge; HDRLibraryStopwatch("picture_seed_shown", {path: photo.path, key: seed.key}); }
+      } catch (error) { if (aborted(error) || !isCurrent()) return; }
+    }
+    let meta = await response;
     if (!isCurrent()) return;
     await drawPicture(meta, canvas, controller, isCurrent);
     if (!isCurrent()) return;
@@ -142,7 +158,11 @@
       if (!isCurrent()) return;
     }
     photo.pictureCurrent = !!meta.kept;
+    const remembered = pictureIdentity(photo);
+    recentPictures.delete(remembered); recentPictures.set(remembered, meta);
+    if (recentPictures.size > 32) recentPictures.delete(recentPictures.keys().next().value);
     canvas.closest(".library-cell")?.querySelector(".library-edited")?.setAttribute("title", meta.kept ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. The Library will try making it again automatically.");
+    canvas.dataset.pictureEdge = meta.edge;
     canvas.dataset.pictureKey = meta.key;
     canvas.dataset.picturePath = photo.path;
     overlays?.attach(photo,canvas,meta,controller,isCurrent);
@@ -421,24 +441,22 @@
     const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}` : "";
     if (identity && identity === state.singleIdentity && !state.single?.signal.aborted) { positionZoom(); return; }
     state.singleIdentity = identity;
-    state.single?.abort(); state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; state.fitMeta = null; $("native-picture").hidden = true; clearPrefetch();
+    state.single?.abort(); state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; state.fitMeta = null; $("native-picture").hidden = true;
     if (!photo || !state.active || state.view !== "single") return;
     compare.hide();
     const controller = new AbortController(); state.single = controller;
     const current = () => state.active && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
     status(`Loading ${photo.name}…`);
     try {
-      const meta = await loadAndShow(photo, edge, $("single-picture"), controller, current, 0);
+      const prepared = readAhead.take(photo, edge);
+      const neighbours = [state.photos[state.index + 1], state.photos[state.index - 1]].filter(Boolean);
+      // Preserve the selected job, including an unfinished read-ahead decode.
+      readAhead.update(photo, neighbours, edge);
+      const meta = await loadAndShow(photo, edge, $("single-picture"), controller, current, 0, prepared);
       if (!meta || !current()) return;
       state.fitMeta = meta; positionZoom(); if (state.zoom) void showNative();
       updateSingleCaption();
       status(`${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
-      for (const index of [state.index + 1, state.index - 1]) {
-        const next = state.photos[index]; if (!next) continue;
-        const ahead = new AbortController(); state.prefetch.set(next.path, ahead);
-        api("/api/library/picture", { path: next.path, edge, quality: "quick", priority: 50 }, ahead.signal)
-          .catch((error) => { if (!aborted(error)) console.debug("Library read-ahead:", error.message); });
-      }
     } catch (error) { if (state.single === controller) state.singleIdentity = ""; if (!aborted(error) && !controller.signal.aborted) removeUnreadable(photo, error); }
   }
   function positionZoom() {

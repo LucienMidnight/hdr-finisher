@@ -16,13 +16,27 @@ for(let i=0;i<6;i++) fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient
   await lib.evaluate(folder=>HDRLibrary.browse(folder),folder); await lib.waitForSelector('#grid-space canvas[data-picture-key]');
   await lib.locator('.library-cell').filter({hasText:'photo-4.png'}).click();
   const selected=await lib.evaluate(()=>HDRLibrary.getSnapshot().selected), requests=[];
+  let releaseAhead, aheadRequested=false;
+  const aheadGate=new Promise(resolve=>{releaseAhead=resolve;});
+  await page.route('**/api/library/picture', async route=>{
+   const body=route.request().postDataJSON();
+   if(body.path.endsWith('photo-5.png')&&body.priority===50&&body.edge>=1280){aheadRequested=true;await aheadGate;}
+   await route.continue();
+  });
   page.on('request',r=>{if(r.url().endsWith('/api/library/picture')){const b=r.postDataJSON();if(b.priority===0)requests.push(b);}});
   await page.keyboard.press('f');
-  await lib.waitForFunction(p=>HDRLibrary.getSnapshot().review&&document.querySelector('#single-picture').dataset.picturePath===p,selected);
+  await lib.waitForFunction(p=>HDRLibrary.getSnapshot().review&&document.querySelector('#single-picture').dataset.picturePath===p&&Number(document.querySelector('#single-picture').dataset.pictureEdge)>=1280,selected);
   await page.waitForTimeout(800); assert.ok(requests.length<=2,`Foreground loads: ${requests.length}`);
-  await page.keyboard.press('ArrowRight'); await lib.waitForFunction(p=>document.querySelector('#single-picture').dataset.picturePath!==p&&document.querySelector('#single-picture').dataset.picturePath===HDRLibrary.getSnapshot().selected,selected);
+  assert.ok(aheadRequested,'Neighbour read-ahead began while selected photo loaded');
+  await page.keyboard.press('ArrowRight');
+  await lib.waitForFunction(p=>document.querySelector('#single-picture').dataset.picturePath!==p&&document.querySelector('#single-picture').dataset.picturePath===HDRLibrary.getSnapshot().selected,selected);
+  assert.ok(Number(await lib.locator('#single-picture').getAttribute('data-picture-edge'))<1280,'Cached grid picture appears while full preview is held');
+  assert.equal(requests.filter(b=>b.path.endsWith('photo-5.png')).length,0,'Selecting the neighbour reuses its unfinished request');
+  releaseAhead();
+  await lib.waitForFunction(()=>Number(document.querySelector('#single-picture').dataset.pictureEdge)>=1280);
+  await page.unroute('**/api/library/picture');
   await page.keyboard.press('Escape'); await lib.waitForFunction(()=>!HDRLibrary.getSnapshot().review);
-  console.log('PASS: fullscreen selected photo, arrow browsing and bounded foreground loads.');
+  console.log('PASS: fullscreen arrow shows cached photo before delayed full preview, preserves neighbour request and avoids duplicate foreground loads.');
   await lib.locator('#filter-button').click(); await lib.locator('#filter-grade').selectOption('ungraded');
   await lib.locator('#filter-button').click(); assert.equal(await lib.locator('#filter-button').getAttribute('aria-pressed'),'true');
   assert.equal(await lib.evaluate(()=>HDRLibrary.getSnapshot().count),6);
