@@ -15,6 +15,7 @@ import numpy as np
 from .capabilities import probe_capabilities
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext, scene_linear_to_nits
 from .adjustments import SDR_SCENE_TO_DISPLAY_SCALE
+from .import_bands import grade_import_bands
 from .loader import SOURCE_COLOR_TRANSFORM_VERSION, SOURCE_DECODER_VERSION, load_image
 from .metadata import extract_metadata
 from .models import (
@@ -255,7 +256,9 @@ class LoadedSession:
 
 
 class SessionStore:
-    def __init__(self) -> None:
+    def __init__(self, *, grade_import_parallel: bool = False) -> None:
+        # Library kept-preview stores retain their established serial path.
+        self._grade_import_parallel = grade_import_parallel
         self._lock = RLock()
         self._current: LoadedSession | None = None
 
@@ -294,7 +297,7 @@ class SessionStore:
             resolved_override = interpretation_override or SourceInterpretationOverride()
             # Hashing reads file bytes, not decoded pixels or metadata. Join
             # before constructing the identity; the worker retains no image.
-            with ThreadPoolExecutor(max_workers=1, thread_name_prefix="source-hash") as pool:
+            with grade_import_bands(enabled=self._grade_import_parallel), ThreadPoolExecutor(max_workers=1, thread_name_prefix="source-hash") as pool:
                 initial_stat = source_path.stat()
                 fingerprint = pool.submit(_sha256_file, source_path)
                 image, source, metadata, analysis, sdr_reference_image = load_image(

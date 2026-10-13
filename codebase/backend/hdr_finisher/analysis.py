@@ -4,6 +4,8 @@ from typing import Any, Callable
 
 import numpy as np
 
+from .import_bands import run_bands
+
 from .color import acescg_to_linear_bt2020, compute_peak_stops, detect_transfer_function
 from .models import HDRAnalysis, HDRClassification, SourceLatitude
 
@@ -146,14 +148,16 @@ def _luma_peaks(
 
     exact_peak = 0.0
     strip_rows = max(1, int(rows))
-    for start in range(0, height, strip_rows):
+    def band(start):
         if cancelled is not None and cancelled():
             raise RuntimeError("Import cancelled")
         stop = min(start + strip_rows, height)
         strip_luma = np.tensordot(
             image[start:stop, :, :3], coefficients, axes=([-1], [0])
         )
-        exact_peak = max(exact_peak, float(np.max(strip_luma, initial=0.0)))
+        return float(np.max(strip_luma, initial=0.0))
+    for band_peak in run_bands(band, range(0, height, strip_rows)):
+        exact_peak = max(exact_peak, band_peak)
     return exact_peak, robust_peak
 
 
@@ -190,10 +194,12 @@ def _bt2020_channel_peaks(
 
     exact_peak = 0.0
     strip_rows = max(1, int(rows))
-    for start in range(0, height, strip_rows):
+    def band(start):
         if cancelled is not None and cancelled():
             raise RuntimeError("Import cancelled")
         stop = min(start + strip_rows, height)
         strip = acescg_to_linear_bt2020(image[start:stop, :, :3])
-        exact_peak = max(exact_peak, float(np.max(strip, initial=0.0)))
+        return float(np.max(strip, initial=0.0))
+    for band_peak in run_bands(band, range(0, height, strip_rows)):
+        exact_peak = max(exact_peak, band_peak)
     return exact_peak, robust_peak

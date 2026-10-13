@@ -7,6 +7,8 @@ from time import perf_counter
 
 import numpy as np
 
+from .import_bands import map_import_negative
+
 from .analysis import classify_hdr
 from .color import (
     detect_color_space,
@@ -210,7 +212,7 @@ def load_image(
     # AP1 gamut operation. All resolved import routes share this boundary,
     # including decoder-normalized RAW, DNG and JPEG Ultra HDR.
     if not metadata.get("needs_color_override") and metadata.get("color_space") is not None:
-        normalized = transform_float32_bounded(
+        normalized = map_import_negative(
             normalized, map_negative_acescg, cancelled=cancelled
         )
     if metadata.get("raw_input"):

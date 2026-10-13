@@ -385,7 +385,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-store = SessionStore()
+store = SessionStore(grade_import_parallel=True)
 atexit.register(store.clear)
 capabilities = probe_capabilities()
 export_backends = build_export_backends(capabilities)

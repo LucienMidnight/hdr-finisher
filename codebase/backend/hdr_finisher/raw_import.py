@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
+from .import_bands import parallel_import_enabled, run_bands
+
 from .color import aces2065_to_acescg, transform_float32_bounded
 from .dng_color import D60_XYZ, XYZ_D60_TO_ACESCG, chromatic_adaptation_matrix
 from .models import LensCorrectionSettings, RawImportSettings
@@ -942,11 +944,17 @@ def _normalize_camera_rgb_float32(
     source = np.asarray(transport)
     if source.dtype != np.uint16 or source.ndim != 3 or source.shape[2] != 3:
         raise RawImportError("LibRaw camera-RGB transport must be a uint16 H×W×3 image.")
-    output = source.astype(np.float32)
+    parallel = parallel_import_enabled()
+    output = np.empty(source.shape, dtype=np.float32) if parallel else source.astype(np.float32)
     inverse_range = (1.0 / (metadata.white_level - metadata.black_level)).astype(np.float32)
-    for start in range(0, output.shape[0], rows):
+    def band(start):
         _raise_if_cancelled(cancelled)
-        output[start : start + rows] *= inverse_range
+        # Same uint16 -> float32 cast and multiply, in disjoint destinations.
+        if parallel:
+            output[start:start + rows] = source[start:start + rows]
+        output[start:start + rows] *= inverse_range
+    for _ in run_bands(band, range(0, output.shape[0], rows)):
+        pass
     return output
 
 
@@ -961,12 +969,14 @@ def _camera_rgb_to_acescg_float32(
         raise RawImportError("Camera color conversion requires an H×W×3 float32 image.")
     wb = metadata.as_shot_wb.astype(np.float32)
     matrix = metadata.camera_to_acescg.astype(np.float32)
-    for start in range(0, camera_rgb.shape[0], rows):
+    def band(start):
         _raise_if_cancelled(cancelled)
         end = min(camera_rgb.shape[0], start + rows)
         strip = camera_rgb[start:end]
         strip *= wb
         strip[:] = strip @ matrix.T
+    for _ in run_bands(band, range(0, camera_rgb.shape[0], rows)):
+        pass
     return np.ascontiguousarray(camera_rgb, dtype=np.float32)
 
 
@@ -1065,11 +1075,13 @@ def _transport_diagnostics(
         return {}
     maximum = np.zeros(3, dtype=np.uint16)
     ceiling_count = np.zeros(3, dtype=np.int64)
-    for start in range(0, source.shape[0], rows):
+    def band(start):
         _raise_if_cancelled(cancelled)
-        strip = source[start : start + rows]
-        maximum = np.maximum(maximum, np.max(strip, axis=(0, 1)))
-        ceiling_count += np.count_nonzero(strip == 65535, axis=(0, 1))
+        strip = source[start:start + rows]
+        return np.max(strip, axis=(0, 1)), np.count_nonzero(strip == 65535, axis=(0, 1))
+    for band_maximum, band_count in run_bands(band, range(0, source.shape[0], rows)):
+        maximum = np.maximum(maximum, band_maximum)
+        ceiling_count += band_count
     return {
         "channel_maximum": maximum.astype(int).tolist(),
         "exact_65535_count": ceiling_count.astype(int).tolist(),
