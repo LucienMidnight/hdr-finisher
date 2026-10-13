@@ -171,8 +171,9 @@ class LibraryMembership:
 
     def describe(self, photos):
         pins = self.pins()
+        kept = {source(p) for _,p in self.marks._query("SELECT album,path FROM album_photos")}
         for photo in photos:
-            photo["kept_by_album"] = bool(photo.get("albums")) and not self.pinned(photo["path"], pins)
+            photo["kept_by_album"] = source(photo["path"]) in kept and not self.pinned(photo["path"], pins)
 
     def check(self, checks):
         # Exact-path helper batches: no unrelated folder walk and no picture decode.

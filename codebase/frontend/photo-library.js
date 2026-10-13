@@ -256,6 +256,7 @@
       root.append(make("p", "library-details-sub", HDRLibraryFacts.headline(photo)));
       root.append(make("p", "library-details-sub", `${photo.edited ? "Edited" : "Not edited"}${photo.copy_count ? ` \u00b7 ${plural(photo.copy_count, "virtual copy", "virtual copies")}` : ""}`));
       if (photo.albums?.length) root.append(make("p", "library-details-sub", `In ${photo.albums.join(", ")}${photo.kept_by_album ? " · Kept in the library by an album; folder not pinned" : ""}`));
+      else if (photo.kept_by_album) root.append(make("p", "library-details-sub", "Kept in the library by an album; folder not pinned"));
     }
     culling.details(root);
     const manage = make("button", "text-button", "Manage tags and labels…"); manage.type = "button"; manage.id = "manage-tags";

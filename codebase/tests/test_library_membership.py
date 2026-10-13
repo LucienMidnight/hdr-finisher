@@ -181,5 +181,8 @@ def test_virtual_copy_album_keeps_original_family_and_survives_rebuild(tmp_path)
     browser.remove_pin(str(folder));index.membership.reconcile()
     key=str(photos[0])+"|copy|alternative"
     assert candidates(index)=={str(photos[0]),key}
+    family = marks.read([str(photos[0]),key])["photos"]
+    assert all(p["kept_by_album"] for p in family)
+    assert not family[0]["albums"] and family[1]["albums"] == ["Copies"]
     marks.database.unlink();rebuilt=LibraryMarks(browser.root);restored=LibraryIndex(rebuilt,browser,None);LibraryCopies(rebuilt)
     assert candidates(restored)=={str(photos[0]),key}
