@@ -13,6 +13,7 @@ from threading import Event, RLock, get_ident
 import time
 from typing import Any, Callable
 import zlib
+import weakref
 
 import numpy as np
 
@@ -235,6 +236,7 @@ class SourceMipStore:
         *,
         is_current: Callable[[], bool] | None = None,
         progress: Callable[[int, int], None] | None = None,
+        persist: bool = True,
     ) -> tuple[np.ndarray, str]:
         """Return the level for ``long_edge`` and how it was answered.
 
@@ -270,8 +272,9 @@ class SourceMipStore:
                 if is_current is not None and not is_current():
                     raise StaleRender("A newer source replaced this mip request.")
         try:
-            self._ensure_cleaned()
-            array, state = self._load_or_build(identity, edge, image, is_current, progress)
+            if persist:
+                self._ensure_cleaned()
+            array, state = self._load_or_build(identity, edge, image, is_current, progress, persist)
             with self._lock:
                 if is_current is not None and not is_current():
                     raise StaleRender("A newer source replaced this mip request.")
@@ -283,6 +286,77 @@ class SourceMipStore:
                     self._inflight.pop(key, None)
                 self._build_progress.pop(key, None)
             flight.set()
+
+    def persist_cached(self, identity: SourceMipIdentity, long_edge: int,
+                       *, is_current: Callable[[], bool]) -> None:
+        """Post-response housekeeping with no retained/queued image owner.
+
+        Chunk copies are smaller than the old whole-level byte buffers. A
+        weak owner check aborts if the LRU evicts this level. No memory lock
+        is held during disk I/O or pruning, so another open cannot wait on it.
+        """
+        if self.disk_budget_bytes <= 0 or not is_current():
+            return
+        edge = max(256, int(long_edge))
+        key = (identity.digest(), edge)
+        with self._lock:
+            array = self._memory.get(key)
+            if array is None:
+                return
+            owner = weakref.ref(array)
+            width, height, byte_size = array.shape[1], array.shape[0], int(array.nbytes)
+            del array
+        self._ensure_cleaned()
+        path = self._level_path(identity, edge)
+        temp = None
+        published = False
+        try:
+            if path.exists() or not is_current():
+                return
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temp = path.with_name(f".{path.name}.{os.getpid()}.{get_ident()}.tmp")
+            header = _SOURCE_MIP_HEADER.pack(
+                SOURCE_MIP_MAGIC, int(identity.format_version), width, height,
+                3, _SOURCE_MIP_DTYPE_FLOAT32, 0, byte_size, 0,
+            )
+            crc = 0
+            with temp.open("wb") as stream:
+                stream.write(header)
+                for offset in range(0, byte_size, 1024 * 1024):
+                    with self._lock:
+                        if not is_current():
+                            return
+                        array = self._memory.get(key)
+                        if array is None or array is not owner():
+                            return
+                        chunk = memoryview(array).cast("B")[offset:offset + 1024 * 1024].tobytes()
+                        del array
+                    crc = zlib.crc32(chunk, crc)
+                    stream.write(chunk)
+                    del chunk
+                if not is_current():
+                    return
+                stream.seek(0)
+                stream.write(_SOURCE_MIP_HEADER.pack(
+                    SOURCE_MIP_MAGIC, int(identity.format_version), width, height,
+                    3, _SOURCE_MIP_DTYPE_FLOAT32, 0, byte_size, crc & 0xFFFFFFFF,
+                ))
+            if not is_current():
+                return
+            # A cancellation racing replace still only publishes a complete,
+            # immutable level of this exact identity, never a partial entry.
+            os.replace(temp, path)
+            published = True
+        except OSError as exc:
+            self._record_filesystem_failure("write", path, exc)
+        finally:
+            if temp is not None:
+                try:
+                    temp.unlink(missing_ok=True)
+                except OSError as exc:
+                    self._record_filesystem_failure("delete", temp, exc)
+        if published:
+            self._prune_disk()
 
     def discard_memory(self, identity: SourceMipIdentity) -> None:
         """Drop this identity's in-memory levels; disk entries stay reusable."""
@@ -342,6 +416,7 @@ class SourceMipStore:
         image: np.ndarray,
         is_current: Callable[[], bool] | None,
         progress: Callable[[int, int], None] | None,
+        persist: bool,
     ) -> tuple[np.ndarray, str]:
         if self.disk_budget_bytes > 0:
             loaded = self._read_disk_level(identity, edge)
@@ -378,7 +453,7 @@ class SourceMipStore:
             self._counters["bytes_generated"] += int(array.nbytes)
         if is_current is not None and not is_current():
             raise StaleRender("A newer source replaced this mip build.")
-        if self.disk_budget_bytes > 0:
+        if persist and self.disk_budget_bytes > 0:
             self._write_disk_level(identity, edge, array)
             self._prune_disk()
         return array, "built"
@@ -449,26 +524,30 @@ class SourceMipStore:
 
     def _write_disk_level(self, identity: SourceMipIdentity, edge: int, array: np.ndarray) -> None:
         path = self._level_path(identity, edge)
+        temp = None
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            payload = np.ascontiguousarray(array).tobytes()
+            # The cache level is already contiguous and immutable. Write its
+            # buffer directly: no pixel copy or header+payload byte copy.
+            payload = memoryview(array).cast("B")
             crc = zlib.crc32(payload) & 0xFFFFFFFF
             header = _SOURCE_MIP_HEADER.pack(
-                SOURCE_MIP_MAGIC,
-                int(identity.format_version),
-                int(array.shape[1]),
-                int(array.shape[0]),
-                3,
-                _SOURCE_MIP_DTYPE_FLOAT32,
-                0,
-                len(payload),
-                crc,
+                SOURCE_MIP_MAGIC, int(identity.format_version), int(array.shape[1]),
+                int(array.shape[0]), 3, _SOURCE_MIP_DTYPE_FLOAT32, 0, len(payload), crc,
             )
             temp = path.with_name(f".{path.name}.{os.getpid()}.{get_ident()}.tmp")
-            temp.write_bytes(header + payload)
+            with temp.open("wb") as stream:
+                stream.write(header)
+                stream.write(payload)
             os.replace(temp, path)
         except OSError as exc:
             self._record_filesystem_failure("write", path, exc)
+        finally:
+            if temp is not None:
+                try:
+                    temp.unlink(missing_ok=True)
+                except OSError as exc:
+                    self._record_filesystem_failure("delete", temp, exc)
 
     def _discard_corrupt(self, path: Path) -> None:
         try:
@@ -763,12 +842,13 @@ class SessionRenderCache:
         long_edge: int,
         adjustments: AdjustmentState,
         is_current: Callable[[], bool] | None = None,
+        *, persist_mips: bool = True,
     ) -> tuple[np.ndarray, str, str]:
         """Return the authoritative geometry-fixed source for a GPU grade proxy."""
         edge = max(256, int(long_edge))
         geometry = adjustments.shared.geometry
         signature = geometry.model_dump_json()
-        source, sdr_reference = self._proxies(edge, is_current=is_current)
+        source, sdr_reference = self._proxies(edge, is_current=is_current, persist_mips=persist_mips)
         use_authored_sdr = (
             kind == PreviewKind.SDR
             and sdr_reference is not None
@@ -1393,17 +1473,17 @@ class SessionRenderCache:
                 "source_mip_identity": source_identity,
             }
 
-    def _proxies(self, long_edge: int, *, is_current: Callable[[], bool] | None = None) -> tuple[np.ndarray, np.ndarray | None]:
+    def _proxies(self, long_edge: int, *, is_current: Callable[[], bool] | None = None, persist_mips: bool = True) -> tuple[np.ndarray, np.ndarray | None]:
         edge = max(256, int(long_edge))
         with self._lock:
-            return self._proxies_locked(edge, is_current=is_current)
+            return self._proxies_locked(edge, is_current=is_current, persist_mips=persist_mips)
 
-    def _proxies_locked(self, edge: int, *, is_current: Callable[[], bool] | None = None) -> tuple[np.ndarray, np.ndarray | None]:
-        self._source_proxies[edge] = self._source_level_locked(edge, PreviewKind.HDR, is_current=is_current)
+    def _proxies_locked(self, edge: int, *, is_current: Callable[[], bool] | None = None, persist_mips: bool = True) -> tuple[np.ndarray, np.ndarray | None]:
+        self._source_proxies[edge] = self._source_level_locked(edge, PreviewKind.HDR, is_current=is_current, persist=persist_mips)
         if self.sdr_reference_image is None:
             self._sdr_proxies[edge] = None
         else:
-            self._sdr_proxies[edge] = self._source_level_locked(edge, PreviewKind.SDR, is_current=is_current)
+            self._sdr_proxies[edge] = self._source_level_locked(edge, PreviewKind.SDR, is_current=is_current, persist=persist_mips)
         self._source_proxies.move_to_end(edge)
         self._sdr_proxies.move_to_end(edge)
         while len(self._source_proxies) > self.max_proxy_levels:
@@ -1412,7 +1492,7 @@ class SessionRenderCache:
             self._evictions += 1
         return self._source_proxies[edge], self._sdr_proxies[edge]
 
-    def _source_level_locked(self, edge: int, kind: PreviewKind, *, is_current: Callable[[], bool] | None = None) -> np.ndarray:
+    def _source_level_locked(self, edge: int, kind: PreviewKind, *, is_current: Callable[[], bool] | None = None, persist: bool = True) -> np.ndarray:
         """Return one source level, through the persistent mip store when present.
 
         The store holds pre-adjustment scene-linear levels keyed by source
@@ -1425,7 +1505,7 @@ class SessionRenderCache:
         image = self.image if kind == PreviewKind.HDR else self.sdr_reference_image
         identity = self.source_identity if kind == PreviewKind.HDR else self.sdr_identity
         if identity is not None and self.mip_store is not None and image is not None:
-            level, state = self.mip_store.level(identity, edge, image, is_current=is_current)
+            level, state = self.mip_store.level(identity, edge, image, is_current=is_current, persist=persist)
         else:
             session_proxies = self._source_proxies if kind == PreviewKind.HDR else self._sdr_proxies
             cached = session_proxies.get(edge)

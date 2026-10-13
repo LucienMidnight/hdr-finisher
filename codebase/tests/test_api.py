@@ -1412,3 +1412,36 @@ def test_export_directory_browser_rejects_missing_folder(tmp_path: Path) -> None
     response = client.get("/api/export-directories", params={"path": str(tmp_path / "missing")})
     assert response.status_code == 400
     assert "not available" in response.json()["detail"]
+
+
+def test_proxy_body_is_sent_before_cache_write_and_prune(tmp_path, monkeypatch):
+    import asyncio
+    from hdr_finisher.main import webgpu_proxy
+    from hdr_finisher.models import PreviewKind
+    from hdr_finisher.render_cache import SourceMipStore
+    buffer = BytesIO()
+    Image.new('RGB', (400, 300), (120, 90, 60)).save(buffer, format='PNG')
+    created = client.post('/api/session', files={'file': ('deferred.png', buffer.getvalue(), 'image/png')})
+    session_id = created.json()['session']['session_id']
+    session = store.get(session_id)
+    mips = SourceMipStore(tmp_path / 'mips')
+    session.render_cache.mip_store = mips
+    events = []
+    opened, prune = Path.open, mips._prune_disk
+    def written(path, mode='r', *args, **kwargs):
+        if mode == 'wb' and path.suffix == '.tmp':
+            events.append('write')
+        return opened(path, mode, *args, **kwargs)
+    def pruned():
+        events.append('prune')
+        return prune()
+    monkeypatch.setattr(Path, 'open', written)
+    monkeypatch.setattr(mips, '_prune_disk', pruned)
+    response = webgpu_proxy(session_id, PreviewKind.HDR, 256, 'rgba16f', None, None, False)
+    assert not events
+    async def sent(message):
+        if message['type'] == 'http.response.body':
+            assert message['body'] == response.body
+            events.append('picture')
+    asyncio.run(response({'type': 'http'}, None, sent))
+    assert events == ['picture', 'write', 'prune']

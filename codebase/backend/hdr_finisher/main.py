@@ -23,6 +23,7 @@ from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTasks
 from starlette.datastructures import MutableHeaders
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ValidationError
@@ -1138,6 +1139,7 @@ def webgpu_proxy(
             long_edge,
             adjustments,
             is_current=lambda: session.edit_revision == revision,
+            persist_mips=False,
         )
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
@@ -1155,7 +1157,18 @@ def webgpu_proxy(
     body, bytes_per_row, pixel_format = encode_rgba_proxy(proxy, prefer_half=format == "rgba16f")
     height, width = proxy.shape[:2]
     source_state = session.render_cache.source_level_state(long_edge)
+    # ASGI sends the complete picture body before running these tasks. They
+    # carry only store + identity/epoch metadata, never session/image owners.
+    background = BackgroundTasks()
+    mip_store = session.render_cache.mip_store
+    if mip_store is not None:
+        epoch = session.render_cache.source_epoch
+        for identity in (session.render_cache.source_identity, session.render_cache.sdr_identity):
+            if identity is not None:
+                background.add_task(mip_store.persist_cached, identity, long_edge,
+                                    is_current=lambda: store.is_source_current(session_id, epoch))
     return Response(
+        background=background,
         content=body,
         media_type="application/octet-stream",
         headers={

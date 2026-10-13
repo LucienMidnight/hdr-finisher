@@ -904,3 +904,101 @@ def test_geometry_map_states_the_proxy_frame_size_at_every_edge_without_building
         assert not cache._source_proxies
         proxy, _space, _signature = cache.geometry_source_proxy(PreviewKind.HDR, edge, adjustments)
         assert (width, height) == proxy.shape[1::-1]
+
+
+def test_deferred_mip_uses_existing_memory_and_writes_identical_disk_bytes(tmp_path):
+    image = _mip_image(900, 600)
+    identity = _mip_identity(image)
+    serial = SourceMipStore(tmp_path / 'serial')
+    expected, _ = serial.level(identity, 512, image)
+    deferred = SourceMipStore(tmp_path / 'deferred')
+    actual, state = deferred.level(identity, 512, image, persist=False)
+    assert state == 'built' and not deferred._level_path(identity, 512).exists()
+    owned = deferred._memory[(identity.digest(), 512)]
+    assert actual is owned
+    deferred.persist_cached(identity, 512, is_current=lambda: True)
+    assert deferred._memory[(identity.digest(), 512)] is owned
+    assert deferred._level_path(identity, 512).read_bytes() == serial._level_path(identity, 512).read_bytes()
+    warm, state = SourceMipStore(deferred.root).level(identity, 512, image)
+    assert state == 'disk' and warm.tobytes() == expected.tobytes()
+
+
+def test_deferred_mip_skips_stale_evicted_and_disabled_memory(tmp_path):
+    image = _mip_image()
+    identity = _mip_identity(image)
+    store = SourceMipStore(tmp_path / 'mips')
+    store.level(identity, 256, image, persist=False)
+    store.persist_cached(identity, 256, is_current=lambda: False)
+    assert not store._level_path(identity, 256).exists()
+    store.discard_memory(identity)
+    store.persist_cached(identity, 256, is_current=lambda: True)
+    assert not store._level_path(identity, 256).exists()
+    disabled = SourceMipStore(tmp_path / 'disabled', memory_budget_bytes=0)
+    disabled.level(identity, 256, image, persist=False)
+    disabled.persist_cached(identity, 256, is_current=lambda: True)
+    assert not disabled._level_path(identity, 256).exists()
+
+
+@pytest.mark.parametrize('fail_write', [False, True])
+def test_deferred_mip_cancel_or_write_failure_removes_temp_and_never_publishes(tmp_path, monkeypatch, fail_write):
+    import hdr_finisher.render_cache as module
+    image = _mip_image()
+    identity = _mip_identity(image)
+    store = SourceMipStore(tmp_path / 'mips')
+    store.level(identity, 256, image, persist=False)
+    current = True
+    original_crc = module.zlib.crc32
+    def crc(payload, seed=0):
+        nonlocal current
+        value = original_crc(payload, seed)
+        if not fail_write:
+            current = False
+        return value
+    monkeypatch.setattr(module.zlib, 'crc32', crc)
+    if fail_write:
+        def failed_replace(*args):
+            raise OSError('injected failed publication')
+        monkeypatch.setattr(module.os, 'replace', failed_replace)
+    store.persist_cached(identity, 256, is_current=lambda: current)
+    assert not store._level_path(identity, 256).exists()
+    assert not list(store.root.rglob('*.tmp'))
+    assert store.diagnostics()['write_failures'] == int(fail_write)
+
+
+def test_deferred_mip_disk_io_does_not_block_foreground_memory_hits(tmp_path, monkeypatch):
+    from pathlib import Path
+    from threading import Event
+    from concurrent.futures import ThreadPoolExecutor
+    image = _mip_image()
+    identity = _mip_identity(image)
+    store = SourceMipStore(tmp_path / 'mips')
+    expected, _ = store.level(identity, 256, image, persist=False)
+    writing, release = Event(), Event()
+    opened = Path.open
+    class SlowWrite:
+        def __init__(self, stream):
+            self.stream = stream
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+        def seek(self, *args):
+            return self.stream.seek(*args)
+        def write(self, data):
+            if len(data) > 1000:
+                writing.set()
+                assert release.wait(2), 'disk I/O held the foreground memory lock'
+            return self.stream.write(data)
+    def open_path(path, mode='r', *args, **kwargs):
+        stream = opened(path, mode, *args, **kwargs)
+        return SlowWrite(stream) if mode == 'wb' and path.suffix == '.tmp' else stream
+    monkeypatch.setattr(Path, 'open', open_path)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        flight = pool.submit(store.persist_cached, identity, 256, is_current=lambda: True)
+        try:
+            assert writing.wait(2)
+            actual, state = store.level(identity, 256, image, persist=False)
+            assert state == 'memory' and actual is expected
+        finally:
+            release.set()
+        flight.result()
