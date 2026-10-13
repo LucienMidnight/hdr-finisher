@@ -82,7 +82,7 @@
     return photo => {
       const marks = photo.marks || {}, tags = marks.tags || [];
       const path = (photo.source_path || photo.path).replaceAll("\\", "/").toLocaleLowerCase();
-      return (!folders.length || folders.some(folder => path.startsWith(folder))) && (!filters.raw || rawTypes.has(photo.type)) && (!filters.type || photo.type === filters.type)
+      return (!folders.length || folders.some(folder => path.startsWith(folder) && (!photo.library_pins || photo.library_pins.some(pin => String(pin).replaceAll("\\", "/").replace(/\/$/, "").toLocaleLowerCase() + "/" === folder)))) && (!filters.raw || rawTypes.has(photo.type)) && (!filters.type || photo.type === filters.type)
         && (!filters.rating || (marks.rating || 0) >= Number(filters.rating))
         && (!filters.pick || (filters.pick === "hide-rejected" ? marks.pick !== "reject" : (marks.pick || "unmarked") === filters.pick))
         && (!filters.label || marks.label === filters.label)

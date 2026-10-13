@@ -16,7 +16,7 @@ Terms used here:
 
 - **Marks:** a photo's rating, pick or reject flag, colour label and tags.
 - **Settings file:** the small `.hdrf` file the app writes beside a photo.
-- **Library database:** the app's own index of every photo it has seen.
+- **Library database:** the index of photos under a pinned folder or in a manual album.
 - **Helper:** a second, low-priority process that does the Library's slow
   reading.
 
@@ -62,6 +62,8 @@ checked for this page.
 |---|---|---|
 | `library.sqlite3` | The library database (section 4). Created the first time a folder is opened in the Library. | Rebuilt from the settings files as folders are visited or indexed. Unwritten work and other exceptions are lost: see section 4. |
 | `library-preferences.json` | The meanings you gave the four colour labels, and whether background indexing is on. | Label meanings are blank again; indexing returns to on. |
+| `library-kept-records\` | One atomic recovery record per kept photo or detached work item, referenced by `kept-photos.json`. Only a changed photo record is rewritten. | Rebuilding its cached offline work is no longer possible; sidecars remain intact. |
+| `kept-photos.json` | Recovery list of manual albums, their physical photos and virtual copies, cached facts and detached pending settings/recovery/history. Backend-owned and replaced atomically when this state changes. | A database rebuild can no longer find photos outside pins automatically; sidecars remain intact. |
 | `pinned-folders.json` | The list of pinned folders, as plain paths. | No folders are pinned. Photos and marks are untouched. |
 | `library-pictures\` | Cached browsing pictures, one `.npz` file each (section 9). | Safe at any time. Pictures are made again when next needed. |
 | `thumbnails\` | Small pictures for the older file browser used by Import. Not used by the Library grid. | Safe. |
@@ -206,6 +208,43 @@ pictures, the remaining reverts and virtual copies are not built in Stage A.
 
 ## 4. The library database
 
+### Library membership (October 13, 2026)
+
+The Library contains every photo under any pinned folder, plus every photo
+in a manual album. Virtual copies follow their physical original. Overlapping
+pins keep photos until their last covering pin is gone. Ratings, tags, grades
+and smart rules do not keep an unpinned photo. Projects are not yet built.
+Opening without pinning shows a temporary folder; it contributes nothing to
+Library search, tag counts or smart albums unless a photo joins an album.
+This temporary-folder behaviour is built for Steve to confirm.
+
+Unpinning immediately cleans `files`, tag associations and disposable marks
+rows. It never writes a settings file or deletes a photo. Pending marks/album
+removals and grade recovery/history remain protected in their existing durable
+tables, outside Library membership; the existing writer retries pending work.
+`kept-photos.json` and `library-kept-records\` also retain these protected records, so an index rebuild
+cannot discard work because its folder was unpinned. Unsaved recovery is kept
+as recovery; it is never silently made the saved grade. Re-pinning reads the
+unchanged sidecars again. Removing the last manual-album membership outside
+pins has the same effect; Undo restores membership and its file index row.
+
+The recovery list includes albums and cached records even on unplugged drives.
+Each photo has one atomic record under `library-kept-records\`; writer completion changes only that record, not the whole recovery list. A missing database is rebuilt from these before normal indexing, then connected
+sidecars use the existing section 5 reconciliation rules. Pending database work
+still wins until written. Album-only photos appear in Details as **Kept in the
+library by an album; folder not pinned**.
+
+Part 1 validation: 474 JavaScript fast checks and 1,990 Python checks passed
+(three skipped). The focused Electron membership and background-writer checks
+passed at 2560×1440. Initial checks exposed temporary-photo status and
+preference-only startup regressions; both were fixed. Disposable photos only.
+
+Smart candidates use this membership. All pinned Look in choices ticked means
+the whole Library including album-only photos. A subset covers only those
+pins. Saved folders that are no longer pinned remain labelled **(not pinned)**,
+match nothing, and work again when pinned.
+
+
 `library.sqlite3` is a standard SQLite file. Any SQLite viewer can open it;
 open a copy, not the live file.
 
@@ -246,13 +285,13 @@ retains the existing `library.sqlite3`, including every pending mark.
 
 ### What is lost if the database is deleted
 
-Everything is rebuilt from the settings files except:
+The kept-photo recovery list restores manual albums and its cached/protected
+records. Outside that list, everything is rebuilt from settings files except:
 
 1. **Marks on photos with `pending = 1`.** Their settings files were never
    written, so the database held the only copy.
-2. **Empty albums.** An album with no photos exists only in the database.
-3. **Tags that no photo carries**, such as one made with New tag and not yet
-   used.
+2. **Empty albums if the recovery list is also deleted.** Their names now survive SQLite loss in `kept-photos.json`.
+3. **Unused tags if the recovery list is also deleted.** The current tag list is recorded there.
 4. **Unwritten grades, unsaved recovery and the retained previous grade.**
    These live in `photo_grades`; a saved grade already beside its photo survives.
 
@@ -448,6 +487,18 @@ Indexing makes pinned folders searchable without visiting each one.
   the pass from the beginning.
 
 ### Keeping folders current (slice 2b, October 11)
+
+Album-only photos get an exact-path helper check about every five minutes,
+200 photos per batch, sharing the existing check lane and pause/priority gates.
+Only photo and settings-file size/modified-date probes run on unchanged entries;
+no unrelated folders are scanned and no pictures are decoded. Changed file facts
+use the existing metadata reader, 32 at a time; settings changes use section 5.
+The next pass waits at least ten times its last duration. Missing photos on a
+connected volume leave their albums/index; disconnected volumes retain entries.
+External moves appear as missing at the recorded path, as with existing folder
+checks; a move through the app updates its stored paths. No whole-drive search
+for an externally moved photo is performed.
+
 
 The existing helper lists names, sizes and modified dates (including settings
 files). The backend compares the listing with session-only folder snapshots;

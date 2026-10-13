@@ -43,6 +43,8 @@ class LibraryIndex:
         self._paused = False
         self._preferences_failure = None
         self._progress = {"state": "idle", "folder": "", "done": 0, "total": 0, "passes": 0}
+        from .library_membership import LibraryMembership
+        self.membership = LibraryMembership(self)
 
     # Personal settings stay outside the database, which can be rebuilt.
 
@@ -126,6 +128,7 @@ class LibraryIndex:
                         db.executemany("DELETE FROM files WHERE path = ?", [(path,) for path in known])
             finally:
                 db.close()
+            self.membership.reconcile()
 
     @audited("index_remember_facts")
     def remember_facts(self, records, *, epoch=None, generation=None):
@@ -143,6 +146,7 @@ class LibraryIndex:
                     db.executemany("INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?)", rows)
             finally:
                 db.close()
+            self.membership.reconcile()
 
     @audited("index_photos")
     def photos(self, paths):

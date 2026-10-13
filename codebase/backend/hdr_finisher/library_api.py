@@ -381,6 +381,7 @@ def create_library_router(worker, browser, store=None):
                 except (ValueError, OSError):
                     photo.update(edited=False)
         if store is not None: result["photos"] = marks.copies.expand(result["photos"])
+        index.membership.describe(result["photos"])
         return result
 
     @router.get("/preferences")
@@ -400,16 +401,30 @@ def create_library_router(worker, browser, store=None):
             previous = {item["path"] for item in browser.pinned()}
             for path in paths:
                 browser.add_pin(path)
+            index.membership.reconcile()
             index.kick()
             return {"pinned": folder_commands.pins(), "skipped": sum(path in previous for path in paths)}
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=user_error(exc)) from exc
 
+    @router.post("/pins/impact")
+    def pin_impact(request: FolderRequest):
+        return command(index.membership.impact, request.path)
+
+    @router.post("/albums/impact")
+    def album_impact(request: AlbumRequest):
+        return command(lambda: index.membership.impact(album=request.name, paths=request.paths or None))
+
     @router.post("/pins/remove")
     def remove_pin(command: FolderRequest):
         # Missing/offline folders must still be removable from preferences.
         try:
-            return {"pinned": browser.remove_pin(command.path)}
+            with marks._lock:
+                impact = index.membership.impact(folder=command.path)
+                pinned = browser.remove_pin(command.path)
+                index.membership.reconcile()
+            index.kick()
+            return {"pinned": pinned, **impact}
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=user_error(exc)) from exc
 
@@ -447,6 +462,7 @@ def create_library_router(worker, browser, store=None):
         if root is not None:
             index.checks.seed({**result,"photos":[dict(photo) for photo in result["photos"]]})
         if store is not None: result["photos"] = marks.copies.expand(result["photos"])
+        index.membership.describe(result["photos"])
         return result
 
     @router.post("/collection")
@@ -522,7 +538,11 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/albums/remove")
     def album_remove(request: AlbumRequest):
-        return command(marks.album_change, request.name, request.paths, False)
+        def remove():
+            with marks._lock:
+                impact = index.membership.impact(album=request.name, paths=request.paths)
+                return {**marks.album_change(request.name, request.paths, False), "left_library": impact["leaving"]}
+        return command(remove)
 
     @router.post("/albums/rename")
     def album_rename(request: AlbumRequest):

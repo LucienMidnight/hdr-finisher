@@ -30,6 +30,28 @@ def folder_tree(value, cancelled=lambda: False):
     return {"path": str(root), "children": sorted(children, key=lambda item: item["name"].casefold())}
 
 
+def check_kept(paths, cancelled=lambda: False):
+    photos = []
+    for value in paths:
+        if cancelled(): raise CancelledError()
+        path = Path(value)
+        item = {"path": value}
+        try:
+            info = path.stat()
+            item.update(bytes=info.st_size, mtime_ns=info.st_mtime_ns)
+            try:
+                settings = Path(value + SIDECAR_SUFFIX).lstat()
+                item["settings"] = [settings.st_size, settings.st_mtime_ns]
+            except FileNotFoundError:
+                item["settings"] = None
+        except FileNotFoundError:
+            item["missing" if path.parent.is_dir() else "offline"] = True
+        except OSError:
+            item["unreadable"] = True
+        photos.append(item)
+    return {"photos": photos}
+
+
 @audited("scan_folder")
 def scan_folder(value, cancelled=lambda: False, fingerprints=False):
     root = checked_folder(value)

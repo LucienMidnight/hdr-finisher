@@ -112,7 +112,9 @@ class SmartAlbums:
         # SQLite writes are serialized by the existing backend ownership lock.
         # The stamp is sampled inside that lock, never before a transaction.
         with self.marks._lock, self._cache_lock:
-            stamp = self.version()
+            scope = getattr(self.marks,"membership",None)
+            pins = scope.pins() if scope else []
+            stamp = self.version() + (json.dumps(pins) if scope else "")
             if version == stamp: return {"version":stamp,"photos":None}
             if self._version == stamp: return {"version":stamp,"photos":deepcopy(self._snapshot)}
             photos=[]
@@ -134,6 +136,9 @@ class SmartAlbums:
                 for path,size,modified,facts in files:
                     row={"path":path,"name":Path(path).name,"type":Path(path).suffix[1:].upper(),"bytes":size,"mtime_ns":modified,"indexed":True,
                          "marks":Marks().model_dump(),"albums":[],"storage":"none",**(json.loads(facts) if facts else {}),**rows.get(path,{}),**grade_status(path)}
+                    if scope:
+                        row["library_pins"] = [p for p in pins if scope.under(path,p)]
+                        row["kept_by_album"] = not bool(row["library_pins"])
                     family=copies.get(path,{})
                     items=family.get("desired",[]) if family.get("pending") else family.get("baseline",[])
                     row["copy_count"]=len(items);photos.append(row)

@@ -25,6 +25,7 @@ class FolderChecks:
         self.pins = []
         self.availability = None
         self.next_availability = 0
+        self.kept_last = self.kept_duration = 0
 
     def start(self):
         if self.index.worker is None:
@@ -240,6 +241,21 @@ class FolderChecks:
                         self.check(path, requested)
                     except CancelledError:
                         break
+            elif not self.index._paused and not self.index.worker.status()["paused"] and self.clock()-self.kept_last >= max(self.pinned_seconds,10*self.kept_duration):
+                started = self.clock()
+                with self.lock: self.running = {"path":"", "requested":False, "state":"checking albums"}
+                try:
+                    if self.index.membership.check(self):
+                        with self.lock:
+                            self.revision += 1
+                            self.events.append({"id":self.revision,"path":"","changed":True,"message":"Photos kept by albums updated"})
+                except (CheckAhead, CancelledError):
+                    pass
+                except Exception as error:
+                    problem("kept_check_failed", self.index.browser.root, error, "album entries kept; retry automatically")
+                finally:
+                    self.kept_last = self.clock(); self.kept_duration = self.clock()-started
+                    with self.lock: self.running = None
             else:
                 self.wake.wait(.25)
             self.wake.clear()

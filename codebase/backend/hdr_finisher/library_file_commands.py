@@ -334,6 +334,7 @@ class FileCommands:
                         result=self.execute(token);return result
                     with self.marks._lock: self.marks._undo.append({'command':undo,'file_command':True})
                 if recovery and completed: self.notify(f'Finished an interrupted delete for {len(completed)} photos and their settings.' if record['action'] in {'delete','delete_rejected'} else f'Finished an interrupted file command for {len(completed)} items. Settings are together with their photos.')
+                self.index.membership.reconcile()
                 log('file_command_complete',operation=record['action'],count=len(completed),recovery=recovery)
             return self.result(record)
 

@@ -168,7 +168,7 @@ class LibrarySettingsWriter:
             return {"waiting": count, "done": self._completed, "total": self._progress_total,
                 "attention": list(groups.values()) + (self.marks.grades.attention() if getattr(self.marks, "grades", None) else []), "busy": bool(self._busy()), "paused": self._paused,
                 "reasons": dict(problems), "events": list(self._events),
-                "photos": list(self.marks._rows(list(paths)).values()) if paths else []}
+                "photos": (self.marks.membership.status_rows(list(paths)) if getattr(self.marks,"membership",None) else list(self.marks._rows(list(paths)).values())) if paths else []}
 
     def retry(self, folder, reason):
         """Retry only the selected live folder/reason group; retain its failure until success."""
@@ -292,6 +292,7 @@ class LibrarySettingsWriter:
                 db.execute("DELETE FROM settings_writes WHERE path=?", (path,))
         finally:
             db.close()
+        if getattr(self.marks, "membership", None): self.marks.membership.reconcile()
         self._completed += 1
         if path in self._recovered:
             self._recovered.remove(path)

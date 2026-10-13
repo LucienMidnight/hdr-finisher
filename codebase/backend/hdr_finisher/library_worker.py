@@ -143,7 +143,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "native", "scan", "tree", "metadata", "kept", "overlay"}:
+        if command not in {"picture", "native", "scan", "tree", "metadata", "kept", "kept-check", "overlay"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -412,6 +412,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 elif job["command"] == "native":
                     output = pictures.build_native(job["path"], job["center_x"], job["center_y"], job["width"], job["height"], cancelled.is_set)
                     result = {"id": job["id"], "result": output}
+                elif job["command"] == "kept-check":
+                    from .library_folders import check_kept
+                    result = {"id": job["id"], "result": check_kept(job["paths"], check)}
                 elif job["command"] == "metadata":
                     from .library_metadata import read_metadata
                     result = {"id": job["id"], "result": read_metadata(job["paths"], check)}
@@ -472,7 +475,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept", "overlay"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept", "kept-check", "overlay"}:
                     message["queued_at"] = time.time()
                     sequence += 1
                     jobs[message["id"]] = Event()

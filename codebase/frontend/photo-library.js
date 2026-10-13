@@ -255,7 +255,7 @@
       }
       root.append(make("p", "library-details-sub", HDRLibraryFacts.headline(photo)));
       root.append(make("p", "library-details-sub", `${photo.edited ? "Edited" : "Not edited"}${photo.copy_count ? ` \u00b7 ${plural(photo.copy_count, "virtual copy", "virtual copies")}` : ""}`));
-      if (photo.albums?.length) root.append(make("p", "library-details-sub", `In ${photo.albums.join(", ")}`));
+      if (photo.albums?.length) root.append(make("p", "library-details-sub", `In ${photo.albums.join(", ")}${photo.kept_by_album ? " · Kept in the library by an album; folder not pinned" : ""}`));
     }
     culling.details(root);
     const manage = make("button", "text-button", "Manage tags and labels…"); manage.type = "button"; manage.id = "manage-tags";
@@ -651,8 +651,15 @@
     if (path && !state.folderSelection.has(path)) { state.folderSelection = new Set([path]); paintFolderSelection(); }
     const pinned = state.pins.find(pin => key(pin.path) === key(path));
     const actions = path ? [{ label: pinned ? "Unpin folder" : "Pin folder", run: async () => {
+      if (pinned) {
+        const impact = await api("/api/library/pins/impact", { path: pinned.path });
+        const message = `${impact.leaving.toLocaleString()} photos leave the library. ${impact.kept ? `${impact.kept.toLocaleString()} stay because they are in albums. ` : ""}Nothing is deleted from disk.`;
+        if (!await HDRLibraryDialogs.ask({ title: `Stop showing ${pinned.name}?`, message, confirm: "Unpin folder" })) return;
+      }
       await api(pinned ? "/api/library/pins/remove" : "/api/library/pins", pinned ? { path: pinned.path } : { paths: [path] });
       await refreshPins();
+      updateDetails(); void albums.refresh().catch(error => status(error.message)); void tagWindow.refresh().catch(error => status(error.message));
+      if (state.collection || state.path) void reopen();
       status(pinned ? "Folder unpinned. Photos stay where they are." : "Folder pinned.");
     }}] : [{ label: "Add folder…", run: openPicker }];
     if (path && !state.picker) {

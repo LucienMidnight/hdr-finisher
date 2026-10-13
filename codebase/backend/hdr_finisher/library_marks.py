@@ -114,7 +114,7 @@ class LibraryMarks:
             raise ValueError("A file command is in progress or needs attention. This photo was left alone.")
         if not path.parent.exists() and path.suffix.lower() in SOURCE_EXTENSIONS:
             # Only known library photos may be changed while disconnected.
-            if self._query("SELECT 1 FROM photos WHERE path=? UNION SELECT 1 FROM files WHERE path=?", (str(path), str(path))):
+            if self._query("SELECT 1 FROM photos WHERE path=? UNION SELECT 1 FROM files WHERE path=?", (str(path), str(path))) or (getattr(self,"grades",None) and self.grades._get(str(path))):
                 return path
         path = path.resolve(strict=True)
         if not path.is_file() or path.suffix.lower() not in SOURCE_EXTENSIONS:
@@ -265,6 +265,10 @@ class LibraryMarks:
             if getattr(self, "grades", None): self.grades.observe_documents(observed_paths, observed_documents)
             if getattr(self, "copies", None):
                 for value, document in zip(observed_paths, observed_documents): self.copies.observe(value, document)
+            if getattr(self, "membership", None):
+                self.membership.reconcile()
+                self.membership.describe(photos)
+                self.membership.remember(photos)
             return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo)}
 
     def _write_sidecar(self, path, document, *, revision=None, fingerprint=None, owner_id=None):
@@ -346,6 +350,9 @@ class LibraryMarks:
         return after, originals, warnings
 
     def _result(self, photos, warnings, **extra):
+        if getattr(self, "membership", None):
+            self.membership.reconcile()
+            self.membership.describe(photos)
         return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo), **extra}
 
     @audited("change", milestone=True)
@@ -395,9 +402,13 @@ class LibraryMarks:
                 try:
                     path = self._path(row["path"])
                 except (FileNotFoundError, OSError) as error:
-                    problem("undo_skipped", row["path"], error, "photo skipped; remaining photos undone")
-                    skipped += 1
-                    continue
+                    path = self.source_path(row["path"])
+                    if not path.parent.exists() and path.suffix.lower() in SOURCE_EXTENSIONS:
+                        path = Path(row["path"])  # The undo snapshot proves this disconnected photo was known.
+                    else:
+                        problem("undo_skipped", row["path"], error, "photo skipped; remaining photos undone")
+                        skipped += 1
+                        continue
                 paths.append(str(path))
                 restored.append(row)
             documents = self._documents(paths)

@@ -484,6 +484,15 @@ Decided on October 9 from the mock-up (`docs/product/library-wireframes`):
 
 ### 5.2 Navigation
 
+**Decided and built October 13:** Library membership is photos under any pin
+plus photos in a manual album. Unpinning really cleans the index, preserving
+album-only photos, overlapping pins and all pending settings/recovery/history.
+No disk photos are deleted and unpinning never writes a `.hdrf`. Confirmation
+reports how many leave and how many stay in albums. A temporary opened folder
+is shown only while browsing, outside Library-wide queries unless its photos
+join an album; built for Steve to confirm. Projects are not yet built.
+
+
 Decided:
 
 - The left side shows **pinned folders**, **projects** and **albums**, not
@@ -686,11 +695,22 @@ Proposed, mocked up October 10 (not yet confirmed by Steve):
 
 ### 5.7 Albums and smart albums
 
+**Decided and built October 13:** A manual album keeps its photos in the
+Library outside every pin; Details explains this. Removing the last membership
+or deleting that album makes those photos leave, and Undo returns them.
+`kept-photos.json` and per-photo `library-kept-records\` in app data restore albums and their out-of-pin photos after
+SQLite loss, including disconnected entries and protected unwritten work.
+Album-only photos use bounded exact-path checks, about every five minutes,
+without walking unrelated folders. All pinned Look in choices ticked include
+kept photos; a subset excludes those outside it. Saved unpinned folder rules
+stay labelled not pinned and match nothing until re-pinned.
+
+
 Decided:
 
 - **Albums:** hand-picked sets. Photos stay where they are on disk.
 - **Smart albums:** defined by rules, for example tagged "kids" and "beach"
-  and state is edited. They cover everything the database has indexed and
+  and state is edited. They cover pinned and manual-album Library members and
   tie into the filter and tag systems.
 
 Proposed:

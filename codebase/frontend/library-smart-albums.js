@@ -63,9 +63,9 @@
    body.append(common);
    const rows=make("div","library-smart-rows"),add=make("button","text-button","+ Add rule");add.type="button";body.append(rows,add);
    const look=make("fieldset","library-smart-folders");look.append(make("legend","","Look in"));
-   const pins=options.pins(),available=[...pins];for(const path of filters.folders)if(!available.some(p=>p.path===path))available.push({path,name:path});
-   const boxes=[];for(const pin of available){const label=make("label"),box=make("input");box.type="checkbox";box.value=pin.path;box.checked=!filters.folders.length||filters.folders.includes(pin.path);label.append(box,make("span","",pin.name));look.append(label);boxes.push(box);box.addEventListener("change",()=>{filters.folders=boxes.every(b=>b.checked)?[]:boxes.filter(b=>b.checked).map(b=>b.value);count();});}
-   body.append(look,make("p","library-filter-note","All folders ticked means the whole indexed library."));
+   const pins=options.pins(),available=[...pins];for(const path of filters.folders)if(!available.some(p=>p.path===path))available.push({path,name:`${path} (not pinned)`});
+   const boxes=[];for(const pin of available){const label=make("label"),box=make("input");box.type="checkbox";box.value=pin.path;box.checked=!filters.folders.length ? pins.some(p=>p.path===pin.path) : filters.folders.includes(pin.path);box.dataset.pinned=String(pins.some(p=>p.path===pin.path));label.append(box,make("span","",pin.name));look.append(label);boxes.push(box);box.addEventListener("change",()=>{filters.folders=boxes.filter(b=>b.dataset.pinned==="true").every(b=>b.checked)&&!boxes.some(b=>b.dataset.pinned==="false"&&b.checked)?[]:boxes.filter(b=>b.checked).map(b=>b.value);count();});}
+   body.append(look,make("p","library-filter-note","All pinned folders ticked means the whole library, including photos kept by albums. A folder marked not pinned matches nothing until pinned again."));
    const live=make("p","library-smart-count");live.setAttribute("aria-live","polite");body.append(live);
    const error=make("p","library-filter-note");error.setAttribute("role","alert");body.append(error);
    const cancel=make("button","button-secondary","Cancel"),save=make("button","button-primary",item?"Save":"Create smart album");cancel.type="button";save.type="submit";actions.append(cancel,save);

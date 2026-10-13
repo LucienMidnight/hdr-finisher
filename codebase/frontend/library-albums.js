@@ -34,12 +34,12 @@
       finally { await refresh(); }
     }
     async function newAlbum(paths = []) {
-      const answer = await ask({ title: "New Album", message: paths.length ? `The album starts with the ${photos(paths.length)} selected. Photos stay where they are.` : "An album is a hand-picked set. Photos stay where they are.", fields: [{ name: "name", label: "Album name" }], confirm: "Create" });
+      const answer = await ask({ title: "New Album", message: paths.length ? `The album starts with the ${photos(paths.length)} selected. Photos stay where they are. Photos in an album stay in the library even if their folder is unpinned.` : "An album is a hand-picked set. Photos stay where they are. Photos in an album stay in the library even if their folder is unpinned.", fields: [{ name: "name", label: "Album name" }], confirm: "Create" });
       if (!answer) return;
       await command("/api/library/albums/create", { name: answer.name, paths }, () => paths.length ? `${photos(paths.length)} added to ${answer.name}.` : `Album ${answer.name} created.`);
     }
     const add = (name, paths) => paths.length ? command("/api/library/albums/add", { name, paths }, result => result.changed ? `${photos(result.changed)} added to ${name}.` : `Already in ${name}.`) : Promise.resolve();
-    const take = (name, paths) => command("/api/library/albums/remove", { name, paths }, result => `${photos(result.changed)} removed from ${name}. The files are untouched.`);
+    const take = (name, paths) => command("/api/library/albums/remove", { name, paths }, result => `${photos(result.changed)} removed from ${name}. The files are untouched.${result.left_library ? ` ${result.left_library.toLocaleString()} are no longer in the library; their folder is not pinned.` : ""}`);
     async function rename(album) {
       const answer = await ask({ title: "Rename Album", fields: [{ name: "name", label: "Album name", value: album.name }], confirm: "Rename" });
       if (!answer || answer.name === album.name) return;
@@ -47,7 +47,8 @@
       if (active && same(active, album.name)) options.open(answer.name);
     }
     async function remove(album) {
-      const answer = await ask({ title: "Delete Album", message: `${album.name} is removed from the list. Its ${photos(album.count)} stay where they are; nothing is deleted from disk. Ctrl+Z brings the album back.`, confirm: "Delete album" });
+      const impact = await options.api("/api/library/albums/impact", { name: album.name });
+      const answer = await ask({ title: "Delete Album", message: `${album.name} is removed from the list. Its ${photos(album.count)} stay where they are; nothing is deleted from disk. Ctrl+Z brings the album back.${impact.leaving ? ` ${impact.leaving.toLocaleString()} photos will leave the library; their folder is not pinned.` : ""}`, confirm: "Delete album" });
       if (!answer) return;
       await command("/api/library/albums/delete", { name: album.name }, () => `Album ${album.name} deleted. Photos untouched.`);
       if (active && same(active, album.name)) options.closed();
