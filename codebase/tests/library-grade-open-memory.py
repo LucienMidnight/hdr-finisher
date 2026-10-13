@@ -45,7 +45,7 @@ def sample():
 watcher=threading.Thread(target=sample)
 watcher.start()
 try:
-    store=SessionStore()
+    store=SessionStore() if serial else SessionStore(grade_import_parallel=True)
     session=store.prepare_session(output/'identity/identity.ARW')
 finally:
     finished.set()

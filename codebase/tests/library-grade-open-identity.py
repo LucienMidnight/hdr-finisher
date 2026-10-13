@@ -14,7 +14,7 @@ photo = OUT / 'identity.ARW'
 if not photo.exists():
     shutil.copyfile(ROOT / 'output/library-slow-spots/development-final-photos-ZHfVZM/DSC07060.ARW', photo)
 before = '--before' in sys.argv
-store = SessionStore()
+store = SessionStore(grade_import_parallel=True)
 for kind in ('new', 'saved'):
     session = store.prepare_session(photo)
     if kind == 'saved':

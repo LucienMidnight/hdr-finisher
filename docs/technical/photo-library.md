@@ -2103,3 +2103,111 @@ What to try: in the development or unpacked app, double-click a saved-grade
 RAW, a fresh RAW, then cancel an open by returning to Library and reopen the
 saved grade. Confirm the first real picture and settings look unchanged and
 judge the wait; do not spend another timing sweep on these small warm changes.
+
+### Grade import bands — October 13 follow-up
+
+Steve approved the earlier 16 MB option and replaced the former memory rule:
+no additional full-size photo copies held at once; about 100 MB extra peak
+working memory is allowed, larger additions require his decision. This round
+uses that allowance for two-worker bands rather than retaining the three-worker
+trial. No numerical budget or existing cache limit changes.
+
+Before is `0e8a2b6`, including the prior hash/cache changes. The stopwatch ran
+three saved-grade opens and three never-opened paths per build, before and
+after. Same disposable 42 MP ARW copies, disposable profiles, 2560×1440,
+saved-grade preparation outside the samples and shared warm source-mip cache
+as last round. The fresh paths had no sidecar before opening. Source hashes
+confirm the copied photo bytes remained untouched. Timings were taken without
+fast tests or builds competing for CPU. No cold-cache saving is claimed.
+
+Click to first real frame, seconds:
+
+| Build and kind | Before, three opens | After, three opens | Mean before → after | Saving |
+|---|---|---|---|---|
+| Development, saved grade | 4.72 / 4.70 / 4.68 | 3.98 / 3.99 / 3.97 | 4.70 → 3.98 | 0.72 |
+| Development, fresh paths | 4.71 / 4.45 / 4.52 | 3.96 / 3.97 / 3.95 | 4.56 → 3.96 | 0.60 |
+| Packaged, saved grade | 4.43 / 4.72 / 4.73 | 3.96 / 4.02 / 4.04 | 4.63 → 4.01 | 0.62 |
+| Packaged, fresh paths | 4.66 / 4.72 / 4.71 | 4.14 / 3.96 / 3.97 | 4.70 → 4.02 | 0.68 |
+
+Stage means across the six opens per build, seconds. Each open's repeated
+phase entries are summed before averaging. These use the existing stopwatch.
+
+| Stage | Split and why | Development before → after | Packaged before → after |
+|---|---|---|---|
+| RAW | Partly: transport maxima/counts and camera normalization; disjoint writes, integer counts and ordered maxima. | 2.213 → 2.018 | 2.216 → 1.998 |
+| Colour | Yes: white balance/matrix and negative mapping are per-pixel; the same arithmetic writes separate row ranges. | 1.008 → 0.677 | 1.049 → 0.684 |
+| Analysis | Partly: exact luma/BT.2020 scan bands; original band shapes and ordered maxima. Robust samples/quantiles stay serial. | 0.745 → 0.609 | 0.752 → 0.610 |
+
+What is not split: LibRaw's AHD demosaic remains the same opaque decoder
+operation; changing its neighbour processing would exceed this brief. The
+opposed-highlight pixel chunks read immutable neighbours, so they could be
+independent; chrominance sums would additionally require identical original
+chunk reductions combined in original order. Neither was changed: the supplied
+ARW has no clipped photosites, so these paths are bypassed and have no measured
+saving here. Their extra scratch space on clipped RAWs is unvalidated. The
+existing CFA-pattern normalization/white-balance passes also have disjoint
+channel destinations, but were left alone rather than expanding the trial
+beyond the main timed band loops. No separate saving is claimed for them.
+Analysis keeps its original stride, samples, quantile methods and small-image
+route: a global percentile is not an independent-band calculation. Initial
+RAW exposure and first-found peak-candidate construction remain serial. All
+required measurements still finish before the first real frame.
+
+The new worker scope is an explicit opt-in of the main Grade SessionStore.
+Default SessionStores, including the Library helper's saved-preview rebuilds,
+remain serial. The helper's priority, decoder count, queue and native thread
+settings are untouched. One open may use the pair at a time; a simultaneous
+open falls back to serial execution. Machines with fewer than four logical
+CPUs stay serial; otherwise at most two workers leave at least half available.
+The local CPU probe on this 12-logical-CPU machine measured roughly 1.7–2.0
+active cores in the changed routines, including their native NumPy calls.
+Cancelled/failed opens join active bands and cancel queued work before their
+arrays can be released or another session published. Results combine in
+original band order, regardless of worker completion order.
+
+Memory: the one backend peak-private-memory sample was 1,228,824,576 bytes
+before and 1,236,025,344 after (+7,200,768 bytes, about 7.2 MB). Peak working
+sets were 839,303,168 and 839,442,432 bytes. These are samples, not a guarantee
+of an exact RAM increment for every source. The 508,677,120-byte decoded
+source and full-size buffer count are unchanged. Negative mapping caps each
+worker's band at about 100k pixels to bound even its all-negative float64
+working arrays; it changes band boundaries, not the per-pixel method. Matrix
+and exact-peak scan bands retain their old shapes. No photo arrays are returned
+or accumulated as queued results; only scalars/small integer vectors or None.
+
+Failures/corrections: the three-worker trial raised sampled private memory by
+140,951,552 bytes (about 141 MB), exceeding Steve's allowance, so it was not
+retained. The first scope design would also have enabled helper saved-preview
+rebuilds; the explicit main-store opt-in fixed that before the final packaged
+checks. No outstanding check failure.
+
+Validation: 471 Node and 1,981 Python tests passed, three existing skips;
+36 focused band/RAW/open-reuse tests passed. The real 42 MP new/saved identity
+checks match prior source and proxy bytes, analysis/metadata, peak candidates
+and documents bit-for-bit. Synthetic cases cover band boundaries, transport
+ceiling counts, non-neutral camera transforms, all-negative pixels, signed
+zero, NaN/infinity sanitation, exact/robust peaks, worker isolation and failure
+joining. Development and unpacked `library-grade-saving.js` passed for saved
+load, unsaved leave, recovery and conflicts. Final stopwatch runs also passed
+in-flight cancellation and saved-grade reopening in both builds. The first
+frame still precedes source-cache persistence/pruning. No CPU export/Proof
+method, shader, tolerance, limit, budget, cache layout, installer or push.
+
+The measured total savings exceed half a second in both builds, so the capped
+version is retained. Detailed events and CPU/memory samples are under
+`codebase/output/library-grade-open/bands-*`; last round's timing files remain
+separate. The timing driver supports `--bands` to keep the records distinct;
+identity/memory probes explicitly opt into the main Grade policy.
+
+Local commit notes:
+
+- Import-only band processing: two workers, exact ordered results and explicit
+  Grade opt-in; grouped fast/identity/open checks passed; the oversized trial
+  and original helper-affecting scope above are not shipped.
+- Timing record/probes: fresh three-open before/after records and opt-in
+  identity/memory probes; both builds passed; no outstanding failure.
+
+What to try: open a saved-grade RAW and a fresh RAW, cancel one open and reopen
+it, and judge the wait while other Grade work is active. Confirm the same
+picture, saved settings and readouts. Leave the two-worker cap in place unless
+Steve chooses to revisit the larger-memory option.

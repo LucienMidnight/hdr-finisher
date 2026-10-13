@@ -5,7 +5,7 @@ const { _electron } = require('../desktop/node_modules/playwright');
 const root = path.resolve(__dirname, '..'), output = path.join(root, 'output/library-grade-open');
 const packaged = process.argv.includes('--packaged');
 const label = process.argv.includes('--after') ? 'after' : 'before';
-const mode = `${label}-${packaged ? 'packaged' : 'development'}`;
+const mode = (process.argv.includes('--bands') ? 'bands-' : '') + `${label}-${packaged ? 'packaged' : 'development'}`;
 fs.mkdirSync(output, { recursive: true });
 const profile = fs.mkdtempSync(path.join(output, mode + '-profile-'));
 const folder = fs.mkdtempSync(path.join(output, mode + '-photos-'));
