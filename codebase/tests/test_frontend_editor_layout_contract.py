@@ -15,12 +15,12 @@ def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> Non
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
-    assert '<p class="product-name">HDR FINISHER</p>' in html
+    assert '<img class="product-logo" src="/static/assets/brand/hdr-finisher-logo.svg" alt="HDR Finisher">' in html
     assert "Cinema Print" not in html
     assert "Exposure dependent" not in html
-    product_block = css[css.rindex(".product-name {"):]
-    assert "font-family: var(--font-display);" in product_block
-    assert "text-transform: uppercase;" in product_block
+    product_block = css[css.index("\n.product-logo {"): ]
+    assert "object-fit: contain;" in product_block
+    assert '[data-theme="default-light"] .product-logo' in product_block
 
     final_refinement = css[css.index("/* Shared instrument components and panel hierarchy. */"):]
     body_block = final_refinement[

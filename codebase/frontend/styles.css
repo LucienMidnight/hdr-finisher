@@ -6460,7 +6460,7 @@ body[data-workflow="export"] #export-sheet {
 
 /* Final cascade for the instrument shell. */
 :root {
-  --top-h: 54px;
+  --top-h: 46px;
   --control-row-h: 36px;
 }
 
@@ -9226,3 +9226,7 @@ body[data-workflow="import"] #viewer-status-dock { display: none; }
 .library-away[hidden] { display: none; }
 
 .library-host iframe[hidden] { display: none; }
+
+/* The supplied full wordmark keeps its original proportions. */
+.product-logo { display: block; width: 131px; height: 40px; object-fit: contain; filter: invert(1); }
+:root[data-theme="default-light"] .product-logo { filter: none; }
