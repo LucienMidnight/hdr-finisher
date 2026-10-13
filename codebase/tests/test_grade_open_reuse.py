@@ -108,3 +108,26 @@ def test_recovery_decode_selection_retains_the_original_default(tmp_path):
         assert open_document(store, recovery, photo, reuse_session_id=str(payload.session_id)) is prepared
     finally:
         store.clear()
+
+
+def test_file_hash_and_decode_overlap_without_another_image(tmp_path, monkeypatch):
+    from threading import Event
+    import hdr_finisher.sessions as sessions
+    photo = tmp_path / 'overlap.png'
+    Image.new('RGB', (32, 24), (128, 80, 40)).save(photo)
+    hash_started, decoding = Event(), Event()
+    real_load, real_hash = sessions.load_image, sessions._sha256_file
+    def hash_file(path):
+        hash_started.set()
+        assert decoding.wait(2), 'hash blocked decoding'
+        return real_hash(path)
+    def load(*args, **kwargs):
+        assert hash_started.wait(2), 'decode blocked hashing'
+        decoding.set()
+        return real_load(*args, **kwargs)
+    monkeypatch.setattr(sessions, '_sha256_file', hash_file)
+    monkeypatch.setattr(sessions, 'load_image', load)
+    store = SessionStore()
+    session = store.prepare_session(photo)
+    assert session.source_fingerprint_sha256 == real_hash(photo)
+    store.clear()

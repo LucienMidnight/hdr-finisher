@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 from time import perf_counter
@@ -117,6 +118,7 @@ class LoadedSession:
     undo_history: list[HistoryEntry] = field(default_factory=list, repr=False)
     redo_history: list[HistoryEntry] = field(default_factory=list, repr=False)
     history_bytes: int = 0
+    prepared_fingerprint: InitVar[str | None] = None
     source_fingerprint_sha256: str = field(init=False)
     source_byte_size: int = field(init=False)
     preview: PreviewSettings = field(default_factory=PreviewSettings)
@@ -124,14 +126,14 @@ class LoadedSession:
     scope_tokens: dict[PreviewKind, int] = field(default_factory=lambda: {PreviewKind.HDR: 0, PreviewKind.SDR: 0})
     render_cache: SessionRenderCache = field(init=False, repr=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, prepared_fingerprint: str | None) -> None:
         self.color_context = RenderColorContext(self.hdr_reference_white_nits)
         self.hdr_reference_white_nits = self.color_context.hdr_reference_white_nits
         if self.source_luminance is None:
             self.source_luminance = describe_source_luminance(
                 self.source, self.metadata, has_authored_sdr=self.sdr_reference_image is not None
             )
-        self.source_fingerprint_sha256 = _sha256_file(self.source_path)
+        self.source_fingerprint_sha256 = prepared_fingerprint if prepared_fingerprint is not None else _sha256_file(self.source_path)
         self.source_byte_size = self.source_path.stat().st_size
         recommended_exposure = self._apply_import_defaults(self.adjustments)
         if recommended_exposure is not None:
@@ -290,19 +292,32 @@ class SessionStore:
         try:
             resolved_raw_settings = raw_import_settings or RawImportSettings()
             resolved_override = interpretation_override or SourceInterpretationOverride()
-            image, source, metadata, analysis, sdr_reference_image = load_image(
-                source_path,
-                overrides={
-                    "color_space": resolved_override.color_space,
-                    "transfer_function": resolved_override.transfer_function,
-                    "linear_reference": resolved_override.linear_reference,
-                },
-                raw_import_settings=resolved_raw_settings,
-                progress=progress,
-                cancelled=cancelled,
-                retained_session_bytes=self._retained_session_bytes(),
-                hdr_reference_white_nits=hdr_reference_white_nits,
-            )
+            # Hashing reads file bytes, not decoded pixels or metadata. Join
+            # before constructing the identity; the worker retains no image.
+            with ThreadPoolExecutor(max_workers=1, thread_name_prefix="source-hash") as pool:
+                initial_stat = source_path.stat()
+                fingerprint = pool.submit(_sha256_file, source_path)
+                image, source, metadata, analysis, sdr_reference_image = load_image(
+                    source_path,
+                    overrides={
+                        "color_space": resolved_override.color_space,
+                        "transfer_function": resolved_override.transfer_function,
+                        "linear_reference": resolved_override.linear_reference,
+                    },
+                    raw_import_settings=resolved_raw_settings,
+                    progress=progress,
+                    cancelled=cancelled,
+                    retained_session_bytes=self._retained_session_bytes(),
+                    hdr_reference_white_nits=hdr_reference_white_nits,
+                )
+                prepared_fingerprint = fingerprint.result()
+            final_stat = source_path.stat()
+            if (initial_stat.st_size, initial_stat.st_mtime_ns, initial_stat.st_ctime_ns) != (
+                final_stat.st_size, final_stat.st_mtime_ns, final_stat.st_ctime_ns
+            ):
+                # An external source edit is exceptional: retain the old
+                # post-decode fingerprint rather than trust the early hash.
+                prepared_fingerprint = _sha256_file(source_path)
             lens_result = metadata.get("lens_correction") or {}
             if (
                 source_path.suffix.lower() == ".dng"
@@ -338,6 +353,7 @@ class SessionStore:
             session = LoadedSession(
                 session_id=uuid4().hex,
                 source_path=source_path,
+                prepared_fingerprint=prepared_fingerprint,
                 image=image,
                 sdr_reference_image=sdr_reference_image,
                 source=source,
@@ -862,6 +878,16 @@ class SessionStore:
             if getattr(self, "grade_recovery_observer", None):
                 self.grade_recovery_observer(session)
             return session
+
+    def is_source_current(self, session_id: str, source_epoch: int) -> bool:
+        """Lock-free cancellation check, like SessionRenderCache.source_epoch.
+
+        Cache persistence holds its memory lock; taking the session lock here
+        would invert source replacement's session/cache lock order.
+        """
+        current = self._current
+        return bool(current is not None and current.session_id == session_id
+                    and current.render_cache.source_epoch == source_epoch)
 
     def next_preview_token(self, session_id: str, kind: PreviewKind) -> int:
         with self._lock:
