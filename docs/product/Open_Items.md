@@ -53,6 +53,7 @@ Deferred work and backlog in one list, in no order. None of it blocks 0.9.0.
 | Local-grade transfer | Copy or move a local adjustment's grade between HDR and SDR. Its own sprint | PRD 13, "Deferred: separate sprints" |
 | Preview settling | Optional full-resolution settle and a shorter refinement delay. Its own sprint | PRD 13, "Deferred: separate sprints" |
 | Path feather | Stress-test extreme Feather and Softness on awkward paths | PRD 13 |
+| REFWHITE-01 | Changing HDR reference white on a file that carries its own HDR brightness (seen with an Ultra HDR JPEG) changes Grade's rendering but does not rescale the open image. A fresh open scales it differently, so the HDR result in Grade and in export can look different after the project is closed and reopened (about twice as bright in the test). SDR is unaffected; RAW files matched exactly. Found October 12, 2026; reported, not fixed. Touches the source and export area, so it needs its own careful brief | [Photo Library technical notes](../technical/photo-library.md), section 15, "Part 3: exact-match stop" |
 | TIFF colour space | A TIFF with an unrecognized colour profile falls back to a misleading default | PRD 13, item 12 |
 | Source workflows | Untested: Photoshop OpenEXR export, GIMP, linear DNG from Adobe and DxO | PRD 13, item 13 |
 | SDR gamut | Research a perceptual HDR-to-SDR colour mapping to replace the luma-first compressor | PRD 13, item 14 |
