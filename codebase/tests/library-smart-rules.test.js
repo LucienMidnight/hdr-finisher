@@ -27,3 +27,17 @@ test("membership is live after marks, tags and grades change",()=>{
  filters.rules=[{field:"tag",value:"new"}];assert.equal(q.apply(photos,"name",false,filters).length,0);photos[0].marks.tags.push("New");assert.equal(q.apply(photos,"name",false,filters).length,1);
  filters.rules=[{field:"state",value:"not edited"}];photos[0].edited=false;assert.equal(q.apply(photos,"name",false,filters).length,1);
 });
+test("unsorted worker count equals existing album membership for every rule and common control",()=>{
+ const photos=[original,copy,{path:"d:/Other/Blank.jpg",name:"Blank.jpg",type:"JPG",marks:{}},
+  {...original,path:"D:/Shoot/Night.NEF",name:"Night.NEF",type:"NEF",camera:"Éclair",iso:null,shutter:0.5,marks:{tags:["Straße","KIDS"],rating:5}}];
+ const expressions=[{}, {raw:true},{type:"ARW"},{rating:"4"},{pick:"hide-rejected"},{pick:"unmarked"},{label:"green"},{search:" kids "},
+  {folders:["d:/shoot/"]},{folders:["d:/shoo"]},{search:"copy",any:true,rules:[{field:"rating",value:0}]}];
+ for(const field of Object.keys(q.FIELDS))for(const op of ["is","contains","starts","ends","range","greater","less","at-least","at-most"])
+  for(const not of [false,true])for(const value of ["", "4", "kids", "2026-10-12"])
+   expressions.push({rules:[{field,op,not,value,from:"",to:"800"}]});
+ expressions.push({rules:[{field:"future",value:"x"}]},{rules:[{field:"future"}]});
+ for(const filters of expressions)for(const any of [false,true]){
+  const expression={...filters,any};
+  assert.equal(q.count(photos,expression),q.apply(photos,"name",false,expression).length,JSON.stringify(expression));
+ }
+});

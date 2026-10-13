@@ -75,11 +75,11 @@
     const span = from != null && to != null ? (String(from) === String(to) ? `${from}` : `${from} to ${to}`) : from != null ? `${from} or ${field.kind === "date" ? "later" : "more"}` : `${to} or ${field.kind === "date" ? "earlier" : "less"}`;
     return `${field.label} ${rule.not ? "is not" : "is"} ${span}`;
   }
-  function apply(photos, sort = "time", descending = false, filters = {}) {
+  function predicate(filters = {}) {
     const needle = (filters.search || "").trim().toLocaleLowerCase();
     const rules = filters.rules || [];
     const folders = (filters.folders || []).map(path => String(path).replaceAll("\\", "/").replace(/\/$/, "").toLocaleLowerCase() + "/");
-    const result = photos.filter(photo => {
+    return photo => {
       const marks = photo.marks || {}, tags = marks.tags || [];
       const path = (photo.source_path || photo.path).replaceAll("\\", "/").toLocaleLowerCase();
       return (!folders.length || folders.some(folder => path.startsWith(folder))) && (!filters.raw || rawTypes.has(photo.type)) && (!filters.type || photo.type === filters.type)
@@ -88,7 +88,16 @@
         && (!filters.label || marks.label === filters.label)
         && (!needle || photo.name.toLocaleLowerCase().includes(needle) || tags.some(tag => tag.toLocaleLowerCase().includes(needle)))
         && (!rules.length || (filters.any ? rules.some(rule => matches(photo, rule)) : rules.every(rule => matches(photo, rule))));
-    });
+    };
+  }
+  function count(photos, filters = {}) {
+    const accepts = predicate(filters);
+    let total = 0;
+    for (const photo of photos) if (accepts(photo)) total++;
+    return total;
+  }
+  function apply(photos, sort = "time", descending = false, filters = {}) {
+    const result = photos.filter(predicate(filters));
     const picks = { pick: 0, unmarked: 1, reject: 2 };
     const parents = new Map(photos.filter(p=>!p.copy_id).map(p=>[p.path,p]));
     return result.sort((left, right) => {
@@ -109,7 +118,7 @@
       return (descending ? -1 : 1) * (order || compareText(a.name, b.name) || compareText(a.path, b.path));
     });
   }
-  const api = Object.freeze({ apply, matches, values, describe, format, FIELDS });
+  const api = Object.freeze({ apply, count, matches, values, describe, format, FIELDS });
   if (typeof module !== "undefined") module.exports = api;
-  else window.HDRLibraryQuery = api;
+  else globalThis.HDRLibraryQuery = api;
 })();
