@@ -1944,7 +1944,7 @@ session fetch. Denoise-off opens do not start a full-source noise warm-up.
 Scopes and overlays start together after the first frame and do not hold the
 loading state or controls open. Pixel processing methods are unchanged.
 
-### Measurement audit and remaining work
+### Initial measurement audit (October 12)
 
 - RAW corrections, colour conversion/normalisation and negative-value mapping
   produce the actual image; the first frame needs their exact output.
@@ -1967,11 +1967,11 @@ loading state or controls open. Pixel processing methods are unchanged.
   ownership, cancellation and memory limits. No cache layout or queue change
   was made. This remains an incomplete Part 2 first-frame requirement.
 
-The existing stopwatch now records the Library click, Grade-visible loading,
+At the end of the initial October 12 batch, the stopwatch recorded the Library click, Grade-visible loading,
 backend phases, grade attachment, first frame and controls-ready events. No
-42 MP before/after timings, GPU drivers or unpacked-build checks were run,
+42 MP before/after timings, GPU drivers or unpacked-build checks had been run,
 following Steve's fast-checks-only instruction. The under-0.5-second and
-four-second targets are therefore unverified, not claimed achieved.
+four-second targets were therefore unverified, not claimed achieved.
 
 Fast validation: 471 Node and 1,959 Python tests passed, three existing skips.
 Focused tests compare decoded pixels, HDR measurements, grade documents and
@@ -1987,3 +1987,119 @@ Small startup fix: both Electron runners wait for complete initial page load
 and its main-process continuation before navigation. Only ERR_ABORTED (-3)
 from window loadURL is treated as an interrupted navigation; genuine backend
 failures keep their existing dialog and shutdown handling.
+
+### Part 2 continuation — October 13, 2026
+
+Before: `10eeb1e`; after: the memory-safe hash/cache changes below. Actual
+Library double-clicks, 2560×1440, three opens per kind in development and
+unpacked packaged builds. Each run used disposable copies of the 42 MP
+7968×5320 ARW and a disposable profile under `codebase/output`. Preparing the
+saved grade was outside the timing samples. The three fresh paths had never
+been opened in Grade and had no saved sidecar. Their byte-identical contents
+share the preview cache warmed by saved-grade preparation. These are warm
+source-mip results; they do not establish a cold-cache saving. Original photo
+bytes were checked unchanged. No writes to Steve's folders or test projects.
+
+Click to first real frame, seconds (all three samples and their means):
+
+| Build and kind | Before, three opens | After, three opens | Mean before → after |
+|---|---|---|---|
+| Development, saved grade | 4.45 / 4.45 / 4.70 | 4.48 / 4.51 / 4.48 | 4.53 → 4.49 |
+| Development, fresh paths | 5.78 / 4.42 / 4.48 | 4.71 / 4.46 / 4.46 | 4.89 → 4.54 |
+| Packaged, saved grade | 4.51 / 4.47 / 4.52 | 4.48 / 4.46 / 4.47 | 4.50 → 4.47 |
+| Packaged, fresh paths | 4.75 / 4.70 / 4.49 | 4.70 / 4.74 / 4.47 | 4.65 → 4.63 |
+
+Backend stage means, seconds. Repeated entries for a phase are summed per
+open, then averaged; these are logged stages, not a new measuring method.
+
+| Build, kind and run | RAW development | Colour conversion | Analysis | Session indexing | Ready |
+|---|---|---|---|---|---|
+| Development, saved grade, before | 2.187 | 1.006 | 0.734 | 0.224 | 0.063 |
+| Development, saved grade, after | 2.166 | 0.989 | 0.735 | 0.156 | 0.115 |
+| Development, fresh paths, before | 2.104 | 0.985 | 0.724 | 0.224 | 0.072 |
+| Development, fresh paths, after | 2.135 | 0.994 | 0.718 | 0.157 | 0.142 |
+| Packaged, saved grade, before | 2.188 | 0.978 | 0.719 | 0.213 | 0.068 |
+| Packaged, saved grade, after | 2.182 | 0.974 | 0.719 | 0.161 | 0.119 |
+| Packaged, fresh paths, before | 2.114 | 0.964 | 0.723 | 0.235 | 0.182 |
+| Packaged, fresh paths, after | 2.192 | 1.010 | 0.719 | 0.172 | 0.125 |
+
+Metadata/RAW-metadata/lens stages were negligible for this fixture. Click,
+Grade-visible, attachment, first-frame and controls events remain available
+in `codebase/output/library-grade-open/{before,after}-{development,packaged}.json`.
+The first fresh development baseline spent 1.354 s between click and starting
+the open. Its slower total must not be attributed to the backend changes.
+The warm saved-grade differences are small; a substantial first-frame speedup
+and the four-second target have not been demonstrated.
+
+What now overlaps: source SHA-256 reads file bytes beside the existing decode,
+then joins before session identity is published. It needs no decoded-image
+owner or full-size copy. A changed source stat uses the existing late-hash
+behaviour. The stable path still decodes and hashes once.
+
+What remains serial: RAW corrections produce the pixels for normalization,
+colour conversion and negative mapping; their output feeds classification,
+peaks and initial Grade settings. Source candidates still finish before
+publication. Other peak/analysis scans can be independent, but overlapping
+them would overlap their scratch allocations, violating this brief's memory
+condition. Their methods, order and values are unchanged.
+
+Rejected trial: RAW transport diagnostics could read the existing camera-RGB
+buffer beside normalization/in-place colour conversion, with identical
+results and no additional full-size photo. However, one controlled backend
+peak-private-memory sample rose from 1,230,946,304 to 1,247,121,408 bytes
+(+15.4 MiB), so that change was removed. Separately timed original routines
+cost 0.748 s diagnostics and 0.527 s normalization plus colour conversion:
+0.527 s is an ideal upper bound for overlap, not a measured first-frame
+saving. Steve's one optional decision is whether that possible saving warrants
+allowing about 16 MB more peak memory; it could reduce RAM available to other
+photos/apps. No such permission is assumed.
+
+The retained change's backend sample was 1,229,533,184 private bytes versus
+1,230,946,304 before; peak working set 839,131,136 versus 840,822,784 bytes.
+These are single-process samples, not a claimed memory reduction. The
+508,677,120-byte source and full-size owner count are unchanged.
+
+First-frame cache review: the GPU proxy response sends its complete picture
+body before source-mip disk persistence, stale-file cleanup and pruning. A
+background task carries only cache identity and session/source epoch; it
+never queues a session or image owner. It takes at most a 1 MiB byte chunk
+from the still-owned immutable LRU entry, releasing the memory lock before
+I/O. Eviction or supersession aborts the temporary write. Publication is an
+atomic replace after the existing header/checksum is complete. Even a cancel
+racing publication can only leave a complete entry for the exact old identity,
+which is valid for reuse. Cache format, layout and budgets remain unchanged;
+evicted/disabled-memory entries skip optional persistence. Foreground memory
+hits do not wait on a paused background disk write. Existing synchronous
+cache consumers retain their route, with direct buffer writes instead of
+whole-level byte copies.
+
+Validation for the group: 471 Node tests, 1,969 Python tests passed, three
+existing skips; focused hash/cache/API checks 92 passed. The 42 MP before/after
+identity check passed for new and saved grades: source pixels, proxy bytes,
+all recorded analysis/metadata, peak candidates and edit documents exactly
+match. Deferred multi-chunk cache files also exactly match the prior format.
+Development and packaged `library-grade-saving.js` passed: saved load, both
+grades/crop, unsaved leave, recovery and conflict handling. Final stopwatch
+runs in both builds also cancelled an in-flight Library open and reopened the
+saved grade correctly. No shader, export/Proof algorithm, tolerance, limit or
+budget change; no sweep, installer or push.
+
+Failures: the diagnostic overlap failed the memory condition and was removed.
+Early stopwatch fixtures needed log-record parsing and queued-sidecar waiting;
+the final checks have no outstanding failure.
+
+Local commit notes (checks above apply to the grouped changes):
+
+- Hash overlap: one file hash beside decode, exact identity retained; fast and
+  identity checks passed; no retained failure.
+- Cache housekeeping: picture body first, weak ownership, cancellation and
+  atomic identical files; fast/cache/API and focused app checks passed; no
+  retained failure.
+- Timing record and drivers: disposable 42 MP before/after samples, identity
+  and memory probes; both app builds passed; the rejected memory trial is
+  recorded rather than shipped.
+
+What to try: in the development or unpacked app, double-click a saved-grade
+RAW, a fresh RAW, then cancel an open by returning to Library and reopen the
+saved grade. Confirm the first real picture and settings look unchanged and
+judge the wait; do not spend another timing sweep on these small warm changes.
