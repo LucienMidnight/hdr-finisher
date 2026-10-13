@@ -24,13 +24,13 @@ test("All sort keys work in either direction without changing input", () => {
  assert.deepEqual(photos.map(photo => photo.path), ["a", "b", "c"]);
 });
 test("Filters combine rating, picks, label, tag search and file type", () => {
- assert.deepEqual(paths("name", false, { raw: true }), ["c", "a"]);
- assert.deepEqual(paths("name", false, { rating: 3, pick: "pick", label: "blue", search: "FaMiLy", type: "ARW" }), ["a"]);
- assert.deepEqual(paths("name", false, { pick: "hide-rejected" }), ["c", "a"]);
- assert.deepEqual(paths("name", false, { pick: "unmarked" }), ["c"]);
- assert.deepEqual(paths("name", false, { search: "photo-2" }), ["b"]);
- assert.deepEqual(paths("name", false, { raw: true, type: "PNG" }), []);
- assert.equal(apply([{ name: "a", path: "a", type: "ORI" }], "name", false, { raw: true }).length, 1);
+ assert.deepEqual(paths("name", false, { rules: [{field:"type",op:"in",values:["arw","dng","ori"]}] }), ["c", "a"]);
+ assert.deepEqual(paths("name", false, { rules: [{field:"rating",op:"at-least",value:3},{field:"pick",op:"in",values:["pick"]},{field:"label",op:"in",values:["blue"]},{field:"search",op:"contains",value:"FaMiLy"},{field:"type",op:"in",values:["arw"]}] }), ["a"]);
+ assert.deepEqual(paths("name", false, {rules:[{field:"pick",op:"in",values:["pick","unmarked"]}]}), ["c", "a"]);
+ assert.deepEqual(paths("name", false, {rules:[{field:"pick",op:"in",values:["unmarked"]}]}), ["c"]);
+ assert.deepEqual(paths("name", false, {rules:[{field:"search",value:"photo-2"}]}), ["b"]);
+ assert.deepEqual(paths("name", false, {rules:[{field:"type",op:"in",values:["arw","dng"]},{field:"type",value:"png"}]}), []);
+ assert.equal(apply([{ name: "a", path: "a", type: "ORI" }], "name", false, { rules: [{field:"type",op:"in",values:["arw","dng","ori"]}] }).length, 1);
 });
 test("copies stay after their original in either sort direction; marks and copy filters remain independent", () => {
   const family = [
@@ -40,13 +40,13 @@ test("copies stay after their original in either sort direction; marks and copy 
   ];
   assert.deepEqual(apply(family,"rating").map(p=>p.path),["a","a|copy|1","b"]);
   assert.deepEqual(apply(family,"rating",true).map(p=>p.path),["b","a","a|copy|1"]);
-  assert.deepEqual(apply(family,"rating",false,{rating:"4"}).map(p=>p.path),["a|copy|1"]);
+  assert.deepEqual(apply(family,"rating",false,{rules:[{field:"rating",op:"at-least",value:4}]}).map(p=>p.path),["a|copy|1"]);
   assert.deepEqual(apply(family,"name",false,{rules:[{field:"copy",value:"virtual copy"}]}).map(p=>p.path),["a|copy|1"]);
 });
 
 test("Grade filters use saved grades independently of marks, including virtual copies", () => {
  const rows = [{...photos[0], edited: false}, {...photos[1], edited: true}, {...photos[2], edited: true, copy_id: "copy"}];
- assert.deepEqual(apply(rows, "name", false, {grade:"graded"}).map(p=>p.path), ["c", "b"]);
- assert.deepEqual(apply(rows, "name", false, {grade:"ungraded"}).map(p=>p.path), ["a"]);
- assert.deepEqual(apply(rows, "name", false, {grade:"graded", rating:"2"}).map(p=>p.path), ["b"]);
+ assert.deepEqual(apply(rows, "name", false, {rules:[{field:"state",value:"edited"}]}).map(p=>p.path), ["c", "b"]);
+ assert.deepEqual(apply(rows, "name", false, {rules:[{field:"state",value:"not edited"}]}).map(p=>p.path), ["a"]);
+ assert.deepEqual(apply(rows, "name", false, {rules:[{field:"state",value:"edited"},{field:"rating",op:"at-least",value:2}]}).map(p=>p.path), ["b"]);
 });

@@ -13,18 +13,10 @@ from .library_diagnostics import log
 
 
 class SmartRules(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     any: bool = False
     rules: list[dict] = Field(default_factory=list, max_length=100)
     folders: list[str] = Field(default_factory=list, max_length=100)
-    # Common filter-bar controls keep their meaning even in Match any mode.
-    rating: str = ""
-    pick: str = ""
-    label: str = ""
-    type: str = ""
-    search: str = ""
-    raw: bool = False
-    grade: str = ""
 
 
 class SmartCommand(BaseModel):
@@ -52,18 +44,26 @@ class SmartAlbums:
         return value
 
     def list(self):
-        with self.index._state: return deepcopy(self.preferences().get("smart_albums", []))
+        with self.index._state:
+            albums = deepcopy(self.preferences().get("smart_albums", []))
+            for album in albums: album["filters"] = SmartRules.model_validate(album["filters"]).model_dump()
+            return albums
 
     @staticmethod
     def filters(value):
         value = SmartRules.model_validate(value).model_dump()
         for rule in value["rules"]:
-            if not isinstance(rule.get("field"), str) or not rule["field"] or set(rule)-{"field","value","label","from","to","not","op"}:
+            if not isinstance(rule.get("field"), str) or not rule["field"] or set(rule)-{"field","value","label","from","to","not","op","values","labels"}:
                 raise ValueError("That smart album rule could not be read. Nothing was changed.")
-            if rule.get("op", "is") not in {"is","contains","starts","ends","greater","less","at-least","at-most","range"}:
+            if rule.get("op", "is") not in {"is","contains","starts","ends","greater","less","at-least","at-most","range","in"}:
                 raise ValueError("That comparison could not be read. Nothing was changed.")
-            if any(isinstance(v, (dict,list)) for v in rule.values()):
+            if any(isinstance(v, (dict,list)) for k,v in rule.items() if k not in {"values","labels"}):
                 raise ValueError("That rule value could not be read. Nothing was changed.")
+            for key in ("values", "labels"):
+                if key in rule and (not isinstance(rule[key], list) or not all(isinstance(v, str) for v in rule[key])):
+                    raise ValueError("That list of rule values could not be read. Nothing was changed.")
+            if rule.get("op") == "in" and not rule.get("values"):
+                raise ValueError("Choose at least one rule value.")
             if "not" in rule and not isinstance(rule["not"],bool): raise ValueError("That rule could not be read.")
         # Paths may be offline. No filesystem write or original-file access.
         value["folders"] = list(dict.fromkeys(str(Path(p).expanduser().resolve()) for p in value["folders"]))
@@ -82,7 +82,7 @@ class SmartAlbums:
                     raise ValueError("That smart album name is taken. Nothing was changed.")
                 if request.action == "duplicate" and at is None:
                     raise ValueError("That smart album is no longer in the library.")
-                filters = deepcopy(albums[at]["filters"]) if request.action == "duplicate" else self.filters(request.filters.model_dump())
+                filters = self.filters(albums[at]["filters"]) if request.action == "duplicate" else self.filters(request.filters.model_dump())
                 item = {"id":request.id if request.action == "edit" else uuid4().hex, "name":name, "filters":filters}
                 if request.action == "edit":
                     if at is None: raise ValueError("That smart album is no longer in the library.")

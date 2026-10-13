@@ -62,20 +62,11 @@
    await refresh();options.status(`Album ${answer.name} created.`);
   }
   async function editor(item=null,initial=null) {
-   const filters=structuredClone(item?.filters || initial || {rules:[],any:false,folders:[]});filters.rules ||= [];filters.folders ||= [];
+   const source=item?.filters || initial || {}, filters=structuredClone({rules:source.rules || [],any:!!source.any,folders:source.folders || []});
    const dialog=make("dialog","application-dialog library-ask library-smart-editor"),form=make("form"),header=make("div","application-dialog-header"),body=make("div","library-ask-body"),actions=make("div","app-dialog-actions");
    dialog.setAttribute("aria-label",item?"Edit smart album":"New smart album");header.append(make("h2","",item?"Edit smart album":"New smart album"));
    const name=make("input");name.name="name";name.value=item?.name||"";name.maxLength=120;name.setAttribute("aria-label","Smart album name");const nameLabel=make("label","library-ask-field");nameLabel.append(make("span","","Name"),name);body.append(nameLabel);
    const mode=select("Match rules",[{value:"all",label:"Match all of these rules"},{value:"any",label:"Match any of these rules"}],filters.any?"any":"all");body.append(mode);
-   // Common filter controls are mandatory in the filter bar, even with Match any.
-   // Preserve that expression and expose them as editable required controls.
-   const common=make("div","library-smart-common");
-   for(const [key,label] of [["rating","Minimum rating"],["pick","Pick status"],["label","Colour label"],["type","File type"],["search","File name or tag"]]) if(filters[key]) {
-    const line=make("label","library-ask-field"),input=make("input");input.value=String(filters[key]);input.setAttribute("aria-label",label);line.append(make("span","",`Required: ${label}`),input);common.append(line);input.addEventListener("input",()=>{filters[key]=input.value;count();});
-   }
-   if(filters.grade){const label=make("label","library-ask-field"),input=select("Grade status",[{value:"",label:"Any grade status"},{value:"graded",label:"Graded"},{value:"ungraded",label:"Ungraded"}],filters.grade);label.append(make("span","","Required: Grade status"),input);common.append(label);input.addEventListener("change",()=>{filters.grade=input.value;count();});}
-   if(filters.raw){const label=make("label"),box=make("input");box.type="checkbox";box.checked=true;label.append(box,make("span","","Required: RAW only"));box.addEventListener("change",()=>{filters.raw=box.checked;count();});common.append(label);}
-   body.append(common);
    const rows=make("div","library-smart-rows"),add=make("button","text-button","+ Add rule");add.type="button";body.append(rows,add);
    const look=make("fieldset","library-smart-folders");look.append(make("legend","","Look in"));
    const pins=options.pins(),available=[...pins];for(const path of filters.folders)if(!available.some(p=>p.path===path))available.push({path,name:`${path} (not pinned)`});
@@ -101,13 +92,18 @@
    }
    function renderRules(){rows.replaceChildren(...filters.rules.map((rule,i)=>{
     const row=make("div","library-smart-rule"),field=select("Rule field",Object.entries(query.FIELDS).map(([value,f])=>({value,label:f.label})),rule.field);field.dataset.ruleField=String(i);const f=query.FIELDS[rule.field];
-    const ops=f.kind==="range"||f.kind==="date"?["range","is","greater","less","at-least","at-most"]:f.kind==="text"?["contains","is","starts","ends"]:["is","contains","starts","ends"];
-    const op=select("Comparison",ops,rule.op||((f.kind==="range"||f.kind==="date")&&rule.value==null?"range":f.kind==="text"?"contains":"is"));rule.op=op.value;row.append(field,op);
-    if(op.value==="range")for(const key of ["from","to"]){const input=make("input");input.type=f.kind==="date"?"date":"number";input.value=rule[key]??"";input.setAttribute("aria-label",key==="from"?"From":"To");input.addEventListener("input",()=>{rule[key]=input.value;count();});row.append(input);}
+    const ops=f.kind==="range"||f.kind==="date"?["range","is","greater","less","at-least","at-most",...(f.numeric?["contains","starts","ends"]:[])]:f.kind==="text"?["contains","is","starts","ends"]:["is","in","contains","starts","ends"];
+    const op=select("Comparison",ops,rule.op||((f.kind==="range"||f.kind==="date")&&rule.value==null?"range":f.kind==="text"?"contains":"is"));rule.op=op.value;op.querySelector('option[value="in"]')?.replaceChildren(document.createTextNode("is any of"));row.append(field,op);
+    if(op.value==="in") {
+     const list=make("div","library-filter-values"), selected=new Map((rule.values||[]).map((v,j)=>[v,rule.labels?.[j]||v]));row.append(list);
+     const fill=values=>{if(!list.isConnected)return;for(const [value,label] of selected)if(!values.some(v=>v.value===value))values.push({value,label});
+      list.replaceChildren(...values.map(item=>{const label=make("label","library-filter-value"),box=make("input");box.type="checkbox";box.checked=selected.has(item.value);label.append(box,make("span","",item.label));box.addEventListener("change",()=>{box.checked?selected.set(item.value,item.label):selected.delete(item.value);rule.values=[...selected.keys()];rule.labels=[...selected.values()];count();});return label;}));};
+     fill([...selected].map(([value,label])=>({value,label})));ready.then(()=>work("values",{field:rule.field})).then(fill).catch(e=>{if(list.isConnected)error.textContent=e.message;});
+    } else if(op.value==="range")for(const key of ["from","to"]){const input=make("input");input.type=f.kind==="date"?"date":"number";input.value=rule[key]??"";input.setAttribute("aria-label",key==="from"?"From":"To");input.addEventListener("input",()=>{rule[key]=input.value;count();});row.append(input);}
     else {
      const found=f.kind==="choice"&&op.value==="is"?[]:null;
      const suppliedValue=rule.value!=null;
-     const input=make("input");input.type=f.kind==="range"?"number":f.kind==="date"?"date":"text";input.value=rule.value??"";input.setAttribute("aria-label","Rule value");rule.value=input.value;
+     const input=make("input");input.type=["contains","starts","ends"].includes(op.value)?"text":f.kind==="range"?"number":f.kind==="date"?"date":"text";input.value=rule.value??"";input.setAttribute("aria-label","Rule value");rule.value=input.value;
      if(found){
       const initialValue=input.value,hadValue=suppliedValue;
       const suggestions=make("datalist");suggestions.id=`smart-rule-values-${serial}-${i}`;input.setAttribute("list",suggestions.id);row.append(suggestions);
@@ -125,7 +121,7 @@
     }
     const notLabel=make("label"),not=make("input");not.type="checkbox";not.checked=!!rule.not;not.setAttribute("aria-label","is not");notLabel.append(not,make("span","","is not"));not.addEventListener("change",()=>{rule.not=not.checked;count();});row.append(notLabel);
     const remove=make("button","text-button","×");remove.type="button";remove.setAttribute("aria-label","Remove rule");remove.addEventListener("click",()=>{filters.rules.splice(i,1);renderRules();count();});row.append(remove);
-    field.addEventListener("change",()=>{filters.rules[i]={field:field.value};renderRules();count();});op.addEventListener("change",()=>{rule.op=op.value;delete rule.from;delete rule.to;delete rule.value;renderRules();count();});return row;
+    field.addEventListener("change",()=>{filters.rules[i]={field:field.value};renderRules();count();});op.addEventListener("change",()=>{rule.op=op.value;delete rule.from;delete rule.to;delete rule.value;delete rule.values;delete rule.labels;renderRules();count();});return row;
    }));}
    add.addEventListener("click",()=>{filters.rules.push({field:"rating",op:"at-least",value:3});renderRules();count();});mode.addEventListener("change",count);name.addEventListener("input",()=>{save.disabled=!name.value.trim()||(boxes.length>0&&!boxes.some(b=>b.checked));});
    form.addEventListener("submit",async e=>{e.preventDefault();save.disabled=true;try{await options.run("/api/library/smart-albums",{action:item?"edit":"create",id:item?.id||"",name:name.value.trim(),filters});dialog.close();await refresh();if(active===item?.id)options.open(active);}catch(e){error.textContent=e.message;save.disabled=false;}});

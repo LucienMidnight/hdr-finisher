@@ -121,3 +121,13 @@ def test_rebuild_candidates_from_saved_settings_after_database_loss(setup,tmp_pa
     db.close()
     fresh=SmartAlbums(rebuilt,preference)
     assert fresh.list()==before and fresh.candidates()["photos"][0]["edited"]
+
+
+def test_multi_tick_rules_round_trip_without_fixed_properties(smart):
+    filters={"rules":[{"field":"camera","op":"in","values":["alpha","beta",""],"labels":["Alpha","Beta","Not recorded"]},{"field":"search","op":"contains","value":"holiday"}]}
+    create(smart,filters=filters)
+    stored=smart.list()[0]["filters"]
+    assert stored["rules"]==filters["rules"]
+    assert set(stored)=={"rules","any","folders"}
+    for values in [[],[{}],"alpha",[1]]:
+        with pytest.raises(ValueError):create(smart,"Invalid",{"rules":[{"field":"camera","op":"in","values":values}]})

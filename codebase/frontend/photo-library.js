@@ -572,8 +572,6 @@
     try {
       const result = place.kind === "smart" ? await smart.open(place.name) : place.kind ? await api("/api/library/collection", { kind: place.kind, name: place.name }, controller.signal) : await api("/api/library/scan", { path }, controller.signal);
       if (controller.signal.aborted) return;
-      $("filter-type").replaceChildren(new Option("All file types", ""), ...[...new Set([...result.photos.map(photo => photo.type), ...(state.filters.type ? [state.filters.type] : [])])].sort().map(type => new Option(type, type)));
-      $("filter-type").value = state.filters.type || "";
       if (place.kind === "smart") { state.smartFilters = result.filters; state.smartIndexing = result.indexing; $("place-title").textContent = result.name; }
       HDRLibraryStopwatch("folder_listed", { path });
       state.reading = false; state.allPhotos = result.photos; state.photos = result.photos; state.index = result.photos.length ? 0 : -1;
@@ -824,7 +822,7 @@
   }
   for (const side of ["left", "right"]) $(`collapse-${side}`).addEventListener("click", () => collapse(side, !library.classList.contains(`library-${side}-closed`)));
   function paintFilterButton() {
-    const active = !!(state.filters.raw || state.filters.search?.trim() || state.filters.rating || state.filters.pick || state.filters.label || state.filters.type || state.filters.grade || state.filters.rules?.length);
+    const active = !!state.filters.rules?.length;
     $("filter-button").setAttribute("aria-pressed", String(active));
     $("filter-add").setAttribute("aria-pressed", String(active));
     $("filter-button").setAttribute("aria-expanded", String(!$("library-filterbar").hidden));
@@ -867,10 +865,8 @@
   paintSort(); paintSize();
   $("sort-menu").addEventListener("click", event => { const item = event.target.closest("[data-sort]"); if (!item) return; state.sort = item.dataset.sort; paintSort(); applyQuery(); });
   $("sort-dir").addEventListener("click", () => { state.descending = !state.descending; paintSort(); applyQuery(); });
-  $("raw-only").addEventListener("click", () => { state.filters.raw = !state.filters.raw; $("raw-only").setAttribute("aria-pressed", String(!!state.filters.raw)); applyQuery(); });
-  for (const name of ["rating", "pick", "label", "type", "search", "grade"]) $("filter-" + name).addEventListener(name === "search" ? "input" : "change", event => { state.filters[name] = event.target.value; applyQuery(); });
-  $("filter-clear").addEventListener("click", () => { state.filters = {}; for (const name of ["rating", "pick", "label", "type", "search", "grade"]) $("filter-" + name).value = ""; $("raw-only").setAttribute("aria-pressed", "false"); ruleFilters.render(); applyQuery(); });
-  const ruleFilters = HDRLibraryFilters.create({ bar: $("filter-rules"), addButton: $("filter-add"), match: $("filter-match"), photos: () => state.allPhotos,
+  $("filter-clear").addEventListener("click", () => { state.filters = { rules: [] }; ruleFilters.render(); applyQuery(); });
+  const ruleFilters = HDRLibraryFilters.create({ bar: $("filter-rules"), addButton: $("filter-add"), photos: () => state.allPhotos,
     filters: () => state.filters, changed: () => applyQuery(), reading: () => state.allPhotos.some(photo => !photo.indexed) });
   // One health snapshot owns Activity, indexing and live writer state.
   function showIndexing(next) {
@@ -1055,13 +1051,11 @@
   }
   async function restoreState(saved) {
     if (!saved) return;
-    state.sort = saved.sort || "time"; state.descending = !!saved.descending; state.filters = saved.filters || {};
+    state.sort = saved.sort || "time"; state.descending = !!saved.descending; state.filters = { rules: saved.filters?.rules || [], any: false };
     state.size = saved.size || 190; state.hdr = !!saved.hdr; state.zoom = !!saved.zoom;
     state.zoomX = saved.zoomX ?? .5; state.zoomY = saved.zoomY ?? .5;
     $("thumbnail-size").value = state.size; paintSort(); paintSize();
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr)); $("zoom-button").setAttribute("aria-pressed", String(state.zoom));
-    $("raw-only").setAttribute("aria-pressed", String(!!state.filters.raw));
-    for (const name of ["rating", "pick", "label", "type", "search", "grade"]) $("filter-" + name).value = state.filters[name] || "";
     $("library-filterbar").hidden = !saved.filterOpen; paintFilterButton();
     collapse("left", !!saved.leftClosed); collapse("right", !!saved.rightClosed); ruleFilters.render();
     await refreshPins();

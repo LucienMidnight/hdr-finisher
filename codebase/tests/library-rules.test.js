@@ -13,7 +13,7 @@ const paths = filters => apply(photos, "name", false, filters).map(photo => phot
 
 test("Offered values come from the photos on screen, with counts and honest gaps", () => {
   assert.deepEqual(values(photos, "camera"), [{ value: "ilce-7rm3", label: "ILCE-7RM3", count: 2 }, { value: "x-e2s", label: "X-E2S", count: 1 }, { value: "", label: "Not recorded", count: 1 }]);
-  assert.deepEqual(values(photos, "lens").at(-1), { value: "", label: "Unknown", count: 2 });
+  assert.deepEqual(values(photos, "lens").at(-1), { value: "", label: "Not recorded", count: 2 });
   assert.deepEqual(values(photos, "shutter").map(item => item.label), ["1/250 s", "2 s", "Not recorded"]);
   assert.deepEqual(values(photos, "aperture").map(item => [item.label, item.count]), [["f/2.8", 2], ["f/8", 1], ["Not recorded", 1]]);
   assert.deepEqual(values(photos, "focal_length").map(item => item.label), ["24 mm", "35 mm", "85 mm", "Not recorded"]);
@@ -31,25 +31,25 @@ test("Rules filter by camera, lens, tag, ISO range and capture date", () => {
   assert.deepEqual(paths({ rules: [{ field: "iso", from: "200", to: "200", not: true }] }), ["a", "b", "d"]);
   assert.deepEqual(paths({ rules: [{ field: "date", from: "2024-02-03", to: "2024-02-03" }] }), ["a"]);
   assert.deepEqual(paths({ rules: [{ field: "date", from: "2024-03-01" }] }), ["b"]);
-  assert.deepEqual(paths({ rules: [{ field: "shutter", value: "1/250 s" }] }), ["a", "c"]);
+  assert.deepEqual(paths({ rules: [{ field: "shutter", value: 0.004 }] }), ["a", "c"]);
   assert.equal(matches(photos[0], { field: "no-such-field" }), true);
 });
 
 test("Rules match all or any, and combine with the basic filters", () => {
-  const rules = [{ field: "camera", value: "x-e2s" }, { field: "aperture", value: "f/8" }];
+  const rules = [{ field: "camera", value: "x-e2s" }, { field: "aperture", value: 8 }];
   assert.deepEqual(paths({ rules }), []);
   assert.deepEqual(paths({ rules, any: true }), ["b", "c"]);
-  assert.deepEqual(paths({ rules, any: true, raw: true, type: "RAF" }), ["c"]);
+  assert.deepEqual(paths({ rules: [{field:"camera",op:"in",values:["x-e2s","ilce-7rm3"]},{field:"type",value:"raf"}] }), ["c"]);
   assert.deepEqual(paths({ rules: [] }), ["a", "b", "c", "d"]);
 });
 
 test("Chips say what the rule does", () => {
   assert.equal(describe({ field: "camera", value: "x-e2s", label: "X-E2S" }), "Camera is X-E2S");
   assert.equal(describe({ field: "lens", value: "", label: "Unknown", not: true }), "Lens is not Unknown");
-  assert.equal(describe({ field: "iso", from: "100", to: "800" }), "ISO is 100 to 800");
-  assert.equal(describe({ field: "iso", from: "400", to: "400" }), "ISO is 400");
-  assert.equal(describe({ field: "iso", from: "1600", to: "" }), "ISO is 1600 or more");
-  assert.equal(describe({ field: "date", from: "", to: "2024-01-01" }), "Capture date is 2024-01-01 or earlier");
+  assert.equal(describe({ field: "iso", from: "100", to: "800" }), "ISO 100 to 800");
+  assert.equal(describe({ field: "iso", from: "400", to: "400" }), "ISO 400");
+  assert.equal(describe({ field: "iso", from: "1600", to: "" }), "ISO 1600 or more");
+  assert.equal(describe({ field: "date", from: "", to: "2024-01-01" }), "Capture date 2024-01-01 or earlier");
 });
 
 test("Date modified sorts in either direction", () => {

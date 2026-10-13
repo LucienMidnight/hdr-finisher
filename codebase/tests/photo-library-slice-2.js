@@ -71,32 +71,28 @@ const settings = file => JSON.parse(fs.readFileSync(file + ".hdrf", "utf8"));
     assert.deepEqual(fs.readdirSync(folder).filter(name => name.endsWith(".hdrf")), [], "Looking at details writes nothing");
     console.log("PASS: details summary, Show all, and honest Unknown / Not recorded.");
 
-    // Filter rules.
+    // One chip per field; ticks within a field are OR, fields combine with AND.
     await library.locator("#filter-button").click();
     await library.locator("#filter-add").click(); await menu("Camera").click();
-    await library.locator('#library-filter-panel .library-filter-value[data-value="ilce-7rm3"]').click();
+    await library.getByLabel("ILCE-7RM3", {exact:true}).check();
+    await library.locator("#library-filter-panel button.button-primary").click();
     await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 2);
-    assert.equal(await library.locator(".library-rule-chip").textContent(), "Camera is ILCE-7RM3 ×");
-    assert.ok(await library.locator("#filter-match").isHidden());
+    assert.equal(await library.locator("#filter-match").count(), 0);
     await library.locator("#filter-add").click(); await menu("ISO").click();
-    await library.locator('#library-filter-panel input[aria-label="From ISO"]').fill("800");
+    await library.getByLabel("From ISO", {exact:true}).selectOption("3200");
     await library.locator("#library-filter-panel button.button-primary").click();
     await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 1 && HDRLibrary.getSnapshot().rules === 2);
-    await library.locator("#filter-add").click(); await menu("Camera").click();
-    await library.locator("#filter-rule-not").check();
-    await library.locator('#library-filter-panel .library-filter-value[data-value="ilce-7rm3"]').click();
-    await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 0 && HDRLibrary.getSnapshot().rules === 3);
-    await library.locator(".library-rule-chip").filter({ hasText: "Camera is ILCE" }).click();
-    await library.waitForFunction(() => HDRLibrary.getSnapshot().rules === 2);
-    assert.equal((await snapshot()).count, 0, "ISO 800 or more and not that camera: nothing matches all");
-    await library.locator("#filter-match").selectOption("any");
-    await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 5);
-    await library.locator(".library-rule-chip").filter({ hasText: "is not" }).click();
-    await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 1);
+    await library.getByRole("button", {name:"Edit Camera",exact:true}).click();
+    assert.ok(await library.getByLabel("ILCE-7RM3", {exact:true}).isChecked());
+    await library.getByLabel("Not recorded", {exact:true}).check();
+    await library.locator("#library-filter-panel button.button-primary").click();
+    await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 1 && HDRLibrary.getSnapshot().rules === 2);
+    await library.getByRole("button", {name:"Remove ISO filter",exact:true}).click();
+    await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 6);
     await library.locator("#filter-clear").click();
     await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 6 && HDRLibrary.getSnapshot().rules === 0);
     await library.locator("#filter-button").click();
-    console.log("PASS: + Filter value lists, ISO range, is not, match any, chip removal and Clear.");
+    console.log("PASS: tick lists, ISO range, editable unique chips, separate removal and Clear.");
 
     // Tag management.
     await cell("plain-0.png").click(); await cell("plain-1.png").click({ modifiers: ["Control"] });
