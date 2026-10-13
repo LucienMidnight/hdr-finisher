@@ -21,7 +21,8 @@ self.onmessage=async ({data:{id,action,filters,field,knownVersion}})=>{
   else if(action==="values") {
    if(!choices.has(field))choices.set(field,HDRLibraryQuery.values(photos,field));
    result=choices.get(field);
-  } else {
+  } else if(action==="paths") result=HDRLibraryQuery.apply(photos,"name",false,filters).map(photo=>photo.path);
+  else {
    const key=JSON.stringify(filters);
    if(!counts.has(key)){
     if(counts.size>=100)counts.clear();

@@ -706,6 +706,16 @@ kept photos; a subset excludes those outside it. Saved unpinned folder rules
 stay labelled not pinned and match nothing until re-pinned.
 
 
+**Album commands, decided and built October 13:** Smart-album right-click
+and keyboard menus offer Edit rules and name, Save as manual album, and
+Duplicate. Manual albums offer Duplicate. Each creation is one Undo step.
+The editable proposed name is Copy of <name>, then (2), (3), etc., checking
+both album kinds. A manual snapshot uses the shared smart-rule worker at
+confirmation time, including not-connected photos. The smart source stays
+and keeps updating. Manual copies retain all membership; smart copies retain
+all rules and Look in paths, including currently unpinned saved paths. Names
+are written to sidecars through the existing background writer.
+
 Decided:
 
 - **Albums:** hand-picked sets. Photos stay where they are on disk.

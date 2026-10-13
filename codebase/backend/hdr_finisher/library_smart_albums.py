@@ -75,11 +75,14 @@ class SmartAlbums:
             if request.action == "delete":
                 if at is None: raise ValueError("That smart album is no longer in the library.")
                 albums.pop(at)
-            elif request.action in {"create","edit"}:
+            elif request.action in {"create","edit","duplicate"}:
                 name = clean_names([request.name], "Smart album names")[0]
-                if any(a["name"].casefold() == name.casefold() and a["id"] != request.id for a in albums):
+                if any(a["name"].casefold() == name.casefold() and (request.action != "edit" or a["id"] != request.id) for a in albums):
                     raise ValueError("That smart album name is taken. Nothing was changed.")
-                item = {"id":request.id if request.action == "edit" else uuid4().hex, "name":name, "filters":self.filters(request.filters.model_dump())}
+                if request.action == "duplicate" and at is None:
+                    raise ValueError("That smart album is no longer in the library.")
+                filters = deepcopy(albums[at]["filters"]) if request.action == "duplicate" else self.filters(request.filters.model_dump())
+                item = {"id":request.id if request.action == "edit" else uuid4().hex, "name":name, "filters":filters}
                 if request.action == "edit":
                     if at is None: raise ValueError("That smart album is no longer in the library.")
                     albums[at] = item

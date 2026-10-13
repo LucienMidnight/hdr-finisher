@@ -26,7 +26,7 @@
    root.replaceChildren(...albums.map(item=>{
     const row=make("div","library-folder-row library-album-row");row.dataset.smart=item.id;row.classList.toggle("active",active===item.id);row.setAttribute("aria-selected",String(active===item.id));
     const name=make("button","folder-name",item.name);name.type="button";name.title="Smart album · saved filter";name.addEventListener("click",()=>options.open(item.id));
-    const menu=event=>showMenu(event,[{label:"Edit rules and name…",run:()=>editor(item)},{label:"Delete smart album…",run:()=>remove(item)}],{label:"Smart album actions",onError:e=>options.status(e.message)});
+    const menu=event=>showMenu(event,[{label:"Edit rules and name…",run:()=>editor(item)},{label:"Save as manual album…",run:()=>copy(item,true)},{label:"Duplicate",run:()=>copy(item,false)},{label:"Delete smart album…",run:()=>remove(item)}],{label:"Smart album actions",onError:e=>options.status(e.message)});
     row.addEventListener("contextmenu",menu);row.addEventListener("keydown",e=>{if(e.key==="ContextMenu" || e.shiftKey && e.key==="F10")menu(e);});
     // No drop handler: membership is determined only by the saved rules.
     row.append(name,make("span","library-count","◇"));return row;
@@ -46,6 +46,20 @@
   async function remove(item) {
    if(!await ask({title:"Delete smart album",message:`Delete ${item.name}? Photos, grades and settings stay untouched. Ctrl+Z restores the rules.`,confirm:"Delete smart album"}))return;
    await options.run("/api/library/smart-albums",{action:"delete",id:item.id});await refresh();if(active===item.id){active="";options.closed();}
+  }
+  async function copy(item,manual) {
+   await refresh();
+   const handpicked=(await options.api("/api/library/albums")).albums;
+   const value=HDRLibraryAlbumNames.copyName(item.name,[...albums.map(a=>a.name),...handpicked.map(a=>a.name)]);
+   const answer=await ask({title:manual?"Save as Manual Album":"Duplicate Smart Album",message:manual?"The new manual album keeps the photos matching now, including not-connected photos. The smart album keeps updating.":"The new smart album uses the same rules and Look in choices.",fields:[{name:"name",label:"Album name",value}],confirm:manual?"Create manual album":"Duplicate"});
+   if(!answer)return;
+   if(manual) {
+    await refresh();const current=album(item.id);if(!current)throw new Error("That smart album is no longer in the library.");
+    await work("refresh",{filters:current.filters});
+    const paths=await work("paths",{filters:current.filters});
+    await options.run("/api/library/albums/create",{name:answer.name,paths});
+   } else await options.run("/api/library/smart-albums",{action:"duplicate",id:item.id,name:answer.name});
+   await refresh();options.status(`Album ${answer.name} created.`);
   }
   async function editor(item=null,initial=null) {
    const filters=structuredClone(item?.filters || initial || {rules:[],any:false,folders:[]});filters.rules ||= [];filters.folders ||= [];

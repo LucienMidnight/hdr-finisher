@@ -13,6 +13,7 @@ test("worker caches counts and choices, checks versions, and invalidates on inde
  const filters={rules:[{field:"rating",value:5,op:"is"}]};
  assert.equal((await send("refresh",{filters})).result.count,1);
  assert.equal((await send("count",{filters})).result.count,1);assert.equal(counts,1);
+ assert.deepEqual(Array.from((await send("paths",{filters})).result),["D:/a.jpg"]);
  await send("values",{field:"type"});await send("values",{field:"type"});assert.equal(choices,1);
  await send("refresh",{filters});assert.equal(counts,1);assert.equal(requests.at(-1),"/api/library/smart-candidates?version=one");
  assert.equal((await send("candidates",{knownVersion:"one"})).result.photos,null);

@@ -532,6 +532,15 @@ def create_library_router(worker, browser, store=None):
     def album_create(request: AlbumRequest):
         return command(marks.album_create, request.name, request.paths)
 
+    @router.post("/albums/duplicate")
+    def album_duplicate(request: AlbumRequest):
+        def duplicate():
+            with marks._lock:
+                if not marks._exists("album", request.name):
+                    raise ValueError("That album is no longer in the library.")
+                return marks.album_create(request.new_name or "", marks.album_paths(request.name))
+        return command(duplicate)
+
     @router.post("/albums/add")
     def album_add(request: AlbumRequest):
         return command(marks.album_change, request.name, request.paths, True)

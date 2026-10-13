@@ -15,6 +15,7 @@
         const name = make("button", "folder-name", album.name); name.type = "button"; name.title = `Album · ${photos(album.count)}`;
         name.addEventListener("click", () => options.open(album.name));
         const menu = event => showMenu(event, [
+          { label: "Duplicate", run: () => duplicate(album) },
           { label: "Rename album…", run: () => rename(album) },
           { label: "Delete album…", run: () => remove(album) },
         ], { label: "Album actions", onError: report });
@@ -40,6 +41,13 @@
     }
     const add = (name, paths) => paths.length ? command("/api/library/albums/add", { name, paths }, result => result.changed ? `${photos(result.changed)} added to ${name}.` : `Already in ${name}.`) : Promise.resolve();
     const take = (name, paths) => command("/api/library/albums/remove", { name, paths }, result => `${photos(result.changed)} removed from ${name}. The files are untouched.${result.left_library ? ` ${result.left_library.toLocaleString()} are no longer in the library; their folder is not pinned.` : ""}`);
+    async function duplicate(album) {
+      const smart=(await options.api("/api/library/smart-albums")).albums;
+      const value=HDRLibraryAlbumNames.copyName(album.name,[...albums.map(a=>a.name),...smart.map(a=>a.name)]);
+      const answer=await ask({title:"Duplicate Album",message:"The new album has the same photos. Photos stay where they are.",fields:[{name:"name",label:"Album name",value}],confirm:"Duplicate"});
+      if(!answer)return;
+      await command("/api/library/albums/duplicate",{name:album.name,new_name:answer.name},()=>`Album ${answer.name} created.`);
+    }
     async function rename(album) {
       const answer = await ask({ title: "Rename Album", fields: [{ name: "name", label: "Album name", value: album.name }], confirm: "Rename" });
       if (!answer || answer.name === album.name) return;

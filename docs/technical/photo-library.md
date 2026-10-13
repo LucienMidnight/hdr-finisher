@@ -375,6 +375,42 @@ Other temporary files and links are left untouched.
 
 ### Library-wide tag and album commands
 
+October 13 album menus: **Duplicate** creates a new manual or smart album.
+**Save as manual album…** snapshots a smart album using the shared query worker
+at confirmation, including offline indexed originals and virtual copies.
+The source album is unchanged. Each creation uses one backend command and
+one Undo step; manual album memberships use the existing background writer.
+The name box proposes **Copy of <name>**, then **Copy of <name> (2)** and so on,
+checking names of both album kinds and staying within the existing 120-character
+limit. The box stays editable. Smart **Edit rules and name…** already had
+right-click and ContextMenu/Shift+F10 access; these paths are retained.
+
+Final messages added for Library scope and album commands:
+
+| Where | Wording |
+|---|---|
+| Unpin title | Stop showing <folder>? |
+| Unpin body | <N> photos leave the library. <K> stay because they are in albums. Nothing is deleted from disk. (Omit the K sentence when zero.) |
+| After last-album removal | <N> are no longer in the library; their folder is not pinned. (Appended to the existing removal status.) |
+| Delete Album | <N> photos will leave the library; their folder is not pinned. (Appended when any leave.) |
+| New Album | Photos in an album stay in the library even if their folder is unpinned. |
+| Details | Kept in the library by an album; folder not pinned (also shown on an original kept through its virtual copy). |
+| Look in | All pinned folders ticked means the whole library, including photos kept by albums. A folder marked not pinned matches nothing until pinned again. |
+| Duplicate Album | The new album has the same photos. Photos stay where they are. |
+| Duplicate Smart Album | The new smart album uses the same rules and Look in choices. |
+| Save as Manual Album | The new manual album keeps the photos matching now, including not-connected photos. The smart album keeps updating. |
+| Creation status | Album <name> created. |
+| Kept-photo update status | Photos kept by albums updated |
+
+Part 2 validation: 475 Node checks and 1,994 Python checks passed (three
+existing skips). Focused Electron album-command and existing smart-album checks
+passed at 2560×1440, covering naming, offline snapshots, single Undo and both
+Edit menu paths. The first existing smart-album run timed out waiting for its
+155,000-photo fixture count; the diagnostic rerun passed unchanged count and
+responsiveness requirements. Temporary diagnostics were removed. Disposable
+photos only; no installer or push.
+
+
 Rename, Merge and Remove for tags, and Rename and Delete for albums, find
 every photo carrying the name and run the steps above.
 
