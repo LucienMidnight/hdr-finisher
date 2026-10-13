@@ -74,7 +74,6 @@
       const list = targets();
       if (!list.length) return;
       const section = document.createElement("section"); section.className = "library-culling";
-      const count = document.createElement("p"); count.textContent = list.length === 1 ? "Marks" : `${list.length.toLocaleString()} photos selected`; section.append(count);
       const rating = document.createElement("div"); rating.className = "library-rating-controls"; rating.setAttribute("aria-label", "Star rating");
       rating.append(button("0", "Clear rating · 0", { rating: 0 }));
       for (let value = 1; value <= 5; value++) {

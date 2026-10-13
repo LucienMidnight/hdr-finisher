@@ -8,6 +8,11 @@
     selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0,
     folderSelection: new Set(), folderAnchor: "", collection: null, smartFilters: null, allFacts: false, labelNames: {}, indexing: null };
   const standalone = parent === window, libraryDesktop = standalone ? window.hdrFinisherDesktop : null;
+  const navigation = HDRLibraryNavigation.create({ root: document.querySelector(".library-nav"), refresh: () => refreshPins() });
+  const applyTheme = theme => { document.documentElement.dataset.theme = ["default-dark", "default-light", "studio-gray"].includes(theme) ? theme : "default-dark"; };
+  try { applyTheme(JSON.parse(localStorage.getItem("hdr-finisher:application-preferences:v1") || "{}").theme); } catch {}
+  if (!standalone) applyTheme(parent.document.documentElement.dataset.theme);
+  window.addEventListener("storage", event => { if (event.key === "hdr-finisher:application-preferences:v1") { try { applyTheme(JSON.parse(event.newValue || "{}").theme); } catch {} } });
   const postParent = (action, detail = {}) => {
     if (!standalone) parent.postMessage({ type: "hdr-library", action, ...detail }, location.origin);
     else if (libraryDesktop) {
@@ -74,9 +79,10 @@
   const albums = HDRLibraryAlbums.create({ root: $("albums"), addButton: $("add-album"), api, status, run: culling.run,
     selection: () => [...state.selection], smartAction: () => smart.menuAction(), open: name => browseCollection("album", name),
     closed: () => { const back = state.lastFolder || state.pins.find(pin => pin.available)?.path; if (back) void browse(back); else void reopen(); } });
-  const smart = HDRLibrarySmartAlbums.create({ root: $("albums"), api, status, run: culling.run, pins: () => state.pins,
+  const smart = HDRLibrarySmartAlbums.create({ root: $("smart-albums"), api, status, run: culling.run, pins: () => state.pins,
     open: id => browseCollection("smart", id), closed: () => { const back = state.lastFolder || state.pins.find(pin => pin.available)?.path; if (back) void browse(back); }, });
   void smart.refresh().catch(error => status(error.message));
+  $("add-smart-album").addEventListener("click", () => void smart.editor().catch(error => status(error.message)));
   $("filter-save-smart").addEventListener("click", () => { void smart.editor(null, { ...structuredClone(state.filters), folders: state.path ? [state.path] : [] }).catch(error => status(error.message)); });
   const tagWindow = HDRLibraryTags.create({ api, run: culling.run, undo: culling.undo, undoAvailable: culling.undoAvailable,
     showTag: tag => browseCollection("tag", tag), indexing: () => state.indexing?.state === "indexing",
@@ -246,25 +252,22 @@
     const photo = selected(); const root = $("details"), tagFocused = document.activeElement?.id === "library-tag-input"; root.replaceChildren();
     if (!photo || !state.selection.size) { root.textContent = "Select a photo."; return; }
     const one = state.selection.size === 1 && state.selection.has(photo.path);
-    root.append(make("strong", "", one ? fileName(photo) : `${state.selection.size.toLocaleString()} photos selected`));
+    const list = rows => { const dl = document.createElement("dl"); for (const [label, value] of rows) dl.append(make("dt", "", label), make("dd", label === "Name" ? "library-file-name" : "", value)); return dl; };
     if (one) {
-      if (photo.copy_id) root.append(make("p", "library-details-sub", `Virtual copy \u201c${photo.copy_name}\u201d. Its own grade, marks and tags. No second image file.`));
+      const file = make("section", "library-facts"); file.append(make("p", "library-kicker", "File"), list(HDRLibraryFacts.groups(photo)[0][1])); root.append(file);
       if (photo.copy_id) {
+        root.append(make("p", "library-details-sub", `Virtual copy “${photo.copy_name}”.`));
         const rename = make("button", "text-button", "Rename copy…"); rename.type = "button";
         rename.addEventListener("click", () => renameCopy(photo).catch(error => status(error.message))); root.append(rename);
       }
-      root.append(make("p", "library-details-sub", HDRLibraryFacts.headline(photo)));
-      root.append(make("p", "library-details-sub", `${photo.edited ? "Edited" : "Not edited"}${photo.copy_count ? ` \u00b7 ${plural(photo.copy_count, "virtual copy", "virtual copies")}` : ""}`));
-      if (photo.albums?.length) root.append(make("p", "library-details-sub", `In ${photo.albums.join(", ")}${photo.kept_by_album ? " · Kept in the library by an album; folder not pinned" : ""}`));
-      else if (photo.kept_by_album) root.append(make("p", "library-details-sub", "Kept in the library by an album; folder not pinned"));
-    }
+    } else root.append(make("strong", "", `${state.selection.size.toLocaleString()} photos selected`));
+    root.append(make("p", "library-kicker", "Marks"));
     culling.details(root);
     const manage = make("button", "text-button", "Manage tags and labels…"); manage.type = "button"; manage.id = "manage-tags";
     manage.addEventListener("click", () => void tagWindow.open()); root.append(manage);
     if (one) {
       const facts = make("section", "library-facts"); facts.id = "library-facts";
-      const list = rows => { const dl = document.createElement("dl"); for (const [label, value] of rows) dl.append(make("dt", "", label), make("dd", "", value)); return dl; };
-      if (state.allFacts) for (const [kicker, rows] of HDRLibraryFacts.groups(photo)) facts.append(make("p", "library-kicker", kicker), list(rows));
+      if (state.allFacts) for (const [kicker, rows] of HDRLibraryFacts.groups(photo).slice(1)) facts.append(make("p", "library-kicker", kicker), list(rows));
       else facts.append(make("p", "library-kicker", "Camera"), list(HDRLibraryFacts.summary(photo)));
       const more = make("button", "text-button", state.allFacts ? "Show less" : "Show all"); more.type = "button"; more.id = "facts-toggle";
       more.addEventListener("click", () => { state.allFacts = !state.allFacts; updateDetails(); $("facts-toggle")?.focus(); });
@@ -412,15 +415,19 @@
     return wanted <= 1280 ? 1280 : wanted <= 1920 ? 1920 : 2560;
   }
   async function showSingle() {
-    const photo = selected(); state.single?.abort(); state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; state.fitMeta = null; $("native-picture").hidden = true; clearPrefetch();
-    if (!photo || !state.active || state.view !== "single") return;
+    if (!state.active || state.view !== "single") return;
     if (compare.enabled()) { void compare.show(); return; }
+    const photo = selected(), edge = singleEdge();
+    const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}` : "";
+    if (identity && identity === state.singleIdentity && !state.single?.signal.aborted) { positionZoom(); return; }
+    state.singleIdentity = identity;
+    state.single?.abort(); state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; state.fitMeta = null; $("native-picture").hidden = true; clearPrefetch();
+    if (!photo || !state.active || state.view !== "single") return;
     compare.hide();
     const controller = new AbortController(); state.single = controller;
     const current = () => state.active && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
     status(`Loading ${photo.name}…`);
     try {
-      const edge = singleEdge();
       const meta = await loadAndShow(photo, edge, $("single-picture"), controller, current, 0);
       if (!meta || !current()) return;
       state.fitMeta = meta; positionZoom(); if (state.zoom) void showNative();
@@ -432,7 +439,7 @@
         api("/api/library/picture", { path: next.path, edge, quality: "quick", priority: 50 }, ahead.signal)
           .catch((error) => { if (!aborted(error)) console.debug("Library read-ahead:", error.message); });
       }
-    } catch (error) { if (!aborted(error) && !controller.signal.aborted) removeUnreadable(photo, error); }
+    } catch (error) { if (state.single === controller) state.singleIdentity = ""; if (!aborted(error) && !controller.signal.aborted) removeUnreadable(photo, error); }
   }
   function positionZoom() {
     const canvas = $("single-picture"), native = $("native-picture"), stage = $("single-stage"), meta = state.nativeMeta || state.fitMeta;
@@ -523,7 +530,6 @@
     state.review = review; library.classList.toggle("review", review);
     if (review) setView("single"); else setView(state.beforeReview);
     postParent("review", { enabled: review });
-    requestAnimationFrame(() => { if (state.view === "single") showSingle(); });
   }
   function openGrade() {
     if (!selected()) return;
@@ -563,6 +569,7 @@
     } catch (error) { if (!aborted(error) && state.scan === controller) { state.reading = false; state.scanError = error.message; status(error.message); paintGrid(); } }
   }
   function applyQuery() {
+    paintFilterButton();
     const lead = selected()?.path, anchor = state.photos[state.anchor]?.path;
     const base = state.collection?.kind === "smart" ? HDRLibraryQuery.apply(state.allPhotos, state.sort, state.descending, state.smartFilters || {}) : state.allPhotos;
     state.photos = HDRLibraryQuery.apply(base, state.sort, state.descending, state.filters);
@@ -620,10 +627,10 @@
       try { const result = await api("/api/library/tree", { path: folder.path }); children.replaceChildren(...result.children.map((item) => folderRow(item, depth + 1))); }
       catch (error) { status(error.message); }
     });
-    row.append(expand, name); wrapper.append(row, children); return wrapper;
+    row.append(expand, name); if (depth === 0) navigation.pinHandle(row, folder.path); wrapper.append(row, children); return wrapper;
   }
   async function refreshPins() {
-    const result = await api("/api/library/pins"); state.pins = result.pinned;
+    const result = await api("/api/library/pins"); state.pins = navigation.orderPins(result.pinned);
     $("folders").replaceChildren(...state.pins.map((pin) => folderRow(pin))); paintGrid();
   }
   function paintFolderSelection() {
@@ -798,7 +805,13 @@
     $(`collapse-${side}`).setAttribute("aria-label", `${closed ? "Expand" : "Collapse"} ${side === "left" ? "folders" : "details"}`);
   }
   for (const side of ["left", "right"]) $(`collapse-${side}`).addEventListener("click", () => collapse(side, !library.classList.contains(`library-${side}-closed`)));
-  function toggleFilters() { const hidden = !$("library-filterbar").hidden; $("library-filterbar").hidden = hidden; $("filter-button").setAttribute("aria-pressed", String(!hidden)); }
+  function paintFilterButton() {
+    const active = !!(state.filters.raw || state.filters.search?.trim() || state.filters.rating || state.filters.pick || state.filters.label || state.filters.type || state.filters.grade || state.filters.rules?.length);
+    $("filter-button").setAttribute("aria-pressed", String(active));
+    $("filter-add").setAttribute("aria-pressed", String(active));
+    $("filter-button").setAttribute("aria-expanded", String(!$("library-filterbar").hidden));
+  }
+  function toggleFilters() { $("library-filterbar").hidden = !$("library-filterbar").hidden; paintFilterButton(); }
   $("picture-settings").addEventListener("click", async () => {
     try {
       const prefs = await api("/api/library/picture-settings");
@@ -837,8 +850,8 @@
   $("sort-menu").addEventListener("click", event => { const item = event.target.closest("[data-sort]"); if (!item) return; state.sort = item.dataset.sort; paintSort(); applyQuery(); });
   $("sort-dir").addEventListener("click", () => { state.descending = !state.descending; paintSort(); applyQuery(); });
   $("raw-only").addEventListener("click", () => { state.filters.raw = !state.filters.raw; $("raw-only").setAttribute("aria-pressed", String(!!state.filters.raw)); applyQuery(); });
-  for (const name of ["rating", "pick", "label", "type", "search"]) $("filter-" + name).addEventListener(name === "search" ? "input" : "change", event => { state.filters[name] = event.target.value; applyQuery(); });
-  $("filter-clear").addEventListener("click", () => { state.filters = {}; for (const name of ["rating", "pick", "label", "type", "search"]) $("filter-" + name).value = ""; $("raw-only").setAttribute("aria-pressed", "false"); ruleFilters.render(); applyQuery(); });
+  for (const name of ["rating", "pick", "label", "type", "search", "grade"]) $("filter-" + name).addEventListener(name === "search" ? "input" : "change", event => { state.filters[name] = event.target.value; applyQuery(); });
+  $("filter-clear").addEventListener("click", () => { state.filters = {}; for (const name of ["rating", "pick", "label", "type", "search", "grade"]) $("filter-" + name).value = ""; $("raw-only").setAttribute("aria-pressed", "false"); ruleFilters.render(); applyQuery(); });
   const ruleFilters = HDRLibraryFilters.create({ bar: $("filter-rules"), addButton: $("filter-add"), match: $("filter-match"), photos: () => state.allPhotos,
     filters: () => state.filters, changed: () => applyQuery(), reading: () => state.allPhotos.some(photo => !photo.indexed) });
   // One health snapshot owns Activity, indexing and live writer state.
@@ -945,6 +958,7 @@
   new ResizeObserver(() => { paintGrid(); paintFilm(); }).observe(grid);
   window.addEventListener("message", (event) => {
     if (event.origin !== location.origin || event.source !== parent || event.data?.type !== "hdr-library-host") return;
+    if (event.data.action === "theme") applyTheme(event.data.theme);
     if (event.data.action === "active") setActive(event.data.enabled);
     if (event.data.action === "add-folder") openPicker();
     if (event.data.action === "restore") void restoreState(event.data.state).catch(error => status(error.message));
@@ -1029,8 +1043,8 @@
     $("thumbnail-size").value = state.size; paintSort(); paintSize();
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr)); $("zoom-button").setAttribute("aria-pressed", String(state.zoom));
     $("raw-only").setAttribute("aria-pressed", String(!!state.filters.raw));
-    for (const name of ["rating", "pick", "label", "type", "search"]) $("filter-" + name).value = state.filters[name] || "";
-    $("library-filterbar").hidden = !saved.filterOpen; $("filter-button").setAttribute("aria-pressed", String(!!saved.filterOpen));
+    for (const name of ["rating", "pick", "label", "type", "search", "grade"]) $("filter-" + name).value = state.filters[name] || "";
+    $("library-filterbar").hidden = !saved.filterOpen; paintFilterButton();
     collapse("left", !!saved.leftClosed); collapse("right", !!saved.rightClosed); ruleFilters.render();
     await refreshPins();
     if (saved.collection) await browseCollection(saved.collection.kind, saved.collection.name);
@@ -1051,6 +1065,7 @@
     $("popout-library").classList.add("dock"); $("popout-library").setAttribute("aria-label", "Dock Library");
     $("popout-library").title = "Return Library to the main window";
     libraryDesktop?.onLibraryWindowChanged(message => {
+      if (message.action === "theme") applyTheme(message.theme);
       if (message.action === "close") void libraryDesktop.dockLibrary(portableState()).catch(error => status(error.message));
     });
     libraryDesktop?.onDisplayStateChanged(() => {
@@ -1071,7 +1086,9 @@
       const options = await api("/api/library/options"); state.timing = options.timing;
       state.labelNames = (await api("/api/library/preferences")).label_names;
       void albums.refresh().catch(error => status(error.message)); void pollIndexing();
-      const saved = libraryDesktop ? (await libraryDesktop.getLibraryWindow()).state : null;
+      const windowState = libraryDesktop ? await libraryDesktop.getLibraryWindow() : null;
+      if (windowState) applyTheme(windowState.theme);
+      const saved = windowState?.state;
       if (saved) await restoreState(saved);
       else { await refreshPins(); const first = state.pins.find((pin) => pin.available); if (first) await browse(first.path); }
       await libraryDesktop?.rendererReady();

@@ -560,7 +560,7 @@ function registerIpc() {
     if (!windows.has("library")) libraryWindowState = checkedLibraryState(snapshot);
     const window = await createWindow("library"); window.show(); window.focus(); return true;
   });
-  handleWindow("desktop:get-library-window", () => ({ detached: windows.has("library"), state: libraryWindowState }));
+  handleWindow("desktop:get-library-window", () => ({ detached: windows.has("library"), state: libraryWindowState, theme: applicationPreferences.theme }));
   handleWindow("desktop:dock-library", (record, snapshot) => {
     if (record.role !== "library") throw new Error("Only Library can dock itself.");
     libraryWindowState = checkedLibraryState(snapshot);
@@ -628,6 +628,8 @@ function registerIpc() {
   handle("desktop:delete-grading-preset", (presetId) => deleteGradingPreset(presetId));
   handle("desktop:set-preferences", (value) => {
     applicationPreferences = sanitizeApplicationPreferences(value);
+    const library = windows.get("library")?.window;
+    if (library && !library.isDestroyed()) library.webContents.send("desktop:library-window", { action: "theme", theme: applicationPreferences.theme });
     renderingMode = applicationPreferences.renderingMode;
     persistApplicationPreferences();
     buildMenu();

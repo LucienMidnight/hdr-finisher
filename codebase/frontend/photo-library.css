@@ -255,3 +255,26 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-smart-count { color: var(--body); }
 #smart-albums { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding: 6px; }
 .library-left-closed #smart-albums { display: none; }
+
+/* Scrollable library surfaces use the same themed colours as Grade's rail. */
+.library *, .library-picker *, .library-smart-editor *, .library-tags *, .library-filter-panel * { scrollbar-color: var(--border) var(--panel); }
+.library-nav { overflow-y: auto; }
+.library-nav-section { display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0; }
+.library-nav-section #folders, .library-nav-section #albums, .library-nav-section #smart-albums { max-height: none; overflow: visible; min-height: 0; }
+.library-nav-section + .library-nav-section { border-top: 1px solid var(--hairline); }
+.library-left-closed .library-nav-section { display: none; }
+.library-left-closed .library-nav-section[data-section="folders"] { display: block; }
+.library-left-closed .library-nav .section-handle, .library-left-closed .library-nav .section-toggle { display: none; }
+.library-drag-handle { flex: 0 0 22px; width: 22px; padding: 0; border: 0; background: transparent; color: var(--quiet); cursor: grab; font: inherit; }
+.library-drag-handle:hover { color: var(--text); }
+.library-nav .drag-target { box-shadow: inset 0 2px var(--accent); }
+#details .library-file-name { color: var(--text); font-weight: var(--panel-title-font-weight); }
+#details > .library-facts:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.library-map-status { background: color-mix(in srgb, var(--panel) 88%, transparent); border-radius: var(--radius); }
+.library-toolbar #filter-button[aria-pressed="true"] { background: var(--accent-bed); border-color: var(--accent); color: var(--text); }
+.library-toolbar #filter-button[aria-pressed="false"][aria-expanded="true"] { border-color: var(--border); color: var(--body); }
+
+.library-heading .section-toggle { display: grid; place-items: center; flex: 0 0 var(--panel-collapse-button-size); width: var(--panel-collapse-button-size); height: var(--panel-collapse-button-size); padding: 0; border: 0; background: transparent; color: var(--body); }
+#details .library-culling { border-top: 0; margin-top: 4px; padding-top: 4px; }
+
+#filter-add[aria-pressed="true"] { background: var(--accent-bed); color: var(--text); border-color: var(--accent); }

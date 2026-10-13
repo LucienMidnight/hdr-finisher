@@ -64,8 +64,11 @@
       panel.hidden = false; place();
       (panel.querySelector(".library-filter-value, .library-filter-range input") || box).focus();
     }
+    let closeOnClick = false;
+    options.addButton.addEventListener("pointerdown", () => { closeOnClick = !panel.hidden || (HDRLibraryDialogs.menuOpen() && document.getElementById("library-folder-menu").getAttribute("aria-label") === "Filter by"); }, true);
     options.addButton.addEventListener("click", event => {
       close();
+      if (closeOnClick) { closeOnClick = false; HDRLibraryDialogs.closeMenu(); return; }
       showMenu(event, Object.entries(query.FIELDS).map(([id, field]) => ({ label: field.label, run: () => open(id) })), { label: "Filter by", anchor: options.addButton });
     });
     options.match.addEventListener("change", () => { options.filters().any = options.match.value === "any"; changed(); });

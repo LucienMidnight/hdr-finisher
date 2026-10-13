@@ -85,6 +85,7 @@
       return (!folders.length || folders.some(folder => path.startsWith(folder) && (!photo.library_pins || photo.library_pins.some(pin => String(pin).replaceAll("\\", "/").replace(/\/$/, "").toLocaleLowerCase() + "/" === folder)))) && (!filters.raw || rawTypes.has(photo.type)) && (!filters.type || photo.type === filters.type)
         && (!filters.rating || (marks.rating || 0) >= Number(filters.rating))
         && (!filters.pick || (filters.pick === "hide-rejected" ? marks.pick !== "reject" : (marks.pick || "unmarked") === filters.pick))
+        && (!filters.grade || (filters.grade === "graded" ? !!photo.edited : !photo.edited))
         && (!filters.label || marks.label === filters.label)
         && (!needle || photo.name.toLocaleLowerCase().includes(needle) || tags.some(tag => tag.toLocaleLowerCase().includes(needle)))
         && (!rules.length || (filters.any ? rules.some(rule => matches(photo, rule)) : rules.every(rule => matches(photo, rule))));

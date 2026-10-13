@@ -43,3 +43,10 @@ test("copies stay after their original in either sort direction; marks and copy 
   assert.deepEqual(apply(family,"rating",false,{rating:"4"}).map(p=>p.path),["a|copy|1"]);
   assert.deepEqual(apply(family,"name",false,{rules:[{field:"copy",value:"virtual copy"}]}).map(p=>p.path),["a|copy|1"]);
 });
+
+test("Grade filters use saved grades independently of marks, including virtual copies", () => {
+ const rows = [{...photos[0], edited: false}, {...photos[1], edited: true}, {...photos[2], edited: true, copy_id: "copy"}];
+ assert.deepEqual(apply(rows, "name", false, {grade:"graded"}).map(p=>p.path), ["c", "b"]);
+ assert.deepEqual(apply(rows, "name", false, {grade:"ungraded"}).map(p=>p.path), ["a"]);
+ assert.deepEqual(apply(rows, "name", false, {grade:"graded", rating:"2"}).map(p=>p.path), ["b"]);
+});

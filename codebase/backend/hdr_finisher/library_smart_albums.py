@@ -24,6 +24,7 @@ class SmartRules(BaseModel):
     type: str = ""
     search: str = ""
     raw: bool = False
+    grade: str = ""
 
 
 class SmartCommand(BaseModel):

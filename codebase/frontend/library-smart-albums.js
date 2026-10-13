@@ -14,7 +14,7 @@
    }
    return new Promise((resolve,reject)=>{const id=++serial;pending.set(id,{resolve,reject});worker.postMessage({id,action,...extra});});
   }
-  const root=make("div");root.id="smart-albums";options.root.after(root);
+  const root=options.root;
   const select=(label,values,value)=>{const s=make("select");s.setAttribute("aria-label",label);s.append(...values.map(v=>new Option(v.label??v,v.value??v)));s.value=value;return s;};
   const album=id=>albums.find(a=>a.id===id);
   async function candidates() {
@@ -73,6 +73,7 @@
    for(const [key,label] of [["rating","Minimum rating"],["pick","Pick status"],["label","Colour label"],["type","File type"],["search","File name or tag"]]) if(filters[key]) {
     const line=make("label","library-ask-field"),input=make("input");input.value=String(filters[key]);input.setAttribute("aria-label",label);line.append(make("span","",`Required: ${label}`),input);common.append(line);input.addEventListener("input",()=>{filters[key]=input.value;count();});
    }
+   if(filters.grade){const label=make("label","library-ask-field"),input=select("Grade status",[{value:"",label:"Any grade status"},{value:"graded",label:"Graded"},{value:"ungraded",label:"Ungraded"}],filters.grade);label.append(make("span","","Required: Grade status"),input);common.append(label);input.addEventListener("change",()=>{filters.grade=input.value;count();});}
    if(filters.raw){const label=make("label"),box=make("input");box.type="checkbox";box.checked=true;label.append(box,make("span","","Required: RAW only"));box.addEventListener("change",()=>{filters.raw=box.checked;count();});common.append(label);}
    body.append(common);
    const rows=make("div","library-smart-rows"),add=make("button","text-button","+ Add rule");add.type="button";body.append(rows,add);
