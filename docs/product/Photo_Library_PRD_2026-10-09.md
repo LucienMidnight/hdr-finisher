@@ -2405,6 +2405,170 @@ logs, copies and images: `codebase/output/library-fullscreen-speed-trial/`.
 Validation: 480 Node tests passed; 1,996 pytest passed, three skipped; this
 trial's Electron GPU stages completed sequentially. No production files changed.
 
+**M9, October 14 (camera RAW cold-disk/decode deep dive; prototype only):**
+The best measured resident-GPU route reaches **713 ms median**, versus
+**819 ms** for the CPU route. It does not meet the 500 ms cold-picture or
+three-pictures/second targets. Thirty-file browsing reaches 12/30 ready at
+500 ms and 0/30 at 250/100 ms. Nothing in shipped Library, Grade, export,
+Proof, shaders, limits or cache preferences changed. Steve accepts **10 GB**
+as the planned default full-size disk allowance; it is not adopted here.
+
+Conditions: disposable copies on D:, Windows `CreateFileW` with
+`FILE_FLAG_NO_BUFFERING | FILE_FLAG_SEQUENTIAL_SCAN`, 4096-aligned buffers and
+read lengths. This bypasses Windows file cache even after copying. Enclosure
+and disk firmware caches are uncontrolled; these are physical-I/O requests,
+not a power-cycled disk qualification. Read timing is ReadFile alone; its
+memory copy is separate. RAW unpack includes header open and forced
+`raw_image_visible` access: rawpy.imread alone is lazy and was not counted
+as unpack. First incorrect header-only floor data was replaced before reporting.
+Sources/project folders and the real app cache were never written.
+
+A/B/E use six M7 camera representatives (two Sony, Canon, Fuji, Nikon, DJI),
+two samples per file, median within file then across files. Current folder
+inventory adds no brand beyond these and tops out at 48 MP; linear DxO DNG,
+line-scan DNG and other non-camera formats are excluded. D uses 30 disposable
+files from 18 distinct camera sources, with repeated source content disclosed
+in manifest.json, not the mixed-format M7 ordering. Background and browsing
+figures are single bounded batches/runs, not statistical medians. Normal
+priority and 12 requested native threads for the viewed route; below-normal
+separate one-thread processes for read-ahead. Electron runs were sequential
+at 2560x1440. Picture dimensions fit 2160x1440; Sony portraits are 961x1440.
+Renderer/pipeline and worker startup are warmed separately. Two animation
+frames after GPU completion indicate composition opportunity, not panel scanout.
+
+**A — Read/unpack floor, milliseconds.**
+
+| Camera/file | Read, 1 thread | Unpack, 1 thread | Read, 12 threads | Unpack, 12 threads |
+|---|---:|---:|---:|---:|
+| Sony DSC02767.ARW | 444 | 44 | 443 | 44 |
+| Sony DSC06615.ARW | 249 | 142 | 249 | 140 |
+| Canon 2L1B8631.CR2 | 145 | 313 | 147 | 317 |
+| Fuji X-E2S RAF | 197 | 16 | 197 | 17 |
+| Nikon D7500 NEF | 101 | 233 | 88 | 233 |
+| DJI_0071-2.DNG | 482 | 116 | 486 | 115 |
+
+Slowest disk read: DJI; slowest unpack: Canon. Extra threads barely change
+unpacking in this installed LibRaw. DJI's read plus unpack alone is about
+601 ms, already above the entire target. Parallel reads of all six files
+(two batches/count) take median 1620 / 1539 / 1590 / 1533 ms with 1 / 2 / 3 /
+6 lanes. Six does not establish a useful improvement over two; this small,
+nearby-copy batch also does not prove six reads are worse on the disk.
+
+**B — Cold RAW to drawn picture.** Both routes retain LibRaw half-size linear
+development, unity WB/camera matrix where available, and current LibRaw sRGB
+fallback for DJI (its preferred matrix has no red row). The CPU route uses
+float32 colour conversion and per-channel Pillow shrink. The GPU route uploads
+RGB16 camera data, shrinks/converts on WebGPU, inserts the resulting scene
+texture into the existing Library renderer and draws directly. No full-scene
+CPU readback or disk save precedes the display. Starting look uses a sparse
+camera sample on CPU; this is another visual approximation, not exact parity.
+
+| Route | End-to-end median, ms | Slowest per-file median |
+|---|---:|---|
+| CPU preparation, direct RGBA-half handoff | 819 | DJI, 1174 ms |
+| GPU conversion, resident scene/direct draw | 713 | DJI, 1053 ms |
+
+Median main GPU-route components: disk read 232 ms, unpack 127 ms, LibRaw
+develop 75 ms, sampled look 3 ms, camera packing 5 ms, page tail 177 ms.
+The page tail includes fetch/upload (94 ms), compute/submitted-copy completion
+(56 ms), renderer draw and frame waits. Stage medians do not add to the
+median total. These are wall-clock queue timings, not GPU timestamp profiling.
+CPU shrink/colour/packing medians are 109/122/29 ms. GPU removes those CPU
+steps but transfers a larger source, giving a net **106 ms (13%)** median
+screen improvement; it is slightly slower for DSC06615.ARW. New GPU uploads
+are 6 bytes/source pixel versus 8 for RGBA-half, but more pixels cross the
+page than fitted scene transport: fewer total bytes is not demonstrated.
+Fitted dimensions and no-readback/save were used together; their individual
+speed contributions were not isolated. M7's roundtrip result used different
+conditions and is not a matched before/after comparison.
+
+**C — Background work beside Grade and a prioritized viewed photo.**
+
+| Background processes | Prepared and drawn photos/s | Viewed-photo screen time | Normal Grade exposure preview |
+|---|---:|---:|---:|
+| 1 | 1.44 | 1.13 s | 10 ms |
+| 2 | 2.00 | 1.29 s | 8 ms |
+| 3 | 2.15 | 1.53 s | 10 ms |
+
+Each batch prepares/draws six representatives plus a separate viewed Sony.
+The viewed request has a reserved lane; it does not queue behind read-ahead.
+Grade exposure change settles exact/ready throughout (idle comparison 16 ms).
+This covers ordinary fit preview, not heavy denoise/export. Library timer
+lateness was 35-40 ms with 2/3 background lanes; the first one-lane batch had
+a 654 ms stall. Do not call responsiveness fully qualified. Two background
+lanes plus one reserved viewed lane are the better trade-off: three background
+lanes buy little throughput and worsen viewed latency, allowing four reads.
+
+**D — Fresh, unbuffered 30-file browsing with two background lanes.**
+Priority follows current selection; passed pending work is skipped; in-flight
+work finishes. Up to ten prepainted canvases are held, and the selected canvas
+is made visible with two animation frames before final-wait timing stops.
+This qualifies the prototype queue/loopback handoff, not production IPC.
+
+| Interval | Sharp at selection | Final stopped-photo wait | Maximum selection lateness |
+|---|---:|---:|---:|
+| 500 ms | 12/30 | 1.56 s | 39 ms |
+| 250 ms | 0/30 | 5.54 s | 52 ms |
+| 100 ms | 0/30 | 1.37 s | 62 ms |
+
+At steady pace only 40% arrive sharp; stop recovery is 2.7-11.1 times the
+500 ms target. Faster pace is not monotonically worse. The 250 ms outlier
+has no per-job queue trace to diagnose it; no broad timing chase was run.
+Steve's responsiveness judgment still matters; these prototype results do
+not establish FastRawViewer-like recovery.
+
+**E — Differences against today's Library, same fitted dimensions.**
+
+| Camera/file | SDR mean code difference / maximum | HDR relative mean difference |
+|---|---|---:|
+| Sony DSC02767.ARW | 2.125 / 19 | 0.104% |
+| Sony DSC06615.ARW | 0.040 / 1 | 0.035% |
+| Canon CR2 | 0.259 / 1 | 0.725% |
+| Fuji RAF | 1.410 / 210 | 2.698% |
+| Nikon NEF | 0.071 / 1 | 0.035% |
+| DJI DNG | 0.173 / 33 | 0.313% |
+
+SDR values are 8-bit sRGB code differences; HDR uses actual linear renderer
+readback for comparison only, outside the timed screen route. Full side-by-side
+SDR/HDR rows are comparison-0.png through comparison-5.png; corresponding
+details-N.png show matching bright/shadow crops. PNG captures are SDR and
+can clip HDR highlights; they do not establish physical HDR-panel appearance.
+Fuji's isolated differences and Sony's mean change need Steve's eye. No
+identical-pixel tolerance is applied or loosened. Both thumbnail and full-size
+would have to derive from the same new scene texture/route when built; matched
+thumbnail generation itself was not prototyped or timed here.
+
+**Targets and recommendation.** Best standalone route is 213 ms (43%) over
+the 500 ms target, slowest DJI 553 ms over. Best measured background rate is
+72% of three/s; the recommended two background lanes reach 67%. None of the
+three browsing/recovery targets is met reliably. Cold disk cost is confirmed;
+unpack is sometimes close to the budget and does not gain much from threads;
+GPU conversion and avoiding readback are useful; less total page data and the
+isolated fitted-size gain remain unproved. This hybrid still develops/demosaics
+on CPU, including Fuji X-Trans; native unpacked-mosaic GPU demosaicing was not
+implemented and its possible speed is not claimed.
+
+Recommend a resident GPU browsing scene with two background lanes, a reserved
+viewed lane, bounded memory and C: read-ahead/disk reuse (planned 10 GB default).
+Keep LibRaw's Fuji/DJI handling initially, correct the visual differences and
+reduce the large loopback/IPC upload before adoption. This adds GPU texture
+lifetime/queue/transport complexity; camera colour, clipping and contention
+with Grade can break. Do not promise universal 500 ms cold RAWs from this disk:
+DJI's measured physical read/unpack floor already exceeds it. Grade stays on
+its current full route. This recommendation is a design choice, not a shipped
+pipeline/cache-budget change.
+
+Reproduce from codebase with .venv Python: library-raw-deep-dive.py init;
+M9_THREADS=1 then =12 for floor; =12 for cpu. Run
+node tests/run-in-electron.js tests/performance/library-raw-deep-dive.js,
+then --browse-only, then --coexist-only, with window 2560x1440; finish with
+library-raw-deep-dive-summary.py. Raw JSON, logs, copies and images are in
+ignored output/library-raw-deep-dive. No new dependencies. Python compile and
+Node syntax checks passed. These new performance instruments are outside the
+fast unit suites' coverage; no broad unit/GPU sweep or installer was run.
+Only prototype scripts and this M9 note changed. Bounded slow runs stayed
+below the 30-minute allowance.
+
 **T1, October 10 (trial entirely outside the app):** Temporary copies of
 Canon CR2, Fuji RAF and DJI JPEG were saved beside today's project document,
 closed and reopened. Three grade changes 50 ms apart used a trial 500 ms
