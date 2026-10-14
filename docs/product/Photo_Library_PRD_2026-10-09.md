@@ -834,6 +834,18 @@ proposals:
   decision above against gain-map files for unedited photos. Details are
   in the slice 3 brief, Stage B. Grades changed in bulk need more work in
   slice 7; see section 8, "Carried forward to slice 7".
+- Superseded in part by Steve, October 14: edited photos need a
+  screen-sized picture. Steve now culls in full screen, where an edited
+  photo shown from a 1024-pixel picture looks far softer than its
+  unedited neighbours (DSC07072.ARW: a 1024 x 684, 73 KB JPEG stretched
+  to the screen). The saved picture is made at the same fitted size as
+  unedited full-size pictures, at a JPEG quality that holds up full
+  screen, still as one gain-map file for SDR and HDR. Existing edited
+  photos are remade in the background, without the user re-saving each.
+  Because remaking one takes a full Grade render (about 9-12 seconds in
+  the log), these pictures must not be pushed out by full-size browsing
+  pictures. The resolution setting may keep smaller choices for limited
+  disks, but screen size is the default.
 - Only visible grid/filmstrip cells are requested. Requests are cancelled
   when they leave the screen. Single view reads ahead to its next and
   previous neighbours. Work uses the existing low-priority helper and
