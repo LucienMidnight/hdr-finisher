@@ -24,7 +24,7 @@ from .raw_import import RAW_EXTENSIONS
 
 FAST_THUMBNAIL_EXTENSIONS = RAW_EXTENSIONS | {".avif", ".png", ".jpg", ".jpeg", ".bmp"}
 EMBEDDED_PREVIEW_EXTENSIONS = RAW_EXTENSIONS | {".jpg", ".jpeg", ".tif", ".tiff"}
-THUMBNAIL_CACHE_VERSION = "natural-aspect-v4"
+THUMBNAIL_CACHE_VERSION = "embedded-jpeg-v5"
 
 WINDOWS_KNOWN_FOLDER_IDS = {
     "desktop": "B4BFCC3A-DB2C-424C-B029-7FE99A87C641",
