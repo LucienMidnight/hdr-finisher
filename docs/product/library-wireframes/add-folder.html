@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en" class="desktop-shell">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add folder mock-up · HDR Finisher</title>
+  <!-- The app's real stylesheet, so colours, fonts and buttons are the real ones. -->
+  <link rel="stylesheet" href="../../../codebase/frontend/styles.css">
+  <style>
+    /* Add folder mock-up, October 14, 2026. Uses only the app's tokens.
+       Copies of the app's dark-theme values, so the page still reads if the
+       app stylesheet cannot be reached. */
+    :root { --app: #0b0d0f; --panel: #101315; --raised: #171b1e; --input: #12171a; --deep: #06080a;
+      --hairline: rgba(255,255,255,.07); --border: #252a2e; --text: #f2f4f3; --body: #c3c8cb; --muted: #8d9299;
+      --quiet: #5f6870; --accent: #9b7bff; --inverse: #0c1113; --backdrop: #050607; --shadow: #00000059;
+      --sans: "Segoe UI", system-ui, sans-serif; --display: var(--sans); --mono: Consolas, ui-monospace, monospace; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--backdrop, #050607); font-family: var(--sans); color: var(--body); }
+    .note { position: fixed; top: 0; left: 0; right: 0; padding: 6px 12px; background: #1d1a10; color: #d9cfae; font-size: 12px; border-bottom: 1px dashed var(--quiet); }
+    .note b { color: #efbb55; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; margin-right: 10px; }
+    .dlg { width: min(1130px, calc(100vw - 32px)); height: min(700px, calc(100vh - 60px)); margin-top: 28px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 20px 60px var(--shadow); overflow: hidden; }
+    .head { padding: 16px 24px 12px; border-bottom: 1px solid var(--hairline); }
+    .head h2 { margin: 0 0 4px; font-family: var(--display); font-size: 18px; color: var(--text); }
+    .head p { margin: 0; font-size: 12px; color: var(--muted); }
+    .pathbar { display: flex; align-items: center; gap: 10px; padding: 12px 24px; }
+    .pathbar input { flex: 1; height: 30px; padding: 0 10px; background: var(--input); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: 12px; }
+    .txt { background: none; border: 0; color: var(--muted); font-size: 12px; cursor: pointer; padding: 4px 6px; }
+    .txt:hover { color: var(--text); }
+    .seg { display: flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .seg button { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; background: transparent; border: 0; color: var(--muted); font-size: 12px; cursor: pointer; }
+    .seg button + button { border-left: 1px solid var(--border); }
+    .seg button.on { background: var(--raised); color: var(--text); }
+    .seg svg { width: 14px; height: 14px; }
+    .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 160px 1fr 250px; margin: 0 24px; border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
+    .places { padding: 14px 0; border-right: 1px solid var(--hairline); overflow: auto; }
+    .places button { display: block; width: 100%; text-align: left; padding: 7px 18px; background: none; border: 0; color: var(--muted); font-size: 13px; cursor: pointer; }
+    .places button:hover { color: var(--text); background: var(--raised); }
+    .main { min-width: 0; overflow: auto; background: var(--app); }
+    /* list view */
+    .cols, .row { display: grid; grid-template-columns: 28px 1fr 100px 130px 110px; align-items: center; }
+    .cols { position: sticky; top: 0; z-index: 1; padding: 8px 12px; background: var(--app); font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--quiet); border-bottom: 1px solid var(--hairline); }
+    .row { width: 100%; padding: 9px 12px; background: none; border: 0; border-bottom: 1px solid var(--hairline); color: var(--body); font-size: 13px; text-align: left; cursor: pointer; }
+    .row b { color: var(--text); font-weight: 600; }
+    .row:hover, .tile:hover { background: var(--raised); }
+    .row.sel, .tile.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); outline: 1px solid var(--accent); outline-offset: -1px; }
+    .ico { width: 16px; height: 16px; color: var(--muted); }
+    /* grid view */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 6px; padding: 10px; }
+    .tile { display: flex; flex-direction: column; gap: 6px; padding: 6px; background: none; border: 0; border-radius: 5px; color: var(--body); cursor: pointer; text-align: center; }
+    .frame { aspect-ratio: 1; display: grid; place-items: center; background: var(--deep); border-radius: 3px; overflow: hidden; }
+    .frame img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+    .frame .big { width: 46%; height: 46%; color: var(--quiet); }
+    .tile span { font-size: 11px; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .loading { background: linear-gradient(90deg, var(--deep) 0%, var(--raised) 50%, var(--deep) 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+    /* preview pane */
+    .side { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-left: 1px solid var(--hairline); overflow: auto; }
+    .side h3 { margin: 0; font-size: 13px; color: var(--text); word-break: break-all; }
+    .side .meta { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .side .hint { font-size: 11px; color: var(--quiet); }
+    .peek { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .peek div { aspect-ratio: 3/2; background: var(--deep); border-radius: 3px; overflow: hidden; display: grid; place-items: center; }
+    .peek img { width: 100%; height: 100%; object-fit: cover; }
+    .hero { background: var(--deep); border-radius: 4px; display: grid; place-items: center; aspect-ratio: 1; overflow: hidden; }
+    .hero img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .foot { display: flex; align-items: center; gap: 10px; padding: 14px 24px; }
+    .foot .status { flex: 1; font-size: 12px; color: var(--muted); }
+    .btn { height: 32px; padding: 0 16px; border-radius: 5px; border: 1px solid var(--border); background: var(--raised); color: var(--text); font-size: 13px; cursor: pointer; }
+    .btn.primary { background: var(--text); color: var(--inverse); border-color: var(--text); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="note"><b>Mock-up</b>Click a folder to see its peek in the right pane; double-click to go inside. Click a photo to preview it. Switch List / Grid at the top right. Photos are stand-ins.</div>
+
+  <div class="dlg" role="dialog" aria-labelledby="t">
+    <div class="head">
+      <h2 id="t">Add folder</h2>
+      <p>Photos stay where they are. Ctrl-click or Shift-click to choose several folders. Double-click to look inside.</p>
+    </div>
+    <div class="pathbar">
+      <button class="txt" id="up">Up</button>
+      <input id="path" value="D:\Photos\2026" aria-label="Folder path">
+      <button class="txt">Go</button>
+      <div class="seg" role="group" aria-label="View">
+        <button id="v-list" title="List"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>List</button>
+        <button id="v-grid" class="on" title="Grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Grid</button>
+      </div>
+    </div>
+    <div class="body">
+      <nav class="places">
+        <button>C:</button><button>D:</button><button>Pictures</button><button>Downloads</button><button>Desktop</button><button>Documents</button><button>Home</button><button>Exports</button><button>HDR Test Images</button><button>Play_Raw</button><button>test-photos-delete-later</button>
+      </nav>
+      <div class="main" id="main"></div>
+      <aside class="side" id="side"></aside>
+    </div>
+    <div class="foot">
+      <span class="status" id="status">Pin this folder, or select folders below.</span>
+      <button class="btn">Cancel</button><button class="btn primary">Pin folder</button>
+    </div>
+  </div>
+
+<script>
+const FOLDER_SVG = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const BIG_FOLDER = FOLDER_SVG.replace('class="ico"', 'class="big"');
+const PHOTO_SVG = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>';
+const img = n => `photos/${String(n).padStart(3, "0")}.jpg`;
+
+// Stand-in contents of D:\Photos\2026 and one dated folder inside it.
+const folders = [
+  { name: "20260830", count: 214, kinds: "ARW", first: 0 },
+  { name: "20260905", count: 87, kinds: "ARW, JPG", first: 6 },
+  { name: "20260912", count: 1204, kinds: "ARW", first: 12 },
+  { name: "20260920", count: 36, kinds: "ARW, DNG", first: 20 },
+  { name: "20261003 Taipei", count: 412, kinds: "ARW, HIF", first: 28 },
+  { name: "Exports", count: 18, kinds: "AVIF, JPG", first: 40 },
+  { name: "Empty card dump", count: 0, kinds: "", first: -1 },
+];
+const photosIn = start => Array.from({ length: 30 }, (_, i) => ({
+  name: `DSC0${6997 + i}.ARW`, size: `${83400 + ((i * 37) % 300)} KB`, kind: i === 7 ? "OpenEXR image" : "Sony RAW image",
+  date: "9/15/2026", src: img((start + i) % 54), slow: i === 7,
+}));
+
+let view = "grid", place = "root", selected = -1;
+const $ = id => document.getElementById(id);
+
+function entries() {
+  if (place === "root") return folders.map(f => ({ ...f, dir: true }));
+  return photosIn(12);
+}
+
+function render() {
+  const list = entries(), main = $("main");
+  $("path").value = place === "root" ? "D:\\Photos\\2026" : "D:\\Photos\\2026\\20260912";
+  $("v-list").classList.toggle("on", view === "list"); $("v-grid").classList.toggle("on", view === "grid");
+  if (view === "list") {
+    main.innerHTML = `<div class="cols"><span></span><span>Name</span><span>Size</span><span>Kind</span><span>Date added</span></div>` +
+      list.map((e, i) => `<button class="row${i === selected ? " sel" : ""}" data-i="${i}">${e.dir ? FOLDER_SVG : PHOTO_SVG}<b>${e.name}</b><span>${e.dir ? "--" : e.size}</span><span>${e.dir ? "Folder" : e.kind}</span><span>${e.dir ? "--" : e.date}</span></button>`).join("");
+  } else {
+    main.innerHTML = `<div class="grid">` + list.map((e, i) => {
+      const inner = e.dir ? BIG_FOLDER : `<img src="${e.src}" alt="" loading="lazy">`;
+      // One tile shows the loading state of a format with no embedded picture.
+      const loading = !e.dir && e.slow;
+      return `<button class="tile${i === selected ? " sel" : ""}" data-i="${i}" title="${e.name}"><div class="frame${loading ? " loading" : ""}">${loading ? "" : inner}</div><span>${e.name}</span></button>`;
+    }).join("") + `</div>`;
+  }
+  main.querySelectorAll("[data-i]").forEach(el => {
+    el.onclick = () => { selected = Number(el.dataset.i); render(); };
+    el.ondblclick = () => { const e = entries()[Number(el.dataset.i)]; if (e.dir && e.count) { place = "inside"; selected = -1; render(); } };
+  });
+  main.querySelector(".sel")?.scrollIntoView({ block: "nearest" });
+  side();
+}
+
+function side() {
+  const e = entries()[selected], s = $("side");
+  if (!e) { s.innerHTML = `<h3>Select a folder or photo.</h3><div class="hint">Photo files stay in their folders.</div>`; $("status").textContent = "Pin this folder, or select folders below."; return; }
+  if (e.dir) {
+    $("status").textContent = "1 folder selected";
+    if (!e.count) { s.innerHTML = `<h3>${e.name}</h3><div class="meta">No photos in this folder.</div>`; return; }
+    s.innerHTML = `<h3>${e.name}</h3>
+      <div class="peek">${[0, 1, 2, 3].map(k => `<div><img src="${img(e.first + k)}" alt=""></div>`).join("")}</div>
+      <div class="meta">${e.count.toLocaleString()} photos · ${e.kinds}</div>
+      <div class="hint">A quick look from the camera's own previews. Double-click to look inside.</div>`;
+  } else {
+    $("status").textContent = "Pin this folder, or select folders below.";
+    s.innerHTML = e.slow
+      ? `<div class="hero loading"></div><h3>${e.name}</h3><div class="meta">${e.size} · ${e.kind}</div><div class="hint">No camera preview in this file. Making a temporary preview…</div>`
+      : `<div class="hero"><img src="${e.src}" alt=""></div><h3>${e.name}</h3><div class="meta">${e.size} · ${e.kind}</div><div class="hint">Camera's own preview. The Library makes its own picture once the folder is pinned.</div>`;
+  }
+}
+
+$("v-list").onclick = () => { view = "list"; render(); };
+$("v-grid").onclick = () => { view = "grid"; render(); };
+// Going Up selects the folder just left, so you can see where you were.
+$("up").onclick = () => { if (place !== "root") { place = "root"; selected = folders.findIndex(f => f.name === "20260912"); render(); } };
+render();
+</script>
+</body>
+</html>
