@@ -23,9 +23,15 @@ async function eventually(check) {
   assert.fail('Window condition timed out');
 }
 (async () => {
+  console.log('[library] launching disposable navigation check');
   const app = await electron.launch({ executablePath: require(require.resolve('electron', { paths: [path.join(root, 'desktop')] })), args: [path.join(root, 'desktop')], cwd: path.join(root, 'desktop'), env, timeout: 90000 });
+  console.log('[library] launched');
   try {
-    const main = await app.firstWindow();
+    // Select the loaded app page; firstWindow's initial-load waiter can miss
+    // the load event when the native runner has already awaited main-process setup.
+    await eventually(() => app.windows().some(page => /^https?:/.test(page.url()) && new URL(page.url()).pathname === '/'));
+    const main = app.windows().find(page => /^https?:/.test(page.url()) && new URL(page.url()).pathname === '/');
+    console.log('[library] main window ready');
     const errors = [];
     main.on('pageerror', error => errors.push(error.message));
     await main.waitForSelector('#library-frame');
@@ -34,6 +40,7 @@ async function eventually(check) {
     await library.waitForFunction(() => !!window.HDRLibrary);
     main.on('console', message => { if (message.type() === 'error') console.log('[renderer]', message.text()); });
     await library.locator('#add-folder').click();
+    await library.locator('#picker-view-list').click();
     await library.waitForFunction(() => !document.querySelector('#picker-pin').disabled);
     await library.locator('#picker-path').fill(folder);
     await library.locator('#picker-go').click();
@@ -49,11 +56,59 @@ async function eventually(check) {
     await library.locator('#picker-up').click();
     await library.waitForFunction(() => document.querySelectorAll('#picker-list .directory').length === 100);
     assert.equal(await library.locator('#picker-list').evaluate(element => element.scrollTop), scroll);
+    assert.equal(await target.getAttribute('aria-selected'), 'true');
+    await library.waitForFunction(() => document.querySelector('#picker-preview-name').textContent === 'folder-080'
+      && document.querySelector('#picker-preview-note').textContent === 'No photos in this folder.');
+    await library.locator('#picker-view-grid').click();
+    assert.equal(await library.locator('#folder-picker').getAttribute('data-view'), 'grid');
+    assert.equal(await target.getAttribute('aria-selected'), 'true');
+    await library.locator('#picker-list .directory').filter({ hasText: 'folder-081' }).click({ modifiers: ['Control'] });
+    assert.equal(await library.locator('#picker-list .directory[aria-selected="true"]').count(), 2);
+    await library.locator('#picker-list .directory').filter({ hasText: 'folder-083' }).click({ modifiers: ['Shift'] });
+    assert.equal(await library.locator('#picker-list .directory[aria-selected="true"]').count(), 3);
+    await target.click();
+    // Slow mocked thumbnails expose request ownership without decoding source pixels.
+    const requested = [], abortedRequests = [];
+    let hold = true;
+    main.on('requestfailed', request => { if (request.url().includes('/api/media-browser/thumbnail')) abortedRequests.push(request.url()); });
+    await main.route('**/api/media-browser/thumbnail?*', async route => {
+      requested.push(route.request().url());
+      if (hold) await new Promise(resolve => setTimeout(resolve, 1000));
+      try { await route.fulfill({ contentType: 'image/png', body: fs.readFileSync(fixture) }); } catch {}
+    });
+    const firstPhoto = library.locator('#picker-list .file').filter({ hasText: 'photo-000.png' });
+    await firstPhoto.scrollIntoViewIfNeeded();
+    await eventually(async () => requested.length > 0);
+    await library.locator('#picker-list').evaluate(element => { element.scrollTop = element.scrollHeight; });
+    await eventually(async () => abortedRequests.length > 0);
+    assert.ok(requested.length < 35, `Offscreen pictures requested: ${requested.length}`);
+    hold = false;
+    const lastPhoto = library.locator('#picker-list .file').filter({ hasText: 'photo-119.png' });
+    await lastPhoto.click();
+    await library.waitForFunction(() => !document.querySelector('#picker-preview').hidden && document.querySelector('#picker-preview').naturalWidth > 0);
+    await main.route('**/api/media-browser/folder-peek?*', route => route.fulfill({ json: {
+      count: 1204, formats: ['ARW', 'JPG'], samples: Array.from({ length: 4 }, (_, i) => ({ name: `camera-${i}.arw`, path: `/peek/camera-${i}.arw` }))
+    } }));
+    await target.click();
+    await library.waitForFunction(() => document.querySelectorAll('#picker-peek img[src]').length === 4);
+    assert.equal(await library.locator('#picker-preview-note').textContent(), '1,204 photos · ARW, JPG');
+    assert.ok(requested.filter(url => url.includes('%2Fpeek%2F')).every(url => new URL(url).searchParams.get('embedded_only') === 'true'));
+    await main.screenshot({ path: path.join(output, 'add-folder-grid-peek.png') });
+    await main.unroute('**/api/media-browser/folder-peek?*');
+    await main.unroute('**/api/media-browser/thumbnail?*');
+    await target.dblclick();
+    await library.waitForFunction(child => document.querySelector('#picker-path').value === child && !document.querySelector('#picker-pin').disabled, child);
+    await library.locator('#picker-up').click();
+    await library.waitForFunction(() => document.querySelector('#picker-list .directory[aria-selected="true"]')?.textContent.includes('folder-080'));
+
     await target.click({ button: 'right' });
     await library.locator('#library-folder-menu button').click();
     await library.waitForFunction(child => [...document.querySelectorAll('#folders .library-folder-row')].some(row => row.dataset.path === child), child);
     await library.locator('#picker-cancel').click();
-    console.log('PASS: picker returns to its previous scroll position and pins from the modal menu.');
+    await library.locator('#add-folder').click();
+    await library.waitForFunction(() => document.querySelector('#folder-picker').dataset.view === 'grid' && !document.querySelector('#picker-pin').disabled);
+    await library.locator('#picker-cancel').click();
+    console.log('PASS: picker list/grid, selections, visible-only thumbnails/cancellation, folder peek, Up, remembered view and modal Pin.');
     const pinned = library.locator('#folders .folder-name').filter({ hasText: 'folder-080' });
     await pinned.click({ button: 'right' });
     assert.equal(await library.getByRole('menuitem', { name: 'Unpin folder', exact: true }).textContent(), 'Unpin folder');

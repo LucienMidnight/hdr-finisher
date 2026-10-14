@@ -42,6 +42,7 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     assert.equal(await page.locator(".workspace-main").isVisible(), false);
     assert.equal(await page.locator("#viewer-status-dock").isVisible(), false);
     await library.locator("#add-folder").click();
+    await library.locator("#picker-view-list").click();
     await library.locator("#picker-path").fill(folder);
     await library.locator("#picker-go").click();
     await library.waitForFunction(() => document.querySelector("#picker-list button"));
