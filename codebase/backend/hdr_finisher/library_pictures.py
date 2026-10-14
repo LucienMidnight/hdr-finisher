@@ -190,9 +190,12 @@ class LibraryPictureCache:
     @audited("cache_trim")
     def trim(self):
         self._trim_directory(self.full_root)
-        self._trim_directory(self.root)
+        # Saved grades cost a render to remake. Disposable grid/full pictures
+        # have separate allowances and can never evict their gain-map files.
+        self._trim_directory(self.root, {".npz"})
+        self._trim_directory(self.root, {".jpg", ".avif", ".json"})
 
-    def _trim_directory(self, directory):
+    def _trim_directory(self, directory, extensions=None):
         # One eviction batch only on overflow, keeping a 10% gap below the limit.
         with _TRIM_LOCK:
             entries = []
@@ -200,7 +203,7 @@ class LibraryPictureCache:
             if (self.root.parent / "library-picture-preferences.json").exists():
                 self.limit = preferences(self.root.parent)["limit_bytes"]
             for path in directory.glob("*"):
-                if path.suffix not in {".npz", ".jpg", ".avif", ".json"}: continue
+                if path.suffix not in (extensions or {".npz", ".jpg", ".avif", ".json"}): continue
                 try:
                     stat = path.stat()
                     entries.append((stat.st_mtime_ns, stat.st_size, path))

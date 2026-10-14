@@ -4,7 +4,7 @@ import json
 import numpy as np
 import pytest
 from test_library_grades import setup, saved, edit
-from hdr_finisher.library_kept import produce, identity, preferences, KeptPictures, atomic_json
+from hdr_finisher.library_kept import produce, identity, preferences, KeptPictures, atomic_json, PICTURE_VERSION
 from hdr_finisher.library_pictures import LibraryPictureCache
 from hdr_finisher import exporters
 from hdr_finisher.models import ExportSettings, PreviewKind
@@ -29,16 +29,16 @@ def test_corrected_producer_uses_same_export_renditions_and_never_changes_open_g
     Path(result["temporary"]).unlink()
 
 def test_picture_preferences_preserve_unknown_and_reject_unreadable(tmp_path):
-    assert preferences(tmp_path)=={"edited_edge":1024,"limit_bytes":2*1024**3}
+    assert preferences(tmp_path)=={"edited_resolution":"screen","screen_edge":2560,"edited_edge":2560,"limit_bytes":2*1024**3}
     path=tmp_path/"library-picture-preferences.json"
     path.write_text('{"future":17}')
-    preferences(tmp_path,{"edited_edge":512})
+    preferences(tmp_path,{"edited_resolution":512})
     assert json.loads(path.read_text())["future"]==17
     with pytest.raises(ValueError, match="1 GB"):
         preferences(tmp_path,{"limit_bytes":1024**3-1})
     assert preferences(tmp_path,{"limit_bytes":1024**3})["limit_bytes"]==1024**3
     path.write_text('broken')
-    with pytest.raises(ValueError): preferences(tmp_path,{"edited_edge":1920})
+    with pytest.raises(ValueError): preferences(tmp_path,{"edited_resolution":1920})
     assert path.read_text()=='broken'
 
 def test_picture_matching_and_missing_fallback(setup,tmp_path):
@@ -48,16 +48,21 @@ def test_picture_matching_and_missing_fallback(setup,tmp_path):
     assert kept.cached(photo) is None
     key=kept.key(str(photo),identity(grade));kept.cache.root.mkdir(parents=True)
     (kept.cache.root/(key+".jpg")).write_bytes(b"jpeg")
-    atomic_json(kept.cache.root/(key+".json"),{"extension":"jpg","grade_identity":identity(grade),"source_stat":kept.source_stat(photo)})
+    atomic_json(kept.cache.root/(key+".json"),{"extension":"jpg","grade_identity":identity(grade),"source_stat":kept.source_stat(photo),"picture_version":PICTURE_VERSION,"edge":2560})
     assert kept.cached(photo)["kept"]
     document=json.loads(Path(str(photo)+".hdrf").read_text());document["grade"]["global_adjustments"]["hdr"]["exposure"]=3
     Path(str(photo)+".hdrf").write_text(json.dumps(document))
     assert kept.cached(photo) is None
 
-def test_single_budget_removes_quick_pictures_first(tmp_path):
+def test_disposable_picture_budgets_cannot_evict_saved_grades(tmp_path):
     cache=LibraryPictureCache(tmp_path,limit=100)
-    cache.root.mkdir();(cache.root/"a.npz").write_bytes(b"x"*80);(cache.root/"b.jpg").write_bytes(b"x"*50)
-    cache.trim();assert not (cache.root/"a.npz").exists();assert (cache.root/"b.jpg").exists()
+    cache.root.mkdir();cache.full_root.mkdir()
+    (cache.root/"a.npz").write_bytes(b"x"*180)
+    (cache.full_root/"full.npz").write_bytes(b"x"*180)
+    (cache.root/"b.jpg").write_bytes(b"x"*50)
+    cache.trim()
+    assert not (cache.root/"a.npz").exists() and not (cache.full_root/"full.npz").exists()
+    assert (cache.root/"b.jpg").exists()
 
 def test_publication_request_not_tied_to_open_grade(setup,tmp_path):
     photo,store,session,marks,grades=setup
@@ -202,7 +207,7 @@ def test_unreadable_kept_picture_is_missing_and_remade_without_another_save(setu
         picture.write_bytes(b"damaged picture")
     metadata = kept.cache.root / (key + ".json")
     atomic_json(metadata, {"extension": extension, "grade_identity": grade_id,
-        "source_stat": kept.source_stat(photo)})
+        "source_stat": kept.source_stat(photo), "picture_version": PICTURE_VERSION, "edge": 2560})
     try:
         assert kept.cached(photo) and kept.current_meta(str(photo), grade_id)
         response = client.get(f"/api/library/kept-pixels/{key}?lane=hdr")
@@ -227,3 +232,68 @@ def test_unreadable_kept_picture_is_missing_and_remade_without_another_save(setu
         assert photo.read_bytes() == source_before and sidecar.read_bytes() == grade_before
     finally:
         kept.close()
+
+
+def test_screen_default_ignores_retired_resolution_and_size_changes_invalidate_cache(setup, tmp_path):
+    photo,store,session,marks,grades=setup
+    grade=saved(setup)
+    atomic_json(tmp_path/"library-picture-preferences.json", {"edited_edge":1024})
+    assert preferences(tmp_path)["edited_edge"]==2560
+    preferences(tmp_path,{"screen_edge":1920})
+    kept=KeptPictures(tmp_path,marks,Worker())
+    key=kept.key(str(photo),identity(grade));kept.cache.root.mkdir(parents=True)
+    (kept.cache.root/(key+".jpg")).write_bytes(b"old")
+    meta={"extension":"jpg","grade_identity":identity(grade),"source_stat":kept.source_stat(photo),"edge":1920}
+    atomic_json(kept.cache.root/(key+".json"),meta)
+    assert kept.cached(photo) is None and kept.current_meta(str(photo),identity(grade)) is None
+    atomic_json(kept.cache.root/(key+".json"),meta|{"picture_version":PICTURE_VERSION})
+    assert kept.cached(photo)
+    preferences(tmp_path,{"screen_edge":2560})
+    assert kept.cached(photo) is None
+    kept.close()
+
+
+def test_saved_picture_is_fitted_after_crop_and_encoded_for_screen(setup, tmp_path, monkeypatch):
+    from hdr_finisher.models import CropRectangle
+    photo,store,session,marks,grades=setup
+    session.image=np.ones((180,300,3),np.float32)
+    session.adjustments.shared.geometry.crop=CropRectangle(x=.1,y=.1,width=.5,height=.5)
+    grade=session.edit_document().model_dump(mode="json")
+    monkeypatch.setattr("hdr_finisher.sessions.SessionStore.prepare_session",lambda *a,**k:session)
+    captured={}
+    def encode(path,hdr,sdr,settings,white):
+        captured.update(settings=settings,size=hdr.shape[:2]);Path(path).write_bytes(b"test")
+    monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",encode)
+    result=produce(tmp_path,photo,grade,128)
+    try:
+        assert max(captured["size"])==128
+        assert captured["settings"].quality==95 and captured["settings"].jpeg_chroma_subsampling=="444"
+        assert captured["settings"].jpeg_gain_map_quality==95 and captured["settings"].jpeg_gain_map_scale=="full"
+        assert result["source_width"]>result["width"]
+    finally: Path(result["temporary"]).unlink()
+
+
+def test_background_refresh_remakes_existing_grade_without_save(setup, tmp_path, monkeypatch):
+    from concurrent.futures import Future
+    from test_library_open_kept import wait_for
+    photo,store,session,marks,grades=setup
+    grade=saved(setup)
+    sidecar=Path(str(photo)+".hdrf");before=sidecar.read_bytes();requests=[]
+    def encode(path,*args): Path(path).write_bytes(b"picture")
+    monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",encode)
+    class BackgroundWorker(Worker):
+        def submit_library(self,kind,**request):
+            requests.append(request);future=Future()
+            future.set_result(produce(tmp_path,request["path"],request["grade"],request["edge"]))
+            return "background",future
+        def cancel(self,job): pass
+    kept=KeptPictures(tmp_path,marks,BackgroundWorker())
+    try:
+        kept.remake_missing()
+        wait_for(lambda: kept.cached(photo) is not None)
+        assert len(requests)==1 and requests[0]["edge"]==2560
+        assert sidecar.read_bytes()==before
+        kept.remake_missing()
+        wait_for(lambda: not kept._refreshing)
+        assert len(requests)==1
+    finally: kept.close()

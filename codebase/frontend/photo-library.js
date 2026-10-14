@@ -895,10 +895,10 @@
   $("picture-settings").addEventListener("click", async () => {
     try {
       const prefs = await api("/api/library/picture-settings");
-      const answer = await HDRLibraryDialogs.ask({ title: "Library pictures", message: `${(prefs.used_bytes / 1024**3).toFixed(2)} GB in use. Resolution applies to pictures made after the next save.`, fields: [
+      const answer = await HDRLibraryDialogs.ask({ title: "Library pictures", message: `${(prefs.used_bytes / 1024**3).toFixed(2)} GB in use. Older edited pictures are remade in the background. Saved pictures have their own storage allowance.`, fields: [
         { name: "limit", label: "Storage limit (GB)", type: "number", min: 1, step: 1, value: String(Math.round(prefs.limit_bytes / 1024**3)) },
-        { name: "edge", label: "Edited-picture resolution", options: ["512", "1024", "1920"], value: String(prefs.edited_edge) }], confirm: "Save" });
-      if (answer) { await api("/api/library/picture-settings", { limit_bytes: Math.round(Number(answer.limit) * 1024**3), edited_edge: Number(answer.edge) }); status("Library picture settings saved."); }
+        { name: "edge", label: "Edited-picture resolution", options: [{value:"screen",label:"Screen size"}, "512", "1024", "1920"], value: String(prefs.edited_resolution) }], confirm: "Save" });
+      if (answer) { await api("/api/library/picture-settings", { limit_bytes: Math.round(Number(answer.limit) * 1024**3), edited_resolution: answer.edge === "screen" ? "screen" : Number(answer.edge) }); status("Library picture settings saved."); }
     } catch (error) { status(error.message); }
   });
   $("filter-button").addEventListener("click", toggleFilters);
@@ -1159,6 +1159,7 @@
     filmVisible: state.filmCells.size, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
   (async () => {
     try {
+      await api("/api/library/picture-settings", {screen_edge:singleEdge()});
       const options = await api("/api/library/options"); state.timing = options.timing;
       browsingLimits = options.browsing || browsingLimits;
       void HDRLibraryPictures.configure(browsingLimits).catch(() => {});

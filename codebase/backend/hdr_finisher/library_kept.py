@@ -19,10 +19,15 @@ from .library_diagnostics import log
 
 _LOCK=RLock()
 EDGES=(512,1024,1920)
+PICTURE_VERSION="saved-screen-v1"
 RETRY_SECONDS=30
 
 def identity(grade):
     return sha256(json.dumps(grade_key(grade),sort_keys=True,separators=(",",":")).encode()).hexdigest()
+
+def kept_picture_key(path, grade_id, edge):
+    return sha256((PICTURE_VERSION+":"+str(edge)+":"+str(path)+":"+grade_id).encode()).hexdigest()
+
 
 def atomic_json(path, value):
     path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)
@@ -38,12 +43,18 @@ def preferences(root, change=None):
         except FileNotFoundError: value={}
         if not isinstance(value,dict): raise ValueError("Library picture settings could not be read; nothing was changed.")
         if change is not None:
-            if set(change)-{"edited_edge","limit_bytes"}: raise ValueError("Unknown Library picture setting.")
+            if set(change)-{"edited_resolution","screen_edge","limit_bytes"}: raise ValueError("Unknown Library picture setting.")
             candidate=value|change
-            if candidate.get("edited_edge",1024) not in EDGES: raise ValueError("Choose 512, 1024 or 1920 pixels.")
+            if candidate.get("edited_resolution","screen") not in (*EDGES,"screen"): raise ValueError("Choose Screen size, 512, 1024 or 1920 pixels.")
+            if not isinstance(candidate.get("screen_edge",2560),int) or not 1280<=candidate.get("screen_edge",2560)<=2560:
+                raise ValueError("Screen picture size must be between 1280 and 2560 pixels.")
             if not isinstance(candidate.get("limit_bytes",2*1024**3),int) or candidate.get("limit_bytes",2*1024**3)<1024**3: raise ValueError("Choose a storage limit of at least 1 GB.")
             value=candidate;atomic_json(path,value)
-        return {"edited_edge":value.get("edited_edge",1024),"limit_bytes":value.get("limit_bytes",2*1024**3)}
+        resolution=value.get("edited_resolution","screen")
+        screen_edge=value.get("screen_edge",2560)
+        return {"edited_resolution":resolution,"screen_edge":screen_edge,
+            "edited_edge":screen_edge if resolution=="screen" else resolution,
+            "limit_bytes":value.get("limit_bytes",2*1024**3)}
 
 def capture_source(session):
     """Capture source references, never the mutable Grade or a full-size copy.
@@ -67,7 +78,7 @@ def capture_source(session):
         "source_fingerprint_sha256": session.source_fingerprint_sha256}
 
 
-def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None, source=None):
+def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=None):
     """One read-only corrected decode + reduced renditions via the export graph.
 
     Shared renderer calls only; export/Proof, their source and budgets are unchanged.
@@ -98,22 +109,25 @@ def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None, source=
     if document.source.fingerprint_sha256 and session.source_fingerprint_sha256!=document.source.fingerprint_sha256:
         raise ValueError("The source photo changed; its Library picture was left unavailable.")
     source_height,source_width=session.image.shape[:2]
-    frame=SimpleNamespace(image=reduce_picture(session.image,edge),
-        sdr_reference_image=reduce_picture(session.sdr_reference_image,edge) if session.sdr_reference_image is not None else None,
+    frame=SimpleNamespace(image=session.image,
+        sdr_reference_image=session.sdr_reference_image,
         adjustments=document.global_adjustments,local_adjustments=document.local_adjustments,denoise=document.denoise,
         color_context=session.color_context,hdr_reference_white_nits=document.hdr_reference_white_nits)
-    # Release the full decoded source before grading the small reminder.
+    # Render the saved grade before fitting, so crop/rotation cannot shrink
+    # the finished picture below its screen target.
     del session
     source_ms=(perf_counter()-source_started)*1000
     log("kept_source_ready", path=str(path), grade_identity=identity(grade), route=source_route, duration_ms=source_ms)
     render_started=perf_counter()
-    settings=ExportSettings(quality=75,jpeg_gain_map_quality=75,jpeg_gain_map_scale="half",
-        avif_bit_depth=8,avif_gain_map_quality=75,avif_gain_map_scale="half",dithering="off")
+    settings=ExportSettings(quality=95,jpeg_chroma_subsampling="444",
+        jpeg_gain_map_quality=95,jpeg_gain_map_scale="full",
+        avif_bit_depth=8,avif_gain_map_quality=95,avif_gain_map_scale="full",dithering="off")
     adjustments=exporters._finishing_adjustments_for_export(frame)
     adjustments.shared.overlay_mode="off"
     check();hdr=exporters._render_export_branch(frame,settings,PreviewKind.HDR,adjustments)
     check();sdr=exporters._render_export_branch(frame,settings,PreviewKind.SDR,adjustments)
-    check();hdr=reduce_picture(hdr,edge);sdr=reduce_picture(sdr,edge)
+    check();source_height,source_width=hdr.shape[:2]
+    hdr=reduce_picture(hdr,edge);sdr=reduce_picture(sdr,edge)
     render_ms=(perf_counter()-render_started)*1000
     log("kept_rendered", path=str(path), grade_identity=identity(grade), duration_ms=render_ms)
     directory=Path(root)/"library-pictures";directory.mkdir(parents=True,exist_ok=True)
@@ -126,10 +140,10 @@ def produce(root, path, grade, edge=1024, format="jpeg", cancelled=None, source=
         encode_ms=(perf_counter()-encode_started)*1000
         log("kept_encoded", path=str(path), grade_identity=identity(grade), duration_ms=encode_ms)
         return {"temporary":str(temp),"extension":extension,"grade_identity":identity(grade),
-            "width":hdr.shape[1],"height":hdr.shape[0],"source_width":round(source_width*hdr.shape[1]/frame.image.shape[1]),
-            "source_height":round(source_height*hdr.shape[0]/frame.image.shape[0]),"edge":edge,"white":203,
+            "width":hdr.shape[1],"height":hdr.shape[0],"source_width":source_width,"source_height":source_height,"edge":edge,"white":203,
             "source_route":source_route,"source_ms":source_ms,"render_ms":render_ms,"encode_ms":encode_ms,
-            "stored_bytes":temp.stat().st_size,"make_ms":round((perf_counter()-started)*1000,2),"route":"saved-gain-map"}
+            "picture_version":PICTURE_VERSION,"stored_bytes":temp.stat().st_size,
+            "make_ms":round((perf_counter()-started)*1000,2),"route":"saved-gain-map"}
     except BaseException:
         temp.unlink(missing_ok=True);raise
 
@@ -168,7 +182,7 @@ class KeptPictures:
     def __init__(self,root,marks,worker):
         self.root=Path(root);self.marks=marks;self.worker=worker;self.cache=LibraryPictureCache(root)
         self.jobs={};self._lock=RLock();self._closed=False
-        self._requested=set();self._retry_after={}
+        self._requested=set();self._retry_after={};self._refreshing=False
         self._open_producer=ThreadPoolExecutor(max_workers=1,thread_name_prefix="hdr-kept-open")
     def request(self,path):
         path=str(self.marks._path(path))
@@ -178,7 +192,31 @@ class KeptPictures:
             default=doc.get("grade_default") or state.get("default")
             return {"path":path,"grade":deepcopy(grade),"grade_identity":identity(grade),
                 "edited":grade is not None and grade_key(grade)!=grade_key(default),**preferences(self.root)}
-    def key(self,path,grade_id): return sha256((str(path)+":"+grade_id).encode()).hexdigest()
+    def key(self,path,grade_id):
+        return kept_picture_key(path,grade_id,preferences(self.root)["edited_edge"])
+    def remake_missing(self):
+        """Refresh known edited photos in the background, without another save."""
+        with self._lock:
+            if self._closed or self._refreshing: return
+            self._refreshing=True
+        def refresh():
+            try:
+                with self.marks._lock:
+                    paths=[row[0] for row in self.marks._query("SELECT path FROM photo_grades")]
+                for path in paths:
+                    while True:
+                        with self._lock:
+                            if self._closed: return
+                            ready=len(self.jobs)+len(self._requested)<2
+                        if ready: break
+                        time.sleep(.1)
+                    try:
+                        if self.cached(path) is None: self.ensure(path)
+                    except (OSError,ValueError):
+                        continue  # Disconnected photos are retried on Library use.
+            finally:
+                with self._lock: self._refreshing=False
+        Thread(target=refresh,name="hdr-kept-refresh",daemon=True).start()
     def cached(self,path):
         request=self.request(path)
         if not request["edited"]: return None
@@ -186,7 +224,8 @@ class KeptPictures:
         try:
             meta=json.loads((self.cache.root/(key+".json")).read_text())
             picture=self.cache.root/(key+"."+meta["extension"])
-            if not picture.is_file() or meta["grade_identity"]!=request["grade_identity"]: return None
+            if (not picture.is_file() or meta["grade_identity"]!=request["grade_identity"]
+                    or meta.get("picture_version")!=PICTURE_VERSION or meta.get("edge")!=request["edited_edge"]): return None
             if meta.get("source_stat")!=self.source_stat(path): return None
             os.utime(picture,None);os.utime(self.cache.root/(key+".json"),None)
             return meta|{"key":key,"kept":True,"cache_hit":True}
@@ -195,7 +234,8 @@ class KeptPictures:
         key = self.key(path, grade_id)
         try:
             meta = json.loads((self.cache.root / (key + ".json")).read_text())
-            if meta.get("grade_identity") != grade_id or meta.get("source_stat") != self.source_stat(path): return None
+            if (meta.get("grade_identity") != grade_id or meta.get("source_stat") != self.source_stat(path)
+                    or meta.get("picture_version") != PICTURE_VERSION or meta.get("edge") != preferences(self.root)["edited_edge"]): return None
             return meta if (self.cache.root / (key + "." + meta["extension"])).is_file() else None
         except (OSError, ValueError, KeyError): return None
     @staticmethod
@@ -250,7 +290,8 @@ class KeptPictures:
                         result=f.result()
                         temporary=Path(result["temporary"])
                         with self.marks._lock,self._lock:
-                            if self.jobs.get(path)!=job or self.request(path)["grade_identity"]!=request["grade_identity"] or self.source_stat(path)!=stat:
+                            if (self.jobs.get(path)!=job or self.request(path)["grade_identity"]!=request["grade_identity"]
+                                    or preferences(self.root)["edited_edge"]!=request["edited_edge"] or self.source_stat(path)!=stat):
                                 log("kept_picture_replaced",photo=path,reason="saved grade or source changed while picture was being made",action="stale picture discarded")
                                 return
                             temp=Path(result["temporary"]);key=self.key(path,request["grade_identity"])

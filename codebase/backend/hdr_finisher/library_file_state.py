@@ -74,6 +74,7 @@ def pictures(root, item, delete=False):
     import numpy as np
     from .library_pictures import PICTURE_VERSION
     from .library_overlays import VERSION as MAP_VERSION
+    from .library_kept import kept_picture_key
     root=Path(root)/'library-pictures'
     if not root.exists(): return
     old,new=item['old'],item.get('new','')
@@ -83,12 +84,12 @@ def pictures(root, item, delete=False):
         try:
             meta=json.loads(file.read_text(encoding='utf-8')); grade=meta.get('grade_identity')
             if grade is None: continue
-            pair=next(((a,b) for a,b in pairs if file.stem==sha256((a+':'+grade).encode()).hexdigest()),None)
+            pair=next(((a,b) for a,b in pairs if file.stem==kept_picture_key(a,grade,meta['edge'])),None)
             if pair is None: continue
             picture=root/(file.stem+'.'+meta['extension'])
             if delete:
                 file.unlink(missing_ok=True);picture.unlink(missing_ok=True);continue
-            key=sha256((pair[1]+':'+grade).encode()).hexdigest()
+            key=kept_picture_key(pair[1],grade,meta['edge'])
             if picture.exists(): os.replace(picture,root/(key+'.'+meta['extension']))
             meta['path']=mapped(meta.get('path',pair[0]),old,new)
             durable(root/(key+'.json'),meta);file.unlink(missing_ok=True)

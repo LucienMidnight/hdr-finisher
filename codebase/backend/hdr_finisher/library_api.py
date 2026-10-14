@@ -231,7 +231,7 @@ def create_library_router(worker, browser, store=None):
 
         @router.post("/picture-settings")
         def set_picture_settings(change: dict):
-            return command(lambda: (picture_preferences(browser.root, change), kept.cache.trim(), kept.usage())[-1])
+            return command(lambda: (picture_preferences(browser.root, change), kept.cache.trim(), kept.remake_missing(), kept.usage())[-1])
 
         @router.post("/kept-picture")
         def request_kept(request: FolderRequest):
@@ -444,7 +444,9 @@ def create_library_router(worker, browser, store=None):
                     photo.update(edited=saved["edited"], grade_identity=saved["grade_identity"])
                 except (ValueError, OSError):
                     photo.update(edited=False)
-        if store is not None: result["photos"] = marks.copies.expand(result["photos"])
+        if store is not None:
+            result["photos"] = marks.copies.expand(result["photos"])
+            kept.remake_missing()
         index.membership.describe(result["photos"])
         return result
 

@@ -846,6 +846,15 @@ proposals:
   the log), these pictures must not be pushed out by full-size browsing
   pictures. The resolution setting may keep smaller choices for limited
   disks, but screen size is the default.
+  Implemented October 14: Screen size uses the same 1280-2560-pixel fitted
+  edge as unedited browsing. The saved grade is rendered before fitting
+  (including crop), then stored as JPEG quality 95, 4:4:4, with a full-size
+  quality-95 gain map. One file serves SDR and HDR. All previous saved
+  Library pictures are stale and are rebuilt in the background; grades
+  and originals are unchanged. Saved gain-map pictures have their own
+  storage allowance, independent of disposable grid and full-size pictures.
+  DSC07072.ARW measured 2560 x 1709 and 1,327,867 bytes (about 1.33 MB);
+  cost varies with image detail. Smaller 512/1024/1920 choices remain.
 - Only visible grid/filmstrip cells are requested. Requests are cancelled
   when they leave the screen. Single view reads ahead to its next and
   previous neighbours. Work uses the existing low-priority helper and
