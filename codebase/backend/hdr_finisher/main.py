@@ -2324,10 +2324,28 @@ def pause_library_worker(request: LibraryPauseRequest) -> dict[str, object]:
     return library_worker.status()
 
 
-@app.get("/api/media-browser/thumbnail")
-async def media_browser_thumbnail(request: Request, path: str = Query(), size: int = Query(default=256, ge=64, le=512)) -> Response:
+@app.get("/api/media-browser/folder-peek")
+async def media_browser_folder_peek(request: Request, path: str = Query()) -> dict[str, object]:
     cancel_event = Event()
-    task = asyncio.create_task(run_in_threadpool(media_browser_store.thumbnail, path, size, cancel_event=cancel_event))
+    task = asyncio.create_task(run_in_threadpool(media_browser_store.folder_peek, path, cancel_event=cancel_event))
+    try:
+        while not task.done():
+            await asyncio.wait([task], timeout=0.1)
+            if await request.is_disconnected():
+                cancel_event.set()
+                await asyncio.gather(task, return_exceptions=True)
+                raise HTTPException(status_code=499, detail="Folder peek cancelled.")
+        return task.result()
+    except (MediaBrowserError, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        cancel_event.set()
+
+
+@app.get("/api/media-browser/thumbnail")
+async def media_browser_thumbnail(request: Request, path: str = Query(), size: int = Query(default=256, ge=64, le=512), embedded_only: bool = Query(default=False)) -> Response:
+    cancel_event = Event()
+    task = asyncio.create_task(run_in_threadpool(media_browser_store.thumbnail, path, size, embedded_only=embedded_only, cancel_event=cancel_event))
     try:
         while not task.done():
             done, _pending = await asyncio.wait([task], timeout=0.1)

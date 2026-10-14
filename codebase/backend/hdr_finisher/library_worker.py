@@ -120,7 +120,7 @@ class LibraryWorker:
                 if self._stop.wait(min(2, .5 * self._restarts)):
                     return
 
-    def submit_thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False,
+    def submit_thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False, embedded_only: bool = False,
                          priority: int = 10) -> tuple[str, Future]:
         self.start()
         job_id = uuid4().hex
@@ -135,7 +135,7 @@ class LibraryWorker:
             self._pending[job_id] = future
             try:
                 self._requests[job_id] = {"command": "thumbnail", "id": job_id,
-                    "path": str(value), "size": int(size), "fast_only": bool(fast_only), "priority": int(priority)}
+                    "path": str(value), "size": int(size), "fast_only": bool(fast_only), "embedded_only": bool(embedded_only), "priority": int(priority)}
                 if self._connection is not None and not self._recovering:
                     self._connection.send(self._requests[job_id])
             except (EOFError, OSError) as exc:
@@ -176,9 +176,9 @@ class LibraryWorker:
                     return job_id, self._pending[job_id]
             return self.submit_library("picture", browse_key=key, **arguments)
 
-    def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False,
+    def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False, embedded_only: bool = False,
                   cancel_event: Event | None = None) -> Path:
-        job_id, future = self.submit_thumbnail(value, size, fast_only=fast_only,
+        job_id, future = self.submit_thumbnail(value, size, fast_only=fast_only, embedded_only=embedded_only,
                                               priority=0 if fast_only else 10)
         try:
             while True:
@@ -436,7 +436,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     output = scan_folder(job["path"], check, fingerprints=True) if job["command"] == "scan" else folder_tree(job["path"], check)
                     result = {"id": job["id"], "result": output}
                 else:
-                    output = browser.thumbnail(job["path"], job["size"], fast_only=job["fast_only"])
+                    output = browser.thumbnail(job["path"], job["size"], fast_only=job["fast_only"], embedded_only=job.get("embedded_only", False), cancel_event=cancelled)
                     result = {"id": job["id"], "path": str(output)}
             except MediaBrowserInterpretationRequired as exc:
                 log("helper_interpretation_required", path=job.get("path"), reason=str(exc), action="interpretation requested; photo untouched")

@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import uuid
+from concurrent.futures import CancelledError
 from contextlib import contextmanager
 from pathlib import Path
 from threading import BoundedSemaphore, RLock
@@ -22,6 +23,7 @@ from .raw_import import RAW_EXTENSIONS
 
 
 FAST_THUMBNAIL_EXTENSIONS = RAW_EXTENSIONS | {".avif", ".png", ".jpg", ".jpeg", ".bmp"}
+EMBEDDED_PREVIEW_EXTENSIONS = RAW_EXTENSIONS | {".jpg", ".jpeg", ".tif", ".tiff"}
 THUMBNAIL_CACHE_VERSION = "natural-aspect-v4"
 
 WINDOWS_KNOWN_FOLDER_IDS = {
@@ -186,7 +188,27 @@ class MediaBrowserStore:
     def remove_favorite(self, value: str) -> list[dict[str, Any]]:
         return self.remove_pin(value)
 
-    def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False, cancel_event=None) -> Path:
+    def folder_peek(self, value: str, *, cancel_event=None) -> dict[str, Any]:
+        """Count direct photo children without opening images or indexing the Library."""
+        path = Path(value).expanduser().resolve(strict=True)
+        if not path.is_dir():
+            raise MediaBrowserError("Select a folder for a peek.")
+        count, formats, samples = 0, set(), []
+        with os.scandir(path) as entries:
+            for entry in entries:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise CancelledError("Folder peek cancelled.")
+                suffix = Path(entry.name).suffix.lower()
+                if suffix not in SOURCE_EXTENSIONS or not entry.is_file():
+                    continue
+                count += 1
+                formats.add(suffix[1:].upper())
+                # A bounded candidate pool lets us skip files without a camera JPEG.
+                if len(samples) < 12 and suffix in EMBEDDED_PREVIEW_EXTENSIONS:
+                    samples.append({"name": entry.name, "path": entry.path})
+        return {"count": count, "formats": sorted(formats), "samples": samples}
+
+    def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False, embedded_only: bool = False, cancel_event=None) -> Path:
         path = Path(value).expanduser().resolve(strict=True)
         if not path.is_file() or path.suffix.lower() not in SOURCE_EXTENSIONS:
             raise MediaBrowserError("Select a supported image file for a thumbnail.")
@@ -194,7 +216,7 @@ class MediaBrowserStore:
             raise MediaBrowserError("This format has no cheap staged-preview path.")
         edge = max(64, min(int(size), 512))
         stat = path.stat()
-        variant = "fast" if fast_only else "full"
+        variant = "embedded" if embedded_only else "fast" if fast_only else "full"
         key = hashlib.sha256(
             f"{THUMBNAIL_CACHE_VERSION}\0{path}\0{stat.st_size}\0{stat.st_mtime_ns}\0{edge}\0{variant}".encode()
         ).hexdigest()
@@ -203,11 +225,15 @@ class MediaBrowserStore:
         if output.is_file():
             return output
         if self.thumbnail_worker is not None:
-            return self.thumbnail_worker.thumbnail(str(path), edge, fast_only=fast_only, cancel_event=cancel_event)
+            return self.thumbnail_worker.thumbnail(str(path), edge, fast_only=fast_only, embedded_only=embedded_only, cancel_event=cancel_event)
         with self.decode_slot():
             if output.is_file():
                 return output
-            image = _read_thumbnail_source(path, edge, fast_only=fast_only)
+            if cancel_event is not None and cancel_event.is_set():
+                raise CancelledError("Thumbnail cancelled.")
+            image = _read_embedded_thumbnail(path) if embedded_only else _read_thumbnail_source(path, edge, fast_only=fast_only)
+            if cancel_event is not None and cancel_event.is_set():
+                raise CancelledError("Thumbnail cancelled.")
             _write_thumbnail(output, image, edge)
             self._prune_thumbnails(512)
         return output
@@ -412,28 +438,50 @@ def _is_local_windows_device_target(drive_type: int, target: str) -> bool:
     return bool(normalized) and normalized.startswith(allowed_prefixes.get(drive_type, ()))
 
 
+def _read_embedded_thumbnail(path: Path, *, jpeg_only: bool = True) -> np.ndarray:
+    """Never demosaic RAWs or decode source pixels when a camera JPEG is absent."""
+    from io import BytesIO
+    from PIL import Image, ImageOps
+
+    try:
+        flip = 0
+        if path.suffix.lower() in RAW_EXTENSIONS:
+            import rawpy
+            with rawpy.imread(str(path)) as raw:
+                thumb = raw.extract_thumb()
+                flip = int(getattr(getattr(raw, "sizes", None), "flip", 0) or 0)
+            if thumb.format != rawpy.ThumbFormat.JPEG:
+                if not jpeg_only:
+                    return _apply_libraw_orientation(np.asarray(thumb.data), flip)
+                raise MediaBrowserError("No embedded JPEG preview in this file.")
+            data = thumb.data
+        elif path.suffix.lower() in EMBEDDED_PREVIEW_EXTENSIONS:
+            import exifread
+            with path.open("rb") as source:
+                data = exifread.process_file(source, details=False).get("JPEGThumbnail")
+            if not data:
+                raise MediaBrowserError("No embedded JPEG preview in this file.")
+        else:
+            raise MediaBrowserError("No embedded JPEG preview in this file.")
+        with Image.open(BytesIO(data)) as image:
+            orientation = int(image.getexif().get(274, 1) or 1)
+            pixels = np.asarray(ImageOps.exif_transpose(image).convert("RGB"))
+        return pixels if orientation != 1 else _apply_libraw_orientation(pixels, flip)
+    except MediaBrowserError:
+        raise
+    except Exception as exc:
+        raise MediaBrowserError("No embedded JPEG preview in this file.") from exc
+
+
 def _read_thumbnail_source(
     path: Path, edge: int = 256, *, fast_only: bool = False
 ) -> np.ndarray:
     suffix = path.suffix.lower()
-    if suffix in RAW_EXTENSIONS:
+    if suffix in EMBEDDED_PREVIEW_EXTENSIONS:
         try:
-            import rawpy
-
-            with rawpy.imread(str(path)) as raw:
-                thumb = raw.extract_thumb()
-                raw_flip = int(getattr(getattr(raw, "sizes", None), "flip", 0) or 0)
-            if thumb.format == rawpy.ThumbFormat.JPEG:
-                from io import BytesIO
-                from PIL import Image, ImageOps
-
-                with Image.open(BytesIO(thumb.data)) as image:
-                    embedded_orientation = int(image.getexif().get(274, 1) or 1)
-                    pixels = np.asarray(ImageOps.exif_transpose(image).convert("RGB"))
-                return pixels if embedded_orientation != 1 else _apply_libraw_orientation(pixels, raw_flip)
-            return _apply_libraw_orientation(np.asarray(thumb.data), raw_flip)
-        except Exception:
-            if fast_only:
+            return _read_embedded_thumbnail(path, jpeg_only=False)
+        except MediaBrowserError:
+            if fast_only and suffix in RAW_EXTENSIONS:
                 return _neutral_thumbnail_placeholder()
     if suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
         return _read_pillow_thumbnail(path, edge)
