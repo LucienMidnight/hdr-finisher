@@ -865,6 +865,227 @@ Later proposals still to settle: user cache/size settings, comfort-cap
 behaviour, moved-photo cache identities and movable cache storage. The
 older "Create HDR previews" mock-up controls are superseded by live HDR.
 
+#### Full-screen browsing speed (agreed October 14, 2026)
+
+Steve reported that arrowing quickly through photos in single and
+full-screen view still hitches after the October 13 speed-up, while the
+grid stays smooth. Nothing here is built yet. This records what was
+found, what Steve and Claude agreed to try, in what order, and the
+measurements needed first.
+
+**What was found.** From reading the code and the app's own timing log
+of Steve's browsing on October 13 (not from a new test run):
+
+- The grid is smooth because each thumbnail keeps its own painted
+  surface. Full screen has one surface, redrawn from nothing on every
+  arrow press. No full-size picture is kept in memory between steps.
+- A full-size picture already saved on disk still took 200-270 ms to
+  appear, most of it re-reading and transferring the picture. Drawing
+  is one queue, so the next arrow press waits behind it. The stand-in
+  thumbnail appears in about 20 ms.
+- Of 82 full-size decodes in the log, 60 were cancelled and 22 kept.
+  Most of the cancelled ones had finished decoding (typically 3
+  seconds, worst 35 seconds) and were discarded before saving.
+- A decode cannot be interrupted once started. During fast arrowing
+  the six picture lanes filled with photos already passed; one photo
+  Steve stopped on waited 1.5-3 seconds for a lane and about 5 seconds
+  in total.
+- An ordinary camera RAW took 1.3-2.2 seconds per full-size decode:
+  about 340-740 ms reading the RAW, 400-900 ms shrinking and converting
+  colour on the processor, 160-550 ms saving.
+- The picture cache was at its 2 GB limit. Since October 13, pictures
+  of 1280 pixels and larger are saved uncompressed, about 26 MB each at
+  2560, so about 75 of them fill the cache. Eviction is oldest first
+  and includes grid thumbnails.
+- The same photo was sometimes decoded at two sizes within a second.
+  Cause not traced; the three single-view sizes (1280/1920/2560) are
+  the likely reason.
+- The thumbnail decode and the full-size decode read the same RAW. The
+  thumbnail route discards the large data, so opening that photo full
+  screen decodes it a second time.
+
+**What other apps do** (research October 14; forum reports, not our
+measurements). FastRawViewer keeps no full-size pictures on disk. By
+default it holds 40 decoded files in memory, reads 12 ahead in the
+direction of travel on 8 threads growing to 9, and does the heavy RAW
+conversion on the graphics card. Its only disk cache is for thumbnails
+(4000 MB), and it saves one only if it took longer than 500 ms to make.
+Lightroom and darktable store finished 8-bit pictures on disk at fixed
+sizes, built at import or when idle. Capture One users report it keeps
+about two pictures ready, and complain about culling speed, more so at
+4K. DxO rebuilds its whole cache when the preview size changes.
+
+**Agreed direction.**
+
+- Match FastRawViewer for culling and navigating, in full screen too:
+  decode from the RAW quickly, keep decoded pictures in memory around
+  the photo being viewed, read ahead in the direction of travel.
+- Full-size pictures stay unfinished (scene data, look applied by the
+  graphics card when drawn), as decided October 10. This keeps the
+  live SDR/HDR switch and one drawing path.
+- Steve does not want camera JPEGs as stand-ins in single or
+  full-screen view, because colour and distortion jump when the RAW
+  picture replaces them. The Library's own thumbnail is the stand-in.
+  The embedded-picture head start for slow formats above stays for
+  the grid unless Steve says otherwise.
+- Thumbnails and full-size pictures get separate storage allowances.
+  A full-size picture must never push out a thumbnail.
+- One full-size picture size per machine, not three, so a size change
+  does not cause a second decode.
+- Work follows the user's workflow: names and grid first, then
+  thumbnails for the selected folder (unchanged; Steve is happy with
+  it), then full-size pictures, nearest the viewed photo first.
+- One decode should give both sizes. In single and full-screen view,
+  always. In the grid, the thumbnail is delivered first and the
+  full-size picture is also made only for a dozen or so photos around
+  the selection. For the whole folder only once full-size files are
+  much smaller.
+- A decode that finishes after the user has moved on is kept.
+- The photo being viewed always goes ahead of read-ahead work. No
+  full-size work starts for photos passed without a pause.
+- Settings: pictures kept in memory (Auto or a number), and disk
+  space for full-size pictures (Auto, Off or a size). Auto must give
+  good speed without endangering the computer. Worth trying
+  FastRawViewer's rule of saving to disk only what was slow to make.
+
+**Order of work.**
+
+1. Memory layer: keep recent full-size pictures ready (aim: about ten
+   on the graphics card, about forty in ordinary memory), directional
+   read-ahead of about twelve, the queueing rules above, both sizes
+   from one decode in single view, and showing a picture without
+   waiting for its disk save. Separate allowances so thumbnails are
+   safe. No measurement is needed before starting.
+2. Faster decode, using the M7 results.
+3. Smaller full-size files on disk, quiet building of the rest of the
+   folder outward from the viewed photo, and the settings. Needs the
+   M8 results.
+
+Steve first listed disk building ahead of the memory layer. Agreed to
+swap them: the memory layer is what makes arrowing instant, and disk
+building costs about 13 GB per 500 photos until the files are smaller.
+
+**Tests required** (section 7, M7 and M8; brief:
+`docs/technical/codex-brief-library-fullscreen-speed-trial-2026-10-14.md`).
+
+- M7 decides step 2 and how far read-ahead can be trusted. If a
+  full-size picture cannot be had in roughly half a second per photo
+  with several running at once, twelve ahead will not keep up with
+  fast arrowing and step 3 matters more.
+- M8 decides the disk format for step 3. If no smaller unfinished
+  format opens quickly enough, the fallback is a finished picture as
+  Lightroom stores, at the cost of two stored versions or a rebuild
+  whenever the starting look changes. Ask Steve before taking it.
+- After each step is built: the fast checks, the two existing
+  Library full-screen checks (`library-appearance-navigation.js`,
+  `library-fullscreen-raw.js`), and Steve arrowing through a real
+  folder. Per AGENTS.md, how it feels is judged by Steve first. Step
+  1 touches drawing code shared with Grade, so also run the one or
+  two Grade GPU checks that cover whatever it changes there.
+
+**Update after M7 and M8 (October 14, 2026).** M7 showed that read-ahead
+in memory cannot carry cold browsing with today's decode: about 1.4
+full-size pictures a second with six separate workers, and the photo
+landed on was sharp after 1.7-3.3 seconds. Viewed-photo priority, direct
+handoff (837 to 279 ms) and pictures held on the graphics card (12 ms
+redraw) all proved worthwhile. M8 found lossless shuffled Zstandard 35%
+smaller with identical pixels; no several-fold lossless saving exists.
+
+Found by Claude the same day, not covered by M7: Steve's photos are on
+drive D:, a spinning disk in a USB enclosure; the app cache is on C:, an
+NVMe drive. M7 ran with files already in Windows' memory, so it did not
+measure reading a photo cold from D:. FastRawViewer's own advice is two
+or three parallel reads on spinning disks. M7's "alone" figures used one
+thread at low priority, not the whole machine.
+
+Decided by Steve, October 14:
+
+- Decode speed gets a deep dive, not parked. Every later trick is
+  bottlenecked by it.
+- Target, measured against FastRawViewer on Steve's machine (sharp in
+  under half a second, unless he presses as fast as he can):
+  1. At a steady culling pace, about one press every half second,
+     every photo is sharp when reached.
+  2. The photo stopped on after moving fast is sharp within half a
+     second.
+  3. Pressing as fast as possible may outrun preparation, showing the
+     Library thumbnail, as long as it catches up quickly on stopping.
+- Only camera RAW files matter for this speed. Other formats are
+  usually already picks, so waiting for them is acceptable.
+- The browsing picture need only look the same to the eye, judged by
+  Steve from side-by-sides. Colour accuracy may be traded for speed;
+  real accuracy comes when the photo opens in Grade, which is unchanged.
+  The Library thumbnail and full-size picture of one photo must still
+  come from the same route, so nothing jumps within the Library.
+- A FastRawViewer-style route, with most work after unpacking done on
+  the graphics card, is the target design. Cheaper processor gains are
+  a step on the way. The October 14 graphics-card prototype was
+  rejected only against the old identical-pixels rule and because it
+  handed pictures back to the processor; neither binds the new trial.
+
+Revised order of work:
+
+1. Memory layer as above, plus separate workers, viewed-photo priority
+   and direct handoff. Unchanged.
+2. Decode deep dive for camera RAW (M9), then build its winning route.
+3. Disk building with lossless compression, the allowances and Auto.
+   Decided by Steve, October 14: the default allowance for full-size
+   pictures is 10 GB (about 625 pictures at 16 MB), separate from the
+   thumbnail allowance and changeable in settings.
+
+**After M9 (October 14, 2026).** Steve reviewed the M9 side-by-sides for
+every camera, including Fuji and Sony DSC02767, and saw nothing wrong:
+the graphics-card browsing picture is accepted for appearance.
+
+M9 moved the bottleneck to the photo disk. A cold camera RAW spent about
+232 ms (up to 486 ms) reading from `D:`, 127 ms unpacking, about 80 ms in
+our remaining processing and 177 ms reaching the screen. The disk
+delivered about four RAW files a second however many readers ran.
+Background work roughly doubled the viewed photo's time, because each
+worker reads then decodes, so reads collide and the disk idles while
+workers decode.
+
+Claude's hypothesis, not yet measured: FastRawViewer feels instant on the
+same disk mainly because it reads files into memory ahead of the user (a
+40-file RAW cache, 12 ahead), so the photo stopped on usually needs only
+unpacking and drawing. Proposed design: one dedicated disk reader filling
+an in-memory RAW file cache in priority order (viewed photo first, then
+the direction of travel), reading in small pieces so background reads
+yield at once to the viewed photo, with decode workers working only from
+memory. A truly cold jump will still pay the disk read; no design avoids
+that on this disk.
+
+Agreed by Steve: test this as M10 before building. Brief:
+`docs/technical/codex-brief-library-disk-reader-trial-2026-10-14.md`.
+
+**Decided after M10 (October 14, 2026): build it.** M10 confirmed the disk
+reader: steady culling went from 12/30 to 26/30 photos sharp, every miss in
+the first six photos, and the wait after hammering fell to about 0.85 s.
+Steve chose to stop measuring and build. The build bar:
+
+- Steady culling (a press every half second): every photo sharp, including
+  the first few.
+- Stopping on a photo already read ahead: sharp within half a second.
+- After pressing as fast as possible: judged by Steve against
+  FastRawViewer by feel. About 1 s is the measured limit on this disk,
+  because the photo landed on has usually not been read yet and reading
+  it alone takes 0.25-0.45 s. A faster photo disk changes this.
+
+The build combines step 1 with the M9 and M10 findings: the graphics-card
+browsing picture for camera RAW (appearance approved), two background
+workers plus a reserved one for the viewed photo, the dedicated disk reader
+(12 ahead, about 40 RAW files in memory, 1 MB pieces, scaled down by Auto on
+smaller machines), pictures held on the graphics card, separate thumbnail
+and full-size allowances, and three fixes M10 exposed: promote a viewed
+photo already being decoded in the background, send less data to the
+screen, and start reading ahead when a photo is selected in the grid. The
+grid's thumbnails for camera RAW move to the same route so nothing jumps;
+grid speed must not get worse. Moving development onto the graphics card
+stays a later option, only if the build still feels slow to Steve. Disk
+building on `C:` (lossless shuffled Zstandard, 10 GB) follows as its own
+step. Brief:
+`docs/technical/codex-brief-library-fullscreen-browsing-build-2026-10-14.md`.
+
 ### 5.10 Overlays: focus, and exposure
 
 Decided:
@@ -1471,6 +1692,10 @@ target.
 | M4 | How large is the embedded JPEG across cameras, and how often is it big enough? | How much the tier 1 head start is worth |
 | M5 | Does thumbnail work in the helper process disturb the grade preview? | Limits for background work |
 | M6 | Does keeping edited-photo previews current hold up across a whole library? | The preview design (one of the two risky pieces) |
+| M7 | How fast can a full-size (2560) Library picture be made from a RAW and put on screen, alone and with several at once? What does making the thumbnail in the same decode add? | Whether read-ahead can carry full-screen browsing (5.9, full-screen browsing speed, step 2) |
+| M8 | How small can an unfinished full-size picture be stored, and how long does it take to write and to open? | The disk format and default allowance for full-size pictures (5.9, step 3) |
+| M9 | How fast can a camera RAW become a full-size browsing picture on screen, cold from the photo disk, if the picture only has to look the same to the eye? | The decode route for full-screen browsing (5.9, update after M7 and M8, step 2) |
+| M10 | Does one prioritised disk reader feeding an in-memory RAW file cache let browsing meet the targets on the photo disk? | Whether the disk reader becomes part of the step 1-2 build (5.9, after M9) |
 | R1 | Which metadata reader gives reliable lens and maker-specific data per brand: what is built in, or bundling ExifTool? | Reader choice, and what the app can honestly promise per brand |
 | T1 | Trial: save today's project document beside a photo, reopen it with the photo found beside it, with autosave. | The save-model change (the other risky piece) |
 
