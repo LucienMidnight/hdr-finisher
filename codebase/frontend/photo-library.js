@@ -105,16 +105,17 @@
   }
   const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}`;
   const recentPictures = new Map();
-  const rawTypes = new Set(["ARW", "CR2", "CR3", "NEF", "NRW", "RAF", "RW2", "ORF", "PEF", "DNG", "SRW", "3FR", "IIQ", "ERF", "KDC", "MOS", "MRW", "RAW", "RWL", "SR2", "SRF"]);
+  const rawTypes = new Set(["ARW", "CR2", "CR3", "NEF", "NRW", "RAF", "RW2", "ORF", "ORI", "PEF", "DNG", "SRW"]);
   const rawCandidate = photo => photo && rawTypes.has(photo.type) && !photo.edited && !photo.copy_id;
   const browsingSize = {width: Math.min(2560, Math.round(screen.width * (window.devicePixelRatio || 1))),
     height: Math.min(2560, Math.round(screen.height * (window.devicePixelRatio || 1)))};
   let browsingLimits = {ahead:12,gpu_pictures:10}, rawController = null, rawTimer, rawDirection = 1, rawGeneration = 0;
   let rawPlanSignature = "";
+  const rawClient = crypto.randomUUID();
   function stopRawAhead() {
     clearTimeout(rawTimer); rawController?.abort(); rawController = null; rawGeneration++;
     rawPlanSignature = "";
-    void api("/api/library/raw-plan", {paths:[],...browsingSize}).catch(() => {});
+    void api("/api/library/raw-plan", {paths:[],...browsingSize,client:rawClient,revision:rawGeneration}).catch(() => {});
   }
   function startRawAhead(previousIndex = state.index) {
     if (!state.active || !selected()) return;
@@ -134,7 +135,7 @@
       // View first, then travel order. Submit one GPU conversion at a time so
       // foreground draws and Grade get an opportunity between background jobs.
       const heldPaths = new Set([photo,...neighbours.slice(0, Math.max(1,browsingLimits.gpu_pictures-3)),...neighbours.slice(-2)]
-        .filter(rawCandidate).map(p => p.source_path || p.path));
+        .filter(rawCandidate).slice(0,browsingLimits.gpu_pictures).map(p => p.source_path || p.path));
       for (const meta of result.ready.filter(meta => heldPaths.has(meta.path))) {
         if (!current()) break;
         const item = photos.find(p => (p.source_path || p.path) === meta.path);
@@ -153,7 +154,10 @@
       catch(error) { if (!aborted(error)) console.debug("Library read-ahead:",error.message); }
       if (current()) rawTimer = setTimeout(poll,100);
     }
-    void api("/api/library/raw-plan", {paths:photos.map(p=>p.path),...browsingSize},controller.signal)
+    const retained = photos.map(p=>recentPictures.get(pictureIdentity(p)))
+      .filter(meta=>meta?.route === "camera-raw-gpu" && meta.edge >= 1280 && HDRLibraryPictures.resident(meta.key))
+      .map(meta=>meta.transport_key);
+    void api("/api/library/raw-plan", {paths:photos.map(p=>p.path),retained,...browsingSize,client:rawClient,revision:generation},controller.signal)
       .then(prepareReady).then(() => { if (current()) rawTimer = setTimeout(poll,50); })
       .catch(error => { if (!aborted(error)) console.debug("Library read-ahead:",error.message); });
   }
@@ -504,7 +508,9 @@
     status(`Loading ${photo.name}…`);
     try {
       startRawAhead();
-      const prepared = rawCandidate(photo) ? null : readAhead.take(photo, edge);
+      const retained = recentPictures.get(pictureIdentity(photo));
+      const prepared = rawCandidate(photo) ? (retained?.route === "camera-raw-gpu" && retained.edge >= 1280 && HDRLibraryPictures.resident(retained.key)
+        ? Promise.resolve(retained) : null) : readAhead.take(photo, edge);
       const neighbours = [state.photos[state.index + 1], state.photos[state.index - 1]].filter(Boolean);
       // Preserve the selected job, including an unfinished read-ahead decode.
       readAhead.update(photo, neighbours.filter(item => !rawCandidate(item)), edge);

@@ -79,6 +79,7 @@ class RawBrowsing:
         self.screen = (2560, 1440)
         self.sequence = 0
         self.failure = None
+        self.plan_revisions = OrderedDict()
 
     def start(self):
         with self.cv:
@@ -138,19 +139,29 @@ class RawBrowsing:
                 finally:
                     kernel.CloseHandle(handle)
 
-    def plan(self, paths, width=2560, height=1440):
+    def plan(self, paths, width=2560, height=1440, client="", revision=0, retained=()):
         paths = paths[:self.limits["ahead"] + 3]
         with self.cv:
+            if client:
+                if revision <= self.plan_revisions.get(client, -1):
+                    return self.status()
+                self.plan_revisions[client] = revision
+                self.plan_revisions.move_to_end(client)
+                while len(self.plan_revisions) > 32:
+                    self.plan_revisions.popitem(last=False)
             self.screen = (max(1280, min(2560, width)), max(720, min(2560, height)))
             self.wanted = [identity(path)[0] for path in paths]
             self.selected = self.wanted[0] if self.wanted else None
             # Drop queued stale read-ahead; completed/in-flight work remains useful.
             for key, job in list(self.jobs.items()):
+                if job["priority"] == 0 and key != self.selected and not job["active"]:
+                    job["priority"] = 50 + (self.wanted.index(key) if key in self.wanted else len(self.wanted))
                 if job["priority"] >= 50 and key not in self.wanted and not job["active"]:
                     job["future"].cancel()
                     del self.jobs[key]
             for i, path in enumerate(paths):
-                self.request(path, 0 if i == 0 else 50 + i)
+                if self.wanted[i] not in retained:
+                    self.request(path, 0 if i == 0 else 50 + i)
             self.cv.notify_all()
         return self.status()
 
@@ -162,7 +173,8 @@ class RawBrowsing:
         full_scale = min(self.screen[0] / w, self.screen[1] / h, 1)
         bw, bh = max(1, round(w * full_scale)), max(1, round(h * full_scale))
         browse_key = sha256(f"{meta['transport_key']}:{bw}:{bh}".encode()).hexdigest()
-        return meta | {"key": key, "width": width, "height": height, "edge": max(width, height),
+        # edge identifies the preview tier; dimensions remain fitted to the screen.
+        return meta | {"key": key, "width": width, "height": height, "edge": max(1280, width, height) if edge >= 1280 else max(width, height),
             "browse_width": bw, "browse_height": bh, "browse_key": browse_key,
             "prepare_full": meta["transport_key"] in self.wanted[:max(1,self.limits["gpu_pictures"]-2)],
             "quality": "quick", "stored_bytes": 0, "cache_hit": False}

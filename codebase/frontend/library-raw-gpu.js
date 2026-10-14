@@ -67,7 +67,7 @@ window.HDRLibraryRawGPU = (() => {
       const resources = [raw], made = [], encoder = device.createCommandEncoder();
       const sizes = [meta];
       if (meta.edge < 1280 && meta.prepare_full) {
-        sizes.push({...meta,key:meta.browse_key,width:meta.browse_width,height:meta.browse_height,edge:Math.max(meta.browse_width,meta.browse_height)});
+        sizes.push({...meta,key:meta.browse_key,width:meta.browse_width,height:meta.browse_height,edge:Math.max(1280,meta.browse_width,meta.browse_height)});
       }
       if (meta.edge >= 1280) {
         const scale = Math.min(512 / Math.max(meta.raw_width, meta.raw_height), 1);

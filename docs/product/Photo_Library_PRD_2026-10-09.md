@@ -1086,6 +1086,46 @@ building on `C:` (lossless shuffled Zstandard, 10 GB) follows as its own
 step. Brief:
 `docs/technical/codex-brief-library-fullscreen-browsing-build-2026-10-14.md`.
 
+**Built October 14, 2026.** Camera RAW thumbnails and fitted Single/full-screen
+scenes now use the approved M9 route: LibRaw half-size RGB16 in independent
+processes, then Library-only GPU shrink/colour. Near selection, one decode and
+upload makes both sizes; thumbnail-only work makes no full-size scene. Two
+background processes and one reserved viewed-photo process share a prioritised
+1 MB reader. Auto allows 12 ahead/40 RAW files/10 GPU scenes on 64 GB, with
+separate byte caps and smaller allowances on smaller machines. Active background
+decodes are promoted, navigation plans reject late requests, and retained scenes
+redraw without another CPU decode. Reading starts at grid selection; Grade/export
+pause signals also pause new RAW reading/development and GPU preparation.
+Thumbnail and full-size disk allowances are independent. Full-size RAW scenes
+stay in RAM/GPU memory; the whole-folder Zstandard disk build remains the next
+step. Grade, export, Proof, their renderer and their pinned shaders are unchanged.
+Existing ungraded camera RAW thumbnails are remade once under the new identity;
+saved-grade pictures and non-camera formats keep their routes.
+
+The real Library's M10-order 30-file run on disposable D: copies, warm renderer
+and Windows-cache-bypassing reads, reached 30/30 sharp-ready at 500 ms (M10
+26/30), 8/30 at 250 ms (0/30), and 1/30 at 100 ms (0/30). Last-photo waits,
+including two animation frames, were 25/1033/977 ms respectively; the eight-photo
+burst was 952 ms and the distant jump 976 ms (M10 860/844 ms). An earlier valid
+500 ms run reached 29/30, missing photo two: this is measured success, not a
+guarantee against disk variation. GPU hand-off/conversion medians were 157–172 ms
+(M10 about 182 ms). Faster-stop differences are chiefly disk reads (about
+0.40–0.48 s in the final cases), development (0.23–0.29 s), and actual UI drawing.
+A decoded read-ahead scene, absent from the GPU, settled in 237 ms; returning to
+a scene just seen took 40 ms. The RAW-bytes-only cache condition was not isolated
+separately. Normal-reader grid checks with the same 30 files/fresh app caches
+took 10.9 s built versus 18.0 s before; Windows file caching was uncontrolled.
+Cache-bypassing grid time varied from 16 to 60 s and has no matched old-route
+baseline. These figures are not panel scanout measurements; Steve's own culling
+is the final judgement. Very large RAWs that exceed memory/GPU buffer allowances
+can fail the Library preview; Grade's original loader is unaffected.
+
+Validation: Library RAW full-screen/back/forward coverage and bounded-reader,
+promotion, stale-plan, retained-scene and independent-disk-cache checks. The
+appearance-navigation check passed its navigation portion, then its obsolete
+`#filter-grade` selector failed against the already-replaced filter UI; that
+unrelated test was left unchanged. No broad sweep, installer or push.
+
 ### 5.10 Overlays: focus, and exposure
 
 Decided:

@@ -109,6 +109,9 @@ class NativeRequest(BaseModel):
 
 class RawPlanRequest(BaseModel):
     paths: list[str] = Field(default_factory=list, max_length=16)
+    client: str = Field(default="", max_length=64)
+    revision: int = Field(default=0, ge=0)
+    retained: list[str] = Field(default_factory=list, max_length=16)
     width: int = Field(default=2560, ge=1, le=16384)
     height: int = Field(default=1440, ge=1, le=16384)
 
@@ -331,7 +334,7 @@ def create_library_router(worker, browser, store=None):
     def raw_plan(command: RawPlanRequest):
         paths = [str(marks.source_path(path)) for path in command.paths]
         paths = [path for path in paths if camera_raw(path)]
-        return raw_browsing.plan(paths, command.width, command.height)
+        return raw_browsing.plan(paths, command.width, command.height, command.client, command.revision, command.retained)
 
     @router.get("/raw-ready")
     def raw_ready():
@@ -642,6 +645,8 @@ def create_library_router(worker, browser, store=None):
                     # Decoding finishes and is kept even if the selection moved.
                     raise HTTPException(499, "Library request cancelled.")
                 await asyncio.sleep(.01)
+            if future.cancelled():
+                raise HTTPException(499, "Library request superseded.")
             try:
                 return raw_browsing.metadata(future.result(), command.edge)
             except (ValueError, OSError) as error:
