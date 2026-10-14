@@ -162,6 +162,20 @@ class LibraryWorker:
                 problem("helper_send_failed", arguments.get("path", arguments.get("paths", [])), exc, "request retained for automatic helper restart")
         return job_id, future
 
+    def submit_browse_picture(self, **arguments) -> tuple[str, Future]:
+        """Non-RAW browsing owns its job, independently of HTTP waiters."""
+        from .library_pictures import picture_key
+        key = picture_key(arguments["path"], arguments["edge"], arguments["quality"])
+        self.start()
+        with self._lock:
+            for job_id, request in self._requests.items():
+                if request.get("browse_key") == key:
+                    priority = min(request["priority"], arguments.get("priority", 10))
+                    request["priority"] = priority
+                    self._send({"command": "prioritize", "id": job_id, "priority": priority})
+                    return job_id, self._pending[job_id]
+            return self.submit_library("picture", browse_key=key, **arguments)
+
     def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False,
                   cancel_event: Event | None = None) -> Path:
         job_id, future = self.submit_thumbnail(value, size, fast_only=fast_only,
@@ -469,6 +483,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 if message["command"] == "pause":
                     state["paused"] = message["paused"]
                     pictures.pause_native(message["paused"])
+                elif message["command"] == "prioritize":
+                    queue[:] = [(message["priority"] if item[2]["id"] == message["id"] else item[0], item[1], item[2]) for item in queue]
+                    heapq.heapify(queue)
                 elif message["command"] == "cancel":
                     event = jobs.pop(message["id"], None)
                     if event is not None:

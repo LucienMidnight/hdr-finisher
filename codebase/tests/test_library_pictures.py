@@ -131,3 +131,33 @@ def test_large_browse_cache_avoids_compression_without_changing_pixels(tmp_path,
         with np.load(cache.file(meta["key"]), allow_pickle=False) as stored:
             np.testing.assert_array_equal(stored["pixels"], pixels.astype(np.float16))
         assert cache.cached(source, edge, "quick")["key"] == meta["key"]
+
+
+def test_non_raw_decode_keeps_completed_pixels_after_viewer_cancels(tmp_path, monkeypatch):
+    from threading import Event
+    source = photo(tmp_path)
+    cancelled = Event()
+    def decode(*args):
+        cancelled.set()  # Viewer left during the native decoder call.
+        return np.ones((12, 24, 3), np.float32), None, {"route": "test"}
+    monkeypatch.setattr("hdr_finisher.library_pictures.decode_picture", decode)
+    cache = LibraryPictureCache(tmp_path / "cache")
+    result = cache.build(source, 2560, cancelled=cancelled.is_set)
+    assert cache.cached(source, 2560, "quick")["key"] == result["key"]
+
+
+def test_non_raw_browse_waiters_share_job_across_pause_and_promote_it(tmp_path):
+    source = photo(tmp_path)
+    helper = LibraryWorker(tmp_path / "cache")
+    try:
+        helper.pause("test", True)
+        job, future = helper.submit_browse_picture(path=str(source), edge=2560, quality="quick", priority=50)
+        retry, shared = helper.submit_browse_picture(path=str(source), edge=2560, quality="quick", priority=0)
+        assert retry == job and shared is future
+        assert helper.status()["pending"] == 1
+        assert helper._requests[job]["priority"] == 0
+        helper.pause("test", False)
+        result = future.result(timeout=20)
+        assert LibraryPictureCache(helper.root).cached(source, 2560, "quick")["key"] == result["key"]
+    finally:
+        helper.close()

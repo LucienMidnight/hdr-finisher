@@ -288,11 +288,14 @@ def create_library_router(worker, browser, store=None):
         except (ValueError, OSError) as error:
             raise HTTPException(status_code=400, detail=user_error(error)) from error
 
-    async def helper_result(request, command, **arguments):
+    async def helper_result(request, command, *, retain_picture=False, **arguments):
         arguments["trace_id"] = request.headers.get("X-Library-Request")
         epoch = file_commands.epoch
         try:
-            job_id, future = await run_in_threadpool(worker.submit_library, command, **arguments)
+            if retain_picture:
+                job_id, future = await run_in_threadpool(worker.submit_browse_picture, **arguments)
+            else:
+                job_id, future = await run_in_threadpool(worker.submit_library, command, **arguments)
         except (RuntimeError, ValueError, OSError) as error:
             log("helper_request_failed", operation=command, paths=arguments, reason=str(error), action="request stopped; saved marks retained")
             raise HTTPException(status_code=503, detail=helper_error(error)) from error
@@ -316,7 +319,8 @@ def create_library_router(worker, browser, store=None):
             log("helper_request_failed", operation=command, paths=arguments, reason=str(exc), action="request stopped; saved marks retained")
             raise HTTPException(status_code=400, detail=f"The Library could not read {arguments.get('path', 'the selected photos')}. Saved marks are safe; check the photo or folder and try again.") from exc
         finally:
-            worker.cancel(job_id)
+            if not retain_picture:
+                worker.cancel(job_id)
 
     @router.post("/stopwatch")
     def stopwatch(events: list[StopwatchEvent]):
@@ -657,7 +661,7 @@ def create_library_router(worker, browser, store=None):
             raise HTTPException(status_code=400, detail=user_error(exc)) from exc
         if cached:
             return cached
-        return await helper_result(request, "picture", **command.model_dump())
+        return await helper_result(request, "picture", retain_picture=True, **command.model_dump())
 
     from .library_overlays import OverlayMaps
     from .raw_import import RAW_EXTENSIONS

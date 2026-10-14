@@ -83,12 +83,18 @@ class LibraryPictureCache:
         if path.suffix.lower() not in SOURCE_EXTENSIONS:
             raise ValueError("Unsupported library file type.")
         key = picture_key(path, edge, quality)
-        with _CACHE_LOCKS[int(key[:2], 16) % len(_CACHE_LOCKS)]:
+        browsing = path.suffix.lower() not in raw_import.RAW_EXTENSIONS and quality in {"quick", "fast"}
+        lock_key = sha256(str(path).encode()).hexdigest() if browsing else key
+        with _CACHE_LOCKS[int(lock_key[:2], 16) % len(_CACHE_LOCKS)]:
             cached = self.cached(path, edge, quality)
             if cached:
                 return cached
             started = perf_counter()
             check_cancelled(cancelled)
+            # Once a non-RAW browse decode starts, finish and store it even if
+            # its original viewer has gone away. Queued work can still cancel.
+            if browsing:
+                cancelled = None
             decode_started = perf_counter()
             pixels, reference, metadata = decoded if decoded is not None else decode_picture(path, edge, quality)
             log("picture_decoded", path=str(path), key=key, duration_ms=(perf_counter()-decode_started)*1000)
