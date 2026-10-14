@@ -2298,3 +2298,35 @@ What to try: open a saved-grade RAW and a fresh RAW, cancel one open and reopen
 it, and judge the wait while other Grade work is active. Confirm the same
 picture, saved settings and readouts. Leave the two-worker cap in place unless
 Steve chooses to revisit the larger-memory option.
+
+
+## Add folder views and camera peeks — October 14, 2026
+
+Add folder now remembers its List/Grid view, with the switch beside the path
+bar. Grid uses the existing file-browser folder icon and temporary photo
+thumbnails. Folder selection, Ctrl/Shift selection, double-click navigation
+and Pin share the same behavior in both views. Going Up selects and scrolls
+to the folder just left, and shows its peek.
+
+A folder peek counts supported photos directly inside that folder and lists
+their file types. It tries at most 12 eligible files to show up to four
+embedded camera JPEGs; it never generates pictures for a peek. Missing or
+unreadable embedded previews can therefore leave fewer pictures, or a
+message explaining that none are available. Photo tiles and the selected
+photo use the media-browser service, preferring embedded JPEGs and otherwise
+making a temporary thumbnail with a loading state. Ambiguous colour inputs
+retain the existing interpretation message.
+
+Only visible grid tiles and peek frames request pictures. Scrolling them out
+of view aborts their requests and releases their object URLs. The picker has
+two request slots, reserving browser connections for other work. Closing or
+navigating cancels the previous folder and pictures. An already executing
+decoder finishes its current read before observing cancellation; cancelled
+results are not written to disk. The existing media-browser cache prunes to
+512 JPEG files after generation, including in the desktop helper. Its new
+keys refresh prior generated thumbnails. None of this uses the Library
+picture cache, changes its allowances, or changes Grade, export or Proof.
+
+The layout follows `product/library-wireframes/add-folder.html`, retaining
+the existing application dialog dimensions and styles. The reference was
+opened from a static server rooted at `ai`, with its stand-in photos loaded.

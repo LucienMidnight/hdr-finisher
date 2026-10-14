@@ -292,3 +292,32 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-filter-values .library-filter-value span { flex: initial; }
 .library-filter-values .library-filter-value span:not(.library-count) { flex: 1; }
 .library-filter-range .library-filter-values { max-height: 260px; }
+
+/* The Add folder window shares file-browser tokens, rows and folder artwork. */
+.picker-view-switch { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.picker-view-switch button { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 0; background: transparent; color: var(--muted); font: 12px var(--sans); cursor: pointer; }
+.picker-view-switch button + button { border-left: 1px solid var(--border); }
+.picker-view-switch [aria-pressed="true"] { background: var(--raised); color: var(--text); }
+.picker-view-switch svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+.library-picker[data-view="grid"] .media-browser-table { grid-template-rows: minmax(0, 1fr); }
+.library-picker[data-view="grid"] .media-browser-list-header { display: none; }
+.library-picker[data-view="grid"] #picker-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); align-content: start; gap: 6px; padding: 10px; }
+.library-picker[data-view="grid"] .directory-browser-entry { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 6px; border-radius: 5px; text-align: center; }
+.library-picker[data-view="grid"] .directory-browser-entry:hover { background: var(--raised); }
+.library-picker[data-view="grid"] .directory-browser-entry.selected { background: color-mix(in srgb, var(--accent) 18%, var(--raised)); outline: 1px solid var(--accent); outline-offset: -1px; }
+.library-picker .picker-tile-frame { display: grid; place-items: center; width: 100%; aspect-ratio: 1; background: var(--deep); border-radius: 3px; }
+.picker-tile-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.library-picker .picker-folder-icon { width: 46%; height: 46%; background: var(--quiet); mask: url("assets/icons/tabler/folder.svg") center / contain no-repeat; }
+.picker-tile-name { width: 100%; font: 11px var(--mono); }
+#picker-preview-frame { flex: 0 0 auto; aspect-ratio: 1; width: 100%; }
+.library-picker #picker-preview-frame.loading { display: flex; }
+#picker-preview-frame[hidden], #picker-peek[hidden] { display: none; }
+#picker-peek { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; flex-shrink: 0; }
+#picker-peek > div { display: grid; place-items: center; aspect-ratio: 3/2; background: var(--deep); border-radius: 3px; overflow: hidden; }
+#picker-peek > div[hidden] { display: none; }
+#picker-peek img { width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: cover; }
+#picker-preview-note { font-size: 12px; color: var(--muted); line-height: 1.5; }
+#picker-preview-hint { font-size: 11px; color: var(--quiet); }
+.library-picker .loading { background: linear-gradient(90deg, var(--deep), var(--raised), var(--deep)); background-size: 200% 100%; animation: picker-loading 1.4s linear infinite; }
+@keyframes picker-loading { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .library-picker .loading { animation: none; } }

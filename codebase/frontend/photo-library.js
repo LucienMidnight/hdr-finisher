@@ -776,93 +776,12 @@
       onError: error => { if (state.picker) $("picker-status").textContent = error.message; else status(error.message); } });
   }
   $("folders").addEventListener("contextmenu", event => showFolderMenu(event));
-  async function pickerBrowse(path = "") {
-    const picker = state.picker; if (!picker) return;
-    if (picker.displayed) picker.scrollPositions.set(picker.displayed, $("picker-list").scrollTop);
-    closeFolderMenu(); picker.controller?.abort(); clearPickerPreview();
-    const controller = new AbortController(); picker.controller = controller;
-    picker.current = ""; picker.selection.clear(); $("picker-pin").disabled = true;
-    $("picker-status").textContent = "Reading folder…";
-    try {
-      const result = await api(`/api/media-browser?mode=export_directory&path=${encodeURIComponent(path)}`, undefined, controller.signal);
-      if (state.picker !== picker || controller.signal.aborted) return;
-      picker.current = result.current; picker.parent = result.parent; picker.entries = result.entries; picker.selection = new Set(); picker.anchor = -1;
-      if (document.activeElement !== $("picker-path")) $("picker-path").value = result.current; $("picker-up").disabled = !result.parent; $("picker-status").textContent = "Pin this folder, or select folders below.";
-      $("picker-places").replaceChildren(...[...result.drives, ...result.locations, ...result.pinned].map((place) => {
-        const button = document.createElement("button"); button.type = "button"; button.textContent = place.name; button.title = place.path; button.addEventListener("click", () => pickerBrowse(place.path)); return button;
-      }));
-      picker.displayed = result.current;
-      $("picker-list").replaceChildren(...picker.entries.map((folder, index) => {
-        const button = document.createElement("button"); button.type = "button"; button.title = folder.path;
-        button.className = `directory-browser-entry ${folder.kind}${folder.supported ? " supported" : ""}`;
-        button.dataset.path = folder.path;
-        button.setAttribute("role", "option"); button.setAttribute("aria-selected", "false");
-        const values = [folder.name, folder.size == null ? "--" : `${(folder.size / 1024).toFixed(0)} KB`, folder.kind_label,
-          folder.date_added_ms == null ? "--" : new Date(folder.date_added_ms).toLocaleDateString()];
-        ["name", "size", "kind", "date"].forEach((column, i) => {
-          const span = document.createElement("span"); span.className = `directory-browser-entry-${column}`; span.textContent = values[i]; button.append(span);
-        });
-        button.addEventListener("click", (event) => {
-          if (folder.kind !== "directory") {
-            if (folder.supported) void pickerPreview(folder);
-            return;
-          }
-          clearPickerPreview();
-          if (event.shiftKey && picker.anchor >= 0) {
-            if (!event.ctrlKey) picker.selection.clear();
-            for (let i = Math.min(index, picker.anchor); i <= Math.max(index, picker.anchor); i++) { if (picker.entries[i].kind === "directory") picker.selection.add(i); }
-          } else if (event.ctrlKey || event.metaKey) {
-            picker.selection.has(index) ? picker.selection.delete(index) : picker.selection.add(index); picker.anchor = index;
-          } else { picker.selection = new Set([index]); picker.anchor = index; }
-          [...$("picker-list").children].forEach((element, i) => { element.setAttribute("aria-selected", String(picker.selection.has(i))); element.classList.toggle("selected", picker.selection.has(i)); });
-          $("picker-status").textContent = `${picker.selection.size} folders selected`;
-        });
-        if (folder.kind === "directory") {
-          button.addEventListener("dblclick", () => pickerBrowse(folder.path)); bindFolderMenu(button, folder.path);
-        } return button;
-      }));
-      $("picker-list").scrollTop = picker.scrollPositions.get(result.current) || 0;
-    } catch (error) { if (!aborted(error) && state.picker === picker) $("picker-status").textContent = error.message; }
-    finally { if (state.picker === picker && picker.controller === controller) $("picker-pin").disabled = !picker.current; }
+  function pickerBrowse(path = "", returnPath = "") { return state.picker?.browse(path, returnPath); }
+  function openPicker() {
+    state.picker = HDRLibraryFolderPicker.create({ api, sleep, bindFolderMenu, closeFolderMenu });
+    $("folder-picker").showModal(); pickerBrowse(state.path);
   }
-  function clearPickerPreview() {
-    const picker = state.picker;
-    picker?.preview?.abort();
-    $("picker-preview").onload = null; $("picker-preview").onerror = null;
-    if (picker?.previewUrl) { URL.revokeObjectURL(picker.previewUrl); picker.previewUrl = null; }
-    $("picker-preview").hidden = true; $("picker-preview").removeAttribute("src");
-    $("picker-preview-name").textContent = "Select a photo to preview.";
-    $("picker-preview-note").textContent = "Photo files stay in their folders.";
-  }
-  async function pickerPreview(entry) {
-    clearPickerPreview();
-    const picker = state.picker, controller = new AbortController(); picker.preview = controller;
-    $("picker-preview-name").textContent = entry.name; $("picker-preview-note").textContent = "Loading preview…";
-    const current = () => state.picker === picker && !controller.signal.aborted;
-    try {
-      const params = new URLSearchParams({ path: entry.path, size: "512", key: entry.thumbnail_key || "", version: "natural-aspect-v4" });
-      let response;
-      for (;;) {
-        response = await fetch(`/api/media-browser/thumbnail?${params}`, { signal: controller.signal });
-        if (response.status !== 202) break;
-        await sleep(150, controller.signal);
-      }
-      if (!response.ok) {
-        if (response.status === 409) {
-          const payload = await response.json();
-          if (payload.detail?.code === "interpretation_required") throw new Error("Open this photo in Grade to choose its colour interpretation.");
-        }
-        throw new Error("Preview unavailable.");
-      }
-      const blob = await response.blob(); if (!current()) return;
-      picker.previewUrl = URL.createObjectURL(blob);
-      const image = $("picker-preview");
-      image.onload = () => { if (current()) { image.hidden = false; $("picker-preview-note").textContent = "SDR browser thumbnail"; } };
-      image.onerror = () => { if (current()) $("picker-preview-note").textContent = "Preview unavailable."; };
-      image.alt = `Preview of ${entry.name}`; image.src = picker.previewUrl;
-    } catch (error) { if (!aborted(error) && current()) $("picker-preview-note").textContent = error.message; }
-  }
-  function openPicker() { state.picker = { selection: new Set(), scrollPositions: new Map() }; $("folder-picker").showModal(); pickerBrowse(state.path); }
+  ["list", "grid"].forEach(view => $(`picker-view-${view}`).addEventListener("click", () => state.picker?.setView(view)));
   $("picker-pin").addEventListener("click", async () => {
     const picker = state.picker; if (!picker?.current) return;
     const paths = picker.selection.size ? [...picker.selection].map((index) => picker.entries[index].path) : [picker.current];
@@ -871,11 +790,11 @@
     catch (error) { $("picker-status").textContent = error.message; }
     finally { $("picker-pin").disabled = false; }
   });
-  $("folder-picker").addEventListener("close", () => { closeFolderMenu(); state.picker?.controller?.abort(); clearPickerPreview(); state.picker = null; });
+  $("folder-picker").addEventListener("close", () => { closeFolderMenu(); state.picker?.stop(); state.picker = null; });
   $("picker-cancel").addEventListener("click", () => $("folder-picker").close());
   $("picker-go").addEventListener("click", () => pickerBrowse($("picker-path").value));
   $("picker-path").addEventListener("keydown", (event) => { if (event.key === "Enter") pickerBrowse(event.target.value); });
-  $("picker-up").addEventListener("click", () => pickerBrowse(state.picker.parent));
+  $("picker-up").addEventListener("click", () => pickerBrowse(state.picker.parent, state.picker.current));
   $("add-folder").addEventListener("click", openPicker); $("empty-add").addEventListener("click", openPicker);
   $("open-image").addEventListener("click", () => postParent("choose-source"));
   $("grid-view").addEventListener("click", () => setView("grid")); $("single-view").addEventListener("click", () => setView("single")); $("review-view").addEventListener("click", () => setReview(true));
