@@ -106,7 +106,8 @@
   const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}`;
   const recentPictures = new Map();
   const rawTypes = new Set(["ARW", "CR2", "CR3", "NEF", "NRW", "RAF", "RW2", "ORF", "ORI", "PEF", "DNG", "SRW"]);
-  const rawCandidate = photo => photo && rawTypes.has(photo.type) && !photo.edited && !photo.copy_id;
+  const rawCandidate = photo => photo && rawTypes.has(photo.type) && !photo.edited && !photo.copy_id
+    && !recentPictures.get(pictureIdentity(photo))?.route?.includes("linear-dng");
   const browsingSize = {width: Math.min(2560, Math.round(screen.width * (window.devicePixelRatio || 1))),
     height: Math.min(2560, Math.round(screen.height * (window.devicePixelRatio || 1)))};
   let browsingLimits = {ahead:12,gpu_pictures:10}, rawController = null, rawTimer, rawDirection = 1, rawGeneration = 0;
