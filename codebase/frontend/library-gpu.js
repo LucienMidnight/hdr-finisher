@@ -87,8 +87,8 @@ window.HDRLibraryPictures = (() => {
       HDRLibraryStopwatch("draw_dispatched", { key: meta.key, queue_ms: performance.now() - queued });
       const gpu = await initialize();
       if (signal.aborted || !isCurrent()) return;
-      if (canvas.width !== meta.width) canvas.width = meta.width;
-      if (canvas.height !== meta.height) canvas.height = meta.height;
+      // Keep the accepted frame at its own shape while conversion and pixels load.
+      // renderTo resizes through its presentation gate when the new frame is ready.
       gpu.librarySignal = signal;
       gpu.libraryMeta = meta;
       if (meta.route === "camera-raw-gpu" && !gpu.rawPictures?.get(meta.key)) {
