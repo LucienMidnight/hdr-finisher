@@ -2152,6 +2152,259 @@ DNGs, in exchange for immediate browsing without preparing files. If it must
 match Grade's brightness/corrections and preserve linear-DNG HDR, keep stored
 previews for those cases. Nothing is adopted by this trial.
 
+**M7, October 14 (full-screen speed trial; measurement only):** Separate
+worker processes and direct memory handoff buy more than a faster shrink alone.
+They do not carry cold mixed-format browsing at four or ten photos a second:
+**0/30 photos were sharp when selected at either pace**. No shipped behavior,
+cache layout, shader, tolerance, budget, CPU export or Proof changed.
+
+Conditions: the ten M1/M2 representative files plus `DSC01287.exr`; the original
+30-photo ordering for browsing. Sony ARW, Canon CR2, mosaiced DJI DNG, linear
+DxO DNG, Fuji RAF, Nikon NEF, JPEG, HEIC, TIFF and EXR are covered. All sources
+were copied to ignored output; projects, originals and the real app cache were
+untouched. Primary CPU measurements use below-normal priority, six lanes and
+one native numeric thread per worker. Electron GPU runs were sequential through
+`tests/run-in-electron.js`, window 2560x1440, RTX 4070 Ti (12 GB), 64 GB RAM.
+Picture caches are fresh; the Windows file cache is warm/uncontrolled. Generally
+two samples per file, median within each file then median across the eleven
+files. Six-lane throughput is eleven divided by median batch wall time. Named
+slowest cases below use the same per-file median. Stage medians do not add to a
+median total. Page measurements use a loopback experimental service and the
+unchanged Library GPU renderer; they do not qualify production IPC/queue costs.
+
+**A — Where today's time goes.** Main current-route stages, milliseconds:
+
+| Stage | Alone median | Slowest alone | Six threads median | Slowest with six |
+|---|---:|---|---:|---|
+| Whole decode | 1297 | DSC01287.exr (4375) | 2396 | iphone_16_pro_IMG_3324.HEIC (7443) |
+| Traced LibRaw read/process; zero for other formats | 205 | DJI_0071-2.DNG (614) | 203 | 2L1B8631.CR2 (943) |
+| Shrink | 232 | DSC00264_DxO-optical-corr-only.dng (1220) | 382 | DSC04375_DxO_clipped_target.tif (4034) |
+| Colour plus untraced loader/normalization work | 604 | DSC01287.exr (3820) | 556 | iphone_16_pro_IMG_3324.HEIC (6724) |
+| Starting look | 50 | DJI_0071-2.DNG (108) | 89 | DSC00264_DxO-optical-corr-only.dng (629) |
+| RGB half-float packing | 46 | DJI_0071-2.DNG (59) | 81 | DSC00264_DxO-optical-corr-only.dng (111) |
+| Save | 549 | DSC00264_DxO-optical-corr-only.dng (1032) | 1231 | Nikon_D7500_DSC_3931.NEF (3869) |
+| Fetch/open/pack/transfer to page | 220 | DJI_0071.JPG (239) | 423 | 2L1B8631.CR2 (1576) |
+| Upload/draw/wait after fetch | 42 | DJI_0071-2.DNG (50) | 55 | 2L1B8631.CR2 (66) |
+
+The aggregate LibRaw row includes five non-LibRaw zeros; it is not an estimate
+of native-format reading. A companion probe separates those loader reads
+(normal priority, two samples, separately from the primary matrix):
+
+| Companion stage | Alone median, ms | Slowest alone | Six threads median, ms | Slowest with six |
+|---|---:|---|---:|---|
+| Read/process source | 370 | DSC01287.exr (2954) | 673 | iphone_16_pro_IMG_3324.HEIC (5996) |
+| Shrink | 196 | DSC00264_DxO-optical-corr-only.dng (922) | 351 | DSC00264_DxO-optical-corr-only.dng (4675) |
+| Colour and residual work | 242 | DJI_0071.JPG (950) | 433 | DJI_0071.JPG (4803) |
+
+JPEG's size-dependent native draft read and shrink remain fused in residual
+work. Save and page fetch also become expensive with six competing jobs; the
+single six-thread page run took 13.70 seconds for eleven completed pictures.
+The raw files retain each file's stage trace rather than inferring pure colour
+cost by counting loader time as matrix multiplication.
+
+**B — Decode alternatives.** Total includes starting look, half-float packing
+and fresh cache save. Throughput includes that work; decode excludes it.
+
+| CPU route | Decode median, ms | Slowest decode | Total median, ms | Photos/second |
+|---|---:|---|---:|---:|
+| Current, alone | 1297 | DSC01287.exr (4375) | 1966 | 0.41 |
+| Current, six threads in one process | 2396 | iphone_16_pro_IMG_3324.HEIC (7443) | 5177 | 0.93 |
+| Current, six separate processes | 1369 | DSC01287.exr (3893) | 2788 | 1.36 |
+| Float32 colour matrix, alone | 896 | DSC01287.exr (3496) | 1536 | 0.49 |
+| Float32 matrix, six threads | 1948 | iphone_16_pro_IMG_3324.HEIC (6798) | 4499 | 0.99 |
+| Float32 matrix, six processes | 1499 | DSC01287.exr (4236) | 2938 | 1.25 |
+| Parallel channel shrink + float32 matrix, alone | 803 | DSC01287.exr (3203) | 1377 | 0.56 |
+| Parallel shrink + float32 matrix, six processes | 1413 | DSC01287.exr (3816) | 2955 | 1.38 |
+
+Separate processes increased unchanged-math throughput from 0.93 to 1.36
+photos/second (46%). Parallel three-channel Pillow shrinking is bit-exact on
+all six decoded camera buffers; its float32 matrix companion changes at most
+one rendered SDR code value, so the combined route is **not bit-exact**.
+Its 1.38 versus 1.36 photos/second is a small observed difference, not an
+established further gain. Float32 matrix alone lost under six-process load.
+Process startup was roughly 1.8–2.0 seconds separately from per-job timers.
+
+The isolated already-decoded camera step shows the benefit more clearly:
+
+| Shrink/colour step | Alone median, ms | Slowest alone | Six-thread median, ms | Slowest with six |
+|---|---:|---|---:|---|
+| Current | 457 | DJI_0071-2.DNG (533) | 925 | DJI_0071-2.DNG (1015) |
+| Parallel shrink + float32 matrix | 353 | DJI_0071-2.DNG (409) | 856 | DJI_0071-2.DNG (886) |
+
+Across whole six-camera batches this saved about 19% alone and 12% with six
+competing threads. It cannot remove source-read cost.
+
+A test-only WebGPU separable triangular resize and camera conversion was also
+tried on the six mosaiced camera originals, including six concurrent reads:
+
+| GPU experiment stage, alone | Median, ms | Slowest case |
+|---|---:|---|
+| LibRaw transport decode | 376 | 2L1B8631.CR2 (487) |
+| Full source upload | 134 | DJI_0071-2.DNG (194) |
+| Resize/colour GPU work | 26 | DSC06615.ARW (49) |
+| Scene readback | 21 | DJI_0071-2.DNG (22) |
+| Full roundtrip including CPU starting look; excludes RAW read | 1514 | DJI_0071-2.DNG (1773) |
+
+The kernel is fast, but allocation, upload, scene return and starting-look
+work made the full roundtrip 1.51 seconds. With six reads, median decode was
+637 ms and median roundtrip 1,660 ms; queued conversion/draws finished the
+six-photo group in 17.96 seconds (last: Nikon NEF). It also produced isolated
+SDR differences up to 36 code values. **Reject this GPU prototype**: it neither
+preserves the exact picture nor establishes a faster complete route. Generic
+linear DNG/HEIC/EXR GPU conversion was not qualified.
+
+**C — Two sizes from one decode.** Decode plus starting look, without packing
+or cache writes; below-normal single-job measurements:
+
+| Route | 512 median, ms / slowest | 2560 median, ms / slowest | Both median, ms / slowest |
+|---|---|---|---|
+| Current | 573 / DSC01287.exr (3621) | 956 / DSC01287.exr (3880) | 1246 / DSC01287.exr (4350) |
+| Parallel shrink + float32 matrix | 421 / DSC01287.exr (2870) | 762 / DSC01287.exr (2984) | 782 / DSC01287.exr (3245) |
+
+Median **matched per-file extra cost** of both over 2560 was 170 ms current
+and 96 ms experimental; the slowest extra cost was linear DxO DNG, 1,319 and
+1,022 ms respectively. These are not differences between the table medians.
+LibRaw transport and native decoded arrays are shared, but JPEG still needs
+two size-dependent draft reads; the linear-DNG normalization work is repeated.
+Generate both when a full picture is needed or imminent. Do not make every
+grid thumbnail pay for a 2560 picture, and do not call both sizes free.
+
+**D — Decode finished to screen.** Includes starting look and transport work:
+
+| Handoff | Median, ms | Slowest case |
+|---|---:|---|
+| Current save then reopen | 837 | iphone_16_pro_IMG_3324.HEIC (1141) |
+| Retain RGB half in memory, pack directly to page | 279 | iphone_16_pro_IMG_3324.HEIC (363) |
+| Redraw resident GPU picture | 12.15 | DJI_0071-2.DNG (12.35) |
+
+Direct handoff saved about 558 ms between decode and display. Whole current-
+math decode-to-screen medians were 1,745 ms via disk and 1,209 ms direct;
+EXR was slowest at 4,645 and 4,010 ms. GPU completion plus two animation frames
+marks an opportunity for composition, not a measured physical panel scanout.
+
+**E — Holding pictures beside Grade.** Actual simultaneous hold test:
+
+| Held resource | Per picture | Total held | Observed result |
+|---|---:|---:|---|
+| Ten 2560x1707 RGBA half GPU textures | 33.34 MiB | 333.4 MiB | No validation/OOM error |
+| Forty varied RGB half scene arrays in RAM | Mean 25.62 MiB | 1.001 GiB | Private process memory increased about 1.003 GiB |
+
+Across the eleven representative pictures, RGB-half scene pixels take a
+median 25.03 MiB; the largest are DJI DNG/JPEG and HEIC at 28.13 MiB. The
+HEIC SDR reference adds another 28.13 MiB when retained (not included in the
+forty-array hold). GPU allocations above use one fixed representative aspect.
+
+Grade was loaded and ready with its default fit preview (676x1013); its
+reported resident resources were 32.9 MiB. Global GPU usage went from 8,235
+to 8,592 MiB, leaving 3,403 MiB free. Those counters include other desktop
+applications. Device loss was not independently monitored; the original raw
+`device_lost:false` is a placeholder, not a measured counter. This hold was comfortable for the tested fit preview, not a
+qualification beside heavy grading, denoise or export. Float32 RGB would take
+about twice the RAM (arithmetic estimate, not allocated here); references and
+other cache objects add to these pixel-only costs.
+
+**End-to-end — Thirty never-prepared photos.** Six below-normal processes,
+the best measured mixed CPU route (parallel shrink/float32 matrix), direct
+handoff, twelve directional read-ahead, at most ten prepainted GPU canvases.
+Viewed/nearest photos have priority; pending jobs behind the selection are
+skipped, while already-running decodes finish. Each pace has a fresh session:
+
+| Step interval | Sharp at selection | Final landed photo wait | Maximum selection clock lateness |
+|---|---:|---:|---:|
+| 250 ms | 0/30 | 3.32 s | 8.2 ms |
+| 100 ms | 0/30 | 1.70 s | 5.5 ms |
+
+The final photo was `DSC03819.ARW`. Earlier FIFO experiments waited 19.56 /
+14.17 seconds at the two paces; a current-math priority run waited 2.38 /
+2.16 seconds. All had 0/30 sharp at selection. Final-wait timing varied and
+the faster pace was not monotonically worse; these single runs do not prove
+a small CPU variant gain. Priority matters, but memory read-ahead alone does
+**not** sustain cold browsing on this mixed set. Already-prepared disk pictures
+and retained GPU pictures remain useful.
+
+**M8, October 14 (unfinished scene storage trial):** All candidates retain
+scene data and separate look metadata, so the same file can still draw SDR or
+HDR. Packing/compression prototypes exist only in the instrument.
+
+**F — Storage choices.** Fresh writes; warm filesystem opens. Ready means
+opened and packed into the existing RGBA-half drawing transport, before page
+transfer or GPU upload. Two samples per file:
+
+| Format | Median MiB | Write median, ms | Open median, ms | Ready median, ms | Slowest ready |
+|---|---:|---:|---:|---:|---|
+| npz | 25.07 | 300 | 28 | 119 | iphone_16_pro_IMG_3324.HEIC (147) |
+| npz-deflate | 20.05 | 1222 | 114 | 206 | DSC01287.exr (355) |
+| zip-level1 | 20.12 | 907 | 122 | 211 | iphone_16_pro_IMG_3324.HEIC (345) |
+| shuffle-zlib1 | 16.69 | 561 | 111 | 210 | iphone_16_pro_IMG_3324.HEIC (351) |
+| shuffle-zlib6 | 15.88 | 1182 | 99 | 189 | iphone_16_pro_IMG_3324.HEIC (347) |
+| half8-shuffle-zlib1 | 13.50 | 757 | 137 | 227 | iphone_16_pro_IMG_3324.HEIC (413) |
+| shuffle-zstd1 | 16.35 | 127 | 78 | 174 | iphone_16_pro_IMG_3324.HEIC (261) |
+| half8-shuffle-zstd1 | 12.82 | 185 | 92 | 184 | iphone_16_pro_IMG_3324.HEIC (299) |
+
+`npz` is today's uncompressed baseline; `npz-deflate` is the earlier compressed
+baseline. Shuffle puts the low/high bytes of half-floats into separate streams;
+`half8` rounds the half-float mantissa from ten to eight bits. ZIP levels and
+Zlib levels are experimental alternatives. Lossless shuffled Zstandard level 1
+cuts median size 35% and writes faster, but takes about 55 ms more to open and
+pack than today's file. These unfinished files open well under typical RAW
+rebuild time; very cheap/small inputs may not benefit equally.
+
+**G — Differences after the unchanged Library renderer.** SDR differences are
+8-bit sRGB code values; HDR is relative mean absolute error in linear rendered
+values, before OS composition. The rounded variants have identical scene
+rounding regardless of compressor:
+
+| Candidates | SDR mean absolute difference, median | SDR p99 difference, median | Largest SDR pixel difference | HDR relative mean error, median / worst file |
+|---|---:|---:|---:|---|
+| npz, npz-deflate, zip-level1, shuffle-zlib1, shuffle-zlib6, shuffle-zstd1 | 0 | 0 | 0 | 0 / 0 (all files identical) |
+| half8-shuffle-zlib1, half8-shuffle-zstd1 | 0.0405 | 1 | 30 | 0.0696% / EXR 0.0707% |
+
+The worst per-file mean SDR difference was Nikon NEF (0.065 code values).
+Lossless candidates reproduce every measured SDR and HDR pixel exactly.
+The nearly twofold lossy size reduction is not evidence of no visible change:
+rare differences are much larger than the average. No tolerance was changed.
+Side-by-side images are `comparison-1.png` (Sony shadows), `comparison-3.png`
+(linear DxO DNG) and `comparison-10.png` (EXR highlights) in ignored output.
+They include both renderer branches; PNG screenshots are SDR captures and may
+clip HDR highlights. Numeric HDR comparisons use the branch's actual output.
+
+**Five suspicions and recommendations.** (1) CPU shrink can be faster; the
+GPU kernel can be much faster but this full GPU route fails speed/fidelity.
+(2) Process isolation helps substantially. (3) A second size is cheaper than
+another whole decode, with format-dependent exceptions. (4) Avoiding disk
+before display helps substantially. (5) Several-fold lossless size reduction
+was not found; lossless gained 35%, while roughly half size required rounding.
+
+Decode recommendation: six bounded separate processes, viewed-photo priority
+and direct memory handoff; preserve current maths for an exact-picture change.
+Parallel shrinking is promising, but the float32 companion's one-code changes
+and small extra concurrent gain need a deliberate decision before adoption.
+Two-size recommendation: share decode when full-size is requested or nearby,
+not throughout a thumbnail-only folder scan. Storage recommendation: consider
+lossless byte-shuffled RGB-half Zstandard level 1; trade 55 ms more open/pack
+for 35% smaller files and faster writes. Keep today's uncompressed route if
+minimum reopen latency matters more. Adopt no format or feature in this trial.
+
+Not measured: cold OS disks, network storage, other GPUs, physical HDR panel
+appearance/scanout, heavy Grade/export overlap, sustained warm navigation,
+production integration of this queue/IPC, or generic-format GPU conversion.
+The first GPU handoff timing pass was discarded because it omitted starting
+look work; its raw file and reason remain in output. Corrected D is reported
+above. Supplemental native-read stages ran at normal priority; primary matrices
+and final process workers ran below normal. Small timing changes were recorded
+without a broad retest or an installer build.
+
+Reproduce from `codebase`: install `zstandard==0.25.0` with venv pip `--target
+output/library-fullscreen-speed-trial/deps`; run the Python instrument with
+`cpu`, `extend`, `read-split`, `step-probe`, `route-measure` in order, then set
+`HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440` and run
+`node tests/run-in-electron.js tests/performance/library-fullscreen-speed-trial.js`.
+Run `library-fullscreen-speed-summary.py` with venv Python last. The JS owns the
+throwaway service; `--resume` resumes completed sections. Raw per-file JSON,
+logs, copies and images: `codebase/output/library-fullscreen-speed-trial/`.
+Validation: 480 Node tests passed; 1,996 pytest passed, three skipped; this
+trial's Electron GPU stages completed sequentially. No production files changed.
+
 **T1, October 10 (trial entirely outside the app):** Temporary copies of
 Canon CR2, Fuji RAF and DJI JPEG were saved beside today's project document,
 closed and reopened. Three grade changes 50 ms apart used a trial 500 ms
