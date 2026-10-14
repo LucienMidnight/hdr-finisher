@@ -105,6 +105,58 @@
   }
   const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}`;
   const recentPictures = new Map();
+  const rawTypes = new Set(["ARW", "CR2", "CR3", "NEF", "NRW", "RAF", "RW2", "ORF", "PEF", "DNG", "SRW", "3FR", "IIQ", "ERF", "KDC", "MOS", "MRW", "RAW", "RWL", "SR2", "SRF"]);
+  const rawCandidate = photo => photo && rawTypes.has(photo.type) && !photo.edited && !photo.copy_id;
+  const browsingSize = {width: Math.min(2560, Math.round(screen.width * (window.devicePixelRatio || 1))),
+    height: Math.min(2560, Math.round(screen.height * (window.devicePixelRatio || 1)))};
+  let browsingLimits = {ahead:12,gpu_pictures:10}, rawController = null, rawTimer, rawDirection = 1, rawGeneration = 0;
+  let rawPlanSignature = "";
+  function stopRawAhead() {
+    clearTimeout(rawTimer); rawController?.abort(); rawController = null; rawGeneration++;
+    rawPlanSignature = "";
+    void api("/api/library/raw-plan", {paths:[],...browsingSize}).catch(() => {});
+  }
+  function startRawAhead(previousIndex = state.index) {
+    if (!state.active || !selected()) return;
+    if (previousIndex !== state.index) rawDirection = state.index > previousIndex ? 1 : -1;
+    const photo = selected();
+    const neighbours = Array.from({length:browsingLimits.ahead}, (_,i) => state.photos[state.index + (i+1)*rawDirection]);
+    neighbours.push(state.photos[state.index - rawDirection], state.photos[state.index - 2*rawDirection]);
+    const photos = [photo,...neighbours].filter(rawCandidate);
+    const signature = photos.map(pictureIdentity).join(";");
+    if (signature === rawPlanSignature) return;
+    rawController?.abort(); clearTimeout(rawTimer);
+    const controller = new AbortController(); rawController = controller;
+    const generation = ++rawGeneration; rawPlanSignature = signature;
+    const current = () => state.active && !controller.signal.aborted && generation === rawGeneration;
+    async function prepareReady(result) {
+      if (!current() || result.paused) return;
+      // View first, then travel order. Submit one GPU conversion at a time so
+      // foreground draws and Grade get an opportunity between background jobs.
+      const heldPaths = new Set([photo,...neighbours.slice(0, Math.max(1,browsingLimits.gpu_pictures-3)),...neighbours.slice(-2)]
+        .filter(rawCandidate).map(p => p.source_path || p.path));
+      for (const meta of result.ready.filter(meta => heldPaths.has(meta.path))) {
+        if (!current()) break;
+        const item = photos.find(p => (p.source_path || p.path) === meta.path);
+        if (!item || HDRLibraryPictures.resident(meta.key)) continue;
+        await HDRLibraryPictures.prepare(meta, controller.signal, current);
+        if (!current()) break;
+        const old = recentPictures.get(pictureIdentity(item));
+        if (!old?.kept) recentPictures.set(pictureIdentity(item),meta);
+        while (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
+        break;
+      }
+    }
+    async function poll() {
+      if (!current()) return;
+      try { await prepareReady(await api("/api/library/raw-ready",undefined,controller.signal)); }
+      catch(error) { if (!aborted(error)) console.debug("Library read-ahead:",error.message); }
+      if (current()) rawTimer = setTimeout(poll,100);
+    }
+    void api("/api/library/raw-plan", {paths:photos.map(p=>p.path),...browsingSize},controller.signal)
+      .then(prepareReady).then(() => { if (current()) rawTimer = setTimeout(poll,50); })
+      .catch(error => { if (!aborted(error)) console.debug("Library read-ahead:",error.message); });
+  }
   const readAhead = HDRLibraryReadAhead.create({
     key: (photo, edge) => `${pictureIdentity(photo)}|${edge}`,
     load: (photo, edge, signal) => {
@@ -112,7 +164,7 @@
       return cached?.edge === edge ? Promise.resolve(cached) : api("/api/library/picture", { path: photo.path, edge, quality: "quick", priority: 50 }, signal);
     },
   });
-  function clearPrefetch() { readAhead.clear(); }
+  function clearPrefetch() { readAhead.clear(); stopRawAhead(); }
   function setActive(active) {
     state.active = active;
     if (!active) {
@@ -147,7 +199,7 @@
     }
     let meta = await response;
     if (!isCurrent()) return;
-    await drawPicture(meta, canvas, controller, isCurrent);
+    if (seed?.key !== meta.key || canvas.dataset.pictureKey !== meta.key) await drawPicture(meta, canvas, controller, isCurrent);
     if (!isCurrent()) return;
     HDRLibraryStopwatch("picture_shown", { path: photo.path, key: meta.key, kept: !!meta.kept, duration_ms: performance.now() - started });
     diagnostics(photo, meta, performance.now() - started);
@@ -159,8 +211,11 @@
     }
     photo.pictureCurrent = !!meta.kept;
     const remembered = pictureIdentity(photo);
-    recentPictures.delete(remembered); recentPictures.set(remembered, meta);
-    if (recentPictures.size > 32) recentPictures.delete(recentPictures.keys().next().value);
+    const oldPicture = recentPictures.get(remembered);
+    if (!oldPicture || meta.kept || !oldPicture.kept && meta.edge >= oldPicture.edge) {
+      recentPictures.delete(remembered); recentPictures.set(remembered, meta);
+    }
+    if (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
     canvas.closest(".library-cell")?.querySelector(".library-edited")?.setAttribute("title", meta.kept ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. The Library will try making it again automatically.");
     canvas.dataset.pictureEdge = meta.edge;
     canvas.dataset.pictureKey = meta.key;
@@ -414,7 +469,9 @@
     if (!state.photos.length) return;
     if (compare.enabled() && state.view === "single") mode = "single";
     const next = HDRLibrarySelection.choose(state.photos.map(photo => photo.path), state.selection, state.anchor, index, mode);
+    const previousIndex = state.index;
     state.index = next.index; state.selection = next.selected; state.anchor = next.anchor; updateDetails();
+    startRawAhead(previousIndex);
     if (state.view === "grid") {
       if (scroll && state.layout) {
         const top = Math.floor(state.index / state.layout.columns) * state.layout.rowHeight;
@@ -430,9 +487,7 @@
     }
   }
   function singleEdge() {
-    const stage = $("single-stage");
-    const wanted = Math.max(stage.clientWidth, stage.clientHeight) * (window.devicePixelRatio || 1);
-    return wanted <= 1280 ? 1280 : wanted <= 1920 ? 1920 : 2560;
+    return Math.max(1280, Math.min(2560, Math.max(browsingSize.width,browsingSize.height)));
   }
   async function showSingle() {
     if (!state.active || state.view !== "single") return;
@@ -448,10 +503,11 @@
     const current = () => state.active && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
     status(`Loading ${photo.name}…`);
     try {
-      const prepared = readAhead.take(photo, edge);
+      startRawAhead();
+      const prepared = rawCandidate(photo) ? null : readAhead.take(photo, edge);
       const neighbours = [state.photos[state.index + 1], state.photos[state.index - 1]].filter(Boolean);
       // Preserve the selected job, including an unfinished read-ahead decode.
-      readAhead.update(photo, neighbours, edge);
+      readAhead.update(photo, neighbours.filter(item => !rawCandidate(item)), edge);
       const meta = await loadAndShow(photo, edge, $("single-picture"), controller, current, 0, prepared);
       if (!meta || !current()) return;
       state.fitMeta = meta; positionZoom(); if (state.zoom) void showNative();
@@ -597,6 +653,7 @@
     if (state.anchor < 0) state.anchor = state.index;
     if (!selected() && state.view === "single") setView("grid");
     updateDetails(); paintGrid(); paintFilm();
+    startRawAhead();
     if (state.view === "single" && selected()?.path !== lead) showSingle();
     if (!state.reading) status(`${state.photos.length.toLocaleString()} of ${state.allPhotos.length.toLocaleString()} photos${state.hiddenFiles ? ` · ${state.hiddenFiles} unreadable files hidden` : ""}${state.collection?.kind === "smart" && state.smartIndexing ? " · Indexing is still running, so more may turn up." : ""}`);
   }
@@ -1096,6 +1153,8 @@
   (async () => {
     try {
       const options = await api("/api/library/options"); state.timing = options.timing;
+      browsingLimits = options.browsing || browsingLimits;
+      void HDRLibraryPictures.configure(browsingLimits).catch(() => {});
       state.labelNames = (await api("/api/library/preferences")).label_names;
       void albums.refresh().catch(error => status(error.message)); void pollIndexing();
       const windowState = libraryDesktop ? await libraryDesktop.getLibraryWindow() : null;

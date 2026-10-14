@@ -107,6 +107,12 @@ class NativeRequest(BaseModel):
     height: int = Field(ge=64, le=4096)
 
 
+class RawPlanRequest(BaseModel):
+    paths: list[str] = Field(default_factory=list, max_length=16)
+    width: int = Field(default=2560, ge=1, le=16384)
+    height: int = Field(default=1440, ge=1, le=16384)
+
+
 class FolderRequest(BaseModel):
     path: str
 
@@ -181,6 +187,10 @@ class PreferencesRequest(BaseModel):
 
 def create_library_router(worker, browser, store=None):
     cache = LibraryPictureCache(browser.root)
+    from .library_raw import RawBrowsing, camera_raw
+    from .library_raw_thumbnails import RawThumbnails
+    raw_browsing = RawBrowsing(browser.root, paused=lambda: worker.status()["paused"])
+    raw_thumbnails = RawThumbnails(browser.root)
     marks = LibraryMarks(browser.root)
     if store is not None:
         from .library_grade_api import add_grade_routes
@@ -195,6 +205,7 @@ def create_library_router(worker, browser, store=None):
         try:
             yield
         finally:
+            await run_in_threadpool(raw_browsing.close)
             file_commands._stop.set()
             index.close()
             if store is not None: kept.close()
@@ -313,7 +324,53 @@ def create_library_router(worker, browser, store=None):
 
     @router.get("/options")
     def options():
-        return {"timing": os.environ.get("HDR_FINISHER_DEV_LIBRARY_TIMING") == "1"}
+        raw_browsing.start()
+        return {"timing": os.environ.get("HDR_FINISHER_DEV_LIBRARY_TIMING") == "1", "browsing": raw_browsing.limits}
+
+    @router.post("/raw-plan")
+    def raw_plan(command: RawPlanRequest):
+        paths = [str(marks.source_path(path)) for path in command.paths]
+        paths = [path for path in paths if camera_raw(path)]
+        return raw_browsing.plan(paths, command.width, command.height)
+
+    @router.get("/raw-ready")
+    def raw_ready():
+        return raw_browsing.status()
+
+    @router.get("/raw-transport/{key}")
+    def raw_transport(key: str):
+        try:
+            return Response(raw_browsing.pixels(key), media_type="application/octet-stream",
+                headers={"Cache-Control": "private, no-store"})
+        except KeyError:
+            raise HTTPException(404, "RAW picture was released; select the photo again.")
+
+    @router.get("/raw-thumbnail/{key}")
+    def raw_thumbnail(key: str):
+        try:
+            body, width, height, stride = raw_thumbnails.pixels(key)
+            return Response(body, media_type="application/octet-stream", headers={
+                "X-Image-Width": str(width), "X-Image-Height": str(height),
+                "X-Bytes-Per-Row": str(stride), "X-Working-Space": "acescg", "Cache-Control": "private, no-store"})
+        except (ValueError, OSError, EOFError):
+            raise HTTPException(404, "RAW thumbnail was released; select the photo again.")
+
+    @router.post("/raw-thumbnail/{key}")
+    async def save_raw_thumbnail(key: str, request: Request):
+        # Metadata comes from our completed decode, not arbitrary client input.
+        if int(request.headers.get("content-length", "0")) > 512 * 512 * 8:
+            raise HTTPException(413, "RAW thumbnail is too large.")
+        with raw_browsing.cv:
+            entry = raw_browsing.outputs.get(key)
+            if entry is None:
+                raise HTTPException(409, "RAW picture was released before thumbnail save.")
+            meta = raw_browsing.metadata(entry[1], 512)
+        body = await request.body()
+        try:
+            await run_in_threadpool(raw_thumbnails.store, meta, body)
+        except (ValueError, OSError) as error:
+            raise HTTPException(409, str(error)) from error
+        return {"ok": True}
 
     @router.get("/pins")
     def pins():
@@ -572,6 +629,23 @@ def create_library_router(worker, browser, store=None):
             if cached: return cached
             await run_in_threadpool(kept.ensure, command.path)
         command.path = str(marks.source_path(command.path))
+        if await run_in_threadpool(camera_raw, command.path):
+            if command.edge < 1280:
+                cached = await run_in_threadpool(raw_thumbnails.cached, command.path)
+                if cached:
+                    return cached
+            future = raw_browsing.request(command.path, command.priority)
+            while not future.done():
+                if raw_browsing.paused():
+                    return JSONResponse({"detail": "library_pending"}, status_code=202)
+                if await request.is_disconnected():
+                    # Decoding finishes and is kept even if the selection moved.
+                    raise HTTPException(499, "Library request cancelled.")
+                await asyncio.sleep(.01)
+            try:
+                return raw_browsing.metadata(future.result(), command.edge)
+            except (ValueError, OSError) as error:
+                raise HTTPException(400, str(error)) from error
         try:
             cached = await run_in_threadpool(cache.cached, command.path, command.edge, command.quality)
         except (ValueError, OSError) as exc:

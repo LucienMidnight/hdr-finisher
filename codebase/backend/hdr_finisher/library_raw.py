@@ -13,6 +13,7 @@ from threading import Condition, Thread
 import time
 
 from .library_raw_decode import worker_main
+from .library_raw_reader import open_raw
 from .library_diagnostics import log
 
 VERSION = "library-camera-gpu-v1"
@@ -124,8 +125,18 @@ class RawBrowsing:
     def _promote(process, foreground=True):
         if os.name == "nt":
             import ctypes
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+            kernel.OpenProcess.restype = ctypes.c_void_p
+            kernel.SetPriorityClass.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+            kernel.CloseHandle.argtypes = [ctypes.c_void_p]
             # Scheduling priority only; never changes Grade's process or thread pools.
-            ctypes.windll.kernel32.SetPriorityClass(int(process._handle), 0x20 if foreground else 0x4000)
+            handle = kernel.OpenProcess(0x0200, False, process.pid)
+            if handle:
+                try:
+                    kernel.SetPriorityClass(handle, 0x20 if foreground else 0x4000)
+                finally:
+                    kernel.CloseHandle(handle)
 
     def plan(self, paths, width=2560, height=1440):
         paths = paths[:self.limits["ahead"] + 3]
@@ -148,7 +159,12 @@ class RawBrowsing:
         scale = min(self.screen[0] / w, self.screen[1] / h, 1) if edge >= 1280 else min(512 / max(w, h), 1)
         width, height = max(1, round(w * scale)), max(1, round(h * scale))
         key = sha256(f"{meta['transport_key']}:{width}:{height}".encode()).hexdigest()
+        full_scale = min(self.screen[0] / w, self.screen[1] / h, 1)
+        bw, bh = max(1, round(w * full_scale)), max(1, round(h * full_scale))
+        browse_key = sha256(f"{meta['transport_key']}:{bw}:{bh}".encode()).hexdigest()
         return meta | {"key": key, "width": width, "height": height, "edge": max(width, height),
+            "browse_width": bw, "browse_height": bh, "browse_key": browse_key,
+            "prepare_full": meta["transport_key"] in self.wanted[:max(1,self.limits["gpu_pictures"]-2)],
             "quality": "quick", "stored_bytes": 0, "cache_hit": False}
 
     def status(self):
@@ -206,7 +222,7 @@ class RawBrowsing:
                             continue
                         memory = SharedMemory(create=True, size=max(1, job["size"]))
                         try:
-                            handle = open(job["path"], "rb", buffering=0)
+                            handle = open_raw(job["path"])
                         except BaseException:
                             self._dispose(memory)
                             raise
@@ -311,7 +327,7 @@ class RawBrowsing:
                             log("raw_browse_ready", path=job["path"], decode_ms=meta["decode_ms"], read_ms=meta["read_ms"])
                     job = None
                     self.cv.notify_all()
-        except (EOFError, OSError, RuntimeError, ValueError) as error:
+        except Exception as error:
             with self.cv:
                 if job and not self.stopped:
                     self._fail(job, error)

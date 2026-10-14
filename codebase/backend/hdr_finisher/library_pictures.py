@@ -48,6 +48,7 @@ def picture_key(path, edge, quality):
 class LibraryPictureCache:
     def __init__(self, root, limit=CACHE_LIMIT_BYTES):
         self.root = Path(root) / "library-pictures"
+        self.full_root = Path(root) / "library-full-pictures"
         self.limit = limit
         self._known_bytes = None
         self._native_lock = RLock()
@@ -57,12 +58,13 @@ class LibraryPictureCache:
     def file(self, key):
         if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
             raise ValueError("Invalid library picture key.")
-        return self.root / (key + ".npz")
+        large = self.full_root / (key + ".npz")
+        return large if large.is_file() else self.root / (key + ".npz")
 
     @audited("cache_cached")
     def cached(self, path, edge, quality):
         key = picture_key(path, edge, quality)
-        destination = self.file(key)
+        destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
         if not destination.is_file():
             return None
         try:
@@ -108,11 +110,11 @@ class LibraryPictureCache:
                 "metadata": np.asarray(json.dumps(metadata))}
             if reference is not None:
                 arrays["reference"] = np.clip(reference, 0, 65504).astype(np.float16)
-            self.root.mkdir(parents=True, exist_ok=True)
-            destination = self.file(key)
+            destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
+            destination.parent.mkdir(parents=True, exist_ok=True)
             temporary = None
             try:
-                with NamedTemporaryFile(dir=self.root, suffix=".tmp", delete=False) as handle:
+                with NamedTemporaryFile(dir=destination.parent, suffix=".tmp", delete=False) as handle:
                     temporary = Path(handle.name)
                     # Large browsing previews must not wait on deflate compression.
                     save = np.savez if edge >= 1280 else np.savez_compressed
@@ -181,13 +183,17 @@ class LibraryPictureCache:
 
     @audited("cache_trim")
     def trim(self):
+        self._trim_directory(self.full_root)
+        self._trim_directory(self.root)
+
+    def _trim_directory(self, directory):
         # One eviction batch only on overflow, keeping a 10% gap below the limit.
         with _TRIM_LOCK:
             entries = []
             from .library_kept import preferences
             if (self.root.parent / "library-picture-preferences.json").exists():
                 self.limit = preferences(self.root.parent)["limit_bytes"]
-            for path in self.root.glob("*"):
+            for path in directory.glob("*"):
                 if path.suffix not in {".npz", ".jpg", ".avif", ".json"}: continue
                 try:
                     stat = path.stat()

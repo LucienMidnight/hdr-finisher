@@ -1,6 +1,17 @@
 /* Independent picture transport; Grade's renderer and pinned shaders are reused unchanged. */
 window.clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 class HDRLibraryGPU extends HDRWebGPUPreview {
+  evictGpuCacheEntry(kind, key) {
+    const proxy = kind === "source-proxy" ? this.proxies.get(key) : null;
+    if (proxy && this.rawPictures?.owns(proxy.texture)) { this.rawPictures.release(proxy.texture); return; }
+    super.evictGpuCacheEntry(kind,key);
+  }
+  resetSession(sessionId = null) {
+    // Retained Library scenes have their own bounded owner. Detach references
+    // before Grade's unchanged reset clears its per-picture working resources.
+    for (const [key, proxy] of this.proxies) if (this.rawPictures?.owns(proxy.texture)) this.proxies.delete(key);
+    super.resetSession(sessionId);
+  }
   async waitForSubmittedWork(...args) {
     const started = performance.now();
     const result = await super.waitForSubmittedWork(...args);
@@ -28,8 +39,17 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
   async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", revision = 0, sourceIdentity = "source", options = {}) {
     const key = `${sessionId}:${lane}`;
     if (this.proxies.has(key)) return this.proxies.get(key);
+    if (this.libraryMeta?.route === "camera-raw-gpu") {
+      this.rawPictures ||= HDRLibraryRawGPU.create(this);
+      this.rawPictures.configure(this.libraryLimits);
+      const entry = await this.rawPictures.convert(this.libraryMeta, this.librarySignal);
+      const proxy = this.rawPictures.proxy(this.libraryMeta, lane, entry, geometrySignature, sourceIdentity);
+      this.proxies.set(key, proxy);
+      return proxy;
+    }
     const started = performance.now();
-    const response = await fetch(`/api/library/pixels/${sessionId}?lane=${lane}`, { signal: this.librarySignal });
+    const url = this.libraryMeta?.route === "camera-raw-scene" ? `/api/library/raw-thumbnail/${sessionId}` : `/api/library/pixels/${sessionId}?lane=${lane}`;
+    const response = await fetch(url, { signal: this.librarySignal });
     if (!response.ok) throw new Error("The cached picture is unavailable; revisit this photo.");
     const width = Number(response.headers.get("X-Image-Width"));
     const height = Number(response.headers.get("X-Image-Height"));
@@ -70,6 +90,13 @@ window.HDRLibraryPictures = (() => {
       if (canvas.width !== meta.width) canvas.width = meta.width;
       if (canvas.height !== meta.height) canvas.height = meta.height;
       gpu.librarySignal = signal;
+      gpu.libraryMeta = meta;
+      if (meta.route === "camera-raw-gpu" && !gpu.rawPictures?.get(meta.key)) {
+        gpu.rawPictures ||= HDRLibraryRawGPU.create(gpu);
+        gpu.rawPictures.configure(gpu.libraryLimits);
+        await gpu.rawPictures.convert(meta, signal);
+        if (signal.aborted || !isCurrent()) return;
+      }
       const adjustments = structuredClone(meta.adjustments);
       adjustments.hdr.highlight_compression_target_nits = 1000;
       const started = performance.now();
@@ -122,5 +149,17 @@ window.HDRLibraryPictures = (() => {
       } finally { texture.destroy(); }
     }); queue = task; return task;
   }
-  return Object.freeze({ show: (meta, ...args) => meta.kept ? showKept(meta, ...args) : show(meta, ...args), initialize });
+  function prepare(meta, signal, isCurrent = () => true) {
+    const task = queue.catch(() => {}).then(async () => {
+      if (signal.aborted || !isCurrent()) return;
+      const gpu = await initialize();
+      gpu.rawPictures ||= HDRLibraryRawGPU.create(gpu);
+      gpu.rawPictures.configure(gpu.libraryLimits);
+      return gpu.rawPictures.convert(meta, signal);
+    }); queue = task; return task;
+  }
+  return Object.freeze({ show: (meta, ...args) => meta.kept ? showKept(meta, ...args) : show(meta, ...args), initialize, prepare,
+    configure: async limits => { (await initialize()).libraryLimits = limits; },
+    resident: key => !!renderer?.rawPictures?.get(key),
+    snapshot: () => renderer?.rawPictures?.snapshot() || {pictures:0,bytes:0} });
 })();

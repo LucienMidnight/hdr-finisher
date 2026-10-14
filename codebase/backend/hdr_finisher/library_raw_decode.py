@@ -63,6 +63,9 @@ def worker_main(connection, foreground):
         os.environ[name] = "1"
     from .library_worker import _lower_priority
     _lower_priority()
+    # Warm imports before reporting ready, not inside the first viewed decode.
+    import rawpy
+    from .library_pictures import default_look
     connection.send({"ready": True, "pid": os.getpid()})
     try:
         while True:
