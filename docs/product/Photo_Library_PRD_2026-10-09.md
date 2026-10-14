@@ -2569,6 +2569,151 @@ fast unit suites' coverage; no broad unit/GPU sweep or installer was run.
 Only prototype scripts and this M9 note changed. Bounded slow runs stayed
 below the 30-minute allowance.
 
+**M10, October 14 (dedicated photo-disk reader; prototype only):**
+One reader greatly improves steady browsing and cold recovery, but does not
+meet all targets. Nothing in shipped Library, Grade, CPU export, Proof,
+pinned shaders, tolerances, limits, budgets or real picture cache changed.
+The accepted M9 GPU picture route is reused verbatim by the test driver.
+
+Conditions match M9: its same 30 disposable D: copies (18 distinct camera
+sources, including repeated contents), Windows unbuffered 4096-aligned reads,
+warmed renderer and decoders, sequential Electron runs at 2560x1440. Firmware
+caches remain uncontrolled. Normal-priority viewed lane requests 12 native
+threads; two separate below-normal background processes request one each.
+Each representative and scenario has two samples; tables use medians, with
+per-file medians before the six-camera median. These small samples are not
+a distribution or a production responsiveness qualification. No new dependency.
+
+**A/B — One reader and giving way to a viewed request.** Six M9 representatives
+per throughput batch; four mid-read interruptions per piece size. MB is decimal.
+
+| Read piece | RAWs/s | MB/s | Viewed read starts, median / slowest ms |
+|---|---:|---:|---:|
+| Whole file | 3.48 | 182.0 | 449 / 467 |
+| 4 MiB | 3.62 | 189.4 | 21.0 / 22.7 |
+| 1 MiB | 3.60 | 188.4 | 7.4 / 10.5 |
+| 256 KiB | 3.60 | 188.3 | 0.3 / 0.6 |
+
+DJI DNG is the slowest read, 456-475 ms across these modes. The slowest
+whole-file yield was during DJI; the slowest piece yields were during Sony
+DSC02767. Pieces show no
+throughput penalty in this sample; the few-percent differences are not a
+proven improvement. Chosen: 1 MiB, twelve ahead and forty complete RAW files
+in an oldest-first memory cache, starting from the brief's defaults. Ten ms
+worst observed read-start delay is already small next to decode/display;
+256 KiB adds four times the read calls without fixing the remaining delay.
+
+**C — Background prepared and drawn beside a viewed photo.**
+
+| Batch | Background pictures/s | Viewed-photo time | Slowest preparation |
+|---|---:|---:|---|
+| Six representatives, M9 comparison | 1.99 (M9: 2.00) | 0.80 s (M9: 1.29 s with two lanes) | Canon CR2, 518 ms |
+| 29 background photos plus one viewed | 2.29 | 0.81 s | Canon CR2, 518 ms |
+
+The six-file batch gains no meaningful throughput; DJI is last drawn, and
+the last read finishes about 0.8 s before the last picture. Decode and
+handoff still matter. In the longer mixed batch the disk is busy 94-95% of
+the reader's elapsed time: 30 reads take 11.96 s, 2.51 RAWs/s at 172.7 MB/s,
+and the last draw follows another 0.62-0.76 s later. Thus disk supply is the
+main sustained constraint for this larger-file set, with a processor/transfer/
+draw tail. It cannot supply three of these RAWs/s even before drawing them.
+Three/s completion reaches 66% in the matched small batch, 76% in the longer
+batch; no extra-worker sweep was run. The background idle gaps are largely
+removed, but the earlier claim of four/s was too optimistic for the full set.
+
+**D — Viewed photo with background reading and preparation enabled.** RAW-cache
+prefill is outside the timed request; a cached RAW is not a developed picture.
+
+| Viewed RAW | Median to sharp | Slowest per-file median |
+|---|---:|---|
+| Already in RAW memory | 463 ms | Canon CR2, 586 ms (DJI: 538 ms) |
+| Not read yet | 733 ms | DJI DNG, 1034 ms |
+
+Cached beats the 500 ms budget by 37 ms at the median but not for every
+camera. Cold remains 233 ms over, close to M9's 713 ms alone and well below
+its 1130-1530 ms under load. Per-camera cached/cold ms: Sony DSC02767 376/815,
+Sony DSC06615 453/728, Canon 586/738, Fuji 213/407, Nikon 474/589, DJI 538/1034.
+
+**E — Browsing and recovery.** Each count was identical in both repeats.
+Stop times include making the selected painted canvas visible and frame waits.
+
+| Run | Already sharp on arrival | Stop wait median / slowest | M9 stop wait |
+|---|---:|---:|---:|
+| 30 photos, 500 ms presses | 26/30 | 8 / 8 ms | 1560 ms (12/30 sharp) |
+| 30 photos, 250 ms presses | 0/30 | 822 / 824 ms | 5540 ms |
+| 30 photos, 100 ms presses | 0/30 | 843 / 849 ms | 1370 ms |
+| Cold eight-photo burst, 100 ms | 0/8 | 860 / 862 ms | Not measured |
+| Cold jump from photo 0 to 29 | 0/1 | 844 / 845 ms | Not measured |
+| Eight-photo burst, thirteen RAWs prefilled | 0/8 | 681 / 695 ms | Not measured |
+
+Steady pace is 87% ready versus M9's 40%; misses are 0/1/2/3 in one repeat
+and 0/1/2/5 in the other, all within the first six. Every later photo was
+sharp on arrival. Target 1 improves substantially but fails the literal
+every-photo requirement from a cold start. Targets 2/3: faster runs recover
+in 1.64-1.69 times the 500 ms allowance, not reliably within it. The cold
+burst and jump take about 1.7 times it; even a RAW-cached burst takes 1.36
+times it. Highest browsing selection lateness is 30 ms, excluding the
+intentional 35 ms head start before the cold jump. There is no mystery
+multi-second recovery in these runs. This is a test queue and loopback
+transport, not a change to the real Library navigation UI.
+
+**F — Where the stopped-photo time goes.** Joined per-selection traces in
+ignored `traces.json` cover every selection, including skipped/partial jobs:
+read queue, read pieces and pauses, copying, dispatch, unpack, development,
+look/pack, result handoff, GPU upload/compute, draw and visible-frame wait.
+Service and worker monotonic clocks share Windows' counter; joining renderer
+durations at run start has a few-ms offset, not GPU timestamp precision.
+
+For the 822 ms stop at 250 ms presses (Sony DSC01226), approximate medians
+are: request reaches service 3 ms, read wait 2, physical read 429, copy/piece
+overhead 12, dispatch/worker queue 2, unpack 45, development 104, metadata/
+look/pack/other decode 25, result/painter handoff 3, fetch/upload 110, GPU
+conversion 55, draw 15, then visible-frame/poll wait 16. Per-stage medians
+need not sum exactly to median total. It was not RAW-cached on stopping.
+For the cached burst, Sony DSC04761 was already assigned to a background
+worker and was not promoted on selection: unpack 67-71 ms, development
+204-239 ms, worker-input/result waits 125-149 ms and GPU handoff/draw about
+260 ms explain the remaining miss. Priority must reach in-flight decode,
+not just reading. M9's historical 5.54 s cannot be diagnosed retrospectively
+without its missing trace; its disappearance does not prove disk contention
+was its entire cause. No comparable unexplained outlier remains here.
+
+**Suspicions/recommendation.** Small-piece read priority is confirmed useful;
+one reader keeps the disk busy and removes the large loaded-photo read penalty.
+Multiple-reader collision is not separately isolated from all other scheduling
+changes. The claimed four/s background completion and universal 0.4 s cached
+stop are overturned by these measurements. FastRawViewer's own behavior was
+not instrumented, so its reason for feeling instant remains a hypothesis.
+
+Recommend making one prioritised reader part of the eventual build with
+12 ahead, a 40-file RAW cache and 1 MiB pieces, alongside priority for a photo
+already decoding and a smaller transfer path. This is useful infrastructure,
+not approval to claim the targets met. Forty RAWs at this set's mean size
+cost about 2.75 GB (2.57 GiB); forty of its largest cost 3.86 GB (3.60 GiB).
+All thirty complete/partial files used about 2.07 GB in this prototype;
+paused buffers alone reached 1.98 GB during fast travel. Decoder copies,
+developed transport and GPU pictures cost extra. Count-only eviction and
+paused reads need a shared byte cap and stale-work cleanup in the real build.
+Forty-file eviction, reversal, larger folders, device loss and cancellation
+under production IPC were not tested. Added complexity is ownership and
+priority across reader, cache, workers and graphics surfaces; stale selections,
+memory growth, file changes/disconnection and Grade resource contention could
+break. Grade was not exercised in this trial, so no new coexistence claim.
+
+Reproduce from codebase: `.venv/Scripts/python.exe tests/performance/library-disk-reader-trial.py disk`,
+then `node tests/run-in-electron.js tests/performance/library-disk-reader-trial.js`
+with `HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440`, then the corresponding
+`library-disk-reader-summary.py`. The GPU driver resumes completed samples;
+move its ignored gpu.json aside to start fresh. JSON, traces, logs and the
+pre-followup result are in ignored output/library-disk-reader-trial; source
+copies remain in M9's ignored folder. Initial service HTTP/1.0 polling failed
+with ERR_NO_BUFFER_SPACE; persistent connections fixed it, unfinished samples
+were resumed, and C was repeated with the final transport. These instruments
+are outside the fast unit suites' coverage; Python compile, Node syntax and
+the directly relevant sequential GPU runs passed. No full sweep, audit,
+endurance, installer or shipped source change. Bounded slow runs stayed well
+below thirty minutes. Only the test instruments and this M10 record changed.
+
 **T1, October 10 (trial entirely outside the app):** Temporary copies of
 Canon CR2, Fuji RAF and DJI JPEG were saved beside today's project document,
 closed and reopened. Three grade changes 50 ms apart used a trial 500 ms
