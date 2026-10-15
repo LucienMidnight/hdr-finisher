@@ -2,7 +2,7 @@
 
 - **Date:** October 15, 2026
 - **Branch at planning time:** `film-stocks-phase-1` (after `597e5ac`)
-- **Status:** Plan only. Nothing here is built yet. Decisions marked **Steve** are open.
+- **Status:** Phase 1 data implemented October 15, 2026. Phases 2 to 6 remain planned. Decisions marked **Steve** are open. See Film Look PRD section 5.1 for shipped data and open paper choices.
 - **Reference read:** spektrafilm at `3bb2c2d` (June 7, 2026), Filmbox's published workflow.
 - **Requirements and data sources:** [Film Look PRD](Film_Look_PRD.md). Its
   section 5 is the record of which film data is confirmed, estimated or missing;

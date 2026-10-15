@@ -123,9 +123,50 @@ Labels used below:
 | Data | Status | Source |
 |---|---|---|
 | Characteristic curves, spectral sensitivities, dye densities, for every stock and paper | Confirmed (as spektrafilm's profiles) | spektrafilm `data/profiles/*.json`, built by its author from Kodak and Fujifilm data sheets and published papers. Read at commit `3bb2c2d` (June 7, 2026) |
-| Default paper for each stock | Confirmed | spektrafilm profile `target_print` field |
+| Default paper for each negative stock; none for slides | Confirmed | spektrafilm profile `target_print` field; positive films use `scan_film` |
 | DIR coupler strengths (Color Separation baseline) | Spektrafilm estimate | `runtime/params_builder.py`: negative-film values are noted there as "just eyeballed, optimize!" |
 | Neutral printer filter values per stock and paper | Confirmed (as spektrafilm's) | spektrafilm `data/filters/neutral_print_filters.json` |
+
+Phase 1 implemented October 15, 2026, from the same pinned revision
+`3bb2c2d2801ff68b92019cf1dbcbb133d60832bc`: all 20 camera profiles
+(16 negatives and 4 slides), 44 stock/paper manifests. Every negative has its
+own default paper plus Kodak 2383 and Fujifilm Crystal Archive Type II,
+omitting duplicate combinations. There are three distinct print media in the
+data, including Kodak Portra Endura. No other papers were baked.
+
+Shipped format: `hdr-finisher-film-stock/2`, JSON manifests tagged
+`hdr-finisher-film-arrays/1`, referring to shared compressed little-endian
+float32 `arrays/<sha256>.npz` files. Total film-data folder: approximately
+18.69 MB, previously 14.00 MB (decimal MB, including license and changelog).
+All rendering numbers of the six original stocks are identical as float32.
+Both packaging specifications already include the whole film-data directory.
+The backend expands the arrays for the GPU, and can load an alternative paper
+with `load_film_stock(id, paper)` or `GET /api/film-stocks/{id}?paper={paper}`.
+The existing Stock menu uses only each stock's default; no Paper picker yet.
+
+Names, still/cine use, anti-halation and default papers are copied from the
+profiles without estimation. Upstream `positive` is stored as `slide`.
+Slide film uses the positive-film silver-density coupler calculation and scans
+film density directly, with no print curve, print glare or paper. Print Warmth,
+Print Tint and Preflash consequently have no effect on slides. The upstream
+parameter object requires a dummy print profile to be constructed; that paper
+is bypassed and is not stored as a slide's paper.
+
+The existing 33-cubed sampling approximates the full spectral simulation.
+A deterministic probe of 1,000 random colours plus a 256-step grey ramp found
+maximum differences of about 6.5 display levels (out of 255) for C200, 2.8 for
+Vision3 500T, and 1.3 or less for each slide. These are interpolation differences
+from spektrafilm, not preview/export disagreement; GPU/CPU parity passes its
+unchanged tolerance. No table resolution or pinned tolerance was changed.
+
+Open paper recommendation (not a shipping decision): provisionally Supra
+Endura rather than Ultra Endura. Compared with Portra Endura, Supra's fitted
+curves have higher peak slopes in all three layers; Ultra's increase is more
+concentrated in blue. This is a curve comparison, not a visual paper trial.
+Either additional paper is estimated to add about 6.7 MB across all 16
+negatives, using measured current compressed-table sizes. Keep the current
+20-stock set and three distinct print media pending Steve's choice; no extra
+paper was baked for this recommendation.
 
 ### 5.2 Halation
 

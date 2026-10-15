@@ -78,3 +78,14 @@ HDR Finisher's Film stock engine is its own re-implementation, informed by spekt
 is distributed under GNU GPL version 3; this is compatible with HDR Finisher's GPL-3.0 license.
 These files and notices must remain present in source and packaged distributions that include the
 Film stock data.
+
+The October 15, 2026 Film Look data expansion uses spektrafilm revision
+`3bb2c2d2801ff68b92019cf1dbcbb133d60832bc`: all 20 camera stocks, including
+Vision3, Verita, pushed Portra 800, C200, X-Tra 400, Ultramax and the four
+slide films (Velvia, Provia, Ektachrome and Kodachrome). Negative-film tables
+include their default print medium plus Kodak Vision 2383 and Fujifilm
+Crystal Archive Type II; the other default is Kodak Portra Endura. Slides
+are scanned directly. The modifications also include storing the sampled
+numbers as shared compressed float32 arrays with JSON manifests. These
+new files retain CC BY-SA 4.0; the complete stock/paper list and changes are
+recorded in the film-data `CHANGELOG.txt`.
