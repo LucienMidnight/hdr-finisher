@@ -81,7 +81,7 @@
       this.curveBuffer = null;
       this.filmStockBuffer = null;
       this.filmStockPlaceholder = null;
-      this.filmStockUploads = new Set();
+      this.filmStockUploads = new Map();
       this.curveSampleCache = new Map();
       this.lastCurveSamples = null;
       this.surfaceKeys = new WeakMap();
@@ -720,7 +720,7 @@
       this.curveBuffer = null;
       this.filmStockBuffer = null;
       this.filmStockPlaceholder = null;
-      this.filmStockUploads = new Set();
+      this.filmStockUploads = new Map();
       this.peakReductionPipeline = null;
       this.maskProbePipeline = null;
       this.frameMaskRecord = null;
@@ -1618,13 +1618,14 @@
       if (!this.filmStockBuffer) {
         const bytes = stocks.slotCount * stocks.slotFloats * 4;
         this.filmStockBuffer = this.device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-        this.filmStockUploads = new Set();
+        this.filmStockUploads = new Map();
         this.recordAllocation("film-stock", bytes, { slots: stocks.slotCount });
       }
       for (const id of loaded) {
-        if (this.filmStockUploads.has(id)) continue;
-        this.device.queue.writeBuffer(this.filmStockBuffer, stocks.ids.indexOf(id) * stocks.slotFloats * 4, stocks.packedSlot(id));
-        this.filmStockUploads.add(id);
+        const data = stocks.packedSlot(id);
+        if (this.filmStockUploads.get(id) === data) continue;
+        this.device.queue.writeBuffer(this.filmStockBuffer, stocks.bufferIds.indexOf(id) * stocks.slotFloats * 4, data);
+        this.filmStockUploads.set(id, data);
       }
       return { buffer: this.filmStockBuffer };
     }

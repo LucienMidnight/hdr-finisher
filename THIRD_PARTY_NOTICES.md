@@ -89,3 +89,14 @@ are scanned directly. The modifications also include storing the sampled
 numbers as shared compressed float32 arrays with JSON manifests. These
 new files retain CC BY-SA 4.0; the complete stock/paper list and changes are
 recorded in the film-data `CHANGELOG.txt`.
+
+### spektrafilm print-curve morph
+
+`codebase/backend/hdr_finisher/film_print_morph.py` is ported from Andrea
+Volpato's spektrafilm `utils/morph_curves.py` at revision
+`3bb2c2d2801ff68b92019cf1dbcbb133d60832bc`, under GPL-3.0, like HDR Finisher.
+Source: https://github.com/andreavolpato/spektrafilm . The formulas are unchanged;
+the source profile type annotation is replaced with a local duck type.
+The fitted paper layers and scanner calibration in `film_stocks/controls.json`
+are derived from the same CC BY-SA 4.0 profiles credited above, extracted by
+`tools/bake_film_controls.py`; existing measured stock tables are unchanged.

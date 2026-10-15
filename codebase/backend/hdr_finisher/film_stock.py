@@ -14,7 +14,9 @@ uniform axis, written out in index math so the shader can mirror it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import lru_cache
+from types import SimpleNamespace
 import json
 import math
 import re
@@ -103,6 +105,8 @@ class StockParameters:
     warmth: np.float32  # Print warmth slider / 100
     tint: np.float32  # Print tint slider / 100
     preflash: np.float32
+    print_exposure_gain: np.float32 = np.float32(1)
+    development_gamma: np.float32 = np.float32(1)
 
 
 class FilmStockError(ValueError):
@@ -276,6 +280,8 @@ def stock_parameters(look: object) -> StockParameters:
         warmth=np.float32(float(look.stock_print_warmth) / 100.0),
         tint=np.float32(float(look.stock_print_tint) / 100.0),
         preflash=np.float32(float(look.stock_preflash) / 100.0 * PREFLASH_SCALE),
+        print_exposure_gain=np.float32(2 ** float(getattr(look, "print_exposure", 0))),
+        development_gamma=np.float32(development_gamma(getattr(look, "film_stock", "none"), float(getattr(look, "push_pull", 0)))),
     )
 
 
@@ -325,15 +331,15 @@ def _lookup_table(value: np.ndarray, table: StockTable) -> np.ndarray:
     return _lerp(near, far, f0)
 
 
-def _film_density(stock: FilmStock, exposure: np.ndarray) -> np.ndarray:
+def _film_density(stock: FilmStock, exposure: np.ndarray, gamma: float = 1) -> np.ndarray:
     """Film layer exposure (linear, n x 3) -> developed film density."""
     log_exposure = np.log10(exposure + LOG_EPSILON)
-    first = _curve(log_exposure, stock.film_curves_plain, stock.film_range)
+    first = _curve(log_exposure * np.float32(gamma), stock.film_curves_plain, stock.film_range)
     if stock.type == "slide":
         first = stock.film_density_max - first
     shifted = first + stock.coupler_high_exposure_shift * first * first
     corrected = log_exposure - shifted @ stock.coupler_matrix
-    return _curve(corrected, stock.film_curves_corrected, stock.film_range)
+    return _curve(corrected * np.float32(gamma), stock.film_curves_corrected, stock.film_range)
 
 
 def print_film_density(stock: FilmStock, density: np.ndarray, parameters: StockParameters) -> np.ndarray:
@@ -347,7 +353,7 @@ def print_film_density(stock: FilmStock, density: np.ndarray, parameters: StockP
             parameters.warmth * stock.print_warmth_log_shift
             + parameters.tint * stock.print_tint_log_shift
         )
-    print_raw = np.power(np.float32(10.0), print_log)
+    print_raw = np.power(np.float32(10.0), print_log) * parameters.print_exposure_gain
     if parameters.preflash != 0.0:
         print_raw += parameters.preflash * stock.preflash_raw
     print_density = _curve(np.log10(print_raw + LOG_EPSILON), stock.print_curves, stock.print_range)
@@ -372,7 +378,7 @@ def _film_exposure(stock: FilmStock, rgb: np.ndarray, parameters: StockParameter
 
 def render_film_stock(stock: FilmStock, rgb: np.ndarray, parameters: StockParameters) -> np.ndarray:
     """The chain F on linear sRGB (n x 3), without colour separation."""
-    density = _film_density(stock, _film_exposure(stock, rgb, parameters))
+    density = _film_density(stock, _film_exposure(stock, rgb, parameters), parameters.development_gamma)
     return _print_and_scan(stock, density, parameters)
 
 
@@ -393,10 +399,10 @@ def render_film_stock_with_grey(
     both developed film densities before print/scan and also return the grained
     grey. The clean grey remains the reference for partial stock mixes.
     """
-    grey_density = _film_density(stock, _film_exposure(stock, grey_rgb, parameters))
+    grey_density = _film_density(stock, _film_exposure(stock, grey_rgb, parameters), parameters.development_gamma)
     film = None
     if rgb is not None:
-        density = _film_density(stock, _film_exposure(stock, rgb, parameters))
+        density = _film_density(stock, _film_exposure(stock, rgb, parameters), parameters.development_gamma)
         if parameters.separation_gain != 1.0:
             density = grey_density + (density - grey_density) * parameters.separation_gain
         if density_delta is not None:
@@ -407,3 +413,73 @@ def render_film_stock_with_grey(
         grained_grey = _print_and_scan(stock, grey_density + density_delta, parameters)
         return film, grey, grained_grey
     return film, grey
+
+
+@lru_cache(maxsize=1)
+def _controls_data() -> dict:
+    return json.loads((FILM_STOCK_DIR / "controls.json").read_text(encoding="utf-8"))
+
+
+def measured_push_stock(stock_id: str, push: float) -> str:
+    """Only Portra 800 +1/+2 have measured development profiles."""
+    if stock_id == "kodak_portra_800" and push in (1, 2):
+        return f"kodak_portra_800_push{int(push)}"
+    return stock_id
+
+
+def development_gamma(stock_id: str, push: float) -> float:
+    return 1.0 if measured_push_stock(stock_id, push) != stock_id else 2.0 ** (0.2 * push)
+
+
+def controlled_film_stock(stock_id: str, paper: str | None = None, contrast: float = 0,
+                          shadows: float = 0, highlights: float = 0, lab_levels: bool = False) -> FilmStock | None:
+    return _controlled_film_stock(str(FILM_STOCK_DIR), stock_id, paper, contrast, shadows, highlights, lab_levels)
+
+
+@lru_cache(maxsize=8)
+def _controlled_film_stock(directory: str, stock_id: str, paper: str | None, contrast: float,
+                          shadows: float, highlights: float, lab_levels: bool) -> FilmStock | None:
+    """Small, bounded cache of paper curves and scanner-calibrated tables.
+
+    The measured base arrays remain unchanged. CPU and API use this same result.
+    Contrast is gamma 0.5..2; fast layers carry paper shadows, mid/slow layers
+    highlights. Negative Highlight Contrast blends toward developer exhaustion.
+    Positive cine print reverses the grain-speed roles.
+    """
+    stock = load_film_stock(stock_id, paper)
+    if stock is None or not (contrast or shadows or highlights or lab_levels):
+        return stock
+    metadata = _controls_data()
+    changes = {}
+    if stock.type != "slide" and (contrast or shadows or highlights):
+        from .film_print_morph import PrintCurvesMorphParams, apply_print_curves_morph
+        raw = metadata["papers"][stock.print_profile]
+        model = SimpleNamespace(**{key: np.asarray(raw[key]) for key in ("centers", "amplitudes", "sigmas")}, n_layers=len(raw["centers"][0]))
+        fast, slow = (shadows, highlights) if raw["type"] != "positive" else (highlights, shadows)
+        params = PrintCurvesMorphParams(gamma_factor=2 ** (contrast / 100),
+            gamma_factor_fast=2 ** (fast / 100), gamma_factor_slow=2 ** (slow / 100),
+            developer_exhaustion=max(0, -highlights / 100))
+        axis = np.linspace(*stock.print_range, CURVE_SAMPLES)
+        changes["print_curves"] = apply_print_curves_morph(axis, model, params, profile_type=raw["type"]).astype(np.float32)
+    if lab_levels:
+        path = film_stock_path(stock_id, paper)
+        ref = metadata["scanner"][path.stem]
+        values = stock.scan_table.values.astype(np.float64) - ref["glare_rgb"]
+        y = values @ np.asarray(ref["y_weights"])
+        ratio = np.clip(ref["m"] * y + ref["q"], 0, 1) / (y + 1e-10)
+        values = values * ratio[:, None] + ref["glare_rgb"]
+        changes["scan_table"] = replace(stock.scan_table, values=values.astype(np.float32))
+    return replace(stock, **changes)
+
+
+def controlled_stock_payload(stock_id: str, paper: str | None = None, contrast: float = 0,
+                             shadows: float = 0, highlights: float = 0, lab_levels: bool = False) -> dict | None:
+    stock = controlled_film_stock(stock_id, paper, contrast, shadows, highlights, lab_levels)
+    path = film_stock_path(stock_id, paper)
+    if stock is None or path is None:
+        return None
+    payload = read_film_stock_payload(path)
+    if stock.type != "slide":
+        payload["print_curves"] = stock.print_curves.tolist()
+    payload["scan_table"]["values"] = stock.scan_table.values.ravel().tolist()
+    return payload

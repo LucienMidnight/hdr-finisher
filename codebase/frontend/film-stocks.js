@@ -127,6 +127,24 @@
     return slot;
   }
 
+  const VARIANT_IDS = Object.freeze(Array.from({length: 8}, (_, i) => `variant-${i}`));
+  const ALL_IDS = Object.freeze([...IDS, ...VARIANT_IDS]);
+  const variantKeys = new Map();
+  let nextVariant = 0;
+
+  function recipe(id, film = {}) {
+    const push = Number(film.push_pull) || 0;
+    if (id === "kodak_portra_800" && (push === 1 || push === 2)) id += `_push${push}`;
+    const query = new URLSearchParams();
+    if (film.print_paper && film.print_paper !== "default") query.set("paper", film.print_paper);
+    for (const [field, key] of [["print_contrast", "contrast"], ["shadow_contrast", "shadows"], ["highlight_contrast", "highlights"]]) {
+      if (Number(film[field])) query.set(key, String(Number(film[field])));
+    }
+    if (film.lab_levels) query.set("lab_levels", "true");
+    const suffix = query.toString();
+    return {id, key: suffix ? `${id}?${suffix}` : id};
+  }
+
   const packed = new Map();
   const pending = new Map();
   const failed = new Set();
@@ -140,25 +158,33 @@
     });
   }
 
-  function request(id) {
-    if (!IDS.includes(id) || packed.has(id) || pending.has(id) || failed.has(id)) return pending.get(id) || null;
+  function request(stockId, film = {}) {
+    const {id, key} = recipe(stockId, film);
+    if (!IDS.includes(id) || packed.has(key) || variantKeys.has(key) || pending.has(key) || failed.has(key)) return pending.get(key) || null;
     if (typeof fetch !== "function") return null;
-    const task = fetch(`/api/film-stocks/${encodeURIComponent(id)}`)
+    const task = fetch(`/api/film-stocks/${key}`)
       .then((response) => {
         if (!response.ok) throw new Error(`Film stock ${id} is unavailable (${response.status}).`);
         return response.json();
       })
       .then((document) => {
-        packed.set(id, packFilmStock(document));
-        pending.delete(id);
+        const data = packFilmStock(document);
+        if (key === id) packed.set(id, data);
+        else {
+          const slotId = VARIANT_IDS[nextVariant++ % VARIANT_IDS.length];
+          for (const [oldKey, oldId] of variantKeys) if (oldId === slotId) variantKeys.delete(oldKey);
+          variantKeys.set(key, slotId);
+          packed.set(slotId, data);
+        }
+        pending.delete(key);
         notify(id);
       })
       .catch((error) => {
-        pending.delete(id);
-        failed.add(id);
+        pending.delete(key);
+        failed.add(key);
         console.warn(error?.message || error);
       });
-    pending.set(id, task);
+    pending.set(key, task);
     return task;
   }
 
@@ -167,27 +193,30 @@
    * plus one, or 0 while its data is not loaded (the stage then stays off and
    * the preview re-renders when the data arrives). Asking starts the load.
    */
-  function slot(id) {
+  function slot(stockId, film = {}) {
+    const {id, key} = recipe(stockId, film);
     if (!IDS.includes(id)) return 0;
-    if (!packed.has(id)) {
-      request(id);
+    const slotId = key === id ? id : variantKeys.get(key);
+    if (!slotId || !packed.has(slotId)) {
+      request(stockId, film);
       return 0;
     }
-    return IDS.indexOf(id) + 1;
+    return ALL_IDS.indexOf(slotId) + 1;
   }
 
   const HDRFilmStocks = Object.freeze({
     ids: IDS,
+    bufferIds: ALL_IDS,
     names: NAMES,
     layout: LAYOUT,
     slotFloats: SLOT_FLOATS,
-    slotCount: IDS.length,
+    slotCount: ALL_IDS.length,
     maxTableSize: MAX_TABLE_SIZE,
     packFilmStock,
     request,
     slot,
     packedSlot: (id) => packed.get(id) || null,
-    loadedIds: () => IDS.filter((id) => packed.has(id)),
+    loadedIds: () => ALL_IDS.filter((id) => packed.has(id)),
     get version() { return version; },
     onLoad(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     /** Test seam: install packed data without the network. */
