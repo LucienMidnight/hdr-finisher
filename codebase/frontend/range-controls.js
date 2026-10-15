@@ -490,8 +490,9 @@ function formatControlValue(path, value) {
   if (path.endsWith("highlight_compression_start_percent") || path.endsWith("highlight_compression_manual_peak_percent")) return `${Math.round(numeric)}%`;
   if (path.endsWith("film_look.halation_radius")) return `${numeric.toFixed(2)}% 35mm gate`;
   if (path.endsWith("film_look.bloom_radius")) return `${numeric.toFixed(2)}% output diag`;
+  if (path.endsWith("film_look.stock_exposure")) return `${numeric > 0 ? "+" : ""}${numeric.toFixed(2)} EV`;
   if (path.includes("film_look")) {
-    const signed = /(contrast|toe|shoulder|density|hue_offset)$/.test(path);
+    const signed = /(contrast|toe|shoulder|density|hue_offset|separation|warmth|tint)$/.test(path);
     return `${signed && numeric > 0 ? "+" : ""}${Math.round(numeric)}%`;
   }
   if (path.endsWith("highlight_compression_softness")) {

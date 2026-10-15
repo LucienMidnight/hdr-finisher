@@ -255,6 +255,23 @@
     params[GPU_PARAMS.FILM_RED_RESPONSE] = blackAndWhiteOn ? 0 : (film.red_response || 0) / 100;
     params[GPU_PARAMS.FILM_GREEN_RESPONSE] = blackAndWhiteOn ? 0 : (film.green_response || 0) / 100;
     params[GPU_PARAMS.FILM_BLUE_RESPONSE] = blackAndWhiteOn ? 0 : (film.blue_response || 0) / 100;
+    // Film stock (film_stock.py stock_parameters, adjustments.py
+    // _apply_film_stock). The slot stays 0, and the stage off, until the
+    // stock's data has reached the GPU; its arrival re-renders the preview.
+    // Black & White keeps the stock's tone but none of its colour.
+    const stockColor = blackAndWhiteOn ? 0 : Math.min(1, Math.max(0, (Number(film.stock_color ?? 100) || 0) / 100));
+    const stockTone = Math.min(1, Math.max(0, (Number(film.stock_tone ?? 100) || 0) / 100));
+    const stockId = film.film_stock || "none";
+    const stockActive = filmEnabled && stockId !== "none" && (stockColor > 0 || stockTone > 0);
+    params[GPU_PARAMS.FILM_STOCK_SLOT] = stockActive ? (globalThis.HDRFilmStocks?.slot(stockId) || 0) : 0;
+    params[GPU_PARAMS.FILM_STOCK_COLOR] = stockColor;
+    params[GPU_PARAMS.FILM_STOCK_TONE] = stockTone;
+    params[GPU_PARAMS.FILM_STOCK_EXPOSURE_GAIN] = 2 ** (Number(film.stock_exposure) || 0);
+    params[GPU_PARAMS.FILM_STOCK_SEPARATION_GAIN] = 2 ** ((Number(film.stock_separation) || 0) / 100);
+    // Warmth and Tint scale the stock's own 20 CC log shift vectors.
+    params[GPU_PARAMS.FILM_STOCK_WARMTH] = (Number(film.stock_print_warmth) || 0) / 100;
+    params[GPU_PARAMS.FILM_STOCK_TINT] = (Number(film.stock_print_tint) || 0) / 100;
+    params[GPU_PARAMS.FILM_STOCK_PREFLASH] = (Number(film.stock_preflash) || 0) / 100 * 0.1;
     params[GPU_PARAMS.FILM_HIGHLIGHT_DESATURATION] = (film.highlight_desaturation || 0) / 100;
     params[GPU_PARAMS.FILM_SHADOW_DESATURATION] = (film.shadow_desaturation || 0) / 100;
     params[GPU_PARAMS.HALATION_ENABLED] = film.halation_enabled !== false && ((((film.halation_amount || 0) > 0) && (film.halation_radius || 0) > 0) || film.halation_view_map) ? 1 : 0;

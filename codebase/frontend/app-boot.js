@@ -887,6 +887,16 @@ function bindEvents() {
   els.blackAndWhiteMatchHdr?.addEventListener("click", matchHdrBlackAndWhiteToSdr);
   els.filmLookReset?.addEventListener("click", resetFilmLook);
   els.filmLookMatchHdr?.addEventListener("click", matchHdrFilmLookToSdr);
+  // A film stock's tables arrive after the first render that asked for them,
+  // which left the stage off; render the lanes that use it again.
+  window.HDRFilmStocks?.onLoad((id) => {
+    if (!state.session) return;
+    for (const lane of ["hdr", "sdr"]) {
+      if (state.adjustments?.[lane]?.film_look?.film_stock !== id) continue;
+      invalidatePreview(lane, { markDirty: false });
+      debouncePreview(lane);
+    }
+  });
   els.colorGradingReset?.addEventListener("click", () => resetLaneObject("color_grading", defaultColorGrading()));
   els.colorGradingMatchHdr?.addEventListener("click", () => matchLaneObject("color_grading"));
   els.vignetteReset?.addEventListener("click", () => resetLaneObject("vignette", defaultVignette()));

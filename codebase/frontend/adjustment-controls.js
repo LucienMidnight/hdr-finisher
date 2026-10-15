@@ -127,11 +127,31 @@ function renderFilmGrainChroma() {
   if (state.session) chroma.disabled = filmGrainChromaInactive();
 }
 
+// The Film Stock sliders do nothing while no stock is chosen.
+const FILM_STOCK_SLIDER_PATHS = Object.freeze([
+  "stock_color", "stock_tone", "stock_exposure", "stock_separation",
+  "stock_print_warmth", "stock_print_tint", "stock_preflash",
+].map((key) => `current.film_look.${key}`));
+
+function filmStockSlidersInactive() {
+  return (state.adjustments?.[state.currentView]?.film_look?.film_stock || "none") === "none";
+}
+
+function renderFilmStockControls() {
+  if (!state.session) return;
+  const inactive = filmStockSlidersInactive();
+  FILM_STOCK_SLIDER_PATHS.forEach((path) => {
+    const control = document.querySelector(`[data-path="${path}"]`);
+    if (control) control.disabled = inactive;
+  });
+}
+
 function renderControlState() {
   const defaults = defaultAdjustments();
   const filmLook = state.adjustments[state.currentView]?.film_look;
   document.querySelector("[data-film-grain-custom]")?.toggleAttribute("hidden", filmLook?.grain_film_format !== "custom");
   renderFilmGrainChroma();
+  renderFilmStockControls();
   renderHighlightCompressionControls();
   renderSdrHighlightCompressionControls();
   els.controlRows.forEach((row) => {

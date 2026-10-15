@@ -272,7 +272,7 @@ function previewGraphTimingKey(lane = state.currentView) {
   return [lane, Boolean(state.denoise?.[lane]?.enabled), gpuDetailGraphActive(lane),
     localAdjustments().filter((item) => item.enabled !== false).length,
     Number(film.grain_amount) > 0, Number(film.bloom_amount) > 0,
-    Number(film.halation_amount) > 0,
+    Number(film.halation_amount) > 0, (film.film_stock || "none") !== "none",
     Number(state.adjustments?.[lane]?.detail?.softness) > 0 || (Number(state.adjustments?.[lane]?.detail?.microcontrast) || 0) !== 0,
     state.zoomMode === "custom" ? "zoom" : "fit"].join(":");
 }

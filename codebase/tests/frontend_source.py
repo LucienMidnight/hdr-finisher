@@ -25,7 +25,7 @@ def _parameter_positions() -> dict[str, int]:
     """The real named layout, used only to resolve existing numeric source pins."""
     text = (FRONTEND / "gpu-param-layout.js").read_text(encoding="utf-8")
     fields = re.findall(r'name: "([A-Z0-9_]+)", index: (\d+)', text.split('const indices =', 1)[0])
-    assert len(fields) == 190
+    assert len(fields) == 198
     return {name: int(index) for name, index in fields}
 
 

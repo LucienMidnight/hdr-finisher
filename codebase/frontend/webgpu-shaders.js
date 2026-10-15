@@ -7,6 +7,11 @@
   const GPU_PARAMS = ((typeof window !== "undefined" && window.HDRGpuParamLayout)
     || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRGpuParamLayout)).indices;
 
+  // Film stock slots (film-stocks.js packs them; see gpu-param-layout.js).
+  const FILM_STOCK = ((typeof window !== "undefined" && window.HDRFilmStockLayout)
+    || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRFilmStockLayout));
+  const STOCK = FILM_STOCK.offsets;
+
   const PEAK_HISTOGRAM_BINS = 4096;
 
   // BW-01 Black & White, in WGSL for both the render and the peak shaders
@@ -397,6 +402,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     @group(0) @binding(3) var spatialTexture: texture_2d<f32>;
     @group(0) @binding(4) var spatialSampler: sampler;
     @group(0) @binding(5) var overlayMaskTexture: texture_2d<f32>;
+    @group(0) @binding(6) var<storage, read> filmStock: array<f32>;
 
     struct VertexOut { @builtin(position) position: vec4f }
 
@@ -1194,10 +1200,108 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     fn filmLumaFromSignal(value: f32) -> f32 {
       return select(srgbDecode(clamp(value, 0.0, 1.0)), curveDecodeChannel(value), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
     }
-    fn filmResponse(input: vec3f) -> vec3f {
+    // Film stock: the chain F of backend/hdr_finisher/film_stock.py on the
+    // stock's baked tables, read from the lane's slot of filmStock. Lookups
+    // are clamped linear (1D, 256 samples) and clamped trilinear (3D) with the
+    // CPU's float32 scales, and every blend is a + (b - a) * t as there.
+    fn stockLerp(a: vec3f, b: vec3f, t: f32) -> vec3f { return a + (b - a) * t; }
+    fn stockVec3(at: u32) -> vec3f { return vec3f(filmStock[at], filmStock[at + 1u], filmStock[at + 2u]); }
+    fn stockLog10(value: vec3f) -> vec3f { return log2(value) * 0.30102999566398120; }
+    fn stockCurveChannel(curve: u32, channel: u32, position: f32) -> f32 {
+      let index = min(u32(position), ${FILM_STOCK.curveSamples - 2}u);
+      let at = curve + index * 3u + channel;
+      let a = filmStock[at];
+      return a + (filmStock[at + 3u] - a) * (position - f32(index));
+    }
+    fn stockCurve(curve: u32, low: f32, scale: f32, value: vec3f) -> vec3f {
+      let position = clamp((value - vec3f(low)) * scale, vec3f(0.0), vec3f(${FILM_STOCK.curveSamples - 1}.0));
+      return vec3f(stockCurveChannel(curve, 0u, position.x), stockCurveChannel(curve, 1u, position.y), stockCurveChannel(curve, 2u, position.z));
+    }
+    fn stockTable(base: u32, header: u32, value: vec3f) -> vec3f {
+      let size = u32(filmStock[base + header]);
+      let values = base + u32(filmStock[base + header + 1u]);
+      let position = clamp((value - stockVec3(base + header + 2u)) * stockVec3(base + header + 5u), vec3f(0.0), vec3f(f32(size - 1u)));
+      let index = min(vec3u(position), vec3u(size - 2u));
+      let t = position - vec3f(index);
+      let stride0 = size * size * 3u;
+      let stride1 = size * 3u;
+      let corner = values + ((index.x * size + index.y) * size + index.z) * 3u;
+      let near = stockLerp(
+        stockLerp(stockVec3(corner), stockVec3(corner + 3u), t.z),
+        stockLerp(stockVec3(corner + stride1), stockVec3(corner + stride1 + 3u), t.z),
+        t.y,
+      );
+      let far = stockLerp(
+        stockLerp(stockVec3(corner + stride0), stockVec3(corner + stride0 + 3u), t.z),
+        stockLerp(stockVec3(corner + stride0 + stride1), stockVec3(corner + stride0 + stride1 + 3u), t.z),
+        t.y,
+      );
+      return stockLerp(near, far, t.x);
+    }
+    // Linear sRGB -> film layer exposure -> developed density (two passes
+    // for the DIR couplers). film_stock.py _film_exposure and _film_density.
+    fn stockDensity(base: u32, rgb: vec3f) -> vec3f {
+      let matrix = base + ${STOCK.INPUT_MATRIX}u;
+      let exposure = max(vec3f(
+        dot(stockVec3(matrix), rgb), dot(stockVec3(matrix + 3u), rgb), dot(stockVec3(matrix + 6u), rgb),
+      ), vec3f(0.0)) * p[${GPU_PARAMS.FILM_STOCK_EXPOSURE_GAIN}];
+      let logExposure = stockLog10(exposure + vec3f(1e-10));
+      let low = filmStock[base + ${STOCK.FILM_LOW}u];
+      let scale = filmStock[base + ${STOCK.FILM_SCALE}u];
+      let first = stockCurve(base + ${STOCK.FILM_CURVES_PLAIN}u, low, scale, logExposure);
+      let shifted = first + filmStock[base + ${STOCK.COUPLER_SHIFT}u] * first * first;
+      let couplers = base + ${STOCK.COUPLER_MATRIX}u;
+      let correction = shifted.x * stockVec3(couplers) + shifted.y * stockVec3(couplers + 3u) + shifted.z * stockVec3(couplers + 6u);
+      return stockCurve(base + ${STOCK.FILM_CURVES_CORRECTED}u, low, scale, logExposure - correction);
+    }
+    // Film density -> print exposure (with the enlarger filter shifts and
+    // preflash) -> print density -> scanned linear sRGB. _print_and_scan.
+    fn stockPrintScan(base: u32, density: vec3f) -> vec3f {
+      let printLog = stockTable(base, ${STOCK.PRINT_TABLE}u, density)
+        + (p[${GPU_PARAMS.FILM_STOCK_WARMTH}] * stockVec3(base + ${STOCK.PRINT_WARMTH_SHIFT}u)
+          + p[${GPU_PARAMS.FILM_STOCK_TINT}] * stockVec3(base + ${STOCK.PRINT_TINT_SHIFT}u));
+      let printRaw = exp2(printLog * 3.32192809488736235) + p[${GPU_PARAMS.FILM_STOCK_PREFLASH}] * stockVec3(base + ${STOCK.PREFLASH_RAW}u);
+      let printDensity = stockCurve(
+        base + ${STOCK.PRINT_CURVES}u, filmStock[base + ${STOCK.PRINT_LOW}u], filmStock[base + ${STOCK.PRINT_SCALE}u],
+        stockLog10(printRaw + vec3f(1e-10)),
+      );
+      return stockTable(base, ${STOCK.SCAN_TABLE}u, printDensity);
+    }
+    fn stockToSrgb(rgb: vec3f) -> vec3f { return select(rgb, acescgToSrgb(rgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5); }
+    fn stockFromSrgb(rgb: vec3f) -> vec3f { return select(rgb, srgbToAcescg(rgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5); }
+    // adjustments.py _apply_film_stock, in the branch's working space. Above
+    // reference white (1.0) colour is evaluated at white and the tone gain is
+    // held, so HDR highlights keep their ratios. The grey (Y, Y, Y) and the
+    // middle grey (0.18, 0.18, 0.18) are converted to sRGB like the pixel.
+    fn filmStockStage(rgb: vec3f) -> vec3f {
+      if (p[${GPU_PARAMS.FILM_STOCK_SLOT}] < 0.5) { return rgb; }
+      let base = (u32(p[${GPU_PARAMS.FILM_STOCK_SLOT}] + 0.5) - 1u) * ${FILM_STOCK.slotFloats}u;
+      let color = p[${GPU_PARAMS.FILM_STOCK_COLOR}];
+      let tone = p[${GPU_PARAMS.FILM_STOCK_TONE}];
+      let middle = stockFromSrgb(stockPrintScan(base, stockDensity(base, stockToSrgb(vec3f(0.18)))));
+      let toneGain = 0.18 / max(filmLuma(middle), 0.000001);
+      let luma = max(filmLuma(rgb), 0.0);
+      let highlightScale = 1.0 / max(luma, 1.0);
+      let greyDensity = stockDensity(base, stockToSrgb(vec3f(luma * highlightScale)));
+      let greyLuma = max(filmLuma(stockFromSrgb(stockPrintScan(base, greyDensity))), 0.000001);
+      let toneTarget = luma + (toneGain * greyLuma / highlightScale - luma) * tone;
+      var result = rgb * (toneTarget / max(luma, 0.0000001));
+      if (color > 0.0) {
+        var density = stockDensity(base, stockToSrgb(rgb * highlightScale));
+        if (p[${GPU_PARAMS.FILM_STOCK_SEPARATION_GAIN}] != 1.0) {
+          density = greyDensity + (density - greyDensity) * p[${GPU_PARAMS.FILM_STOCK_SEPARATION_GAIN}];
+        }
+        let stocked = stockFromSrgb(stockPrintScan(base, density)) * (toneTarget / greyLuma);
+        result += (stocked - result) * color;
+      }
+      return rgb + (result - rgb) * p[${GPU_PARAMS.FILM_LOOK_STRENGTH}];
+    }
+    fn filmResponse(source: vec3f) -> vec3f {
       // HDR enters as scene-linear ACEScg; SDR enters as scene-linear sRGB.
       // The response signal is encoded and decoded within that same branch.
-      if (p[${GPU_PARAMS.FILM_RESPONSE_ENABLED}] < 0.5 || p[${GPU_PARAMS.FILM_LOOK_STRENGTH}] <= 0.0) { return input; }
+      if (p[${GPU_PARAMS.FILM_RESPONSE_ENABLED}] < 0.5 || p[${GPU_PARAMS.FILM_LOOK_STRENGTH}] <= 0.0) { return source; }
+      // The film stock runs first, immediately before the response.
+      let input = filmStockStage(source);
       let sourceY = max(filmLuma(input), 0.0);
       var rgb = input;
       if (p[${GPU_PARAMS.FILM_PRINT_STRENGTH}] > 0.0 && sourceY > 0.0000001) {

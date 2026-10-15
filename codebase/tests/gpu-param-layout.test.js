@@ -11,11 +11,11 @@ const sources=['gpu-render-plan.js','gpu-params.js','webgpu-preview.js','graph-s
 const shaderSource=shaders.SHADER_SOURCE+'\n'+shaders.PEAK_REDUCTION_SHADER_SOURCE;
 const audit=(js=sources,wgsl=shaderSource)=>auditGlobalParameterUses(js,wgsl,layout.fields);
 
-test('the global parameter list preserves all 190 names and original positions',()=>{
- assert.equal(layout.count,190);
- assert.equal(new Set(layout.fields.map(f=>f.name)).size,190);
- assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:190},(_,i)=>i));
- assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.map(({name,index})=>[name,index]))).digest('hex'),'42f4f5f064f2580cf65203db259e7e673809d412516c4ea87a02a0e8aa37cc51');
+test('the global parameter list preserves all 198 names and original positions',()=>{
+ assert.equal(layout.count,198);
+ assert.equal(new Set(layout.fields.map(f=>f.name)).size,198);
+ assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:198},(_,i)=>i));
+ assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.map(({name,index})=>[name,index]))).digest('hex'),'f4ae69b00a5676fb53e3d13dc9a0cc034db58af73abda40bd826e8852453e385');
  assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,60]);
  assert.deepEqual(layout.fields.filter(f=>f.hostOnly).map(f=>f.name),['DETAIL_ENABLED']);
  assert.ok(Object.isFrozen(layout)&&Object.isFrozen(layout.indices)&&Object.isFrozen(layout.fields));

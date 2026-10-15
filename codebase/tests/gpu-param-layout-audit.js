@@ -1,11 +1,12 @@
 // Audit the production global buffer writers and compiled shader consumers.
 const assert=require('node:assert/strict');
+const GLOBAL_COUNT=require('../frontend/gpu-param-layout.js').HDRGpuParamLayout.count;
 function withoutComments(source) { return source.replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/[^\r\n]*/g,''); }
 function aliasesOf(source,indices) {
  const result={...indices, BLACK_AND_WHITE_PARAM: indices.BLACK_AND_WHITE_ENABLED};
  for(const match of source.matchAll(/\bconst\s+(\w+)\s*(?::\s*u32\s*)?=\s*(?:GPU_PARAMS\.(\w+)|(\d+)u?)\s*;/g)) {
   const value=match[2]?indices[match[2]]:Number(match[3]);
-  if(Number.isInteger(value)&&value<190)result[match[1]]=value;
+  if(Number.isInteger(value)&&value<GLOBAL_COUNT)result[match[1]]=value;
  }
  return result;
 }
@@ -30,7 +31,7 @@ function positionsOf(expression,indices,aliases) {
   // JS bracket expressions in these buffers contain only integer arithmetic.
   if(!/^[\d\s+*()-]+$/.test(expr))continue;
   const value=Function('return ('+expr+')')();
-  if(Number.isInteger(value)&&value>=0&&value<190)outputs.add(value);
+  if(Number.isInteger(value)&&value>=0&&value<GLOBAL_COUNT)outputs.add(value);
  }
  return outputs;
 }
@@ -86,7 +87,7 @@ module.exports={auditGlobalParameterUses,positionsOf};function bareGlobalPositio
       issues.push(`source ${file}: ${match[0]}`);
     }
     for(const match of code.matchAll(/\bconst\s+\w+(?:_INDEX|_PARAM)\s*=\s*(\d+)\s*;/g)) {
-      if(Number(match[1])<190)issues.push(`source ${file}: ${match[0]}`);
+      if(Number(match[1])<GLOBAL_COUNT)issues.push(`source ${file}: ${match[0]}`);
     }
   }
   return issues;

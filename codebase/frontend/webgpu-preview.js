@@ -79,6 +79,9 @@
       this.submissionLog = [];
       this.paramBuffer = null;
       this.curveBuffer = null;
+      this.filmStockBuffer = null;
+      this.filmStockPlaceholder = null;
+      this.filmStockUploads = new Set();
       this.curveSampleCache = new Map();
       this.lastCurveSamples = null;
       this.surfaceKeys = new WeakMap();
@@ -441,6 +444,7 @@
         0,
       );
       const parameterBufferBytes = (this.paramBuffer?.size || 0) + (this.curveBuffer?.size || 0)
+        + (this.filmStockBuffer?.size || 0)
         + [...this.localParamBuffers.values()].reduce((sum, buffer) => sum + (buffer.size || 0), 0);
       // Resident source levels at their real size, plus a whole-frame source
       // this render is about to load (a region proxy that Direct replaces).
@@ -607,6 +611,7 @@
             { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
             { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
             { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+            { binding: 6, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
           ],
         });
         this.spatialSampler = this.device.createSampler({
@@ -713,6 +718,9 @@
       this.spatialSampler = null;
       this.paramBuffer = null;
       this.curveBuffer = null;
+      this.filmStockBuffer = null;
+      this.filmStockPlaceholder = null;
+      this.filmStockUploads = new Set();
       this.peakReductionPipeline = null;
       this.maskProbePipeline = null;
       this.frameMaskRecord = null;
@@ -974,6 +982,7 @@
         : measuredDenoiseEvidenceBytes;
       const denoiseResolvedBytes = this.denoiseSourceSelector?.resolved?.byteSize || 0;
       const parameterBufferBytes = (this.paramBuffer?.size || 0) + (this.curveBuffer?.size || 0)
+        + (this.filmStockBuffer?.size || 0)
         + [...this.localParamBuffers.values()].reduce((sum, buffer) => sum + (buffer.size || 0), 0)
         + intermediateEntries.reduce((sum, entry) => sum + (entry.compositeParamBuffer?.size || 0), 0)
         + denoiseParameterBufferBytes;
@@ -1586,8 +1595,38 @@
           { binding: 3, resource: spatialView },
           { binding: 4, resource: this.spatialSampler },
           { binding: 5, resource: overlayView },
+          { binding: 6, resource: this.filmStockBinding() },
         ],
       });
+    }
+
+    /**
+     * The film stock tables the film pass reads (binding 6): each loaded
+     * stock in its fixed slot (film-stocks.js). Until one has loaded a small
+     * placeholder is bound; FILM_STOCK_SLOT is 0 then, so nothing reads it.
+     * Stock data never changes, so a slot is written once.
+     */
+    filmStockBinding() {
+      const stocks = window.HDRFilmStocks;
+      const loaded = stocks?.loadedIds() || [];
+      if (!loaded.length) {
+        if (!this.filmStockPlaceholder) {
+          this.filmStockPlaceholder = this.device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE });
+        }
+        return { buffer: this.filmStockPlaceholder };
+      }
+      if (!this.filmStockBuffer) {
+        const bytes = stocks.slotCount * stocks.slotFloats * 4;
+        this.filmStockBuffer = this.device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+        this.filmStockUploads = new Set();
+        this.recordAllocation("film-stock", bytes, { slots: stocks.slotCount });
+      }
+      for (const id of loaded) {
+        if (this.filmStockUploads.has(id)) continue;
+        this.device.queue.writeBuffer(this.filmStockBuffer, stocks.ids.indexOf(id) * stocks.slotFloats * 4, stocks.packedSlot(id));
+        this.filmStockUploads.add(id);
+      }
+      return { buffer: this.filmStockBuffer };
     }
 
     /**
@@ -6130,6 +6169,7 @@
           { binding: 3, resource: source.spatialTexture.createView() },
           { binding: 4, resource: this.spatialSampler },
           { binding: 5, resource: source.spatialTexture.createView() },
+          { binding: 6, resource: this.filmStockBinding() },
         ],
       });
       const encoder = this.device.createCommandEncoder();

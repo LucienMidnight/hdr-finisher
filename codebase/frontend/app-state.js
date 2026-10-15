@@ -171,6 +171,13 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.detail.sharpen_radius_px": { min: 0.3, max: 3, decimals: 2 },
   "current.detail.sharpen_threshold": { min: 0, max: 100, decimals: 0 },
   "current.film_look.look_strength": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.stock_color": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.stock_tone": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.stock_exposure": { min: -3, max: 3, decimals: 2 },
+  "current.film_look.stock_separation": { min: -100, max: 100, decimals: 0 },
+  "current.film_look.stock_print_warmth": { min: -100, max: 100, decimals: 0 },
+  "current.film_look.stock_print_tint": { min: -100, max: 100, decimals: 0 },
+  "current.film_look.stock_preflash": { min: 0, max: 100, decimals: 0 },
   "current.film_look.print_strength": { min: 0, max: 100, decimals: 0 },
   "current.film_look.print_contrast": { min: -100, max: 100, decimals: 0 },
   "current.film_look.print_toe": { min: -100, max: 100, decimals: 0 },
@@ -691,6 +698,16 @@ let graphEditorResizeObserver = null;
 const defaultFilmLook = () => ({
   reference_model: "custom",
   look_strength: 100,
+  // Film stock: measured stock color and tone, applied before
+  // Film Response. "none" leaves the stage off.
+  film_stock: "none",
+  stock_color: 100,
+  stock_tone: 100,
+  stock_exposure: 0,
+  stock_separation: 0,
+  stock_print_warmth: 0,
+  stock_print_tint: 0,
+  stock_preflash: 0,
   print_strength: 0,
   print_contrast: 0,
   print_toe: 0,
@@ -732,7 +749,9 @@ const defaultFilmLook = () => ({
 
 // 2: Image Softness and Microcontrast left Film Look for Detail (NEXT-01 #2),
 // and the presets no longer set them.
-const FILM_LOOK_PRESET_RECIPE_VERSION = 2;
+// 3: Film stock stage. Every recipe states its stock (the older ones "none",
+// through the defaults), and the Portra 400 pair was added.
+const FILM_LOOK_PRESET_RECIPE_VERSION = 3;
 
 function completeFilmLookRecipe(values) {
   return Object.freeze({
@@ -772,6 +791,20 @@ const FILM_LOOK_PRESETS = Object.freeze([
     description: "Coarse responsive grain, open glow, and softened fine detail for low-light character.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
     recipe: completeFilmLookRecipe({ print_strength: 54, print_contrast: 7, print_toe: 10, print_shoulder: 18, color_density: 17, red_response: 8, green_response: -3, blue_response: -7, highlight_desaturation: 30, shadow_desaturation: 17, grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_sensitivity: 66, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86, bloom_amount: 12, bloom_sensitivity: 70, bloom_radius: 0.7, bloom_highlight_detail: 70 }),
+  }),
+  Object.freeze({
+    id: "portra-400-full",
+    name: "Portra 400 Full",
+    description: "Kodak Portra 400 color and tone on its own print paper, with fine 35mm grain.",
+    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
+    recipe: completeFilmLookRecipe({ film_stock: "kodak_portra_400", stock_color: 100, stock_tone: 100, grain_amount: 12, grain_size: 30, grain_film_format: "35mm" }),
+  }),
+  Object.freeze({
+    id: "portra-400-color",
+    name: "Portra 400 Color",
+    description: "Kodak Portra 400 color only; your own tone is kept. No grain, halation, or bloom.",
+    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
+    recipe: completeFilmLookRecipe({ film_stock: "kodak_portra_400", stock_color: 100, stock_tone: 0 }),
   }),
 ]);
 

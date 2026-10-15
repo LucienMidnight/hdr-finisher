@@ -195,6 +195,14 @@
     Object.freeze({ name: "MASK_RECT_Y", index: 187 }),
     Object.freeze({ name: "MASK_RECT_WIDTH", index: 188 }),
     Object.freeze({ name: "MASK_RECT_HEIGHT", index: 189 }),
+    Object.freeze({ name: "FILM_STOCK_SLOT", index: 190 }),
+    Object.freeze({ name: "FILM_STOCK_COLOR", index: 191 }),
+    Object.freeze({ name: "FILM_STOCK_TONE", index: 192 }),
+    Object.freeze({ name: "FILM_STOCK_EXPOSURE_GAIN", index: 193 }),
+    Object.freeze({ name: "FILM_STOCK_SEPARATION_GAIN", index: 194 }),
+    Object.freeze({ name: "FILM_STOCK_WARMTH", index: 195 }),
+    Object.freeze({ name: "FILM_STOCK_TINT", index: 196 }),
+    Object.freeze({ name: "FILM_STOCK_PREFLASH", index: 197 }),
   ]);
 
   const indices = Object.freeze(Object.fromEntries(fields.map(({ name, index }) => [name, index])));
@@ -438,4 +446,37 @@
   const HDRGpuPassLayouts = Object.freeze({layouts, indices: passIndices, record, offset});
   if (typeof window !== "undefined") window.HDRGpuPassLayouts = HDRGpuPassLayouts;
   if (typeof module !== "undefined" && module.exports) module.exports.HDRGpuPassLayouts = HDRGpuPassLayouts;
+  // One film stock's slot in the film pass's stock buffer, in floats from the
+  // slot's start (film-stocks.js packs it, the film pass reads it). A table
+  // header is [size, values offset, min0, min1, min2, scale0, scale1, scale2].
+  const FILM_STOCK_CURVE_FLOATS = 256 * 3;
+  const FILM_STOCK_HEADER_FLOATS = 64;
+  const FILM_STOCK_MAX_TABLE_SIZE = 33;
+  const filmStockOffsets = Object.freeze({
+    INPUT_MATRIX: 0,
+    FILM_LOW: 9,
+    FILM_SCALE: 10,
+    COUPLER_MATRIX: 11,
+    COUPLER_SHIFT: 20,
+    PRINT_LOW: 21,
+    PRINT_SCALE: 22,
+    PREFLASH_RAW: 23,
+    PRINT_TABLE: 26,
+    SCAN_TABLE: 34,
+    PRINT_WARMTH_SHIFT: 42,
+    PRINT_TINT_SHIFT: 45,
+    FILM_CURVES_PLAIN: FILM_STOCK_HEADER_FLOATS,
+    FILM_CURVES_CORRECTED: FILM_STOCK_HEADER_FLOATS + FILM_STOCK_CURVE_FLOATS,
+    PRINT_CURVES: FILM_STOCK_HEADER_FLOATS + 2 * FILM_STOCK_CURVE_FLOATS,
+    TABLES: FILM_STOCK_HEADER_FLOATS + 3 * FILM_STOCK_CURVE_FLOATS,
+  });
+  const HDRFilmStockLayout = Object.freeze({
+    offsets: filmStockOffsets,
+    curveSamples: 256,
+    maxTableSize: FILM_STOCK_MAX_TABLE_SIZE,
+    slotFloats: filmStockOffsets.TABLES + 2 * FILM_STOCK_MAX_TABLE_SIZE ** 3 * 3,
+    slotCount: 6,
+  });
+  if (typeof window !== "undefined") window.HDRFilmStockLayout = HDRFilmStockLayout;
+  if (typeof module !== "undefined" && module.exports) module.exports.HDRFilmStockLayout = HDRFilmStockLayout;
 })();

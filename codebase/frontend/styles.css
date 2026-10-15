@@ -5681,6 +5681,13 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 
 .film-module-header > span { color: var(--quiet); }
 
+.film-stock-credit {
+  margin: 0 0 4px;
+  color: var(--quiet);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .film-module-toggle {
   display: inline-flex;
   align-items: center;

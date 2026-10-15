@@ -16,7 +16,7 @@ const { frontendSource } = require("./frontend-source.js");
 
 // Kept in step with webgpu-preview.js, where 160 and 161 carry the tile origin
 // and 166 the Show noise view flag, and 167-174 describe the Clarity map.
-const PARAM_COUNT = 190;
+const PARAM_COUNT = 198;
 
 const BYTES_PER_PIXEL = {
   rgba32float: 16,

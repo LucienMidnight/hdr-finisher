@@ -1368,6 +1368,23 @@
           </div>
           <div class="control-row" data-control-path="current.film_look.look_strength"><div class="control-heading"><label for="film-look-strength">Look Strength</label><output data-value-path="current.film_look.look_strength">100%</output></div><input id="film-look-strength" type="range" min="0" max="100" step="1" value="100" data-path="current.film_look.look_strength"></div>
 
+          <div class="film-module-header"><strong>Film Stock</strong></div>
+          <label class="select-control"><span class="tooltip-trigger" data-tooltip="Color and tone measured from a real film stock printed on its own paper. Runs before Film Response.">Stock</span><select id="film-stock" data-path="current.film_look.film_stock"><option value="none" selected>None</option><option value="kodak_portra_400">Kodak Portra 400</option><option value="kodak_portra_160">Kodak Portra 160</option><option value="kodak_portra_800">Kodak Portra 800</option><option value="kodak_ektar_100">Kodak Ektar 100</option><option value="kodak_gold_200">Kodak Gold 200</option><option value="fujifilm_pro_400h">Fujifilm Pro 400H</option></select></label>
+          <p class="film-stock-credit">Stock data: spektrafilm by Andrea Volpato · CC BY-SA 4.0</p>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.stock_color"><div class="control-heading"><label class="tooltip-trigger" for="film-stock-color" data-tooltip="How much of the stock&#39;s color is used. At 0 your own color is kept.">Stock Color</label><output data-value-path="current.film_look.stock_color">100%</output></div><input id="film-stock-color" type="range" min="0" max="100" step="1" value="100" data-path="current.film_look.stock_color"></div>
+            <div class="control-row" data-control-path="current.film_look.stock_tone"><div class="control-heading"><label class="tooltip-trigger" for="film-stock-tone" data-tooltip="How much of the stock&#39;s contrast curve is used. At 0 your own tone is kept.">Stock Tone</label><output data-value-path="current.film_look.stock_tone">100%</output></div><input id="film-stock-tone" type="range" min="0" max="100" step="1" value="100" data-path="current.film_look.stock_tone"></div>
+          </div>
+          <div class="control-row" data-control-path="current.film_look.stock_exposure"><div class="control-heading"><label class="tooltip-trigger" for="film-stock-exposure" data-tooltip="Exposes the negative brighter or darker before printing, which moves the picture along the stock&#39;s curve.">Film Exposure</label><output data-value-path="current.film_look.stock_exposure">0.00 EV</output></div><input id="film-stock-exposure" type="range" min="-3" max="3" step="0.01" value="0" data-path="current.film_look.stock_exposure"></div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.stock_separation"><div class="control-heading"><label class="tooltip-trigger" for="film-stock-separation" data-tooltip="Pushes the stock&#39;s colors further apart, or closer together, in the negative. Greys are unchanged.">Color Separation</label><output data-value-path="current.film_look.stock_separation">0%</output></div><input id="film-stock-separation" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.stock_separation"></div>
+            <div class="control-row" data-control-path="current.film_look.stock_preflash"><div class="control-heading"><label class="tooltip-trigger" for="film-stock-preflash" data-tooltip="Flashes the print paper with light, lifting and softening the shadows.">Preflash</label><output data-value-path="current.film_look.stock_preflash">0%</output></div><input id="film-stock-preflash" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.stock_preflash"></div>
+          </div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.stock_print_warmth"><div class="control-heading"><label class="tooltip-trigger" for="film-stock-warmth" data-tooltip="The enlarger&#39;s yellow filter: warmer or cooler prints. 100% is a 20 CC filter.">Print Warmth</label><output data-value-path="current.film_look.stock_print_warmth">0%</output></div><input id="film-stock-warmth" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.stock_print_warmth"></div>
+            <div class="control-row" data-control-path="current.film_look.stock_print_tint"><div class="control-heading"><label class="tooltip-trigger" for="film-stock-tint" data-tooltip="The enlarger&#39;s magenta filter. 100% is a 20 CC filter.">Print Tint</label><output data-value-path="current.film_look.stock_print_tint">0%</output></div><input id="film-stock-tint" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.stock_print_tint"></div>
+          </div>
+
           <div class="film-module-header"><strong>Film Response</strong></div>
           <div class="control-row" data-control-path="current.film_look.print_strength"><div class="control-heading"><label for="film-print-strength">Print Strength</label><output data-value-path="current.film_look.print_strength">0%</output></div><input id="film-print-strength" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.print_strength"></div>
           <div class="control-pair">
@@ -1829,6 +1846,7 @@
   <script src="/static/graph-scale.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/gpu-allocator.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/gpu-budget.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/film-stocks.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/webgpu-shaders.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/source-transport.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/mask-loader.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
