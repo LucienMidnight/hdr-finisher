@@ -269,6 +269,37 @@ applied at run time and so is cheap), Push/Pull, scan sharpening and levels.
 Remove Film Response, Color Density, Channel Response and the desaturation
 sliders. Halation: remove Sensitivity; keep Hue Offset and Saturation. Brief: `docs/technical/codex-brief-film-look-phase-3-controls-2026-10-15.md`.
 
+Phase 3 pre-implementation checks, October 15, 2026: stopped at the brief's
+explicit grain follow-up condition. At reduced Fit processing, normal 35mm
+grain was visibly stronger than the downsized CPU export; native 100% agreed.
+See PRD section 5.3 for recipe, measurements, limits and the reproducible
+diagnostic. No Phase 3 controls, model fields, presets or renderer paths have
+changed. Resolve the Fit grain decision, then finish Phase 3 before Phase 3b.
+
+Spatial reach follow-up (calculated workload, not a timing benchmark): at a
+6000 x 4000 frame, 35mm, maximum Bloom radius 10 and Halation radius 5, Resolution
+0, with Detail neutral, the current planner requires a 544-pixel halo per side
+(128 quarter-resolution blur texels plus extraction/direct reads). Compared
+with the previous maximum-of-reaches rule's 284-pixel halo, an interior 512 x
+512 tile processes 1600 x 1600 instead of 1080 x 1080 pixels, about 2.19 times
+the padded area. A single 1600 x 900 viewport rectangle similarly needs 2688 x
+1988 instead of 2168 x 1468, about 1.68 times the padded area; actual viewport
+tiling, clipping at image edges and caching affect the real cost. The whole
+frame path does not acquire padding. No latency was measured or claimed;
+Steve should try maximum effects while zooming and panning in the app.
+
+Validation of these diagnostic/record changes: Node 483 passed; Python 2094
+passed / 3 skipped; diagnostic JavaScript/Python syntax checks passed. Sequential
+Electron grain-size comparisons ran at 2560x1440 in disposable profiles, on
+generated media only. The normal/reduced Fit versus downsized-export diagnostic
+reports the mismatch above; native comparison passed its observational parity
+check. The spectral probe completed against the verified pinned revision. An
+initial probe setup imported the app's Pydantic model in the bake environment,
+which does not include Pydantic; using a simple neutral parameter object removed
+that unnecessary dependency. No rendering test or pinned tolerance was altered.
+Film-stock/grain parity drivers and the additional Proof/export group were not
+rerun: implementation stopped before any renderer changes. No installer or push.
+
 **Phase 3b: Lens filter.** Replace Bloom & Diffusion with the lens diffusion
 filter (type, Strength in filter grades, Size), as in section 6. Separate thread
 after Phase 3.

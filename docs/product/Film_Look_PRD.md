@@ -172,6 +172,22 @@ Vision3 500T, and 1.3 or less for each slide. These are interpolation difference
 from spektrafilm, not preview/export disagreement; GPU/CPU parity passes its
 unchanged tolerance. No table resolution or pinned tolerance was changed.
 
+Phase 3 follow-up probe, October 15, 2026: a fresh reproducible sample of 1,000
+uniform linear-sRGB colours in [0, 1] (NumPy seed 0) plus a 256-step grey ramp,
+compared with the full spectral pipeline at the same pinned revision. Error is
+absolute channel difference after clipping to [0, 1] and sRGB display encoding,
+in levels out of 255; the mean includes every RGB channel of all 1,256 samples.
+C200: mean 0.1388, maximum 1.2232; worst is the red channel of saturated green
+input RGB (0.06004, 0.91791, 0.27951). Vision3 500T: mean 0.3151, maximum 1.2530;
+worst is the red channel of green input (0.02168, 0.99097, 0.29621); other large
+errors are green/cyan colours. These are a new, specified sample set, not a
+reconstruction of the earlier probe (whose exact samples/seed were not specified in the earlier PRD).
+They do not replace the earlier reported maxima. Scanner sharpening, spatial
+and random effects are disabled; print glare uses the baked constant mean.
+Reproduce with `codebase/tools/probe_film_stock_tables.py`, using the existing
+bake Python environment and pinned checkout under `output/`. No table size,
+data or tolerance changed.
+
 Open paper recommendation (not a shipping decision): provisionally Supra
 Endura rather than Ultra Endura. Compared with Portra Endura, Supra's fitted
 curves have higher peak slopes in all three layers; Ultra's increase is more
@@ -230,6 +246,35 @@ Notes on using these numbers:
 - Spektrafilm itself has **no per-stock grain**: all stocks use the same settings
   (`runtime/params_schema.py` `GrainParams`; `model/grain.py` has a to-do note
   for per-stock RMS granularity).
+
+Size follow-up, October 15, 2026: **unresolved Fit/export mismatch; Phase 3
+controls have not been implemented.** A generated 2400 x 1600 four-patch image,
+Portra 400, Grain Amount 100, Size 50, 35mm, Chroma 40 was rendered through the
+GPU at native 100% and at a reduced 1200 x 800 Fit processing size, then compared
+with the actual CPU export renderer at original and half-size delivery, with
+output sharpening off. At native size the mean RGB difference was 0.0653 levels
+out of 255 and p99.9 was 1 level. At half size it was 2.5180 levels and p99.9 was
+14 levels. At the app's actual automatic Fit size (1520 x 1013, resolution
+override off), the mean difference was 3.1402 levels and p99.9 was 18; grey-patch
+grain variation was 3.3671 preview versus 2.5827 export, again about 30% stronger.
+On the half-size flat mid-grey patch, mean per-channel grain standard deviation
+was 2.6657 preview versus 2.0575 export: the reduced preview grain was about 30%
+stronger, visibly so in side-by-side crops. Native variation was 4.4188 preview
+versus 4.4142 export. Downsize export therefore correctly makes grain finer;
+rebuilding the grain at the smaller preview size does not reproduce that scan.
+Coarser Super 8 grain looked consistent overall, so it alone would have missed
+the issue. This was the SDR lane with a standard-range canvas; HDR and other
+Fit sizes remain unchecked. Full/native processing displayed at Fit was not
+assessed; the failing case is reduced processing at Fit, not CSS scaling alone.
+
+The brief explicitly says to stop and report a visible Fit/export disagreement
+before changing the design. No grain, stage order, export or pinned tolerance
+was changed. `tests/performance/film-grain-size-diagnostic.js`, run through the
+Electron runner at 2560x1440, preserves this read-only comparison and writes
+crops/results to ignored `output/phase3-grain/`. It reports results rather than
+loosening or replacing the existing parity checks. The existing grain-parity
+driver compares equal-sized CPU/GPU preview renders; it cannot catch this
+full-render-then-downsize export difference.
 
 ### 5.4 Data still to get
 
