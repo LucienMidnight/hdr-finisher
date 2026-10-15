@@ -219,6 +219,50 @@ diffusion -> resolution scatter -> halation -> negative (curves, couplers) ->
 grain in density -> print -> scan -> output. This is the biggest and riskiest
 phase, and it is in the "still strict" area (CPU export is the reference).
 
+Phase 2 implementation, October 15, 2026:
+
+- CPU and Direct/Tiled WebGPU follow this order together. Print and scan have
+  separate runtime functions; slides bypass print even with density grain.
+- Existing bloom/diffusion and resolution filters are reused before exposure
+  curves. Filter redesign and controls remain for later phases.
+- The deterministic grain field becomes a base-10 density delta before print,
+  using its existing development, response, size and amount rules. Neutral
+  uses the equivalent straight transmission response. No grain calibration or
+  new sub-layer model is introduced.
+- A clean grey reference anchors Stock Tone; its grained counterpart carries
+  density variation through partial Stock Tone/Color settings without cancelling
+  the grain. Above reference white the existing fixed stock gain preserves HDR
+  highlight ratios.
+- Look Strength mixes the completed module once. Signed stock colour is retained
+  until this mix, then the existing lane boundary clips it. Detail structure is
+  independent, after the mix; vignette and output follow. Diagnostic maps bypass
+  the film and Detail structure. Neutral/off Film Look remains a true bypass.
+- Export resizing and sharpening operate on the completed scan, including grain,
+  before the output limiter; Proof shares that export renderer. Existing recipes
+  can change appearance. No old-order compatibility path is retained.
+- WebGPU reuses its existing textures and parameter layout. Sequential spatial
+  filters need summed tile support rather than the old maximum. Individual blur
+  caps, stock table limits and parity tolerances are unchanged; the composed halo
+  grows to cover the actual reads. Steve should judge responsiveness in the app.
+- Paper selection, shipping stock/paper combinations, legacy response controls
+  and the six original stock data files remain unchanged. Phase 3 owns the new
+  development/print/scan controls and removal of the legacy response controls.
+
+Validation: Node 483 passed; full Python suite 2091 passed / 3 skipped; final
+focused CPU/contract checks 433 passed; Proof/export group 85 passed. WebGPU
+stock parity passed all 32 cases and grain parity all 10 cases at their existing
+tolerances. Direct/Tiled parity was byte-exact at 256/512 tile sizes, including
+maximum spatial effects and negative/slide grain. The tiled driver's default
+fixture path still expects the removed "Load test pattern" button; validation
+used its supported `--input` path with a generated HDR test image. No installer,
+push, broad driver sweep or performance claim is part of this phase.
+
+During development, assertions pinning the previous order were updated to the
+new order. An SDR partial-strength GPU mismatch exposed clipping of signed
+stock colour before the mix; retaining it until the CPU's final boundary fixed
+the mismatch without changing tables or tolerances. No final rendering check
+failed.
+
 **Phase 3: Print and development controls.** Paper picker, Print Exposure,
 paper contrast controls (on the paper curve, which is already applied at run
 time and so is cheap), Push/Pull, scan sharpening and levels. Remove Film

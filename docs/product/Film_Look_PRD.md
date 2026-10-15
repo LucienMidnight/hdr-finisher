@@ -41,6 +41,19 @@ paper act at the print stage.
 
 R3. Look Strength mixes the whole module with the unprocessed picture.
 
+Phase 2 implements this processing order in CPU preview/export/Proof and both
+WebGPU routes: existing lens diffusion -> resolution scatter -> halation ->
+negative curves/couplers -> density grain -> print -> scan. Slides skip print
+and scan the grained film density directly. Look Strength mixes the completed
+module once, before independent Detail structure, vignette and output handling.
+Signed stock colour survives until that mix; clipping earlier changes partial
+mixes. Neutral/off Film Look remains a true bypass.
+
+Delivery resizing and sharpening now resample the completed scan, including
+grain, before the output limiter. The grain field, controls and calibration are
+unchanged; grain's placement changes its appearance. The existing creative
+Film Response controls remain temporarily after scan until Phase 3 removes them.
+
 R4. HDR: highlights above paper white keep their ratios, as the film stock
 stage does today. The SDR version can copy the HDR settings once
 ("Match HDR film look") and stays independently editable.
