@@ -237,7 +237,7 @@ def parse_film_stock(payload: dict[str, Any], stock_id: str | None = None) -> Fi
         raise FilmStockError(f"Film stock file for '{stock_id}' names '{identifier}'.")
     if payload.get("type") == "slide":
         # Unused print fields keep the common CPU/GPU slot layout; slides
-        # return from _print_and_scan before evaluating any print operation.
+        # bypass print_film_density before evaluating any print operation.
         payload = {**payload, "print_table": payload["scan_table"],
                    "preflash_raw": [0]*3, "print_warmth_log_shift": [0]*3, "print_tint_log_shift": [0]*3,
                    "print_log_exposure_range": [0, 1], "print_curves": [[0]*3]*CURVE_SAMPLES}
@@ -336,10 +336,10 @@ def _film_density(stock: FilmStock, exposure: np.ndarray) -> np.ndarray:
     return _curve(corrected, stock.film_curves_corrected, stock.film_range)
 
 
-def _print_and_scan(stock: FilmStock, density: np.ndarray, parameters: StockParameters) -> np.ndarray:
-    """Film density -> print -> scanned linear sRGB."""
+def print_film_density(stock: FilmStock, density: np.ndarray, parameters: StockParameters) -> np.ndarray:
+    """Negative density -> paper density; slides bypass the print entirely."""
     if stock.type == "slide":
-        return _lookup_table(density, stock.scan_table)
+        return density
     print_log = _lookup_table(density, stock.print_table)
     if parameters.warmth != 0.0 or parameters.tint != 0.0:
         # Enlarger filter shift, main exposure only (not the preflash).
@@ -351,7 +351,16 @@ def _print_and_scan(stock: FilmStock, density: np.ndarray, parameters: StockPara
     if parameters.preflash != 0.0:
         print_raw += parameters.preflash * stock.preflash_raw
     print_density = _curve(np.log10(print_raw + LOG_EPSILON), stock.print_curves, stock.print_range)
-    return _lookup_table(print_density, stock.scan_table)
+    return print_density
+
+
+def scan_density(stock: FilmStock, density: np.ndarray) -> np.ndarray:
+    """Scan either developed paper or slide density to linear sRGB."""
+    return _lookup_table(density, stock.scan_table)
+
+
+def _print_and_scan(stock: FilmStock, density: np.ndarray, parameters: StockParameters) -> np.ndarray:
+    return scan_density(stock, print_film_density(stock, density, parameters))
 
 
 def _film_exposure(stock: FilmStock, rgb: np.ndarray, parameters: StockParameters) -> np.ndarray:
@@ -372,14 +381,17 @@ def render_film_stock_with_grey(
     rgb: np.ndarray | None,
     grey_rgb: np.ndarray,
     parameters: StockParameters,
-) -> tuple[np.ndarray | None, np.ndarray]:
+    density_delta: np.ndarray | None = None,
+) -> tuple[np.ndarray | None, np.ndarray] | tuple[np.ndarray | None, np.ndarray, np.ndarray]:
     """F of each pixel and of its matching grey, inputs and outputs linear sRGB.
 
     ``grey_rgb`` is the working-space grey ``(Y, Y, Y)`` converted to linear
     sRGB exactly as the pixel was, so a grey pixel and its grey take the same
     path. Colour separation scales the pixel's film density about the grey's
     density, so greys are untouched. ``rgb`` may be None when only the grey
-    chain is needed (Stock colour at zero).
+    chain is needed (Stock colour at zero). With ``density_delta``, perturb
+    both developed film densities before print/scan and also return the grained
+    grey. The clean grey remains the reference for partial stock mixes.
     """
     grey_density = _film_density(stock, _film_exposure(stock, grey_rgb, parameters))
     film = None
@@ -387,6 +399,11 @@ def render_film_stock_with_grey(
         density = _film_density(stock, _film_exposure(stock, rgb, parameters))
         if parameters.separation_gain != 1.0:
             density = grey_density + (density - grey_density) * parameters.separation_gain
+        if density_delta is not None:
+            density = density + density_delta
         film = _print_and_scan(stock, density, parameters)
     grey = _print_and_scan(stock, grey_density, parameters)
+    if density_delta is not None:
+        grained_grey = _print_and_scan(stock, grey_density + density_delta, parameters)
+        return film, grey, grained_grey
     return film, grey
