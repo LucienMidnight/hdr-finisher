@@ -139,11 +139,11 @@ old hand-built Film Response curve.
 | Toe, Shoulder | **Replace** | Become Shadow Contrast and Highlight Contrast (spektrafilm's fast/slow layer gamma, plus developer exhaustion for a softer shoulder) |
 | Color Density | **Remove** | Same job as Color Separation |
 | Red, Green, Blue Response | **Remove** | Covered by Print Warmth/Tint. Per-channel paper contrast could come back as an advanced option later |
-| Highlight, Shadow Desaturation | **Remove** (Steve, D1) | Real stocks lose colour in their shoulder and toe already |
+| Highlight, Shadow Desaturation | **Remove from Film Look** (Steve, D1, October 15, 2026) | Real stocks lose colour in their shoulder and toe already. Steve wants them back later as general controls in the main Color section, not Film Look; recorded in `Open_Items.md` (COLOR-DESAT-01) |
 | Halation Amount | Keep | Scales the stock's own halation strength |
 | Halation Physical Extent | Keep, renamed Spread | Scales the stock's own spread (still 65 µm, cine 50 µm) |
 | Halation Sensitivity | **Remove** | It was needed because the glow was added after the curve. Before the curve, only bright light halates visibly |
-| Halation Hue Offset, Saturation | **Remove** (Steve, D2) | On film the colour comes from layer order (red nearest the base), set per stock |
+| Halation Hue Offset, Saturation | **Keep** (Steve, D2, October 15, 2026; Filmbox offers both) | The stock sets the glow's own colour (red nearest the base); Hue Offset and Saturation adjust around it. At 0 offset the glow keeps the stock's colour |
 | Show halation map | Keep | |
 | Bloom Amount, Sensitivity, Optical Spread, Highlight Detail | **Replace** | Becomes a real lens filter: type (Black Pro-Mist, Pro-Mist, Glimmerglass, CineBloom), Strength in filter grades (1/8 to 2), Size. Applied before the film, so the curve shapes the glow |
 | Film Resolution | Keep, moves earlier | Becomes in-emulsion scatter, before the negative curve, as in spektrafilm. Then it softens the image but not the grain |
@@ -263,10 +263,15 @@ stock colour before the mix; retaining it until the CPU's final boundary fixed
 the mismatch without changing tables or tolerances. No final rendering check
 failed.
 
-**Phase 3: Print and development controls.** Paper picker, Print Exposure,
-paper contrast controls (on the paper curve, which is already applied at run
-time and so is cheap), Push/Pull, scan sharpening and levels. Remove Film
-Response, Color Density, Channel Response and the desaturation sliders.
+**Phase 3: Development, print, scan and halation controls.** Paper picker,
+Print Exposure, paper contrast controls (on the paper curve, which is already
+applied at run time and so is cheap), Push/Pull, scan sharpening and levels.
+Remove Film Response, Color Density, Channel Response and the desaturation
+sliders. Halation: remove Sensitivity; keep Hue Offset and Saturation. Brief: `docs/technical/codex-brief-film-look-phase-3-controls-2026-10-15.md`.
+
+**Phase 3b: Lens filter.** Replace Bloom & Diffusion with the lens diffusion
+filter (type, Strength in filter grades, Size), as in section 6. Separate thread
+after Phase 3.
 
 **Phase 4: Stock character.** Collect grain data from data sheets; set grain,
 halation and paper defaults per stock; add the "from the stock / set" tracking
@@ -302,8 +307,11 @@ than about 30 minutes, stop and ask Steve first.
 
 ## 11. Open decisions for Steve (one at a time, when we reach them)
 
-- **D1** Remove Highlight/Shadow Desaturation, or keep them as creative trims?
-- **D2** Remove Halation Hue and Saturation, or keep a single colour trim?
+- **D1** Decided October 15, 2026: remove Highlight/Shadow Desaturation from
+  Film Look; later, add them to the main Color section (`Open_Items.md`,
+  COLOR-DESAT-01).
+- **D2** Decided October 15, 2026: keep halation Hue Offset and Saturation
+  (Filmbox has both).
 - **D3** How many stocks and papers to ship (sets app size; Phase 1).
 - **D4** Grain sub-layers: the cheap approximation, or true sub-layers at about
   3x the grain cost?

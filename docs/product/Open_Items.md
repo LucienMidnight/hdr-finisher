@@ -48,6 +48,7 @@ Deferred work and backlog in one list, in no order. None of it blocks 0.9.0.
 | PIPE-01 | Review the order of the whole processing pipeline before 1.0 | PRD 11a |
 | BW-01 | Black & White slider strength, fade points and preset values are first estimates awaiting Steve's tuning | PRD 11a |
 | DETAIL-01 | Texture and Microcontrast behave very differently; review both | PRD 11a |
+| COLOR-DESAT-01 | Add Highlight Desaturation and Shadow Desaturation to the main Color section as general controls. They leave Film Look in its rebuild (Phase 3). Needs care with presets. Steve, October 15, 2026 | [Film Look Rebuild Plan](Film_Look_Rebuild_Plan_2026-10-15.md), section 6 and D1 |
 | CLARITY-01 | Brush and mask Clarity at a large radius works the GPU harder than global Clarity | PRD 11a |
 | DENOISE-02 | Other Denoise engines (Open Image Denoise, neural). Ideas only | PRD 11a |
 | Local-grade transfer | Copy or move a local adjustment's grade between HDR and SDR. Its own sprint | PRD 13, "Deferred: separate sprints" |
