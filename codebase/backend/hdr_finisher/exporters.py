@@ -16,7 +16,6 @@ import numpy as np
 
 from .adjustments import (
     apply_adjustments,
-    apply_final_grain,
     apply_hdr_output_highlight_compression,
     apply_sdr_output_highlight_compression,
 )
@@ -161,16 +160,17 @@ def _render_export_branch(
         adjustments,
         kind,
         sdr_reference_image=getattr(session, "sdr_reference_image", None),
-        include_grain=False,
+        include_grain=True,
         include_output_highlight_compression=False,
         local_adjustments=adjustments.enabled_locals(getattr(session, "local_adjustments", None)),
         color_context=color_context,
     )
+    # Grain now develops inside the negative, before print and scan. Delivery
+    # resizing/sharpening therefore resamples the completed film, like a scan.
     # Output finishing resamples and sharpens for the delivered size, neither of
     # which the preview models. Running it before the limiter keeps its ringing
     # underneath the ceiling instead of on top of it.
     image = apply_output_finishing(image, settings.output_finishing, kind)
-    image = apply_final_grain(image, adjustments, kind)
     if kind == PreviewKind.HDR:
         result = apply_hdr_output_highlight_compression(image, adjustments, color_context=color_context)
     else:

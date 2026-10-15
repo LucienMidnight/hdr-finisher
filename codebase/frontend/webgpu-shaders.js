@@ -1257,8 +1257,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     // Film density -> print exposure (with the enlarger filter shifts and
     // preflash) -> print density -> scanned linear sRGB. _print_and_scan.
-    fn stockPrintScan(base: u32, density: vec3f) -> vec3f {
-      if (filmStock[base + ${STOCK.SCAN_FILM}u] > 0.5) { return stockTable(base, ${STOCK.SCAN_TABLE}u, density); }
+    fn stockPrintDensity(base: u32, density: vec3f) -> vec3f {
+      if (filmStock[base + ${STOCK.SCAN_FILM}u] > 0.5) { return density; }
       let printLog = stockTable(base, ${STOCK.PRINT_TABLE}u, density)
         + (p[${GPU_PARAMS.FILM_STOCK_WARMTH}] * stockVec3(base + ${STOCK.PRINT_WARMTH_SHIFT}u)
           + p[${GPU_PARAMS.FILM_STOCK_TINT}] * stockVec3(base + ${STOCK.PRINT_TINT_SHIFT}u));
@@ -1267,7 +1267,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         base + ${STOCK.PRINT_CURVES}u, filmStock[base + ${STOCK.PRINT_LOW}u], filmStock[base + ${STOCK.PRINT_SCALE}u],
         stockLog10(printRaw + vec3f(1e-10)),
       );
-      return stockTable(base, ${STOCK.SCAN_TABLE}u, printDensity);
+      return printDensity;
+    }
+    fn stockPrintScan(base: u32, density: vec3f) -> vec3f {
+      return stockTable(base, ${STOCK.SCAN_TABLE}u, stockPrintDensity(base, density));
     }
     // HDR keeps reference white at 0.18 and its generated SDR is the scene times
     // (100 / 203) / 0.18, so the film is exposed on the SDR scale in both lanes.
@@ -1278,7 +1281,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // reference white (1.0 on the SDR scale) colour is evaluated at white and the tone gain is
     // held, so HDR highlights keep their ratios. The grey (Y, Y, Y) and the
     // middle grey (0.18, 0.18, 0.18) are converted to sRGB like the pixel.
-    fn filmStockStage(rgb: vec3f) -> vec3f {
+    fn filmStockStage(rgb: vec3f, densityDelta: vec3f) -> vec3f {
       if (p[${GPU_PARAMS.FILM_STOCK_SLOT}] < 0.5) { return rgb; }
       let base = (u32(p[${GPU_PARAMS.FILM_STOCK_SLOT}] + 0.5) - 1u) * ${FILM_STOCK.slotFloats}u;
       let color = p[${GPU_PARAMS.FILM_STOCK_COLOR}];
@@ -1290,25 +1293,29 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let luma = max(filmLuma(rgb), 0.0);
       let highlightScale = referenceWhite / max(luma, referenceWhite);
       let greyDensity = stockDensity(base, stockToSrgb(vec3f(luma * highlightScale)));
-      let greyLuma = max(filmLuma(stockFromSrgb(stockPrintScan(base, greyDensity))), 0.000001);
-      let toneTarget = luma + (toneGain * greyLuma / highlightScale - luma) * tone;
+      let cleanGreyLuma = max(filmLuma(stockFromSrgb(stockPrintScan(base, greyDensity))), 0.000001);
+      var greyLuma = cleanGreyLuma;
+      if (any(densityDelta != vec3f(0.0))) {
+        greyLuma = max(filmLuma(stockFromSrgb(stockPrintScan(base, greyDensity + densityDelta))), 0.000001);
+      }
+      let toneTarget = (luma + (toneGain * cleanGreyLuma / highlightScale - luma) * tone) * (greyLuma / cleanGreyLuma);
       var result = rgb * (toneTarget / max(luma, 0.0000001));
       if (color > 0.0) {
         var density = stockDensity(base, stockToSrgb(rgb * highlightScale));
         if (p[${GPU_PARAMS.FILM_STOCK_SEPARATION_GAIN}] != 1.0) {
           density = greyDensity + (density - greyDensity) * p[${GPU_PARAMS.FILM_STOCK_SEPARATION_GAIN}];
         }
-        let stocked = stockFromSrgb(stockPrintScan(base, density)) * (toneTarget / greyLuma);
+        let stocked = stockFromSrgb(stockPrintScan(base, density + densityDelta)) * (toneTarget / greyLuma);
         result += (stocked - result) * color;
       }
-      return rgb + (result - rgb) * p[${GPU_PARAMS.FILM_LOOK_STRENGTH}];
+      return result;
     }
     fn filmResponse(source: vec3f) -> vec3f {
       // HDR enters as scene-linear ACEScg; SDR enters as scene-linear sRGB.
       // The response signal is encoded and decoded within that same branch.
       if (p[${GPU_PARAMS.FILM_RESPONSE_ENABLED}] < 0.5 || p[${GPU_PARAMS.FILM_LOOK_STRENGTH}] <= 0.0) { return source; }
-      // The film stock runs first, immediately before the response.
-      let input = filmStockStage(source);
+      // Temporary legacy response, after print/scan until Phase 3.
+      let input = source;
       let sourceY = max(filmLuma(input), 0.0);
       var rgb = input;
       if (p[${GPU_PARAMS.FILM_PRINT_STRENGTH}] > 0.0 && sourceY > 0.0000001) {
@@ -1318,10 +1325,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let shoulderKnee = 0.18 * log(1.0 + exp((mapped - 0.55) / 0.18));
         mapped = max(mapped - 0.28 * (p[${GPU_PARAMS.FILM_PRINT_TOE}] * toeKnee + p[${GPU_PARAMS.FILM_PRINT_SHOULDER}] * shoulderKnee), 0.0);
         if (p[${GPU_PARAMS.HDR_LANE}] < 0.5) { mapped = clamp(mapped, 0.0, 1.0); }
-        let targetY = mix(sourceY, filmLumaFromSignal(mapped), p[${GPU_PARAMS.FILM_PRINT_STRENGTH}] * p[${GPU_PARAMS.FILM_LOOK_STRENGTH}]);
+        let targetY = mix(sourceY, filmLumaFromSignal(mapped), p[${GPU_PARAMS.FILM_PRINT_STRENGTH}]);
         rgb *= targetY / sourceY;
       }
-      let channelResponse = vec3f(p[${GPU_PARAMS.FILM_RED_RESPONSE}], p[${GPU_PARAMS.FILM_GREEN_RESPONSE}], p[${GPU_PARAMS.FILM_BLUE_RESPONSE}]) * p[${GPU_PARAMS.FILM_LOOK_STRENGTH}];
+      let channelResponse = vec3f(p[${GPU_PARAMS.FILM_RED_RESPONSE}], p[${GPU_PARAMS.FILM_GREEN_RESPONSE}], p[${GPU_PARAMS.FILM_BLUE_RESPONSE}]);
       if (any(abs(channelResponse) > vec3f(0.000001))) {
         let responseY = max(filmLuma(rgb), 0.0);
         let responseSignal = filmSignalFromLuma(responseY);
@@ -1339,7 +1346,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let maximum = max(rgb.r, max(rgb.g, rgb.b));
         let minimum = min(rgb.r, min(rgb.g, rgb.b));
         let relative = clamp((maximum - minimum) / max(abs(y), 0.00001), 0.0, 2.0);
-        let density = p[${GPU_PARAMS.FILM_COLOR_DENSITY}] * p[${GPU_PARAMS.FILM_LOOK_STRENGTH}];
+        let density = p[${GPU_PARAMS.FILM_COLOR_DENSITY}];
         rgb = neutral + (rgb - neutral) * exp2(0.45 * density);
         rgb *= max(0.75, 1.0 - density * 0.045 * relative);
       }
@@ -1356,15 +1363,16 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           p[${GPU_PARAMS.HDR_LANE}] > 0.5
         );
         let desaturation = clamp(
-          (shadowWeight * p[${GPU_PARAMS.FILM_SHADOW_DESATURATION}] + highlightWeight * p[${GPU_PARAMS.FILM_HIGHLIGHT_DESATURATION}]) * p[${GPU_PARAMS.FILM_LOOK_STRENGTH}],
+          (shadowWeight * p[${GPU_PARAMS.FILM_SHADOW_DESATURATION}] + highlightWeight * p[${GPU_PARAMS.FILM_HIGHLIGHT_DESATURATION}]),
           0.0,
           1.0
         );
         rgb = vec3f(responseY) + (rgb - vec3f(responseY)) * (1.0 - desaturation);
       }
-      return max(rgb, vec3f(0.0));
-    }
-    // Clip in the delivery primaries so the selected target is also a hard
+        // Preserve signed stock colour until the whole-module mix, as on CPU.
+        return rgb;
+      }
+      // Clip in the delivery primaries so the selected target is also a hard
     // per-channel ceiling in the encoded signal.
     fn clipToOutputTarget(input: vec3f) -> vec3f {
       if (p[${GPU_PARAMS.HDR_LANE}] > 0.5) {
@@ -1718,71 +1726,20 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let stats = grainCoverageStats(grainDevelop(signal), opacity, edge);
       return ((1.0 - transmit) - stats.x) / sqrt(max(stats.y, 0.0001) * midSpread);
     }
-    fn applyFilmLook(coordinate: vec2i) -> vec3f {
-      var rgb = sampleFilm(coordinate);
-      if (p[${GPU_PARAMS.FILM_RESPONSE_ENABLED}] >= 0.5 && p[${GPU_PARAMS.FILM_LOOK_STRENGTH}] > 0.0) {
-        var spatial = vec4f(0.0);
-        if (p[${GPU_PARAMS.HALATION_ENABLED}] > 0.5 || (p[${GPU_PARAMS.BLOOM_ENABLED}] > 0.5 && p[${GPU_PARAMS.BLOOM_AMOUNT}] > 0.0)) {
-          spatial = sampleSpatialTexel((vec2f(coordinate) + vec2f(0.5)) / spatialScale());
-        }
-        if (p[${GPU_PARAMS.HALATION_ENABLED}] > 0.5) {
-          let halationRadius = filmPhysicalOffset(p[${GPU_PARAMS.HALATION_RADIUS}], 256);
-          let edgeRadius = clamp(halationRadius / 4, 1, 16);
-          let edgeSource = halationEdgeSource(coordinate, p[${GPU_PARAMS.HALATION_SENSITIVITY}], edgeRadius);
-          let haloY = max(spatial.a - edgeSource * 0.15, 0.0);
-          let angle = radians(45.0 * p[${GPU_PARAMS.HALATION_HUE}]);
-          // Base-reflected light re-exposes mostly the red layer (_halation_tint).
-          let warm = vec3f(1.0, 0.30 + 0.20 * sin(angle), 0.08 * max(-sin(angle), 0.0));
-          let warmY = lumaSrgb(warm);
-          let canonicalTintSrgb = mix(vec3f(warmY), warm, clamp(p[${GPU_PARAMS.HALATION_SATURATION}], 0.0, 1.0));
-          let tint = select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
-          // The map's white sits at SDR white in either lane (adjustments.py
-          // _apply_halation): 0.18 / (100 / 203) in HDR scene values.
-          if (p[${GPU_PARAMS.HALATION_VIEW_MAP}] > 0.5) {
-            return vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0) * select(1.0, 0.18 / (100.0 / 203.0), p[${GPU_PARAMS.HDR_LANE}] > 0.5));
-          }
-          rgb += haloY * tint * (0.42 * p[${GPU_PARAMS.HALATION_AMOUNT}] * p[${GPU_PARAMS.FILM_LOOK_STRENGTH}]);
-        }
-        if (p[${GPU_PARAMS.BLOOM_ENABLED}] > 0.5 && p[${GPU_PARAMS.BLOOM_AMOUNT}] > 0.0) {
-          let bloomMask = filmHighlightMask(rgb, p[${GPU_PARAMS.BLOOM_SENSITIVITY}]);
-          let qualified = rgb * bloomMask * bloomMask;
-          let amount = p[${GPU_PARAMS.BLOOM_AMOUNT}] * p[${GPU_PARAMS.FILM_LOOK_STRENGTH}];
-          let additive = spatial.rgb * (0.22 * amount);
-          let diffusionDelta = spatial.rgb - qualified;
-          let absoluteDetail = abs(diffusionDelta);
-          let qualifiedMagnitude = abs(qualified);
-          let relativeDetail = max(max(absoluteDetail.r, absoluteDetail.g), absoluteDetail.b)
-            / (max(max(qualifiedMagnitude.r, qualifiedMagnitude.g), qualifiedMagnitude.b) + 0.02);
-          let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
-          let diffusion = diffusionDelta * ((1.0 - p[${GPU_PARAMS.BLOOM_HIGHLIGHT_DETAIL}]) * 0.35 * amount * (1.0 - edgeProtection));
-          rgb = max(rgb + additive + diffusion, vec3f(0.0));
-        }
-      }
-      // Detail's Softness and Microcontrast (NEXT-01 #2): in the film stage
-      // where Image Structure ran, but on Detail's switch and not scaled by
-      // Look Strength, so they also run with Film Look off.
-      if (p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5 && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001)) {
-        let structureBlur = filmBlur(coordinate, 0.06, 24);
-        let structureSource = rgb;
-        rgb = structureSource
-          + (structureBlur - structureSource) * p[${GPU_PARAMS.STRUCTURE_SOFTNESS}] * 0.65
-          + (structureSource - structureBlur) * p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}] * 0.5;
-        rgb = select(clamp(rgb, vec3f(0.0), vec3f(1.0)), max(rgb, vec3f(0.0)), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
-      }
-      if (p[${GPU_PARAMS.FILM_RESPONSE_ENABLED}] >= 0.5 && p[${GPU_PARAMS.FILM_LOOK_STRENGTH}] > 0.0) {
-        if (p[${GPU_PARAMS.FILM_RESOLUTION}] < 1.0) {
-          let resolutionLoss = (1.0 - p[${GPU_PARAMS.FILM_RESOLUTION}]) * p[${GPU_PARAMS.FILM_LOOK_STRENGTH}];
-          let resolutionSource = sampleFilm(coordinate);
-          let resolutionBlur = filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32);
-          let fineDetail = resolutionSource - resolutionBlur;
-          let relativeDetail = max(abs(fineDetail.r), max(abs(fineDetail.g), abs(fineDetail.b)))
-            / (max(abs(resolutionSource.r), max(abs(resolutionSource.g), abs(resolutionSource.b))) + 0.02);
-          let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
-          rgb -= fineDetail * resolutionLoss * 0.85 * (1.0 - edgeProtection);
-        }
-      }
-      rgb = applyVignette(rgb, coordinate);
-      if (p[${GPU_PARAMS.FILM_LOOK_ENABLED}] > 0.5 && p[${GPU_PARAMS.FILM_FINISH_STRENGTH}] > 0.0 && p[${GPU_PARAMS.GRAIN_ENABLED}] > 0.5 && (p[${GPU_PARAMS.GRAIN_AMOUNT}] > 0.0 || p[${GPU_PARAMS.GRAIN_VIEW_MAP}] > 0.5)) {
+    fn filmModuleActive() -> bool {
+      return p[${GPU_PARAMS.FILM_LOOK_ENABLED}] > 0.5 && p[${GPU_PARAMS.FILM_FINISH_STRENGTH}] > 0.0
+        && p[${GPU_PARAMS.FILM_RESPONSE_ENABLED}] >= 0.5 && p[${GPU_PARAMS.FILM_LOOK_STRENGTH}] > 0.0
+        && (p[${GPU_PARAMS.FILM_STOCK_SLOT}] > 0.5 || p[${GPU_PARAMS.FILM_PRINT_STRENGTH}] > 0.0
+          || p[${GPU_PARAMS.FILM_COLOR_DENSITY}] != 0.0 || p[${GPU_PARAMS.FILM_RED_RESPONSE}] != 0.0
+          || p[${GPU_PARAMS.FILM_GREEN_RESPONSE}] != 0.0 || p[${GPU_PARAMS.FILM_BLUE_RESPONSE}] != 0.0
+          || p[${GPU_PARAMS.FILM_HIGHLIGHT_DESATURATION}] > 0.0 || p[${GPU_PARAMS.FILM_SHADOW_DESATURATION}] > 0.0
+          || p[${GPU_PARAMS.HALATION_ENABLED}] > 0.5
+          || (p[${GPU_PARAMS.BLOOM_ENABLED}] > 0.5 && p[${GPU_PARAMS.BLOOM_AMOUNT}] > 0.0)
+          || p[${GPU_PARAMS.FILM_RESOLUTION}] < 1.0
+          || (p[${GPU_PARAMS.GRAIN_ENABLED}] > 0.5 && (p[${GPU_PARAMS.GRAIN_AMOUNT}] > 0.0 || p[${GPU_PARAMS.GRAIN_VIEW_MAP}] > 0.5)));
+    }
+    fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
+      if (p[${GPU_PARAMS.GRAIN_ENABLED}] < 0.5 || p[${GPU_PARAMS.GRAIN_AMOUNT}] <= 0.0) { return vec3f(0.0); }
         let pixelsPerMm = filmPixelsPerMm(frameDimensions());
         let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[${GPU_PARAMS.GRAIN_SIZE}]) / 1000.0;
         let pitch = max(1.0, physicalPitch);
@@ -1826,13 +1783,104 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let highlightWeight = pow(signal, 2.0);
         let midWeight = max(0.0, 1.0 - shadowWeight - highlightWeight);
         let response = shadowWeight * p[${GPU_PARAMS.GRAIN_SHADOW_RESPONSE}] + midWeight * p[${GPU_PARAMS.GRAIN_MIDTONE_RESPONSE}] + highlightWeight * p[${GPU_PARAMS.GRAIN_HIGHLIGHT_RESPONSE}];
-        let amount = 0.18 * p[${GPU_PARAMS.GRAIN_AMOUNT}] * p[${GPU_PARAMS.FILM_FINISH_STRENGTH}] * response * pixelCoverage;
-        // The view map swaps the picture for a neutral mid-grey card once the
-        // tonal response has been read from it, isolating the grain field.
-        if (p[${GPU_PARAMS.GRAIN_VIEW_MAP}] > 0.5) { rgb = vec3f(filmLumaFromSignal(0.5)); }
-        rgb *= exp2(grain * amount);
+        let amount = 0.18 * p[${GPU_PARAMS.GRAIN_AMOUNT}] * master * response * pixelCoverage;
+        return grain * amount;
+    }
+    fn lensDiffusion(coordinate: vec2i) -> vec3f {
+      var rgb = sampleFilm(coordinate);
+      if (filmModuleActive()) {
+        let spatial = sampleSpatialTexel((vec2f(coordinate) + vec2f(0.5)) / spatialScale());
+        if (p[${GPU_PARAMS.BLOOM_ENABLED}] > 0.5 && p[${GPU_PARAMS.BLOOM_AMOUNT}] > 0.0) {
+          let bloomMask = filmHighlightMask(rgb, p[${GPU_PARAMS.BLOOM_SENSITIVITY}]);
+          let qualified = rgb * bloomMask * bloomMask;
+          let amount = p[${GPU_PARAMS.BLOOM_AMOUNT}];
+          let additive = spatial.rgb * (0.22 * amount);
+          let diffusionDelta = spatial.rgb - qualified;
+          let absoluteDetail = abs(diffusionDelta);
+          let qualifiedMagnitude = abs(qualified);
+          let relativeDetail = max(max(absoluteDetail.r, absoluteDetail.g), absoluteDetail.b)
+            / (max(max(qualifiedMagnitude.r, qualifiedMagnitude.g), qualifiedMagnitude.b) + 0.02);
+          let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
+          let diffusion = diffusionDelta * ((1.0 - p[${GPU_PARAMS.BLOOM_HIGHLIGHT_DETAIL}]) * 0.35 * amount * (1.0 - edgeProtection));
+          rgb = max(rgb + additive + diffusion, vec3f(0.0));
+        }
       }
-      return max(rgb, vec3f(0.0));
+      return rgb;
+    }
+    fn resolutionScatter(coordinate: vec2i) -> vec3f {
+      var rgb = sampleFilm(coordinate);
+      if (filmModuleActive()) {
+        if (p[${GPU_PARAMS.FILM_RESOLUTION}] < 1.0) {
+          let resolutionLoss = (1.0 - p[${GPU_PARAMS.FILM_RESOLUTION}]);
+          let resolutionSource = sampleFilm(coordinate);
+          let resolutionBlur = filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32);
+          let fineDetail = resolutionSource - resolutionBlur;
+          let relativeDetail = max(abs(fineDetail.r), max(abs(fineDetail.g), abs(fineDetail.b)))
+            / (max(abs(resolutionSource.r), max(abs(resolutionSource.g), abs(resolutionSource.b))) + 0.02);
+          let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
+          rgb -= fineDetail * resolutionLoss * 0.85 * (1.0 - edgeProtection);
+        }
+      }
+      return rgb;
+    }
+    fn finishStructure(coordinate: vec2i) -> vec3f {
+      var rgb = sampleFilm(coordinate);
+      if (p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5 && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001)) {
+        let structureBlur = filmBlur(coordinate, 0.06, 24);
+        let structureSource = rgb;
+        rgb = structureSource
+          + (structureBlur - structureSource) * p[${GPU_PARAMS.STRUCTURE_SOFTNESS}] * 0.65
+          + (structureSource - structureBlur) * p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}] * 0.5;
+        rgb = select(clamp(rgb, vec3f(0.0), vec3f(1.0)), max(rgb, vec3f(0.0)), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+      }
+      return applyVignette(rgb, coordinate);
+    }
+    fn applyFilmLook(coordinate: vec2i) -> vec3f {
+      var rgb = sampleFilm(coordinate);
+      if (filmModuleActive()) {
+        var spatial = vec4f(0.0);
+        if (p[${GPU_PARAMS.HALATION_ENABLED}] > 0.5) {
+          spatial = sampleSpatialTexel((vec2f(coordinate) + vec2f(0.5)) / spatialScale());
+        }
+        if (p[${GPU_PARAMS.HALATION_ENABLED}] > 0.5) {
+          let halationRadius = filmPhysicalOffset(p[${GPU_PARAMS.HALATION_RADIUS}], 256);
+          let edgeRadius = clamp(halationRadius / 4, 1, 16);
+          let edgeSource = halationEdgeSource(coordinate, p[${GPU_PARAMS.HALATION_SENSITIVITY}], edgeRadius);
+          let haloY = max(spatial.a - edgeSource * 0.15, 0.0);
+          let angle = radians(45.0 * p[${GPU_PARAMS.HALATION_HUE}]);
+          // Base-reflected light re-exposes mostly the red layer (_halation_tint).
+          let warm = vec3f(1.0, 0.30 + 0.20 * sin(angle), 0.08 * max(-sin(angle), 0.0));
+          let warmY = lumaSrgb(warm);
+          let canonicalTintSrgb = mix(vec3f(warmY), warm, clamp(p[${GPU_PARAMS.HALATION_SATURATION}], 0.0, 1.0));
+          let tint = select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+          // The map's white sits at SDR white in either lane (adjustments.py
+          // _apply_halation): 0.18 / (100 / 203) in HDR scene values.
+          if (p[${GPU_PARAMS.HALATION_VIEW_MAP}] > 0.5) {
+            return applyVignette(vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0) * select(1.0, 0.18 / (100.0 / 203.0), p[${GPU_PARAMS.HDR_LANE}] > 0.5)), coordinate);
+          }
+          rgb += haloY * tint * (0.42 * p[${GPU_PARAMS.HALATION_AMOUNT}]);
+        }
+
+        if (p[${GPU_PARAMS.GRAIN_ENABLED}] > 0.5 && p[${GPU_PARAMS.GRAIN_VIEW_MAP}] > 0.5) {
+          return applyVignette(vec3f(filmLumaFromSignal(0.5)) * exp2(filmGrainStops(rgb, coordinate, p[${GPU_PARAMS.FILM_LOOK_STRENGTH}])), coordinate);
+        }
+        let stops = filmGrainStops(rgb, coordinate, 1.0);
+        if (p[${GPU_PARAMS.FILM_STOCK_SLOT}] > 0.5) {
+          rgb = filmStockStage(rgb, -0.3010299956639812 * stops);
+        } else {
+          rgb *= exp2(stops);
+        }
+        rgb = filmResponse(rgb);
+        let original = textureLoad(overlayMaskTexture, boundedCoordinate(coordinate), 0).rgb;
+        rgb = mix(original, rgb, p[${GPU_PARAMS.FILM_LOOK_STRENGTH}]);
+      }
+      // Structure uses its own pass after the completed module; maps bypass it.
+      if (p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5 && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001)) { return rgb; }
+      // Match the active module's SDR boundary; a neutral/off module bypasses it.
+      if (filmModuleActive()) {
+        rgb = select(clamp(rgb, vec3f(0.0), vec3f(1.0)), max(rgb, vec3f(0.0)), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+      }
+      return applyVignette(rgb, coordinate);
     }
     fn applyVignette(rgb: vec3f, coordinate: vec2i) -> vec3f {
       if (p[${GPU_PARAMS.VIGNETTE_ENABLED}] < 0.5 || abs(p[${GPU_PARAMS.VIGNETTE_AMOUNT}]) < 0.000001) { return rgb; }
@@ -2442,7 +2490,22 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     @fragment fn filmResponseFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = textureDimensions(sourceTexture);
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
-      return vec4f(filmResponse(textureLoad(sourceTexture, coordinate, 0).rgb), 1.0);
+      return vec4f(textureLoad(sourceTexture, coordinate, 0).rgb, 1.0);
+    }
+
+    @fragment fn lensFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
+      return vec4f(lensDiffusion(coordinate), 1.0);
+    }
+
+    @fragment fn scatterFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
+      return vec4f(resolutionScatter(coordinate), 1.0);
+    }
+
+    @fragment fn structureFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
+      return vec4f(finishStructure(coordinate), 1.0);
     }
 
     @fragment fn spatialExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {

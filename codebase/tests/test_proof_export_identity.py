@@ -267,3 +267,32 @@ def test_full_size_is_part_of_the_proof_request_signature() -> None:
     assert ProofArtifactStore._request_signature("session", reduced, context) != ProofArtifactStore._request_signature(
         "session", full, context
     )
+
+
+@pytest.mark.parametrize("stock_id", ["kodak_portra_400", "fujifilm_velvia_100"])
+def test_film_density_grain_proof_is_export_byte_for_byte(backends, tmp_path, stock_id):
+    capabilities, export_backends = backends
+    if capabilities["ultrahdr_encoder"].status != CapabilityStatus.AVAILABLE:
+        pytest.skip("Ultra HDR encoder unavailable")
+    backend = export_backends["jpeg_ultrahdr"]
+    session = _session(_source()[:64, :96].copy())
+    session.local_adjustments = []
+    for branch in (session.adjustments.hdr, session.adjustments.sdr):
+        look = branch.film_look
+        look.film_stock = stock_id
+        look.grain_amount = 65
+        look.bloom_amount = 35
+        look.halation_amount = 45
+        look.film_resolution = 70
+        look.look_strength = 60
+    settings = ExportSettings(format="jpeg_ultrahdr", output_path=str(tmp_path / "film.jpg"), overwrite=True)
+    result = backend.export(session, settings)
+    assert result.accepted, result.message
+    store = ProofArtifactStore()
+    try:
+        proof = store.create(session, ProofArtifactRequest(
+            adjustments=session.adjustments, format="jpeg_ultrahdr", quality=settings.quality, full_size=True,
+        ), backend)
+        assert proof.sha256 == _sha(Path(result.output_path))
+    finally:
+        store.clear()

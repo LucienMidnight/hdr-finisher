@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from hdr_finisher import film_grain
-from hdr_finisher.adjustments import FrameWindow, apply_final_grain
+from hdr_finisher.adjustments import FrameWindow, _apply_film_look
 from hdr_finisher.models import AdjustmentState, PreviewKind
 
 FRAME = (5320, 7968)
@@ -19,7 +19,7 @@ def _grain_log(level: float, film_type: str = "color_negative", *, chroma: float
     look.grain_chroma = chroma
     look.grain_film_type = film_type
     card = np.full((size, size, 3), level, dtype=np.float32)
-    grained = apply_final_grain(card, state, PreviewKind.SDR, frame_window=FrameWindow(1500, 2500, *FRAME))
+    grained = _apply_film_look(card, state, PreviewKind.SDR, frame_window=FrameWindow(1500, 2500, *FRAME))
     return np.log2(grained / np.float32(level))
 
 
@@ -111,11 +111,11 @@ def test_threaded_row_chunks_match_a_single_pass() -> None:
     state.sdr.film_look.grain_amount = 60.0
     state.sdr.film_look.grain_chroma = 40.0
     image = np.random.default_rng(9).random((300, 200, 3)).astype(np.float32)
-    chunked = apply_final_grain(image, state, PreviewKind.SDR)
+    chunked = _apply_film_look(image, state, PreviewKind.SDR)
     original = adjustments.GRAIN_CHUNK_ROWS
     try:
         adjustments.GRAIN_CHUNK_ROWS = 10_000
-        single = apply_final_grain(image, state, PreviewKind.SDR)
+        single = _apply_film_look(image, state, PreviewKind.SDR)
     finally:
         adjustments.GRAIN_CHUNK_ROWS = original
     np.testing.assert_array_equal(chunked, single)

@@ -373,37 +373,37 @@ def test_detail_low_pass_has_no_isolated_taps(radius: int) -> None:
     assert beyond <= radius
 
 
-def test_cpu_film_spatial_stages_reuse_the_response_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cpu_film_stages_follow_light_and_mix_the_completed_module(monkeypatch) -> None:
     image = np.full((8, 10, 3), 0.18, dtype=np.float32)
     state = AdjustmentState()
     look = state.hdr.film_look
-    look.halation_amount = 20
-    look.bloom_amount = 20
-    state.hdr.detail.softness = 10
+    look.halation_amount = look.bloom_amount = 20
     look.film_resolution = 90
     look.grain_enabled = False
-    response_frame = np.full_like(image, 0.25)
-    seen_sources: list[np.ndarray] = []
+    look.look_strength = 50
+    state.hdr.detail.softness = 10
+    calls = []
 
-    monkeypatch.setattr(adjustments_module, "_apply_film_response", lambda *_args: response_frame)
-    monkeypatch.setattr(
-        adjustments_module,
-        "_apply_halation",
-        lambda current, *_args: (current + np.float32(0.01), np.zeros_like(current)),
-    )
+    def stage(name, increment):
+        def run(current, *_args, **_kwargs):
+            calls.append((name, float(current[0, 0, 0])))
+            result = current + np.float32(increment)
+            return (result, np.zeros_like(current)) if name == "halation" else result
+        return run
 
-    def record_source(current: np.ndarray, *_args: object, spatial_source: np.ndarray, **_kwargs: object) -> np.ndarray:
-        seen_sources.append(spatial_source)
-        return current + np.float32(0.01)
-
-    monkeypatch.setattr(adjustments_module, "_apply_bloom", record_source)
-    monkeypatch.setattr(adjustments_module, "_apply_image_structure", record_source)
-    monkeypatch.setattr(adjustments_module, "_apply_film_resolution", record_source)
-
-    adjustments_module._apply_film_look(image, state, PreviewKind.HDR)
-
-    assert len(seen_sources) == 3
-    assert all(source is response_frame for source in seen_sources)
+    for name, function, increment in (
+        ("lens", "_apply_bloom", .01),
+        ("scatter", "_apply_film_resolution", .02),
+        ("halation", "_apply_halation", .03),
+        ("response", "_apply_film_response", .04),
+        ("detail", "_apply_image_structure", .05),
+    ):
+        monkeypatch.setattr(adjustments_module, function, stage(name, increment))
+    output = adjustments_module._apply_film_look(image, state, PreviewKind.HDR)
+    assert [name for name, _ in calls] == ["lens", "scatter", "halation", "response", "detail"]
+    np.testing.assert_allclose([value for _, value in calls], [.18, .19, .21, .24, .23], atol=1e-7)
+    np.testing.assert_allclose(output, .28, atol=1e-7)
+    np.testing.assert_array_equal(image, np.full_like(image, .18))
 
 
 @pytest.mark.parametrize(
@@ -609,7 +609,7 @@ def test_inactive_film_spatial_stages_do_not_blur(monkeypatch: pytest.MonkeyPatc
     apply_adjustments(image, state, kind)
 
 
-def test_halation_and_bloom_are_spatial_and_grain_remains_last() -> None:
+def test_halation_and_bloom_remain_spatial_with_density_grain() -> None:
     image = np.zeros((41, 41, 3), dtype=np.float32)
     image[20, 20] = 8.0
     state = AdjustmentState()
@@ -2002,7 +2002,6 @@ def test_sdr_branches_share_one_post_highlight_tail(monkeypatch: pytest.MonkeyPa
         "apply_detail",
         "_apply_film_look",
         "_apply_vignette",
-        "apply_final_grain",
         "apply_sdr_output_highlight_compression",
     ):
         spy(name)
@@ -2025,7 +2024,6 @@ def test_sdr_branches_share_one_post_highlight_tail(monkeypatch: pytest.MonkeyPa
         "apply_detail",
         "_apply_film_look",
         "_apply_vignette",
-        "apply_final_grain",
         "apply_sdr_output_highlight_compression",
     ]
     assert tail_of(_apply_sdr_adjustments) == expected
@@ -2086,3 +2084,13 @@ def test_both_highlight_lanes_build_their_curves_from_the_shared_helpers(
     assert calls.count("_soft_ceiling_exponent") == 2
     assert calls.count("_soft_ceiling_curve") == 2
     assert calls.count("_soft_ceiling_activation") == 2
+
+
+@pytest.mark.parametrize("strength, enabled", [(100, True), (0, True), (100, False)])
+def test_neutral_film_module_preserves_unbounded_input(strength, enabled):
+    state = AdjustmentState()
+    state.sdr.film_look.look_strength = strength
+    state.sdr.film_look_section_enabled = enabled
+    image = np.array([[[1.4, .5, -.01]]], np.float32)
+    output = adjustments_module._apply_film_look(image, state, PreviewKind.SDR)
+    np.testing.assert_array_equal(output, image)

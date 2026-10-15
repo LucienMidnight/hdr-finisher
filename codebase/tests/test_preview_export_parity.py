@@ -3,21 +3,13 @@
 PRD 10, Phase 8: *"Validate preview/export operation order"* and *"Full preview
 and export meet numerical and visual parity thresholds"*.
 
-The preview grades through ``apply_adjustments`` with grain and the output
-limiter included inline. Export withholds both, applies output finishing, then
-runs them:
+The preview and export develop grain inside the negative before printing
+and scanning. Export withholds only the output limiter, applies delivery
+resizing/sharpening to the completed scan, then limits its ringing:
 
-    apply_adjustments(include_grain=False, include_output_highlight_compression=False)
+    apply_adjustments(include_output_highlight_compression=False)
     -> apply_output_finishing
-    -> apply_final_grain
     -> highlight compression
-
-That ordering is deliberate. Output finishing resamples and sharpens for the
-delivered size, and its ringing has to land *under* the limiter's ceiling
-rather than on top of it, so it cannot simply be appended. The cost of the
-rearrangement is that preview and export run the same stages in a different
-order, and the only thing that keeps them the same picture is that the stages
-they moved commute with the one they moved around.
 
 So this pins the claim rather than assuming it: with output finishing neutral
 -- which is its default, ``resize_mode="original"`` and ``sharpening="off"`` --
@@ -87,11 +79,17 @@ def _session(image: np.ndarray, adjustments: AdjustmentState) -> object:
     )()
 
 
+@pytest.mark.parametrize("stock_id", ["none", "kodak_portra_400", "fujifilm_velvia_100"])
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
-def test_export_equals_the_preview_graph_when_finishing_is_neutral(kind) -> None:
+def test_export_equals_the_preview_graph_when_finishing_is_neutral(kind, stock_id) -> None:
     """The whole claim, stated as an equality rather than a tolerance."""
     image = _source()
     adjustments = _graded_state()
+    look = getattr(adjustments, kind.value).film_look
+    look.film_stock = stock_id
+    look.bloom_amount = 35
+    look.halation_amount = 45
+    look.film_resolution = 60
     session = _session(image, adjustments)
     settings = ExportSettings()
     assert settings.output_finishing.resize_mode == "original"
@@ -190,3 +188,25 @@ def test_a_negative_source_does_not_become_a_negative_delivery() -> None:
 
     assert float(exported.min()) >= 0.0
     assert np.isfinite(exported).all()
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+@pytest.mark.parametrize("stock_id", ["kodak_portra_400", "fujifilm_velvia_100"])
+def test_delivery_resizes_the_completed_grained_scan(kind, stock_id):
+    from hdr_finisher.finishing import apply_output_finishing
+    from hdr_finisher.adjustments import apply_hdr_output_highlight_compression, apply_sdr_output_highlight_compression
+
+    source = _source()
+    state = _graded_state()
+    getattr(state, kind.value).film_look.film_stock = stock_id
+    session = _session(source, state)
+    settings = ExportSettings(output_finishing=OutputFinishingSettings(
+        resize_mode="long_edge", long_edge=32, sharpening="strong",
+    ))
+    scan = apply_adjustments(source, state, kind, include_output_highlight_compression=False)
+    delivered = apply_output_finishing(scan, settings.output_finishing, kind)
+    limiter = apply_hdr_output_highlight_compression if kind == PreviewKind.HDR else apply_sdr_output_highlight_compression
+    expected = limiter(delivered, state)
+    actual = _render_export_branch(session, settings, kind, state)
+    assert max(actual.shape[:2]) == 32
+    np.testing.assert_array_equal(actual, expected)

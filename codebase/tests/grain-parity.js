@@ -30,6 +30,10 @@ const MAX_GRAIN_MEAN_DIFFERENCE = 0.1 / 255;
 const MAX_GRAIN_P999_DIFFERENCE = 2 / 255;
 
 const CASES = [
+  { lane: "sdr", film_type: "color_negative", format: "super8", size: 60, chroma: 40, map: false, strength: 50 },
+  { lane: "sdr", film_type: "color_negative", format: "super8", size: 60, chroma: 40, map: false, stock: "kodak_portra_400", tone: 0 },
+  { lane: "hdr", film_type: "color_negative", format: "super8", size: 60, chroma: 40, map: false, stock: "kodak_portra_400", color: 0 },
+  { lane: "sdr", film_type: "color_negative", format: "super8", size: 60, chroma: 40, map: false, stock: "fujifilm_velvia_100" },
   { lane: "sdr", film_type: "color_negative", format: "35mm", size: 50, chroma: 40, map: false },
   { lane: "sdr", film_type: "color_negative", format: "super8", size: 60, chroma: 40, map: false },
   { lane: "sdr", film_type: "color_negative", format: "super16", size: 100, chroma: 0, map: true },
@@ -93,6 +97,9 @@ tifffile.imwrite(sys.argv[1], rgb.astype(np.float32), photometric="rgb")
     // The app's own startup and settle passes can repaint the canvas at its
     // own preview size between this render and the capture; they are stood
     // down first, and a size mismatch is taken again rather than failed.
+    await page.evaluate(async (ids) => {
+      await Promise.all(ids.map(id => window.HDRFilmStocks.request(id)));
+    }, [...new Set(CASES.map(item => item.stock).filter(Boolean))]);
     const compare = async (...args) => {
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const result = await compareOnce(...args);
@@ -106,6 +113,9 @@ tifffile.imwrite(sys.argv[1], rgb.astype(np.float32), photometric="rgb")
       const lane = testCase.lane;
       state.adjustments[lane].film_look_section_enabled = true;
       Object.assign(state.adjustments[lane].film_look, {
+        film_stock: testCase.stock || "none",
+        stock_tone: testCase.tone ?? 100, stock_color: testCase.color ?? 100,
+        look_strength: testCase.strength ?? 100,
         grain_enabled: true,
         grain_amount: amount,
         grain_size: testCase.size,
@@ -160,7 +170,7 @@ tifffile.imwrite(sys.argv[1], rgb.astype(np.float32), photometric="rgb")
       const max = sorted[sorted.length - 1];
       const passed = mean <= MAX_GRAIN_MEAN_DIFFERENCE && p999 <= MAX_GRAIN_P999_DIFFERENCE;
       if (!passed) failures.push({ ...testCase, mean, p999 });
-      const label = `${testCase.lane} ${testCase.film_type} ${testCase.format} size ${testCase.size}${testCase.map ? " map" : ""}`;
+      const label = `${testCase.lane} ${testCase.film_type} ${testCase.format} size ${testCase.size}${testCase.stock ? ` ${testCase.stock}` : ""}${testCase.strength ? ` mix ${testCase.strength}` : ""}${testCase.map ? " map" : ""}`;
       console.log(
         `${label.padEnd(48)} ${grained.size[0]}x${grained.size[1]}  `
         + `added GPU/CPU difference: mean ${(mean * 255).toFixed(3)} levels, p99.9 ${(p999 * 255).toFixed(1)}, max ${(max * 255).toFixed(0)}  `

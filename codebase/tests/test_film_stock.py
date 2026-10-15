@@ -410,3 +410,67 @@ def test_original_six_keep_every_rendering_number(stock_id, expected):
             parts.append(np.asarray(value, dtype="<f4").tobytes())
     numeric(payload)
     assert hashlib.sha256(b"".join(parts)).hexdigest() == expected
+
+
+@pytest.mark.parametrize("stock_id", ["kodak_portra_400", "fujifilm_velvia_100"])
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_density_grain_reaches_print_or_slide_scan_before_output(stock_id, kind, monkeypatch):
+    monkeypatch.setattr(film_stock_module, "FILM_STOCK_DIR", REAL_STOCK_DIR)
+    stock = load_film_stock(stock_id)
+    state = AdjustmentState()
+    look = getattr(state, kind.value).film_look
+    look.film_stock = stock_id
+    look.grain_amount = 80
+    look.grain_film_format = "super8"
+    look.grain_chroma = 50
+    source = np.full((19, 23, 3), .12, np.float32)
+    clean = _apply_film_look(source, state, kind, include_grain=False)
+    seen = []
+    original = film_stock_module.print_film_density
+
+    def record(stock, density, parameters):
+        seen.append(density.copy())
+        return original(stock, density, parameters)
+
+    monkeypatch.setattr(film_stock_module, "print_film_density", record)
+    grained = _apply_film_look(source, state, kind)
+    # A flat exposure now reaches print/slide scan with varying film density.
+    assert any(np.ptp(density[:, 0]) > .001 for density in seen if len(density) > 1)
+    assert not np.array_equal(clean, grained)
+    if stock.type == "slide":
+        for density in seen:
+            np.testing.assert_array_equal(original(stock, density, stock_parameters(look)), density)
+        look.stock_print_warmth = 100
+        look.stock_print_tint = -100
+        look.stock_preflash = 100
+        np.testing.assert_array_equal(grained, _apply_film_look(source, state, kind))
+    # The finished module, including density grain, is mixed once.
+    look.look_strength = 50
+    half = _apply_film_look(source, state, kind)
+    np.testing.assert_allclose(half, source + (grained - source) * np.float32(.5), atol=1e-7)
+
+
+@pytest.mark.parametrize("stock_id", ["kodak_portra_400", "fujifilm_velvia_100"])
+def test_density_grain_keeps_hdr_highlight_ratios(stock_id, monkeypatch):
+    monkeypatch.setattr(film_stock_module, "FILM_STOCK_DIR", REAL_STOCK_DIR)
+    look = FilmLookAdjustments(film_stock=stock_id)
+    rgb = np.array([[[.8, .6, .4], [3.2, 2.4, 1.6]]], np.float32)
+    # The same field sample isolates highlight handling from random position.
+    delta = np.full_like(rgb, .012)
+    result = _apply_film_stock(rgb.copy(), look, PreviewKind.HDR, np.float32(1), density_delta=delta)
+    np.testing.assert_allclose(result[:, 1], result[:, 0] * 4, rtol=2e-6)
+
+
+@pytest.mark.parametrize("tone, color", [(0, 100), (100, 0), (50, 50)])
+def test_partial_stock_mixes_do_not_cancel_density_grain(tone, color, monkeypatch):
+    monkeypatch.setattr(film_stock_module, "FILM_STOCK_DIR", REAL_STOCK_DIR)
+    state = AdjustmentState()
+    look = state.sdr.film_look
+    look.film_stock = "kodak_portra_400"
+    look.stock_tone, look.stock_color = tone, color
+    look.grain_amount = 80
+    look.grain_film_format = "super8"
+    source = np.full((23, 29, 3), .18, np.float32)
+    clean = _apply_film_look(source, state, PreviewKind.SDR, include_grain=False)
+    grained = _apply_film_look(source, state, PreviewKind.SDR)
+    assert float(np.std(_linear_luma(grained - clean))) > .0001

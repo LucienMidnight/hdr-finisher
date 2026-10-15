@@ -26,7 +26,17 @@ const NEUTRAL = {
   film_stock: "none", stock_color: 100, stock_tone: 100, stock_exposure: 0, stock_separation: 0,
   stock_print_warmth: 0, stock_print_tint: 0, stock_preflash: 0,
 };
+const EFFECTS = { grain_amount: 60, grain_size: 80, grain_film_format: "super16", grain_chroma: 40,
+  halation_amount: 45, halation_radius: 0.7, bloom_amount: 35, bloom_radius: 1.2,
+  bloom_highlight_detail: 30, film_resolution: 50 };
 const CASES = [
+  { label: "Portra density grain", stock: { film_stock: "kodak_portra_400", grain_amount: 80, grain_film_format: "super8" } },
+  { label: "Portra lens", stock: { film_stock: "kodak_portra_400", bloom_amount: 55, bloom_highlight_detail: 0 } },
+  { label: "Portra scatter", stock: { film_stock: "kodak_portra_400", film_resolution: 0 } },
+  { label: "Portra halation", stock: { film_stock: "kodak_portra_400", halation_amount: 70 } },
+  { label: "Portra physical chain", stock: { film_stock: "kodak_portra_400", ...EFFECTS } },
+  { label: "Velvia physical chain", stock: { film_stock: "fujifilm_velvia_100", ...EFFECTS } },
+  { label: "Portra half chain", stock: { film_stock: "kodak_portra_400", ...EFFECTS }, look_strength: 50 },
   { label: "C200 full", stock: { film_stock: "fujifilm_c200" } },
   { label: "Vision3 500T full", stock: { film_stock: "kodak_vision3_500t" } },
   { label: "Velvia 100 full", stock: { film_stock: "fujifilm_velvia_100" } },
@@ -110,7 +120,9 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
       const branch = state.adjustments[lane];
-      Object.assign(branch.film_look, stock, { look_strength: lookStrength, grain_amount: 0, halation_amount: 0, bloom_amount: 0 });
+      Object.assign(branch.film_look, { grain_amount: 0, halation_amount: 0, bloom_amount: 0, film_resolution: 100,
+        grain_size: 50, grain_film_format: "35mm", grain_chroma: 40, halation_radius: 1.2,
+        bloom_radius: 3, bloom_highlight_detail: 100, look_strength: lookStrength }, stock);
       state.globalEditDirty = true;
       if (!await syncGlobalEditState()) throw Error("Recipe sync failed");
       invalidatePreview(lane);

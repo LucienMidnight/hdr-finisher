@@ -318,8 +318,9 @@
       if (params[FILM_GATE_AXIS_INDEX] > 1.5) {
         pixelsPerMm = quarter[0] / params[FILM_GATE_WIDTH_INDEX];
       }
-      blurTexels = Math.max(blurTexels,
-        clamp(pixelsPerMm * 43.2666153 * Math.max(finiteNumber(params[GPU_PARAMS.HALATION_RADIUS], 0), 0) / 100, 0.25, blurCap));
+      // Lens diffusion and halation now run in sequence: their support adds.
+      // Each blur keeps its existing cap; the tile must include both reaches.
+      blurTexels += clamp(pixelsPerMm * 43.2666153 * Math.max(finiteNumber(params[GPU_PARAMS.HALATION_RADIUS], 0), 0) / 100, 0.25, blurCap);
     }
 
     // Full-resolution reads: halation's edge source from `filmPhysicalOffset`,
@@ -344,18 +345,18 @@
     );
     let direct = 0;
     if (halationActive) {
-      direct = Math.max(direct, clamp(Math.floor(physicalOffset(finiteNumber(params[GPU_PARAMS.HALATION_RADIUS], 0), 256) / 4), 1, 16));
+      direct += clamp(Math.floor(physicalOffset(finiteNumber(params[GPU_PARAMS.HALATION_RADIUS], 0), 256) / 4), 1, 16);
     }
     const structureActive = params[GPU_PARAMS.STRUCTURE_ENABLED] > 0.5
       && (Math.abs(params[GPU_PARAMS.STRUCTURE_SOFTNESS]) > 0 || Math.abs(params[GPU_PARAMS.STRUCTURE_MICROCONTRAST]) > 0);
     if (structureActive) {
-      direct = Math.max(direct, clamp(Math.round(frameDiagonal * 0.06 / 100), 1, 24));
+      direct += clamp(Math.round(frameDiagonal * 0.06 / 100), 1, 24);
     }
     if (params[GPU_PARAMS.FILM_RESOLUTION] < 1) {
-      direct = Math.max(direct, physicalOffset(0.04 + 0.08 * (1 - params[GPU_PARAMS.FILM_RESOLUTION]) * params[GPU_PARAMS.FILM_LOOK_STRENGTH], 32));
+      direct += physicalOffset(0.04 + 0.08 * (1 - params[GPU_PARAMS.FILM_RESOLUTION]), 32);
     }
 
-    const total = Math.ceil(blurTexels) * grid + Math.ceil(direct);
+    const total = (Math.ceil(blurTexels) + (bloomActive && halationActive ? 1 : 0)) * grid + Math.ceil(direct);
     return {
       quarter,
       blurTexels,

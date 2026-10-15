@@ -276,11 +276,9 @@ def _apply_hdr_adjustments(
             source_pixel_scale=source_pixel_scale,
         )
     if hdr.film_look_section_enabled or _structure_is_active(hdr):
-        result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=False)
+        result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=include_grain, frame_window=frame_window)
     if hdr.vignette_section_enabled:
         result = _apply_vignette(result, hdr.vignette, PreviewKind.HDR, frame_window=frame_window)
-    if include_grain:
-        result = apply_final_grain(result, adjustments, PreviewKind.HDR, frame_window=frame_window)
     if include_output_highlight_compression:
         result = apply_hdr_output_highlight_compression(
             result, adjustments, color_context=color_context, anchor=highlight_anchor
@@ -808,11 +806,9 @@ def _apply_sdr_post_highlight_tail(
             source_pixel_scale=source_pixel_scale,
         )
     if sdr.film_look_section_enabled or _structure_is_active(sdr):
-        result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
+        result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=include_grain, frame_window=frame_window)
     if sdr.vignette_section_enabled:
         result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR, frame_window=frame_window)
-    if include_grain:
-        result = apply_final_grain(result, adjustments, PreviewKind.SDR, frame_window=frame_window)
     if include_output_highlight_compression:
         result = apply_sdr_output_highlight_compression(result, adjustments)
     return np.clip(result, 0.0, 1.0)
@@ -1612,130 +1608,65 @@ def _apply_curves(image: np.ndarray, adjustments: AdjustmentState, kind: Preview
 
 
 def _apply_film_look(
-    image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind, *, include_grain: bool = True
-) -> np.ndarray:
-    """Apply the finishing look after curves, with grain deliberately last.
-
-    Detail's Softness and Microcontrast run in this stage, on the film response
-    frame, but they answer to Detail's switch rather than Film Look's and are
-    not scaled by Look Strength.
-    """
-    branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
-    look = branch.film_look
-    if branch.black_and_white_section_enabled:
-        look = black_and_white_neutral_film_look(look)
-    strength = np.float32(look.look_strength / 100.0)
-    structure_active = _structure_is_active(branch)
-    if not branch.film_look_section_enabled or strength <= 0.0:
-        if not structure_active:
-            return image
-        result = image.astype(np.float32, copy=True)
-        result = _apply_image_structure(result, branch.detail, kind)
-        return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
-
-    response_active = any(
-        float(getattr(look, field, 0.0)) != 0.0
-        for field in (
-            "print_strength",
-            "color_density",
-            "red_response",
-            "green_response",
-            "blue_response",
-            "highlight_desaturation",
-            "shadow_desaturation",
-        )
-    )
-    stock_active = _film_stock_is_active(look)
-    halation_active = (
-        look.halation_enabled and look.halation_amount > 0.0 and look.halation_radius > 0.0
-    )
-    halation_map_active = look.halation_enabled and look.halation_view_map
-    bloom_active = look.bloom_enabled and look.bloom_amount > 0.0 and look.bloom_radius > 0.0
-    resolution_active = look.film_resolution < 100.0
-    grain_active = include_grain and look.grain_enabled and (
-        look.grain_amount > 0.0 or look.grain_view_map
-    )
-    active = any(
-        (
-            stock_active,
-            response_active,
-            halation_active,
-            halation_map_active,
-            bloom_active,
-            structure_active,
-            resolution_active,
-            grain_active,
-        )
-    )
-    if not active:
-        return image
-
-    result = image.astype(np.float32, copy=True)
-    if stock_active:
-        result = _apply_film_stock(result, look, kind, strength)
-    result = _apply_film_response(result, look, kind, strength)
-    # WebGPU retains the completed response frame as the source for all Film
-    # Look spatial kernels. Keep the CPU path on the same stage boundary: the
-    # effects are composited in order below, while every blur is derived from
-    # this immutable response frame rather than an already blurred result.
-    spatial_source = result
-
-    if halation_active or halation_map_active:
-        result, halation_map = _apply_halation(result, look, kind, strength)
-        if look.halation_view_map:
-            return halation_map
-    if bloom_active:
-        result = _apply_bloom(result, look, kind, strength, spatial_source=spatial_source)
-    if structure_active:
-        result = _apply_image_structure(result, branch.detail, kind, spatial_source=spatial_source)
-    if resolution_active:
-        result = _apply_film_resolution(result, look, strength, spatial_source=spatial_source)
-    if include_grain and look.grain_enabled and strength > 0.0:
-        if look.grain_view_map:
-            return _apply_density_grain(
-                result, look, kind, adjustments.shared.film_grain_seed, strength, view_map=True
-            )
-        if look.grain_amount > 0.0:
-            result = _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed, strength)
-    return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
-
-
-def apply_final_grain(
-    image: np.ndarray,
-    adjustments: AdjustmentState,
-    kind: PreviewKind,
-    *,
+    image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind, *, include_grain: bool = True,
     frame_window: FrameWindow | None = None,
 ) -> np.ndarray:
-    """Synthesize deterministic film grain at the current (preview or final export) resolution.
+    """Lens -> scatter -> halation -> negative/grain -> print -> scan.
 
-    ``frame_window`` places ``image`` in the whole frame when it is one region
-    of one, so a strip samples the frame's grain field rather than starting a
-    new one at its own first row.
+    Look Strength mixes the completed module once. Detail structure remains
+    an independent finishing operation, followed by the caller's vignette.
     """
     branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
-    if not branch.film_look_section_enabled:
-        return image
     look = branch.film_look
     if branch.black_and_white_section_enabled:
         look = black_and_white_neutral_film_look(look)
     strength = np.float32(look.look_strength / 100.0)
-    if not look.grain_enabled or strength <= 0.0:
-        return image
-    if look.halation_enabled and look.halation_view_map:
-        # The halation map replaces the picture upstream, on this path and in
-        # the WebGPU shader alike. Grain must not be sprinkled over it.
-        return image
-    if look.grain_view_map:
-        return _apply_density_grain(
-            image, look, kind, adjustments.shared.film_grain_seed, strength,
-            view_map=True, frame_window=frame_window,
-        )
-    if look.grain_amount <= 0.0:
-        return image
-    return _apply_density_grain(
-        image, look, kind, adjustments.shared.film_grain_seed, strength, frame_window=frame_window
+    response_active = any(float(getattr(look, field, 0.0)) != 0.0 for field in (
+        "print_strength", "color_density", "red_response", "green_response", "blue_response",
+        "highlight_desaturation", "shadow_desaturation",
+    ))
+    halation_active = look.halation_enabled and (
+        (look.halation_amount > 0.0 and look.halation_radius > 0.0) or look.halation_view_map
     )
+    bloom_active = look.bloom_enabled and look.bloom_amount > 0.0 and look.bloom_radius > 0.0
+    module_active = branch.film_look_section_enabled and strength > 0.0 and (
+        _film_stock_is_active(look) or response_active or halation_active or bloom_active
+        or look.film_resolution < 100.0
+        or (include_grain and look.grain_enabled and (look.grain_amount > 0.0 or look.grain_view_map))
+    )
+    if not module_active and not _structure_is_active(branch):
+        return image
+    result = image.astype(np.float32, copy=True)
+    if module_active:
+        full = np.float32(1.0)
+        if bloom_active:
+            result = _apply_bloom(result, look, kind, full)
+        if look.film_resolution < 100.0:
+            result = _apply_film_resolution(result, look, full)
+        if halation_active:
+            result, halation_map = _apply_halation(result, look, kind, full)
+            if look.halation_view_map:
+                return halation_map
+        grain = include_grain and look.grain_enabled and look.grain_amount > 0.0
+        if include_grain and look.grain_enabled and look.grain_view_map:
+            return _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed,
+                                        strength, view_map=True, frame_window=frame_window)
+        if _film_stock_is_active(look):
+            delta = _apply_density_grain(
+                result, look, kind, adjustments.shared.film_grain_seed, full,
+                frame_window=frame_window, density_delta=True,
+            ) if grain else None
+            result = _apply_film_stock(result, look, kind, full, density_delta=delta)
+        elif grain:
+            # Neutral's straight response preserves the existing density field.
+            result = _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed,
+                                         full, frame_window=frame_window, clip_output=False)
+        # Legacy creative response stays until Phase 3 removes its controls.
+        result = _apply_film_response(result, look, kind, full)
+        result = image + (result - image) * strength
+    if _structure_is_active(branch):
+        result = _apply_image_structure(result, branch.detail, kind)
+    return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
 
 
 def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) -> np.ndarray:
@@ -1869,7 +1800,8 @@ def _film_stock_is_active(look: object) -> bool:
     )
 
 
-def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
+def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32,
+                      *, density_delta: np.ndarray | None = None) -> np.ndarray:
     """Render the chosen film stock's colour and tone, per pixel, in place.
 
     ``image`` must be a private, C-contiguous float32 frame in the branch's
@@ -1916,14 +1848,20 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
         highlight_scale = reference_white / np.maximum(luma, reference_white)
         clamped = rgb * highlight_scale[:, None]
         grey_level = luma * highlight_scale
-        film, grey = render_film_stock_with_grey(
+        rendered = render_film_stock_with_grey(
             stock,
             to_srgb(clamped) if color > 0.0 else None,
             to_srgb(np.repeat(grey_level[:, None], 3, axis=1)),
             parameters,
+            None if density_delta is None else density_delta.reshape(-1, 3)[start:stop],
         )
+        film, grey = rendered[:2]
         grey_luma = np.maximum(_film_luma(from_srgb(grey), kind), np.float32(1e-6))
         target = luma + (tone_gain * grey_luma / highlight_scale - luma) * tone
+        if density_delta is not None:
+            grained_luma = np.maximum(_film_luma(from_srgb(rendered[2]), kind), np.float32(1e-6))
+            target *= grained_luma / grey_luma
+            grey_luma = grained_luma
         result = rgb * (target / np.maximum(luma, np.float32(1e-7)))[:, None]
         if film is not None:
             stocked = from_srgb(film) * (target / grey_luma)[:, None]
@@ -2430,6 +2368,8 @@ def _apply_density_grain(
     *,
     view_map: bool = False,
     frame_window: FrameWindow | None = None,
+    density_delta: bool = False,
+    clip_output: bool = True,
 ) -> np.ndarray:
     """Modulate the frame by the film grain density field.
 
@@ -2472,6 +2412,9 @@ def _apply_density_grain(
             develop_rgb, develop_luma, (0.2126, 0.7152, 0.0722), left, top + first_row, physical_pitch, seed,
             look.grain_film_type, float(look.grain_softness) / 100.0, chroma,
         )
+        if density_delta:
+            # Convert the renderer's log2 transmission field to optical density.
+            return -np.float32(np.log10(2.0)) * noise * (response * amount)[..., None]
         base = np.full_like(part, neutral) if view_map else part
         return np.maximum(base, 0.0) * np.exp2(noise * (response * amount)[..., None])
 
@@ -2482,6 +2425,8 @@ def _apply_density_grain(
     else:
         with ThreadPoolExecutor(max_workers=GRAIN_WORKERS, thread_name_prefix="film-grain") as pool:
             result = np.concatenate(list(pool.map(lambda span: render(*span), spans)), axis=0)
+    if density_delta or not clip_output:
+        return result.astype(np.float32)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
 
 

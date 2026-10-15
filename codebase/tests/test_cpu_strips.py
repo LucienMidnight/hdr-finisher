@@ -217,8 +217,9 @@ def test_authored_sdr_base_is_exact():
     np.testing.assert_array_equal(strips, reference)
 
 
+@pytest.mark.parametrize("stock_id", ["none", "kodak_portra_400", "fujifilm_velvia_100"])
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
-def test_placed_stages_are_exact(kind):
+def test_placed_stages_are_exact(kind, stock_id):
     """A strip renders its share of the frame's vignette and grain field.
 
     Both stages are pointwise but neither is region-local, so this is the test
@@ -239,6 +240,7 @@ def test_placed_stages_are_exact(kind):
     branch.vignette.center_y = 0.61
     branch.film_look_section_enabled = True
     branch.film_look.grain_enabled = True
+    branch.film_look.film_stock = stock_id
     branch.film_look.grain_amount = 65.0
     branch.film_look.grain_size = 45.0
     branch.film_look.grain_chroma = 35.0

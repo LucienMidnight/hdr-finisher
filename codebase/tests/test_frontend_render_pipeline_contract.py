@@ -107,7 +107,12 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "(mappedRgb - vec3f(targetValue)) * (1.0 - progress)" in shader
     assert "let requiredRatio = clamp(" in shader
     assert "let targetValue = exp2(effectiveStartStop + stopSpan * mapped)" in shader
-    assert "filmResponse(textureLoad(sourceTexture" in shader
+    assert "fn lensDiffusion(coordinate: vec2i)" in shader
+    assert "fn resolutionScatter(coordinate: vec2i)" in shader
+    assert "rgb = filmStockStage(rgb, -0.3010299956639812 * stops)" in shader
+    assert "rgb = mix(original, rgb, p[79])" in shader
+    chain = shader[shader.index("encodeFilmChain(encoder, pipelines, graph, originalView"):]
+    assert chain.index("pipelines.lens") < chain.index("pipelines.scatter") < chain.index("pipelines.finish")
     assert "spatialExtractFragmentMain" in shader
     assert "fn applyColorGrading" in shader
     assert "srgbEncode(sourceY)" in shader
@@ -159,8 +164,10 @@ def test_advanced_finishing_controls_are_wired_to_the_editor_and_export_contract
     assert "let edgeProtection = smoothRange(0.025, 0.20, relativeDetail)" in shader
     assert "(1.0 - edgeProtection)" in shader
     assert "chroma = p[104] * (1.0 - 0.8 * smoothRange(0.88, 1.0, signal))" in shader
-    assert "rgb *= exp2(grain * amount)" in shader
-    assert "if (p[158] > 0.5) { rgb = vec3f(filmLumaFromSignal(0.5)); }" in shader
+    assert "return grain * amount" in shader
+    assert "rgb *= exp2(stops)" in shader
+    assert "stockPrintScan(base, density + densityDelta)" in shader
+    assert "return applyVignette(vec3f(filmLumaFromSignal(0.5)) * exp2(filmGrainStops(rgb, coordinate, p[79]))" in shader
 
 
 def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
@@ -222,7 +229,9 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "let tint = mix(vec3f(warmY), warm" not in shader
     assert "let toeKnee = 0.18 * log(1.0 + exp((0.45 - mapped) / 0.18))" in shader
     assert "let shoulderKnee = 0.18 * log(1.0 + exp((mapped - 0.55) / 0.18))" in shader
-    assert "let channelResponse = vec3f(p[143], p[144], p[145]) * p[79]" in shader
+    # Stage controls run at full strength; the completed module is mixed once.
+    assert "let channelResponse = vec3f(p[143], p[144], p[145]);" in shader
+    assert "rgb = mix(original, rgb, p[79])" in shader
     assert "let highlightGuard = 1.0 - 0.65 * smoothRange(0.88, 1.12, responseSignal)" in shader
     assert "shadowWeight * p[147] + highlightWeight * p[146]" in shader
     assert "smoothRange(0.50, 0.82, responseSignal)" in shader

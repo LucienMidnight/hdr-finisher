@@ -4160,24 +4160,8 @@
             localSource = target;
           });
 
-          pass(filmView, pipelines.response, bind(localSource.createView()), width, height);
-          let spatialResultView = sourceView;
-          if (spatialActive) {
-            // The spatial grid is anchored to the frame, and this tile's halo
-            // rectangle starts on one of its texels, so the valid region is
-            // exactly the tile's own extent on that grid. Rendering only that
-            // region keeps an edge tile from writing texels its source never
-            // covered, which `validSpatialDimensions()` then reads back.
-            const spatialWidth = Math.ceil(width / graph.spatialGrid);
-            const spatialHeight = Math.ceil(height / graph.spatialGrid);
-            const spatialAView = graph.spatialATexture.createView();
-            const spatialBView = graph.spatialBTexture.createView();
-            pass(spatialAView, pipelines.extract, bind(filmView, spatialBView), spatialWidth, spatialHeight, 0);
-            pass(spatialBView, pipelines.blurHorizontal, bind(filmView, spatialAView), spatialWidth, spatialHeight, 0);
-            pass(spatialAView, pipelines.blurVertical, bind(filmView, spatialBView), spatialWidth, spatialHeight, 0);
-            spatialResultView = graph.spatialATexture.createView();
-          }
-          pass(finishView, pipelines.finish, bind(filmView, spatialResultView), width, height);
+          this.encodeFilmChain(encoder, pipelines, graph, localSource.createView(),
+            (source, spatial, original) => bind(source, spatial, original), params, width, height);
         }
         // The finished tile is measured before it is composited, because the
         // composite encodes for the display and this has to read the picture.
@@ -4830,16 +4814,6 @@
       const detailCompositeBindGroup = detailActive
         ? makeBindGroup(intermediate.baseTexture.createView(), intermediate.detailBTexture.createView())
         : null;
-      const extractBindGroup = spatialActive
-        ? makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView())
-        : null;
-      const horizontalBindGroup = spatialActive
-        ? makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialATexture.createView())
-        : null;
-      const verticalBindGroup = spatialActive
-        ? makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView())
-        : null;
-      const finishBindGroup = makeBindGroup(intermediate.filmTexture.createView(), spatialAView);
       if (!intermediate.compositeParamBuffer
         || intermediate.compositeParamBuffer.size < Math.max(16, Math.ceil(params.byteLength / 4) * 4)) {
         intermediate.compositeParamBuffer?.destroy();
@@ -5057,69 +5031,9 @@
           localPass.end();
           localSource = target;
         }
-        const responseBindGroup = makeBindGroup(localSource.createView(), spatialAView);
-        const responsePass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: intermediate.filmTexture.createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            loadOp: "clear",
-            storeOp: "store",
-          }],
-        });
-        responsePass.setPipeline(pipelines.response);
-        responsePass.setBindGroup(0, responseBindGroup);
-        responsePass.draw(3);
-        responsePass.end();
-        if (spatialActive) {
-          const extractPass = encoder.beginRenderPass({
-            colorAttachments: [{
-              view: intermediate.spatialATexture.createView(),
-              clearValue: { r: 0, g: 0, b: 0, a: 0 },
-              loadOp: "clear",
-              storeOp: "store",
-            }],
-          });
-          extractPass.setPipeline(pipelines.extract);
-          extractPass.setBindGroup(0, extractBindGroup);
-          extractPass.draw(3);
-          extractPass.end();
-          const horizontalPass = encoder.beginRenderPass({
-            colorAttachments: [{
-              view: intermediate.spatialBTexture.createView(),
-              clearValue: { r: 0, g: 0, b: 0, a: 0 },
-              loadOp: "clear",
-              storeOp: "store",
-            }],
-          });
-          horizontalPass.setPipeline(pipelines.blurHorizontal);
-          horizontalPass.setBindGroup(0, horizontalBindGroup);
-          horizontalPass.draw(3);
-          horizontalPass.end();
-          const verticalPass = encoder.beginRenderPass({
-            colorAttachments: [{
-              view: intermediate.spatialATexture.createView(),
-              clearValue: { r: 0, g: 0, b: 0, a: 0 },
-              loadOp: "clear",
-              storeOp: "store",
-            }],
-          });
-          verticalPass.setPipeline(pipelines.blurVertical);
-          verticalPass.setBindGroup(0, verticalBindGroup);
-          verticalPass.draw(3);
-          verticalPass.end();
-        }
-        const finishPass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: intermediate.finishTexture.createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            loadOp: "clear",
-            storeOp: "store",
-          }],
-        });
-        finishPass.setPipeline(pipelines.finish);
-        finishPass.setBindGroup(0, finishBindGroup);
-        finishPass.draw(3);
-        finishPass.end();
+        this.encodeFilmChain(encoder, pipelines, intermediate, localSource.createView(),
+          (source, spatial, original) => makeBindGroup(source, spatial, this.paramBuffer, original),
+          params, proxy.width, proxy.height);
       }
       // A settled render splits here: the finished picture has to exist before
       // its peak can be measured, and the measured peak has to exist before the
@@ -6374,6 +6288,52 @@
       });
     }
 
+    encodeFilmChain(encoder, pipelines, graph, originalView, bind, params, width, height) {
+      const filmView = graph.filmTexture.createView();
+      const finishView = graph.finishTexture.createView();
+      const fallback = originalView;
+      const a = graph.spatialATexture?.createView() || fallback;
+      const b = graph.spatialBTexture?.createView() || fallback;
+      const pass = (view, pipeline, group, w = width, h = height) => {
+        const render = encoder.beginRenderPass({ colorAttachments: [{
+          view, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "store",
+        }] });
+        render.setViewport(0, 0, w, h, 0, 1);
+        render.setScissorRect(0, 0, w, h);
+        render.setPipeline(pipeline);
+        render.setBindGroup(0, group);
+        render.draw(3);
+        render.end();
+      };
+      const active = params[GPU_PARAMS.FILM_RESPONSE_ENABLED] >= 0.5 && params[GPU_PARAMS.FILM_LOOK_STRENGTH] > 0;
+      const bloom = active && params[GPU_PARAMS.BLOOM_ENABLED] > 0.5 && params[GPU_PARAMS.BLOOM_AMOUNT] > 0;
+      const halation = active && params[GPU_PARAMS.HALATION_ENABLED] > 0.5;
+      const scatter = active && params[GPU_PARAMS.FILM_RESOLUTION] < 1;
+      const spatial = () => {
+        const grid = graph.spatialGrid || spatialGridScale(width, height);
+        const sw = Math.ceil(width / grid), sh = Math.ceil(height / grid);
+        pass(a, pipelines.extract, bind(filmView, b, originalView), sw, sh);
+        pass(b, pipelines.blurHorizontal, bind(filmView, a, originalView), sw, sh);
+        pass(a, pipelines.blurVertical, bind(filmView, b, originalView), sw, sh);
+      };
+      pass(filmView, pipelines.response, bind(originalView, fallback, originalView));
+      if (bloom || scatter) {
+        if (bloom) spatial();
+        pass(finishView, pipelines.lens, bind(filmView, a, originalView));
+        pass(filmView, pipelines.scatter, bind(finishView, a, originalView));
+      }
+      if (halation) spatial();
+      pass(finishView, pipelines.finish, bind(filmView, a, originalView));
+      const structure = params[GPU_PARAMS.STRUCTURE_ENABLED] > 0.5
+        && (Math.abs(params[GPU_PARAMS.STRUCTURE_SOFTNESS]) > 0.000001 || Math.abs(params[GPU_PARAMS.STRUCTURE_MICROCONTRAST]) > 0.000001);
+      const map = active && ((halation && params[GPU_PARAMS.HALATION_VIEW_MAP] > 0.5)
+        || (params[GPU_PARAMS.GRAIN_ENABLED] > 0.5 && params[GPU_PARAMS.GRAIN_VIEW_MAP] > 0.5));
+      if (structure && !map) {
+        pass(filmView, pipelines.structure, bind(finishView, fallback, originalView));
+        pass(finishView, pipelines.response, bind(filmView, fallback, originalView));
+      }
+    }
+
     pipelineFor(format) {
       if (this.pipelines.has(format)) return this.pipelines.get(format);
       const base = this.device.createRenderPipeline({
@@ -6515,6 +6475,12 @@
           fragment: { module: this.module, entryPoint: "peakCandidateLocalFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         }),
+        ...Object.fromEntries(["lens", "scatter", "structure"].map((name) => [name, this.device.createRenderPipeline({
+          layout: this.pipelineLayout,
+          vertex: { module: this.module, entryPoint: "vertexMain" },
+          fragment: { module: this.module, entryPoint: `${name}FragmentMain`, targets: [{ format: "rgba16float" }] },
+          primitive: { topology: "triangle-list" },
+        })])),
         base,
         finish,
         scopePeakTile,

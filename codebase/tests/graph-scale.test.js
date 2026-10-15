@@ -273,9 +273,13 @@ test("the spatial grid keeps the default halation glow at two texels or more", (
 test("the spatial reach is anchored to the quarter-resolution grid and capped", () => {
   const maxed = activeParams({ 95: 100, 88: 100 });
   const detail = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, maxed);
-  // The shader caps `spatialBlur` at 64 quarter-resolution texels; the halo
-  // reserves exactly that, converted back to full resolution.
-  assert.equal(detail.blurTexels, 64);
+  // Each blur retains its cap of 64 quarter-resolution texels. Lens and
+  // halation now run in sequence, so their reaches add instead of competing.
+  assert.equal(detail.blurTexels, 128);
+  const lensOnly = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 95: 100, 85: 0 }));
+  const haloOnly = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 88: 100, 92: 0 }));
+  assert.equal(lensOnly.blurTexels, 64);
+  assert.equal(haloOnly.blurTexels, 64);
   assert.equal(Scale.spatialReach(NATIVE.width, NATIVE.height, maxed) % Scale.SPATIAL_SCALE, 0);
   // The full-resolution reads are capped too: halation's edge source at 16,
   // the structure blur at 24, the film-resolution blur at 32.
@@ -286,7 +290,7 @@ test("the spatial reach is anchored to the quarter-resolution grid and capped", 
   // The bloom reach is monotone in its radius up to the cap.
   const small = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 95: 0.5 }));
   const larger = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 95: 2 }));
-  assert.ok(small.blurTexels < larger.blurTexels && larger.blurTexels <= 64);
+  assert.ok(small.blurTexels < larger.blurTexels && larger.blurTexels <= 128);
 });
 
 test("the composed reach composes Detail and the film stage, and rounds to the grid", () => {

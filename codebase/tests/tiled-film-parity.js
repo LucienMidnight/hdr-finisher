@@ -243,6 +243,16 @@ const MAX_CHANNEL_DELTA = 0;
     await configure();
     for (const tileSize of tileSizes) await parityPass("vignette+grain", tileSize);
 
+    // Negative and slide densities both carry the frame-placed grain field.
+    await page.evaluate(async () => {
+      await Promise.all(["kodak_portra_400", "fujifilm_velvia_100"].map(id => window.HDRFilmStocks.request(id)));
+    });
+    for (const stock of ["kodak_portra_400", "fujifilm_velvia_100"]) {
+      await configure({ film_stock: stock, look_strength: 50 });
+      for (const tileSize of tileSizes) await parityPass(stock, tileSize);
+    }
+    await configure({ film_stock: "none", look_strength: 100 });
+
     // 4 -- the spatial film effects. Halation and bloom are separable blurs on
     // the quarter-resolution grid, so this is where a tile whose grid is offset
     // from the frame's, or whose halo is short, shows a seam at every boundary.
@@ -251,8 +261,8 @@ const MAX_CHANNEL_DELTA = 0;
       detail_softness: 25, detail_microcontrast: 30, film_resolution: 82 });
     for (const tileSize of tileSizes) await parityPass("spatial", tileSize);
 
-    // 5 -- the same at the largest radii either effect can be asked for, where
-    // the halo is at its 64-texel cap and largest relative to the tile.
+    // 5 -- the same at the largest radii either effect can be asked for. Each
+    // blur reaches its 64-texel cap; sequential support adds in the tile halo.
     await configure({ halation_amount: 100, halation_radius: 5.0, halation_sensitivity: 100,
       bloom_amount: 100, bloom_radius: 10.0,
       detail_softness: 100, detail_microcontrast: 100, film_resolution: 0 });
