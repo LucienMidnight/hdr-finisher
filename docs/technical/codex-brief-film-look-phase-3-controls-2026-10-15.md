@@ -152,3 +152,29 @@ sharpening default, anything odd), each with what you chose and the alternative.
 It points to the same documents, says what Phase 3 left in place and anything
 unfinished, lists open questions that affect it, and asks for the same
 three-part ending.
+
+## Addendum, October 15, 2026: Fit grain decision
+
+Codex stopped Phase 3 at the grain follow-up: with reduced processing at Fit,
+preview grain is about 30% stronger than the CPU export downsized to the same
+size; at 100% they agree (PRD section 5.3).
+
+**Steve's decision: the export is the truth; fix the preview.** A downsized scan
+of grained film really does have finer, weaker grain, so the full-resolution
+export, downsized, is the reference. When the preview processes at a reduced
+size, its grain must look like the native-resolution grain averaged down to that
+size: the same strength, and as close a texture as is practical. 100% stays as
+it is.
+
+- Applies to the GPU preview (Direct and Tiled) and the CPU preview fallback.
+  Export and Proof do not change.
+- Do not go back to drawing grain after resizing: grain stays in the film density
+  (Phase 2).
+- Turn the read-only diagnostic into a pass/fail check: reduced Fit preview
+  against the downsized export, on flat grey and on the patch image, at the
+  actual automatic Fit size and at half size, for 35mm and Super 8, in SDR and
+  HDR. Choose a tolerance from what is visible, explain it, and do not loosen it
+  later to get a pass.
+- Report the speed cost in one line, if any.
+
+Then carry on with the rest of Phase 3 as briefed.
