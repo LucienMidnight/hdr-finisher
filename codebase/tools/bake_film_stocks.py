@@ -15,7 +15,7 @@ its target print paper, switches off everything spatial or random (grain,
 halation, diffusion, blur, unsharp mask, coupler diffusion), turns off auto
 exposure, uses the 'mallett2019' RGB-to-film-exposure method (linear in RGB),
 and then samples spektrafilm's own functions into the tables described in the
-"hdr-finisher-film-stock/1" format:
+"hdr-finisher-film-stock/2" format:
 
     input_matrix           linear sRGB -> film layer exposure (3x3)
     film_curves_plain      film density curves, minimum subtracted
@@ -34,6 +34,12 @@ and then samples spektrafilm's own functions into the tables described in the
                            0.03 % of the viewing white); no gamut compression,
                            no clipping, no transfer function
 
+Slide films store no print stage: positive-film DIR couplers use silver
+(maximum minus dye density), and scan_table maps film density directly to RGB.
+Small JSON manifests refer to content-addressed arrays/*.npz (compressed
+little-endian float32). Identical arrays are shared across stocks and papers.
+The API expands these arrays for the existing WebGPU loader.
+
 The data in the resulting files is derived from spektrafilm's stock profiles,
 which are licensed CC BY-SA 4.0 by Andrea Volpato. See
 backend/hdr_finisher/film_stocks/CHANGELOG.txt.
@@ -42,28 +48,23 @@ backend/hdr_finisher/film_stocks/CHANGELOG.txt.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import shutil
+import subprocess
 import sys
 import types
 from pathlib import Path
 
 import numpy as np
 
-FORMAT = "hdr-finisher-film-stock/1"
+FORMAT = "hdr-finisher-film-stock/2"
+SOURCE_REVISION = "3bb2c2d2801ff68b92019cf1dbcbb133d60832bc"
 ATTRIBUTION = (
     "Derived from spektrafilm by Andrea Volpato, https://github.com/andreavolpato/spektrafilm, "
     "licensed CC BY-SA 4.0. Modified (re-sampled into HDR Finisher tables) by the HDR Finisher project."
 )
-STOCKS = {
-    "kodak_portra_400": "Kodak Portra 400",
-    "kodak_portra_160": "Kodak Portra 160",
-    "kodak_portra_800": "Kodak Portra 800",
-    "kodak_ektar_100": "Kodak Ektar 100",
-    "kodak_gold_200": "Kodak Gold 200",
-    "fujifilm_pro_400h": "Fujifilm Pro 400H",
-}
 TABLE_SIZE = 33
 CURVE_SAMPLES = 256
 FILTER_SHIFT_CC = 20.0  # enlarger filter shift (Kodak CC) at a full-scale warmth / tint slider
@@ -99,7 +100,7 @@ def setup_spektrafilm(clone: Path) -> None:
         sys.path.insert(0, src)
 
 
-def build_params(film_profile: str, *, rgb_to_raw_method: str = "mallett2019",
+def build_params(film_profile: str, *, paper: str | None = None, rgb_to_raw_method: str = "mallett2019",
                  preflash: float = 0.0, y_filter_shift: float = 0.0, m_filter_shift: float = 0.0,
                  output_gamut_compress: bool = False):
     """spektrafilm default params for the stock + its target print, deterministic and non-spatial."""
@@ -107,8 +108,12 @@ def build_params(film_profile: str, *, rgb_to_raw_method: str = "mallett2019",
     from spektrafilm.runtime.params_builder import init_params
     from spektrafilm.utils.gamut_compression import OutputGamutCompressSpec
 
-    print_profile = load_profile(film_profile).info.target_print
+    profile = load_profile(film_profile)
+    print_profile = paper or profile.info.target_print or "kodak_portra_endura"
+    # The upstream parameter object requires a print profile even when its
+    # scan_film pipeline bypasses printing entirely. No dummy paper is baked.
     params = init_params(film_profile=film_profile, print_profile=print_profile)
+    params.io.scan_film = profile.info.type == "positive"
     params.camera.auto_exposure = False
     params.camera.exposure_compensation_ev = 0.0
     params.film_render.grain.active = False
@@ -151,16 +156,15 @@ def _r(values) -> list:
     return np.array(flat).reshape(arr.shape).tolist()
 
 
-def bake_stock(stock_id: str) -> dict:
+def bake_stock(stock_id: str, paper: str | None = None) -> dict:
     from spektrafilm.model.couplers import compute_density_curves_before_dir_couplers, compute_dir_couplers_matrix
     from spektrafilm.model.illuminants import standard_illuminant
     from spektrafilm.utils.morph_curves import apply_print_curves_morph
 
-    pipe = build_pipeline(build_params(stock_id))
+    pipe = build_pipeline(build_params(stock_id, paper=paper))
     film, prt = pipe.film, pipe.print
-    if film.info.type != "negative" or prt.info.type != "negative":
-        raise ValueError(f"{stock_id}: only negative film on negative paper is supported by format 1")
-    fstage, pstage, sstage = pipe._filming_stage, pipe._printing_stage, pipe._scanning_stage
+    positive = film.info.type == "positive"
+    fstage, pstage = pipe._filming_stage, pipe._printing_stage
     cref = pipe._color_reference_service
 
     # 1. Linear sRGB -> film raw exposure. mallett2019 is linear in RGB, so
@@ -180,8 +184,33 @@ def bake_stock(stock_id: str) -> dict:
     curves_plain = curves - np.nanmin(curves, axis=0)
     dirc = pipe.film_render.dir_couplers
     coupler_matrix = compute_dir_couplers_matrix(dirc) * dirc.amount if dirc.active else np.zeros((3, 3))
-    curves_corrected = (compute_density_curves_before_dir_couplers(curves_plain, log_exposure, coupler_matrix, positive=False)
+    curves_corrected = (compute_density_curves_before_dir_couplers(curves_plain, log_exposure, coupler_matrix, positive=positive)
                         if dirc.active else curves_plain.copy())
+
+    metadata = {
+        "type": "slide" if positive else "negative",
+        "use": film.info.use,
+        "antihalation": film.info.antihalation,
+        "default_paper": film.info.target_print,
+        "source_revision": SOURCE_REVISION,
+    }
+    common = {
+        "format": FORMAT, "id": stock_id, "name": film.info.name,
+        "film_profile": stock_id, "attribution": ATTRIBUTION, **metadata,
+        "input_matrix": _r(input_matrix),
+        "film_log_exposure_range": _r([log_exposure[0], log_exposure[-1]]),
+        "film_curves_plain": _r(curves_plain), "film_curves_corrected": _r(curves_corrected),
+        "coupler_matrix": _r(coupler_matrix), "coupler_high_exposure_shift": 0.0,
+        "film_density_max": _r(np.nanmax(curves_plain, axis=0)),
+    }
+    if positive:
+        common.update({
+            "print_profile": None,
+            "scan_table": {"size": TABLE_SIZE, "domain_min": [0.0]*3,
+                           "domain_max": common["film_density_max"],
+                           "values": _r(scan_density_to_rgb(pipe, _grid(np.zeros(3), np.nanmax(curves_plain, axis=0), TABLE_SIZE))[0].ravel())},
+        })
+        return common
 
     # 3. Film density -> print log raw (spectral enlarger, neutral filters,
     #    mid-grey normalisation). Preflash is kept out of the table.
@@ -210,7 +239,7 @@ def bake_stock(stock_id: str) -> dict:
     filter_shifts = {}
     for key, kwargs in (("warmth", {"y_filter_shift": -FILTER_SHIFT_CC}),
                         ("tint", {"m_filter_shift": -FILTER_SHIFT_CC})):
-        shifted = build_pipeline(build_params(stock_id, **kwargs))
+        shifted = build_pipeline(build_params(stock_id, paper=paper, **kwargs))
         shifted.enlarger.preflash_exposure = 0.0
         filter_shifts[key] = shifted._printing_stage._film_cmy_to_print_log_raw(grey_density)[0, 0] - base_log_raw
 
@@ -229,7 +258,9 @@ def bake_stock(stock_id: str) -> dict:
     return {
         "format": FORMAT,
         "id": stock_id,
-        "name": STOCKS[stock_id],
+        "name": film.info.name,
+        **metadata,
+        "film_density_max": common["film_density_max"],
         "film_profile": stock_id,
         "print_profile": prt.info.stock,
         "attribution": ATTRIBUTION,
@@ -272,24 +303,62 @@ def scan_density_to_rgb(pipe, density):
 
 
 def write_stock(data: dict, out_dir: Path) -> Path:
-    path = out_dir / f"{data['id']}.json"
-    text = json.dumps(data, separators=(",", ":"), ensure_ascii=True)
-    path.write_bytes((text + "\n").encode("utf-8"))
+    """Small JSON manifests + shared, compressed little-endian float32 arrays.
+
+    Content addressing shares film curves across papers and scanner tables
+    across stocks. CPU and GPU both consume these exact float32 values.
+    """
+    def compact(value):
+        if isinstance(value, dict):
+            return {key: compact(item) for key, item in value.items()}
+        if isinstance(value, list) and np.asarray(value).size >= CURVE_SAMPLES:
+            array = np.asarray(value, dtype="<f4")
+            digest = hashlib.sha256(str(array.shape).encode() + array.tobytes()).hexdigest()
+            target = out_dir / "arrays" / f"{digest}.npz"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if not target.exists():
+                np.savez_compressed(target, values=array)
+            return {"array": digest}
+        return value
+    suffix = "" if data["print_profile"] == data["default_paper"] else "__" + data["print_profile"]
+    path = out_dir / f"{data['id']}{suffix}.json"
+    payload = compact(data)
+    payload["storage"] = "hdr-finisher-film-arrays/1"
+    path.write_bytes((json.dumps(payload, separators=(",", ":")) + "\n").encode())
     return path
+
+
+def camera_profiles(clone: Path) -> dict:
+    profiles = {}
+    for path in sorted((clone / "src/spektrafilm/data/profiles").glob("*.json")):
+        info = json.loads(path.read_text())["info"]
+        if info["stage"] == "filming":
+            profiles[path.stem] = info
+    return profiles
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bake HDR Finisher film-stock tables from a spektrafilm clone.")
     parser.add_argument("spektrafilm", type=Path, help="path to the spektrafilm clone (folder with src/)")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output folder (default: backend/hdr_finisher/film_stocks)")
-    parser.add_argument("--stock", action="append", choices=sorted(STOCKS), help="bake only this stock (repeatable)")
+    parser.add_argument("--stock", action="append", help="bake only this stock (repeatable)")
     args = parser.parse_args()
 
+    revision = subprocess.check_output(
+        ["git", "-c", f"safe.directory={args.spektrafilm.resolve().as_posix()}",
+         "-C", str(args.spektrafilm), "rev-parse", "HEAD"], text=True,
+    ).strip()
+    if revision != SOURCE_REVISION:
+        parser.error(f"Expected spektrafilm {SOURCE_REVISION}; found {revision}. Review the source before changing the pin.")
     setup_spektrafilm(args.spektrafilm)
     args.out.mkdir(parents=True, exist_ok=True)
-    for stock_id in args.stock or list(STOCKS):
-        path = write_stock(bake_stock(stock_id), args.out)
-        print(f"wrote {path}")
+    profiles = camera_profiles(args.spektrafilm)
+    for stock_id in args.stock or list(profiles):
+        info = profiles[stock_id]
+        papers = list(dict.fromkeys([info["target_print"], "kodak_2383", "fujifilm_crystal_archive_typeii"])) if info["type"] == "negative" else [None]
+        for paper in papers:
+            path = write_stock(bake_stock(stock_id, paper), args.out)
+            print(f"wrote {path}", flush=True)
     license_src = Path(args.spektrafilm) / "SPEKTRAFILM_LICENSE.txt"
     shutil.copyfile(license_src, args.out / "SPEKTRAFILM_LICENSE.txt")
     print(f"copied {license_src.name}")
