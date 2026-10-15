@@ -27,6 +27,10 @@ const NEUTRAL = {
   stock_print_warmth: 0, stock_print_tint: 0, stock_preflash: 0,
 };
 const CASES = [
+  { label: "C200 full", stock: { film_stock: "fujifilm_c200" } },
+  { label: "Vision3 500T full", stock: { film_stock: "kodak_vision3_500t" } },
+  { label: "Velvia 100 full", stock: { film_stock: "fujifilm_velvia_100" } },
+  { label: "Velvia sliders", stock: { film_stock: "fujifilm_velvia_100", stock_exposure: 0.7, stock_separation: 40 } },
   { label: "Portra 400 full", stock: { film_stock: "kodak_portra_400" } },
   { label: "Portra 400 color", stock: { film_stock: "kodak_portra_400", stock_tone: 0 } },
   { label: "Portra 400 tone", stock: { film_stock: "kodak_portra_400", stock_color: 0 } },

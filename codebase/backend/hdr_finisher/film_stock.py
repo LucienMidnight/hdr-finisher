@@ -1,8 +1,8 @@
 """Film stock colour and tone from baked manufacturer data.
 
 A stock file (``film_stocks/<id>.json``, baked offline by
-``tools/bake_film_stocks.py``) holds the curves and tables of one negative
-stock and its print paper. ``render_film_stock`` runs the chain F described in
+``tools/bake_film_stocks.py``) references shared compressed float32 arrays
+for a camera stock and its print paper, or a directly scanned slide. ``render_film_stock`` runs the chain F described in
 the Film Stock spec: linear sRGB -> film layer exposure -> film density (two
 passes for the DIR couplers) -> print exposure -> print density -> linear
 sRGB. Everything is per pixel, so strips and tiles render it exactly.
@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import math
+import re
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -24,15 +25,29 @@ from typing import Any
 import numpy as np
 
 
-FILM_STOCK_FORMAT = "hdr-finisher-film-stock/1"
+FILM_STOCK_FORMAT = "hdr-finisher-film-stock/2"
 FILM_STOCK_DIR = Path(__file__).resolve().with_name("film_stocks")
 FILM_STOCK_IDS = (
-    "kodak_portra_400",
-    "kodak_portra_160",
-    "kodak_portra_800",
-    "kodak_ektar_100",
-    "kodak_gold_200",
-    "fujifilm_pro_400h",
+    'kodak_portra_400',
+    'kodak_portra_160',
+    'kodak_portra_800',
+    'kodak_ektar_100',
+    'kodak_gold_200',
+    'fujifilm_pro_400h',
+    'fujifilm_c200',
+    'fujifilm_provia_100f',
+    'fujifilm_velvia_100',
+    'fujifilm_xtra_400',
+    'kodak_ektachrome_100',
+    'kodak_kodachrome_64',
+    'kodak_portra_800_push1',
+    'kodak_portra_800_push2',
+    'kodak_ultramax_400',
+    'kodak_verita_200d',
+    'kodak_vision3_200t',
+    'kodak_vision3_250d',
+    'kodak_vision3_500t',
+    'kodak_vision3_50d',
 )
 CURVE_SAMPLES = 256
 LOG_EPSILON = np.float32(1e-10)
@@ -57,6 +72,13 @@ class FilmStock:
     id: str
     name: str
     attribution: str
+    type: str
+    use: str
+    antihalation: str
+    default_paper: str | None
+    film_profile: str
+    print_profile: str | None
+    film_density_max: np.ndarray
     input_matrix: np.ndarray
     film_range: tuple[np.float32, np.float32]
     film_curves_plain: np.ndarray
@@ -91,17 +113,43 @@ _cache: dict[tuple[str, str], FilmStock] = {}
 _cache_lock = Lock()
 
 
-def film_stock_path(stock_id: str) -> Path | None:
+def film_stock_path(stock_id: str, paper: str | None = None) -> Path | None:
     """Return the data file for a known stock id, or None when there is none."""
     if stock_id not in FILM_STOCK_IDS:
         return None
+    if paper is not None and paper not in ("kodak_portra_endura", "kodak_2383", "fujifilm_crystal_archive_typeii"):
+        return None
     path = FILM_STOCK_DIR / f"{stock_id}.json"
+    if paper is not None and path.is_file():
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+        if metadata.get("type") == "slide":
+            return None
+        if paper != metadata.get("default_paper"):
+            path = FILM_STOCK_DIR / f"{stock_id}__{paper}.json"
     return path if path.is_file() else None
 
 
-def load_film_stock(stock_id: str) -> FilmStock | None:
+def read_film_stock_payload(path: Path) -> dict:
+    """Expand trusted manifests; arrays are shared compressed float32 NPZs."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.pop("storage", None) != "hdr-finisher-film-arrays/1":
+        raise FilmStockError("Unsupported film array storage format.")
+    def expand(value):
+        if isinstance(value, dict) and set(value) == {"array"}:
+            digest = value["array"]
+            if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+                raise FilmStockError("Invalid film array reference.")
+            with np.load(path.parent / "arrays" / f"{digest}.npz", allow_pickle=False) as archive:
+                return archive["values"].tolist()
+        if isinstance(value, dict):
+            return {key: expand(item) for key, item in value.items()}
+        return value
+    return expand(payload)
+
+
+def load_film_stock(stock_id: str, paper: str | None = None) -> FilmStock | None:
     """Load and cache a stock. Unknown ids and missing files return None."""
-    path = film_stock_path(stock_id)
+    path = film_stock_path(stock_id, paper)
     if path is None:
         return None
     key = (str(path), stock_id)
@@ -109,8 +157,7 @@ def load_film_stock(stock_id: str) -> FilmStock | None:
         cached = _cache.get(key)
     if cached is not None:
         return cached
-    with path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
+    payload = read_film_stock_payload(path)
     stock = parse_film_stock(payload, stock_id)
     with _cache_lock:
         _cache[key] = stock
@@ -188,11 +235,24 @@ def parse_film_stock(payload: dict[str, Any], stock_id: str | None = None) -> Fi
     identifier = str(payload.get("id", ""))
     if stock_id is not None and identifier != stock_id:
         raise FilmStockError(f"Film stock file for '{stock_id}' names '{identifier}'.")
+    if payload.get("type") == "slide":
+        # Unused print fields keep the common CPU/GPU slot layout; slides
+        # return from _print_and_scan before evaluating any print operation.
+        payload = {**payload, "print_table": payload["scan_table"],
+                   "preflash_raw": [0]*3, "print_warmth_log_shift": [0]*3, "print_tint_log_shift": [0]*3,
+                   "print_log_exposure_range": [0, 1], "print_curves": [[0]*3]*CURVE_SAMPLES}
     curve_shape = (CURVE_SAMPLES, 3)
     return FilmStock(
         id=identifier,
         name=str(payload.get("name", identifier)),
         attribution=str(payload.get("attribution", "")),
+        type=str(payload.get("type", "negative")),
+        use=str(payload.get("use", "still")),
+        antihalation=str(payload.get("antihalation", "strong")),
+        default_paper=payload.get("default_paper"),
+        film_profile=str(payload.get("film_profile", identifier)),
+        print_profile=payload.get("print_profile"),
+        film_density_max=_array(payload, "film_density_max", (3,)) if payload.get("type") == "slide" else np.zeros(3, dtype=np.float32),
         input_matrix=_array(payload, "input_matrix", (3, 3)),
         film_range=_range(payload, "film_log_exposure_range"),
         film_curves_plain=np.ascontiguousarray(_array(payload, "film_curves_plain", curve_shape)),
@@ -269,6 +329,8 @@ def _film_density(stock: FilmStock, exposure: np.ndarray) -> np.ndarray:
     """Film layer exposure (linear, n x 3) -> developed film density."""
     log_exposure = np.log10(exposure + LOG_EPSILON)
     first = _curve(log_exposure, stock.film_curves_plain, stock.film_range)
+    if stock.type == "slide":
+        first = stock.film_density_max - first
     shifted = first + stock.coupler_high_exposure_shift * first * first
     corrected = log_exposure - shifted @ stock.coupler_matrix
     return _curve(corrected, stock.film_curves_corrected, stock.film_range)
@@ -276,6 +338,8 @@ def _film_density(stock: FilmStock, exposure: np.ndarray) -> np.ndarray:
 
 def _print_and_scan(stock: FilmStock, density: np.ndarray, parameters: StockParameters) -> np.ndarray:
     """Film density -> print -> scanned linear sRGB."""
+    if stock.type == "slide":
+        return _lookup_table(density, stock.scan_table)
     print_log = _lookup_table(density, stock.print_table)
     if parameters.warmth != 0.0 or parameters.tint != 0.0:
         # Enlarger filter shift, main exposure only (not the preflash).

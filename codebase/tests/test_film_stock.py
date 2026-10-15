@@ -82,7 +82,7 @@ def stock_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     def install(payload: dict[str, object]) -> Path:
         directory = tmp_path / f"stocks{len(list(tmp_path.iterdir()))}"
         directory.mkdir()
-        (directory / f"{payload['id']}.json").write_text(json.dumps(payload), encoding="utf-8")
+        (directory / f"{payload['id']}.json").write_text(json.dumps({**payload, "storage": "hdr-finisher-film-arrays/1"}), encoding="utf-8")
         monkeypatch.setattr(film_stock_module, "FILM_STOCK_DIR", directory)
         return directory
 
@@ -308,7 +308,7 @@ def _real_portra() -> object:
     if not (REAL_STOCK_DIR / "kodak_portra_400.json").is_file():
         pytest.skip("kodak_portra_400.json has not been baked yet")
     return film_stock_module.parse_film_stock(
-        json.loads((REAL_STOCK_DIR / "kodak_portra_400.json").read_text(encoding="utf-8")), "kodak_portra_400"
+        film_stock_module.read_film_stock_payload(REAL_STOCK_DIR / "kodak_portra_400.json"), "kodak_portra_400"
     )
 
 
@@ -339,3 +339,74 @@ def test_real_portra_400_meets_both_lanes_at_the_same_exposure(monkeypatch) -> N
     sdr_out = _stage(sdr, look, PreviewKind.SDR)
     hdr_out = _stage(hdr, look, PreviewKind.HDR)
     np.testing.assert_allclose(adjustments_module.acescg_to_linear_srgb(hdr_out) * scale, sdr_out, rtol=2e-3, atol=1e-5)
+
+
+@pytest.mark.parametrize("stock_id", film_stock_module.FILM_STOCK_IDS)
+def test_shipped_stock_metadata_and_all_requested_papers(stock_id, monkeypatch):
+    monkeypatch.setattr(film_stock_module, "FILM_STOCK_DIR", REAL_STOCK_DIR)
+    stock = load_film_stock(stock_id)
+    assert stock is not None
+    assert stock.film_profile == stock_id
+    assert stock.type in ("negative", "slide")
+    assert stock.use in ("still", "cine")
+    assert stock.antihalation in ("strong", "weak", "none")
+    rgb = np.random.default_rng(8).uniform(0, 2, (49, 3)).astype(np.float32)
+    params = stock_parameters(FilmLookAdjustments(film_stock=stock_id, stock_separation=40))
+    papers = (None,) if stock.type == "slide" else (stock.default_paper, "kodak_2383", "fujifilm_crystal_archive_typeii")
+    for paper in papers:
+        variant = load_film_stock(stock_id, paper)
+        assert variant is not None
+        assert variant.print_profile == paper
+        whole = render_film_stock(variant, rgb, params)
+        assert np.isfinite(whole).all()
+        strips = np.concatenate([render_film_stock(variant, rgb[:23], params), render_film_stock(variant, rgb[23:], params)])
+        np.testing.assert_array_equal(whole, strips)
+    if stock.type == "slide":
+        assert stock.default_paper is None
+        assert load_film_stock(stock_id, "kodak_2383") is None
+        shifted = stock_parameters(FilmLookAdjustments(film_stock=stock_id, stock_separation=40, stock_preflash=100, stock_print_warmth=100, stock_print_tint=-100))
+        np.testing.assert_array_equal(render_film_stock(stock, rgb, params), render_film_stock(stock, rgb, shifted))
+
+
+def test_hidden_paper_api_and_cache_are_separate(monkeypatch):
+    monkeypatch.setattr(film_stock_module, "FILM_STOCK_DIR", REAL_STOCK_DIR)
+    default = load_film_stock("kodak_portra_400")
+    cinema = load_film_stock("kodak_portra_400", "kodak_2383")
+    assert default is not cinema
+    assert cinema.print_profile == "kodak_2383"
+    client = TestClient(app)
+    response = client.get("/api/film-stocks/kodak_portra_400?paper=kodak_2383")
+    assert response.status_code == 200
+    assert response.json()["print_profile"] == "kodak_2383"
+    for paper in ("../models", "kodak_ultra_endura", "nope"):
+        assert client.get("/api/film-stocks/kodak_portra_400", params={"paper": paper}).status_code == 404
+
+
+def test_compact_array_reference_cannot_escape_data_directory(tmp_path):
+    path = tmp_path / "invalid.json"
+    path.write_text(json.dumps({"storage": "hdr-finisher-film-arrays/1", "scan_table": {"array": "../secret"}}))
+    with pytest.raises(FilmStockError):
+        film_stock_module.read_film_stock_payload(path)
+
+
+# These hashes cover every original float32 number in the six shipped v1
+# tables, before the rebuild. Metadata and storage changes are excluded.
+ORIGINAL_NUMERIC_HASHES = {'kodak_portra_400': '1cbce684160e8f541f6060cc0bffbee47c57a67500a91bd7a53ee76af097134f', 'kodak_portra_160': 'c5848b7436e10eca8a7930ba7ff62808ff5218daebc1878213b76cd6d8ab69c6', 'kodak_portra_800': '720bd86fe593a112a4b23a4ea76c636bad48212eda333096296c8163936a6d31', 'kodak_ektar_100': '98371d827b03d81722a0afef2e8fbaa0daca3f10535093fe4f18f1d15211909b', 'kodak_gold_200': '3c4e7e9eb03cfe22fc2bb2e3af94ef9f941907566a78d297d7a524d15f350a71', 'fujifilm_pro_400h': '2409e9aaa9737286884c9f1e392ab7bbae4740868e0a41e7a804fa07eb59410f'}
+
+
+@pytest.mark.parametrize("stock_id, expected", ORIGINAL_NUMERIC_HASHES.items())
+def test_original_six_keep_every_rendering_number(stock_id, expected):
+    import hashlib
+    payload = film_stock_module.read_film_stock_payload(REAL_STOCK_DIR / f"{stock_id}.json")
+    parts = []
+    def numeric(value):
+        if isinstance(value, dict):
+            for key in sorted(value):
+                if key != "film_density_max":
+                    numeric(value[key])
+        elif isinstance(value, list):
+            parts.append(np.asarray(value, dtype="<f4").tobytes())
+        elif isinstance(value, (float, int)):
+            parts.append(np.asarray(value, dtype="<f4").tobytes())
+    numeric(payload)
+    assert hashlib.sha256(b"".join(parts)).hexdigest() == expected

@@ -47,3 +47,37 @@ codebase/tools/bake_film_stocks.py. Checked against spektrafilm's own
 simulation with the same settings: mean difference under 0.12 8-bit sRGB
 code values, maximum 1 code value, on a ColorChecker, a grey ramp and random
 colours, for all six stocks.
+
+Phase 1 expansion (2026-10-15, format "hdr-finisher-film-stock/2")
+----------------------------------------------------------------
+Same spektrafilm source revision as above. Camera profiles added:
+fujifilm_c200, fujifilm_xtra_400, kodak_ultramax_400,
+kodak_portra_800_push1, kodak_portra_800_push2, kodak_verita_200d,
+kodak_vision3_50d, kodak_vision3_200t, kodak_vision3_250d,
+kodak_vision3_500t, fujifilm_velvia_100, fujifilm_provia_100f,
+kodak_ektachrome_100, kodak_kodachrome_64.
+All 16 negative films have their own target_print plus kodak_2383 and
+fujifilm_crystal_archive_typeii, omitting duplicate pairs (40 negative
+combinations). The four positive films are directly scanned, without print
+curves or print glare. Their DIR couplers use maximum density minus dye
+density, matching spektrafilm's positive-film silver-density calculation.
+Profiles' names, use, antihalation, target_print and source revision are
+recorded in the manifests. Positive is labelled slide. No grain defaults
+or other estimated per-stock physical values were added.
+
+The same 7-significant-digit samples are stored as little-endian float32.
+Small JSON manifests tagged storage "hdr-finisher-film-arrays/1" reference
+arrays/<sha256>.npz. Each NPZ contains a single compressed "values" array;
+the hash covers its shape string and little-endian float32 bytes. Identical
+arrays are shared across stocks and papers. Both rendering paths consume
+the same expanded values. All original six stocks' rendering numbers are
+unchanged as float32, guarded by regression hashes. The default manifest
+is <stock>.json; alternatives use <stock>__<paper>.json. Slide manifests
+have null print_profile and default_paper, with no print-stage data.
+
+The existing 33x33x33 interpolation remains an approximation of the full
+spectral model, particularly for saturated colours. Preview/export parity
+is a separate check; its original tolerances are unchanged. See Film Look
+PRD section 5.1 for the source-comparison probe and open paper recommendation.
+The CC BY-SA 4.0 attribution, source link and license above apply to all
+new manifests and shared arrays as well as the original six stocks.

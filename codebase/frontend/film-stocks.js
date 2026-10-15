@@ -3,8 +3,8 @@
 
   // Film stock data for the WebGPU film pass.
   //
-  // Each stock's baked tables (backend/hdr_finisher/film_stocks/<id>.json,
-  // served by GET /api/film-stocks/<id>) are fetched once and packed into one
+  // Each stock's manifest and shared compressed float32 arrays
+  // (expanded by GET /api/film-stocks/<id>) are fetched once and packed into one
   // fixed-size slot of floats. The renderer copies loaded slots into a single
   // storage buffer, and the film pass finds a lane's stock by its slot number
   // (FILM_STOCK_SLOT, 0 while the data has not arrived). The shader's chain
@@ -18,15 +18,43 @@
     "kodak_ektar_100",
     "kodak_gold_200",
     "fujifilm_pro_400h",
-  ]);
+    "fujifilm_c200",
+    "fujifilm_provia_100f",
+    "fujifilm_velvia_100",
+    "fujifilm_xtra_400",
+    "kodak_ektachrome_100",
+    "kodak_kodachrome_64",
+    "kodak_portra_800_push1",
+    "kodak_portra_800_push2",
+    "kodak_ultramax_400",
+    "kodak_verita_200d",
+    "kodak_vision3_200t",
+    "kodak_vision3_250d",
+    "kodak_vision3_500t",
+    "kodak_vision3_50d"
+]);
   const NAMES = Object.freeze({
-    kodak_portra_400: "Kodak Portra 400",
-    kodak_portra_160: "Kodak Portra 160",
-    kodak_portra_800: "Kodak Portra 800",
-    kodak_ektar_100: "Kodak Ektar 100",
-    kodak_gold_200: "Kodak Gold 200",
-    fujifilm_pro_400h: "Fujifilm Pro 400H",
-  });
+    "kodak_portra_400": "Kodak Portra 400",
+    "kodak_portra_160": "Kodak Portra 160",
+    "kodak_portra_800": "Kodak Portra 800",
+    "kodak_ektar_100": "Kodak Ektar 100",
+    "kodak_gold_200": "Kodak Gold 200",
+    "fujifilm_pro_400h": "Fujifilm Pro 400H",
+    "fujifilm_c200": "Fujifilm C200",
+    "fujifilm_provia_100f": "Fujifilm Provia 100F",
+    "fujifilm_velvia_100": "Fujifilm Velvia 100",
+    "fujifilm_xtra_400": "Fujifilm X-Tra 400",
+    "kodak_ektachrome_100": "Kodak Ektachrome 100",
+    "kodak_kodachrome_64": "Kodak Kodachrome 64",
+    "kodak_portra_800_push1": "Kodak Portra 800 (Push 1)",
+    "kodak_portra_800_push2": "Kodak Portra 800 (Push 2)",
+    "kodak_ultramax_400": "Kodak Ultramax 400",
+    "kodak_verita_200d": "Kodak Verita 200D",
+    "kodak_vision3_200t": "Kodak Vision3 200T",
+    "kodak_vision3_250d": "Kodak Vision3 250D",
+    "kodak_vision3_500t": "Kodak Vision3 500T",
+    "kodak_vision3_50d": "Kodak Vision3 50D"
+});
   const SHARED = (typeof window !== "undefined" && window.HDRFilmStockLayout)
     || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRFilmStockLayout);
   const CURVE_SAMPLES = SHARED.curveSamples;
@@ -54,8 +82,14 @@
 
   /** Pack one stock document into a slot. Throws on malformed data. */
   function packFilmStock(stock) {
-    if (!stock || stock.format !== "hdr-finisher-film-stock/1") throw new Error("Film stock data is not in the expected format.");
+    if (!stock || stock.format !== "hdr-finisher-film-stock/2") throw new Error("Film stock data is not in the expected format.");
+    const slide = stock.type === "slide";
+    if (slide) stock = { ...stock, print_table: stock.scan_table, preflash_raw: [0, 0, 0],
+      print_warmth_log_shift: [0, 0, 0], print_tint_log_shift: [0, 0, 0],
+      print_log_exposure_range: [0, 1], print_curves: Array.from({ length: CURVE_SAMPLES }, () => [0, 0, 0]) };
     const slot = new Float32Array(SLOT_FLOATS);
+    slot[LAYOUT.SCAN_FILM] = slide ? 1 : 0;
+    slot.set(numbers(stock.film_density_max || [0, 0, 0], 3, "film_density_max"), LAYOUT.FILM_DENSITY_MAX);
     slot.set(numbers(stock.input_matrix, 9, "input_matrix"), LAYOUT.INPUT_MATRIX);
     const film = numbers(stock.film_log_exposure_range, 2, "film_log_exposure_range");
     slot[LAYOUT.FILM_LOW] = film[0];

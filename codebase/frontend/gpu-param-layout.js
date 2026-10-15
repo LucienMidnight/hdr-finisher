@@ -465,6 +465,8 @@
     SCAN_TABLE: 34,
     PRINT_WARMTH_SHIFT: 42,
     PRINT_TINT_SHIFT: 45,
+    SCAN_FILM: 48,
+    FILM_DENSITY_MAX: 49,
     FILM_CURVES_PLAIN: FILM_STOCK_HEADER_FLOATS,
     FILM_CURVES_CORRECTED: FILM_STOCK_HEADER_FLOATS + FILM_STOCK_CURVE_FLOATS,
     PRINT_CURVES: FILM_STOCK_HEADER_FLOATS + 2 * FILM_STOCK_CURVE_FLOATS,
@@ -475,7 +477,7 @@
     curveSamples: 256,
     maxTableSize: FILM_STOCK_MAX_TABLE_SIZE,
     slotFloats: filmStockOffsets.TABLES + 2 * FILM_STOCK_MAX_TABLE_SIZE ** 3 * 3,
-    slotCount: 6,
+    slotCount: 20,
   });
   if (typeof window !== "undefined") window.HDRFilmStockLayout = HDRFilmStockLayout;
   if (typeof module !== "undefined" && module.exports) module.exports.HDRFilmStockLayout = HDRFilmStockLayout;

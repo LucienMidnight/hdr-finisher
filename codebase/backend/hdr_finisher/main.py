@@ -33,7 +33,7 @@ from .capabilities import probe_capabilities
 from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, DOCS_DIR, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
 from .desktop_security import DesktopPathGrants, secret_matches
 from .exporters import ExportOverwriteRequired, build_export_backends
-from .film_stock import available_film_stocks, film_stock_path
+from .film_stock import available_film_stocks, film_stock_path, read_film_stock_payload
 from .folder_picker import pick_directory
 from .loader import LoaderError
 from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore
@@ -599,12 +599,12 @@ def api_film_stocks() -> list[dict[str, str]]:
 
 
 @app.get("/api/film-stocks/{stock_id}")
-def api_film_stock(stock_id: str) -> FileResponse:
+def api_film_stock(stock_id: str, paper: str | None = None) -> dict:
     # Only the fixed stock ids resolve to a file, so no other path is served.
-    path = film_stock_path(stock_id)
+    path = film_stock_path(stock_id, paper)
     if path is None:
         raise HTTPException(status_code=404, detail=f"Film stock '{stock_id}' was not found.")
-    return FileResponse(path, media_type="application/json")
+    return read_film_stock_payload(path)
 
 
 @app.post("/api/session")

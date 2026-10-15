@@ -1248,7 +1248,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let logExposure = stockLog10(exposure + vec3f(1e-10));
       let low = filmStock[base + ${STOCK.FILM_LOW}u];
       let scale = filmStock[base + ${STOCK.FILM_SCALE}u];
-      let first = stockCurve(base + ${STOCK.FILM_CURVES_PLAIN}u, low, scale, logExposure);
+      var first = stockCurve(base + ${STOCK.FILM_CURVES_PLAIN}u, low, scale, logExposure);
+      if (filmStock[base + ${STOCK.SCAN_FILM}u] > 0.5) { first = stockVec3(base + ${STOCK.FILM_DENSITY_MAX}u) - first; }
       let shifted = first + filmStock[base + ${STOCK.COUPLER_SHIFT}u] * first * first;
       let couplers = base + ${STOCK.COUPLER_MATRIX}u;
       let correction = shifted.x * stockVec3(couplers) + shifted.y * stockVec3(couplers + 3u) + shifted.z * stockVec3(couplers + 6u);
@@ -1257,6 +1258,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // Film density -> print exposure (with the enlarger filter shifts and
     // preflash) -> print density -> scanned linear sRGB. _print_and_scan.
     fn stockPrintScan(base: u32, density: vec3f) -> vec3f {
+      if (filmStock[base + ${STOCK.SCAN_FILM}u] > 0.5) { return stockTable(base, ${STOCK.SCAN_TABLE}u, density); }
       let printLog = stockTable(base, ${STOCK.PRINT_TABLE}u, density)
         + (p[${GPU_PARAMS.FILM_STOCK_WARMTH}] * stockVec3(base + ${STOCK.PRINT_WARMTH_SHIFT}u)
           + p[${GPU_PARAMS.FILM_STOCK_TINT}] * stockVec3(base + ${STOCK.PRINT_TINT_SHIFT}u));
