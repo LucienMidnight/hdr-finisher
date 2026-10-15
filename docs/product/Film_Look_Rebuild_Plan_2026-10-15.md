@@ -4,6 +4,9 @@
 - **Branch at planning time:** `film-stocks-phase-1` (after `597e5ac`)
 - **Status:** Plan only. Nothing here is built yet. Decisions marked **Steve** are open.
 - **Reference read:** spektrafilm at `3bb2c2d` (June 7, 2026), Filmbox's published workflow.
+- **Requirements and data sources:** [Film Look PRD](Film_Look_PRD.md). Its
+  section 5 is the record of which film data is confirmed, estimated or missing;
+  keep it current rather than this plan's grain table.
 
 ## 1. Why
 
