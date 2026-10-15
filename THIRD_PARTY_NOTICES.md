@@ -65,3 +65,16 @@ is Copyright 2016 The Space Mono Project Authors. Each family is distributed und
 Font License, Version 1.1. The complete family-specific license text is retained beside each bundled
 family under `codebase/frontend/assets/fonts/` and must remain present in source and packaged
 distributions.
+
+HDR Finisher's Film stock data is derived from Andrea Volpato's
+[`spektrafilm`](https://github.com/andreavolpato/spektrafilm). The film and print-paper profiles
+it is derived from are distributed under the Creative Commons Attribution-ShareAlike 4.0
+International License (CC BY-SA 4.0). The HDR Finisher project modified that data by re-sampling it
+into its own colour, density and print tables; the derived files in
+`codebase/backend/hdr_finisher/film_stocks/` remain under CC BY-SA 4.0, carry an attribution string,
+and are accompanied by an unmodified copy of `SPEKTRAFILM_LICENSE.txt` and a `CHANGELOG.txt` that
+describes how they were made. The tables are produced offline by `codebase/tools/bake_film_stocks.py`.
+HDR Finisher's Film stock engine is its own re-implementation, informed by spektrafilm's code, which
+is distributed under GNU GPL version 3; this is compatible with HDR Finisher's GPL-3.0 license.
+These files and notices must remain present in source and packaged distributions that include the
+Film stock data.
