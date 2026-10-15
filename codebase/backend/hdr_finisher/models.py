@@ -146,6 +146,24 @@ class FilmLookAdjustments(BaseModel):
         "16mm_fine",
     ] = "custom"
     look_strength: float = Field(default=100.0, ge=0.0, le=100.0)
+    # Film stock: a real stock's colour and tone, rendered by ``film_stock.py``
+    # from baked manufacturer data, ahead of Film Response.
+    film_stock: Literal[
+        "none",
+        "kodak_portra_400",
+        "kodak_portra_160",
+        "kodak_portra_800",
+        "kodak_ektar_100",
+        "kodak_gold_200",
+        "fujifilm_pro_400h",
+    ] = "none"
+    stock_color: float = Field(default=100.0, ge=0.0, le=100.0)
+    stock_tone: float = Field(default=100.0, ge=0.0, le=100.0)
+    stock_exposure: float = Field(default=0.0, ge=-3.0, le=3.0)
+    stock_separation: float = Field(default=0.0, ge=-100.0, le=100.0)
+    stock_print_warmth: float = Field(default=0.0, ge=-100.0, le=100.0)
+    stock_print_tint: float = Field(default=0.0, ge=-100.0, le=100.0)
+    stock_preflash: float = Field(default=0.0, ge=0.0, le=100.0)
     print_strength: float = Field(default=0.0, ge=0.0, le=100.0)
     print_contrast: float = Field(default=0.0, ge=-100.0, le=100.0)
     print_toe: float = Field(default=0.0, ge=-100.0, le=100.0)

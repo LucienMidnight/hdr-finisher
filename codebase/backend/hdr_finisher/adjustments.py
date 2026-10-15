@@ -18,6 +18,7 @@ from .finishing import apply_geometry
 from .models import AdjustmentState, LocalAdjustment, PreviewKind
 from .detail import apply_detail
 from . import film_grain
+from .film_stock import load_film_stock, render_film_stock, render_film_stock_with_grey, stock_parameters
 from .sdr_gamut import compress_to_srgb_gamut
 
 
@@ -579,13 +580,15 @@ def _apply_black_and_white(image: np.ndarray, bw: object, *, guide: np.ndarray |
 def black_and_white_neutral_film_look(look: object) -> object:
     """Film Look with the colour it would add to a mono picture taken out.
 
-    Halation's warm tint, grain's colour and the per-channel print response
-    would tint a black & white picture; real B&W film has none of them. The
-    saved values are left as they are.
+    Halation's warm tint, grain's colour, the per-channel print response and
+    the film stock's colour would tint a black & white picture; real B&W film
+    has none of them. The film stock's tone is kept. The saved values are left
+    as they are.
     """
     return look.model_copy(update={
         "halation_saturation": 0.0,
         "grain_chroma": 0.0,
+        "stock_color": 0.0,
         "red_response": 0.0,
         "green_response": 0.0,
         "blue_response": 0.0,
@@ -1642,6 +1645,7 @@ def _apply_film_look(
             "shadow_desaturation",
         )
     )
+    stock_active = _film_stock_is_active(look)
     halation_active = (
         look.halation_enabled and look.halation_amount > 0.0 and look.halation_radius > 0.0
     )
@@ -1653,6 +1657,7 @@ def _apply_film_look(
     )
     active = any(
         (
+            stock_active,
             response_active,
             halation_active,
             halation_map_active,
@@ -1666,6 +1671,8 @@ def _apply_film_look(
         return image
 
     result = image.astype(np.float32, copy=True)
+    if stock_active:
+        result = _apply_film_stock(result, look, kind, strength)
     result = _apply_film_response(result, look, kind, strength)
     # WebGPU retains the completed response frame as the source for all Film
     # Look spatial kernels. Keep the CPU path on the same stage boundary: the
@@ -1843,6 +1850,85 @@ def _film_highlight_desaturation_weight(response_signal: np.ndarray, kind: Previ
         float(SDR_FILM_HIGHLIGHT_DESATURATION_END),
         response_signal,
     )
+
+
+FILM_STOCK_REFERENCE_WHITE = np.float32(1.0)
+FILM_STOCK_MIDDLE_GREY = np.float32(0.18)
+FILM_STOCK_CHUNK_PIXELS = 1 << 18
+
+
+def _film_stock_is_active(look: object) -> bool:
+    """Film stock renders unless no stock is chosen or both its mixes are zero.
+
+    With Stock colour and Stock tone both at zero the stage is the identity
+    (bar pixels darker than 1e-7, which it would round towards black), so it is
+    skipped outright. Callers have already applied the Black & White override.
+    """
+    return getattr(look, "film_stock", "none") != "none" and (
+        float(look.stock_color) > 0.0 or float(look.stock_tone) > 0.0
+    )
+
+
+def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
+    """Render the chosen film stock's colour and tone, per pixel, in place.
+
+    ``image`` must be a private, C-contiguous float32 frame in the branch's
+    working space (ACEScg for HDR, linear sRGB for SDR); it is overwritten and
+    returned. The stock chain F runs in linear sRGB. Above reference white the
+    colour is evaluated at reference white and the stock's tone gain is held
+    there, so HDR highlights keep their ratios instead of meeting paper white.
+    """
+    if master <= 0.0 or not _film_stock_is_active(look):
+        return image
+    stock = load_film_stock(look.film_stock)
+    if stock is None:
+        return image
+    parameters = stock_parameters(look)
+    tone = np.float32(float(look.stock_tone) / 100.0)
+    color = np.float32(float(look.stock_color) / 100.0)
+    if kind == PreviewKind.HDR:
+        to_srgb, from_srgb = acescg_to_linear_srgb, linear_srgb_to_acescg
+    else:
+        to_srgb = from_srgb = lambda rgb: rgb  # noqa: E731
+    middle_grey = to_srgb(np.full((1, 3), FILM_STOCK_MIDDLE_GREY, dtype=np.float32))
+    middle = from_srgb(render_film_stock(stock, middle_grey, parameters))
+    tone_gain = FILM_STOCK_MIDDLE_GREY / np.maximum(_film_luma(middle, kind)[0], np.float32(1e-6))
+
+    image = np.ascontiguousarray(image, dtype=np.float32)
+    flat = image.reshape(-1, 3)
+
+    def render(start: int, stop: int) -> None:
+        rgb = flat[start:stop]
+        luma = np.maximum(_film_luma(rgb, kind), np.float32(0.0))
+        # sc = Yw / Y above reference white, else 1.
+        highlight_scale = FILM_STOCK_REFERENCE_WHITE / np.maximum(luma, FILM_STOCK_REFERENCE_WHITE)
+        clamped = rgb * highlight_scale[:, None]
+        grey_level = luma * highlight_scale
+        film, grey = render_film_stock_with_grey(
+            stock,
+            to_srgb(clamped) if color > 0.0 else None,
+            to_srgb(np.repeat(grey_level[:, None], 3, axis=1)),
+            parameters,
+        )
+        grey_luma = np.maximum(_film_luma(from_srgb(grey), kind), np.float32(1e-6))
+        target = luma + (tone_gain * grey_luma / highlight_scale - luma) * tone
+        result = rgb * (target / np.maximum(luma, np.float32(1e-7)))[:, None]
+        if film is not None:
+            stocked = from_srgb(film) * (target / grey_luma)[:, None]
+            result += (stocked - result) * color
+        flat[start:stop] = rgb + (result - rgb) * master
+
+    spans = [
+        (start, min(start + FILM_STOCK_CHUNK_PIXELS, flat.shape[0]))
+        for start in range(0, flat.shape[0], FILM_STOCK_CHUNK_PIXELS)
+    ]
+    if len(spans) <= 1:
+        for span in spans:
+            render(*span)
+    else:
+        with ThreadPoolExecutor(max_workers=GRAIN_WORKERS, thread_name_prefix="film-stock") as pool:
+            list(pool.map(lambda span: render(*span), spans))
+    return image
 
 
 def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:

@@ -33,6 +33,7 @@ from .capabilities import probe_capabilities
 from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, DOCS_DIR, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
 from .desktop_security import DesktopPathGrants, secret_matches
 from .exporters import ExportOverwriteRequired, build_export_backends
+from .film_stock import available_film_stocks, film_stock_path
 from .folder_picker import pick_directory
 from .loader import LoaderError
 from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore
@@ -590,6 +591,20 @@ def save_desktop_project(session_id: str, request: DesktopProjectSaveRequest) ->
 @app.get("/api/capabilities")
 def api_capabilities() -> dict[str, object]:
     return {"capabilities": capabilities}
+
+
+@app.get("/api/film-stocks")
+def api_film_stocks() -> list[dict[str, str]]:
+    return available_film_stocks()
+
+
+@app.get("/api/film-stocks/{stock_id}")
+def api_film_stock(stock_id: str) -> FileResponse:
+    # Only the fixed stock ids resolve to a file, so no other path is served.
+    path = film_stock_path(stock_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"Film stock '{stock_id}' was not found.")
+    return FileResponse(path, media_type="application/json")
 
 
 @app.post("/api/session")

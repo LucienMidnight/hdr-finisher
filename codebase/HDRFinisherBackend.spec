@@ -11,6 +11,7 @@ block_cipher = None
 datas = [
     ("frontend", "frontend"),
     ("samples", "samples"),
+    ("backend/hdr_finisher/film_stocks", "hdr_finisher/film_stocks"),
     ("../README.md", "."),
     ("../LICENSE", "."),
     ("../THIRD_PARTY_NOTICES.md", "."),

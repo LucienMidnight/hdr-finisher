@@ -52,8 +52,9 @@ def test_branch_serialization_order_and_adjustment_signature_are_stable() -> Non
     assert tuple(adjustments.hdr.model_dump()) == HDR_FIELD_ORDER
     assert tuple(adjustments.sdr.model_dump()) == SDR_FIELD_ORDER
     signature = adjustment_signature(adjustments)
+    # Changed October 15, 2026, when Film Look gained the Film stock fields.
     assert hashlib.sha256(signature.encode()).hexdigest() == (
-        "d1f27e49fffca54aab343e3de3102ef9800bdff8f79dddf3ff691375132f3e5a"
+        "a2315ae1ef13d722780bec24ce809f43da741339f6c45be03a4b9518018beb30"
     )
     assert AdjustmentState.model_validate(adjustments.model_dump(mode="json")) == adjustments
 
