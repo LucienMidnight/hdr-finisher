@@ -316,11 +316,26 @@ def _real_portra() -> object:
 def test_real_portra_400_keeps_middle_grey_near_neutral(kind, monkeypatch) -> None:
     _real_portra()
     monkeypatch.setattr(film_stock_module, "FILM_STOCK_DIR", REAL_STOCK_DIR)
-    grey = np.full((1, 1, 3), 0.18, dtype=np.float32)
+    # HDR keeps reference white at 0.18, so its middle grey is the SDR one
+    # divided by the generated-SDR scale.
+    level = 0.18 / float(adjustments_module.SDR_SCENE_TO_DISPLAY_SCALE) if kind == PreviewKind.HDR else 0.18
+    grey = np.full((1, 1, 3), level, dtype=np.float32)
     for tone in (0.0, 100.0):
         output = _stage(grey, FilmLookAdjustments(film_stock="kodak_portra_400", stock_tone=tone), kind)[0, 0]
-        assert LUMA[kind](output) == pytest.approx(0.18, rel=1e-3)
+        assert LUMA[kind](output) == pytest.approx(level, rel=1e-3)
         # Portra on Endura with spektrafilm's neutral filters prints mid grey
         # slightly warm (blue about 4% under in October 2026's bake); a
         # broken chain or swapped layer order lands far outside this.
-        np.testing.assert_allclose(output, 0.18, rtol=0.05)
+        np.testing.assert_allclose(output, level, rtol=0.05)
+
+
+def test_real_portra_400_meets_both_lanes_at_the_same_exposure(monkeypatch) -> None:
+    _real_portra()
+    monkeypatch.setattr(film_stock_module, "FILM_STOCK_DIR", REAL_STOCK_DIR)
+    scale = float(adjustments_module.SDR_SCENE_TO_DISPLAY_SCALE)
+    sdr = np.array([[[0.32, 0.18, 0.09], [0.05, 0.12, 0.04], [0.6, 0.55, 0.5]]], dtype=np.float32)
+    hdr = linear_srgb_to_acescg(sdr / scale)
+    look = FilmLookAdjustments(film_stock="kodak_portra_400", stock_tone=100.0)
+    sdr_out = _stage(sdr, look, PreviewKind.SDR)
+    hdr_out = _stage(hdr, look, PreviewKind.HDR)
+    np.testing.assert_allclose(adjustments_module.acescg_to_linear_srgb(hdr_out) * scale, sdr_out, rtol=2e-3, atol=1e-5)

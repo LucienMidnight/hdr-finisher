@@ -1267,10 +1267,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       );
       return stockTable(base, ${STOCK.SCAN_TABLE}u, printDensity);
     }
-    fn stockToSrgb(rgb: vec3f) -> vec3f { return select(rgb, acescgToSrgb(rgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5); }
-    fn stockFromSrgb(rgb: vec3f) -> vec3f { return select(rgb, srgbToAcescg(rgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5); }
+    // HDR keeps reference white at 0.18 and its generated SDR is the scene times
+    // (100 / 203) / 0.18, so the film is exposed on the SDR scale in both lanes.
+    fn stockLaneScale() -> f32 { return select(1.0, 2.7367268, p[${GPU_PARAMS.HDR_LANE}] > 0.5); }
+    fn stockToSrgb(rgb: vec3f) -> vec3f { return select(rgb, acescgToSrgb(rgb) * stockLaneScale(), p[${GPU_PARAMS.HDR_LANE}] > 0.5); }
+    fn stockFromSrgb(rgb: vec3f) -> vec3f { return select(rgb, srgbToAcescg(rgb) / stockLaneScale(), p[${GPU_PARAMS.HDR_LANE}] > 0.5); }
     // adjustments.py _apply_film_stock, in the branch's working space. Above
-    // reference white (1.0) colour is evaluated at white and the tone gain is
+    // reference white (1.0 on the SDR scale) colour is evaluated at white and the tone gain is
     // held, so HDR highlights keep their ratios. The grey (Y, Y, Y) and the
     // middle grey (0.18, 0.18, 0.18) are converted to sRGB like the pixel.
     fn filmStockStage(rgb: vec3f) -> vec3f {
@@ -1278,10 +1281,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let base = (u32(p[${GPU_PARAMS.FILM_STOCK_SLOT}] + 0.5) - 1u) * ${FILM_STOCK.slotFloats}u;
       let color = p[${GPU_PARAMS.FILM_STOCK_COLOR}];
       let tone = p[${GPU_PARAMS.FILM_STOCK_TONE}];
-      let middle = stockFromSrgb(stockPrintScan(base, stockDensity(base, stockToSrgb(vec3f(0.18)))));
-      let toneGain = 0.18 / max(filmLuma(middle), 0.000001);
+      let referenceWhite = 1.0 / stockLaneScale();
+      let middleGrey = 0.18 / stockLaneScale();
+      let middle = stockFromSrgb(stockPrintScan(base, stockDensity(base, stockToSrgb(vec3f(middleGrey)))));
+      let toneGain = middleGrey / max(filmLuma(middle), 0.000001);
       let luma = max(filmLuma(rgb), 0.0);
-      let highlightScale = 1.0 / max(luma, 1.0);
+      let highlightScale = referenceWhite / max(luma, referenceWhite);
       let greyDensity = stockDensity(base, stockToSrgb(vec3f(luma * highlightScale)));
       let greyLuma = max(filmLuma(stockFromSrgb(stockPrintScan(base, greyDensity))), 0.000001);
       let toneTarget = luma + (toneGain * greyLuma / highlightScale - luma) * tone;

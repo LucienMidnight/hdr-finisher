@@ -1887,12 +1887,24 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
     tone = np.float32(float(look.stock_tone) / 100.0)
     color = np.float32(float(look.stock_color) / 100.0)
     if kind == PreviewKind.HDR:
-        to_srgb, from_srgb = acescg_to_linear_srgb, linear_srgb_to_acescg
+        # HDR keeps reference white at 0.18; the generated SDR is the same
+        # scene times SDR_SCENE_TO_DISPLAY_SCALE. The film is exposed on the
+        # SDR scale so both lanes meet the stock at the same exposure.
+        lane_scale = SDR_SCENE_TO_DISPLAY_SCALE
+
+        def to_srgb(rgb):
+            return acescg_to_linear_srgb(rgb) * lane_scale
+
+        def from_srgb(rgb):
+            return linear_srgb_to_acescg(rgb) / lane_scale
     else:
+        lane_scale = np.float32(1.0)
         to_srgb = from_srgb = lambda rgb: rgb  # noqa: E731
-    middle_grey = to_srgb(np.full((1, 3), FILM_STOCK_MIDDLE_GREY, dtype=np.float32))
+    reference_white = FILM_STOCK_REFERENCE_WHITE / lane_scale
+    lane_middle_grey = FILM_STOCK_MIDDLE_GREY / lane_scale
+    middle_grey = to_srgb(np.full((1, 3), lane_middle_grey, dtype=np.float32))
     middle = from_srgb(render_film_stock(stock, middle_grey, parameters))
-    tone_gain = FILM_STOCK_MIDDLE_GREY / np.maximum(_film_luma(middle, kind)[0], np.float32(1e-6))
+    tone_gain = lane_middle_grey / np.maximum(_film_luma(middle, kind)[0], np.float32(1e-6))
 
     image = np.ascontiguousarray(image, dtype=np.float32)
     flat = image.reshape(-1, 3)
@@ -1901,7 +1913,7 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
         rgb = flat[start:stop]
         luma = np.maximum(_film_luma(rgb, kind), np.float32(0.0))
         # sc = Yw / Y above reference white, else 1.
-        highlight_scale = FILM_STOCK_REFERENCE_WHITE / np.maximum(luma, FILM_STOCK_REFERENCE_WHITE)
+        highlight_scale = reference_white / np.maximum(luma, reference_white)
         clamped = rgb * highlight_scale[:, None]
         grey_level = luma * highlight_scale
         film, grey = render_film_stock_with_grey(
