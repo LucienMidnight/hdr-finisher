@@ -1728,8 +1728,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           let edgeRadius = clamp(halationRadius / 4, 1, 16);
           let edgeSource = halationEdgeSource(coordinate, p[${GPU_PARAMS.HALATION_SENSITIVITY}], edgeRadius);
           let haloY = max(spatial.a - edgeSource * 0.15, 0.0);
-          let angle = radians(12.0 + 45.0 * p[${GPU_PARAMS.HALATION_HUE}]);
-          let warm = vec3f(1.0, 0.34 + 0.18 * sin(angle), 0.07 + 0.10 * max(cos(angle), 0.0));
+          let angle = radians(45.0 * p[${GPU_PARAMS.HALATION_HUE}]);
+          // Base-reflected light re-exposes mostly the red layer (_halation_tint).
+          let warm = vec3f(1.0, 0.30 + 0.20 * sin(angle), 0.08 * max(-sin(angle), 0.0));
           let warmY = lumaSrgb(warm);
           let canonicalTintSrgb = mix(vec3f(warmY), warm, clamp(p[${GPU_PARAMS.HALATION_SATURATION}], 0.0, 1.0));
           let tint = select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5);

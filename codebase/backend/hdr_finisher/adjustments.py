@@ -2291,9 +2291,14 @@ def _bloom_source(image: np.ndarray, kind: PreviewKind, sensitivity: float) -> n
 
 def _halation_tint(hue_offset: float, saturation: float, kind: PreviewKind) -> np.ndarray:
     """Return one canonical linear-sRGB tint in the branch working space."""
-    angle = np.deg2rad(np.float32(12.0 + 0.45 * hue_offset))
+    # Halation is light that passes the emulsion, reflects off the film base
+    # and re-exposes mostly the bottom, red-sensitive layer, a little of the
+    # green and none of the blue (spektrafilm's default layer strengths are
+    # 0.05 : 0.015 : 0). Hue 0 is that red; positive hue warms it towards
+    # orange, negative hue leans it towards magenta.
+    angle = np.deg2rad(np.float32(0.45 * hue_offset))
     warm = np.array(
-        [1.0, 0.34 + 0.18 * np.sin(angle), 0.07 + 0.10 * np.maximum(np.cos(angle), 0.0)],
+        [1.0, 0.30 + 0.20 * np.sin(angle), 0.08 * np.maximum(-np.sin(angle), 0.0)],
         dtype=np.float32,
     )
     neutral = np.full(3, np.dot(warm, np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)), dtype=np.float32)
