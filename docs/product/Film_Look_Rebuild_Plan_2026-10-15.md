@@ -1,0 +1,242 @@
+# Film Look Rebuild Plan
+
+- **Date:** October 15, 2026
+- **Branch at planning time:** `film-stocks-phase-1` (after `597e5ac`)
+- **Status:** Plan only. Nothing here is built yet. Decisions marked **Steve** are open.
+- **Reference read:** spektrafilm at `3bb2c2d` (June 7, 2026), Filmbox's published workflow.
+
+## 1. Why
+
+The Film Stock stage (spektrafilm data) now does the job the older Film Response
+section did, using real measured curves. The two stack on top of each other, and
+three Film Response sliders (Print Contrast, Toe, Shoulder) do nothing unless
+Print Strength is above 0. Halation, Bloom and Grain are also applied after the
+film is finished, while on real film (and in spektrafilm) they happen before or
+inside the negative. This plan rebuilds Film Look around the physical process,
+with presets in layers.
+
+## 2. Goals
+
+1. One panel, ordered the way light travels through real film:
+   **Lens -> Negative -> Development -> Print -> Scan -> Output.**
+2. Each effect happens at its physical point, so the film curve shapes it as
+   real film would (for example, halation glow is compressed by the negative's
+   shoulder, and grain passes through the print paper's contrast).
+3. Presets in three layers: the stock's own character, presets for a single
+   stage, and complete Looks.
+4. No two controls doing the same job.
+5. HDR keeps working: highlights above paper white keep their ratios, as now.
+
+## 3. How spektrafilm works (what matters for us)
+
+Its order of steps (`runtime/pipeline.py`, `runtime/stages/*.py`):
+
+1. **Camera:** exposure, then the lens diffusion filter (Black Pro-Mist,
+   Pro-Mist, Glimmerglass, CineBloom), then lens blur, then **halation and
+   in-emulsion scatter**, all applied to the light before the film records it.
+2. **Develop the negative:** density curves, then DIR couplers (colour
+   separation), then **grain, added to the negative's density**.
+3. **Print:** enlarger filters (Y/M), print exposure, preflash, optional
+   enlarger diffusion, then the paper's density curves (which can be "morphed":
+   contrast, contrast of fast/slow layers, per-channel contrast, developer
+   exhaustion).
+4. **Scan:** the print (or, for slide film, the film itself) to RGB, then
+   scanner blur and unsharp mask, with optional auto black/white levels.
+
+Per-stock data it has: measured curves and dyes; a default print paper; whether
+the stock is **still or cine** (base thickness, so halation spread: 65 µm still,
+50 µm cine); and the **anti-halation layer: strong, weak or none** (halation
+strength). It ships 28 profiles: 20 camera films (including Vision3 cine stocks,
+slide films, and Portra 800 pushed one and two stops) and 8 print papers or print
+films.
+
+## 4. Grain: theirs versus ours
+
+| | spektrafilm | HDR Finisher today |
+|---|---|---|
+| What is drawn | A random count of developed grains per pixel (statistics only), then a blur and a "clumping" texture | Real grains with sizes and positions, overlapping as on film |
+| Where it happens | In the negative's density, before printing | At the very end, on the finished picture |
+| Layers | 3 colour layers, each split into fast/mid/slow sub-layers with coarse, medium and fine grains | 3 colour layers (or 1 for black and white), one size each |
+| Tone behaviour | Comes from the physics: thin negative = few grains, and the print curve then shapes what is visible | Shaped by hand with the Shadow, Midtone and Highlight Response sliders |
+| Per-stock grain | **None.** Every stock uses the same grain settings (the code has a to-do note for per-stock granularity) | None |
+| Resolution | Scales with film format and image size | Scales with film format and image size |
+| GPU and export match | Not a goal (CPU, random) | Exact; strips match whole frames |
+
+**Verdict:** our grain renderer is better and should stay: it draws real grain
+shapes, runs on the GPU, and matches export exactly. Spektrafilm is better on
+**where** the grain goes and **which grains respond to which tones**. We take
+these two ideas from it:
+
+1. **Add grain to the negative's density, before the print.** Then the print
+   paper's contrast decides how visible it is in each tone, as on real film,
+   and the Response sliders become small trims (default 100%) rather than the
+   main shaping tool.
+2. **Fast/slow sub-layers:** coarse grains carry the shadows of the scene and
+   fine grains the highlights. This is why real film looks grainier in the
+   shadows. We can approximate it with one grain size that changes with
+   exposure (cheap) or with true sub-layers (about 3x the grain cost on the GPU).
+   Start with the cheap version.
+
+**Grain per stock** cannot come from spektrafilm's code. It has to come from
+the manufacturers' data sheets (Kodak publishes a Print Grain Index, Fujifilm
+an RMS granularity). Phase 4 collects these, and turns them into default Grain
+Size and Amount for each stock. No values will be guessed.
+
+## 5. The new panel
+
+Look Strength stays at the top, with the Looks browser. Then:
+
+| Stage | Controls |
+|---|---|
+| **Lens** | Film Format (moves here: it sets the scale of everything below), Diffusion Filter type, Filter Strength, Filter Size |
+| **Negative** | Stock, Stock Color, Stock Tone, Film Exposure, Color Separation, Halation (Amount, Spread, map), Resolution, Grain (Amount, Size, Softness, Chroma, Film Type, Response trims, map) |
+| **Development** | Push/Pull |
+| **Print** | Paper, Print Exposure, Print Warmth, Print Tint, Preflash, Print Contrast, Shadow Contrast, Highlight Contrast |
+| **Scan** | Scan sharpening, Lab levels (auto black and white) |
+| **Output** | HDR highlight handling (today's behaviour, made visible), the "Match HDR film look" action for SDR |
+
+"None" in the Stock menu becomes **Neutral**: a plain stock with a straight
+response, so every control still works without a real stock. This replaces the
+old hand-built Film Response curve.
+
+## 6. Every control, old and new
+
+| Today | Verdict | Why / where it goes |
+|---|---|---|
+| Look Strength | Keep | Master mix, top of the panel |
+| Stock | Keep, moves to Negative | Adds more stocks (see Phase 1); "None" becomes Neutral |
+| Stock Color, Stock Tone | Keep | Our own idea: borrow only a stock's colour or only its tone. Spektrafilm has no equivalent |
+| Film Exposure | Keep | Same as spektrafilm's camera exposure |
+| Color Separation | Keep | Spektrafilm's DIR coupler amount |
+| Preflash | Keep, moves to Print | Same as spektrafilm |
+| Print Warmth, Print Tint | Keep, moves to Print | Spektrafilm's enlarger Y/M filters |
+| Print Strength | **Remove** | Its curve is replaced by the paper's own curve |
+| Print Contrast | **Replace** | Becomes paper contrast (spektrafilm's print gamma), and works on its own |
+| Toe, Shoulder | **Replace** | Become Shadow Contrast and Highlight Contrast (spektrafilm's fast/slow layer gamma, plus developer exhaustion for a softer shoulder) |
+| Color Density | **Remove** | Same job as Color Separation |
+| Red, Green, Blue Response | **Remove** | Covered by Print Warmth/Tint. Per-channel paper contrast could come back as an advanced option later |
+| Highlight, Shadow Desaturation | **Remove** (Steve, D1) | Real stocks lose colour in their shoulder and toe already |
+| Halation Amount | Keep | Scales the stock's own halation strength |
+| Halation Physical Extent | Keep, renamed Spread | Scales the stock's own spread (still 65 µm, cine 50 µm) |
+| Halation Sensitivity | **Remove** | It was needed because the glow was added after the curve. Before the curve, only bright light halates visibly |
+| Halation Hue Offset, Saturation | **Remove** (Steve, D2) | On film the colour comes from layer order (red nearest the base), set per stock |
+| Show halation map | Keep | |
+| Bloom Amount, Sensitivity, Optical Spread, Highlight Detail | **Replace** | Becomes a real lens filter: type (Black Pro-Mist, Pro-Mist, Glimmerglass, CineBloom), Strength in filter grades (1/8 to 2), Size. Applied before the film, so the curve shapes the glow |
+| Film Resolution | Keep, moves earlier | Becomes in-emulsion scatter, before the negative curve, as in spektrafilm. Then it softens the image but not the grain |
+| Grain Amount, Size | Keep | Defaults come from the stock |
+| Grain Softness, Chroma, Film Type | Keep | Spektrafilm has no B&W stocks; our B&W grain stays our own |
+| Grain Film Format, Capture Geometry, custom size | Keep, moves to Lens | Already shared by grain, halation and resolution |
+| Grain Shadow, Midtone, Highlight Response | Keep as trims | Default 100%; physics does the main shaping (section 4) |
+| Show grain map | Keep | |
+| `reference_model` (hidden field) | **Remove** | Saved with every project but read by nothing |
+| — | **New:** Paper | Each stock's default paper, plus the others (Portra Endura, Endura Premier, Supra, Ultra, Ektacolor Edge, Crystal Archive II, and cine print films 2383 and 2393) |
+| — | **New:** Print Exposure | Brighter or darker print, separate from Film Exposure; they look different |
+| — | **New:** Push/Pull | Development contrast and grain. Real data exists only for Portra 800 (+1, +2); for other stocks it is a contrast change, labelled as approximate |
+| — | **New:** Scan sharpening, Lab levels | Spektrafilm's scanner unsharp mask and auto black/white |
+
+### What spektrafilm does not have and we should
+
+- **HDR output.** Spektrafilm ends at paper white. Our highlight handling above
+  paper white stays, and gets its own place in Output.
+- **Per-stock grain** (from data sheets, section 4).
+- **Black and white.** It has the code but no B&W stocks. We keep our B&W grain,
+  and B&W stocks can be added later if good data turns up.
+- **Partial stock mixes** (Stock Color / Stock Tone).
+- **Exact GPU preview matching the export.**
+
+### Left out on purpose
+
+- Spektrafilm's spectral and colour-space settings: these are baked into our tables.
+- Print glare texture: its average is already baked in, and the texture is not visible.
+- Gate weave, flicker (Filmbox): video only.
+- Negative-only and Print-only modes (Filmbox): Print Warmth, Tint and Exposure
+  already do the "grade between negative and print" job.
+- Bleach bypass: not in spektrafilm. Possible later.
+
+## 7. Presets in three layers
+
+1. **Stock character.** Choosing a stock sets its colour and tone, plus its
+   defaults for: halation (from still/cine and the anti-halation layer), grain
+   Amount and Size (from data sheets), and its default paper.
+2. **Stage presets.** A small menu on each stage that changes only that stage
+   (Lens: "Light diffusion"; Grain: "16mm"; Print: "Warm print").
+3. **Looks.** A complete recipe: stock, paper, and every stage.
+
+**The rule:** each control remembers whether it is still "from the stock" or was
+**set** by the user (by hand or by a stage preset). Changing the stock updates
+only controls still "from the stock". A set control shows a small dot, and
+clicking the dot returns it to the stock's value.
+
+**Looks store only what differs from the stock.** A Look saves its stock, paper
+and the controls it deliberately sets. Everything else stays "from the stock",
+so swapping the stock inside a Look still behaves sensibly.
+
+The four current Looks (Clean Cinema, Soft Color Negative, Dense Print,
+High-Speed Texture) are rebuilt on real stocks and papers.
+
+## 8. Phases
+
+Each phase is its own small set of commits. Heavy coding goes to Codex with a
+brief; the panel mock-up is done here first.
+
+**Phase 0: Check what breaks.** List which of Steve's projects and test
+projects use Film Response, the old Looks, Bloom or Halation settings. Under the
+pre-1.0 rule there is no migration; Steve gets a one-line list.
+
+**Phase 1: Data.** Re-bake every stock spektrafilm has (Vision3 50D, 250D, 200T,
+500T; Ultramax 400; Fujifilm C200 and Superia X-tra 400; Portra 800 pushed one
+and two stops; slide films Velvia, Provia, Ektachrome, Kodachrome), with each
+stock's tags (still/cine, anti-halation, type, default paper). Bake film x paper
+print tables. Today's files are 2.3 MB of JSON each; switch to a compact binary
+format, or the paper choice grows the app by tens of MB. Slide films need the
+"scan the film directly" path instead of print plus scan.
+
+**Phase 2: Reorder the chain** (CPU export and GPU together). New order: lens
+diffusion -> resolution scatter -> halation -> negative (curves, couplers) ->
+grain in density -> print -> scan -> output. This is the biggest and riskiest
+phase, and it is in the "still strict" area (CPU export is the reference).
+
+**Phase 3: Print and development controls.** Paper picker, Print Exposure,
+paper contrast controls (on the paper curve, which is already applied at run
+time and so is cheap), Push/Pull, scan sharpening and levels. Remove Film
+Response, Color Density, Channel Response and the desaturation sliders.
+
+**Phase 4: Stock character.** Collect grain data from data sheets; set grain,
+halation and paper defaults per stock; add the "from the stock / set" tracking
+and the dot.
+
+**Phase 5: Presets.** Stage preset menus; rebuild the four Looks; add Looks for
+the new stocks (for example, Vision3 500T on 2383).
+
+**Phase 6: Panel.** Mock-up first (Looks strip, the six stages folding open,
+the dots), then build. Update the controls reference and the spektrafilm credit.
+
+## 9. Risks
+
+- **Speed.** Grain and the spatial effects move inside the film chain. Grain
+  must then run between the negative and print lookups in the GPU pass, or the
+  negative density must be stored in an extra buffer. Both cost something; to
+  be measured in Phase 2, and judged by Steve using the app.
+- **Look changes.** Moving halation, diffusion and resolution before the curve
+  changes how every existing setting looks, not just the removed ones.
+- **HDR.** Effects applied before the stock must keep the current behaviour above
+  reference white. The film-stock parity check must cover HDR highlights.
+- **App size.** Film x paper tables (Phase 1).
+- **Push/Pull honesty.** Only Portra 800 has measured pushed data.
+
+## 10. Testing
+
+As `ai/AGENTS.md` sets out. Fast checks for every change. Phase 2 touches CPU
+export and pinned shaders, so it gets every check that covers Film Look:
+`film-stock-parity.js`, the grain parity checks, and the Film Look
+halation/bloom/resolution parity checks, run once per group of commits. A full
+sweep happens only before merging to `main`. If a phase's checks look like more
+than about 30 minutes, stop and ask Steve first.
+
+## 11. Open decisions for Steve (one at a time, when we reach them)
+
+- **D1** Remove Highlight/Shadow Desaturation, or keep them as creative trims?
+- **D2** Remove Halation Hue and Saturation, or keep a single colour trim?
+- **D3** How many stocks and papers to ship (sets app size; Phase 1).
+- **D4** Grain sub-layers: the cheap approximation, or true sub-layers at about
+  3x the grain cost?
