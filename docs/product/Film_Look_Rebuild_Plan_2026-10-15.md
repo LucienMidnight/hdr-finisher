@@ -79,8 +79,29 @@ these two ideas from it:
 
 **Grain per stock** cannot come from spektrafilm's code. It has to come from
 the manufacturers' data sheets (Kodak publishes a Print Grain Index, Fujifilm
-an RMS granularity). Phase 4 collects these, and turns them into default Grain
-Size and Amount for each stock. No values will be guessed.
+an RMS granularity). Phase 4 turns them into default Grain Size and Amount for
+each stock. No values will be guessed.
+
+Collected October 15, 2026 (sheets kept outside the repo in
+`HDR Finisher Tool/film-datasheets`). Kodak Print Grain Index, 35mm at
+4x6 / 8x10 / 16x20; 25 is the visibility threshold, and 4 points is one
+just-noticeable step:
+
+| Stock | 4x6 | 8x10 | 16x20 |
+|---|---|---|---|
+| Ektar 100 | under 25 | 38 | 66 |
+| Portra 160 | 28 | 50 | |
+| Portra 400 | 37 | 59 | 89 |
+| Gold 200 | 44 | 64 | |
+| Ultramax 400 | 46 | | |
+| Portra 800 | 48 | 70 | |
+
+The 4x6 to 8x10 step (twice the enlargement) adds about 21 to 22 points for
+every stock, which also calibrates how grain should grow with Film Format.
+Fujifilm's negatives (C200, Superia X-tra 400, Pro 400H) all read RMS 4, so they
+cannot be ranked from their sheets; place them by ISO next to their Kodak
+counterparts. Vision3 sheets have per-layer granularity curves across the
+tonal range, which can also check the shadow-to-highlight grain behaviour.
 
 ## 5. The new panel
 
@@ -179,9 +200,8 @@ High-Speed Texture) are rebuilt on real stocks and papers.
 Each phase is its own small set of commits. Heavy coding goes to Codex with a
 brief; the panel mock-up is done here first.
 
-**Phase 0: Check what breaks.** List which of Steve's projects and test
-projects use Film Response, the old Looks, Bloom or Halation settings. Under the
-pre-1.0 rule there is no migration; Steve gets a one-line list.
+Old projects: Steve has said (October 15, 2026) they do not matter for this
+rebuild. No migration and no affected-project check.
 
 **Phase 1: Data.** Re-bake every stock spektrafilm has (Vision3 50D, 250D, 200T,
 500T; Ultramax 400; Fujifilm C200 and Superia X-tra 400; Portra 800 pushed one
