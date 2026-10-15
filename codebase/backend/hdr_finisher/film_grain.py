@@ -197,19 +197,21 @@ def layer_coverage(
     layer: GrainLayer,
     kind: FilmType,
     edge: float,
+    sample_offset: tuple[float, float] = (0.0, 0.0),
 ) -> np.ndarray:
     """Grain coverage over a region whose first pixel sits at (left, top) in the frame."""
     height, width = signal.shape
+    offset_x, offset_y = sample_offset
     seeded = seed_hash(seed, layer.salt)
-    rows = np.arange(top, top + height, dtype=np.float64) / pitch
-    cols = np.arange(left, left + width, dtype=np.float64) / pitch
+    rows = (np.arange(top, top + height, dtype=np.float64) + offset_y) / pitch
+    cols = (np.arange(left, left + width, dtype=np.float64) + offset_x) / pitch
     mottle = _value_noise(cols / MOTTLE_CELLS, rows / MOTTLE_CELLS, seed_hash(seed, layer.salt + MOTTLE_SALT))
     develop = develop_level(signal + np.float32(kind.clumping) * mottle.astype(np.float32)).astype(np.float32)
 
-    first_cx = int(np.floor(left / pitch)) - 1
-    last_cx = int(np.floor((left + width - 1) / pitch)) + 1
-    first_cy = int(np.floor(top / pitch)) - 1
-    last_cy = int(np.floor((top + height - 1) / pitch)) + 1
+    first_cx = int(np.floor((left + offset_x) / pitch)) - 1
+    last_cx = int(np.floor((left + width - 1 + offset_x) / pitch)) + 1
+    first_cy = int(np.floor((top + offset_y) / pitch)) - 1
+    last_cy = int(np.floor((top + height - 1 + offset_y) / pitch)) + 1
     cy, cx = np.meshgrid(
         np.arange(first_cy, last_cy + 1, dtype=np.int64),
         np.arange(first_cx, last_cx + 1, dtype=np.int64),
@@ -232,10 +234,10 @@ def layer_coverage(
 
     # Each grain's pixel box, clipped to the region: clipping only drops
     # pixels, never reorders what a kept pixel receives.
-    x0 = np.maximum(np.ceil((gx - radius) * pitch).astype(np.int64), left)
-    x1 = np.minimum(np.floor((gx + radius) * pitch).astype(np.int64), left + width - 1)
-    y0 = np.maximum(np.ceil((gy - radius) * pitch).astype(np.int64), top)
-    y1 = np.minimum(np.floor((gy + radius) * pitch).astype(np.int64), top + height - 1)
+    x0 = np.maximum(np.ceil((gx - radius) * pitch - offset_x).astype(np.int64), left)
+    x1 = np.minimum(np.floor((gx + radius) * pitch - offset_x).astype(np.int64), left + width - 1)
+    y0 = np.maximum(np.ceil((gy - radius) * pitch - offset_y).astype(np.int64), top)
+    y1 = np.minimum(np.floor((gy + radius) * pitch - offset_y).astype(np.int64), top + height - 1)
     keep = (x1 >= x0) & (y1 >= y0)
     grain_cy = cy.ravel()[cell_index][keep]
     # Single precision from here, as in the shader; the grain's box above was
@@ -255,7 +257,7 @@ def layer_coverage(
         _splat_band(
             log_transmit, develop_flat, left, top, width, pitch, edge, kind.opacity,
             gx[start:stop], gy[start:stop], radius[start:stop], sensitivity[start:stop],
-            x0[start:stop], x1[start:stop], y0[start:stop], y1[start:stop],
+            x0[start:stop], x1[start:stop], y0[start:stop], y1[start:stop], sample_offset,
         )
     return np.float32(1.0) - np.exp(log_transmit)
 
@@ -277,6 +279,7 @@ def _splat_band(
     x1: np.ndarray,
     y0: np.ndarray,
     y1: np.ndarray,
+    sample_offset: tuple[float, float] = (0.0, 0.0),
 ) -> None:
     """Add one band of grains' log transmittance to the pixels their boxes cover."""
     box_w = x1 - x0 + 1
@@ -286,8 +289,8 @@ def _splat_band(
     px = x0[grain] + within % box_w[grain]
     py = y0[grain] + within // box_w[grain]
     inverse_pitch = np.float32(1.0 / pitch)
-    du = px.astype(np.float32) * inverse_pitch - gx[grain]
-    dv = py.astype(np.float32) * inverse_pitch - gy[grain]
+    du = (px.astype(np.float32) + np.float32(sample_offset[0])) * inverse_pitch - gx[grain]
+    dv = (py.astype(np.float32) + np.float32(sample_offset[1])) * inverse_pitch - gy[grain]
     rho = np.sqrt(du * du + dv * dv) / radius[grain]
     inside = rho < np.float32(1.0)
     grain, px, py, rho = grain[inside], px[inside], py[inside], rho[inside]
@@ -325,6 +328,8 @@ def grain_noise(
     film_type_name: str,
     softness: float,
     chroma: np.ndarray,
+    minimum_pitch: float = 1.0,
+    sample_offset: tuple[float, float] = (0.0, 0.0),
 ) -> np.ndarray:
     """Per-channel grain in units of the first grain field, before Amount and response.
 
@@ -339,8 +344,8 @@ def grain_noise(
     for layer in kind.layers:
         signal = luma_signal if layer.channel is None else signals[..., layer.channel]
         signal = signal.astype(np.float32, copy=False)
-        pitch = max(1.0, physical_pitch * layer.size)
-        coverage = layer_coverage(signal, left, top, pitch, seed, layer, kind, edge)
+        pitch = max(minimum_pitch, physical_pitch * layer.size)
+        coverage = layer_coverage(signal, left, top, pitch, seed, layer, kind, edge, sample_offset)
         mean, std = coverage_statistics(develop_level(signal), kind, edge)
         # Halfway between film's own granularity, which peaks at mid density,
         # and a flat response; the Response sliders shape the rest.
@@ -354,3 +359,23 @@ def grain_noise(
     spread = chroma.astype(np.float32, copy=False)[..., None] * np.float32(CHROMA_SPREAD)
     colour = mono[..., None] + spread * (stacked - mono[..., None])
     return colour * np.float32(UNIT_RMS)
+
+
+def preview_grain_noise(*args, preview_scale: float = 1.0) -> np.ndarray:
+    """Integrate native grain over a reduced preview pixel; export uses scale 1.
+
+    Equal-area stratified samples retain the native field's clamping pitch.
+    Four samples at half size approximate the scan's reconstruction filter;
+    up to 4x4 bounds preview work at very small display scales.
+    """
+    scale = min(1.0, max(0.05, preview_scale))
+    if scale >= 1.0:
+        return grain_noise(*args)
+    count = min(4, int(np.ceil(1.0 / scale)))
+    result = None
+    for y in range(count):
+        for x in range(count):
+            offset = ((x + 0.5) / count - 0.5 * scale, (y + 0.5) / count - 0.5 * scale)
+            sample = grain_noise(*args, minimum_pitch=scale, sample_offset=offset)
+            result = sample if result is None else result + sample
+    return result / np.float32(count * count)

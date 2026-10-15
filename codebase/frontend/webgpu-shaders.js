@@ -1738,13 +1738,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           || p[${GPU_PARAMS.FILM_RESOLUTION}] < 1.0
           || (p[${GPU_PARAMS.GRAIN_ENABLED}] > 0.5 && (p[${GPU_PARAMS.GRAIN_AMOUNT}] > 0.0 || p[${GPU_PARAMS.GRAIN_VIEW_MAP}] > 0.5)));
     }
-    fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
+    fn filmGrainSample(rgb: vec3f, coordinate: vec2i, master: f32, offset: vec2f, minimumPitch: f32) -> vec3f {
       if (p[${GPU_PARAMS.GRAIN_ENABLED}] < 0.5 || p[${GPU_PARAMS.GRAIN_AMOUNT}] <= 0.0) { return vec3f(0.0); }
         let pixelsPerMm = filmPixelsPerMm(frameDimensions());
         let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[${GPU_PARAMS.GRAIN_SIZE}]) / 1000.0;
-        let pitch = max(1.0, physicalPitch);
-        let pixelCoverage = min(1.0, physicalPitch);
-        let frame = vec2f(frameCoordinate(coordinate));
+        let pitch = max(minimumPitch, physicalPitch);
+        let pixelCoverage = min(1.0, physicalPitch / minimumPitch);
+        let frame = vec2f(frameCoordinate(coordinate)) + offset;
         let signal = clamp(filmSignalFromLuma(max(filmLuma(rgb), 0.0)), 0.0, 1.0);
         // Color negative: three dye layers, blue coarsest, each developed by
         // its own channel. Black & white: one layer of sharper, denser silver.
@@ -1768,9 +1768,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
             vec3f(srgbEncode(developRgb.r), srgbEncode(developRgb.g), srgbEncode(developRgb.b)) / 0.45, vec3f(0.0), vec3f(1.0)
           );
           let layers = vec3f(
-            grainLayerNoise(frame / max(1.0, physicalPitch * 0.9), channelSignal.r, 211u, opacity, clumping, edge, midSpread),
-            grainLayerNoise(frame / max(1.0, physicalPitch), channelSignal.g, 223u, opacity, clumping, edge, midSpread),
-            grainLayerNoise(frame / max(1.0, physicalPitch * 1.3), channelSignal.b, 227u, opacity, clumping, edge, midSpread)
+            grainLayerNoise(frame / max(minimumPitch, physicalPitch * 0.9), channelSignal.r, 211u, opacity, clumping, edge, midSpread),
+            grainLayerNoise(frame / max(minimumPitch, physicalPitch), channelSignal.g, 223u, opacity, clumping, edge, midSpread),
+            grainLayerNoise(frame / max(minimumPitch, physicalPitch * 1.3), channelSignal.b, 227u, opacity, clumping, edge, midSpread)
           );
           let weights = vec3f(0.2126, 0.7152, 0.0722);
           let mono = dot(layers, weights) / length(weights);
@@ -1785,6 +1785,19 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let response = shadowWeight * p[${GPU_PARAMS.GRAIN_SHADOW_RESPONSE}] + midWeight * p[${GPU_PARAMS.GRAIN_MIDTONE_RESPONSE}] + highlightWeight * p[${GPU_PARAMS.GRAIN_HIGHLIGHT_RESPONSE}];
         let amount = 0.18 * p[${GPU_PARAMS.GRAIN_AMOUNT}] * master * response * pixelCoverage;
         return grain * amount;
+    }
+    fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
+      let scale = clamp(p[${GPU_PARAMS.SOURCE_PIXEL_SCALE}], 0.05, 1.0);
+      if (scale >= 1.0) { return filmGrainSample(rgb, coordinate, master, vec2f(0.0), 1.0); }
+      let count = min(4u, u32(ceil(1.0 / scale)));
+      var sum = vec3f(0.0);
+      for (var y = 0u; y < count; y++) {
+        for (var x = 0u; x < count; x++) {
+          let offset = (vec2f(f32(x), f32(y)) + vec2f(0.5)) / f32(count) - vec2f(0.5 * scale);
+          sum += filmGrainSample(rgb, coordinate, master, offset, scale);
+        }
+      }
+      return sum / f32(count * count);
     }
     fn lensDiffusion(coordinate: vec2i) -> vec3f {
       var rgb = sampleFilm(coordinate);

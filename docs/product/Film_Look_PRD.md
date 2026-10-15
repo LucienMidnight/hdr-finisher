@@ -247,34 +247,42 @@ Notes on using these numbers:
   (`runtime/params_schema.py` `GrainParams`; `model/grain.py` has a to-do note
   for per-stock RMS granularity).
 
-Size follow-up, October 15, 2026: **unresolved Fit/export mismatch; Phase 3
-controls have not been implemented.** A generated 2400 x 1600 four-patch image,
-Portra 400, Grain Amount 100, Size 50, 35mm, Chroma 40 was rendered through the
-GPU at native 100% and at a reduced 1200 x 800 Fit processing size, then compared
-with the actual CPU export renderer at original and half-size delivery, with
-output sharpening off. At native size the mean RGB difference was 0.0653 levels
-out of 255 and p99.9 was 1 level. At half size it was 2.5180 levels and p99.9 was
-14 levels. At the app's actual automatic Fit size (1520 x 1013, resolution
-override off), the mean difference was 3.1402 levels and p99.9 was 18; grey-patch
-grain variation was 3.3671 preview versus 2.5827 export, again about 30% stronger.
-On the half-size flat mid-grey patch, mean per-channel grain standard deviation
-was 2.6657 preview versus 2.0575 export: the reduced preview grain was about 30%
-stronger, visibly so in side-by-side crops. Native variation was 4.4188 preview
-versus 4.4142 export. Downsize export therefore correctly makes grain finer;
-rebuilding the grain at the smaller preview size does not reproduce that scan.
-Coarser Super 8 grain looked consistent overall, so it alone would have missed
-the issue. This was the SDR lane with a standard-range canvas; HDR and other
-Fit sizes remain unchecked. Full/native processing displayed at Fit was not
-assessed; the failing case is reduced processing at Fit, not CSS scaling alone.
+Size follow-up, October 15, 2026: **preview grain fix implemented; the rest
+of Phase 3 and Phase 3b are still pending.** Steve chose the full-resolution
+export, downsized, as the reference. Reduced GPU Direct/Tiled and CPU fallback
+now average samples of the native grain field in film density, before print.
+Native 100%, export and Proof keep the original single-sample field. This is
+bounded box quadrature, not an exact full-resolution render followed by Lanczos;
+individual noise pixels therefore need not coincide with the downsized scan.
 
-The brief explicitly says to stop and report a visible Fit/export disagreement
-before changing the design. No grain, stage order, export or pinned tolerance
-was changed. `tests/performance/film-grain-size-diagnostic.js`, run through the
-Electron runner at 2560x1440, preserves this read-only comparison and writes
-crops/results to ignored `output/phase3-grain/`. It reports results rather than
-loosening or replacing the existing parity checks. The existing grain-parity
-driver compares equal-sized CPU/GPU preview renders; it cannot catch this
-full-render-then-downsize export difference.
+`tests/performance/film-grain-size-diagnostic.js` is now pass/fail. It generates
+a 2400 x 1600 four-patch image and a separate flat-grey image, compares the real
+native export with actual automatic Fit (1520 x 1013 here), half size and native
+size, and covers 35mm/Super 8, SDR/HDR, Direct/Tiled and CPU fallback. All four
+patch interiors are checked. Reduced grain must stay within 15% in mean channel
+RMS and within one 8-bit level in RMS and channel mean. This fixed visual
+allowance rejects the previous visibly stronger ~30% grain while allowing the
+bounded integration approximation; inspected side-by-side crops have similar
+fine texture. Existing native whole-frame limits remain mean <= 0.1 and p99.9
+<= 2 levels, rather than applying them separately to difficult stock colours.
+The diagnostic writes generated media and comparisons to ignored output only.
+
+Validation: 180 patch/route/size comparisons pass; worst grain-strength error
+13.9%, worst channel mean bias 0.356 levels. Native whole-frame mean is at most
+0.0654 levels and p99.9 is 1. Direct/Tiled images are byte-identical. The initial
+72 grey-patch matrix ran end-to-end; the expanded checks reused its same native
+exports, and the native whole-frame scope correction was evaluated from those
+recorded images. Existing grain parity passes all ten cases without changed
+limits. Fast checks: 483 JavaScript and 2094 Python passed, three Python skipped.
+
+Cost: reduced grain evaluates 4 samples at these Fit sizes, up to 16 at smaller
+scales, instead of one. The grain portion of GPU work increases accordingly;
+CPU fallback also visits more native-scale grain cells and can be substantially
+slower. No controlled before/after whole-preview timing was taken. Steve should
+try Fit and zoom/pan responsiveness with grain enabled. Scales smaller than the
+tested Fit/half sizes use the same bounded approximation but are not covered by
+this acceptance matrix. Phase 3 controls and the Phase 3b lens filter have not
+been implemented or committed yet.
 
 ### 5.4 Data still to get
 

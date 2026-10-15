@@ -276,7 +276,7 @@ def _apply_hdr_adjustments(
             source_pixel_scale=source_pixel_scale,
         )
     if hdr.film_look_section_enabled or _structure_is_active(hdr):
-        result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=include_grain, frame_window=frame_window)
+        result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=include_grain, frame_window=frame_window, source_pixel_scale=source_pixel_scale)
     if hdr.vignette_section_enabled:
         result = _apply_vignette(result, hdr.vignette, PreviewKind.HDR, frame_window=frame_window)
     if include_output_highlight_compression:
@@ -806,7 +806,7 @@ def _apply_sdr_post_highlight_tail(
             source_pixel_scale=source_pixel_scale,
         )
     if sdr.film_look_section_enabled or _structure_is_active(sdr):
-        result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=include_grain, frame_window=frame_window)
+        result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=include_grain, frame_window=frame_window, source_pixel_scale=source_pixel_scale)
     if sdr.vignette_section_enabled:
         result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR, frame_window=frame_window)
     if include_output_highlight_compression:
@@ -1609,7 +1609,7 @@ def _apply_curves(image: np.ndarray, adjustments: AdjustmentState, kind: Preview
 
 def _apply_film_look(
     image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind, *, include_grain: bool = True,
-    frame_window: FrameWindow | None = None,
+    frame_window: FrameWindow | None = None, source_pixel_scale: float = 1.0,
 ) -> np.ndarray:
     """Lens -> scatter -> halation -> negative/grain -> print -> scan.
 
@@ -1650,17 +1650,17 @@ def _apply_film_look(
         grain = include_grain and look.grain_enabled and look.grain_amount > 0.0
         if include_grain and look.grain_enabled and look.grain_view_map:
             return _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed,
-                                        strength, view_map=True, frame_window=frame_window)
+                                        strength, view_map=True, frame_window=frame_window, preview_scale=source_pixel_scale)
         if _film_stock_is_active(look):
             delta = _apply_density_grain(
                 result, look, kind, adjustments.shared.film_grain_seed, full,
-                frame_window=frame_window, density_delta=True,
+                frame_window=frame_window, preview_scale=source_pixel_scale, density_delta=True,
             ) if grain else None
             result = _apply_film_stock(result, look, kind, full, density_delta=delta)
         elif grain:
             # Neutral's straight response preserves the existing density field.
             result = _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed,
-                                         full, frame_window=frame_window, clip_output=False)
+                                         full, frame_window=frame_window, preview_scale=source_pixel_scale, clip_output=False)
         # Legacy creative response stays until Phase 3 removes its controls.
         result = _apply_film_response(result, look, kind, full)
         result = image + (result - image) * strength
@@ -2370,6 +2370,7 @@ def _apply_density_grain(
     frame_window: FrameWindow | None = None,
     density_delta: bool = False,
     clip_output: bool = True,
+    preview_scale: float = 1.0,
 ) -> np.ndarray:
     """Modulate the frame by the film grain density field.
 
@@ -2386,7 +2387,7 @@ def _apply_density_grain(
     region_height = image.shape[0]
     left, top, width, height = FrameWindow.resolve(frame_window, image)
     physical_pitch = float(_grain_pitch_pixels(width, height, look))
-    pixel_coverage = np.float32(min(1.0, physical_pitch))
+    pixel_coverage = np.float32(min(1.0, physical_pitch / min(1.0, max(0.05, preview_scale))))
     amount = np.float32(0.18 * look.grain_amount / 100.0) * master * pixel_coverage
     neutral = _film_decode_luma(np.float32(0.5), kind)
 
@@ -2408,9 +2409,9 @@ def _apply_density_grain(
         chroma = np.float32(look.grain_chroma / 100.0) * (
             np.float32(1.0) - np.float32(0.8) * _smoothstep(0.88, 1.0, signal)
         )
-        noise = film_grain.grain_noise(
+        noise = film_grain.preview_grain_noise(
             develop_rgb, develop_luma, (0.2126, 0.7152, 0.0722), left, top + first_row, physical_pitch, seed,
-            look.grain_film_type, float(look.grain_softness) / 100.0, chroma,
+            look.grain_film_type, float(look.grain_softness) / 100.0, chroma, preview_scale=preview_scale,
         )
         if density_delta:
             # Convert the renderer's log2 transmission field to optical density.

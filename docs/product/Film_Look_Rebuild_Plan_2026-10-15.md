@@ -269,12 +269,15 @@ applied at run time and so is cheap), Push/Pull, scan sharpening and levels.
 Remove Film Response, Color Density, Channel Response and the desaturation
 sliders. Halation: remove Sensitivity; keep Hue Offset and Saturation. Brief: `docs/technical/codex-brief-film-look-phase-3-controls-2026-10-15.md`.
 
-Phase 3 pre-implementation checks, October 15, 2026: stopped at the brief's
-explicit grain follow-up condition. At reduced Fit processing, normal 35mm
-grain was visibly stronger than the downsized CPU export; native 100% agreed.
-See PRD section 5.3 for recipe, measurements, limits and the reproducible
-diagnostic. No Phase 3 controls, model fields, presets or renderer paths have
-changed. Resolve the Fit grain decision, then finish Phase 3 before Phase 3b.
+Phase 3 continuation, October 15, 2026: the Fit grain decision is implemented.
+Reduced GPU Direct/Tiled and CPU fallback integrate the native density grain;
+export, Proof and native 100% retain their original field. The fixed pass/fail
+check covers flat grey and all four patch interiors, actual automatic Fit,
+half size, native, 35mm/Super 8 and SDR/HDR. All 180 comparisons pass; see PRD
+section 5.3 for scope, tolerance, approximation and performance limits. Existing
+ten-case grain parity and both fast suites pass. Development/Print/Scan controls
+and Halation cleanup are still missing, so Phase 3 is not finished; Phase 3b
+has not begun. Continue those before stock character (Phase 4).
 
 Spatial reach follow-up (calculated workload, not a timing benchmark): at a
 6000 x 4000 frame, 35mm, maximum Bloom radius 10 and Halation radius 5, Resolution
