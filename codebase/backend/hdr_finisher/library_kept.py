@@ -15,6 +15,7 @@ from .gainmap_decoders import GainMapDecodeError
 from .library_grades import grade_key
 from .library_pictures import LibraryPictureCache, reduce_picture
 from .models import EditDocument, ExportSettings, PreviewKind
+from .projects import validate_saved_document
 from .library_diagnostics import log
 
 _LOCK=RLock()
@@ -87,7 +88,7 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
     from .sessions import SessionStore
     from . import exporters
     from .library_pictures import check_cancelled
-    started=perf_counter();document=EditDocument.model_validate(grade)
+    started=perf_counter();document=validate_saved_document(grade)
     def check(): check_cancelled(cancelled)
     check()
     source_started=perf_counter()

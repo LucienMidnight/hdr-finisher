@@ -5,7 +5,8 @@ from pathlib import Path
 from uuid import uuid4
 from .library_marks import Marks, clean_names
 from .models import EditDocument
-from .library_diagnostics import log
+from .projects import validate_saved_document
+from .library_diagnostics import log, problem
 
 SEPARATOR = "|copy|"
 
@@ -39,7 +40,7 @@ class LibraryCopies:
             Marks.model_validate(item.get("marks", {}))
             if not isinstance(item.get("albums",[]),list): raise ValueError("Virtual copy albums cannot be read; settings were left untouched.")
             clean_names(item.get("albums", []), "Album names")
-            if item.get("grade") is not None: EditDocument.model_validate(item["grade"])
+            if item.get("grade") is not None: validate_saved_document(item["grade"])
         return deepcopy(items)
 
     def state(self, path):
@@ -267,7 +268,11 @@ class LibraryCopies:
         output=[]
         for photo in photos:
             if is_copy(photo["path"]): output.append(photo); continue
-            items=self.items(photo["path"]); photo["copy_count"]=len(items); output.append(photo)
+            try: items=self.items(photo["path"])
+            except ValueError as error:
+                # One unreadable settings file must not blank the whole folder.
+                problem("copies_read_failed",photo["path"],error,"copies hidden; settings left untouched"); items=[]
+            photo["copy_count"]=len(items); output.append(photo)
             rows=self.marks._rows([photo["path"]+SEPARATOR+i["photo_id"] for i in items])
             for order,item in enumerate(items):
                 key=photo["path"]+SEPARATOR+item["photo_id"]

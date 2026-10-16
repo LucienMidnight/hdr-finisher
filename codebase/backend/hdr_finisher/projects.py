@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import hashlib
 import json
 import logging
@@ -193,8 +194,17 @@ def _validate_ignoring_unknown_fields(state_payload: object) -> EditDocument:
                 raise
             dropped.extend(".".join(str(part) for part in location) for location in removed)
     if dropped:
-        logger.info("Project opened with %d outdated field(s) ignored: %s", len(dropped), ", ".join(sorted(dropped)))
+        logger.info("Saved grade read with %d outdated field(s) ignored: %s", len(dropped), ", ".join(sorted(dropped)))
     return document
+
+
+def validate_saved_document(state_payload: object) -> EditDocument:
+    """A grade read from a saved file, such as a Library settings file.
+
+    Gets the same leniency as project open, without changing the payload
+    the caller holds; the next save writes the grade without what was dropped.
+    """
+    return _validate_ignoring_unknown_fields(deepcopy(state_payload))
 
 
 def _drop_field(payload: object, location: tuple) -> bool:

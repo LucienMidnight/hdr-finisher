@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 from .library_grades import LibraryGrades
 from .models import EditDocument, EditCommand
-from .projects import open_document
+from .projects import open_document, validate_saved_document
 
 
 class GradeRequest(BaseModel):
@@ -115,7 +115,7 @@ def add_grade_routes(router, marks, store):
                 path = grades.path(session_id)
                 state = grades._get(path)
                 document = request.document or state["default"]
-                session = open_document(store, EditDocument.model_validate(document), marks.source_path(path), reuse_session_id=session_id if request.reuse_source else None)
+                session = open_document(store, validate_saved_document(document), marks.source_path(path), reuse_session_id=session_id if request.reuse_source else None)
                 new_id = str(session.session_id)
                 grades.sessions[new_id] = path
                 grades.starts[new_id] = document

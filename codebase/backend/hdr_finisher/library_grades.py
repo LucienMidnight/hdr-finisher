@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from time import perf_counter
 
-from .models import EditDocument
+from .projects import validate_saved_document
 from .library_marks import Marks
 from .library_diagnostics import log
 
@@ -56,7 +56,7 @@ class LibraryGrades:
             grade = state.get("desired") if state.get("pending") else document.get("grade")
             if recovery and not state.get("pending"):
                 grade = state.get("recovery") or grade
-            return EditDocument.model_validate(grade) if grade else None
+            return validate_saved_document(grade) if grade else None
 
     def capture_edit(self, session):
         if str(session.session_id) in self.sessions:
@@ -88,7 +88,7 @@ class LibraryGrades:
             document = self.marks._document(Path(path))
             grade = (document or {}).get("grade")
             if grade is not None:
-                EditDocument.model_validate(grade)
+                validate_saved_document(grade)
             state = self._get(path)
             recovery = state.get("recovery")
             self.sessions[session_id] = path
