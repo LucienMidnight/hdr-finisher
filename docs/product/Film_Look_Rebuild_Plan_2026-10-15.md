@@ -2,7 +2,7 @@
 
 - **Date:** October 15, 2026
 - **Branch at planning time:** `film-stocks-phase-1` (after `597e5ac`)
-- **Status:** Phase 1 data implemented October 15, 2026. Phases 2 to 6 remain planned. Decisions marked **Steve** are open. See Film Look PRD section 5.1 for shipped data and open paper choices.
+- **Status:** Phases 1-3 complete; Phase 3b lens integration in final validation October 16, 2026. Phases 4-6 remain planned. See section 8 and the completion notes below for current results; earlier WIP notes are historical. Decisions marked **Steve** are open.
 - **Reference read:** spektrafilm at `3bb2c2d` (June 7, 2026), Filmbox's published workflow.
 - **Requirements and data sources:** [Film Look PRD](Film_Look_PRD.md). Its
   section 5 is the record of which film data is confirmed, estimated or missing;
@@ -461,3 +461,17 @@ Fast checks pass: all 483 existing Node checks plus two new lens checks; all
 2,150 Python checks plus the added upstream-golden check (19 lens checks total),
 three skips. No renderer uses this model yet, so GPU coverage belongs to the
 integration commit. No removed behavior or tests in this preparation commit.
+
+
+Phase 3b focused driver preparation: added physical lens preview/export and
+exact Direct/Tiled drivers, covering 128 cases each (four families, two Strengths,
+two Sizes, two formats, SDR/HDR, Fit/native). The first preview/export matrix
+passed all 128. Tile pixels now pass all 128 after correcting the integration's
+normalized-coordinate lens interpolation and its one-texel read support; the
+blur caps remain 64 individual / 128 composed quarter texels. A missing lens
+script in the Library iframe produced startup errors despite valid main-view
+pixels; adding that import passes the focused startup/worst-CineBloom smoke.
+The final preview/export matrix is checking the corrected interpolation.
+No tolerance or budget change. Fast checks on the integration: 486 Node and
+2,158 Python pass, three Python skips; final library-import run is in progress.
+The warmed timing/photo option uses the same lens driver, not a broad sweep.
