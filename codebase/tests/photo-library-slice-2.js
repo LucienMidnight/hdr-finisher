@@ -61,7 +61,7 @@ const settings = file => JSON.parse(fs.readFileSync(file + ".hdrf", "utf8"));
     const summary = await library.locator("#library-facts").textContent();
     for (const text of ["FE 85mm F1.8", "85 mm", "f/2.8", "1/250 s", "ISO 400"]) assert.ok(summary.includes(text), text);
     await library.locator("#facts-toggle").click();
-    const all = await library.locator("#library-facts").textContent();
+    const all = await library.locator("#details").textContent();
     for (const text of ["File", "SONY", "Settings file", "None yet", "Location", "Not recorded", "Show less"]) assert.ok(all.includes(text), text);
     await cell("sony-b.jpg").click();
     await library.waitForFunction(() => /Lens\s*Unknown/.test(document.querySelector("#library-facts")?.innerText || ""));
