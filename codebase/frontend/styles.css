@@ -9267,7 +9267,6 @@ body[data-workflow="import"] #viewer-status-dock { display: none; }
 .film-effect-tile .film-module-header { margin: 0; padding: 0; border: 0; font-family: var(--display); }
 .film-look-group .film-response-grid { padding: 0; background: transparent; border: 0; }
 .film-print-controls { display: grid; gap: 10px; padding: 0; margin: 0; border: 0; min-width: 0; }
-.film-print-controls:disabled { opacity: .45; }
 .film-panel-note, [data-film-slide-note] { margin: 4px 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
 .film-push-segments { display: flex; gap: 2px; padding: 3px; background: var(--segment-channel-background); box-shadow: var(--depth-channel); border-radius: 4px; }
 .film-push-segments > button { flex: 1; padding: 4px; min-width: 0; color: var(--muted); font-family: var(--mono); border: 0; background: transparent; box-shadow: none; }

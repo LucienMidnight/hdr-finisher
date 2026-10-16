@@ -14,7 +14,7 @@ module.exports = async function checkStockCharacterUi(page) {
   state.adjustments.hdr.film_look=defaultFilmLook(); syncControlsFromState(); renderControlState();
   input('film_stock','kodak_portra_400'); await syncGlobalEditState();
   check(hdr().grain_amount===HDRFilmCharacterData.portra_400_anchor_amount && hdr().halation_amount>0,'stock did not set own effects');
-  check(document.querySelector('[data-value-path="current.film_look.halation_amount"]').textContent==='100% stock','relative readout');
+  check(document.querySelector('[data-value-path="current.film_look.halation_amount"]').textContent==='100%','relative readout');
   check(Math.abs(Number(document.querySelector('#film-halation-hue').value))<1e-6,'hue does not display zero');
   input('grain_amount',HDRFilmCharacterData.portra_400_anchor_amount); await syncGlobalEditState();
   check(hdr().stock_overrides.includes('grain_amount') && !dot('grain_amount').hidden,'equal value does not become set');

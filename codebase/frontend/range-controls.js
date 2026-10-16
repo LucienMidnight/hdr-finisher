@@ -474,7 +474,7 @@ function formatControlValue(path, value) {
   const stockScale = typeof filmStockUiContext === "function" ? filmStockUiContext(path) : null;
   if (stockScale && HDRFilmCharacter.scale(stockScale.film, stockScale.key)) {
     const ui = HDRFilmCharacter.toUi(stockScale.film, stockScale.key, Number(value));
-    return stockScale.key === "halation_hue_offset" ? `${ui > 0 ? "+" : ""}${Number(ui.toFixed(1))}%` : `${Number(ui.toFixed(1))}% stock`;
+    return stockScale.key === "halation_hue_offset" ? `${ui > 0 ? "+" : ""}${Number(ui.toFixed(1))}%` : `${Number(ui.toFixed(1))}%`;
   }
   const numeric = Number(value);
   if (path.endsWith("straighten_angle")) return `${numeric.toFixed(1)}\u00b0`;
