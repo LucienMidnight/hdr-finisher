@@ -957,14 +957,38 @@ function bindEvents() {
     );
     noteViewerPan();
   }, { passive: true });
-  els.navigationThumb.addEventListener("click", (event) => {
-    if (!state.session || state.zoomMode !== "custom") return;
-    const imageBox = els.navigationThumbImage.getBoundingClientRect();
-    const x = event.detail === 0 ? 0.5 : clamp((event.clientX - imageBox.left) / Math.max(1, imageBox.width), 0, 1);
-    const y = event.detail === 0 ? 0.5 : clamp((event.clientY - imageBox.top) / Math.max(1, imageBox.height), 0, 1);
+  // Press and drag pans continuously; keyboard activation centres the view.
+  const panFromNavigation = (x, y) => {
     els.dropzone.scrollLeft = x * els.dropzone.scrollWidth - els.dropzone.clientWidth / 2;
     els.dropzone.scrollTop = y * els.dropzone.scrollHeight - els.dropzone.clientHeight / 2;
     updateNavigationViewport();
+  };
+  const panFromNavigationPointer = (event) => {
+    const imageBox = els.navigationThumbImage.getBoundingClientRect();
+    panFromNavigation(
+      clamp((event.clientX - imageBox.left) / Math.max(1, imageBox.width), 0, 1),
+      clamp((event.clientY - imageBox.top) / Math.max(1, imageBox.height), 0, 1),
+    );
+  };
+  let navigationDragPointer = null;
+  els.navigationThumb.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !state.session || state.zoomMode !== "custom") return;
+    navigationDragPointer = event.pointerId;
+    els.navigationThumb.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    panFromNavigationPointer(event);
+  });
+  els.navigationThumb.addEventListener("pointermove", (event) => {
+    if (event.pointerId === navigationDragPointer) panFromNavigationPointer(event);
+  });
+  const endNavigationDrag = (event) => {
+    if (event.pointerId === navigationDragPointer) navigationDragPointer = null;
+  };
+  els.navigationThumb.addEventListener("pointerup", endNavigationDrag);
+  els.navigationThumb.addEventListener("pointercancel", endNavigationDrag);
+  els.navigationThumb.addEventListener("click", (event) => {
+    if (event.detail !== 0 || !state.session || state.zoomMode !== "custom") return;
+    panFromNavigation(0.5, 0.5);
   });
   els.overlayToggle.addEventListener("click", toggleOverlayPopover);
   els.overlayClose.addEventListener("click", closeOverlayPopover);

@@ -1249,6 +1249,7 @@ body[data-active-lane="sdr"] .lane-dot {
   color: var(--text);
   box-shadow: 0 4px 18px rgb(0 0 0 / 35%);
   cursor: crosshair;
+  touch-action: none;
 }
 
 .navigation-thumb.hidden { display: none; }
