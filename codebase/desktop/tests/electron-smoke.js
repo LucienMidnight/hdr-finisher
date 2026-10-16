@@ -213,7 +213,8 @@ async function main() {
       await window.waitForTimeout(80);
       const layout = await window.evaluate(() => {
         // Measure the instance on screen; each workflow panel has its own header.
-        const rect = (selector) => [...document.querySelectorAll(selector)].find((element) => element.getClientRects().length)?.getBoundingClientRect();
+        const rect = (selector) => ([...document.querySelectorAll(selector)].find((element) => element.getClientRects().length)
+          || document.querySelector(selector))?.getBoundingClientRect();
         const source = document.querySelector(".source-rail");
         const sourceHeader = rect(".source-rail .rail-title-row");
         const sourceCollapse = rect("#source-rail-expand");
@@ -700,7 +701,18 @@ async function main() {
     assert.equal(savedProject.global_adjustments.shared.false_color_band_anchor, "project");
     assert.equal(savedProject.global_adjustments.shared.false_color_ceiling_nits, 1000);
     assert.equal(Object.hasOwn(savedProject.global_adjustments.shared, "overlay_preset"), false);
-    assert.equal(await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), "HDR Finisher");
+    // The saved state reaches the native title asynchronously.
+    const savedNativeTitle = await electronApp.evaluate(async ({ BrowserWindow }) => {
+      const deadline = Date.now() + 10000;
+      let title = "";
+      while (Date.now() < deadline) {
+        title = BrowserWindow.getAllWindows()[0]?.getTitle() || "";
+        if (title === "HDR Finisher") break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      return title;
+    });
+    assert.equal(savedNativeTitle, "HDR Finisher");
     await selectMenuItem("File", "Open Project…", "File", "#project-open");
     await window.locator("#directory-browser").waitFor({ state: "visible" });
     assert.equal(await window.locator("#directory-browser").getAttribute("data-mode"), "project_open");
