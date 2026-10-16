@@ -293,9 +293,18 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   renderSession();
   renderLocalAdjustments();
   seedExportFieldsFromSession();
-  const gpuReady = await renderGpuDraft("hdr", { hideStatus: false, longEdge: settledProxyLongEdge() });
+  let gpuReady = await renderGpuDraft("hdr", { hideStatus: false, longEdge: settledProxyLongEdge() });
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
-  if (!gpuReady) await refreshPreview({ progressSteps: [36, 76, 92] });
+  // The first photo with a film stock waits for that stock's tables, and
+  // their arrival re-renders the lane, superseding this draft. That is
+  // cancellation, not a GPU failure: draw again on the GPU. Answering it with
+  // the CPU preview took over two minutes for a 24 MP film-stock grade.
+  if (!gpuReady && transientGpuRefusal()) {
+    gpuReady = await renderGpuDraft("hdr", { hideStatus: false, longEdge: settledProxyLongEdge() });
+    if (openGeneration !== null && openGeneration !== state.importGeneration) return;
+  }
+  // A second supersession means newer scheduled work will present the frame.
+  if (!gpuReady && !transientGpuRefusal()) await refreshPreview({ progressSteps: [36, 76, 92] });
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   gradeOpenStage("grade_open_first_frame");
   void Promise.all([
