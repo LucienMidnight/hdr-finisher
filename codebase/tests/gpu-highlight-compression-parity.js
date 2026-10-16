@@ -15,7 +15,7 @@ function assert(condition, message) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await page.evaluate(() => document.getElementById("test-pattern-button").click());
     await page.waitForFunction(() => state.session?.session_id && state.gpuPreview?.available);
 
     const result = await page.evaluate(async () => {
