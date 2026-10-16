@@ -2,7 +2,7 @@
 
 - **Date:** October 15, 2026
 - **Branch at planning time:** `film-stocks-phase-1` (after `597e5ac`)
-- **Status:** Phases 1-3 and 3b complete October 16, 2026; Phase 4 stock character is next. Phases 4-6 remain planned. See section 8 and the completion notes below for current results; earlier WIP notes are historical. Decisions marked **Steve** are open.
+- **Status:** Phases 1-4 (including 3b) complete October 16, 2026. Phase 5 presets is next; Phase 6 panel polish remains planned. See section 8 and the completion notes below for current results; earlier WIP notes are historical. Decisions marked **Steve** are open.
 - **Reference read:** spektrafilm at `3bb2c2d` (June 7, 2026), Filmbox's published workflow.
 - **Requirements and data sources:** [Film Look PRD](Film_Look_PRD.md). Its
   section 5 is the record of which film data is confirmed, estimated or missing;
@@ -83,7 +83,8 @@ these two ideas from it:
 **Grain per stock** cannot come from spektrafilm's code. It has to come from
 the manufacturers' data sheets (Kodak publishes a Print Grain Index, Fujifilm
 an RMS granularity). Phase 4 turns them into default Grain Size and Amount for
-each stock. No values will be guessed.
+each stock. The Phase 4 brief authorizes explicit, sourced estimates where
+manufacturer data cannot establish a value; label each as PRD section 5 requires.
 
 Collected October 15, 2026 (sheets kept outside the repo in
 `HDR Finisher Tool/film-datasheets`). Kodak Print Grain Index, 35mm at
@@ -570,3 +571,51 @@ tracking are next; Phase 5 Looks and Phase 6 panel polish remain unfinished.
 Documentation completion commit: current user guides, pipeline notes and known
 limitations updated. No renderer change after the final checks above; those
 checks remain applicable. Two unrelated untracked Library briefs are untouched.
+
+
+## Phase 4 completion (October 16, 2026)
+
+Picking a stock now fills its grain, halation and matching paper. Seven owned
+controls track inherited/set state independently in HDR and SDR; manual edits
+show a reset dot, and double-click also restores inherited slider values.
+Undo/redo, project save/reopen and Match HDR preserve ownership. Deliberate
+bypasses remain independent. Existing projects have no ownership flags and
+therefore treat these controls as inherited on their next stock change; there
+is no migration. Existing full Look recipes await Phase 5.
+
+Character metadata and its browser bootstrap share a generator. PRD section 5.5
+records every shipped stock value, source and confidence. Portra 400 starts at
+Amount 24, Size 30, for a 35mm scan displayed 6x4 inches at 14 inches viewing
+distance. Change anchor=24.0 in codebase/tools/build_film_character.py and rerun
+with the repository Python to tune Amount across the scale. Steve has not yet
+judged this starting estimate. Vision3 charts were read visually as estimates;
+precise layer fitting is unfinished and would require a later renderer phase.
+The geometric format check passes, but does not certify perceived graininess.
+
+Final checks: 493 Node tests pass; 2,181 Python tests pass, three skip. Stock
+preview/export comparisons pass 10/10 (still, cine, slide, Neutral, set controls,
+both lanes); grain comparisons pass 12/12. Existing mean 0.1 / p99.9 2 display
+level limits are unchanged. Live UI checks pass selection, equal-value set,
+dot/paper/double-click reset, relative slider/typed input, undo/redo and Match
+HDR with independent SDR. No final failure remains. Initial failures exposed
+an intended saved-schema signature change, a Hue step-grid issue (fixed), and
+a harness assumption that Neutral must allocate a stock table (corrected to
+require bypass). No tolerance was relaxed. Existing HDR precision, Black &
+White tile and Library pause-warning limitations remain as previously recorded;
+no broad release sweep was run.
+
+Commit records: f560e7b adds sourced calibration (Node 493 pass; initial Python
+2,157 pass with only the intended new saved-schema signature failing, three
+skip; focused metadata checks pass). d68c215 adds ownership and reset controls
+(focused Python 25 pass, including the updated intended signature; Node 493
+pass). The final validation/docs commit adds behavior-driven UI and stock/grain
+cases and records the final passing checks above. Export/Proof equations,
+renderers, stage order, baked stock arrays, shader layouts and limits are
+unchanged. No push or installer. Two unrelated untracked Library briefs remain
+untouched. No Steve lens feedback arrived during Phase 4.
+
+Next: Phase 5 stage presets and sparse Looks (PRD R11), rebuilding Clean Cinema,
+Soft Color Negative, Dense Print and High-Speed Texture on real stocks/papers,
+plus Looks for new stocks. Reuse HDRFilmCharacter and stock_overrides; apply
+only deliberate preset changes as set. Phase 6 panel polish remains separate.
+The exhaustive Phase 4 chosen-versus-alternative record is in the Phase 4 brief.

@@ -42,7 +42,7 @@ test('halation UI is relative, round-trips ordinary renderer values and preserve
 test('Portra measured pushes update inherited grain without owning Push/Pull', () => {
  const f=film(); C.select(f,'kodak_portra_800'); C.set(f,'push_pull',1); assert.equal(f.grain_amount,data.stocks.kodak_portra_800_push1.defaults.grain_amount);
  C.set(f,'grain_size',20); C.set(f,'push_pull',2); assert.equal(f.grain_size,20); assert.equal(f.grain_amount,data.stocks.kodak_portra_800_push2.defaults.grain_amount);
- C.select(f,'kodak_portra_400'); assert.equal(f.push_pull,2); assert.equal(f.grain_amount,24);
+ C.select(f,'kodak_portra_400'); assert.equal(f.push_pull,2); assert.equal(f.grain_amount,data.portra_400_anchor_amount);
 });
 test('saved lane ownership survives JSON and Match copies without sharing state', () => {
  const hdr=film(); C.select(hdr,'kodak_portra_400'); C.set(hdr,'grain_amount',19);

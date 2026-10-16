@@ -37,7 +37,7 @@ const NEUTRAL = {
 };
 const EFFECTS = { grain_amount: 60, grain_size: 80, grain_film_format: "super16", grain_chroma: 40,
   halation_amount: 45, halation_radius: 0.7, lens_filter: "black_pro_mist", lens_size: 1.2, film_resolution: 50 };
-const CASES = [
+let CASES = [
   { label: "Portra density grain", stock: { film_stock: "kodak_portra_400", grain_amount: 80, grain_film_format: "super8" } },
   { label: "Portra lens", stock: { film_stock: "kodak_portra_400", lens_filter: "black_pro_mist", } },
   { label: "Portra scatter", stock: { film_stock: "kodak_portra_400", film_resolution: 0 } },
@@ -71,6 +71,18 @@ const CASES = [
     print_contrast:100, shadow_contrast:100, highlight_contrast:100}},
   {label: "Neutral actual paper", stock: {film_stock:"none", print_paper:"kodak_2383", scan_sharpening:100, lab_levels:true}},
 ];
+
+const stockCharacterOnly = process.argv.includes("--stock-character-only");
+if (stockCharacterOnly) {
+  const C = require("../frontend/film-character.js");
+  CASES = ["kodak_portra_400", "kodak_vision3_500t", "fujifilm_velvia_100", "none"].map(id => ({
+    label:`Character ${id}`, stock:C.select({stock_overrides:[]},id),
+  }));
+  const overridden = C.select({stock_overrides:[]}, "kodak_portra_400");
+  C.set(overridden,"grain_amount",45); C.set(overridden,"halation_amount",12); C.set(overridden,"print_paper","kodak_2383");
+  C.select(overridden,"kodak_vision3_250d");
+  CASES.push({label:"Character set controls", stock:overridden});
+}
 
 if (selectedCase && !CASES.some(c => c.label === selectedCase)) throw new Error(`Unknown case: ${selectedCase}`);
 
@@ -125,6 +137,10 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
     if (!sessionResponse.ok()) throw new Error(`Fixture session failed with HTTP ${sessionResponse.status()}.`);
     const { session } = await sessionResponse.json();
     await page.evaluate((loadedSession) => activateDesktopSession(loadedSession, ""), session);
+    if (stockCharacterOnly) {
+      await require("./film-character-ui-check.js")(page);
+      if (process.argv.includes("--ui-only")) return;
+    }
     const loaded = await page.evaluate(async (ids) => {
       await Promise.all(ids.map((id) => window.HDRFilmStocks.request(id)));
       return window.HDRFilmStocks.loadedIds();
@@ -240,7 +256,9 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       for (const { label, stock, look_strength: lookStrength = 100 } of CASES.filter(c => !selectedCase || c.label === selectedCase)) {
         const on = await compare(lane, { ...NEUTRAL, ...stock }, lookStrength);
         if (on.error) throw new Error(`${lane} ${label}: ${on.error}`);
-        if (!on.slot) throw new Error(`${lane} ${label}: the stock never reached the GPU`);
+        if (stockCharacterOnly && stock.film_stock === "none") {
+          if (on.slot) throw new Error(`${lane} ${label}: Neutral default should bypass stock allocation`);
+        } else if (!on.slot) throw new Error(`${lane} ${label}: the stock never reached the GPU`);
         if (extremeHdr) {
           console.log("Finished texture:",JSON.stringify(on.textureStats));
           const absolute=[...on.differences].sort((a,b)=>a-b);

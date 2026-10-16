@@ -30,6 +30,8 @@ const MAX_GRAIN_MEAN_DIFFERENCE = 0.1 / 255;
 const MAX_GRAIN_P999_DIFFERENCE = 2 / 255;
 
 const CASES = [
+  { lane: "sdr", film_type: "color_negative", format: "35mm", size: 30, chroma: 0, map: false, stock: "kodak_vision3_500t" },
+  { lane: "hdr", film_type: "color_negative", format: "35mm", size: 30, chroma: 0, map: false, stock: "kodak_vision3_50d" },
   { lane: "sdr", film_type: "color_negative", format: "super8", size: 60, chroma: 40, map: false, strength: 50 },
   { lane: "sdr", film_type: "color_negative", format: "super8", size: 60, chroma: 40, map: false, stock: "kodak_portra_400", tone: 0 },
   { lane: "hdr", film_type: "color_negative", format: "super8", size: 60, chroma: 40, map: false, stock: "kodak_portra_400", color: 0 },

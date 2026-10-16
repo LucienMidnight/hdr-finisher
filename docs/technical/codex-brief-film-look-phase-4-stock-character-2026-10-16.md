@@ -142,3 +142,49 @@ preset menus, Looks that store only their stock, paper and deliberate changes
 Dense Print, High-Speed Texture) on real stocks and papers, and new Looks for the
 new stocks. It points to the same documents, says what is left in place and
 unfinished, lists open questions, and asks for the same three-part ending.
+
+## Phase 4 implementation decisions (October 16, 2026)
+
+Data/calibration: `f560e7b`. Ownership/panel/model: `d68c215`.
+All confidence/source records and shipped numbers are in PRD 5.5; none of the
+following calibration choices is a confirmed manufacturer slider value.
+
+| Question / doubt | Chosen | Alternative left open |
+|---|---|---|
+| Portra 400 visual anchor | Amount 24, Size 30 (13.2 um), 35mm scan displayed 6x4 inches, viewed at 14 inches; Steve still needs to judge it by eye | Start with the older Portra Look's Amount 12, or tune after visual review |
+| PGI scale and Size/Amount split | Doubling per 21.5 points; half each log-scale change to physical diameter and Amount | Put the whole change in Amount, or fit a perceptual transfer function |
+| Ektar's below-25 bound | Placement 24, Estimate | Lower placement, such as 20; the sheet cannot pick one |
+| Fujifilm C200 | Placement 44 beside Gold 200, Estimate | Use finer Portra 160 as the analogue |
+| Fujifilm X-tra 400 | Placement 46 beside Ultramax 400, Estimate | Use Portra 400's 37 |
+| Fujifilm Pro 400H | Placement 37 beside Portra 400, Estimate | Use Ultramax 400's 46 |
+| Portra 800 Push +1 / +2 | Placements 52 / 56, one/two noticeable steps above 48, Estimate | Keep 48 until measured pushed data exists |
+| Velvia / Provia / Ektachrome | Placement 24 each, alongside finest negative, Estimate; Ektachrome historical RMS remains Proxy | Place slides finer than Ektar, e.g. 20; do not convert reversal RMS to negative PGI |
+| Kodachrome 64 | Placement 24 beside fine slides, Estimate | Finer placement 20 by speed/description |
+| Verita 200D | Placement 34 beside 200T, Estimate; manufacturer grain source Missing | Gold 200's placement 44 by speed |
+| Vision3 50D / 200T / 250D / 500T | Placements 24 / 34 / 36 / 44, Estimate, using chart ranking; 200T and 250D are close | Speed-only placements, or defer until charts are digitized |
+| Vision3 chart readings | Read logarithmic sigma-D at common chart exposure 1.5 / 3 / 4.5, multiply by 1000, approximate +/-25% reading uncertainty | Digitize and align by density/channel or scene exposure; current samples are not cross-stock fixed-density measurements |
+| Grain shape / format conclusion | Keep normalized renderer and flat trims; curves' toe hump and declining highlights are only broadly represented. Halved gate doubles pitch within 1e-6; this is not a perceptual PGI certification | Fit per-layer tonal curves / exposure-dependent size in a later grain-renderer phase |
+| Halation slider units and set values | 100% stock for Amount/Spread/Saturation, 0 Hue Offset; save absolute renderer values, so set controls stay fixed on stock changes | Save multipliers, which would move the rendered set control with a new stock |
+| Halation projection | Map red strength through existing .42 coefficient, sigma to three-sigma radius, fit tint hue to R:G. Weak-back tint also acquires a small blue component in the unchanged model | Add arbitrary RGB tint / a new kernel; outside this phase's renderer constraint |
+| Neutral halation controls | Keep existing absolute effect controls, since there is no stock baseline to divide by | Borrow a real stock's baseline for Neutral |
+| Enabled switches | Remain independent; picking a stock does not override a deliberate bypass | Make switches stock-owned too, contrary to the brief's seven-control scope |
+| Paper identity | Inherited/default means matching paper; set alternatives remain fixed. Explicitly choosing the “Stock's own paper” option keeps that relational choice, not a frozen paper profile | Freeze the concrete default paper; not all such cross-stock tables ship, and baking more is outside scope |
+| Portra 800 development | Push +1/+2 refresh inherited grain from pushed entries; leave other stocks' push grain alone | Guess grain changes for every push/pull stop |
+| Reset convenience / slider bounds | Dot and double-click both restore inheritance; slides can reset Paper while print is bypassed. Amount/Spread slider spans 200%/400% stock, typed input keeps original absolute bounds; align Hue's slider steps on zero | Dot only; expose entire, much wider relative range on the slider |
+| Existing Looks | Leave full recipes for Phase 5; they do not yet encode deliberate overrides sparsely | Rebuild them here, which would exceed Phase 4 |
+
+No change to export/Proof equations, grain/halation drawing, stage order, lens
+filter, baked arrays, shader layouts, limits or budgets. No migration code.
+Existing projects have no recorded ownership: their controls are treated as
+inherited on the next stock change. Existing full Look recipes await Phase 5.
+The two untracked Library briefs remain untouched. No Steve lens feedback was
+received during this phase.
+
+
+Final validation/docs commit: 493 Node pass, 2,181 Python pass / three skip;
+stock GPU/CPU 10/10 and grain GPU/CPU 12/12 pass at unchanged 0.1 mean / 2 p99.9
+limits. Final live UI interaction checks pass. Initial Hue step-grid failure
+was fixed; intended schema signature and Neutral bypass expectations were
+updated for the requested behavior, without relaxing a tolerance. No final
+failure remains. Phase 5 is next; no push or installer. Completion notes and
+commit-by-commit records are in the PRD and rebuild plan.

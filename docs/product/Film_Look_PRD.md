@@ -223,7 +223,7 @@ compared.
 | Ultramax 400 (`kodak_ultramax_400`) | PGI 46 at 4x6 | Confirmed | Kodak E-7023, February 2016 |
 | Portra 800 (`kodak_portra_800`) | PGI 48 / 70 | Confirmed | Kodak E-4040, January 2025 |
 | Portra 800 pushed 1 and 2 stops (`kodak_portra_800_push1`, `_push2`) | None | **Missing.** Estimate: coarser than Portra 800 | Kodak gives no pushed PGI |
-| Vision3 50D, 200T, 250D, 500T (`kodak_vision3_*`) | Per-layer RMS curves across the tonal range | Confirmed curves, **not yet read off the charts** | Kodak sheets: 50D (March 2022), 200T brochure (revision code 1167.25), 250D (March 2022), 500T H-1-5219t (July 2015) |
+| Vision3 50D, 200T, 250D, 500T (`kodak_vision3_*`) | Per-layer RMS curves across the tonal range | Confirmed curves; visual readings are **Estimate**, section 5.5 | Kodak sheets: 50D (March 2022), 200T brochure (revision code 1167.25), 250D (March 2022), 500T H-1-5219t (July 2015) |
 | Verita 200D (`kodak_verita_200d`) | None | **Missing** | No sheet found |
 | Fujifilm C200 (`fujifilm_c200`) | RMS 4 | Confirmed, but cannot rank | Fujifilm data sheet (published September 2019) |
 | Fujifilm Superia X-tra 400 (`fujifilm_xtra_400`) | RMS 4 | Confirmed, but cannot rank | Fujifilm data sheet (September 2019) |
@@ -241,8 +241,7 @@ Notes on using these numbers:
 - Doubling the enlargement (4x6 to 8x10) adds about 21 to 22 PGI points for every
   Kodak stock that lists both. **Confirmed** from the sheets; it can calibrate how
   grain grows with Film Format.
-- How a PGI number becomes our Grain Amount and Size is **our calibration, not yet
-  done**. It will be fitted to the Kodak stocks and checked by eye.
+- How a PGI number becomes our Grain Amount and Size is **our calibration (initial Phase 4 placement in section 5.5), not manufacturer data**. It will be fitted to the Kodak stocks and checked by eye.
 - Spektrafilm itself has **no per-stock grain**: all stocks use the same settings
   (`runtime/params_schema.py` `GrainParams`; `model/grain.py` has a to-do note
   for per-stock RMS granularity).
@@ -377,7 +376,7 @@ final regression checks are still pending; Phase 3 is not yet accepted.
 | Item | Why it matters | Where it might come from |
 |---|---|---|
 | Ektachrome E100 sheet (E-4000) | Confirms the current slide film's grain | Kodak Alaris |
-| Vision3 values off the charts | Per-stock grain for cinema stocks, and the shadow-to-highlight shape | The saved sheets |
+| Digitized Vision3 curves | Visual estimates now read (5.5); precise per-layer fitting would need digitization and a later renderer phase | The saved sheets |
 | Pushed Portra 800 grain | Push/Pull grain change | Not published; keep as estimate |
 | Verita 200D sheet | Grain for this stock | Kodak |
 
@@ -598,3 +597,51 @@ certification. Constant-field/channel energy checks pass; no additive brightness
 term is used. Consider halo warmth as one later optional control; separate
 core/halo/bloom controls are deferred. Phase 4 stock character and from-stock/set
 tracking are next; Phase 5 Looks and Phase 6 panel polish remain unfinished.
+
+
+## Phase 4 implementation completion (October 16, 2026)
+
+Picking a stock now fills its grain, halation and matching paper. Seven owned
+controls track inherited/set state independently in HDR and SDR; manual edits
+show a reset dot, and double-click also restores inherited slider values.
+Undo/redo, project save/reopen and Match HDR preserve ownership. Deliberate
+bypasses remain independent. Existing projects have no ownership flags and
+therefore treat these controls as inherited on their next stock change; there
+is no migration. Existing full Look recipes await Phase 5.
+
+Character metadata and its browser bootstrap share a generator. PRD section 5.5
+records every shipped stock value, source and confidence. Portra 400 starts at
+Amount 24, Size 30, for a 35mm scan displayed 6x4 inches at 14 inches viewing
+distance. Change anchor=24.0 in codebase/tools/build_film_character.py and rerun
+with the repository Python to tune Amount across the scale. Steve has not yet
+judged this starting estimate. Vision3 charts were read visually as estimates;
+precise layer fitting is unfinished and would require a later renderer phase.
+The geometric format check passes, but does not certify perceived graininess.
+
+Final checks: 493 Node tests pass; 2,181 Python tests pass, three skip. Stock
+preview/export comparisons pass 10/10 (still, cine, slide, Neutral, set controls,
+both lanes); grain comparisons pass 12/12. Existing mean 0.1 / p99.9 2 display
+level limits are unchanged. Live UI checks pass selection, equal-value set,
+dot/paper/double-click reset, relative slider/typed input, undo/redo and Match
+HDR with independent SDR. No final failure remains. Initial failures exposed
+an intended saved-schema signature change, a Hue step-grid issue (fixed), and
+a harness assumption that Neutral must allocate a stock table (corrected to
+require bypass). No tolerance was relaxed. Existing HDR precision, Black &
+White tile and Library pause-warning limitations remain as previously recorded;
+no broad release sweep was run.
+
+Commit records: f560e7b adds sourced calibration (Node 493 pass; initial Python
+2,157 pass with only the intended new saved-schema signature failing, three
+skip; focused metadata checks pass). d68c215 adds ownership and reset controls
+(focused Python 25 pass, including the updated intended signature; Node 493
+pass). The final validation/docs commit adds behavior-driven UI and stock/grain
+cases and records the final passing checks above. Export/Proof equations,
+renderers, stage order, baked stock arrays, shader layouts and limits are
+unchanged. No push or installer. Two unrelated untracked Library briefs remain
+untouched. No Steve lens feedback arrived during Phase 4.
+
+Next: Phase 5 stage presets and sparse Looks (PRD R11), rebuilding Clean Cinema,
+Soft Color Negative, Dense Print and High-Speed Texture on real stocks/papers,
+plus Looks for new stocks. Reuse HDRFilmCharacter and stock_overrides; apply
+only deliberate preset changes as set. Phase 6 panel polish remains separate.
+The exhaustive Phase 4 chosen-versus-alternative record is in the Phase 4 brief.
