@@ -171,7 +171,7 @@ Values beyond graph endpoints are extended with endpoint slopes before conversio
 
 Both branches carry the same nested `film_look` schema and a separate top-level bypass. Lens diffusion, resolution scatter and halation act before the negative. Push/Pull changes development; grain perturbs developed density before print and scan. Slides skip print. Neutral has a straight baseline with physical paper controls. Print Contrast acts on paper layers, independently of Film Exposure. Scan Sharpening is RGB unsharp masking before the single Look Strength mix; Detail structure follows it. HDR values above reference white keep their ratios.
 
-The CPU renderer and WebGPU routes share stage order and physical parameter meanings. `shared.film_grain_seed` anchors grain across HDR and SDR. Reduced preview averages native-scale grain samples before printing to approximate the downsized native export. Halation and grain maps are viewer diagnostics suppressed for export. Phase 3 validation remains in progress; see the Film Look PRD.
+The CPU renderer and WebGPU routes share stage order and physical parameter meanings. `shared.film_grain_seed` anchors grain across HDR and SDR. Reduced preview averages native-scale grain samples before printing to approximate the downsized native export. Halation and grain maps are viewer diagnostics suppressed for export. Phase 3 is complete; Phase 3b lens validation is in progress. Lens Filter uses all 27 Gaussian components of the pinned spektrafilm PSF, cropped and normalized inside the existing reach. None bypasses it. See the Film Look PRD and known-limitations.md for the extreme HDR preview range.
 
 ## Scopes and overlays
 

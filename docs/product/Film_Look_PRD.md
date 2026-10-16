@@ -439,3 +439,50 @@ Two separate Black & White-only Direct/Tiled failures on the extreme fixture
 remain recorded and uninvestigated. No new code changed in this documentation
 commit; the preceding production fast and focused checks remain applicable.
 Phase 3b may now begin. No push or installer.
+
+
+Phase 3b complete, October 16, 2026: None / Black Pro-Mist / Pro-Mist /
+Glimmerglass / CineBloom replace all five retired Bloom fields across the model,
+CPU, GPU, UI, presets and current guides. Strength spans continuous 1/8-2;
+Size spans 0.25-4, default 1. The energy-normalized pinned-upstream mixture has
+27 Gaussian components, with per-component bounded renormalization, film-plane
+format sizing and the unchanged stage order. Full-resolution CPU export and
+Proof use the same new lens model; their identity checks pass. Existing stock
+data, grain, halation and resolution are unchanged by Phase 3b. GPL credit is
+in THIRD_PARTY_NOTICES.md. The cap/tail table and decisions are in the rebuild
+plan; extreme Super 8 shapes are substantially tighter than uncapped upstream.
+
+Final checks: 486 Node and 2,158 Python pass, three Python skips. Corrected
+preview/export matrix: 128/128 pass, worst added mean 0.070 levels, p99.9 2,
+inside unchanged 0.1/2 limits. Direct/Tiled: 128/128 byte-exact pixel comparisons;
+focused startup/worst-lens smoke passes after fixing the Library import. The
+initial native tile differences were corrected with integer pixel interpolation
+and its edge support, without raising individual/composed blur caps, GPU image
+allocations, memory ceilings or tolerances. Match can safely reject the recorded
+coloured lens target; retired calibration Bloom has no invented replacement.
+Existing extreme uncompressed HDR and two separate Black & White-only tile
+failures remain as previously recorded. The unrelated Library pause HTTP 422
+warning remains uninvestigated. No broad release sweep, push or installer.
+
+Warmed timing: five measured repeats after one warm-up, real Darktable highlight
+reconstruction DSC06451 EXR, HDR lane, 1520x1013, grain off, standard-range canvas
+capture. Median forced GPU render: None 3.3 ms (2.8-6.3), Black Pro-Mist 1/2,
+Size 1, 35mm 49.8 ms (48.7-53.1), CineBloom 2, Size 4, Super 8 86.8 ms
+(85.1-94.9). Added cost is about 47 / 84 ms, well beyond the pre-recorded 5%
+allowance and explained by the 27-component, 55-pass quarter-grid filter.
+These are warmed forced-render timings, not whole-app interaction or native-size
+latency guarantees. None bypasses the filter; active filters reuse existing
+scratch images. No further timing sweep is needed; Steve should try dragging,
+zooming and panning. Reduced grain separately costs 4-16 native samples instead
+of one, and Phase 3 Scan adds passes; no controlled Phase 3 whole-preview timing
+was taken.
+
+Visual inspection: Black Pro-Mist 1/2 gives a restrained soft glow around shop
+signs/lamps while retaining the dominant bright shop, dark street and reflections.
+The maximum CineBloom/Super 8 recipe makes a much larger coloured veil and softens
+signs, while the lit shop/signs remain brightest. This was an HDR-source picture
+viewed through a standard-range diagnostic capture, not a physical HDR display
+certification. Constant-field/channel energy checks pass; no additive brightness
+term is used. Consider halo warmth as one later optional control; separate
+core/halo/bloom controls are deferred. Phase 4 stock character and from-stock/set
+tracking are next; Phase 5 Looks and Phase 6 panel polish remain unfinished.

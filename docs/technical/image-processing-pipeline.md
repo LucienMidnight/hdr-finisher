@@ -138,12 +138,12 @@ Implementation: [`finishing.apply_geometry`](../../codebase/backend/hdr_finisher
 | 6 | HDR curves | Global curves |
 | 7 | Global color grading | Final global creative grade before locals |
 | 8 | Ordered local layers | Each layer grades and blends the running result using a stable source mask |
-| 9 | Film response and color density | Post-local film response |
-| 10 | Halation | Spatial highlight effect |
-| 11 | Bloom/diffusion | Spatial highlight effect |
-| 12 | Image structure/microcontrast and film resolution/softness | Post-local spatial finishing |
-| 13 | Vignette | Whole-frame finishing after the film look |
-| 14 | Seeded grain | Last creative stage at the current render resolution |
+| 9 | Lens Filter | Energy-conserving film-plane PSF, or None bypass |
+| 10 | Film Resolution | Fine-detail scatter before the negative |
+| 11 | Halation | Fixed-threshold coloured edge scatter |
+| 12 | Negative/development and grain | Grain perturbs developed film density |
+| 13 | Paper and scan | Slides skip paper; Scan Sharpening and Lab Levels; one Look Strength mix |
+| 14 | Detail structure and Vignette | Independent finishing after Film Look |
 | 15 | Non-negative clip | Enforce the HDR working/output invariant |
 
 Highlight compression's configured peak is a stage-local target. Later color, locals, film effects, and grain may raise the final measured peak; do not treat it as a delivery hard clamp.
@@ -163,9 +163,9 @@ Generated SDR starts from the ACEScg HDR source:
 9. SDR curves.
 10. global color grading.
 11. ordered local layers.
-12. film response/color density, halation, bloom/diffusion, structure, and film resolution.
-13. vignette.
-14. seeded grain.
+12. lens filter, film resolution, halation, negative and density grain, paper/scanner, one Look Strength mix.
+13. Detail structure and vignette.
+14. final grain dispatch (film density grain is already resolved).
 15. clamp to `[0, 1]` display-linear sRGB.
 
 The scene-to-display conversion boundary is important. Moving a scene-linear control after it changes both its numerical meaning and its visual behavior.
@@ -195,7 +195,7 @@ Within one local layer, the CPU applies its supported tone/zone/exposure/contras
 
 ### 5.5 Film and grain separation
 
-`_apply_film_look` contains film response, halation, bloom, structure, and film-resolution effects. The normal pipeline calls it without grain, applies vignette, then invokes `apply_final_grain`. Keep this separation: export needs to resize before generating final-resolution grain.
+`_apply_film_look` applies the lens filter, film resolution, halation, negative/density grain, paper/scanner and the single master mix before Detail. The retained final-grain dispatch resolves density grain at the requested output size; it does not add a second display-space grain field. Export and full-size Proof use the same CPU reference.
 
 ## 6. Interactive preview pipeline
 
@@ -226,10 +226,10 @@ Routine GPU grading must not start CPU grading, delivery encoding, network trans
 geometry-fixed source proxy
   -> global HDR/SDR base shader
   -> one full-screen ping-pong blend per ordered local layer
-  -> film-response pass
-  -> quarter-resolution highlight extraction
-  -> separable horizontal/vertical spatial blur
-  -> composite halation + bloom + structure + resolution + vignette + grain
+  -> lens filter (27 weighted separable Gaussian components on the quarter grid)
+  -> film resolution, then halation
+  -> negative + density grain, paper/scanner
+  -> one Look Strength mix, then Detail and vignette
   -> display mapping and diagnostic overlay
 ```
 

@@ -189,7 +189,7 @@ of 1,000,000 nits for the CPU request; compression remained off.
 The new reproducible Film Look trigger is HDR, Neutral, default paper,
 Look Strength 100, Push/Pull +2, Print Exposure -3, Print Contrast +100,
 Shadow Contrast +100, Highlight Contrast +100, Lab Levels off, Scan 0,
-no grain, halation, bloom or Detail, output highlight compression off.
+no grain, halation, lens filter or Detail, output highlight compression off.
 On the standard peak-16 hue ramp its CPU film-stage peak is approximately
 4,848,818 scene units, 24.68 stops above white. Testing the five controls
 individually on the same ramp gives peaks 20.16, 126.93, 40.75, 28.40 and
@@ -205,3 +205,25 @@ HDR highlight compression its extreme check passes at added mean 0.040,
 p99.9 2; the simpler safe cap failed at mean 61.517, p99.9 182. CPU export,
 Proof, tolerances and memory/blur ceilings are unchanged. This is a known
 extreme-grade limitation, not an ordinary preview parity guarantee.
+
+
+## Physical lens filter limits (October 16, 2026)
+
+The fixed preview reach shortens long lens-filter tails. CPU export and Proof
+use the same bounded model. Before each Gaussian component is renormalized,
+the omitted scattered energy at Size 4 on Super 8 is approximately 27.6% for
+Glimmerglass, 48.6-58.8% for Black Pro-Mist, 67.2-70.6% for Pro-Mist and
+78.1-81.2% for CineBloom (RGB ranges, 6000x4000 source at Fit). These are
+Gaussian-surrogate tail estimates, not measured physical filter transmission.
+The Film Look rebuild plan records both formats, Size extremes and native/Fit.
+No energy is simply added or discarded by the normalized filter, but the widest
+glows are tighter than upstream's uncapped shapes.
+
+Automatic Match copies lens type, Strength and Size unchanged. Its existing
+quality gate can reject a coloured lens target: the calibrated HDR-match scene
+with Black Pro-Mist 1/2, Size 1, plus its tone/local grade, reaches P95 luma
+0.056 and OKLab 0.052. It safely refuses the match rather than returning a recipe
+outside its existing colour limit of 0.05. No Match tolerance was relaxed.
+Saved projects or presets containing removed Bloom fields must be recreated;
+no pre-1.0 migration is supplied. Several historical performance drivers still
+contain retired recipes and need updating before their next release sweep.

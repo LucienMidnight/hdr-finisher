@@ -18,7 +18,6 @@ The sliders intentionally cover the useful everyday range. Some slider ranges be
 | Compression Mode | Chooses the kind of output highlight treatment. Peak Fit is the default; the section bypass is the single on/off control. | Peak Fit anchors a monotonic shoulder to the measured finished peak. Soft Ceiling is asymptotic. Clip imposes a strict per-channel delivery ceiling. | Peak Fit, Soft Ceiling, Clip | Same choices |
 | Compression Start | Protects tones below the shoulder and says where highlight bending should begin. | Converts the entered reference-nit level to scene-linear ACEScg. Peak Fit can move the effective start lower when necessary to keep an extreme compression ratio smooth and monotonic; the graph and caption show this. | 100 to 4,000 nit | **1 to 9,999 nit**; it must remain below Target Peak |
 | Target Peak | Sets the brightest intended finished highlight. | Peak Fit maps the selected final-grade signal to this value. Soft Ceiling treats it as an asymptote. Clip clamps every linear BT.2020 channel to it. HDR transport still has a 10,000-nit PQ ceiling. | 200 to 10,000 nit | **2 to 10,000 nit**; it must remain above Start |
-| Highlight Detail | Keeps or flattens local contrast at the very brightest end in Peak Fit. | Sets the output stop-slope at the input peak: 0% is flat there, while 100% retains the source's local stop separation. The curve remains monotonic. | 0 to 100% | **0 to 100%** |
 | Softness | Changes Soft Ceiling from firm and late to broad and gentle. | Changes the generalized soft-ceiling exponent and blends the effect in from 0%. The slider moves in fine 0.5-percentage-point steps. It only applies in Soft Ceiling mode. | 0 to 100% | **0 to 100%**; 0% makes Soft Ceiling neutral |
 | Manual Source Peak | Overrides the measured source peak when automatic measurement does not describe the highlight you care about. | Supplies Peak Fit's final pre-compression input anchor. Automatic choices use the active Highlight Color signal or its 99.99th percentile to ignore isolated pixels. | 100 to 100,000 nit | **1 to 1,000,000 nit** |
 | Compression Bias | Moves compression pressure earlier or later without moving the endpoints. | Re-parameterizes the monotonic shoulder while preserving its endpoint anchors and requested peak slope. Negative and positive settings redistribute contrast in opposite directions. | -100 to +100 | **-100 to +100** |
@@ -72,7 +71,7 @@ Off by default; the eye button turns it on for the current rendition. All slider
 
 ## Film Look in HDR and SDR
 
-Film Look uses the same stages in each branch. Phase 3 controls are being validated on film-look-rebuild; see the Film Look PRD for outstanding checks. Halation follows the film gate; Bloom still follows the output diagonal until Phase 3b.
+Film Look uses the same stages in each branch. Phase 3 controls are complete on film-look-rebuild. Lens Filter, Halation and Grain follow the film gate. Phase 3b lens filter is complete; see the Film Look PRD.
 
 Film stock data is derived from [spektrafilm](https://github.com/andreavolpato/spektrafilm) by Andrea Volpato, licensed CC BY-SA 4.0. HDR Finisher re-samples spektrafilm's profiles into its own tables and runs its own GPU and CPU engine, informed by spektrafilm's GPL-3.0 code; see `THIRD_PARTY_NOTICES.md` and `codebase/backend/hdr_finisher/film_stocks/CHANGELOG.txt`.
 
@@ -96,9 +95,9 @@ Film stock data is derived from [spektrafilm](https://github.com/andreavolpato/s
 | Halation Spread | Sets scatter scale relative to the film gate and Film Format. | Slider 0–2%; direct entry 0–5% of 35mm gate |
 | Halation Hue Offset / Saturation | Tune the warm scatter color without changing the source grade. | Hue -100 to +100%; Saturation 0–100% |
 | Show halation map | Replaces the viewer with a grey map of where the halation glow can appear. It shows placement, not strength. It is suppressed during export. | Off/On |
-| Bloom Amount / Sensitivity | Control broad neutral highlight diffusion and branch-relative qualification. | 0–100% |
-| Bloom Radius | Sets diffusion scale as a percentage of image diagonal. | Slider 0–4%; direct entry 0–10% |
-| Highlight Detail | Retains local bright-source detail inside Bloom. Technically, it crossfades the energy-moving diffusion component while leaving the additive optical bloom available: 100% preserves the source edge and 0% applies maximum core softening. | 0–100% |
+| Lens Filter | None (bypass), Black Pro-Mist, Pro-Mist, Glimmerglass or CineBloom; spreads light before film without adding energy. | Family selection |
+| Lens Strength | Continuous commercial filter grades with 1/8, 1/4, 1/2, 1 and 2 marks. | 0.125–2 |
+| Lens Size | Scales the film-plane glow; 1 is normal size. Existing spatial caps shorten the longest tails. | 0.25–4 |
 | Grain Amount / Size / Softness / Chroma | Set density-grain strength, scale, clumping, and colored component. | 0–100% |
 | Shadow / Midtone / Highlight Response | Weight grain by local density instead of overlaying uniform noise. | 0–150% |
 | Film Resolution | Reduces pre-grain resolving character as the value moves below 100%. | 0–100% |
@@ -141,7 +140,6 @@ These controls use the same ranges in each branch, but HDR works in the scene-re
 | Start | Chooses the requested shoulder onset. | Sets an SDR input percentage; Peak Fit can move the effective start lower to preserve a monotonic curve. | 1% to 99% | **1% to 99%** |
 | Softness | Controls how strongly Soft Ceiling bends highlights. | Zero is identity; higher values engage the luma-preserving asymptote earlier. | 0% to 100% | **0% to 100%** |
 | Highlight Color | Chooses the highlight color trajectory. | Smooth color rolloff maps linear-sRGB channels independently; Preserve color retains ratios; Neutralize peak converges the endpoint to white. | Three named choices | Same choices |
-| Highlight Detail | Retains contrast near the Peak Fit endpoint. | Sets the positive endpoint slope of the monotonic stop-domain curve. | 0% to 100% | **0% to 100%** |
 | Input Peak | Chooses the Peak Fit measurement. | Uses the exact maximum, a robust percentile, or a manual source percentage. | Three named choices | Same choices |
 | Manual Source Peak | Supplies the pre-exposure source peak for manual measurement. | Expressed relative to SDR white; Tone Exposure is included when the curve is built. | 100% to 10,000% | **1% to 1,000,000%** |
 | Compression Bias | Redistributes separation through the Peak Fit shoulder. | Warps the shoulder parameter without changing its endpoints. | -100 to +100 | **-100 to +100** |

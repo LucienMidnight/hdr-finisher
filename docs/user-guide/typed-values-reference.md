@@ -215,10 +215,8 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 | Spread | 0 to 2 % of 35mm gate | **0 to 5 % of 35mm gate** | Follows Film Format. |
 | Hue Offset | -100 to 100 % | -100 to 100 % |  |
 | Saturation | 0 to 100 % | 0 to 100 % |  |
-| Amount | 0 to 100 % | 0 to 100 % |  |
-| Sensitivity | 0 to 100 % | 0 to 100 % |  |
-| Optical Spread | 0 to 4 % of output diagonal | **0 to 10 % of output diagonal** |  |
-| Highlight Detail | 0 to 100 % | 0 to 100 % |  |
+| Lens Strength | 1/8 to 2 | 0.125 to 2 | Continuous commercial grades. |
+| Lens Size | 0.25 to 4 | 0.25 to 4 | 1 is normal; follows Film Format. |
 | Film Resolution | 0 to 100 % | 0 to 100 % |  |
 | Amount | 0 to 100 % | 0 to 100 % |  |
 | Size | 0 to 100 % | 0 to 100 % |  |
