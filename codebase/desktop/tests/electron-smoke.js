@@ -93,6 +93,11 @@ async function main() {
     // The Library owns the start screen; the shared import input is the ready signal.
     await window.waitForSelector("#file-input", { state: "attached", timeout: 30000 });
     checkpoint("window ready");
+    // The editor opens once a picture is loaded; the Library covers it until then.
+    await window.locator("#file-input").setInputFiles(path.join(codebase, "tests", "fixtures", "hdr_headroom.tiff"));
+    await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("hdr_headroom.tiff"), null, { timeout: 120000 });
+    await window.waitForFunction(() => document.body.dataset.workflow === "grade");
+    checkpoint("editor ready");
     const nativeMacChrome = process.platform === "darwin";
     const selectMenuItem = async (menuLabel, itemLabel, customMenuLabel, selector) => {
       if (nativeMacChrome) {
