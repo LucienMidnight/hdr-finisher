@@ -39,13 +39,14 @@ function initializeGroupPresetControls() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "group-preset text-button";
-    button.textContent = "Preset";
+    button.textContent = groupElement.dataset.group === "film-look" ? "Looks" : "Preset";
     button.setAttribute("aria-haspopup", "dialog");
     button.addEventListener("click", () => openGroupPresetDialog(groupElement));
     const header = groupElement.querySelector(":scope > .control-group-header");
     const reset = header?.querySelector(".group-reset");
     if (header) header.insertBefore(button, reset || header.querySelector(".section-bypass"));
   });
+  initializeFilmStagePresets();
   els.groupPresetClose?.addEventListener("click", closeGroupPresetDialog);
   els.groupPresetDialog?.addEventListener("cancel", (event) => {
     event.preventDefault();
@@ -237,8 +238,8 @@ async function saveCurrentGroupPreset() {
       `Replace the existing “${name}” preset?`,
       { title: "Replace preset", confirmLabel: "Replace", destructive: true },
     )) return;
-  const values = Object.fromEntries(context.paths.map((path) => [path, JSON.parse(JSON.stringify(groupPresetPathValue(context, path)))]));
-  await persistGroupPreset({ groupId: context.groupId, name, recipeVersion: 1, values });
+  const values = Object.fromEntries(context.paths.map((path) => [path, JSON.parse(JSON.stringify(context.group === "film-look" ? HDRFilmCharacter.sparse(groupPresetPathValue(context, path)) : groupPresetPathValue(context, path)))]));
+  await persistGroupPreset({ groupId: context.groupId, name, recipeVersion: context.group === "film-look" ? FILM_LOOK_PRESET_RECIPE_VERSION : 1, values });
   els.groupPresetName.value = "";
   els.groupPresetStatus.textContent = `Saved “${name}”.`;
   await renderGroupPresetList();
@@ -253,6 +254,10 @@ function applyGroupPreset(preset) {
   context.paths.forEach((path) => {
     if (!Object.hasOwn(preset.values, path)) return;
     const value = JSON.parse(JSON.stringify(preset.values[path]));
+    if (context.group === "film-look") {
+      setGroupPresetPathValue(context, path, HDRFilmCharacter.expand(value));
+      return;
+    }
     const known = getValueByPath(defaults, path);
     const plain = (item) => Boolean(item) && typeof item === "object" && !Array.isArray(item);
     setGroupPresetPathValue(context, path, plain(value) && plain(known)
@@ -280,3 +285,25 @@ function applyGroupPreset(preset) {
   closeGroupPresetDialog();
 }
 
+
+// Simple temporary menus; Phase 6 owns the panel layout.
+function initializeFilmStagePresets() {
+  const anchors = {Lens:"lens_filter", Format:"grain_film_format", Development:"push_pull", Print:"print_paper", Scan:"scan_sharpening"};
+  for (const [name, entries] of Object.entries(HDRFilmCharacter.stages)) {
+    const anchor = document.querySelector(`[data-path="current.film_look.${anchors[name]}"]`);
+    const row = anchor?.closest(".control-row, .select-control");
+    if (!row) continue;
+    const label = document.createElement("label"); label.className = "select-control";
+    label.textContent = `${name} preset`;
+    const menu = document.createElement("select"); menu.dataset.filmStage = name;
+    menu.add(new Option("Choose preset…", ""));
+    entries.forEach(([title], index) => menu.add(new Option(title, String(index))));
+    menu.addEventListener("change", () => {
+      if (!state.session || menu.value === "") return;
+      HDRFilmCharacter.stage(state.adjustments[state.currentView].film_look, name, Number(menu.value));
+      syncControlsFromState(); renderControlState(); invalidatePreview(state.currentView); debouncePreview(state.currentView);
+      menu.value = "";
+    });
+    label.append(menu); row.before(label);
+  }
+}

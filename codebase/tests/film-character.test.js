@@ -39,7 +39,7 @@ test('halation UI is relative, round-trips ordinary renderer values and preserve
  }
  const f=film(); C.select(f,'kodak_portra_400'); C.set(f,'halation_amount',7); C.select(f,'kodak_verita_200d'); assert.equal(f.halation_amount,7);
 });
-test('Portra measured pushes update inherited grain without owning Push/Pull', () => {
+test('Portra measured pushes update inherited grain and tracks deliberate Push/Pull', () => {
  const f=film(); C.select(f,'kodak_portra_800'); C.set(f,'push_pull',1); assert.equal(f.grain_amount,data.stocks.kodak_portra_800_push1.defaults.grain_amount);
  C.set(f,'grain_size',20); C.set(f,'push_pull',2); assert.equal(f.grain_size,20); assert.equal(f.grain_amount,data.stocks.kodak_portra_800_push2.defaults.grain_amount);
  C.select(f,'kodak_portra_400'); assert.equal(f.push_pull,2); assert.equal(f.grain_amount,data.portra_400_anchor_amount);

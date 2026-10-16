@@ -41,7 +41,7 @@ def test_ownership_is_strict_and_survives_the_real_project_and_undo_paths(tmp_pa
     target = session.adjustments.model_copy(deep=True)
     target.hdr.film_look = FilmLookAdjustments(film_stock="kodak_portra_400",
         **{**DATA["stocks"]["kodak_portra_400"]["defaults"], "grain_amount":19},
-        stock_overrides=["grain_amount", "print_paper"])
+        stock_overrides=["grain_amount", "print_paper", "lens_filter", "push_pull", "lab_levels"])
     def apply(kind, payload=None):
         return store.apply_edit_commands(session_id, [EditCommand(
             expected_revision=store.get(session_id).edit_revision,
@@ -50,7 +50,7 @@ def test_ownership_is_strict_and_survives_the_real_project_and_undo_paths(tmp_pa
     undo = apply("undo").document.global_adjustments
     assert undo.hdr.film_look.stock_overrides == []
     redo = apply("redo").document.global_adjustments
-    assert redo.hdr.film_look.stock_overrides == ["grain_amount", "print_paper"]
+    assert redo.hdr.film_look.stock_overrides == ["grain_amount", "print_paper", "lens_filter", "push_pull", "lab_levels"]
     assert redo.hdr.film_look.grain_amount == 19
     assert redo.sdr.film_look.stock_overrides == []
     saved = tmp_path / "character.hdrfinisher"
@@ -59,4 +59,4 @@ def test_ownership_is_strict_and_survives_the_real_project_and_undo_paths(tmp_pa
     assert reopened.adjustments.hdr.film_look == target.hdr.film_look
     assert reopened.adjustments.sdr.film_look == target.sdr.film_look
     with pytest.raises(ValidationError):
-        FilmLookAdjustments(stock_overrides=["stock_exposure"])
+        FilmLookAdjustments(stock_overrides=["film_stock"])

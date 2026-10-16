@@ -688,111 +688,22 @@ let viewerResizeObserver = null;
 let viewerResizeFrame = null;
 let graphEditorResizeObserver = null;
 
-const defaultFilmLook = () => ({
-  look_strength: 100,
-  // Film stock: measured stock color and tone, applied before
-  // the physical paper and scanner. "none" is the straight Neutral stock.
-  film_stock: "none",
-  stock_overrides: [],
-  stock_color: 100,
-  stock_tone: 100,
-  stock_exposure: 0,
-  stock_separation: 0,
-  stock_print_warmth: 0,
-  stock_print_tint: 0,
-  stock_preflash: 0,
-  push_pull: 0,
-  print_paper: "default",
-  print_exposure: 0,
-  print_contrast: 0,
-  shadow_contrast: 0,
-  highlight_contrast: 0,
-  scan_sharpening: 0,
-  lab_levels: false,
-  grain_enabled: true,
-  grain_amount: 0,
-  grain_size: 50,
-  grain_softness: 25,
-  grain_chroma: 0,
-  grain_film_format: "35mm",
-  grain_film_type: "color_negative",
-  grain_capture_geometry: "frame",
-  grain_custom_width_mm: 36,
-  grain_custom_height_mm: 24,
-  grain_shadow_response: 100,
-  grain_midtone_response: 100,
-  grain_highlight_response: 100,
-  grain_view_map: false,
-  film_resolution: 100,
-  lens_filter: "none",
-  lens_strength: 0.5,
-  lens_size: 1,
-  halation_enabled: true,
-  halation_amount: 0,
-  halation_radius: 0.2,
-  halation_hue_offset: 0,
-  halation_saturation: 75,
-  halation_view_map: false,
-});
+const defaultFilmLook = () => HDRFilmCharacter.defaults({film_stock:"none"});
 
-// 2: Image Softness and Microcontrast left Film Look for Detail (NEXT-01 #2),
-// and the presets no longer set them.
-// 3: Film stock stage. Every recipe states its stock (the older ones "none",
-// through the defaults), and the Portra 400 pair was added.
-const FILM_LOOK_PRESET_RECIPE_VERSION = 5;
-
-function completeFilmLookRecipe(values) {
-  return Object.freeze({
-    ...defaultFilmLook(),
-    ...values,
-    halation_view_map: false,
-    grain_view_map: false,
-  });
-}
-
+// Phase 5: identity plus deliberate controls only. No old-recipe conversion.
+const FILM_LOOK_PRESET_RECIPE_VERSION = 6;
 const FILM_LOOK_PRESETS = Object.freeze([
-  Object.freeze({
-    id: "clean-cinema",
-    name: "Clean Cinema",
-    description: "Fine texture, restrained density, and a clean highlight finish.",
-    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ grain_amount: 14, grain_size: 22, grain_softness: 50, grain_chroma: 10, grain_film_format: "65mm", grain_shadow_response: 82, grain_highlight_response: 110, film_resolution: 98, halation_amount: 6, halation_radius: 0.16, halation_saturation: 68,}),
-  }),
-  Object.freeze({
-    id: "soft-color-negative",
-    name: "Soft Color Negative",
-    description: "Gentle shoulders, soft color separation, and quiet portrait texture.",
-    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ grain_amount: 22, grain_size: 38, grain_softness: 52, grain_chroma: 13, grain_film_format: "35mm", grain_shadow_response: 88, grain_midtone_response: 98, grain_highlight_response: 112, film_resolution: 94, halation_amount: 9, halation_radius: 0.24, halation_saturation: 74,}),
-  }),
-  Object.freeze({
-    id: "dense-print",
-    name: "Dense Print",
-    description: "Deeper color, firmer print contrast, and a richer projected finish.",
-    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ grain_amount: 30, grain_size: 46, grain_softness: 34, grain_chroma: 18, grain_film_format: "35mm", grain_shadow_response: 92, grain_midtone_response: 104, grain_highlight_response: 118, film_resolution: 90, halation_amount: 13, halation_radius: 0.28, halation_hue_offset: 2, halation_saturation: 82,}),
-  }),
-  Object.freeze({
-    id: "high-speed-texture",
-    name: "High-Speed Texture",
-    description: "Coarse responsive grain, open glow, and softened fine detail for low-light character.",
-    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86,}),
-  }),
-  Object.freeze({
-    id: "portra-400-full",
-    name: "Portra 400 Full",
-    description: "Kodak Portra 400 color and tone on its own print paper, with fine 35mm grain.",
-    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ film_stock: "kodak_portra_400", stock_color: 100, stock_tone: 100, grain_amount: 12, grain_size: 30, grain_film_format: "35mm" }),
-  }),
-  Object.freeze({
-    id: "portra-400-color",
-    name: "Portra 400 Color",
-    description: "Kodak Portra 400 color only; your own tone is kept. No grain, halation, or lens filter.",
-    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ film_stock: "kodak_portra_400", stock_color: 100, stock_tone: 0 }),
-  }),
+  Object.freeze({"id": "clean-cinema", "name": "Clean Cinema", "description": "Fine, clean cinema print with light diffusion.", "recipeVersion": 6, "recipe": {"film_stock": "kodak_vision3_250d", "print_paper": "kodak_2383", "grain_film_format": "35mm", "lens_filter": "black_pro_mist", "lens_strength": 0.125, "lens_size": 1, "stock_overrides": ["print_paper", "grain_film_format", "lens_filter", "lens_strength", "lens_size"]}}),
+  Object.freeze({"id": "soft-color-negative", "name": "Soft Color Negative", "description": "Soft contrast and gentle portrait colour.", "recipeVersion": 6, "recipe": {"film_stock": "fujifilm_pro_400h", "print_paper": "default", "print_contrast": -15, "stock_separation": -10, "stock_overrides": ["print_contrast", "stock_separation"]}}),
+  Object.freeze({"id": "dense-print", "name": "Dense Print", "description": "Deep colour with a firm Crystal Archive print.", "recipeVersion": 6, "recipe": {"film_stock": "kodak_ektar_100", "print_paper": "fujifilm_crystal_archive_typeii", "print_contrast": 15, "stock_overrides": ["print_paper", "print_contrast"]}}),
+  Object.freeze({"id": "high-speed-texture", "name": "High-Speed Texture", "description": "Pushed Portra with coarse Super 16 grain and open glow.", "recipeVersion": 6, "recipe": {"film_stock": "kodak_portra_800", "print_paper": "default", "push_pull": 1, "grain_film_format": "super16", "lens_filter": "pro_mist", "lens_strength": 0.25, "lens_size": 1, "stock_overrides": ["push_pull", "grain_film_format", "lens_filter", "lens_strength", "lens_size"]}}),
+  Object.freeze({"id": "portra-400-natural", "name": "Portra 400 Natural", "description": "Portra 400 on its own paper, with its own character.", "recipeVersion": 6, "recipe": {"film_stock": "kodak_portra_400", "print_paper": "default", "stock_overrides": []}}),
+  Object.freeze({"id": "night-tungsten", "name": "Night Tungsten", "description": "Tungsten cinema stock with a soft highlight glow.", "recipeVersion": 6, "recipe": {"film_stock": "kodak_vision3_500t", "print_paper": "kodak_2383", "lens_filter": "pro_mist", "lens_strength": 0.25, "lens_size": 1, "stock_overrides": ["print_paper", "lens_filter", "lens_strength", "lens_size"]}}),
+  Object.freeze({"id": "everyday-gold", "name": "Everyday Gold", "description": "Warm everyday consumer print.", "recipeVersion": 6, "recipe": {"film_stock": "kodak_gold_200", "print_paper": "default", "stock_print_warmth": 12, "stock_overrides": ["stock_print_warmth"]}}),
+  Object.freeze({"id": "lab-scan", "name": "Lab Scan", "description": "Fine Portra 160 with clean lab levels and light sharpening.", "recipeVersion": 6, "recipe": {"film_stock": "kodak_portra_160", "print_paper": "default", "lab_levels": true, "scan_sharpening": 25, "stock_overrides": ["lab_levels", "scan_sharpening"]}}),
+  Object.freeze({"id": "velvia-landscape", "name": "Velvia Landscape", "description": "Saturated Velvia slide colour, scanned directly.", "recipeVersion": 6, "recipe": {"film_stock": "fujifilm_velvia_100", "print_paper": "default", "stock_overrides": []}}),
+  Object.freeze({"id": "kodachrome", "name": "Kodachrome", "description": "Classic Kodachrome slide colour, scanned directly.", "recipeVersion": 6, "recipe": {"film_stock": "kodak_kodachrome_64", "print_paper": "default", "stock_overrides": []}}),
+  Object.freeze({"id": "super-8-memories", "name": "Super 8 Memories", "description": "Small-format home-movie grain and bloom.", "recipeVersion": 6, "recipe": {"film_stock": "kodak_vision3_200t", "print_paper": "default", "grain_film_format": "super8", "lens_filter": "cinebloom", "lens_strength": 0.25, "lens_size": 1, "stock_overrides": ["grain_film_format", "lens_filter", "lens_strength", "lens_size"]}}),
 ]);
 
 const defaultColorGrading = () => ({

@@ -199,7 +199,7 @@ def test_adjustment_group_presets_are_scoped_persistent_and_available_in_headers
     assert 'id="group-preset-list"' in html
     assert 'id="group-preset-name"' in html
     assert 'id="film-reference-model"' not in html
-    assert "const FILM_LOOK_PRESET_RECIPE_VERSION = 5" in javascript
+    # Sparse Look round-trips are exercised by film-presets.test.js and the UI driver.
     assert 'data-section-path="current.film_look_section_enabled"' in html
     assert ".group-preset { order: 2;" in css
     assert ".control-group-header:has(.group-preset) {" in css

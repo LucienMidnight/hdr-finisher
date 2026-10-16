@@ -4,7 +4,7 @@ function bindRangeResetControls() {
     if (!control || control.disabled) return;
     event.preventDefault();
     const stockControl = filmStockUiContext(control.dataset.path);
-    if (stockControl && HDRFilmCharacter.owned.includes(stockControl.key)) {
+    if (stockControl && HDRFilmCharacter.tracked.includes(stockControl.key)) {
       resetFilmStockControl(stockControl.key);
       return;
     }
@@ -392,7 +392,7 @@ function syncFilmStockSlider(path, control) {
     control.dataset.stockOriginalMin = control.min;
     control.dataset.stockOriginalMax = control.max;
   }
-  control.dataset.defaultValue = String(filmStockUiValue(path, HDRFilmCharacter.character(context.film).defaults[context.key], true));
+  control.dataset.defaultValue = String(filmStockUiValue(path, HDRFilmCharacter.defaults(context.film)[context.key], true));
   control.min = filmStockUiValue(path, Number(control.dataset.stockOriginalMin), true);
   control.max = filmStockUiValue(path, Number(control.dataset.stockOriginalMax), true);
   const scale = HDRFilmCharacter.scale(context.film, context.key);
@@ -419,9 +419,9 @@ function renderFilmStockDots() {
   if (typeof HDRFilmCharacter === "undefined") return;
   const film = state.adjustments?.[state.currentView]?.film_look;
   if (!film) return;
-  for (const key of HDRFilmCharacter.owned) {
+  for (const key of HDRFilmCharacter.tracked) {
     const control = document.querySelector(`[data-path="current.film_look.${key}"]`);
-    const heading = control?.closest(".control-row")?.querySelector(".control-heading") || control?.closest(".select-control");
+    const heading = control?.closest(".control-row")?.querySelector(".control-heading") || control?.closest(".select-control, .numeric-control, .film-module-toggle");
     if (!heading) continue;
     let dot = heading.querySelector("[data-stock-reset]");
     if (!dot) {
