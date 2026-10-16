@@ -409,3 +409,55 @@ Two separate Black & White-only Direct/Tiled failures on the extreme fixture
 remain recorded and uninvestigated. No new code changed in this documentation
 commit; the preceding production fast and focused checks remain applicable.
 Phase 3b may now begin. No push or installer.
+
+
+Phase 3b implementation choices (before measurement): Size spans 0.25 to 4,
+default 1, because upstream supplies no UI bounds. Alternative: an unbounded
+scale; the finite range is reversible. Use upstream's actual three-Gaussian
+approximation of each radial exponential, retaining all 27 components and the
+family's per-channel halo redistribution. Keep existing spatial textures and
+blur/reach ceilings; truncate and renormalize the combined PSF inside them,
+identically for CPU export/Proof and GPU. Record omitted energy against the
+uncapped upstream mixture. This changes the new lens model only.
+Source agreement tolerance: 2e-9 for mixture coefficients; CPU constant-field
+energy within 1e-6 (float32 rounding); existing preview/export pixel and exact
+Direct/Tiled requirements stay unchanged. Timing comparison uses 5% allowance
+for run variation; above that report the cost, without changing a budget.
+
+Implementation refinement: normalize each capped Gaussian component separately,
+rather than normalize the cropped combined PSF. This retains each family's
+core/halo/bloom energy shares and per-channel warmth. The alternative would
+reduce the relative weight of broad components as the cap cuts off their tails.
+Rounded upstream Gaussian amplitudes sum to 0.9999; divide by that sum so the
+new filter is exactly energy-conserving. Upstream uses a fast recursive Gaussian
+for large sigmas; use the bounded explicit Gaussian kernel as the CPU/Proof
+reference here, with clamped picture edges matching the existing preview.
+
+
+Phase 3b cap measurement (model preparation): for a 6000x4000 source and
+1520x1013 Fit, the table gives the percentage of scattered PSF energy outside
+the existing capped square, BEFORE per-component renormalization. Ranges are
+across RGB channels. These are continuous Gaussian-surrogate tail integrals
+relative to upstream's three-sigma support, not an exact exponential integral.
+The filter redistributes this clipped component energy inside the cap, so it
+does not darken a flat field. The widest small-format filters are substantially
+shorter than upstream's uncapped filters; no blur cap is raised.
+
+| Filter / format | Native Size .25 | Native Size 4 | Fit Size .25 | Fit Size 4 |
+|---|---:|---:|---:|---:|
+| glimmerglass / 35mm | 0.00% | 3.39% | 0.00% | 3.47% |
+| glimmerglass / super8 | 0.59% | 27.31% | 0.60% | 27.58% |
+| black_pro_mist / 35mm | 0.00% | 6.27-16.03% | 0.00% | 6.40-16.36% |
+| black_pro_mist / super8 | 1.18-1.77% | 48.15-58.51% | 1.22-1.84% | 48.56-58.78% |
+| pro_mist / 35mm | 0.21% | 27.63-36.26% | 0.22% | 27.92-36.63% |
+| pro_mist / super8 | 9.87-11.60% | 66.99-70.43% | 10.04-11.85% | 67.21-70.60% |
+| cinebloom / 35mm | 2.08% | 45.39-58.36% | 2.15% | 45.66-58.67% |
+| cinebloom / super8 | 26.25-31.13% | 77.94-81.04% | 26.52-31.53% | 78.13-81.16% |
+
+
+Phase 3b model preparation commit: added the independent CPU kernel/FFT model,
+matching preview coefficient table, pinned-upstream goldens and GPL credit.
+Fast checks pass: all 483 existing Node checks plus two new lens checks; all
+2,150 Python checks plus the added upstream-golden check (19 lens checks total),
+three skips. No renderer uses this model yet, so GPU coverage belongs to the
+integration commit. No removed behavior or tests in this preparation commit.

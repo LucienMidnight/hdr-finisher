@@ -100,3 +100,15 @@ the source profile type annotation is replaced with a local duck type.
 The fitted paper layers and scanner calibration in `film_stocks/controls.json`
 are derived from the same CC BY-SA 4.0 profiles credited above, extracted by
 `tools/bake_film_controls.py`; existing measured stock tables are unchanged.
+
+
+### spektrafilm lens diffusion
+
+`lens_filter.py` and `frontend/lens-filters.js` reimplement Andrea Volpato's
+spektrafilm `model/diffusion.py` family shapes, halo-channel redistribution and
+commercial strength mapping, plus `utils/fast_gaussian_filter.py`'s three-Gaussian
+exponential surrogate, at GPL-3.0 revision `3bb2c2d`.
+Source: https://github.com/andreavolpato/spektrafilm . All 27 components are kept;
+rounded amplitudes are normalized, and each Gaussian is cropped and normalized
+inside HDR Finisher's existing spatial cap. Explicit bounded kernels replace
+the upstream recursive large-sigma implementation; edge handling is clamped.
