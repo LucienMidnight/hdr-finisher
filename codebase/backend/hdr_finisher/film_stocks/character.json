@@ -1,0 +1,1357 @@
+{
+  "format": "hdr-finisher-film-character/1",
+  "portra_400_anchor_amount": 24.0,
+  "anchor_diameter_um": 13.2,
+  "pgi_per_doubling": 21.5,
+  "stocks": {
+    "kodak_portra_400": {
+      "defaults": {
+        "grain_amount": 24.0,
+        "grain_size": 30.0,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Kodak E-4050 (January 2025), 35mm 4x6 PGI 37; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Kodak E-4050 (January 2025), 35mm 4x6 PGI 37; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_portra_endura; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 37,
+        "status": "Confirmed",
+        "source": "Kodak E-4050 (January 2025), 35mm 4x6 PGI 37"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_portra_endura"
+    },
+    "kodak_portra_160": {
+      "defaults": {
+        "grain_amount": 20.75893,
+        "grain_size": 22.572548,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Kodak E-4051 (January 2025), 35mm 4x6 PGI 28; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Kodak E-4051 (January 2025), 35mm 4x6 PGI 28; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_portra_endura; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 28,
+        "status": "Confirmed",
+        "source": "Kodak E-4051 (January 2025), 35mm 4x6 PGI 28"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_portra_endura"
+    },
+    "kodak_portra_800": {
+      "defaults": {
+        "grain_amount": 28.656221,
+        "grain_size": 40.670506,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Kodak E-4040 (January 2025), 35mm 4x6 PGI 48; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Kodak E-4040 (January 2025), 35mm 4x6 PGI 48; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_portra_endura; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 48,
+        "status": "Confirmed",
+        "source": "Kodak E-4040 (January 2025), 35mm 4x6 PGI 48"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_portra_endura"
+    },
+    "kodak_ektar_100": {
+      "defaults": {
+        "grain_amount": 19.462659,
+        "grain_size": 19.601927,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Kodak E-4046 says below 25; choose 24, not a measured PGI; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Kodak E-4046 says below 25; choose 24, not a measured PGI; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_portra_endura; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 24,
+        "status": "Estimate",
+        "source": "Kodak E-4046 says below 25; choose 24, not a measured PGI"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_portra_endura"
+    },
+    "kodak_gold_200": {
+      "defaults": {
+        "grain_amount": 26.866811,
+        "grain_size": 36.569776,
+        "halation_amount": 19.047619,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": -32.172249,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Kodak E-7022 (June 2023), 35mm 4x6 PGI 44; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Kodak E-7022 (June 2023), 35mm 4x6 PGI 44; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_portra_endura; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 44,
+        "status": "Confirmed",
+        "source": "Kodak E-7022 (June 2023), 35mm 4x6 PGI 44"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "weak",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.08,
+          0.02,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_portra_endura"
+    },
+    "kodak_ultramax_400": {
+      "defaults": {
+        "grain_amount": 27.747095,
+        "grain_size": 38.587093,
+        "halation_amount": 19.047619,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": -32.172249,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Kodak E-7023 (February 2016), 35mm 4x6 PGI 46; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Kodak E-7023 (February 2016), 35mm 4x6 PGI 46; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_portra_endura; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 46,
+        "status": "Confirmed",
+        "source": "Kodak E-7023 (February 2016), 35mm 4x6 PGI 46"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "weak",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.08,
+          0.02,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_portra_endura"
+    },
+    "fujifilm_c200": {
+      "defaults": {
+        "grain_amount": 26.866811,
+        "grain_size": 36.569776,
+        "halation_amount": 19.047619,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": -32.172249,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Near Gold 200 by speed; Fujifilm RMS 4 does not establish a PGI; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Near Gold 200 by speed; Fujifilm RMS 4 does not establish a PGI; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: fujifilm_crystal_archive_typeii; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 44,
+        "status": "Estimate",
+        "source": "Near Gold 200 by speed; Fujifilm RMS 4 does not establish a PGI"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "weak",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.08,
+          0.02,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "fujifilm_crystal_archive_typeii"
+    },
+    "fujifilm_xtra_400": {
+      "defaults": {
+        "grain_amount": 27.747095,
+        "grain_size": 38.587093,
+        "halation_amount": 19.047619,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": -32.172249,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Near Ultramax 400 by speed; Fujifilm RMS 4 does not establish a PGI; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Near Ultramax 400 by speed; Fujifilm RMS 4 does not establish a PGI; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: fujifilm_crystal_archive_typeii; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 46,
+        "status": "Estimate",
+        "source": "Near Ultramax 400 by speed; Fujifilm RMS 4 does not establish a PGI"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "weak",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.08,
+          0.02,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "fujifilm_crystal_archive_typeii"
+    },
+    "fujifilm_pro_400h": {
+      "defaults": {
+        "grain_amount": 24.0,
+        "grain_size": 30.0,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Near Portra 400 by speed and professional-negative positioning; RMS 4 cannot rank; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Near Portra 400 by speed and professional-negative positioning; RMS 4 cannot rank; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: fujifilm_crystal_archive_typeii; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 37,
+        "status": "Estimate",
+        "source": "Near Portra 400 by speed and professional-negative positioning; RMS 4 cannot rank"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "fujifilm_crystal_archive_typeii"
+    },
+    "kodak_portra_800_push1": {
+      "defaults": {
+        "grain_amount": 30.56481,
+        "grain_size": 45.044357,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "One PGI-like noticeable step coarser than Portra 800; no pushed PGI; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "One PGI-like noticeable step coarser than Portra 800; no pushed PGI; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_portra_endura; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 52,
+        "status": "Estimate",
+        "source": "One PGI-like noticeable step coarser than Portra 800; no pushed PGI"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_portra_endura"
+    },
+    "kodak_portra_800_push2": {
+      "defaults": {
+        "grain_amount": 32.600518,
+        "grain_size": 49.70952,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Two PGI-like noticeable steps coarser than Portra 800; no pushed PGI; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Two PGI-like noticeable steps coarser than Portra 800; no pushed PGI; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_portra_endura; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 56,
+        "status": "Estimate",
+        "source": "Two PGI-like noticeable steps coarser than Portra 800; no pushed PGI"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_portra_endura"
+    },
+    "fujifilm_velvia_100": {
+      "defaults": {
+        "grain_amount": 19.462659,
+        "grain_size": 19.601927,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "RMS 8 reversal; place next to finest negative, not an RMS-to-PGI conversion; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "RMS 8 reversal; place next to finest negative, not an RMS-to-PGI conversion; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: None; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 24,
+        "status": "Estimate",
+        "source": "RMS 8 reversal; place next to finest negative, not an RMS-to-PGI conversion"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": null
+    },
+    "fujifilm_provia_100f": {
+      "defaults": {
+        "grain_amount": 19.462659,
+        "grain_size": 19.601927,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "RMS 8 reversal; place next to finest negative, not an RMS-to-PGI conversion; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "RMS 8 reversal; place next to finest negative, not an RMS-to-PGI conversion; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: None; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 24,
+        "status": "Estimate",
+        "source": "RMS 8 reversal; place next to finest negative, not an RMS-to-PGI conversion"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": null
+    },
+    "kodak_ektachrome_100": {
+      "defaults": {
+        "grain_amount": 19.462659,
+        "grain_size": 19.601927,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "E-4024 RMS 8 is a Proxy for older E100G/GX; use finest-negative placement; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "E-4024 RMS 8 is a Proxy for older E100G/GX; use finest-negative placement; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: None; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 24,
+        "status": "Estimate",
+        "source": "E-4024 RMS 8 is a Proxy for older E100G/GX; use finest-negative placement"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": null
+    },
+    "kodak_kodachrome_64": {
+      "defaults": {
+        "grain_amount": 19.462659,
+        "grain_size": 19.601927,
+        "halation_amount": 19.047619,
+        "halation_radius": 0.450693909,
+        "halation_hue_offset": -32.172249,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "E-55 extremely fine grain and ISO 64; alongside other fine slides; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "E-55 extremely fine grain and ISO 64; alongside other fine slides; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: None; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 24,
+        "status": "Estimate",
+        "source": "E-55 extremely fine grain and ISO 64; alongside other fine slides"
+      },
+      "halation": {
+        "use": "still",
+        "antihalation": "weak",
+        "tags_status": "Confirmed",
+        "sigma_um": 65,
+        "strength_rgb": [
+          0.08,
+          0.02,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": null
+    },
+    "kodak_verita_200d": {
+      "defaults": {
+        "grain_amount": 22.866998,
+        "grain_size": 27.403537,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.346687623,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "ISO 200 daylight cine description; between Vision3 50D and 250D; sheet Missing; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "ISO 200 daylight cine description; between Vision3 50D and 250D; sheet Missing; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_2383; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 34,
+        "status": "Estimate",
+        "source": "ISO 200 daylight cine description; between Vision3 50D and 250D; sheet Missing"
+      },
+      "halation": {
+        "use": "cine",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 50,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_2383"
+    },
+    "kodak_vision3_50d": {
+      "defaults": {
+        "grain_amount": 19.462659,
+        "grain_size": 19.601927,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.346687623,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "5203 March 2022 p3 granularity curves; finest cine placement; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "5203 March 2022 p3 granularity curves; finest cine placement; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_2383; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 24,
+        "status": "Estimate",
+        "source": "5203 March 2022 p3 granularity curves; finest cine placement"
+      },
+      "halation": {
+        "use": "cine",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 50,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_2383",
+      "chart_reading": {
+        "status": "Estimate",
+        "source": "5203 March 2022 p3 granularity curves; finest cine placement",
+        "log_relative_exposure": [
+          1.5,
+          3,
+          4.5
+        ],
+        "rms_rgb": [
+          [
+            6,
+            6,
+            9
+          ],
+          [
+            4,
+            4.5,
+            7.5
+          ],
+          [
+            2.5,
+            3.5,
+            5
+          ]
+        ],
+        "reading_uncertainty": "about +/-25%, visual log-axis readings, not digitized manufacturer numbers"
+      }
+    },
+    "kodak_vision3_200t": {
+      "defaults": {
+        "grain_amount": 22.866998,
+        "grain_size": 27.403537,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.346687623,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "5213 brochure p2 granularity curves; near 250D, slightly finer; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "5213 brochure p2 granularity curves; near 250D, slightly finer; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_2383; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 34,
+        "status": "Estimate",
+        "source": "5213 brochure p2 granularity curves; near 250D, slightly finer"
+      },
+      "halation": {
+        "use": "cine",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 50,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_2383",
+      "chart_reading": {
+        "status": "Estimate",
+        "source": "5213 brochure p2 granularity curves; near 250D, slightly finer",
+        "log_relative_exposure": [
+          1.5,
+          3,
+          4.5
+        ],
+        "rms_rgb": [
+          [
+            9,
+            9,
+            17
+          ],
+          [
+            6,
+            7,
+            15
+          ],
+          [
+            5,
+            6,
+            12
+          ]
+        ],
+        "reading_uncertainty": "about +/-25%, visual log-axis readings, not digitized manufacturer numbers"
+      }
+    },
+    "kodak_vision3_250d": {
+      "defaults": {
+        "grain_amount": 23.616229,
+        "grain_size": 29.120524,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.346687623,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "5207 March 2022 p3 granularity curves; between 200T and 500T; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "5207 March 2022 p3 granularity curves; between 200T and 500T; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_2383; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 36,
+        "status": "Estimate",
+        "source": "5207 March 2022 p3 granularity curves; between 200T and 500T"
+      },
+      "halation": {
+        "use": "cine",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 50,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_2383",
+      "chart_reading": {
+        "status": "Estimate",
+        "source": "5207 March 2022 p3 granularity curves; between 200T and 500T",
+        "log_relative_exposure": [
+          1.5,
+          3,
+          4.5
+        ],
+        "rms_rgb": [
+          [
+            10,
+            10,
+            16
+          ],
+          [
+            5,
+            7,
+            13
+          ],
+          [
+            4.5,
+            5.5,
+            9
+          ]
+        ],
+        "reading_uncertainty": "about +/-25%, visual log-axis readings, not digitized manufacturer numbers"
+      }
+    },
+    "kodak_vision3_500t": {
+      "defaults": {
+        "grain_amount": 26.866811,
+        "grain_size": 36.569776,
+        "halation_amount": 3.571429,
+        "halation_radius": 0.346687623,
+        "halation_hue_offset": 21.320152,
+        "halation_saturation": 100.0,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "H-1-5219t July 2015 p4 granularity curves; coarsest cine placement; HDR Finisher PGI calibration"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "H-1-5219t July 2015 p4 granularity curves; coarsest cine placement; HDR Finisher PGI calibration"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Projection of spektrafilm 3bb2c2d params_builder.py _HALATION_PRESETS into unchanged HDR Finisher renderer"
+        },
+        "print_paper": {
+          "status": "Confirmed",
+          "source": "spektrafilm profile target_print: kodak_2383; slides bypass print"
+        }
+      },
+      "placement": {
+        "value": 44,
+        "status": "Estimate",
+        "source": "H-1-5219t July 2015 p4 granularity curves; coarsest cine placement"
+      },
+      "halation": {
+        "use": "cine",
+        "antihalation": "strong",
+        "tags_status": "Confirmed",
+        "sigma_um": 50,
+        "strength_rgb": [
+          0.015,
+          0.005,
+          0
+        ],
+        "status": "Spektrafilm estimate",
+        "source": "spektrafilm 3bb2c2d runtime/params_builder.py _HALATION_PRESETS"
+      },
+      "default_paper": "kodak_2383",
+      "chart_reading": {
+        "status": "Estimate",
+        "source": "H-1-5219t July 2015 p4 granularity curves; coarsest cine placement",
+        "log_relative_exposure": [
+          1.5,
+          3,
+          4.5
+        ],
+        "rms_rgb": [
+          [
+            11,
+            13,
+            31
+          ],
+          [
+            6,
+            8,
+            19
+          ],
+          [
+            5,
+            6,
+            12
+          ]
+        ],
+        "reading_uncertainty": "about +/-25%, visual log-axis readings, not digitized manufacturer numbers"
+      }
+    },
+    "none": {
+      "defaults": {
+        "grain_amount": 0,
+        "grain_size": 50,
+        "halation_amount": 0,
+        "halation_radius": 0.2,
+        "halation_hue_offset": 0,
+        "halation_saturation": 75,
+        "print_paper": "default"
+      },
+      "provenance": {
+        "grain_amount": {
+          "status": "Estimate",
+          "source": "Synthetic Neutral: no own grain or halation; inactive control baselines retained"
+        },
+        "grain_size": {
+          "status": "Estimate",
+          "source": "Synthetic Neutral: no own grain or halation; inactive control baselines retained"
+        },
+        "halation_amount": {
+          "status": "Estimate",
+          "source": "Synthetic Neutral: no own grain or halation; inactive control baselines retained"
+        },
+        "halation_radius": {
+          "status": "Estimate",
+          "source": "Synthetic Neutral: no own grain or halation; inactive control baselines retained"
+        },
+        "halation_hue_offset": {
+          "status": "Estimate",
+          "source": "Synthetic Neutral: no own grain or halation; inactive control baselines retained"
+        },
+        "halation_saturation": {
+          "status": "Estimate",
+          "source": "Synthetic Neutral: no own grain or halation; inactive control baselines retained"
+        },
+        "print_paper": {
+          "status": "Estimate",
+          "source": "Synthetic Neutral: no own grain or halation; inactive control baselines retained"
+        }
+      }
+    }
+  }
+}

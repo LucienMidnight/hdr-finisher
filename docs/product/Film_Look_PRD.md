@@ -381,6 +381,118 @@ final regression checks are still pending; Phase 3 is not yet accepted.
 | Pushed Portra 800 grain | Push/Pull grain change | Not published; keep as estimate |
 | Verita 200D sheet | Grain for this stock | Kodak |
 
+
+### 5.5 Phase 4 shipping character calibration (October 16, 2026)
+
+`film_stocks/character.json` stores all 20 stocks and Neutral, every shipped
+control's confidence/source, and the upstream tag/halation inputs separately.
+`tools/build_film_character.py` regenerates it and its static frontend bootstrap.
+No baked colour/tone table or rendering equation changes in this phase.
+
+**Estimate:** Portra 400 anchor Amount **24**, diameter **13.2 micrometres**
+(Size **30**). Judge a 35mm 3:2 scan displayed at 6x4 inches, viewed from 14 inches,
+with default paper, neutral exposure/print/scan, default grain trims and no lens
+filter. This is a first visual calibration for Steve, not a manufacturer slider
+value. Change the single `anchor=24.0` in the generator and regenerate to tune
+strength for all stocks; the physical diameter stays fixed.
+
+**Estimate:** scale factor `2**((placement-37)/21.5)`, split equally in log space
+between grain diameter and Amount (each gets its square root). Size is recovered
+from the existing `diameter_um = 6 + .24*Size`. Four PGI points is one noticeable
+step, but there is no published percentage increase per step. Choosing a doubling
+per 21.5 points is our calibration, not an RMS-to-PGI conversion. Ektar's chosen
+24 is an estimate under its confirmed <25 bound. Every derived slider number in
+the following table is **Estimate**, even when its input PGI is Confirmed.
+
+**Spektrafilm estimate:** strong/weak/no anti-halation R:G:B strengths are
+(.015,.005,0), (.08,.02,0), (.30,.10,.015); still/cine sigma is 65/50 um.
+**Confirmed:** the stock tags and default papers come from its pinned profiles.
+**Estimate:** Amount = red strength/.42*100 in our additive renderer; Spread is
+three sigma converted to percent of a 36x24mm diagonal (our kernel radius is
+three sigma). These are projections into our existing edge-qualified glow,
+not reproduction of spektrafilm's different scatter kernel. Strong/weak colours
+fit the existing tint equation by hue; no-backing uses hue 30, saturation 90
+as an approximation to its small blue component. These projection values are
+**Estimate**, not confirmed physical halation measurements.
+
+Amount, Spread and Saturation read **100% stock** at the stock's setting;
+Hue Offset reads **0** there. Saved values remain ordinary renderer units.
+A set control keeps that absolute value when changing stocks, so its relative
+readout can change. This avoids changing export/GPU equations. Neutral has no
+own grain/halation and uses the existing absolute sliders for deliberate effects.
+Amount's slider spans 0-200% stock, Spread 0-400%; typed values can reach the
+existing absolute model bounds. Hue/Saturation retain their absolute bounds,
+expressed relative to the stock. Enabled/bypass switches remain independent,
+not stock-owned: a deliberate bypass stays off when changing stocks.
+
+Only Amount/Size, the four halation controls and Paper are stock-owned.
+Paper's saved `default` means the current stock's confirmed matching paper;
+slides skip print. Explicit alternative papers survive stock changes, including
+through a slide. Portra 800 Push +1/+2 refreshes inherited grain from the two
+pushed placements; all other Push/Pull grain remains unchanged (no data).
+Stage presets and sparse Looks remain Phase 5; no compatibility path is added.
+
+Before new measurements: physical format pitch must double within 1e-6 relative
+when the gate dimensions halve, since it is geometry; this corresponds to our
+calibrated 21.5-PGI step, within the documented roughly 20-22 point sheet spread.
+This is a scale sanity check, not proof of perceived grain matching PGI.
+New numerical mapping round trips allow 1e-6 absolute for decimal metadata;
+existing GPU/export tolerances and exact Proof guarantees remain unchanged.
+Visual chart readings below have about +/-25% reading uncertainty; this is a
+confidence statement, not a relaxed test tolerance.
+
+| Stock | Placement input and status | Amount / Size (Estimate) | Halation Amount / Spread / Hue / Saturation (Estimate) | Paper (Confirmed from profile) |
+|---|---|---|---|---|
+| `kodak_portra_400` | 37 (Confirmed) | 24.000 / 30.000 | 3.571 / 0.450694 / 21.320 / 100 | kodak_portra_endura |
+| `kodak_portra_160` | 28 (Confirmed) | 20.759 / 22.573 | 3.571 / 0.450694 / 21.320 / 100 | kodak_portra_endura |
+| `kodak_portra_800` | 48 (Confirmed) | 28.656 / 40.671 | 3.571 / 0.450694 / 21.320 / 100 | kodak_portra_endura |
+| `kodak_ektar_100` | 24 (Estimate) | 19.463 / 19.602 | 3.571 / 0.450694 / 21.320 / 100 | kodak_portra_endura |
+| `kodak_gold_200` | 44 (Confirmed) | 26.867 / 36.570 | 19.048 / 0.450694 / -32.172 / 100 | kodak_portra_endura |
+| `kodak_ultramax_400` | 46 (Confirmed) | 27.747 / 38.587 | 19.048 / 0.450694 / -32.172 / 100 | kodak_portra_endura |
+| `fujifilm_c200` | 44 (Estimate) | 26.867 / 36.570 | 19.048 / 0.450694 / -32.172 / 100 | fujifilm_crystal_archive_typeii |
+| `fujifilm_xtra_400` | 46 (Estimate) | 27.747 / 38.587 | 19.048 / 0.450694 / -32.172 / 100 | fujifilm_crystal_archive_typeii |
+| `fujifilm_pro_400h` | 37 (Estimate) | 24.000 / 30.000 | 3.571 / 0.450694 / 21.320 / 100 | fujifilm_crystal_archive_typeii |
+| `kodak_portra_800_push1` | 52 (Estimate) | 30.565 / 45.044 | 3.571 / 0.450694 / 21.320 / 100 | kodak_portra_endura |
+| `kodak_portra_800_push2` | 56 (Estimate) | 32.601 / 49.710 | 3.571 / 0.450694 / 21.320 / 100 | kodak_portra_endura |
+| `fujifilm_velvia_100` | 24 (Estimate) | 19.463 / 19.602 | 3.571 / 0.450694 / 21.320 / 100 | none (slide) |
+| `fujifilm_provia_100f` | 24 (Estimate) | 19.463 / 19.602 | 3.571 / 0.450694 / 21.320 / 100 | none (slide) |
+| `kodak_ektachrome_100` | 24 (Estimate) | 19.463 / 19.602 | 3.571 / 0.450694 / 21.320 / 100 | none (slide) |
+| `kodak_kodachrome_64` | 24 (Estimate) | 19.463 / 19.602 | 19.048 / 0.450694 / -32.172 / 100 | none (slide) |
+| `kodak_verita_200d` | 34 (Estimate) | 22.867 / 27.404 | 3.571 / 0.346688 / 21.320 / 100 | kodak_2383 |
+| `kodak_vision3_50d` | 24 (Estimate) | 19.463 / 19.602 | 3.571 / 0.346688 / 21.320 / 100 | kodak_2383 |
+| `kodak_vision3_200t` | 34 (Estimate) | 22.867 / 27.404 | 3.571 / 0.346688 / 21.320 / 100 | kodak_2383 |
+| `kodak_vision3_250d` | 36 (Estimate) | 23.616 / 29.121 | 3.571 / 0.346688 / 21.320 / 100 | kodak_2383 |
+| `kodak_vision3_500t` | 44 (Estimate) | 26.867 / 36.570 | 3.571 / 0.346688 / 21.320 / 100 | kodak_2383 |
+
+All placement sources/reasons are recorded with each stock in character.json.
+Neutral's seven defaults (Amount 0, Size 50; halation 0/.2/0/75; Paper default)
+are **Estimate**, synthetic design values, with zero own grain/halation.
+Ektachrome's historical RMS 8 remains **Proxy**; its current E100 source is
+**Missing**. Verita and pushed Portra manufacturer grain figures remain
+**Missing**. No estimate above fills those evidence gaps as Confirmed.
+
+Vision3 chart reading method: rendered the saved full chart pages, followed the
+right-hand **logarithmic** sigma-D axis and multiplied by 1000. Samples below
+are R/G/B at common log-relative-exposure 1.5, 3.0 and 4.5, not at equal density
+or equal scene stops between stocks. They support broad within-Vision3 ranking,
+not a direct comparison with still PGI. **Confirmed:** the sheets contain the
+curves; **Estimate:** all numbers visually read from them and all placements.
+
+| Stock / sheet page | RMS RGB at 1.5 (Estimate) | At 3.0 (Estimate) | At 4.5 (Estimate) |
+|---|---|---|---|
+| 50D 5203 p3 | 6 / 6 / 9 | 4 / 4.5 / 7.5 | 2.5 / 3.5 / 5 |
+| 200T 5213 p2 | 9 / 9 / 17 | 6 / 7 / 15 | 5 / 6 / 12 |
+| 250D 5207 p3 | 10 / 10 / 16 | 5 / 7 / 13 | 4.5 / 5.5 / 9 |
+| 500T H-1-5219t p4 | 11 / 13 / 31 | 6 / 8 / 19 | 5 / 6 / 12 |
+
+The toe hump then declining density granularity is broadly compatible with
+sparse developed grains giving way to a dense merged field, but the unchanged
+renderer is statistically normalized and its default response trims are flat.
+It does not reproduce these per-layer curves or make size exposure-dependent.
+This phase checks and records that limitation; changing the grain model would
+violate its scope. Slide films share the finest-negative estimate; reversal RMS
+is not treated as comparable with negative RMS.
+
 ## 6. Acceptance
 
 - Every control does something visible at its default range, alone (no control
