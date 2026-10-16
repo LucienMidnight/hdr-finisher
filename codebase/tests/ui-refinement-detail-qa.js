@@ -23,22 +23,24 @@ function assert(condition, message) {
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     const logoPath = path.join(outputDir, "logo-implementation.png");
-    await page.locator(".product-mark").screenshot({ path: logoPath });
-    const logoSurface = await page.locator(".product-mark").evaluate((logo) => {
+    await page.locator(".product-logo").screenshot({ path: logoPath });
+    const logoSurface = await page.locator(".product-logo").evaluate((logo) => {
       const style = getComputedStyle(logo);
-      return { borderWidth: style.borderTopWidth, mask: style.maskImage || style.webkitMaskImage };
+      return { borderWidth: style.borderTopWidth, loaded: logo.complete && logo.naturalWidth > 0 };
     });
-    assert(logoSurface.borderWidth === "0px" && logoSurface.mask.includes("hdr-finisher-icon-simple.svg"), `Product mark surface is incorrect: ${JSON.stringify(logoSurface)}`);
+    assert(logoSurface.borderWidth === "0px" && logoSurface.loaded, `Product mark surface is incorrect: ${JSON.stringify(logoSurface)}`);
+    await page.evaluate(() => document.getElementById("test-pattern-button").click());
+    await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
+    await page.locator('[data-workflow-tab="proof"]').click();
     const buttonPath = path.join(outputDir, "button-implementation.png");
-    await page.locator("#import-button").screenshot({ path: buttonPath });
-    const buttonSurface = await page.locator("#import-button").evaluate((button) => {
+    await page.locator("#chrome-proof-refresh").screenshot({ path: buttonPath });
+    const buttonSurface = await page.locator("#chrome-proof-refresh").evaluate((button) => {
       const style = getComputedStyle(button);
       return { background: style.backgroundImage, borderWidth: style.borderTopWidth, appearance: style.appearance, shadow: style.boxShadow };
     });
     assert(buttonSurface.background.includes("linear-gradient") && buttonSurface.borderWidth === "0px" && buttonSurface.appearance === "none" && !buttonSurface.shadow.includes("inset"), `Primary button material is incorrect: ${JSON.stringify(buttonSurface)}`);
 
-    await page.getByRole("button", { name: "Load test pattern" }).click();
-    await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
+    await page.locator('[data-workflow-tab="grade"]').click();
     await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
     const rawGroup = page.locator(".raw-development-group");
     await rawGroup.evaluate((group) => {
