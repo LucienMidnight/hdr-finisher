@@ -56,7 +56,8 @@ async function main() {
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     if (await page.locator("#avif-gain-map-chroma-subsampling").count()) throw new Error("Gain-map chroma must not be exposed in the export UI.");
-    await page.locator("#test-pattern-button").click();
+    // The Library is now the start screen; load a fixture for export checks.
+    await page.setInputFiles("#file-input", require("node:path").resolve("tests/fixtures/hdr_headroom.tiff"));
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 120000 });
     await page.locator('[data-workflow-tab="export"]').click();
     const advanced = page.locator("#jpeg-advanced-settings");
