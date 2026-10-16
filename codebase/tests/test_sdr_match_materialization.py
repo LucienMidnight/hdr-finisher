@@ -41,7 +41,8 @@ def _calibrated_grade() -> tuple[AdjustmentState, list[LocalAdjustment]]:
     hdr.color_grading.highlights.saturation = 18
     # Retired artistic controls have no physical equivalent; physical controls
     # have independent coverage in test_film_controls.py.
-    hdr.film_look.bloom_amount = 6
+    # The removed 6% Bloom has no equivalent physical filter grade.
+    # Lens recipe copying and safe rejection have separate coverage.
     hdr.film_look.halation_amount = 5
     hdr.detail.clarity_amount = 4
     hdr.vignette.amount = -4
@@ -318,3 +319,24 @@ def test_color_grading_wheels_are_translated_into_sdr_primaries() -> None:
 
             error = abs((graded_hue - reference_hue + 180.0) % 360.0 - 180.0)
             assert error <= 1.0, f"{wheel_name} at {hue} deg drifted {error:.1f} deg"
+
+
+@pytest.mark.parametrize("family", ["glimmerglass", "black_pro_mist", "pro_mist", "cinebloom"])
+def test_match_copies_physical_lens_recipe_without_threshold_translation(family) -> None:
+    from hdr_finisher.sdr_match import _semantic_sdr_translation
+    adjustments = AdjustmentState()
+    look = adjustments.hdr.film_look
+    look.lens_filter, look.lens_strength, look.lens_size = family, 0.375, 2.5
+    translated = _semantic_sdr_translation(adjustments, np.full((8, 8, 3), 20.0, np.float32))
+    assert translated.film_look.lens_filter == family
+    assert translated.film_look.lens_strength == 0.375
+    assert translated.film_look.lens_size == 2.5
+
+
+def test_match_rejects_coloured_lens_target_outside_existing_quality_gate() -> None:
+    source = tifffile.imread(FIXTURE).astype(np.float32)
+    adjustments, locals_ = _calibrated_grade()
+    adjustments.hdr.film_look.lens_filter = "black_pro_mist"
+    adjustments.hdr.film_look.lens_strength = 0.5
+    with pytest.raises(SDRMatchMaterializationError, match="could not be safely materialized"):
+        materialize_sdr_match(source, adjustments, locals_, reference_white_nits=203, source_pixel_scale=1.0)

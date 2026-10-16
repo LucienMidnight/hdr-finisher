@@ -87,7 +87,7 @@ def test_export_equals_the_preview_graph_when_finishing_is_neutral(kind, stock_i
     adjustments = _graded_state()
     look = getattr(adjustments, kind.value).film_look
     look.film_stock = stock_id
-    look.bloom_amount = 35
+    look.lens_filter = "black_pro_mist"
     look.halation_amount = 45
     look.film_resolution = 60
     session = _session(image, adjustments)

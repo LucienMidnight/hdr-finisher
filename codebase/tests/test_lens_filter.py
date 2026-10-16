@@ -33,7 +33,7 @@ def test_constant_field_is_preserved_and_none_is_exact_bypass(family):
 
 def test_fft_blocks_match_direct_clamped_convolution():
     rng=np.random.default_rng(318)
-    image=rng.random((5,270,3),dtype=np.float32)
+    image=rng.random((5,770,3),dtype=np.float32)
     kernel=psf("black_pro_mist",1,.25,2)
     actual=convolve(image,kernel)
     r=kernel.shape[0]//2
@@ -41,7 +41,7 @@ def test_fft_blocks_match_direct_clamped_convolution():
     expected=np.zeros_like(image,dtype=np.float64)
     for y in range(2*r+1):
         for x in range(2*r+1):
-            expected+=padded[y:y+5,x:x+270]*kernel[y,x]
+            expected+=padded[y:y+5,x:x+770]*kernel[y,x]
     np.testing.assert_allclose(actual,expected,atol=1e-6,rtol=0)
 
 
@@ -67,3 +67,11 @@ def test_pinned_upstream_coefficients():
     for family,expected in golden.items():
         actual=[[sigma,*weights] for sigma,weights in components(family)]
         np.testing.assert_allclose(actual,expected,atol=2e-9,rtol=0)
+
+
+@pytest.mark.parametrize("field", ["bloom_enabled","bloom_amount","bloom_sensitivity","bloom_radius","bloom_highlight_detail"])
+def test_retired_bloom_controls_are_rejected(field):
+    from pydantic import ValidationError
+    from hdr_finisher.models import FilmLookAdjustments
+    with pytest.raises(ValidationError):
+        FilmLookAdjustments(**{field:1})

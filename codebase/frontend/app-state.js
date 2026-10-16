@@ -192,14 +192,12 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.film_look.grain_midtone_response": { min: 0, max: 150, decimals: 0 },
   "current.film_look.grain_highlight_response": { min: 0, max: 150, decimals: 0 },
   "current.film_look.film_resolution": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.lens_strength": { min: 0.125, max: 2, decimals: 3 },
+  "current.film_look.lens_size": { min: 0.25, max: 4, decimals: 2 },
   "current.film_look.halation_amount": { min: 0, max: 100, decimals: 0 },
   "current.film_look.halation_radius": { min: 0, max: 5, decimals: 2 },
   "current.film_look.halation_hue_offset": { min: -100, max: 100, decimals: 0 },
   "current.film_look.halation_saturation": { min: 0, max: 100, decimals: 0 },
-  "current.film_look.bloom_amount": { min: 0, max: 100, decimals: 0 },
-  "current.film_look.bloom_sensitivity": { min: 0, max: 100, decimals: 0 },
-  "current.film_look.bloom_radius": { min: 0, max: 10, decimals: 2 },
-  "current.film_look.bloom_highlight_detail": { min: 0, max: 100, decimals: 0 },
 });
 
 const TONE_EQUALIZER_MIN_EV = -6;
@@ -725,24 +723,22 @@ const defaultFilmLook = () => ({
   grain_highlight_response: 100,
   grain_view_map: false,
   film_resolution: 100,
+  lens_filter: "none",
+  lens_strength: 0.5,
+  lens_size: 1,
   halation_enabled: true,
   halation_amount: 0,
   halation_radius: 0.2,
   halation_hue_offset: 0,
   halation_saturation: 75,
   halation_view_map: false,
-  bloom_enabled: true,
-  bloom_amount: 0,
-  bloom_sensitivity: 80,
-  bloom_radius: 0.5,
-  bloom_highlight_detail: 75,
 });
 
 // 2: Image Softness and Microcontrast left Film Look for Detail (NEXT-01 #2),
 // and the presets no longer set them.
 // 3: Film stock stage. Every recipe states its stock (the older ones "none",
 // through the defaults), and the Portra 400 pair was added.
-const FILM_LOOK_PRESET_RECIPE_VERSION = 4;
+const FILM_LOOK_PRESET_RECIPE_VERSION = 5;
 
 function completeFilmLookRecipe(values) {
   return Object.freeze({
@@ -759,28 +755,28 @@ const FILM_LOOK_PRESETS = Object.freeze([
     name: "Clean Cinema",
     description: "Fine texture, restrained density, and a clean highlight finish.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ grain_amount: 14, grain_size: 22, grain_softness: 50, grain_chroma: 10, grain_film_format: "65mm", grain_shadow_response: 82, grain_highlight_response: 110, film_resolution: 98, halation_amount: 6, halation_radius: 0.16, halation_saturation: 68, bloom_amount: 4, bloom_sensitivity: 88, bloom_radius: 0.32, bloom_highlight_detail: 90 }),
+    recipe: completeFilmLookRecipe({ grain_amount: 14, grain_size: 22, grain_softness: 50, grain_chroma: 10, grain_film_format: "65mm", grain_shadow_response: 82, grain_highlight_response: 110, film_resolution: 98, halation_amount: 6, halation_radius: 0.16, halation_saturation: 68,}),
   }),
   Object.freeze({
     id: "soft-color-negative",
     name: "Soft Color Negative",
     description: "Gentle shoulders, soft color separation, and quiet portrait texture.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ grain_amount: 22, grain_size: 38, grain_softness: 52, grain_chroma: 13, grain_film_format: "35mm", grain_shadow_response: 88, grain_midtone_response: 98, grain_highlight_response: 112, film_resolution: 94, halation_amount: 9, halation_radius: 0.24, halation_saturation: 74, bloom_amount: 9, bloom_sensitivity: 76, bloom_radius: 0.62, bloom_highlight_detail: 78 }),
+    recipe: completeFilmLookRecipe({ grain_amount: 22, grain_size: 38, grain_softness: 52, grain_chroma: 13, grain_film_format: "35mm", grain_shadow_response: 88, grain_midtone_response: 98, grain_highlight_response: 112, film_resolution: 94, halation_amount: 9, halation_radius: 0.24, halation_saturation: 74,}),
   }),
   Object.freeze({
     id: "dense-print",
     name: "Dense Print",
     description: "Deeper color, firmer print contrast, and a richer projected finish.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ grain_amount: 30, grain_size: 46, grain_softness: 34, grain_chroma: 18, grain_film_format: "35mm", grain_shadow_response: 92, grain_midtone_response: 104, grain_highlight_response: 118, film_resolution: 90, halation_amount: 13, halation_radius: 0.28, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80 }),
+    recipe: completeFilmLookRecipe({ grain_amount: 30, grain_size: 46, grain_softness: 34, grain_chroma: 18, grain_film_format: "35mm", grain_shadow_response: 92, grain_midtone_response: 104, grain_highlight_response: 118, film_resolution: 90, halation_amount: 13, halation_radius: 0.28, halation_hue_offset: 2, halation_saturation: 82,}),
   }),
   Object.freeze({
     id: "high-speed-texture",
     name: "High-Speed Texture",
     description: "Coarse responsive grain, open glow, and softened fine detail for low-light character.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86, bloom_amount: 12, bloom_sensitivity: 70, bloom_radius: 0.7, bloom_highlight_detail: 70 }),
+    recipe: completeFilmLookRecipe({ grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86,}),
   }),
   Object.freeze({
     id: "portra-400-full",
@@ -792,7 +788,7 @@ const FILM_LOOK_PRESETS = Object.freeze([
   Object.freeze({
     id: "portra-400-color",
     name: "Portra 400 Color",
-    description: "Kodak Portra 400 color only; your own tone is kept. No grain, halation, or bloom.",
+    description: "Kodak Portra 400 color only; your own tone is kept. No grain, halation, or lens filter.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
     recipe: completeFilmLookRecipe({ film_stock: "kodak_portra_400", stock_color: 100, stock_tone: 0 }),
   }),

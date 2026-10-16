@@ -231,21 +231,21 @@ def test_vertical_strip_and_custom_gate_anchor_film_plane_units_consistently() -
     assert _film_pixels_per_mm(4_800, 64_000, look) == pytest.approx(100.0)
 
 
-def test_bloom_spread_is_output_relative_and_independent_of_film_format() -> None:
+def test_lens_filter_spread_follows_film_format() -> None:
     image = np.zeros((81, 121, 3), dtype=np.float32)
     image[38:43, 58:63] = 8.0
     state = AdjustmentState()
     look = state.hdr.film_look
     look.halation_enabled = False
-    look.bloom_amount = 70
-    look.bloom_radius = 3
+    look.lens_filter = "black_pro_mist"
+    look.lens_size = 3
 
     look.grain_film_format = "65mm"
     large_format = apply_adjustments(image, state, PreviewKind.HDR)
     look.grain_film_format = "super8"
     small_format = apply_adjustments(image, state, PreviewKind.HDR)
 
-    np.testing.assert_array_equal(large_format, small_format)
+    assert not np.array_equal(large_format, small_format)
 
 
 @pytest.mark.parametrize(("hue_offset", "saturation"), [(-100, 100), (0, 75), (100, 35), (0, 0)])
@@ -377,7 +377,8 @@ def test_cpu_film_stages_follow_light_and_mix_the_completed_module(monkeypatch) 
     image = np.full((8, 10, 3), 0.18, dtype=np.float32)
     state = AdjustmentState()
     look = state.hdr.film_look
-    look.halation_amount = look.bloom_amount = 20
+    look.halation_amount = 20
+    look.lens_filter = "black_pro_mist"
     look.film_resolution = 90
     look.grain_enabled = False
     look.look_strength = 50
@@ -392,8 +393,9 @@ def test_cpu_film_stages_follow_light_and_mix_the_completed_module(monkeypatch) 
             return (result, np.zeros_like(current)) if name == "halation" else result
         return run
 
+    import hdr_finisher.lens_filter as lens_module
+    monkeypatch.setattr(lens_module, "apply_filter", stage("lens", .01))
     for name, function, increment in (
-        ("lens", "_apply_bloom", .01),
         ("scatter", "_apply_film_resolution", .02),
         ("halation", "_apply_halation", .03),
         ("scan", "_apply_scan_sharpening", .04),
@@ -537,8 +539,7 @@ def test_inactive_film_spatial_stages_do_not_blur(monkeypatch: pytest.MonkeyPatc
     look = getattr(state, kind.value).film_look
     look.halation_enabled = True
     look.halation_amount = 0
-    look.bloom_enabled = True
-    look.bloom_amount = 0
+    look.lens_filter = "none"
     getattr(state, kind.value).detail.softness = 0
     getattr(state, kind.value).detail.microcontrast = 0
     look.film_resolution = 100
@@ -552,15 +553,15 @@ def test_inactive_film_spatial_stages_do_not_blur(monkeypatch: pytest.MonkeyPatc
     apply_adjustments(image, state, kind)
 
 
-def test_halation_and_bloom_remain_spatial_with_density_grain() -> None:
+def test_halation_and_lens_remain_spatial_with_density_grain() -> None:
     image = np.zeros((41, 41, 3), dtype=np.float32)
     image[20, 20] = 8.0
     state = AdjustmentState()
     look = state.hdr.film_look
     look.halation_amount = 70
     look.halation_radius = 2.0
-    look.bloom_amount = 45
-    look.bloom_radius = 3.0
+    look.lens_filter = "black_pro_mist"
+    look.lens_size = 3.0
     look.grain_amount = 30
     output = apply_adjustments(image, state, PreviewKind.HDR)
 
@@ -610,26 +611,6 @@ def test_halation_extent_changes_spread_without_changing_edge_qualification() ->
     assert float(np.sum(large_map)) > float(np.sum(small_map))
 
 
-def test_bloom_sensitivity_and_spread_have_distinct_effects() -> None:
-    image = np.zeros((121, 121, 3), dtype=np.float32)
-    image[58:63, 58:63] = 0.75
-    state = AdjustmentState()
-    look = state.hdr.film_look
-    look.halation_enabled = False
-    look.bloom_amount = 100
-    look.bloom_highlight_detail = 100
-    look.bloom_radius = 0.5
-    look.bloom_sensitivity = 10
-    selective = apply_adjustments(image, state, PreviewKind.HDR)
-    look.bloom_sensitivity = 100
-    sensitive = apply_adjustments(image, state, PreviewKind.HDR)
-    assert float(np.sum(sensitive - image)) > float(np.sum(selective - image))
-
-    look.bloom_radius = 4.0
-    spread = apply_adjustments(image, state, PreviewKind.HDR)
-    assert float(spread[60, 66, 0]) > float(sensitive[60, 66, 0])
-
-
 def test_film_resolution_attenuates_microcontrast_but_protects_hard_edges() -> None:
     checker = (np.indices((81, 81)).sum(axis=0) % 2).astype(np.float32)
     texture = np.repeat((0.5 + checker * 0.02)[..., None], 3, axis=-1)
@@ -649,61 +630,13 @@ def test_film_resolution_attenuates_microcontrast_but_protects_hard_edges() -> N
     assert float(edge_result[40, 40, 0] - edge_result[40, 41, 0]) > 0.95
 
 
-def test_bloom_highlight_detail_controls_real_core_diffusion() -> None:
-    yy, xx = np.mgrid[:81, :81].astype(np.float32)
-    soft_highlight = np.exp(-((xx - 40.0) ** 2 + (yy - 40.0) ** 2) / (2.0 * 9.0 ** 2)) * 8.0
-    image = np.repeat(soft_highlight[..., None], 3, axis=-1).astype(np.float32)
-    detailed = AdjustmentState()
-    look = detailed.hdr.film_look
-    look.bloom_amount = 100
-    look.bloom_radius = 4.0
-    look.bloom_sensitivity = 100
-    look.bloom_highlight_detail = 100
-    look.halation_enabled = False
-
-    diffused = detailed.model_copy(deep=True)
-    diffused.hdr.film_look.bloom_highlight_detail = 0
-    detailed_output = apply_adjustments(image, detailed, PreviewKind.HDR)
-    diffused_output = apply_adjustments(image, diffused, PreviewKind.HDR)
-
-    assert float(diffused_output[40, 40, 0]) < float(detailed_output[40, 40, 0])
-    assert float(diffused_output[25, 40, 0]) > float(detailed_output[25, 40, 0])
-    assert np.all(np.isfinite(diffused_output))
-    assert float(diffused_output.min()) >= 0.0
-
-
-def test_bloom_diffusion_does_not_cut_a_dark_echo_into_a_hard_edge() -> None:
-    image = np.zeros((81, 81, 3), dtype=np.float32)
-    image[:, :41] = 8.0
-    detailed = AdjustmentState()
-    look = detailed.hdr.film_look
-    look.bloom_amount = 100
-    look.bloom_radius = 4.0
-    look.bloom_sensitivity = 100
-    look.bloom_highlight_detail = 100
-    look.halation_enabled = False
-
-    diffused = detailed.model_copy(deep=True)
-    diffused.hdr.film_look.bloom_highlight_detail = 0
-    detailed_output = apply_adjustments(image, detailed, PreviewKind.HDR)
-    diffused_output = apply_adjustments(image, diffused, PreviewKind.HDR)
-
-    # The transition may still receive a tiny amount of low-contrast
-    # diffusion, but it must not cut the several-percent dark notch produced
-    # by the unprotected subtraction.
-    assert float(np.min(diffused_output[:, 39])) >= float(np.min(detailed_output[:, 39])) * 0.995
-    np.testing.assert_allclose(diffused_output[:, 40:43], detailed_output[:, 40:43], atol=1e-6)
-
-
-def test_bloom_has_a_smooth_monotonic_hard_edge_profile() -> None:
+def test_lens_filter_has_a_smooth_monotonic_hard_edge_profile() -> None:
     image = np.zeros((101, 101, 3), dtype=np.float32)
     image[:, :51] = 8.0
     state = AdjustmentState()
     look = state.hdr.film_look
-    look.bloom_amount = 100
-    look.bloom_radius = 4.0
-    look.bloom_sensitivity = 100
-    look.bloom_highlight_detail = 35
+    look.lens_filter = "black_pro_mist"
+    look.lens_size = 4.0
     look.halation_enabled = False
 
     output = apply_adjustments(image, state, PreviewKind.HDR)

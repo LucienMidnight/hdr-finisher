@@ -3503,7 +3503,7 @@
       if (detailActive || localDetailActive) nodes.push({ id: "detail", halo });
       if (activeLocals.length) nodes.push({ id: "mask-feather", halo });
       if (params[GPU_PARAMS.HALATION_ENABLED] > 0.5) nodes.push({ id: "halation", halo });
-      if (params[GPU_PARAMS.BLOOM_ENABLED] > 0.5 && params[GPU_PARAMS.BLOOM_AMOUNT] > 0) nodes.push({ id: "bloom", halo });
+      if (params[GPU_PARAMS.LENS_FILTER] > 0.5 && params[GPU_PARAMS.LENS_SCATTER] > 0) nodes.push({ id: "lens-filter", halo });
       if (filmNeighbourhoodActive && !spatialActive) nodes.push({ id: "softness", halo });
       if (params[GPU_PARAMS.VIGNETTE_ENABLED] > 0.5 && params[GPU_PARAMS.VIGNETTE_AMOUNT] !== 0) nodes.push("vignette");
       if (params[GPU_PARAMS.FILM_LOOK_ENABLED] > 0.5 && params[GPU_PARAMS.FILM_FINISH_STRENGTH] > 0) nodes.push("grain");
@@ -6340,19 +6340,19 @@
       const fallback = originalView;
       const a = graph.spatialATexture?.createView() || fallback;
       const b = graph.spatialBTexture?.createView() || fallback;
-      const pass = (view, pipeline, group, w = width, h = height) => {
+      const pass = (view, pipeline, group, w = width, h = height, instance = 0, accumulate = false) => {
         const render = encoder.beginRenderPass({ colorAttachments: [{
-          view, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "store",
+          view, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: accumulate ? "load" : "clear", storeOp: "store",
         }] });
         render.setViewport(0, 0, w, h, 0, 1);
         render.setScissorRect(0, 0, w, h);
         render.setPipeline(pipeline);
         render.setBindGroup(0, group);
-        render.draw(3);
+        render.draw(3,1,0,instance);
         render.end();
       };
       const active = params[GPU_PARAMS.FILM_RESPONSE_ENABLED] >= 0.5 && params[GPU_PARAMS.FILM_LOOK_STRENGTH] > 0;
-      const bloom = active && params[GPU_PARAMS.BLOOM_ENABLED] > 0.5 && params[GPU_PARAMS.BLOOM_AMOUNT] > 0;
+      const bloom = active && params[GPU_PARAMS.LENS_FILTER] > 0.5 && params[GPU_PARAMS.LENS_SCATTER] > 0;
       const halation = active && params[GPU_PARAMS.HALATION_ENABLED] > 0.5;
       const scatter = active && params[GPU_PARAMS.FILM_RESOLUTION] < 1;
       const spatial = () => {
@@ -6364,8 +6364,16 @@
       };
       pass(filmView, pipelines.response, bind(originalView, fallback, originalView));
       if (bloom || scatter) {
-        if (bloom) spatial();
-        pass(finishView, pipelines.lens, bind(filmView, a, originalView));
+        if (bloom) {
+          const grid = graph.spatialGrid || spatialGridScale(width,height);
+          const sw = Math.ceil(width/grid), sh = Math.ceil(height/grid);
+          pass(finishView,pipelines.lensExtract,bind(filmView,fallback,originalView),sw,sh);
+          for(let component=0;component<27;component++) {
+            pass(a,pipelines.lensHorizontal,bind(filmView,finishView,originalView),sw,sh,component);
+            pass(b,pipelines.lensVertical,bind(filmView,a,originalView),sw,sh,component,component>0);
+          }
+        }
+        pass(finishView, pipelines.lens, bind(filmView, b, originalView));
         pass(filmView, pipelines.scatter, bind(finishView, a, originalView));
       }
       if (halation) spatial();
@@ -6516,7 +6524,24 @@
         },
         primitive: { topology: "triangle-list" },
       });
+      const lensExtract = this.device.createRenderPipeline({
+        layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
+        fragment:{module:this.module,entryPoint:"lensExtractFragmentMain",targets:[{format:"rgba16float"}]},
+        primitive:{topology:"triangle-list"},
+      });
+      const lensHorizontal = this.device.createRenderPipeline({
+        layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
+        fragment:{module:this.module,entryPoint:"lensHorizontalFragmentMain",targets:[{format:"rgba16float"}]},
+        primitive:{topology:"triangle-list"},
+      });
+      const lensVertical = this.device.createRenderPipeline({
+        layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
+        fragment:{module:this.module,entryPoint:"lensVerticalFragmentMain",targets:[{format:"rgba16float",
+          blend:{color:{operation:"add",srcFactor:"one",dstFactor:"one"},alpha:{operation:"add",srcFactor:"one",dstFactor:"one"}}}]},
+        primitive:{topology:"triangle-list"},
+      });
       const pipelines = {
+        lensExtract, lensHorizontal, lensVertical,
         peakCandidateLocal: this.device.createRenderPipeline({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },

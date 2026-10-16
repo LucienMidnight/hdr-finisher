@@ -281,7 +281,7 @@ def test_film_density_grain_proof_is_export_byte_for_byte(backends, tmp_path, st
         look = branch.film_look
         look.film_stock = stock_id
         look.grain_amount = 65
-        look.bloom_amount = 35
+        look.lens_filter = "black_pro_mist"
         look.halation_amount = 45
         look.film_resolution = 70
         look.look_strength = 60

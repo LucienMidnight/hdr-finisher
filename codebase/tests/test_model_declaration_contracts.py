@@ -52,9 +52,9 @@ def test_branch_serialization_order_and_adjustment_signature_are_stable() -> Non
     assert tuple(adjustments.hdr.model_dump()) == HDR_FIELD_ORDER
     assert tuple(adjustments.sdr.model_dump()) == SDR_FIELD_ORDER
     signature = adjustment_signature(adjustments)
-    # Changed October 15, 2026, when Film Look gained physical development, paper and scan controls.
+    # Changed October 16, 2026, when physical lens filters replaced Bloom controls.
     assert hashlib.sha256(signature.encode()).hexdigest() == (
-        "2d17d55652910201bd5965c591eced8e1067de7bd5b0b458fce27dd4afa4c8f2"
+        "a7ccea9324dc176cec94fd9b3eca97d18cddfc97bdc7a7151587d557cfe842e9"
     )
     assert AdjustmentState.model_validate(adjustments.model_dump(mode="json")) == adjustments
 

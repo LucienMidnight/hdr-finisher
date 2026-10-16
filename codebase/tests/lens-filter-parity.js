@@ -216,6 +216,7 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
     }, { lane, stock, lookStrength, longEdge: LONG_EDGE, extremeHdr });
 
     if(process.argv.includes("--inspect")) {
+      await page.evaluate(()=>stopPreviewWatchdog());
       LONG_EDGE=1520;
       for(const [name,recipe] of [["none",NEUTRAL],["black_pro_mist",{...NEUTRAL,lens_filter:"black_pro_mist",lens_strength:.5,lens_size:1}],["cinebloom",{...NEUTRAL,lens_filter:"cinebloom",lens_strength:2,lens_size:4,grain_film_format:"super8"}]]) {
         await compare("hdr",recipe,100);

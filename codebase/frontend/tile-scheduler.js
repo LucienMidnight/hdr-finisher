@@ -45,7 +45,7 @@
     detail: null,
     denoise: null,
     halation: null,
-    bloom: null,
+    "lens-filter": null,
     softness: null,
     "mask-feather": null,
   });

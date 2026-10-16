@@ -489,7 +489,11 @@ function formatControlValue(path, value) {
   if (path.endsWith("_nits")) return `${Math.round(numeric)} nit`;
   if (path.endsWith("highlight_compression_start_percent") || path.endsWith("highlight_compression_manual_peak_percent")) return `${Math.round(numeric)}%`;
   if (path.endsWith("film_look.halation_radius")) return `${numeric.toFixed(2)}% 35mm gate`;
-  if (path.endsWith("film_look.bloom_radius")) return `${numeric.toFixed(2)}% output diag`;
+  if (path.endsWith("film_look.lens_size")) return `${numeric.toFixed(2)}x`;
+  if (path.endsWith("film_look.lens_strength")) {
+    const grades = {0.125:"1/8",0.25:"1/4",0.5:"1/2",1:"1",2:"2"};
+    return grades[numeric] || Number(numeric.toFixed(3)).toString();
+  }
   if (path.endsWith("film_look.stock_exposure")) return `${numeric > 0 ? "+" : ""}${numeric.toFixed(2)} EV`;
   if (path.includes("film_look")) {
     const signed = /(contrast|toe|shoulder|density|hue_offset|separation|warmth|tint)$/.test(path);

@@ -48,9 +48,9 @@ function activeParams(overrides = {}) {
   params[85] = 1;   // halation enabled
   params[86] = 0.5;
   params[88] = 0.2; // halation radius (film plane, percent)
-  params[92] = 1;   // bloom enabled
+  params[92] = 1;   // lens filter
   params[93] = 0.5;
-  params[95] = 0.5; // bloom radius (frame diagonal, percent)
+  params[95] = 0.5; // lens spatial size
   params[97] = 1;   // Detail enabled, for Softness/Microcontrast (NEXT-01 #2)
   params[98] = 0.4; // softness
   params[99] = 0.3; // microcontrast
@@ -72,7 +72,7 @@ function activeParams(overrides = {}) {
 test("the declared contract names every module the sprint asks about", () => {
   const ids = Scale.MODULE_SCALE_CONTRACT.map((entry) => entry.id);
   for (const required of [
-    "detail", "detail-local", "denoise", "grain", "bloom", "halation",
+    "detail", "detail-local", "denoise", "grain", "lens-filter", "halation",
     "softness", "masks", "geometry",
   ]) {
     assert.ok(ids.includes(required), `missing scale contract for ${required}`);
@@ -238,8 +238,8 @@ test("the Clarity frame map's reach is declared only while global Clarity runs",
 
 test("the film-plane halation reach follows the processing scale", () => {
   const radius = 0.2;
-  const native = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 88: radius }));
-  const display = Scale.spatialReachDetail(DISPLAY.width, DISPLAY.height, activeParams({ 88: radius }));
+  const native = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 92: 0, 88: radius }));
+  const display = Scale.spatialReachDetail(DISPLAY.width, DISPLAY.height, activeParams({ 92: 0, 88: radius }));
   // The physical radius is the same, so its pixel reach is proportional to the
   // frame's pixels-per-mm: a quarter-size frame reaches a quarter as far. The
   // blur is counted in texels of each frame's own spatial grid.
@@ -287,8 +287,8 @@ test("the spatial reach is anchored to the quarter-resolution grid and capped", 
   assert.equal(structure.blurTexels, 0);
   assert.ok(structure.direct >= Math.round(Math.hypot(NATIVE.width, NATIVE.height) * 0.06 / 100));
   assert.equal(Scale.spatialReach(NATIVE.width, NATIVE.height, activeParams()), Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams()).total);
-  // The bloom reach is monotone in its radius up to the cap.
-  const small = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 95: 0.5 }));
+  // The lens reach grows with Size until it reaches the unchanged cap.
+  const small = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 95: 0.25 }));
   const larger = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 95: 2 }));
   assert.ok(small.blurTexels < larger.blurTexels && larger.blurTexels <= 128);
 });

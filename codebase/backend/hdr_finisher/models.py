@@ -204,11 +204,9 @@ class FilmLookAdjustments(BaseModel):
     halation_saturation: float = Field(default=75.0, ge=0.0, le=100.0)
     halation_view_map: bool = False
 
-    bloom_enabled: bool = True
-    bloom_amount: float = Field(default=0.0, ge=0.0, le=100.0)
-    bloom_sensitivity: float = Field(default=80.0, ge=0.0, le=100.0)
-    bloom_radius: float = Field(default=0.5, ge=0.0, le=10.0)
-    bloom_highlight_detail: float = Field(default=75.0, ge=0.0, le=100.0)
+    lens_filter: Literal["none", "black_pro_mist", "pro_mist", "glimmerglass", "cinebloom"] = "none"
+    lens_strength: float = Field(default=0.5, ge=0.125, le=2.0)
+    lens_size: float = Field(default=1.0, ge=0.25, le=4.0)
 
 
 class ColorWheelAdjustments(BaseModel):

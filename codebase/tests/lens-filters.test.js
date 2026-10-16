@@ -20,3 +20,9 @@ test("commercial filter strength interpolates continuously in log stops",()=>{
   }
   assert.equal(lens.scatter(0,2),0);
 });
+
+test("lens tile plans require their spatial halo",()=>{
+  const {HDRTileScheduler}=require("../frontend/tile-scheduler.js");
+  assert.equal(HDRTileScheduler.declaredHalo([{id:"lens-filter",halo:64}]),64);
+  assert.throws(()=>HDRTileScheduler.declaredHalo([{id:"lens-filter"}]),/invalid halo/);
+});

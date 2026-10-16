@@ -1368,14 +1368,11 @@
           </div>
           <div class="control-row" data-control-path="current.film_look.look_strength"><div class="control-heading"><label for="film-look-strength">Look Strength</label><output data-value-path="current.film_look.look_strength">100%</output></div><input id="film-look-strength" type="range" min="0" max="100" step="1" value="100" data-path="current.film_look.look_strength"></div>
 
-          <div class="film-module-header"><strong>Bloom &amp; Diffusion</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.bloom_enabled"> Enabled</label></div>
+          <div class="film-module-header"><strong>Lens Filter</strong></div>
+          <label class="select-control"><span>Filter</span><select id="film-lens-filter" data-path="current.film_look.lens_filter"><option value="none" selected>None</option><option value="black_pro_mist">Black Pro-Mist</option><option value="pro_mist">Pro-Mist</option><option value="glimmerglass">Glimmerglass</option><option value="cinebloom">CineBloom</option></select></label>
           <div class="control-pair">
-            <div class="control-row" data-control-path="current.film_look.bloom_amount"><div class="control-heading"><label for="film-bloom-amount">Amount</label><output data-value-path="current.film_look.bloom_amount">0%</output></div><input id="film-bloom-amount" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.bloom_amount"></div>
-            <div class="control-row" data-control-path="current.film_look.bloom_sensitivity"><div class="control-heading"><label for="film-bloom-sensitivity">Sensitivity</label><output data-value-path="current.film_look.bloom_sensitivity">80%</output></div><input id="film-bloom-sensitivity" type="range" min="0" max="100" step="1" value="80" data-path="current.film_look.bloom_sensitivity"></div>
-          </div>
-          <div class="control-pair">
-            <div class="control-row" data-control-path="current.film_look.bloom_radius"><div class="control-heading"><label for="film-bloom-radius">Optical Spread</label><output data-value-path="current.film_look.bloom_radius">0.50% output diag</output></div><input id="film-bloom-radius" type="range" min="0" max="4" step="0.05" value="0.5" data-path="current.film_look.bloom_radius"></div>
-            <div class="control-row" data-control-path="current.film_look.bloom_highlight_detail"><div class="control-heading"><label for="film-bloom-detail">Highlight Detail</label><output data-value-path="current.film_look.bloom_highlight_detail">75%</output></div><input id="film-bloom-detail" type="range" min="0" max="100" step="1" value="75" data-path="current.film_look.bloom_highlight_detail"></div>
+            <div class="control-row" data-control-path="current.film_look.lens_strength"><div class="control-heading"><label for="film-lens-strength">Strength</label><output data-value-path="current.film_look.lens_strength">1/2</output></div><input id="film-lens-strength" type="range" min="0.125" max="2" step="0.001" value="0.5" list="film-lens-grades" data-path="current.film_look.lens_strength"><datalist id="film-lens-grades"><option value="0.125" label="1/8"></option><option value="0.25" label="1/4"></option><option value="0.5" label="1/2"></option><option value="1" label="1"></option><option value="2" label="2"></option></datalist></div>
+            <div class="control-row" data-control-path="current.film_look.lens_size"><div class="control-heading"><label for="film-lens-size">Size</label><output data-value-path="current.film_look.lens_size">1.00x</output></div><input id="film-lens-size" type="range" min="0.25" max="4" step="0.01" value="1" data-path="current.film_look.lens_size"></div>
           </div>
 
           <div class="film-module-header"><strong>Negative</strong></div>
@@ -1833,6 +1830,7 @@
   <script src="/static/latest-work-queue.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/viewport-request.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/gpu-param-layout.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/lens-filters.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/graph-scale.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/gpu-allocator.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/gpu-budget.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

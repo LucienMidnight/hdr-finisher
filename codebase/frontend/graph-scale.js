@@ -5,6 +5,9 @@
     || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRGpuParamLayout)).indices;
 
 
+  const LENS_FILTERS = ((typeof window !== "undefined" && window.HDRLensFilters)
+    || (typeof module !== "undefined" && module.exports && require("./lens-filters.js")));
+
   /**
    * The processing-scale contract for the preview graph (sprint PRD Phase 3
    * item 3; PRD 5.9 module parity policy).
@@ -99,7 +102,7 @@
     // Halation and bloom are the two stages that need the quarter-resolution
     // pair, because they are the two that blur on it.
     const spatialActive = filmActive
-      && (params[GPU_PARAMS.HALATION_ENABLED] > 0.5 || (params[GPU_PARAMS.BLOOM_ENABLED] > 0.5 && params[GPU_PARAMS.BLOOM_AMOUNT] > 0));
+      && (params[GPU_PARAMS.HALATION_ENABLED] > 0.5 || (params[GPU_PARAMS.LENS_FILTER] > 0.5 && params[GPU_PARAMS.LENS_SCATTER] > 0));
     // Softness/Microcontrast and film resolution blur the film texture
     // directly, at full resolution. They allocate nothing, but they read past
     // the pixel they are writing just as surely, so they need a halo. Softness
@@ -293,7 +296,7 @@
     // The shader caps a blur at 256 full-resolution pixels (the CPU/export
     // cap), which is 256 / grid texels.
     const blurCap = 256 / grid;
-    const bloomActive = params[GPU_PARAMS.BLOOM_ENABLED] > 0.5 && params[GPU_PARAMS.BLOOM_AMOUNT] > 0;
+    const bloomActive = params[GPU_PARAMS.LENS_FILTER] > 0.5 && params[GPU_PARAMS.LENS_SCATTER] > 0;
     const halationActive = params[GPU_PARAMS.HALATION_ENABLED] > 0.5;
 
     // `spatialBlur`: a Gaussian sampled one texel apart out to floor(radius),
@@ -303,8 +306,12 @@
     // substitutes the tile's edge for the picture and shows a seam.
     let blurTexels = 0;
     if (bloomActive) {
-      blurTexels = Math.max(blurTexels,
-        clamp(Math.hypot(quarter[0], quarter[1]) * Math.max(finiteNumber(params[GPU_PARAMS.BLOOM_RADIUS], 0), 0) / 100, 0.25, blurCap));
+      let ppm = Math.max(quarter[0]/params[FILM_GATE_WIDTH_INDEX],quarter[1]/params[FILM_GATE_HEIGHT_INDEX]);
+      if (params[FILM_GATE_AXIS_INDEX] > .5 && params[FILM_GATE_AXIS_INDEX] < 1.5) ppm = quarter[1]/params[FILM_GATE_HEIGHT_INDEX];
+      if (params[FILM_GATE_AXIS_INDEX] > 1.5) ppm = quarter[0]/params[FILM_GATE_WIDTH_INDEX];
+      const maxUm = Math.max(...(LENS_FILTERS.components[Math.round(params[GPU_PARAMS.LENS_FILTER])] || []).map(c=>c[0]));
+      blurTexels = Math.max(0,Math.floor(Math.min(blurCap*Math.min(1,Math.max(.05,params[GPU_PARAMS.SOURCE_PIXEL_SCALE])),
+        Math.floor(3*maxUm*ppm*params[GPU_PARAMS.LENS_SIZE]/1000+.5))));
     }
     if (halationActive) {
       // `filmPixelsPerMm` over the frame's quarter-resolution size.
@@ -357,7 +364,7 @@
     }
 
     if (params[GPU_PARAMS.SCAN_SHARPENING] > 0) direct += Math.floor(4 * 0.7 * clamp(finiteNumber(params[GPU_PARAMS.SOURCE_PIXEL_SCALE], 1), 0.05, 1) + 0.5);
-    const total = (Math.ceil(blurTexels) + (bloomActive && halationActive ? 1 : 0)) * grid + Math.ceil(direct);
+    const total = (Math.ceil(blurTexels) + (bloomActive ? 1 : 0)) * grid + Math.ceil(direct);
     return {
       quarter,
       blurTexels,
@@ -494,15 +501,15 @@
       cpuFallback: "apply_final_grain",
     }),
     Object.freeze({
-      id: "bloom",
-      label: "Bloom",
-      unit: "frame-diagonal",
-      radius: "a fraction of the processing frame's diagonal, sampled on the quarter-resolution "
+      id: "lens-filter",
+      label: "Lens filter",
+      unit: "film-plane",
+      radius: "the filter PSF in film-plane micrometres, sampled on the quarter-resolution "
         + "grid anchored to the frame",
       halo: "spatial",
       coarse: "yes",
       cache: "none",
-      cpuFallback: "_apply_film_look bloom pass",
+      cpuFallback: "lens_filter.apply_filter",
     }),
     Object.freeze({
       id: "halation",

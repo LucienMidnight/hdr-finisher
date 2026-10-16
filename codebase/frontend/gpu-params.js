@@ -277,11 +277,10 @@
     params[GPU_PARAMS.HALATION_HUE] = (film.halation_hue_offset || 0) / 100;
     params[GPU_PARAMS.HALATION_SATURATION] = blackAndWhiteOn ? 0 : (film.halation_saturation ?? 75) / 100;
     params[GPU_PARAMS.HALATION_VIEW_MAP] = film.halation_view_map ? 1 : 0;
-    params[GPU_PARAMS.BLOOM_ENABLED] = film.bloom_enabled !== false && (film.bloom_radius || 0) > 0 ? 1 : 0;
-    params[GPU_PARAMS.BLOOM_AMOUNT] = (film.bloom_amount || 0) / 100;
-    params[GPU_PARAMS.BLOOM_SENSITIVITY] = (film.bloom_sensitivity ?? 80) / 100;
-    params[GPU_PARAMS.BLOOM_RADIUS] = film.bloom_radius ?? 0.5;
-    params[GPU_PARAMS.BLOOM_HIGHLIGHT_DETAIL] = (film.bloom_highlight_detail ?? 75) / 100;
+    const lensType = Math.max(0, window.HDRLensFilters.names.indexOf(film.lens_filter || "none"));
+    params[GPU_PARAMS.LENS_FILTER] = lensType;
+    params[GPU_PARAMS.LENS_SCATTER] = window.HDRLensFilters.scatter(lensType, film.lens_strength ?? 0.5);
+    params[GPU_PARAMS.LENS_SIZE] = film.lens_size ?? 1;
     // 97-99: Detail's Softness and Microcontrast, run in the film stage where
     // Film Look's Image Structure ran (NEXT-01 #2). Detail's switch gates
     // them; Look Strength and the Film Look switch do not.

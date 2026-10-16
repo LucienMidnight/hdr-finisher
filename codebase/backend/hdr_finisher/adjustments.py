@@ -1617,9 +1617,9 @@ def _apply_film_look(
     halation_active = look.halation_enabled and (
         (look.halation_amount > 0.0 and look.halation_radius > 0.0) or look.halation_view_map
     )
-    bloom_active = look.bloom_enabled and look.bloom_amount > 0.0 and look.bloom_radius > 0.0
+    lens_active = look.lens_filter != "none"
     module_active = branch.film_look_section_enabled and strength > 0.0 and (
-        _film_stock_is_active(look) or look.scan_sharpening > 0 or halation_active or bloom_active
+        _film_stock_is_active(look) or look.scan_sharpening > 0 or halation_active or lens_active
         or look.film_resolution < 100.0
         or (include_grain and look.grain_enabled and (look.grain_amount > 0.0 or look.grain_view_map))
     )
@@ -1628,8 +1628,11 @@ def _apply_film_look(
     result = image.astype(np.float32, copy=True)
     if module_active:
         full = np.float32(1.0)
-        if bloom_active:
-            result = _apply_bloom(result, look, kind, full)
+        if lens_active:
+            from .lens_filter import apply_filter
+            _, _, frame_width, frame_height = FrameWindow.resolve(frame_window, image)
+            result = apply_filter(result, look.lens_filter, look.lens_strength, look.lens_size,
+                                  _film_pixels_per_mm(frame_width, frame_height, look), source_pixel_scale)
         if look.film_resolution < 100.0:
             result = _apply_film_resolution(result, look, full)
         if halation_active:
@@ -2089,12 +2092,6 @@ def _halation_edge_source(
     return (qualified * edge_gate).astype(np.float32)
 
 
-def _bloom_source(image: np.ndarray, kind: PreviewKind, sensitivity: float) -> np.ndarray:
-    """Return a soft-knee optical bloom source with subdued threshold chatter."""
-    mask = _highlight_mask(image, kind, sensitivity)
-    return (np.maximum(image, 0.0) * (mask * mask)[..., None]).astype(np.float32)
-
-
 def _halation_tint(hue_offset: float, saturation: float, kind: PreviewKind) -> np.ndarray:
     """Return one canonical linear-sRGB tint in the branch working space."""
     # Halation is light that passes the emulsion, reflects off the film base
@@ -2134,48 +2131,6 @@ def _apply_halation(
     halation_map = np.repeat(map_signal[..., None], 3, axis=-1).astype(np.float32)
     amount = np.float32(0.42 * look.halation_amount / 100.0) * master
     return (image + halo * amount).astype(np.float32), halation_map
-
-
-def _apply_bloom(
-    image: np.ndarray,
-    look: object,
-    kind: PreviewKind,
-    master: np.float32,
-    *,
-    spatial_source: np.ndarray | None = None,
-) -> np.ndarray:
-    blur_input = image if spatial_source is None else spatial_source
-    source = _bloom_source(blur_input, kind, look.bloom_sensitivity)
-    current_qualified = _bloom_source(image, kind, look.bloom_sensitivity)
-    # Bloom is an optical finish measured against the rendered output, not the
-    # film gate. Changing Film Format must therefore leave its spread unchanged.
-    radius = max(1, _radius_pixels(image, look.bloom_radius))
-    blurred = _diffusion_blur(source, radius)
-    detail = np.float32(np.clip(look.bloom_highlight_detail / 100.0, 0.0, 1.0))
-    amount = np.float32(look.bloom_amount / 100.0) * master
-
-    # Bloom is the additive veil; diffusion is an energy-moving low-pass that
-    # can soften the core instead of merely drawing a larger glow around it.
-    # Highlight Detail crossfades only the diffusion component, so 100% keeps
-    # the source edge intact while still allowing ordinary optical bloom.
-    additive = blurred * (np.float32(0.22) * amount)
-    # Do not turn a decisive object boundary into a dark/bright echo. The
-    # qualified highlight is nonlinear, so subtracting it from its blur at an
-    # unprotected hard edge is resolution-sensitive: a Full frame retains a
-    # sharper threshold crossing than its 4K proxy. Keep diffusion on smooth
-    # highlight structure while letting the additive veil handle hard edges.
-    diffusion_delta = blurred - current_qualified
-    relative_detail = np.max(np.abs(diffusion_delta), axis=-1) / (
-        np.max(np.abs(current_qualified), axis=-1) + np.float32(0.02)
-    )
-    edge_protection = _smoothstep(0.025, 0.20, relative_detail)
-    diffusion = diffusion_delta * (
-        (np.float32(1.0) - detail)
-        * np.float32(0.35)
-        * amount
-        * (np.float32(1.0) - edge_protection)[..., None]
-    )
-    return np.maximum(image + additive + diffusion, 0.0).astype(np.float32)
 
 
 def _structure_is_active(branch: object) -> bool:

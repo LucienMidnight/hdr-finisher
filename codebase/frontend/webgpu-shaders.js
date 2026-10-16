@@ -405,6 +405,11 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
   textureStore(outTex, storeAt, vec4f(fromOpponent(opponent), 1.0));
 }`;
 
+  const LENS_FILTERS = ((typeof window !== "undefined" && window.HDRLensFilters)
+    || (typeof module !== "undefined" && module.exports && require("./lens-filters.js")));
+  const LENS_COMPONENTS_WGSL = LENS_FILTERS.components.slice(1).flat().map(([sigma,weights]) =>
+    `vec4f(${[sigma,...weights].map(value=>Number(value).toPrecision(12)).join(",")})`).join(",\n");
+
   const SHADER_SOURCE = String.raw`
     @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
     @group(0) @binding(1) var<storage, read> p: array<f32>;
@@ -414,12 +419,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     @group(0) @binding(5) var overlayMaskTexture: texture_2d<f32>;
     @group(0) @binding(6) var<storage, read> filmStock: array<f32>;
 
-    struct VertexOut { @builtin(position) position: vec4f }
+    struct VertexOut { @builtin(position) position: vec4f, @location(0) @interpolate(flat) lensComponent: u32 }
 
-    @vertex fn vertexMain(@builtin(vertex_index) index: u32) -> VertexOut {
+    @vertex fn vertexMain(@builtin(vertex_index) index: u32, @builtin(instance_index) instance: u32) -> VertexOut {
       var positions = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
       var output: VertexOut;
       output.position = vec4f(positions[index], 0.0, 1.0);
+      output.lensComponent = instance;
       return output;
     }
 
@@ -1528,12 +1534,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     fn packedQualifiedSample(coordinate: vec2f) -> vec4f {
       let pixel = vec2i(coordinate);
       let rgb = sampleFilm(pixel);
-      let bloomMask = filmHighlightMask(rgb, p[${GPU_PARAMS.BLOOM_SENSITIVITY}]);
-      let bloom = rgb * bloomMask * bloomMask * select(0.0, 1.0, p[${GPU_PARAMS.BLOOM_ENABLED}] > 0.5 && p[${GPU_PARAMS.BLOOM_AMOUNT}] > 0.0);
       let halationRadius = filmPhysicalOffset(p[${GPU_PARAMS.HALATION_RADIUS}], 256);
       let edgeRadius = clamp(halationRadius / 4, 1, 16);
       let halation = halationEdgeSource(pixel, 0.75, edgeRadius) * select(0.0, 1.0, p[${GPU_PARAMS.HALATION_ENABLED}] > 0.5);
-      return vec4f(bloom, halation);
+      return vec4f(vec3f(0.0), halation);
     }
     // The spatial intermediates are a quarter-resolution grid anchored to the
     // frame at a strict factor of four, rather than a proportional rescale of
@@ -1623,16 +1627,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // samples in this texture.
       let frameSpatial = frameSpatialDimensions();
       let blurCap = 256.0 / spatialScale();
-      let bloomRadius = clamp(length(frameSpatial) * max(p[${GPU_PARAMS.BLOOM_RADIUS}], 0.0) / 100.0, 0.25, blurCap);
       let halationRadiusMm = 43.2666153 * max(p[${GPU_PARAMS.HALATION_RADIUS}], 0.0) / 100.0;
       let halationRadius = clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, blurCap);
       // The two effects carry different radii in the same packed texture, so
       // each walks its own kernel. An inactive effect's channels are already
       // zero out of the extract pass and are not worth walking.
       var result = vec4f(0.0);
-      if (p[${GPU_PARAMS.BLOOM_ENABLED}] > 0.5 && p[${GPU_PARAMS.BLOOM_AMOUNT}] > 0.0) {
-        result = vec4f(spatialGaussianAxis(direction, coordinate, bloomRadius).rgb, 0.0);
-      }
       if (p[${GPU_PARAMS.HALATION_ENABLED}] > 0.5) {
         result.a = spatialGaussianAxis(direction, coordinate, halationRadius).a;
       }
@@ -1736,7 +1736,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         && p[${GPU_PARAMS.FILM_RESPONSE_ENABLED}] >= 0.5 && p[${GPU_PARAMS.FILM_LOOK_STRENGTH}] > 0.0
         && (p[${GPU_PARAMS.FILM_STOCK_SLOT}] > 0.5 || p[${GPU_PARAMS.SCAN_SHARPENING}] > 0.0
           || p[${GPU_PARAMS.HALATION_ENABLED}] > 0.5
-          || (p[${GPU_PARAMS.BLOOM_ENABLED}] > 0.5 && p[${GPU_PARAMS.BLOOM_AMOUNT}] > 0.0)
+          || (p[${GPU_PARAMS.LENS_FILTER}] > 0.5 && p[${GPU_PARAMS.LENS_SCATTER}] > 0.0)
           || p[${GPU_PARAMS.FILM_RESOLUTION}] < 1.0
           || (p[${GPU_PARAMS.GRAIN_ENABLED}] > 0.5 && (p[${GPU_PARAMS.GRAIN_AMOUNT}] > 0.0 || p[${GPU_PARAMS.GRAIN_VIEW_MAP}] > 0.5)));
     }
@@ -1801,23 +1801,22 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return sum / f32(count * count);
     }
+    // Integer texel reads avoid texture-size-dependent normalized sampler
+    // rounding between a frame and a tile. The interpolation is unchanged.
+    fn sampleLensTexel(texel: vec2f) -> vec3f {
+      let point = texel - vec2f(0.5);
+      let base = vec2i(floor(point));
+      let blend = fract(point);
+      return mix(mix(loadSpatialTexel(base).rgb, loadSpatialTexel(base+vec2i(1,0)).rgb, blend.x),
+        mix(loadSpatialTexel(base+vec2i(0,1)).rgb, loadSpatialTexel(base+vec2i(1,1)).rgb, blend.x), blend.y);
+    }
     fn lensDiffusion(coordinate: vec2i) -> vec3f {
       var rgb = sampleFilm(coordinate);
       if (filmModuleActive()) {
-        let spatial = sampleSpatialTexel((vec2f(coordinate) + vec2f(0.5)) / spatialScale());
-        if (p[${GPU_PARAMS.BLOOM_ENABLED}] > 0.5 && p[${GPU_PARAMS.BLOOM_AMOUNT}] > 0.0) {
-          let bloomMask = filmHighlightMask(rgb, p[${GPU_PARAMS.BLOOM_SENSITIVITY}]);
-          let qualified = rgb * bloomMask * bloomMask;
-          let amount = p[${GPU_PARAMS.BLOOM_AMOUNT}];
-          let additive = spatial.rgb * (0.22 * amount);
-          let diffusionDelta = spatial.rgb - qualified;
-          let absoluteDetail = abs(diffusionDelta);
-          let qualifiedMagnitude = abs(qualified);
-          let relativeDetail = max(max(absoluteDetail.r, absoluteDetail.g), absoluteDetail.b)
-            / (max(max(qualifiedMagnitude.r, qualifiedMagnitude.g), qualifiedMagnitude.b) + 0.02);
-          let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
-          let diffusion = diffusionDelta * ((1.0 - p[${GPU_PARAMS.BLOOM_HIGHLIGHT_DETAIL}]) * 0.35 * amount * (1.0 - edgeProtection));
-          rgb = max(rgb + additive + diffusion, vec3f(0.0));
+        let spatial = sampleLensTexel((vec2f(coordinate) + vec2f(0.5)) / spatialScale());
+        if (p[${GPU_PARAMS.LENS_FILTER}] > 0.5) {
+          let amount = p[${GPU_PARAMS.LENS_SCATTER}];
+          rgb = (1.0-amount)*rgb + amount*spatial;
         }
       }
       return rgb;
@@ -2618,6 +2617,51 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     @fragment fn structureFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
       return storeFilm(finishStructure(coordinate));
+    }
+
+    const LENS_COMPONENTS = array<vec4f,108>(${LENS_COMPONENTS_WGSL});
+    fn lensComponent(index: u32) -> vec4f {
+      return LENS_COMPONENTS[(u32(p[${GPU_PARAMS.LENS_FILTER}])-1u)*27u+index];
+    }
+    fn lensSigma(index: u32) -> f32 {
+      return max(0.000001,lensComponent(index).x*p[${GPU_PARAMS.LENS_SIZE}]*filmPixelsPerMm(frameDimensions())/(1000.0*spatialScale()));
+    }
+    fn lensExtent(sigma: f32) -> i32 {
+      let cap = floor(256.0*clamp(p[${GPU_PARAMS.SOURCE_PIXEL_SCALE}],0.05,1.0)/spatialScale());
+      return i32(min(cap,floor(3.0*sigma+0.5)));
+    }
+    fn lensSourceAtSpatial(pixel: vec2i) -> vec3f {
+      let point = (vec2f(clamp(pixel,vec2i(0),validSpatialDimensions()-vec2i(1)))+vec2f(0.5))*spatialScale();
+      let offset = spatialScale()*0.25;
+      return (sampleFilm(vec2i(point+vec2f(-offset,-offset)))
+        +sampleFilm(vec2i(point+vec2f(offset,-offset)))
+        +sampleFilm(vec2i(point+vec2f(-offset,offset)))
+        +sampleFilm(vec2i(point+vec2f(offset,offset))))*0.25;
+    }
+    @fragment fn lensExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      return vec4f(lensSourceAtSpatial(vec2i(input.position.xy)),1.0);
+    }
+    @fragment fn lensHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let sigma = lensSigma(input.lensComponent);
+      let extent = lensExtent(sigma);
+      let base = vec2i(input.position.xy);
+      var total = vec3f(0.0); var weightTotal = 0.0;
+      for(var x = -extent; x <= extent; x++) {
+        let weight = exp(-0.5*(f32(x)/sigma)*(f32(x)/sigma));
+        total += loadSpatialTexel(base+vec2i(x,0)).rgb*weight; weightTotal += weight;
+      }
+      return vec4f(total/weightTotal,1.0);
+    }
+    @fragment fn lensVerticalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let sigma = lensSigma(input.lensComponent);
+      let extent = lensExtent(sigma);
+      let base = vec2i(input.position.xy);
+      var total = vec3f(0.0); var weightTotal = 0.0;
+      for(var y = -extent; y <= extent; y++) {
+        let weight = exp(-0.5*(f32(y)/sigma)*(f32(y)/sigma));
+        total += loadSpatialTexel(base+vec2i(0,y)).rgb*weight; weightTotal += weight;
+      }
+      return vec4f(total/weightTotal*lensComponent(input.lensComponent).yzw,0.0);
     }
 
     @fragment fn spatialExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {

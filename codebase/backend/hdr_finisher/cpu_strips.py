@@ -204,7 +204,7 @@ def strip_execution_refusals(
     if look_active:
         spatial = (
             (look.halation_enabled and (look.halation_view_map or (look.halation_amount > 0.0 and look.halation_radius > 0.0)))
-            or (look.bloom_enabled and look.bloom_amount > 0.0 and look.bloom_radius > 0.0)
+            or look.lens_filter != "none"
             or look.film_resolution < 100.0
         )
         if spatial:

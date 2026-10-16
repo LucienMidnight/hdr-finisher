@@ -617,14 +617,7 @@ def _attenuate_highlight_qualified_controls(grading: ColorGradingAdjustments, fa
 
 
 def _translate_film_highlight_sensitivity(target: object, source: object, factor: float) -> None:
-    for name in ("bloom_sensitivity",):
-        sensitivity = float(getattr(source, name))
-        hdr_threshold = np.float32(0.92 - 0.50 * np.clip(sensitivity / 100.0, 0.0, 1.0))
-        hdr_luma = _film_decode_luma(np.array(hdr_threshold, dtype=np.float32), PreviewKind.HDR)
-        sdr_threshold = float(_srgb_encode(automatic_sdr_match_luma(hdr_luma)))
-        setattr(target, name, float(np.clip((0.92 - sdr_threshold) / 0.50 * 100.0, 0.0, 100.0)))
     target.halation_amount *= max(0.50, float(np.sqrt(max(factor, 0.0))))
-    target.bloom_amount *= max(0.25, float(np.sqrt(max(factor, 0.0))))
 
 
 def _materialize_local_grades(
@@ -836,7 +829,7 @@ def _tonal_analysis_copy(adjustments: AdjustmentState) -> AdjustmentState:
         look = branch.film_look
         look.grain_enabled = False
         look.halation_enabled = False
-        look.bloom_enabled = False
+        look.lens_filter = "none"
         look.film_resolution = 100.0
     return result
 

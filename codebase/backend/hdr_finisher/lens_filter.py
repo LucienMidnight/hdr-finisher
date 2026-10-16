@@ -91,8 +91,9 @@ def convolve(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     radius = kernel.shape[0]//2
     if radius == 0:
         return image.astype(np.float32, copy=True)
-    block = 256
-    fft_size = 1 << (block+4*radius-1).bit_length()
+    block = 512
+    # Circular overlap is confined to the discarded first 2*radius samples.
+    fft_size = 1 << (block+2*radius-1).bit_length()
     spectrum = [np.fft.rfft2(kernel[...,c], s=(fft_size,fft_size)) for c in range(3)]
     output = np.empty_like(image, dtype=np.float32)
     height,width = image.shape[:2]

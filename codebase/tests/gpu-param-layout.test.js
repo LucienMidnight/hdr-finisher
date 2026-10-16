@@ -15,8 +15,8 @@ test('the global parameter list preserves all 198 names and original positions',
  assert.equal(layout.count,198);
  assert.equal(new Set(layout.fields.map(f=>f.name)).size,198);
  assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:198},(_,i)=>i));
- assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.map(({name,index})=>[name,index]))).digest('hex'),'206b3c764e8fcbb4dd8fbb35394abbd9ea4082abd9fc7eb42f5f74ba1848cb89');
- assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,60,83,84,87,143,144,145,146,147]);
+ assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.map(({name,index})=>[name,index]))).digest('hex'),'1103db645a61d3df6876c5f599e753cf012375e84f2bfc48ef4c6cd2425762cc');
+ assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,60,83,84,87,94,96,143,144,145,146,147]);
  assert.deepEqual(layout.fields.filter(f=>f.hostOnly).map(f=>f.name),['DETAIL_ENABLED']);
  assert.ok(Object.isFrozen(layout)&&Object.isFrozen(layout.indices)&&Object.isFrozen(layout.fields));
  assert.ok(layout.fields.every(Object.isFrozen));

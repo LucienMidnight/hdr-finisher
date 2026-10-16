@@ -475,3 +475,47 @@ The final preview/export matrix is checking the corrected interpolation.
 No tolerance or budget change. Fast checks on the integration: 486 Node and
 2,158 Python pass, three Python skips; final library-import run is in progress.
 The warmed timing/photo option uses the same lens driver, not a broad sweep.
+
+
+Phase 3b integration decisions: None is a true bypass; commercial Strength is
+continuous 1/8-2, default 1/2; Size is 0.25-4, default 1. Lens channel weights
+operate in each lane's existing linear working RGB (ACEScg HDR, sRGB SDR),
+matching the port's pipeline context; a common extra colour-space conversion
+is the alternative, not added here. No Phase 4 stock defaults or Phase 5 Looks
+are invented. Preset schema becomes 5 and simply drops retired Bloom fields.
+Recommend considering halo warmth later: it would let Steve adjust coloured
+fringes without changing overall diffusion, after judging these fixed family
+shapes in the app. Separate group sizes/strengths would add substantially more
+controls and are deferred.
+
+Intentionally replaced checks: removed the retired Bloom Sensitivity/Spread,
+Highlight Detail and hard-edge dark-echo tests; physical film-plane format,
+monotonic edge, energy, source coefficients, pipeline ordering and five removed
+field rejections replace them. The former output-relative format-invariance
+check now requires physical format dependence. Shader positions still total
+198 with removed slots reserved; numeric caps, budgets, all export/Proof and
+preview agreement tolerances stay pinned. Preset-version and cache-schema
+snapshots reflect the requested schema. Match's calibrated 6% Bloom setting is
+removed, with no invented conversion to a filter grade. All its original
+quality/editability/GPU-certification assertions stay; new tests check exact
+lens recipe copying and safe rejection of the Black Pro-Mist 1/2 coloured target
+that exceeds the existing Match colour gate. See known-limitations.md.
+
+The existing Library worker pause request can log HTTP 422 for reason
+"grade-control" (accepted reasons are grading/export/manual). This is outside
+Film Look and is recorded without investigation. The missing Library lens
+script import was part of this change and has been fixed.
+
+
+Phase 3b renderer integration validation: final corrected lens preview/export
+matrix passes 128/128 at the unchanged added mean 0.1 / p99.9 2 level limits
+(worst added mean 0.070, p99.9 2). Direct/Tiled pixels pass 128/128 byte-exact;
+the Library import correction also passes the focused startup/native worst-lens
+smoke. Final fast checks pass: 486 Node, 2,158 Python, three Python skips,
+including CPU export/Proof identity. The first matrix's native tile differences
+were fixed, not waived. No new renderer failure remains; the separate recorded
+HDR range, Black & White tile and worker-warning limitations remain. CPU FFT
+blocks bound temporary memory independently of export dimensions. GPU scratch
+reuse adds no image allocation; lens uses 55 quarter-grid passes when active,
+None bypasses them. Photo inspection and warmed timing follow in the final
+completion note. No push or installer.

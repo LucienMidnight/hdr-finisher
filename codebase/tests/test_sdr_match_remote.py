@@ -50,7 +50,8 @@ def _grade() -> tuple[AdjustmentState, list[LocalAdjustment]]:
     hdr.color_grading.highlights.saturation = 18
     # Retired artistic controls have no physical equivalent; physical controls
     # have independent coverage in test_film_controls.py.
-    hdr.film_look.bloom_amount = 6
+    # The removed 6% Bloom has no equivalent physical filter grade.
+    # Lens recipe copying and safe rejection have separate coverage.
     hdr.film_look.halation_amount = 5
     hdr.detail.clarity_amount = 4
     hdr.vignette.amount = -4

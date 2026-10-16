@@ -160,7 +160,6 @@ def test_advanced_finishing_controls_are_wired_to_the_editor_and_export_contract
     # a tile, and the rounding difference costs byte-exact Direct/Tiled parity.
     assert "fn loadSpatialTexel(texel: vec2i)" in shader
     assert "total += (loadSpatialTexel(base + step * index) + loadSpatialTexel(base - step * index)) * weight" in shader
-    assert "let diffusionDelta = spatial.rgb - qualified" in shader
     assert "let edgeProtection = smoothRange(0.025, 0.20, relativeDetail)" in shader
     assert "(1.0 - edgeProtection)" in shader
     assert "chroma = p[104] * (1.0 - 0.8 * smoothRange(0.88, 1.0, signal))" in shader
@@ -181,7 +180,7 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     for path in [
         "push_pull", "print_paper", "print_exposure", "print_contrast", "grain_amount", "grain_shadow_response",
         "grain_midtone_response", "grain_highlight_response", "halation_amount",
-        "bloom_amount", "grain_film_format",
+        "lens_filter", "lens_strength", "lens_size", "grain_film_format",
         "grain_capture_geometry", "grain_custom_width_mm", "grain_custom_height_mm",
         "grain_view_map", "halation_view_map",
         "shadow_contrast", "highlight_contrast", "scan_sharpening",
@@ -198,11 +197,8 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "halationEdgeSource" in shader
     assert "center * smoothRange(0.004, 0.12, relativeEdge)" in shader
     assert "let edgeRadius = clamp(halationRadius / 4, 1, 16)" in shader
-    assert "rgb * bloomMask * bloomMask" in shader
     assert "let edgeProtection = smoothRange(0.025, 0.20, relativeDetail)" in shader
     assert 'for="film-halation-radius">Spread</label>' in html
-    assert "Optical Spread" in html
-    assert "% output diag" in javascript
     assert "exp2(0.55 * p[81] * p[79])" not in shader
     assert "mapped -= p[82] * p[79]" not in shader
     assert "mapped -= p[83] * p[79]" not in shader
@@ -217,10 +213,8 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "filmPixelsPerMm(frameSpatial) * halationRadiusMm" in shader
     assert "fn frameSpatialDimensions() -> vec2f" in shader
     assert "filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32)" in shader
-    # Bloom stays output-relative and halation stays film-plane -- the change is
-    # only which extent they are relative to.
+    # The lens replacement retains the exact existing halation blur cap.
     assert "let blurCap = 256.0 / spatialScale();" in shader
-    assert "clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, blurCap)" in shader
     assert "clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, blurCap)" in shader
     assert "length(frameSpatial) * max(p[88], 0.0) / 100.0" not in shader
     assert "filmStoredBlur(coordinate, outputRelativeOffset(0.06,24))" in shader

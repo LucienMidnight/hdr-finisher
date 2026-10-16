@@ -36,11 +36,10 @@ const NEUTRAL = {
   push_pull: 0, print_paper: "default", print_exposure: 0, print_contrast: 0, shadow_contrast: 0, highlight_contrast: 0, scan_sharpening: 0, lab_levels: false,
 };
 const EFFECTS = { grain_amount: 60, grain_size: 80, grain_film_format: "super16", grain_chroma: 40,
-  halation_amount: 45, halation_radius: 0.7, bloom_amount: 35, bloom_radius: 1.2,
-  bloom_highlight_detail: 30, film_resolution: 50 };
+  halation_amount: 45, halation_radius: 0.7, lens_filter: "black_pro_mist", lens_size: 1.2, film_resolution: 50 };
 const CASES = [
   { label: "Portra density grain", stock: { film_stock: "kodak_portra_400", grain_amount: 80, grain_film_format: "super8" } },
-  { label: "Portra lens", stock: { film_stock: "kodak_portra_400", bloom_amount: 55, bloom_highlight_detail: 0 } },
+  { label: "Portra lens", stock: { film_stock: "kodak_portra_400", lens_filter: "black_pro_mist", } },
   { label: "Portra scatter", stock: { film_stock: "kodak_portra_400", film_resolution: 0 } },
   { label: "Portra halation", stock: { film_stock: "kodak_portra_400", halation_amount: 70 } },
   { label: "Portra physical chain", stock: { film_stock: "kodak_portra_400", ...EFFECTS } },
@@ -149,9 +148,9 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         highlight_compression_start_nits:400, highlight_compression_target_nits:1000,
         highlight_compression_color_handling:"smooth_rolloff",
       });
-      Object.assign(branch.film_look, { grain_amount: 0, halation_amount: 0, bloom_amount: 0, film_resolution: 100,
+      Object.assign(branch.film_look, { grain_amount: 0, halation_amount: 0, lens_filter: "none", film_resolution: 100,
         grain_size: 50, grain_film_format: "35mm", grain_chroma: 40, halation_radius: 1.2,
-        bloom_radius: 3, bloom_highlight_detail: 100, look_strength: lookStrength }, stock);
+        lens_size: 3.0, look_strength: lookStrength }, stock);
       state.globalEditDirty = true;
       if (!await syncGlobalEditState()) throw Error("Recipe sync failed");
       invalidatePreview(lane);

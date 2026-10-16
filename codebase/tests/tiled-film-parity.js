@@ -90,7 +90,7 @@ const MAX_CHANNEL_DELTA = 0;
       Object.assign(state.adjustments.hdr.film_look, {
         grain_amount: 65, grain_size: 45, grain_softness: 30, grain_chroma: 35,
         grain_shadow_response: 110, grain_midtone_response: 100, grain_highlight_response: 70,
-        halation_amount: 0, bloom_amount: 0,
+        halation_amount: 0, lens_filter: "none",
         push_pull:0, print_paper:"default", print_exposure:0,
         print_contrast:0, shadow_contrast:0, highlight_contrast:0,
         scan_sharpening:0, lab_levels:false,
@@ -281,29 +281,29 @@ const MAX_CHANNEL_DELTA = 0;
     // 4 -- the spatial film effects. Halation and bloom are separable blurs on
     // the quarter-resolution grid, so this is where a tile whose grid is offset
     // from the frame's, or whose halo is short, shows a seam at every boundary.
-    await configure({ halation_amount: 70, halation_radius: 1.2, bloom_amount: 55, bloom_radius: 3.0,
+    await configure({ halation_amount: 70, halation_radius: 1.2, lens_filter: "black_pro_mist", lens_size: 3.0,
       detail_softness: 25, detail_microcontrast: 30, film_resolution: 82 });
     for (const tileSize of tileSizes) await parityPass("spatial", tileSize);
 
     // 5 -- the same at the largest radii either effect can be asked for. Each
     // blur reaches its 64-texel cap; sequential support adds in the tile halo.
-    await configure({ halation_amount: 100, halation_radius: 5.0, bloom_amount: 100, bloom_radius: 10.0,
+    await configure({ halation_amount: 100, halation_radius: 5.0, lens_filter: "black_pro_mist", lens_size: 4,
       detail_softness: 100, detail_microcontrast: 100, film_resolution: 0 });
     for (const tileSize of tileSizes) await parityPass("spatial-max", tileSize);
 
     // 6 -- the halation view map, which replaces the picture with the halo
     // field alone, so a seam in it has nothing to hide behind.
     await configure({ halation_amount: 70, halation_radius: 1.2, halation_view_map: true,
-      bloom_amount: 0, film_resolution: 100 });
+      lens_filter: "none", film_resolution: 100 });
     for (const tileSize of tileSizes) await parityPass("halation-view-map", tileSize);
-    await configure({ halation_amount: 0, halation_view_map: false, bloom_amount: 0,
+    await configure({ halation_amount: 0, halation_view_map: false, lens_filter: "none",
       film_resolution: 100 });
 
     // Black & White's neighbourhood colour, alone and under the spatial effects.
     await configure({ bw: { reds: -100, oranges: 100, yellows: -100, greens: 100, aquas: -100, blues: 100, purples: -100, magentas: 100 } });
     for (const tileSize of tileSizes) await parityPass("black-and-white", tileSize);
     await configure({ bw: { oranges: 100, greens: -60, blues: -80 }, halation_amount: 70, halation_radius: 1.2,
-      bloom_amount: 55, bloom_radius: 3.0, detail_softness: 25, film_resolution: 82 });
+      lens_filter: "black_pro_mist", lens_size: 3.0, detail_softness: 25, film_resolution: 82 });
     for (const tileSize of tileSizes) await parityPass("bw+spatial", tileSize);
     await configure({ film_resolution: 100 });
 
