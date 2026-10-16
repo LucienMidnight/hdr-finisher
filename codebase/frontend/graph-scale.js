@@ -107,7 +107,7 @@
     // #2), so they count whether or not Film Look is on.
     const structureActive = params[GPU_PARAMS.STRUCTURE_ENABLED] > 0.5
       && (Math.abs(params[GPU_PARAMS.STRUCTURE_SOFTNESS]) > 0.000001 || Math.abs(params[GPU_PARAMS.STRUCTURE_MICROCONTRAST]) > 0.000001);
-    const filmBlurActive = structureActive || (filmActive && params[GPU_PARAMS.FILM_RESOLUTION] < 1);
+    const filmBlurActive = structureActive || (filmActive && (params[GPU_PARAMS.FILM_RESOLUTION] < 1 || params[GPU_PARAMS.SCAN_SHARPENING] > 0));
     return {
       spatialActive,
       filmNeighbourhoodActive: spatialActive || filmBlurActive,
@@ -356,6 +356,7 @@
       direct += physicalOffset(0.04 + 0.08 * (1 - params[GPU_PARAMS.FILM_RESOLUTION]), 32);
     }
 
+    if (params[GPU_PARAMS.SCAN_SHARPENING] > 0) direct += Math.floor(4 * 0.7 * clamp(finiteNumber(params[GPU_PARAMS.SOURCE_PIXEL_SCALE], 1), 0.05, 1) + 0.5);
     const total = (Math.ceil(blurTexels) + (bloomActive && halationActive ? 1 : 0)) * grid + Math.ceil(direct);
     return {
       quarter,

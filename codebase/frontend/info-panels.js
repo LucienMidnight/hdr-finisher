@@ -374,7 +374,7 @@ function renderSessionChrome() {
         && els.rawHighlightBypass?.getAttribute("aria-pressed") !== "true";
       control.disabled = !hasSession || Boolean(unavailableModule) || bypassedRawHighlightControl
         || (control.id === "film-grain-chroma" && filmGrainChromaInactive())
-        || (FILM_STOCK_SLIDER_PATHS.includes(control.dataset.path) && filmStockSlidersInactive());
+        || (FILM_PRINT_KEYS.some(key => control.dataset.path === `current.film_look.${key}`) && FILM_SLIDE_STOCKS.has(state.adjustments?.[state.currentView]?.film_look?.film_stock));
     }
   });
   els.viewButtons.forEach((button) => {

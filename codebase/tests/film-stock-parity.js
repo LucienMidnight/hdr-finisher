@@ -19,12 +19,17 @@ const { execFileSync } = require("child_process");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 const LONG_EDGE = 1200;
+const laneIndex = process.argv.indexOf("--lane");
+const selectedLane = laneIndex >= 0 ? process.argv[laneIndex + 1] : null;
+if (selectedLane !== null && !["hdr", "sdr"].includes(selectedLane)) throw new Error("--lane must be hdr or sdr");
+const LANES = selectedLane ? [selectedLane] : ["hdr", "sdr"];
 const MAX_MEAN_DIFFERENCE = 0.1 / 255;
 const MAX_P999_DIFFERENCE = 2 / 255;
 
 const NEUTRAL = {
   film_stock: "none", stock_color: 100, stock_tone: 100, stock_exposure: 0, stock_separation: 0,
   stock_print_warmth: 0, stock_print_tint: 0, stock_preflash: 0,
+  push_pull: 0, print_paper: "default", print_exposure: 0, print_contrast: 0, shadow_contrast: 0, highlight_contrast: 0, scan_sharpening: 0, lab_levels: false,
 };
 const EFFECTS = { grain_amount: 60, grain_size: 80, grain_film_format: "super16", grain_chroma: 40,
   halation_amount: 45, halation_radius: 0.7, bloom_amount: 35, bloom_radius: 1.2,
@@ -49,6 +54,16 @@ const CASES = [
     stock: { film_stock: "kodak_portra_400", stock_exposure: 0.7, stock_separation: 40, stock_print_warmth: 50, stock_print_tint: -30, stock_preflash: 30 },
   },
   { label: "Pro 400H half look", stock: { film_stock: "fujifilm_pro_400h", stock_exposure: -0.5 }, look_strength: 50 },
+  ...["default", "kodak_2383", "fujifilm_crystal_archive_typeii"].flatMap(paper => [-100,100].map(extreme => ({
+    label: `${paper} controls ${extreme}`, stock: {film_stock: "kodak_portra_400", print_paper: paper,
+      print_contrast: extreme, shadow_contrast: -extreme, highlight_contrast: extreme,
+      print_exposure: extreme > 0 ? 3 : -3, scan_sharpening: 100, lab_levels: true}}))),
+  ...[-2,-1,1,2].map(push => ({label: `Portra 800 push ${push}`, stock: {film_stock: "kodak_portra_800", push_pull: push}})),
+  ...[-2,2].map(push => ({label: `C200 approximate push ${push}`, stock: {film_stock: "fujifilm_c200", push_pull: push}})),
+  {label: "Slide development scan", stock: {film_stock:"fujifilm_velvia_100", push_pull:2, scan_sharpening:100, lab_levels:true}},
+  {label: "Neutral physical controls", stock: {film_stock:"none", push_pull:1, print_exposure:1,
+    print_contrast:50, shadow_contrast:-50, highlight_contrast:50, scan_sharpening:100, lab_levels:true}},
+  {label: "Neutral actual paper", stock: {film_stock:"none", print_paper:"kodak_2383", scan_sharpening:100, lab_levels:true}},
 ];
 
 function writeFixture() {
@@ -162,11 +177,11 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
           raw = Math.max(raw, difference);
         }
       }
-      return { size, differences, raw, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock) };
+      return { size, differences, raw, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock, stock) };
     }, { lane, stock, lookStrength, longEdge: LONG_EDGE });
 
     const failures = [];
-    for (const lane of ["hdr", "sdr"]) {
+    for (const lane of LANES) {
       const off = await compare(lane, NEUTRAL, 100);
       if (off.error) throw new Error(`${lane} off: ${off.error}`);
       for (const { label, stock, look_strength: lookStrength = 100 } of CASES) {

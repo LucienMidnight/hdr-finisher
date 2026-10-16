@@ -604,6 +604,11 @@ def api_film_stock(stock_id: str, paper: str | None = None,
                    shadows: float = Query(0, ge=-100, le=100),
                    highlights: float = Query(0, ge=-100, le=100),
                    lab_levels: bool = False) -> dict:
+    if stock_id == "none":
+        payload = controlled_stock_payload(stock_id, paper, contrast, shadows, highlights, lab_levels)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="Unknown Neutral paper.")
+        return payload
     # Only the fixed stock ids resolve to a file, so no other path is served.
     path = film_stock_path(stock_id, paper)
     if path is None:

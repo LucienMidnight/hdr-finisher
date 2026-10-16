@@ -607,7 +607,6 @@ def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndar
     # zero, and a control supported entirely by the body remains unchanged.
     qualification_scale = float(np.clip(highlight_factor * (4.0 - 3.0 * highlight_factor), 0.0, 4.0 / 3.0))
     _attenuate_highlight_qualified_controls(sdr.color_grading, min(1.0, qualification_scale))
-    sdr.film_look.highlight_desaturation *= qualification_scale
     _translate_film_highlight_sensitivity(sdr.film_look, hdr.film_look, highlight_factor)
     return sdr
 
@@ -618,7 +617,7 @@ def _attenuate_highlight_qualified_controls(grading: ColorGradingAdjustments, fa
 
 
 def _translate_film_highlight_sensitivity(target: object, source: object, factor: float) -> None:
-    for name in ("halation_sensitivity", "bloom_sensitivity"):
+    for name in ("bloom_sensitivity",):
         sensitivity = float(getattr(source, name))
         hdr_threshold = np.float32(0.92 - 0.50 * np.clip(sensitivity / 100.0, 0.0, 1.0))
         hdr_luma = _film_decode_luma(np.array(hdr_threshold, dtype=np.float32), PreviewKind.HDR)

@@ -127,23 +127,17 @@ function renderFilmGrainChroma() {
   if (state.session) chroma.disabled = filmGrainChromaInactive();
 }
 
-// The Film Stock sliders do nothing while no stock is chosen.
-const FILM_STOCK_SLIDER_PATHS = Object.freeze([
-  "stock_color", "stock_tone", "stock_exposure", "stock_separation",
-  "stock_print_warmth", "stock_print_tint", "stock_preflash",
-].map((key) => `current.film_look.${key}`));
-
-function filmStockSlidersInactive() {
-  return (state.adjustments?.[state.currentView]?.film_look?.film_stock || "none") === "none";
-}
+const FILM_PRINT_KEYS = Object.freeze(["print_paper", "print_exposure", "stock_print_warmth", "stock_print_tint", "stock_preflash", "print_contrast", "shadow_contrast", "highlight_contrast"]);
+const FILM_SLIDE_STOCKS = new Set(["fujifilm_provia_100f", "fujifilm_velvia_100", "kodak_ektachrome_100", "kodak_kodachrome_64"]);
 
 function renderFilmStockControls() {
   if (!state.session) return;
-  const inactive = filmStockSlidersInactive();
-  FILM_STOCK_SLIDER_PATHS.forEach((path) => {
-    const control = document.querySelector(`[data-path="${path}"]`);
-    if (control) control.disabled = inactive;
+  const slide = FILM_SLIDE_STOCKS.has(state.adjustments?.[state.currentView]?.film_look?.film_stock);
+  FILM_PRINT_KEYS.forEach((key) => {
+    const control = document.querySelector(`[data-path="current.film_look.${key}"]`);
+    if (control) control.disabled = slide;
   });
+  document.querySelector("[data-film-slide-note]")?.toggleAttribute("hidden", !slide);
 }
 
 function renderControlState() {

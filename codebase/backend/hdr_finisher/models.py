@@ -137,17 +137,9 @@ class FilmLookAdjustments(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    reference_model: Literal[
-        "custom",
-        "large_format_fine",
-        "35mm_fine",
-        "35mm_balanced",
-        "35mm_fast",
-        "16mm_fine",
-    ] = "custom"
     look_strength: float = Field(default=100.0, ge=0.0, le=100.0)
     # Film stock: a real stock's colour and tone, rendered by ``film_stock.py``
-    # from baked manufacturer data, ahead of Film Response.
+    # from baked manufacturer data, through development, paper and scan.
     film_stock: Literal[
         "none",
         "kodak_portra_400",
@@ -178,16 +170,14 @@ class FilmLookAdjustments(BaseModel):
     stock_print_warmth: float = Field(default=0.0, ge=-100.0, le=100.0)
     stock_print_tint: float = Field(default=0.0, ge=-100.0, le=100.0)
     stock_preflash: float = Field(default=0.0, ge=0.0, le=100.0)
-    print_strength: float = Field(default=0.0, ge=0.0, le=100.0)
+    push_pull: int = Field(default=0, ge=-2, le=2)
+    print_paper: Literal["default", "kodak_2383", "fujifilm_crystal_archive_typeii"] = "default"
+    print_exposure: float = Field(default=0.0, ge=-3.0, le=3.0)
+    shadow_contrast: float = Field(default=0.0, ge=-100.0, le=100.0)
+    highlight_contrast: float = Field(default=0.0, ge=-100.0, le=100.0)
+    scan_sharpening: float = Field(default=0.0, ge=0.0, le=100.0)
+    lab_levels: bool = False
     print_contrast: float = Field(default=0.0, ge=-100.0, le=100.0)
-    print_toe: float = Field(default=0.0, ge=-100.0, le=100.0)
-    print_shoulder: float = Field(default=0.0, ge=-100.0, le=100.0)
-    color_density: float = Field(default=0.0, ge=-100.0, le=100.0)
-    red_response: float = Field(default=0.0, ge=-100.0, le=100.0)
-    green_response: float = Field(default=0.0, ge=-100.0, le=100.0)
-    blue_response: float = Field(default=0.0, ge=-100.0, le=100.0)
-    highlight_desaturation: float = Field(default=0.0, ge=0.0, le=100.0)
-    shadow_desaturation: float = Field(default=0.0, ge=0.0, le=100.0)
 
     grain_enabled: bool = True
     grain_amount: float = Field(default=0.0, ge=0.0, le=100.0)
@@ -209,7 +199,6 @@ class FilmLookAdjustments(BaseModel):
 
     halation_enabled: bool = True
     halation_amount: float = Field(default=0.0, ge=0.0, le=100.0)
-    halation_sensitivity: float = Field(default=75.0, ge=0.0, le=100.0)
     halation_radius: float = Field(default=0.2, ge=0.0, le=5.0)
     halation_hue_offset: float = Field(default=0.0, ge=-100.0, le=100.0)
     halation_saturation: float = Field(default=75.0, ge=0.0, le=100.0)

@@ -178,16 +178,12 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.film_look.stock_print_warmth": { min: -100, max: 100, decimals: 0 },
   "current.film_look.stock_print_tint": { min: -100, max: 100, decimals: 0 },
   "current.film_look.stock_preflash": { min: 0, max: 100, decimals: 0 },
-  "current.film_look.print_strength": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.push_pull": { min: -2, max: 2, decimals: 0 },
+  "current.film_look.print_exposure": { min: -3, max: 3, decimals: 2 },
+  "current.film_look.shadow_contrast": { min: -100, max: 100, decimals: 0 },
+  "current.film_look.highlight_contrast": { min: -100, max: 100, decimals: 0 },
+  "current.film_look.scan_sharpening": { min: 0, max: 100, decimals: 0 },
   "current.film_look.print_contrast": { min: -100, max: 100, decimals: 0 },
-  "current.film_look.print_toe": { min: -100, max: 100, decimals: 0 },
-  "current.film_look.print_shoulder": { min: -100, max: 100, decimals: 0 },
-  "current.film_look.color_density": { min: -100, max: 100, decimals: 0 },
-  "current.film_look.red_response": { min: -100, max: 100, decimals: 0 },
-  "current.film_look.green_response": { min: -100, max: 100, decimals: 0 },
-  "current.film_look.blue_response": { min: -100, max: 100, decimals: 0 },
-  "current.film_look.highlight_desaturation": { min: 0, max: 100, decimals: 0 },
-  "current.film_look.shadow_desaturation": { min: 0, max: 100, decimals: 0 },
   "current.film_look.grain_amount": { min: 0, max: 100, decimals: 0 },
   "current.film_look.grain_size": { min: 0, max: 100, decimals: 0 },
   "current.film_look.grain_softness": { min: 0, max: 100, decimals: 0 },
@@ -197,7 +193,6 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.film_look.grain_highlight_response": { min: 0, max: 150, decimals: 0 },
   "current.film_look.film_resolution": { min: 0, max: 100, decimals: 0 },
   "current.film_look.halation_amount": { min: 0, max: 100, decimals: 0 },
-  "current.film_look.halation_sensitivity": { min: 0, max: 100, decimals: 0 },
   "current.film_look.halation_radius": { min: 0, max: 5, decimals: 2 },
   "current.film_look.halation_hue_offset": { min: -100, max: 100, decimals: 0 },
   "current.film_look.halation_saturation": { min: 0, max: 100, decimals: 0 },
@@ -696,10 +691,9 @@ let viewerResizeFrame = null;
 let graphEditorResizeObserver = null;
 
 const defaultFilmLook = () => ({
-  reference_model: "custom",
   look_strength: 100,
   // Film stock: measured stock color and tone, applied before
-  // Film Response. "none" leaves the stage off.
+  // the physical paper and scanner. "none" is the straight Neutral stock.
   film_stock: "none",
   stock_color: 100,
   stock_tone: 100,
@@ -708,16 +702,14 @@ const defaultFilmLook = () => ({
   stock_print_warmth: 0,
   stock_print_tint: 0,
   stock_preflash: 0,
-  print_strength: 0,
+  push_pull: 0,
+  print_paper: "default",
+  print_exposure: 0,
   print_contrast: 0,
-  print_toe: 0,
-  print_shoulder: 0,
-  color_density: 0,
-  red_response: 0,
-  green_response: 0,
-  blue_response: 0,
-  highlight_desaturation: 0,
-  shadow_desaturation: 0,
+  shadow_contrast: 0,
+  highlight_contrast: 0,
+  scan_sharpening: 0,
+  lab_levels: false,
   grain_enabled: true,
   grain_amount: 0,
   grain_size: 50,
@@ -735,7 +727,6 @@ const defaultFilmLook = () => ({
   film_resolution: 100,
   halation_enabled: true,
   halation_amount: 0,
-  halation_sensitivity: 75,
   halation_radius: 0.2,
   halation_hue_offset: 0,
   halation_saturation: 75,
@@ -751,13 +742,12 @@ const defaultFilmLook = () => ({
 // and the presets no longer set them.
 // 3: Film stock stage. Every recipe states its stock (the older ones "none",
 // through the defaults), and the Portra 400 pair was added.
-const FILM_LOOK_PRESET_RECIPE_VERSION = 3;
+const FILM_LOOK_PRESET_RECIPE_VERSION = 4;
 
 function completeFilmLookRecipe(values) {
   return Object.freeze({
     ...defaultFilmLook(),
     ...values,
-    reference_model: "custom",
     halation_view_map: false,
     grain_view_map: false,
   });
@@ -769,28 +759,28 @@ const FILM_LOOK_PRESETS = Object.freeze([
     name: "Clean Cinema",
     description: "Fine texture, restrained density, and a clean highlight finish.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 42, print_contrast: 6, print_toe: 3, print_shoulder: 10, color_density: 9, red_response: 3, blue_response: -2, highlight_desaturation: 12, shadow_desaturation: 5, grain_amount: 14, grain_size: 22, grain_softness: 50, grain_chroma: 10, grain_film_format: "65mm", grain_shadow_response: 82, grain_highlight_response: 110, film_resolution: 98, halation_amount: 6, halation_sensitivity: 84, halation_radius: 0.16, halation_saturation: 68, bloom_amount: 4, bloom_sensitivity: 88, bloom_radius: 0.32, bloom_highlight_detail: 90 }),
+    recipe: completeFilmLookRecipe({ grain_amount: 14, grain_size: 22, grain_softness: 50, grain_chroma: 10, grain_film_format: "65mm", grain_shadow_response: 82, grain_highlight_response: 110, film_resolution: 98, halation_amount: 6, halation_radius: 0.16, halation_saturation: 68, bloom_amount: 4, bloom_sensitivity: 88, bloom_radius: 0.32, bloom_highlight_detail: 90 }),
   }),
   Object.freeze({
     id: "soft-color-negative",
     name: "Soft Color Negative",
     description: "Gentle shoulders, soft color separation, and quiet portrait texture.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 48, print_contrast: -2, print_toe: 7, print_shoulder: 22, color_density: 12, red_response: 5, green_response: -1, blue_response: -4, highlight_desaturation: 28, shadow_desaturation: 9, grain_amount: 22, grain_size: 38, grain_softness: 52, grain_chroma: 13, grain_film_format: "35mm", grain_shadow_response: 88, grain_midtone_response: 98, grain_highlight_response: 112, film_resolution: 94, halation_amount: 9, halation_sensitivity: 78, halation_radius: 0.24, halation_saturation: 74, bloom_amount: 9, bloom_sensitivity: 76, bloom_radius: 0.62, bloom_highlight_detail: 78 }),
+    recipe: completeFilmLookRecipe({ grain_amount: 22, grain_size: 38, grain_softness: 52, grain_chroma: 13, grain_film_format: "35mm", grain_shadow_response: 88, grain_midtone_response: 98, grain_highlight_response: 112, film_resolution: 94, halation_amount: 9, halation_radius: 0.24, halation_saturation: 74, bloom_amount: 9, bloom_sensitivity: 76, bloom_radius: 0.62, bloom_highlight_detail: 78 }),
   }),
   Object.freeze({
     id: "dense-print",
     name: "Dense Print",
     description: "Deeper color, firmer print contrast, and a richer projected finish.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 62, print_contrast: 18, print_toe: 12, print_shoulder: 15, color_density: 26, red_response: 7, green_response: -2, blue_response: -6, highlight_desaturation: 20, shadow_desaturation: 12, grain_amount: 30, grain_size: 46, grain_softness: 34, grain_chroma: 18, grain_film_format: "35mm", grain_shadow_response: 92, grain_midtone_response: 104, grain_highlight_response: 118, film_resolution: 90, halation_amount: 13, halation_sensitivity: 72, halation_radius: 0.28, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80 }),
+    recipe: completeFilmLookRecipe({ grain_amount: 30, grain_size: 46, grain_softness: 34, grain_chroma: 18, grain_film_format: "35mm", grain_shadow_response: 92, grain_midtone_response: 104, grain_highlight_response: 118, film_resolution: 90, halation_amount: 13, halation_radius: 0.28, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80 }),
   }),
   Object.freeze({
     id: "high-speed-texture",
     name: "High-Speed Texture",
     description: "Coarse responsive grain, open glow, and softened fine detail for low-light character.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 54, print_contrast: 7, print_toe: 10, print_shoulder: 18, color_density: 17, red_response: 8, green_response: -3, blue_response: -7, highlight_desaturation: 30, shadow_desaturation: 17, grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_sensitivity: 66, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86, bloom_amount: 12, bloom_sensitivity: 70, bloom_radius: 0.7, bloom_highlight_detail: 70 }),
+    recipe: completeFilmLookRecipe({ grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86, bloom_amount: 12, bloom_sensitivity: 70, bloom_radius: 0.7, bloom_highlight_detail: 70 }),
   }),
   Object.freeze({
     id: "portra-400-full",

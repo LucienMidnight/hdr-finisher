@@ -296,3 +296,31 @@ def test_film_density_grain_proof_is_export_byte_for_byte(backends, tmp_path, st
         assert proof.sha256 == _sha(Path(result.output_path))
     finally:
         store.clear()
+
+
+@pytest.mark.parametrize("stock,paper", [("kodak_portra_800","kodak_2383"),
+    ("fujifilm_velvia_100","default"), ("none","default")])
+def test_physical_film_controls_proof_is_export(backends, tmp_path, stock, paper):
+    from hdr_finisher.models import FilmLookAdjustments
+    capabilities, export_backends = backends
+    if capabilities["ultrahdr_encoder"].status != CapabilityStatus.AVAILABLE:
+        pytest.skip("Ultra HDR encoder unavailable")
+    backend = export_backends["jpeg_ultrahdr"]
+    rng = np.random.default_rng(20261016)
+    image = rng.uniform(.01, 3, (96,128,3)).astype(np.float32)
+    session = _session(image)
+    for lane in (session.adjustments.hdr, session.adjustments.sdr):
+        lane.film_look = FilmLookAdjustments(film_stock=stock, print_paper=paper,
+            push_pull=2, print_exposure=.5, print_contrast=50, shadow_contrast=-50,
+            highlight_contrast=50, scan_sharpening=100, lab_levels=True, grain_amount=30)
+    result = backend.export(session, ExportSettings(format="jpeg_ultrahdr",
+        output_path=str(tmp_path/"physical.jpg"), overwrite=True))
+    assert result.accepted, result.message
+    store = ProofArtifactStore()
+    try:
+        proof = store.create(session, ProofArtifactRequest(adjustments=session.adjustments,
+            format="jpeg_ultrahdr", quality=ExportSettings().quality, full_size=True), backend)
+        assert (proof.width,proof.height) == (128,96)
+        assert proof.sha256 == _sha(Path(result.output_path))
+    finally:
+        store.clear()

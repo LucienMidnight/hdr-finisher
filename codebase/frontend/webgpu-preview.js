@@ -4475,6 +4475,11 @@
       try {
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
+      // Physical paper/scan variants must arrive before this recipe is drawn.
+      const filmRecipe = adjustments[lane]?.film_look || {};
+      await window.HDRFilmStocks?.request(filmRecipe.film_stock || "none", filmRecipe);
+      if (resourceGeneration !== this.resourceGeneration || serial !== this.renderSerials.get(canvas)
+        || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-stock");
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
       const sourceIdentity = sourceOptions?.identity || "source";
       const context = canvas.getContext("webgpu");
@@ -6329,8 +6334,10 @@
         && (Math.abs(params[GPU_PARAMS.STRUCTURE_SOFTNESS]) > 0.000001 || Math.abs(params[GPU_PARAMS.STRUCTURE_MICROCONTRAST]) > 0.000001);
       const map = active && ((halation && params[GPU_PARAMS.HALATION_VIEW_MAP] > 0.5)
         || (params[GPU_PARAMS.GRAIN_ENABLED] > 0.5 && params[GPU_PARAMS.GRAIN_VIEW_MAP] > 0.5));
+      pass(filmView, pipelines.scan, bind(finishView, fallback, originalView));
       if (structure && !map) {
-        pass(filmView, pipelines.structure, bind(finishView, fallback, originalView));
+        pass(finishView, pipelines.structure, bind(filmView, fallback, originalView));
+      } else {
         pass(finishView, pipelines.response, bind(filmView, fallback, originalView));
       }
     }
@@ -6476,7 +6483,7 @@
           fragment: { module: this.module, entryPoint: "peakCandidateLocalFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         }),
-        ...Object.fromEntries(["lens", "scatter", "structure"].map((name) => [name, this.device.createRenderPipeline({
+        ...Object.fromEntries(["lens", "scatter", "structure", "scan"].map((name) => [name, this.device.createRenderPipeline({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: `${name}FragmentMain`, targets: [{ format: "rgba16float" }] },

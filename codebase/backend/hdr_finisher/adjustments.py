@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -18,7 +18,7 @@ from .finishing import apply_geometry
 from .models import AdjustmentState, LocalAdjustment, PreviewKind
 from .detail import apply_detail
 from . import film_grain
-from .film_stock import load_film_stock, render_film_stock, render_film_stock_with_grey, stock_parameters
+from .film_stock import controlled_film_stock, measured_push_stock, load_film_stock, render_film_stock, render_film_stock_with_grey, stock_parameters
 from .sdr_gamut import compress_to_srgb_gamut
 
 
@@ -54,10 +54,6 @@ GRAIN_DEVELOP_HDR_SCALE = np.float32((100.0 / 203.0) / 0.18)
 # difference between HDR and SDR (the first grain left 0.0004); 1.0 left 0.011.
 GRAIN_DEVELOP_FULL = 0.45
 GRAIN_WORKERS = max(1, min(8, (os.cpu_count() or 2) - 1))
-HDR_FILM_HIGHLIGHT_DESATURATION_START = np.float32(0.50)
-HDR_FILM_HIGHLIGHT_DESATURATION_END = np.float32(0.82)
-SDR_FILM_HIGHLIGHT_DESATURATION_START = np.float32(0.62)
-SDR_FILM_HIGHLIGHT_DESATURATION_END = np.float32(1.0)
 
 
 @dataclass(frozen=True)
@@ -587,9 +583,6 @@ def black_and_white_neutral_film_look(look: object) -> object:
         "halation_saturation": 0.0,
         "grain_chroma": 0.0,
         "stock_color": 0.0,
-        "red_response": 0.0,
-        "green_response": 0.0,
-        "blue_response": 0.0,
     })
 
 
@@ -1621,16 +1614,12 @@ def _apply_film_look(
     if branch.black_and_white_section_enabled:
         look = black_and_white_neutral_film_look(look)
     strength = np.float32(look.look_strength / 100.0)
-    response_active = any(float(getattr(look, field, 0.0)) != 0.0 for field in (
-        "print_strength", "color_density", "red_response", "green_response", "blue_response",
-        "highlight_desaturation", "shadow_desaturation",
-    ))
     halation_active = look.halation_enabled and (
         (look.halation_amount > 0.0 and look.halation_radius > 0.0) or look.halation_view_map
     )
     bloom_active = look.bloom_enabled and look.bloom_amount > 0.0 and look.bloom_radius > 0.0
     module_active = branch.film_look_section_enabled and strength > 0.0 and (
-        _film_stock_is_active(look) or response_active or halation_active or bloom_active
+        _film_stock_is_active(look) or look.scan_sharpening > 0 or halation_active or bloom_active
         or look.film_resolution < 100.0
         or (include_grain and look.grain_enabled and (look.grain_amount > 0.0 or look.grain_view_map))
     )
@@ -1661,8 +1650,8 @@ def _apply_film_look(
             # Neutral's straight response preserves the existing density field.
             result = _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed,
                                          full, frame_window=frame_window, preview_scale=source_pixel_scale, clip_output=False)
-        # Legacy creative response stays until Phase 3 removes its controls.
-        result = _apply_film_response(result, look, kind, full)
+        if look.scan_sharpening > 0:
+            result = _apply_scan_sharpening(result, look.scan_sharpening / 100, source_pixel_scale)
         result = image + (result - image) * strength
     if _structure_is_active(branch):
         result = _apply_image_structure(result, branch.detail, kind)
@@ -1761,28 +1750,6 @@ def _film_decode_luma(signal: np.ndarray, kind: PreviewKind) -> np.ndarray:
     return _srgb_decode(np.clip(signal, 0.0, 1.0))
 
 
-def _film_highlight_desaturation_weight(response_signal: np.ndarray, kind: PreviewKind) -> np.ndarray:
-    """Return a display-relevant highlight mask for the current lane.
-
-    The HDR curve places reference white at 0.5. The former shared 0.62..1.0
-    range did not begin until roughly 600 nits and was only about five percent
-    active at 1,000 nits, leaving most of the adjustment beyond common display
-    headroom. HDR now rolls in above reference white and becomes strong across
-    the visible 400..2,000-nit range. SDR retains its existing response.
-    """
-    if kind == PreviewKind.HDR:
-        return _smoothstep(
-            float(HDR_FILM_HIGHLIGHT_DESATURATION_START),
-            float(HDR_FILM_HIGHLIGHT_DESATURATION_END),
-            response_signal,
-        )
-    return _smoothstep(
-        float(SDR_FILM_HIGHLIGHT_DESATURATION_START),
-        float(SDR_FILM_HIGHLIGHT_DESATURATION_END),
-        response_signal,
-    )
-
-
 FILM_STOCK_REFERENCE_WHITE = np.float32(1.0)
 FILM_STOCK_MIDDLE_GREY = np.float32(0.18)
 FILM_STOCK_CHUNK_PIXELS = 1 << 18
@@ -1795,7 +1762,10 @@ def _film_stock_is_active(look: object) -> bool:
     (bar pixels darker than 1e-7, which it would round towards black), so it is
     skipped outright. Callers have already applied the Black & White override.
     """
-    return getattr(look, "film_stock", "none") != "none" and (
+    neutral_active = any(float(getattr(look, key, 0)) != 0 for key in (
+        "stock_exposure", "stock_separation", "stock_print_warmth", "stock_print_tint", "stock_preflash",
+        "push_pull", "print_exposure", "print_contrast", "shadow_contrast", "highlight_contrast", "lab_levels")) or getattr(look, "print_paper", "default") != "default"
+    return (getattr(look, "film_stock", "none") != "none" or neutral_active) and (
         float(look.stock_color) > 0.0 or float(look.stock_tone) > 0.0
     )
 
@@ -1812,7 +1782,9 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
     """
     if master <= 0.0 or not _film_stock_is_active(look):
         return image
-    stock = load_film_stock(look.film_stock)
+    stock = controlled_film_stock(measured_push_stock(look.film_stock, look.push_pull),
+        None if look.print_paper == "default" else look.print_paper,
+        look.print_contrast, look.shadow_contrast, look.highlight_contrast, look.lab_levels)
     if stock is None:
         return image
     parameters = stock_parameters(look)
@@ -1835,8 +1807,8 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
     reference_white = FILM_STOCK_REFERENCE_WHITE / lane_scale
     lane_middle_grey = FILM_STOCK_MIDDLE_GREY / lane_scale
     middle_grey = to_srgb(np.full((1, 3), lane_middle_grey, dtype=np.float32))
-    middle = from_srgb(render_film_stock(stock, middle_grey, parameters))
-    tone_gain = lane_middle_grey / np.maximum(_film_luma(middle, kind)[0], np.float32(1e-6))
+    middle = from_srgb(render_film_stock(stock, middle_grey, replace(parameters, print_exposure_gain=np.float32(1))))
+    tone_gain = np.float32(1) if stock.type.startswith("neutral") else lane_middle_grey / np.maximum(_film_luma(middle, kind)[0], np.float32(1e-6))
 
     image = np.ascontiguousarray(image, dtype=np.float32)
     flat = image.reshape(-1, 3)
@@ -1879,110 +1851,6 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
         with ThreadPoolExecutor(max_workers=GRAIN_WORKERS, thread_name_prefix="film-stock") as pool:
             list(pool.map(lambda span: render(*span), spans))
     return image
-
-
-def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
-    """Apply Film Response in the branch's scene-linear working RGB.
-
-    HDR is ACEScg and SDR is linear sRGB. Tone shaping is authored through a
-    perceptual luma signal, then decoded back to the same scene-linear branch;
-    density changes operate in that branch without reinterpreting RGB values as
-    coordinates from the other working space.
-    """
-    print_mix = np.float32(look.print_strength / 100.0) * master
-    density = np.float32(look.color_density / 100.0) * master
-    channel_response = np.array(
-        [
-            getattr(look, "red_response", 0.0),
-            getattr(look, "green_response", 0.0),
-            getattr(look, "blue_response", 0.0),
-        ],
-        dtype=np.float32,
-    ) * (master / np.float32(100.0))
-    highlight_desaturation = np.float32(getattr(look, "highlight_desaturation", 0.0) / 100.0) * master
-    shadow_desaturation = np.float32(getattr(look, "shadow_desaturation", 0.0) / 100.0) * master
-    if (
-        print_mix == 0.0
-        and density == 0.0
-        and not np.any(channel_response)
-        and highlight_desaturation == 0.0
-        and shadow_desaturation == 0.0
-    ):
-        return image
-
-    source_luma = np.maximum(_film_luma(image, kind), 0.0)
-    target_luma = source_luma
-    if print_mix > 0.0:
-        signal = _film_encode_luma(source_luma, kind)
-        # Author the response curve at its requested values, then use master
-        # only for the final response blend. Scaling both made intermediate
-        # Look Strength values behave approximately strength-squared.
-        contrast = np.float32(look.print_contrast / 100.0)
-        toe = np.float32(look.print_toe / 100.0)
-        shoulder = np.float32(look.print_shoulder / 100.0)
-        mapped = np.float32(0.5) + (signal - np.float32(0.5)) * np.float32(2.0**(0.55 * contrast))
-        # Softplus knees retain a positive derivative at every legal setting.
-        # Unlike additive masks, they cannot introduce a hard join or reverse
-        # tone order around the toe and shoulder boundaries.
-        toe_knee = np.float32(0.18) * np.logaddexp(
-            np.float32(0.0), (np.float32(0.45) - mapped) / np.float32(0.18)
-        )
-        shoulder_knee = np.float32(0.18) * np.logaddexp(
-            np.float32(0.0), (mapped - np.float32(0.55)) / np.float32(0.18)
-        )
-        mapped -= np.float32(0.28) * (toe * toe_knee + shoulder * shoulder_knee)
-        mapped = np.maximum(mapped, np.float32(0.0))
-        if kind == PreviewKind.SDR:
-            mapped = np.clip(mapped, 0.0, 1.0)
-        target_luma = _film_decode_luma(mapped, kind)
-        target_luma = source_luma + (target_luma - source_luma) * print_mix
-
-    gain = np.ones_like(source_luma, dtype=np.float32)
-    np.divide(target_luma, source_luma, out=gain, where=source_luma > 1e-7)
-    result = image * gain[..., None]
-
-    if np.any(channel_response):
-        response_luma = np.maximum(_film_luma(result, kind), 0.0)
-        response_signal = _film_encode_luma(response_luma, kind)
-        neutral = response_luma[..., None]
-        maximum = np.max(result, axis=-1, keepdims=True)
-        minimum = np.min(result, axis=-1, keepdims=True)
-        relative = np.clip((maximum - minimum) / np.maximum(np.abs(neutral), 1e-5), 0.0, 2.0)[..., 0]
-        exposure_weight = np.float32(0.20) + np.float32(0.80) * _smoothstep(0.08, 0.88, response_signal)
-        saturation_guard = np.float32(1.0) - np.float32(0.35) * _smoothstep(0.60, 1.40, relative)
-        highlight_guard = np.float32(1.0) - np.float32(0.65) * _smoothstep(0.88, 1.12, response_signal)
-        response_ev = (
-            channel_response.reshape(1, 1, 3)
-            * np.float32(0.35)
-            * (exposure_weight * saturation_guard * highlight_guard)[..., None]
-        )
-        result *= np.exp2(response_ev)
-
-    if density != 0.0:
-        # Positive density increases subtractive dye separation while slightly
-        # lowering highly saturated colors, unlike a simple saturation control.
-        neutral = (_acescg_luma(result) if kind == PreviewKind.HDR else _linear_luma(result))[..., None]
-        chroma = result - neutral
-        maximum = np.max(result, axis=-1, keepdims=True)
-        minimum = np.min(result, axis=-1, keepdims=True)
-        relative = np.clip((maximum - minimum) / np.maximum(np.abs(neutral), 1e-5), 0.0, 2.0)
-        chroma_scale = np.float32(2.0 ** (0.45 * float(density)))
-        result = neutral + chroma * chroma_scale
-        result *= np.maximum(np.float32(0.75), np.float32(1.0) - density * np.float32(0.045) * relative)
-
-    if highlight_desaturation > 0.0 or shadow_desaturation > 0.0:
-        response_luma = np.maximum(_film_luma(result, kind), 0.0)
-        response_signal = _film_encode_luma(response_luma, kind)
-        shadow_weight = np.float32(1.0) - _smoothstep(0.08, 0.46, response_signal)
-        highlight_weight = _film_highlight_desaturation_weight(response_signal, kind)
-        desaturation = np.clip(
-            shadow_weight * shadow_desaturation + highlight_weight * highlight_desaturation,
-            0.0,
-            1.0,
-        )
-        neutral = response_luma[..., None]
-        result = neutral + (result - neutral) * (np.float32(1.0) - desaturation[..., None])
-    return result.astype(np.float32)
 
 
 def _radius_pixels(image: np.ndarray, percent_diagonal: float, maximum: int = 256) -> int:
@@ -2251,7 +2119,7 @@ def _apply_halation(
 ) -> tuple[np.ndarray, np.ndarray]:
     radius = _film_radius_pixels(image, look, look.halation_radius)
     source = _halation_edge_source(
-        image, kind, look.halation_sensitivity, edge_radius=max(1, radius // 4)
+        image, kind, 75.0, edge_radius=max(1, radius // 4)
     )
     blurred = _diffusion_blur(source, max(1, radius))
     edge_scatter = np.maximum(blurred - source * np.float32(0.15), 0.0)
@@ -2635,3 +2503,30 @@ def _monotone_cubic_interpolate(x: np.ndarray, y: np.ndarray, sample_x: np.ndarr
     h01 = -2.0 * t3 + 3.0 * t2
     h11 = t3 - t2
     return h00 * y0 + h10 * segment * m0 + h01 * y1 + h11 * segment * m1
+
+
+def _apply_scan_sharpening(image: np.ndarray, amount: float, source_pixel_scale: float = 1) -> np.ndarray:
+    """Scanner RGB unsharp mask (sigma 0.7 source pixels), before Look Strength.
+
+    Unlike Detail this has no edge threshold, luma-only mask or texture band.
+    The finite Gaussian uses upstream's four-sigma support, at most 3 pixels.
+    """
+    sigma = 0.7 * max(0.05, min(1, source_pixel_scale))
+    radius = int(4 * sigma + 0.5)
+    if amount <= 0 or radius == 0:
+        return image
+    offsets = np.arange(-radius, radius + 1)
+    weights = np.exp(-0.5 * (offsets / sigma) ** 2)
+    weights = (weights / weights.sum()).astype(np.float32)
+    blurred = image.astype(np.float32, copy=False)
+    for axis in (1, 0):
+        pad = [(0, 0)] * 3
+        pad[axis] = (radius, radius)
+        padded = np.pad(blurred, pad, mode="edge")
+        result = np.zeros_like(blurred)
+        for index, weight in enumerate(weights):
+            slices = [slice(None)] * 3
+            slices[axis] = slice(index, index + image.shape[axis])
+            result += padded[tuple(slices)] * weight
+        blurred = result
+    return image + np.float32(amount) * (image - blurred)

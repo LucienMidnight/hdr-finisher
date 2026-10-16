@@ -43,7 +43,7 @@
     "fujifilm_c200": "Fujifilm C200",
     "fujifilm_provia_100f": "Fujifilm Provia 100F",
     "fujifilm_velvia_100": "Fujifilm Velvia 100",
-    "fujifilm_xtra_400": "Fujifilm X-Tra 400",
+    "fujifilm_xtra_400": "Fujifilm Superia X-Tra 400",
     "kodak_ektachrome_100": "Kodak Ektachrome 100",
     "kodak_kodachrome_64": "Kodak Kodachrome 64",
     "kodak_portra_800_push1": "Kodak Portra 800 (Push 1)",
@@ -88,7 +88,7 @@
       print_warmth_log_shift: [0, 0, 0], print_tint_log_shift: [0, 0, 0],
       print_log_exposure_range: [0, 1], print_curves: Array.from({ length: CURVE_SAMPLES }, () => [0, 0, 0]) };
     const slot = new Float32Array(SLOT_FLOATS);
-    slot[LAYOUT.SCAN_FILM] = slide ? 1 : 0;
+    slot[LAYOUT.SCAN_FILM] = slide ? 1 : stock.type === "neutral" ? 2 : stock.type === "neutral_paper" ? 3 : 0;
     slot.set(numbers(stock.film_density_max || [0, 0, 0], 3, "film_density_max"), LAYOUT.FILM_DENSITY_MAX);
     slot.set(numbers(stock.input_matrix, 9, "input_matrix"), LAYOUT.INPUT_MATRIX);
     const film = numbers(stock.film_log_exposure_range, 2, "film_log_exposure_range");
@@ -128,7 +128,7 @@
   }
 
   const VARIANT_IDS = Object.freeze(Array.from({length: 8}, (_, i) => `variant-${i}`));
-  const ALL_IDS = Object.freeze([...IDS, ...VARIANT_IDS]);
+  const ALL_IDS = Object.freeze([...IDS, "none", ...VARIANT_IDS]);
   const variantKeys = new Map();
   let nextVariant = 0;
 
@@ -136,6 +136,8 @@
     const push = Number(film.push_pull) || 0;
     if (id === "kodak_portra_800" && (push === 1 || push === 2)) id += `_push${push}`;
     const query = new URLSearchParams();
+    const slide = ["fujifilm_provia_100f", "fujifilm_velvia_100", "kodak_ektachrome_100", "kodak_kodachrome_64"].includes(id);
+    if (slide) film = {lab_levels: film.lab_levels};
     if (film.print_paper && film.print_paper !== "default") query.set("paper", film.print_paper);
     for (const [field, key] of [["print_contrast", "contrast"], ["shadow_contrast", "shadows"], ["highlight_contrast", "highlights"]]) {
       if (Number(film[field])) query.set(key, String(Number(film[field])));
@@ -159,8 +161,11 @@
   }
 
   function request(stockId, film = {}) {
+    if (stockId === "none" && !["stock_exposure", "stock_separation", "stock_print_warmth", "stock_print_tint", "stock_preflash",
+      "push_pull", "print_exposure", "print_contrast", "shadow_contrast", "highlight_contrast", "lab_levels"].some(key => Number(film[key]))
+      && (!film.print_paper || film.print_paper === "default")) return null;
     const {id, key} = recipe(stockId, film);
-    if (!IDS.includes(id) || packed.has(key) || variantKeys.has(key) || pending.has(key) || failed.has(key)) return pending.get(key) || null;
+    if (!(IDS.includes(id) || id === "none") || packed.has(key) || variantKeys.has(key) || pending.has(key) || failed.has(key)) return pending.get(key) || null;
     if (typeof fetch !== "function") return null;
     const task = fetch(`/api/film-stocks/${key}`)
       .then((response) => {
@@ -195,7 +200,7 @@
    */
   function slot(stockId, film = {}) {
     const {id, key} = recipe(stockId, film);
-    if (!IDS.includes(id)) return 0;
+    if (!(IDS.includes(id) || id === "none")) return 0;
     const slotId = key === id ? id : variantKeys.get(key);
     if (!slotId || !packed.has(slotId)) {
       request(stockId, film);

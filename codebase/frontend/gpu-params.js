@@ -244,17 +244,9 @@
     const filmEnabled = branch.film_look_section_enabled !== false;
     params[GPU_PARAMS.FILM_RESPONSE_ENABLED] = filmEnabled ? 1 : 0;
     params[GPU_PARAMS.FILM_LOOK_STRENGTH] = filmEnabled ? (film.look_strength ?? 100) / 100 : 0;
-    params[GPU_PARAMS.FILM_PRINT_STRENGTH] = (film.print_strength || 0) / 100;
-    params[GPU_PARAMS.FILM_PRINT_CONTRAST] = (film.print_contrast || 0) / 100;
-    params[GPU_PARAMS.FILM_PRINT_TOE] = (film.print_toe || 0) / 100;
-    params[GPU_PARAMS.FILM_PRINT_SHOULDER] = (film.print_shoulder || 0) / 100;
-    params[GPU_PARAMS.FILM_COLOR_DENSITY] = (film.color_density || 0) / 100;
     // With Black & White on, Film Look adds no colour back: no per-channel
     // print response, no halation tint, no grain colour
     // (adjustments.py black_and_white_neutral_film_look).
-    params[GPU_PARAMS.FILM_RED_RESPONSE] = blackAndWhiteOn ? 0 : (film.red_response || 0) / 100;
-    params[GPU_PARAMS.FILM_GREEN_RESPONSE] = blackAndWhiteOn ? 0 : (film.green_response || 0) / 100;
-    params[GPU_PARAMS.FILM_BLUE_RESPONSE] = blackAndWhiteOn ? 0 : (film.blue_response || 0) / 100;
     // Film stock (film_stock.py stock_parameters, adjustments.py
     // _apply_film_stock). The slot stays 0, and the stage off, until the
     // stock's data has reached the GPU; its arrival re-renders the preview.
@@ -262,21 +254,25 @@
     const stockColor = blackAndWhiteOn ? 0 : Math.min(1, Math.max(0, (Number(film.stock_color ?? 100) || 0) / 100));
     const stockTone = Math.min(1, Math.max(0, (Number(film.stock_tone ?? 100) || 0) / 100));
     const stockId = film.film_stock || "none";
-    const stockActive = filmEnabled && stockId !== "none" && (stockColor > 0 || stockTone > 0);
-    params[GPU_PARAMS.FILM_STOCK_SLOT] = stockActive ? (globalThis.HDRFilmStocks?.slot(stockId) || 0) : 0;
+    const neutralActive = ["stock_exposure", "stock_separation", "stock_print_warmth", "stock_print_tint", "stock_preflash",
+      "push_pull", "print_exposure", "print_contrast", "shadow_contrast", "highlight_contrast", "lab_levels"].some(key => Number(film[key]))
+      || (film.print_paper && film.print_paper !== "default");
+    const stockActive = filmEnabled && (stockId !== "none" || neutralActive) && (stockColor > 0 || stockTone > 0);
+    params[GPU_PARAMS.FILM_STOCK_SLOT] = stockActive ? (globalThis.HDRFilmStocks?.slot(stockId, film) || 0) : 0;
     params[GPU_PARAMS.FILM_STOCK_COLOR] = stockColor;
     params[GPU_PARAMS.FILM_STOCK_TONE] = stockTone;
+    params[GPU_PARAMS.FILM_PRINT_EXPOSURE_GAIN] = 2 ** (Number(film.print_exposure) || 0);
+    const push = Number(film.push_pull) || 0;
+    params[GPU_PARAMS.FILM_DEVELOPMENT_GAMMA] = stockId === "kodak_portra_800" && (push === 1 || push === 2) ? 1 : 2 ** (0.2 * push);
+    params[GPU_PARAMS.SCAN_SHARPENING] = (film.scan_sharpening ?? 0) / 100;
     params[GPU_PARAMS.FILM_STOCK_EXPOSURE_GAIN] = 2 ** (Number(film.stock_exposure) || 0);
     params[GPU_PARAMS.FILM_STOCK_SEPARATION_GAIN] = 2 ** ((Number(film.stock_separation) || 0) / 100);
     // Warmth and Tint scale the stock's own 20 CC log shift vectors.
     params[GPU_PARAMS.FILM_STOCK_WARMTH] = (Number(film.stock_print_warmth) || 0) / 100;
     params[GPU_PARAMS.FILM_STOCK_TINT] = (Number(film.stock_print_tint) || 0) / 100;
     params[GPU_PARAMS.FILM_STOCK_PREFLASH] = (Number(film.stock_preflash) || 0) / 100 * 0.1;
-    params[GPU_PARAMS.FILM_HIGHLIGHT_DESATURATION] = (film.highlight_desaturation || 0) / 100;
-    params[GPU_PARAMS.FILM_SHADOW_DESATURATION] = (film.shadow_desaturation || 0) / 100;
     params[GPU_PARAMS.HALATION_ENABLED] = film.halation_enabled !== false && ((((film.halation_amount || 0) > 0) && (film.halation_radius || 0) > 0) || film.halation_view_map) ? 1 : 0;
     params[GPU_PARAMS.HALATION_AMOUNT] = (film.halation_amount || 0) / 100;
-    params[GPU_PARAMS.HALATION_SENSITIVITY] = (film.halation_sensitivity ?? 75) / 100;
     params[GPU_PARAMS.HALATION_RADIUS] = film.halation_radius ?? 0.2;
     params[GPU_PARAMS.HALATION_HUE] = (film.halation_hue_offset || 0) / 100;
     params[GPU_PARAMS.HALATION_SATURATION] = blackAndWhiteOn ? 0 : (film.halation_saturation ?? 75) / 100;

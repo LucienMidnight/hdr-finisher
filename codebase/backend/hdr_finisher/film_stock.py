@@ -172,6 +172,8 @@ def available_film_stocks() -> list[dict[str, str]]:
     """``[{id, name, attribution}]`` for every stock whose data file is present."""
     entries: list[dict[str, str]] = []
     for stock_id in FILM_STOCK_IDS:
+        if stock_id in ("kodak_portra_800_push1", "kodak_portra_800_push2"):
+            continue
         stock = load_film_stock(stock_id)
         if stock is not None:
             entries.append({"id": stock.id, "name": stock.name, "attribution": stock.attribution})
@@ -256,7 +258,7 @@ def parse_film_stock(payload: dict[str, Any], stock_id: str | None = None) -> Fi
         default_paper=payload.get("default_paper"),
         film_profile=str(payload.get("film_profile", identifier)),
         print_profile=payload.get("print_profile"),
-        film_density_max=_array(payload, "film_density_max", (3,)) if payload.get("type") == "slide" else np.zeros(3, dtype=np.float32),
+        film_density_max=_array(payload, "film_density_max", (3,)) if payload.get("type") in ("slide", "neutral") else np.zeros(3, dtype=np.float32),
         input_matrix=_array(payload, "input_matrix", (3, 3)),
         film_range=_range(payload, "film_log_exposure_range"),
         film_curves_plain=np.ascontiguousarray(_array(payload, "film_curves_plain", curve_shape)),
@@ -334,6 +336,8 @@ def _lookup_table(value: np.ndarray, table: StockTable) -> np.ndarray:
 def _film_density(stock: FilmStock, exposure: np.ndarray, gamma: float = 1) -> np.ndarray:
     """Film layer exposure (linear, n x 3) -> developed film density."""
     log_exposure = np.log10(exposure + LOG_EPSILON)
+    if stock.type.startswith("neutral"):
+        return log_exposure * np.float32(gamma)
     first = _curve(log_exposure * np.float32(gamma), stock.film_curves_plain, stock.film_range)
     if stock.type == "slide":
         first = stock.film_density_max - first
@@ -346,7 +350,7 @@ def print_film_density(stock: FilmStock, density: np.ndarray, parameters: StockP
     """Negative density -> paper density; slides bypass the print entirely."""
     if stock.type == "slide":
         return density
-    print_log = _lookup_table(density, stock.print_table)
+    print_log = -density if stock.type.startswith("neutral") else _lookup_table(density, stock.print_table)
     if parameters.warmth != 0.0 or parameters.tint != 0.0:
         # Enlarger filter shift, main exposure only (not the preflash).
         print_log += (
@@ -362,6 +366,15 @@ def print_film_density(stock: FilmStock, density: np.ndarray, parameters: StockP
 
 def scan_density(stock: FilmStock, density: np.ndarray) -> np.ndarray:
     """Scan either developed paper or slide density to linear sRGB."""
+    if stock.type == "neutral":
+        axis = np.linspace(*stock.film_range, CURVE_SAMPLES)
+        log_e = np.stack([np.interp(density[:, c], stock.film_curves_plain[:, c], axis) for c in range(3)], axis=-1)
+        rgb = np.power(10., -log_e).astype(np.float32)
+        if stock.film_density_max[2] > 0:
+            y = rgb @ np.array([.2126,.7152,.0722], dtype=np.float32)
+            m, q = stock.film_density_max[:2]
+            rgb *= (np.clip(m*y+q,0,1)/(y+1e-10))[:,None]
+        return rgb
     return _lookup_table(density, stock.scan_table)
 
 
@@ -399,6 +412,8 @@ def render_film_stock_with_grey(
     both developed film densities before print/scan and also return the grained
     grey. The clean grey remains the reference for partial stock mixes.
     """
+    if density_delta is not None and stock.type.startswith("neutral"):
+        density_delta = -density_delta
     grey_density = _film_density(stock, _film_exposure(stock, grey_rgb, parameters), parameters.development_gamma)
     film = None
     if rgb is not None:
@@ -433,6 +448,13 @@ def development_gamma(stock_id: str, push: float) -> float:
 
 def controlled_film_stock(stock_id: str, paper: str | None = None, contrast: float = 0,
                           shadows: float = 0, highlights: float = 0, lab_levels: bool = False) -> FilmStock | None:
+    if stock_id == "none":
+        from .film_neutral import neutral_payload
+        payload = neutral_payload(paper, contrast, shadows, highlights, lab_levels)
+        return parse_film_stock(payload) if payload is not None else None
+    base = load_film_stock(stock_id)
+    if base is not None and base.type == "slide":
+        paper, contrast, shadows, highlights = None, 0, 0, 0
     return _controlled_film_stock(str(FILM_STOCK_DIR), stock_id, paper, contrast, shadows, highlights, lab_levels)
 
 
@@ -442,8 +464,8 @@ def _controlled_film_stock(directory: str, stock_id: str, paper: str | None, con
     """Small, bounded cache of paper curves and scanner-calibrated tables.
 
     The measured base arrays remain unchanged. CPU and API use this same result.
-    Contrast is gamma 0.5..2; fast layers carry paper shadows, mid/slow layers
-    highlights. Negative Highlight Contrast blends toward developer exhaustion.
+    Contrast is gamma 0.5..2; fast layers carry final-image highlights,
+    mid/slow layers shadows for negative paper (the enlarger reverses exposure). Negative Highlight Contrast blends toward developer exhaustion.
     Positive cine print reverses the grain-speed roles.
     """
     stock = load_film_stock(stock_id, paper)
@@ -455,7 +477,7 @@ def _controlled_film_stock(directory: str, stock_id: str, paper: str | None, con
         from .film_print_morph import PrintCurvesMorphParams, apply_print_curves_morph
         raw = metadata["papers"][stock.print_profile]
         model = SimpleNamespace(**{key: np.asarray(raw[key]) for key in ("centers", "amplitudes", "sigmas")}, n_layers=len(raw["centers"][0]))
-        fast, slow = (shadows, highlights) if raw["type"] != "positive" else (highlights, shadows)
+        fast, slow = (highlights, shadows) if raw["type"] != "positive" else (shadows, highlights)
         params = PrintCurvesMorphParams(gamma_factor=2 ** (contrast / 100),
             gamma_factor_fast=2 ** (fast / 100), gamma_factor_slow=2 ** (slow / 100),
             developer_exhaustion=max(0, -highlights / 100))
@@ -474,6 +496,9 @@ def _controlled_film_stock(directory: str, stock_id: str, paper: str | None, con
 
 def controlled_stock_payload(stock_id: str, paper: str | None = None, contrast: float = 0,
                              shadows: float = 0, highlights: float = 0, lab_levels: bool = False) -> dict | None:
+    if stock_id == "none":
+        from .film_neutral import neutral_payload
+        return neutral_payload(paper, contrast, shadows, highlights, lab_levels)
     stock = controlled_film_stock(stock_id, paper, contrast, shadows, highlights, lab_levels)
     path = film_stock_path(stock_id, paper)
     if stock is None or path is None:
