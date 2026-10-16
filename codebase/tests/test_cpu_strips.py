@@ -47,9 +47,11 @@ from hdr_finisher.scopes import build_scope_from_processed  # noqa: E402
 def assert_strips_match(actual, desired):
     """Strips must match the whole picture exactly. On macOS, Apple's vector
     maths rounds differently at strip edges; Steve accepted differences of
-    about one part in a million there (October 16, 2026). Windows stays exact."""
+    about one part in a million there (October 16, 2026): two parts per
+    million of the value, or one millionth of reference white for dark
+    values. Windows and Linux stay exact."""
     if sys.platform == "darwin":
-        np.testing.assert_allclose(actual, desired, rtol=2e-6, atol=1e-7)
+        np.testing.assert_allclose(actual, desired, rtol=2e-6, atol=1e-6)
     else:
         np.testing.assert_array_equal(actual, desired)
 

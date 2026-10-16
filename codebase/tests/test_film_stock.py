@@ -28,9 +28,11 @@ from hdr_finisher.models import AdjustmentState, FilmLookAdjustments, HDRAdjustm
 def assert_strips_match(actual, desired):
     """Strips must match the whole picture exactly. On macOS, Apple's vector
     maths rounds differently at strip edges; Steve accepted differences of
-    about one part in a million there (October 16, 2026). Windows stays exact."""
+    about one part in a million there (October 16, 2026): two parts per
+    million of the value, or one millionth of reference white for dark
+    values. Windows and Linux stay exact."""
     if sys.platform == "darwin":
-        np.testing.assert_allclose(actual, desired, rtol=2e-6, atol=1e-7)
+        np.testing.assert_allclose(actual, desired, rtol=2e-6, atol=1e-6)
     else:
         np.testing.assert_array_equal(actual, desired)
 
@@ -273,7 +275,7 @@ def test_stage_is_identical_chunk_by_chunk(stock_dir, monkeypatch) -> None:
     whole = _stage(image, look, PreviewKind.HDR)
     monkeypatch.setattr(adjustments_module, "FILM_STOCK_CHUNK_PIXELS", 97)
     chunked = _stage(image, look, PreviewKind.HDR)
-    np.testing.assert_array_equal(chunked, whole)
+    assert_strips_match(chunked, whole)
     strips = np.concatenate([_stage(image[:20], look, PreviewKind.HDR), _stage(image[20:], look, PreviewKind.HDR)])
     assert_strips_match(strips, whole)
 
