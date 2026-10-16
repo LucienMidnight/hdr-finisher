@@ -214,6 +214,7 @@ async function exportCurrentSession() {
   els.exportConfirmButton.disabled = true;
   status.post({ id: "export", severity: "progress", message: "Rendering full-resolution HDR and SDR endpoints…", progress: "indeterminate" });
   els.exportResult.classList.add("hidden");
+  state.lastExportMessage = "";
   const exportStartedAt = performance.now();
   let lastExportExpectation = "Rendering full-resolution HDR and SDR endpoints";
   const exportTicker = window.setInterval(() => {
@@ -260,7 +261,9 @@ async function exportCurrentSession() {
     status.post({ id: "export", severity: measurementWarning ? "attention" : "success",
       message: measurementWarning ? `${completedMessage} See the Export panel for a measurement warning.` : completedMessage,
       dismissible: Boolean(measurementWarning) });
-    els.exportStatus.textContent = measurementWarning || "The completed export is available below.";
+    // Kept so reopening the Export tab still shows it until the next export.
+    state.lastExportMessage = measurementWarning || "The completed export is available below.";
+    els.exportStatus.textContent = state.lastExportMessage;
     if (payload.output_path) {
       const parsed = splitOutputPath(payload.output_path);
       els.exportFilename.value = parsed.filename;
@@ -330,7 +333,7 @@ function prepareExportRail() {
   renderCapabilities();
   renderFormatCards();
   updateExportAvailability();
-  els.exportStatus.textContent = "Choose a format and destination.";
+  els.exportStatus.textContent = state.lastExportMessage || "Choose a format and destination.";
 }
 
 function openExportSheet() {

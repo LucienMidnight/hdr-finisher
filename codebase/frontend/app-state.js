@@ -441,6 +441,7 @@ const state = {
   gpuPreparedLane: { hdr: false, sdr: false },
   scopeZoneOverlay: null,
   lastExportPath: "",
+  lastExportMessage: "",
   defaultExportDirectory: "",
   desktopEnvironment: null,
   desktopDocumentStateKey: "",

@@ -170,6 +170,7 @@ async function ejectCurrentSession() {
   state.interpretationGateDismissed = false;
   state.lastScope = null;
   state.lastExportPath = "";
+  state.lastExportMessage = "";
   state.gpuPreview?.resetSession();
   state.previewInfo = {
     mediaType: "n/a",
