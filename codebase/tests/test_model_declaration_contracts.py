@@ -70,10 +70,10 @@ def test_proof_request_order_signature_and_export_conversion_are_stable() -> Non
     )
     # The signature is an in-process cache key, never persisted. It changed on
     # October 1, 2026 when ``full_size`` joined the request.
-    # It includes the app version, so it changed again with 0.9.0 (October 8).
+    # It includes the app version, so it changed again with 0.9.1 (October 16).
     assert ProofArtifactStore._request_signature(
         "session", request, RenderColorContext(203)
-    ) == "4828bf231b07a5cd718fae32"
+    ) == "4d90f8b783b81b44bdc563ea"
 
     converted = request.to_export_settings("proof.jpg")
     for name in (

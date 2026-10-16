@@ -1,3 +1,42 @@
+# HDR Finisher 0.9.1
+
+0.9.1 adds a Photo Library for browsing and organising your pictures, and rebuilds Film Look with a larger choice of film stocks, print papers and lens filters.
+
+## Photo Library
+
+- Browse pinned folders in a thumbnail grid or filmstrip, open a single picture, or review full screen. Zoom in to inspect real detail, and compare two pictures with linked zoom and position.
+- Organise pictures with stars, colour labels, tags, manual albums and smart albums that follow your filter rules. Duplicate albums or turn a smart selection into a manual album.
+- Check focus and exposure with overlays, including shadow and highlight warnings based on the source picture.
+- Grades save in the background, with autosave status, recovery and conflict choices. Saved grades appear in Library pictures, and virtual copies let you keep several independent versions of a photo.
+- Copy and paste selected parts of a grade, or revert a photo or copy. Rename, move and delete photos and folders through confirmed commands with recovery records.
+- Background folder checks keep the Library current. Camera RAW browsing, read-ahead and reuse of pictures make moving between photos quicker, and edited Library pictures retain their HDR and SDR views.
+
+## Film Look
+
+- Choose from a library of negative and slide films, with stock-specific colour, tone, grain and character. Film Looks combine a stock with selected creative changes, and stage presets let you reuse individual parts of a look.
+- Five folding stages follow the picture through camera, development, printing and scanning. Push/Pull, print exposure, print contrast, shadow and highlight contrast, paper choice and scanner controls shape the result.
+- Film effects now follow their physical order. Grain at Fit reflects the downsized film scan, and halation favours red light as it would after reflection through the film base.
+- Black Pro-Mist, Pro-Mist, Glimmerglass and CineBloom lens filters provide different kinds of glow, with Strength and Size controls.
+- Stock-owned controls show which values belong to the selected stock and which you changed, with reset dots to return to the stock value.
+
+## Refinements
+
+- New branding, a tighter header, and Library and preset controls styled to match the side panels.
+- Grade loading appears immediately when opening a Library photo, and the preview retries on the graphics card when loading a film stock interrupts its first draft.
+- Neutral Film Look retains weak colour channels and a wider range before HDR highlight compression. Extremely bright, uncompressed grades still have the preview limit described below.
+
+## Changed or removed
+
+Bloom has been replaced by the lens filters. Projects or presets that used removed settings, including earlier Film Look controls, must be recreated. Before 1.0, removed settings are not migrated.
+
+## Known limitations
+
+This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. Very bright uncompressed HDR grades can exceed the preview's numerical range and show clipped colours or white patches; CPU export and Proof remain the reference. The widest lens-filter glows have bounded tails. Preview/export differences and other retained checks are recorded in Known limitations; release validation status is recorded there separately from these draft notes.
+
+See [Known limitations](https://github.com/LucienMidnight/hdr-finisher/blob/v0.9.1/docs/known-limitations.md) for support and validation status.
+
+**Full changelog:** https://github.com/LucienMidnight/hdr-finisher/compare/v0.9.0...v0.9.1
+
 # HDR Finisher 0.9.0
 
 0.9.0 is the largest update so far: about 400 changes since 0.8.12. The headlines are a preview that shows real full-resolution detail, much faster editing on large files, several new tools, and a codebase reorganised so it is easier to work on.
