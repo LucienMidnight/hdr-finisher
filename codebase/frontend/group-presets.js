@@ -39,7 +39,7 @@ function initializeGroupPresetControls() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "group-preset text-button";
-    button.textContent = groupElement.dataset.group === "film-look" ? "Looks" : "Preset";
+    button.textContent = "Preset";
     button.setAttribute("aria-haspopup", "dialog");
     button.addEventListener("click", () => openGroupPresetDialog(groupElement));
     const header = groupElement.querySelector(":scope > .control-group-header");
@@ -65,7 +65,7 @@ async function openGroupPresetDialog(groupElement) {
   const context = groupPresetContextForElement(groupElement);
   if (!context) return;
   state.groupPresetContext = context;
-  els.groupPresetTitle.textContent = `${context.label} Presets`;
+  els.groupPresetTitle.textContent = "Adjustment Presets";
   els.groupPresetContext.textContent = context.group === "film-look"
     ? `${context.lane.toUpperCase()} Film Look · built-ins are editable starting points; Reset returns Neutral.`
     : context.group === "black-and-white"
@@ -198,11 +198,11 @@ async function renderGroupPresetList() {
     if (state.groupPresetContext !== context) return;
     els.groupPresetList.replaceChildren();
     if (builtIns.length) {
-      appendGroupPresetSubheading(context.group === "black-and-white" ? "Built-in filter presets" : "Built-in character recipes");
+      appendGroupPresetSubheading("Built-in");
       builtIns.forEach(appendGroupPresetRow);
     }
     if (presets.length) {
-      appendGroupPresetSubheading("Saved presets");
+      appendGroupPresetSubheading("Saved");
       presets.forEach(appendGroupPresetRow);
     } else if (!builtIns.length) {
       const empty = document.createElement("p");
@@ -286,24 +286,42 @@ function applyGroupPreset(preset) {
 }
 
 
-// Simple temporary menus; Phase 6 owns the panel layout.
+// Fixed stage shortcuts share the existing recipe application path.
 function initializeFilmStagePresets() {
-  const anchors = {Lens:"lens_filter", Format:"grain_film_format", Development:"push_pull", Print:"print_paper", Scan:"scan_sharpening"};
-  for (const [name, entries] of Object.entries(HDRFilmCharacter.stages)) {
-    const anchor = document.querySelector(`[data-path="current.film_look.${anchors[name]}"]`);
-    const row = anchor?.closest(".control-row, .select-control");
-    if (!row) continue;
-    const label = document.createElement("label"); label.className = "select-control";
-    label.textContent = `${name} preset`;
-    const menu = document.createElement("select"); menu.dataset.filmStage = name;
-    menu.add(new Option("Choose preset…", ""));
-    entries.forEach(([title], index) => menu.add(new Option(title, String(index))));
-    menu.addEventListener("change", () => {
-      if (!state.session || menu.value === "") return;
-      HDRFilmCharacter.stage(state.adjustments[state.currentView].film_look, name, Number(menu.value));
-      syncControlsFromState(); renderControlState(); invalidatePreview(state.currentView); debouncePreview(state.currentView);
-      menu.value = "";
+  document.querySelectorAll("[data-film-shortcuts]").forEach(box => {
+    const name = box.dataset.filmShortcuts;
+    const label = document.createElement("span"); label.textContent = name;
+    box.append(label);
+    HDRFilmCharacter.stages[name].forEach(([title], index) => {
+      const button = document.createElement("button");
+      button.type = "button"; button.className = "button-secondary";
+      button.dataset.filmStage = name; button.dataset.filmRecipe = String(index);
+      button.textContent = title.replace(/ \(.*\)$/, "").replace(/ print$/, "");
+      button.title = title;
+      button.addEventListener("click", () => {
+        if (!state.session || button.disabled) return;
+        HDRFilmCharacter.stage(state.adjustments[state.currentView].film_look, name, index);
+        syncControlsFromState(); renderControlState(); invalidatePreview(state.currentView); debouncePreview(state.currentView);
+      });
+      box.append(button);
     });
-    label.append(menu); row.before(label);
-  }
+  });
+  document.querySelectorAll(".film-stage-heading").forEach(button => button.addEventListener("click", () => {
+    const expanded = button.getAttribute("aria-expanded") !== "true";
+    button.setAttribute("aria-expanded", String(expanded));
+    document.getElementById(button.getAttribute("aria-controls")).hidden = !expanded;
+  }));
+  document.querySelectorAll("[data-film-push]").forEach(button => {
+    button.addEventListener("click", () => {
+      if (state.session) commitAdjustmentValue("current.film_look.push_pull", Number(button.dataset.filmPush), {manual:true});
+    });
+    button.addEventListener("keydown", event => {
+      const buttons = [...button.parentElement.querySelectorAll("button")];
+      const direction = {ArrowLeft:-1, ArrowUp:-1, ArrowRight:1, ArrowDown:1}[event.key];
+      if (!direction && !["Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const index = event.key === "Home" ? 0 : event.key === "End" ? buttons.length-1 : (buttons.indexOf(button)+direction+buttons.length)%buttons.length;
+      buttons[index].focus(); buttons[index].click();
+    });
+  });
 }

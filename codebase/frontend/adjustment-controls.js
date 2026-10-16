@@ -150,6 +150,14 @@ function renderFilmStockControls() {
     if (control) control.disabled = slide;
   });
   document.querySelector("[data-film-slide-note]")?.toggleAttribute("hidden", !slide);
+  const printControls = document.querySelector(".film-print-controls");
+  if (printControls) printControls.disabled = slide;
+  document.querySelector('[data-film-section="print"]')?.classList.toggle("film-slide", slide);
+  for (const key of ["lens_strength", "lens_size"]) {
+    const control = document.querySelector(`[data-path="current.film_look.${key}"]`);
+    if (control) control.disabled = state.adjustments[state.currentView].film_look.lens_filter === "none";
+  }
+  renderFilmPanel();
 }
 
 function renderControlState() {
@@ -184,7 +192,7 @@ function renderControlState() {
   els.curveGroupState.textContent = "";
   els.curveReset.closest(".control-group")?.classList.toggle("modified", curvesModified);
   const filmModified = !valuesEqual(state.adjustments[state.currentView]?.film_look, currentLaneDefaults.film_look);
-  if (els.filmLookState) els.filmLookState.textContent = "";
+  if (els.filmLookState) els.filmLookState.textContent = filmModified ? "Mod" : "";
   els.filmLookReset?.closest(".control-group")?.classList.toggle("modified", filmModified);
   const gradingModified = !valuesEqual(state.adjustments[state.currentView]?.color_grading, currentLaneDefaults.color_grading);
   if (els.colorGradingState) els.colorGradingState.textContent = "";
@@ -208,6 +216,8 @@ function renderControlState() {
 }
 
 function isPathModified(path, defaults = defaultAdjustments()) {
+  const context = filmStockUiContext(path);
+  if (context && HDRFilmCharacter.tracked.includes(context.key)) return (context.film.stock_overrides || []).includes(context.key);
   return !valuesEqual(getValueByPath(state.adjustments, path), getValueByPath(defaults, path));
 }
 
@@ -421,7 +431,16 @@ function renderFilmStockDots() {
   if (!film) return;
   for (const key of HDRFilmCharacter.tracked) {
     const control = document.querySelector(`[data-path="current.film_look.${key}"]`);
-    const heading = control?.closest(".control-row")?.querySelector(".control-heading") || control?.closest(".select-control, .numeric-control, .film-module-toggle");
+    let heading = control?.closest(".control-row")?.querySelector(".control-heading");
+    const labelRow = control?.closest(".select-control, .numeric-control, .film-module-toggle");
+    if (!heading && labelRow) {
+      heading = labelRow.querySelector(".film-control-label");
+      if (!heading) {
+        heading = document.createElement("span"); heading.className = "film-control-label";
+        const copy = [...labelRow.childNodes].filter(node => node !== control);
+        heading.append(...copy); labelRow.prepend(heading);
+      }
+    }
     if (!heading) continue;
     let dot = heading.querySelector("[data-stock-reset]");
     if (!dot) {
@@ -430,17 +449,88 @@ function renderFilmStockDots() {
       dot.dataset.stockReset = key;
       dot.className = "film-stock-reset";
       dot.textContent = "●";
-      dot.addEventListener("click", () => resetFilmStockControl(key));
-      heading.append(dot);
+      dot.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); resetFilmStockControl(key); });
+      heading.prepend(dot);
     }
     const set = (film.stock_overrides || []).includes(key);
     dot.hidden = !set;
-    dot.disabled = !state.session;
-    const label = key === "print_paper" ? "Paper" : heading.querySelector("label, span")?.textContent || key;
-    dot.setAttribute("aria-label", `Return ${label} to the stock`);
-    dot.title = `Set by you. Return ${label} to the stock`;
-    if (key.startsWith("halation_")) control.title = film.film_stock === "none"
+    dot.disabled = !state.session || Boolean(control.closest("fieldset:disabled"));
+    const row = control.closest(".control-row, .select-control, .numeric-control, .film-module-toggle");
+    row?.classList.toggle("film-control-set", set);
+    if (HDRFilmCharacter.owned.includes(key)) {
+      let tag = heading.querySelector(".film-stock-tag");
+      if (!tag) { tag = document.createElement("span"); tag.className = "film-stock-tag"; tag.textContent = "STOCK"; heading.append(tag); }
+      tag.hidden = set;
+    }
+    const name = (heading.querySelector("label")?.textContent || heading.textContent).replace(/●|STOCK/g, "").trim();
+    const effect = control.closest(".film-effect-tile")?.querySelector(".film-module-header strong")?.textContent;
+    const label = effect ? (name === "Enabled" ? effect : `${effect} ${name}`) : name || key.replaceAll("_", " ");
+    control.setAttribute("aria-label", label);
+    dot.setAttribute("aria-label", `Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}`);
+    dot.title = `Mod. Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}`;
+    if (HDRFilmCharacter.owned.includes(key) && key.startsWith("halation_")) control.title = film.film_stock === "none"
       ? "Neutral has no halation of its own; these are absolute effect controls."
       : "100% is this stock's own value; Hue Offset 0 keeps its colour. Set values stay fixed when changing stock.";
   }
+}
+
+// Panel presentation only: never writes the saved Film Look or renderer data.
+function renderFilmPanel() {
+  const film = state.adjustments?.[state.currentView]?.film_look;
+  if (!film) return;
+  const character = HDRFilmCharacter.character(film);
+  const slide = film.film_stock !== "none" && character.default_paper === null;
+  const text = key => {
+    const control = document.querySelector(`[data-path="current.film_look.${key}"]`);
+    return control?.selectedOptions?.[0]?.textContent || String(film[key]);
+  };
+  const paperName = id => {
+    if (!id) return "None";
+    const option = document.querySelector(`[data-path="current.film_look.print_paper"] option[value="${id}"]`);
+    return option?.textContent || id.split("_").map(word => word === "typeii" ? "Type II" : word[0].toUpperCase()+word.slice(1)).join(" ");
+  };
+  const paper = paperName(film.print_paper === "default" ? character.default_paper : film.print_paper);
+  const facts = document.getElementById("film-stock-facts");
+  if (facts) {
+    const estimate = status => status && status !== "Confirmed" ? " · estimate" : "";
+    const amount = character.defaults.grain_amount;
+    const grain = amount <= 21 ? "Very fine grain" : amount <= 25 ? "Fine grain" : amount <= 30 ? "Medium grain" : "Coarse grain";
+    const halation = {strong:"Low halation", weak:"Visible halation", none:"Strong halation"}[character.halation?.antihalation] || "Halation";
+    const chips = film.film_stock === "none" ? ["Straight response", "No grain or halation of its own"] : [
+      (character.halation?.use === "cine" ? "Cinema film" : "Still film")+(slide ? " · slide" : ""),
+      grain+estimate(character.provenance?.grain_amount?.status),
+      halation+estimate(character.halation?.status),
+      slide ? "Scanned directly, no print" : `Prints on ${paperName(character.default_paper)}`];
+    facts.replaceChildren(...chips.map(copy => { const chip = document.createElement("span"); chip.textContent = copy; return chip; }));
+  }
+  const formatKeys = ["grain_film_format", "grain_capture_geometry", "grain_custom_width_mm", "grain_custom_height_mm", "stock_exposure", "lens_filter", "lens_strength", "lens_size"];
+  const printKeys = [...FILM_PRINT_KEYS];
+  const scanKeys = ["lab_levels", "scan_sharpening"];
+  const stageKeys = {camera:formatKeys, negative:HDRFilmCharacter.tracked.filter(key => ![...formatKeys, ...printKeys, ...scanKeys, "push_pull", "look_strength"].includes(key)), development:["push_pull"], print:printKeys, scan:scanKeys};
+  const grade = {0.125:"1/8", 0.25:"1/4", 0.5:"1/2", 1:"1", 2:"2"}[film.lens_strength] || Number(film.lens_strength).toFixed(2);
+  const summaries = {
+    camera:text("grain_film_format")+(film.lens_filter === "none" ? "" : ` · ${text("lens_filter")} ${grade}`),
+    negative:(film.grain_enabled ? `Grain ${Math.round(film.grain_amount)}` : "No grain")+" · "+(film.halation_enabled ? `Halation ${Math.round(HDRFilmCharacter.toUi(film, "halation_amount", film.halation_amount))}%` : "No halation"),
+    development:film.push_pull === 0 ? "Normal" : film.push_pull > 0 ? `Push +${film.push_pull}` : `Pull ${film.push_pull}`,
+    print:slide ? "No print" : paper+(film.stock_print_warmth ? film.stock_print_warmth > 0 ? " · Warm" : " · Cool" : ""),
+    scan:(film.lab_levels ? "Lab levels" : "Clean")+(film.scan_sharpening ? ` · Sharpen ${film.scan_sharpening}` : "")};
+  for (const [name, keys] of Object.entries(stageKeys)) {
+    const stage = document.querySelector(`[data-film-section="${name}"]`);
+    if (!stage) continue;
+    const summary = stage.querySelector(".film-stage-summary"); summary.textContent = summaries[name]; summary.title = summaries[name];
+    const count = keys.filter(key => (film.stock_overrides || []).includes(key)).length;
+    stage.querySelector(".film-stage-mod").textContent = count ? `${count} Mod` : "";
+  }
+  document.querySelectorAll("[data-film-push]").forEach(button => {
+    button.disabled = !state.session;
+    button.setAttribute("aria-pressed", String(Number(button.dataset.filmPush) === film.push_pull));
+  });
+  const note = document.getElementById("film-push-note");
+  if (note) note.textContent = film.film_stock === "kodak_portra_800"
+    ? "Portra 800 +1 and +2 use Kodak’s measured push data. Other positions approximate development through film contrast."
+    : "Approximate for this stock: changes film contrast in whole stops. Measured push data exists only for Portra 800 +1 and +2.";
+  const output = document.getElementById("film-output-note");
+  if (output) output.textContent = state.currentView === "hdr"
+    ? "HDR output: highlights above paper white keep their brightness ratios, so lamps and the sun stay bright. Nothing to set."
+    : "SDR output: the print fits the screen’s white. Nothing to set.";
 }
