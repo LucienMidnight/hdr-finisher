@@ -279,7 +279,7 @@
   });
   // Scheduling only: an active control gesture pauses Library background work.
   let picturePauseTimer;
-  const pausePictures = paused => fetch("/api/library-worker/pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "grade-control", paused }) }).catch(() => {});
+  const pausePictures = paused => fetch("/api/library-worker/pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "grading", paused }) }).catch(() => {});
   document.addEventListener("pointerdown", event => {
     if (state.activeWorkflow === "grade" && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true); }
   }, true);
