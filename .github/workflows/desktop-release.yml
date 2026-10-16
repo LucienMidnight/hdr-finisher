@@ -288,7 +288,7 @@ jobs:
           package_version="$(node -p "require('../../codebase/desktop/package.json').version")"
           flatpak install --user -y "HDR-Finisher-${package_version}-Linux-x86_64.flatpak"
           sidecar="/app/hdr-finisher/resources/backend/HDR Finisher Backend"
-          flatpak run --user --env=HDR_FINISHER_DESKTOP_SECRET=ci --env=HDR_FINISHER_DESKTOP_CONTROL_SECRET=ci --command="$sidecar" io.github.LucienMidnight.hdr-finisher --desktop-sidecar --parent-pid 999999999 | grep "\"backend_version\":\"${package_version}\""
+          flatpak run --user --env=HDR_FINISHER_DESKTOP_SECRET=ci --env=HDR_FINISHER_DESKTOP_CONTROL_SECRET=ci --env=HDR_FINISHER_APP_DATA_DIR=/tmp/hdr-finisher-ci --command="$sidecar" io.github.LucienMidnight.hdr-finisher --desktop-sidecar --parent-pid 999999999 | grep "\"backend_version\":\"${package_version}\""
           set +e
           timeout 20 dbus-run-session -- xvfb-run -a flatpak run --user io.github.LucienMidnight.hdr-finisher --disable-gpu
           status=$?
