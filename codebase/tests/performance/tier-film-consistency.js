@@ -32,7 +32,7 @@ function argument(name, fallback = null) {
 
   const configure = (scenario) => page.evaluate((selected) => {
     const look = state.adjustments.hdr.film_look;
-    const bloom = selected === "bloom" || selected === "diffusion" || selected === "combined";
+    const lens = selected !== "neutral" && selected !== "halation";
     const halation = selected === "halation" || selected === "combined";
     Object.assign(look, {
       look_strength: 100,
@@ -41,12 +41,10 @@ function argument(name, fallback = null) {
       halation_enabled: halation,
       halation_amount: halation ? 70 : 0,
       halation_radius: 1.2,
-      bloom_enabled: bloom,
-      bloom_amount: bloom ? 55 : 0,
-      bloom_radius: 3,
-      bloom_sensitivity: 75,
-      bloom_highlight_detail: selected === "diffusion" ? 0 : 100,
-      film_resolution: 100,
+      film_stock: "none",
+      lens_filter: lens ? (selected === "pro_mist" ? "pro_mist" : "black_pro_mist") : "none",
+      lens_strength: 0.5,
+      lens_size: 3,
     });
   }, scenario);
 
@@ -104,7 +102,7 @@ function argument(name, fallback = null) {
     const neutral4k = await captureTier("4096");
     const neutralFull = await captureTier("full");
     const scenarios = {};
-    for (const scenario of ["bloom", "diffusion", "halation", "combined"]) {
+    for (const scenario of ["black_pro_mist", "pro_mist", "halation", "combined"]) {
       await configure(scenario);
       scenarios[scenario] = {
         tier4k: await captureTier("4096"),
@@ -189,17 +187,15 @@ function argument(name, fallback = null) {
 
     console.log(JSON.stringify(metrics, null, 2));
     if (metrics.error) throw new Error(metrics.error);
-    // Keep the proportional regression guard intact. Chromium is the
-    // authoritative harness for this test and the dense-kernel change passes
-    // here; the earlier Electron-only failure came from that harness's fixed
-    // window geometry, not evidence that this threshold needed relaxing.
-    if (metrics.diffusion.meanContributionDisagreement
-      > metrics.bloom.meanContributionDisagreement * 1.25
-      || metrics.diffusion.peakContributionDisagreement
-      > metrics.bloom.peakContributionDisagreement * 1.25) {
+    // Compare the current lens families with the existing 1.25x guard.
+    // Do not relax it to accommodate a different physical filter model.
+    if (metrics.pro_mist.meanContributionDisagreement
+      > metrics.black_pro_mist.meanContributionDisagreement * 1.25
+      || metrics.pro_mist.peakContributionDisagreement
+      > metrics.black_pro_mist.peakContributionDisagreement * 1.25) {
       throw new Error(
-        "Bloom diffusion adds a tier-sensitive hard-edge echo: "
-        + JSON.stringify({ bloom: metrics.bloom, diffusion: metrics.diffusion }),
+        "Pro-Mist adds a tier-sensitive hard-edge echo relative to Black Pro-Mist: "
+        + JSON.stringify({ blackProMist: metrics.black_pro_mist, proMist: metrics.pro_mist }),
       );
     }
     if (errors.length) throw new Error(`Browser errors: ${errors.join(" | ")}`);
