@@ -54,10 +54,12 @@ async function main() {
       chooser = await chooserPromise;
       await chooser.setFiles(fixture);
     }
-    await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 120000 });
-    if (await page.locator("#interpretation-gate").isVisible()) await page.locator("#accept-interpretation").click();
-
+    // Wait for import completion, then review the source on the Grade screen.
+    await page.waitForFunction(() => Boolean(state.session) && !state.importInProgress, null, { timeout: 120000 });
     await page.locator('[data-workflow-tab="grade"]').click();
+    if (await page.evaluate(() => Boolean(state.session?.analysis?.needs_color_override))) {
+      await page.locator("#accept-interpretation").click();
+    }
     await page.locator('[data-path="hdr.exposure"]').evaluate((control) => {
       control.value = "0.2";
       control.dispatchEvent(new Event("input", { bubbles: true }));
