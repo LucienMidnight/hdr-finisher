@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Film Look panel mock-up · HDR Finisher</title>
+<style>
+/* Film Look panel mock-up, Phase 6, October 16, 2026. Layout and behaviour
+   reference only: colours and type copy the app's tokens
+   (docs/design/HDR_Finisher_Design_Guidelines.md); sliders are simplified.
+   Stock numbers are illustrative, not the shipped calibration. */
+@font-face { font-family: "Source Sans 3"; src: url("../../../codebase/frontend/assets/fonts/source-sans-3/SourceSans3-Variable.ttf"); font-weight: 200 900; }
+@font-face { font-family: "Gabarito"; src: url("../../../codebase/frontend/assets/fonts/gabarito/Gabarito-Variable.ttf"); font-weight: 400 900; }
+@font-face { font-family: "Space Mono"; src: url("../../../codebase/frontend/assets/fonts/space-mono/SpaceMono-Regular.ttf"); }
+:root {
+  --viewer: #07080a; --app: #0b0d0f; --panel: #101315; --raised: #171b1e; --input: #12171a; --deep: #06080a;
+  --hairline: rgba(255,255,255,.07); --border: #252a2e; --text: #f2f4f3; --body: #c3c8cb; --muted: #8d9299;
+  --quiet: #5f6870; --accent: #9b7bff; --accent-strong: #b49cff; --accent-bed: #211a3b; --attention: #ffb020;
+  --sans: "Source Sans 3", "Segoe UI", sans-serif; --display: "Gabarito", var(--sans); --mono: "Space Mono", Consolas, monospace;
+  --chev: url("../../../codebase/frontend/assets/icons/tabler/chevron-right.svg");
+}
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; display: grid; grid-template-columns: 1fr 320px 330px; background: var(--app); color: var(--body); font: 13px/1.35 var(--sans); overflow: hidden; }
+button, select, input { font: inherit; color: inherit; }
+.mocknote { position: fixed; left: 0; top: 0; right: 650px; padding: 6px 12px; background: #1d1a10; color: #d9cfae; font-size: 12px; border-bottom: 1px dashed var(--quiet); z-index: 5; }
+.mocknote b { color: #efbb55; font: 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; margin-right: 8px; }
+.viewer { background: var(--viewer); display: grid; place-items: center; padding: 40px; }
+.photo { width: 88%; aspect-ratio: 3/2; border-radius: 2px; background:
+  radial-gradient(circle at 70% 32%, #ffd9a3 0 2%, #ff9a52 3%, transparent 9%),
+  radial-gradient(circle at 28% 40%, #fff1c9 0 1.5%, #ffb46a 2.5%, transparent 7%),
+  linear-gradient(180deg, #1d2633 0%, #2c2e33 45%, #3a2f26 70%, #15110e 100%); position: relative; }
+.photo::after { content: "Preview"; position: absolute; left: 10px; bottom: 8px; font: 10px var(--mono); color: #ffffff55; letter-spacing: .1em; text-transform: uppercase; }
+
+/* Rail */
+.rail { background: var(--panel); border-left: 1px solid var(--hairline); overflow-y: auto; }
+.rail-title { padding: 12px 12px 10px; font: 600 13px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--text); border-bottom: 1px solid var(--hairline); }
+.tabs { display: flex; margin: 10px 12px 0; padding: 3px; background: linear-gradient(#06080a, #0d1012); border-radius: 4px; box-shadow: inset 0 1px 2px #000; }
+.tabs button { flex: 1; height: 26px; border: 0; background: transparent; color: var(--muted); border-radius: 3px; cursor: pointer; font: 600 11px var(--mono); letter-spacing: .08em; }
+.tabs button[aria-selected="true"] { background: linear-gradient(#22282c, #181c1f); color: var(--accent); box-shadow: inset 0 1px 0 #ffffff14, 0 1px 3px #0008; }
+.group { border-bottom: 1px solid var(--hairline); }
+.group-head { display: flex; align-items: center; height: 38px; padding: 0 8px 0 10px; gap: 4px; }
+.group-toggle { flex: 1; display: flex; align-items: center; gap: 6px; height: 38px; border: 0; background: none; cursor: pointer; padding: 0; text-align: left; }
+.idx { font: 11px var(--mono); color: var(--quiet); width: 16px; }
+.chev { width: 18px; height: 18px; background: var(--body); -webkit-mask: var(--chev) center/18px no-repeat; mask: var(--chev) center/18px no-repeat; transition: transform 120ms; flex: 0 0 auto; }
+[aria-expanded="true"] > .chev { transform: rotate(90deg); }
+.gtitle { font: 600 12px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--text); }
+.gstatus { margin-left: auto; font: 10px var(--mono); color: var(--body); display: flex; align-items: center; gap: 5px; }
+.gstatus:empty { display: none; }
+.gstatus::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.txtbtn { border: 0; background: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 3px 5px; }
+.txtbtn:hover { color: var(--text); }
+.eye { width: 26px; height: 26px; border: 0; background: none; color: var(--accent); cursor: pointer; font-size: 14px; }
+.group.open { border-top: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.group.open .idx { color: var(--accent); }
+.gbody { background: var(--raised); padding: 10px 12px 14px; display: grid; gap: 10px; }
+
+/* Controls */
+.row { display: grid; gap: 2px; }
+.rhead { display: flex; align-items: center; justify-content: space-between; min-height: 16px; gap: 8px; }
+.rhead label, .lbl { font-size: 12px; color: var(--body); display: flex; align-items: center; gap: 5px; }
+.val { font: 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.row.set .val { color: var(--text); }
+.from { font: 9px var(--mono); color: var(--quiet); letter-spacing: .04em; margin-left: 4px; }
+.row.set .from { display: none; }
+.dot { width: 13px; height: 13px; display: none; place-items: center; border: 0; padding: 0; background: none; cursor: pointer; }
+.dot::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.dot:hover::before { width: 7px; height: 7px; box-shadow: 0 0 0 2px var(--accent-bed); }
+.row.set .dot { display: grid; }
+input[type=range] { -webkit-appearance: none; width: 100%; height: 22px; margin: 0; background: none; cursor: ew-resize; }
+input[type=range]::-webkit-slider-runnable-track { height: 9px; border-radius: 3px; background: linear-gradient(90deg, var(--fillc, #3a4046) 0 var(--fill, 0%), transparent var(--fill, 0%)), linear-gradient(#050608, #1a1f23); box-shadow: inset 0 1px 2px #000, 0 1px 0 #ffffff10; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 17px; margin-top: -4px; border-radius: 2px; background: linear-gradient(#f0f2f3, #b7bcc0); }
+.row.set input[type=range] { --fillc: var(--accent); }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+select { width: 100%; height: 28px; padding: 0 8px; background: var(--input); border: 1px solid var(--border); border-radius: 3px; color: var(--text); font-size: 12px; }
+.row.set select { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.switch { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
+.switch input { appearance: none; width: 34px; height: 18px; border-radius: 9px; background: linear-gradient(#050608, #1a1f23); box-shadow: inset 0 1px 2px #000; position: relative; cursor: pointer; margin: 0; }
+.switch input::after { content: ""; position: absolute; top: 0; left: 0; width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f3f4f5, #9aa0a5); transition: left 120ms; }
+.switch input:checked { background: var(--accent); }
+.switch input:checked::after { left: 16px; }
+.seg { display: flex; padding: 2px; gap: 2px; background: linear-gradient(#06080a, #0d1012); border-radius: 4px; box-shadow: inset 0 1px 2px #000; }
+.seg button { flex: 1; height: 24px; border: 0; background: none; border-radius: 3px; color: var(--muted); font: 11px var(--mono); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: linear-gradient(#22282c, #181c1f); color: var(--accent); box-shadow: inset 0 1px 0 #ffffff14; }
+.mapbtn { justify-self: start; border: 1px solid var(--border); background: linear-gradient(#1d2226, #15191c); border-radius: 3px; color: var(--body); font-size: 11px; padding: 4px 9px; cursor: pointer; }
+.hint { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.credit { font-size: 10px; color: var(--quiet); }
+
+/* Look and stock */
+.lookbar { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.lookbtn { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 10px; background: var(--input); border: 1px solid var(--border); border-radius: 3px; cursor: pointer; text-align: left; }
+.lookbtn .lname { color: var(--text); font-size: 13px; font-weight: 600; }
+.lookbtn .lmod { font: 10px var(--mono); color: var(--body); display: flex; align-items: center; gap: 5px; }
+.lookbtn .lmod::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.lookbtn .lmod:empty::after { display: none; }
+.savebtn { height: 32px; padding: 0 10px; border: 1px solid var(--border); background: linear-gradient(#1d2226, #15191c); border-radius: 3px; color: var(--body); font-size: 12px; cursor: pointer; }
+.stockcard { border: 1px solid var(--border); border-radius: 3px; background: var(--panel); padding: 10px; display: grid; gap: 8px; }
+.stockcard .lbl { font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font: 10px var(--mono); color: var(--body); background: var(--raised); border: 1px solid var(--hairline); border-radius: 3px; padding: 2px 6px; }
+
+/* Stages */
+.stages { display: grid; border-top: 1px solid var(--hairline); margin: 0 -12px; }
+.stage { border-bottom: 1px solid var(--hairline); }
+.stage-head { width: 100%; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border: 0; background: none; cursor: pointer; text-align: left; }
+.stage-head .chev { width: 16px; height: 16px; -webkit-mask-size: 16px; mask-size: 16px; }
+.snum { font: 10px var(--mono); color: var(--quiet); }
+.sname { font: 600 11px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--body); }
+.ssum { margin-left: auto; font: 10px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.smod { font: 10px var(--mono); color: var(--body); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.smod::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.smod:empty { display: none; }
+.stage.open > .stage-head .sname { color: var(--text); }
+.stage.open > .stage-head .snum { color: var(--accent); }
+.sbody { display: none; padding: 4px 12px 14px; gap: 10px; background: color-mix(in srgb, var(--deep) 45%, var(--raised)); }
+.stage.open .sbody { display: grid; }
+.stage.disabled .sbody > :not(.slide-note) { opacity: .38; pointer-events: none; }
+.slide-note { display: none; font-size: 12px; color: var(--body); padding: 8px 10px; border: 1px dashed var(--border); border-radius: 3px; }
+.stage.disabled .slide-note { display: block; }
+.presets { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.presets .plabel { font: 10px var(--mono); color: var(--quiet); letter-spacing: .06em; text-transform: uppercase; margin-right: 2px; }
+.presets button { height: 22px; padding: 0 8px; border: 1px solid var(--border); background: linear-gradient(#1d2226, #15191c); border-radius: 11px; color: var(--body); font-size: 11px; cursor: pointer; }
+.presets button:hover { border-color: var(--accent); color: var(--text); }
+.tile { border: 1px solid var(--border); border-radius: 3px; padding: 8px 10px 10px; display: grid; gap: 8px; background: var(--raised); }
+.tile-head { display: flex; align-items: center; justify-content: space-between; }
+.tile-head strong { font: 600 10px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--text); }
+.rel { font: 9px var(--mono); color: var(--quiet); letter-spacing: .08em; text-transform: uppercase; border-top: 1px solid var(--hairline); padding-top: 6px; }
+.output { padding: 10px 12px 2px; display: grid; gap: 4px; }
+.output .sname { color: var(--muted); }
+
+/* Popover */
+.pop { position: fixed; z-index: 10; width: 300px; max-height: 70vh; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 14px 40px #000c; padding: 6px; display: none; }
+.pop.show { display: block; }
+.pop h4 { margin: 8px 8px 4px; font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--quiet); }
+.pop button.item { display: grid; width: 100%; text-align: left; padding: 7px 8px; border: 0; background: none; border-radius: 3px; cursor: pointer; }
+.pop button.item:hover { background: var(--accent-bed); }
+.pop .iname { color: var(--text); font-size: 13px; }
+.pop .idesc { color: var(--muted); font-size: 11px; }
+
+/* Notes */
+.notes { background: #0e0f0c; border-left: 1px solid var(--hairline); overflow-y: auto; padding: 14px 16px 30px; font-size: 12.5px; color: #cfcbbd; }
+.notes h2 { font: 600 12px var(--display); letter-spacing: .08em; text-transform: uppercase; color: #efbb55; margin: 0 0 8px; }
+.notes h3 { font-size: 12.5px; color: var(--text); margin: 14px 0 4px; }
+.notes p, .notes li { margin: 0 0 6px; line-height: 1.45; }
+.notes ol, .notes ul { padding-left: 18px; margin: 0; }
+.notes .q { border-left: 2px solid #efbb55; padding: 4px 8px; margin: 8px 0; background: #1a170e; }
+.notes .try { color: #9fd6a8; }
+</style>
+</head>
+<body>
+<div class="mocknote"><b>Mock-up</b>Film Look panel, Phase 6. Try: pick a stock, move a slider, click a dot, open a Look, choose a slide film, switch to SDR. Numbers are illustrative.</div>
+
+<main class="viewer"><div class="photo" role="img" aria-label="Preview placeholder"></div></main>
+
+<aside class="rail" aria-label="Control Panel">
+  <div class="rail-title">Control Panel</div>
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-lane="hdr">HDR</button>
+    <button role="tab" aria-selected="false" data-lane="sdr">SDR</button>
+  </div>
+  <section class="group"><div class="group-head"><button class="group-toggle" aria-expanded="false"><span class="idx">06</span><span class="chev"></span><span class="gtitle">Detail</span></button></div></section>
+
+  <section class="group open" id="film">
+    <div class="group-head">
+      <button class="group-toggle" aria-expanded="true"><span class="idx">07</span><span class="chev"></span><span class="gtitle">Film Look</span><span class="gstatus" id="film-status"></span></button>
+      <button class="txtbtn" id="film-reset">Reset</button>
+      <button class="eye" aria-pressed="true" aria-label="Toggle Film Look preview">&#9673;</button>
+    </div>
+    <div class="gbody">
+      <div id="match-row" hidden><button class="savebtn" style="width:100%">Match HDR film look</button><p class="hint" style="margin:4px 0 0">Copies the HDR look once; SDR stays independently editable.</p></div>
+
+      <div class="lookbar">
+        <button class="lookbtn" id="look-btn" aria-haspopup="dialog"><span><span class="from" style="margin:0 6px 0 0">LOOK</span><span class="lname" id="look-name">None</span></span><span class="lmod" id="look-mod"></span></button>
+        <button class="savebtn" id="save-look" title="Save the current Film Look as your own Look">Save</button>
+      </div>
+      <div class="row" data-k="look_strength"></div>
+
+      <div class="stockcard">
+        <div class="rhead"><span class="lbl">Film stock</span></div>
+        <select id="stock" aria-label="Film stock"></select>
+        <div class="chips" id="stock-chips"></div>
+        <div class="credit">Stock data: spektrafilm by Andrea Volpato · CC BY-SA 4.0</div>
+      </div>
+
+      <div class="stages" id="stages">
+        <section class="stage" data-stage="camera">
+          <button class="stage-head" aria-expanded="false"><span class="chev"></span><span class="snum">1</span><span class="sname">Camera</span><span class="ssum"></span><span class="smod"></span></button>
+          <div class="sbody">
+            <div class="presets" data-presets="format"><span class="plabel">Format</span></div>
+            <div class="pair"><div class="row" data-k="format"></div><div class="row" data-k="geometry"></div></div>
+            <div class="row" data-k="film_exposure"></div>
+            <div class="presets" data-presets="lens"><span class="plabel">Lens</span></div>
+            <div class="row" data-k="lens_filter"></div>
+            <div class="pair"><div class="row" data-k="lens_strength"></div><div class="row" data-k="lens_size"></div></div>
+          </div>
+        </section>
+        <section class="stage open" data-stage="negative">
+          <button class="stage-head" aria-expanded="true"><span class="chev"></span><span class="snum">2</span><span class="sname">Negative</span><span class="ssum"></span><span class="smod"></span></button>
+          <div class="sbody">
+            <div class="pair"><div class="row" data-k="stock_color"></div><div class="row" data-k="stock_tone"></div></div>
+            <div class="row" data-k="separation"></div>
+            <div class="tile">
+              <div class="tile-head"><strong>Halation</strong><div class="row" data-k="halation_on" style="display:block"></div></div>
+              <button class="mapbtn">Show halation map</button>
+              <div class="pair"><div class="row" data-k="halation_amount"></div><div class="row" data-k="halation_spread"></div></div>
+              <div class="pair"><div class="row" data-k="halation_hue"></div><div class="row" data-k="halation_sat"></div></div>
+            </div>
+            <div class="row" data-k="resolution"></div>
+            <div class="tile">
+              <div class="tile-head"><strong>Grain</strong><div class="row" data-k="grain_on" style="display:block"></div></div>
+              <button class="mapbtn">Show grain map</button>
+              <div class="row" data-k="grain_type"></div>
+              <div class="pair"><div class="row" data-k="grain_amount"></div><div class="row" data-k="grain_size"></div></div>
+              <div class="pair"><div class="row" data-k="grain_softness"></div><div class="row" data-k="grain_chroma"></div></div>
+              <div class="rel">Tone response</div>
+              <div class="row" data-k="resp_shadow"></div><div class="row" data-k="resp_mid"></div><div class="row" data-k="resp_high"></div>
+            </div>
+          </div>
+        </section>
+        <section class="stage" data-stage="development">
+          <button class="stage-head" aria-expanded="false"><span class="chev"></span><span class="snum">3</span><span class="sname">Development</span><span class="ssum"></span><span class="smod"></span></button>
+          <div class="sbody">
+            <div class="row" data-k="push_pull"></div>
+            <p class="hint" id="push-hint"></p>
+          </div>
+        </section>
+        <section class="stage" data-stage="print">
+          <button class="stage-head" aria-expanded="false"><span class="chev"></span><span class="snum">4</span><span class="sname">Print</span><span class="ssum"></span><span class="smod"></span></button>
+          <div class="sbody">
+            <p class="slide-note">Slide film has no print. It is scanned directly, so these controls do not apply.</p>
+            <div class="presets" data-presets="print"><span class="plabel">Print</span></div>
+            <div class="row" data-k="paper"></div>
+            <div class="row" data-k="print_exposure"></div>
+            <div class="pair"><div class="row" data-k="warmth"></div><div class="row" data-k="tint"></div></div>
+            <div class="row" data-k="preflash"></div>
+            <div class="row" data-k="print_contrast"></div>
+            <div class="pair"><div class="row" data-k="shadow_contrast"></div><div class="row" data-k="highlight_contrast"></div></div>
+          </div>
+        </section>
+        <section class="stage" data-stage="scan">
+          <button class="stage-head" aria-expanded="false"><span class="chev"></span><span class="snum">5</span><span class="sname">Scan</span><span class="ssum"></span><span class="smod"></span></button>
+          <div class="sbody">
+            <div class="presets" data-presets="scan"><span class="plabel">Scan</span></div>
+            <div class="row" data-k="lab_levels"></div>
+            <div class="row" data-k="scan_sharpening"></div>
+          </div>
+        </section>
+      </div>
+      <div class="output" id="output-note"></div>
+    </div>
+  </section>
+
+  <section class="group"><div class="group-head"><button class="group-toggle" aria-expanded="false"><span class="idx">08</span><span class="chev"></span><span class="gtitle">Vignette</span></button></div></section>
+</aside>
+
+<aside class="notes" aria-label="Design notes">
+  <h2>Notes for Steve</h2>
+  <p>How the panel is organised, and what to look at. Everything is clickable.</p>
+
+  <h3>1. Look first, then the film</h3>
+  <p>The top row is the <b>Look</b>: a complete recipe. It shows the Look's name, and <b>Mod</b> once you change anything. <b>Save</b> keeps your own. Under it, the <b>Film stock</b> card says what the stock brings, in plain words.</p>
+
+  <h3>2. Five stages, in the order light travels</h3>
+  <p>Camera → Negative → Development → Print → Scan. Each folds open on its own. When folded, it shows a short summary (for example "35mm · Pro-Mist 1/4") and how many controls you changed.</p>
+  <p class="try">Try: fold Negative and open Print.</p>
+
+  <h3>3. "From the stock" or set</h3>
+  <p>Values the stock fills in are grey and marked <span style="font:10px var(--mono);color:var(--quiet)">STOCK</span>. Once you change one, its value turns white, its slider fills violet, and a <b>dot</b> appears by its name. Clicking the dot puts the stock's value back.</p>
+  <p class="try">Try: move Grain Amount, then switch the stock to Portra 800. Your grain stays; halation follows the new stock. Then click the dot.</p>
+
+  <h3>4. Presets live inside their stage</h3>
+  <p>Small buttons at the top of a stage (Lens, Format, Print, Scan). They change that stage only, and what they change shows dots.</p>
+
+  <h3>5. Slides</h3>
+  <p>Pick Velvia or Kodachrome: Print fades out with a short note, and the Print summary says "No print".</p>
+
+  <h3>6. Output is a note, not a stage</h3>
+  <p>There is nothing to set; it just tells you what happens to HDR highlights. In SDR, "Match HDR film look" sits at the top.</p>
+
+  <h3>Changes from the plan</h3>
+  <ul>
+    <li><b>Lens is called Camera</b> and also holds Film Format and Film Exposure: these are camera decisions.</li>
+    <li><b>The stock picker sits above the stages</b>, not inside Negative, because it drives all of them.</li>
+    <li><b>Push/Pull is five buttons</b> (−2 to +2) instead of a slider: it only takes whole stops.</li>
+    <li><b>Grain response trims</b> sit in the Grain tile under "Tone response".</li>
+  </ul>
+
+  <h3>Questions for you</h3>
+  <div class="q"><b>Q1. Show the Look's name?</b> Codex chose not to remember which Look you applied, so the menu says "Choose preset" again after use. I'd remember it and add "Mod" when you edit, as shown here. Small change; tell me if you prefer Codex's way.</div>
+  <div class="q"><b>Q2. Which stage starts open?</b> The app's rule is that groups start closed. Inside Film Look I'd open Negative by default, since it holds grain and halation. Or keep all five closed.</div>
+  <div class="q"><b>Q3. "STOCK" tag.</b> Is the small grey tag next to inherited values helpful, or noise? Without it, only the grey value tells you.</div>
+</aside>
+
+<div class="pop" id="look-pop" role="dialog" aria-label="Looks"></div>
+
+<script>
+const STOCKS = {
+  none:      { name: "Neutral", type: "neg", use: "—", ah: "—", paper: "None (straight)", grain: 0, size: 0, hal: 0, chips: ["No grain or halation of its own"] },
+  portra400: { name: "Kodak Portra 400", type: "neg", use: "Still", ah: "strong", paper: "Kodak Portra Endura", grain: 24, size: 30, hal: 100, chips: ["Still film", "Fine grain", "Low halation", "Prints on Portra Endura"] },
+  portra800: { name: "Kodak Portra 800", type: "neg", use: "Still", ah: "strong", paper: "Kodak Portra Endura", grain: 31, size: 36, hal: 100, chips: ["Still film", "Medium grain", "Low halation", "Prints on Portra Endura"] },
+  gold200:   { name: "Kodak Gold 200", type: "neg", use: "Still", ah: "weak", paper: "Kodak Portra Endura", grain: 29, size: 34, hal: 100, chips: ["Still film", "Medium grain", "Visible halation", "Prints on Portra Endura"] },
+  v500t:     { name: "Kodak Vision3 500T", type: "neg", use: "Cine", ah: "strong", paper: "Kodak 2383", grain: 29, size: 34, hal: 100, chips: ["Cinema film", "Medium grain", "Low halation", "Prints on Kodak 2383"] },
+  pro400h:   { name: "Fujifilm Pro 400H", type: "neg", use: "Still", ah: "strong", paper: "Fujifilm Crystal Archive", grain: 24, size: 30, hal: 100, chips: ["Still film", "Fine grain · estimate", "Low halation", "Prints on Crystal Archive"] },
+  velvia:    { name: "Fujifilm Velvia 100", type: "slide", use: "Still", ah: "strong", paper: "None (slide)", grain: 19, size: 24, hal: 100, chips: ["Slide film", "Very fine grain · estimate", "Scanned directly, no print"] },
+  kodachrome:{ name: "Kodak Kodachrome 64", type: "slide", use: "Still", ah: "weak", paper: "None (slide)", grain: 19, size: 24, hal: 100, chips: ["Slide film", "Very fine grain · estimate", "Scanned directly, no print"] },
+};
+const STOCK_OWNED = ["grain_amount", "grain_size", "halation_amount", "halation_spread", "halation_hue", "halation_sat", "paper"];
+const GRADES = [[0.125, "1/8"], [0.25, "1/4"], [0.5, "1/2"], [1, "1"], [2, "2"]];
+const C = {
+  look_strength: { label: "Look Strength", kind: "range", min: 0, max: 100, def: 100, fmt: v => v + "%" },
+  format: { label: "Film Format", kind: "select", opts: [["65mm", "65mm"], ["35mm", "35mm"], ["super35", "Super 35"], ["super16", "Super 16"], ["16mm", "16mm"], ["super8", "Super 8"], ["custom", "Custom"]], def: "35mm" },
+  geometry: { label: "Capture", kind: "select", opts: [["frame", "Frame"], ["hstrip", "Horizontal strip"], ["vstrip", "Vertical strip"]], def: "frame" },
+  film_exposure: { label: "Film Exposure", kind: "range", min: -3, max: 3, step: .01, def: 0, fmt: v => (v > 0 ? "+" : "") + v.toFixed(2) + " EV" },
+  lens_filter: { label: "Lens Filter", kind: "select", opts: [["none", "None"], ["bpm", "Black Pro-Mist"], ["pm", "Pro-Mist"], ["glim", "Glimmerglass"], ["cine", "CineBloom"]], def: "none" },
+  lens_strength: { label: "Strength", kind: "range", min: 0, max: 4, step: 1, def: 2, fmt: v => GRADES[v][1], dis: () => S.v.lens_filter === "none" },
+  lens_size: { label: "Size", kind: "range", min: .25, max: 4, step: .05, def: 1, fmt: v => v.toFixed(2) + "×", dis: () => S.v.lens_filter === "none" },
+  stock_color: { label: "Stock Color", kind: "range", min: 0, max: 100, def: 100, fmt: v => v + "%" },
+  stock_tone: { label: "Stock Tone", kind: "range", min: 0, max: 100, def: 100, fmt: v => v + "%" },
+  separation: { label: "Color Separation", kind: "range", min: -100, max: 100, def: 0, fmt: v => v + "%" },
+  halation_on: { label: "", kind: "switch", def: true, aria: "Halation" },
+  halation_amount: { label: "Amount", kind: "range", min: 0, max: 200, def: 100, fmt: v => v + "%" },
+  halation_spread: { label: "Spread", kind: "range", min: 25, max: 300, def: 100, fmt: v => v + "%" },
+  halation_hue: { label: "Hue Offset", kind: "range", min: -100, max: 100, def: 0, fmt: v => (v > 0 ? "+" : "") + v },
+  halation_sat: { label: "Saturation", kind: "range", min: 0, max: 200, def: 100, fmt: v => v + "%" },
+  resolution: { label: "Film Resolution", kind: "range", min: 0, max: 100, def: 100, fmt: v => v + "%" },
+  grain_on: { label: "", kind: "switch", def: true, aria: "Grain" },
+  grain_type: { label: "Film Type", kind: "select", opts: [["color", "Color negative"], ["bw", "Black & white"]], def: "color" },
+  grain_amount: { label: "Amount", kind: "range", min: 0, max: 100, def: 0, fmt: v => v },
+  grain_size: { label: "Size", kind: "range", min: 0, max: 100, def: 0, fmt: v => v },
+  grain_softness: { label: "Softness", kind: "range", min: 0, max: 100, def: 25, fmt: v => v + "%" },
+  grain_chroma: { label: "Chroma", kind: "range", min: 0, max: 100, def: 0, fmt: v => v + "%" },
+  resp_shadow: { label: "Shadows", kind: "range", min: 0, max: 150, def: 100, fmt: v => v + "%" },
+  resp_mid: { label: "Midtones", kind: "range", min: 0, max: 150, def: 100, fmt: v => v + "%" },
+  resp_high: { label: "Highlights", kind: "range", min: 0, max: 150, def: 100, fmt: v => v + "%" },
+  push_pull: { label: "Push / Pull", kind: "seg", opts: [[-2, "−2"], [-1, "−1"], [0, "0"], [1, "+1"], [2, "+2"]], def: 0 },
+  paper: { label: "Paper", kind: "select", opts: [["default", "Stock's own paper"], ["2383", "Kodak 2383 (cinema)"], ["ca", "Fujifilm Crystal Archive II"]], def: "default" },
+  print_exposure: { label: "Print Exposure", kind: "range", min: -3, max: 3, step: .01, def: 0, fmt: v => (v > 0 ? "+" : "") + v.toFixed(2) + " EV" },
+  warmth: { label: "Print Warmth", kind: "range", min: -100, max: 100, def: 0, fmt: v => (v > 0 ? "+" : "") + v },
+  tint: { label: "Print Tint", kind: "range", min: -100, max: 100, def: 0, fmt: v => (v > 0 ? "+" : "") + v },
+  preflash: { label: "Preflash", kind: "range", min: 0, max: 100, def: 0, fmt: v => v + "%" },
+  print_contrast: { label: "Print Contrast", kind: "range", min: -100, max: 100, def: 0, fmt: v => (v > 0 ? "+" : "") + v },
+  shadow_contrast: { label: "Shadow Contrast", kind: "range", min: -100, max: 100, def: 0, fmt: v => (v > 0 ? "+" : "") + v },
+  highlight_contrast: { label: "Highlight Contrast", kind: "range", min: -100, max: 100, def: 0, fmt: v => (v > 0 ? "+" : "") + v },
+  lab_levels: { label: "Lab Levels (auto black and white)", kind: "switch", def: false },
+  scan_sharpening: { label: "Scan Sharpening", kind: "range", min: 0, max: 100, def: 0, fmt: v => v },
+};
+const STAGES = {
+  camera: ["format", "geometry", "film_exposure", "lens_filter", "lens_strength", "lens_size"],
+  negative: ["stock_color", "stock_tone", "separation", "halation_on", "halation_amount", "halation_spread", "halation_hue", "halation_sat", "resolution", "grain_on", "grain_type", "grain_amount", "grain_size", "grain_softness", "grain_chroma", "resp_shadow", "resp_mid", "resp_high"],
+  development: ["push_pull"],
+  print: ["paper", "print_exposure", "warmth", "tint", "preflash", "print_contrast", "shadow_contrast", "highlight_contrast"],
+  scan: ["lab_levels", "scan_sharpening"],
+};
+const PRESETS = {
+  format: [["65mm", { format: "65mm" }], ["35mm", { format: "35mm" }], ["Super 16", { format: "super16" }], ["Super 8", { format: "super8" }]],
+  lens: [["None", { lens_filter: "none", lens_strength: 2, lens_size: 1 }], ["Light diffusion", { lens_filter: "bpm", lens_strength: 0, lens_size: 1 }], ["Soft glow", { lens_filter: "pm", lens_strength: 1, lens_size: 1 }], ["Sparkle", { lens_filter: "glim", lens_strength: 1, lens_size: 1 }], ["Heavy bloom", { lens_filter: "cine", lens_strength: 2, lens_size: 1 }]],
+  print: [["Neutral", {}], ["Warm", { warmth: 15 }], ["Cool", { warmth: -15 }], ["Soft", { print_contrast: -20 }], ["Rich", { print_contrast: 20 }], ["Cinema", { paper: "2383" }]].map(([n, p]) => [n, Object.assign({ paper: "default", print_exposure: 0, warmth: 0, tint: 0, preflash: 0, print_contrast: 0, shadow_contrast: 0, highlight_contrast: 0 }, p)]),
+  scan: [["Clean scan", { lab_levels: false, scan_sharpening: 0 }], ["Lab scan", { lab_levels: true, scan_sharpening: 25 }]],
+};
+const LOOKS = [
+  ["Clean Cinema", "Fine, clean cinema print with light diffusion", "v500t", { paper: "2383", lens_filter: "bpm", lens_strength: 0 }],
+  ["Soft Color Negative", "Gentle colour and softer contrast", "pro400h", { print_contrast: -15, separation: -10 }],
+  ["High-Speed Texture", "Pushed Portra 800, coarse Super 16 texture and glow", "portra800", { push_pull: 1, format: "super16", lens_filter: "pm", lens_strength: 1 }],
+  ["Portra 400 Natural", "The stock's own character, nothing changed", "portra400", {}],
+  ["Night Tungsten", "Vision3 500T with soft cinema glow", "v500t", { paper: "2383", lens_filter: "pm", lens_strength: 1 }],
+  ["Everyday Gold", "A gently warm consumer print", "gold200", { warmth: 12 }],
+  ["Velvia Landscape", "Saturated slide colour", "velvia", {}],
+  ["Kodachrome", "The classic slide character", "kodachrome", {}],
+];
+
+function stockValue(k) {
+  const s = STOCKS[S.stock];
+  if (k === "grain_amount") return s.grain;
+  if (k === "grain_size") return s.size;
+  if (k === "paper") return "default";
+  return C[k].def;
+}
+function fresh() { const v = {}; for (const k in C) v[k] = C[k].def; return v; }
+const S = { lane: "hdr", stock: "portra400", v: fresh(), set: new Set(), look: null, lookMod: false };
+function inherit() { for (const k of STOCK_OWNED) if (!S.set.has(k)) S.v[k] = stockValue(k); }
+function setVal(k, val, fromUser = true) {
+  S.v[k] = val; S.set.add(k);
+  if (fromUser && S.look) S.lookMod = true;
+  render();
+}
+function resetVal(k) {
+  S.set.delete(k);
+  S.v[k] = STOCK_OWNED.includes(k) ? stockValue(k) : C[k].def;
+  if (S.look) S.lookMod = true;
+  render();
+}
+
+function build() {
+  const sel = document.getElementById("stock");
+  for (const [id, s] of Object.entries(STOCKS)) sel.add(new Option(s.name, id));
+  sel.onchange = () => { S.stock = sel.value; if (S.look) S.lookMod = true; inherit(); render(); };
+  document.querySelectorAll(".row[data-k]").forEach(el => {
+    const k = el.dataset.k, c = C[k];
+    const owned = STOCK_OWNED.includes(k);
+    const head = c.label ? `<div class="rhead"><label><button class="dot" title="Back to the ${owned ? "stock's" : "default"} value" aria-label="Reset ${c.label}"></button>${c.label}</label><span><span class="val"></span>${owned ? '<span class="from">STOCK</span>' : ""}</span></div>` : "";
+    if (c.kind === "range") {
+      el.innerHTML = head + `<input type="range" min="${c.min}" max="${c.max}" step="${c.step || 1}" aria-label="${c.label}">`;
+      const inp = el.querySelector("input");
+      inp.oninput = () => setVal(k, Number(inp.value));
+      inp.ondblclick = () => resetVal(k);
+    } else if (c.kind === "select") {
+      el.innerHTML = head + `<select aria-label="${c.label}">${c.opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>`;
+      el.querySelector("select").onchange = e => setVal(k, e.target.value);
+    } else if (c.kind === "switch") {
+      el.innerHTML = `<label class="switch">${c.label ? `<span class="lbl"><button class="dot" aria-label="Reset ${c.label}"></button>${c.label}</span>` : '<button class="dot" aria-label="Reset"></button>'}<input type="checkbox" aria-label="${c.aria || c.label}"></label>`;
+      el.querySelector("input").onchange = e => setVal(k, e.target.checked);
+    } else if (c.kind === "seg") {
+      el.innerHTML = head + `<div class="seg" role="group" aria-label="${c.label}">${c.opts.map(([v, t]) => `<button data-v="${v}">${t}</button>`).join("")}</div>`;
+      el.querySelectorAll(".seg button").forEach(b => b.onclick = () => setVal(k, Number(b.dataset.v)));
+    }
+    el.querySelectorAll(".dot").forEach(d => d.onclick = e => { e.preventDefault(); e.stopPropagation(); resetVal(k); });
+  });
+  document.querySelectorAll("[data-presets]").forEach(box => {
+    for (const [name, vals] of PRESETS[box.dataset.presets]) {
+      const b = document.createElement("button"); b.textContent = name;
+      b.onclick = () => { for (const [k, val] of Object.entries(vals)) { S.v[k] = val; S.set.add(k); } if (S.look) S.lookMod = true; render(); };
+      box.appendChild(b);
+    }
+  });
+  document.querySelectorAll(".stage-head").forEach(h => h.onclick = () => {
+    const st = h.parentElement; st.classList.toggle("open"); h.setAttribute("aria-expanded", st.classList.contains("open"));
+  });
+  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+    S.lane = b.dataset.lane;
+    document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
+    render();
+  });
+  document.getElementById("film-reset").onclick = () => { S.v = fresh(); S.set.clear(); S.look = null; S.lookMod = false; S.stock = "none"; inherit(); render(); };
+  const pop = document.getElementById("look-pop");
+  pop.innerHTML = "<h4>Built-in Looks</h4>" + LOOKS.map((l, i) => `<button class="item" data-i="${i}"><span class="iname">${l[0]}</span><span class="idesc">${l[1]}</span></button>`).join("") + '<h4>Your Looks</h4><button class="item"><span class="iname">Street at dusk</span><span class="idesc">Saved October 12</span></button>';
+  pop.querySelectorAll("button[data-i]").forEach(b => b.onclick = () => {
+    const [name, , stock, vals] = LOOKS[b.dataset.i];
+    S.v = fresh(); S.set.clear(); S.stock = stock;
+    for (const [k, val] of Object.entries(vals)) { S.v[k] = val; S.set.add(k); }
+    inherit(); S.look = name; S.lookMod = false; pop.classList.remove("show"); render();
+  });
+  const btn = document.getElementById("look-btn");
+  btn.onclick = e => { const r = btn.getBoundingClientRect(); pop.style.left = (r.left - 310) + "px"; pop.style.top = r.top + "px"; pop.classList.toggle("show"); e.stopPropagation(); };
+  document.addEventListener("click", e => { if (!pop.contains(e.target)) pop.classList.remove("show"); });
+}
+
+function summary(st) {
+  const v = S.v, s = STOCKS[S.stock];
+  const fmt = C.format.opts.find(o => o[0] === v.format)[1];
+  if (st === "camera") return fmt + (v.lens_filter === "none" ? "" : " · " + C.lens_filter.opts.find(o => o[0] === v.lens_filter)[1] + " " + GRADES[v.lens_strength][1]);
+  if (st === "negative") return (v.grain_on ? "Grain " + v.grain_amount : "No grain") + " · " + (v.halation_on ? "Halation " + v.halation_amount + "%" : "No halation");
+  if (st === "development") return v.push_pull === 0 ? "Normal" : (v.push_pull > 0 ? "Push +" : "Pull ") + v.push_pull;
+  if (st === "print") { if (s.type === "slide") return "No print"; const p = v.paper === "default" ? s.paper : C.paper.opts.find(o => o[0] === v.paper)[1]; return p + (v.warmth ? (v.warmth > 0 ? " · Warm" : " · Cool") : ""); }
+  if (st === "scan") return (v.lab_levels ? "Lab levels" : "Clean") + (v.scan_sharpening ? " · Sharpen " + v.scan_sharpening : "");
+}
+
+function render() {
+  const s = STOCKS[S.stock];
+  document.getElementById("stock").value = S.stock;
+  document.getElementById("stock-chips").innerHTML = s.chips.map(c => `<span class="chip">${c}</span>`).join("");
+  document.querySelectorAll(".row[data-k]").forEach(el => {
+    const k = el.dataset.k, c = C[k], val = S.v[k];
+    el.classList.toggle("set", S.set.has(k));
+    const out = el.querySelector(".val");
+    if (c.kind === "range") {
+      const inp = el.querySelector("input"); inp.value = val;
+      const home = c.min < 0 ? 0 : c.min; const lo = Math.min(home, val), hi = Math.max(home, val);
+      inp.style.setProperty("--fill", ((hi - c.min) / (c.max - c.min) * 100) + "%");
+      if (out) out.textContent = c.fmt(val);
+      inp.disabled = c.dis ? c.dis() : false; el.style.opacity = inp.disabled ? .4 : 1;
+    } else if (c.kind === "select") { el.querySelector("select").value = val; if (out) out.textContent = ""; }
+    else if (c.kind === "switch") el.querySelector("input").checked = val;
+    else if (c.kind === "seg") { el.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.v) === val)); if (out) out.textContent = ""; }
+  });
+  let total = 0;
+  for (const [st, keys] of Object.entries(STAGES)) {
+    const n = keys.filter(k => S.set.has(k)).length; total += n;
+    const sec = document.querySelector(`[data-stage="${st}"]`);
+    sec.querySelector(".ssum").textContent = summary(st);
+    sec.querySelector(".smod").textContent = n ? n + " Mod" : "";
+  }
+  document.querySelector('[data-stage="print"]').classList.toggle("disabled", s.type === "slide");
+  const anyMod = total > 0 || S.stock !== "none" || S.set.has("look_strength");
+  document.getElementById("film-status").textContent = anyMod ? "Mod" : "";
+  document.getElementById("look-name").textContent = S.look || (S.stock === "none" ? "None" : "No Look");
+  document.getElementById("look-mod").textContent = S.look && S.lookMod ? "Mod" : "";
+  document.getElementById("match-row").hidden = S.lane !== "sdr";
+  document.getElementById("push-hint").textContent = S.stock === "portra800" ? "Portra 800 +1 and +2 use Kodak's measured push data." : "Approximate for this stock: changes the film's contrast in whole stops. Measured push data exists only for Portra 800.";
+  document.getElementById("output-note").innerHTML = S.lane === "hdr"
+    ? '<span class="sname">Output</span><span class="hint">HDR: highlights above paper white keep their brightness ratios, so lamps and the sun stay bright instead of turning into flat paper white. Nothing to set.</span>'
+    : '<span class="sname">Output</span><span class="hint">SDR: the print fits the screen’s white. Nothing to set.</span>';
+}
+build(); inherit(); render();
+</script>
+</body>
+</html>
