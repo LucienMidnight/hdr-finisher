@@ -36,6 +36,8 @@ async function boot() {
   observeGraphEditorSizes();
   observeViewerSize();
   void window.HDRGradeSaving?.offerRecovery().catch(error => showUploadError(error.message));
+  // Start-up is complete; tests wait for this before driving the app.
+  document.body.dataset.ready = "true";
 }
 
 async function initializeGpuPreview() {

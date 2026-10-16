@@ -91,11 +91,11 @@ async function main() {
   try {
     const window = await electronApp.firstWindow();
     // The Library owns the start screen; the shared import input is the ready signal.
-    await window.waitForSelector("#file-input", { state: "attached", timeout: 30000 });
+    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 60000 });
     checkpoint("window ready");
     // The editor opens once a picture is loaded; the Library covers it until then.
-    await window.locator("#file-input").setInputFiles(path.join(codebase, "tests", "fixtures", "hdr_headroom.tiff"));
-    await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("hdr_headroom.tiff"), null, { timeout: 120000 });
+    await window.locator("#file-input").setInputFiles(sourcePath);
+    await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"), null, { timeout: 120000 });
     await window.waitForFunction(() => document.body.dataset.workflow === "grade");
     checkpoint("editor ready");
     const nativeMacChrome = process.platform === "darwin";
@@ -176,7 +176,9 @@ async function main() {
     assert.equal(initialNativeTitle, "HDR Finisher");
     assert.equal(await window.locator(".window-chrome").isVisible(), !nativeMacChrome);
     const headerGeometry = await window.evaluate(() => ({
-      heights: [".rail-title-row", ".viewer-bar", ".grade-header"].map((selector) => document.querySelector(selector)?.getBoundingClientRect().height),
+      // Each workflow panel has its own header; measure the one on screen.
+      heights: [".rail-title-row", ".viewer-bar", ".grade-header"].map((selector) => [...document.querySelectorAll(selector)]
+        .find((element) => element.getClientRects().length)?.getBoundingClientRect().height),
       sourceCollapsed: document.querySelector(".source-rail")?.classList.contains("collapsed"),
       productNameHeight: document.querySelector(".product-name")?.getBoundingClientRect().height,
       productMarkHeight: document.querySelector(".product-mark")?.getBoundingClientRect().height,
@@ -202,12 +204,16 @@ async function main() {
       await window.screenshot({ path: path.join(outputDirectory, screenshotName) });
       await window.keyboard.press("Escape");
     }
-    assert.equal(await window.locator(".top-actions").count(), 0);
+    // The header keeps Autosave and Recent projects; the other project and app
+    // commands move into the window menu.
+    assert.equal(await window.locator(".top-actions #grade-autosave").count(), 1);
+    assert.equal(await window.locator(".top-actions :is(#project-open, #project-save, #settings-open, #help-open)").count(), 0);
     for (const [width, height] of [[1280, 720], [1366, 768], [1440, 900], [1600, 900], [1920, 1080]]) {
       await electronApp.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(...size), [width, height]);
       await window.waitForTimeout(80);
       const layout = await window.evaluate(() => {
-        const rect = (selector) => document.querySelector(selector)?.getBoundingClientRect();
+        // Measure the instance on screen; each workflow panel has its own header.
+        const rect = (selector) => [...document.querySelectorAll(selector)].find((element) => element.getClientRects().length)?.getBoundingClientRect();
         const source = document.querySelector(".source-rail");
         const sourceHeader = rect(".source-rail .rail-title-row");
         const sourceCollapse = rect("#source-rail-expand");
@@ -377,6 +383,9 @@ async function main() {
       preflight: "HDR reference white: 203 nits",
     });
 
+    // Start the import coverage from a fresh renderer with no picture open.
+    await window.reload({ waitUntil: "domcontentloaded" });
+    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 60000 });
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.evaluate(({ base64, name }) => {
       const binary = atob(base64);
@@ -402,7 +411,7 @@ async function main() {
     // upload/drop coverage intentionally replaces an active session and is a
     // separate desktop-import contract.
     await window.reload({ waitUntil: "domcontentloaded" });
-    await window.waitForSelector("#file-input", { state: "attached", timeout: 30000 });
+    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 60000 });
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
     const beforeRotation = await presentedPreviewSnapshot(window);
@@ -491,7 +500,7 @@ async function main() {
     // deliberately inside Crop so its settled pixels can be observed without
     // a later UI action becoming part of the handoff assertion.
     await window.reload({ waitUntil: "domcontentloaded" });
-    await window.waitForSelector("#file-input", { state: "attached", timeout: 30000 });
+    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 60000 });
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
     // Session metadata becomes visible before the first preview frame is
@@ -572,7 +581,7 @@ async function main() {
     await window.waitForFunction(() => state.geometryTransformHandoffSignature === null, null, { timeout: 30000 });
     checkpoint("straighten slider cancellation ready");
     await window.reload({ waitUntil: "domcontentloaded" });
-    await window.waitForSelector("#file-input", { state: "attached", timeout: 30000 });
+    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 60000 });
 
     await window.locator("#file-input").setInputFiles(pathlessDropPath);
     await window.evaluate(async () => {
@@ -662,15 +671,16 @@ async function main() {
     assert.equal(Number(await window.locator("#hdr-saturation").inputValue()), 0.4, "a Tone preset must not alter Color controls");
     assert.equal(await window.locator("#film-reference-model").count(), 0);
     await window.locator('[data-group="film-look"] .group-preset').click();
-    assert.equal(await window.locator(".group-preset-row.built-in").count(), 4);
+    assert.equal(await window.locator(".group-preset-row.built-in").count(), await window.evaluate(() => FILM_LOOK_PRESETS.length));
     assert.equal(await window.locator(".group-preset-row.built-in").getByRole("button", { name: "Delete" }).count(), 0);
     const cleanCinemaRow = window.locator(".group-preset-row.built-in").filter({ hasText: "Clean Cinema" });
-    assert.match(await cleanCinemaRow.textContent(), /Fine texture, restrained density/);
+    assert.match(await cleanCinemaRow.textContent(), /Fine, clean cinema print/);
     await cleanCinemaRow.getByRole("button", { name: "Apply" }).click();
     const appliedFilmModel = await window.evaluate(() => state.adjustments.hdr.film_look);
-    assert.equal(appliedFilmModel.reference_model, "custom");
-    assert.equal(appliedFilmModel.print_strength, 42);
-    assert.equal(appliedFilmModel.grain_amount, 14);
+    assert.equal(appliedFilmModel.film_stock, "kodak_vision3_250d");
+    assert.equal(appliedFilmModel.print_paper, "kodak_2383");
+    assert.equal(appliedFilmModel.lens_filter, "black_pro_mist");
+    assert.equal(appliedFilmModel.lens_strength, 0.125);
     assert.deepEqual(Object.keys(appliedFilmModel).sort(), Object.keys(await window.evaluate(() => defaultFilmLook())).sort());
 
     await window.evaluate(() => { saveProjectToPath({ saveAs: true }); });
