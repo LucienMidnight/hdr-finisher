@@ -297,3 +297,57 @@ def test_background_refresh_remakes_existing_grade_without_save(setup, tmp_path,
         wait_for(lambda: not kept._refreshing)
         assert len(requests)==1
     finally: kept.close()
+
+
+@pytest.mark.parametrize("edge", [512, 1024, 1920, 2560])
+@pytest.mark.parametrize("crop,rotation,roll", [
+    (1, 0, 0), (.5, 0, 0), (.15, 90, 0), (.5, 270, 13), (1, 0, -8),
+])
+def test_shrink_first_render_receives_crop_aware_reduced_source(setup, tmp_path, monkeypatch, edge, crop, rotation, roll):
+    from hdr_finisher.finishing import apply_geometry, geometry_output_dimensions
+    from hdr_finisher.models import CropRectangle
+    photo,store,session,marks,grades=setup
+    session.image=np.ones((2800,4200,3),np.float32)
+    geometry=session.adjustments.shared.geometry
+    geometry.crop=CropRectangle(x=.03 if crop<1 else 0,y=0,width=crop,height=crop)
+    geometry.rotation=rotation;geometry.straighten_angle=roll
+    grade=session.edit_document().model_dump(mode="json")
+    monkeypatch.setattr("hdr_finisher.sessions.SessionStore.prepare_session",lambda *a,**k:session)
+    shapes=[]
+    def render(frame,settings,lane,adjustments):
+        shapes.append(frame.image.shape[:2])
+        return apply_geometry(frame.image,adjustments.shared.geometry)
+    monkeypatch.setattr(exporters,"_render_export_branch",render)
+    monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",lambda path,*args:Path(path).write_bytes(b"test"))
+    result=produce(tmp_path,photo,grade,edge)
+    try:
+        available=max(geometry_output_dimensions(4200,2800,geometry))
+        assert abs(max(result["width"],result["height"])-min(edge,available))<=2
+        assert shapes[0]==shapes[1]
+        assert max(shapes[0])<=4200
+        if available>edge:
+            assert max(shapes[0])<4200, "Both export branches must receive reduced pixels"
+        else:
+            assert shapes[0]==(2800,4200), "Tiny crops retain all available detail"
+        assert session.image.shape==(2800,4200,3)
+    finally: Path(result["temporary"]).unlink()
+
+
+def test_shrink_releases_both_full_size_sources_before_render(setup, tmp_path, monkeypatch):
+    import weakref
+    photo,store,session,marks,grades=setup
+    grade=session.edit_document().model_dump(mode="json")
+    source=dict(image=np.ones((400,600,3),np.float32),
+        sdr_reference_image=np.ones((400,600,3),np.float32),
+        color_context=session.color_context,source_fingerprint_sha256=session.source_fingerprint_sha256)
+    refs=[weakref.ref(source[name]) for name in ("image","sdr_reference_image")]
+    def render(frame,*args):
+        assert not source
+        assert all(ref() is None for ref in refs)
+        assert max(frame.image.shape[:2])==64
+        assert frame.sdr_reference_image.shape==frame.image.shape
+        return frame.image
+    monkeypatch.setattr(exporters,"_render_export_branch",render)
+    monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",lambda path,*args:Path(path).write_bytes(b"test"))
+    result=produce(tmp_path,photo,grade,64,source=source)
+    Path(result["temporary"]).unlink()

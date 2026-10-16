@@ -86,10 +86,13 @@ separate job, started by entering Single or by look-ahead.
 
 ### 3.3 Saved-grade (kept) pictures
 
-- On save, the main backend shrinks the image Grade already has open to the
-  kept size (0.45 s, off the save request) and hands that small image to the
-  existing kept renderer. Same corrected source, same renderer, same output,
-  so there is no quality trade-off. Estimated 10.9 s to about 2 s.
+- On save, the main backend shrinks the image Grade already has open, off
+  the save request, before handing it to the existing kept renderer. The
+  renderer's geometry dimensions choose the smallest input whose crop and
+  rotation still fill the target, capped at the full source. A final fit
+  removes rounding overshoot. Pixel-scale effects can differ from a full-size
+  export; the Library picture is judged against Grade at Fit. Existing saved
+  pictures remain valid; the picture version and JPEG settings are unchanged.
 - Cases with no open photo (revert, virtual copies, the request route) keep
   today's re-open, but at full helper speed when Grade is idle (about 4.5 s).
 - The encode step is left alone in the first round. It belongs to the export

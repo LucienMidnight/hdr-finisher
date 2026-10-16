@@ -27,14 +27,15 @@ const savedGrade = raw ? JSON.parse(fs.readFileSync(source + '.hdrf', 'utf8')).g
     let previousKey = await cell.locator('canvas').getAttribute('data-picture-key');
     for (const autosave of [true, false]) {
       await cell.dblclick();
-      await page.waitForFunction(() => HDRGradeSaving.active());
+      await page.waitForFunction(() => HDRGradeSaving.active() && HDRGradeSaving.ready() && !state.gradeOpen);
       const button = page.locator('#grade-autosave');
       if ((await button.getAttribute('aria-pressed') === 'true') !== autosave) await button.click();
       await page.evaluate(async ({ grade, autosave }) => {
         const adjustments = structuredClone(grade?.global_adjustments || state.adjustments);
         if (!grade) { adjustments.hdr.exposure = .75; adjustments.sdr.exposure = -.25; }
+        else adjustments.hdr.exposure += .25; // Ensure even a neutral saved RAW grade creates an edit.
         if (!autosave) adjustments.hdr.exposure -= .01;
-        await queueEditCommand('set_global_adjustments', { adjustments });
+        if (!await queueEditCommand('set_global_adjustments', { adjustments })) throw new Error('The test grade edit was rejected.');
       }, { grade: savedGrade, autosave });
       if (!autosave) assert.ok(await page.evaluate(() => HDRGradeSaving.save()));
       await page.evaluate(() => activateWorkflowTab('import'));

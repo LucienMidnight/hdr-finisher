@@ -79,6 +79,28 @@ def capture_source(session):
         "source_fingerprint_sha256": session.source_fingerprint_sha256}
 
 
+def render_source_edge(width, height, geometry, target):
+    """Smallest source long edge whose actual cropped geometry fills target.
+
+    Resolve dimensions only: no full-size geometry render or image allocation.
+    Checking reduced dimensions includes roll's safety margin and crop rounding.
+    """
+    from .finishing import geometry_output_dimensions
+    full_edge = max(width, height)
+    if max(geometry_output_dimensions(width, height, geometry)) <= target:
+        return full_edge
+    low, high = 1, full_edge
+    while low < high:
+        candidate = (low + high) // 2
+        scale = candidate / full_edge
+        w, h = max(1, round(width * scale)), max(1, round(height * scale))
+        if max(geometry_output_dimensions(w, h, geometry)) >= target:
+            high = candidate
+        else:
+            low = candidate + 1
+    return low
+
+
 def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=None):
     """One read-only corrected decode + reduced renditions via the export graph.
 
@@ -110,12 +132,14 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
     if document.source.fingerprint_sha256 and session.source_fingerprint_sha256!=document.source.fingerprint_sha256:
         raise ValueError("The source photo changed; its Library picture was left unavailable.")
     source_height,source_width=session.image.shape[:2]
-    frame=SimpleNamespace(image=session.image,
-        sdr_reference_image=session.sdr_reference_image,
+    geometry=document.global_adjustments.shared.geometry
+    reduced_edge=render_source_edge(source_width,source_height,geometry,edge)
+    frame=SimpleNamespace(image=reduce_picture(session.image,reduced_edge),
+        sdr_reference_image=(reduce_picture(session.sdr_reference_image,reduced_edge)
+            if session.sdr_reference_image is not None else None),
         adjustments=document.global_adjustments,local_adjustments=document.local_adjustments,denoise=document.denoise,
         color_context=session.color_context,hdr_reference_white_nits=document.hdr_reference_white_nits)
-    # Render the saved grade before fitting, so crop/rotation cannot shrink
-    # the finished picture below its screen target.
+    # Drop the private session/cache and its full-size references before rendering.
     del session
     source_ms=(perf_counter()-source_started)*1000
     log("kept_source_ready", path=str(path), grade_identity=identity(grade), route=source_route, duration_ms=source_ms)
@@ -127,7 +151,9 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
     adjustments.shared.overlay_mode="off"
     check();hdr=exporters._render_export_branch(frame,settings,PreviewKind.HDR,adjustments)
     check();sdr=exporters._render_export_branch(frame,settings,PreviewKind.SDR,adjustments)
-    check();source_height,source_width=hdr.shape[:2]
+    check()
+    from .finishing import geometry_output_dimensions
+    source_width,source_height=geometry_output_dimensions(source_width,source_height,geometry)
     hdr=reduce_picture(hdr,edge);sdr=reduce_picture(sdr,edge)
     render_ms=(perf_counter()-render_started)*1000
     log("kept_rendered", path=str(path), grade_identity=identity(grade), duration_ms=render_ms)
