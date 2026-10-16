@@ -90,7 +90,8 @@ async function main() {
   });
   try {
     const window = await electronApp.firstWindow();
-    await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    // The Library owns the start screen; the shared import input is the ready signal.
+    await window.waitForSelector("#file-input", { state: "attached", timeout: 30000 });
     checkpoint("window ready");
     const nativeMacChrome = process.platform === "darwin";
     const selectMenuItem = async (menuLabel, itemLabel, customMenuLabel, selector) => {
@@ -396,7 +397,7 @@ async function main() {
     // upload/drop coverage intentionally replaces an active session and is a
     // separate desktop-import contract.
     await window.reload({ waitUntil: "domcontentloaded" });
-    await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    await window.waitForSelector("#file-input", { state: "attached", timeout: 30000 });
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
     const beforeRotation = await presentedPreviewSnapshot(window);
@@ -485,7 +486,7 @@ async function main() {
     // deliberately inside Crop so its settled pixels can be observed without
     // a later UI action becoming part of the handoff assertion.
     await window.reload({ waitUntil: "domcontentloaded" });
-    await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    await window.waitForSelector("#file-input", { state: "attached", timeout: 30000 });
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
     // Session metadata becomes visible before the first preview frame is
@@ -566,7 +567,7 @@ async function main() {
     await window.waitForFunction(() => state.geometryTransformHandoffSignature === null, null, { timeout: 30000 });
     checkpoint("straighten slider cancellation ready");
     await window.reload({ waitUntil: "domcontentloaded" });
-    await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    await window.waitForSelector("#file-input", { state: "attached", timeout: 30000 });
 
     await window.locator("#file-input").setInputFiles(pathlessDropPath);
     await window.evaluate(async () => {
