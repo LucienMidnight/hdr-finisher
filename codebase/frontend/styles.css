@@ -9237,3 +9237,7 @@ body[data-workflow="import"] #viewer-status-dock { display: none; }
 /* The supplied full wordmark keeps its original proportions. */
 .product-logo { display: block; width: 131px; height: 40px; object-fit: contain; filter: invert(1); }
 :root[data-theme="default-light"] .product-logo { filter: none; }
+
+.film-stock-reset { border: 0; background: transparent; color: var(--accent, #d2a862); padding: 0 5px; cursor: pointer; font-size: 10px; }
+.film-stock-reset[hidden] { display: none; }
+.film-stock-reset:focus-visible { outline: 1px solid currentColor; }

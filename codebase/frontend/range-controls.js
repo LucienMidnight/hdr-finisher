@@ -57,7 +57,7 @@ function enhanceEditableGradeValues() {
     const rule = MANUAL_VALUE_RULES[rulePath];
     if (!rule || !output.closest("#grade-workflow-panel")) return;
     bindEditableValue(output, {
-      getValue: () => getValueByPath(state.adjustments, path),
+      getValue: () => filmStockUiValue(path, getValueByPath(state.adjustments, path), true),
       normalize: (text) => normalizeManualControlValue(rulePath, text),
       commit: ({ value }) => commitAdjustmentValue(path, value, { manual: true }),
       label: () => `${output.closest(".control-heading")?.querySelector("label")?.textContent?.trim() || path} value`,
@@ -230,7 +230,9 @@ function normalizeManualControlValue(path, text) {
   if (!rule) return null;
   const parsed = parseManualNumber(text);
   if (!Number.isFinite(parsed)) return null;
-  const storedValue = rule.entryScale ? parsed / rule.entryScale : parsed;
+  const uiValue = rule.entryScale ? parsed / rule.entryScale : parsed;
+  const storedValue = filmStockUiValue(path, uiValue, false);
+  if (storedValue !== uiValue) return normalizeManualNumber(storedValue, { ...rule, decimals: 6 });
   return normalizeManualNumber(storedValue, rule);
 }
 
@@ -469,6 +471,11 @@ function darktableTintHueColor(requestedHue) {
 }
 
 function formatControlValue(path, value) {
+  const stockScale = typeof filmStockUiContext === "function" ? filmStockUiContext(path) : null;
+  if (stockScale && HDRFilmCharacter.scale(stockScale.film, stockScale.key)) {
+    const ui = HDRFilmCharacter.toUi(stockScale.film, stockScale.key, Number(value));
+    return stockScale.key === "halation_hue_offset" ? `${ui > 0 ? "+" : ""}${Number(ui.toFixed(1))}%` : `${Number(ui.toFixed(1))}% stock`;
+  }
   const numeric = Number(value);
   if (path.endsWith("straighten_angle")) return `${numeric.toFixed(1)}\u00b0`;
   if (path.endsWith("luminance_ev")) return `${numeric.toFixed(2)} EV`;

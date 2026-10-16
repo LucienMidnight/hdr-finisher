@@ -693,6 +693,7 @@ const defaultFilmLook = () => ({
   // Film stock: measured stock color and tone, applied before
   // the physical paper and scanner. "none" is the straight Neutral stock.
   film_stock: "none",
+  stock_overrides: [],
   stock_color: 100,
   stock_tone: 100,
   stock_exposure: 0,

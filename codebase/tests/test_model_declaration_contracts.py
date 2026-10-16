@@ -52,9 +52,9 @@ def test_branch_serialization_order_and_adjustment_signature_are_stable() -> Non
     assert tuple(adjustments.hdr.model_dump()) == HDR_FIELD_ORDER
     assert tuple(adjustments.sdr.model_dump()) == SDR_FIELD_ORDER
     signature = adjustment_signature(adjustments)
-    # Changed October 16, 2026, when physical lens filters replaced Bloom controls.
+    # Changed October 16, 2026: each lane now serializes stock_overrides for Phase 4.
     assert hashlib.sha256(signature.encode()).hexdigest() == (
-        "a7ccea9324dc176cec94fd9b3eca97d18cddfc97bdc7a7151587d557cfe842e9"
+        "88a593ef80a45bc8cbde848333a56ecf5fc3e47a0118d15f81f348e0db71daf8"
     )
     assert AdjustmentState.model_validate(adjustments.model_dump(mode="json")) == adjustments
 

@@ -163,6 +163,11 @@ class FilmLookAdjustments(BaseModel):
         "kodak_vision3_500t",
         "kodak_vision3_50d",
     ] = "none"
+    # Ownership is saved with each lane, therefore history and Match copy it too.
+    stock_overrides: list[Literal[
+        "grain_amount", "grain_size", "halation_amount", "halation_radius",
+        "halation_hue_offset", "halation_saturation", "print_paper",
+    ]] = Field(default_factory=list)
     stock_color: float = Field(default=100.0, ge=0.0, le=100.0)
     stock_tone: float = Field(default=100.0, ge=0.0, le=100.0)
     stock_exposure: float = Field(default=0.0, ge=-3.0, le=3.0)

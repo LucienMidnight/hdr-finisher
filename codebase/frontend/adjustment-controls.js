@@ -3,6 +3,11 @@ function bindRangeResetControls() {
     const control = event.target.closest('input[type="range"]:not([data-no-double-reset])');
     if (!control || control.disabled) return;
     event.preventDefault();
+    const stockControl = filmStockUiContext(control.dataset.path);
+    if (stockControl && HDRFilmCharacter.owned.includes(stockControl.key)) {
+      resetFilmStockControl(stockControl.key);
+      return;
+    }
     control.value = control.dataset.defaultValue ?? control.defaultValue;
     control.dispatchEvent(new Event("input", { bubbles: true }));
     control.dispatchEvent(new Event("change", { bubbles: true }));
@@ -31,7 +36,7 @@ function resolveAdjustmentPath(path) {
 function readControlValue(control) {
   if (control.type === "checkbox") return control.checked;
   const numeric = control.type === "range" || control.type === "number" || control.dataset.valueType === "number";
-  return numeric ? Number(control.value) : control.value;
+  return numeric ? filmStockUiValue(control.dataset.path, Number(control.value), false) : control.value;
 }
 
 function commitAdjustmentValue(path, value, { manual = false } = {}) {
@@ -40,7 +45,13 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
     beginGlobalDetailInteraction(resolvedPath);
     state.previewScheduler?.beginInteraction();
   }
-  setValueByPath(state.adjustments, path, value);
+  const filmPath = resolvedPath.match(/^(hdr|sdr)\.film_look\.([^.]+)$/);
+  if (filmPath) {
+    const film = state.adjustments[filmPath[1]].film_look;
+    if (filmPath[2] === "film_stock") HDRFilmCharacter.select(film, value);
+    else HDRFilmCharacter.set(film, filmPath[2], value);
+    syncControlsFromState();
+  } else setValueByPath(state.adjustments, path, value);
   // Only one film look diagnostic map can be on screen at a time.
   if (value === true && /film_look\.(halation|grain)_view_map$/.test(resolvedPath)) {
     const companion = resolvedPath.endsWith("halation_view_map") ? "grain_view_map" : "halation_view_map";
@@ -104,7 +115,8 @@ function syncControlsFromState() {
 function syncRangeControlFromState(path, requestedControl = null) {
   const control = requestedControl || document.querySelector(`[data-path="${path}"]`);
   if (!control || control.type !== "range") return;
-  const value = Number(getValueByPath(state.adjustments, path));
+  syncFilmStockSlider(path, control);
+  const value = Number(filmStockUiValue(path, getValueByPath(state.adjustments, path), true));
   const minimum = Number(control.min);
   const maximum = Number(control.max);
   const outsideSlider = value < minimum || value > maximum;
@@ -146,6 +158,7 @@ function renderControlState() {
   document.querySelector("[data-film-grain-custom]")?.toggleAttribute("hidden", filmLook?.grain_film_format !== "custom");
   renderFilmGrainChroma();
   renderFilmStockControls();
+  renderFilmStockDots();
   renderHighlightCompressionControls();
   renderSdrHighlightCompressionControls();
   els.controlRows.forEach((row) => {
@@ -357,3 +370,77 @@ function renderOutputFinishingControls() {
   window.HDRProofing?.invalidate("settings");
 }
 
+
+// Stock ownership belongs to the lane's saved Film Look object, not to the DOM.
+function filmStockUiContext(path) {
+  if (typeof HDRFilmCharacter === "undefined" || typeof state === "undefined" || !path) return null;
+  const match = resolveAdjustmentPath(path).match(/^(hdr|sdr)\.film_look\.([^.]+)$/);
+  const film = match && state.adjustments?.[match[1]]?.film_look;
+  return film ? {film, key:match[2]} : null;
+}
+
+function filmStockUiValue(path, value, toUi) {
+  const context = filmStockUiContext(path);
+  if (!context) return value;
+  return HDRFilmCharacter[toUi ? "toUi" : "fromUi"](context.film, context.key, value);
+}
+
+function syncFilmStockSlider(path, control) {
+  const context = filmStockUiContext(path);
+  if (!context || !HDRFilmCharacter.owned.includes(context.key)) return;
+  if (!control.dataset.stockOriginalMin) {
+    control.dataset.stockOriginalMin = control.min;
+    control.dataset.stockOriginalMax = control.max;
+  }
+  control.dataset.defaultValue = String(filmStockUiValue(path, HDRFilmCharacter.character(context.film).defaults[context.key], true));
+  control.min = filmStockUiValue(path, Number(control.dataset.stockOriginalMin), true);
+  control.max = filmStockUiValue(path, Number(control.dataset.stockOriginalMax), true);
+  const scale = HDRFilmCharacter.scale(context.film, context.key);
+  if (scale?.offset) {
+    // Keep zero on the range step lattice; typed values retain full bounds.
+    control.min = Math.ceil(Number(control.min));
+    control.max = Math.floor(Number(control.max));
+  }
+  if (scale && !scale.offset) {
+    control.max = Math.min(Number(control.max), context.key === "halation_radius" ? 400 : 200);
+  }
+}
+
+function resetFilmStockControl(key) {
+  if (!state.session) return;
+  HDRFilmCharacter.reset(state.adjustments[state.currentView].film_look, key);
+  syncControlsFromState();
+  invalidatePreview(state.currentView);
+  renderControlState();
+  debouncePreview(state.currentView);
+}
+
+function renderFilmStockDots() {
+  if (typeof HDRFilmCharacter === "undefined") return;
+  const film = state.adjustments?.[state.currentView]?.film_look;
+  if (!film) return;
+  for (const key of HDRFilmCharacter.owned) {
+    const control = document.querySelector(`[data-path="current.film_look.${key}"]`);
+    const heading = control?.closest(".control-row")?.querySelector(".control-heading") || control?.closest(".select-control");
+    if (!heading) continue;
+    let dot = heading.querySelector("[data-stock-reset]");
+    if (!dot) {
+      dot = document.createElement("button");
+      dot.type = "button";
+      dot.dataset.stockReset = key;
+      dot.className = "film-stock-reset";
+      dot.textContent = "●";
+      dot.addEventListener("click", () => resetFilmStockControl(key));
+      heading.append(dot);
+    }
+    const set = (film.stock_overrides || []).includes(key);
+    dot.hidden = !set;
+    dot.disabled = !state.session;
+    const label = key === "print_paper" ? "Paper" : heading.querySelector("label, span")?.textContent || key;
+    dot.setAttribute("aria-label", `Return ${label} to the stock`);
+    dot.title = `Set by you. Return ${label} to the stock`;
+    if (key.startsWith("halation_")) control.title = film.film_stock === "none"
+      ? "Neutral has no halation of its own; these are absolute effect controls."
+      : "100% is this stock's own value; Hue Offset 0 keeps its colour. Set values stay fixed when changing stock.";
+  }
+}
