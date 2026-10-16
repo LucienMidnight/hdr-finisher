@@ -2,6 +2,8 @@
 import json
 import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 from fastapi import HTTPException
@@ -86,9 +88,15 @@ class FolderCommands:
 
     def show(self, paths):
         checked = [checked_folder(p) for p in dict.fromkeys(paths)]
-        for path in checked: os.startfile(str(path))
+        for path in checked: reveal(path)
         log("folder_show", paths=[str(p) for p in checked], action="opened in Explorer")
         return {"photos": [], "warnings": [], "undo_available": bool(self.marks._undo)}
+
+
+def reveal(path):
+    """Open a folder in the system file manager."""
+    if os.name == "nt": os.startfile(str(path))
+    else: subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(path)])
 
 
 def add_folder_command_routes(router, marks, browser, index):

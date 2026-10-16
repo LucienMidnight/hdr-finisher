@@ -61,6 +61,6 @@ def test_unreadable_preferences_are_not_overwritten(commands):
 
 def test_show_selected_disposable_folders(commands, monkeypatch):
     parent,c=commands; other=parent/"two";other.mkdir(); shown=[]
-    monkeypatch.setattr("os.startfile",shown.append)
+    monkeypatch.setattr("hdr_finisher.library_folder_commands.reveal",lambda path: shown.append(str(path)))
     c.show([str(parent),str(other),str(parent)])
     assert shown == [str(parent),str(other)]

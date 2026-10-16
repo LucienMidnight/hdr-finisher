@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import pytest
 from test_library_file_commands import setup,Stop
@@ -6,6 +7,8 @@ from hdr_finisher.library_file_commands import FileCommands,FileRequest
 from hdr_finisher.library_file_io import rename,same
 from hdr_finisher.library_marks import MarkChange
 from hdr_finisher import library_recycle
+
+pytestmark = pytest.mark.skipif(os.name != 'nt', reason='Library file commands are Windows-only in this version.')
 
 
 class Bin:

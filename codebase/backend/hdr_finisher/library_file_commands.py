@@ -14,6 +14,10 @@ from .library_folder_commands import folder_name
 from .library_diagnostics import log
 
 OPEN_MESSAGE = 'Open another photo before changing this one. Nothing was changed for it.'
+# Removing an original safely relies on Windows file locks. Elsewhere these
+# commands are refused while planning, before any file is touched.
+FILE_COMMANDS_SUPPORTED = os.name == 'nt'
+PLATFORM_MESSAGE = 'Renaming, moving and deleting photos from the Library is available on Windows only in this version. Nothing was changed.'
 
 
 class FileRequest(BaseModel):
@@ -70,6 +74,7 @@ class FileCommands:
         with self.index.checks.lock: self.index.checks.revision+=1
 
     def plan(self,request):
+        if not FILE_COMMANDS_SUPPORTED: raise ValueError(PLATFORM_MESSAGE)
         with self._lane,self.marks.writer._lane,self.marks._lock:
             if request.action in {'delete','delete_rejected'}:
                 from .library_file_delete import plan
