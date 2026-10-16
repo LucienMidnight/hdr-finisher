@@ -22,6 +22,8 @@ const LONG_EDGE = 1200;
 const laneIndex = process.argv.indexOf("--lane");
 const selectedLane = laneIndex >= 0 ? process.argv[laneIndex + 1] : null;
 if (selectedLane !== null && !["hdr", "sdr"].includes(selectedLane)) throw new Error("--lane must be hdr or sdr");
+const caseIndex = process.argv.indexOf("--case");
+const selectedCase = caseIndex >= 0 ? process.argv[caseIndex + 1] : null;
 const LANES = selectedLane ? [selectedLane] : ["hdr", "sdr"];
 const MAX_MEAN_DIFFERENCE = 0.1 / 255;
 const MAX_P999_DIFFERENCE = 2 / 255;
@@ -63,6 +65,9 @@ const CASES = [
   {label: "Slide development scan", stock: {film_stock:"fujifilm_velvia_100", push_pull:2, scan_sharpening:100, lab_levels:true}},
   {label: "Neutral physical controls", stock: {film_stock:"none", push_pull:1, print_exposure:1,
     print_contrast:50, shadow_contrast:-50, highlight_contrast:50, scan_sharpening:100, lab_levels:true}},
+  {label: "Neutral physical no scan", stock: {film_stock:"none", push_pull:1, print_exposure:1, print_contrast:50, shadow_contrast:-50, highlight_contrast:50, lab_levels:true}},
+  {label: "Neutral maximum paper gain", stock: {film_stock:"none", push_pull:2, print_exposure:-3,
+    print_contrast:100, shadow_contrast:100, highlight_contrast:100}},
   {label: "Neutral actual paper", stock: {film_stock:"none", print_paper:"kodak_2383", scan_sharpening:100, lab_levels:true}},
 ];
 
@@ -177,14 +182,21 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
           raw = Math.max(raw, difference);
         }
       }
-      return { size, differences, raw, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock, stock) };
+      const worst = [];
+      for (let i=0; i<differences.length && worst.length<8; i++) {
+        if (differences[i] !== raw) continue;
+        const pixel=Math.floor(i/3), j=pixel*4;
+        worst.push({d:raw,x:pixel%surface.width,y:Math.floor(pixel/surface.width),
+          gpu:Array.from(gpu.slice(j,j+3)),cpu:Array.from(cpu.slice(j,j+3))});
+      }
+      return { size, differences, raw, worst, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock, stock) };
     }, { lane, stock, lookStrength, longEdge: LONG_EDGE });
 
     const failures = [];
     for (const lane of LANES) {
       const off = await compare(lane, NEUTRAL, 100);
       if (off.error) throw new Error(`${lane} off: ${off.error}`);
-      for (const { label, stock, look_strength: lookStrength = 100 } of CASES) {
+      for (const { label, stock, look_strength: lookStrength = 100 } of CASES.filter(c => !selectedCase || c.label === selectedCase)) {
         const on = await compare(lane, { ...NEUTRAL, ...stock }, lookStrength);
         if (on.error) throw new Error(`${lane} ${label}: ${on.error}`);
         if (!on.slot) throw new Error(`${lane} ${label}: the stock never reached the GPU`);
@@ -194,7 +206,7 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         const p999 = sorted[Math.floor(sorted.length * 0.999)];
         const maximum = sorted[sorted.length - 1];
         const passed = mean <= MAX_MEAN_DIFFERENCE && p999 <= MAX_P999_DIFFERENCE;
-        if (!passed) failures.push({ lane, label, mean: mean * 255, p999: p999 * 255 });
+        if (!passed) failures.push({ lane, label, mean: mean * 255, p999: p999 * 255, worst:on.worst });
         console.log(
           `${lane} ${label.padEnd(20)} ${on.size[0]}x${on.size[1]}  `
           + `added GPU/CPU difference: mean ${(mean * 255).toFixed(3)} levels, p99.9 ${(p999 * 255).toFixed(1)}, max ${(maximum * 255).toFixed(0)}  `

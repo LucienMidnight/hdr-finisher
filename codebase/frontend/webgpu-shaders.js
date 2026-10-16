@@ -1858,6 +1858,47 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return rgb;
     }
+    // Neutral's ideal paper can put a saturated HDR colour exactly on an
+    // sRGB boundary. Independent ACES half-float rounding then creates colour
+    // in the nearly empty channel. Choose a nearby representable ACES triplet
+    // by its sRGB error; the texture format, allocation and limits stay fixed.
+    fn filmHalfPrecision(rgb: vec3f) -> vec3f {
+      if (p[${GPU_PARAMS.HDR_LANE}] < 0.5 || p[${GPU_PARAMS.FILM_STOCK_SLOT}] < 0.5) { return rgb; }
+      let base = (u32(p[${GPU_PARAMS.FILM_STOCK_SLOT}] + 0.5) - 1u) * ${FILM_STOCK.slotFloats}u;
+      if (filmStock[base + ${STOCK.SCAN_FILM}u] != 2.0) { return rgb; }
+      let referenceRgb = acescgToSrgb(rgb);
+      let q = quantizeToF16(rgb);
+      let ulp = exp2(floor(log2(max(abs(q),vec3f(0.00006103515625))))-10.0);
+      let rowR = vec3f(1.7048873310,-0.6241572745,-0.0808867739);
+      let rowG = vec3f(-0.1295209353,1.1383993260,-0.0087792418);
+      let rowB = vec3f(-0.0241270599,-0.1246206123,1.1488221099);
+      var weakest = 0u;
+      if (abs(referenceRgb.g) < abs(referenceRgb[weakest])) { weakest = 1u; }
+      if (abs(referenceRgb.b) < abs(referenceRgb[weakest])) { weakest = 2u; }
+      let row = select(select(rowR,rowG,weakest==1u),rowB,weakest==2u);
+      // Solve the weakest channel using the smallest matrix coefficient;
+      // that channel's half-float steps then give the finest correction.
+      var solved = 0u;
+      if (abs(row.g) < abs(row[solved])) { solved = 1u; }
+      if (abs(row.b) < abs(row[solved])) { solved = 2u; }
+      let a = (solved+1u)%3u; let b = (solved+2u)%3u;
+      let weights = 1.0/max(abs(referenceRgb),vec3f(0.00001));
+      var best = q;
+      let initialDelta = acescgToSrgb(q)-referenceRgb;
+      var error = dot(initialDelta*initialDelta,weights);
+      for (var x = -1; x <= 1; x++) {
+        for (var y = -1; y <= 1; y++) {
+          var candidate = q;
+          candidate[a] = quantizeToF16(q[a]+f32(x)*ulp[a]);
+          candidate[b] = quantizeToF16(q[b]+f32(y)*ulp[b]);
+          candidate[solved] = quantizeToF16((referenceRgb[weakest]-row[a]*candidate[a]-row[b]*candidate[b])/row[solved]);
+          let delta = acescgToSrgb(candidate)-referenceRgb;
+          let score = dot(delta*delta,weights);
+          if (score < error) { best = candidate; error = score; }
+        }
+      }
+      return best;
+    }
     fn filmDiagnosticMap() -> bool {
       return filmModuleActive() && ((p[${GPU_PARAMS.HALATION_ENABLED}] > 0.5 && p[${GPU_PARAMS.HALATION_VIEW_MAP}] > 0.5)
         || (p[${GPU_PARAMS.GRAIN_ENABLED}] > 0.5 && p[${GPU_PARAMS.GRAIN_VIEW_MAP}] > 0.5));
@@ -2540,12 +2581,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // source, and so the scope pass reads that result instead of recomputing it.
     @fragment fn scanFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return vec4f(scanFilm(coordinate), 1.0);
+      return vec4f(filmHalfPrecision(scanFilm(coordinate)), 1.0);
     }
 
     @fragment fn finishFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return vec4f(applyFilmLook(coordinate), 1.0);
+      return vec4f(filmHalfPrecision(applyFilmLook(coordinate)), 1.0);
     }
 
     fn finishedAt(coordinate: vec2i) -> vec3f {
