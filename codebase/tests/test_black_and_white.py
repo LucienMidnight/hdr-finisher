@@ -190,15 +190,15 @@ def test_film_look_adds_no_colour_back_when_black_and_white_is_on() -> None:
     look = state.hdr.film_look
     look.halation_amount = 80
     look.halation_saturation = 100
-    look.red_response = 60
-    look.blue_response = -60
+    look.stock_print_warmth = 60
+    look.stock_print_tint = -60
     look.grain_amount = 40
     look.grain_chroma = 80
     out = apply_adjustments(image, state, PreviewKind.HDR)
     spread = out.max(axis=-1) - out.min(axis=-1)
     assert float(spread.max()) <= NEUTRAL_TOLERANCE * max(1.0, float(out.max()))
     # The saved values are left as they were.
-    assert look.halation_saturation == 100 and look.grain_chroma == 80 and look.red_response == 60
+    assert look.halation_saturation == 100 and look.grain_chroma == 80 and look.stock_print_warmth == 60
 
 
 @pytest.mark.parametrize("authored_reference", [False, True])

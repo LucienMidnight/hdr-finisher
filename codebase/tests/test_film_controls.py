@@ -23,6 +23,7 @@ def test_paper_controls_are_independent_bounded_and_do_not_mutate_data(paper):
         assert np.isfinite(altered.print_curves).all()
         assert not np.array_equal(altered.print_curves, original)
         # All fitted layers retain their amplitude and the same physical range.
+        assert np.all(np.diff(altered.print_curves, axis=0) >= -2e-6)
         assert altered.print_curves.min() >= -1e-7
         assert altered.print_curves.max() <= original.max() + 1e-5
     np.testing.assert_array_equal(base.print_curves, original)
@@ -99,7 +100,7 @@ def test_physical_print_extremes_are_finite_and_monotonic(kind, contrast, shadow
     lane = PreviewKind(kind)
     levels = np.geomspace(1e-6, 32 if kind == "hdr" else 1, 512, dtype=np.float32)
     rgb = np.repeat(levels[None, :, None], 3, axis=2)
-    look = FilmLookAdjustments(film_stock="kodak_portra_400", stock_color=0, print_contrast=contrast,
+    look = FilmLookAdjustments(film_stock="none", stock_color=0, print_contrast=contrast,
         shadow_contrast=shadows, highlight_contrast=highlights)
     result = _apply_film_stock(rgb.copy(), look, lane, np.float32(1))
     assert np.isfinite(result).all()

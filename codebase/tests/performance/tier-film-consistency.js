@@ -41,7 +41,6 @@ function argument(name, fallback = null) {
       halation_enabled: halation,
       halation_amount: halation ? 70 : 0,
       halation_radius: 1.2,
-      halation_sensitivity: 60,
       bloom_enabled: bloom,
       bloom_amount: bloom ? 55 : 0,
       bloom_radius: 3,

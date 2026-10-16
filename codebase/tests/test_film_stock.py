@@ -300,7 +300,11 @@ def test_film_stock_api_lists_and_serves_known_stocks_only(stock_dir) -> None:
     assert served.status_code == 200
     assert served.headers["content-type"].startswith("application/json")
     assert served.json() == payload
-    for unknown in ("kodak_gold_200", "none", "nope", "..%2Fmodels.py", "kodak_portra_400.json"):
+    neutral = client.get("/api/film-stocks/none")
+    assert neutral.status_code == 200
+    assert neutral.json()["type"] == "neutral"
+    assert neutral.json()["id"] == "none"
+    for unknown in ("kodak_gold_200", "nope", "..%2Fmodels.py", "kodak_portra_400.json"):
         assert client.get(f"/api/film-stocks/{unknown}").status_code == 404
 
 

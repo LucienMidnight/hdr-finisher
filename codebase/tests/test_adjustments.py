@@ -13,7 +13,7 @@ import hdr_finisher.exporters as exporters
 from hdr_finisher.adjustments import (
     _apply_hdr_adjustments,
     _apply_hdr_color,
-    _apply_film_response,
+    _apply_film_stock,
     _apply_curve_set,
     _apply_saturation_vibrance,
     _apply_sdr_adjustments,
@@ -87,7 +87,7 @@ def test_grain_view_map_isolates_the_grain_field_on_a_neutral_card(kind: Preview
     state = AdjustmentState()
     look = getattr(state, kind.value).film_look
     look.grain_amount = 60
-    look.print_strength = 40
+    look.print_contrast = 40
     graded = apply_adjustments(image, state, kind)
 
     look.grain_view_map = True
@@ -381,6 +381,7 @@ def test_cpu_film_stages_follow_light_and_mix_the_completed_module(monkeypatch) 
     look.film_resolution = 90
     look.grain_enabled = False
     look.look_strength = 50
+    look.scan_sharpening = 70
     state.hdr.detail.softness = 10
     calls = []
 
@@ -395,12 +396,12 @@ def test_cpu_film_stages_follow_light_and_mix_the_completed_module(monkeypatch) 
         ("lens", "_apply_bloom", .01),
         ("scatter", "_apply_film_resolution", .02),
         ("halation", "_apply_halation", .03),
-        ("response", "_apply_film_response", .04),
+        ("scan", "_apply_scan_sharpening", .04),
         ("detail", "_apply_image_structure", .05),
     ):
         monkeypatch.setattr(adjustments_module, function, stage(name, increment))
     output = adjustments_module._apply_film_look(image, state, PreviewKind.HDR)
-    assert [name for name, _ in calls] == ["lens", "scatter", "halation", "response", "detail"]
+    assert [name for name, _ in calls] == ["lens", "scatter", "halation", "scan", "detail"]
     np.testing.assert_allclose([value for _, value in calls], [.18, .19, .21, .24, .23], atol=1e-7)
     np.testing.assert_allclose(output, .28, atol=1e-7)
     np.testing.assert_array_equal(image, np.full_like(image, .18))
@@ -420,11 +421,9 @@ def test_film_response_preserves_hdr_headroom_without_print_ceiling() -> None:
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
     state = AdjustmentState()
     look = state.hdr.film_look
-    look.print_strength = 100
     look.print_contrast = 18
-    look.print_toe = 10
-    look.print_shoulder = 30
-    look.color_density = 20
+    look.shadow_contrast = 10
+    look.highlight_contrast = 30
     output = apply_adjustments(image, state, PreviewKind.HDR)
 
     assert np.all(np.isfinite(output))
@@ -447,13 +446,14 @@ def test_extreme_film_response_curve_is_smooth_bounded_and_monotonic(
     )
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
     look = FilmLookAdjustments(
-        print_strength=100,
         print_contrast=contrast,
-        print_toe=toe,
-        print_shoulder=shoulder,
+        shadow_contrast=toe,
+        highlight_contrast=shoulder,
     )
 
-    output = _apply_film_response(image, look, kind, np.float32(1.0))[0, :, 0]
+    state = AdjustmentState()
+    getattr(state, kind.value).film_look = look
+    output = apply_adjustments(image, state, kind)[0, :, 0]
 
     assert np.all(np.isfinite(output))
     assert float(np.min(output)) >= 0.0
@@ -464,82 +464,26 @@ def test_extreme_film_response_curve_is_smooth_bounded_and_monotonic(
         assert float(output[-1]) <= 1.0
 
 
-def test_channel_response_is_exposure_dependent_bounded_and_affects_luminance() -> None:
-    levels = np.array([0.002, 0.18, 1.8, 18.0], dtype=np.float32)
-    image = levels.reshape(1, -1, 1) * np.array([1.0, 0.55, 0.25], dtype=np.float32)
-    look = FilmLookAdjustments(red_response=100)
-
-    output = _apply_film_response(image, look, PreviewKind.HDR, np.float32(1.0))
-    red_gain = output[0, :, 0] / image[0, :, 0]
-    input_luma = np.einsum("...c,c->...", image, np.array([0.2722287, 0.6740818, 0.0536895]))
-    output_luma = np.einsum("...c,c->...", output, np.array([0.2722287, 0.6740818, 0.0536895]))
-
-    assert float(red_gain[1]) > float(red_gain[0])
-    assert float(red_gain[2]) > float(red_gain[-1])
-    assert float(np.max(red_gain)) < 1.3
-    assert not np.allclose(input_luma, output_luma)
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+@pytest.mark.parametrize("paper", ["default", "kodak_2383", "fujifilm_crystal_archive_typeii"])
+def test_physical_paper_controls_change_the_scan_without_mutating_input(kind, paper) -> None:
+    image = np.array([[[.01,.02,.04], [.18,.18,.18], [.6,.4,.2]]], dtype=np.float32)
+    original = image.copy()
+    base = _apply_film_stock(image.copy(), FilmLookAdjustments(print_paper=paper), kind, np.float32(1))
+    for fields in ({"print_exposure": 1}, {"print_contrast": 50}, {"shadow_contrast": -50},
+                   {"highlight_contrast": 50}, {"lab_levels": True}):
+        output = _apply_film_stock(image.copy(), FilmLookAdjustments(print_paper=paper, **fields), kind, np.float32(1))
+        assert np.isfinite(output).all()
+        assert not np.allclose(output, base, atol=2e-6), fields
+    np.testing.assert_array_equal(image, original)
 
 
-def test_tonal_desaturation_targets_shadows_and_highlights_smoothly() -> None:
-    levels = np.array([0.005, 0.18, 0.95], dtype=np.float32)
-    image = levels.reshape(1, -1, 1) * np.array([1.0, 0.6, 0.2], dtype=np.float32)
-    look = FilmLookAdjustments(highlight_desaturation=100, shadow_desaturation=100)
-
-    output = _apply_film_response(image, look, PreviewKind.SDR, np.float32(1.0))
-    output_luma = np.einsum("...c,c->...", output, np.array([0.2126, 0.7152, 0.0722]))
-    output_chroma = (np.max(output, axis=-1) - np.min(output, axis=-1)) / np.maximum(output_luma, 1e-6)
-
-    assert float(output_chroma[0, 0]) < float(output_chroma[0, 1])
-    assert float(output_chroma[0, 2]) < float(output_chroma[0, 1])
-    assert np.all(np.isfinite(output))
-
-
-def test_hdr_highlight_desaturation_reaches_display_visible_highlights() -> None:
-    # Normalize the test hue so each scale value is its exact ACEScg luma.
-    hue = np.array([1.0, 0.45, 0.12], dtype=np.float32)
-    hue /= np.dot(hue, np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32))
-    nits = np.array([100.0, 203.0, 400.0, 1000.0, 2000.0, 4000.0], dtype=np.float32)
-    levels = nits / np.float32(203.0) * np.float32(0.18)
-    image = levels.reshape(1, -1, 1) * hue
-    look = FilmLookAdjustments(highlight_desaturation=100)
-
-    output = _apply_film_response(image, look, PreviewKind.HDR, np.float32(1.0))
-    weights = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
-    output_luma = np.einsum("...c,c->...", output, weights)
-    input_chroma = (np.max(image, axis=-1) - np.min(image, axis=-1)) / levels.reshape(1, -1)
-    output_chroma = (np.max(output, axis=-1) - np.min(output, axis=-1)) / output_luma
-    retained_chroma = output_chroma / input_chroma
-
-    assert float(retained_chroma[0, 0]) > 0.99
-    assert float(retained_chroma[0, 1]) > 0.99
-    assert float(retained_chroma[0, 2]) < 0.90
-    assert float(retained_chroma[0, 3]) < 0.50
-    assert float(retained_chroma[0, 4]) < 0.20
-    assert float(retained_chroma[0, 5]) < 0.01
-    assert np.all(np.diff(retained_chroma[0]) <= 1e-6)
-    assert np.all(np.isfinite(output))
-
-
-def test_color_density_is_not_a_conventional_luma_preserving_saturation() -> None:
-    image = np.array([[[0.8, 0.2, 0.05]]], dtype=np.float32)
-    look = FilmLookAdjustments(color_density=100)
-
-    dense = _apply_film_response(image, look, PreviewKind.HDR, np.float32(1.0))
-    saturated = _apply_saturation_vibrance(image, 1.0, 0.0)
-    weights = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
-
-    assert float(np.dot(dense[0, 0], weights)) < float(np.dot(image[0, 0], weights))
-    assert float(np.dot(saturated[0, 0], weights)) == pytest.approx(float(np.dot(image[0, 0], weights)))
-
-
-def test_legacy_film_look_payload_receives_neutral_sprint_b_defaults() -> None:
-    look = FilmLookAdjustments.model_validate({"print_strength": 42})
-
-    assert look.red_response == 0
-    assert look.green_response == 0
-    assert look.blue_response == 0
-    assert look.highlight_desaturation == 0
-    assert look.shadow_desaturation == 0
+@pytest.mark.parametrize("field", ["reference_model", "print_strength", "print_toe", "print_shoulder",
+    "color_density", "red_response", "green_response", "blue_response", "highlight_desaturation",
+    "shadow_desaturation", "halation_sensitivity"])
+def test_removed_film_controls_are_rejected_instead_of_migrated(field) -> None:
+    with pytest.raises(ValidationError):
+        FilmLookAdjustments.model_validate({field: 42})
 
 
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
@@ -552,10 +496,9 @@ def test_film_response_look_strength_is_a_single_linear_blend(kind: PreviewKind)
         image *= np.float32(4.0)
     state = AdjustmentState()
     look = getattr(state, kind.value).film_look
-    look.print_strength = 80
     look.print_contrast = 45
-    look.print_toe = 35
-    look.print_shoulder = 55
+    look.shadow_contrast = 35
+    look.highlight_contrast = 55
 
     look.look_strength = 0
     bypass = apply_adjustments(image, state, kind)
@@ -655,12 +598,11 @@ def test_halation_extent_changes_spread_without_changing_edge_qualification() ->
     state = AdjustmentState()
     look = state.hdr.film_look
     look.halation_amount = 100
-    look.halation_sensitivity = 100
     look.halation_radius = 0.2
-    qualification_small = adjustments_module._halation_edge_source(image, PreviewKind.HDR, look.halation_sensitivity)
+    qualification_small = adjustments_module._halation_edge_source(image, PreviewKind.HDR, 75)
     small, small_map = adjustments_module._apply_halation(image, look, PreviewKind.HDR, np.float32(1.0))
     look.halation_radius = 2.0
-    qualification_large = adjustments_module._halation_edge_source(image, PreviewKind.HDR, look.halation_sensitivity)
+    qualification_large = adjustments_module._halation_edge_source(image, PreviewKind.HDR, 75)
     large, large_map = adjustments_module._apply_halation(image, look, PreviewKind.HDR, np.float32(1.0))
 
     assert float(large[60, 47, 0]) > float(small[60, 47, 0])

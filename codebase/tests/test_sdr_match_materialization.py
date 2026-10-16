@@ -39,8 +39,8 @@ def _calibrated_grade() -> tuple[AdjustmentState, list[LocalAdjustment]]:
     hdr.luma_curve = [[0, 0], [0.25, 0.23], [0.5, 0.5], [0.75, 0.78], [1, 1]]
     hdr.color_grading.highlights.luminance_ev = 0.15
     hdr.color_grading.highlights.saturation = 18
-    hdr.film_look.print_strength = 8
-    hdr.film_look.highlight_desaturation = 12
+    # Retired artistic controls have no physical equivalent; physical controls
+    # have independent coverage in test_film_controls.py.
     hdr.film_look.bloom_amount = 6
     hdr.film_look.halation_amount = 5
     hdr.detail.clarity_amount = 4
@@ -241,7 +241,6 @@ def _monochrome_grade() -> AdjustmentState:
     hdr.highlight_compression_start_nits = 300.0
     hdr.highlight_compression_target_nits = 800.0
     hdr.detail.clarity_amount = 20.0
-    hdr.film_look.print_strength = 25.0
     hdr.vignette.amount = -25.0
     return adjustments
 

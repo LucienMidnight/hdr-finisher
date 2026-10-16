@@ -68,7 +68,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # the finished picture instead of predicting it from the source, and so the
     # composite and scope passes agree by construction rather than by mirroring.
     assert "fn finishFragmentMain(" in shader
-    assert "return vec4f(applyFilmLook(coordinate), 1.0);" in shader
+    assert "return vec4f(filmHalfPrecision(applyFilmLook(coordinate)), 1.0);" in shader
     assert shader.count("applyFilmLook(coordinate)") == 1
     assert "applyOutputHighlights(finishedAt(coordinate))" in shader
     # The limiter is a single final-output stage: one shoulder call site per lane,
@@ -166,8 +166,8 @@ def test_advanced_finishing_controls_are_wired_to_the_editor_and_export_contract
     assert "chroma = p[104] * (1.0 - 0.8 * smoothRange(0.88, 1.0, signal))" in shader
     assert "return grain * amount" in shader
     assert "rgb *= exp2(stops)" in shader
-    assert "stockPrintScan(base, density + densityDelta)" in shader
-    assert "return applyVignette(vec3f(filmLumaFromSignal(0.5)) * exp2(filmGrainStops(rgb, coordinate, p[79]))" in shader
+    assert "stockPrintScan(base, density + delta, p[80])" in shader
+    assert "return vec3f(filmLumaFromSignal(0.5)) * exp2(filmGrainStops(rgb, coordinate, p[79]))" in shader
 
 
 def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
@@ -179,13 +179,13 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     for label in ["Clean Cinema", "Soft Color Negative", "Dense Print", "High-Speed Texture"]:
         assert label in javascript
     for path in [
-        "print_strength", "color_density", "grain_amount", "grain_shadow_response",
+        "push_pull", "print_paper", "print_exposure", "print_contrast", "grain_amount", "grain_shadow_response",
         "grain_midtone_response", "grain_highlight_response", "halation_amount",
         "bloom_amount", "grain_film_format",
         "grain_capture_geometry", "grain_custom_width_mm", "grain_custom_height_mm",
         "grain_view_map", "halation_view_map",
-        "red_response", "green_response", "blue_response",
-        "highlight_desaturation", "shadow_desaturation", "grain_film_type",
+        "shadow_contrast", "highlight_contrast", "scan_sharpening",
+        "lab_levels", "grain_film_type",
     ]:
         assert f'data-path="current.film_look.{path}"' in html
     # NEXT-01 #2: Softness and Microcontrast are Detail controls now.
@@ -200,7 +200,7 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "let edgeRadius = clamp(halationRadius / 4, 1, 16)" in shader
     assert "rgb * bloomMask * bloomMask" in shader
     assert "let edgeProtection = smoothRange(0.025, 0.20, relativeDetail)" in shader
-    assert "Physical Extent" in html
+    assert 'for="film-halation-radius">Spread</label>' in html
     assert "Optical Spread" in html
     assert "% output diag" in javascript
     assert "exp2(0.55 * p[81] * p[79])" not in shader
@@ -227,15 +227,13 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "let canonicalTintSrgb = mix(vec3f(warmY), warm" in shader
     assert "select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5)" in shader
     assert "let tint = mix(vec3f(warmY), warm" not in shader
-    assert "let toeKnee = 0.18 * log(1.0 + exp((0.45 - mapped) / 0.18))" in shader
-    assert "let shoulderKnee = 0.18 * log(1.0 + exp((mapped - 0.55) / 0.18))" in shader
-    # Stage controls run at full strength; the completed module is mixed once.
-    assert "let channelResponse = vec3f(p[143], p[144], p[145]);" in shader
+    assert "fn scanFragmentMain" in shader
     assert "rgb = mix(original, rgb, p[79])" in shader
-    assert "let highlightGuard = 1.0 - 0.65 * smoothRange(0.88, 1.12, responseSignal)" in shader
-    assert "shadowWeight * p[147] + highlightWeight * p[146]" in shader
-    assert "smoothRange(0.50, 0.82, responseSignal)" in shader
-    assert "smoothRange(0.62, 1.0, responseSignal)" in shader
+    assert "let gamma = p[81]" in shader
+    assert "stockPrintScan(base, density + delta, p[80])" in shader
+    for removed in ("print_strength", "print_toe", "print_shoulder", "color_density",
+                    "red_response", "green_response", "blue_response", "highlight_desaturation", "shadow_desaturation"):
+        assert f'data-path="current.film_look.{removed}"' not in html
     assert 'data-film-grain-custom hidden' in html
     assert 'id="film-look-match-hdr"' in html
     assert "film_grain_seed: 271828" in javascript

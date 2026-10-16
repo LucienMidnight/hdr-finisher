@@ -41,7 +41,7 @@ def test_a_removed_field_is_dropped_wherever_it_sits(caplog: pytest.LogCaptureFi
     assert document.global_adjustments.hdr.exposure == 0.5
     saved = document.model_dump_json()
     for name in ("a_removed_top_level_setting", "a_removed_grade_setting", "photo_fine", "levels"):
-        assert name not in saved
+        assert f'"{name}"' not in saved
     assert "4 outdated field(s) ignored" in caplog.text
 
 
