@@ -33,7 +33,7 @@ Bloom has been replaced by the lens filters. Projects or presets that used remov
 
 ## Known limitations
 
-This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. Very bright uncompressed HDR grades can exceed the preview's numerical range and show clipped colours or white patches; CPU export and Proof remain the reference. The widest lens-filter glows have bounded tails. Preview/export differences and other retained checks are recorded in Known limitations; release validation status is recorded there separately from these draft notes.
+This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. Very bright uncompressed HDR grades can exceed the preview's numerical range and show clipped colours or white patches; CPU export and Proof remain the reference. The widest lens-filter glows have bounded tails. On macOS and Linux, renaming, moving and deleting photos from the Library is not available yet; the Library says so and leaves your files untouched. Preview/export differences and other retained checks are recorded in Known limitations; release validation status is recorded there separately from these draft notes.
 
 See [Known limitations](https://github.com/LucienMidnight/hdr-finisher/blob/v0.9.1/docs/known-limitations.md) for support and validation status.
 
