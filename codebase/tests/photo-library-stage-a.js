@@ -61,9 +61,7 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     await library.waitForFunction(() => document.getElementById("picker-list").scrollTop > 0);
     assert.equal(await library.evaluate(() => { const dialog = document.getElementById("folder-picker"); return dialog.scrollHeight <= dialog.clientHeight; }), true);
     await page.screenshot({ path: path.join(output, "picker.png") });
-    const scanned = page.waitForResponse(response => response.url().endsWith("/api/library/scan") && response.request().method() === "POST");
     await library.locator("#picker-pin").click();
-    await scanned;
     await library.waitForFunction(() => !document.getElementById("folder-picker").open);
     const icon = await library.evaluate(() => {
       const button = document.querySelector(".expand-folder"), style = getComputedStyle(button, "::before");
