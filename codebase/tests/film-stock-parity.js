@@ -140,6 +140,7 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
     if (stockCharacterOnly) {
       await require("./film-character-ui-check.js")(page);
       if (process.argv.includes("--presets-ui")) await require("./film-presets-ui-check.js")(page);
+      if (process.argv.includes("--panel-ui")) await require("./film-panel-ui-check.js")(page);
       if (process.argv.includes("--ui-only")) return;
     }
     const loaded = await page.evaluate(async (ids) => {

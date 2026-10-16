@@ -39,8 +39,11 @@ module.exports = async function checkStockCharacterUi(page) {
   input('grain_amount',31); await syncGlobalEditState(); check(hdr().grain_amount===73,'SDR shares HDR state');
   input('print_paper','kodak_2383'); await syncGlobalEditState();
   input('film_stock','fujifilm_velvia_100'); await syncGlobalEditState();
-  check(!dot('print_paper').disabled,'slide must allow inherited-paper reset');
-  dot('print_paper').click(); await syncGlobalEditState(); check(state.adjustments.sdr.film_look.print_paper==='default','slide paper reset');
+  check(dot('print_paper').disabled,'slide Print reset must be locked');
+  dot('print_paper').click(); await syncGlobalEditState(); check(state.adjustments.sdr.film_look.print_paper==='kodak_2383','slide retains deliberate paper');
+  input('film_stock','kodak_portra_400'); await syncGlobalEditState();
+  dot('print_paper').click(); await syncGlobalEditState(); check(state.adjustments.sdr.film_look.print_paper==='default','negative paper reset');
+  input('film_stock','fujifilm_velvia_100'); await syncGlobalEditState();
   const grain=document.querySelector('#film-grain-amount');
   grain.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})); await syncGlobalEditState();
   check(!state.adjustments.sdr.film_look.stock_overrides.includes('grain_amount'),'double-click must restore inheritance');

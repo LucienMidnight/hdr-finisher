@@ -71,19 +71,51 @@ Off by default; the eye button turns it on for the current rendition. All slider
 
 ## Film Look in HDR and SDR
 
-Film Look uses the same stages in each branch. Phase 3 controls are complete on film-look-rebuild. Lens Filter, Halation and Grain follow the film gate. Phase 3b lens filter is complete; see the Film Look PRD.
+Film Look has the same controls in HDR and SDR. Its Preset button opens the
+shared Adjustment Presets dialog: complete Looks are under Built-in, and your
+recipes under Saved. Applying a Look replaces the Film Look recipe. Save
+current records the stock, paper and deliberately set controls only.
+
+Look Strength comes first, then the Film stock card. Its facts describe still
+or cinema film, grain, halation and matching paper; estimate labels distinguish
+calibrated descriptions from manufacturer measurements. Slide films are
+scanned directly without print.
+
+The five folding stages have triangles, summaries and a count of Mod controls:
+
+- Camera: Format shortcuts, Film Format, Capture and physical dimensions for
+  Custom format; Film Exposure; Lens shortcuts, Lens Filter, Strength and Size.
+- Negative (open initially): Stock Color, Stock Tone, Color Separation; Halation
+  tile and map; Film Resolution; Grain tile and map, with Tone response trims.
+- Development: five Push/Pull buttons, -2 through +2. The note identifies the
+  measured Portra 800 +1/+2 profiles; other development positions are approximate.
+- Print: shortcuts, Paper, Print Exposure, Print Warmth, Print Tint, Preflash,
+  Print Contrast, Shadow Contrast and Highlight Contrast. Slides show No print
+  and lock the whole stage, retaining the settings for a later negative stock.
+- Scan: shortcuts, Lab Levels and Scan Sharpening.
+
+Shortcut buttons affect only their named scope. STOCK means a stock-owned
+value is inherited. A deliberate edit, including setting the same value,
+shows a reset dot before its name and counts as Mod. Click that dot or
+double-click a slider to restore its stock value or shared baseline. Switching
+stock updates only inherited controls. Undo/redo, saved projects and sparse
+Looks preserve this distinction. Folding lasts for the current session only.
+
+The final Output note explains HDR highlight ratios or SDR screen white and
+has nothing to set. SDR's Match HDR film look button at the top copies once;
+the two renditions remain independently editable.
 
 Film stock data is derived from [spektrafilm](https://github.com/andreavolpato/spektrafilm) by Andrea Volpato, licensed CC BY-SA 4.0. HDR Finisher re-samples spektrafilm's profiles into its own tables and runs its own GPU and CPU engine, informed by spektrafilm's GPL-3.0 code; see `THIRD_PARTY_NOTICES.md` and `codebase/backend/hdr_finisher/film_stocks/CHANGELOG.txt`.
 
 | Control | Purpose | Range |
 |---|---|---|
 | Look Strength | Blends the complete Film Look toward neutral without changing its component values. | 0–100% |
-| Stock | Measured negative or slide colour and tone, or a straight-response Neutral stock. Slides have no print. | Neutral or a stock |
+| Film stock | Measured negative or slide colour and tone, or a straight-response Neutral stock. Slides have no print. | Neutral or a stock |
 | Stock Color | How much of the stock's colour response is applied. | 0–100% |
-| Stock Tone | How much of the stock's print tone curve is applied. At 0 your tones stay as graded and only the stock's colour is borrowed (the Portra 400 Color preset); at 100 the full film-and-print tone is used (Portra 400 Full). HDR highlights above reference white keep their ratios at any setting. | 0–100% |
-| Film Exposure | Over- or under-exposes the negative; the print is rebalanced so brightness holds and the stock's character changes (Portra opens up and softens when overexposed). | -3 to +3 EV |
+| Stock Tone | How much of the stock's print tone curve is applied. At 0 your tones stay as graded and only the stock's colour is borrowed; at 100 the full film-and-print tone is used. HDR highlights above reference white keep their ratios at any setting. | 0–100% |
+| Film Exposure | Exposes the negative brighter or darker before print, moving along its curve; independent of Print Exposure. | -3 to +3 EV |
 | Color Separation | Strengthens or weakens the interaction between the colour layers, which sets the stock's colour richness. Greys are unchanged. | -100 to +100% |
-| Preflash | Pre-exposes the print paper, lowering print contrast and keeping more highlight detail. | 0–100% |
+| Preflash | Flashes the print paper with light, lifting and softening shadows. | 0–100% |
 | Print Warmth / Print Tint | Enlarger yellow and magenta filtration; 100% is a 20 CC filter shift. | -100 to +100% |
 | Push/Pull | Development in whole stops. Portra 800 +1/+2 are measured; other positions approximate film contrast. | -2 to +2 stops |
 | Paper | The stock default, Kodak 2383, or Fujifilm Crystal Archive Type II. Disabled for slides. | Three choices |
@@ -99,9 +131,9 @@ Film stock data is derived from [spektrafilm](https://github.com/andreavolpato/s
 | Lens Strength | Continuous commercial filter grades with 1/8, 1/4, 1/2, 1 and 2 marks. | 0.125–2 |
 | Lens Size | Scales the film-plane glow; 1 is normal size. Existing spatial caps shorten the longest tails. | 0.25–4 |
 | Grain Amount / Size / Softness / Chroma | Set density-grain strength, scale, clumping, and colored component. | 0–100% |
-| Shadow / Midtone / Highlight Response | Weight grain by local density instead of overlaying uniform noise. | 0–150% |
+| Tone response: Shadows / Midtones / Highlights | Weight grain by local density instead of overlaying uniform noise. | 0–150% |
 | Film Resolution | Reduces pre-grain resolving character as the value moves below 100%. | 0–100% |
-| Show grain map | Replaces the viewer with the grain field alone, painted on a neutral mid-grey card that still carries the tonal response the picture drives. It is suppressed during export, and the Halation map takes precedence if both are on. | Off/On |
+| Show grain map | Replaces the viewer with the grain field alone, painted on a neutral mid-grey card that still carries the tonal response the picture drives. It is suppressed during export; choosing either map switches off the other. | Off/On |
 
 The deterministic grain seed lives in shared adjustment state. HDR and SDR can use different response values but sample the same spatial field.
 

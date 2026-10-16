@@ -112,13 +112,13 @@ target panel:
 
 | Stage | Controls |
 |---|---|
-| Top | Looks, Look Strength |
-| Lens | Film Format, Diffusion Filter type, Strength, Size |
-| Negative | Stock, Stock Color, Stock Tone, Film Exposure, Color Separation, Halation (Amount, Spread, map), Resolution, Grain (Amount, Size, Softness, Chroma, Film Type, Response trims, map) |
+| Top | Shared Preset button for Looks; Look Strength; Film stock card and credit |
+| Camera | Format shortcuts; Film Format, Capture, custom dimensions; Film Exposure; Lens shortcuts, Lens Filter, Strength, Size |
+| Negative | Stock Color, Stock Tone, Color Separation, Halation tile, Film Resolution, Grain tile with Tone response trims and maps |
 | Development | Push/Pull |
 | Print | Paper, Print Exposure, Print Warmth, Print Tint, Preflash, Print Contrast, Shadow Contrast, Highlight Contrast |
 | Scan | Scan sharpening, Lab levels |
-| Output | HDR highlight handling, Match HDR film look (SDR) |
+| Output | Informational HDR/SDR output note; SDR Match HDR film look sits at the top |
 
 ## 5. Film data: sources and confidence
 

@@ -12,14 +12,26 @@ module.exports = async function(page) {
    const preset=builtInGroupPresets(state.groupPresetContext).find(p=>p.id===`built-in:${id}`);
    check(preset,`missing Look ${id}`); applyGroupPreset(preset); await syncGlobalEditState();
   };
+  const checkPanel = () => {
+   for (const section of group.querySelectorAll('[data-film-section]')) {
+    const keys=[...new Set([...section.querySelectorAll('[data-path]')].map(c=>c.dataset.path.split('.').at(-1)))];
+    const count=keys.filter(key=>state.adjustments[state.currentView].film_look.stock_overrides.includes(key)).length;
+    check(section.querySelector('.film-stage-mod').textContent===(count ? `${count} Mod` : ''),'stage Mod count disagrees with deliberate controls');
+    check(Boolean(section.querySelector('.film-stage-summary').textContent),'missing current-setting summary');
+   }
+  };
   try {
    for(const lane of ['hdr','sdr']) {
     await switchLane(lane);
     const outside=structuredClone(state.adjustments);
     for(const [stage,entries] of Object.entries(HDRFilmCharacter.stages)) {
-     const menu=document.querySelector(`[data-film-stage="${stage}"]`); check(menu,`missing ${stage}`);
+
      for(let i=0;i<entries.length;i++) {
-      menu.value=String(i);menu.dispatchEvent(new Event('change',{bubbles:true})); await syncGlobalEditState();
+      const button=stage==='Development'
+       ? document.querySelector(`[data-film-push="${entries[i][1].push_pull}"]`)
+       : document.querySelector(`[data-film-stage="${stage}"][data-film-recipe="${i}"]`);
+      check(button,`missing ${stage} shortcut ${i}`);button.click();await syncGlobalEditState();
+      checkPanel();
       const f=state.adjustments[lane].film_look;
       for(const [key,value] of Object.entries(entries[i][1])) {
        check(f[key]===value,`${stage} value ${key}`);
@@ -28,7 +40,7 @@ module.exports = async function(page) {
      }
     }
     for(const look of FILM_LOOK_PRESETS) {
-     await applyLook(look.id);
+     await applyLook(look.id);checkPanel();
      const expected=HDRFilmCharacter.expand(look.recipe);
      for(const key of Object.keys(expected)) check(JSON.stringify(state.adjustments[lane].film_look[key])===JSON.stringify(expected[key]),`${lane} ${look.id} replacement ${key}`);
     }

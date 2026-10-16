@@ -2,7 +2,7 @@
 
 Status: living guideline for the shipped application
 
-Last updated: 2026-10-10
+Last updated: 2026-10-16
 
 This guideline is authoritative for current UI behavior and supersedes persistence language in older product and sprint documents.
 
@@ -54,6 +54,37 @@ Keep source facts separate from grade decisions, grade decisions separate from v
 - A group body opens directly below its header and must not shift unrelated controls horizontally.
 - Collapse is organizational only. It never enables, disables, resets, or bypasses processing.
 - `aria-expanded` must match the visual state, and the hidden body must not remain keyboard-reachable.
+
+### Sub-sections and fixed stage shortcuts
+
+Film Look uses five subordinate disclosures: Camera, Negative, Development,
+Print and Scan. Use a small right-pointing triangle which rotates down when
+open, no number, a short current-setting summary, and `<n> Mod` for deliberately
+set controls. Keep the whole heading keyboard-operable with `aria-expanded`
+and `aria-controls`; hidden content cannot receive focus. A long summary may
+truncate visually but retains its full accessible text and hover title.
+
+The Film Look module starts collapsed. Inside it, Negative starts open and the
+other four stages folded (Steve, October 16). Stage disclosure state lasts for
+the page session, across module folding and HDR/SDR switching; it is never saved
+with a project or preset and never changes processing.
+
+Fixed shortcuts live as small wrapping buttons inside their owning stage.
+They are actions, not managed presets or persistent selection indicators.
+Format and Lens sit inside Camera; Print and Scan have their own rows.
+Development uses the five whole-stop Push/Pull segments. Complete recipes use
+the shared Preset button and Adjustment Presets dialog, under Built-in / Saved.
+
+Keep ordinary sliders full-width, even where the illustrative mock-up shows
+pairs. Use the real instrument sliders, switch material and segmented tokens.
+Halation and Grain may use raised tiles for their honest sub-control grouping;
+grain trims sit beneath the relationship label Tone response. Stock-owned,
+inherited controls carry a muted STOCK tag; deliberate settings carry the
+existing reset dot before the name, stronger value ink and accent slider fill.
+This applies to selects, switches and segmented controls as well as sliders.
+Equal-value deliberate edits still count as Mod. Dots restore the stock value
+or common baseline. Slide films retain Print settings but lock every Print
+action, including its reset dots and shortcuts, until a negative is selected.
 
 ## Modified state
 

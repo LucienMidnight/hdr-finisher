@@ -2,7 +2,7 @@
 
 - **Date:** October 15, 2026
 - **Branch at planning time:** `film-stocks-phase-1` (after `597e5ac`)
-- **Status:** Phases 1-5 (including 3b) complete October 16, 2026. Phase 6 panel mock-up by Claude is next. See section 8 and the completion notes below for current results; earlier WIP notes are historical. Decisions marked **Steve** are open.
+- **Status:** Phases 1-6 (including 3b) implemented October 16, 2026; release check of the whole rebuild remains before merge. Phase 6 follows the approved mock-up and its implementation record in the Phase 6 brief. See section 8 and the completion notes below for current results; earlier WIP notes are historical. Decisions marked **Steve** are open.
 - **Reference read:** spektrafilm at `3bb2c2d` (June 7, 2026), Filmbox's published workflow.
 - **Requirements and data sources:** [Film Look PRD](Film_Look_PRD.md). Its
   section 5 is the record of which film data is confirmed, estimated or missing;
@@ -109,7 +109,15 @@ tonal range, which can also check the shadow-to-highlight grain behaviour.
 
 ## 5. The new panel
 
-Look Strength stays at the top, with the Looks browser. Then:
+The approved Phase 6 panel supersedes this plan's original placement proposal:
+Looks use the shared Preset button and Adjustment Presets dialog. Look Strength
+and the Film stock card sit above five folding stages: Camera, Negative,
+Development, Print and Scan. Camera includes Format, Capture, custom dimensions,
+Film Exposure and Lens. Negative starts open; the others start folded. Output
+is a final note, and SDR Match HDR sits at the top. Fixed Format/Lens/Print/Scan
+shortcuts stay inside their stages. See the Phase 6 brief for current behavior.
+
+The following table preserves the original planning proposal for context:
 
 | Stage | Controls |
 |---|---|
