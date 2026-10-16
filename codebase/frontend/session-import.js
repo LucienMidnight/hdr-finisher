@@ -622,6 +622,8 @@ function renderInterpretationGate() {
 }
 
 function retireActiveSession() {
+  status.clear("match");
+  status.clear("grade-save");
   state.scopeAwaitingPresentation = null;
   // End every document-owned timer, controller, selection, draft, and cache
   // before a replacement document is installed. Generations remain monotonic

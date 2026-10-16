@@ -396,7 +396,9 @@ async function openProjectFromPath(desktopSelection = null) {
     els.projectOpen.disabled = true;
     const statusTimer = beginProjectOpenStatus(selection.path?.split(/[\\/]/).pop() || "loading source");
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    const resumeGradeSaving = await window.HDRGradeSaving?.pauseForProjectOpen();
     try {
+      if (openGeneration !== state.projectOpenGeneration) return;
       let result = await projectIo.openDesktopProject(fetch, {
         projectGrant: selection.grant,
         signal: controller.signal,
@@ -437,6 +439,7 @@ async function openProjectFromPath(desktopSelection = null) {
       }
       return;
     } finally {
+      resumeGradeSaving?.();
       if (openGeneration === state.projectOpenGeneration) {
         window.clearInterval(statusTimer);
         els.projectOpen.disabled = false;
@@ -456,6 +459,7 @@ async function openProjectFromPath(desktopSelection = null) {
   const statusTimer = beginProjectOpenStatus(path.split(/[\\/]/).pop() || "loading source");
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
   let sourcePath = null;
+  const resumeGradeSaving = await window.HDRGradeSaving?.pauseForProjectOpen();
   try {
     let result = await projectIo.openPathProject(fetch, { path });
     let { response, payload } = result;
@@ -485,6 +489,7 @@ async function openProjectFromPath(desktopSelection = null) {
   } catch (error) {
     status.post({ id: "project-open", severity: "error", message: error?.message || "The project could not be opened." });
   } finally {
+    resumeGradeSaving?.();
     window.clearInterval(statusTimer);
     hidePreviewMessage();
     if (status.get("project-open")?.severity === "progress") status.clear("project-open");

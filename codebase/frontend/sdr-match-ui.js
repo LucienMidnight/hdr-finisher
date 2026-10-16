@@ -1,6 +1,8 @@
 async function setSdrMatch() {
   if (!state.session) return false;
-  if (await syncGlobalEditState() === false) return false;
+  const sessionId = state.session.session_id;
+  const isCurrent = () => state.session?.session_id === sessionId;
+  if (await syncGlobalEditState() === false || !isCurrent()) return false;
   const authored = state.editDocument?.source?.luminance?.sdr_rendition === "authored";
   let consent = false;
   if (authored) {
@@ -8,7 +10,7 @@ async function setSdrMatch() {
       "This source contains an authored SDR rendition. Match will replace it with an editable generated SDR rendition. Undo restores the authored grade.",
       { title: "Replace authored SDR rendition", confirmLabel: "Continue" },
     );
-    if (!consent) return false;
+    if (!consent || !isCurrent()) return false;
   }
   setIndeterminatePreviewMessage("Matching HDR grade · analyzing settled HDR proxy");
   if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = true;
@@ -18,7 +20,7 @@ async function setSdrMatch() {
     const candidateRenderer = state.renderingMode !== "cpu" && state.gpuPreview?.available
       ? (state.sdrMatchCandidateRenderer || "gpu") : "cpu";
     let matchFinished = false;
-    const request = fetch(`/api/session/${state.session.session_id}/sdr-match`, {
+    const request = fetch(`/api/session/${sessionId}/sdr-match`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -29,12 +31,14 @@ async function setSdrMatch() {
       }),
     }).finally(() => { matchFinished = true; });
     if (candidateRenderer !== "cpu") {
-      void serveSdrMatchCandidates(state.session.session_id, state.editRevision, () => matchFinished);
+      void serveSdrMatchCandidates(sessionId, state.editRevision, () => matchFinished || !isCurrent());
     }
     const response = await request;
     const result = await safeJson(response);
+    if (!isCurrent()) return false;
     if (response.status === 409) {
       await refreshEditState();
+      if (!isCurrent()) return false;
       throw new Error(result?.detail?.message || "The grade changed while Match was analyzing it. Try again.");
     }
     if (!response.ok) throw new Error(responseErrorMessage(result, "SDR Match failed."));
@@ -62,6 +66,7 @@ async function setSdrMatch() {
       : settledProxyLongEdge();
     const previewTier = previewLongEdge >= refinementProxyLongEdge() ? "refinement" : "settled";
     if (state.denoise.sdr.enabled) await recalculateDenoise("sdr");
+    if (!isCurrent()) return false;
     const gpuOptions = {
       hideStatus: false,
       longEdge: previewLongEdge,
@@ -69,6 +74,7 @@ async function setSdrMatch() {
       tier: previewTier,
     };
     const previewDeferred = await presentMatchedSdrPreview(gpuOptions);
+    if (!isCurrent()) return false;
     if (previewDeferred) {
       syncDesktopDocumentState();
       status.post({ id: "match", severity: "info", message: "HDR grade matched to SDR · preview updating." });
@@ -80,20 +86,25 @@ async function setSdrMatch() {
     if (state.currentView === "sdr") {
       await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "sdr" });
     }
+    if (!isCurrent()) return false;
     if (state.compareLayout !== "single") {
       const other = state.currentView === "hdr" ? "sdr" : "hdr";
       await renderComparisonPreview(other, { force: true });
     }
+    if (!isCurrent()) return false;
     syncDesktopDocumentState();
     status.post({ id: "match", severity: "success", message: "HDR grade matched to SDR." });
     return true;
   } catch (error) {
+    if (!isCurrent()) return false;
     console.error(error);
     status.post({ id: "match", severity: "error", message: error.message });
     return false;
   } finally {
-    hidePreviewMessage();
-    renderLaneChrome();
+    if (isCurrent()) {
+      hidePreviewMessage();
+      renderLaneChrome();
+    }
   }
 }
 

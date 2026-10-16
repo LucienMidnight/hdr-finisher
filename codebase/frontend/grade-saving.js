@@ -69,6 +69,14 @@
     } finally { asking = false; render(); syncDesktopDocumentState(); }
   }
   let tickFlight = Promise.resolve(), revertFlight = Promise.resolve();
+  let projectOpenPauses = 0;
+  async function pauseForProjectOpen() {
+    projectOpenPauses += 1;
+    // Drain a check/save already in flight before the backend replaces its session.
+    await tickFlight;
+    let released = false;
+    return () => { if (!released) { released = true; projectOpenPauses -= 1; } };
+  }
   async function save({ automatic = false } = {}) {
     if (!automatic) await revertFlight;
     if (busy && !saving && !automatic) await tickFlight;
@@ -157,10 +165,14 @@
     return session;
   }
   async function tick() {
-    if (!current || readySession !== current || busy || asking || state.importInProgress || state.session?.session_id !== current) return;
+    if (projectOpenPauses || !current || readySession !== current || busy || asking || state.importInProgress || state.session?.session_id !== current) return;
+    const sessionId = current;
+    const isCurrent = () => current === sessionId && state.session?.session_id === sessionId;
     busy = true;
     try {
-      result = await command("check", { unsaved: state.documentDirty });
+      const checked = await command("check", { unsaved: state.documentDirty }, sessionId);
+      if (!isCurrent()) return;
+      result = checked;
       if (result.session) await refresh(result.session);
       if (result.reload) {
         await load(result.grade);
@@ -172,7 +184,7 @@
         busy = false; await save({ automatic: true });
       }
     } catch (error) {
-      status.post({ id: "grade-save", severity: "error", message: error.message });
+      if (isCurrent()) status.post({ id: "grade-save", severity: "error", message: error.message });
     } finally { busy = false; render(); }
   }
   function activated(session, projectPath) {
@@ -262,7 +274,7 @@
     } finally { asking = false; byId("grade-revert-menu").disabled = false; byId("grade-revert-saved").disabled = false; }
   }
   byId("grade-revert-menu").addEventListener("click",()=>{ revertFlight = revertMenu().catch(error=>status.post({id:"grade-revert",severity:"error",message:error.message})); });
-  window.HDRGradeSaving = { refresh, prepare, open, save, saveProject, leave, render, activated, resolve, offerRecovery,
+  window.HDRGradeSaving = { pauseForProjectOpen, refresh, prepare, open, save, saveProject, leave, render, activated, resolve, offerRecovery,
     item: () => currentPath, ready: () => Boolean(current && readySession === current),
     active: () => Boolean(current && state.session?.session_id === current),
     hasGrade: id => id === current && loadedGrade, conflict: () => Boolean(result.conflict) };
