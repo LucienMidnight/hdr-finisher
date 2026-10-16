@@ -23,6 +23,8 @@
 
 - New branding, a tighter header, and Library and preset controls styled to match the side panels.
 - Grade loading appears immediately when opening a Library photo, and the preview retries on the graphics card when loading a film stock interrupts its first draft.
+- Recent projects in the File menu and header reopen your last ten projects, including ones saved with Save As. Drag in the navigation window to pan, and the RAW only filter is back beside HDR in the Library toolbar.
+- Fixes for Black and White on large tiled pictures, Library tags and albums saving reliably, and Match no longer applying a late reply to the next photo.
 - Neutral Film Look retains weak colour channels and a wider range before HDR highlight compression. Extremely bright, uncompressed grades still have the preview limit described below.
 
 ## Changed or removed
