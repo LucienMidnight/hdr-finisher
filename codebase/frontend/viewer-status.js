@@ -241,6 +241,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   // The coordinator keeps the same record, so its follow-up decisions (pan
   // candidate, catch-up freshness) read one source of truth.
   state.renderCoordinator?.noteAccepted(state.acceptedPresentation);
+  refreshScopesAfterPresentation(lane);
 }
 
 function markPreviewUnavailable(reason) {

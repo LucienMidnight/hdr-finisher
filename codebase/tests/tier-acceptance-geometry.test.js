@@ -48,6 +48,7 @@ function shell({ previewResolution = "4096" } = {}) {
     ensureGeometryCoordinateMap() {},
     renderCurrentPreviewSize() {},
     renderReadouts() {},
+    refreshScopesAfterPresentation() {},
     scheduleNavigationThumbnail() {},
     renderViewerStatus() {},
     gpuPreviewEligible: () => true,

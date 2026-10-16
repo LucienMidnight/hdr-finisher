@@ -64,7 +64,7 @@ function assert(condition, message) {
       if (!fs.existsSync(resolved)) throw new Error(`Input does not exist: ${resolved}`);
       await page.setInputFiles("#file-input", resolved);
     } else {
-      await page.getByRole("button", { name: "Load test pattern" }).click();
+      await page.evaluate(() => els.testPatternButton.click());
     }
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
@@ -150,8 +150,8 @@ function assert(condition, message) {
         metrics: JSON.stringify(state.gpuPreview.tiledExecutionMetrics || null),
       };
 
-      // 4 -- automatic estimate disclosure, including the legacy flag and a
-      // reachable refusal. The old preference no longer controls GPU estimation.
+      // 4 -- automatic estimate disclosure, including the estimate toggle and a
+      // reachable refusal. The toggle selects bounded estimation or the preview peak.
       const readPanel = async (enabled) => {
         state.scopeExactPeak = enabled;
         if (els.scopeExactPeak) els.scopeExactPeak.checked = enabled;
@@ -169,15 +169,14 @@ function assert(condition, message) {
       const panelOn = await readPanel(true);
       const panelOff = await readPanel(false);
       // Make the bounded analysis refuse, as it can for an over-budget graph.
-      // Keep a positive fallback-label guard rather than assuming the legacy
-      // flag disables an automatically measured GPU scope.
+      // Keep a positive fallback-label guard for an enabled estimate.
       exactScopePeakCache.clear();
       renderer.measureEditingPeak = async () => ({
         rendered: false, refusals: ["test: bounded measurement unavailable"],
       });
       let panelRefused;
       try {
-        panelRefused = await readPanel(false);
+        panelRefused = await readPanel(true);
       } finally {
         renderer.measureEditingPeak = originalMeasure;
         exactScopePeakCache.clear();
@@ -235,13 +234,13 @@ function assert(condition, message) {
     assert(result.panelOn.applied && result.panelOn.exact === false && result.panelOn.label === "Peak (estimate)"
       && result.panelOn.measuredLongEdge === result.nativeEdge,
       `The panel did not disclose its native-patch estimate: ${JSON.stringify(result.panelOn)}`);
-    assert(result.panelOff.applied && result.panelOff.exact === false && result.panelOff.label === "Peak (estimate)",
-      `Automatic estimation changed with the legacy flag: ${JSON.stringify(result.panelOff)}`);
+    assert(result.panelOff.applied && result.panelOff.exact === false && result.panelOff.label === "Peak (preview)",
+      `The disabled estimate did not retain the preview peak: ${JSON.stringify(result.panelOff)}`);
     assert(result.panelRefused.applied && result.panelRefused.exact === false
       && result.panelRefused.label === "Peak (preview)",
       `The panel did not disclose the refused measurement fallback: ${JSON.stringify(result.panelRefused)}`);
     console.log(`panel disclosure    on -> "${result.panelOn.label}" at ${result.panelOn.measuredLongEdge}, `
-      + `legacy off -> "${result.panelOff.label}", refused -> "${result.panelRefused.label}"  PASS`);
+      + `off -> "${result.panelOff.label}", refused -> "${result.panelRefused.label}"  PASS`);
 
     if (input) {
       const gain = result.panelOn.peakValue - result.panelRefused.peakValue;

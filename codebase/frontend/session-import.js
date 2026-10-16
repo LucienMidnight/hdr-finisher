@@ -622,6 +622,7 @@ function renderInterpretationGate() {
 }
 
 function retireActiveSession() {
+  state.scopeAwaitingPresentation = null;
   // End every document-owned timer, controller, selection, draft, and cache
   // before a replacement document is installed. Generations remain monotonic
   // so callbacks already queued by the browser cannot publish into the next
