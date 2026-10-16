@@ -65,7 +65,7 @@ async function main() {
       const pending = [...requests].reverse().find((request) => request.path === pathname && request.durationMs === undefined);
       if (pending) pending.durationMs = Date.now() - pending.startedAt;
     });
-    await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    await window.waitForSelector("#file-input", { state: "attached", timeout: 30000 });
     await window.waitForTimeout(1500);
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.waitForFunction(() => window.HDRFinisherPerformance?.sessionId?.(), null, { timeout: 120000 });
@@ -109,7 +109,7 @@ async function main() {
     const before = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot());
     const bypass = await measureControl(window, '[data-section-path="current.film_look_section_enabled"]', { type: "click" });
     const afterBypass = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot());
-    const slider = await measureControl(window, "#film-print-contrast", { type: "input", value: 12 });
+    const slider = await measureControl(window, "#film-print_contrast", { type: "input", value: 12 });
     const afterSlider = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot());
     const result = {
       sourcePath,
