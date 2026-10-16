@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +23,16 @@ from hdr_finisher.film_stock import (
 )
 from hdr_finisher.main import app
 from hdr_finisher.models import AdjustmentState, FilmLookAdjustments, HDRAdjustments, PreviewKind, SDRAdjustments
+
+
+def assert_strips_match(actual, desired):
+    """Strips must match the whole picture exactly. On macOS, Apple's vector
+    maths rounds differently at strip edges; Steve accepted differences of
+    about one part in a million there (October 16, 2026). Windows stays exact."""
+    if sys.platform == "darwin":
+        np.testing.assert_allclose(actual, desired, rtol=2e-6, atol=1e-7)
+    else:
+        np.testing.assert_array_equal(actual, desired)
 
 
 REAL_STOCK_DIR = film_stock_module.FILM_STOCK_DIR
@@ -264,7 +275,7 @@ def test_stage_is_identical_chunk_by_chunk(stock_dir, monkeypatch) -> None:
     chunked = _stage(image, look, PreviewKind.HDR)
     np.testing.assert_array_equal(chunked, whole)
     strips = np.concatenate([_stage(image[:20], look, PreviewKind.HDR), _stage(image[20:], look, PreviewKind.HDR)])
-    np.testing.assert_array_equal(strips, whole)
+    assert_strips_match(strips, whole)
 
 
 def test_missing_stock_data_leaves_the_picture_alone(tmp_path, monkeypatch) -> None:
@@ -364,7 +375,7 @@ def test_shipped_stock_metadata_and_all_requested_papers(stock_id, monkeypatch):
         whole = render_film_stock(variant, rgb, params)
         assert np.isfinite(whole).all()
         strips = np.concatenate([render_film_stock(variant, rgb[:23], params), render_film_stock(variant, rgb[23:], params)])
-        np.testing.assert_array_equal(whole, strips)
+        assert_strips_match(whole, strips)
     if stock.type == "slide":
         assert stock.default_paper is None
         assert load_film_stock(stock_id, "kodak_2383") is None

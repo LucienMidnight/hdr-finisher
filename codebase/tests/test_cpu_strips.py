@@ -43,6 +43,16 @@ from hdr_finisher.models import (  # noqa: E402
 )
 from hdr_finisher.scopes import build_scope_from_processed  # noqa: E402
 
+
+def assert_strips_match(actual, desired):
+    """Strips must match the whole picture exactly. On macOS, Apple's vector
+    maths rounds differently at strip edges; Steve accepted differences of
+    about one part in a million there (October 16, 2026). Windows stays exact."""
+    if sys.platform == "darwin":
+        np.testing.assert_allclose(actual, desired, rtol=2e-6, atol=1e-7)
+    else:
+        np.testing.assert_array_equal(actual, desired)
+
 # The windowed projective resample perturbs float32 in its last bits, which
 # `test_geometry_region.py` measures at 6e-08 absolute. That difference is in
 # the strip's *input*, so the grade carries it forward; nothing else in this
@@ -251,7 +261,7 @@ def test_placed_stages_are_exact(kind, stock_id):
     strips, report = render_in_strips(image, state, kind, budget_bytes=4096)
 
     assert report.plan.strip_count > 1
-    np.testing.assert_array_equal(strips, reference)
+    assert_strips_match(strips, reference)
 
 
 def test_grain_view_map_is_exact_in_strips():
