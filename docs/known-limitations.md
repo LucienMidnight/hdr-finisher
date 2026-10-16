@@ -41,6 +41,15 @@ HDR Finisher is a finishing editor, not a full compositor or RAW editor:
 
 Importing, opening a project, ejecting, and closing prompt to save or discard unsaved adjustment state.
 
+## Steve's testing feedback (October 16, 2026)
+
+- Peak estimate now controls the additional bounded editing-peak measurement on GPU and CPU preview. On shows the estimate; off shows the peak in the preview samples. A scope request waiting for its matching GPU frame retries after that frame arrives, clearing Updating. Export and Proof measurement are unchanged.
+- Save As previously had no in-app recent-project list; Library and the initial Library screen list photos, not project files. Steve chose Recent projects. File and the header now expose the last ten successfully opened or saved projects, stored in the desktop profile. Existing projects enter the list when next opened; this includes Steve's previously saved project. Browser mode stores its history locally. Missing files report an error and keep the current project open.
+- Project opening now pauses and drains Library grade polling before replacing the backend session. This fixes the reproduced old-photo 404. Retiring a photo clears its Match/grade-saving messages, and late Match results cannot change the next photo. The delayed-open check passed with a scratch copy of Steve's RAW project; opening did not rewrite the project or create a source sidecar. His original project and RAW hashes were unchanged.
+- **Crop follow-up: medium-sized, deferred.** The source pixels and source-relative crop are retained, but reopening Crop currently frames the already-cropped preview and composes another crop inside it. Editing the same crop needs an uncropped editing preview with the saved crop handles restored, then a careful return to the committed preview. Main risks are crop/rotate/perspective coordinate handoff, mask alignment, undo, saved-project reopening, and export/Proof geometry agreement. No crop implementation or export/Proof changes were made in this brief.
+
+The four targeted checks for Claude's logo, Film panel, Navigate and RAW-toggle changes passed independently. The Library filter driver now tests the intentionally restored RAW toggle rather than requiring its absence. UI refinement skipped three missing optional historical reference images. The release check remains stopped at Steve's request; these checks do not constitute release validation.
+
 ## Preview limitations
 
 - Reduced GPU source levels now limit Straighten/Perspective bicubic overshoot to nearby source values (October 8). On DSC00099 the shelf LED specks are gone at Fit and 12%, but a small blue/cyan speck remains on the glass sculpture at Fit. Negative ACEScg channels already exist after the full-size camera colour conversion, before lens correction; they are retained rather than globally clipped. Native geometry, CPU export, Proof and colour conversion are unchanged. The inspected production CPU export render at 711 pixels showed no matching LED specks; this is not a general export qualification.
