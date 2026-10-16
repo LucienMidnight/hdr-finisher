@@ -571,6 +571,8 @@ function bindEvents() {
   els.emptyImportButton.addEventListener("click", requestSourceImport);
   els.sourceRailExpand.addEventListener("click", toggleSourceRail);
   bindLocalAdjustmentEvents();
+  document.getElementById("project-recents").addEventListener("click", showRecentProjects);
+  document.getElementById("recent-projects-close").addEventListener("click", () => document.getElementById("recent-projects-dialog").close());
   els.projectOpen?.addEventListener("click", () => openProjectFromPath());
   els.projectSave?.addEventListener("click", () => saveProjectToPath());
   els.hdrReferenceWhite?.addEventListener("change", async () => {

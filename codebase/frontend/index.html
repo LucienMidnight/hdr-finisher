@@ -15,6 +15,7 @@
         <div class="window-menu-popover" role="menu" hidden>
           <button type="button" role="menuitem" data-desktop-command="open-source">Open Image…</button>
           <span data-window-menu-slot="project-open"></span>
+          <button type="button" role="menuitem" data-desktop-command="recent-projects">Recent projects…</button>
           <span class="window-menu-separator" role="separator"></span>
           <span data-window-menu-slot="project-save"></span>
           <button type="button" role="menuitem" data-desktop-command="save-as">Save Project As…</button>
@@ -106,6 +107,7 @@
       <div class="top-actions">
         <button id="grade-autosave" class="text-button grade-autosave" type="button" aria-pressed="true" title="Autosave grades to the file beside each photo"><i aria-hidden="true"></i><span>Autosave on</span></button>
         <button id="project-open" class="text-button" type="button">Open project</button>
+        <button id="project-recents" class="text-button" type="button">Recent projects</button>
         <button id="project-save" class="text-button" type="button" disabled>Save project</button>
         <button id="settings-open" class="text-button" type="button" aria-label="Open settings" title="Settings">Settings</button>
         <button id="help-open" class="text-button" type="button" aria-label="Open help" title="Help">Help</button>
@@ -1808,6 +1810,12 @@
   <!-- MINOR-10: the in-application stand-in for window.confirm / alert /
        prompt. A native modal leaves the Electron renderer unable to open a
        <select> popup until the window loses and regains focus. -->
+  <dialog id="recent-projects-dialog" class="application-dialog app-dialog" aria-labelledby="recent-projects-title">
+    <div class="application-dialog-header"><h2 id="recent-projects-title">Recent projects</h2></div>
+    <div class="app-dialog-content"><p id="recent-projects-empty" class="helper">Saved and opened projects will appear here.</p><ul id="recent-projects-list" class="recent-projects-list"></ul></div>
+    <div class="app-dialog-actions"><button id="recent-projects-close" class="button-secondary" type="button">Close</button></div>
+  </dialog>
+
   <dialog id="app-dialog" class="application-dialog app-dialog" aria-labelledby="app-dialog-title">
     <div class="application-dialog-header">
       <div><h2 id="app-dialog-title">Confirm</h2></div>

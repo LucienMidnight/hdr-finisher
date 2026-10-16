@@ -332,6 +332,46 @@ function documentTransitionToken() {
   ].join(":");
 }
 
+function rememberBrowserProject(path) {
+  if (desktop) return;
+  const projects = readBrowserRecentProjects().filter(item => item !== path);
+  try { localStorage.setItem("hdr-finisher:recent-projects", JSON.stringify([path, ...projects].slice(0, 10))); }
+  catch (error) { console.warn("The project could not be added to Recent projects.", error); }
+}
+
+function readBrowserRecentProjects() {
+  try {
+    const projects = JSON.parse(localStorage.getItem("hdr-finisher:recent-projects") || "[]");
+    return Array.isArray(projects) ? projects.filter(path => typeof path === "string" && /\.hdrfinisher$/i.test(path)).slice(0, 10) : [];
+  } catch { return []; }
+}
+
+async function showRecentProjects() {
+  try {
+    const projects = desktop ? await desktop.listRecentProjects() : readBrowserRecentProjects();
+    const dialog = document.getElementById("recent-projects-dialog");
+    const list = document.getElementById("recent-projects-list");
+    list.replaceChildren();
+    document.getElementById("recent-projects-empty").hidden = projects.length > 0;
+    for (const path of projects) {
+      const item = document.createElement("li"), button = document.createElement("button");
+      button.type = "button";
+      const name = document.createElement("strong"), location = document.createElement("span");
+      name.textContent = path.split(/[/\\]/).pop(); location.textContent = path;
+      button.append(name, location);
+      button.addEventListener("click", async () => {
+        dialog.close();
+        try {
+          const selection = desktop ? await desktop.grantProjectPath(path, "project-open") : { path };
+          await openProjectFromPath(selection);
+        } catch (error) { status.post({ id: "project-open", severity: "error", message: error.message }); }
+      });
+      item.append(button); list.append(item);
+    }
+    dialog.showModal();
+  } catch (error) { status.post({ id: "project-open", severity: "error", message: error.message || "Recent projects could not be read." }); }
+}
+
 async function openProjectFromPath(desktopSelection = null) {
   if (!await confirmUnsavedTransition("open another project")) return;
   const confirmedDocument = documentTransitionToken();
@@ -405,7 +445,7 @@ async function openProjectFromPath(desktopSelection = null) {
       }
     }
   }
-  const path = await window.HDRDialogs.prompt(
+  const path = desktopSelection?.path || await window.HDRDialogs.prompt(
     "Path to a .hdrfinisher project", state.projectPath || "",
     { title: "Open project", confirmLabel: "Open" },
   );
@@ -440,6 +480,7 @@ async function openProjectFromPath(desktopSelection = null) {
       return;
     }
     await activateDesktopSession(payload.session, path);
+    rememberBrowserProject(path);
     status.post({ id: "project-open", severity: "success", message: "Project opened." });
   } catch (error) {
     status.post({ id: "project-open", severity: "error", message: error?.message || "The project could not be opened." });
@@ -551,6 +592,7 @@ async function saveProjectFileToPath({ saveAs = false } = {}) {
     return false;
   }
   state.projectPath = payload.path;
+  rememberBrowserProject(payload.path);
   state.editDocument = payload.document;
   loadDenoiseDocument(state.editDocument);
   state.documentDirty = false;

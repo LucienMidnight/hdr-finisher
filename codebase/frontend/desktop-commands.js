@@ -40,6 +40,7 @@ async function handleDesktopCommand(command, payload = null) {
     return allowed;
   }
   if (command === "open-source") return requestSourceImport();
+  if (command === "recent-projects") return showRecentProjects();
   if (command === "open-project") return openProjectFromPath();
   if (command === "save") return saveProjectToPath({ saveAs: false });
   if (command === "save-as") return saveProjectToPath({ saveAs: true });

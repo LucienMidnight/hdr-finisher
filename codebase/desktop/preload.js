@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   openSourceInMain: (filePath, itemKey) => ipcRenderer.invoke("desktop:open-source-in-main", filePath, itemKey),
   grantSourcePath: (filePath) => ipcRenderer.invoke("desktop:grant-source-path", filePath),
   grantProjectPath: (filePath, intent) => ipcRenderer.invoke("desktop:grant-project-path", filePath, intent),
+  listRecentProjects: () => ipcRenderer.invoke("desktop:recent-projects"),
   openProject: () => ipcRenderer.invoke("desktop:open-project"),
   relinkSource: () => ipcRenderer.invoke("desktop:relink-source"),
   saveProject: (options) => ipcRenderer.invoke("desktop:save-project", options),

@@ -21,6 +21,7 @@ const { cachedUpdateResult } = require("./lib/updates");
 const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bounds");
 const { windowChromeOptions } = require("./lib/window-chrome");
 const { installProcessDiagnostics } = require("./lib/process-diagnostics");
+const { createRecentProjects } = require("./lib/recent-projects");
 const { detectVideoMemory } = require("./lib/video-memory");
 
 const { leaveCurrentPhoto } = require(app.isPackaged ? "./shared/photo-transition" : "../frontend/photo-transition");
@@ -50,6 +51,8 @@ if (process.env.HDR_FINISHER_DISABLE_GPU === "1") {
   app.commandLine.appendSwitch("in-process-gpu");
   app.disableHardwareAcceleration();
 }
+
+const recentProjects = createRecentProjects(path.join(app.getPath("userData"), "recent-projects.json"));
 
 let backend = null;
 let mainWindow = null;
@@ -542,6 +545,8 @@ function registerIpc() {
     return callback(...args);
   });
 
+  handle("desktop:recent-projects", () => recentProjects.list());
+
   // Window commands resolve their sender; photo commands remain main-only.
   const handleWindow = (channel, callback) => ipcMain.handle(channel, async (event, ...args) => {
     const record = validateSender(event);
@@ -790,6 +795,10 @@ function registerIpc() {
   handle("desktop:set-document-state", (next = {}) => {
     const nextPath = typeof next.path === "string" ? next.path : "";
     if (nextPath && !knownProjectPaths.has(pathKey(nextPath))) throw new Error("Unknown project path.");
+    if (nextPath && nextPath !== documentState.path) {
+      try { recentProjects.remember(nextPath); }
+      catch (error) { console.warn("The project could not be added to Recent projects.", error); }
+    }
     documentState = {
       path: nextPath,
       dirty: Boolean(next.dirty),

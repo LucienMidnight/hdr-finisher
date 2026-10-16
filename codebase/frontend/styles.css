@@ -9285,3 +9285,10 @@ body[data-workflow="import"] #viewer-status-dock { display: none; }
 
 .film-control-label { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .film-module-toggle .film-control-label { flex: 1; }
+
+.recent-projects-list { list-style: none; padding: 0; margin: 0; }
+.recent-projects-list button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; padding: 10px; margin-bottom: 6px; }
+.recent-projects-list strong, .recent-projects-list span { overflow-wrap: anywhere; }
+.recent-projects-list span { color: var(--muted); font-size: 11px; }
+
+.recent-projects-list button:hover, .recent-projects-list button:focus-visible { border-color: var(--accent); }
