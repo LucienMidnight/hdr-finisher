@@ -22,7 +22,13 @@ for(const p of photos)fs.copyFileSync(path.join(root,"tests/fixtures/sdr_gradien
  const open=async name=>{await lib.locator("#filter-add").click();await lib.getByRole("menuitem",{name,exact:true}).click();};
  const apply=async()=>lib.locator("#library-filter-panel").getByRole("button",{name:"Apply",exact:true}).click();
  const clear=async()=>{await lib.locator("#filter-clear").click();await count(4);};
- assert.equal(await lib.locator("#raw-only,#filter-match,#filter-type,#filter-grade").count(),0);
+ assert.equal(await lib.locator("#filter-match,#filter-type,#filter-grade").count(),0);
+ await lib.locator('#raw-only').click();await count(2);
+ await lib.getByRole('button',{name:'3 stars',exact:true}).click();await count(2);
+ await lib.getByLabel('Rating comparison',{exact:true}).selectOption('is');await count(1);
+ await lib.locator('#filter-clear').click();await count(2);
+ assert.equal(await lib.locator('#raw-only').getAttribute('aria-pressed'),'true');
+ await lib.locator('#raw-only').click();await count(4);
  await lib.getByRole("button",{name:"3 stars",exact:true}).click();await count(2);
  await lib.getByLabel("Rating comparison",{exact:true}).selectOption("is");await count(1);
  await lib.getByLabel("Rating comparison",{exact:true}).selectOption("at-most");await count(3);
@@ -50,6 +56,7 @@ for(const p of photos)fs.copyFileSync(path.join(root,"tests/fixtures/sdr_gradien
  await open("Capture date");await lib.getByLabel("From Capture date",{exact:true}).fill("2026-10-13");await lib.getByLabel("To Capture date",{exact:true}).fill("2026-10-13");await apply();await count(4);await clear();
  await open("Tag");await lib.getByLabel("No tags",{exact:true}).check();await apply();await count(2);await clear();
  await open("Camera");await lib.getByLabel("Alpha",{exact:true}).check();await lib.getByLabel("Beta",{exact:true}).check();await apply();await count(3);
+ await lib.locator("#raw-only").click();await count(2);
  await lib.locator("#filter-save-smart").click();const editor=lib.getByRole("dialog",{name:"New smart album",exact:true});
  assert.equal(await editor.getByLabel("Comparison",{exact:true}).inputValue(),"in");assert.equal(await editor.getByLabel("Alpha",{exact:true}).isChecked(),true);assert.equal(await editor.getByLabel("Beta",{exact:true}).isChecked(),true);
  assert.equal(await editor.getByText(/Required:/).count(),0);await editor.getByText("3 matching photos",{exact:true}).waitFor();await editor.getByLabel("Beta",{exact:true}).uncheck();await editor.getByText("1 matching photos",{exact:true}).waitFor();await editor.getByRole("button",{name:"Cancel",exact:true}).click();
