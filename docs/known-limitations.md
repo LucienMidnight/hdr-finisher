@@ -168,3 +168,40 @@ Logs and results: `codebase/output/performance/review/prerelease-0.9-2026-10-09/
 The sweep did not include coverage audits, long editing endurance, or broad
 timing sweeps. No installer was built; packaged v0.9, other platforms, and
 physical HDR display validation remain separate release checks.
+
+
+## Extreme HDR preview range (October 16, 2026)
+
+The preview's earlier shared half-float stages have a finite range of 65,504
+scene units, 18.47 stops above HDR reference white (0.18). Extreme uncompressed
+HDR grades can clip colour channels and show wrong colours or white patches;
+CPU export and Proof remain the reference. This predates Film Look rebuilding.
+A disposable-profile run of pre-rebuild main e4274ae, with Film Look disabled,
+Exposure +8 and output highlight compression off, on a linear-sRGB hue ramp
+peaking at 1,024, reaches 262,144 source units (20.47 stops above white).
+The finished preview clips to 65,504: 297,722 channel samples at the ceiling,
+no infinity or NaNs. Against unchanged CPU output the displayed difference is
+mean 2.936 eight-bit levels, p99.9 255 (ordinary tolerance 0.1 / 2).
+Exposure 0 on that same input passes at mean 0.025, p99.9 1.
+The inactive source-peak metadata was bounded to its existing model maximum
+of 1,000,000 nits for the CPU request; compression remained off.
+
+The new reproducible Film Look trigger is HDR, Neutral, default paper,
+Look Strength 100, Push/Pull +2, Print Exposure -3, Print Contrast +100,
+Shadow Contrast +100, Highlight Contrast +100, Lab Levels off, Scan 0,
+no grain, halation, bloom or Detail, output highlight compression off.
+On the standard peak-16 hue ramp its CPU film-stage peak is approximately
+4,848,818 scene units, 24.68 stops above white. Testing the five controls
+individually on the same ramp gives peaks 20.16, 126.93, 40.75, 28.40 and
+20.66 respectively: none individually reaches the ceiling. Stacking is the
+trigger on this fixture; sufficiently bright input can exceed the preview
+range independently of Film Look. The uncompressed stacked case exceeds
+preview/export tolerance (added mean 3.201, p99.9 250).
+
+Steve directed that a pre-existing failure be recorded rather than extending
+precision into shared stages or reducing the new control ranges. Neither is
+changed. The already-limited final Neutral storage/anchor fix remains: after
+HDR highlight compression its extreme check passes at added mean 0.040,
+p99.9 2; the simpler safe cap failed at mean 61.517, p99.9 182. CPU export,
+Proof, tolerances and memory/blur ceilings are unchanged. This is a known
+extreme-grade limitation, not an ordinary preview parity guarantee.

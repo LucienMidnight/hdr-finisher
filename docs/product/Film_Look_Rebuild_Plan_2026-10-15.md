@@ -393,3 +393,19 @@ two Black & White-only cases on that extreme input fail separately, recorded
 without investigation. Fresh Fit-grain acceptance passes all 180 comparisons;
 previous ten-case grain parity and 94+3 Proof/export checks pass. No push or
 installer. Phase 3 remains unfinished; Phase 3b has not started.
+
+
+Phase 3 completion, October 16, 2026: Steve's conditional range decision was
+resolved by a direct pre-rebuild main e4274ae run. Exposure +8 with compression
+off reproduces half-float clipping and wrong colours (mean 2.936, p99.9 255);
+the full settings and new Neutral stacked trigger are in known-limitations.md.
+No earlier precision extension or control-range narrowing is required under
+his decision. The retained final Neutral fix passes the compressed extreme
+case; CPU export and numerical/budget pins remain unchanged. Phase 3 is now
+complete: Fit grain acceptance 180/180; physical Development/Print/Scan and
+Halation committed; Node 483 and Python 2,132 pass (three skips); ordinary
+control matrix passes with the documented extreme uncompressed exception.
+Two separate Black & White-only Direct/Tiled failures on the extreme fixture
+remain recorded and uninvestigated. No new code changed in this documentation
+commit; the preceding production fast and focused checks remain applicable.
+Phase 3b may now begin. No push or installer.

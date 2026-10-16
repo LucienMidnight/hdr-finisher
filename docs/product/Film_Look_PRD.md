@@ -423,3 +423,19 @@ settings, and identify the existing Looks as awaiting Phase 5. Documentation
 only; uses the preceding 483 Node / 2,132 Python results and the recorded focused
 checks. The uncompressed extreme Neutral HDR failure above remains unresolved;
 these references document the controls, not Phase 3 acceptance.
+
+
+Phase 3 completion, October 16, 2026: Steve's conditional range decision was
+resolved by a direct pre-rebuild main e4274ae run. Exposure +8 with compression
+off reproduces half-float clipping and wrong colours (mean 2.936, p99.9 255);
+the full settings and new Neutral stacked trigger are in known-limitations.md.
+No earlier precision extension or control-range narrowing is required under
+his decision. The retained final Neutral fix passes the compressed extreme
+case; CPU export and numerical/budget pins remain unchanged. Phase 3 is now
+complete: Fit grain acceptance 180/180; physical Development/Print/Scan and
+Halation committed; Node 483 and Python 2,132 pass (three skips); ordinary
+control matrix passes with the documented extreme uncompressed exception.
+Two separate Black & White-only Direct/Tiled failures on the extreme fixture
+remain recorded and uninvestigated. No new code changed in this documentation
+commit; the preceding production fast and focused checks remain applicable.
+Phase 3b may now begin. No push or installer.
