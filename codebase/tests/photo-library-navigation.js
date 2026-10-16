@@ -115,7 +115,10 @@ async function eventually(check) {
     await main.keyboard.press('Escape');
     await pinned.click({ button: 'right' });
     await library.getByRole('menuitem', { name: 'Unpin folder', exact: true }).click();
+    // Unpin now asks for confirmation before removing Library membership.
+    await library.locator('dialog.library-ask[open] button.button-primary').click();
     await library.waitForFunction(() => !document.querySelector('#folders .library-folder-row'));
+    console.log('PASS: confirmed Unpin leaves the folder tree empty.');
     assert.ok(fs.existsSync(child));
     await library.evaluate(async folder => {
       await fetch('/api/library/pins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paths: [folder] }) });
