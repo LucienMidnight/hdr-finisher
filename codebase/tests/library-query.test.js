@@ -32,6 +32,11 @@ test("Filters combine rating, picks, label, tag search and file type", () => {
  assert.deepEqual(paths("name", false, {rules:[{field:"type",op:"in",values:["arw","dng"]},{field:"type",value:"png"}]}), []);
  assert.equal(apply([{ name: "a", path: "a", type: "ORI" }], "name", false, { rules: [{field:"type",op:"in",values:["arw","dng","ori"]}] }).length, 1);
 });
+test("RAW only keeps RAW file types and combines with rules", () => {
+ assert.deepEqual(paths("name", false, { raw: true }), ["c", "a"]);
+ assert.deepEqual(paths("name", false, { raw: true, rules: [{field:"rating",op:"at-least",value:3}] }), ["a"]);
+ assert.deepEqual(paths("name", false, { raw: false }), ["c", "b", "a"]);
+});
 test("copies stay after their original in either sort direction; marks and copy filters remain independent", () => {
   const family = [
     {path:"a",name:"a",marks:{rating:1}},

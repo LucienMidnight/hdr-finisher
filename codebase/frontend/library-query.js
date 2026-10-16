@@ -93,7 +93,8 @@
     const folders = (filters.folders || []).map(path => String(path).replaceAll("\\", "/").replace(/\/$/, "").toLocaleLowerCase() + "/");
     return photo => {
       const path = (photo.source_path || photo.path).replaceAll("\\", "/").toLocaleLowerCase();
-      return (!folders.length || folders.some(folder => path.startsWith(folder) && (!photo.library_pins || photo.library_pins.some(pin => String(pin).replaceAll("\\", "/").replace(/\/$/, "").toLocaleLowerCase() + "/" === folder))))
+      return (!filters.raw || rawTypes.has(String(photo.type || "").toUpperCase()))
+        && (!folders.length || folders.some(folder => path.startsWith(folder) && (!photo.library_pins || photo.library_pins.some(pin => String(pin).replaceAll("\\", "/").replace(/\/$/, "").toLocaleLowerCase() + "/" === folder))))
         && (!rules.length || (filters.any ? rules.some(accepts => accepts(photo)) : rules.every(accepts => accepts(photo))));
     };
   }
