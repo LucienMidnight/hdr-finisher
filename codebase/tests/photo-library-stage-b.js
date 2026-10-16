@@ -16,7 +16,11 @@ for (let i = 0; i < 24; i++) fs.copyFileSync(fixture, path.join(folder, `photo-$
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
     const library = page.frame({ url: /\/library(?:\?|$)/ }); assert.ok(library);
     await library.waitForFunction(() => window.HDRLibrary);
-    await library.evaluate(folder => HDRLibrary.browse(folder), folder);
+    // Tag suggestions count Library members, so pin these disposable photos.
+    await library.evaluate(async folder => {
+      await fetch("/api/library/pins", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths: [folder] }) });
+      await HDRLibrary.browse(folder);
+    }, folder);
     await library.waitForSelector("#grid-space canvas[data-picture-key]");
     assert.equal(fs.readdirSync(folder).length, 24, "Browsing must not create sidecars");
     const cells = library.locator("#grid-space .library-cell");
