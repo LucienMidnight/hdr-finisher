@@ -46,7 +46,7 @@ const MAX_DIFFERING_FRACTION = 0.0005;
       if (!fs.existsSync(resolved)) throw new Error(`Input does not exist: ${resolved}`);
       await page.setInputFiles("#file-input", resolved);
     } else {
-      await page.getByRole("button", { name: "Load test pattern" }).click();
+      await page.evaluate(() => document.getElementById("test-pattern-button").click());
     }
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 600000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
