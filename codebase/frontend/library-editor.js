@@ -20,6 +20,9 @@
     send("theme", { theme: document.documentElement.dataset.theme });
     send("active", { enabled: active });
     if (active) frame.contentWindow?.focus();
+    // Leaving the Library must take keyboard focus back, or editor shortcuts
+    // keep going to the hidden Library page.
+    else if (document.activeElement === frame) frame.blur();
   }
   new MutationObserver(() => send("theme", { theme: document.documentElement.dataset.theme })).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   function review(enabled) {
