@@ -170,7 +170,7 @@ function assert(condition, message) {
       await page.setInputFiles("#file-input", noisy);
       source = { kind: "generated-noisy", path: noisy, width: DENOISE_SOURCE_WIDTH, height: DENOISE_SOURCE_HEIGHT };
     } else {
-      await page.getByRole("button", { name: "Load test pattern" }).click();
+      await page.evaluate(() => document.getElementById("test-pattern-button").click());
       source = { kind: "test-pattern" };
     }
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 300000 });
