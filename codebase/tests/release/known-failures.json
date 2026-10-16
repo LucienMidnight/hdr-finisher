@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "failures": [
+    {
+      "driver": "tests/export-file-browser-interaction.js",
+      "messages": [
+        "locator('#export-confirm-button')",
+        "element is not enabled",
+        "page.waitForResponse: Timeout 120000ms exceeded"
+      ],
+      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
+      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__export-file-browser-interaction.js.attempt-4.log"
+    },
+    {
+      "driver": "tests/film-stock-parity.js",
+      "messages": [
+        "Error: Film stock preview and export disagree: [{\"lane\":\"hdr\",\"label\":\"Neutral maximum paper gain\",\"mean\":3.2009965277764834,\"p999\":250,\"worst\":[{\"d\":255,\"x\":421,\"y\":1,\"gpu\":[209,255,0],\"cpu\":[25,255,255]},{\"d\":255,\"x\":1175,\"y\":1,\"gpu\":[255,0,255],\"cpu\":[255,255,255]},{\"d\":255,\"x\":1131,\"y\":2,\"gpu\":[255,0,255],\"cpu\":[255,255,255]},{\"d\":255,\"x\":1075,\"y\":3,\"gpu\":[255,0,255],\"cpu\":[255,255,255]},{\"d\":255,\"x\":1119,\"y\":3,\"gpu\":[255,0,255],\"cpu\":[255,255,255]},{\"d\":255,\"x\":1121,\"y\":3,\"gpu\":[255,0,255],\"cpu\":[255,255,255]},{\"d\":255,\"x\":423,\"y\":4,\"gpu\":[165,255,0],\"cpu\":[51,255,255]},{\"d\":255,\"x\":1113,\"y\":4,\"gpu\":[255,0,255],\"cpu\":[255,255,255]}]}]"
+      ],
+      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
+      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__film-stock-parity.js.attempt-3.log"
+    },
+    {
+      "driver": "tests/tiled-film-parity.js",
+      "messages": [
+        "Error: Vignette/grain parity failed: [{\"label\":\"black-and-white\",\"tileSize\":256,\"maxDelta\":253,\"differing\":2798},{\"label\":\"black-and-white\",\"tileSize\":512,\"maxDelta\":253,\"differing\":1555}]"
+      ],
+      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
+      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__tiled-film-parity.js.attempt-4.log"
+    },
+    {
+      "driver": "tests/performance/tier-film-consistency.js",
+      "messages": [
+        "Error: Pro-Mist adds a tier-sensitive hard-edge echo relative to Black Pro-Mist: {\"blackProMist\":{\"width\":383,\"height\":573,\"meanEffect4k\":6.198559487952848,\"meanEffectFull\":6.420450592897245,\"meanContributionDisagreement\":2.1946908837945074,\"peakContributionDisagreement\":77.33333333333333,\"peakAt\":[325,83],\"affectedPixels\":144894},\"proMist\":{\"width\":383,\"height\":573,\"meanEffect4k\":9.689254029226387,\"meanEffectFull\":9.97303824404568,\"meanContributionDisagreement\":2.835890378916681,\"peakContributionDisagreement\":68.33333333333333,\"peakAt\":[321,76],\"affectedPixels\":155966}}"
+      ],
+      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
+      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__performance__tier-film-consistency.js.attempt-2.log"
+    },
+    {
+      "driver": "tests/webgpu-shader-compilation.js",
+      "messages": [
+        "Error: Sharpen Amount response is not continuous and monotonic: {\"rendered\":true,\"finite\":true,\"maximum\":10.640625,\"nonzero\":5790,\"clarityRadiusDifference\":0.04180406178541792,\"sharpenRadiusDifference\":0.07295989930086459,\"sharpenThresholdDifference\":0.009408437452899912,\"suppressedDifference\":0,\"activationDifference\":0,\"baselineGradient\":null,\"sharpenOneGradient\":0.13040999204866469,\"sharpenTenGradient\":0.14341668790531537,\"sharpenGradient\":0.1539396650734402}"
+      ],
+      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
+      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__webgpu-shader-compilation.js.attempt-2.log"
+    },
+    {
+      "driver": "tests/photo-library-stage-a.js",
+      "messages": [
+        "frame.evaluate: TypeError: Cannot read properties of null (reading 'getImageData')"
+      ],
+      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
+      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__photo-library-stage-a.js.attempt-4.log"
+    },
+    {
+      "driver": "tests/photo-library-stage-b.js",
+      "messages": [
+        "+ 'Family (0)'",
+        "- 'Family (2)'"
+      ],
+      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
+      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__photo-library-stage-b.js.attempt-4.log"
+    },
+    {
+      "driver": "tests/photo-library-navigation.js",
+      "messages": [
+        "frame.waitForFunction: Timeout 30000ms exceeded.",
+        "photo-library-navigation.js:118:19"
+      ],
+      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
+      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__photo-library-navigation.js.attempt-2.log"
+    },
+    {
+      "driver": "tests/photo-library-slice-2.js",
+      "messages": [
+        "+   'Holiday'",
+        "-   'Sea'"
+      ],
+      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
+      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__photo-library-slice-2.js.attempt-4.log"
+    },
+    {
+      "driver": "tests/library-background-activity.js",
+      "messages": [
+        "\"rating\": 0",
+        "\"rating\": 4",
+        "library-background-activity.js:71:10"
+      ],
+      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
+      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__library-background-activity.js.attempt-2.log"
+    }
+  ]
+}

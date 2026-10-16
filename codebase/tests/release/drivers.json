@@ -1,0 +1,3684 @@
+{
+  "schemaVersion": 1,
+  "areas": [
+    "export-proof",
+    "film",
+    "lens",
+    "library",
+    "masks",
+    "detail",
+    "geometry",
+    "preview",
+    "ui"
+  ],
+  "protectedProjects": [
+    "local-test-media/viewport/DSC00264-four-masks.hdrfinisher",
+    "local-test-media/viewport/DSC00264-fifty-locals.hdrfinisher",
+    "D:/Photos/Play_Raw/Fantastic light over village - AdamFromCanada/DSC00950.hdrfinisher"
+  ],
+  "sourceAreas": [
+    {
+      "pattern": "^(docs/|AGENTS\\.md$|README|\\.github/|packaging/|codebase/(tests/|desktop/tests/|package[^/]*\\.json$))",
+      "areas": []
+    },
+    {
+      "pattern": "^codebase/(frontend|backend/hdr_finisher)/[^/]*(export|proof)",
+      "areas": [
+        "export-proof"
+      ]
+    },
+    {
+      "pattern": "^codebase/(frontend|backend/hdr_finisher)/[^/]*(film|grain|halation|vignette)",
+      "areas": [
+        "film"
+      ]
+    },
+    {
+      "pattern": "^codebase/(frontend|backend/hdr_finisher)/[^/]*lens",
+      "areas": [
+        "lens"
+      ]
+    },
+    {
+      "pattern": "^codebase/(frontend|backend/hdr_finisher)/[^/]*(library|grade.sav|photo.transition|grade.open)",
+      "areas": [
+        "library"
+      ]
+    },
+    {
+      "pattern": "^codebase/(frontend|backend/hdr_finisher)/[^/]*(mask|local|brush|graph.scale)",
+      "areas": [
+        "masks"
+      ]
+    },
+    {
+      "pattern": "^codebase/(frontend|backend/hdr_finisher)/[^/]*(detail|denoise|sharpen|clarity)",
+      "areas": [
+        "detail"
+      ]
+    },
+    {
+      "pattern": "^codebase/(frontend|backend/hdr_finisher)/[^/]*(geometry|perspective|crop)",
+      "areas": [
+        "geometry"
+      ]
+    },
+    {
+      "pattern": "^codebase/(frontend|backend/hdr_finisher)/[^/]*(preview|render|gpu|webgpu|scope|peak|source.transport|zoom|tile|highlight|sdr|color|colour|adjustment|api|core|pipeline|session|models)",
+      "areas": [
+        "export-proof",
+        "film",
+        "lens",
+        "library",
+        "masks",
+        "detail",
+        "geometry",
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/frontend/[^/]*(ui|control|layout|dialog|styles|\\.css$|\\.html$|window|commands|panels|overlay|project|media.browser|application.shell|app)",
+      "areas": [
+        "export-proof",
+        "film",
+        "lens",
+        "library",
+        "masks",
+        "detail",
+        "geometry",
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/backend/hdr_finisher/[^/]*(project|raw|source|import|metadata|image|decode|formats|gain|avif|jpeg|dng|match|display|preferences|documents)",
+      "areas": [
+        "export-proof",
+        "film",
+        "lens",
+        "library",
+        "masks",
+        "detail",
+        "geometry",
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/desktop/(?!tests/)",
+      "areas": [
+        "export-proof",
+        "film",
+        "lens",
+        "library",
+        "masks",
+        "detail",
+        "geometry",
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/backend/hdr_finisher/(analysis|config|cpu_strips|loader|main|media_browser)\\.py$",
+      "areas": [
+        "export-proof",
+        "film",
+        "lens",
+        "library",
+        "masks",
+        "detail",
+        "geometry",
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/frontend/(desktop-chrome|group-presets|viewer-status)\\.js$",
+      "areas": [
+        "export-proof",
+        "film",
+        "lens",
+        "library",
+        "masks",
+        "detail",
+        "geometry",
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/frontend/assets/",
+      "areas": [
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/(run_app\\.py|HDRFinisher.*\\.spec)$",
+      "areas": [
+        "export-proof",
+        "film",
+        "lens",
+        "library",
+        "masks",
+        "detail",
+        "geometry",
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/tools/[^/]*(film|stock)",
+      "areas": [
+        "film"
+      ]
+    },
+    {
+      "pattern": "^(\\.gitignore|RELEASE_NOTES\\.md|THIRD_PARTY_NOTICES\\.md)$",
+      "areas": []
+    }
+  ],
+  "drivers": [
+    {
+      "path": "desktop/tests/confirmation-focus.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "MINOR-10, the Electron half -- a confirmation must not raise a native modal.",
+      "launch": {
+        "method": "native"
+      }
+    },
+    {
+      "path": "desktop/tests/electron-smoke.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "electron smoke",
+      "launch": {
+        "method": "native"
+      }
+    },
+    {
+      "path": "desktop/tests/highlight-lane-4k.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "highlight lane 4k",
+      "launch": {
+        "method": "native",
+        "env": {
+          "HDR_FINISHER_TEST_PROJECT": "{project}"
+        }
+      }
+    },
+    {
+      "path": "desktop/tests/multi-window.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "multi window",
+      "launch": {
+        "method": "native"
+      }
+    },
+    {
+      "path": "desktop/tests/preview-diagnostic.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Interactive reproduction harness. Opens a separate profile and never saves",
+      "launch": {
+        "method": "native",
+        "env": {
+          "HDR_FINISHER_PACKAGED_EXECUTABLE": "{electron}",
+          "HDR_FINISHER_MENU_PROJECT": "{project}"
+        }
+      }
+    },
+    {
+      "path": "desktop/tests/preview-menu.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "preview menu",
+      "launch": {
+        "method": "native",
+        "env": {
+          "HDR_FINISHER_PACKAGED_EXECUTABLE": "{electron}",
+          "HDR_FINISHER_MENU_PROJECT": "{project}"
+        }
+      }
+    },
+    {
+      "path": "desktop/tests/preview-restore.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "preview restore",
+      "launch": {
+        "method": "native",
+        "env": {
+          "HDR_FINISHER_PACKAGED_EXECUTABLE": "{electron}",
+          "HDR_FINISHER_MENU_PROJECT": "{project}"
+        }
+      }
+    },
+    {
+      "path": "desktop/tests/proof-grade-diagnostic.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "proof grade diagnostic",
+      "launch": {
+        "method": "electron",
+        "env": {
+          "HDR_FINISHER_TEST_PROJECT": "{project}"
+        }
+      }
+    },
+    {
+      "path": "desktop/tests/renderer-crash.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Deliberately crashes only the renderer of an isolated source-test instance.",
+      "launch": {
+        "method": "native"
+      }
+    },
+    {
+      "path": "desktop/tests/standalone-browser.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "standalone browser",
+      "launch": {
+        "method": "native"
+      }
+    },
+    {
+      "path": "tests/brush-feather-reference.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "brush feather reference",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/brush-feather-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/brush-mask-interaction.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "brush mask interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/brush-native-feather-reference.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "Native Feather (with and without Shift Edge) against exact CPU export masks.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/brush-native-feather-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/brush-native-shift-reference.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "brush native shift reference",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/brush-native-shift-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/brush-regional-erase-reference.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "Check actual R16 regional attenuation against export; admission is unchanged.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/brush-regional-erase-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/bw-parity.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "BW-01 Black & White: the WebGPU preview matches the CPU export.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/clarity-map-parity.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "Clarity's brightness map: the WebGPU preview matches the CPU export.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/crop-apply-handoff.js",
+      "areas": [
+        "geometry"
+      ],
+      "tier": "area",
+      "protects": "crop apply handoff",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/css-app-shell-matrix.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "css app shell matrix",
+      "launch": {
+        "method": "electron"
+      },
+      "note": "Conservative diagnostic tier: investigation, measurement or broad visual capture; not an automatic release gate."
+    },
+    {
+      "path": "tests/curve-editor-interaction.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "curve editor interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/denoise-adaptive-parity.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "Adaptive denoise: the WebGPU preview against the Python the export runs.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/denoise-noise-view.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "Denoise \"Show noise\": the preview shows only what Denoise removes.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/denoise-pan-enable-drag.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "Isolated 42 MP regression for pan -> enable -> Exposure drag, and warmed zoom.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}"
+        ]
+      }
+    },
+    {
+      "path": "tests/denoise-progressive-disclosure.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "PRD 6.3 -- progressive disclosure for the Denoise controls.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/denoise-tile-cache.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "Denoise zoomed in: a grade edit reuses the tiles Denoise already reconstructed.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/denoise-zoomed-region.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "Denoise zoomed in: only what is on screen is loaded and reconstructed.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/detail-control-reference.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "Isolated global/local Detail controls versus apply_detail. Disposable GPU only.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/detail-control-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/device-loss-fallback.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Phase 5 item 6: device loss is recoverable and classified. The application",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/display-capability-change.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "DISPLAY-01: a display capability change replaces an already-current frame.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/editing-peak-bounded.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Phase 2: editing measurement cannot request native sources or native masks.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/editing-peak-bounded.js.json"
+        ]
+      },
+      "note": "Conservative diagnostic tier: investigation, measurement or broad visual capture; not an automatic release gate."
+    },
+    {
+      "path": "tests/electron-browser-context.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Playwright contexts are sequential here: each uses the runner's one window.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/electron-context-isolation.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/electron-context-isolation.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "electron context isolation",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/electron-initial-load.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "A DOM-ready page may still belong to Electron's pending loadURL promise.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/startup-state.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/export-file-browser-interaction.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "export file browser interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/export-presets-interaction.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "export presets interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/exposure-bands-interaction.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "exposure bands interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/film-character-ui-check.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "area",
+      "protects": "film character ui check",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/film-stock-parity.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/film-panel-ui-check.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "area",
+      "protects": "film panel ui check",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/film-stock-parity.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/film-presets-ui-check.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "area",
+      "protects": "Keep preset persistence in memory so this driver cannot write Steve's preset folder.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/film-stock-parity.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/film-stock-parity.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "area",
+      "protects": "Film stock: the WebGPU preview matches the CPU export.",
+      "launch": {
+        "method": "electron",
+        "followupArgs": [
+          [
+            "--stock-character-only",
+            "--ui-only",
+            "--panel-ui",
+            "--presets-ui"
+          ]
+        ]
+      }
+    },
+    {
+      "path": "tests/fine-adjustment-interaction.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "fine adjustment interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/frontend-source.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "Finds frontend code by name instead of by file, so a unit test keeps",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/gpu-param-layout.test.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/full-tier-brush-feather.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "full tier brush feather",
+      "launch": {
+        "method": "electron"
+      },
+      "note": "Retired Bloom fields remain in recipe; diagnostic until Steve decides whether to remove or update."
+    },
+    {
+      "path": "tests/full-tier-denoise.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "full",
+      "protects": "Denoise must be switchable off at every tier, including Full.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/full-tier-preview.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "full",
+      "protects": "full tier preview",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/geometry-transactions.js",
+      "areas": [
+        "geometry"
+      ],
+      "tier": "area",
+      "protects": "geometry transactions",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/gpu-highlight-compression-parity.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "gpu highlight compression parity",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/gpu-param-layout-audit.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "Audit the production global buffer writers and compiled shader consumers.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/gpu-param-layout.test.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/gpu-param-layout.test.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "gpu param layout.test",
+      "launch": {
+        "method": "node",
+        "nodeTest": true
+      }
+    },
+    {
+      "path": "tests/gpu-pass-layout-audit.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "gpu pass layout audit",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/gpu-pass-layout.test.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/gpu-pass-layout.test.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "gpu pass layout.test",
+      "launch": {
+        "method": "node",
+        "nodeTest": true
+      }
+    },
+    {
+      "path": "tests/gpu-scope-parity.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "gpu scope parity",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/gradient-mask-interaction.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "gradient mask interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/gradient-transform-reference.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "Shared GPU gradients versus export's source-rasterized geometry masks.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/gradient-transform-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/grading-value-entry.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "grading value entry",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/grain-parity.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "area",
+      "protects": "Film grain: the WebGPU preview matches the CPU export.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/in-app-confirmations.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "MINOR-10 -- confirmations are in-application, not native.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/lane-roundtrip-interaction.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "lane roundtrip interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/large-noisy-tiff.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "A source larger than the 4K tier, written without any image dependency.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/denoise-zoomed-region.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/lens-filter-parity.js",
+      "areas": [
+        "lens"
+      ],
+      "tier": "area",
+      "protects": "Film stock: the WebGPU preview matches the CPU export.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/lens-filter-tiled-parity.js",
+      "areas": [
+        "lens"
+      ],
+      "tier": "area",
+      "protects": "Physical lens filters: exact Direct/Tiled bytes at Fit and native.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-album-commands.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library album commands",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-appearance-navigation.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library appearance navigation",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-background-activity.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Activity controls and Stage C conflict attention, disposable photo copies only.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-background-interaction.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library background interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-background-writer.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Stage A: immediate marks/Undo and Details states. Disposable photo copies only.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-compare.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library compare",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-delete-file-commands.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library delete file commands",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-exposure.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library exposure",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-filter-bar.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Focused filter UI acceptance: synthetic metadata over disposable real pictures.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-focus.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Saved grades never get an original map, even while both overlays are on.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-folder-checks.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "One focused Electron check, disposable intake folders only.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-folder-controls.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library folder controls",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-folder-file-commands.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library folder file commands",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-fullscreen-raw.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library fullscreen raw",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-grade-open-stopwatch.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Click-to-first-frame stopwatch: real 42 MP copies and a disposable profile.",
+      "launch": {
+        "method": "native"
+      }
+    },
+    {
+      "path": "tests/library-grade-reverts.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Slice 3 Stage A: one real window, disposable originals and app profile.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-grade-saving.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Slice 3 Stage A: one real window, disposable originals and app profile.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-kept-pictures.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Slice 3 Stage A: one real window, disposable originals and app profile.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-measurement-identity.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library measurement identity",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-membership.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library membership",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-nonraw-picture.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Slow non-RAW fitted pictures survive pause, navigation and repeat waiters.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-photo-file-commands.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library photo file commands",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-picture-startup.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "GPU setup must overlap a visible photo request, using the existing renderer.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-round1.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Serial real-camera launch, six maps, save-to-picture and folder-check coverage.",
+      "launch": {
+        "method": "native"
+      }
+    },
+    {
+      "path": "tests/library-saved-picture-refresh.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Saved grades refresh the existing Library, including a RAW without bright peaks.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-slice4-a.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library slice4 a",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-smart-albums.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "library smart albums",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-virtual-copies.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Slice 3 Stage A: one real window, disposable originals and app profile.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/local-adjustment-usability.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "local adjustment usability",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/local-adjustments-interaction.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "local adjustments interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/local-crop-anchor-interaction.js",
+      "areas": [
+        "masks",
+        "geometry"
+      ],
+      "tier": "area",
+      "protects": "local crop anchor interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/local-design-qa.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "full",
+      "protects": "local design qa",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/local-grade-reference.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "Actual local GPU pass versus CPU export, with colour wheels and opacity.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/local-grade-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/local-stack-sizing.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "local stack sizing",
+      "launch": {
+        "method": "electron"
+      },
+      "note": "Conservative diagnostic tier: investigation, measurement or broad visual capture; not an automatic release gate."
+    },
+    {
+      "path": "tests/luma-feather-quality.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "full",
+      "protects": "luma feather quality",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/luma-graph-region-reference.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "Regional expression masks versus CPU export and whole-source GPU masks.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/luma-graph-region-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/luma-mask-interaction.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "luma mask interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/luma-region-reference.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "GPU regional luma versus the existing whole-source GPU mask. No project.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/luma-region-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/mask-graph-interaction.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "mask graph interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/mask-raster-reference.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "Native GPU shape tiles versus CPU export masks. No project is opened.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/mask-raster-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/mask-resample-reference.js",
+      "areas": [
+        "masks",
+        "geometry"
+      ],
+      "tier": "area",
+      "protects": "GPU masks under straighten/perspective against exact CPU export masks:",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/mask-resample-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/media-browser-preview-interaction.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "media browser preview interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/native-region-stall.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Regression driver for the \"Native region exact\" refinement stall.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/native-region-stall.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/neutral-color-grading-reference.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "Actual GPU grading versus export, including signed near-black RAW pixels.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/neutral-color-grading-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/pan-store-region-identity.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "A source region copied from the whole-frame store held for panning must be",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/path-feather-geometry.js",
+      "areas": [
+        "geometry"
+      ],
+      "tier": "area",
+      "protects": "Path Feather guide geometry.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/path-feather-mask-cache.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "Path Feather drag must never cache the committed mask under a newer leaf.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/path-mask-interaction.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "A Path node/handle drag only commits when the pointer gesture actually",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/brush-pack-benchmark.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "Repeated packing-only A/B, separated from queue waits and classification.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/brush-pack-benchmark.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/brush-rejection-diagnostic.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "GPU admission decomposition. Read-only fixture, disposable session.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/brush-rejection-diagnostic.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/budget-route.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "full",
+      "protects": "Preview Responsiveness Tuning Sprint P2: Direct GPU is chosen when it",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/budget-route.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/clarity-radius-load.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "diagnostic",
+      "protects": "How much work a Clarity Radius costs the tiled preview.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/clarity-radius-load.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/control-inventory.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "control inventory",
+      "launch": {
+        "method": "node"
+      }
+    },
+    {
+      "path": "tests/performance/denoise-drag-region.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "NEXT-01 #4 -- a zoomed-in Denoise drag reconstructs only what is on",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/denoise-input-coalescing.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "Phase 1.6 -- live Denoise input is coalesced to one in-flight",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/denoise-input-coalescing.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/denoise-native-intermediate-probe.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "diagnostic",
+      "protects": "Disposable proposal probe; forces native processing through the existing Full override.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/denoise-scale-identity.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "denoise scale identity",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/denoise-selector-seam.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "denoise selector seam",
+      "launch": {
+        "method": "native",
+        "args": [
+          "--output",
+          "{output}/denoise-selector-seam.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/denoise-stale-source.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "A replaced source copy never leaves the preview drawing from freed memory",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/detail-band-probe.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "diagnostic",
+      "protects": "Read an existing cached native Detail texel; disposable session, no export.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/detail-band-probe.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/detail-cache-residency.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "Phase 5 exit gate 3: Detail peak residency remains bounded at 24 MP, 42 MP",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--inputs",
+          "C:\\Users\\Steve\\AppData\\Local\\Temp\\hdr-finisher-noisy-6000x4000.tiff,C:\\Users\\Steve\\AppData\\Local\\Temp\\hdr-finisher-noisy-7968x5320.tiff,C:\\Users\\Steve\\AppData\\Local\\Temp\\hdr-finisher-noisy-7680x4320.tiff"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/drag-gpu-load.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "P6 (Preview Responsiveness Tuning Sprint): GPU load while dragging.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/drag-gpu-load.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/editing-peak-clarity-reference.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "diagnostic",
+      "protects": "editing peak clarity reference",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\local-test-media\\viewport\\DSC00264-four-masks.hdrfinisher",
+          "--set",
+          "hdr.detail.clarity_amount=100,hdr.detail.clarity_radius_percent=1.5",
+          "--output",
+          "{output}/editing-peak-clarity-reference.js.json"
+        ]
+      },
+      "note": "Conservative diagnostic tier: investigation, measurement or broad visual capture; not an automatic release gate."
+    },
+    {
+      "path": "tests/performance/editing-peak-diagnostic.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Bounded peak diagnostics on a disposable edit state; never saves a project.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/editing-peak-diagnostic.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/exact-tier-latency.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Measure the section 11.1 acceptance targets on a real WebGPU adapter.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/export-parity.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "Phase 0 item 7 / PRD 15.27 -- export/reference parity.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/export-parity.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/failure-taxonomy.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Phase 1.5 -- Section 5.8 failure policy: a recoverable failure must not",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/failure-taxonomy.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/film-grain-size-diagnostic.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "diagnostic",
+      "protects": "Pass/fail: native and reduced preview versus a full-resolution scan downsized.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/film-look-interaction.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "area",
+      "protects": "film look interaction",
+      "launch": {
+        "method": "native"
+      }
+    },
+    {
+      "path": "tests/performance/fit-filtering-ab.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Phase 0 work item 6 -- Fit filtering A/B, set up so the owner can judge it",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/fit-filtering-ab.js.json"
+        ]
+      },
+      "note": "Retired Bloom fields remain in recipe; diagnostic until Steve decides whether to remove or update."
+    },
+    {
+      "path": "tests/performance/fit-filtering-compare.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Phase 0 item 6 comparator: numbers for a pair of displayed screenshots.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/fit-filtering-ab.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/fit-filtering-fixture.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "Phase 0 item 6 fixture: one deterministic HDR source that carries all six",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/export-parity.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/full-tier-instrumented-tiling.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "PERF-05 -- a tiled render at Full must survive GPU instrumentation.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/full-tier-tone-cost.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "PERF-03 -- what one tone drag costs at the Full tier.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/gpu-linear-gradient-parity.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "gpu linear gradient parity",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/gpu-local-adjustments.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "gpu local adjustments",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/gpu-local-adjustments.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/halation-map-zoom.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "diagnostic",
+      "protects": "NEXT-01 #1 -- does the Show halation map change with preview resolution?",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/halation-map-zoom.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/hardware-matrix-capture.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Phase 5 item 7: capture one machine's row of the supported hardware matrix.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--dir",
+          "{output}/hardware",
+          "--class",
+          "discrete"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/hardware-matrix-summary.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Phase 5 item 7: merge the captured per-machine rows into a markdown table.",
+      "launch": {
+        "method": "node"
+      }
+    },
+    {
+      "path": "tests/performance/headline-latency.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "\u00a78.1 headline latency under the \u00a78 measurement rule.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/heavy-project-baseline.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "heavy project baseline",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/heavy-project-baseline.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/heavy-project-control-sweep.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "heavy project control sweep",
+      "launch": {
+        "method": "electron"
+      },
+      "note": "Retired Bloom fields remain in recipe; diagnostic until Steve decides whether to remove or update."
+    },
+    {
+      "path": "tests/performance/heavy-project-drag-review.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Native-pointer representative drag coverage. Disposable session, never saves.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/heavy-project-dynamic-sweep.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Measurement-only dynamic controls, local masks, scopes, and viewer tasks.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/heavy-project-long-session.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Bounded endurance replay using original automatic anchors. No project saves.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/heavy-project-review-common.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "Test-only observations; never changes product routing or saves a project.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/preview-export-compare.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/heavy-project-viewer-tasks.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Measurement-only scopes, zoom, pan, compare, and overlay workflow timings.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/heavy-project-viewer-tasks.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/high-impact-review.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Focused automatic-anchor verification. Disposable session; never saves.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/high-impact-review.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/highlight-anchor-stability.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Highlight-compression shoulder stability while dragging (owner report",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/highlight-anchor-stability.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/highlight-ceiling.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "The Highlight compression output ceiling holds whatever the shoulder anchor.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/highlight-ceiling.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/library-browsing-build.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Real shipped Library UI, M10 sources/order, disposable D: copies only.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/library-disk-reader-trial.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "M10 uses the M9 renderer verbatim. Only test service and workloads differ.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/library-fullscreen-speed-trial.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "M7/M8 measurement only; run through tests/run-in-electron.js at 2560x1440.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/library-raw-deep-dive.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "M9 isolated measurement: CPU LibRaw, GPU conversion kept resident; no shipped changes.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/library-smart-editor.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Real 155,000-row SQLite index and HTTP endpoint, isolated from Steve's library.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/library-smart-albums.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/library-smart-query.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "library smart query",
+      "launch": {
+        "method": "node",
+        "requires": "A JSON corpus file with 50,000 photos, passed after the driver path."
+      }
+    },
+    {
+      "path": "tests/performance/live-monitor.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Attach to a running HDR Finisher window started with",
+      "launch": {
+        "method": "node",
+        "requires": "An existing test app with --remote-debugging-port=9333 (read-only attachment)."
+      }
+    },
+    {
+      "path": "tests/performance/local-mask-performance.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "local mask performance",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/luma-feather-latency.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "luma feather latency",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/luma-feather-latency.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/many-local-layers.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "many local layers",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/many-local-layers.js.json"
+        ]
+      },
+      "note": "Conservative diagnostic tier: investigation, measurement or broad visual capture; not an automatic release gate."
+    },
+    {
+      "path": "tests/performance/match-candidate-review.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "match candidate review",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/match-candidate-review.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/native-inspection-dpr.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "The 100% inspection contract for a 2400-wide source: the processed edge is",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/packaged-baselines.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "full",
+      "protects": "Phase 0 packaged baselines -- the 42.4 MP fixture at Fit, 100%, 200%, and a",
+      "launch": {
+        "method": "packaged"
+      }
+    },
+    {
+      "path": "tests/performance/peak-readout-review.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "peak readout review",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/peak-readout-review.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/phase3-coverage-audit.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Phase 3 coverage audit: every static control and the mask edits, at 100%",
+      "launch": {
+        "method": "electron"
+      },
+      "note": "Retired Bloom fields remain in recipe; diagnostic until Steve decides whether to remove or update."
+    },
+    {
+      "path": "tests/performance/phase3-local-route-smoke.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "One Fit edit and zoom sequence; disposable session, never saves a project.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/phase3-local-route-smoke.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/phase3-manual-baseline.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "phase3 manual baseline",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/phase3-manual-baseline.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/phase4-preview.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "phase4 preview",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/phase4-regression-browser.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "full",
+      "protects": "phase4 regression browser",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/phase4-regression-browser.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/phase5-endurance.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Phase 5 item 6: endurance. Repeated scale changes and edits must not leak",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/phase5-inactive-lane.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "phase5 inactive lane",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/phase5-peak-agreement.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "full",
+      "protects": "Phase 5 exit gate: \"Logical peak agrees with instrumented application",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/phase5-peak-agreement.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/phase5-transport-ab.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Phase 5 item 4: measure the candidate pixel transports for one above-budget",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/phase5-transport-ab.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/phase5-transport-probe.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "phase5 transport probe",
+      "launch": {
+        "method": "node",
+        "requires": "Uses unauthenticated Node fetch against a sidecar; existing standalone invocation needs HDR_FINISHER_URL pointing to a test backend."
+      }
+    },
+    {
+      "path": "tests/performance/photo-library-quick-open-trial.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Switched-off quick-open instrument; run only through run-in-electron.js.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/photo-library-refresh-interaction.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "External M6 scheduling trial. No app changes; equivalent-priority CPU",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/photo-library-speed-trial.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "External measurement only. Existing shaders/readback/Ultra HDR encoder;",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/presentation-gate.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Phase 1.4 -- concurrent generations must not resize the presentation target",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/presentation-gate.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/preview-export-compare.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "preview export compare",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--enforce",
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/preview-export-compare.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/preview-performance.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "preview performance",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/raw-import-baseline.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Measurement-only RAW import stage baseline. Never saves a project.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--raw",
+          "D:\\Photos\\HDR Test Images\\DSC00264.ARW",
+          "--output",
+          "{output}/raw-import-baseline.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/responsiveness-probe.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Preview Responsiveness Tuning Sprint: route and work probe.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/responsiveness-probe.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/roi-catch-up.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Phase 2 work item 7 verification -- the deferred whole-frame catch-up that",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/roi-catch-up.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/roi-pan-cache.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Phase 2 work item 8 verification -- the display-scale pan cache.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/roi-pan-cache.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/roi-parity.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Phase 2 work item 9 -- legacy-versus-ROI parity over the visible region.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/roi-parity.js.json"
+        ]
+      },
+      "note": "Retired Bloom fields remain in recipe; diagnostic until Steve decides whether to remove or update."
+    },
+    {
+      "path": "tests/performance/roi-refinement.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Viewport refinement -- the diagnostic switch controls refinement; custom",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/roi-refinement.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/roi-source-transport.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Phase 3 work item 2 -- ROI source routing and the warm-Fit transport gate.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/roi-source-transport.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/source-tile-transfer-probe.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Measurement only: where a native source-region fetch spends its time.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/summarize-phase4-regression.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "summarize phase4 regression",
+      "launch": {
+        "method": "node"
+      }
+    },
+    {
+      "path": "tests/performance/summarize-review.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Reproducible read-only summary of drag/endurance artifacts.",
+      "launch": {
+        "method": "node"
+      }
+    },
+    {
+      "path": "tests/performance/summarize-viewport-baseline.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "summarize viewport baseline",
+      "launch": {
+        "method": "node"
+      }
+    },
+    {
+      "path": "tests/performance/tier-change-blank-canvas.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "PERF-07 -- the viewer must not go blank when the tier changes.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/tier-film-consistency.js",
+      "areas": [
+        "film",
+        "lens"
+      ],
+      "tier": "area",
+      "protects": "tier film consistency",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/performance/tiled-mask-batch-transport.js",
+      "areas": [
+        "masks"
+      ],
+      "tier": "area",
+      "protects": "Phase 1.3 -- local masks must travel as bounded batches, not one request per tile.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/tiled-mask-batch-transport.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/tiled-stop-gate.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Phase 2 stop gate -- a new input must stop further obsolete submissions",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/tiled-stop-gate.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/zoom-after-edit-review.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Where does a zoom spend its time right after a local edit? Disposable session, never saves.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/zoom-after-edit-review.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/zoom-block-continuity.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "Same-scene 50%/100% continuity at the PRD's 8-screen-pixel block size.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/zoom-block-continuity.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/zoom-cycle-profile.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Profile repeated Fit <-> magnified zoom cycles and pans on a project, with",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--project",
+          "{project}",
+          "--output",
+          "{output}/zoom-cycle-profile.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/perspective-interaction.js",
+      "areas": [
+        "geometry"
+      ],
+      "tier": "area",
+      "protects": "perspective interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/perspective-preview-ownership.js",
+      "areas": [
+        "geometry"
+      ],
+      "tier": "area",
+      "protects": "perspective preview ownership",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/photo-library-navigation.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Disposable Electron check for folder navigation and Library window handoff.",
+      "launch": {
+        "method": "native"
+      }
+    },
+    {
+      "path": "tests/photo-library-slice-2.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Slice 2: details, filter rules, tag management, albums and background indexing. Disposable copies only.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/photo-library-stage-a.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Focused Stage A check. All generated photos live in disposable test output.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/photo-library-stage-b.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Stage B exercises only disposable copies, never the owner's photo folders.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/photo-library-stage-c.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Disposable sources only. Stage C sort/filter/HDR and loading regression.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/pixel-magnification.js",
+      "areas": [
+        "geometry"
+      ],
+      "tier": "area",
+      "protects": "pixel magnification",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/preview-resolution-interaction.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "P5: one opt-in replaced the three-way Preview response menu.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/preview-scheduler-coalescing.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "preview scheduler coalescing",
+      "launch": {
+        "method": "node"
+      }
+    },
+    {
+      "path": "tests/project-open-session-interaction.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "project open session interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/proof-size-interaction.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "Proof size: a reduced proof says it is reduced, and a full-size proof is",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/recent-projects-interaction.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "recent projects interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/run-in-electron.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "run in electron",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/startup-state.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/run-native-electron.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Run a driver that owns its Electron launch, without starting a second app.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "desktop/tests/electron-smoke.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/scope-exact-peak.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "scope exact peak",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/scope-peak-toggle-interaction.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "scope peak toggle interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/scope-region-interaction.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "scope region interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/sdr-gamut-gpu-parity.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "sdr gamut gpu parity",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/sdr-match-gpu-interaction.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "sdr match gpu interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/session-replacement-interaction.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "session replacement interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/sharpen-blur-reference.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "GPU Sharpen blur versus the CPU export kernel, including image edges.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/sharpen-blur-reference.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/slider-fill-anchoring.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "slider fill anchoring",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/source-disclosures-interaction.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "source disclosures interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/startup-state.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "startup state",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/status-manager-interaction.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "status manager interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/technical-panel-fit.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "technical panel fit",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/tiled-admission-scope-fallback.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "tiled admission scope fallback",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/tiled-cpu-detail-parity.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "area",
+      "protects": "Phase 5 exit gate 4: global and local Detail match the CPU reference across",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/tiled-direct-parity.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "Phase 4 exit gate 1: Direct and Tiled pointwise results meet parity",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/tiled-film-parity.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "area",
+      "protects": "tiled film parity",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/transport-pool-exhaustion.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Regression driver for the abandoned-stream connection-pool exhaustion.",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/transport-pool-exhaustion.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/ui-refinement-detail-qa.js",
+      "areas": [
+        "detail"
+      ],
+      "tier": "full",
+      "protects": "ui refinement detail qa",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/view-tools-interaction.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "view tools interaction",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/webgpu-shader-compilation.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "preview-raw is intentionally an SDR/sRGB byte surface. On an HDR desktop",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/workflow-stage-overlays.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "The mask editor canvas sits over the shared preview element, so a gizmo left",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/zebra-overlay-live.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Regression driver: the exposure overlay (zebra / false colour) must follow",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/zebra-overlay-live.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/zoom-refinement-stall.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "area",
+      "protects": "Regression driver for the lost-wake-up stall the owner hit while adding a",
+      "launch": {
+        "method": "electron",
+        "args": [
+          "--output",
+          "{output}/zoom-refinement-stall.js.json"
+        ]
+      }
+    },
+    {
+      "path": "tests/library-grade-open-identity.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Exact 42 MP before/after source, measurements, candidates and proxy check.",
+      "launch": {
+        "method": "python"
+      }
+    },
+    {
+      "path": "tests/library-grade-open-memory.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "One serial/overlapped open, measuring peak memory without pixel copies.",
+      "launch": {
+        "method": "python"
+      }
+    },
+    {
+      "path": "tests/performance/brush_feather_qualification.py",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "Hold GPU-generated soft verdicts to native CPU-mask accuracy, without changing the trial.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/cpu-strip-full.py",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Measure CPU Full through the bounded strip path on a real source.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/denoise-accuracy-stages.py",
+      "areas": [
+        "detail"
+      ],
+      "tier": "diagnostic",
+      "protects": "Isolate denoise order and grade amplification on a saved project; read only.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/denoise-intermediate-parity.py",
+      "areas": [
+        "detail"
+      ],
+      "tier": "diagnostic",
+      "protects": "Compare reused intermediate HDR models against fresh models and export.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/denoise-source-aligned-continuity.py",
+      "areas": [
+        "detail"
+      ],
+      "tier": "diagnostic",
+      "protects": "Recheck bounded GPU readbacks through actual geometry source mappings.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/detail-precision-diagnostic.py",
+      "areas": [
+        "detail"
+      ],
+      "tier": "diagnostic",
+      "protects": "Compare pre-Detail rounding and early clipping on a native patch; never saves input.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/export_parity_check.py",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "File-side half of the export/reference parity run (PRD 4.8, 15.27).",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/export-parity.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/film-grain-size-reference.py",
+      "areas": [
+        "film"
+      ],
+      "tier": "diagnostic",
+      "protects": "Scan reference and CPU fallback for the Fit grain acceptance matrix.",
+      "launch": {
+        "method": "python"
+      }
+    },
+    {
+      "path": "tests/performance/followup-campaign.py",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Sequential GPU campaign with frozen source and read-only fixture hashes.",
+      "launch": {
+        "method": "python"
+      }
+    },
+    {
+      "path": "tests/performance/generate-denoise-proxy-fixtures.py",
+      "areas": [
+        "detail"
+      ],
+      "tier": "diagnostic",
+      "protects": "from __future__ import annotations",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/library-disk-reader-summary.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "M10 medians and joined per-selection traces. No app or source-folder writes.",
+      "launch": {
+        "method": "python"
+      }
+    },
+    {
+      "path": "tests/performance/library-disk-reader-trial.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "M10 only: single unbuffered piece reader; M9 GPU preparation from memory.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/library-disk-reader-trial.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/library-focus-trial.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Small, read-only trial; controlled softness supplements unlabeled real frames.",
+      "launch": {
+        "method": "python"
+      }
+    },
+    {
+      "path": "tests/performance/library-folder-check.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Measure one unchanged-folder check, without decoding or writing source files.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/library-fullscreen-speed-summary.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Aggregate M7/M8 by median per file first; preserve slowest names.",
+      "launch": {
+        "method": "python"
+      }
+    },
+    {
+      "path": "tests/performance/library-fullscreen-speed-trial.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "M7/M8 disposable instrument. No production patches survive this process.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/library-fullscreen-speed-trial.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/library-kept-backend-trial.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Read-only corrected-source / reduced export-rendition timing trial.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/library-mark-acceptance.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Measure Stage A HTTP acceptance on disposable local photo copies; no decode.",
+      "launch": {
+        "method": "python"
+      }
+    },
+    {
+      "path": "tests/performance/library-open-source-parity.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Compare real corrected-source routes exactly on a disposable source copy.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/library-raw-deep-dive-summary.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Summarize the M9 prototype's ignored JSON results and make review crops.",
+      "launch": {
+        "method": "python"
+      }
+    },
+    {
+      "path": "tests/performance/library-raw-deep-dive.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "M9 test-only RAW probe. All writes confined to ignored output; no app patches.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/library-raw-deep-dive.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/library-smart-index.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Disposable synthetic 155,000-photo index; no real photo folder is accessed.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/library-smart-albums.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/make_authored_sdr_fixture.py",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Disposable photo-derived Ultra HDR fixture; never overwrite any input.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/make_four_mask_fixture.py",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "Build the second Viewport-Bounded GPU Preview fixture (PRD section 8).",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/mask-blur-benchmark.py",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "Isolated whole-frame/strip feather comparison; no source photos needed.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/mask_trial_evidence.py",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "Render inspectable CPU/GPU evidence for admitted masks over two levels.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/native-mask-followup.py",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "Read-only fixture tracing and isolated old/new feather A/B; no RAW decode.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/photo-library-measurements.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Read-only M1/M4/R1 corpus probe; no grading or preview-pipeline changes.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/photo-library-quick-open-trial.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Test-only quick-open service. Originals read-only; no disk pixels/cache/encoder.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/photo-library-quick-open-trial.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/photo-library-remaining.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "External M2/M3/M6/T1 instrument, not an adopted library pipeline or schema.",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/photo-library-speed-trial.py",
+      "areas": [
+        "library"
+      ],
+      "tier": "diagnostic",
+      "protects": "Disposable library speed trial. No shipped pipeline, format or cache changes.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/photo-library-speed-trial.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/preview_export_compare.py",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "Reference half of the preview-versus-export comparison (Viewport PRD 4.6).",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/preview-export-compare.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/proof_export_identity.py",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "full",
+      "protects": "Full-size Proof versus export on a real project (PRD section 3).",
+      "launch": {
+        "method": "python",
+        "args": [
+          "--project",
+          "{project}",
+          "--out",
+          "{output}/proof-identity.json"
+        ]
+      },
+      "note": "Broad full-size real-project file identity; synthetic exact identity remains in every fast Python suite."
+    },
+    {
+      "path": "tests/performance/reference_session.py",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "Open a project in-process for reference renders, without touching it.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/preview-export-compare.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/performance/sample-process-memory.ps1",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "param([int]$RootProcessId)",
+      "launch": {
+        "method": "powershell",
+        "requires": "Provide the owned test process RootProcessId; sampler runs until that process exits."
+      }
+    },
+    {
+      "path": "tests/performance/soft_mask_fuzz.py",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "Random masks: when can one small bitmap stand in for the exact mask? (Viewport PRD 5.1)",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/soft_mask_survey.py",
+      "areas": [
+        "masks"
+      ],
+      "tier": "diagnostic",
+      "protects": "How well does a small bitmap stand in for each mask of a project? (Viewport PRD 5.1)",
+      "launch": {
+        "method": "python",
+        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
+      }
+    },
+    {
+      "path": "tests/performance/source-mip-benchmark.py",
+      "areas": [
+        "preview"
+      ],
+      "tier": "diagnostic",
+      "protects": "Record cold, memory-warm and disk-warm source mip costs.",
+      "launch": {
+        "method": "python"
+      }
+    },
+    {
+      "path": "tests/performance/zoom_block_compare.py",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "Area-average 8x8 screen-pixel blocks at any zoom (PRD 4.4).",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/performance/zoom-block-continuity.js"
+        ]
+      }
+    }
+  ]
+}

@@ -316,6 +316,9 @@ function packagedExecutable() {
   };
   require("./electron-browser-context").installSequentialContexts(browserFacade, window, navigate, origin);
   playwright.chromium.launch = async () => browserFacade;
+  // Desktop tests resolve a separate Playwright installation. Share the same
+  // supported browser branch so a release never needs a temporary adapter.
+  require(require.resolve("playwright", { paths: [DESKTOP_DIRECTORY] })).chromium.launch = playwright.chromium.launch;
   process.on("exit", stop);
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => { stop(); process.exit(130); });
@@ -346,5 +349,7 @@ function packagedExecutable() {
   };
 
   process.argv = [process.argv[0], path.resolve(testPath), ...testArguments];
-  require(path.resolve(testPath));
+  // Set require.main as a direct Node invocation would, including drivers
+  // whose standalone entry point is guarded by require.main === module.
+  require("node:module")._load(path.resolve(testPath), null, true);
 })().catch((error) => { console.error(error); process.exit(1); });
