@@ -43,6 +43,16 @@ const settings = file => JSON.parse(fs.readFileSync(file + ".hdrf", "utf8"));
       if (value !== undefined) await dialog.locator("input").fill(value);
       await dialog.locator("button.button-primary").click();
     };
+    // The command updates the Library immediately; disk follows the writer.
+    const saved = async () => {
+      const deadline = Date.now() + 30000;
+      for (;;) {
+        const status = await library.evaluate(async () => (await fetch("/api/library/settings-status")).json());
+        if (status.waiting === 0 && !status.busy) return;
+        assert.ok(Date.now() < deadline, "Settings writer did not finish");
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    };
     const cell = name => library.locator(`#grid-space .library-cell`).filter({ hasText: name });
 
     // Background indexing: pin both folders, open only one.
@@ -108,9 +118,11 @@ const settings = file => JSON.parse(fs.readFileSync(file + ".hdrf", "utf8"));
     await row("Holiday").click(); await library.locator("#library-tags-rename").click();
     await answer("Sea");
     await library.locator("dialog.library-ask[open] h2").filter({ hasText: "Merge Tags?" }).waitFor();
+    await saved();
     assert.deepEqual(settings(path.join(folder, "plain-0.png")).marks.tags, ["Holiday"], "Nothing changes before the merge is confirmed");
     await answer();
     await library.waitForFunction(() => document.querySelector('#library-tags-list [data-tag="Sea"] .library-tag-count')?.textContent === "3" && !document.querySelector('#library-tags-list [data-tag="Holiday"]'));
+    await saved();
     assert.deepEqual(settings(path.join(folder, "plain-0.png")).marks.tags, ["Sea"]);
     await library.locator("#library-tags-new").click(); await answer("Portfolio");
     await row("Portfolio").waitFor();
@@ -123,7 +135,8 @@ const settings = file => JSON.parse(fs.readFileSync(file + ".hdrf", "utf8"));
     await row("Sea").click(); await library.locator("#library-tags-show").click();
     await library.waitForFunction(() => HDRLibrary.getSnapshot().collection?.kind === "tag" && HDRLibrary.getSnapshot().count === 3);
     assert.ok((await snapshot()).paths.includes(path.join(unvisited, "far.png")), "A tag reaches photos in folders never opened");
-    assert.ok((await library.locator(".library-label-controls button").first().getAttribute("title")).startsWith("To retouch · red label"));
+    await library.getByRole("button", { name: /To retouch.*red label/ }).click();
+    await library.waitForFunction(() => HDRLibrary.getSnapshot().marks.label === "red");
     console.log("PASS: Tags and Labels window: counts, rename-into-existing asks before merging, new tag, undo, label meaning, Show photos.");
 
     // Albums.
@@ -134,34 +147,38 @@ const settings = file => JSON.parse(fs.readFileSync(file + ".hdrf", "utf8"));
     await answer("Best");
     const album = name => library.locator(`#albums .library-album-row[data-album="${name}"]`);
     await library.waitForFunction(() => document.querySelector('#albums [data-album="Best"] .library-count')?.textContent === "2");
+    await saved();
     assert.deepEqual(settings(path.join(folder, "sony-a.jpg")).albums, ["Best"]);
     assert.equal(settings(path.join(folder, "sony-a.jpg")).marks.rating, 0);
     await cell("plain-2.png").click({ button: "right" }); await menu("Add to Best").click();
     await library.waitForFunction(() => document.querySelector('#albums [data-album="Best"] .library-count')?.textContent === "3");
     await cell("plain-2.png").click();
-    await library.waitForFunction(() => [...document.querySelectorAll("#details .library-details-sub")].some(line => line.textContent === "In Best"));
+    await library.waitForFunction(() => HDRLibrary.getSnapshot().facts.albums.includes("Best"));
     await album("Best").locator(".folder-name").click();
     await library.waitForFunction(() => HDRLibrary.getSnapshot().collection?.kind === "album" && HDRLibrary.getSnapshot().count === 3);
     await cell("plain-2.png").click({ button: "right" }); await menu("Remove from Best").click();
     await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 2);
+    await saved();
     assert.deepEqual(settings(path.join(folder, "plain-2.png")).albums, []);
     assert.ok(fs.existsSync(path.join(folder, "plain-2.png")), "Removing from an album leaves the file");
     await cell("sony-a.jpg").click(); await page.keyboard.press("Control+z");
     await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 3 && !HDRLibrary.getSnapshot().reading);
     await album("Best").click({ button: "right" }); await menu("Rename album").click(); await answer("Best of 2026");
     await library.waitForFunction(() => HDRLibrary.getSnapshot().collection?.name === "Best of 2026" && HDRLibrary.getSnapshot().count === 3);
+    await saved();
     assert.deepEqual(settings(path.join(folder, "sony-b.jpg")).albums, ["Best of 2026"]);
     await page.screenshot({ path: path.join(output, "album.png") });
     await album("Best of 2026").click({ button: "right" }); await menu("Delete album").click(); await answer();
     await library.waitForFunction(() => !HDRLibrary.getSnapshot().albums.includes("Best of 2026") && HDRLibrary.getSnapshot().collection === null && HDRLibrary.getSnapshot().count === 6);
+    await saved();
     assert.deepEqual(settings(path.join(folder, "sony-b.jpg")).albums, []);
     console.log("PASS: albums from a selection, right-click add/remove, album view, undo, rename, delete; files untouched.");
 
     // The indexing control.
     await library.locator("#index-status").click();
-    await menu("Turn background indexing off").click();
-    await library.waitForFunction(() => document.querySelector("#index-status").textContent === "Background indexing is off");
-    await library.locator("#index-status").click(); await menu("Turn background indexing on").click();
+    await library.locator("#library-activity").getByRole("button", { name: "Turn background indexing off", exact: true }).click();
+    await library.waitForFunction(() => document.querySelector("#library-activity").textContent.includes("Background indexing is off"));
+    await library.locator("#library-activity").getByRole("button", { name: "Turn background indexing on", exact: true }).click();
     await library.waitForFunction(() => HDRLibrary.getSnapshot().indexing?.state === "idle", null, { timeout: 60000 });
     for (const [file, bytes] of originals) assert.deepEqual(fs.readFileSync(file), bytes, `${file} must be untouched`);
     assert.deepEqual(errors, []);
