@@ -3500,6 +3500,7 @@
       // Every neighbourhood node declares the composed reach, because each of
       // them has to be correct over the tile plus whatever the stages after it
       // will read. Detail runs first, so its own reach is the largest.
+      if (graphScaleContract().blackAndWhiteGuideReach(params) > 0) nodes.push({ id: "black-and-white", halo });
       if (detailActive || localDetailActive) nodes.push({ id: "detail", halo });
       if (activeLocals.length) nodes.push({ id: "mask-feather", halo });
       if (params[GPU_PARAMS.HALATION_ENABLED] > 0.5) nodes.push({ id: "halation", halo });

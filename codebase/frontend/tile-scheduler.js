@@ -43,6 +43,7 @@
     // Neighbourhood modules declare radius-derived halos in later phases; the
     // vocabulary exists now so the scheduler can already carry them.
     detail: null,
+    "black-and-white": null,
     denoise: null,
     halation: null,
     "lens-filter": null,
