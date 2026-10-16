@@ -146,3 +146,18 @@ synthetic exact identity continues in the required fast Python suite. This
 classification does not waive AGENTS.md's Still strict rule: if export/Proof
 or pinned numerical contracts change, every check covering that change is
 required, and its time estimate must be reviewed before starting.
+
+## Tooling validation (October 16, 2026)
+
+At revision `c9a696f`, the fast checks passed: 516 Node tests and 2,204 Python
+tests, with three Python skips. All five plan selections were checked. One
+core run was deliberately stopped after its first completed driver, then resumed
+at the same revision: 12 passed, one new failure, none unfinished, 10.9 minutes
+including the automatic retry. All three protected hashes stayed unchanged.
+The preview/export comparison failed its peak verdict on both attempts; paired
+pixels, tone and masks passed. No application or driver repair was attempted.
+
+Evidence is in ignored `codebase/output/release-checks/2026-10-16T16-24-55-193Z-29cde84e1a59b2272a4f/`.
+The current release plan compares with `v0.9.1`, selects only 13 core checks and
+estimates 10.8 minutes entirely from history, including a retry allowance.
+This is a plan, not a release certification. Release/full sweeps were not run.
