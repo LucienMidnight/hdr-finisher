@@ -61,6 +61,15 @@ for (let i = 0; i < 3; i++) fs.copyFileSync(path.join(root, "tests", "fixtures",
   assert.equal(await library.locator("#library-undo").isVisible(), false);
   assert.deepEqual(errors, []);
   await library.locator("#index-status").click();
+  // Finish Undo before creating the external conflict fixture.
+  const saveDeadline = Date.now() + 30000;
+  for (;;) {
+   const status = await library.evaluate(async () => (await fetch("/api/library/settings-status")).json());
+   if (status.waiting === 0 && !status.busy) break;
+   assert.ok(Date.now() < saveDeadline, "Undo settings writer did not finish");
+   await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal(JSON.parse(fs.readFileSync(corrupt, "utf8")).marks.rating, 0);
   const conflict = path.join(folder, "photo-0.png (sync conflicted copy).hdrf");
   fs.copyFileSync(corrupt, conflict);
   const copiesBefore = [fs.readFileSync(corrupt, "utf8"), fs.readFileSync(conflict, "utf8")];
