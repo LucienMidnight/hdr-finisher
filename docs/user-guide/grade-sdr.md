@@ -86,7 +86,7 @@ For a scene-linear source without an authored SDR reference:
 5. Exposure Bands
 6. Contrast and Lift/Gamma/Gain
 7. Curves
-8. Film Response/Color Density, Halation, Bloom, Detail Softness and Microcontrast, then Grain
+8. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan, then Look Strength; followed by Detail Softness and Microcontrast
 
 For an authored SDR reference such as supported Apple HDR HEIC:
 
@@ -97,7 +97,7 @@ For an authored SDR reference such as supported Apple HDR HEIC:
 5. Exposure Bands
 6. Contrast, then SDR color grade through ACEScg and back to sRGB
 7. Lift/Gamma/Gain and Curves
-8. Film Response/Color Density, Halation, Bloom, Detail Softness and Microcontrast, then Grain
+8. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan, then Look Strength; followed by Detail Softness and Microcontrast
 
 The final result is clipped to the normalized SDR range.
 

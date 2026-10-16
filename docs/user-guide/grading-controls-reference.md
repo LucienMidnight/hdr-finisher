@@ -72,26 +72,28 @@ Off by default; the eye button turns it on for the current rendition. All slider
 
 ## Film Look in HDR and SDR
 
-Film Look uses the same structure in each branch. Amount and sensitivity controls are normalized; Radius is a percentage of the current image diagonal.
+Film Look uses the same stages in each branch. Phase 3 controls are being validated on film-look-rebuild; see the Film Look PRD for outstanding checks. Halation follows the film gate; Bloom still follows the output diagonal until Phase 3b.
 
 Film stock data is derived from [spektrafilm](https://github.com/andreavolpato/spektrafilm) by Andrea Volpato, licensed CC BY-SA 4.0. HDR Finisher re-samples spektrafilm's profiles into its own tables and runs its own GPU and CPU engine, informed by spektrafilm's GPL-3.0 code; see `THIRD_PARTY_NOTICES.md` and `codebase/backend/hdr_finisher/film_stocks/CHANGELOG.txt`.
 
 | Control | Purpose | Range |
 |---|---|---|
-| Reference Model | Populates an editable set of tonal, grain, glow, and resolving-character values. Custom/Neutral applies no preset. | Custom/Neutral; Large Format Fine; 35mm Fine; 35mm Balanced; 35mm Fast; 16mm Fine |
 | Look Strength | Blends the complete Film Look toward neutral without changing its component values. | 0–100% |
-| Stock | Renders a real colour negative stock and its print paper from manufacturer data: Kodak Portra 160 / 400 / 800, Ektar 100, Gold 200, Fujifilm Pro 400H. Runs first in Film Look, after your tone work. None turns the stage off. | None or a stock |
+| Stock | Measured negative or slide colour and tone, or a straight-response Neutral stock. Slides have no print. | Neutral or a stock |
 | Stock Color | How much of the stock's colour response is applied. | 0–100% |
 | Stock Tone | How much of the stock's print tone curve is applied. At 0 your tones stay as graded and only the stock's colour is borrowed (the Portra 400 Color preset); at 100 the full film-and-print tone is used (Portra 400 Full). HDR highlights above reference white keep their ratios at any setting. | 0–100% |
 | Film Exposure | Over- or under-exposes the negative; the print is rebalanced so brightness holds and the stock's character changes (Portra opens up and softens when overexposed). | -3 to +3 EV |
 | Color Separation | Strengthens or weakens the interaction between the colour layers, which sets the stock's colour richness. Greys are unchanged. | -100 to +100% |
 | Preflash | Pre-exposes the print paper, lowering print contrast and keeping more highlight detail. | 0–100% |
 | Print Warmth / Print Tint | Enlarger yellow and magenta filtration; 100% is a 20 CC filter shift. | -100 to +100% |
-| Print Strength | Blends the HDR-safe Cinema Print response. | 0–100% |
-| Contrast, Toe, Shoulder | Shape print-like separation, black transition, and highlight restraint in the branch's perceptual domain. | -100 to +100% |
-| Color Density | Changes subtractive dye-like chroma separation with a small density-dependent luminance change. | -100 to +100% |
-| Halation Amount / Sensitivity | Control red highlight-edge scatter (light reflected off the film base re-exposing mostly the red layer) and the branch-relative highlight population that qualifies. | 0–100% |
-| Halation Radius | Sets edge-scatter scale as a percentage of image diagonal. | Slider 0–2%; direct entry 0–5% |
+| Push/Pull | Development in whole stops. Portra 800 +1/+2 are measured; other positions approximate film contrast. | -2 to +2 stops |
+| Paper | The stock default, Kodak 2383, or Fujifilm Crystal Archive Type II. Disabled for slides. | Three choices |
+| Print Exposure | More light on the paper makes a darker print, independently of Film Exposure. | -3 to +3 EV |
+| Print / Shadow / Highlight Contrast | Change the paper layers; work without raising another control. Negative Highlight Contrast also softens the paper shoulder. | -100 to +100% |
+| Scan Sharpening | Scanner RGB unsharp mask; no Detail edge threshold. Starts at 0; 70 matches spektrafilm's amount. | 0–100% |
+| Lab Levels | Scanner auto black/white calibration. | Off/On |
+| Halation Amount | Light reflected off the film base re-exposes mostly the red layer before development. | 0–100% |
+| Halation Spread | Sets scatter scale relative to the film gate and Film Format. | Slider 0–2%; direct entry 0–5% of 35mm gate |
 | Halation Hue Offset / Saturation | Tune the warm scatter color without changing the source grade. | Hue -100 to +100%; Saturation 0–100% |
 | Show halation map | Replaces the viewer with a grey map of where the halation glow can appear. It shows placement, not strength. It is suppressed during export. | Off/On |
 | Bloom Amount / Sensitivity | Control broad neutral highlight diffusion and branch-relative qualification. | 0–100% |
@@ -108,7 +110,7 @@ Softness and Microcontrast moved to the Detail section:
 
 | Control | Purpose | Range |
 |---|---|---|
-| Softness | Softens digital edge hardness across the whole picture, in colour. Runs after local adjustments, before grain; follows Detail's on/off, not Film Look's Look Strength. | 0–100 |
+| Softness | Softens digital edge hardness across the whole picture, in colour. Runs after the completed film scan; follows Detail's on/off, not Film Look's Look Strength. | 0–100 |
 | Microcontrast | Lowers or raises fine local contrast across the whole picture, in colour. Works differently from Texture. Same placement as Softness. | -100 to +100 |
 
 ## Lift, Gamma, Gain in HDR and SDR

@@ -158,13 +158,10 @@ The current HDR order is:
 5. Lift/Gamma/Gain
 6. Curves
 7. Detail and local adjustments
-8. Film Response and Color Density
-9. Halation
-10. Bloom/Diffusion
-11. Detail Softness and Microcontrast
-12. Grain
-13. Output Highlights: Peak Fit, Soft Ceiling, or Clip
-14. Clamp final negative values to zero
+8. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan, then Look Strength
+9. Detail Softness and Microcontrast
+10. Output Highlights: Peak Fit, Soft Ceiling, or Clip
+11. Clamp final negative values to zero
 
 Order matters. A curve sees the result of every preceding enabled section.
 

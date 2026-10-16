@@ -205,19 +205,14 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 | Control | Slider | Typed value | Notes |
 | --- | --- | --- | --- |
 | Look Strength | 0 to 100 % | 0 to 100 % |  |
-| Print Strength | 0 to 100 % | 0 to 100 % |  |
-| Print Contrast | -100 to 100 % | -100 to 100 % |  |
-| Color Density | -100 to 100 % | -100 to 100 % |  |
-| Toe | -100 to 100 % | -100 to 100 % |  |
-| Shoulder | -100 to 100 % | -100 to 100 % |  |
-| Red Response | -100 to 100 % | -100 to 100 % |  |
-| Green Response | -100 to 100 % | -100 to 100 % |  |
-| Blue Response | -100 to 100 % | -100 to 100 % |  |
-| Highlight Desaturation | 0 to 100 % | 0 to 100 % |  |
-| Shadow Desaturation | 0 to 100 % | 0 to 100 % |  |
-| Amount | 0 to 100 % | 0 to 100 % |  |
-| Sensitivity | 0 to 100 % | 0 to 100 % |  |
-| Physical Extent | 0 to 2 % of 35mm gate | **0 to 5 % of 35mm gate** |  |
+| Push/Pull | -2 to +2 stops | -2 to +2 whole stops | Measured Portra 800 +1/+2; approximate otherwise. |
+| Print Exposure | -3 to +3 EV | -3 to +3 EV | More exposure darkens the print. |
+| Print Contrast | -100 to 100 % | -100 to 100 % | Physical paper contrast. |
+| Shadow Contrast | -100 to 100 % | -100 to 100 % | Paper's shadow layers. |
+| Highlight Contrast | -100 to 100 % | -100 to 100 % | Paper's highlight layers and softer shoulder. |
+| Scan Sharpening | 0 to 100 % | 0 to 100 % | Starts at 0; 70 matches upstream. |
+| Halation Amount | 0 to 100 % | 0 to 100 % | |
+| Spread | 0 to 2 % of 35mm gate | **0 to 5 % of 35mm gate** | Follows Film Format. |
 | Hue Offset | -100 to 100 % | -100 to 100 % |  |
 | Saturation | 0 to 100 % | 0 to 100 % |  |
 | Amount | 0 to 100 % | 0 to 100 % |  |

@@ -414,3 +414,12 @@ two Black & White-only cases on that extreme input fail separately, recorded
 without investigation. Fresh Fit-grain acceptance passes all 180 comparisons;
 previous ten-case grain parity and 94+3 Proof/export checks pass. No push or
 installer. Phase 3 remains unfinished; Phase 3b has not started.
+
+
+Phase 3 documentation follow-up, October 16, 2026: the colour-pipeline and
+four control/usage references describe Development, physical paper contrast,
+Print Exposure, Scan Sharpening and Lab Levels, remove retired Film Response
+settings, and identify the existing Looks as awaiting Phase 5. Documentation
+only; uses the preceding 483 Node / 2,132 Python results and the recorded focused
+checks. The uncompressed extreme Neutral HDR failure above remains unresolved;
+these references document the controls, not Phase 3 acceptance.

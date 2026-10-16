@@ -123,13 +123,10 @@ The HDR branch remains linear ACEScg. Current order:
 8. Lift/Gamma/Gain luminance zones
 9. HDR-domain luma/R/G/B curves
 10. Detail and local adjustments
-11. Film Response and subtractive Color Density
-12. Halation
-13. Bloom/Diffusion
-14. Image Softness and Microcontrast
-15. Seeded density-aware Grain
-16. Output Highlights: Peak Fit, Soft Ceiling, or Clip
-17. Final non-negative clip
+11. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan sharpening and levels, then Look Strength
+12. Detail Softness and Microcontrast
+13. Output Highlights: Peak Fit, Soft Ceiling, or Clip
+14. Final non-negative clip
 
 HDR luma coefficients are ACEScg-derived: `0.2722287 R + 0.6740818 G + 0.0536895 B`.
 
@@ -147,7 +144,7 @@ Peak Fit measures the final pre-compression grade. Smooth color rolloff measures
 6. Monotonic display-linear SDR Exposure Bands
 7. Contrast and Lift/Gamma/Gain
 8. SDR-domain curves
-9. Film Response/Color Density, Halation, Bloom, Image Structure, and Grain
+9. Film Look physical stages (as above), then Detail Softness and Microcontrast
 
 ### From an authored SDR HEIC reference
 
@@ -172,9 +169,9 @@ Values beyond graph endpoints are extended with endpoint slopes before conversio
 
 ## Film Look
 
-Both branches carry the same nested `film_look` schema and a separate top-level bypass. Film Response works in a perceptual branch domain, so the HDR path retains values above diffuse white rather than applying an SDR print ceiling. Halation and Bloom qualify highlights relative to that branch. Spatial radii are stored as percentages of image diagonal.
+Both branches carry the same nested `film_look` schema and a separate top-level bypass. Lens diffusion, resolution scatter and halation act before the negative. Push/Pull changes development; grain perturbs developed density before print and scan. Slides skip print. Neutral has a straight baseline with physical paper controls. Print Contrast acts on paper layers, independently of Film Exposure. Scan Sharpening is RGB unsharp masking before the single Look Strength mix; Detail structure follows it. HDR values above reference white keep their ratios.
 
-The CPU renderer and two-pass WebGPU renderer use the same operation order and parameter meanings. `shared.film_grain_seed` anchors the spatial grain field across HDR and SDR; branch-specific response controls may change its amplitude but not its phase. The Halation qualification map and the grain map are viewer diagnostics and export backends force them off on a deep copy of the adjustment state.
+The CPU renderer and WebGPU routes share stage order and physical parameter meanings. `shared.film_grain_seed` anchors grain across HDR and SDR. Reduced preview averages native-scale grain samples before printing to approximate the downsized native export. Halation and grain maps are viewer diagnostics suppressed for export. Phase 3 validation remains in progress; see the Film Look PRD.
 
 ## Scopes and overlays
 
