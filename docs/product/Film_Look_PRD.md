@@ -645,3 +645,44 @@ Soft Color Negative, Dense Print and High-Speed Texture on real stocks/papers,
 plus Looks for new stocks. Reuse HDRFilmCharacter and stock_overrides; apply
 only deliberate preset changes as set. Phase 6 panel polish remains separate.
 The exhaustive Phase 4 chosen-versus-alternative record is in the Phase 4 brief.
+
+
+## Phase 5 completion (October 16, 2026)
+
+Five simple stage menus (Lens, Format, Development, Print, Scan) and all eleven
+approved Looks now work in the existing panel. The Film Look header's Looks
+button opens the existing preset dialog, which also saves users' Looks. All 38
+saved creative controls track deliberate edits, including equal-value edits;
+set dots and slider double-click restore inheritance. Stock identity and preview
+maps are excluded. Seven stock-varying defaults keep their Phase 4 behavior;
+other controls use the unchanged common baseline. Sparse recipes retain stock,
+paper and deliberate controls, replacing previous Film Look settings on apply.
+Both retired Portra built-ins and the old four recipes are removed, without
+migration. Existing old project/preset intent is not upgraded; re-save current
+Looks for sparse behavior. HDR/SDR independence and one-time Match HDR remain.
+
+Exact values, every chosen-versus-alternative decision and the complete Claude
+Phase 6 mock-up handoff are in
+[the Phase 5 brief](../technical/codex-brief-film-look-phase-5-presets-2026-10-16.md#phase-5-implementation-record-october-16-2026).
+The recipes are creative starting estimates; Steve's visual judgment is pending.
+The menus are plain selects, Format is still physically near Grain, and the
+existing modal/dots await Phase 6 design. No rendering, calibration, stage order,
+stock data, shader layouts, bounds, parity tolerances or export/Proof code changed.
+
+Validation: 497 Node pass; 2,181 Python pass, three skip. Focused Electron UI
+at 2560x1440 passes every stage and Look in HDR and SDR, sparse user-Look
+save/reapply, switching stock inside a Look, new reset dots, undo/redo and
+independent Match HDR. Existing stock-character UI checks also pass. Project
+save/reopen uses temporary generated media in the Python check; preset UI uses
+an in-memory store to protect Steve's folder. No pixel/render matrix is needed
+for these control-only changes, per the brief. No final failure remains. Initial
+syntax and ownership-order errors were fixed; a JSON-property-order-only UI
+assertion was changed to compare each actual field. Existing HDR precision,
+Black & White tile and Library-warning limitations are unchanged.
+
+Commit 0b8be08 implements recipes/ownership/menus with the passing fast and
+focused checks above. The following validation/docs commit adds the repeatable
+UI helper and these records, using the same passing runs; no production code
+changes after them. No broad release sweep, push or installer. Two unrelated
+untracked Library briefs remain untouched. No Steve lens/grain feedback arrived.
+Phase 6 starts with Claude's panel mock-up, then implementation.
