@@ -227,3 +227,35 @@ outside its existing colour limit of 0.05. No Match tolerance was relaxed.
 Saved projects or presets containing removed Bloom fields must be recreated;
 no pre-1.0 migration is supplied. Several historical performance drivers still
 contain retired recipes and need updating before their next release sweep.
+
+
+## v0.9.1 pre-release check (October 16, 2026)
+
+**Not ready.** This was the focused check, not the full sweep. The run began at `61ca972`; version/notes preparation was `69768b6`, and the final tested code/test revision was `006247a`. A separate concurrent commit, `fb93f34` (export warning display), landed during the run: later fast checks include it, earlier export checks precede it. This is not certification of one frozen revision.
+
+Fast checks: 497 Node and 2,204 Python passed (three Python skips). Driver totals: 33 passed, 10 failed, 1 shared helper covered indirectly, 28 unfinished at the 75-minute limit. Remaining direct Library unit drivers are credited from the complete Node fast suite; they were not run twice. All three protected project hashes stayed unchanged. No repeated GPU device loss was observed.
+
+No unresolved failure matches the 0.9.0 known list with the same message. No application failure was cleared as flaky. Failures were retried once; repaired drivers were confirmed separately. The stock retry used its supported single-case option after the full matrix isolated the only failure. New check failures below are not all established application bugs.
+
+- `export-file-browser-interaction.js`: **New:** file-browser export leaves Confirm disabled on the disposable fixture; four-format export flow cannot complete.
+- `film-stock-parity.js`: **New to the 0.9.0 list, already documented:** extreme uncompressed HDR Neutral maximum paper gain exceeds preview/export agreement (added mean 3.201, p99.9 250); the earlier Extreme HDR preview range section explains the existing ceiling. Full matrix plus targeted confirmation.
+- `tiled-film-parity.js`: **New:** Black & White Direct/Tiled frames differ despite the byte-exact guarantee; other film cases passed.
+- `performance/tier-film-consistency.js`: **New:** current Pro-Mist/Black Pro-Mist glow contribution ratio is about 1.292 against the unchanged 1.25 limit. The old Bloom failure is a different recipe/message.
+- `webgpu-shader-compilation.js`: **New:** Sharpen Amount continuous/monotonic response assertion fails; likely Detail baseline/response area.
+- `photo-library-stage-a.js`: **Driver out of date, unresolved:** folder/grid checks progress, but single-view pixel readback still requests a 2D context from the current GPU canvas. This failure does not establish a rendering bug.
+- `photo-library-stage-b.js`: **New check failure:** after fixing asynchronous sidecar reads, tag suggestions time out or show Family (0) rather than Family (2). Tag counts/refresh remain unresolved.
+- `photo-library-navigation.js`: **New check failure:** Unpin folder does not satisfy the empty-folder-tree assertion; folder removal/tree expectation needs follow-up.
+- `photo-library-slice-2.js`: **New check failure:** after fixing the Details container, confirmed tag merge still reads Holiday instead of Sea from disk; background persistence/test synchronization needs follow-up.
+- `library-background-activity.js`: **New check failure:** conflict check observes an undone rating changing on disk; writer completion/test synchronization needs follow-up.
+
+Stale drivers were updated individually for removed Bloom, current Film Look controls, the Library start screen/import action, current logo/button results, background settings writes, and the complete Details container. Numerical tolerances, exact-match guarantees and budgets were unchanged. Corrected writer-status and UI appearance checks passed; UI QA had three unavailable historical reference captures, so those optional comparisons were skipped.
+
+Invocation equivalents: the three Film UI helper modules ran through film-stock-parity UI modes; the parameter-layout helper used gpu-param-layout.test.js; Proof used its supported shared browser branch after native startup stalled. electron-initial-load.js is a launcher helper exercised indirectly. These are not standalone green checks of the native launch path.
+
+Also observed: Grade sends library-worker pause reason `grade-control`, which the backend rejects with HTTP 422. No application fix was made by this validation.
+
+Logs, actual commands, attempts, fixture manifests, partial lens results, and the exact remaining commands are in `codebase/output/performance/review/prerelease-0.9.1-2026-10-16/` (`summary.json`, `results.json`, `unfinished.json`). Coverage audits, endurance runs, broad timing sweeps and Library speed trials were not run. No merge, tag, push or installer build was performed.
+
+Unfinished: lens preview/export matrix (122 of 128 cases passed, none failed), exact lens Direct/Tiled matrix, Film Look interaction, and 25 Library drivers. `unfinished.json` contains every remaining driver and command.
+
+Local preparation/driver commits (excluding the separate concurrent change): `006247a`, `96506de`, `1669484`, `db0820b`, `525f538`, `35042dd`, `5518720`, `cdb8b8d`, `6824292`, `44b9cb9`, `8c44e4e`, `230d1f8`, `a94b68d`, `8c61ec5`, `1ad45bc`, `a9366f8`, `69768b6`. The release-check record is committed separately after these.
