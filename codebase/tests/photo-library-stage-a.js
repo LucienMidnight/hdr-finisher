@@ -71,7 +71,7 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     await library.waitForSelector("#grid-space canvas[data-picture-key]", { timeout: 60000 });
     await library.waitForFunction(() => document.querySelectorAll("#grid-space canvas").length > 0 && [...document.querySelectorAll("#grid-space canvas")].every(canvas => canvas.dataset.pictureKey), null, { timeout: 60000 });
     await page.screenshot({ path: path.join(output, "grid.png") });
-    const first = await library.evaluate(() => document.querySelector("#grid-space .library-cell").dataset.path);
+    const first = await library.locator("#grid-space .library-cell").first().getAttribute("data-path");
     const cache = await library.evaluate(async photo => {
       return (await fetch("/api/library/picture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: photo, edge: 512, quality: "quick" }) })).json();
     }, first);
@@ -83,9 +83,17 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     console.log("[library] virtual grid", snapshot, "thumbnail bytes", cache.stored_bytes);
     await library.locator("#single-view").click();
     await library.waitForSelector("#single-picture[data-picture-key]", { timeout: 60000 });
-    const pixels = await library.evaluate(() => {
+    const pixels = await library.evaluate(async () => {
       const canvas = document.getElementById("single-picture");
-      return [...canvas.getContext("2d").getImageData(Math.floor(canvas.width/2), Math.floor(canvas.height/2),1,1).data];
+      // Decode the GPU canvas snapshot into a separate 2D canvas.
+      const image = new Image();
+      image.src = canvas.toDataURL("image/png");
+      await image.decode();
+      const surface = document.createElement("canvas");
+      surface.width = canvas.width; surface.height = canvas.height;
+      const context = surface.getContext("2d");
+      context.drawImage(image, 0, 0);
+      return [...context.getImageData(Math.floor(surface.width/2), Math.floor(surface.height/2), 1, 1).data];
     });
     assert.ok(pixels.slice(0,3).some(value => value > 10), JSON.stringify(pixels));
     await page.screenshot({ path: path.join(output, "single.png") });
@@ -127,7 +135,7 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     assert.equal(await page.evaluate(() => state.activeWorkflow), "import");
     await page.evaluate(() => { window.libraryGateChoice = "discard"; });
     await library.locator("#single-picture").click(); await page.keyboard.press("Enter");
-    await page.waitForFunction(old => state.activeWorkflow === "grade" && state.session.session_id !== old, currentSession, { timeout: 60000 });
+    await page.waitForFunction(old => state.session && state.activeWorkflow === "grade" && state.session.session_id !== old, currentSession, { timeout: 60000 });
     assert.equal(await page.evaluate(() => window.libraryGateCount), 2);
     assert.equal(fs.readFileSync(path.join(folder, "ignored.hdrf"), "utf8"), "sidecar stays untouched");
     assert.equal(fs.readdirSync(folder).filter(name => name.endsWith(".hdrf")).length, 1);
@@ -158,8 +166,8 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
       const started = Date.now();
       const pending = new Set();
       const request = req => {
-        if (req.url().includes("/api/library/picture")) { pending.add(req); peak = Math.max(peak, ++active); }
-        if (req.url().includes("/api/library/pixels/") && firstPixels == null) firstPixels = Date.now() - started;
+        if (new URL(req.url()).pathname === "/api/library/picture") { pending.add(req); peak = Math.max(peak, ++active); }
+        if (/\/api\/library\/(?:pixels|kept-pixels|raw-thumbnail)\//.test(req.url()) && firstPixels == null) firstPixels = Date.now() - started;
       };
       const done = req => { if (pending.delete(req)) active--; };
       const response = res => { if (res.url().endsWith("/api/library/picture")) { firstMeta ??= Date.now() - started; finished++; } };
