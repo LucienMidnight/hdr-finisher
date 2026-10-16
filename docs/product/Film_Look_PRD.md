@@ -269,10 +269,8 @@ The diagnostic writes generated media and comparisons to ignored output only.
 
 Validation: 180 patch/route/size comparisons pass; worst grain-strength error
 13.9%, worst channel mean bias 0.356 levels. Native whole-frame mean is at most
-0.0654 levels and p99.9 is 1. Direct/Tiled images are byte-identical. The initial
-72 grey-patch matrix ran end-to-end; the expanded checks reused its same native
-exports, and the native whole-frame scope correction was evaluated from those
-recorded images. Existing grain parity passes all ten cases without changed
+0.0654 levels and p99.9 is 1. Direct/Tiled images are byte-identical. A fresh end-to-end rerun of the complete 180-case matrix also passes,
+including regenerated native exports and CPU fallback images. Existing grain parity passes all ten cases without changed
 limits. Fast checks: 483 JavaScript and 2094 Python passed, three Python skipped.
 
 Cost: reduced grain evaluates 4 samples at these Fit sizes, up to 16 at smaller
@@ -281,8 +279,98 @@ CPU fallback also visits more native-scale grain cells and can be substantially
 slower. No controlled before/after whole-preview timing was taken. Steve should
 try Fit and zoom/pan responsiveness with grain enabled. Scales smaller than the
 tested Fit/half sizes use the same bounded approximation but are not covered by
-this acceptance matrix. Phase 3 controls and the Phase 3b lens filter have not
-been implemented or committed yet.
+this acceptance matrix. See the Phase 3 continuation below for control work.
+
+Phase 3 work in progress, October 16, 2026: shared paper morph/scanner preparation
+is committed in `efec862`; panel/model/CPU/GPU wiring and Neutral are committed
+as work in progress in `7db66fc` and are being validated. Phase 3 is NOT complete and Phase 3b has NOT started. Push/Pull uses
+whole stops from -2 to +2; Portra 800 +1/+2 select the measured profiles, all
+other positions use approximate film gamma `2**(0.2*stops)`. Paper contrast
+factors span 0.5..2. Negative-paper fast layers are assigned to image highlights,
+mid/slow layers to shadows (the enlarger reverses exposure); negative Highlight
+Contrast also blends toward upstream developer exhaustion. All three shipped
+paper profiles are negative in the pinned data, including Kodak 2383.
+
+Scan Sharpening defaults to 0 to keep Neutral unprocessed; 70 matches upstream's
+0.7 amount, with its 0.7-pixel RGB Gaussian unsharp mask. This differs from
+Detail's edge-qualified structure. It runs before the single Look Strength mix.
+The GPU reuses its existing textures, adding scan/copy passes and at most three
+source pixels of neighborhood reach; no existing blur cap or comparison limit
+is raised. Lab Levels calibrates the scanner only; it does not also re-expose
+the camera or enlarger as upstream's linked exposure corrections can do. No controlled before/after latency measurement is available.
+
+Neutral uses an analytic log-density negative and a synthetic three-layer
+paper whose scanner inverts the same sampled baseline. Its default is straight;
+the alternative paper selections use the measured paper/scanner data, without
+borrowing any measured negative's colour matrix or couplers. Stock Color/Tone
+only mix existing character; a straight Neutral baseline has none to invent. Its Lab Levels
+uses the upstream 1%/98% encoded-sRGB endpoint convention. This is an explicit
+synthetic stock choice, not measured manufacturer data. Default Neutral bypasses
+the stock allocation entirely. The two measured push entries leave the menu;
+slide Print controls show "Slides have no print". Existing projects/presets
+using removed response, desaturation or halation sensitivity fields are affected;
+no compatibility path is kept. Four Looks await rebuilding in Phase 5.
+
+Validation in progress: all 32 expanded HDR stock/control cases pass, as do
+all 31 previously expanded SDR cases. Four initial HDR failures exposed a
+stock-only return matrix that differed from the exact CPU CAT02 conversion;
+that conversion is corrected without altering the general shader conversion.
+The remaining strong Neutral HDR case exposed independent ACES half-float
+rounding near an sRGB gamut boundary. Neutral HDR now chooses among nine nearby
+representable triplets by weighted sRGB error, at the raw-film and scanner
+writes. The case improves from p99.9 10 levels to 1, below the unchanged limit
+of 2; mean is 0.052 levels. Texture formats, allocations and GPU limits stay
+fixed. This adds arithmetic only to Neutral HDR; its time cost is not measured.
+The focused Proof/export group passed 94 checks; three additional real-encoder
+checks using the physical controls match Proof and export byte for byte.
+
+Steve explicitly approved the limited retired-control test replacement on
+October 16. Physical paper/scanner and removed-field rejection checks replace
+the old artistic response/desaturation and compatibility checks; all 198 GPU
+positions, numeric tolerances and budgets remain fixed. Schema snapshots and
+fixtures now use the current model. Existing matching fixtures simply drop the
+retired artistic settings: they have no physical equivalent, and inventing a
+translation made their calibrated fits unstable. The original match-quality,
+CPU-certification and monochrome assertions remain, and all 11 match checks
+pass. Physical-control effects are independently tested. JavaScript: 483 pass.
+The complete Python run and final Fit-grain check are still in progress.
+
+The strict end-to-end paper tone monotonicity checks use the straight Neutral
+negative (as the retired default-response checks did), retaining the 2e-6 bound.
+All three measured papers also have direct curve monotonicity checks with that
+same bound and independent agreement with the pinned upstream equations. The
+complete measured negative/coupler chain has a tiny pre-existing toe reversal
+which extreme paper controls amplify to about 0.0014 of one 8-bit level; the
+manufacturer data has not been altered to conceal it. Phase 3 acceptance and
+Phase 3b remain pending until required checks finish.
+
+A further extreme-value probe found that valid Neutral settings (Push +2,
+Print Exposure -3, all three paper contrasts +100) can exceed half-float's
+65,504 limit. On this GPU the existing preview clips there: readback found no
+infinities or NaNs. Steve requested a simple cap comparison first, and
+conditionally authorized the final-film alpha scale only if that cap failed.
+With a generated 128-to-shadow HDR hue ramp, after the ordinary 400/1000-nit
+Peak Fit output stage, explicit capping fails the unchanged limits: added mean
+61.517 and p99.9 182 levels (limits 0.1 and 2). The limited scale representation
+is therefore selected. CPU export is unchanged. Final film/scanner/Detail
+writes store a power-of-two scale in spare alpha; reads decode it, including
+retained-picture interpolation. Earlier film-plane passes keep alpha=1.
+
+The Neutral pre-compression brightness measurement also clipped at 65,504.
+It now uses the existing bounded float32 maximum algorithm through a separate
+final-film entry point, including scale decoding; the audited peak shader and
+its existing entry points retain their original byte pins. Image texture sizes,
+blur caps, tile budgets and comparison tolerances remain fixed. A small bounded
+reduction buffer replaces the half-float measurement grid for Neutral HDR
+anchors. There is no controlled latency measurement.
+
+The unchanged CPU's final HDR blend loses float32 precision on these enormous
+values; the extreme Neutral preview explicitly reproduces that rounding. The
+focused extreme acceptance case then passes: added mean 0.040 levels, p99.9 2
+(absolute mean 0.0411). Rare boundary pixels still differ by as much as 196
+levels; the percentile check allows those isolated outliers, which must not be
+mistaken for byte-exact preview/export identity. Direct/Tiled validation and
+final regression checks are still pending; Phase 3 is not yet accepted.
 
 ### 5.4 Data still to get
 
@@ -301,3 +389,28 @@ been implemented or committed yet.
 - Switching stock inside a Look keeps the user's own settings and updates the rest.
 - Every per-stock default in the shipped data traces to section 5.
 - GPU and CPU export agree within the parity tolerances.
+
+
+Phase 3 range validation, October 16, 2026 (acceptance still blocked): the
+retained production patch changes only final ideal-Neutral HDR film/scanner/
+Detail storage and readers, plus its float32 highlight-anchor reduction. The
+original pinned peak-reduction source, CPU export, all tolerances, texture
+sizes and blur/memory ceilings are unchanged. Steve's cap-first test found
+clipping at 65,504, no infinity or NaNs; the explicit safe cap fails after HDR
+compression at added mean 61.517 levels, p99.9 182. The selected alpha scale
+passes the compressed extreme fixture at about 0.040 added mean and p99.9 2,
+although rare boundary pixels can differ by 196 levels. Fast checks pass:
+483 Node; 2,132 Python, three skips. The expanded stock/control matrix passes
+65 of 66 comparisons. Its new maximum-gain Neutral HDR case WITHOUT output
+compression fails at mean 3.201, p99.9 250. This is not accepted or waived.
+A temporary linear-sRGB storage experiment failed and was removed. An isolated
+full-precision-final-pass diagnostic still fails at mean 0.128, p99.9 22, showing
+that changing only final storage precision is insufficient. A further base-pass
+probe was invalid due to a temporary format mismatch and supplies no evidence;
+all probe code was removed. Broader changes before the final film passes exceed
+the expressly limited range-fix scope and need Steve's decision before proceeding.
+New Neutral Scan/Detail range Direct/Tiled cases are byte-identical at 256/512;
+two Black & White-only cases on that extreme input fail separately, recorded
+without investigation. Fresh Fit-grain acceptance passes all 180 comparisons;
+previous ten-case grain parity and 94+3 Proof/export checks pass. No push or
+installer. Phase 3 remains unfinished; Phase 3b has not started.

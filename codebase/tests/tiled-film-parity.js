@@ -45,6 +45,7 @@ const MAX_CHANNEL_DELTA = 0;
     args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer"],
   });
   const page = await browser.newPage({ viewport: { width: 1680, height: 1000 } });
+  page.on("response", async response => { if (response.status() >= 400) console.error(response.status(),response.url(),await response.text()); });
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   const results = [];
@@ -54,7 +55,11 @@ const MAX_CHANNEL_DELTA = 0;
     if (input) {
       const resolved = path.resolve(input);
       if (!fs.existsSync(resolved)) throw new Error(`Input does not exist: ${resolved}`);
-      await page.setInputFiles("#file-input", resolved);
+      const response=await page.request.post(new URL("/api/session",url).href,{
+        multipart:{file:{name:path.basename(resolved),mimeType:"application/octet-stream",buffer:fs.readFileSync(resolved)}}});
+      if(!response.ok()) throw Error(`Fixture upload failed: ${response.status()}`);
+      const {session}=await response.json();
+      await page.evaluate(loaded=>activateDesktopSession(loaded,""),session);
     } else {
       await page.getByRole("button", { name: "Load test pattern" }).click();
     }
@@ -71,13 +76,13 @@ const MAX_CHANNEL_DELTA = 0;
     // the film stage, so they are set on Detail but tested here.
     // Black & White with sliders set reads each pixel's colour from the source
     // around it (BW-01), so tiles need its reach in their halo too.
-    const configure = async (overrides = {}) => page.evaluate(({ detail_softness = 0, detail_microcontrast = 0, bw = null, ...extra }) => {
+    const configure = async (overrides = {}) => page.evaluate(async ({ detail_softness = 0, detail_microcontrast = 0, bw = null, ...extra }) => {
       Object.assign(state.adjustments.hdr.detail, { softness: detail_softness, microcontrast: detail_microcontrast });
       state.adjustments.hdr.black_and_white_section_enabled = Boolean(bw);
       state.adjustments.hdr.black_and_white = { reds: 0, oranges: 0, yellows: 0, greens: 0, aquas: 0, blues: 0, purples: 0, magentas: 0, ...(bw || {}) };
       state.adjustments.hdr.exposure = 0.85;
-      state.adjustments.hdr.contrast = 18;
-      state.adjustments.hdr.saturation = 12;
+      state.adjustments.hdr.contrast = 1.18;
+      state.adjustments.hdr.saturation = 1.12;
       Object.assign(state.adjustments.hdr.vignette, {
         amount: -55, midpoint: 38, roundness: 30, feather: 60,
         highlight_protection: 25, center_x: 0.33, center_y: 0.61,
@@ -86,7 +91,16 @@ const MAX_CHANNEL_DELTA = 0;
         grain_amount: 65, grain_size: 45, grain_softness: 30, grain_chroma: 35,
         grain_shadow_response: 110, grain_midtone_response: 100, grain_highlight_response: 70,
         halation_amount: 0, bloom_amount: 0,
+        push_pull:0, print_paper:"default", print_exposure:0,
+        print_contrast:0, shadow_contrast:0, highlight_contrast:0,
+        scan_sharpening:0, lab_levels:false,
       }, extra);
+      await window.HDRFilmStocks.request(state.adjustments.hdr.film_look.film_stock,state.adjustments.hdr.film_look);
+      state.globalEditDirty=true;
+      if (!await syncGlobalEditState()) throw Error("Recipe sync failed: "+JSON.stringify({gradeOpen:state.gradeOpen,edit:status.get("edit")}));
+      invalidatePreview("hdr");
+      await settlePreview("hdr",{});
+      while(state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(()=>null);
     }, overrides);
 
     // What a capture actually shows. The comparison is only meaningful when
@@ -252,6 +266,17 @@ const MAX_CHANNEL_DELTA = 0;
       for (const tileSize of tileSizes) await parityPass(stock, tileSize);
     }
     await configure({ film_stock: "none", look_strength: 100 });
+
+    // Ideal Neutral can exceed half-float before the HDR shoulder. Exercise
+    // both final film storage and its scanner / Detail consumers byte-exactly.
+    for (const scan of [0,100]) {
+      await configure({film_stock:"none", grain_amount:0, push_pull:2,
+        print_exposure:-3, print_contrast:100, shadow_contrast:100,
+        highlight_contrast:100, scan_sharpening:scan,
+        detail_softness:scan ? 35 : 0, detail_microcontrast:scan ? 60 : 0});
+      for(const tileSize of tileSizes) await parityPass(`Neutral range scan ${scan}`,tileSize);
+    }
+    await configure({film_stock:"none",look_strength:100});
 
     // 4 -- the spatial film effects. Halation and bloom are separable blurs on
     // the quarter-resolution grid, so this is where a tile whose grid is offset

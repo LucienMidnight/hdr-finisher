@@ -19,11 +19,13 @@ const { execFileSync } = require("child_process");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 const LONG_EDGE = 1200;
+const extremeHdr = process.argv.includes("--extreme-hdr");
 const laneIndex = process.argv.indexOf("--lane");
 const selectedLane = laneIndex >= 0 ? process.argv[laneIndex + 1] : null;
 if (selectedLane !== null && !["hdr", "sdr"].includes(selectedLane)) throw new Error("--lane must be hdr or sdr");
 const caseIndex = process.argv.indexOf("--case");
 const selectedCase = caseIndex >= 0 ? process.argv[caseIndex + 1] : null;
+if (selectedCase && !selectedCase.trim()) throw new Error("--case requires a label");
 const LANES = selectedLane ? [selectedLane] : ["hdr", "sdr"];
 const MAX_MEAN_DIFFERENCE = 0.1 / 255;
 const MAX_P999_DIFFERENCE = 2 / 255;
@@ -71,6 +73,8 @@ const CASES = [
   {label: "Neutral actual paper", stock: {film_stock:"none", print_paper:"kodak_2383", scan_sharpening:100, lab_levels:true}},
 ];
 
+if (selectedCase && !CASES.some(c => c.label === selectedCase)) throw new Error(`Unknown case: ${selectedCase}`);
+
 function writeFixture() {
   const python = path.resolve(__dirname, "..", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
   const target = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "film-stock-parity-")), "stock_hues.tiff");
@@ -80,7 +84,7 @@ h, w = 800, 1200
 x = np.arange(w) / w
 hue = np.array([colorsys.hsv_to_rgb(v, 0.7, 1.0) for v in x], np.float32)
 y = np.arange(h)[:, None, None] / h
-level = np.float32(2.0) ** (4.0 - 12.0 * y)
+level = np.float32(2.0) ** (${extremeHdr ? 7.0 : 4.0} - 12.0 * y)
 rgb = (hue[None, :, :] * level).astype(np.float32)
 rgb[:, :80] = level[:, :, :] * np.float32(0.8)
 tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
@@ -135,11 +139,16 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       }
       return compareOnce(...args);
     };
-    const compareOnce = async (lane, stock, lookStrength) => page.evaluate(async ({ lane, stock, lookStrength, longEdge }) => {
+    const compareOnce = async (lane, stock, lookStrength) => page.evaluate(async ({ lane, stock, lookStrength, longEdge, extremeHdr }) => {
       if (state.currentView !== lane) await switchLane(lane);
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
       const branch = state.adjustments[lane];
+      if (extremeHdr && lane === "hdr") Object.assign(branch, {
+        highlight_section_enabled:true, highlight_compression_mode:"peak_fit",
+        highlight_compression_start_nits:400, highlight_compression_target_nits:1000,
+        highlight_compression_color_handling:"smooth_rolloff",
+      });
       Object.assign(branch.film_look, { grain_amount: 0, halation_amount: 0, bloom_amount: 0, film_resolution: 100,
         grain_size: 50, grain_film_format: "35mm", grain_chroma: 40, halation_radius: 1.2,
         bloom_radius: 3, bloom_highlight_detail: 100, look_strength: lookStrength }, stock);
@@ -153,6 +162,39 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
       if (!await renderGpuDraft(lane, { longEdge })) return { error: "GPU render failed" };
       await state.gpuPreview.device.queue.onSubmittedWorkDone();
+      let textureStats=null;
+      if (extremeHdr) {
+        const device = state.gpuPreview.device;
+        const source = state.gpuPreview.scopeSources.get(els.previewCanvas);
+        const width=source.width, height=source.height, size=width*height*16;
+        const storage=device.createBuffer({size,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC});
+        const buffer=device.createBuffer({size,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+        const module=device.createShaderModule({code:`
+          @group(0) @binding(0) var picture:texture_2d<f32>;
+          @group(0) @binding(1) var<storage,read_write> values:array<vec4f>;
+          @compute @workgroup_size(8,8) fn main(@builtin(global_invocation_id) id:vec3u) {
+            let d=textureDimensions(picture); if(id.x>=d.x || id.y>=d.y) {return;}
+            values[id.y*d.x+id.x]=textureLoad(picture,vec2i(id.xy),0);
+          }`});
+        const pipeline=device.createComputePipeline({layout:"auto",compute:{module,entryPoint:"main"}});
+        const bindings=device.createBindGroup({layout:pipeline.getBindGroupLayout(0),entries:[
+          {binding:0,resource:source.filmTexture.createView()},{binding:1,resource:{buffer:storage}}]});
+        const encoder=device.createCommandEncoder(), pass=encoder.beginComputePass();
+        pass.setPipeline(pipeline);pass.setBindGroup(0,bindings);pass.dispatchWorkgroups(Math.ceil(width/8),Math.ceil(height/8));pass.end();
+        encoder.copyBufferToBuffer(storage,0,buffer,0,size);
+        device.queue.submit([encoder.finish()]); await buffer.mapAsync(GPUMapMode.READ);
+        const values=new Float32Array(buffer.getMappedRange());
+        let infinity=0,nan=0,maxFinite=0,maxDecoded=0,atLimit=0;
+        for(let i=0;i<values.length;i++) if(i%4!==3) {
+          const value=values[i];
+          if(Number.isNaN(value)) nan++;
+          else if(!Number.isFinite(value)) infinity++;
+          else {maxDecoded=Math.max(maxDecoded,Math.abs(value*values[i-i%4+3]));maxFinite=Math.max(maxFinite,Math.abs(value));if(Math.abs(value)===65504) atLimit++;}
+        }
+        textureStats={infinity,nan,maxFinite,maxDecoded,atLimit, anchor:source.params[75], branchPeak:branch.highlight_compression_source_peak_nits,
+          samples:[0,400,744,759,1000].map(x=>({x,rgba:Array.from(values.slice(x*4,x*4+4))}))};
+        buffer.unmap();buffer.destroy();storage.destroy();
+      }
       const image = await new Promise((resolve, reject) => {
         const element = new Image();
         element.onload = () => resolve(element);
@@ -189,8 +231,8 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         worst.push({d:raw,x:pixel%surface.width,y:Math.floor(pixel/surface.width),
           gpu:Array.from(gpu.slice(j,j+3)),cpu:Array.from(cpu.slice(j,j+3))});
       }
-      return { size, differences, raw, worst, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock, stock) };
-    }, { lane, stock, lookStrength, longEdge: LONG_EDGE });
+      return { size, differences, raw, worst, textureStats, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock, stock) };
+    }, { lane, stock, lookStrength, longEdge: LONG_EDGE, extremeHdr });
 
     const failures = [];
     for (const lane of LANES) {
@@ -200,6 +242,13 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         const on = await compare(lane, { ...NEUTRAL, ...stock }, lookStrength);
         if (on.error) throw new Error(`${lane} ${label}: ${on.error}`);
         if (!on.slot) throw new Error(`${lane} ${label}: the stock never reached the GPU`);
+        if (extremeHdr) {
+          console.log("Finished texture:",JSON.stringify(on.textureStats));
+          const absolute=[...on.differences].sort((a,b)=>a-b);
+          console.log("After HDR highlight compression:",JSON.stringify({
+            mean:on.differences.reduce((a,b)=>a+b,0)/on.differences.length,
+            p999:absolute[Math.floor(absolute.length*.999)],max:on.raw,worst:on.worst}));
+        }
         const added = on.differences.map((value, index) => Math.max(0, value - off.differences[index]) / 255);
         const mean = added.reduce((sum, value) => sum + value, 0) / added.length;
         const sorted = [...added].sort((left, right) => left - right);

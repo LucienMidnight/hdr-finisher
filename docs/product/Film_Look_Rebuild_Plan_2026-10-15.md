@@ -303,6 +303,25 @@ that unnecessary dependency. No rendering test or pinned tolerance was altered.
 Film-stock/grain parity drivers and the additional Proof/export group were not
 rerun: implementation stopped before any renderer changes. No installer or push.
 
+Phase 3 continuation, October 16, 2026: shared paper/scanner preparation
+is in `efec862`, control wiring and Neutral in `7db66fc`, Steve-approved physical
+replacement checks in `059d3e9`, and Neutral HDR colour precision in `4bd62b5`.
+The fresh Fit-grain acceptance run passes all 180 comparisons. Final expanded
+stock checks and full Python checks are running. Steve conditionally authorised
+the limited final-film alpha scale only if a safe cap failed. Readback proved
+that the old preview clips at 65,504 (no infinity or NaNs). The simple cap fails
+after HDR compression: added mean error 61.517 levels and p99.9 182, against
+unchanged limits 0.1 and 2. The selected scale plus float32 highlight-anchor
+reduction passes the extreme fixture at added mean about 0.040 and p99.9 2;
+rare boundary pixels still differ by up to 196 levels. CPU export is unchanged.
+The original pinned reduction source remains byte-identical; the scaled film
+uses a separate compute entry point. New Neutral range Direct/Tiled cases,
+with Scan and Detail, are byte-identical at tile sizes 256 and 512. The same
+driver reports two Black & White-only failures on the extreme fixture; these
+inactive-final-storage cases are recorded without investigation. PRD section
+5.3 records choices and checks. Phase 3 acceptance remains pending the running
+checks; do not start Phase 3b or Phase 4 from a work-in-progress commit.
+
 **Phase 3b: Lens filter.** Replace Bloom & Diffusion with the lens diffusion
 filter (type, Strength in filter grades, Size), as in section 6. Separate thread
 after Phase 3.
@@ -349,3 +368,28 @@ than about 30 minutes, stop and ask Steve first.
 - **D3** How many stocks and papers to ship (sets app size; Phase 1).
 - **D4** Grain sub-layers: the cheap approximation, or true sub-layers at about
   3x the grain cost?
+
+
+Phase 3 range validation, October 16, 2026 (acceptance still blocked): the
+retained production patch changes only final ideal-Neutral HDR film/scanner/
+Detail storage and readers, plus its float32 highlight-anchor reduction. The
+original pinned peak-reduction source, CPU export, all tolerances, texture
+sizes and blur/memory ceilings are unchanged. Steve's cap-first test found
+clipping at 65,504, no infinity or NaNs; the explicit safe cap fails after HDR
+compression at added mean 61.517 levels, p99.9 182. The selected alpha scale
+passes the compressed extreme fixture at about 0.040 added mean and p99.9 2,
+although rare boundary pixels can differ by 196 levels. Fast checks pass:
+483 Node; 2,132 Python, three skips. The expanded stock/control matrix passes
+65 of 66 comparisons. Its new maximum-gain Neutral HDR case WITHOUT output
+compression fails at mean 3.201, p99.9 250. This is not accepted or waived.
+A temporary linear-sRGB storage experiment failed and was removed. An isolated
+full-precision-final-pass diagnostic still fails at mean 0.128, p99.9 22, showing
+that changing only final storage precision is insufficient. A further base-pass
+probe was invalid due to a temporary format mismatch and supplies no evidence;
+all probe code was removed. Broader changes before the final film passes exceed
+the expressly limited range-fix scope and need Steve's decision before proceeding.
+New Neutral Scan/Detail range Direct/Tiled cases are byte-identical at 256/512;
+two Black & White-only cases on that extreme input fail separately, recorded
+without investigation. Fresh Fit-grain acceptance passes all 180 comparisons;
+previous ten-case grain parity and 94+3 Proof/export checks pass. No push or
+installer. Phase 3 remains unfinished; Phase 3b has not started.

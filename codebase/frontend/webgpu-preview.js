@@ -94,6 +94,7 @@
       this.scopeResources = new Map();
       this.scopePeakTargets = [];
       this.peakReductionPipeline = null;
+      this.scaledFilmPeakReductionModule = null;
       this.peakReductionCache = new Map();
       // The last real highlight measurement per lane, with the estimate it was
       // taken against, so a drag frame can carry it instead of the estimate.
@@ -722,6 +723,7 @@
       this.filmStockPlaceholder = null;
       this.filmStockUploads = new Map();
       this.peakReductionPipeline = null;
+      this.scaledFilmPeakReductionModule = null;
       this.maskProbePipeline = null;
       this.frameMaskRecord = null;
       this.deviceLost = false;
@@ -1325,7 +1327,7 @@
           const rendered = await this.renderTo(this.editingAnalysisCanvas, sessionId, lane, uncompressed, curveSampler, 1600, locals, revision, null, white, sourceSize, {isCurrent, measureOnly:true});
           const finished = this.scopeSources.get(this.editingAnalysisCanvas);
           if (!rendered?.width || !finished || !isCurrent()) return null;
-          const pipeline = await this.ensurePeakReductionPipeline("finishedPeakReductionMain");
+          const pipeline = await this.ensurePeakReductionPipeline(adjustments.hdr.film_look.film_stock === "none" ? "scaledFilmPeakReductionMain" : "finishedPeakReductionMain");
           value = await this.runPeakReduction(pipeline, finished.filmTexture, finished.width, finished.height, params, "robust", anchor.key);
         }
         return {highlightAnchor:{key:anchor.key, value}};
@@ -2211,6 +2213,7 @@
       const result = await this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
         measureOnly,
         analysisPatch: sourceOptions?.analysisPatch,
+        neutralPaperAnchor: highlightAnchorOnly && lane === "hdr" && adjustments.hdr.film_look.film_stock === "none",
         analysisMasks: sourceOptions?.analysisMasks,
         analysisNativeLuma: sourceOptions?.analysisNativeLuma,
         claritySurround: sourceOptions?.claritySurround,
@@ -3829,7 +3832,20 @@
       const finishView = graph.finishTexture.createView();
       // No finished picture exists in the noise view, so there is no peak to
       // measure, and reading back an unwritten grid would report a stale one.
-      const peakTarget = noiseView ? null : this.ensureScopePeakTarget();
+      // Neutral's ideal paper may exceed half-float before the HDR shoulder.
+      // Keep its anchor maximum in the existing float32 reduction buffer.
+      const floatPeak = options.neutralPaperAnchor === true;
+      const floatPeakPipeline = floatPeak ? await this.ensurePeakReductionPipeline("scaledFilmPeakReductionMain") : null;
+      const peakBytes = (1 + PEAK_HISTOGRAM_BINS) * 4;
+      const floatPeakResult = floatPeak ? this.device.createBuffer({size:peakBytes,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC}) : null;
+      const floatPeakRead = floatPeak ? this.device.createBuffer({size:4,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ}) : null;
+      const floatPeakParams = floatPeak ? this.createStorageBuffer(params) : null;
+      if (floatPeak) {
+        this.device.queue.writeBuffer(floatPeakResult,0,new Uint32Array(1+PEAK_HISTOGRAM_BINS));
+        this.device.queue.writeBuffer(floatPeakParams,0,params);
+        localBuffers.push({buffer:floatPeakResult},{buffer:floatPeakParams});
+      }
+      const peakTarget = noiseView || floatPeak ? null : this.ensureScopePeakTarget();
       const peakView = peakTarget?.texture.createView() || null;
       const globalInputIdentity = detailBandIdentity(params, proxy.identity, "global");
       const pinnedDetail = [];
@@ -4167,7 +4183,8 @@
         // The finished tile is measured before it is composited, because the
         // composite encodes for the display and this has to read the picture.
         // On a measurement pass this is the only thing the tile is for.
-        if (peakTarget) {
+        if (peakTarget || floatPeak) {
+          let peakTexture = graph.finishTexture;
           let peakBindGroup = bind(finishView);
           if (options.analysisPatch && (tile.rect.width !== width || tile.rect.height !== height)) {
             // A measurement reads the patch alone. The halo is there to make
@@ -4189,10 +4206,22 @@
             patchValues[GPU_PARAMS.TILE_VALID_HEIGHT] = tile.rect.height;
             const patchBuffer = this.createStorageBuffer(patchValues);
             this.device.queue.writeBuffer(patchBuffer, 0, patchValues);
+            peakTexture = patchTexture;
             const patchView = patchTexture.createView();
             peakBindGroup = this.bindGraphResources(patchView, patchView, { buffer: patchBuffer }, patchView);
             this.destroyAfterActiveRenders(() => { patchTexture.destroy(); patchBuffer.destroy(); });
           }
+          if (floatPeak) {
+            const reduction=encoder.beginComputePass();
+            reduction.setPipeline(floatPeakPipeline);
+            reduction.setBindGroup(0,this.device.createBindGroup({layout:floatPeakPipeline.getBindGroupLayout(0),entries:[
+              {binding:0,resource:peakTexture.createView()},
+              {binding:1,resource:{buffer:floatPeakParams}},
+              {binding:2,resource:{buffer:floatPeakResult}},
+            ]}));
+            reduction.dispatchWorkgroups(Math.ceil(peakTexture.width/8),Math.ceil(peakTexture.height/8));
+            reduction.end();
+          } else {
           const peakPass = encoder.beginRenderPass({
             colorAttachments: [{
               view: peakView,
@@ -4205,6 +4234,7 @@
           peakPass.setBindGroup(0, peakBindGroup);
           peakPass.draw(3);
           peakPass.end();
+          }
         }
         if (!measureOnly) {
           const overlayView = options.overlayIndex >= 0
@@ -4238,6 +4268,7 @@
       // batches already submitted finish, and nothing further is encoded or
       // presented.
       if (cancelled) {
+        floatPeakRead?.destroy();
         // Some of the map's pre-pass may never be submitted, so its record of
         // what it holds cannot be trusted.
         if (clarityFrame) this.clarityFrameMap = null;
@@ -4265,6 +4296,7 @@
           { width: peakTarget.size, height: peakTarget.size },
         );
       }
+      if (floatPeak) encoder.copyBufferToBuffer(floatPeakResult,0,floatPeakRead,0,4);
       submissions += 1;
       this.device.queue.submit([encoder.finish()]);
       denoiseTilesUnsubmitted.length = 0;
@@ -4283,10 +4315,12 @@
         if (validationScopeOpen) validationError = await this.device.popErrorScope();
       }
       if (encodeError) {
+        floatPeakRead?.destroy();
         if (clarityFrame) this.clarityFrameMap = null;
         throw encodeError;
       }
       if (validationError) {
+        floatPeakRead?.destroy();
         if (clarityFrame) this.clarityFrameMap = null;
         this.dropDenoiseTiles(denoiseTilesCreated);
         if (peakTarget) peakTarget.busy = false;
@@ -4329,6 +4363,12 @@
       // has no fresh grid to measure, so it leaves the previous peak alone
       // rather than attributing a stale maximum to the current generation.
       let measuredPeak = null;
+      if (floatPeak) {
+        try {
+          await floatPeakRead.mapAsync(GPUMapMode.READ);
+          measuredPeak = new Float32Array(floatPeakRead.getMappedRange())[0];
+        } finally { if(floatPeakRead.mapState === "mapped") floatPeakRead.unmap(); floatPeakRead.destroy(); }
+      }
       if (peakTarget) {
         if (processedTiles > 0) measuredPeak = await this.readScopePeak(peakTarget);
         else peakTarget.busy = false;
@@ -6661,16 +6701,19 @@
       this.peakReductionPipelines = this.peakReductionPipelines || new Map();
       const existing = this.peakReductionPipelines.get(entryPoint);
       if (existing) return existing;
-      if (!this.peakReductionModule) {
-        const module = this.device.createShaderModule({ code: PEAK_REDUCTION_SHADER_SOURCE });
+      const scaledFilm = entryPoint === "scaledFilmPeakReductionMain";
+      const moduleKey = scaledFilm ? "scaledFilmPeakReductionModule" : "peakReductionModule";
+      if (!this[moduleKey]) {
+        const code = scaledFilm ? window.HDRWebGPUShaders.SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE : PEAK_REDUCTION_SHADER_SOURCE;
+        const module = this.device.createShaderModule({code});
         const compilation = await module.getCompilationInfo();
-        const errors = compilation.messages.filter((message) => message.type === "error");
-        if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
-        this.peakReductionModule = module;
+        const errors = compilation.messages.filter(message => message.type === "error");
+        if(errors.length) throw new Error(errors.map(message => message.message).join("; "));
+        this[moduleKey] = module;
       }
       const pipeline = await this.device.createComputePipelineAsync({
         layout: "auto",
-        compute: { module: this.peakReductionModule, entryPoint },
+        compute: { module: this[moduleKey], entryPoint },
       });
       this.peakReductionPipelines.set(entryPoint, pipeline);
       return pipeline;

@@ -238,6 +238,16 @@ fn finishedPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   let sdrV2 = peakParams[${GPU_PARAMS.HDR_LANE}] < 0.5 && peakParams[${GPU_PARAMS.SDR_PEAK_LANE}] > 0.5;
   recordPeak(peakSignalOf(rgb, sdrV2));
 }`;
+  // Separate final-film entry point. The audited source-prefix and original
+  // finished reduction remain byte-identical and retain their own pipeline.
+  const SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE = PEAK_REDUCTION_SHADER_SOURCE + `
+@compute @workgroup_size(8, 8)
+fn scaledFilmPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
+  let dimensions = textureDimensions(peakSource);
+  if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
+  let stored = textureLoad(peakSource, vec2i(id.xy), 0);
+  recordPeak(peakSignalOf(stored.rgb * stored.a, false));
+}`;
   const ADAPTIVE_DENOISE_SHADER_SOURCE = `
 // scratch: (originX, originY, width, height) in frame pixels
 // frame:   (frameWidth, frameHeight, level, axis)   axis 0 = horizontal
@@ -858,6 +868,23 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let mapped = w * (1.0 - w) * (1.0 - w) * m0 + w * w * (3.0 - 2.0 * w) + w * w * (w - 1.0) * m1;
       return exp2(effectiveStartStop + stopSpan * mapped);
     }
+    fn hdrPeakFitBlend(input: vec3f, mapped: vec3f, activation: f32) -> vec3f {
+      if (max(max(abs(input.r),abs(input.g)),abs(input.b)) > 32752.0
+          && p[${GPU_PARAMS.FILM_STOCK_SLOT}] > 0.5) {
+        let base=(u32(p[${GPU_PARAMS.FILM_STOCK_SLOT}]+0.5)-1u)*${FILM_STOCK.slotFloats}u;
+        if (filmStock[base + ${STOCK.SCAN_FILM}u] == 2.0) {
+          // Preserve the exact CPU's float32 subtraction before its final mix.
+          // At extreme ideal-paper gains, algebraic mix loses this rounding.
+          if (activation >= 1.0) {
+            let step = exp2(floor(log2(max(abs(input),vec3f(0.00006103515625))))-23.0);
+            return round(mapped/step)*step;
+          }
+          let difference = mapped-input;
+          return input + difference*activation;
+        }
+      }
+      return mix(input,mapped,activation);
+    }
     fn hdrPeakFit(input: vec3f) -> vec3f {
       if (p[${GPU_PARAMS.HIGHLIGHT_MODE}] != 1.0) { return input; }
       let y = max(lumaAces(input), 0.0);
@@ -901,15 +928,18 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           peakFitChannel(transport.g, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
           peakFitChannel(transport.b, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1)
         );
+        if (max(max(abs(input.r),abs(input.g)),abs(input.b)) > 32752.0) {
+          return hdrPeakFitBlend(input, bt2020ToAcescg(mappedTransport), peakFitActivation);
+        }
         return mix(input, bt2020ToAcescg(mappedTransport), peakFitActivation);
       }
       let mapped = w * (1.0 - w) * (1.0 - w) * m0 + w * w * (3.0 - 2.0 * w) + w * w * (w - 1.0) * m1;
       let targetValue = exp2(effectiveStartStop + stopSpan * mapped);
       let mappedRgb = input * (targetValue / max(signal, 0.00000001));
-      if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] < 0.5) { return mix(input, mappedRgb, peakFitActivation); }
+      if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] < 0.5) { return hdrPeakFitBlend(input, mappedRgb, peakFitActivation); }
       let progress = u * u * (3.0 - 2.0 * u);
       let neutralized = vec3f(targetValue) + (mappedRgb - vec3f(targetValue)) * (1.0 - progress);
-      return mix(input, neutralized, peakFitActivation);
+      return hdrPeakFitBlend(input, neutralized, peakFitActivation);
     }
     fn sdrSoftCeiling(input: vec3f) -> vec3f {
       if (p[${GPU_PARAMS.HIGHLIGHT_MODE}] != 2.0 || p[${GPU_PARAMS.HIGHLIGHT_SOFTNESS}] <= 0.0) { return input; }
@@ -1808,10 +1838,29 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return rgb;
     }
+    fn filmStoredRgb(sample: vec4f) -> vec3f { return sample.rgb * sample.a; }
+    fn sampleScannedFilm(coordinate: vec2i) -> vec3f {
+      return filmStoredRgb(textureLoad(sourceTexture, boundedCoordinate(coordinate), 0));
+    }
+    fn filmStoredBlur(coordinate: vec2i, radius: i32) -> vec3f {
+      let sigma = max(f32(radius),1.0)*0.7;
+      let bound = validTileDimensions()-vec2i(1);
+      var total = vec3f(0.0); var weightTotal = 0.0;
+      for (var y = -radius; y <= radius; y++) {
+        let rowWeight = exp(-f32(y*y)/(2.0*sigma*sigma));
+        for (var x = -radius; x <= radius; x++) {
+          let weight = rowWeight*exp(-f32(x*x)/(2.0*sigma*sigma));
+          let texel = clamp(coordinate+vec2i(x,y),vec2i(0),bound);
+          total += filmStoredRgb(textureLoad(sourceTexture,texel,0))*weight;
+          weightTotal += weight;
+        }
+      }
+      return total/weightTotal;
+    }
     fn finishStructure(coordinate: vec2i) -> vec3f {
-      var rgb = sampleFilm(coordinate);
+      var rgb = sampleScannedFilm(coordinate);
       if (p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5 && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001)) {
-        let structureBlur = filmBlur(coordinate, 0.06, 24);
+        let structureBlur = filmStoredBlur(coordinate, outputRelativeOffset(0.06,24));
         let structureSource = rgb;
         rgb = structureSource
           + (structureBlur - structureSource) * p[${GPU_PARAMS.STRUCTURE_SOFTNESS}] * 0.65
@@ -1899,12 +1948,26 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return best;
     }
+    fn storeFilm(rgb: vec3f) -> vec4f {
+      var scale = 1.0;
+      if (p[${GPU_PARAMS.HDR_LANE}] > 0.5 && p[${GPU_PARAMS.FILM_STOCK_SLOT}] > 0.5) {
+        let base = (u32(p[${GPU_PARAMS.FILM_STOCK_SLOT}]+0.5)-1u)*${FILM_STOCK.slotFloats}u;
+        if (filmStock[base + ${STOCK.SCAN_FILM}u] == 2.0) {
+          // Preserve extreme ideal-paper highlights before the output shoulder.
+          // Only the post-negative film, scanner and Detail passes use this
+          // representation. Other stocks and earlier stages retain alpha=1.
+          let peak = max(max(abs(rgb.r),abs(rgb.g)),abs(rgb.b));
+          scale = exp2(max(0.0,ceil(log2(max(peak/32752.0,1.0)))));
+        }
+      }
+      return vec4f(filmHalfPrecision(rgb/scale),scale);
+    }
     fn filmDiagnosticMap() -> bool {
       return filmModuleActive() && ((p[${GPU_PARAMS.HALATION_ENABLED}] > 0.5 && p[${GPU_PARAMS.HALATION_VIEW_MAP}] > 0.5)
         || (p[${GPU_PARAMS.GRAIN_ENABLED}] > 0.5 && p[${GPU_PARAMS.GRAIN_VIEW_MAP}] > 0.5));
     }
     fn scanFilm(coordinate: vec2i) -> vec3f {
-      var rgb = sampleFilm(coordinate);
+      var rgb = sampleScannedFilm(coordinate);
       if (filmDiagnosticMap()) { return applyVignette(rgb, coordinate); }
       if (filmModuleActive()) {
         let sigma = 0.7 * clamp(p[${GPU_PARAMS.SOURCE_PIXEL_SCALE}], 0.05, 1.0);
@@ -1916,7 +1979,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
             for (var x = -3; x <= 3; x += 1) {
               if (abs(x) > radius || abs(y) > radius) { continue; }
               let weight = exp(-0.5 * f32(x*x + y*y) / (sigma*sigma));
-              blurred += sampleFilm(coordinate + vec2i(x,y)) * weight;
+              blurred += sampleScannedFilm(coordinate + vec2i(x,y)) * weight;
               total += weight;
             }
           }
@@ -2539,7 +2602,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     @fragment fn filmResponseFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = textureDimensions(sourceTexture);
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
-      return vec4f(textureLoad(sourceTexture, coordinate, 0).rgb, 1.0);
+      return textureLoad(sourceTexture, coordinate, 0);
     }
 
     @fragment fn lensFragmentMain(input: VertexOut) -> @location(0) vec4f {
@@ -2554,7 +2617,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
 
     @fragment fn structureFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return vec4f(finishStructure(coordinate), 1.0);
+      return storeFilm(finishStructure(coordinate));
     }
 
     @fragment fn spatialExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {
@@ -2581,16 +2644,16 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // source, and so the scope pass reads that result instead of recomputing it.
     @fragment fn scanFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return vec4f(filmHalfPrecision(scanFilm(coordinate)), 1.0);
+      return storeFilm(scanFilm(coordinate));
     }
 
     @fragment fn finishFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return vec4f(filmHalfPrecision(applyFilmLook(coordinate)), 1.0);
+      return storeFilm(applyFilmLook(coordinate));
     }
 
     fn finishedAt(coordinate: vec2i) -> vec3f {
-      return textureLoad(sourceTexture, boundedCoordinate(coordinate), 0).rgb;
+      return filmStoredRgb(textureLoad(sourceTexture, boundedCoordinate(coordinate), 0));
     }
     fn scopeOutputAt(coordinate: vec2i) -> vec3f {
       let filmOutput = applyOutputHighlights(finishedAt(coordinate));
@@ -2712,7 +2775,15 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // stretched over this frame and given the same output mapping.
     @fragment fn placeholderFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let uv = input.position.xy / frameDimensions();
-      let filmOutput = applyOutputHighlights(textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0).rgb);
+      let dimensions=vec2i(textureDimensions(spatialTexture));
+      let point=uv*vec2f(dimensions)-vec2f(0.5);
+      let first=vec2i(floor(point)); let fraction=fract(point);
+      let bound=dimensions-vec2i(1);
+      let a=filmStoredRgb(textureLoad(spatialTexture,clamp(first,vec2i(0),bound),0));
+      let b=filmStoredRgb(textureLoad(spatialTexture,clamp(first+vec2i(1,0),vec2i(0),bound),0));
+      let c=filmStoredRgb(textureLoad(spatialTexture,clamp(first+vec2i(0,1),vec2i(0),bound),0));
+      let d=filmStoredRgb(textureLoad(spatialTexture,clamp(first+vec2i(1,1),vec2i(0),bound),0));
+      let filmOutput = applyOutputHighlights(mix(mix(a,b,fraction.x),mix(c,d,fraction.x),fraction.y));
       let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
       return vec4f(displayEncode(output), 1.0);
     }
@@ -3033,6 +3104,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
   const HDRWebGPUShaders = Object.freeze({
     BLACK_AND_WHITE_PARAM,
     PEAK_REDUCTION_SHADER_SOURCE,
+    SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE,
     ADAPTIVE_DENOISE_SHADER_SOURCE,
     SHADER_SOURCE,
     LUMA_MASK_SHADER_SOURCE,

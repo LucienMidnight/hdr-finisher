@@ -68,7 +68,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # the finished picture instead of predicting it from the source, and so the
     # composite and scope passes agree by construction rather than by mirroring.
     assert "fn finishFragmentMain(" in shader
-    assert "return vec4f(filmHalfPrecision(applyFilmLook(coordinate)), 1.0);" in shader
+    assert "return storeFilm(applyFilmLook(coordinate));" in shader
     assert shader.count("applyFilmLook(coordinate)") == 1
     assert "applyOutputHighlights(finishedAt(coordinate))" in shader
     # The limiter is a single final-output stage: one shoulder call site per lane,
@@ -223,7 +223,7 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, blurCap)" in shader
     assert "clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, blurCap)" in shader
     assert "length(frameSpatial) * max(p[88], 0.0) / 100.0" not in shader
-    assert "filmBlur(coordinate, 0.06, 24)" in shader
+    assert "filmStoredBlur(coordinate, outputRelativeOffset(0.06,24))" in shader
     assert "let canonicalTintSrgb = mix(vec3f(warmY), warm" in shader
     assert "select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5)" in shader
     assert "let tint = mix(vec3f(warmY), warm" not in shader
