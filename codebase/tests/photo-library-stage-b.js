@@ -26,7 +26,17 @@ for (let i = 0; i < 24; i++) fs.copyFileSync(fixture, path.join(folder, `photo-$
     await library.waitForFunction(() => document.querySelectorAll("#grid-space .library-stars").length > 0 && [...document.querySelectorAll('#grid-space .library-cell[aria-selected="true"] .library-stars')].every(star => star.textContent === "★★★★"));
     const first = path.join(folder, "photo-00.png"), second = path.join(folder, "photo-01.png");
     const document = source => JSON.parse(fs.readFileSync(source + ".hdrf", "utf8"));
-    assert.equal(document(first).marks.rating, 4); assert.equal(document(second).marks.rating, 4);
+    // Marks reach disk through the background settings writer.
+    const persisted = async check => {
+      const deadline = Date.now() + 30000;
+      for (;;) {
+        try { check(); return; } catch (error) {
+          if (Date.now() >= deadline) throw error;
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+    };
+    await persisted(() => { assert.equal(document(first).marks.rating, 4); assert.equal(document(second).marks.rating, 4); });
     await page.keyboard.press("p");
     await library.waitForFunction(() => HDRLibrary.getSnapshot().marks.pick === "pick");
     await page.keyboard.press("6");
@@ -36,7 +46,7 @@ for (let i = 0; i < 24; i++) fs.copyFileSync(fixture, path.join(folder, `photo-$
     await page.keyboard.press("t");
     await library.locator("#library-tag-input").fill("Family"); await page.keyboard.press("Enter");
     await library.waitForFunction(() => HDRLibrary.getSnapshot().marks.tags.includes("Family"));
-    assert.deepEqual(document(first).marks.tags, ["Family"]);
+    await persisted(() => { assert.deepEqual(document(first).marks.tags, ["Family"]); });
     await library.locator("#library-tag-input").fill("Fam");
     await library.waitForSelector("#library-tag-suggestions [role=option]");
     assert.equal(await library.locator("#library-tag-suggestions [role=option]").first().textContent(), "Family (2)");
@@ -51,17 +61,17 @@ for (let i = 0; i < 24; i++) fs.copyFileSync(fixture, path.join(folder, `photo-$
     assert.equal(await library.locator(".library-tag-chip.partial").count(), 1);
     await library.locator('.library-tag-chip.partial button').first().click();
     await library.waitForFunction(() => HDRLibrary.getSnapshot().marks.tags.includes("Family"));
-    assert.equal(document(path.join(folder, "photo-02.png")).marks.tags[0], "Family");
+    await persisted(() => { assert.equal(document(path.join(folder, "photo-02.png")).marks.tags[0], "Family"); });
     await library.locator('[aria-label="Remove tag Family"]').click();
     await library.waitForFunction(() => !HDRLibrary.getSnapshot().marks.tags.includes("Family"));
     await cells.nth(0).click(); await page.keyboard.press("Control+a");
     assert.equal(await library.evaluate(() => HDRLibrary.getSnapshot().selection.length), 24);
     await page.keyboard.press("2");
     await library.waitForFunction(() => [...document.querySelectorAll("#grid-space .library-stars")].every(star => star.textContent === "★★"));
-    assert.equal(fs.readdirSync(folder).filter(name => name.endsWith(".hdrf")).length, 24);
+    await persisted(() => { assert.equal(fs.readdirSync(folder).filter(name => name.endsWith(".hdrf")).length, 24); });
     await page.keyboard.press("Control+z");
     await library.waitForFunction(() => HDRLibrary.getSnapshot().marks.rating === 4);
-    assert.equal(document(first).marks.rating, 4); assert.equal(document(path.join(folder, "photo-23.png")).marks.rating, 0);
+    await persisted(() => { assert.equal(document(first).marks.rating, 4); assert.equal(document(path.join(folder, "photo-23.png")).marks.rating, 0); });
     const colour = await library.evaluate(() => {
       const star = document.querySelector(".library-stars"); return { actual: getComputedStyle(star).color, expected: getComputedStyle(document.documentElement).getPropertyValue("--star").trim() };
     });
