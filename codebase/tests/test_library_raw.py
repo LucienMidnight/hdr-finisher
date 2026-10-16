@@ -76,7 +76,9 @@ def test_one_reader_bounds_raw_bytes_and_stale_plans(tmp_path, monkeypatch):
         time.sleep(.01)
     key = identity(files[4])[0]
     assert key in service.raw
-    assert bytes(service.raw[key][0].buf) == files[4].read_bytes()
+    # macOS rounds shared memory up to a whole page; the photo is the recorded length.
+    memory, size = service.raw[key]
+    assert bytes(memory.buf[:size]) == files[4].read_bytes()
     with service.cv:
         assert service._trim_raw(2*MIB)
         assert sum(item[1] for item in service.raw.values()) + 2*MIB <= service.limits["raw_bytes"]
