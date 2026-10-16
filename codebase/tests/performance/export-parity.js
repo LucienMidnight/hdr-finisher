@@ -44,7 +44,8 @@ const TRACKED_DEFAULTS = {
   grain_amount: 0,
   grain_size: 50,
   halation_amount: 0,
-  bloom_amount: 0,
+  lens_size: 1,
+  lens_strength: 0.5,
   texture_amount: 0,
   clarity_amount: 0,
   sharpen_amount: 0,
@@ -78,7 +79,9 @@ const SCENARIOS = [
     band: "halation",
     settings: [
       ["current.film_look.halation_amount", 35],
-      ["current.film_look.bloom_amount", 25],
+      ["current.film_look.lens_filter", "black_pro_mist"],
+      ["current.film_look.lens_strength", 0.5],
+      ["current.film_look.lens_size", 1],
     ],
   },
   { id: "fine-detail", band: "fine", settings: [] },
@@ -197,7 +200,7 @@ function pythonExecutable() {
         } else {
           control.value = control.defaultValue;
         }
-        control.dispatchEvent(new Event("input", { bubbles: true }));
+        control.dispatchEvent(new Event(control.tagName === "SELECT" ? "change" : "input", { bubbles: true }));
         report.push({
           path: control.dataset.path,
           before,
@@ -209,7 +212,7 @@ function pythonExecutable() {
         const control = document.querySelector(`[data-path="${controlPath}"]`);
         if (!control) throw new Error(`Missing control ${controlPath}`);
         control.value = String(value);
-        control.dispatchEvent(new Event("input", { bubbles: true }));
+        control.dispatchEvent(new Event(control.tagName === "SELECT" ? "change" : "input", { bubbles: true }));
       }
       if (definition.denoise) {
         await syncGlobalEditState();
