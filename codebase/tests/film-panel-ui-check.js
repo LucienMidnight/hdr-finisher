@@ -23,9 +23,10 @@ module.exports = async function checkFilmPanel(page) {
   await page.evaluate(async id => {await switchLane('hdr');state.adjustments.hdr.film_look=HDRFilmCharacter.expand({film_stock:id,print_paper:'default'});syncControlsFromState();renderControlState();await syncGlobalEditState();},id);
  };
  await choose('none');
- assert.equal(await group.locator('#film-look-state').innerText(),'');
+ assert.equal(await group.evaluate(el=>el.classList.contains('modified')),false);
  await choose('kodak_portra_400');
- assert.equal(await group.locator('#film-look-state').innerText(),'Mod');
+ assert.equal(await group.evaluate(el=>el.classList.contains('modified')),true);
+ assert.equal(await group.locator('#film-look-state').innerText(),'');
  assert.equal(await group.locator('#film-lens-strength').isDisabled(),true);
  assert.equal(await group.locator('#film-lens-filter').getAttribute('aria-label'),'Lens Filter');
  assert.equal(await group.locator('[data-path="current.film_look.halation_enabled"]').getAttribute('aria-label'),'Halation');

@@ -192,7 +192,7 @@ function renderControlState() {
   els.curveGroupState.textContent = "";
   els.curveReset.closest(".control-group")?.classList.toggle("modified", curvesModified);
   const filmModified = !valuesEqual(state.adjustments[state.currentView]?.film_look, currentLaneDefaults.film_look);
-  if (els.filmLookState) els.filmLookState.textContent = filmModified ? "Mod" : "";
+  if (els.filmLookState) els.filmLookState.textContent = "";
   els.filmLookReset?.closest(".control-group")?.classList.toggle("modified", filmModified);
   const gradingModified = !valuesEqual(state.adjustments[state.currentView]?.color_grading, currentLaneDefaults.color_grading);
   if (els.colorGradingState) els.colorGradingState.textContent = "";
