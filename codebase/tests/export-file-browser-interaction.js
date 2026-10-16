@@ -36,10 +36,11 @@ async function main() {
     });
     if (!reservedNameRejected) throw new Error("Windows reserved project filenames were not rejected.");
 
+    // Open the shared import action; the Library now owns the start screen.
     const fixture = path.resolve("tests", "fixtures", "hdr_headroom.tiff");
     let chooser = null;
     if (await page.evaluate(() => Boolean(desktop))) {
-      await page.locator("#import-button").click();
+      await page.evaluate(() => { void requestSourceImport(); });
       await page.locator("#directory-browser").waitFor({ state: "visible" });
       await page.waitForFunction(() => !document.getElementById('directory-browser-go')?.disabled);
       await page.locator("#directory-browser-path").fill(path.dirname(fixture));
@@ -49,7 +50,7 @@ async function main() {
       await page.locator("#directory-browser").waitFor({ state: "hidden" });
     } else {
       const chooserPromise = page.waitForEvent("filechooser");
-      await page.locator("#import-button").click();
+      await page.evaluate(() => { void requestSourceImport(); });
       chooser = await chooserPromise;
       await chooser.setFiles(fixture);
     }
