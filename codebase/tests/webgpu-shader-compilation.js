@@ -55,7 +55,12 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     if (!sessionResponse.ok()) throw new Error(`Fixture session failed with HTTP ${sessionResponse.status()}.`);
     const { session } = await sessionResponse.json();
     await page.evaluate((loadedSession) => activateDesktopSession(loadedSession, ""), session);
+    // Activation schedules its own preview. Finish it before reading a
+    // diagnostic frame; scope readback rejects a source replaced mid-read.
+    await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight, null, { timeout: 180000 });
+    await page.evaluate(() => state.previewScheduler?.cancel());
     const detailOutput = await page.evaluate(async () => {
+      const canvas = document.createElement("canvas");
       const renderDetail = async (detail) => {
         Object.assign(state.adjustments.hdr.detail, {
           texture_amount: 0,
@@ -65,10 +70,13 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
           sharpen_radius_px: 0.8,
           sharpen_threshold: 10,
         }, detail);
-        const rendered = await renderGpuDraft("hdr", { longEdge: 512 });
+        const rendered = await state.gpuPreview.renderTo(canvas, state.session.session_id, "hdr",
+          JSON.parse(JSON.stringify(state.adjustments)), sampleCurvePoints, 512, [],
+          state.editRevision, null, projectReferenceWhiteNits(), state.session.source);
         if (!rendered) return null;
-        const scope = await state.gpuPreview.analyzeScope(els.previewCanvas, { width: 64, height: 32 });
-        return [...(scope?.pixels || [])];
+        const scope = await state.gpuPreview.analyzeScope(canvas, { width: 64, height: 32 });
+        if (scope?.pixels?.length !== 64 * 32 * 3) throw new Error("Detail scope readback was superseded or incomplete");
+        return [...scope.pixels];
       };
       const difference = (left, right) => left.reduce(
         (total, value, index) => total + Math.abs(value - right[index]),
@@ -97,13 +105,14 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
       const clarityLarge = await renderDetail({ clarity_amount: 60, clarity_radius_percent: 3.0 });
       const sharpenOne = await renderDetail({ sharpen_amount: 1, sharpen_radius_px: 0.8, sharpen_threshold: 10 });
       const sharpenTen = await renderDetail({ sharpen_amount: 10, sharpen_radius_px: 0.8, sharpen_threshold: 10 });
+      const sharpenEighty = await renderDetail({ sharpen_amount: 80, sharpen_radius_px: 0.8, sharpen_threshold: 10 });
       const sharpenSmall = await renderDetail({ sharpen_amount: 80, sharpen_radius_px: 0.3, sharpen_threshold: 0 });
       const sharpenLarge = await renderDetail({ sharpen_amount: 80, sharpen_radius_px: 3.0, sharpen_threshold: 0 });
       const sharpenThreshold = await renderDetail({ sharpen_amount: 80, sharpen_radius_px: 3.0, sharpen_threshold: 80 });
       const sharpenSuppressed = await renderDetail({ sharpen_amount: 1, sharpen_radius_px: 0.8, sharpen_threshold: 100 });
       const sharpenActivation = await renderDetail({ sharpen_amount: 0.0002, sharpen_radius_px: 0.8, sharpen_threshold: 100 });
       const values = texture || [];
-      const variants = [baseline, texture, claritySmall, clarityLarge, sharpenOne, sharpenTen, sharpenSmall, sharpenLarge, sharpenThreshold, sharpenSuppressed, sharpenActivation];
+      const variants = [baseline, texture, claritySmall, clarityLarge, sharpenOne, sharpenTen, sharpenEighty, sharpenSmall, sharpenLarge, sharpenThreshold, sharpenSuppressed, sharpenActivation];
       return {
         rendered: Boolean(baseline && texture && claritySmall && clarityLarge && sharpenSmall && sharpenLarge && sharpenThreshold),
         finite: variants.every((variant) => variant?.every(Number.isFinite)),
@@ -117,6 +126,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
         baselineGradient: gradientEnergy(baseline),
         sharpenOneGradient: gradientEnergy(sharpenOne),
         sharpenTenGradient: gradientEnergy(sharpenTen),
+        sharpenEightyGradient: gradientEnergy(sharpenEighty),
         sharpenGradient: gradientEnergy(sharpenLarge),
       };
     });
@@ -133,7 +143,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     }
     if (!(detailOutput.baselineGradient < detailOutput.sharpenOneGradient
       && detailOutput.sharpenOneGradient < detailOutput.sharpenTenGradient
-      && detailOutput.sharpenTenGradient < detailOutput.sharpenGradient)) {
+      && detailOutput.sharpenTenGradient < detailOutput.sharpenEightyGradient)) {
       throw new Error(`Sharpen Amount response is not continuous and monotonic: ${JSON.stringify(detailOutput)}`);
     }
     if (detailOutput.activationDifference > 0.00001) {
