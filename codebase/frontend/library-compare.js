@@ -10,11 +10,15 @@
     const sides=[...root.querySelectorAll('.compare-side')].map(element=>({element,stage:element.querySelector('.compare-stage'),fit:element.querySelector('.compare-fit'),native:element.querySelector('.compare-native'),caption:element.querySelector('.compare-caption'),note:element.querySelector('.compare-note')}));
     const button=document.createElement('button');button.id='compare-button';button.className='tool-button';button.textContent='Compare';button.title='Compare options Â· C';button.setAttribute('aria-expanded','false');button.setAttribute('aria-haspopup','dialog');$('zoom-button').before(button);
     const panel=document.createElement('div');panel.id='compare-options';panel.className='library-popover library-options';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Compare options');
-    panel.innerHTML=`<label><input id="compare-enabled" type="checkbox"> Compare</label><label>Layout <select id="compare-layout"><option value="side">Side by side</option><option value="top">Top and bottom</option><option value="split">Split</option></select></label><label><input id="compare-names" type="checkbox" checked> File names and marks</label>`;document.body.append(panel);
+    panel.innerHTML=`<label class="checkbox-row"><input id="compare-enabled" type="checkbox" aria-label="Compare"><span data-compare-state="compare-enabled">Disabled</span></label><label>Layout <select id="compare-layout"><option value="side">Side by side</option><option value="top">Top and bottom</option><option value="split">Split</option></select></label><div class="library-option-toggle"><span>File names and marks</span><label class="checkbox-row"><input id="compare-names" type="checkbox" aria-label="File names and marks" checked><span data-compare-state="compare-names">Enabled</span></label></div>`;document.body.append(panel);
     button.addEventListener('click',()=>{panel.hidden=!panel.hidden;button.setAttribute('aria-expanded',String(!panel.hidden));const r=button.getBoundingClientRect();panel.style.left=`${Math.min(r.left,innerWidth-260)}px`;panel.style.top=`${r.bottom+4}px`;});
     document.addEventListener('pointerdown',e=>{if(!panel.contains(e.target)&&!button.contains(e.target)){panel.hidden=true;button.setAttribute('aria-expanded','false');}});
     panel.addEventListener('keydown',e=>{if(e.key==='Escape'){panel.hidden=true;button.setAttribute('aria-expanded','false');button.focus();e.stopPropagation();}});
-    $('compare-enabled').addEventListener('change',e=>command(e.target.checked?'on':'off'));
+    function syncSwitches(){
+      $('compare-enabled').checked=enabled;$('compare-names').checked=settings.compare_names;
+      for(const label of panel.querySelectorAll('[data-compare-state]')) label.textContent=$(label.dataset.compareState).checked?'Enabled':'Disabled';
+    }
+    $('compare-enabled').addEventListener('change',e=>{void command(e.target.checked?'on':'off').then(syncSwitches,syncSwitches);});
     for(const id of ['compare-layout','compare-names']) $(id).addEventListener('change',async()=>{
       try {settings=await o.api('/api/library/review-preferences',{compare_layout:$('compare-layout').value,compare_names:$('compare-names').checked});layout();if(enabled)show();}catch(e){o.status(e.message);}
     });
@@ -25,7 +29,7 @@
     handle.addEventListener('pointermove',e=>{if(splitting)splitAt(e);});
     for(const type of ['pointerup','pointercancel'])handle.addEventListener(type,e=>{splitting=false;if(handle.hasPointerCapture(e.pointerId))handle.releasePointerCapture(e.pointerId);});
     handle.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){divider=Math.max(.05,Math.min(.95,divider+(e.key==='ArrowLeft'?-.02:.02)));handle.setAttribute('aria-valuenow',String(Math.round(divider*100)));layout();e.preventDefault();e.stopPropagation();}});
-    function layout(){root.dataset.layout=settings.compare_layout;root.style.setProperty('--compare-split',`${divider*100}%`);for(const side of sides)side.caption.hidden=!settings.compare_names;}
+    function layout(){syncSwitches();root.dataset.layout=settings.compare_layout;root.style.setProperty('--compare-split',`${divider*100}%`);for(const side of sides)side.caption.hidden=!settings.compare_names;}
     function cancel(){generation++;for(const s of sides){s.controller?.abort();s.nativeController?.abort();}for(const c of ahead)c.abort();ahead=[];}
     function captions(){for(const s of sides){if(s.photo)s.caption.replaceChildren(document.createTextNode(s.photo.name),o.strip(s.photo));}}
     function command(action,step=1){
@@ -33,7 +37,7 @@
         if(!o.selected())return;
         const result=await o.api('/api/library/compare',{action,step,paths:o.photos().map(p=>p.path),selected:o.selected().path,left:left?.path||null});
         left=o.allPhotos().find(p=>p.path===result.left)||left;enabled=result.enabled;
-        $('compare-enabled').checked=enabled;button.classList.toggle('active',enabled);
+        syncSwitches();button.classList.toggle('active',enabled);
         o.choose(result.right);if(enabled)o.setView('single');else{o.setView('single');cancel();root.hidden=true;$('single-stage').hidden=false;}
       });queue=task.catch(e=>o.status(e.message));return task;
     }
@@ -86,7 +90,7 @@
       const end=e=>{if(!drag||drag.s!==s||e.pointerId!==drag.id)return;const moved=drag.moved;drag=null;if(s.stage.hasPointerCapture(e.pointerId))s.stage.releasePointerCapture(e.pointerId);if(e.type==='pointercancel')return;if(moved)for(const side of sides)void native(side);else{const r=s.stage.getBoundingClientRect();zoom({x:e.clientX-r.left,y:e.clientY-r.top},s);}};
       s.stage.addEventListener('pointerup',end);s.stage.addEventListener('pointercancel',end);
     }
-    function hide(){cancel();root.hidden=true;$('single-stage').hidden=false;$('single-caption').hidden=false;}
+    function hide(){cancel();root.hidden=true;$('single-stage').hidden=false;}
     async function init(){try{settings=await o.api('/api/library/review-preferences');$('compare-layout').value=settings.compare_layout;$('compare-names').checked=settings.compare_names;layout();}catch(e){o.status(e.message);}}
     return {enabled:()=>enabled,command,show,hide,cancel,zoom,captions,init,surfaces:()=>sides,snapshot:()=>({enabled,left:left?.path,right:o.selected()?.path,layout:settings.compare_layout,zoom:o.zoom(),sides:sides.map(s=>({path:s.photo?.path,native:!!s.nativeMeta,kept:!!s.meta?.kept}))})};
   }
