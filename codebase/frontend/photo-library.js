@@ -336,7 +336,7 @@
       element.style.cssText = `left:${3 + (index % layout.columns) * layout.cellWidth}px;top:${3 + Math.floor(index / layout.columns) * layout.rowHeight}px;width:${layout.cellWidth - 3}px;height:${layout.rowHeight - 3}px`;
     });
   }
-  const FILM_PITCH = 119; // a 116px filmstrip tile plus the 3px gap
+  let FILM_PITCH = 119; // filmstrip tile width plus the 3px gap
   function paintFilm() {
     if (!state.active || state.view !== "single" || state.review) { clearCells(state.filmCells); return; }
     $("film-space").style.width = `${state.photos.length * FILM_PITCH + 3}px`;
@@ -860,7 +860,18 @@
     const label = state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending";
     $("sort-dir").dataset.descending = String(state.descending); $("sort-dir").setAttribute("aria-label", label); $("sort-dir").title = label;
   }
-  function paintSize() { const input = $("thumbnail-size"); input.parentElement.style.setProperty("--fill-w", `${(input.value - input.min) / (input.max - input.min) * 100}%`); }
+  function paintSize() {
+    const input = $("thumbnail-size"), anchor = film.scrollLeft / FILM_PITCH;
+    input.parentElement.style.setProperty("--fill-w", `${(input.value - input.min) / (input.max - input.min) * 100}%`);
+    const width = Math.round(state.size * 116 / 190), pictureHeight = Math.round(width * 80 / 116);
+    FILM_PITCH = width + 3;
+    film.style.setProperty("--film-width", `${width}px`);
+    film.style.setProperty("--film-picture-height", `${pictureHeight}px`);
+    film.style.setProperty("--film-tile-height", `${pictureHeight + 25}px`);
+    film.style.setProperty("--film-height", `${pictureHeight + 31}px`);
+    $("film-space").style.width = `${state.photos.length * FILM_PITCH + 3}px`;
+    film.scrollLeft = anchor * FILM_PITCH;
+  }
   paintSort(); paintSize();
   $("sort-menu").addEventListener("click", event => { const item = event.target.closest("[data-sort]"); if (!item) return; state.sort = item.dataset.sort; paintSort(); applyQuery(); });
   $("sort-dir").addEventListener("click", () => { state.descending = !state.descending; paintSort(); applyQuery(); });
@@ -963,7 +974,7 @@
     if (state.active && !document.hidden) { try { await api("/api/library/checks", { client: checkClient, visible: state.path }); await activity.refresh(); } catch (error) { console.debug("Library index:", error.message); } }
     setTimeout(pollIndexing, 1000);
   }
-  $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintSize(); paintGrid(); });
+  $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintSize(); paintGrid(); paintFilm(); });
   let gridFrame = 0, filmFrame = 0;
   grid.addEventListener("scroll", () => { if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); }); });
   film.addEventListener("scroll", () => { if (!filmFrame) filmFrame = requestAnimationFrame(() => { filmFrame = 0; paintFilm(); }); });
