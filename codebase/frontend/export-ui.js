@@ -342,11 +342,6 @@ function openExportSheet() {
 }
 
 function renderCapabilities() {
-  const keys = ["avif_gain_map_encoder", "ultrahdr_encoder", "jpegxl_export"];
-  const available = keys.filter((key) => state.capabilities[key]?.status === "available").length;
-  els.capabilitySummary.textContent = `${available}/3 encoders ready`;
-  els.capabilitySummary.className = `capability-chip ${available >= 2 ? "ready" : "attention"}`;
-
   document.querySelectorAll("[data-capability-for]").forEach((element) => {
     const capability = state.capabilities[element.dataset.capabilityFor];
     const ready = capability?.status === "available";

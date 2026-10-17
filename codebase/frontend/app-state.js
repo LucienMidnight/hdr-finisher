@@ -944,7 +944,6 @@ const els = {
   sessionNameWrap: document.getElementById("session-name-wrap"),
   sessionNameTooltip: document.getElementById("session-name-tooltip"),
   copySourcePath: document.getElementById("copy-source-path"),
-  capabilitySummary: document.getElementById("capability-summary"),
   workflowTabs: [...document.querySelectorAll("[data-workflow-tab]")],
   sourceSettingsToggle: document.getElementById("source-settings-toggle"),
   sourceSettingsPanel: document.getElementById("source-settings-panel"),

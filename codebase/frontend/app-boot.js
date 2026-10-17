@@ -12,8 +12,6 @@ async function boot() {
   applyExportPreset(els.exportFormat.value, "web_default", { invalidate: false });
   await initializeGpuPreview();
   await loadCapabilities().catch(() => {
-    els.capabilitySummary.textContent = "Encoder status unavailable";
-    els.capabilitySummary.className = "capability-chip attention";
   });
   await loadDefaultExportDirectory().catch(() => null);
   renderReadouts();
