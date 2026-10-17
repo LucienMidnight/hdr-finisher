@@ -173,7 +173,7 @@ Helpers still resolve to their parent when explicitly requested.
 |---|---:|---:|---|
 | film | 4 | 1 | `film-stock-parity.js`, `grain-parity.js`, `performance/tier-film-consistency.js`, `tiled-film-parity.js` |
 | lens | 1 | 2 | `performance/tier-film-consistency.js` |
-| library | 6 | 25 | `library-appearance-navigation.js`, `library-background-activity.js`, `library-grade-saving.js`, `photo-library-stage-a.js`, `photo-library-stage-b.js`, `photo-library-stage-c.js` |
+| library | 6 | 25 | `library-picture-startup.js`, `library-background-activity.js`, `library-grade-saving.js`, `photo-library-stage-a.js`, `photo-library-stage-b.js`, `photo-library-stage-c.js` |
 | masks | 6 | 17 | `brush-mask-interaction.js`, `local-adjustments-interaction.js`, `local-crop-anchor-interaction.js`, `luma-region-reference.js`, `mask-raster-reference.js`, `path-mask-interaction.js` |
 | detail | 4 | 12 | `clarity-map-parity.js`, `denoise-adaptive-parity.js`, `denoise-zoomed-region.js`, `sharpen-blur-reference.js` |
 | geometry | 3 | 5 | `geometry-transactions.js`, `local-crop-anchor-interaction.js`, `perspective-interaction.js` |
@@ -197,7 +197,7 @@ parity regressions, device loss, session retirement, low-memory tiled fallback
 and native desktop smoke. UI keeps the native focus regression, numeric entry,
 curve editing and workflow visibility. Library keeps cold browsing/Grade gates,
 marks saved to disk, filtering/native zoom, grade save/conflict/recovery,
-read-ahead/navigation and background pause/cancel behavior.
+GPU setup overlapping visible picture preparation and background pause/cancel behavior.
 
 Overlapping size variants, narrower UI checks, broad matrices, timing probes,
 A/B comparisons, endurance and benchmark workloads belong in full. Files under
@@ -210,7 +210,7 @@ under AGENTS.md. Native desktop smoke is retained alongside the required GitHub
 packaged smoke because it also checks development-time window behavior.
 
 Timing measurement and final estimates: pending the three missing-history
-runs (film-stock-parity, library-grade-saving, library-appearance-navigation).
+runs (film-stock-parity, library-grade-saving, library-picture-startup).
 No full or release sweep is authorized by this task. Timing-only runs share the
 brief's 45-minute total cap. Existing guards and tolerances stay unchanged.
 
@@ -229,3 +229,8 @@ Flatpak all pass. This is the only macOS and Linux test run. It also runs the
 packaged-app smoke test (desktop/tests/electron-smoke.js), which caught a real
 Library focus bug in 0.9.1. The local runner cannot perform this step; it is a
 manual release requirement, not an automated action in test:release.
+
+The navigation candidate was measured, then moved to full: its read-ahead
+assertions pass but its later filter step waits for the removed #filter-grade
+control. No application or driver repair was attempted. The focused
+library-picture-startup driver covers visible-picture preparation instead.
