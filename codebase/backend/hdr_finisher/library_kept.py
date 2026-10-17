@@ -213,6 +213,8 @@ class KeptPictures:
         self.jobs={};self._lock=RLock();self._closed=False
         self._requested=set();self._retry_after={};self._refreshing=False
         self._open_producer=ThreadPoolExecutor(max_workers=1,thread_name_prefix="hdr-kept-open")
+        from .library_picture_queue import PictureQueue
+        self.queue=PictureQueue(self)
     def request(self,path):
         path=str(self.marks._path(path))
         with self.marks._lock:
@@ -278,11 +280,32 @@ class KeptPictures:
                     or time.monotonic()<self._retry_after.get(path,0)):
                 return
             self._requested.add(path)
-        self.schedule(path)
+        self.schedule(path,priority=15)
 
-    def schedule(self,path,grade=None,source=None):
+    def enqueue(self,path,grade=None):
+        request=self.request(path)
+        if request["edited"]:
+            self.queue.enqueue(str(path),request["grade_identity"])
+        else:
+            self.queue.write("DELETE FROM picture_jobs WHERE path=?",(str(path),))
+        with self._lock:
+            old=self.jobs.pop(str(path),None)
+            if isinstance(old,Event): old.set()
+            elif old is not None: self.worker.cancel(old)
+
+    def queue_status(self): return self.queue.status()
+    def queue_command(self,request): return self.queue.command(request)
+
+    def schedule(self,path,grade=None,source=None,priority=80,_queued=False):
         saved_at=time.time()
         path=str(path)
+        if not _queued:
+            request=self.request(path)
+            if not request["edited"]: return
+            self.queue.enqueue(path,request["grade_identity"])
+        if self.queue.paused:
+            if source is not None: source.clear()
+            return
         with self._lock: self._requested.add(path)
         # No decode and no worker startup on the save request thread.
         def launch():
@@ -290,6 +313,9 @@ class KeptPictures:
                 request=self.request(path)
                 if not request["edited"] or not self.cache.managed.preferences()["enabled"]: return
                 if grade is not None and identity(grade)!=request["grade_identity"]: return
+                if self.cached(path):
+                    self.queue.done(path,request["grade_identity"])
+                    return
                 with self._lock:
                     if self._closed: return
                     old=self.jobs.get(path)
@@ -311,7 +337,7 @@ class KeptPictures:
                                 source.clear()
                         future=self._open_producer.submit(build_open)
                     else:
-                        job,future=self.worker.submit_library("kept",priority=80,path=str(self_source(path)),grade=request["grade"],edge=request["edited_edge"])
+                        job,future=self.worker.submit_library("kept",priority=priority,path=str(self_source(path)),grade=request["grade"],edge=request["edited_edge"])
                     self.jobs[path]=job
                 def finish(f):
                     result=None
@@ -328,6 +354,7 @@ class KeptPictures:
                             atomic_json(self.cache.root/(key+".json"),{k:v for k,v in result.items() if k!="temporary"}|{"source_stat":stat,"saved_at":saved_at})
                             self.jobs.pop(path,None)
                             self._retry_after.pop(path,None)
+                        self.queue.done(path,request["grade_identity"])
                         self.cache.trim();log("kept_picture_saved",photo=path,key=key,save_to_written_ms=(time.time()-saved_at)*1000,**result)
                     except Exception as error:
                         with self._lock:
@@ -335,6 +362,8 @@ class KeptPictures:
                             closing=self._closed
                             if not replaced and not closing and not isinstance(error,CancelledError):
                                 self._retry_after[path]=time.monotonic()+RETRY_SECONDS
+                        if not replaced and not closing and not isinstance(error,CancelledError):
+                            self.queue.write("UPDATE picture_jobs SET reason=? WHERE path=?",(str(error),path))
                         if replaced or closing or isinstance(error,CancelledError):
                             reason="app closing" if closing else "replaced by a newer saved grade" if replaced else str(error) or "job cancelled"
                             log("kept_picture_cancelled" if closing else "kept_picture_replaced",photo=path,reason=reason,action="grade safe; cancelled job discarded")
@@ -360,6 +389,7 @@ class KeptPictures:
                 if isinstance(job,Event): job.set()
                 else: self.worker.cancel(job)
             self.jobs.clear()
+        self.queue.stop.set()
         self._open_producer.shutdown(wait=False,cancel_futures=True)
 
     def pixels(self,key,lane):

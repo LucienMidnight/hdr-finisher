@@ -54,7 +54,7 @@ class LibraryHistory:
         if kind not in TARGETS: raise ValueError("Choose a grade to restore.")
         return self.rewrite(values, kind=kind)
 
-    def rewrite(self, values, *, kind=None, targets=None, expected=None, undo=True):
+    def rewrite(self, values, *, kind=None, targets=None, expected=None, undo=True, save_open=False):
         grades = self.grades; marks = grades.marks
         with grades.store._lock, marks._lock:
             paths = list(dict.fromkeys(str(marks._path(p)) for p in values))
@@ -64,9 +64,12 @@ class LibraryHistory:
             for path, document, row in zip(paths, documents, records):
                 document = document or {}; state = grades._get(path); session = self.current(path)
                 if state.get("conflict"): raise ValueError("Resolve the grade changed elsewhere before reverting.")
-                if state.get("pending") or session:
+                online = marks.source_path(path).parent.is_dir()
+                if not online and not document.get("grade"):
+                    document["grade"] = deepcopy(state.get("desired") if state.get("pending") else state.get("indexed_grade", state.get("baseline")))
+                if online and (state.get("pending") or session):
                     if grades._check(path, state, document.get("grade")): raise ValueError("The grade changed elsewhere; nothing was reverted.")
-                else: state["baseline"] = deepcopy(document.get("grade"))
+                elif not state.get("pending"): state["baseline"] = deepcopy(document.get("grade"))
                 current = session.edit_document().model_dump(mode="json") if session else state.get("desired") if state.get("pending") else document.get("grade")
                 expected_grade = expected[path] if expected is not None else None
                 if expected is not None and session and expected_grade is None:
@@ -101,13 +104,13 @@ class LibraryHistory:
                         session = open_document(grades.store, model, marks.source_path(path))
                         grades.sessions[str(session.session_id)] = path
                         grades.starts[str(session.session_id)] = deepcopy(target)
-                    session.dirty = kind != "saved"
+                    session.dirty = kind != "saved" and not save_open
                     state = grades._get(path)
                     if session.dirty: state["recovery"] = deepcopy(target)
                     else: state.pop("recovery", None)
                     grades._put(path, state)
                     payload = session.to_payload().model_dump(mode="json")
-                else:
+                if not session or save_open:
                     state.update(desired=deepcopy(target), pending=True)
                     pending[path] = deepcopy(state)
                     row["photo_id"] = row["photo_id"] or uuid4().hex; row["storage"] = "database"
@@ -117,10 +120,20 @@ class LibraryHistory:
                     import json
                     for path, state in pending.items():
                         db.execute("INSERT OR REPLACE INTO photo_grades VALUES (?, ?)", (path, json.dumps(state)))
+                        if getattr(getattr(marks, "kept", None), "queue", None):
+                            from .library_kept import identity
+                            db.execute("INSERT INTO picture_jobs(path,grade_id) VALUES (?,?) ON CONFLICT(path) DO UPDATE SET grade_id=excluded.grade_id,reason=''", (path, identity(state["desired"])))
                 marks._save(rows, docs, finalize)
             if undo and plans:
-                marks._undo.append({"command": lambda: self.rewrite(list(before), targets=before, expected=after, undo=False)})
+                marks._undo.append({"command": lambda: self.rewrite(list(before), targets=before, expected=after, undo=False, save_open=save_open)})
             for path, _, _, _, session, _, target in plans:
-                if not session and getattr(marks, "kept", None): marks.kept.schedule(path, target)
+                if (not session or save_open) and getattr(marks, "kept", None): marks.kept.enqueue(path, target) if hasattr(marks.kept, "enqueue") else marks.kept.schedule(path, target)
+            descriptions = grades.describe([row["path"] for row in rows])
+            for row in rows:
+                row.update(descriptions.get(row["path"], {}))
+                kept = getattr(marks, "kept", None)
+                if kept:
+                    row["pictureCurrent"] = bool(kept.current_meta(row["path"], row["grade_identity"]))
+                    row["picture_updating"] = bool(row.get("edited") and not row["pictureCurrent"])
             log("grade_revert", target=kind or "undo", count=len(plans), action="previous grade retained")
-            return {"photos": rows, "count": len(plans), "session": payload, "warnings": [], "undo_available": bool(marks._undo)}
+            return {"photos": rows, "count": len(plans), "session": payload, "warnings": [], "undo_available": bool(marks._undo), "grade_changed": True}

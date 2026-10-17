@@ -113,6 +113,7 @@ class LibraryGrades:
             try:
                 with db:
                     for path, document in zip(paths, documents):
+                        if document is None and not self.marks.source_path(path).parent.is_dir(): continue
                         state = self._get(str(path)); document = document or {}
                         if "grade" not in document and not state: continue
                         state["indexed_grade"] = document.get("grade")
@@ -131,10 +132,13 @@ class LibraryGrades:
                 states[path] = json.loads(value)
         from .library_kept import identity
         result = {}
+        exports = getattr(self.store, "batch_export", None)
+        export_records = exports.read_records() if exports else None
         for path in paths:
             state = states.get(str(path), {})
             grade = state.get("desired") if state.get("pending") else state.get("indexed_grade", state.get("baseline"))
             result[str(path)] = {"edited": grade is not None and grade_key(grade) != grade_key(state.get("default")), "grade_identity": identity(grade)}
+            if exports: result[str(path)].update(exports.export_state(str(path), grade, export_records))
         return result
 
     def path(self, session_id):
