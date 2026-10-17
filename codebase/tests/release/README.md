@@ -209,10 +209,10 @@ the complete family matrices must still run for changes to pinned lens contracts
 under AGENTS.md. Native desktop smoke is retained alongside the required GitHub
 packaged smoke because it also checks development-time window behavior.
 
-History-based plan after measuring all missing entries: an all-area release
-selects 45 runnable drivers and estimates 52.7 minutes, including 16.7 minutes
-reserved for retries. A Library change selects 19 (core plus Library),
-13.6 minutes total; masks selects 19, 9.5 minutes total. Core alone is
+Latest history-based plan, including the cold-folder follow-up below: an
+all-area release selects 45 runnable drivers and estimates 52.0 minutes,
+including 15.2 minutes reserved for retries. A Library change selects 19
+(core plus Library), 13.0 minutes total; masks selects 19, 9.5 minutes total. Core alone is
 8.1 minutes. These are estimates, not a release certification. The all-area
 plan is the union of core and every area's checks; the current tag-based plan
 can be smaller when only some areas changed.
@@ -229,6 +229,11 @@ driver remains unmeasured; all three protected hashes stayed unchanged.
 Fast checks: 516 Node and 2,205 Python passed, three Python skips.
 Existing guards and tolerances stay unchanged.
 
+The navigation candidate was measured, then moved to full: its read-ahead
+assertions pass but its later filter step waits for the removed #filter-grade
+control. No application or driver repair was attempted. The focused
+library-picture-startup driver covers visible-picture preparation instead.
+
 ## Final release step: GitHub trial build, before tagging
 
 After the focused release checks pass, ask Steve before pushing the branch.
@@ -244,11 +249,6 @@ Flatpak all pass. This is the only macOS and Linux test run. It also runs the
 packaged-app smoke test (desktop/tests/electron-smoke.js), which caught a real
 Library focus bug in 0.9.1. The local runner cannot perform this step; it is a
 manual release requirement, not an automated action in test:release.
-
-The navigation candidate was measured, then moved to full: its read-ahead
-assertions pass but its later filter step waits for the removed #filter-grade
-control. No application or driver repair was attempted. The focused
-library-picture-startup driver covers visible-picture preparation instead.
 
 ## Library cold-folder request diagnosis (October 17, 2026)
 
@@ -268,3 +268,17 @@ checks detect five live requests, retain bodies after headers, exclude other
 folders, and reproduce four cancellations followed by four replacements with
 late failures without double-counting. The limit stays four; the first-picture
 assertion stays in place. No application queue, display or ordering changed.
+
+Final Stage A validation at 2b32900 passed on its automatic retry: maximum
+four live picture requests, with the first picture drawn before the remaining
+visible pictures finished. The first attempt timed out at the earlier grid-cell
+lookup, before the changed measurement was installed; it was left unchanged.
+The runner therefore reports PASS WITH FLAKY CHECKS (4.9 minutes), not a clean
+first-attempt pass. Diagnosis plus final validation took 8.6 minutes of slow
+tests, under the additional 30-minute cap. All protected hashes stayed unchanged.
+No shared queue code changed, so no additional Library driver was needed.
+Run: codebase/output/release-checks/2026-10-17T02-33-19-058Z-57fa337ef9f32ffe9620/.
+
+Final fast checks: 519 Node tests passed; 2,205 Python tests passed with three
+skips (436 seconds). The added observer tests are behavioral; the application
+limit and all existing pixel, timing and parity tolerances remain unchanged.
