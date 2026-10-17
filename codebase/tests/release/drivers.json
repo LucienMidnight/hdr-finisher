@@ -995,6 +995,17 @@
       }
     },
     {
+      "path": "tests/lens-filter-quick-parity.js",
+      "areas": [
+        "lens"
+      ],
+      "tier": "area",
+      "protects": "Lens filters: the WebGPU preview matches the CPU export for each filter at its strongest glow, HDR and SDR.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
       "path": "tests/lens-filter-parity.js",
       "areas": [
         "lens"

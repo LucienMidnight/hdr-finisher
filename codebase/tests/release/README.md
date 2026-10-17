@@ -172,7 +172,7 @@ Helpers still resolve to their parent when explicitly requested.
 | Area | Kept runnable | Moved runnable to full | Kept drivers (tests/ unless desktop/) |
 |---|---:|---:|---|
 | film | 4 | 1 | `film-stock-parity.js`, `grain-parity.js`, `performance/tier-film-consistency.js`, `tiled-film-parity.js` |
-| lens | 1 | 2 | `performance/tier-film-consistency.js` |
+| lens | 2 | 2 | `performance/tier-film-consistency.js`, `lens-filter-quick-parity.js` |
 | library | 6 | 25 | `library-picture-startup.js`, `library-background-activity.js`, `library-grade-saving.js`, `photo-library-stage-a.js`, `photo-library-stage-b.js`, `photo-library-stage-c.js` |
 | masks | 6 | 17 | `brush-mask-interaction.js`, `local-adjustments-interaction.js`, `local-crop-anchor-interaction.js`, `luma-region-reference.js`, `mask-raster-reference.js`, `path-mask-interaction.js` |
 | detail | 4 | 12 | `clarity-map-parity.js`, `denoise-adaptive-parity.js`, `denoise-zoomed-region.js`, `sharpen-blur-reference.js` |

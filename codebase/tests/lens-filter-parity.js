@@ -42,6 +42,11 @@ const CASES = ["glimmerglass","black_pro_mist","pro_mist","cinebloom"].flatMap(f
   })))));
 
 if (selectedCase && !CASES.some(c => c.label === selectedCase)) throw new Error(`Unknown case: ${selectedCase}`);
+// --quick: each filter once at its widest, strongest glow, where preview and
+// export are most likely to disagree; the full matrix stays the reference.
+const quick = process.argv.includes("--quick");
+const QUICK_CASES = ["glimmerglass","black_pro_mist","pro_mist","cinebloom"].map(family => `${family} 2 4 35mm`);
+if (QUICK_CASES.some(label => !CASES.some(c => c.label === label))) throw new Error("Quick lens cases are missing from the matrix.");
 
 function writeFixture() {
   const python = path.resolve(__dirname, "..", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
@@ -238,12 +243,12 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       return;
     }
     const failures = [];
-    for (const edge of (process.argv.includes("--smoke") ? [1520] : [1520,2400])) {
+    for (const edge of (process.argv.includes("--smoke") || quick ? [1520] : [1520,2400])) {
       LONG_EDGE=edge;
     for (const lane of LANES) {
       const off = await compare(lane, NEUTRAL, 100);
       if (off.error) throw new Error(`${lane} off: ${off.error}`);
-      for (const { label, stock, look_strength: lookStrength = 100 } of CASES.filter(c => !selectedCase || c.label === selectedCase)) {
+      for (const { label, stock, look_strength: lookStrength = 100 } of CASES.filter(c => (!selectedCase || c.label === selectedCase) && (!quick || QUICK_CASES.includes(c.label)))) {
         const on = await compare(lane, { ...NEUTRAL, ...stock }, lookStrength);
         if (on.error) throw new Error(`${lane} ${label}: ${on.error}`);
 
