@@ -47,7 +47,7 @@ fs.mkdirSync(path.join(folder, "z-subfolder"));
   await library.locator("#filter-search").fill("no matching tag");
   assert.equal(await library.locator("#empty-message").textContent(), "No photos match these filters.");
   await library.locator("#filter-clear").click();
-  assert.equal(await library.locator("#raw-only").count(), 0);
+  assert.equal(await library.locator("#raw-only").count(), 1, "The RAW toggle is in the toolbar");
   await library.waitForFunction(() => document.querySelectorAll("#grid-space canvas[data-picture-key]").length === 12);
   let nativeRequests = 0;
   page.on("request", request => { if (request.url().endsWith("/api/library/native")) nativeRequests++; });
@@ -69,9 +69,17 @@ fs.mkdirSync(path.join(folder, "z-subfolder"));
   assert.equal(await library.evaluate(() => HDRLibrary.getSnapshot().native.width), 3000);
   const stage = await library.locator("#single-stage").boundingBox();
   const centerBefore = await library.evaluate(() => HDRLibrary.getSnapshot().zoomCenter);
+  // Each draw stamps data-rendition. A draw into the shown 100% canvas would show the
+  // new crop at the old crop's place for a frame: the flicker after a pan.
+  await library.evaluate(() => {
+    window.nativeDrawsOnScreen = [];
+    window.nativeDrawWatch = new MutationObserver(records => { for (const record of records) if (!record.target.hidden) window.nativeDrawsOnScreen.push(record.target.id); });
+    for (const canvas of document.querySelectorAll(".native-picture")) window.nativeDrawWatch.observe(canvas, { attributes: true, attributeFilter: ["data-rendition"] });
+  });
   await page.mouse.move(stage.x + stage.width / 2, stage.y + stage.height / 2); await page.mouse.down();
   await page.mouse.move(stage.x + stage.width / 2 + 100, stage.y + stage.height / 2 + 80, { steps: 6 }); await page.mouse.up();
   await library.waitForFunction(before => HDRLibrary.getSnapshot().native && !HDRLibrary.getSnapshot().nativeLoading && HDRLibrary.getSnapshot().zoomCenter[0] < before[0], centerBefore);
+  assert.deepEqual(await library.evaluate(() => { window.nativeDrawWatch.disconnect(); return window.nativeDrawsOnScreen; }), [], "A new 100% crop is never drawn into the canvas on screen");
   const movedCenter = await library.evaluate(() => HDRLibrary.getSnapshot().zoomCenter);
   const previous = await library.evaluate(() => HDRLibrary.getSnapshot().selected);
   await page.keyboard.press("ArrowRight");

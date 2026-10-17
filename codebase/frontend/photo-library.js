@@ -572,9 +572,15 @@
       if (!current()) return;
       // Fit and native pictures share the exact same starting look.
       meta.adjustments = state.fitMeta.adjustments;
-      await drawPicture(meta, $("native-picture"), controller, current);
+      // Draw off screen, then swap. Drawing into the shown canvas would show the new
+      // crop at the old crop's place for a frame, a flicker during and after a pan.
+      const next = $("native-picture-next");
+      await drawPicture(meta, next, controller, current);
       if (!current()) return;
-      state.nativeMeta = meta; $("native-picture").dataset.picturePath = photo.path; positionZoom();
+      const shown = $("native-picture");
+      shown.id = "native-picture-next"; shown.hidden = true; shown.removeAttribute("aria-label"); shown.setAttribute("aria-hidden", "true");
+      next.id = "native-picture"; next.removeAttribute("aria-hidden"); next.setAttribute("aria-label", "Native-resolution crop");
+      state.nativeMeta = meta; next.dataset.picturePath = photo.path; positionZoom();
       status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
     } catch (error) { if (!aborted(error) && current()) status(`${percent} unavailable · ${error.message}`); }
     finally { if (state.native === controller) state.nativeLoading = false; }
