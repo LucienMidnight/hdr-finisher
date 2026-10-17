@@ -983,7 +983,9 @@
         let changed = false;
         for (const photo of state.allPhotos) {
           const row = byPath.get(photo.path);
-          if (row && (row.grade_identity !== photo.grade_identity || row.pictureCurrent !== photo.pictureCurrent)) {
+          // A photo that has not loaded yet has no pictureCurrent. Treat missing as
+          // false, or every newly shown thumbnail is thrown away and drawn twice.
+          if (row && ((row.grade_identity || "") !== (photo.grade_identity || "") || !!row.pictureCurrent !== !!photo.pictureCurrent)) {
             Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity, pictureCurrent: row.pictureCurrent });
             for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }
             changed = true;
