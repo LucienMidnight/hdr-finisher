@@ -162,18 +162,58 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     } else console.log("[library format] local real samples unavailable; synthetic route checks only");
     // Cold real-folder startup must draw pixels while other photos are still queued.
     if (fs.existsSync("D:/Photos/HDR Test Images")) {
+      // Temporary diagnosis: compare page events, protocol timestamps and fetch lifetimes.
+      const trace = { page: [], protocol: [] }, protocolRequests = new Map();
+      const protocol = await page.context().newCDPSession(page);
+      await protocol.send("Network.enable");
+      protocol.on("Network.requestWillBeSent", event => {
+        if (new URL(event.request.url).pathname !== "/api/library/picture") return;
+        const body = JSON.parse(event.request.postData || "{}");
+        protocolRequests.set(event.requestId, body);
+        trace.protocol.push({ kind: "start", id: event.requestId, time: event.timestamp, ...body });
+      });
+      for (const [eventName, kind] of [["Network.loadingFinished", "done"], ["Network.loadingFailed", "failed"]]) {
+        protocol.on(eventName, event => {
+          if (protocolRequests.has(event.requestId)) trace.protocol.push({ kind, id: event.requestId, time: event.timestamp, error: event.errorText, cancelled: event.canceled });
+        });
+      }
+      await library.evaluate(() => {
+        const original = window.fetch.bind(window), events = window.__coldFetchTrace = [];
+        let next = 0;
+        window.fetch = async (input, options = {}) => {
+          if (new URL(typeof input === "string" ? input : input.url, location.href).pathname !== "/api/library/picture") return original(input, options);
+          const id = ++next, body = JSON.parse(options.body || "{}");
+          const record = kind => events.push({ kind, id, time: performance.now(), ...body });
+          let settled = false;
+          const end = kind => { if (!settled) { settled = true; record(kind); } };
+          record("start");
+          options.signal?.addEventListener("abort", () => { if (!settled) record("abort"); }, { once: true });
+          try {
+            const response = await original(input, options), json = response.json.bind(response);
+            record("headers");
+            response.json = async () => { try { return await json(); } finally { end("done"); } };
+            return response;
+          } catch (error) { end("failed"); throw error; }
+        };
+      });
       let firstPixels = null, firstMeta = null, finished = 0, active = 0, peak = 0;
       const started = Date.now();
       const pending = new Set();
       const request = req => {
-        if (new URL(req.url()).pathname === "/api/library/picture") { pending.add(req); peak = Math.max(peak, ++active); }
+        if (new URL(req.url()).pathname === "/api/library/picture") { pending.add(req); peak = Math.max(peak, ++active); trace.page.push({kind:"start",time:Date.now(),active,...req.postDataJSON()}); }
         if (/\/api\/library\/(?:pixels|kept-pixels|raw-thumbnail)\//.test(req.url()) && firstPixels == null) firstPixels = Date.now() - started;
       };
-      const done = req => { if (pending.delete(req)) active--; };
+      const done = req => { if (pending.delete(req)) { active--; trace.page.push({kind:"done",time:Date.now(),active,failure:req.failure(),timing:req.timing(),...req.postDataJSON()}); } };
       const response = res => { if (res.url().endsWith("/api/library/picture")) { firstMeta ??= Date.now() - started; finished++; } };
       page.on("request", request); page.on("requestfinished", done); page.on("requestfailed", done); page.on("response", response);
       await library.evaluate(() => HDRLibrary.browse("D:/Photos/HDR Test Images"));
       await library.waitForSelector("#grid-space canvas[data-picture-key]", { timeout: 60000 });
+      trace.renderer = await library.evaluate(() => window.__coldFetchTrace);
+      trace.peak = peak;
+      const traceFile = path.join(output, "cold-request-trace-" + started + ".json");
+      fs.writeFileSync(traceFile, JSON.stringify(trace, null, 2));
+      console.log("[cold request diagnosis]", traceFile, "page peak", peak);
+      await protocol.detach();
       assert.ok(firstPixels != null); assert.ok(peak <= 4, `Picture request peak ${peak}`);
       assert.ok(finished < await library.evaluate(() => HDRLibrary.getSnapshot().visible), "First picture must precede the rest of the visible decodes");
       console.log("[library cold folder] first metadata", firstMeta, "ms; first pixels requested", firstPixels, "ms; first completed picture", Date.now() - started, "ms; maximum picture requests", peak);
