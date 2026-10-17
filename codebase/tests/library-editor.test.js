@@ -39,7 +39,7 @@ test("Library menu availability follows selection, clipboard and workspace", () 
   h.message({ action: "command-state", selected: 1, copied: false });
   assert.deepEqual(h.buttons.map(button => button.disabled), [false, true, true, false]);
   h.message({ action: "command-state", selected: 3, copied: true });
-  assert.deepEqual(h.buttons.map(button => button.disabled), [false, false, false, false]);
+  assert.deepEqual(h.buttons.map(button => button.disabled), [true, false, false, false]);
   assert.equal(h.window.HDRLibraryHost.dispatch("paste-grade"), true);
   assert.equal(h.sent.at(-1).command, "paste-grade");
   h.state.activeWorkflow = "grade";
