@@ -24,7 +24,8 @@
   }
   function updateCommands(next = commandState) {
     commandState = { selected: Number(next.selected) || 0, copied: Boolean(next.copied) };
-    const active = state.activeWorkflow === "import";
+    // A separate Library window is active whatever tab this window shows.
+    const active = detached || state.activeWorkflow === "import";
     for (const button of document.querySelectorAll("[data-desktop-command]")) {
       const command = button.dataset.desktopCommand;
       if (["copy-grade", "paste-grade", "paste-grade-choose", "quick-export"].includes(command)) {
@@ -35,7 +36,7 @@
     desktop?.setLibraryCommandState?.({ ...commandState, active });
   }
   function dispatch(command) {
-    if (state.activeWorkflow !== "import") return false;
+    if (!detached && state.activeWorkflow !== "import") return false;
     if (detached) desktop?.sendLibraryCommand?.(command);
     else send("command", { command });
     return true;
