@@ -12,7 +12,15 @@
   async function preparePaste(paths) {
     const item = window.HDRGradeSaving?.item();
     if (!item || !paths.includes(item)) return true;
-    return (await window.HDRGradeSaving.leave("pasting a grade")) !== false;
+    if ((await window.HDRGradeSaving.leave("pasting a grade")) === false) return false;
+    if (state.documentDirty) {
+      const response = await fetch(`/api/library/grade/${state.session.session_id}`, { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "discard-for-paste" }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "The open photo could not discard its unsaved changes.");
+      await window.HDRGradeSaving.refresh(result.session);
+    }
+    return true;
   }
   function updateCommands(next = commandState) {
     commandState = { selected: Number(next.selected) || 0, copied: Boolean(next.copied) };
@@ -37,6 +45,7 @@
     else if (message.action === "grade-replaced") await window.HDRGradeSaving.refresh(message.session);
     else if (message.action === "quick-export") await window.batchExport?.quick(message.paths || message.ids || []);
     else if (message.action === "export-selection") await window.batchExport?.open(message.paths || message.ids || [], { fromLibrary: true });
+    else if (message.action === "add-export-selection") await window.batchExport?.add(message.paths || []);
   }
   window.HDRLibraryHost = Object.freeze({ isDetached: () => detached, openDrop, preparePaste, dispatch });
   const away = document.createElement("div"); away.className = "library-away"; away.hidden = true;
@@ -46,7 +55,7 @@
     if (message.action === "prepare-paste") {
       preparePaste(message.paths).then(allowed => desktop.completeLibraryPaste(message.requestId, allowed))
         .catch(() => desktop.completeLibraryPaste(message.requestId, false));
-    } else if (["command-state", "grade-replaced", "quick-export", "export-selection"].includes(message.action)) {
+    } else if (["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection"].includes(message.action)) {
       libraryAction(message).catch(error => showUploadError(error.message));
     } else if (message.action === "docked") {
       detached = false; away.hidden = true; frame.hidden = false;
@@ -85,7 +94,7 @@
     if (event.source !== frame.contentWindow || event.origin !== location.origin || event.data?.type !== "hdr-library") return;
     const message = event.data;
     if (message.action === "ready") sync();
-    else if (["command-state", "grade-replaced", "quick-export", "export-selection"].includes(message.action)) libraryAction(message).catch(error => showUploadError(error.message));
+    else if (["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection"].includes(message.action)) libraryAction(message).catch(error => showUploadError(error.message));
     else if (message.action === "review") review(Boolean(message.enabled));
     else if (message.action === "pop-out") {
       if (!desktop) { showUploadError("A separate Library window requires the desktop app."); return; }
@@ -107,6 +116,10 @@
         await openDesktopSelection({ kind: "source", ...selection, itemKey: message.itemKey, fromLibrary: true, clickedAt: message.clickedAt, isCurrent: () => request === openRequest });
       })().catch((error) => showUploadError(error.message));
     }
+  });
+  window.addEventListener("batch-export-add-selection", () => {
+    if (detached) desktop?.sendLibraryCommand?.("add-export-selection");
+    else send("add-export-selection");
   });
   window.addEventListener("hdrfinisher:workflowchange", sync);
 })();

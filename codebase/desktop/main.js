@@ -70,7 +70,7 @@ let libraryWindowState = null;
 let libraryCommandState = { selected: 0, copied: false, active: false };
 let libraryPasteRequest = 0;
 const pendingLibraryPastes = new Map();
-const libraryCommands = new Set(["copy-grade", "paste-grade", "paste-grade-choose", "quick-export"]);
+const libraryCommands = new Set(["copy-grade", "paste-grade", "paste-grade-choose", "quick-export", "add-export-selection"]);
 let processDiagnostics = null;
 let windowFailure = null;
 const knownProjectPaths = new Set();
@@ -567,7 +567,7 @@ function registerIpc() {
     windows.get("library")?.window.webContents.send("desktop:menu-command", { command }); return true;
   });
   handleWindow("desktop:forward-library-action", (record, action, detail = {}) => {
-    if (record.role !== "library" || !["command-state", "grade-replaced", "quick-export", "export-selection"].includes(action)) throw new Error("Invalid Library action.");
+    if (record.role !== "library" || !["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection"].includes(action)) throw new Error("Invalid Library action.");
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
     mainWindow.webContents.send("desktop:library-window", { ...detail, action });
     if (["quick-export", "export-selection"].includes(action)) { mainWindow.show(); mainWindow.focus(); }

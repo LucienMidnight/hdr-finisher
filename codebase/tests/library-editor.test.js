@@ -13,11 +13,15 @@ function host() {
   const document = { getElementById: () => frame, createElement: () => ({ querySelector: () => ({ addEventListener() {} }) }),
     querySelectorAll: selector => selector === "[data-desktop-command]" ? buttons : [], documentElement: { dataset: { theme: "default-dark" } } };
   const state = { activeWorkflow: "import" };
-  const context = { window, document, state, desktop: null, location: { origin: "http://local" },
+  const requests = [];
+  const context = { window, document, state, desktop: null, fetch: async (url, options) => {
+    requests.push({url, body:JSON.parse(options.body)});
+    return {ok:true, json:async()=>({session:{session_id:'open'}})};
+  }, location: { origin: "http://local" },
     MutationObserver: class { observe() {} }, showUploadError: error => { throw new Error(error); } };
   vm.runInNewContext(fs.readFileSync(require.resolve("../frontend/library-editor.js"), "utf8"), context);
   const message = data => listeners.message({ source: frame.contentWindow, origin: "http://local", data: { type: "hdr-library", ...data } });
-  return { window, state, buttons, message, sent, gates, exports };
+  return { window, state, buttons, message, sent, gates, exports, requests };
 }
 
 test("paste asks the leave gate for the exact open virtual copy and respects Cancel", async () => {
@@ -48,4 +52,16 @@ test("Library export actions pass the selected item identities into batch export
   h.message({ action: "export-selection", paths: ["other"] });
   await Promise.resolve();
   assert.deepEqual(h.exports, [["photo", "photo|copy|2"], ["other"]]);
+});
+
+
+test("Don't save reloads the saved photo before the paste mutation", async () => {
+  const h = host();
+  h.state.session = {session_id:'open'}; h.state.documentDirty = true;
+  h.window.HDRGradeSaving.leave = async () => true;
+  let refreshed = false;
+  h.window.HDRGradeSaving.refresh = async session => { assert.equal(session.session_id,'open'); refreshed = true; };
+  assert.equal(await h.window.HDRLibraryHost.preparePaste(['photo|copy|2']),true);
+  assert.deepEqual(h.requests,[{url:'/api/library/grade/open',body:{action:'discard-for-paste'}}]);
+  assert.equal(refreshed,true);
 });
