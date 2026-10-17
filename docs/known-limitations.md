@@ -29,11 +29,23 @@ checks. On a miss, the scene picture is GPU-drawn before requesting a gain-map
 file. CPU file creation uses one background worker, yields between stages to
 visible work, and pauses for Grade/export. It never holds a scene-cache lock
 while yielding. GPU readback for file creation has not been implemented.
-A fresh folder still misses the agreed first-visit limits: median 1.54 s and
-p90 5.84 s (previously 3.59 s / 6.30 s), against 0.4 s / 3.4 s. First-draw
-shader compilation, source decoding and saved-grade remakes remain visible
-costs. Do not treat the passing revisit as a pass for first visits. The recent
-pool stays under 256 MiB. Export and Proof paths were not changed.
+Steve agreed to measure first visits against the same scroll driver on
+pre-cache `ef4326c`, plus 15% noise, rather than Claude's post-first-screen
+clock. The unchanged driver measured 925 ms median / 7478 ms p90 on that
+revision (80 cells, disposable profile, 2560x1440); an external observer
+captured the cold result before the old app's missing thumbnail-pool API
+stopped the driver. Cold limits are 1063.75 ms / 8599.7 ms. The current run
+measured 1064 ms / 7232 ms: p90 passed, median missed by 0.25 ms. No timing
+rerun was made. First-draw shader compilation, source decoding and saved-grade
+remakes remain visible costs.
+
+With every gain-map file explicitly warmed, both revisit passes made zero
+scene-picture or pixel requests: p90 was 2 ms on both, maxima 2 / 214 ms,
+within the unchanged 100 / 300 ms limits. Cache hits need no scene pictures:
+captions use photo metadata and overlays request their own maps. Claude's
+third pass still used scene fallbacks (99 picture requests / 60 pixel fetches),
+so it was not equivalent to this explicit cache warm-up. The recent pool
+stays under 256 MiB. Export and Proof paths were not changed.
 
 ## Input limitations
 

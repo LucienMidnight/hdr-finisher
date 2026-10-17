@@ -1,7 +1,15 @@
-/* Read-only photo folder; disposable Electron profile. Native thumbnail timing and memory budgets. */
+/* Read-only photo folder; disposable Electron profile. Native thumbnail timing and memory budgets.
+ * Cold baseline: ef4326c, unchanged driver, 2560x1440, D:\Photos\HDR Test Images,
+ * disposable profile, 2026-10-17: 80 measured cells, median 925 ms / p90 7478 ms.
+ * Includes folder-open/start-up work (unlike Claude's post-first-screen script).
+ * An external observer captured pass one's measurements before the old app's missing
+ * HDRLibraryThumbnailPool API stopped the driver. Cold limits add Steve's agreed 15%;
+ * revisit limits remain p90 100 ms / max 300 ms.
+ */
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const { chromium } = require('playwright');
 const output = path.resolve(__dirname,'../output/library-thumbnail-scroll');fs.mkdirSync(output,{recursive:true});
+const coldLimits = {median:925 * 1.15, p90:7478 * 1.15};
 const folder = process.env.SCROLL_FOLDER || 'D:\\Photos\\HDR Test Images';
 (async () => {
  const browser = await chromium.launch({headless:true});
@@ -63,8 +71,8 @@ const folder = process.env.SCROLL_FOLDER || 'D:\\Photos\\HDR Test Images';
   await frame.locator('#hdr-button').click();await frame.locator('#hdr-button').click();await page.waitForTimeout(200);
   assert.equal(requests.length,count,'HDR toggle uses the same decoded gain-map file');
   assert.deepEqual(errors,[]);
-  assert.ok(results[0].median<=400,`Cold median ${results[0].median} >400ms`);
-  assert.ok(results[0].p90<=3400,`Cold p90 ${results[0].p90} >3400ms`);
+  assert.ok(results[0].median<=coldLimits.median,`Cold median ${results[0].median} >${coldLimits.median}ms`);
+  assert.ok(results[0].p90<=coldLimits.p90,`Cold p90 ${results[0].p90} >${coldLimits.p90}ms`);
   for(const result of results.slice(1)){assert.ok(result.p90<=100,`Warm p90 ${result.p90} >100ms`);assert.ok(result.max<=300,`Warm max ${result.max} >300ms`);}
   console.log('PASS: three scroll passes, native gain-map reuse on warm visits, bounded decoded pool.');
  } finally {await browser.close();}
