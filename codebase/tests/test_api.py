@@ -1445,3 +1445,25 @@ def test_proxy_body_is_sent_before_cache_write_and_prune(tmp_path, monkeypatch):
             events.append('picture')
     asyncio.run(response({'type': 'http'}, None, sent))
     assert events == ['picture', 'write', 'prune']
+
+
+def test_overlay_omits_grain_without_changing_the_saved_grade(monkeypatch) -> None:
+    upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
+    session_id = upload.json()["session"]["session_id"]
+    session = store.get(session_id)
+    seen = []
+    render = type(session.render_cache).adjusted_frame
+    def capture(cache, adjustments, *args, **kwargs):
+        seen.append(adjustments)
+        return render(cache, adjustments, *args, **kwargs)
+    monkeypatch.setattr(type(session.render_cache), "adjusted_frame", capture)
+    from hdr_finisher.models import OverlayMode
+    session.adjustments.shared.overlay_mode = OverlayMode.ZEBRA
+    session.adjustments.shared.overlay_threshold = 20
+    session.adjustments.hdr.film_look.grain_enabled = True
+    session.adjustments.hdr.film_look.grain_amount = 75
+    response = client.post(f"/api/session/{session_id}/overlay/hdr", json={"long_edge":256})
+    assert response.status_code == 200
+    assert seen and not seen[0].hdr.film_look.grain_enabled
+    assert session.adjustments.hdr.film_look.grain_enabled
+    assert session.adjustments.hdr.film_look.grain_amount == 75

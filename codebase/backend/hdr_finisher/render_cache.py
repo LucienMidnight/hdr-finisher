@@ -1399,7 +1399,7 @@ class SessionRenderCache:
                     self._misses += 1
                     break
                 self._singleflight_waits += 1
-            flight.wait()
+            flight.wait(0.05)
 
         try:
             from .models import ScopeMode

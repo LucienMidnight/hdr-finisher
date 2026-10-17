@@ -2,6 +2,7 @@
 (() => {
   const frame = document.getElementById("library-frame");
   let reviewQueue = Promise.resolve(), restoreWindow = false, detached = false, openRequest = 0;
+  window.HDRLibraryHost = Object.freeze({ isDetached: () => detached });
   const away = document.createElement("div"); away.className = "library-away"; away.hidden = true;
   away.innerHTML = '<p>Library is open in its own window.</p><button class="button-secondary">Show Library</button>';
   frame.after(away); away.querySelector("button").addEventListener("click", () => desktop?.focusLibrary());

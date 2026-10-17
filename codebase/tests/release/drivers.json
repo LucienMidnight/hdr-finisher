@@ -254,6 +254,13 @@
   ],
   "drivers": [
     {
+      "path": "tests/overlay-backlog.js",
+      "areas": ["preview", "library"],
+      "tier": "area",
+      "protects": "Latest-only instruments, grain drag memory and Library recovery",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "desktop/tests/confirmation-focus.js",
       "areas": [
         "ui"

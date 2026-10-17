@@ -293,7 +293,7 @@
   let picturePauseTimer;
   const pausePictures = paused => fetch("/api/library-worker/pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "grading", paused }) }).catch(() => {});
   document.addEventListener("pointerdown", event => {
-    if (state.activeWorkflow === "grade" && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true); }
+    if (state.activeWorkflow === "grade" && !window.HDRLibraryHost?.isDetached() && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true); }
   }, true);
   for (const event of ["pointerup", "pointercancel", "blur"]) window.addEventListener(event, () => { clearTimeout(picturePauseTimer); picturePauseTimer = setTimeout(() => pausePictures(false), 300); });
   window.setInterval(() => { if (!busy && !asking) tickFlight = tick(); }, 500);
