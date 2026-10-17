@@ -280,7 +280,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "highlight lane 4k",
       "launch": {
         "method": "native",
@@ -294,7 +294,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "multi window",
       "launch": {
         "method": "native"
@@ -320,7 +320,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "preview menu",
       "launch": {
         "method": "native",
@@ -335,7 +335,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "preview restore",
       "launch": {
         "method": "native",
@@ -364,7 +364,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Deliberately crashes only the renderer of an isolated source-test instance.",
       "launch": {
         "method": "native"
@@ -375,7 +375,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "standalone browser",
       "launch": {
         "method": "native"
@@ -386,7 +386,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "brush feather reference",
       "launch": {
         "method": "electron",
@@ -412,7 +412,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Native Feather (with and without Shift Edge) against exact CPU export masks.",
       "launch": {
         "method": "electron",
@@ -427,7 +427,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "brush native shift reference",
       "launch": {
         "method": "electron",
@@ -442,7 +442,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Check actual R16 regional attenuation against export; admission is unchanged.",
       "launch": {
         "method": "electron",
@@ -479,7 +479,7 @@
       "areas": [
         "geometry"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "crop apply handoff",
       "launch": {
         "method": "electron"
@@ -524,7 +524,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Denoise \"Show noise\": the preview shows only what Denoise removes.",
       "launch": {
         "method": "electron"
@@ -535,7 +535,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Isolated 42 MP regression for pan -> enable -> Exposure drag, and warmed zoom.",
       "launch": {
         "method": "electron",
@@ -550,7 +550,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "PRD 6.3 -- progressive disclosure for the Denoise controls.",
       "launch": {
         "method": "electron"
@@ -561,7 +561,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Denoise zoomed in: a grade edit reuses the tiles Denoise already reconstructed.",
       "launch": {
         "method": "electron"
@@ -583,7 +583,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Isolated global/local Detail controls versus apply_detail. Disposable GPU only.",
       "launch": {
         "method": "electron",
@@ -609,7 +609,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "DISPLAY-01: a display capability change replaces an already-current frame.",
       "launch": {
         "method": "electron"
@@ -638,7 +638,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Playwright contexts are sequential here: each uses the runner's one window.",
       "launch": {
         "method": "helper",
@@ -652,7 +652,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "electron context isolation",
       "launch": {
         "method": "electron"
@@ -699,7 +699,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "exposure bands interaction",
       "launch": {
         "method": "electron"
@@ -710,7 +710,7 @@
       "areas": [
         "film"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "film character ui check",
       "launch": {
         "method": "helper",
@@ -724,7 +724,7 @@
       "areas": [
         "film"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "film panel ui check",
       "launch": {
         "method": "helper",
@@ -738,7 +738,7 @@
       "areas": [
         "film"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Keep preset persistence in memory so this driver cannot write Steve's preset folder.",
       "launch": {
         "method": "helper",
@@ -771,7 +771,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "fine adjustment interaction",
       "launch": {
         "method": "electron"
@@ -915,7 +915,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "gradient mask interaction",
       "launch": {
         "method": "electron"
@@ -926,7 +926,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Shared GPU gradients versus export's source-rasterized geometry masks.",
       "launch": {
         "method": "electron",
@@ -963,7 +963,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "MINOR-10 -- confirmations are in-application, not native.",
       "launch": {
         "method": "electron"
@@ -974,7 +974,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "lane roundtrip interaction",
       "launch": {
         "method": "electron"
@@ -985,7 +985,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "A source larger than the 4K tier, written without any image dependency.",
       "launch": {
         "method": "helper",
@@ -999,7 +999,7 @@
       "areas": [
         "lens"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Film stock: the WebGPU preview matches the CPU export.",
       "launch": {
         "method": "electron"
@@ -1010,7 +1010,7 @@
       "areas": [
         "lens"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Physical lens filters: exact Direct/Tiled bytes at Fit and native.",
       "launch": {
         "method": "electron"
@@ -1021,7 +1021,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library album commands",
       "launch": {
         "method": "electron"
@@ -1054,7 +1054,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library background interaction",
       "launch": {
         "method": "electron"
@@ -1065,7 +1065,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Stage A: immediate marks/Undo and Details states. Disposable photo copies only.",
       "launch": {
         "method": "electron"
@@ -1076,7 +1076,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library compare",
       "launch": {
         "method": "electron"
@@ -1087,7 +1087,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library delete file commands",
       "launch": {
         "method": "electron"
@@ -1098,7 +1098,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library exposure",
       "launch": {
         "method": "electron"
@@ -1109,7 +1109,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Focused filter UI acceptance: synthetic metadata over disposable real pictures.",
       "launch": {
         "method": "electron"
@@ -1120,7 +1120,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Saved grades never get an original map, even while both overlays are on.",
       "launch": {
         "method": "electron"
@@ -1131,7 +1131,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "One focused Electron check, disposable intake folders only.",
       "launch": {
         "method": "electron"
@@ -1142,7 +1142,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library folder controls",
       "launch": {
         "method": "electron"
@@ -1153,7 +1153,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library folder file commands",
       "launch": {
         "method": "electron"
@@ -1164,7 +1164,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library fullscreen raw",
       "launch": {
         "method": "electron"
@@ -1186,7 +1186,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Slice 3 Stage A: one real window, disposable originals and app profile.",
       "launch": {
         "method": "electron"
@@ -1208,7 +1208,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Slice 3 Stage A: one real window, disposable originals and app profile.",
       "launch": {
         "method": "electron"
@@ -1219,7 +1219,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library measurement identity",
       "launch": {
         "method": "electron"
@@ -1230,7 +1230,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library membership",
       "launch": {
         "method": "electron"
@@ -1241,7 +1241,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Slow non-RAW fitted pictures survive pause, navigation and repeat waiters.",
       "launch": {
         "method": "electron"
@@ -1252,7 +1252,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library photo file commands",
       "launch": {
         "method": "electron"
@@ -1263,7 +1263,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "GPU setup must overlap a visible photo request, using the existing renderer.",
       "launch": {
         "method": "electron"
@@ -1285,7 +1285,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Saved grades refresh the existing Library, including a RAW without bright peaks.",
       "launch": {
         "method": "electron"
@@ -1296,7 +1296,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library slice4 a",
       "launch": {
         "method": "electron"
@@ -1307,7 +1307,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "library smart albums",
       "launch": {
         "method": "electron"
@@ -1318,7 +1318,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Slice 3 Stage A: one real window, disposable originals and app profile.",
       "launch": {
         "method": "electron"
@@ -1329,7 +1329,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "local adjustment usability",
       "launch": {
         "method": "electron"
@@ -1374,7 +1374,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Actual local GPU pass versus CPU export, with colour wheels and opacity.",
       "launch": {
         "method": "electron",
@@ -1412,7 +1412,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Regional expression masks versus CPU export and whole-source GPU masks.",
       "launch": {
         "method": "electron",
@@ -1427,7 +1427,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "luma mask interaction",
       "launch": {
         "method": "electron"
@@ -1453,7 +1453,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "mask graph interaction",
       "launch": {
         "method": "electron"
@@ -1480,7 +1480,7 @@
         "masks",
         "geometry"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "GPU masks under straighten/perspective against exact CPU export masks:",
       "launch": {
         "method": "electron",
@@ -1495,7 +1495,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "media browser preview interaction",
       "launch": {
         "method": "electron"
@@ -1506,7 +1506,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Regression driver for the \"Native region exact\" refinement stall.",
       "launch": {
         "method": "electron",
@@ -1521,7 +1521,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Actual GPU grading versus export, including signed near-black RAW pixels.",
       "launch": {
         "method": "electron",
@@ -1536,7 +1536,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "A source region copied from the whole-frame store held for panning must be",
       "launch": {
         "method": "electron"
@@ -1547,7 +1547,7 @@
       "areas": [
         "geometry"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Path Feather guide geometry.",
       "launch": {
         "method": "electron"
@@ -1558,7 +1558,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Path Feather drag must never cache the committed mask under a newer leaf.",
       "launch": {
         "method": "electron"
@@ -1653,7 +1653,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "NEXT-01 #4 -- a zoomed-in Denoise drag reconstructs only what is on",
       "launch": {
         "method": "electron"
@@ -1664,7 +1664,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Phase 1.6 -- live Denoise input is coalesced to one in-flight",
       "launch": {
         "method": "electron",
@@ -1694,7 +1694,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "denoise scale identity",
       "launch": {
         "method": "electron"
@@ -1705,7 +1705,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "denoise selector seam",
       "launch": {
         "method": "native",
@@ -1720,7 +1720,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "A replaced source copy never leaves the preview drawing from freed memory",
       "launch": {
         "method": "electron"
@@ -1748,7 +1748,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Phase 5 exit gate 3: Detail peak residency remains bounded at 24 MP, 42 MP",
       "launch": {
         "method": "electron",
@@ -1841,7 +1841,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Phase 1.5 -- Section 5.8 failure policy: a recoverable failure must not",
       "launch": {
         "method": "electron",
@@ -1867,7 +1867,7 @@
       "areas": [
         "film"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "film look interaction",
       "launch": {
         "method": "native"
@@ -1944,7 +1944,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "gpu linear gradient parity",
       "launch": {
         "method": "electron"
@@ -1955,7 +1955,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "gpu local adjustments",
       "launch": {
         "method": "electron",
@@ -2014,7 +2014,7 @@
         "preview"
       ],
       "tier": "diagnostic",
-      "protects": "\u00a78.1 headline latency under the \u00a78 measurement rule.",
+      "protects": "§8.1 headline latency under the §8 measurement rule.",
       "launch": {
         "method": "electron"
       }
@@ -2134,7 +2134,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Highlight-compression shoulder stability while dragging (owner report",
       "launch": {
         "method": "electron",
@@ -2149,7 +2149,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "The Highlight compression output ceiling holds whatever the shoulder anchor.",
       "launch": {
         "method": "electron",
@@ -2208,7 +2208,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Real 155,000-row SQLite index and HTTP endpoint, isolated from Steve's library.",
       "launch": {
         "method": "helper",
@@ -2305,7 +2305,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "The 100% inspection contract for a 2400-wide source: the processed edge is",
       "launch": {
         "method": "electron"
@@ -2356,7 +2356,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "One Fit edit and zoom sequence; disposable session, never saves a project.",
       "launch": {
         "method": "electron",
@@ -2388,7 +2388,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "phase4 preview",
       "launch": {
         "method": "electron"
@@ -2425,7 +2425,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "phase5 inactive lane",
       "launch": {
         "method": "electron"
@@ -2511,7 +2511,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Phase 1.4 -- concurrent generations must not resize the presentation target",
       "launch": {
         "method": "electron",
@@ -2587,7 +2587,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Phase 2 work item 7 verification -- the deferred whole-frame catch-up that",
       "launch": {
         "method": "electron",
@@ -2602,7 +2602,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Phase 2 work item 8 verification -- the display-scale pan cache.",
       "launch": {
         "method": "electron",
@@ -2633,7 +2633,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Viewport refinement -- the diagnostic switch controls refinement; custom",
       "launch": {
         "method": "electron",
@@ -2648,7 +2648,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Phase 3 work item 2 -- ROI source routing and the warm-Fit transport gate.",
       "launch": {
         "method": "electron",
@@ -2707,7 +2707,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "PERF-07 -- the viewer must not go blank when the tier changes.",
       "launch": {
         "method": "electron"
@@ -2730,7 +2730,7 @@
       "areas": [
         "masks"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Phase 1.3 -- local masks must travel as bounded batches, not one request per tile.",
       "launch": {
         "method": "electron",
@@ -2745,7 +2745,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Phase 2 stop gate -- a new input must stop further obsolete submissions",
       "launch": {
         "method": "electron",
@@ -2777,7 +2777,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Same-scene 50%/100% continuity at the PRD's 8-screen-pixel block size.",
       "launch": {
         "method": "electron",
@@ -2822,7 +2822,7 @@
       "areas": [
         "geometry"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "perspective preview ownership",
       "launch": {
         "method": "electron"
@@ -2833,7 +2833,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Disposable Electron check for folder navigation and Library window handoff.",
       "launch": {
         "method": "native"
@@ -2844,7 +2844,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Slice 2: details, filter rules, tag management, albums and background indexing. Disposable copies only.",
       "launch": {
         "method": "electron"
@@ -2888,7 +2888,7 @@
       "areas": [
         "geometry"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "pixel magnification",
       "launch": {
         "method": "electron"
@@ -2899,7 +2899,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "P5: one opt-in replaced the three-way Preview response menu.",
       "launch": {
         "method": "electron"
@@ -2910,7 +2910,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "preview scheduler coalescing",
       "launch": {
         "method": "node"
@@ -2921,7 +2921,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "project open session interaction",
       "launch": {
         "method": "electron"
@@ -2943,7 +2943,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "recent projects interaction",
       "launch": {
         "method": "electron"
@@ -2968,7 +2968,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Run a driver that owns its Electron launch, without starting a second app.",
       "launch": {
         "method": "helper",
@@ -2982,7 +2982,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "scope exact peak",
       "launch": {
         "method": "electron"
@@ -2993,7 +2993,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "scope peak toggle interaction",
       "launch": {
         "method": "electron"
@@ -3004,7 +3004,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "scope region interaction",
       "launch": {
         "method": "electron"
@@ -3026,7 +3026,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "sdr match gpu interaction",
       "launch": {
         "method": "electron"
@@ -3063,7 +3063,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "slider fill anchoring",
       "launch": {
         "method": "electron"
@@ -3074,7 +3074,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "source disclosures interaction",
       "launch": {
         "method": "electron"
@@ -3096,7 +3096,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "status manager interaction",
       "launch": {
         "method": "electron"
@@ -3107,7 +3107,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "technical panel fit",
       "launch": {
         "method": "electron"
@@ -3129,7 +3129,7 @@
       "areas": [
         "detail"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Phase 5 exit gate 4: global and local Detail match the CPU reference across",
       "launch": {
         "method": "electron"
@@ -3162,7 +3162,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Regression driver for the abandoned-stream connection-pool exhaustion.",
       "launch": {
         "method": "electron",
@@ -3188,7 +3188,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "view tools interaction",
       "launch": {
         "method": "electron"
@@ -3221,7 +3221,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Regression driver: the exposure overlay (zebra / false colour) must follow",
       "launch": {
         "method": "electron",
@@ -3236,7 +3236,7 @@
       "areas": [
         "preview"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Regression driver for the lost-wake-up stall the owner hit while adding a",
       "launch": {
         "method": "electron",
@@ -3526,7 +3526,7 @@
       "areas": [
         "library"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Disposable synthetic 155,000-photo index; no real photo folder is accessed.",
       "launch": {
         "method": "helper",
@@ -3745,7 +3745,7 @@
       "areas": [
         "ui"
       ],
-      "tier": "area",
+      "tier": "full",
       "protects": "Area-average 8x8 screen-pixel blocks at any zoom (PRD 4.4).",
       "launch": {
         "method": "helper",

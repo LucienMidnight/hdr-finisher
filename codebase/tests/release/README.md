@@ -161,3 +161,71 @@ Evidence is in ignored `codebase/output/release-checks/2026-10-16T16-24-55-193Z-
 The current release plan compares with `v0.9.1`, selects only 13 core checks and
 estimates 10.8 minutes entirely from history, including a retry allowance.
 This is a plan, not a release certification. Release/full sweeps were not run.
+
+## Smaller area release sets (October 17, 2026)
+
+Core and Export/Proof are unchanged. The area tier now has 32 runnable drivers;
+107 runnable drivers moved to full. Nine helper entries also moved to full;
+no driver, launch arguments, source mapping or known-failure entry was removed.
+Helpers still resolve to their parent when explicitly requested.
+
+| Area | Kept runnable | Moved runnable to full | Kept drivers (tests/ unless desktop/) |
+|---|---:|---:|---|
+| film | 4 | 1 | `film-stock-parity.js`, `grain-parity.js`, `performance/tier-film-consistency.js`, `tiled-film-parity.js` |
+| lens | 1 | 2 | `performance/tier-film-consistency.js` |
+| library | 6 | 25 | `library-appearance-navigation.js`, `library-background-activity.js`, `library-grade-saving.js`, `photo-library-stage-a.js`, `photo-library-stage-b.js`, `photo-library-stage-c.js` |
+| masks | 6 | 17 | `brush-mask-interaction.js`, `local-adjustments-interaction.js`, `local-crop-anchor-interaction.js`, `luma-region-reference.js`, `mask-raster-reference.js`, `path-mask-interaction.js` |
+| detail | 4 | 12 | `clarity-map-parity.js`, `denoise-adaptive-parity.js`, `denoise-zoomed-region.js`, `sharpen-blur-reference.js` |
+| geometry | 3 | 5 | `geometry-transactions.js`, `local-crop-anchor-interaction.js`, `perspective-interaction.js` |
+| preview | 6 | 33 | `desktop/tests/electron-smoke.js`, `bw-parity.js`, `device-loss-fallback.js`, `gpu-scope-parity.js`, `session-replacement-interaction.js`, `tiled-admission-scope-fallback.js` |
+| ui | 4 | 13 | `desktop/tests/confirmation-focus.js`, `curve-editor-interaction.js`, `grading-value-entry.js`, `workflow-stage-overlays.js` |
+
+Counts overlap where a driver protects two areas. Export/Proof has its existing
+core checks and no area-tier driver; no export coverage was moved.
+
+Selection rationale: Film keeps stock/export parity and its UI follow-up,
+separate grain/export parity, exact tiling and the shared lens tier guard.
+Lens keeps the real-photo 4K/Full contribution guard that exposed the unresolved
+hard-edge echo. Its exhaustive 128/256-case export and tiling matrices stay in
+full: much broader and slower than the small release set. Masks keep brush and
+path editing, all-tool local interaction, raster/CPU reference coverage and
+regional luma. Detail keeps adaptive denoise/CPU parity, zoomed denoise,
+Clarity/Softness/Microcontrast export parity and the Sharpen impulse reference
+that caught the 0.9.1 defect. Geometry keeps stale-response transactions,
+perspective pixels and crop/local anchoring. Preview keeps the B&W and scope
+parity regressions, device loss, session retirement, low-memory tiled fallback
+and native desktop smoke. UI keeps the native focus regression, numeric entry,
+curve editing and workflow visibility. Library keeps cold browsing/Grade gates,
+marks saved to disk, filtering/native zoom, grade save/conflict/recovery,
+read-ahead/navigation and background pause/cancel behavior.
+
+Overlapping size variants, narrower UI checks, broad matrices, timing probes,
+A/B comparisons, endurance and benchmark workloads belong in full. Files under
+performance/ are retained in area only when their outcome is a correctness
+guard (the lens tier comparison), rather than a performance measurement.
+
+Judgment calls: lens tier consistency remains a known failing guard, not a pass;
+the complete family matrices must still run for changes to pinned lens contracts
+under AGENTS.md. Native desktop smoke is retained alongside the required GitHub
+packaged smoke because it also checks development-time window behavior.
+
+Timing measurement and final estimates: pending the three missing-history
+runs (film-stock-parity, library-grade-saving, library-appearance-navigation).
+No full or release sweep is authorized by this task. Timing-only runs share the
+brief's 45-minute total cap. Existing guards and tolerances stay unchanged.
+
+## Final release step: GitHub trial build, before tagging
+
+After the focused release checks pass, ask Steve before pushing the branch.
+Then run the trial build on that branch:
+
+```powershell
+git push origin <branch>
+gh workflow run desktop-release.yml --ref <branch>
+```
+
+Inspect that specific workflow run and tag only when Windows, macOS, Linux and
+Flatpak all pass. This is the only macOS and Linux test run. It also runs the
+packaged-app smoke test (desktop/tests/electron-smoke.js), which caught a real
+Library focus bug in 0.9.1. The local runner cannot perform this step; it is a
+manual release requirement, not an automated action in test:release.
