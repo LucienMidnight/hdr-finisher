@@ -3825,6 +3825,18 @@
       "launch": {
         "method": "electron"
       }
+    },
+    {
+      "path": "tests/batch-export-ui.js",
+      "areas": [
+        "export-proof",
+        "library"
+      ],
+      "tier": "core",
+      "protects": "Batch preset versions, saved setting round trip, filename examples, Grid/Preview and Quick export dialog.",
+      "launch": {
+        "method": "electron"
+      }
     }
   ]
 }

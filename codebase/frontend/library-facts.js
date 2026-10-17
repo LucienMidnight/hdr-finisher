@@ -37,6 +37,7 @@
       ["File", [["Name", photo.name], ["File type", photo.type], ["Size", megabytes(photo.bytes)],
         ...(photo.width && photo.height ? [["Dimensions", `${photo.width} × ${photo.height}`]] : []),
         ["Modified", when(photo.mtime_ns / 1e6) || NONE], ["Folder", separator > 0 ? photo.path.slice(0, separator) : photo.path], ["Settings file", settings]]],
+      ...(photo.last_export ? [["Export", [["Last export", `${when(photo.last_export.when)} with ${photo.last_export.preset} to ${photo.last_export.files?.[0]?.output_path || "the output folder"}${photo.edited_since_export ? "; edited since then" : ""}`]]]] : []),
       ["Camera", [["Maker", fact("camera_make")], ["Camera", fact("camera")], ["Captured", captured], ["Software", fact("software")]]],
       ["Lens", [["Lens", fact("lens", "Unknown")], ["Lens maker", fact("lens_make")], ["Focal length", fact("focal_length")],
         ["35 mm equivalent", photo.focal_length_35 ? `${photo.focal_length_35} mm` : waiting ? "Reading…" : NONE]]],

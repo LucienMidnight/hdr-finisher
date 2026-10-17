@@ -286,12 +286,9 @@ async function chooseExportDirectory() {
   await openMediaBrowser("export_directory", els.exportDirectory.value);
 }
 
-function requestSessionExport(outputPath, overwrite, pathGrant = null, overwriteTarget = null) {
+function currentExportSettings(outputPath = null, overwrite = false, pathGrant = null, overwriteTarget = null) {
   const resizeMode = els.exportResizeMode?.value || "original";
-  return fetch(`/api/session/${state.session.session_id}/export`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  return {
       format: els.exportFormat.value,
       editing_measurements: editingMeasurementsForDelivery(),
       quality: Number(els.exportQuality.value),
@@ -323,7 +320,14 @@ function requestSessionExport(outputPath, overwrite, pathGrant = null, overwrite
         sharpening: els.exportSharpening.value,
         method: "edge_aware_multiscale",
       },
-    }),
+    };
+}
+
+function requestSessionExport(outputPath, overwrite, pathGrant = null, overwriteTarget = null) {
+  return fetch(`/api/session/${state.session.session_id}/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(currentExportSettings(outputPath, overwrite, pathGrant, overwriteTarget)),
   });
 }
 

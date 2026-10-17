@@ -9285,3 +9285,33 @@ body[data-workflow="import"] #viewer-status-dock { display: none; }
 .recent-projects-list span { color: var(--muted); font-size: 11px; }
 
 .recent-projects-list button:hover, .recent-projects-list button:focus-visible { border-color: var(--accent); }
+
+/* Export presets share the source rail footprint; Grid replaces the photo stage. */
+.batch-preset-rail { display:none; position:fixed; top:calc(var(--window-chrome-h,0px) + var(--top-h)); bottom:0; left:0; width:var(--source-w,260px); z-index:45; padding:16px; overflow:auto; border-right:1px solid var(--hairline); background:var(--panel); }
+body[data-workflow="export"] .batch-preset-rail { display:grid; align-content:start; gap:12px; }
+#batch-preset-list, #batch-versions { display:flex; flex-wrap:wrap; gap:6px; }
+#batch-preset-list { flex-direction:column; }
+#batch-preset-editor, #batch-preset-editor~section label { gap:6px; }
+#batch-preset-editor input, #batch-pattern, #batch-subfolder, #batch-version-name, #batch-directory { width:100%; }
+#batch-versions { padding-top:10px; }
+#batch-versions [aria-pressed="true"] { border-color:var(--accent); }
+#batch-modified { color:var(--text-muted); padding:6px; }
+#batch-example, #batch-summary { color:var(--text-muted); font-size:12px; overflow-wrap:anywhere; }
+.batch-grid-panel { position:fixed; top:calc(var(--window-chrome-h,0px) + var(--top-h)); bottom:0; left:var(--source-w,260px); right:var(--grade-w); z-index:44; padding:16px; overflow:auto; background:var(--bg); }
+.batch-grid-panel[hidden] { display:none; }
+body:not([data-workflow="export"]) .batch-grid-panel { display:none; }
+#batch-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; padding:16px 0; }
+.batch-photo { display:grid; padding:8px; gap:6px; border:1px solid var(--hairline); border-radius:var(--radius-sm,4px); }
+.batch-photo img { width:100%; height:130px; object-fit:contain; }
+.batch-photo small { color:var(--text-muted); }
+#batch-results { font-size:12px; overflow-wrap:anywhere; }
+body[data-workflow="export"]:has(#batch-grid-panel:not([hidden])) .workspace-main { visibility:hidden; }
+
+.batch-quick-dialog { width:min(560px,calc(100vw - 40px)); max-width:560px; }
+.batch-quick-dialog .app-dialog-content { display:grid; gap:12px; padding:16px; }
+.batch-quick-dialog .app-dialog-content :is(input,select) { width:100%; min-width:0; }
+.batch-quick-dialog .app-dialog-content p { margin:0; overflow-wrap:anywhere; }
+.batch-quick-dialog .app-dialog-actions { padding:0 16px 16px; }
+
+.batch-quick-dialog .app-dialog-content p { white-space:pre-line; }
+body.batch-export-ready :is(.export-destination-title,.export-filename-field,.export-directory-field,#export-status,#export-result,#export-confirm-button) { display:none; }

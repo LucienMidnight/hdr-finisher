@@ -41,7 +41,7 @@
       origin = anchor; const field = query.FIELDS[id], current = find(id);
       panel.replaceChildren(make("div", "library-filter-head", field.label)); panel.setAttribute("aria-label", `Filter by ${field.label}`);
       const form = make("form", "library-filter-range"), go = make("button", "button-primary", "Apply"); go.type = "submit";
-      if (id === "state" || id === "copy") {
+      if (id === "copy") {
         const yes = id === "state" ? "edited" : "virtual copy", no = id === "state" ? "not edited" : "original";
         const input = make("select"); input.setAttribute("aria-label", field.label); input.append(new Option("Yes", yes), new Option("No", no)); input.value = current?.value || yes; form.append(input);
         form.addEventListener("submit", event => { event.preventDefault(); const value = input.value; close(); set(id, {field:id,op:"is",value,label:value === yes ? "Yes" : "No"}); options.addButton.focus(); });
