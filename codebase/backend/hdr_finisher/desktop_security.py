@@ -72,6 +72,10 @@ class DesktopPathGrants:
             if not destination.parent.is_dir():
                 raise ValueError("The selected project folder is not available.")
             return
+        if intent == "export-directory":
+            if not path.is_dir():
+                raise ValueError("Select an available export folder.")
+            return
         if intent == "export-file":
             if path.suffix.lower() not in EXPORT_EXTENSIONS or not path.parent.is_dir():
                 raise ValueError("Select a supported export filename in an available folder.")

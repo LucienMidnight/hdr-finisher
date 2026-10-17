@@ -313,6 +313,7 @@ def create_library_router(worker, browser, store=None):
                 item = states.get(photo["path"], {})
                 key = kept.key(photo["path"], item.get("grade_identity", ""))
                 item["pictureCurrent"] = bool(kept.current_meta(photo["path"], item.get("grade_identity", "")))
+                item["picture_updating"] = bool(item.get("edited") and not item["pictureCurrent"])
                 photo.update(item)
                 if item.get("edited") and not item["pictureCurrent"]: kept.ensure(photo["path"])
         return result
@@ -490,6 +491,10 @@ def create_library_router(worker, browser, store=None):
         if store is not None:
             result["photos"] = marks.copies.expand(result["photos"])
             kept.remake_missing()
+        if store is not None:
+            saved_states = store.library_grades.describe([photo["path"] for photo in result["photos"]])
+            for photo in result["photos"]:
+                photo.update(saved_states.get(photo["path"], {}))
         index.membership.describe(result["photos"])
         return result
 
@@ -571,6 +576,10 @@ def create_library_router(worker, browser, store=None):
         if root is not None:
             index.checks.seed({**result,"photos":[dict(photo) for photo in result["photos"]]})
         if store is not None: result["photos"] = marks.copies.expand(result["photos"])
+        if store is not None:
+            saved_states = store.library_grades.describe([photo["path"] for photo in result["photos"]])
+            for photo in result["photos"]:
+                photo.update(saved_states.get(photo["path"], {}))
         index.membership.describe(result["photos"])
         return result
 
