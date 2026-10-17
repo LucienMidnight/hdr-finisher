@@ -430,6 +430,7 @@ function renderFilmStockDots() {
   const film = state.adjustments?.[state.currentView]?.film_look;
   if (!film) return;
   for (const key of HDRFilmCharacter.tracked) {
+    if (key === "halation_enabled" || key === "grain_enabled") continue;
     const control = document.querySelector(`[data-path="current.film_look.${key}"]`);
     let heading = control?.closest(".control-row")?.querySelector(".control-heading");
     const labelRow = control?.closest(".select-control, .numeric-control, .film-module-toggle");
@@ -478,6 +479,11 @@ function renderFilmStockDots() {
 function renderFilmPanel() {
   const film = state.adjustments?.[state.currentView]?.film_look;
   if (!film) return;
+  for (const key of ["halation_enabled", "grain_enabled"]) {
+    const control = document.querySelector(`[data-path="current.film_look.${key}"]`);
+    const label = control?.parentElement.querySelector(".film-toggle-state");
+    if (label) label.textContent = film[key] ? "Enabled" : "Disabled";
+  }
   const character = HDRFilmCharacter.character(film);
   const slide = film.film_stock !== "none" && character.default_paper === null;
   const text = key => {
