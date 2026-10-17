@@ -9,6 +9,7 @@ function subscribe(channel, callback) {
 
 contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   apiVersion: 2,
+  startupTheme: process.argv.find(value => value.startsWith("--hdr-finisher-theme="))?.split("=")[1] || "default-dark",
   platform: process.platform,
   environment: () => ipcRenderer.invoke("desktop:environment"),
   videoMemory: () => ipcRenderer.invoke("desktop:video-memory"),

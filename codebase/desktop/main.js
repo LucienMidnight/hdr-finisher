@@ -74,6 +74,7 @@ const grantedExportPaths = new Set();
 
 const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
   schemaVersion: 3,
+  theme: "default-dark",
   defaultReferenceWhiteNits: 203,
   renderingMode: "auto",
   previewResolution: "auto",
@@ -117,6 +118,7 @@ function sanitizeApplicationPreferences(value = {}) {
     : {};
   return {
     schemaVersion: 3,
+    theme: ["default-dark", "default-light", "studio-gray"].includes(value.theme) ? value.theme : "default-dark",
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
     previewResolution: tiers.includes(String(value.previewResolution)) ? String(value.previewResolution) : "auto",
@@ -1011,10 +1013,11 @@ async function createWindow(role = "main") {
     ...windowChromeOptions(),
     // Library uses native chrome, including Windows snap.
     ...(isMain ? {} : { frame: true }),
-    backgroundColor: "#101415",
+    backgroundColor: ({ "default-light": "#eaeaea", "studio-gray": "#2e2e2e" })[applicationPreferences.theme] || "#101415",
     title: isMain ? "HDR Finisher" : "HDR Finisher — Library",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
+      additionalArguments: [`--hdr-finisher-theme=${applicationPreferences.theme}`],
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
