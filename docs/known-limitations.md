@@ -25,9 +25,14 @@ caches are left untouched, with no migration.
 
 This work is not fully qualified. Native HDR display, GPU colour agreement,
 independent cache Settings, and the disk-cache revisit passed their focused
-checks. A fresh folder still misses the agreed first-visit limits: large RAW,
-TIFF and HEIC decodes take seconds, and saved-grade remakes add background
-work. Do not treat the passing revisit as a pass for first visits. The recent
+checks. On a miss, the scene picture is GPU-drawn before requesting a gain-map
+file. CPU file creation uses one background worker, yields between stages to
+visible work, and pauses for Grade/export. It never holds a scene-cache lock
+while yielding. GPU readback for file creation has not been implemented.
+A fresh folder still misses the agreed first-visit limits: median 1.54 s and
+p90 5.84 s (previously 3.59 s / 6.30 s), against 0.4 s / 3.4 s. First-draw
+shader compilation, source decoding and saved-grade remakes remain visible
+costs. Do not treat the passing revisit as a pass for first visits. The recent
 pool stays under 256 MiB. Export and Proof paths were not changed.
 
 ## Input limitations

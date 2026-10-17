@@ -231,6 +231,8 @@
     if (!isCurrent()) return;
     if (seed?.key !== meta.key || canvas.dataset.pictureKey !== meta.key) await drawPicture(meta, canvas, controller, isCurrent);
     if (!isCurrent()) return;
+    canvas.dataset.picturePath = photo.path; canvas.dataset.pictureEdge = meta.edge; canvas.dataset.pictureKey = meta.key;
+    canvas.closest(".library-cell")?.classList.remove("loading");
     HDRLibraryStopwatch("picture_shown", { path: photo.path, key: meta.key, kept: !!meta.kept, duration_ms: performance.now() - started });
     diagnostics(photo, meta, performance.now() - started);
     if (slow && meta.route.endsWith("-placeholder")) {
@@ -265,6 +267,8 @@
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr));
     for (const cell of [...state.cells.values(), ...state.filmCells.values()]) {
       thumbnails.mode(cell.canvas, state.hdr);
+      if (cell.fallback && cell.scene) void drawPicture(cell.scene, cell.fallback, cell.controller,
+        () => cell.element.isConnected && !cell.controller.signal.aborted).catch(() => {});
     }
     if (state.view === "single") showSingle();
   }
@@ -304,8 +308,20 @@
     });
     const started = performance.now();
     const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
-    thumbnails.show(photo, cell.edge, canvas, current, () => state.hdr).then(meta => {
+    const miss = () => {
+      // A file miss must not wait for the background CPU gain-map producer.
+      const fallback = document.createElement("canvas"); cell.fallback = fallback;
+      canvas.replaceWith(fallback);
+      void loadAndShow(photo, cell.edge, fallback, cell.controller, current).then(meta => {
+        if (!meta || !current() || !cell.fallback) return;
+        void thumbnails.populate(photo, cell.edge);
+        cell.scene = meta; cell.meta = meta; cell.elapsed = performance.now() - started;
+        element.classList.remove("loading");
+      }).catch(error => { if (current() && !aborted(error)) removeUnreadable(photo,error); });
+    };
+    thumbnails.show(photo, cell.edge, canvas, current, () => state.hdr, miss).then(meta => {
       if (!meta || !current()) return;
+      cell.fallback?.replaceWith(canvas); cell.fallback = null; cell.scene = null;
       cell.meta = meta; cell.elapsed = performance.now() - started;
       element.classList.remove("loading");
       overlays?.attach(photo,canvas,meta,cell.controller,current);

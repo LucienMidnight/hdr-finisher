@@ -42,7 +42,8 @@ def build(root, path, edge, key, kept=None, cancelled=None):
     else:
         if enabled:
             cache = LibraryPictureCache(root)
-            meta = cache.build(path, edge, 'quick', cancelled)
+            meta = cache.build(path, edge, 'quick', getattr(cancelled, 'cancelled', cancelled))
+            check_cancelled(cancelled)
             with np.load(cache.file(meta['key']), allow_pickle=False) as stored:
                 pixels = stored['pixels'].astype(np.float32)
                 reference = stored['reference'].astype(np.float32) if 'reference' in stored else None
@@ -58,8 +59,10 @@ def build(root, path, edge, key, kept=None, cancelled=None):
         from .color_context import RenderColorContext
         context = RenderColorContext(203)
         def render(kind):
+            check_cancelled(cancelled)
             image = apply_adjustments(pixels, adjustments, kind, sdr_reference_image=reference,
                 include_grain=True, include_output_highlight_compression=False, color_context=context)
+            check_cancelled(cancelled)
             return apply_hdr_output_highlight_compression(image, adjustments, color_context=context) if kind == PreviewKind.HDR else apply_sdr_output_highlight_compression(image, adjustments)
         hdr, sdr = render(PreviewKind.HDR), render(PreviewKind.SDR)
     check_cancelled(cancelled)
@@ -67,7 +70,9 @@ def build(root, path, edge, key, kept=None, cancelled=None):
     # applies even when the creative highlight-compression section is disabled.
     from .color import acescg_to_linear_bt2020, linear_bt2020_to_acescg
     hdr = linear_bt2020_to_acescg(np.clip(acescg_to_linear_bt2020(hdr), 0, 10000 * .18 / 203))
+    check_cancelled(cancelled)
     body = encode(hdr, sdr)
+    check_cancelled(cancelled)
     current = Path(path).stat()
     if (source_stat.st_size, source_stat.st_mtime_ns) != (current.st_size, current.st_mtime_ns):
         raise ValueError('Photo changed while its thumbnail was being made.')
@@ -138,7 +143,7 @@ class Thumbnails:
             raise ValueError('Invalid thumbnail key.')
         return self.managed.directory('library-thumbnails') / (key + '.jpg')
 
-    def batch(self, paths, edge, priority=10, client="", wanted=None):
+    def batch(self, paths, edge, priority=10, client="", wanted=None, populate=True):
         ready, pending, errors, requests = [], [], [], []
         with self.lock:
             if client and wanted is not None:
@@ -183,12 +188,12 @@ class Thumbnails:
                         else:
                             pending.append(path)
                         continue
-                    if not job and len(self.jobs) < 64:
+                    if populate and not job and len(self.jobs) < 64:
                         kept = saved | {'file': str(self.kept.cache.root / (saved['key'] + '.' + saved['extension']))} if saved else None
                         job = [None, Future()]
                         self.jobs[key] = job
                         self.job_paths[key] = (path,edge)
-                        requests.append((key, job, dict(path=source, edge=edge, key=key, kept=kept, priority=priority)))
+                        requests.append((key, job, dict(path=source, edge=edge, key=key, kept=kept, priority=90)))
                     pending.append(path)
                 except (ValueError, OSError, RuntimeError, CancelledError) as exc:
                     errors.append({'path': path, 'message': str(exc)})

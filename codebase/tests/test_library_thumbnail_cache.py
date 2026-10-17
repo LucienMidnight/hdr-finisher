@@ -123,3 +123,16 @@ def test_disabled_overlay_is_transient_and_raw_save_is_skipped(tmp_path):
     assert not consumer.cache.root.exists()
     RawThumbnails(profile).store({},b'')
     assert not LibraryCache(profile).directory('library-raw-thumbnails').exists()
+
+
+def test_initial_lookup_never_schedules_a_cpu_render(tmp_path):
+    class Marks:
+        def source_path(self, path): return Path(path)
+    class Worker:
+        def submit_library(self, *args, **kwargs):
+            raise AssertionError('A lookup must not start background work')
+    source = tmp_path/'photo.png'; source.write_bytes(b'photo')
+    service = Thumbnails(tmp_path/'profile', Worker(), Marks())
+    result = service.batch([str(source)], 360, populate=False)
+    assert result == {'ready': [], 'pending': [str(source)], 'errors': []}
+    assert not service.jobs

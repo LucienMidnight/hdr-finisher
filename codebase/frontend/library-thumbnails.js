@@ -40,10 +40,10 @@
           const group = waiting.filter(entry => entry.edge === edge && (entry.priority >= 30 ? 30 : 10) === priority);
           for (let offset = 0; offset < group.length; offset += 256) {
             const chunk = group.slice(offset, offset + 256);
-            const result = await api('/api/library/thumbnails', {paths:chunk.map(e => e.photo.path), edge, priority,client,wanted});
+            const result = await api('/api/library/thumbnails', {paths:chunk.map(e => e.photo.path), edge, priority,client,wanted,populate:false});
             for (const meta of result.ready) { const entry = chunk.find(e => e.photo.path === meta.path); if (entry) void accept(entry, meta); }
             for (const failure of result.errors) { const entry = chunk.find(e => e.photo.path === failure.path); if (entry) { entries.delete(entry.id); entry.reject(new Error(failure.message)); } }
-            for (const path of result.pending) { const entry = chunk.find(e => e.photo.path === path); if (entry) queued.add(entry); }
+            for (const path of result.pending) { const entry = chunk.find(e => e.photo.path === path); if (entry) { entry.missed = true; for (const notify of entry.missListeners || []) notify(); queued.add(entry); } }
           }
         }));
       } catch(error) { for (const entry of waiting) { entries.delete(entry.id); entry.reject(error); } }
@@ -66,13 +66,28 @@
       return entry.promise;
     }
     function mode(img, hdr) { img.style.dynamicRangeLimit = hdr ? 'no-limit' : 'standard'; img.dataset.rendition = hdr ? 'hdr' : 'sdr'; img.dataset.peakNits = hdr ? '1000' : '203'; }
-    async function show(photo, edge, img, current, hdr) {
-      const entry = await get(photo,edge);
+    async function show(photo, edge, img, current, hdr, onMiss) {
+      const pending = get(photo,edge);
+      const waiting = entries.get(key(photo,edge));
+      let notified = false;
+      const notify = () => { if (!notified && current()) { notified = true; onMiss?.(); } };
+      if (onMiss && waiting && !waiting.ready) {
+        (waiting.missListeners ||= []).push(notify);
+        if (waiting.missed) notify();
+      }
+      let entry;
+      try { entry = await pending; }
+      finally { if (waiting?.missListeners) waiting.missListeners = waiting.missListeners.filter(f => f !== notify); }
       if (!current()) return;
       img.decoding = 'async'; mode(img,hdr()); img.src = entry.url;
       await img.decode(); if (!current()) return;
       mode(img,hdr()); img.dataset.kept = String(!!entry.meta.kept); img.dataset.pictureKey = entry.meta.key; img.dataset.picturePath = photo.path; img.dataset.pictureEdge = edge;
       return entry.meta;
+    }
+    async function populate(photo, edge) {
+      // Called only after the scene picture has reached the screen.
+      try { await api('/api/library/thumbnails', {paths:[photo.path],edge,priority:90,populate:true}); }
+      catch (_) { /* A cache write cannot turn a displayed photo into an error. */ }
     }
     function prefetch(photos, edge) { for (const photo of photos) void get(photo,edge,30).catch(() => {}); }
     function plan(visible, ahead, edge) {
@@ -85,7 +100,7 @@
       prefetch(ahead,edge);
     }
     function clear() { for (const entry of entries.values()) { entry.reject(new DOMException('Cache changed','AbortError')); } entries.clear(); queued.clear(); bytes = 0; }
-    return Object.freeze({show,prefetch,plan,mode,clear,snapshot:() => ({bytes,budget,ready:[...entries.values()].filter(e=>e.ready).length,pending:queued.size})});
+    return Object.freeze({show,populate,prefetch,plan,mode,clear,snapshot:() => ({bytes,budget,ready:[...entries.values()].filter(e=>e.ready).length,pending:queued.size})});
   }
   const api = Object.freeze({create});
   if (typeof module !== 'undefined') module.exports = api;

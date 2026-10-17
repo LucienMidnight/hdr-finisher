@@ -100,6 +100,7 @@ class PictureRequest(BaseModel):
 
 
 class ThumbnailRequest(BaseModel):
+    populate: bool = True
     client: str = Field(default="", max_length=80)
     wanted: list[str] | None = Field(default=None, max_length=256)
     paths: list[str] = Field(max_length=256)
@@ -260,7 +261,7 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/thumbnails")
     def thumbnail_batch(request: ThumbnailRequest):
-        return thumbnails.batch(request.paths, request.edge, request.priority, request.client, request.wanted)
+        return thumbnails.batch(request.paths, request.edge, request.priority, request.client, request.wanted, request.populate)
 
     @router.get("/thumbnail/{key}")
     def thumbnail_file(key: str):

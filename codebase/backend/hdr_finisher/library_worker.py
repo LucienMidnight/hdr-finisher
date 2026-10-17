@@ -352,7 +352,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     state = {"paused": paused, "foreground": 0, "checking": 0}
 
     def lane(job):
-        if job["command"] in {"picture", "native", "grid-thumbnail"}:
+        if job["command"] == "grid-thumbnail":
+            return "thumbnail"
+        if job["command"] in {"picture", "native"}:
             return "picture"
         if job["command"] in {"kept", "overlay"}:
             return "kept"
@@ -387,7 +389,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     continue
                 if kind == "check":
                     state["checking"] += 1
-                elif kind not in {"index", "kept"}:
+                elif kind not in {"index", "kept", "thumbnail"}:
                     state["foreground"] += 1
 
             waited = [0.]
@@ -400,17 +402,22 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         # wait for that lane, never the reverse (including a
                         # second queued map while the first one is running).
                         allowed = {"index", "check"} if kind == "check" else {"index", "kept"}
-                        if kind == "kept":
+                        if kind in {"kept", "thumbnail"}:
                             allowed.add("check")
+                        allowed.add("thumbnail")
                         if (not state["paused"] and not state["foreground"]
-                                and (kind in {"check", "kept"} or not state["checking"])
+                                and (kind in {"check", "kept", "thumbnail"} or not state["checking"])
                                 and all(lane(item[2]) in allowed for item in queue)):
                             break
                     time.sleep(0.05)
                 waited[0] += time.perf_counter()-wait_started
                 return cancelled.is_set() or stopping.is_set()
 
-            check = yielding if kind in {"index", "check", "kept"} else cancelled.is_set
+            check = yielding if kind in {"index", "check", "kept", "thumbnail"} else cancelled.is_set
+            # Decode-cache locks must never be held while yielding to a visible
+            # request that may need that same cache entry.
+            if kind == "thumbnail":
+                yielding.cancelled = cancelled.is_set
             try:
                 if job["command"] == "overlay":
                     from .library_overlays import OverlayMaps
@@ -455,7 +462,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 jobs.pop(job["id"], None)
                 if kind == "check":
                     state["checking"] -= 1
-                elif kind not in {"index", "kept"}:
+                elif kind not in {"index", "kept", "thumbnail"}:
                     state["foreground"] -= 1
             if not cancelled.is_set() and not stopping.is_set():
                 try:
@@ -475,6 +482,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()
     Thread(target=decode, args=("check",), name="hdr-library-check", daemon=True).start()
     Thread(target=decode, args=("kept",), name="hdr-library-kept", daemon=True).start()
+    # Exactly one CPU gain-map producer; never occupies a visible decode lane.
+    Thread(target=decode, args=("thumbnail",), name="hdr-library-thumbnail", daemon=True).start()
     reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1, "picture_workers": 6, "index_workers": 1})
     try:
         while _parent_is_alive(parent_pid):
