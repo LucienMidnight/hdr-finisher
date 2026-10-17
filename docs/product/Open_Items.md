@@ -21,6 +21,24 @@ list is done.
 | Explicit interfaces between feature files | Each frontend file states what it reads and what it changes, instead of everything sharing one pool of state | Modularization 9 |
 | Publish | Read the draft release notes, tag `v0.9.0`, publish, push | PRD, RELEASE entry in 11a |
 
+## Photo Library
+
+Moved here October 17, 2026, after copy and paste of grades turned out never
+to have been built. The order and the detail are in PRD section 11g, which
+now overrides the Library PRD where they differ.
+
+| Item | What | Detail |
+|---|---|---|
+| Thumbnail cache | Gain-map thumbnails, managed cache folder with settings, no one-at-a-time drawing. With Codex | PRD 11g item 1 |
+| Starting exposure | Exposure starts at zero; RAW development tuned; Library look matches Grade. Strict testing. Before paste | PRD 11g item 2 |
+| Copy and paste, Looks | Slice 7. Never built. Includes pictures for grades changed in bulk | PRD 11g item 3 |
+| Linked photos | Slice 7b. Two decisions open | PRD 11g item 4 |
+| Batch export | Slice 8: Export page grows, Quick export, export presets, ExifTool, metadata authoring. Mock-up first | PRD 11g item 5 |
+| Portable projects | Slice 10: export, open, merge, relink. Two decisions open | PRD 11g item 6 |
+| Library leftovers | Comfort cap, full-size pictures on disk, indexing settings, offline drives | PRD 11g item 7 |
+| Library polish pass | Slice 4 reminders, SDR-only rough edges, remaining waits, Library settings page | PRD 11g item 8 |
+| Match entire HDR grade | Fault reported October 11; not investigated | PRD 11g item 10 |
+
 ## Later
 
 Deferred work and backlog in one list, in no order. None of it blocks 0.9.0.

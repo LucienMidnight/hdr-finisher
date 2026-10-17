@@ -1,5 +1,12 @@
 # Photo Library PRD
 
+> **October 17, 2026: remaining work has moved.** Everything not yet built
+> from this plan, in its current order and with the newer decisions that
+> replace parts of this document, is in the main PRD,
+> [HDR_Finisher_PRD_v1.2.md](HDR_Finisher_PRD_v1.2.md), section 11g. Where
+> the two disagree, section 11g wins. This document stays as the detailed
+> record of decisions and mock-ups.
+
 **Date:** October 9, 2026
 **Status:** Slice 1 is authorized by the October 10 brief. Stages A (looking
 at photos), B (culling), and C (find, HDR, sharpness) are implemented on

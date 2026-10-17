@@ -1081,6 +1081,188 @@ What the exploration should establish: whether a project with Crop and Rotate ap
 
 ---
 
+## 11g. Photo Library — Remaining Work (moved from the Library PRD, 2026-10-17)
+
+**Why this section exists.** The Library was planned in
+[Photo_Library_PRD_2026-10-09.md](Photo_Library_PRD_2026-10-09.md) as
+slices 0 to 10. On October 17 Steve found that copy and paste of grades had
+never been built, although he believed the Library plan was finished. A
+check against the code and the Library PRD's own build records found that
+slices 0 to 6 (with 2b) are built, and that slices 7, 8 and 10 are not
+started. Slice 9 is partly built. From October 14 the work moved to
+full-screen browsing speed, then to the Film Look rebuild and the 0.9.1
+release, and the rest of the Library order was not picked up again.
+
+**This section is now the place the remaining Library work lives.** Where
+it and the Library PRD disagree, this section wins. The Library PRD stays
+as the detailed record of decisions and the mock-ups, and each item below
+points to its detail there. When an item is built, mark it here and add the
+build note to `docs/technical/photo-library.md`.
+
+### Built (for reference, not to redo)
+
+Slices 1, 2 and 2b (docked and pop-out Library, culling marks, tags and
+labels window, albums, filter rules, background indexing, keeping folders
+current), 3 (grades in sidecars, autosave, reverts, before state, virtual
+copies), 4 (quick decode, compare, focus and exposure overlays), 5 (file
+and folder commands, delete all rejected), 6 (smart albums, album
+commands), and full-screen browsing speed (October 14: the M9 GPU RAW route,
+the disk reader, separate thumbnail and full-size allowances). The live
+HDR/SDR switch from slice 9 is built.
+
+### Decisions that replace older ones in the Library PRD
+
+| Older decision (Library PRD) | Now | Since |
+|---|---|---|
+| No stored gain-map previews; the grid draws SDR or HDR live from scene pictures (5.9, open decision 13) | Grid and filmstrip thumbnails become one gain-map file each (Ultra HDR JPEG or AVIF), stored in a managed disk cache. Full-size Single and full-screen pictures stay scene-linear, drawn by the GPU (October 14 decision unchanged) | Steve, 2026-10-17. Brief: `docs/technical/codex-brief-library-thumbnail-cache-2026-10-17.md` |
+| A 2 GB fixed cache in the app data area (Roaming); "user cache/size settings" left to later (5.9, decision 18) | One cache folder, default `%LOCALAPPDATA%\HDR Finisher\Cache` (not synced by cloud services), with a folder chooser in Settings, on/off, size controls, Clear. The separate allowances from October 14 stay | Steve, 2026-10-17 (same brief). The install folder was asked for, but `C:\Program Files` is not writable without admin rights |
+| HDR previews made on request, screen-sized previews with a resolution limit (decisions 15, 16) | Replaced by the live switch (October 10) and the full-size route (October 14) | 2026-10-10 and 2026-10-14 |
+| A batch export window; retire the Export page (5.16) | The Export page stays and grows. Two routes: the Export page (a grid of chosen photos and its own control panel) and Quick export… from the right-click menu with an export preset. Mock-up first | Steve, 2026-10-11 |
+| Paste RAW exposure as a change from each photo's own starting exposure | Dropped once the starting-exposure work (item 1 below) makes Exposure start at zero; exposure then pastes as a plain number | Steve, 2026-10-11 |
+| A stated photo-count size target (decision 23) | No photo-count target as a product idea; performance is tested on a large library internally | Steve, 2026-10-11 |
+| Dragging photos onto a folder moves at once | Asks first, for now | Steve, 2026-10-11 |
+
+### Remaining work, in order
+
+The order is Steve's of October 12 (Library PRD section 4), with the
+thumbnail cache added at the front on October 17.
+
+1. **Thumbnail cache (in progress with Codex, October 17).** Gain-map
+   thumbnails, the managed cache folder and its settings, no one-at-a-time
+   drawing queue, read-ahead, recent thumbnails kept ready. Brief above.
+2. **Starting exposure and RAW tuning (Grade and RAW development, not
+   Library).** The Exposure control starts at zero. RAW development is tuned
+   so that the camera's JPEG, the RAW as first shown, and Grade's starting
+   point roughly agree. The Library's starting look must match Grade's (it
+   still applies the metered exposure, `library_pictures.py`
+   `default_look`). Every RAW grade saved before the change will look
+   brighter or darker; no migration. It changes RAW import, so the strict
+   testing rule applies. Planned before paste. Detail: Library PRD
+   section 4, October 11, "The Library's starting look must match".
+3. **Copy and paste grades, and Looks (slice 7).** Never built.
+   - Ctrl+C copies the selected photo's grade. Ctrl+V pastes it onto the
+     selection with the last-used ticks, always after a confirmation, even
+     for one photo. Ctrl+Shift+V opens the tick list. Confirmation title
+     "Paste Grade From <file name>"; body "Paste Tone, Color, Look, Detail,
+     and RAW development settings." plus what is ticked, and "onto N
+     photos" for more than one.
+   - The tick list: groups that twirl down to the existing preset groups
+     (the app has 24 group ids, not 22; `sdr-base` has no controls). Top
+     level Tone, Colour, Look, Detail, HDR side / SDR side, and outside the
+     grade groups RAW development, lens corrections, crop and geometry,
+     local adjustments and masks. Each shows Mod or default, with All,
+     Modified only (compared with the copied photo's own starting grade)
+     and None. Masks and local adjustments, crop and lens corrections are
+     unticked by default.
+   - Paste rules: values measured from one photo are never pasted (measured
+     highlight peak, matched lens profile, file interpretation, reference
+     white, overlay view settings); lens on/off switches do paste;
+     everything else pastes as numbers. Settings that do not apply to a
+     target's file type are skipped and reported. Paste saves at once
+     whatever the autosave setting, keeps each photo's previous grade as its
+     before state, and is one undo step.
+   - Looks: one Looks menu. A look is a saved paste across several groups;
+     per-panel Preset buttons stay for single groups. Apply Look window with
+     favourites, user folders and a small built-in starter set designed with
+     Steve; preview on hover; built-in looks cannot be changed; a new look
+     comes from an edited photo; "Save as look preset" from the paste
+     window.
+   - **Pictures for grades changed in bulk** (Steve: important, probably
+     complex). After a paste no target has a picture matching its new
+     grade, and a stale picture must never be shown. Queue them through the
+     existing backend kept-picture producer; virtual copies are separate
+     items. Until made, show the default look with an "updating" mark; no
+     rough picture first. Photos on screen first. A job in Activity with a
+     count, Pause and Resume, giving way to Grade, export and on-screen
+     pictures. The to-do list survives restart, crash and unplugged drives.
+     Undo and Restore previous grade are instant (the previous picture is
+     kept). A second paste before the first finishes makes one picture for
+     the latest grade. About 10 seconds per 36 MP photo today, so hundreds
+     of photos take over an hour.
+   - Detail: Library PRD 5.15, section 4 (October 11 "Paste rules"),
+     section 8 "Carried forward to slice 7", mock-up
+     `docs/product/library-wireframes/index.html`.
+4. **Linked photos (slice 7b).** Select photos, Link grades, choose the
+   starting grade; any later change to one (Grade save, paste, look,
+   revert) reaches all. Chain icon in the strip; Grade shows "linked with N
+   other photos". Unlink keeps each grade. Crop, lens corrections and local
+   adjustments are never linked. One link per photo; virtual copies can be
+   linked; "Linked" becomes a filter and smart-album field. **Open for
+   Steve:** whole grade or chosen groups, and where the link is recorded
+   (likely each sidecar). Detail: Library PRD 5.20.
+5. **Batch export (slice 8).** The Export page grows as decided on October
+   11 (above), needs a mock-up before its brief, and must leave room for
+   print settings and watermarks. Quick export… runs an export preset on a
+   selection. Export presets carry format and every existing Export
+   setting, typed sizes, naming pattern (on exported files only) and
+   sub-folder; one run can make several versions (for example HDR AVIF and
+   SDR JPEG). A background queue with progress, estimate, cancel and
+   per-file results that never blocks grading. A record of what was
+   exported feeds the Exported and "edited since last export" states. The
+   exact CPU export is called, never changed (strict rule). With it:
+   - **ExifTool**, bundled and kept running by the helper (licence checked
+     October 11), for Library details and filters (adds lens names from
+     maker notes and the Focus and drive group) and for writing metadata.
+   - **Metadata authoring:** title and caption per photo; creator,
+     copyright and usage notes from one template; written into exports.
+     Privacy options on export (strip location, serial numbers).
+   - **Set name** for an unknown lens, kept with the photo, marked "entered
+     by hand".
+   - Detail: Library PRD 5.8 and 5.16, section 4 (October 11).
+6. **Portable projects (slice 10).** Export project from a folder, album,
+   project or selection: name, location, grades only or with sources (size
+   shown), which virtual copies, whether to include presets and looks,
+   folder or single file; a copy that can drift from the originals. A
+   Projects section that behaves like pinned folders. Open project offers
+   Merge (grades become virtual copies beside their originals, optional
+   album) or Keep separate. Missing photos stay as dashed "Missing" frames.
+   A simple manual relink window (search a folder, match by name, confirm by
+   fingerprint, "Use anyway" on a mismatch). `.hdrfinisher` projects stay
+   out of the Library (decided October 11). **Open for Steve:** packing a
+   project into one file, and the project index file ending. Detail:
+   Library PRD 5.17.
+7. **Leftovers from built slices.**
+   - **Comfort cap:** the HDR grid limited to 1000 nits by default,
+     adjustable (decision 17). Not built. **Open:** smooth roll-off or clip,
+     grid only or everywhere.
+   - **Full-size pictures on disk:** lossless shuffled Zstandard, default
+     allowance 10 GB, Auto/Off/size; pictures kept in memory, Auto or a
+     number (October 14). Not built; full-size scenes are memory-only
+     today.
+   - **Background indexing settings:** processor use, pause on battery, pins
+     to leave out. Not built.
+   - **Offline drives:** dimmed thumbnails marked offline; Grade says the
+     drive is not connected. Not built.
+   - **Drag a folder in from Explorer to pin it.** Proposed, not built.
+   - **Undo history is lost on restart.** Recorded October 11, not
+     planned.
+   - **Open for Steve:** nested tags; what "HDR" means for an unedited
+     photo (proposed: HDR Finisher's default rendering).
+8. **Polish and performance pass** (held until the features above are
+   done, Steve October 11).
+   - Slice 4 reminders: test the blocked-shadows warning on dark and noisy
+     RAWs and revisit its threshold; how exposure warnings are explained
+     (new wording landed October 17); overlay colours moved into their menus
+     (done October 17). Steve's real-photo testing of highlight priority,
+     texture suppression and focus-map blockiness.
+   - SDR-only rough edges (Library PRD section 12): every photo opens on
+     the HDR tab and export defaults to Ultra HDR (remember the last tab and
+     format); Match entire HDR grade replaces SDR work without asking; Proof
+     offers only HDR formats; HDR-assuming wording; no notice on a non-HDR
+     display; the unseen HDR side is still prepared.
+   - Remaining measured waits in `docs/technical/photo-library.md` section
+     15: Single flips for a new display-size picture, overlay maps stalling
+     behind one decoder, a late post-Undo health refresh.
+   - The Library settings page (autosave, cache, HDR preview size,
+     brightness limit, indexing) gathered in one place.
+9. **Installer and a methodical bug hunt.**
+10. **Then:** the MCP server (its own PRD; Library PRD section 11) and the
+    **Match entire HDR grade** fault Steve reported on October 11 (a match
+    reported success with wrong colours; later the automatic match failed
+    outright; photos and message not yet recorded).
+
+---
+
 ## 12. Out of Scope for v1 (Explicit Deferrals)
 
 The following are reasonable future features but are explicitly deferred to avoid scope bloat:
