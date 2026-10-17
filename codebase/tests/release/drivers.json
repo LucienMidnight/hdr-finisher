@@ -3837,6 +3837,18 @@
       "launch": {
         "method": "electron"
       }
+    },
+    {
+      "path": "tests/library-export-menu.js",
+      "areas": [
+        "export-proof",
+        "library"
+      ],
+      "tier": "core",
+      "protects": "Library selection reaches Export without a photo open in Grade: menu availability, Open in Export and Select all.",
+      "launch": {
+        "method": "electron"
+      }
     }
   ]
 }

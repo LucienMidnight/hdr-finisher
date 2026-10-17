@@ -439,9 +439,10 @@ function renderDockSummary() {
     : "Full-resolution processing stats";
 }
 
-function activateWorkflowTab(workflow, { focus = false } = {}) {
+function activateWorkflowTab(workflow, { focus = false, batch = false } = {}) {
   const next = ["import", "grade", "proof", "export"].includes(workflow) ? workflow : "import";
-  if (next !== "import" && !state.session && !(next === "grade" && state.gradeOpen)) return;
+  // Batch export from the Library needs no photo open in Grade.
+  if (next !== "import" && !state.session && !(next === "grade" && state.gradeOpen) && !(next === "export" && batch)) return;
   if (next === "import" && state.gradeOpen) void cancelActiveImport();
   if (next !== "grade") abandonPerspectiveDraft();
   if (next !== "grade" && state.rotateDraftGeometry) closeRotateMode(false);
