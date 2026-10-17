@@ -229,6 +229,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-options {min-width:240px;gap:12px;padding:14px;}
 .library-options label {display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--body);font-size:12px;}
 .library-options input[type="checkbox"] {accent-color:var(--accent);}
+.library-options input[type="range"]::-webkit-slider-runnable-track {border:1px solid var(--border);border-radius:999px;background:var(--input);}
 .library.review #single-caption {display:none;}
 
 /* Library-only source-data warnings. */
