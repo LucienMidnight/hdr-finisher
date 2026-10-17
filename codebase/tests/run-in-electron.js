@@ -339,6 +339,20 @@ function packagedExecutable() {
       if (![1, 2].includes(response)) throw new Error('Tests may Discard or Cancel, never Save fixtures');
       await app.evaluate(({ dialog }, value) => { dialog.hdrFinisherTestUnsavedResponse = value; }, response);
     },
+    selectExportDirectory: async (selectedDirectory) => {
+      const resolved = path.resolve(selectedDirectory);
+      if (!fs.statSync(resolved).isDirectory()) throw new Error('Test export destination must be an existing directory');
+      await app.evaluate(({ dialog }, directory) => {
+        const previous = dialog.showOpenDialog;
+        dialog.showOpenDialog = async (...args) => {
+          // Consume only the batch folder picker, then restore the real dialog.
+          const options = args.at(-1);
+          if (options?.title !== "Choose export folder" || !options?.properties?.includes("openDirectory")) return previous.apply(dialog, args);
+          dialog.showOpenDialog = previous;
+          return { canceled: false, filePaths: [directory] };
+        };
+      }, resolved);
+    },
     selectExportPath: async (selectedPath) => {
       if (fs.existsSync(selectedPath)) throw new Error('Test export destination must be new');
       await app.evaluate(({ dialog }, filePath) => {
