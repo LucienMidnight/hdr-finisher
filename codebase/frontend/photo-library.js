@@ -3,7 +3,7 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const library = $("library"), grid = $("library-grid"), space = $("grid-space"), film = $("filmstrip");
-  const state = { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
+  const state = { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, zoomScale: 1, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
     pins: [], cells: new Map(), filmCells: new Map(), size: 190,
     selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0,
     folderSelection: new Set(), folderAnchor: "", collection: null, smartFilters: null, allFacts: false, labelNames: {}, indexing: null };
@@ -471,8 +471,8 @@
   const compare = HDRLibraryCompare.create({api,status,load:loadAndShow,draw:drawPicture,strip:culling.strip,
     selected,photos:()=>state.photos,allPhotos:()=>state.allPhotos,active:()=>state.active,
     choose:path=>select(state.photos.findIndex(p=>p.path===path)),setView,
-    zoom:()=>({enabled:state.zoom,x:state.zoomX,y:state.zoomY}),
-    setZoom:(enabled,x,y)=>{state.zoom=enabled;state.zoomX=x;state.zoomY=y;$("zoom-button").setAttribute("aria-pressed",String(enabled));}
+    zoom:()=>({enabled:state.zoom,x:state.zoomX,y:state.zoomY,scale:state.zoomScale}),
+    setZoom:(enabled,x,y,scale=state.zoomScale)=>{state.zoom=enabled;state.zoomX=x;state.zoomY=y;state.zoomScale=scale;$("zoom-button").setAttribute("aria-pressed",String(enabled));}
   });
   void compare.init();
   overlays = HDRLibraryOverlays.create({api,status,active:()=>state.active, surfaces:()=>[
@@ -542,41 +542,47 @@
     const canvas = $("single-picture"), native = $("native-picture"), stage = $("single-stage"), meta = state.nativeMeta || state.fitMeta;
     stage.classList.toggle("zoomed", state.zoom);
     if (!state.zoom || !meta) { canvas.style.cssText = ""; native.hidden = true; return; }
-    const dpr = window.devicePixelRatio || 1, width = meta.source_width || meta.width * 2, height = meta.source_height || meta.height * 2;
+    const dpr = window.devicePixelRatio || 1, scale = state.zoomScale;
+    const width = (meta.source_width || meta.width * 2) * scale, height = (meta.source_height || meta.height * 2) * scale;
     const center = HDRLibraryZoom.center(state.zoomX, state.zoomY, width, height, stage.clientWidth * dpr, stage.clientHeight * dpr);
     state.zoomX = center.x; state.zoomY = center.y;
     const left = stage.clientWidth / 2 - center.x * width / dpr, top = stage.clientHeight / 2 - center.y * height / dpr;
     canvas.style.cssText = `position:absolute;width:${width / dpr}px;height:${height / dpr}px;left:${left}px;top:${top}px;object-fit:fill`;
     if (state.nativeMeta) {
       const crop = state.nativeMeta;
-      native.style.cssText = `width:${crop.width / dpr}px;height:${crop.height / dpr}px;left:${left + crop.crop_x / dpr}px;top:${top + crop.crop_y / dpr}px`;
+      native.style.cssText = `width:${crop.width * scale / dpr}px;height:${crop.height * scale / dpr}px;left:${left + crop.crop_x * scale / dpr}px;top:${top + crop.crop_y * scale / dpr}px`;
       native.hidden = false;
     }
   }
   async function showNative() {
     const photo = selected(); if (!photo || !state.fitMeta || !state.zoom || !state.active || state.view !== "single") return;
     if (photo.edited) { state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; $("native-picture").hidden = true; positionZoom(); status("Saved Library picture enlarged. Check detail in Grade."); return; }
+    const stage = $("single-stage"), dpr = window.devicePixelRatio || 1, scale = state.zoomScale, percent = `${Math.round(scale * 100)}%`;
+    const fit = state.fitMeta;
+    if (fit.source_width && fit.width >= fit.source_width * scale) {
+      state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; $("native-picture").hidden = true; positionZoom();
+      status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`); return;
+    }
     state.native?.abort(); const controller = new AbortController(); state.native = controller; state.nativeLoading = true;
-    const stage = $("single-stage"), dpr = window.devicePixelRatio || 1;
     const current = () => state.active && state.zoom && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
-    status(`Loading 100% · ${photo.name}…`);
+    status(`Loading ${percent} · ${photo.name}…`);
     try {
       const meta = await api("/api/library/native", { path: photo.path, center_x: state.zoomX, center_y: state.zoomY,
-        width: Math.max(64, Math.min(4096, Math.ceil(stage.clientWidth * dpr))), height: Math.max(64, Math.min(4096, Math.ceil(stage.clientHeight * dpr))), priority: 0 }, controller.signal);
+        width: Math.max(64, Math.min(4096, Math.ceil(stage.clientWidth * dpr / scale))), height: Math.max(64, Math.min(4096, Math.ceil(stage.clientHeight * dpr / scale))), priority: 0 }, controller.signal);
       if (!current()) return;
       // Fit and native pictures share the exact same starting look.
       meta.adjustments = state.fitMeta.adjustments;
       await drawPicture(meta, $("native-picture"), controller, current);
       if (!current()) return;
       state.nativeMeta = meta; $("native-picture").dataset.picturePath = photo.path; positionZoom();
-      status(`100% · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
-    } catch (error) { if (!aborted(error) && current()) status(`100% unavailable · ${error.message}`); }
+      status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
+    } catch (error) { if (!aborted(error) && current()) status(`${percent} unavailable · ${error.message}`); }
     finally { if (state.native === controller) state.nativeLoading = false; }
   }
   function toggleZoom(point) {
     if (state.view !== "single" || !selected()) return;
     if (compare.enabled()) { compare.zoom(); return; }
-    state.zoom = !state.zoom; state.native?.abort(); state.nativeLoading = false; state.nativeMeta = null;
+    state.zoom = !state.zoom; state.zoomScale = 1; state.native?.abort(); state.nativeLoading = false; state.nativeMeta = null;
     if (state.zoom && point && state.fitMeta) {
       const stage = $("single-stage"), meta = state.fitMeta;
       const center = HDRLibraryZoom.click(point.x, point.y, stage.clientWidth, stage.clientHeight, meta.source_width || meta.width, meta.source_height || meta.height);
@@ -599,8 +605,8 @@
     if (Math.abs(dx) + Math.abs(dy) < 4 && !drag.moved) return;
     drag.moved = true; state.native?.abort();
     const meta = state.nativeMeta || state.fitMeta, dpr = window.devicePixelRatio || 1;
-    state.zoomX = drag.centerX - dx * dpr / (meta.source_width || meta.width * 2);
-    state.zoomY = drag.centerY - dy * dpr / (meta.source_height || meta.height * 2);
+    state.zoomX = drag.centerX - dx * dpr / ((meta.source_width || meta.width * 2) * state.zoomScale);
+    state.zoomY = drag.centerY - dy * dpr / ((meta.source_height || meta.height * 2) * state.zoomScale);
     positionZoom(); clearTimeout(nativeTimer); nativeTimer = setTimeout(showNative, 120);
   });
   function endPan(event) {
@@ -612,6 +618,28 @@
     else { const rect = singleStage.getBoundingClientRect(); toggleZoom({ x: event.clientX - rect.left, y: event.clientY - rect.top }); }
   }
   singleStage.addEventListener("pointerup", endPan); singleStage.addEventListener("pointercancel", endPan);
+  singleStage.addEventListener("wheel", event => {
+    if (state.view !== "single" || !state.fitMeta || !selected() || compare.enabled()) return;
+    event.preventDefault();
+    const meta = state.nativeMeta || state.fitMeta, dpr = window.devicePixelRatio || 1, rect = singleStage.getBoundingClientRect();
+    const sourceWidth = meta.source_width || meta.width * 2, sourceHeight = meta.source_height || meta.height * 2;
+    const width = singleStage.clientWidth * dpr, height = singleStage.clientHeight * dpr;
+    const fit = HDRLibraryZoom.fitScale(sourceWidth, sourceHeight, width, height);
+    const from = state.zoom ? state.zoomScale : fit;
+    const to = HDRLibraryZoom.wheel(from, event.deltaY * (event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? 400 : 1), fit);
+    if (to === from) return;
+    state.native?.abort(); clearTimeout(nativeTimer);
+    if (to <= fit) {
+      state.zoom = false; state.nativeLoading = false; state.nativeMeta = null;
+      $("zoom-button").setAttribute("aria-pressed", "false"); positionZoom();
+      status(`${state.index + 1} of ${state.photos.length.toLocaleString()} · ${selected().name}`); return;
+    }
+    const start = state.zoom ? { x: state.zoomX, y: state.zoomY } : { x: .5, y: .5 };
+    const center = HDRLibraryZoom.anchor(start.x, start.y, (event.clientX - rect.left) * dpr, (event.clientY - rect.top) * dpr, width, height, sourceWidth, sourceHeight, from, to);
+    state.zoom = true; state.zoomScale = to; state.zoomX = center.x; state.zoomY = center.y;
+    $("zoom-button").setAttribute("aria-pressed", "true");
+    positionZoom(); nativeTimer = setTimeout(showNative, 150);
+  }, { passive: false });
   function setView(view) {
     if (view === "single" && !selected()) return;
     if (view !== "single") compare.hide();
@@ -1058,7 +1086,7 @@
   function portableState() {
     return { path: state.path, collection: state.collection, selected: selected()?.path, selection: [...state.selection], anchor: state.photos[state.anchor]?.path,
       sort: state.sort, descending: state.descending, filters: state.filters, size: state.size, view: state.view,
-      hdr: state.hdr, zoom: state.zoom, zoomX: state.zoomX, zoomY: state.zoomY,
+      hdr: state.hdr, zoom: state.zoom, zoomX: state.zoomX, zoomY: state.zoomY, zoomScale: state.zoomScale,
       gridScroll: grid.scrollTop, filmScroll: film.scrollLeft, filterOpen: !$("library-filterbar").hidden,
       leftClosed: library.classList.contains("library-left-closed"), rightClosed: library.classList.contains("library-right-closed") };
   }
@@ -1066,7 +1094,7 @@
     if (!saved) return;
     state.sort = saved.sort || "time"; state.descending = !!saved.descending; state.filters = { rules: saved.filters?.rules || [], any: false, raw: !!saved.filters?.raw };
     state.size = saved.size || 190; state.hdr = !!saved.hdr; state.zoom = !!saved.zoom;
-    state.zoomX = saved.zoomX ?? .5; state.zoomY = saved.zoomY ?? .5;
+    state.zoomX = saved.zoomX ?? .5; state.zoomY = saved.zoomY ?? .5; state.zoomScale = saved.zoomScale || 1;
     $("thumbnail-size").value = state.size; paintSort(); paintSize();
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr)); $("zoom-button").setAttribute("aria-pressed", String(state.zoom));
     $("raw-only").setAttribute("aria-pressed", String(state.filters.raw));
@@ -1106,7 +1134,7 @@
   HDRLibraryStopwatch("ready");
   window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
     overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
-    filmVisible: state.filmCells.size, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
+    filmVisible: state.filmCells.size, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomScale: state.zoomScale, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
   (async () => {
     try {
       await api("/api/library/picture-settings", {screen_edge:singleEdge()});

@@ -3,12 +3,12 @@
   function create(o) {
     const $ = id => document.getElementById(id);
     let enabled=false, left=null, settings={compare_layout:'side',compare_names:true}, divider=.5;
-    let queue=Promise.resolve(), generation=0, ahead=[], drag=null;
+    let queue=Promise.resolve(), generation=0, ahead=[], drag=null, wheelTimer;
     const root=document.createElement('div');root.id='library-compare';root.hidden=true;
     root.innerHTML=`<div class="compare-panes"><section class="compare-side" data-side="left"><div class="compare-stage"><canvas class="compare-fit"></canvas><canvas class="compare-native" hidden></canvas></div><div class="compare-caption"></div><p class="compare-note"></p></section><section class="compare-side" data-side="right"><div class="compare-stage"><canvas class="compare-fit"></canvas><canvas class="compare-native" hidden></canvas></div><div class="compare-caption"></div><p class="compare-note"></p></section><div id="compare-divider" role="slider" tabindex="0" aria-valuemin="5" aria-valuemax="95" aria-valuenow="50" aria-label="Split divider"></div></div>`;
     $('single-stage').before(root);
     const sides=[...root.querySelectorAll('.compare-side')].map(element=>({element,stage:element.querySelector('.compare-stage'),fit:element.querySelector('.compare-fit'),native:element.querySelector('.compare-native'),caption:element.querySelector('.compare-caption'),note:element.querySelector('.compare-note')}));
-    const button=document.createElement('button');button.id='compare-button';button.className='tool-button';button.textContent='Compare';button.title='Compare options Â· C';button.setAttribute('aria-expanded','false');button.setAttribute('aria-haspopup','dialog');$('zoom-button').before(button);
+    const button=document.createElement('button');button.id='compare-button';button.className='tool-button';button.textContent='Compare';button.title='Compare options · C';button.setAttribute('aria-expanded','false');button.setAttribute('aria-haspopup','dialog');$('zoom-button').before(button);
     const panel=document.createElement('div');panel.id='compare-options';panel.className='library-popover library-options';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Compare options');
     panel.innerHTML=`<label class="checkbox-row"><input id="compare-enabled" type="checkbox" aria-label="Compare"><span data-compare-state="compare-enabled">Disabled</span></label><label>Layout <select id="compare-layout"><option value="side">Side by side</option><option value="top">Top and bottom</option><option value="split">Split</option></select></label><div class="library-option-toggle"><span>File names and marks</span><label class="checkbox-row"><input id="compare-names" type="checkbox" aria-label="File names and marks" checked><span data-compare-state="compare-names">Enabled</span></label></div>`;document.body.append(panel);
     button.addEventListener('click',()=>{panel.hidden=!panel.hidden;button.setAttribute('aria-expanded',String(!panel.hidden));const r=button.getBoundingClientRect();panel.style.left=`${Math.min(r.left,innerWidth-260)}px`;panel.style.top=`${r.bottom+4}px`;});
@@ -45,26 +45,28 @@
       const z=o.zoom();
       for(const s of sides){
         if(!s.meta)continue;
-        const dpr=devicePixelRatio||1,w=s.meta.source_width||s.meta.width,h=s.meta.source_height||s.meta.height;
+        const dpr=devicePixelRatio||1,w=(s.meta.source_width||s.meta.width)*z.scale,h=(s.meta.source_height||s.meta.height)*z.scale;
         s.stage.classList.toggle('zoomed',z.enabled);
         if(!z.enabled){s.fit.style.cssText='';s.native.hidden=true;continue;}
-        const x=s.stage.clientWidth/2-z.x*w/dpr,y=s.stage.clientHeight/2-z.y*h/dpr;
+        const c=HDRLibraryZoom.center(z.x,z.y,w,h,s.stage.clientWidth*dpr,s.stage.clientHeight*dpr),x=s.stage.clientWidth/2-c.x*w/dpr,y=s.stage.clientHeight/2-c.y*h/dpr;
         s.fit.style.cssText=`position:absolute;width:${w/dpr}px;height:${h/dpr}px;left:${x}px;top:${y}px;object-fit:fill`;
-        if(s.nativeMeta){const m=s.nativeMeta;s.native.style.cssText=`position:absolute;width:${m.width/dpr}px;height:${m.height/dpr}px;left:${x+m.crop_x/dpr}px;top:${y+m.crop_y/dpr}px`;s.native.hidden=false;}
+        if(s.nativeMeta){const m=s.nativeMeta,k=z.scale/dpr;s.native.style.cssText=`position:absolute;width:${m.width*k}px;height:${m.height*k}px;left:${x+m.crop_x*k}px;top:${y+m.crop_y*k}px`;s.native.hidden=false;}
       }
     }
     async function native(s){
       s.nativeController?.abort();s.nativeMeta=null;s.native.hidden=true;
       if(!o.zoom().enabled||!s.meta)return;
       if(s.photo.edited){s.note.textContent='Saved Library picture enlarged. Check detail in Grade.';return;}
-      const c=new AbortController();s.nativeController=c;const z=o.zoom(),dpr=devicePixelRatio||1;
+      const z=o.zoom(),dpr=devicePixelRatio||1,percent=`${Math.round(z.scale*100)}%`;
+      if(s.meta.source_width&&s.meta.width>=s.meta.source_width*z.scale){s.note.textContent='';return;}
+      const c=new AbortController();s.nativeController=c;
       const current=()=>enabled&&o.active()&&!c.signal.aborted&&s.photo?.path===s.fit.dataset.picturePath;
-      s.note.textContent='Loading 100%â€¦';
+      s.note.textContent=`Loading ${percent}…`;
       try{
-        const m=await o.api('/api/library/native',{path:s.photo.path,center_x:z.x,center_y:z.y,width:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientWidth*dpr))),height:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientHeight*dpr)))},c.signal);
+        const m=await o.api('/api/library/native',{path:s.photo.path,center_x:z.x,center_y:z.y,width:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientWidth*dpr/z.scale))),height:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientHeight*dpr/z.scale)))},c.signal);
         if(!current())return;m.adjustments=s.meta.adjustments;await o.draw(m,s.native,c,current);if(!current())return;
         s.nativeMeta=m;s.native.dataset.picturePath=s.photo.path;s.note.textContent='';position();o.drawOverlay?.(s.photo,s.fit,s.meta,s.controller,current);
-      }catch(e){if(e.name!=='AbortError'&&current())s.note.textContent=`100% unavailable Â· ${e.message}`;}
+      }catch(e){if(e.name!=='AbortError'&&current())s.note.textContent=`${percent} unavailable · ${e.message}`;}
     }
     async function show(){
       if(!enabled)return;cancel();root.hidden=false;$('single-stage').hidden=true;$('single-caption').hidden=true;layout();
@@ -82,13 +84,23 @@
     function zoom(point,side=sides[1]){
       const z=o.zoom();let x=z.x,y=z.y;
       if(!z.enabled&&point&&side.meta){const m=side.meta,p=HDRLibraryZoom.click(point.x,point.y,side.stage.clientWidth,side.stage.clientHeight,m.source_width||m.width,m.source_height||m.height);x=p.x;y=p.y;}
-      o.setZoom(!z.enabled,x,y);position();for(const s of sides)void native(s);
+      o.setZoom(!z.enabled,x,y,1);position();for(const s of sides)void native(s);
     }
     for(const s of sides){
       s.stage.addEventListener('pointerdown',e=>{if(e.button!==0||!s.meta)return;drag={s,id:e.pointerId,x:e.clientX,y:e.clientY,z:o.zoom(),moved:false};s.stage.setPointerCapture(e.pointerId);e.preventDefault();});
-      s.stage.addEventListener('pointermove',e=>{if(!drag||drag.s!==s||!o.zoom().enabled)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)<4&&!drag.moved)return;drag.moved=true;for(const side of sides){side.nativeController?.abort();side.native.hidden=true;side.nativeMeta=null;}const m=s.meta,dpr=devicePixelRatio||1;o.setZoom(true,Math.max(0,Math.min(1,drag.z.x-dx*dpr/(m.source_width||m.width))),Math.max(0,Math.min(1,drag.z.y-dy*dpr/(m.source_height||m.height))));position();});
+      s.stage.addEventListener('pointermove',e=>{if(!drag||drag.s!==s||!o.zoom().enabled)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)<4&&!drag.moved)return;drag.moved=true;for(const side of sides){side.nativeController?.abort();side.native.hidden=true;side.nativeMeta=null;}const m=s.meta,dpr=devicePixelRatio||1;o.setZoom(true,Math.max(0,Math.min(1,drag.z.x-dx*dpr/((m.source_width||m.width)*drag.z.scale))),Math.max(0,Math.min(1,drag.z.y-dy*dpr/((m.source_height||m.height)*drag.z.scale))));position();});
       const end=e=>{if(!drag||drag.s!==s||e.pointerId!==drag.id)return;const moved=drag.moved;drag=null;if(s.stage.hasPointerCapture(e.pointerId))s.stage.releasePointerCapture(e.pointerId);if(e.type==='pointercancel')return;if(moved)for(const side of sides)void native(side);else{const r=s.stage.getBoundingClientRect();zoom({x:e.clientX-r.left,y:e.clientY-r.top},s);}};
       s.stage.addEventListener('pointerup',end);s.stage.addEventListener('pointercancel',end);
+      s.stage.addEventListener('wheel',e=>{
+        if(!enabled||!s.meta)return;e.preventDefault();
+        const z=o.zoom(),m=s.meta,dpr=devicePixelRatio||1,r=s.stage.getBoundingClientRect(),sw=m.source_width||m.width,sh=m.source_height||m.height;
+        const width=s.stage.clientWidth*dpr,height=s.stage.clientHeight*dpr,fit=HDRLibraryZoom.fitScale(sw,sh,width,height),from=z.enabled?z.scale:fit;
+        const to=HDRLibraryZoom.wheel(from,e.deltaY*(e.deltaMode===1?33:e.deltaMode===2?400:1),fit);if(to===from)return;
+        clearTimeout(wheelTimer);for(const side of sides)side.nativeController?.abort();
+        if(to<=fit){o.setZoom(false,z.x,z.y,z.scale);for(const side of sides){side.nativeMeta=null;side.native.hidden=true;side.note.textContent='';}position();return;}
+        const start=z.enabled?{x:z.x,y:z.y}:{x:.5,y:.5},c=HDRLibraryZoom.anchor(start.x,start.y,(e.clientX-r.left)*dpr,(e.clientY-r.top)*dpr,width,height,sw,sh,from,to);
+        o.setZoom(true,c.x,c.y,to);position();wheelTimer=setTimeout(()=>{for(const side of sides)void native(side);},150);
+      },{passive:false});
     }
     function hide(){cancel();root.hidden=true;$('single-stage').hidden=false;$('single-caption').hidden=false;}
     async function init(){try{settings=await o.api('/api/library/review-preferences');$('compare-layout').value=settings.compare_layout;$('compare-names').checked=settings.compare_names;layout();}catch(e){o.status(e.message);}}
