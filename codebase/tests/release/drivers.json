@@ -3813,6 +3813,18 @@
       "launch": {
         "method": "electron"
       }
+    },
+    {
+      "path": "tests/library-grade-paste.js",
+      "areas": [
+        "library",
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "Library grade clipboard, single confirmation and settings persistence, virtual-copy bulk paste, default updating pictures and one-step Undo.",
+      "launch": {
+        "method": "electron"
+      }
     }
   ]
 }

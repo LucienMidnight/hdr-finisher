@@ -972,7 +972,7 @@ function buildMenu() {
         { label: "Undo", enabled: hasDocument, click: () => sendCommand("undo") },
         { label: "Redo", enabled: hasDocument, click: () => sendCommand("redo") },
         { type: "separator" },
-        { label: "Copy grade", enabled: libraryCommandState.active && libraryCommandState.selected === 1, click: () => sendLibraryMenuCommand("copy-grade") },
+        { label: "Copy grade", enabled: libraryCommandState.active && libraryCommandState.selected > 0, click: () => sendLibraryMenuCommand("copy-grade") },
         { label: "Paste grade", enabled: libraryCommandState.active && libraryCommandState.selected > 0 && libraryCommandState.copied, click: () => sendLibraryMenuCommand("paste-grade") },
         { label: "Paste grade (choose settings)…", enabled: libraryCommandState.active && libraryCommandState.selected > 0 && libraryCommandState.copied, click: () => sendLibraryMenuCommand("paste-grade-choose") },
         { label: "Quick export…", enabled: libraryCommandState.active && libraryCommandState.selected > 0, click: () => sendLibraryMenuCommand("quick-export") },

@@ -28,7 +28,7 @@
     for (const button of document.querySelectorAll("[data-desktop-command]")) {
       const command = button.dataset.desktopCommand;
       if (["copy-grade", "paste-grade", "paste-grade-choose", "quick-export"].includes(command)) {
-        button.disabled = !active || !commandState.selected || (command === "copy-grade" && commandState.selected !== 1)
+        button.disabled = !active || !commandState.selected
           || (command.startsWith("paste-grade") && !commandState.copied);
       }
     }
