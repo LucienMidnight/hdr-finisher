@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en" class="desktop-shell">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Export mock-up · HDR Finisher</title>
+  <!-- The app's real stylesheet, so colours, fonts, controls and switches are the real ones. -->
+  <link rel="stylesheet" href="../../../codebase/frontend/styles.css">
+  <script>document.write('<link rel="stylesheet" href="export.css?' + Date.now() + '">');</script>
+</head>
+<body>
+
+  <!-- Mock-up controls. Not part of the app. -->
+  <div class="mock-strip" id="mock-strip">
+    <span class="mock-label">Mock-up</span>
+    <div class="mock-group" role="group" aria-label="Batch">
+      <span>Arrive from</span>
+      <button type="button" data-batch="one">Grade (1 photo)</button>
+      <button type="button" data-batch="many" class="on">Library (12 photos)</button>
+    </div>
+    <label class="mock-check"><input type="checkbox" id="opt-problems" checked> Problems in batch</label>
+    <div class="mock-group" role="group" aria-label="Run">
+      <span>Run</span>
+      <button type="button" data-run="idle" class="on">Not started</button>
+      <button type="button" data-run="running">Running</button>
+      <button type="button" data-run="done">Finished</button>
+    </div>
+    <button type="button" id="mock-quick">Quick export… (Library right-click)</button>
+    <button type="button" class="mock-notes-button" id="notes-button">Notes</button>
+  </div>
+
+  <div class="mock-notes" id="notes" hidden>
+    <h2>What this mock-up shows</h2>
+    <ul>
+      <li><b>One Export page, two ways in.</b> From Grade it arrives with one photo and opens on Preview, as today. From the Library it arrives with the selection as a batch and opens on Grid.</li>
+      <li><b>Left: export presets.</b> Made and edited only here. A preset holds one or more <b>versions</b>; each version has every setting the Export page has today, plus a file name pattern and a sub-folder.</li>
+      <li><b>Right: the control panel edits the selected preset.</b> Changes mark it modified until saved. The destination folder belongs to this run, not to the preset.</li>
+      <li><b>Files are never overwritten.</b> A number is added and the results list says so.</li>
+      <li><b>Exports use each photo's last saved grade.</b> The grid flags a photo with unsaved changes in Grade, and an SDR-only photo whose HDR version will be skipped.</li>
+      <li><b>Quick export…</b> (Library right-click, Ctrl+Shift+E) asks only for a preset and a folder.</li>
+      <li>Room is left in the control panel for print settings and a watermark later (not designed here).</li>
+    </ul>
+  </div>
+
+  <div class="mock-window" id="app" data-batch="many" data-run="idle">
+
+    <header class="window-chrome" aria-label="Application menu">
+      <nav class="window-menu-bar">
+        <div class="window-menu"><button class="window-menu-trigger" type="button">File</button></div>
+        <div class="window-menu"><button class="window-menu-trigger" type="button">Edit</button></div>
+        <div class="window-menu"><button class="window-menu-trigger" type="button">View</button></div>
+        <div class="window-menu"><button class="window-menu-trigger" type="button">Window</button></div>
+        <div class="window-menu"><button class="window-menu-trigger" type="button">Help</button></div>
+      </nav>
+      <div class="window-drag-region"></div>
+      <div class="window-controls">
+        <button class="window-control" type="button" aria-label="Minimize"><img src="../../../codebase/frontend/assets/icons/tabler/minus.svg" alt=""></button>
+        <button class="window-control" type="button" aria-label="Maximize"><img src="../../../codebase/frontend/assets/icons/tabler/square.svg" alt=""></button>
+        <button class="window-control window-control-close" type="button" aria-label="Close"><img src="../../../codebase/frontend/assets/icons/tabler/x.svg" alt=""></button>
+      </div>
+    </header>
+
+    <header class="top-bar">
+      <div class="product-lockup">
+        <img class="product-mark" src="../../../codebase/frontend/assets/brand/hdr-finisher-favicon-small.svg" alt="" width="26" height="26">
+        <p class="product-name">HDR FINISHER</p>
+      </div>
+      <nav class="workflow-tabs" aria-label="Workflow stages">
+        <button class="workflow-tab" type="button"><span aria-hidden="true">01</span>Library</button>
+        <button class="workflow-tab" type="button"><span aria-hidden="true">02</span>Grade</button>
+        <button class="workflow-tab" type="button"><span aria-hidden="true">03</span>Proof</button>
+        <button class="workflow-tab active" type="button"><span aria-hidden="true">04</span>Export</button>
+      </nav>
+      <div class="top-actions">
+        <button class="text-button" type="button">Settings</button>
+        <button class="text-button" type="button">Help</button>
+      </div>
+    </header>
+
+    <div class="ex-body">
+
+      <!-- Left: export presets -->
+      <aside class="ex-presets panel" aria-label="Export presets">
+        <div class="ex-panel-head">
+          <h1 class="panel-title">Export Presets</h1>
+          <button class="ex-icon-button" type="button" id="preset-new" title="New preset" aria-label="New preset">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14 M5 12h14"/></svg>
+          </button>
+        </div>
+        <ul class="ex-preset-list" id="preset-list" role="listbox" aria-label="Export presets"></ul>
+        <p class="helper ex-preset-help">Right-click a preset to rename, duplicate or delete it. Presets are used by Quick export… in the Library.</p>
+      </aside>
+
+      <!-- Centre: the batch -->
+      <main class="ex-centre panel" aria-label="Photos to export">
+        <div class="ex-bar">
+          <div class="ex-bar-title">
+            <span class="panel-title">Export Batch</span>
+            <span class="ex-count" id="batch-count"></span>
+          </div>
+          <div class="ex-tools">
+            <div class="ex-viewmodes" role="group" aria-label="View">
+              <button class="tool-button ex-icon-tool" type="button" data-view="grid" title="Grid" aria-label="Grid"><svg viewBox="0 0 24 24"><path d="M4 4h6v6h-6z M14 4h6v6h-6z M4 14h6v6h-6z M14 14h6v6h-6z"/></svg></button>
+              <button class="tool-button ex-icon-tool" type="button" data-view="preview" title="Preview the selected photo" aria-label="Preview"><svg viewBox="0 0 24 24"><path d="M4 4h16v11h-16z M4 19h3 M10.5 19h3 M17 19h3"/></svg></button>
+            </div>
+            <span class="ex-divider"></span>
+            <button class="tool-button" type="button" id="add-selection" title="Add the photos selected in the Library">Add Library selection</button>
+            <button class="tool-button" type="button" id="remove-selected" title="Take the selected photos out of this batch. Nothing is deleted.">Remove</button>
+            <button class="tool-button" type="button" id="clear-batch">Clear</button>
+          </div>
+        </div>
+
+        <div class="ex-notice" id="batch-notice" hidden></div>
+
+        <div class="ex-grid" id="grid" role="listbox" aria-multiselectable="true" aria-label="Photos in this batch"></div>
+
+        <div class="ex-preview" id="preview" hidden>
+          <div class="ex-preview-bar">
+            <span id="preview-name"></span>
+            <label class="ex-inline-select">Showing
+              <select id="preview-version"></select>
+            </label>
+          </div>
+          <div class="ex-preview-stage"><img id="preview-img" alt=""></div>
+          <div class="ex-preview-scopes"><span>Scopes, as today</span></div>
+        </div>
+
+        <!-- Running and finished states -->
+        <section class="ex-run" id="run" hidden aria-live="polite">
+          <div class="ex-run-line">
+            <strong id="run-title">Exporting 7 of 24 files</strong>
+            <span class="ex-run-eta" id="run-eta">about 2 min left · Grade stays usable</span>
+            <span class="ex-run-actions">
+              <button class="button-secondary" type="button" id="run-pause">Pause</button>
+              <button class="button-secondary" type="button" id="run-cancel">Cancel</button>
+            </span>
+          </div>
+          <div class="ex-run-meter"><i id="run-meter" style="width: 29%"></i></div>
+        </section>
+
+        <section class="ex-results" id="results" hidden>
+          <div class="ex-results-head">
+            <strong id="results-title">22 files exported · 1 renamed · 2 skipped</strong>
+            <span class="ex-results-actions">
+              <button class="text-button" type="button">Show in Explorer</button>
+              <button class="text-button" type="button" id="results-close">Close</button>
+            </span>
+          </div>
+          <div class="ex-results-list" id="results-list" role="table" aria-label="Export results"></div>
+        </section>
+      </main>
+
+      <!-- Right: control panel for the selected preset -->
+      <aside class="ex-control panel" aria-label="Export settings">
+        <div class="ex-panel-head">
+          <h1 class="panel-title">Control Panel</h1>
+        </div>
+        <div class="ex-control-scroll">
+
+          <section class="ex-preset-head">
+            <div class="ex-preset-name">
+              <input type="text" id="preset-name" aria-label="Preset name" spellcheck="false">
+              <span class="ex-mod" id="preset-mod" title="Changed since last saved" hidden>Modified</span>
+            </div>
+            <div class="ex-preset-buttons">
+              <button class="button-secondary" type="button" id="preset-save" disabled>Save</button>
+              <button class="button-secondary" type="button" id="preset-save-new">Save as new…</button>
+              <button class="text-button" type="button" id="preset-revert" disabled>Revert</button>
+            </div>
+          </section>
+
+          <section class="ex-versions">
+            <h2 class="export-section-title">Versions</h2>
+            <div class="ex-version-tabs" id="version-tabs" role="tablist" aria-label="Versions in this preset"></div>
+            <p class="helper">Each photo is exported once per version. One run can make, for example, an HDR AVIF and an SDR JPEG.</p>
+          </section>
+
+          <div class="ex-version-body">
+            <div class="ex-version-name-row">
+              <label class="ex-field">Version name
+                <input type="text" id="version-name" spellcheck="false">
+              </label>
+              <button class="text-button ex-remove-version" type="button" id="version-remove">Remove version</button>
+            </div>
+
+            <section class="export-choice-section">
+              <h2 class="export-section-title">Format</h2>
+              <select id="format">
+                <option value="avif_gain_map">AVIF + gain map</option>
+                <option value="jpeg_ultrahdr">JPEG Ultra HDR</option>
+                <option value="jpegxl_hdr">JPEG XL HDR</option>
+                <option value="sdr_jpegxl">JPEG XL (SDR)</option>
+                <option value="sdr_png">PNG (SDR)</option>
+                <option value="sdr_jpeg">JPEG (SDR)</option>
+              </select>
+            </section>
+            <section class="export-choice-section">
+              <h2 class="export-section-title">Preset</h2>
+              <select id="quality-preset">
+                <option value="web_default">Web Default</option>
+                <option value="web_optimized">Web Optimized</option>
+                <option value="maximum_fidelity">Maximum Fidelity</option>
+              </select>
+            </section>
+
+            <div class="export-settings">
+              <h2 class="export-section-title export-encoding-title">Encoding</h2>
+              <div class="control-row export-quality-row">
+                <div class="control-heading"><label for="quality">Quality</label><output id="quality-value">85</output></div>
+                <span class="range-shell" id="quality-shell"><span class="slider-track"></span><span class="slider-fill"></span><input id="quality" type="range" min="1" max="100" value="85"></span>
+              </div>
+              <details class="jpeg-advanced-settings">
+                <summary>Advanced export settings</summary>
+                <div class="advanced-settings-body">
+                  <p class="helper">Exactly as today for the chosen format: bit depth, chroma, gain-map quality and scale, dithering, source metadata.</p>
+                </div>
+              </details>
+              <fieldset class="output-finishing-settings">
+                <legend class="export-section-title">Output Size &amp; Sharpening</legend>
+                <label>Resize
+                  <select id="resize"><option value="original">Original cropped size</option><option value="long_edge">Long edge</option><option value="fit">Fit within dimensions</option></select>
+                </label>
+                <div id="long-edge-row" hidden><label>Long edge <input id="long-edge" type="number" min="1" max="100000" step="1" value="2560"></label></div>
+                <label class="checkbox-row"><input type="checkbox" checked> Prevent enlargement</label>
+                <label>Output Sharpening
+                  <select><option>Off</option><option selected>Subtle</option><option>Standard</option><option>Strong</option></select>
+                </label>
+              </fieldset>
+            </div>
+
+            <div class="ex-naming">
+              <h2 class="export-section-title">File Name</h2>
+              <label class="ex-field">Pattern
+                <input type="text" id="pattern" class="ex-mono" spellcheck="false">
+              </label>
+              <div class="ex-tokens" id="tokens" aria-label="Insert a part of the name"></div>
+              <p class="ex-example" id="example"></p>
+              <label class="ex-field">Sub-folder <span class="ex-optional">optional</span>
+                <input type="text" id="subfolder" spellcheck="false">
+              </label>
+            </div>
+          </div>
+
+          <section class="ex-destination">
+            <h2 class="export-section-title export-destination-title">Destination</h2>
+            <label class="export-directory-field">Save Folder
+              <span class="directory-picker-row">
+                <input type="text" id="folder" value="D:\Exports\Kempton house">
+                <button class="button-secondary" type="button">Browse</button>
+              </span>
+            </label>
+            <p class="helper">Existing files are never replaced. A number is added, for example “DSCF6495_web (2).avif”, and the results list says so.</p>
+          </section>
+
+          <div class="ex-later" aria-hidden="true">Room for print settings and a watermark later</div>
+        </div>
+
+        <div class="sheet-actions ex-actions">
+          <p class="ex-summary" id="summary"></p>
+          <button class="button-primary" type="button" id="export-go"></button>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="ex-statusbar">
+      <span id="status-text">Photos and grades are not changed by exporting.</span>
+      <span class="ex-activity" id="activity">Activity</span>
+    </footer>
+  </div>
+
+  <!-- Quick export, opened from the Library -->
+  <dialog id="quick" class="application-dialog ex-quick" aria-labelledby="quick-title">
+    <h2 id="quick-title">Quick Export</h2>
+    <p class="ex-quick-sub">12 photos selected in the Library, each with its last saved grade.</p>
+    <label class="ex-field">Export preset
+      <select id="quick-preset"></select>
+    </label>
+    <ul class="ex-quick-versions" id="quick-versions"></ul>
+    <label class="export-directory-field">Save Folder
+      <span class="directory-picker-row">
+        <input type="text" value="D:\Exports\Kempton house">
+        <button class="button-secondary" type="button">Browse</button>
+      </span>
+    </label>
+    <p class="helper" id="quick-notes"></p>
+    <p class="helper">Presets are made and changed on the Export page. <button class="text-button ex-link" type="button" id="quick-open-page">Open the Export page with these photos instead</button></p>
+    <div class="ex-quick-buttons">
+      <button class="button-secondary" type="button" id="quick-cancel">Cancel</button>
+      <button class="button-primary" type="button" id="quick-go"></button>
+    </div>
+  </dialog>
+
+  <!-- Right-click menu for a preset -->
+  <div class="ex-menu" id="preset-menu" role="menu" hidden>
+    <button role="menuitem" type="button">Rename</button>
+    <button role="menuitem" type="button">Duplicate</button>
+    <button role="menuitem" type="button">Delete…</button>
+  </div>
+
+  <script>document.write('<script src="export.js?' + Date.now() + '"><\/script>');</script>
+</body>
+</html>
