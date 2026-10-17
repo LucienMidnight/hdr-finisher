@@ -35,6 +35,12 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   getLibraryWindow: () => ipcRenderer.invoke("desktop:get-library-window"),
   dockLibrary: (state) => ipcRenderer.invoke("desktop:dock-library", state),
   focusLibrary: () => ipcRenderer.invoke("desktop:focus-library"),
+  prepareLibraryPaste: (paths) => ipcRenderer.invoke("desktop:prepare-library-paste", paths),
+  completeLibraryPaste: (requestId, allowed) => ipcRenderer.invoke("desktop:complete-library-paste", requestId, allowed),
+  forwardLibraryAction: (action, detail) => ipcRenderer.invoke("desktop:forward-library-action", action, detail),
+  setLibraryCommandState: (state) => ipcRenderer.invoke("desktop:set-library-command-state", state),
+  sendLibraryCommand: (command) => ipcRenderer.invoke("desktop:send-library-command", command),
+  chooseBatchExportDirectory: (initialPath) => ipcRenderer.invoke("desktop:choose-batch-export-directory", initialPath),
   chooseSourceInMain: () => ipcRenderer.invoke("desktop:choose-source-in-main"),
   onLibraryWindowChanged: (callback) => subscribe("desktop:library-window", callback),
   openDroppedFileInMain: async (file) => {

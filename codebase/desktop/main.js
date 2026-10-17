@@ -67,6 +67,10 @@ let pendingOpenPaths = [];
 let rendererReady = false;
 const windows = new Map();
 let libraryWindowState = null;
+let libraryCommandState = { selected: 0, copied: false, active: false };
+let libraryPasteRequest = 0;
+const pendingLibraryPastes = new Map();
+const libraryCommands = new Set(["copy-grade", "paste-grade", "paste-grade-choose", "quick-export"]);
 let processDiagnostics = null;
 let windowFailure = null;
 const knownProjectPaths = new Set();
@@ -554,6 +558,37 @@ function registerIpc() {
     const record = validateSender(event);
     return callback(record, ...args);
   });
+  handleWindow("desktop:set-library-command-state", (record, next = {}) => {
+    libraryCommandState = { selected: Math.max(0, Number(next.selected) || 0), copied: Boolean(next.copied), active: record.role === "library" || Boolean(next.active) };
+    buildMenu(); return true;
+  });
+  handle("desktop:send-library-command", (command) => {
+    if (!libraryCommands.has(command)) throw new Error("Unknown Library command.");
+    windows.get("library")?.window.webContents.send("desktop:menu-command", { command }); return true;
+  });
+  handleWindow("desktop:forward-library-action", (record, action, detail = {}) => {
+    if (record.role !== "library" || !["command-state", "grade-replaced", "quick-export", "export-selection"].includes(action)) throw new Error("Invalid Library action.");
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
+    mainWindow.webContents.send("desktop:library-window", { ...detail, action });
+    if (["quick-export", "export-selection"].includes(action)) { mainWindow.show(); mainWindow.focus(); }
+    return true;
+  });
+  handleWindow("desktop:prepare-library-paste", (record, paths) => {
+    if (record.role !== "library" || !Array.isArray(paths) || paths.some(value => typeof value !== "string")) throw new Error("Invalid paste selection.");
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    const requestId = ++libraryPasteRequest;
+    return new Promise(resolve => {
+      const timer = setTimeout(() => { pendingLibraryPastes.delete(requestId); resolve(false); }, 300000);
+      pendingLibraryPastes.set(requestId, { resolve, timer });
+      mainWindow.show(); mainWindow.focus();
+      mainWindow.webContents.send("desktop:library-window", { action: "prepare-paste", requestId, paths });
+    });
+  });
+  handle("desktop:complete-library-paste", (requestId, allowed) => {
+    const pending = pendingLibraryPastes.get(requestId);
+    if (!pending) return false;
+    clearTimeout(pending.timer); pendingLibraryPastes.delete(requestId); pending.resolve(allowed === true); return true;
+  });
   handleWindow("desktop:open-drop-in-main", async (record, dropped) => {
     if (record.role !== "library") throw new Error("Only Library can forward a dropped file.");
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
@@ -774,6 +809,17 @@ function registerIpc() {
     else { forceClose = true; mainWindow.close(); }
     return true;
   });
+  handle("desktop:choose-batch-export-directory", async (initialPath) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Choose export folder",
+      defaultPath: typeof initialPath === "string" && initialPath ? initialPath : directoryPreference("fileSave", "pictures"),
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const selection = await grantPath(result.filePaths[0], "export-directory");
+    grantedExportPaths.add(pathKey(selection.path || result.filePaths[0]));
+    return selection;
+  });
   handle("desktop:choose-export-directory", async (initialPath) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "Choose export folder",
@@ -882,6 +928,12 @@ function sendCommand(command, payload = null) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:menu-command", { command, payload });
 }
 
+function sendLibraryMenuCommand(command) {
+  const library = windows.get("library")?.window;
+  if (library?.isFocused()) library.webContents.send("desktop:menu-command", { command });
+  else sendCommand(command);
+}
+
 function sendWindowState(window = mainWindow) {
   if (!window || window.isDestroyed()) return;
   window.webContents.send("desktop:window-state", {
@@ -919,6 +971,11 @@ function buildMenu() {
       submenu: [
         { label: "Undo", enabled: hasDocument, click: () => sendCommand("undo") },
         { label: "Redo", enabled: hasDocument, click: () => sendCommand("redo") },
+        { type: "separator" },
+        { label: "Copy grade", enabled: libraryCommandState.active && libraryCommandState.selected === 1, click: () => sendLibraryMenuCommand("copy-grade") },
+        { label: "Paste grade", enabled: libraryCommandState.active && libraryCommandState.selected > 0 && libraryCommandState.copied, click: () => sendLibraryMenuCommand("paste-grade") },
+        { label: "Paste grade (choose settings)…", enabled: libraryCommandState.active && libraryCommandState.selected > 0 && libraryCommandState.copied, click: () => sendLibraryMenuCommand("paste-grade-choose") },
+        { label: "Quick export…", enabled: libraryCommandState.active && libraryCommandState.selected > 0, click: () => sendLibraryMenuCommand("quick-export") },
         { type: "separator" },
         { label: "Settings…", click: () => sendCommand("settings") },
         { type: "separator" },

@@ -8,18 +8,54 @@
     if (selection) await openDesktopSelection(selection);
     else await importByteFile(file);
   }
-  window.HDRLibraryHost = Object.freeze({ isDetached: () => detached, openDrop });
+  let commandState = { selected: 0, copied: false };
+  async function preparePaste(paths) {
+    const item = window.HDRGradeSaving?.item();
+    if (!item || !paths.includes(item)) return true;
+    return (await window.HDRGradeSaving.leave("pasting a grade")) !== false;
+  }
+  function updateCommands(next = commandState) {
+    commandState = { selected: Number(next.selected) || 0, copied: Boolean(next.copied) };
+    const active = state.activeWorkflow === "import";
+    for (const button of document.querySelectorAll("[data-desktop-command]")) {
+      const command = button.dataset.desktopCommand;
+      if (["copy-grade", "paste-grade", "paste-grade-choose", "quick-export"].includes(command)) {
+        button.disabled = !active || !commandState.selected || (command === "copy-grade" && commandState.selected !== 1)
+          || (command.startsWith("paste-grade") && !commandState.copied);
+      }
+    }
+    desktop?.setLibraryCommandState?.({ ...commandState, active });
+  }
+  function dispatch(command) {
+    if (state.activeWorkflow !== "import") return false;
+    if (detached) desktop?.sendLibraryCommand?.(command);
+    else send("command", { command });
+    return true;
+  }
+  async function libraryAction(message) {
+    if (message.action === "command-state") updateCommands(message);
+    else if (message.action === "grade-replaced") await window.HDRGradeSaving.refresh(message.session);
+    else if (message.action === "quick-export") await window.batchExport?.quick(message.paths || message.ids || []);
+    else if (message.action === "export-selection") await window.batchExport?.open(message.paths || message.ids || [], { fromLibrary: true });
+  }
+  window.HDRLibraryHost = Object.freeze({ isDetached: () => detached, openDrop, preparePaste, dispatch });
   const away = document.createElement("div"); away.className = "library-away"; away.hidden = true;
   away.innerHTML = '<p>Library is open in its own window.</p><button class="button-secondary">Show Library</button>';
   frame.after(away); away.querySelector("button").addEventListener("click", () => desktop?.focusLibrary());
   desktop?.onLibraryWindowChanged(message => {
-    if (message.action === "docked") {
+    if (message.action === "prepare-paste") {
+      preparePaste(message.paths).then(allowed => desktop.completeLibraryPaste(message.requestId, allowed))
+        .catch(() => desktop.completeLibraryPaste(message.requestId, false));
+    } else if (["command-state", "grade-replaced", "quick-export", "export-selection"].includes(message.action)) {
+      libraryAction(message).catch(error => showUploadError(error.message));
+    } else if (message.action === "docked") {
       detached = false; away.hidden = true; frame.hidden = false;
       send("restore", { state: message.state }); activateWorkflowTab("import"); sync();
     } else if (message.action === "choose-source") requestSourceImport();
   });
   const send = (action, detail = {}) => frame.contentWindow?.postMessage({ type: "hdr-library-host", action, ...detail }, location.origin);
   function sync() {
+    updateCommands();
     const active = state.activeWorkflow === "import" && !detached;
     away.hidden = !detached || state.activeWorkflow !== "import";
     if (detached && state.activeWorkflow === "import") desktop?.focusLibrary();
@@ -49,7 +85,7 @@
     if (event.source !== frame.contentWindow || event.origin !== location.origin || event.data?.type !== "hdr-library") return;
     const message = event.data;
     if (message.action === "ready") sync();
-    else if (message.action === "grade-replaced") window.HDRGradeSaving.refresh(message.session).catch(error => showUploadError(error.message));
+    else if (["command-state", "grade-replaced", "quick-export", "export-selection"].includes(message.action)) libraryAction(message).catch(error => showUploadError(error.message));
     else if (message.action === "review") review(Boolean(message.enabled));
     else if (message.action === "pop-out") {
       if (!desktop) { showUploadError("A separate Library window requires the desktop app."); return; }

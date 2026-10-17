@@ -35,6 +35,7 @@ async function initializeDesktopBridge() {
 }
 
 async function handleDesktopCommand(command, payload = null) {
+  if (["copy-grade", "paste-grade", "paste-grade-choose", "quick-export"].includes(command)) return window.HDRLibraryHost?.dispatch(command);
   if (command === "close-photo") {
     let allowed = false;
     try { allowed = await window.HDRGradeSaving.leave("closing the app"); }
