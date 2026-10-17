@@ -176,6 +176,80 @@
     {
       "pattern": "^(\\.gitignore|RELEASE_NOTES\\.md|THIRD_PARTY_NOTICES\\.md)$",
       "areas": []
+    },
+    {
+      "pattern": "^codebase/backend/hdr_finisher/(__init__|launcher|desktop_security|finishing)\\.py$",
+      "areas": [
+        "export-proof",
+        "film",
+        "lens",
+        "library",
+        "masks",
+        "detail",
+        "geometry",
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/backend/hdr_finisher/(binaries|subprocess_utils|hosting_probe)\\.py$",
+      "areas": [
+        "export-proof"
+      ]
+    },
+    {
+      "pattern": "^codebase/backend/hdr_finisher/capabilities\\.py$",
+      "areas": [
+        "export-proof",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/backend/hdr_finisher/folder_picker\\.py$",
+      "areas": [
+        "export-proof",
+        "library"
+      ]
+    },
+    {
+      "pattern": "^codebase/backend/hdr_finisher/overlay\\.py$",
+      "areas": [
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/backend/hdr_finisher/test_pattern\\.py$",
+      "areas": [
+        "preview"
+      ]
+    },
+    {
+      "pattern": "^codebase/frontend/(curve-editor|tone-equalizer)\\.js$",
+      "areas": [
+        "export-proof",
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/frontend/lanes-compare\\.js$",
+      "areas": [
+        "preview",
+        "ui"
+      ]
+    },
+    {
+      "pattern": "^codebase/frontend/(latest-work-queue|presentation-gate|viewport-request)\\.js$",
+      "areas": [
+        "preview"
+      ]
+    },
+    {
+      "pattern": "^codebase/frontend/status-manager\\.js$",
+      "areas": [
+        "ui"
+      ]
     }
   ],
   "drivers": [
