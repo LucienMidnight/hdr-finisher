@@ -114,7 +114,11 @@ class LibraryGrades:
                 with db:
                     for path, document in zip(paths, documents):
                         if document is None and not self.marks.source_path(path).parent.is_dir(): continue
-                        state = self._get(str(path)); document = document or {}
+                        # Read through this connection: once its write grows past the
+                        # page cache it holds the file exclusively, and a second
+                        # connection would wait on it until "database is locked".
+                        row = db.execute("SELECT state FROM photo_grades WHERE path=?", (str(path),)).fetchone()
+                        state = json.loads(row[0]) if row else {}; document = document or {}
                         if "grade" not in document and not state: continue
                         state["indexed_grade"] = document.get("grade")
                         for field in ("session_start", "previous_grade"):

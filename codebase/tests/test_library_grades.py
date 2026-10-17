@@ -310,3 +310,17 @@ def test_sidecar_and_project_export_and_proof_are_byte_identical(setup, tmp_path
         assert hashes[0] == hashes[1]
     finally:
         proofs.clear()
+
+
+def test_indexing_many_large_saved_grades_does_not_lock_the_library(setup, tmp_path):
+    """A big indexing write must not wait on its own reads (October 18, 2026)."""
+    _, _, _, marks, grades = setup
+    folder = tmp_path / "shoot"
+    folder.mkdir()
+    paths = [str(folder / f"DSC{n:05}.ARW") for n in range(45)]
+    bulky = {"history": ["x" * 4000] * 40}
+    for path in paths:
+        grades._put(path, {"default": bulky, "previous_grade": bulky})
+    documents = [{"grade": {"exposure": n}, "grade_history": {}} for n in range(45)]
+    grades.observe_documents(paths, documents)
+    assert [grades._get(path)["indexed_grade"] for path in paths] == [{"exposure": n} for n in range(45)]
