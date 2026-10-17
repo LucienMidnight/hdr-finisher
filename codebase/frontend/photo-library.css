@@ -322,3 +322,14 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-option-toggle > span {flex:1;min-width:120px;}
 .library-options .checkbox-row {white-space:nowrap;}
 .library-options input[type=color] {width:24px;height:22px;padding:0;border:0;cursor:pointer;}
+
+/* Paste reuses the shared dialog and toggles; only its scrolling tree needs layout. */
+.grade-paste-dialog { width: min(640px, 92vw); display: flex; flex-direction: column; }
+.grade-paste-dialog:not([open]) { display: none; }
+.grade-paste-dialog > .library-ask-body:nth-child(2) { min-height: 0; overflow-y: auto; }
+.grade-paste-dialog .application-dialog-header, .grade-paste-dialog .app-dialog-actions { flex-shrink: 0; }
+.grade-paste-dialog .library-options { display: flex; flex-wrap: wrap; align-items: center; padding: 6px 0 12px; }
+.grade-paste-dialog .library-options label { justify-content: flex-start; }
+.grade-paste-dialog summary > .checkbox-row { display: inline-flex !important; }
+.grade-paste-dialog summary > small { margin-left: 8px; }
+.grade-paste-dialog details > .library-ask-body { padding: 8px 18px; }

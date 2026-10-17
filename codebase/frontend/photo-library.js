@@ -22,6 +22,7 @@
           if (current.fullscreen !== detail.enabled) return libraryDesktop.performWindowAction("fullscreen");
         }) : null;
       task?.catch(error => status(error.message));
+      if (["grade-replaced", "quick-export", "export-selection", "command-state", "add-export-selection"].includes(action)) void libraryDesktop.forwardLibraryAction?.(action, detail).catch(error => status(error.message));
     }
   };
   const status = (message) => { $("library-status").textContent = message; };
@@ -80,6 +81,11 @@
   const culling = HDRLibraryCulling.create({ confirm: confirmChange, photos: () => state.allPhotos, selection: () => state.view === "single" && compare.enabled() ? new Set([selected()?.path]) : state.selection, api, status,
     labelName: label => state.labelNames[label] || "",
     updated: result => {
+      if (result.grade_changed) {
+        invalidateGradePictures((result.photos || []).map(photo => photo.path), false);
+        thumbnails.clear(); clearCells(state.cells); clearCells(state.filmCells);
+        paintGrid(); paintFilm(); if (state.view === "single") showSingle();
+      }
       if(result.files_changed) { void filesChanged(result); return; }
       if(result.copies_changed) { void refreshPins(); void reopen(); return; }
       if (result.smart_changed) { void smart.refresh().then(() => smart.poll()).then(result => { if (result && state.collection?.kind === "smart") { state.allPhotos = result.photos; state.smartFilters = result.filters; applyQuery(); } }); }
@@ -119,7 +125,7 @@
     for (const cell of map.values()) { cell.controller.abort(); cell.element.remove(); }
     map.clear();
   }
-  const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}`;
+  const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}|${!!photo.picture_updating}`;
   const thumbnails = HDRLibraryThumbnails.create({api, identity:pictureIdentity});
   let largestGridWidth = 1600;
   const thumbnailEdge = () => {
@@ -295,7 +301,7 @@
     const canvas = document.createElement("img"); canvas.alt = photo.name; frame.append(canvas);
     const name = document.createElement("span"); name.className = "name"; name.textContent = photo.name;
     element.append(frame, name); container.append(element);
-    const cell = { element, canvas, controller: new AbortController(), photo, index, edge:thumbnailEdge() };
+    const cell = { element, canvas, controller: new AbortController(), photo, index, edge:thumbnailEdge(), identity:pictureIdentity(photo) };
     element.addEventListener("click", (event) => select(state.photos.findIndex((item) => item.path === photo.path), false, event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "single"));
     element.addEventListener("dblclick", () => { select(state.photos.findIndex((item) => item.path === photo.path)); openGrade(); });
     element.addEventListener("pointerenter", () => { if (state.timing && cell.meta) diagnostics(photo, cell.meta, cell.elapsed); });
@@ -338,13 +344,15 @@
     for (let index = start; index < end; index += 1) {
       const photo = state.photos[index];
       let cell = map.get(photo.path);
-      if (cell && (cell.edge !== thumbnailEdge() || cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.photo.grade_identity !== photo.grade_identity)) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
+      if (cell && (cell.edge !== thumbnailEdge() || cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.identity !== pictureIdentity(photo))) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
       if (!cell) { cell = makeCell(photo, container, index); map.set(photo.path, cell); }
       position(cell.element, index);
       const active = state.selection.has(photo.path);
       cell.element.classList.toggle("active", active); cell.element.setAttribute("aria-selected", String(active));
       cell.element.classList.toggle("lead", active && index === state.index);
       cell.element.classList.toggle("rejected", photo.marks?.pick === "reject");
+      cell.element.querySelector(".library-picture-updating")?.remove();
+      if (photo.picture_updating) { const mark = make("span", "library-picture-updating library-edited", "Updating"); mark.title = "Showing the default look while the saved-grade picture is updated."; mark.setAttribute("role", "status"); cell.element.append(mark); }
       cell.element.querySelector(".library-marks")?.remove(); cell.element.append(culling.strip(photo));
     }
   }
@@ -380,6 +388,7 @@
     thumbnails.plan(state.photos.slice(first,last),forward ? state.photos.slice(last,Math.min(state.photos.length,last + last - first)) : state.photos.slice(Math.max(0,first - (last-first)),first),thumbnailEdge());
   }
   function updateDetails() {
+    if (window.HDRLibraryCommands) commandState();
     const photo = selected(); const root = $("details"), tagFocused = document.activeElement?.id === "library-tag-input"; root.replaceChildren();
     if (!photo || !state.selection.size) { root.textContent = "Select a photo."; return; }
     const one = state.selection.size === 1 && state.selection.has(photo.path);
@@ -481,6 +490,44 @@
     confirmChange(`${revert.done} ${plural(result.count, "photo")}.${target === "saved" ? "" : ` ${result.count === 1 ? "It keeps" : "Each keeps"} its previous grade.`}${result.undo_available ? " Ctrl+Z undoes it." : ""}`, result.undo_available);
     await pollSettings();
   }
+  const commandState = () => postParent("command-state", {selected: state.selection.size, copied: pasteGrades.available()});
+  function invalidateGradePictures(paths, updating = true) {
+    thumbnails.clear();
+    const targets = new Set(paths);
+    for (const map of [state.cells, state.filmCells]) for (const [path, cell] of map) if (targets.has(path)) { cell.controller.abort(); cell.element.remove(); map.delete(path); }
+    if (updating) for (const photo of state.allPhotos) if (targets.has(photo.path)) { photo.pictureCurrent = false; photo.picture_updating = true; }
+    if (targets.has(selected()?.path)) { state.single?.abort(); state.fitMeta = null; state.nativeMeta = null; }
+  }
+  const pasteGrades = HDRGradePaste.create({api, status,
+    prepare: paths => standalone ? libraryDesktop?.prepareLibraryPaste?.(paths) ?? Promise.resolve(false) : parent.HDRLibraryHost.preparePaste(paths),
+    changed: (_clipboard, result) => {
+      commandState(); if (!result) return;
+      const paths = (result.photos || []).map(photo => photo.path);
+      invalidateGradePictures(paths.length ? paths : [...state.selection]);
+      for (const row of result.photos || []) { const photo = state.allPhotos.find(photo => photo.path === row.path); if (photo) Object.assign(photo, row); }
+      culling.setUndo(result.undo_available);
+      if (result.session) postParent("grade-replaced", {session:result.session});
+      confirmChange(`Pasted grade onto ${plural(result.count, "photo")}. Each keeps its previous grade. ${(result.warnings || []).map(warning => typeof warning === "string" ? warning : `${warning.path.split(/[\\/]/).at(-1)}: ${warning.message}`).join(" ")} Ctrl+Z undoes it.`, result.undo_available);
+      applyQuery(); paintGrid(); paintFilm(); if (state.view === "single") showSingle();
+      void activity.refresh();
+    }
+  });
+  const safeCommand = work => Promise.resolve().then(work).catch(error => status(error.message));
+  const commands = Object.freeze({copy: () => safeCommand(() => state.selection.size === 1 && pasteGrades.copy(selected()?.path)),
+    paste: (choose = false) => safeCommand(() => pasteGrades.paste([...state.selection], choose)),
+    quickExport: () => { if (state.selection.size) postParent("quick-export", {paths:[...state.selection]}); },
+    openExport: () => { if (state.selection.size) postParent("export-selection", {paths:[...state.selection]}); },
+    selection: () => [...state.selection], canCopy: () => state.selection.size === 1, canPaste: () => !!state.selection.size && pasteGrades.available()});
+  window.HDRLibraryCommands = commands;
+  function libraryCommand(command) {
+    if (document.querySelector("dialog[open]") || document.activeElement?.matches("input,textarea,select,[contenteditable]")) return;
+    if (command === "copy-grade") return commands.copy();
+    if (command === "paste-grade" || command === "paste-grade-choose") return commands.paste(command === "paste-grade-choose");
+    if (command === "quick-export") return commands.quickExport();
+    if (command === "undo") return culling.undo();
+  }
+  libraryDesktop?.onMenuCommand?.(({command}) => libraryCommand(command));
+  void pasteGrades.refresh().catch(() => {});
   async function photoMenu(event, photo) {
     event.preventDefault();
     const index = state.photos.findIndex(item => item.path === photo.path);
@@ -491,6 +538,11 @@
       for (const [target, revert] of Object.entries(REVERTS)) if (counts[target]) grades.push({ label: revert.label, run: () => revertGrades(paths, target, counts[target]) });
     } catch (error) { status(error.message); }
     const chosen = state.photos.filter(item => state.selection.has(item.path));
+    grades.push({label:"Copy grade", key:"Ctrl+C", disabled:!commands.canCopy(), run:commands.copy},
+      {label:"Paste grade", key:"Ctrl+V", disabled:!commands.canPaste(), run:() => commands.paste()},
+      {label:"Paste grade (choose settings)…", key:"Ctrl+Shift+V", disabled:!commands.canPaste(), run:() => commands.paste(true)},
+      {separator:true}, {label:"Quick export…",key:"Ctrl+Shift+E",run:commands.quickExport},
+      {label:"Open in Export",run:commands.openExport});
     grades.push({ label: "Create virtual copy…", run: () => createCopy(chosen) });
     if (one && photo.copy_id) grades.push({ label: "Rename copy…", run: () => renameCopy(photo) });
     showMenu(event, [{ header: one ? photo.name : `${paths.length.toLocaleString()} photos` },
@@ -519,7 +571,8 @@
   function updateSingleCaption() {
     if (compare.enabled()) compare.captions();
     if (!selected()) return;
-    $("single-caption").replaceChildren(document.createTextNode(selected().name), culling.strip(selected()));
+    const updating = selected().picture_updating ? " · Updating saved-grade picture · showing default look" : "";
+    $("single-caption").replaceChildren(document.createTextNode(selected().name + updating), culling.strip(selected()));
   }
   function select(index, scroll = false, mode = "single") {
     if (!state.photos.length) return;
@@ -1012,6 +1065,7 @@
         // visible pictures as well, so returning from Grade discovers it.
         const visible = new Set([...state.cells.keys(), ...state.filmCells.keys(), selected()?.path]);
         const paths = state.allPhotos.filter(photo => photo.storage === "database" || photo.edited || visible.has(photo.path)).map(photo => photo.path);
+        void api("/api/library/paste-pictures", {paths:[...visible].filter(Boolean)}).catch(() => {});
         const result = await api("/api/library/settings-status", { paths });
         const byPath = new Map(result.photos.map(photo => [photo.path, photo]));
         let changed = false;
@@ -1019,8 +1073,8 @@
           const row = byPath.get(photo.path);
           // A photo that has not loaded yet has no pictureCurrent. Treat missing as
           // false, or every newly shown thumbnail is thrown away and drawn twice.
-          if (row && ((row.grade_identity || "") !== (photo.grade_identity || "") || !!row.pictureCurrent !== !!photo.pictureCurrent)) {
-            Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity, pictureCurrent: row.pictureCurrent });
+          if (row && ((row.grade_identity || "") !== (photo.grade_identity || "") || !!row.pictureCurrent !== !!photo.pictureCurrent || !!row.picture_updating !== !!photo.picture_updating)) {
+            Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity, pictureCurrent: row.pictureCurrent, picture_updating: row.picture_updating });
             for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }
             changed = true;
           }
@@ -1057,6 +1111,8 @@
     if (event.origin !== location.origin || event.source !== parent || event.data?.type !== "hdr-library-host") return;
     if (event.data.action === "theme") applyTheme(event.data.theme);
     if (event.data.action === "active") setActive(event.data.enabled);
+    if (event.data.action === "add-export-selection") postParent("add-export-selection", {paths:[...state.selection]});
+    if (event.data.action === "command") libraryCommand(event.data.command);
     if (event.data.action === "add-folder") openPicker();
     if (event.data.action === "restore") void restoreState(event.data.state).catch(error => status(error.message));
   });
@@ -1065,6 +1121,9 @@
     if (document.querySelector("dialog[open]") || event.target.matches("input,textarea,select,[contenteditable]") || event.target.closest(".library-filter-panel,.library-folder-menu")) return;
     const key = event.key.toLowerCase();
     if (event.ctrlKey || event.metaKey) {
+      if (key === "c") { event.preventDefault(); void commands.copy(); }
+      if (key === "v") { event.preventDefault(); void commands.paste(event.shiftKey); }
+      if (key === "e" && event.shiftKey) { event.preventDefault(); commands.quickExport(); }
       if (key === "f") { event.preventDefault(); toggleFilters(); }
       if (key === "a") { event.preventDefault(); state.selection = new Set(state.photos.map(photo => photo.path)); updateDetails(); paintGrid(); paintFilm(); }
       if (key === "z") { event.preventDefault(); void culling.undo(); }
