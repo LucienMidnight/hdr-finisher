@@ -552,6 +552,25 @@ function registerIpc() {
     const record = validateSender(event);
     return callback(record, ...args);
   });
+  handleWindow("desktop:open-drop-in-main", async (record, dropped) => {
+    if (record.role !== "library") throw new Error("Only Library can forward a dropped file.");
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
+    let selection;
+    if (typeof dropped?.path === "string") {
+      const filePath = dropped.path;
+      if (isProjectPath(filePath)) {
+        selection = { kind: "project", ...(await grantPath(filePath, "project-open")) };
+        knownProjectPaths.add(pathKey(selection.path || filePath));
+      } else if (isSourcePath(filePath)) {
+        selection = { kind: "source", ...(await grantPath(filePath, "source-open")) };
+      } else throw new Error("This file type cannot be opened in HDR Finisher.");
+    } else if (typeof dropped?.name === "string" && isSourcePath(dropped.name) && dropped.bytes instanceof ArrayBuffer) {
+      selection = { kind: "byte-source", name: dropped.name, bytes: dropped.bytes };
+    } else throw new Error("The dropped file could not be read. Use File › Open to select it.");
+    mainWindow.show(); mainWindow.focus();
+    mainWindow.webContents.send("desktop:open-request", selection);
+    return true;
+  });
   handleWindow("desktop:open-source-in-main", async (record, filePath, itemKey) => {
     if (record.role !== "library") throw new Error("Only the library window can request a source open.");
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");

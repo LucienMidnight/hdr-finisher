@@ -7,7 +7,9 @@ async function initializeDesktopBridge() {
   if (!desktop) return;
   desktop.onMenuCommand(({ command, payload }) => handleDesktopCommand(command, payload));
   desktop.onOpenRequest((selection) => {
-    void openDesktopSelection(selection).catch((error) => {
+    const opening = selection.kind === "byte-source"
+      ? importByteFile(new File([selection.bytes], selection.name)) : openDesktopSelection(selection);
+    void opening.catch((error) => {
       console.error(error);
       showUploadError(error?.message || "Could not open that source image.");
     });

@@ -322,7 +322,6 @@ def test_desktop_source_open_handoffs_surface_failures() -> None:
         javascript.index("desktop.onOpenRequest((selection)"):
         javascript.index("await desktop.rendererReady();")
     ]
-    assert "openDesktopSelection(selection).catch((error)" in bridge_handler
     assert 'showUploadError(error?.message || "Could not open that source image.");' in bridge_handler
 
     browser_handler = frontend_declaration("confirmMediaBrowserSelection")

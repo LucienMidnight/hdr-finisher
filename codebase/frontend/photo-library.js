@@ -25,6 +25,22 @@
     }
   };
   const status = (message) => { $("library-status").textContent = message; };
+  // Capture OS drops anywhere; internal photo/folder drags keep their own handlers.
+  const externalDrop = event => Array.from(event.dataTransfer?.types || []).includes("Files")
+    && !Array.from(event.dataTransfer?.types || []).some(type => type.startsWith("application/x-hdr-library-"));
+  for (const name of ["dragenter", "dragover"]) document.addEventListener(name, event => {
+    if (!externalDrop(event)) return;
+    event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy";
+  }, true);
+  document.addEventListener("drop", event => {
+    if (!externalDrop(event)) return;
+    event.preventDefault(); event.stopPropagation();
+    const files = Array.from(event.dataTransfer.files || []);
+    if (files.length !== 1) { status("Drop one image or project at a time, as with File › Open."); return; }
+    if (!standalone) void parent.HDRLibraryHost.openDrop(files[0]).catch(error => status(error.message));
+    else if (libraryDesktop) void libraryDesktop.openDroppedFileInMain(files[0]).catch(error => status(error.message));
+    else status("Opening dropped files requires the editor window.");
+  }, true);
   const confirmChange = (message, undoAvailable) => { status(message); $("library-undo").hidden = !undoAvailable; };
   const aborted = (error) => error?.name === "AbortError";
   const sleep = (ms, signal) => new Promise((resolve, reject) => {
