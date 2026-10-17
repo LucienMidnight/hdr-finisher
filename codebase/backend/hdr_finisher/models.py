@@ -1375,7 +1375,7 @@ class FavoritePathRequest(BaseModel):
 
 class DesktopPathGrantRequest(BaseModel):
     path: str
-    intent: Literal["source-open", "source-relink", "project-open", "project-save", "export-file"]
+    intent: Literal["source-open", "source-relink", "project-open", "project-save", "export-directory", "export-file"]
 
 
 class DesktopPathGrantResponse(BaseModel):

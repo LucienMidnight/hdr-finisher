@@ -72,3 +72,11 @@ def test_external_proof_link_is_read_only_and_tokenized(monkeypatch, tmp_path: P
     assert "/api/" not in page.text
     assert delivered.status_code == 200
     assert delivered.content == b"proof-bytes"
+
+
+def test_desktop_grant_endpoint_issues_batch_export_folder(tmp_path: Path) -> None:
+    """The Export page's folder picker asks for this grant (October 18, 2026)."""
+    response = main_module.grant_desktop_path(
+        main_module.DesktopPathGrantRequest(path=str(tmp_path), intent="export-directory"))
+
+    assert main_module.desktop_path_grants.consume(response.grant, "export-directory") == tmp_path.resolve()
