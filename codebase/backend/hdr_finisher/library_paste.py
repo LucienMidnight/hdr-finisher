@@ -39,7 +39,7 @@ def setting_label(path):
     elif parts[0]=='denoise': parts=parts[2:]
     elif parts[:2]==['source','raw_import_settings']: parts=parts[2:]
     if len(parts)>1 and parts[0] in ('controls','lens'): parts=parts[1:]
-    return ' · '.join(part.replace('_',' ').capitalize() for part in parts)
+    return ' Â· '.join(part.replace('_',' ').capitalize() for part in parts)
 
 
 def setting_group(field):
@@ -74,7 +74,10 @@ class LibraryPaste:
             from .sessions import SessionStore
             session=SessionStore().prepare_session(self.marks.source_path(path),owns_source_path=False)
             default=session.edit_document().model_dump(mode='json')
-            state['default']=default; self.grades._put(path,state)
+            with self.marks._lock:
+                state=self.grades._get(path)
+                default=state.get('default') or default
+                state['default']=default; self.grades._put(path,state)
         return deepcopy(current or default),deepcopy(default)
 
     def schema(self, grade, start):
@@ -130,6 +133,9 @@ class LibraryPaste:
         clip=deepcopy(self.clipboard); groups=self.schema(clip['grade'],clip['start']); selection=self.selection(groups,selection)
         paths=list(dict.fromkeys(str(self.marks._path(p)) for p in paths))
         if not paths: raise ValueError('Select photos to paste onto.')
+        # Cold starting documents may require a full corrected RAW decode. Do
+        # that before the edit locks: Grade remains usable throughout preflight.
+        for path in paths: self.document(path)
         targets={}; warnings=[]
         raw_prefix='source.raw_import_settings.'
         with self.grades.store._lock,self.marks._lock:

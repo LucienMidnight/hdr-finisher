@@ -332,10 +332,12 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
 
 
 def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> None:
-    # Set these before importing numpy or any decoder. Native libraries must
-    # not create a full-size thread pool in the background process.
+    # Scale native decode/render work within one photo, leaving half the logical
+    # processors for Grade and foreground work. The process remains below normal
+    # priority and the existing Grade/export pause gate still takes precedence.
+    native_threads = max(1, (os.cpu_count() or 2) // 2)
     for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
-        os.environ[name] = "1"
+        os.environ[name] = str(native_threads)
     priority = _lower_priority()
     from .media_browser import MediaBrowserStore, MediaBrowserInterpretationRequired
     from .launcher import _parent_is_alive
