@@ -255,10 +255,15 @@
   "drivers": [
     {
       "path": "tests/overlay-backlog.js",
-      "areas": ["preview", "library"],
+      "areas": [
+        "preview",
+        "library"
+      ],
       "tier": "area",
       "protects": "Latest-only instruments, grain drag memory and Library recovery",
-      "launch": {"method": "electron"}
+      "launch": {
+        "method": "electron"
+      }
     },
     {
       "path": "desktop/tests/confirmation-focus.js",
@@ -2032,7 +2037,7 @@
         "preview"
       ],
       "tier": "diagnostic",
-      "protects": "§8.1 headline latency under the §8 measurement rule.",
+      "protects": "\u00a78.1 headline latency under the \u00a78 measurement rule.",
       "launch": {
         "method": "electron"
       }
@@ -3770,6 +3775,20 @@
         "via": [
           "tests/performance/zoom-block-continuity.js"
         ]
+      }
+    },
+    {
+      "path": "desktop/tests/overlay-feedback.js",
+      "areas": [
+        "preview",
+        "library",
+        "ui",
+        "film"
+      ],
+      "tier": "area",
+      "protects": "GPU analysis overlays, Library review controls and file drops, Performance settings and theme restart.",
+      "launch": {
+        "method": "native"
       }
     }
   ]

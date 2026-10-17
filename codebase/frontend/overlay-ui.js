@@ -156,8 +156,11 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
     return;
   }
 
-  const blob = await response.blob();
-  if (!requestIsCurrent()) return;
+  const blob = await response.blob().catch(error => {
+    if (error.name === "AbortError") return null;
+    throw error;
+  });
+  if (!blob || !requestIsCurrent()) return;
   const url = URL.createObjectURL(blob);
   if (await applyOverlayUrl(url, requestIsCurrent)) {
     state.overlayPresented = {
