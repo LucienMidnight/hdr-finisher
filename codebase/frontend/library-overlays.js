@@ -2,8 +2,7 @@
 (() => {
   function create(o) {
     let prefs={}, enabled={exposure:false,focus:false}, records=new Map(), switching=Promise.resolve(), saveQueue=Promise.resolve();
-    const $=id=>document.getElementById(id), legend=document.createElement('div');
-    legend.id='library-overlay-legend';legend.hidden=true;document.body.append(legend);
+    const $=id=>document.getElementById(id);
     const controls={},fields={};
     function change(key,value){prefs[key]=value;redraw();saveQueue=saveQueue.then(()=>o.api('/api/library/review-preferences',{[key]:value})).catch(e=>o.status(e.message));}
     function options(kind,title,key,content){
@@ -19,10 +18,6 @@
     options('exposure','Exposure','E',`<label>Strength <input id="exposure-strength" type="range" min="0" max="1" step=".01" value=".65"></label><label><input id="exposure-highlights" type="checkbox" checked> Blown highlights <input id="exposure-highlight-color" type="color" value="#ff4050" aria-label="Highlight colour"></label><label><input id="exposure-shadows" type="checkbox" checked> Blocked shadows <input id="exposure-shadow-color" type="color" value="#4080ff" aria-label="Shadow colour"></label>`);
     for(const id of ['focus-strength','focus-sensitivity','focus-color','exposure-strength','exposure-highlights','exposure-shadows','exposure-highlight-color','exposure-shadow-color']){const key=id.replaceAll('-','_');fields[id]=key;$(id).addEventListener('input',e=>change(key,e.target.type==='checkbox'?e.target.checked:e.target.type==='range'?+e.target.value:e.target.value));}
     prefs=Object.fromEntries(Object.entries(fields).map(([id,key])=>{const input=$(id);return [key,input.type==='checkbox'?input.checked:input.type==='range'?+input.value:input.value];}));
-    function updateLegend(){legend.replaceChildren();legend.hidden=!enabled.exposure&&!enabled.focus;
-      const entries=[...(enabled.focus?[['Focus','focus_color']]:[]),...(enabled.exposure?[['Blown','exposure_highlight_color'],['Blocked','exposure_shadow_color']]:[])];
-      for(const [name,key] of entries){const label=document.createElement('label');label.textContent=name;const input=document.createElement('input');input.type='color';input.value=prefs[key];input.setAttribute('aria-label',`${name} colour`);input.addEventListener('input',()=>{change(key,input.value);$(key.replaceAll('_','-')).value=input.value;});label.prepend(input);legend.append(label);}
-    }
     function sync(r){if(!r.canvas.isConnected)return;const c=r.canvas,absolute=c.style.position==='absolute';for(const item of Object.values(r.items)){const layer=item.layer;layer.style.cssText=absolute?c.style.cssText:`position:absolute;left:${c.offsetLeft}px;top:${c.offsetTop}px;width:${c.clientWidth}px;height:${c.clientHeight}px;object-fit:contain`;
       layer.style.pointerEvents='none';layer.style.zIndex=item.kind==='focus'?'4':'3';layer.style.padding=getComputedStyle(c).padding;layer.style.boxSizing='border-box';}}
     function remove(r){for(const item of Object.values(r.items)){item.request?.abort();item.layer.remove();item.badge.remove();}r.observer.disconnect();r.resize.disconnect();if(records.get(r.canvas)===r)records.delete(r.canvas);r.controller.signal.removeEventListener('abort',r.cleanup);}
@@ -54,8 +49,8 @@
         if(color){output.data.set(color,i);output.data[i+3]=Math.round(alpha*255);}}
       item.layer.width=output.width;item.layer.height=output.height;item.layer.getContext('2d').putImageData(output,0,0);item.layer.hidden=false;item.layer.dataset.key=item.map.key;item.layer.dataset.quality=item.map.quality;item.layer.dataset.strength=String(prefs[item.kind+'_strength']);sync(r);
     }
-    function redraw(){for(const r of records.values())for(const item of Object.values(r.items))draw(r,item);updateLegend();}
-    function refresh(){for(const r of [...records.values()])remove(r);for(const s of o.surfaces())attach(s.photo,s.canvas,s.meta,s.controller,s.current);updateLegend();}
+    function redraw(){for(const r of records.values())for(const item of Object.values(r.items))draw(r,item);}
+    function refresh(){for(const r of [...records.values()])remove(r);for(const s of o.surfaces())attach(s.photo,s.canvas,s.meta,s.controller,s.current);}
     function toggle(kind,value){const task=switching.then(async()=>{const result=await o.api('/api/library/overlay-switch',{kind,enabled:value??!enabled[kind]});enabled[kind]=result.enabled;$(`${kind}-enabled`).checked=result.enabled;controls[kind].button.classList.toggle('active',result.enabled);refresh();});switching=task.catch(e=>o.status(e.message));return task;}
     async function init(){try{prefs=await o.api('/api/library/review-preferences');for(const [id,key] of Object.entries(fields)){const input=$(id);if(input.type==='checkbox')input.checked=prefs[key];else input.value=prefs[key];}redraw();}catch(e){o.status(e.message);}}
     return {attach,toggle,init,snapshot:()=>({enabled:{...enabled},settings:{...prefs},maps:[...records.values()].flatMap(r=>Object.values(r.items).map(item=>({path:r.photo.path,kind:item.kind,key:item.map?.key,quality:item.map?.quality,ready:!!item.values,unavailable:item.badge.title})))})};

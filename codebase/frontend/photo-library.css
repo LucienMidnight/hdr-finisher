@@ -234,13 +234,8 @@ body { margin: 0; color: var(--body); background: var(--app); }
 /* Library-only source-data warnings. */
 .picture-frame {position:relative;}
 .library-map-status {position:absolute;bottom:5px;right:5px;z-index:5;background:#17191de0;color:var(--muted);font-size:11px;padding:2px 5px;pointer-events:auto;border-radius:3px;}
-#library-overlay-legend {display:flex;gap:12px;margin-left:8px;font-size:12px;}
-#library-overlay-legend[hidden] {display:none;}
-#library-overlay-legend label {display:flex;gap:5px;align-items:center;}
-#library-overlay-legend input[type=color],.library-options input[type=color] {width:24px;height:22px;padding:0;border:0;cursor:pointer;}
 .library-source-overlay {image-rendering:pixelated;}
 
-#library-overlay-legend {position:fixed;bottom:30px;left:50%;transform:translateX(-50%);z-index:100;background:var(--panel);padding:5px 10px;border:1px solid var(--hairline);border-radius:3px;}
 
 .library-map-status[data-kind="focus"] {bottom:24px;}
 
@@ -321,3 +316,4 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-picker .loading { background: linear-gradient(90deg, var(--deep), var(--raised), var(--deep)); background-size: 200% 100%; animation: picker-loading 1.4s linear infinite; }
 @keyframes picker-loading { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .library-picker .loading { animation: none; } }
+.library-options input[type=color] {width:24px;height:22px;padding:0;border:0;cursor:pointer;}
