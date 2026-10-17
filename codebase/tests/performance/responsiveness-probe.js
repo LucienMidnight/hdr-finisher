@@ -183,7 +183,7 @@ async function measureStroke(page, deltaX) {
     if (preference) {
       await page.evaluate((mode) => {
         // P5: Responsive and Balanced became Faster dragging on; Precise is off.
-        const faster = document.getElementById("preview-faster-dragging");
+        const faster = document.getElementById("settings-faster-dragging");
         const on = mode !== "precise";
         if (faster && faster.checked !== on) {
           faster.checked = on;

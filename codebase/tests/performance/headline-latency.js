@@ -650,7 +650,7 @@ async function measureInputHandler(page) {
     // The drag setting under test. A fresh profile starts at the app default;
     // an existing one may not, so every mode is set explicitly.
     const dragSetting = await page.evaluate((mode) => {
-      const box = document.getElementById("preview-faster-dragging");
+      const box = document.getElementById("settings-faster-dragging");
       if (box) {
         if (mode !== "app-default" && box.checked !== (mode === "on")) {
           box.checked = mode === "on";

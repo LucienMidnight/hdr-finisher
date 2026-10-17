@@ -170,7 +170,6 @@ async function initializeApplicationShell() {
         ? "auto" : normalizedPreviewResolution(preferences.previewResolution);
       const selectablePreviewResolution = preferredPreviewResolution;
       state.fasterDragging = preferences.fasterDragging === true;
-      if (els.previewFasterDragging) els.previewFasterDragging.checked = state.fasterDragging;
       if (preferences.navigationWindow !== state.navigationWindowMode) setNavigationWindowMode(preferences.navigationWindow);
       if (options.initial) {
         state.previewResolutionOverride = selectablePreviewResolution !== "auto";

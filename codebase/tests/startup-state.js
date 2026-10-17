@@ -29,7 +29,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
     }
 
     const startup = await page.evaluate(() => ({
-      fasterDragging: document.querySelector("#preview-faster-dragging")?.checked,
+      fasterDragging: document.querySelector("#settings-faster-dragging")?.checked,
       scopeZoom: document.querySelector("#scope-zoom")?.value,
       compareLayout: document.querySelector("#preview-stage")?.dataset.compareLayout,
       sourceCollapsed: document.querySelector(".source-rail")?.classList.contains("collapsed"),

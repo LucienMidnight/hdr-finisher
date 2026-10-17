@@ -29,7 +29,7 @@ const { _electron: electron } = require("playwright");
     // P5: the Preview response menu became one checkbox. The check is still
     // that the control reacts at once to a real click while previews refine.
     for (const value of [false, true, false, true, false]) {
-      if (await page.locator("#preview-popover").isVisible()) await page.locator("#preview-close").click();
+      if (await page.locator("#settings-dialog").isVisible()) await page.locator("#settings-close").click();
       await page.locator("#zoom-fit").click();
       const image = await page.evaluate(() => { const rect = activePreviewElement().getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; });
       await page.mouse.move(image.x, image.y);
@@ -41,15 +41,15 @@ const { _electron: electron } = require("playwright");
         await page.mouse.move(slider.x + slider.width * (zoom % 2 ? 0.6 : 0.3), slider.y + slider.height / 2);
       }
       await page.mouse.up();
-      if (!await page.locator("#preview-popover").isVisible()) await page.locator("#preview-toggle").click();
+      await page.evaluate(() => HDRApplicationShell.openSettings("performance"));
       const started = Date.now();
       // A real click and change event, not a scripted value.
-      if (await page.locator("#preview-faster-dragging").isChecked() !== value) {
-        await page.locator("#preview-faster-dragging").click();
+      if (await page.locator("#settings-faster-dragging").isChecked() !== value) {
+        await page.locator("#settings-faster-dragging").click();
       }
       await page.waitForFunction((expected) => state.fasterDragging === expected, value, { timeout: 3000 });
       timings.push(Date.now() - started);
-      assert.equal(await page.locator("#preview-popover").isVisible(), true);
+      assert.equal(await page.locator("#settings-dialog").isVisible(), true);
       try {
         await page.waitForFunction(() => {
           const accepted = state.acceptedPresentation;

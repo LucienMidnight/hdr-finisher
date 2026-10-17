@@ -24,7 +24,7 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
     assert.equal(start.normalTierSelector, false);
     assert.equal(start.diagnosticTierSelector, true);
     await page.evaluate(() => {
-      const faster = document.querySelector("#preview-faster-dragging");
+      const faster = document.querySelector("#settings-faster-dragging");
       faster.checked = true;
       faster.dispatchEvent(new Event("change", { bubbles: true }));
     });
@@ -98,7 +98,7 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
     assert.ok(responsive.generation >= coarse.generation, JSON.stringify({ coarse, responsive }));
 
     await page.evaluate(() => {
-      const faster = document.querySelector("#preview-faster-dragging");
+      const faster = document.querySelector("#settings-faster-dragging");
       faster.checked = false;
       faster.dispatchEvent(new Event("change", { bubbles: true }));
     });

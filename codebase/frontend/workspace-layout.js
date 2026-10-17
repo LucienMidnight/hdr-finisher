@@ -36,7 +36,6 @@ function initializeSourceRailState() {
     state.compactWorkspace = event.matches;
     state.compactSourceOpen = false;
     closeOverlayPopover({ restoreFocus: false });
-    closePreviewPopover({ restoreFocus: false });
     applyResponsiveWorkspaceState();
     scheduleLayoutSettled();
   });
@@ -378,7 +377,6 @@ function initializeBoundedTooltips() {
 }
 
 function toggleOverlayPopover() {
-  closePreviewPopover({ restoreFocus: false });
   const open = els.overlayPopover.classList.toggle("hidden") === false;
   els.overlayToggle.setAttribute("aria-expanded", String(open));
 }
@@ -387,18 +385,6 @@ function closeOverlayPopover({ restoreFocus = true } = {}) {
   els.overlayPopover.classList.add("hidden");
   els.overlayToggle.setAttribute("aria-expanded", "false");
   if (restoreFocus) els.overlayToggle.focus();
-}
-
-function togglePreviewPopover() {
-  closeOverlayPopover({ restoreFocus: false });
-  const open = els.previewPopover.classList.toggle("hidden") === false;
-  els.previewToggle.setAttribute("aria-expanded", String(open));
-}
-
-function closePreviewPopover({ restoreFocus = true } = {}) {
-  els.previewPopover.classList.add("hidden");
-  els.previewToggle.setAttribute("aria-expanded", "false");
-  if (restoreFocus) els.previewToggle.focus();
 }
 
 function toggleAnalysisDock() {

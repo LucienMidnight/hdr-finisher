@@ -11,7 +11,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     // P5: one opt-in replaced the three-way Preview response menu.
-    const selector = page.locator("#preview-faster-dragging");
+    const selector = page.locator("#settings-faster-dragging");
     if (await page.locator("#preview-latency").count() !== 0) throw new Error("The old Preview response menu is still present.");
     if (await selector.isChecked()) throw new Error("Faster dragging should be off by default.");
 
@@ -38,10 +38,10 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     if (Math.abs(actualSize.cssWidth - actualSize.sourceWidth) > 1 || Math.abs(actualSize.cssHeight - actualSize.sourceHeight) > 1) {
       throw new Error(`100% zoom was not one source pixel per CSS pixel: ${JSON.stringify(actualSize)}`);
     }
-    await page.locator("#preview-toggle").click();
-    await page.locator("#preview-popover").waitFor({ state: "visible" });
+    await page.evaluate(() => HDRApplicationShell.openSettings("performance"));
+    await page.locator('[data-settings-panel="performance"]').waitFor({ state: "visible" });
     const statusFitsPopover = await page.evaluate(() => {
-      const popover = document.querySelector("#preview-popover");
+      const popover = document.querySelector('[data-settings-panel="performance"]');
       const status = document.querySelector("#preview-quality-status");
       const original = status.textContent;
       status.textContent = "Full unavailable — Bounded strip execution refused this graph. local adjustments, spatial film effects.";

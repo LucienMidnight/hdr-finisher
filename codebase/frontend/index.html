@@ -272,8 +272,6 @@
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
             <button id="overlay-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="overlay-popover" aria-haspopup="dialog" aria-pressed="false">Overlays</button>
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
-            <button id="preview-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="preview-popover" aria-haspopup="dialog">Preview</button>
-            <span class="viewer-tool-divider" aria-hidden="true">|</span>
             <button id="frame-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="frame-popover" aria-haspopup="dialog" title="Set the neutral surround behind the image, kept separate from the application theme.">Frame</button>
           </div>
           <div id="overlay-popover" class="overlay-popover hidden">
@@ -318,20 +316,6 @@
               </div>
               <input id="overlay-threshold" type="range" min="10" max="4000" step="10" value="100" data-path="shared.overlay_threshold">
               <p class="helper overlay-control-note">Highlights pixels at or above this reference-nit level.</p>
-            </div>
-          </div>
-          <div id="preview-popover" class="overlay-popover preview-popover hidden">
-            <div class="popover-heading">
-              <span>Preview</span>
-              <button id="preview-close" class="text-button" type="button">Close</button>
-            </div>
-            <label class="checkbox-row preview-faster-dragging" for="preview-faster-dragging" title="For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected.">
-              <input id="preview-faster-dragging" type="checkbox">
-              <span>Faster dragging</span>
-            </label>
-            <div class="preview-popover-status">
-              <span>Current preview size</span>
-              <strong id="preview-quality-status" aria-live="polite">Standard</strong>
             </div>
           </div>
           <div id="frame-popover" class="overlay-popover frame-popover hidden">
@@ -1661,6 +1645,7 @@
     <div class="settings-layout">
       <nav class="settings-nav" aria-label="Settings sections">
         <button type="button" class="active" data-settings-tab="general" aria-selected="true">General</button>
+        <button type="button" data-settings-tab="performance" aria-selected="false">Performance</button>
         <button type="button" data-settings-tab="appearance" aria-selected="false">Appearance</button>
         <button type="button" data-settings-tab="locations" aria-selected="false">Locations</button>
         <button type="button" data-settings-tab="shortcuts" aria-selected="false">Shortcuts</button>
@@ -1678,6 +1663,9 @@
             </select>
           </label>
           <p id="hdr-reference-white-note" class="helper">Updates the active project when one is open and becomes the default for new sources. It does not set export peak, display peak, proof target, or Windows SDR white.</p>
+        </section>
+        <section data-settings-panel="performance" hidden>
+          <h3>Performance</h3>
           <label class="settings-field">Rendering mode
             <select id="settings-rendering-mode">
               <option value="auto">Auto · Recommended</option>
@@ -1705,6 +1693,10 @@
             <input id="settings-gpu-memory-custom" type="number" min="0.25" max="64" step="0.25" inputmode="decimal" value="2">
           </label>
           <p class="helper">How much of your graphics card the preview may use. Auto uses up to half of the card's own memory, or 2 GiB when the card's memory can't be read. More memory lets the preview process the whole image in one fast pass. Choose a lower limit if you run other graphics-heavy apps at the same time. Export is unaffected.</p>
+          <div class="preview-popover-status">
+            <span>Current preview size</span>
+            <strong id="preview-quality-status" aria-live="polite">Standard</strong>
+          </div>
         </section>
         <section data-settings-panel="appearance" hidden>
           <h3>Appearance</h3>

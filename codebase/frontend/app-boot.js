@@ -104,7 +104,6 @@ function initializePreviewPreferences() {
   state.scopeQuality = DEFAULT_SCOPE_QUALITY;
   state.scopeExactPeak = false;
   state.compareLayout = "single";
-  if (els.previewFasterDragging) els.previewFasterDragging.checked = state.fasterDragging;
   if (els.scopeZoom) els.scopeZoom.value = String(state.scopeMaxNits);
   if (els.scopeDetail) els.scopeDetail.value = state.scopeQuality;
   if (els.scopeExactPeak) els.scopeExactPeak.checked = state.scopeExactPeak;
@@ -644,12 +643,6 @@ function bindEvents() {
     state.scopeMaxNits = [1000, 4000, 10000].includes(requestedMaxNits) ? requestedMaxNits : 4000;
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
-  els.previewFasterDragging?.addEventListener("change", () => {
-    const enabled = els.previewFasterDragging.checked === true;
-    window.HDRApplicationShell?.setFasterDragging?.(enabled);
-    state.fasterDragging = enabled;
-    renderReadouts();
-  });
   els.scopeDetail?.addEventListener("change", async () => {
     state.scopeQuality = SCOPE_QUALITY_PROFILES[els.scopeDetail.value] ? els.scopeDetail.value : DEFAULT_SCOPE_QUALITY;
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
@@ -994,23 +987,15 @@ function bindEvents() {
   });
   els.overlayToggle.addEventListener("click", toggleOverlayPopover);
   els.overlayClose.addEventListener("click", closeOverlayPopover);
-  els.previewToggle.addEventListener("click", togglePreviewPopover);
-  els.previewClose.addEventListener("click", closePreviewPopover);
   document.addEventListener("pointerdown", (event) => {
     if (state.compactSourceOpen && !event.target.closest(".source-rail")) closeCompactSourceRail();
     if (!els.overlayPopover.classList.contains("hidden") && !event.target.closest("#overlay-popover, #overlay-toggle")) closeOverlayPopover({ restoreFocus: false });
-    if (!els.previewPopover.classList.contains("hidden") && !event.target.closest("#preview-popover, #preview-toggle")) closePreviewPopover({ restoreFocus: false });
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (!els.overlayPopover.classList.contains("hidden")) {
       event.preventDefault();
       closeOverlayPopover();
-      return;
-    }
-    if (!els.previewPopover.classList.contains("hidden")) {
-      event.preventDefault();
-      closePreviewPopover({ restoreFocus: true });
       return;
     }
     if (state.compactSourceOpen) {

@@ -120,19 +120,15 @@ async function main() {
     assert.equal(nativeDialogs.length, 0,
       `A native modal was raised: ${JSON.stringify(nativeDialogs)}`);
 
-    // Close Settings so the selector under test is in the viewer's Preview popover.
-    await window.evaluate(() => document.getElementById("settings-dialog")?.close());
-    await window.click("#preview-toggle");
-    await window.waitForSelector("#preview-faster-dragging", { state: "visible", timeout: 10000 });
-
-    // The control, immediately, with no focus round trip. Clicking it must
-    // reach the element, leave it focused, and change it (P5 replaced the
-    // Preview response menu with this checkbox).
-    const selector = window.locator("#preview-faster-dragging");
+    // Faster dragging now lives in Performance settings. It must still react
+    // immediately after the in-app confirmation, without a focus round trip.
+    await window.evaluate(() => HDRApplicationShell.openSettings("performance"));
+    await window.waitForSelector("#settings-faster-dragging", { state: "visible", timeout: 10000 });
+    const selector = window.locator("#settings-faster-dragging");
     const before = await selector.isChecked();
     await selector.click();
     const state = await window.evaluate(() => {
-      const element = document.getElementById("preview-faster-dragging");
+      const element = document.getElementById("settings-faster-dragging");
       return { focused: document.activeElement === element, disabled: element.disabled, checked: element.checked };
     });
     assert.equal(state.disabled, false, "The Faster dragging checkbox was disabled.");

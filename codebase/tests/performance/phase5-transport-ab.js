@@ -39,7 +39,7 @@ function median(values) {
       { timeout: 600000 });
     await page.evaluate(() => {
       // P5: full detail while dragging (the old Precise) is the default.
-      const faster = document.getElementById("preview-faster-dragging");
+      const faster = document.getElementById("settings-faster-dragging");
       if (faster?.checked) {
         faster.checked = false;
         faster.dispatchEvent(new Event("change", { bubbles: true }));
