@@ -131,9 +131,9 @@ class OverlayMaps:
     def cached(self,path,kind,quality="half"):
         key=map_key(path,kind,quality);file=self.file(key)
         try:
-            with np.load(file,allow_pickle=False) as data: meta=json.loads(str(data['metadata']))
-            os.utime(file,None)
-            return meta|{"key":key,"cache_hit":True,"stored_bytes":file.stat().st_size}
+            with np.load(self.cache.open(key,file),allow_pickle=False) as data: meta=json.loads(str(data['metadata']))
+            if file.exists(): os.utime(file,None)
+            return meta|{"key":key,"cache_hit":True,"stored_bytes":file.stat().st_size if file.exists() else 0}
         except FileNotFoundError:return None
         except (OSError,ValueError,EOFError):file.unlink(missing_ok=True);return None
     def build(self,path,kind="exposure",quality="half",cancelled=None):
@@ -156,6 +156,9 @@ class OverlayMaps:
             del pixels
         else:raise ValueError("Unknown Library overlay.")
         meta={"kind":kind,"quality":quality,"path":str(path),"width":data.shape[1],"height":data.shape[0],"make_ms":round((perf_counter()-start)*1000,2)}
+        if not self.cache.managed.preferences()['enabled']:
+            return self.cache.transient_result(key, {'values':data,'metadata':np.asarray(json.dumps(meta))},meta)
+        self.cache.managed.prepare()
         self.cache.root.mkdir(parents=True,exist_ok=True)
         with NamedTemporaryFile(dir=self.cache.root,suffix='.tmp',delete=False) as f:
             temp=Path(f.name);np.savez_compressed(f,values=data,metadata=np.asarray(json.dumps(meta)))
@@ -164,12 +167,10 @@ class OverlayMaps:
             if map_key(path,kind,quality)!=key:raise ValueError("The source photo changed; overlay was not published.")
             os.replace(temp,self.file(key))
         finally:temp.unlink(missing_ok=True)
-        from .library_kept import preferences
-        self.cache.limit=preferences(self.cache.root.parent)["limit_bytes"]
         self.cache.trim();log("overlay_map_saved",**meta)
         return meta|{"key":key,"cache_hit":False,"stored_bytes":self.file(key).stat().st_size}
     def png(self,key):
-        with np.load(self.file(key),allow_pickle=False) as stored:
+        with np.load(self.cache.open(key,self.file(key)),allow_pickle=False) as stored:
             data=stored['values'];meta=json.loads(str(stored['metadata']))
         if map_key(meta['path'],meta['kind'],meta['quality'])!=key:
             raise ValueError("The source photo changed; request its current overlay map.")

@@ -75,7 +75,8 @@ def pictures(root, item, delete=False):
     from .library_pictures import PICTURE_VERSION
     from .library_overlays import VERSION as MAP_VERSION
     from .library_kept import kept_picture_key
-    root=Path(root)/'library-pictures'
+    from .library_cache import LibraryCache
+    root=LibraryCache(root).directory('library-pictures')
     if not root.exists(): return
     old,new=item['old'],item.get('new','')
     pairs=[(r['path'],mapped(r['path'],old,new)) for r in item['rows'].get('photo_grades',[])]

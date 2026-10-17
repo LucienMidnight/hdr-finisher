@@ -21,10 +21,12 @@ def test_map_cache_is_invalidated_after_source_change(tmp_path):
     second=maps.build(p);assert second['key']!=first['key'];assert maps.png(second['key']).startswith(b'\x89PNG')
 
 
-def test_maps_go_before_quick_and_edited_pictures(tmp_path):
-    cache=LibraryPictureCache(tmp_path,limit=100);cache.root.mkdir()
+def test_thumbnail_allowance_evicts_oldest_overlay(tmp_path):
+    cache=LibraryPictureCache(tmp_path);cache.managed.prepare();cache.root.mkdir()
     for name,size in [('a.map.npz',110),('b.npz',10),('c.jpg',40)]: (cache.root/name).write_bytes(b'x'*size)
-    cache.trim();assert not(cache.root/'a.map.npz').exists();assert(cache.root/'b.npz').exists();assert(cache.root/'c.jpg').exists()
+    import os
+    os.utime(cache.root/"a.map.npz",(1,1))
+    cache.managed.trim(limit_bytes=100);assert not(cache.root/'a.map.npz').exists();assert(cache.root/'b.npz').exists();assert(cache.root/'c.jpg').exists()
 
 
 def test_normalized_source_does_not_call_midtone_blocked():

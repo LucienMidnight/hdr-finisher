@@ -69,8 +69,7 @@ def test_cache_discards_oldest_in_a_batch(tmp_path):
     a = cache.build(photo(tmp_path, "a.png"), 128)
     b = cache.build(photo(tmp_path, "b.png"), 128)
     os.utime(cache.file(a["key"]), (1, 1))
-    cache.limit = int(b["stored_bytes"] / .9) + 1
-    cache.trim()
+    cache.managed.trim(limit_bytes=int(b["stored_bytes"] / .9) + 1)
     assert not cache.file(a["key"]).exists()
     assert cache.file(b["key"]).exists()
 

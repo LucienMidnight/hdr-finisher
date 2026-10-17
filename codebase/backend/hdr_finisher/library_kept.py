@@ -44,18 +44,16 @@ def preferences(root, change=None):
         except FileNotFoundError: value={}
         if not isinstance(value,dict): raise ValueError("Library picture settings could not be read; nothing was changed.")
         if change is not None:
-            if set(change)-{"edited_resolution","screen_edge","limit_bytes"}: raise ValueError("Unknown Library picture setting.")
+            if set(change)-{"edited_resolution","screen_edge"}: raise ValueError("Unknown Library picture setting.")
             candidate=value|change
             if candidate.get("edited_resolution","screen") not in (*EDGES,"screen"): raise ValueError("Choose Screen size, 512, 1024 or 1920 pixels.")
             if not isinstance(candidate.get("screen_edge",2560),int) or not 1280<=candidate.get("screen_edge",2560)<=2560:
                 raise ValueError("Screen picture size must be between 1280 and 2560 pixels.")
-            if not isinstance(candidate.get("limit_bytes",2*1024**3),int) or candidate.get("limit_bytes",2*1024**3)<1024**3: raise ValueError("Choose a storage limit of at least 1 GB.")
             value=candidate;atomic_json(path,value)
         resolution=value.get("edited_resolution","screen")
         screen_edge=value.get("screen_edge",2560)
         return {"edited_resolution":resolution,"screen_edge":screen_edge,
-            "edited_edge":screen_edge if resolution=="screen" else resolution,
-            "limit_bytes":value.get("limit_bytes",2*1024**3)}
+            "edited_edge":screen_edge if resolution=="screen" else resolution}
 
 def capture_source(session):
     """Capture source references, never the mutable Grade or a full-size copy.
@@ -157,7 +155,11 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
     hdr=reduce_picture(hdr,edge);sdr=reduce_picture(sdr,edge)
     render_ms=(perf_counter()-render_started)*1000
     log("kept_rendered", path=str(path), grade_identity=identity(grade), duration_ms=render_ms)
-    directory=Path(root)/"library-pictures";directory.mkdir(parents=True,exist_ok=True)
+    from .library_cache import LibraryCache
+    managed=LibraryCache(root)
+    if not managed.preferences()["enabled"]: raise CancelledError("Library cache disabled.")
+    managed.prepare()
+    directory=managed.directory("library-pictures");directory.mkdir(parents=True,exist_ok=True)
     extension="jpg" if format=="jpeg" else "avif"
     with NamedTemporaryFile(dir=directory,prefix="kept-",suffix="."+extension,delete=False) as f: temp=Path(f.name)
     try:
@@ -286,7 +288,7 @@ class KeptPictures:
         def launch():
             try:
                 request=self.request(path)
-                if not request["edited"]: return
+                if not request["edited"] or not self.cache.managed.preferences()["enabled"]: return
                 if grade is not None and identity(grade)!=request["grade_identity"]: return
                 with self._lock:
                     if self._closed: return
@@ -317,7 +319,7 @@ class KeptPictures:
                         result=f.result()
                         temporary=Path(result["temporary"])
                         with self.marks._lock,self._lock:
-                            if (self.jobs.get(path)!=job or self.request(path)["grade_identity"]!=request["grade_identity"]
+                            if (not self.cache.managed.preferences()["enabled"] or temporary.parent != self.cache.root or self.jobs.get(path)!=job or self.request(path)["grade_identity"]!=request["grade_identity"]
                                     or preferences(self.root)["edited_edge"]!=request["edited_edge"] or self.source_stat(path)!=stat):
                                 log("kept_picture_replaced",photo=path,reason="saved grade or source changed while picture was being made",action="stale picture discarded")
                                 return

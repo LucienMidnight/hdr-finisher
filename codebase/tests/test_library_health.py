@@ -128,7 +128,7 @@ def test_cache_corruption_and_exif_fallback_leave_diagnostics(tmp_path, capsys, 
     Image.new("RGB", (20, 20)).save(path)
     cache = LibraryPictureCache(tmp_path)
     from hdr_finisher.library_pictures import picture_key
-    cache.root.mkdir()
+    cache.managed.prepare();cache.root.mkdir()
     cache.file(picture_key(path, 64, "quick")).write_bytes(b"broken")
     assert cache.cached(path, 64, "quick") is None
     import exifread

@@ -29,14 +29,11 @@ def test_corrected_producer_uses_same_export_renditions_and_never_changes_open_g
     Path(result["temporary"]).unlink()
 
 def test_picture_preferences_preserve_unknown_and_reject_unreadable(tmp_path):
-    assert preferences(tmp_path)=={"edited_resolution":"screen","screen_edge":2560,"edited_edge":2560,"limit_bytes":2*1024**3}
+    assert preferences(tmp_path)=={"edited_resolution":"screen","screen_edge":2560,"edited_edge":2560}
     path=tmp_path/"library-picture-preferences.json"
     path.write_text('{"future":17}')
     preferences(tmp_path,{"edited_resolution":512})
     assert json.loads(path.read_text())["future"]==17
-    with pytest.raises(ValueError, match="1 GB"):
-        preferences(tmp_path,{"limit_bytes":1024**3-1})
-    assert preferences(tmp_path,{"limit_bytes":1024**3})["limit_bytes"]==1024**3
     path.write_text('broken')
     with pytest.raises(ValueError): preferences(tmp_path,{"edited_resolution":1920})
     assert path.read_text()=='broken'
@@ -46,7 +43,7 @@ def test_picture_matching_and_missing_fallback(setup,tmp_path):
     grade=saved(setup);kept=KeptPictures(tmp_path,marks,Worker())
     assert kept.request(photo)["edited"]
     assert kept.cached(photo) is None
-    key=kept.key(str(photo),identity(grade));kept.cache.root.mkdir(parents=True)
+    key=kept.key(str(photo),identity(grade));kept.cache.managed.prepare();kept.cache.root.mkdir(parents=True)
     (kept.cache.root/(key+".jpg")).write_bytes(b"jpeg")
     atomic_json(kept.cache.root/(key+".json"),{"extension":"jpg","grade_identity":identity(grade),"source_stat":kept.source_stat(photo),"picture_version":PICTURE_VERSION,"edge":2560})
     assert kept.cached(photo)["kept"]
@@ -54,14 +51,16 @@ def test_picture_matching_and_missing_fallback(setup,tmp_path):
     Path(str(photo)+".hdrf").write_text(json.dumps(document))
     assert kept.cached(photo) is None
 
-def test_disposable_picture_budgets_cannot_evict_saved_grades(tmp_path):
-    cache=LibraryPictureCache(tmp_path,limit=100)
-    cache.root.mkdir();cache.full_root.mkdir()
+def test_thumbnail_allowance_cannot_evict_full_size_or_saved_grade(tmp_path):
+    cache=LibraryPictureCache(tmp_path)
+    cache.managed.prepare();cache.root.mkdir();cache.full_root.mkdir()
     (cache.root/"a.npz").write_bytes(b"x"*180)
     (cache.full_root/"full.npz").write_bytes(b"x"*180)
     (cache.root/"b.jpg").write_bytes(b"x"*50)
-    cache.trim()
-    assert not (cache.root/"a.npz").exists() and not (cache.full_root/"full.npz").exists()
+    import os
+    for file,stamp in [(cache.root/"a.npz",1),(cache.full_root/"full.npz",2),(cache.root/"b.jpg",3)]: os.utime(file,(stamp,stamp))
+    cache.managed.trim(limit_bytes=100)
+    assert not (cache.root/"a.npz").exists() and (cache.full_root/"full.npz").exists()
     assert (cache.root/"b.jpg").exists()
 
 def test_publication_request_not_tied_to_open_grade(setup,tmp_path):
@@ -199,7 +198,7 @@ def test_unreadable_kept_picture_is_missing_and_remade_without_another_save(setu
     kept = marks.kept
     grade_id = identity(grade)
     key = kept.key(str(photo), grade_id)
-    kept.cache.root.mkdir(parents=True, exist_ok=True)
+    kept.cache.managed.prepare();kept.cache.root.mkdir(parents=True, exist_ok=True)
     picture = kept.cache.root / (key + "." + extension)
     if extension == "npz":
         np.savez(picture, pixels=np.ones((2, 3, 3), dtype=np.float16))
@@ -241,7 +240,7 @@ def test_screen_default_ignores_retired_resolution_and_size_changes_invalidate_c
     assert preferences(tmp_path)["edited_edge"]==2560
     preferences(tmp_path,{"screen_edge":1920})
     kept=KeptPictures(tmp_path,marks,Worker())
-    key=kept.key(str(photo),identity(grade));kept.cache.root.mkdir(parents=True)
+    key=kept.key(str(photo),identity(grade));kept.cache.managed.prepare();kept.cache.root.mkdir(parents=True)
     (kept.cache.root/(key+".jpg")).write_bytes(b"old")
     meta={"extension":"jpg","grade_identity":identity(grade),"source_stat":kept.source_stat(photo),"edge":1920}
     atomic_json(kept.cache.root/(key+".json"),meta)

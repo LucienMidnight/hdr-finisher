@@ -1,6 +1,8 @@
 """Disposable scene-linear library pictures. No Grade import/correction route."""
 from __future__ import annotations
 
+from collections import OrderedDict
+import base64
 from concurrent.futures import CancelledError
 from hashlib import sha256
 from io import BytesIO
@@ -46,14 +48,49 @@ def picture_key(path, edge, quality):
 
 
 class LibraryPictureCache:
-    def __init__(self, root, limit=CACHE_LIMIT_BYTES):
-        self.root = Path(root) / "library-pictures"
-        self.full_root = Path(root) / "library-full-pictures"
-        self.limit = limit
-        self._known_bytes = None
+    def __init__(self, root):
+        from .library_cache import LibraryCache
+        self.managed = LibraryCache(root)
+        self.transient = OrderedDict()
+        self.transient_lock = RLock()
         self._native_lock = RLock()
         self._native_source = None
         self._native_paused = False
+
+    def accept_transient(self, result):
+        body = result.pop('_transient', None)
+        if body:
+            with self.transient_lock:
+                self.transient[result['key']] = base64.b64decode(body)
+                self.transient.move_to_end(result['key'])
+                while sum(map(len, self.transient.values())) > 256 * 1024**2:
+                    self.transient.popitem(last=False)
+        return result
+
+    def transient_result(self, key, arrays, metadata):
+        stream = BytesIO()
+        np.savez(stream, **arrays)
+        result = metadata | {'key': key, 'cache_hit': False, 'stored_bytes': 0,
+            '_transient': base64.b64encode(stream.getvalue()).decode()}
+        # Also retain it in this helper for repeat requests; transport stays in RAM.
+        self.accept_transient(dict(result))
+        return result
+
+    def open(self, key, file=None):
+        with self.transient_lock:
+            body = self.transient.get(key)
+            if body is not None:
+                self.transient.move_to_end(key)
+                return BytesIO(body)
+        return file or self.file(key)
+
+    @property
+    def root(self):
+        return self.managed.directory("library-pictures")
+
+    @property
+    def full_root(self):
+        return self.managed.directory("library-full-pictures")
 
     def file(self, key):
         if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
@@ -123,6 +160,9 @@ class LibraryPictureCache:
             if reference is not None:
                 arrays["reference"] = np.clip(reference, 0, 65504).astype(np.float16)
             destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
+            if not self.managed.preferences()['enabled']:
+                return self.transient_result(key, arrays, metadata)
+            self.managed.prepare()
             destination.parent.mkdir(parents=True, exist_ok=True)
             temporary = None
             try:
@@ -138,8 +178,6 @@ class LibraryPictureCache:
                     temporary.unlink(missing_ok=True)
             result = metadata | {"key": key, "cache_hit": False, "stored_bytes": destination.stat().st_size}
             with _TRIM_LOCK:
-                if self._known_bytes is not None:
-                    self._known_bytes += result["stored_bytes"]
                 self.trim()
             log("picture_stored", path=str(path), key=key, duration_ms=(perf_counter()-store_started)*1000)
             return result
@@ -186,49 +224,16 @@ class LibraryPictureCache:
     @audited("cache_pixels")
     def pixels(self, key, lane="hdr"):
         path = self.file(key)
-        with np.load(path, allow_pickle=False) as stored:
+        with np.load(self.open(key, path), allow_pickle=False) as stored:
             reference = lane == "sdr" and "reference" in stored
             pixels = stored["reference" if reference else "pixels"].astype(np.float32)
-        os.utime(path, None)
+        if path.exists(): os.utime(path, None)
         body, stride = encode_rgba_proxy_rows(pixels, 0, pixels.shape[0], prefer_half=True, pixel_format="rgba16float")
         return body, pixels.shape[1], pixels.shape[0], stride, "linear-srgb" if reference else "acescg"
 
     @audited("cache_trim")
     def trim(self):
-        self._trim_directory(self.full_root)
-        # Saved grades cost a render to remake. Disposable grid/full pictures
-        # have separate allowances and can never evict their gain-map files.
-        self._trim_directory(self.root, {".npz"})
-        self._trim_directory(self.root, {".jpg", ".avif", ".json"})
-
-    def _trim_directory(self, directory, extensions=None):
-        # One eviction batch only on overflow, keeping a 10% gap below the limit.
-        with _TRIM_LOCK:
-            entries = []
-            from .library_kept import preferences
-            if (self.root.parent / "library-picture-preferences.json").exists():
-                self.limit = preferences(self.root.parent)["limit_bytes"]
-            for path in directory.glob("*"):
-                if path.suffix not in (extensions or {".npz", ".jpg", ".avif", ".json"}): continue
-                try:
-                    stat = path.stat()
-                    entries.append((stat.st_mtime_ns, stat.st_size, path))
-                except FileNotFoundError as error:
-                    problem("cache_trim_missing", path, error, "entry already removed; continue eviction")
-                    continue
-            total = sum(size for _, size, _ in entries)
-            self._known_bytes = total
-            if total <= self.limit:
-                return
-            for _, size, path in sorted(entries, key=lambda entry: (0 if entry[2].name.endswith(".map.npz") else 1 if entry[2].suffix == ".npz" else 2, entry[0])):
-                if total <= self.limit * .9:
-                    break
-                try:
-                    path.unlink()
-                    total -= size
-                    self._known_bytes = total
-                except FileNotFoundError as error:
-                    problem("cache_trim_missing", path, error, "entry already removed; continue eviction")
+        self.managed.trim()
 
 
 def default_look(pixels, reference, raw_input, suffix):
