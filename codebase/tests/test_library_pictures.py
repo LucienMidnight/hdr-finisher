@@ -161,3 +161,16 @@ def test_non_raw_browse_waiters_share_job_across_pause_and_promote_it(tmp_path):
         assert LibraryPictureCache(helper.root).cached(source, 2560, "quick")["key"] == result["key"]
     finally:
         helper.close()
+
+
+def test_stand_in_request_gets_the_real_picture_once_it_is_cached(tmp_path, monkeypatch):
+    source = photo(tmp_path)
+    routes = {"fast": "embedded-placeholder", "quick": "quick-linear-dng"}
+    monkeypatch.setattr("hdr_finisher.library_pictures.decode_picture",
+        lambda path, edge, quality: (np.ones((12, 24, 3), dtype=np.float32), None, {"route": routes[quality]}))
+    cache = LibraryPictureCache(tmp_path / "app-data")
+    assert cache.build(source, 512, "fast")["route"] == "embedded-placeholder"
+    real = cache.build(source, 512, "quick")
+    assert real["route"] == "quick-linear-dng"
+    assert cache.cached(source, 512, "fast")["key"] == real["key"]
+    assert cache.build(source, 512, "fast")["route"] == "quick-linear-dng"

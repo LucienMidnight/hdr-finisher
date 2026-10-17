@@ -63,6 +63,12 @@ class LibraryPictureCache:
 
     @audited("cache_cached")
     def cached(self, path, edge, quality):
+        # "fast" asks for a stand-in only until the real picture exists. Once it
+        # is cached, the stand-in would just show first and then be swapped.
+        if quality == "fast":
+            real = self.cached(path, edge, "quick")
+            if real:
+                return real
         key = picture_key(path, edge, quality)
         destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
         if not destination.is_file():
