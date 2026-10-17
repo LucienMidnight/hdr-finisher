@@ -118,8 +118,8 @@ failure. Include its driver, exact stable error message(s), documentation source
 and original log evidence. All messages must occur in both failed attempts.
 Keep numeric error details exact when they identify the recorded failure; do
 not match a broad word like `Timeout` or a driver name alone. Different output
-from the same driver is new. Entries seeded here are the ten unresolved
-0.9.1 messages in docs/known-limitations.md; fixed entries may simply pass.
+from the same driver is new. Two entries remain after the 0.9.1 fixes: the extreme Film HDR range and
+the lens tier-consistency decision, documented in docs/known-limitations.md.
 This file classifies results and never suppresses failures or changes guards.
 
 ## Conservative classifications to review
@@ -158,7 +158,7 @@ The preview/export comparison failed its peak verdict on both attempts; paired
 pixels, tone and masks passed. No application or driver repair was attempted.
 
 Evidence is in ignored `codebase/output/release-checks/2026-10-16T16-24-55-193Z-29cde84e1a59b2272a4f/`.
-The current release plan compares with `v0.9.1`, selects only 13 core checks and
+At that revision, the release plan compared with `v0.9.1`, selected only 13 core checks and
 estimates 10.8 minutes entirely from history, including a retry allowance.
 This is a plan, not a release certification. Release/full sweeps were not run.
 
@@ -209,10 +209,25 @@ the complete family matrices must still run for changes to pinned lens contracts
 under AGENTS.md. Native desktop smoke is retained alongside the required GitHub
 packaged smoke because it also checks development-time window behavior.
 
-Timing measurement and final estimates: pending the three missing-history
-runs (film-stock-parity, library-grade-saving, library-picture-startup).
-No full or release sweep is authorized by this task. Timing-only runs share the
-brief's 45-minute total cap. Existing guards and tolerances stay unchanged.
+History-based plan after measuring all missing entries: an all-area release
+selects 45 runnable drivers and estimates 52.7 minutes, including 16.7 minutes
+reserved for retries. A Library change selects 19 (core plus Library),
+13.6 minutes total; masks selects 19, 9.5 minutes total. Core alone is
+8.1 minutes. These are estimates, not a release certification. The all-area
+plan is the union of core and every area's checks; the current tag-based plan
+can be smaller when only some areas changed.
+
+Every selected driver now has real timing history. Stock parity (including
+its UI follow-up), grade saving and picture startup were measured through the
+runner at acf1e93; the other estimates reuse 0.9.0/0.9.1 and runner history.
+The two Library drivers passed. Film reproduced the exact known extreme-HDR
+failure on both attempts; all UI follow-ups passed. The runner classified it
+KNOWN / NOT READY, not a waived pass. No full or release sweep ran.
+All timing work, including the discarded navigation candidate, took
+23.3 minutes of slow tests, within the brief's 45-minute cap. No selected
+driver remains unmeasured; all three protected hashes stayed unchanged.
+Fast checks: 516 Node and 2,205 Python passed, three Python skips.
+Existing guards and tolerances stay unchanged.
 
 ## Final release step: GitHub trial build, before tagging
 
