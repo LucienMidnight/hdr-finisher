@@ -67,8 +67,9 @@ async function main() {
     await record("scope mode switch histogram/vectorscope", 10, (i) => page.locator("#scope-mode").selectOption(i % 2 ? "histogram" : "vectorscope"));
     await record("scope channel composite/luma", 10, (i) => page.locator("#scope-channel-mode").selectOption(i % 2 ? "composite" : "luma"));
     await record("scope detail detailed/reference", 10, (i) => page.locator("#scope-detail").selectOption(i % 2 ? "detailed" : "reference"));
-    await record("scope exact peak on/off", Math.min(3, samples), () => page.locator("#scope-exact-peak").click());
-    await page.locator("#scope-exact-peak").uncheck(); await stable(page);
+    await record("automatic settled scope peak", Math.min(3, samples), () => page.evaluate(async () => {
+      exactScopePeakCache.clear(); await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+    }));
     await record("zoom Fit to 100%", samples, () => page.locator("#zoom-actual").click(), "preview", () => page.locator("#zoom-fit").click());
     await record("zoom 100% to Fit", samples, () => page.locator("#zoom-fit").click(), "preview", () => page.locator("#zoom-actual").click());
     await page.locator("#zoom-actual").click(); await stable(page);

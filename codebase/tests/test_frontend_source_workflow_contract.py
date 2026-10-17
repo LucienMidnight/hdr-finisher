@@ -167,14 +167,6 @@ def test_perspective_draft_is_bounded_before_authoring_tier_apply() -> None:
     assert "Math.min(previewTargetLongEdge(), 1024)" in draft
 
 
-def test_native_exact_peak_is_explicit_opt_in_during_authoring() -> None:
-    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
-
-    exact_peak_input = re.search(r'<input type="checkbox" id="scope-exact-peak"([^>]*)>', markup)
-    assert exact_peak_input is not None
-    assert "checked" not in exact_peak_input.group(1)
-
-
 def test_brand_assets_and_fonts_are_bundled_locally() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     launcher = (FRONTEND / "launcher.html").read_text(encoding="utf-8")

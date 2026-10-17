@@ -102,11 +102,9 @@ function initializePreviewPreferences() {
     ? new window.HDRPreviewLatencyController() : null;
   state.scopeMaxNits = 4000;
   state.scopeQuality = DEFAULT_SCOPE_QUALITY;
-  state.scopeExactPeak = false;
   state.compareLayout = "single";
   if (els.scopeZoom) els.scopeZoom.value = String(state.scopeMaxNits);
   if (els.scopeDetail) els.scopeDetail.value = state.scopeQuality;
-  if (els.scopeExactPeak) els.scopeExactPeak.checked = state.scopeExactPeak;
 }
 
 /**
@@ -645,10 +643,6 @@ function bindEvents() {
   });
   els.scopeDetail?.addEventListener("change", async () => {
     state.scopeQuality = SCOPE_QUALITY_PROFILES[els.scopeDetail.value] ? els.scopeDetail.value : DEFAULT_SCOPE_QUALITY;
-    await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
-  });
-  els.scopeExactPeak?.addEventListener("change", async () => {
-    state.scopeExactPeak = Boolean(els.scopeExactPeak.checked);
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
   els.scopeRegionToggle?.addEventListener("click", () => toggleScopeRegion());

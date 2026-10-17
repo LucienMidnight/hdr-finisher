@@ -3012,7 +3012,7 @@
         "preview"
       ],
       "tier": "full",
-      "protects": "scope peak toggle interaction",
+      "protects": "Automatic editing peak and preview replacement",
       "launch": {
         "method": "electron"
       }

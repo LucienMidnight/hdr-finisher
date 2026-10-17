@@ -362,10 +362,6 @@ const state = {
   scopeChannelMode: "composite",
   scopeMaxNits: 4000,
   scopeQuality: DEFAULT_SCOPE_QUALITY,
-  // Explicit opt-in during continuous authoring. A native exact-peak pass is
-  // background whole-image work and must not automatically compete with the
-  // foreground presentation path.
-  scopeExactPeak: false,
   scopeRegionEnabled: false,
   scopeRegion: null,
   scopeRegionDrag: null,
@@ -1109,7 +1105,6 @@ const els = {
   scopeMode: document.getElementById("scope-mode"),
   scopeChannelMode: document.getElementById("scope-channel-mode"),
   scopeDetail: document.getElementById("scope-detail"),
-  scopeExactPeak: document.getElementById("scope-exact-peak"),
   scopeZoom: document.getElementById("scope-zoom"),
   scopeStats: document.getElementById("scope-stats"),
   histogram: document.getElementById("histogram"),
