@@ -1130,6 +1130,11 @@ thumbnail cache added at the front on October 17.
 1. **Thumbnail cache (in progress with Codex, October 17).** Gain-map
    thumbnails, the managed cache folder and its settings, no one-at-a-time
    drawing queue, read-ahead, recent thumbnails kept ready. Brief above.
+   Limits agreed by Steve, 2026-10-17: revisits as in the brief (90%
+   within 100 ms, none over 300 ms); first visit no worse than before the
+   cache (`ef4326c`), measured with `tests/library-thumbnail-scroll.js`,
+   plus 15% for run-to-run noise. Faster first visits are decode-speed
+   work, not cache work.
 2. **Starting exposure and RAW tuning (Grade and RAW development, not
    Library).** The Exposure control starts at zero. RAW development is tuned
    so that the camera's JPEG, the RAW as first shown, and Grade's starting
