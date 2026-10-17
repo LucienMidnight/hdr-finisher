@@ -3790,6 +3790,29 @@
       "launch": {
         "method": "native"
       }
+    },
+    {
+      "path": "tests/library-thumbnail-scroll.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Native compressed Library thumbnails: cold/warm scroll latency, no GPU draws and bounded recent pool.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-thumbnail-colour.js",
+      "areas": [
+        "library",
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "Native thumbnail versus GPU SDR colour and HDR peak/reference white; independent cache Settings controls.",
+      "launch": {
+        "method": "electron"
+      }
     }
   ]
 }

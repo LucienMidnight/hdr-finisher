@@ -1662,6 +1662,25 @@
         </section>
         <section data-settings-panel="performance" hidden>
           <h3>Performance</h3>
+          <h4>Library thumbnail cache</h4>
+          <label class="checkbox-row"><input id="library-cache-enabled" type="checkbox" aria-label="Library thumbnail cache"><span id="library-cache-state">Enabled</span></label>
+          <label class="settings-field">Thumbnails
+            <select id="library-cache-thumbnail-limit"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option></select>
+          </label>
+          <p id="library-cache-thumbnail-usage" class="helper"></p>
+          <label class="settings-field">Full-size pictures
+            <select id="library-cache-full_size-limit"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option></select>
+          </label>
+          <p id="library-cache-full_size-usage" class="helper"></p>
+          <label class="settings-field">Saved-grade pictures
+            <select id="library-cache-saved_grade-limit"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option></select>
+          </label>
+          <p id="library-cache-saved_grade-usage" class="helper"></p>
+          <p id="library-cache-usage" class="helper" aria-live="polite"></p>
+          <p id="library-cache-location" class="helper" style="overflow-wrap:anywhere"></p>
+          <div class="button-row"><button id="library-cache-change" type="button" class="button-secondary">Change folder…</button><button id="library-cache-reveal" type="button" class="button-secondary">Show in Explorer</button><button id="library-cache-portable" type="button" class="button-secondary" hidden>Use portable cache</button><button id="library-cache-clear" type="button" class="button-secondary">Clear cache…</button></div>
+          <p class="helper">Each allowance removes its own least recently used files. Full-size pictures never displace thumbnails or saved-grade pictures. Disabled reads existing cache files and saves no new cache files. Your photos and grades are never cleared.</p>
+
           <label class="settings-field">Rendering mode
             <select id="settings-rendering-mode">
               <option value="auto">Auto · Recommended</option>
@@ -1854,6 +1873,7 @@
   <script src="/static/desktop-chrome.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app-dialog.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/status-manager.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/library-cache-settings.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/application-shell.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/path-geometry.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/curve-editor.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

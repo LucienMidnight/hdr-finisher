@@ -340,6 +340,7 @@
   function openSettings(tab = "general") {
     selectSettingsTab(tab);
     renderSettings();
+    void window.HDRLibraryCacheSettings?.refresh();
     openDialog(byId("settings-dialog"), document.querySelector(`[data-settings-tab="${tab}"]`));
   }
 

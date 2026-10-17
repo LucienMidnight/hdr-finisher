@@ -661,6 +661,24 @@ function registerIpc() {
     buildMenu();
     return applicationPreferences;
   });
+  handle("desktop:choose-library-cache-directory", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {title:"Choose Library cache folder", properties:["openDirectory", "createDirectory"]});
+    return result.canceled ? null : result.filePaths[0];
+  });
+  handle("desktop:library-cache-options", () => {
+    const directory = process.env.PORTABLE_EXECUTABLE_DIR || (app.isPackaged ? path.dirname(process.execPath) : null);
+    if (!directory) return {};
+    const probe = path.join(directory, `.hdr-cache-probe-${crypto.randomUUID()}`);
+    try { fs.writeFileSync(probe, "", {flag:"wx"}); return {portable:path.join(directory, "Cache")}; }
+    catch { return {}; }
+    finally { try { fs.unlinkSync(probe); } catch {} }
+  });
+  handle("desktop:reveal-library-cache-directory", async (folder) => {
+    if (typeof folder !== "string" || !path.isAbsolute(folder)) throw new Error("Invalid cache folder.");
+    fs.mkdirSync(folder, {recursive:true});
+    const problem = await shell.openPath(folder);
+    if (problem) throw new Error(problem);
+  });
   handle("desktop:choose-preference-directory", async (key) => {
     if (!["projectSave", "projectImport", "fileSave", "fileImport", "presetSave"].includes(key)) throw new Error("Unknown folder preference.");
     const result = await dialog.showOpenDialog(mainWindow, {

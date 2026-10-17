@@ -15,6 +15,21 @@ This page prevents implemented, validated, expected, and planned behavior from b
 | Physical HDR browser checks | Maintained Windows evidence | Not maintained | Required on Kubuntu 26.04; not yet recorded |
 | Auto proof target | Uses Windows telemetry when available | Use fixed target | Use fixed/custom target; exact headroom unavailable |
 
+## Library thumbnail cache qualification (October 17, 2026)
+
+Grid and filmstrip use native gain-map JPEG thumbnails; Single, Compare and
+full-screen keep their scene-linear GPU path. Separate thumbnail, full-size
+and saved-grade allowances default to 2, 10 and 2 GB, with LRU eviction only
+inside each allowance. The default cache is under LocalAppData; old Roaming
+caches are left untouched, with no migration.
+
+This work is not fully qualified. Native HDR display, GPU colour agreement,
+independent cache Settings, and the disk-cache revisit passed their focused
+checks. A fresh folder still misses the agreed first-visit limits: large RAW,
+TIFF and HEIC decodes take seconds, and saved-grade remakes add background
+work. Do not treat the passing revisit as a pass for first visits. The recent
+pool stays under 256 MiB. Export and Proof paths were not changed.
+
 ## Input limitations
 
 - Supported manual source spaces are limited to linear sRGB/Rec.709, linear Display P3, linear Rec.2020, and ACEScg, plus PQ/HLG/sRGB transfer choices.

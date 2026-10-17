@@ -61,7 +61,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-cell.active { background: var(--accent-bed); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 .library-cell.lead { box-shadow: inset 0 0 0 2px var(--accent); }
 .library-cell .picture-frame { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; aspect-ratio: 4 / 3; min-height: 0; overflow: hidden; width: 100%; }
-.library-cell canvas { width: 100%; height: 100%; object-fit: contain; }
+.library-cell canvas, .library-cell img { width: 100%; height: 100%; object-fit: contain; }
 .library-cell .library-marks { order: 1; }
 .library-cell .name { order: 2; flex: 0 0 16px; height: 16px; margin-top: -3px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .library-footer { position: relative; display: flex; align-items: center; gap: 12px; background: var(--panel); color: var(--muted); padding: 5px 12px; min-height: 27px; font-size: 11px; border-top: 1px solid var(--hairline); }
@@ -119,7 +119,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-flag { margin-left: auto; font-size: 16px; }
 .library-copy, .library-edited { display: inline-flex; align-items: center; color: var(--muted); font-family: var(--mono); font-size: 10px; }
 .library-marks svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-.library-cell.rejected canvas { opacity: .34; }
+.library-cell.rejected canvas, .library-cell.rejected img { opacity: .34; }
 #single-caption { display: flex; align-items: center; justify-content: center; gap: 14px; }
 #single-caption .library-marks { display: inline-flex; }
 .library-culling { margin-top: 12px; padding-block: 12px; border-block: 1px solid var(--hairline); }

@@ -143,7 +143,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "native", "scan", "tree", "metadata", "kept", "kept-check", "overlay"}:
+        if command not in {"picture", "native", "scan", "tree", "metadata", "kept", "kept-check", "overlay", "grid-thumbnail"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -352,7 +352,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     state = {"paused": paused, "foreground": 0, "checking": 0}
 
     def lane(job):
-        if job["command"] in {"picture", "native"}:
+        if job["command"] in {"picture", "native", "grid-thumbnail"}:
             return "picture"
         if job["command"] in {"kept", "overlay"}:
             return "kept"
@@ -419,6 +419,10 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 elif job["command"] == "kept":
                     from .library_kept import produce
                     output = produce(root, job["path"], job["grade"], job["edge"], cancelled=check)
+                    result = {"id": job["id"], "result": output}
+                elif job["command"] == "grid-thumbnail":
+                    from .library_thumbnails import build
+                    output = build(root, job["path"], job["edge"], job["key"], job.get("kept"), check)
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
@@ -492,7 +496,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept", "kept-check", "overlay"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept", "kept-check", "overlay", "grid-thumbnail"}:
                     message["queued_at"] = time.time()
                     sequence += 1
                     jobs[message["id"]] = Event()

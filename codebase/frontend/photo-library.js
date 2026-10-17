@@ -120,6 +120,15 @@
     map.clear();
   }
   const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}`;
+  const thumbnails = HDRLibraryThumbnails.create({api, identity:pictureIdentity});
+  let largestGridWidth = 1600;
+  const thumbnailEdge = () => {
+    if (grid.clientWidth) largestGridWidth = grid.clientWidth;
+    return Math.min(1440, Math.ceil((HDRLibraryLayout.gridLayout(state.photos.length, largestGridWidth, grid.clientHeight, 0, 360).cellWidth - 17) * (window.devicePixelRatio || 1)));
+  };
+  const cacheChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('hdr-library-cache') : null;
+  cacheChannel?.addEventListener('message', () => { thumbnails.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); });
+  window.addEventListener("message",event => { if(event.origin === location.origin && event.data?.type === "hdr-library-cache-changed") { thumbnails.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); } });
   const recentPictures = new Map();
   const rawTypes = new Set(["ARW", "CR2", "CR3", "NEF", "NRW", "RAF", "RW2", "ORF", "ORI", "PEF", "DNG", "SRW"]);
   const rawCandidate = photo => photo && rawTypes.has(photo.type) && !photo.edited && !photo.copy_id
@@ -255,8 +264,7 @@
     state.hdr = !state.hdr; state.displayEpoch += 1;
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr));
     for (const cell of [...state.cells.values(), ...state.filmCells.values()]) {
-      if (cell.meta) void drawPicture(cell.meta, cell.canvas, cell.controller, () => state.active && cell.element.isConnected && !cell.controller.signal.aborted)
-        .catch(error => { if (!aborted(error)) status(error.message); });
+      thumbnails.mode(cell.canvas, state.hdr);
     }
     if (state.view === "single") showSingle();
   }
@@ -280,10 +288,10 @@
     const element = document.createElement("div");
     element.className = "library-cell loading"; element.setAttribute("role", "option"); element.dataset.path = photo.path;
     const frame = document.createElement("div"); frame.className = "picture-frame";
-    const canvas = document.createElement("canvas"); canvas.setAttribute("aria-label", photo.name); frame.append(canvas);
+    const canvas = document.createElement("img"); canvas.alt = photo.name; frame.append(canvas);
     const name = document.createElement("span"); name.className = "name"; name.textContent = photo.name;
     element.append(frame, name); container.append(element);
-    const cell = { element, canvas, controller: new AbortController(), photo, index };
+    const cell = { element, canvas, controller: new AbortController(), photo, index, edge:thumbnailEdge() };
     element.addEventListener("click", (event) => select(state.photos.findIndex((item) => item.path === photo.path), false, event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "single"));
     element.addEventListener("dblclick", () => { select(state.photos.findIndex((item) => item.path === photo.path)); openGrade(); });
     element.addEventListener("pointerenter", () => { if (state.timing && cell.meta) diagnostics(photo, cell.meta, cell.elapsed); });
@@ -295,12 +303,14 @@
       event.dataTransfer.setData(HDRLibraryAlbums.DRAG, String(state.selection.size)); event.dataTransfer.effectAllowed = "copyMove";
     });
     const started = performance.now();
-    loadAndShow(photo, container === $("film-space") ? 192 : 512, canvas, cell.controller,
-      () => state.active && element.isConnected && !cell.controller.signal.aborted).then((meta) => {
-        if (!meta) return;
-        cell.meta = meta; cell.elapsed = performance.now() - started;
-        element.classList.remove("loading");
-      }).catch((error) => { if (!aborted(error) && !cell.controller.signal.aborted) removeUnreadable(photo, error); });
+    const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
+    thumbnails.show(photo, cell.edge, canvas, current, () => state.hdr).then(meta => {
+      if (!meta || !current()) return;
+      cell.meta = meta; cell.elapsed = performance.now() - started;
+      element.classList.remove("loading");
+      overlays?.attach(photo,canvas,meta,cell.controller,current);
+      HDRLibraryStopwatch("picture_shown", {path:photo.path,key:meta.key,kept:!!meta.kept,duration_ms:cell.elapsed});
+    }).catch(error => { if (current() && !aborted(error)) removeUnreadable(photo,error); });
     return cell;
   }
   function reconcile(map, start, end, container, position) {
@@ -312,7 +322,7 @@
     for (let index = start; index < end; index += 1) {
       const photo = state.photos[index];
       let cell = map.get(photo.path);
-      if (cell && (cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.photo.grade_identity !== photo.grade_identity)) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
+      if (cell && (cell.edge !== thumbnailEdge() || cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.photo.grade_identity !== photo.grade_identity)) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
       if (!cell) { cell = makeCell(photo, container, index); map.set(photo.path, cell); }
       position(cell.element, index);
       const active = state.selection.has(photo.path);
@@ -322,6 +332,7 @@
       cell.element.querySelector(".library-marks")?.remove(); cell.element.append(culling.strip(photo));
     }
   }
+  let lastGridTop = 0;
   function paintGrid() {
     const count = state.photos.length ? String(state.photos.length) : ""; if ($("place-count").textContent !== count) $("place-count").textContent = count;
     if (!state.active || state.view !== "grid") return;
@@ -335,7 +346,13 @@
     reconcile(state.cells, layout.first, layout.last, space, (element, index) => {
       element.style.cssText = `left:${3 + (index % layout.columns) * layout.cellWidth}px;top:${3 + Math.floor(index / layout.columns) * layout.rowHeight}px;width:${layout.cellWidth - 3}px;height:${layout.rowHeight - 3}px`;
     });
+    const screen = Math.max(layout.columns, layout.last - layout.first);
+    const forward = grid.scrollTop >= lastGridTop; lastGridTop = grid.scrollTop;
+    const first = forward ? layout.last : Math.max(0, layout.first - screen);
+    const last = forward ? Math.min(state.photos.length, layout.last + screen) : layout.first;
+    thumbnails.plan(state.photos.slice(layout.first,layout.last),state.photos.slice(first,last), thumbnailEdge());
   }
+  let lastFilmLeft = 0;
   let FILM_PITCH = 119; // filmstrip tile width plus the 3px gap
   function paintFilm() {
     if (!state.active || state.view !== "single" || state.review) { clearCells(state.filmCells); return; }
@@ -343,6 +360,8 @@
     const first = Math.max(0, Math.floor((film.scrollLeft - 3) / FILM_PITCH));
     const last = Math.min(state.photos.length, Math.ceil((film.scrollLeft + film.clientWidth) / FILM_PITCH));
     reconcile(state.filmCells, first, last, $("film-space"), (element, index) => { element.style.left = `${3 + index * FILM_PITCH}px`; });
+    const forward = film.scrollLeft >= lastFilmLeft; lastFilmLeft = film.scrollLeft;
+    thumbnails.plan(state.photos.slice(first,last),forward ? state.photos.slice(last,Math.min(state.photos.length,last + last - first)) : state.photos.slice(Math.max(0,first - (last-first)),first),thumbnailEdge());
   }
   function updateDetails() {
     const photo = selected(); const root = $("details"), tagFocused = document.activeElement?.id === "library-tag-input"; root.replaceChildren();
@@ -864,10 +883,9 @@
   $("picture-settings").addEventListener("click", async () => {
     try {
       const prefs = await api("/api/library/picture-settings");
-      const answer = await HDRLibraryDialogs.ask({ title: "Library pictures", message: `${(prefs.used_bytes / 1024**3).toFixed(2)} GB in use. Older edited pictures are remade in the background. Saved pictures have their own storage allowance.`, fields: [
-        { name: "limit", label: "Storage limit (GB)", type: "number", min: 1, step: 1, value: String(Math.round(prefs.limit_bytes / 1024**3)) },
+      const answer = await HDRLibraryDialogs.ask({ title: "Library pictures", message: `Saved-grade picture resolution. The Library cache location and separate size limits are in Settings › Performance.`, fields: [
         { name: "edge", label: "Edited-picture resolution", options: [{value:"screen",label:"Screen size"}, "512", "1024", "1920"], value: String(prefs.edited_resolution) }], confirm: "Save" });
-      if (answer) { await api("/api/library/picture-settings", { limit_bytes: Math.round(Number(answer.limit) * 1024**3), edited_resolution: answer.edge === "screen" ? "screen" : Number(answer.edge) }); status("Library picture settings saved."); }
+      if (answer) { await api("/api/library/picture-settings", { edited_resolution: answer.edge === "screen" ? "screen" : Number(answer.edge) }); status("Library picture settings saved."); }
     } catch (error) { status(error.message); }
   });
   $("filter-button").addEventListener("click", toggleFilters);
@@ -1140,6 +1158,7 @@
   }
   // Read-only status for the focused interaction driver; no test-only behavior.
   HDRLibraryStopwatch("ready");
+  window.HDRLibraryThumbnailPool = thumbnails;
   window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
     overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
     filmVisible: state.filmCells.size, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomScale: state.zoomScale, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });

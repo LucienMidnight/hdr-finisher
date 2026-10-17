@@ -99,6 +99,14 @@ class PictureRequest(BaseModel):
     priority: int = Field(default=10, ge=0, le=100)
 
 
+class ThumbnailRequest(BaseModel):
+    client: str = Field(default="", max_length=80)
+    wanted: list[str] | None = Field(default=None, max_length=256)
+    paths: list[str] = Field(max_length=256)
+    edge: int = Field(default=360, ge=64, le=1440)
+    priority: int = Field(default=10, ge=0, le=100)
+
+
 class NativeRequest(BaseModel):
     path: str
     center_x: float = Field(default=.5, ge=0, le=1)
@@ -247,6 +255,38 @@ def create_library_router(worker, browser, store=None):
             return Response(body, media_type="application/octet-stream", headers={
                 "X-Image-Width": str(width), "X-Image-Height": str(height), "X-Bytes-Per-Row": str(stride)})
 
+    from .library_thumbnails import Thumbnails
+    thumbnails = Thumbnails(browser.root, worker, marks, kept if store is not None else None)
+
+    @router.post("/thumbnails")
+    def thumbnail_batch(request: ThumbnailRequest):
+        return thumbnails.batch(request.paths, request.edge, request.priority, request.client, request.wanted)
+
+    @router.get("/thumbnail/{key}")
+    def thumbnail_file(key: str):
+        try:
+            file = thumbnails.file(key)
+            body = file.read_bytes()
+            os.utime(file, None)
+        except (ValueError, OSError):
+            raise HTTPException(404, "Thumbnail was cleared; it will be made again.")
+        return Response(body, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+    @router.get("/cache-settings")
+    def cache_settings():
+        return thumbnails.managed.usage()
+
+    @router.post("/cache-settings")
+    def set_cache_settings(change: dict):
+        thumbnails.cancel()
+        return command(thumbnails.managed.update, change)
+
+    @router.post("/cache-clear")
+    def clear_library_cache(change: dict):
+        thumbnails.cancel()
+        cache.transient.clear()
+        return command(thumbnails.managed.clear, change.get("location"))
+
     from .library_file_commands import add_file_routes
     file_commands = add_file_routes(router, marks, browser, index, worker, store)
 
@@ -310,6 +350,8 @@ def create_library_router(worker, browser, store=None):
             if epoch != file_commands.epoch:
                 raise HTTPException(409, "Photos changed during this read. Open the folder again.")
             result = future.result()
+            if command in {'picture', 'native'}: cache.accept_transient(result)
+            elif command == 'overlay': overlay_maps.cache.accept_transient(result)
             result['_file_epoch'] = epoch
             return result
         except RuntimeError as exc:
