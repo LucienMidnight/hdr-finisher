@@ -276,3 +276,11 @@ Release decision (October 16, 2026): Steve released 0.9.1 (application code as a
 Release-runner core validation (October 16, 2026): at frozen revision `c9a696f`, 12 core checks passed and `tests/performance/preview-export-compare.js` failed on both attempts with `peak: false`; paired pixels, tone and masks passed. This is a new check failure, not an established application diagnosis. The tooling task did not investigate or repair it. The interrupted/resumed run finished in 10.9 minutes, with all three protected project hashes unchanged. Logs and summary: `codebase/output/release-checks/2026-10-16T16-24-55-193Z-29cde84e1a59b2272a4f/`. Fast checks passed (516 Node; 2,204 Python, three skips). No release/full sweep was run.
 
 Release build fixes (October 16, 2026): the first 0.9.1 GitHub build was the first macOS and Linux run of the Library tests and failed before publishing. Library rename, move and delete rely on Windows file locks, so on macOS and Linux they are now refused before any file is touched, and their tests run on Windows only; Show in folder now works on all three. On Apple Silicon, film-stock strips differ from whole-picture processing by up to about one part in a million (largest seen 0.9 ppm), invisible in a photo; Steve accepted a macOS-only allowance of 2 ppm for those strip checks, and Windows stays exact. The macOS RAW read-ahead test now compares the photo's recorded length (macOS rounds shared memory to a page; the app already used the recorded length). On macOS, the test where a requested folder check interrupts a background scan timed out and is marked as an expected failure there until it can be diagnosed on a Mac. The packaged-app smoke test now waits for the shared import input, since the Library owns the start screen.
+
+Library cold-folder follow-up (October 17, 2026): the historical peak of eight
+above was a driver counting artifact. Four cancelled fetches remained counted
+until late browser failure notifications, overlapping their four replacements;
+renderer fetch/body work peaked at four. Stage A now counts live work in the
+cold folder and retires cancellation immediately. The limit remains four and
+application behavior is unchanged. This corrects the request-peak diagnosis;
+the other release limitations above remain open.

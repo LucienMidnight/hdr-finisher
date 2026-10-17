@@ -249,3 +249,22 @@ The navigation candidate was measured, then moved to full: its read-ahead
 assertions pass but its later filter step waits for the removed #filter-grade
 control. No application or driver repair was attempted. The focused
 library-picture-startup driver covers visible-picture preparation instead.
+
+## Library cold-folder request diagnosis (October 17, 2026)
+
+The old Stage A count included cancelled fetches until Playwright delivered
+requestfailed. A cold-folder trace at 24ce5e1 reproduced a page/protocol peak
+of eight: four fetches were aborted, four replacements began, then the four
+old protocol cancellation notifications arrived about one millisecond later.
+Renderer fetch/body lifetimes peaked at four. The automatic retry happened
+to pass the old count, confirming that notification order affected the verdict.
+Both attempts used the real folder read-only and preserved the protected hashes.
+Trace: codebase/output/library-stage-a/cold-request-trace-1792204179995.json.
+
+Stage A now observes fetch/body lifetimes within the Library frame and the
+cold folder, retiring cancelled work immediately and completed work after JSON
+body consumption. It restores fetch afterwards. The observer's regression
+checks detect five live requests, retain bodies after headers, exclude other
+folders, and reproduce four cancellations followed by four replacements with
+late failures without double-counting. The limit stays four; the first-picture
+assertion stays in place. No application queue, display or ordering changed.
