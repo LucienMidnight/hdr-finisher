@@ -316,4 +316,8 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-picker .loading { background: linear-gradient(90deg, var(--deep), var(--raised), var(--deep)); background-size: 200% 100%; animation: picker-loading 1.4s linear infinite; }
 @keyframes picker-loading { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .library-picker .loading { animation: none; } }
+
+.library-option-toggle {display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.library-option-toggle > span {flex:1;min-width:120px;}
+.library-options .checkbox-row {white-space:nowrap;}
 .library-options input[type=color] {width:24px;height:22px;padding:0;border:0;cursor:pointer;}
