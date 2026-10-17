@@ -461,8 +461,9 @@ which match the report.
 
 - At maximum Amount on a flat, low-contrast region, no periodic structure is
   measurable at the `2**levels` period above the noise floor of the source.
-- Preview and export remain byte-identical under the parity tests that cover
-  denoise today, including Direct/Tiled parity and CPU/GPU parity.
+- Preview and export agree within the agreed tolerance under the parity
+  tests that cover denoise today, including Direct/Tiled parity and CPU/GPU
+  parity (exactness dropped October 18, 2026; see section 11d).
 - The live-control contract is unchanged: a drag of Amount, Luminance, Colour
   Noise or Detail Recovery still performs no analysis dispatches.
 - Whatever is chosen is measured against a reference on the denoise corpus
@@ -1037,6 +1038,27 @@ tested. The second is acceptable; silence is not.
 
 ## 11d. Owner Note (2026-10-01): Accuracy Tolerances and CPU/GPU Direction
 
+**Decided (Steve, October 18, 2026): GPU first, including export.** A
+45-photo batch export was estimated at about 5,800 seconds, almost all of
+it the CPU film stock and Denoise at full size. Steve chose to give up the
+guarantee that CPU export exactly matches Proof and to do as much as
+possible on the graphics card, export and Proof included, as darktable
+does: render on the GPU at full size (tiled where memory requires), with
+the CPU as the fallback when there is no usable GPU or the GPU fails.
+
+- GPU and CPU results must agree within an agreed tolerance (point 1
+  below), not pixel for pixel. Proof and export must show the same result
+  as each other, within tolerance.
+- Until GPU export exists, the CPU export is still what ships. Keep it
+  correct; do not invest in making it faster.
+- This settles point 2 in favour of one GPU implementation for preview and
+  export. Where the GPU export runs (the app window, or a backend GPU
+  path) is left to the implementation brief.
+- Not started. The brief waits until the October 17 Library work is
+  finished and checked.
+
+The original note follows.
+
 Two open decisions for Steve, raised by the October 1 performance pass (see section 14 of `GPU_Performance_Review_Sprint_PRD_2026-09-29.md`). Neither is decided here. A draft tolerance policy and the proposed architecture direction are in `Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`.
 
 **1. Define accuracy tolerances.** Recent performance work has treated "byte-identical output" as the rule for any change to masks, feathering and tiling. That rule is safe but rules out the largest wins. One exception was approved on October 1: the feather of a painted mask may differ by up to 2 of 255 mask levels. Under it the native brush-mask compile went from about 7.3 s to about 1.7 s, measured at 1 level of difference. A faster variant (about 0.4 s) was rejected because it reached 13 levels on small marks and marks at the frame edge; with no written tolerance there was no basis for judging whether any part of that was acceptable. A written tolerance would let performance work and its tests be judged against what a viewer can see instead of against bit equality. Things to settle:
@@ -1204,7 +1226,9 @@ thumbnail cache added at the front on October 17.
    SDR JPEG). A background queue with progress, estimate, cancel and
    per-file results that never blocks grading. A record of what was
    exported feeds the Exported and "edited since last export" states. The
-   exact CPU export is called, never changed (strict rule). With it:
+   CPU export is called today; under the October 18 decision (section 11d)
+   batch export moves to the GPU export once it exists, with the CPU as
+   fallback. With it:
    - **ExifTool**, bundled and kept running by the helper (licence checked
      October 11), for Library details and filters (adds lens names from
      maker notes and the Focus and drive group) and for writing metadata.
