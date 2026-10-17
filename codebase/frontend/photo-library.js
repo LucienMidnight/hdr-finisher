@@ -954,8 +954,10 @@
             for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }
             changed = true;
           }
+          // A missing write_reason means "". A false change here restarts Compare
+          // every second, before its pictures can finish loading.
           if (row && JSON.stringify(row.marks) === JSON.stringify(photo.marks) && JSON.stringify(row.albums) === JSON.stringify(photo.albums)
-              && (row.storage !== photo.storage || row.write_reason !== photo.write_reason)) {
+              && (row.storage !== photo.storage || (row.write_reason || "") !== (photo.write_reason || ""))) {
             photo.storage = row.storage; photo.write_reason = row.write_reason || ""; changed = true;
           }
         }
