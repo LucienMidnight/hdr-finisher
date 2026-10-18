@@ -213,10 +213,37 @@ function packagedExecutable() {
     }
   }
 
+  // The app polls its sidecar for as long as it is open (grade saving, GPU
+  // delivery, Library workers), so Playwright's `networkidle` never arrives
+  // and a driver that asks for it times out before testing anything. Every
+  // `networkidle` wait is served instead by the page's `load` event plus the
+  // app's own start-up signals: the shell's `body[data-ready]` and the
+  // Library frame's `window.HDRLibrary`. Pages other than the app shell get
+  // `load` alone.
+  const appReady = async (response) => {
+    const shell = await window.evaluate(() => !!document.getElementById("library-frame")).catch(() => false);
+    if (!shell) return response;
+    await window.waitForFunction(() => document.body?.dataset.ready === "true"
+      && document.getElementById("library-frame")?.contentWindow?.HDRLibrary, null, { timeout: 60000 });
+    return response;
+  };
+  const settled = (options) => options?.waitUntil === "networkidle" ? { ...options, waitUntil: "load" } : options;
   const navigate = window.goto.bind(window);
-  window.goto = (url, options) => {
+  window.goto = async (url, options) => {
     const target = new URL(String(url), origin);
-    return navigate(`${origin}${target.pathname}${target.search}${target.hash}`, options);
+    const response = await navigate(`${origin}${target.pathname}${target.search}${target.hash}`, settled(options));
+    return options?.waitUntil === "networkidle" ? appReady(response) : response;
+  };
+  const reload = window.reload.bind(window);
+  window.reload = async (options) => {
+    const response = await reload(settled(options));
+    return options?.waitUntil === "networkidle" ? appReady(response) : response;
+  };
+  const waitForLoadState = window.waitForLoadState.bind(window);
+  window.waitForLoadState = async (state, options) => {
+    if (state !== "networkidle") return waitForLoadState(state, options);
+    await waitForLoadState("load", options);
+    return appReady();
   };
   // The window is the app; closing it is the runner's job, not the test's.
   window.close = async () => {};
