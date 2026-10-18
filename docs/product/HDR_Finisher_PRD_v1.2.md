@@ -1166,7 +1166,23 @@ thumbnail cache added at the front on October 17.
    brighter or darker; no migration. It changes RAW import, so the strict
    testing rule applies. Planned before paste. Detail: Library PRD
    section 4, October 11, "The Library's starting look must match".
-3. **Copy and paste grades, and Looks (slice 7).** Never built.
+3. **Copy and paste grades, and Looks (slice 7).** Copy/paste implemented
+   October 17, 2026; Looks remains future work, excluded by the October 17
+   paste-and-batch brief. The reusable settings picker confirms even a single
+   target, remembers individual ticks, skips unsupported RAW settings and
+   preserves per-photo measured values. Paste saves immediately and is one
+   Library Undo transaction; Grade targets use the existing leave gate.
+   Saved-picture work is durable per item (including virtual copies), paused
+   from Activity and prioritised for visible photos. Pending items show the
+   default look, and previous saved-picture identities are reused on Undo.
+   Steve requested core-scaled native processing on October 17. Library
+   native pools use half the available logical processors, retain lower
+   process priority and hold one full photo at a time. One observed 42.4 MP
+   RAW at 2560px took 11.19 seconds (18.6 minutes per 100, extrapolated;
+   9.7% whole-machine CPU averaged across 12 logical processors). This is
+   Library picture production, not export, and is not a controlled speedup
+   comparison. Fresh uncached starting grades need additional RAW decoding
+   during paste preflight; that preparation leaves the Grade edit lock free.
    - Ctrl+C copies the selected photo's grade. Ctrl+V pastes it onto the
      selection with the last-used ticks, always after a confirmation, even
      for one photo. Ctrl+Shift+V opens the tick list. Confirmation title
@@ -1217,8 +1233,8 @@ thumbnail cache added at the front on October 17.
    linked; "Linked" becomes a filter and smart-album field. **Open for
    Steve:** whole grade or chosen groups, and where the link is recorded
    (likely each sidecar). Detail: Library PRD 5.20.
-5. **Batch export (slice 8).** The Export page grows as decided on October
-   11 (above), needs a mock-up before its brief, and must leave room for
+5. **Batch export (slice 8).** Implementation follows the October 17 brief
+   and Export wireframe. The Export page stays and must leave room for
    print settings and watermarks. Quick export… runs an export preset on a
    selection. Export presets carry format and every existing Export
    setting, typed sizes, naming pattern (on exported files only) and
@@ -1228,7 +1244,26 @@ thumbnail cache added at the front on October 17.
    exported feeds the Exported and "edited since last export" states. The
    CPU export is called today; under the October 18 decision (section 11d)
    batch export moves to the GPU export once it exists, with the CPU as
-   fallback. With it:
+   fallback. Presets are JSON files in the `Export` sub-folder of the user's configured preset
+   library. Each queued photo owns a separate below-normal CPU process;
+   versions share that photo's decoded session, then release it. Batch import
+   enables the same bounded parallel bands as Grade. Native libraries retain
+   normal multicore processing without the former one-thread cap. Only one full photo runs at a time, so core count does not multiply
+   full-resolution RAW memory. Pause and Cancel take effect after the current
+   photo, preserving completed files; collisions receive numbered names.
+   Existing saved grades and the current decoded source provide known HDR
+   compatibility. Closed, ungraded non-RAW photos may show a compatibility
+   check note until export decodes them; SDR-only sources then skip HDR
+   versions with an explicit result instead of being guessed from extension.
+   On October 18, a disposable ten-copy run of one 42.4 MP Sony RAW,
+   producing full-resolution Ultra HDR JPEG and SDR JPEG per copy, completed
+   20 files in 15 minutes 43 seconds. Average whole-machine CPU was 9.7% on
+   12 logical processors; peak worker-family memory was 7.65 GiB. This is
+   observed throughput, not a controlled before/after comparison. Removing
+   native caps and enabling parallel import does not make the existing CPU
+   renderer highly parallel. The GPU-first work in section 11d remains to
+   be implemented; this batch slice does not implement that renderer.
+   The following remain follow-up work, excluded from the October 17 brief:
    - **ExifTool**, bundled and kept running by the helper (licence checked
      October 11), for Library details and filters (adds lens names from
      maker notes and the Focus and drive group) and for writing metadata.
