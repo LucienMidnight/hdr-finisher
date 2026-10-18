@@ -102,6 +102,21 @@ def test_mandatory_dng_operations_run_once_in_camera_linear_order_and_disable_au
     assert image.dtype == np.float32
 
 
+@pytest.mark.parametrize('opcodes', [False, True])
+def test_mosaiced_dng_applies_recorded_baseline_once(monkeypatch, tmp_path, opcodes):
+    _install_rawpy(monkeypatch)
+    path = tmp_path / 'baseline.dng'
+    path.write_bytes(b'DNG')
+    inspection = _inspection()
+    if not opcodes:
+        inspection.required_opcodes = ()
+    settings = RawImportSettings(lens=LensCorrectionSettings(mode='off'))
+    original, _ = decode_raw(path, settings, dng_inspection=inspection)
+    inspection.metadata['baseline_exposure'] = 1.0
+    brighter, _ = decode_raw(path, settings, dng_inspection=inspection)
+    np.testing.assert_allclose(brighter, original * 2, rtol=1e-6)
+
+
 def test_unaudited_libraw_version_rejects_before_mandatory_operations(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

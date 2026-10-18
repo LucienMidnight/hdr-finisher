@@ -60,14 +60,48 @@ Rules in force:
 reconstruction, linear DNG import, Lensfun corrections, HEIC/AVIF/Ultra HDR
 gain-map decoding, metadata panel, import progress and cancel.
 
+**RAW zero-start implementation (October 18):** Steve approved a fixed
+−0.8 EV linear calibration for every camera RAW. No scene meter, starting
+curve, contrast preset or camera-style rendering is added. HDR and SDR
+Exposure start at 0; source peak measurements follow calibrated pixels.
+Grade and Library use one starting-adjustment implementation. Non-camera
+starts, including linear DNG and authored SDR, retain their existing behavior.
+
+Fuji RAF tag `RawExposureBias` (0x9650) is read as its signed rational and
+compensated by its negative in EV, including the recorded base offset.
+[Darktable's documentation](https://docs.darktable.org/lua/stable/lua.scripts.manual/scripts/contrib/fujifilm_dynamic_range/)
+independently confirms the meaning/sign across DR100/200/400 on X100S and
+X100V. The comparison files record −1.13 EV (DSCF6495) and −2.72 EV
+(DSCF4011). Missing/malformed information gets the plain calibration;
+no offset is guessed from a DR mode or a single photo. DNG BaselineExposure
+is applied once on mosaiced routes; linear DNG keeps its existing route.
+
+Source mip, unedited Library and saved-grade picture versions have changed
+so pictures from the old start regenerate. Exposure pastes as a plain number.
+The finished-code 16-photo comparison, including DSCF4011, is at
+`output/raw-start-measure/comparison.html`; camera-JPEG brightness is for
+Steve's visual judgment, not an EV pass/fail threshold.
+
+**Validation still open:** the existing quick Library RAW decoder fails
+the agreed Grade-match limits on 15/16 comparison photos (SDR ΔE 2000
+mean <1, p99.9 ≤3; HDR ΔE ITP same limits). Sharing neutral defaults does
+not remove its different demosaic/reconstruction and source measurements.
+Steve has been asked whether these pictures may use Grade's decoder,
+with slower cold thumbnails, or whether matching stays open. The brief
+stays active until that decision, required checks and Steve's sheet review.
+
+**Affected saved work:** 28 RAW `.hdrfinisher` projects and 56 graded RAW
+`.hdrf` files were identified read-only in HDR Test Images, Play_Raw,
+20261017 badminton, test-photos-delete-later and the two viewport fixtures.
+The exact paths are in `output/raw-start-measure/affected-projects.json`.
+They retain their saved control values and change brightness; no migration.
+The Alkeria linear-DNG test project's old source path is missing; it is
+outside this camera-RAW change. No source/project/sidecar was rewritten.
+
 **Not built**
 
-- **Exposure at zero.** On import a RAW still gets the metered
-  `recommended_exposure_ev` (`sessions.py`, starting adjustments). The
-  Library's `default_look` (`library_pictures.py`) uses the metered value
-  plus 0.25 EV, which may not match Grade.
-- RAW tuning so the camera JPEG, the first RAW view and Grade's start
-  agree.
+- Complete Library-to-Grade RAW picture agreement and Steve's final
+  brightness review (implementation and limitation above).
 - Linux: mounted drives (`/media`, `/run/media`, `/mnt`) are not listed
   under Locations (`media_browser.py`).
 - A TIFF with an unrecognised colour profile falls back to a default that
@@ -76,9 +110,9 @@ gain-map decoding, metadata panel, import progress and cancel.
 
 ## 6. Open work, in order
 
-1. **Starting exposure at zero and RAW tuning, with Library and Grade
-   matching.** Priority 3 in the master PRD. Strict testing (RAW import).
-   Name the affected projects (including test projects) when it lands.
+1. **Finish validation of the zero RAW start:** resolve the quick Library
+   decoder mismatch, run the required RAW/export/Proof checks and obtain
+   Steve's visual review of the final sheet. Priority 3; strict RAW testing.
 2. Linux mounted drives in Locations.
 3. Unrecognised TIFF colour profiles: ask, or say clearly what was assumed.
 4. Source workflow checks (Photoshop EXR, GIMP, Adobe and DxO linear DNG)

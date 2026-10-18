@@ -114,7 +114,7 @@ Working rules for coding agents, including how much to test:
 
 | Module | Covers | Main code | PRD | State, October 18 |
 | --- | --- | --- | --- | --- |
-| Import and RAW | Input formats, camera RAW and DNG development, source interpretation, starting look | `loader.py`, `raw_import.py`, `linear_dng.py`, `gainmap_decoders.py`, `sessions.py` | [import-and-raw](modules/import-and-raw.md) | Built. **Starting exposure at zero not done.** |
+| Import and RAW | Input formats, camera RAW and DNG development, source interpretation, starting look | `loader.py`, `raw_import.py`, `linear_dng.py`, `gainmap_decoders.py`, `sessions.py` | [import-and-raw](modules/import-and-raw.md) | Built. **RAW Exposure zero implemented; Library picture agreement and final review open.** |
 | Grade | HDR and SDR controls, curves, Detail, local adjustments and masks, Denoise, Black & White, SDR Match, presets | `adjustments.py`, `local_adjustments.py`, `denoise_adaptive.py`, `sdr_match.py`, `frontend/*` panels | [grade](modules/grade.md) | Built. Desaturation controls, preset management and the Match fault open. |
 | Film Look | Stocks, papers, lens filter, grain, halation, Looks | `film_stock.py`, `film_grain.py`, `film_stocks/`, shaders | [film-look](modules/film-look.md) | Rebuild phases 1 to 6 built. Grain data mostly estimates. |
 | Preview and GPU | WebGPU preview, viewport-bounded rendering, zoom, scopes, GPU memory, CPU/GPU parity | `webgpu-*.js`, `gpu-*.js`, `render_cache.py`, `scopes.py` | [preview-and-gpu](modules/preview-and-gpu.md) | Built. Several performance follow-ups open. |

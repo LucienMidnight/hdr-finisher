@@ -67,6 +67,20 @@ adding a look:
 Nothing else changes in RAW development. How the calibration is
 implemented is your choice.
 
+## Implementation status, October 18
+
+Steve approved −0.8 EV. The code now applies that fixed calibration,
+documented Fuji RawExposureBias compensation, neutral shared starting
+adjustments, plain Exposure paste and new source/Library/saved-grade cache
+versions. The final 16-photo sheet includes DSCF4011 and uses finished code.
+Fuji meaning/sign was confirmed independently in darktable's documented
+DR100/200/400 tests, not inferred from DSCF4011.
+
+The separate quick Library decoder fails the agreed Grade-match limits
+on 15/16 SDR comparisons. Steve's decoder decision is pending because
+this brief forbids changing demosaic/reconstruction. Required validation
+and Steve's final visual review remain open; do not archive this brief yet.
+
 ## Steps
 
 1. **Measure first, change nothing.** Done October 18: 16 photos, five

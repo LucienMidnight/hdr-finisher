@@ -4,14 +4,62 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import struct
 
 from hdr_finisher.analysis import classify_hdr
-from hdr_finisher.loader import _recommended_raw_exposure_ev, load_image
+from hdr_finisher.loader import load_image
 from hdr_finisher.models import SourceImageDescriptor
 from hdr_finisher.sessions import LoadedSession
+from hdr_finisher.import_defaults import fuji_raw_exposure_bias, calibrate_camera_raw
 
 
-def test_loaded_raw_session_applies_shared_editable_starting_exposure(tmp_path: Path) -> None:
+def raf_with_bias(tmp_path, numerator, denominator=100):
+    path = tmp_path / "recorded.raf"
+    header = bytearray(100)
+    header[:16] = b"FUJIFILMCCD-RAW "
+    directory = struct.pack('>IHHhh', 1, 0x9650, 4, numerator, denominator)
+    struct.pack_into('>II', header, 92, 100, len(directory))
+    path.write_bytes(header + directory)
+    return path
+
+
+@pytest.mark.parametrize('bias', [-72, -172, -272, -110, 0])
+def test_recorded_fuji_bias_is_compensated_as_a_uniform_gain(tmp_path, bias):
+    path = raf_with_bias(tmp_path, bias)
+    assert fuji_raw_exposure_bias(path) == pytest.approx(bias / 100)
+    original = np.asarray([[[.01, .2, 2.0], [.5, .04, .9]]], dtype=np.float32)
+    pixels = original.copy()
+    info = calibrate_camera_raw(pixels, path)
+    np.testing.assert_allclose(pixels, original * np.float32(2 ** (-.8 - bias / 100)))
+    assert info['recorded_brightness_ev'] == pytest.approx(-bias / 100)
+
+
+@pytest.mark.parametrize('damage', ['missing', 'truncated', 'zero-denominator', 'invalid-header'])
+def test_unreadable_fuji_bias_uses_plain_calibration(tmp_path, damage):
+    path = raf_with_bias(tmp_path, -272, 0 if damage == 'zero-denominator' else 100)
+    if damage == 'missing':
+        path.write_bytes(path.read_bytes()[:100] + struct.pack('>I', 0))
+    elif damage == 'truncated':
+        path.write_bytes(path.read_bytes()[:-1])
+    elif damage == 'invalid-header':
+        path.write_bytes(b'not a RAF')
+    pixels = np.ones((2, 2, 3), np.float32)
+    assert calibrate_camera_raw(pixels, path)['recorded_brightness_ev'] == 0
+    np.testing.assert_allclose(pixels, np.float32(2 ** -.8))
+
+
+def test_non_raw_loader_and_library_starts_are_unchanged(tmp_path):
+    from PIL import Image
+    from hdr_finisher.library_pictures import default_look
+    source = tmp_path / 'plain.png'
+    Image.new('RGB', (8, 8), (128, 128, 128)).save(source)
+    pixels, _, metadata, _, _ = load_image(source)
+    assert 'raw_start_brightness' not in metadata
+    grade = default_look(pixels, None, False, '.png')
+    assert grade.hdr.exposure == grade.sdr.exposure == .25
+
+
+def test_loaded_raw_session_starts_at_zero_in_both_renditions(tmp_path: Path) -> None:
     source_path = tmp_path / "source.arw"
     source_path.write_bytes(b"synthetic raw")
     image = np.full((4, 4, 3), 0.18, dtype=np.float32)
@@ -36,29 +84,17 @@ def test_loaded_raw_session_applies_shared_editable_starting_exposure(tmp_path: 
         analysis=classify_hdr(image, {"transfer_function": "LINEAR"}, ".arw"),
         metadata={
             "raw_input": True,
-            "recommended_exposure_ev": 1.25,
         },
     )
 
-    assert session.adjustments.hdr.exposure == pytest.approx(1.25)
-    assert session.adjustments.sdr.exposure == pytest.approx(1.25)
-    assert session.metadata["default_exposure_applied"] == {
-        "hdr_ev": 1.25,
-        "sdr_ev": 1.25,
-        "method": "bounded_median_and_p90_minus_1_5_ev",
-    }
-
-
-def test_raw_meter_does_not_darken_a_source_that_does_not_need_an_automatic_lift() -> None:
-    image = np.full((20, 20, 3), 0.18, dtype=np.float32)
-
-    assert _recommended_raw_exposure_ev(image) == pytest.approx(-0.009)
-
-
-def test_raw_meter_shifts_its_brightening_limit_down_by_one_and_a_half_stops() -> None:
-    image = np.full((20, 20, 3), 1e-5, dtype=np.float32)
-
-    assert _recommended_raw_exposure_ev(image) == pytest.approx(2.5)
+    assert session.adjustments.hdr.exposure == 0
+    assert session.adjustments.sdr.exposure == 0
+    assert session.starting_adjustments() == session.adjustments
+    from hdr_finisher.library_pictures import default_look
+    assert default_look(image, None, True, ".arw") == session.starting_adjustments()
+    session.adjustments.hdr.exposure = 2.5
+    session._apply_import_defaults(session.adjustments)
+    assert session.adjustments.hdr.exposure == 2.5
 
 
 def test_loaded_authored_sdr_reference_starts_without_extra_highlight_recovery(tmp_path: Path) -> None:
@@ -91,7 +127,7 @@ def test_loaded_authored_sdr_reference_starts_without_extra_highlight_recovery(t
     assert session.adjustments.sdr.highlight_section_enabled is False
 
 
-def test_loader_records_raw_recommendation_without_baking_an_sdr_override(
+def test_loader_applies_only_fixed_linear_gain_before_peak_analysis(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source_path = tmp_path / "source.arw"
@@ -113,7 +149,11 @@ def test_loader_records_raw_recommendation_without_baking_an_sdr_override(
         ),
     )
 
-    _, _, metadata, _, _ = load_image(source_path)
+    original = image.copy()
+    pixels, _, metadata, analysis, _ = load_image(source_path)
 
-    assert metadata["recommended_exposure_ev"] > 0.0
+    np.testing.assert_allclose(pixels, original * np.float32(2 ** -.8))
+    assert metadata["raw_start_brightness"]["calibration_ev"] == -.8
+    assert analysis.peak_linear == pytest.approx(float(np.max(pixels)))
+    assert "recommended_exposure_ev" not in metadata
     assert "recommended_sdr_exposure_ev" not in metadata

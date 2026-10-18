@@ -17,6 +17,7 @@ import numpy as np
 from PIL import Image, ImageCms, ImageOps
 
 from . import loader, raw_import
+from .import_defaults import calibrate_camera_raw, starting_adjustments
 from .library_diagnostics import audited, problem, log
 from .analysis import classify_hdr
 from .color import map_negative_acescg, normalize_to_acescg
@@ -25,7 +26,7 @@ from .models import AdjustmentState
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
-PICTURE_VERSION = "library-scene-v2"
+PICTURE_VERSION = "library-scene-raw-zero-v3"
 CACHE_LIMIT_BYTES = 2 * 1024**3
 _CACHE_LOCKS = [RLock() for _ in range(64)]
 _TRIM_LOCK = RLock()
@@ -201,7 +202,9 @@ class LibraryPictureCache:
                 check_cancelled(cancelled)
                 if picture_key(path, 100000, "native") != identity:
                     raise ValueError("Photo changed while its native picture was being read.")
-                grade = default_look(pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
+                starting_look = metadata.pop("starting_look", None)
+                grade = AdjustmentState.model_validate(starting_look) if starting_look else default_look(
+                    pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
                 source = (identity, pixels, reference, metadata, grade.model_dump(mode="json"))
                 if not self._native_paused:
                     self._native_source = source
@@ -238,20 +241,12 @@ class LibraryPictureCache:
 
 def default_look(pixels, reference, raw_input, suffix):
     sample = pixels[::max(1, int(np.ceil(max(pixels.shape[:2]) / 256)))].copy()
-    exposure = loader._recommended_raw_exposure_ev(sample) if raw_input else 0.
     analysis = classify_hdr(sample, {}, suffix)
-    grade = AdjustmentState()
-    grade.hdr.exposure = exposure
-    grade.sdr.exposure = exposure
-    if reference is not None:
-        grade.sdr.highlight_section_enabled = False
-    from .sessions import LoadedSession
-    from types import SimpleNamespace
-    proxy = SimpleNamespace(analysis=analysis, sdr_reference_image=reference,
-        hdr_reference_white_nits=203, adjustments=grade)
-    LoadedSession._sync_highlight_source_peaks(proxy)
-    grade.hdr.exposure += .25
-    grade.sdr.exposure += .25
+    grade = starting_adjustments(analysis, reference)
+    if not raw_input:
+        # Preserve existing non-camera starts; camera RAW has no Library lift.
+        grade.hdr.exposure += .25
+        grade.sdr.exposure += .25
     return grade
 
 
@@ -345,8 +340,11 @@ def decode_picture(path, edge, quality):
                 pixels = normalize_to_acescg(pixels, "sRGB", "LINEAR")
             # Source saturation, before display tone mapping: neutral white, no reconstruction.
             pixels[clipped] = np.max(pixels[clipped], axis=1)[:, None]
+            if suffix == ".dng":
+                pixels *= np.float32(2.0 ** float(inspection.metadata.get("baseline_exposure", 0.0)))
+            brightness = calibrate_camera_raw(pixels, path)
             log("picture_source_reduced", path=str(path), duration_ms=(perf_counter()-reduce_started)*1000)
-            return pixels, None, {"route": "native-raw" if quality == "native" else "quick-half-raw", "raw_input": True,
+            return pixels, None, {"route": "native-raw" if quality == "native" else "quick-half-raw", "raw_input": True, "raw_start_brightness": brightness,
                 "source_width": transport.shape[1] * (1 if quality == "native" else 2), "source_height": transport.shape[0] * (1 if quality == "native" else 2)}
     if quality == "fast" and suffix in {".heic", ".heif", ".tif", ".tiff"}:
         # Only accept a real decoder-supported picture, never reinterpret arbitrary bytes.
@@ -407,4 +405,8 @@ def linear_dng_picture(path, inspection, edge):
     transform_normalized_to_acescg_in_place(working, build_color_transform(color),
         color.baseline_exposure, highlight_recovery_limit=None)
     working[clipped] = np.max(working[clipped], axis=1)[:, None]
-    return working, None, {"route": "quick-linear-dng", "raw_input": True, "source_width": source_width, "source_height": source_height}
+    grade = default_look(working, None, False, ".dng")
+    exposure = loader._linear_dng_library_exposure_ev(working[::max(1, int(np.ceil(max(working.shape[:2]) / 256)))].copy())
+    grade.hdr.exposure += exposure
+    grade.sdr.exposure += exposure
+    return working, None, {"route": "quick-linear-dng", "starting_look": grade.model_dump(mode="json"), "source_width": source_width, "source_height": source_height}

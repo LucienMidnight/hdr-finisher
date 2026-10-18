@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from test_library_grades import setup, saved, settings
 from hdr_finisher.library_copies import LibraryCopies
-from hdr_finisher.library_paste import LibraryPaste, raw_exposure_from_start
+from hdr_finisher.library_paste import LibraryPaste
 from hdr_finisher.library_kept import KeptPictures, identity
 from hdr_finisher.library_marks import LibraryMarks
 from hdr_finisher.library_grades import LibraryGrades
@@ -49,10 +49,6 @@ def test_never_pasted_fields_and_preferences(setup):
     with pytest.raises(ValueError,match='Unknown'):paste.paste([str(photo)],{'lanes':['hdr'],'settings':['hdr_reference_white_nits']})
 
 
-def test_raw_starting_exposure_delta_is_isolated():
-    assert raw_exposure_from_start(2.5,1.5,-.25)==.75
-
-
 def test_pending_pictures_survive_restart_resume_and_coalesce_latest_grade(setup):
     photo,store,session,marks,grades=setup;grade=saved(setup)
     kept=KeptPictures(marks.database.parent,marks,None);marks.kept=kept
@@ -84,7 +80,7 @@ def test_open_paste_saves_immediately_and_grade_undo_has_before_document(setup):
     marks.writer.drain();assert settings(photo)['grade']['global_adjustments']['hdr']['exposure']==2
     marks.undo();marks.writer.drain();assert settings(photo)['grade']['global_adjustments']['hdr']['exposure']==1
 
-def test_real_paste_applies_raw_delta_and_defers_offline_target(setup):
+def test_real_paste_copies_plain_exposure_and_defers_offline_target(setup):
     import json
     photo,store,session,marks,grades=setup;copied=saved(setup)
     state=grades._get(str(photo));state['default']['global_adjustments']['hdr']['exposure']=.5;grades._put(str(photo),state)
@@ -99,7 +95,7 @@ def test_real_paste_applies_raw_delta_and_defers_offline_target(setup):
     result=paste.paste([str(target)],{'lanes':['hdr'],'settings':[HDR]})
     assert result['count']==1 and 'offline' in result['warnings'][0]['message']
     desired=grades._get(str(target))['desired']
-    assert desired['global_adjustments']['hdr']['exposure']==2.5
+    assert desired['global_adjustments']['hdr']['exposure']==1
     assert grades._get(str(target))['previous_grade']==starting
     marks.undo()
     assert grades._get(str(target))['desired']==starting

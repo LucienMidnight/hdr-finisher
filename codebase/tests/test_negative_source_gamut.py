@@ -72,7 +72,10 @@ def test_decoder_normalized_routes_map_before_analysis(monkeypatch, route):
         return original_analysis(image, *args, **kwargs)
     monkeypatch.setattr(loader, "classify_hdr", analyze)
     actual, _, _, _, sdr = loader.load_image(path)
-    np.testing.assert_allclose(actual, [[[0., .22105263, .3]]], rtol=1e-7)
+    expected = np.asarray([[[0., .22105263, .3]]], dtype=np.float32)
+    if route == "raw":
+        expected *= np.float32(2 ** -.8)
+    np.testing.assert_allclose(actual, expected, rtol=1e-7)
     np.testing.assert_array_equal(seen[0], actual)
     if route == "ultrahdr":
         np.testing.assert_array_equal(sdr, authored_sdr)

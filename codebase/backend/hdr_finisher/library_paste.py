@@ -26,11 +26,6 @@ def leaves(data, prefix):
     return [prefix]
 
 
-def raw_exposure_from_start(copied, copied_start, target_start):
-    """Temporary RAW exposure delta; remove when starting exposure becomes zero."""
-    return target_start + copied - copied_start
-
-
 def setting_label(path):
     parts=path.split('.')
     if parts[0]=='global_adjustments':
@@ -153,8 +148,6 @@ class LibraryPaste:
                         if setting.startswith(raw_prefix) and not raw:
                             skipped.append(group['label']); continue
                         data=value(clip['grade'],setting)
-                        if raw and setting in ('global_adjustments.hdr.exposure','global_adjustments.sdr.exposure'):
-                            data=raw_exposure_from_start(data,value(clip['start'],setting),value(start,setting))
                         put(target,setting,data)
                 EditDocument.model_validate(target)
                 if skipped: warnings.append({'path':path,'message':', '.join(dict.fromkeys(skipped))+' skipped for this file type.'})

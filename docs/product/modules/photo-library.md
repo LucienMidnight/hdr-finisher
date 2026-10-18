@@ -48,7 +48,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Picture tiers:** tier 0 is the camera's embedded preview (under 0.2 s), replaced in place by the real thumbnail. The visible swap is accepted; a blur-then-wipe is the fallback if it bothers Steve. | Steve, 2026-10-12 |
 | The real thumbnail saved to the cache comes from the GPU picture already made for display. It is not decoded and rendered again on the CPU. | Steve, 2026-10-18 |
 | The Export page stays and grows; Quick export… runs a preset on a selection. | Steve, 2026-10-11 |
-| Exposure pastes as a plain number once starting exposure is zero. | Steve, 2026-10-11 |
+| Exposure pastes as a plain number, including RAW; starting Exposure is zero. | Steve, 2026-10-11 |
 | No photo-count size target as a product idea; tested on a large library internally. | Steve, 2026-10-11 |
 | Dragging photos onto a folder asks first, for now. | Steve, 2026-10-11 |
 | `.hdrfinisher` projects stay out of the Library. | 2026-10-11 |
@@ -58,6 +58,8 @@ Library PRD, section 4. These later decisions replace older ones:
 **Paste rules (built):** values measured from one photo are never pasted
 (measured highlight peak, matched lens profile, file interpretation,
 reference white, overlay view settings). Lens on/off switches do paste.
+Exposure copies its literal HDR/SDR number; no source-start or target-start
+delta is added, including offline and virtual photos.
 Settings that don't apply to a file type are skipped and reported. Paste
 always confirms, saves at once whatever the autosave setting, keeps each
 photo's previous grade as its before state, and is one Undo step. Masks,
@@ -135,9 +137,12 @@ local adjustments, crop and lens corrections are unticked by default.
 - Library pictures compete with batch export for the GPU and the CPU. The
   October 18 fairness changes in Export and Proof stop them from forcing
   export onto the CPU.
-- The Library's starting look still uses the metered exposure, and adds
-  +0.25 EV on top (`library_pictures.py` `default_look`), so it may not
-  match Grade (see Import and RAW).
+- Camera RAW starts at Exposure 0 with the shared Grade starting state,
+  the approved −0.8 EV calibration and documented file brightness. Its
+  separate quick decode still fails the agreed perceptual Grade-match
+  limits; the decoder decision and final review remain open (Import and RAW).
+  Non-RAW starts are unchanged. Unedited and saved-grade cache versions
+  invalidate pictures from the previous RAW start.
 
 ## 5. Open work, in order
 
@@ -150,8 +155,9 @@ local adjustments, crop and lens corrections are unticked by default.
    Library already decoded, faster lens correction, and moving Denoise
    preparation and transport off the critical path. Any reduced-resolution
    decode must pass the perceptual limits first.
-3. **Starting exposure** (Import and RAW module), then make the Library's
-   starting look match Grade's.
+3. **RAW picture agreement** (Import and RAW module): zero Exposure and
+   plain-number paste are implemented; resolve the separate quick decoder
+   mismatch and finish strict checks and Steve's comparison-sheet review.
 4. **Looks (slice 7):** one Looks menu; Apply Look window with
    favourites, user folders and a small built-in starter set; preview on
    hover; "Save as look preset" from the paste window. Not built.

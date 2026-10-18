@@ -382,6 +382,10 @@ def _apply_raw_corrections(
         image = transform_float32_bounded(
             aces2065, aces2065_to_acescg, cancelled=cancelled
         )
+    if inspection.dng_inspection is not None and not plan.opcode_plan:
+        # Opcode route already applies this in its DNG colour transform.
+        baseline = float(inspection.dng_inspection.metadata.get("baseline_exposure", 0.0))
+        image *= np.float32(2.0 ** baseline)
     return _RawCorrectionResult(image, lens_settings, lens_metadata, opcode_audit)
 
 

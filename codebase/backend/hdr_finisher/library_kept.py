@@ -20,7 +20,7 @@ from .library_diagnostics import log
 
 _LOCK=RLock()
 EDGES=(512,1024,1920)
-PICTURE_VERSION="saved-screen-gpu-v2"
+PICTURE_VERSION="saved-screen-raw-calibration-v3"
 RETRY_SECONDS=30
 THUMBNAIL_EDGE=256
 

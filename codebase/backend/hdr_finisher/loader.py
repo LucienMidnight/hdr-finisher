@@ -7,6 +7,7 @@ from time import perf_counter
 
 import numpy as np
 
+from .import_defaults import calibrate_camera_raw
 from .import_bands import map_import_negative
 
 from .analysis import classify_hdr
@@ -38,7 +39,7 @@ EXR_COLOR_INTEROP_SPACES = {
 # Provenance for the persistent source mip cache (PRD 5.3). Bump either
 # constant when a change alters the decoded scene-linear pixels for the same
 # file; stale levels are then ignored and removed by version.
-SOURCE_DECODER_VERSION = "hdr-finisher-loader-v1"
+SOURCE_DECODER_VERSION = "hdr-finisher-loader-raw-calibration-v2"
 SOURCE_COLOR_TRANSFORM_VERSION = "acescg-negative-neutral-v2"
 
 # Display-P3 and sRGB share D65, so the hot-path linear conversion is a fixed
@@ -216,7 +217,7 @@ def load_image(
             normalized, map_negative_acescg, cancelled=cancelled
         )
     if metadata.get("raw_input"):
-        metadata["recommended_exposure_ev"] = _recommended_raw_exposure_ev(normalized)
+        metadata["raw_start_brightness"] = calibrate_camera_raw(normalized, path)
     normalize_ms = (perf_counter() - normalize_started) * 1000.0
     descriptor = SourceImageDescriptor(
         filename=path.name,
@@ -245,8 +246,8 @@ def load_image(
     return normalized, descriptor, metadata, analysis, sdr_reference_image
 
 
-def _recommended_raw_exposure_ev(image: np.ndarray) -> float:
-    """Return a bounded photographic starting exposure without altering RAW pixels."""
+def _linear_dng_library_exposure_ev(image: np.ndarray) -> float:
+    """Preserve the existing non-camera linear-DNG Library start."""
     if image.ndim != 3 or image.shape[2] < 3 or image.size == 0:
         return 0.0
     height, width = image.shape[:2]
