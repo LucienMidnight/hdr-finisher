@@ -133,6 +133,54 @@ function packagedExecutable() {
   // process pid is what owns the window and the backend sidecar, so shutdown
   // is anchored to it.
   const electronMainProcessId = await app.evaluate(() => process.pid);
+
+  // When the window goes away mid-driver, Playwright only says "Target page,
+  // context or browser has been closed". These lines tell the causes apart: a
+  // renderer or GPU crash, the app closing its window or quitting, the main
+  // process dying, or the debugging connection dropping while the app runs on.
+  let runnerStopping = false;
+  const mainEventsPath = path.join(userDataDirectory, "logs", "runner-main-events.log");
+  await app.evaluate(({ app: electronApp, BrowserWindow, webContents }, logPath) => {
+    const fs = process.getBuiltinModule("node:fs");
+    fs.mkdirSync(process.getBuiltinModule("node:path").dirname(logPath), { recursive: true });
+    const record = (event, details = {}) => {
+      try { fs.appendFileSync(logPath, `${JSON.stringify({ at: new Date().toISOString(), uptime: process.uptime(), event, ...details })}\n`); } catch { /* best effort */ }
+    };
+    const watch = contents => {
+      contents.on("render-process-gone", (_event, details) => record("render-process-gone", { url: contents.getURL(), reason: details.reason, exitCode: details.exitCode }));
+      contents.on("destroyed", () => record("webcontents-destroyed", { id: contents.id }));
+    };
+    webContents.getAllWebContents().forEach(watch);
+    electronApp.on("web-contents-created", (_event, contents) => watch(contents));
+    for (const win of BrowserWindow.getAllWindows()) win.on("closed", () => record("window-closed", { id: win.id }));
+    electronApp.on("browser-window-created", (_event, win) => win.on("closed", () => record("window-closed", { id: win.id })));
+    electronApp.on("child-process-gone", (_event, details) => record("child-process-gone", details));
+    for (const name of ["before-quit", "will-quit", "quit", "window-all-closed"]) electronApp.on(name, () => record(name));
+    process.on("uncaughtException", error => record("uncaught-exception", { message: String(error?.stack || error) }));
+    process.on("exit", code => record("main-exit", { code }));
+    if (process.env.HDR_FINISHER_RUNNER_HEARTBEAT === "1") {
+      // Opt-in memory heartbeat: shows growth before a silent death.
+      setInterval(() => {
+        const metrics = electronApp.getAppMetrics().map(item => `${item.type}:${item.pid}:${Math.round(item.memory.workingSetSize / 1024)}MB`);
+        record("heartbeat", { rssMB: Math.round(process.memoryUsage().rss / 2 ** 20), heapMB: Math.round(process.memoryUsage().heapUsed / 2 ** 20), metrics });
+      }, 2000).unref();
+    }
+    record("runner-diagnostics-installed", { pid: process.pid });
+  }, mainEventsPath);
+  const mainAlive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const reportGone = (what) => {
+    if (runnerStopping) return;
+    const report = () => {
+      let events = "";
+      try { events = fs.readFileSync(mainEventsPath, "utf8").trim(); } catch { /* none */ }
+      console.error(`[runner] ${what}; Electron main process ${mainAlive(electronMainProcessId) ? "still running" : "gone"}; main-process events:\n${events || "(none)"}`);
+    };
+    // Give the main process a moment to write what it saw.
+    setTimeout(report, 1500).unref?.();
+  };
+  window.on("crash", () => reportGone("page crashed (renderer)"));
+  window.on("close", () => reportGone("page closed"));
+  app.on("close", () => reportGone("Electron application connection closed"));
   // Performance drivers are loaded below, after launch. Expose the real tree
   // root so they can take read-only OS memory snapshots without guessing from
   // Playwright's Windows launcher process.
@@ -273,6 +321,7 @@ function packagedExecutable() {
   const stop = () => {
     if (stopped) return;
     stopped = true;
+    runnerStopping = true;
     const child = app.process();
     // The launcher command is a shell on Windows; killing it can orphan the
     // Electron tree. The main process pid is the tree root that matters.
