@@ -30,6 +30,11 @@
         await refresh(); if (!copied?.name) return;
         const selection = await dialog(copied, paths, choose);
         if (!selection || !await prepare(paths)) return;
+        // Photos never prepared need Grade's import for their own starting point.
+        for (const [index, path] of paths.entries()) {
+          if (paths.length > 1) status(`Preparing ${index + 1} of ${paths.length} photos for paste…`);
+          await api('/api/library/grade-prepare', {path});
+        }
         const result = await api('/api/library/grade-paste', {paths, selection});
         changed?.(copied, result);
       } finally { running = false; }
@@ -91,9 +96,10 @@
           }
           const active = model.active(), names = [...new Set(active.map(group => group.section))];
           summary.textContent = `Paste ${names.length ? names.join(', ') + ' settings' : 'no settings'}${paths.length > 1 ? ` onto ${paths.length} photos` : ''}.`;
-          yes.disabled = true; clearTimeout(timer); const id = ++previewId;
+          // Paste is usable at once; the check below only refines the count and warnings.
+          yes.disabled = !active.length; clearTimeout(timer); const id = ++previewId;
           if (active.length) timer = setTimeout(async () => {
-            yes.disabled = true;
+            notes.textContent = `Checking ${paths.length === 1 ? 'the photo' : `${paths.length} photos`}… Photos not yet prepared take a few seconds each.`;
             try { const preview = await api('/api/library/grade-paste', {paths, selection: model.value(), preview:true}); if (id !== previewId || !dialog.isConnected) return; warnings.textContent = (preview.warnings || []).map(warning => typeof warning === 'string' ? warning : `${warning.path.split(/[\\/]/).at(-1)}: ${warning.message}`).join(' '); notes.textContent = `${preview.count} of ${paths.length} ${paths.length === 1 ? 'photo will' : 'photos will'} change. Each keeps its previous grade. Ctrl+Z undoes the whole paste.`; yes.disabled = !preview.count; }
             catch(error) { if (id === previewId && dialog.isConnected) { warnings.textContent = error.message; yes.disabled = true; } }
           }, 120);

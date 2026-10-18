@@ -103,3 +103,30 @@ def test_real_paste_copies_plain_exposure_and_defers_offline_target(setup):
     marks.writer.drain()
     assert not grades._get(str(target)).get('conflict')
     assert settings(target)['grade']==starting
+
+
+def test_paste_reuses_thumbnail_start_and_develops_each_photo_once(setup, monkeypatch):
+    import threading, time
+    from types import SimpleNamespace
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    photo,store,session,marks,grades=setup
+    shown=photo.with_name('shown.png');shown.write_bytes(photo.read_bytes())
+    fresh=photo.with_name('fresh.png');fresh.write_bytes(photo.read_bytes())
+    start=session.edit_document().model_dump(mode='json')
+    start['source'].update(filename=shown.name,durable_path=str(shown.resolve()))
+    start['global_adjustments']['hdr']['exposure']=.7
+    cache=LibraryPictureCache(marks.database.parent);cache.keep_default_document(shown,start)
+    marks.kept=SimpleNamespace(cache=cache)
+    imports=[];real=SessionStore.prepare_session
+    def counted(self,path,**options):
+        imports.append(Path(path).name);time.sleep(.2);return real(self,path,**options)
+    monkeypatch.setattr(SessionStore,'prepare_session',counted)
+    paste=LibraryPaste(grades)
+    # A photo the grid already developed takes Grade's start from the thumbnail work.
+    assert paste.document(str(shown))[1]['global_adjustments']['hdr']['exposure']==.7
+    assert imports==[]
+    # The paste check and the paste itself may ask for the same new photo at once.
+    threads=[threading.Thread(target=paste.prepare,args=(str(fresh),)) for _ in range(3)]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join()
+    assert imports==['fresh.png'] and grades._get(str(fresh))['default']

@@ -2,6 +2,7 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+from threading import Lock
 from .models import EditDocument
 from .library_grades import grade_key
 from .library_kept import atomic_json
@@ -59,6 +60,10 @@ class LibraryPaste:
     def __init__(self, grades):
         self.grades=grades; self.marks=grades.marks; self.clipboard=None
         self.preferences=self.marks.database.parent/'library-paste-selection.json'
+        self._locks_lock=Lock(); self._path_locks={}
+
+    def _path_lock(self, path):
+        with self._locks_lock: return self._path_locks.setdefault(str(path),Lock())
 
     def document(self, path):
         state=self.grades._get(path)
@@ -66,14 +71,31 @@ class LibraryPaste:
         current=state.get('desired') if state.get('pending') else doc.get('grade') or state.get('indexed_grade')
         default=state.get('default') or doc.get('grade_default')
         if default is None:
-            from .sessions import SessionStore
-            session=SessionStore().prepare_session(self.marks.source_path(path),owns_source_path=False)
-            default=session.edit_document().model_dump(mode='json')
-            with self.marks._lock:
-                state=self.grades._get(path)
-                default=state.get('default') or default
-                state['default']=default; self.grades._put(path,state)
+            # The paste preview and the paste itself may ask at once: develop once.
+            with self._path_lock(path):
+                default=self.grades._get(path).get('default') or self.starting_document(path)
+                with self.marks._lock:
+                    state=self.grades._get(path)
+                    default=state.get('default') or default
+                    state['default']=default; self.grades._put(path,state)
         return deepcopy(current or default),deepcopy(default)
+
+    def starting_document(self, path):
+        source=self.marks.source_path(path)
+        kept=getattr(self.marks,'kept',None)
+        if kept is not None:
+            # A grid thumbnail already ran Grade's import for this photo version.
+            try:
+                document=kept.cache.default_document(source)
+                if document: return EditDocument.model_validate(document).model_dump(mode='json')
+            except (OSError,ValueError): pass
+        from .sessions import SessionStore
+        session=SessionStore().prepare_session(source,owns_source_path=False)
+        return session.edit_document().model_dump(mode='json')
+
+    def prepare(self, path):
+        self.document(str(self.marks._path(path)))
+        return {'ready':True}
 
     def schema(self, grade, start):
         groups={}
@@ -172,6 +194,8 @@ def add_paste_routes(router,grades):
     def copy_grade(request:dict): return call(lambda:paste.copy(request['path']))
     @router.post('/grade-paste')
     def paste_grade(request:dict): return call(lambda:paste.paste(request.get('paths',[]),request.get('selection'),request.get('preview',False)))
+    @router.post('/grade-prepare')
+    def prepare_grade(request:dict): return call(lambda:paste.prepare(request['path']))
     @router.get('/paste-pictures')
     def pictures(): return grades.marks.kept.queue_status()
     @router.post('/paste-pictures')

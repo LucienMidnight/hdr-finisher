@@ -48,6 +48,11 @@ def picture_key(path, edge, quality):
     return sha256(f"{PICTURE_VERSION}:{path}:{stat.st_mtime_ns}:{stat.st_size}:{edge}:{quality}".encode()).hexdigest()
 
 
+def default_document_key(path):
+    # One per photo version, whatever thumbnail size developed it.
+    return picture_key(path, 0, "default-document")
+
+
 class LibraryPictureCache:
     def __init__(self, root):
         from .library_cache import LibraryCache
@@ -99,6 +104,29 @@ class LibraryPictureCache:
         large = self.full_root / (key + ".npz")
         return large if large.is_file() else self.root / (key + ".npz")
 
+    def default_document(self, path):
+        """Grade's starting document kept by a thumbnail development, if the photo is unchanged."""
+        try:
+            return json.loads((self.root / (default_document_key(path) + ".json")).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def keep_default_document(self, path, document):
+        if not self.managed.preferences()['enabled']:
+            return
+        self.managed.prepare()
+        destination = self.root / (default_document_key(path) + ".json")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with NamedTemporaryFile("w", encoding="utf-8", dir=destination.parent, suffix=".tmp", delete=False) as handle:
+                temporary = Path(handle.name)
+                json.dump(document, handle)
+            os.replace(temporary, destination)
+        finally:
+            if temporary:
+                temporary.unlink(missing_ok=True)
+
     @audited("cache_cached")
     def cached(self, path, edge, quality):
         # "fast" asks for a stand-in only until the real picture exists. Once it
@@ -146,6 +174,9 @@ class LibraryPictureCache:
             # A file changed during decoding must never publish under the old identity.
             if picture_key(path, edge, quality) != key:
                 raise ValueError("Photo changed while its library picture was being read.")
+            default_document = metadata.pop("default_document", None)
+            if default_document is not None:
+                self.keep_default_document(path, default_document)
             look_started = perf_counter()
             starting_look = metadata.pop("starting_look", None)
             grade = AdjustmentState.model_validate(starting_look) if starting_look else default_look(
@@ -314,12 +345,15 @@ def decode_picture(path, edge, quality):
             if inspection.route != DngRoute.MOSAICED_RAW_DNG:
                 raise ValueError("This DNG cannot be read by Grade.")
         if quality == "grade-thumbnail":
-            pixels, descriptor, metadata, analysis, reference = loader.load_image(path)
-            grade = starting_adjustments(analysis, reference)
+            # Grade's own import, so the starting document paste needs is kept too.
+            from .sessions import SessionStore
+            session = SessionStore().prepare_session(Path(path), owns_source_path=False)
+            pixels, reference = session.image, session.sdr_reference_image
             return reduce_picture(pixels, edge), reduce_picture(reference, edge) if reference is not None else None, {
                 "route": "grade-raw-thumbnail", "raw_input": True,
-                "starting_look": grade.model_dump(mode="json"),
-                "raw_start_brightness": metadata.get("raw_start_brightness"),
+                "starting_look": session.starting_adjustments().model_dump(mode="json"),
+                "default_document": session.edit_document().model_dump(mode="json"),
+                "raw_start_brightness": session.metadata.get("raw_start_brightness"),
                 "source_width": pixels.shape[1], "source_height": pixels.shape[0]}
         import_started = perf_counter()
         import rawpy

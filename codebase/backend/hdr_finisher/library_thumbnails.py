@@ -57,6 +57,7 @@ def build(root, path, edge, key, kept=None, cancelled=None):
             adjustments = AdjustmentState.model_validate(meta['adjustments'])
         else:
             pixels, reference, meta = decode_picture(Path(path), edge, quality)
+            meta.pop('default_document', None)
             starting = meta.pop('starting_look', None)
             adjustments = AdjustmentState.model_validate(starting) if starting else default_look(pixels, reference, meta.pop('raw_input', False), Path(path).suffix.lower())
         adjustments.hdr.highlight_compression_target_nits = 1000
