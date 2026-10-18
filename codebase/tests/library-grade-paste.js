@@ -87,6 +87,8 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     await dialog.getByRole('button',{name:'Paste onto 3 photos',exact:true}).click();
     const result=await (await pasted).json();assert.equal(result.count,3);assert.equal(result.undo_available,true);
     await frame.locator('.library-picture-updating').first().waitFor();
+    // Picture work is paused above, so the mark says so rather than Updating.
+    await frame.locator('.library-picture-updating').filter({hasText:/^Paused$/}).first().waitFor();
     await page.screenshot({path:path.join(output,'paste-updating.png')});
     const stale=await iframe.evaluate((el,oldKeys)=>[...el.contentDocument.querySelectorAll('.library-cell')].filter(cell=>oldKeys[cell.dataset.path]).some(cell=>[...cell.querySelectorAll('[data-picture-key]')].some(picture=>picture.dataset.pictureKey===oldKeys[cell.dataset.path])),oldKeys);
     assert.equal(stale,false,'no old saved picture remains displayed after paste');

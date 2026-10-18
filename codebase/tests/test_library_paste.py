@@ -53,7 +53,7 @@ def test_raw_starting_exposure_delta_is_isolated():
     assert raw_exposure_from_start(2.5,1.5,-.25)==.75
 
 
-def test_pending_pictures_survive_restart_pausing_and_coalesce_latest_grade(setup):
+def test_pending_pictures_survive_restart_resume_and_coalesce_latest_grade(setup):
     photo,store,session,marks,grades=setup;grade=saved(setup)
     kept=KeptPictures(marks.database.parent,marks,None);marks.kept=kept
     kept.queue_command({'action':'pause'})
@@ -65,7 +65,8 @@ def test_pending_pictures_survive_restart_pausing_and_coalesce_latest_grade(setu
     kept.close()
     restarted_marks=LibraryMarks(marks.database.parent);LibraryGrades(restarted_marks,SessionStore())
     restarted=KeptPictures(marks.database.parent,restarted_marks,None)
-    assert restarted.queue_status()['pending']==1 and restarted.queue_status()['paused']
+    # Pending work survives a restart, but a pause lasts one app session (Steve, October 18, 2026).
+    assert restarted.queue_status()['pending']==1 and not restarted.queue_status()['paused']
     assert restarted_marks._query('SELECT grade_id FROM picture_jobs')[0][0]==identity(changed)
     restarted.queue_command({'action':'resume','paths':[str(photo)]})
     assert not restarted.queue_status()['paused']

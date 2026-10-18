@@ -1,5 +1,4 @@
 """Durable latest-grade picture work; only one background item is dispatched."""
-import json
 from threading import Event, Thread
 import time
 
@@ -11,10 +10,9 @@ class PictureQueue:
             db=self.marks._connect()
             with db:
                 db.execute('CREATE TABLE IF NOT EXISTS picture_jobs (path TEXT PRIMARY KEY, grade_id TEXT NOT NULL, reason TEXT NOT NULL DEFAULT \'\')')
-                db.execute('CREATE TABLE IF NOT EXISTS picture_job_preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
             db.close()
-            rows=self.marks._query("SELECT value FROM picture_job_preferences WHERE key='paused'")
-            self.paused=bool(json.loads(rows[0][0])) if rows else False
+        # Pause lasts for this app session only; every launch resumes picture work.
+        self.paused=False
         self.completed=0
         if kept.worker is not None: Thread(target=self.run,name='hdr-kept-durable-queue',daemon=True).start()
 
@@ -42,7 +40,6 @@ class PictureQueue:
         if action not in (None,'pause','resume'): raise ValueError('Choose Pause or Resume.')
         if action:
             self.paused=action=='pause'
-            self.write("INSERT OR REPLACE INTO picture_job_preferences VALUES ('paused',?)",(json.dumps(self.paused),))
             if self.paused:
                 with self.kept._lock:
                     jobs=list(self.kept.jobs.values())

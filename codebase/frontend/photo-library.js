@@ -364,7 +364,7 @@
       cell.element.classList.toggle("lead", active && index === state.index);
       cell.element.classList.toggle("rejected", photo.marks?.pick === "reject");
       cell.element.querySelector(".library-picture-updating")?.remove();
-      if (photo.picture_updating) { const mark = make("span", "library-picture-updating library-edited", "Updating"); mark.title = "Showing the default look while the saved-grade picture is updated."; mark.setAttribute("role", "status"); cell.element.append(mark); }
+      if (photo.picture_updating) { const mark = make("span", "library-picture-updating library-edited", state.picturesPaused ? "Paused" : "Updating"); mark.title = state.picturesPaused ? "Library picture work is paused. Resume it in Activity." : "Showing the default look while the saved-grade picture is updated."; mark.setAttribute("role", "status"); cell.element.append(mark); }
       cell.element.querySelector(".library-marks")?.remove(); cell.element.append(culling.strip(photo));
     }
   }
@@ -1078,7 +1078,12 @@
         // visible pictures as well, so returning from Grade discovers it.
         const visible = new Set([...state.cells.keys(), ...state.filmCells.keys(), selected()?.path]);
         const paths = state.allPhotos.filter(photo => photo.storage === "database" || photo.edited || visible.has(photo.path)).map(photo => photo.path);
-        void api("/api/library/paste-pictures", {paths:[...visible].filter(Boolean)}).catch(() => {});
+        // Grid order, so the photo top-left on screen is made first.
+        const onScreen = state.photos.map(photo => photo.path).filter(path => visible.has(path));
+        void api("/api/library/paste-pictures", {paths:onScreen}).then(pictures => {
+          if (!!pictures?.paused === !!state.picturesPaused) return;
+          state.picturesPaused = !!pictures?.paused; paintGrid();
+        }).catch(() => {});
         const result = await api("/api/library/settings-status", { paths });
         const byPath = new Map(result.photos.map(photo => [photo.path, photo]));
         let changed = false;
