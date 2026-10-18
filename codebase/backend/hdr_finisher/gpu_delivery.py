@@ -40,6 +40,16 @@ def _atomic(path, value):
 
 
 def render_pair(frame, settings, adjustments):
+    owner = getattr(frame, "delivery_owner", frame)
+    with _lock:
+        if not hasattr(owner, "_delivery_lock"): owner._delivery_lock = RLock()
+    # Proof and export may arrive concurrently. One render and one decision
+    # belong to this source/grade/finishing, including a failed GPU attempt.
+    with owner._delivery_lock:
+        return _render_pair(frame, owner, settings, adjustments)
+
+
+def _render_pair(frame, owner, settings, adjustments):
     from .delivery import preferences, renderer_record
     try:
         policy = preferences()
@@ -50,7 +60,7 @@ def render_pair(frame, settings, adjustments):
         adjustments.model_dump_json(), repr(getattr(frame, "local_adjustments", None)),
         repr(getattr(frame, "denoise", None)), getattr(frame, "hdr_reference_white_nits", 203),
         settings.output_finishing.model_dump_json(), policy["effective_force_cpu"])
-    cached = getattr(frame, "_delivery_cache", None)
+    cached = getattr(owner, "_delivery_cache", None)
     if cached and cached[0] == signature:
         frame._delivery_record = cached[2]
         return cached[1]
@@ -108,7 +118,8 @@ def render_pair(frame, settings, adjustments):
             except OSError: pass
             shutil.rmtree(directory, ignore_errors=True)
         frame._delivery_record = record
-        frame._delivery_cache = (signature, result, record)
+        owner._delivery_record = record
+        frame._delivery_cache = owner._delivery_cache = (signature, result, record)
     return result
 
 

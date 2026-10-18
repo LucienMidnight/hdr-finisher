@@ -71,6 +71,9 @@ class ProofArtifact:
     jpeg_gain_map: JPEGGainMapProofMetadata | None = None
     full_size: bool = False
     exact_measurements: dict | None = None
+    renderer: str = "cpu"
+    fallback_reason: str | None = None
+    delivery_cache: tuple | None = None
 
 
 @dataclass
@@ -195,6 +198,9 @@ class ProofArtifactStore:
                 cached_id = self._request_cache.get(signature)
                 cached = self._artifacts.get(cached_id or "")
                 if cached is not None and cached.path.exists():
+                    if cached.delivery_cache is not None:
+                        session._delivery_cache = cached.delivery_cache
+                        session._delivery_record = cached.delivery_cache[2]
                     return self._response(cached, request.editing_measurements)
 
         render_cache = getattr(session, "render_cache")
@@ -208,6 +214,7 @@ class ProofArtifactStore:
         full_size = bool(request.full_size or source.shape[:2] == render_cache.image.shape[:2])
         proxy_session = SimpleNamespace(
             session_id=f"proof-{getattr(session, 'session_id', 'session')}",
+            delivery_owner=session,
             image=source,
             sdr_reference_image=sdr_reference,
             adjustments=request.adjustments,
@@ -297,6 +304,9 @@ class ProofArtifactStore:
             jpeg_gain_map=jpeg_gain_map,
             full_size=full_size,
             exact_measurements=export_settings._exact_measurements if full_size else None,
+            renderer=result.renderer,
+            fallback_reason=result.fallback_reason,
+            delivery_cache=getattr(proxy_session, "_delivery_cache", None),
         )
         with self._lock:
             self._artifacts[artifact_id] = artifact
@@ -574,8 +584,11 @@ class ProofArtifactStore:
                 if hasattr(denoise, "model_dump_json")
                 else json.dumps(denoise, sort_keys=True, default=str)
             )
+        from .delivery import renderer_record, preferences
+        try: policy = preferences()["effective_force_cpu"]
+        except (OSError, ValueError, AttributeError): policy = renderer_record()["fallback_reason"]
         payload = (
-            f"{APP_VERSION}|{session_id}|{color_context.cache_key}|{denoise_payload}|{request_payload}"
+            f"{APP_VERSION}|{session_id}|{color_context.cache_key}|{denoise_payload}|{request_payload}|{policy}"
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()[:24]
 
@@ -585,6 +598,7 @@ class ProofArtifactStore:
         suffix, _media_type = PROOF_FORMAT_INFO[artifact.format]
         return ProofArtifactResponse(
             artifact_id=artifact.artifact_id,
+            renderer=artifact.renderer, fallback_reason=artifact.fallback_reason,
             format=artifact.format,
             media_type=artifact.media_type,
             byte_size=artifact.path.stat().st_size,

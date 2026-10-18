@@ -1477,6 +1477,8 @@ class JPEGGainMapProofMetadata(BaseModel):
 
 class ProofArtifactResponse(BaseModel):
     artifact_id: str
+    renderer: Literal["gpu", "cpu"] = "cpu"
+    fallback_reason: str | None = None
     format: str
     media_type: str
     byte_size: int

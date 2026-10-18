@@ -27,6 +27,14 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
         output_path:target,path_grant:grant.grant,output_finishing:{resize_mode:"long_edge",long_edge:72,sharpening:"standard"}},timeout:240000});
       const result=await response.json();console.log(JSON.stringify(result));
       if(!result.accepted || result.renderer!==(forced?"cpu":"gpu"))throw Error(`Wrong renderer: ${JSON.stringify(result)}`);
+      const proofResponse=await page.request.post(api(`/api/session/${session.session_id}/proof/artifact`),{data:{
+        format:"jpeg_ultrahdr",quality:95,jpeg_chroma_subsampling:"444",jpeg_gain_map_quality:95,
+        jpeg_gain_map_scale:"full",dithering:"off",guarantee_hdr_peak:true,full_size:true,
+        output_finishing:{resize_mode:"long_edge",long_edge:72,sharpening:"standard"}},timeout:240000});
+      const proof=await proofResponse.json();
+      if(!proofResponse.ok()||proof.renderer!==result.renderer||proof.width!==72||proof.height!==48)
+        throw Error(`Proof did not share delivery: ${JSON.stringify(proof)}`);
+      console.log("Proof shares",proof.renderer,"delivery");
     }
     const result=JSON.parse(execFileSync(python,[helper,"compare",root],{env,encoding:"utf8"}));console.log(JSON.stringify(result));
     if(!result.hdr.passed||!result.sdr.passed)console.error("Perceptual limits exceeded; hand build to Steve for first testing.");

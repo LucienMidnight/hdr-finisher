@@ -102,9 +102,16 @@ Settings rules (from v1.2 section 5, still in force):
   photo falls back to CPU with the reason recorded. Closing the last visible
   window cancels queued/running batch work; completed files remain.
 
+- Step 4: Proof encodes and inspects the same shared finished lane pair as
+  export, with its renderer and fallback reason recorded. Matching full-size
+  Proof and export reuse that pair, including the per-photo CPU decision.
+  Concurrent requests serialize the render; the bounded session cache keys
+  source identity, grade, locals, Denoise, white, finishing and force-CPU policy.
+  Reduced Proof remains explicitly labelled and uses the same graph at its size.
+
 **Not built**
 
-- Cross-operation Proof reuse and GPU Library pictures remain in the delivery brief.
+- GPU Library pictures remain in the delivery brief.
 - No broad GPU-delivery accuracy or speed claim: Steve tests first.
 - Proof covers the three HDR formats only.
 
@@ -112,7 +119,7 @@ Settings rules (from v1.2 section 5, still in force):
 
 1. **GPU delivery.** Brief:
    [codex-brief-gpu-delivery-build-2026-10-18](../../technical/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
-   Steps 1–3 complete. Next: GPU Proof reuse and GPU Library pictures.
+   Steps 1–4 complete. Next: GPU Library pictures.
 2. Replace the old file-side parity allowance (`target × 1.01 + 1`) with
    the zero-upward-allowance check, once GPU delivery exists.
 3. Batch-export metadata follow-ups (shared with Photo Library): bundled
