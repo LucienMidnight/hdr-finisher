@@ -258,7 +258,8 @@ async function openStagedDesktopSource(selection) {
   }
 }
 
-async function activateDesktopSession(session, projectPath, openGeneration = null) {
+// stayOnTab: a background reload of the open photo (paste, outside change) keeps the current page.
+async function activateDesktopSession(session, projectPath, openGeneration = null, { stayOnTab = false } = {}) {
   retireActiveSession();
   state.session = session;
   state.renderCoordinator?.noteSource(session.session_id);
@@ -289,7 +290,7 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   }
   invalidatePreview("hdr", { markDirty: false });
   invalidatePreview("sdr", { markDirty: false });
-  activateWorkflowTab("grade", { focus: false });
+  activateWorkflowTab(stayOnTab ? state.activeWorkflow : "grade", { focus: false });
   renderSession();
   renderLocalAdjustments();
   seedExportFieldsFromSession();

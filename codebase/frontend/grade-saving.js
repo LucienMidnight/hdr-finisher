@@ -40,7 +40,7 @@
     current = payload.session.session_id;
     loadedGrade = true;
     result = {};
-    await activateDesktopSession(payload.session, "");
+    await activateDesktopSession(payload.session, "", null, { stayOnTab: true });
     state.documentDirty = recovery;
     syncDesktopDocumentState();
     render();
@@ -216,10 +216,8 @@
   }
   async function refresh(session) {
     if (!session) return;
-    const workflow = state.activeWorkflow;
     current = session.session_id; readySession = null;
-    await activateDesktopSession(session, "");
-    if (workflow !== "grade") activateWorkflowTab(workflow);
+    await activateDesktopSession(session, "", null, { stayOnTab: true });
     state.documentDirty = Boolean(session.dirty); result = {}; render(); syncDesktopDocumentState();
   }
   // The revert choices open as a menu under the button. The current grade is kept as the previous grade.

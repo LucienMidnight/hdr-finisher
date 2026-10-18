@@ -83,6 +83,8 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     assert.equal(await choose.getAttribute('aria-expanded'),'true');
     await exposure.evaluate(el=>el.closest('details').open=true);assert.equal(await exposure.isChecked(),true);
     assert.equal(await dialog.locator('input[data-setting="global_adjustments.sdr.exposure"]').isChecked(),false);
+    // The open photo is a target; its reload must not flash the Grade page.
+    await page.evaluate(()=>{window.__pages=[];addEventListener('hdrfinisher:workflowchange',event=>window.__pages.push(event.detail.workflow));});
     const pasted=page.waitForResponse(response=>response.url().endsWith('/api/library/grade-paste')&&!JSON.parse(response.request().postData()).preview);
     await dialog.getByRole('button',{name:'Paste onto 3 photos',exact:true}).click();
     const result=await (await pasted).json();assert.equal(result.count,3);assert.equal(result.undo_available,true);
@@ -95,6 +97,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     for(const target of targets){const picture=await api('picture',{path:target,edge:256,quality:'quick',priority:1});assert.equal(Boolean(picture.kept),false,'default while updating');assert.notEqual(picture.key,oldKeys[target]);}
     await savedWhen(photos[1],saved=>saved.grade.global_adjustments.hdr.exposure===.75&&saved.virtual_copies?.find(copy=>copy.name==='Paste target')?.grade.global_adjustments.hdr.exposure===.75);
     await savedWhen(photos[2],saved=>saved.grade.global_adjustments.hdr.exposure===.75);
+    assert.deepEqual(await page.evaluate(()=>window.__pages.filter(page=>page!=='import')),[],'paste stays on the Library');
     let saved=JSON.parse(fs.readFileSync(photos[1]+'.hdrf','utf8'));assert.equal(saved.grade.global_adjustments.hdr.exposure,.75);assert.equal(saved.virtual_copies.find(copy=>copy.name==='Paste target').grade.global_adjustments.hdr.exposure,.75);
     assert.equal(JSON.parse(fs.readFileSync(photos[2]+'.hdrf','utf8')).grade.global_adjustments.hdr.exposure,.75);
     const undo=page.waitForResponse(response=>response.url().endsWith('/api/library/undo'));
