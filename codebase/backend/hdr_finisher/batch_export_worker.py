@@ -1,4 +1,4 @@
-"""Entrypoint for the isolated batch CPU worker."""
+"""Entrypoint for the isolated batch worker."""
 import json
 from pathlib import Path
 import sys
@@ -14,7 +14,7 @@ def main():
         temporary = target.with_suffix(".tmp")
         temporary.write_text(json.dumps(results), encoding="utf-8")
         temporary.replace(target)
-    results = export_photo(task["photo"], ExportPreset.model_validate(task["preset"]), task["directory"], task["sequence"], progress)
+    results = export_photo(task["photo"], ExportPreset.model_validate(task["preset"]), task["directory"], task["sequence"], progress, lambda: Path(task["cancel"]).exists())
     Path(sys.argv[2]).write_text(json.dumps(results), encoding="utf-8")
 
 if __name__ == "__main__": main()

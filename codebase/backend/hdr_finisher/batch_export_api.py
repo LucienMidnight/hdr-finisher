@@ -77,6 +77,11 @@ def create_batch_router(store, grants=None, desktop=False):
                 render_pattern(version.pattern, {"source_path":"example.raw"}, 1, version.name, request.preset.name)
             return queue.start(request.paths,request.preset,request.directory)
         except (ValueError,OSError) as error: raise HTTPException(400,str(error)) from error
+    @router.post("/batch-export/shutdown")
+    def shutdown():
+        queue.close()
+        return {}
+
     @router.get("/batch-export")
     def jobs():
         with queue.condition: return {"jobs":[queue.status(identity) for identity in queue.jobs]}

@@ -123,8 +123,12 @@ function packagedExecutable() {
     timeout: 180000,
   });
   app.on("window", page => { page.on("console", msg => { if(msg.type()==="error")console.error("[renderer]",msg.text()); }); page.on("pageerror", error=>console.error("[renderer]",error)); });
-  const window = await app.firstWindow({ timeout: 180000 });
+  let window = await app.firstWindow({ timeout: 180000 });
+  const visible = app.windows().find(page => !page.url().includes("gpu-delivery.html"));
+  if (visible) window = visible;
+  if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] initial", window.url());
   await require("./electron-initial-load").waitForInitialLoad(app, window);
+  if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] loaded", window.url());
   // The launcher pid Playwright tracks is the shell on Windows; the main
   // process pid is what owns the window and the backend sidecar, so shutdown
   // is anchored to it.
@@ -363,6 +367,7 @@ function packagedExecutable() {
     close: async () => stop(),
   };
 
+  if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] start driver");
   process.argv = [process.argv[0], path.resolve(testPath), ...testArguments];
   // Set require.main as a direct Node invocation would, including drivers
   // whose standalone entry point is guarded by require.main === module.

@@ -93,10 +93,18 @@ Settings rules (from v1.2 section 5, still in force):
   HDR ΔE ITP mean 0.625 / p99.9 2.756; SDR ΔE 2000 mean 0.565 /
   p99.9 2.782. Both pass; decoded HDR peak 668.73 nits against 1000.
 
+- Step 3: batch workers inherit the app-owned GPU queue. Compatible preset
+  versions reuse one finished pair; per-photo GPU failure keeps the batch
+  running on CPU. The existing Pause, Cancel, names and per-file results stay.
+  Delivery submits one creative tile or 128 finishing rows at a time. Grade
+  clients report resident memory against one shared budget; a new Grade render
+  preempts delivery and releases its reservation before Grade admission. That
+  photo falls back to CPU with the reason recorded. Closing the last visible
+  window cancels queued/running batch work; completed files remain.
+
 **Not built**
 
-- Batch GPU scheduling, cross-operation Proof reuse and GPU Library pictures
-  are the next steps of the delivery brief.
+- Cross-operation Proof reuse and GPU Library pictures remain in the delivery brief.
 - No broad GPU-delivery accuracy or speed claim: Steve tests first.
 - Proof covers the three HDR formats only.
 
@@ -104,8 +112,7 @@ Settings rules (from v1.2 section 5, still in force):
 
 1. **GPU delivery.** Brief:
    [codex-brief-gpu-delivery-build-2026-10-18](../../technical/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
-   Steps 1–2 complete. Next: GPU batch scheduling, GPU Proof reuse and
-   GPU Library pictures.
+   Steps 1–3 complete. Next: GPU Proof reuse and GPU Library pictures.
 2. Replace the old file-side parity allowance (`target × 1.01 + 1`) with
    the zero-upward-allowance check, once GPU delivery exists.
 3. Batch-export metadata follow-ups (shared with Photo Library): bundled

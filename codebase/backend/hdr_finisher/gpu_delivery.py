@@ -24,6 +24,7 @@ from .render_cache import SessionRenderCache
 ROOT_ENV = "HDR_FINISHER_GPU_DELIVERY_SPOOL"
 _sessions = {}
 _lock = RLock()
+_clients = {}
 _activity = {"until": 0., "bytes": 0, "budget": 536870912}
 
 
@@ -81,6 +82,9 @@ def render_pair(frame, settings, adjustments):
             "priority": getattr(frame, "delivery_priority", 20), "created": time.time()})
         deadline = time.monotonic() + 180
         while not (directory / "result.json").exists():
+            if getattr(frame, "delivery_cancelled", lambda: False)():
+                from concurrent.futures import CancelledError
+                raise CancelledError("Delivery cancelled.")
             if time.monotonic() > deadline or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 10:
                 raise RuntimeError("The GPU delivery renderer stopped or timed out.")
             time.sleep(.03)
@@ -100,6 +104,8 @@ def render_pair(frame, settings, adjustments):
         if directory is not None:
             with _lock:
                 _sessions.pop(directory.name, None)
+            try: (directory / "cancelled").touch()
+            except OSError: pass
             shutil.rmtree(directory, ignore_errors=True)
         frame._delivery_record = record
         frame._delivery_cache = (signature, result, record)
@@ -115,22 +121,45 @@ def create_gpu_delivery_router():
     router = APIRouter(prefix="/api/delivery/gpu")
     active = {}
 
+    def accounting():
+        now = time.monotonic()
+        for key in list(_clients):
+            if _clients[key]["expires"] < now: _clients.pop(key, None)
+        values = list(_clients.values())
+        _activity.update(until=max((v["until"] for v in values), default=0.),
+            bytes=sum(v["bytes"] for v in values),
+            budget=min((v["budget"] for v in values), default=536870912))
+        # Cancelled workers remove their spool. Never retain its session/mmap.
+        for key, (directory, value) in list(active.items()):
+            if not directory.exists() or (directory / "cancelled").exists():
+                active.pop(key, None)
+                with _lock: _sessions.pop(key, None)
+
     @router.post("/activity")
     async def activity(request: Request):
         value = await request.json()
-        _activity.update(until=time.monotonic() + .25,
-            bytes=max(0, int(value.get("bytes", 0))), budget=max(0, int(value.get("budget", 536870912))))
-        return {}
+        key = str(value.get("id", "grade"))[:80]
+        _clients[key] = {"expires": time.monotonic() + 2,
+            "until": time.monotonic() + .25 if value.get("active") else 0.,
+            "bytes": max(0, int(value.get("bytes", 0))),
+            "budget": max(0, int(value.get("budget", 536870912)))}
+        accounting()
+        reserved = sum(v[1].get("reservation", 0) for v in active.values())
+        return {"reserved": reserved,
+            "budget": max(0, _activity["budget"] - _activity["bytes"] + _clients[key]["bytes"] - reserved)}
 
     @router.get("/permit")
-    def permit():
+    def permit(identity: str | None = None):
         (root / "heartbeat").touch()
-        return {"ready": time.monotonic() >= _activity["until"],
+        accounting()
+        return {"cancelled": bool(identity and identity not in active),
+            "preempt": time.monotonic() < _activity["until"], "ready": time.monotonic() >= _activity["until"],
             "budget": max(0, _activity["budget"] - _activity["bytes"])}
 
     @router.get("/next")
     def next_job():
         (root / "heartbeat").touch()
+        accounting()
         if time.monotonic() < _activity["until"] or active:
             return None
         candidates = []
@@ -156,6 +185,16 @@ def create_gpu_delivery_router():
         active[value["id"]] = (directory, value)
         value["budget"] = max(0, _activity["budget"] - _activity["bytes"])
         return value
+
+    @router.post("/{identity}/reserve")
+    async def reserve(identity: str, request: Request):
+        accounting()
+        if identity not in active: raise HTTPException(404, "GPU delivery job expired.")
+        requested = max(0, int((await request.json())["bytes"]))
+        if requested > max(0, _activity["budget"] - _activity["bytes"]):
+            raise HTTPException(409, "Grade needs the shared GPU budget.")
+        active[identity][1]["reservation"] = requested
+        return {}
 
     @router.post("/{identity}/pixels/{lane}")
     async def pixels(identity: str, lane: str, request: Request):

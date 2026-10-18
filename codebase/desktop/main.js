@@ -1151,9 +1151,9 @@ async function createWindow(role = "main") {
     if (isMain) {
       mainWindow = null;
       windowFailure = null;
-      // Main owns the app lifetime, even while a secondary window is open.
-      if (!shuttingDown) void beginShutdown();
+
     }
+    if (!windows.size && !shuttingDown) void beginShutdown();
   });
   for (const eventName of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
     window.on(eventName, () => sendWindowState(window));
@@ -1253,6 +1253,11 @@ async function beginShutdown() {
     saveWindowBounds(record);
     if (!record.window.isDestroyed()) record.window.destroy();
   }
+  if (backend) {
+    await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
+      headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)}).catch(()=>{});
+  }
+  deliveryWindow?.destroy();deliveryWindow=null;
   await stopBackend();
   app.quit();
 }

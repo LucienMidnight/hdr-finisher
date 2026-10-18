@@ -237,9 +237,38 @@
       // dedicated video memory, or the stated fallback, lowered by verified
       // adapter facts and the allocation probe.
       if (this.memoryBudget === "auto" && this.gpuBudget?.budgetBytes > 0) {
-        return this.gpuBudget.budgetBytes;
+        return Number.isFinite(this.deliveryBudgetBytes) ? Math.min(this.gpuBudget.budgetBytes, this.deliveryBudgetBytes) : this.gpuBudget.budgetBytes;
       }
-      return normalized;
+      return Number.isFinite(this.deliveryBudgetBytes) ? Math.min(normalized, this.deliveryBudgetBytes) : normalized;
+    }
+
+    async reportDeliveryActivity(active = this.activeRenderCount > 0 || this.activeScopeCount > 0 || this.deliveryWaitingCount > 0) {
+      if (globalThis.location?.pathname?.endsWith("gpu-delivery.html")) return {reserved:0};
+      this.deliveryClientId ||= crypto.randomUUID();
+      // Report the configured/calibrated budget, before the shared deduction.
+      const previous = this.deliveryBudgetBytes; this.deliveryBudgetBytes = null;
+      const budget = this.memoryBudgetBytes(); this.deliveryBudgetBytes = previous;
+      const response = await fetch("/api/delivery/gpu/activity", {method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({id:this.deliveryClientId,
+          active,bytes:this.resourceMemorySnapshot().resident.totalBytes,budget})});
+      if (!response.ok) throw Error("Delivery accounting unavailable");
+      const value = await response.json(); this.deliveryBudgetBytes = value.budget;
+      return value;
+    }
+
+    async acquireForegroundDeliveryBudget() {
+      if (!this.deliveryActivityTimer) return;
+      // Grade wins at the next bounded submission. Wait for the hidden
+      // renderer to release its reservation before admitting a new graph.
+      this.deliveryWaitingCount = (this.deliveryWaitingCount || 0) + 1;
+      try {
+        for (;;) {
+          const value = await this.reportDeliveryActivity(true);
+          if (!value.reserved) return;
+          await new Promise(resolve => setTimeout(resolve, 20));
+        }
+      } catch { /* Delivery service unavailable: ordinary Grade admission. */ }
+      finally { this.deliveryWaitingCount -= 1; }
     }
 
     /**
@@ -672,6 +701,10 @@
           }));
         });
         this.available = true;
+        if (!globalThis.location?.pathname?.endsWith("gpu-delivery.html")) {
+          this.deliveryActivityTimer ||= setInterval(() => this.reportDeliveryActivity().catch(()=>{}), 100);
+          this.reportDeliveryActivity(false).catch(()=>{});
+        }
         this.detail = this.adapterInfo.fallback
           ? "WebGPU software adapter active; HDR presentation is not authoritative"
           : `WebGPU settled authoring renderer ready (${this.adapterInfo.description})`;
@@ -2107,6 +2140,7 @@
 
     async renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
       if (!this.available || !this.device) return false;
+      if (this.deliveryActivityTimer) await this.acquireForegroundDeliveryBudget();
       if (sourceSize) this.maskSourceSize = {sessionId,...sourceSize};
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
       if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
@@ -2214,6 +2248,7 @@
         measureOnly,
         delivery: sourceOptions?.delivery,
         beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
+        tileBatchSize: sourceOptions?.tileBatchSize,
         analysisPatch: sourceOptions?.analysisPatch,
         neutralPaperAnchor: highlightAnchorOnly && lane === "hdr" && adjustments.hdr.film_look.film_stock === "none",
         analysisMasks: sourceOptions?.analysisMasks,
@@ -4277,7 +4312,12 @@
         // not make the pan cache believe its tiles are in the retained frame.
         if (!measureOnly) scheduler.acceptTile(tile.key, plan.generation);
         batchTiles += 1;
-        if (batchTiles >= tileBatchSize) flushTiles();
+        if (batchTiles >= tileBatchSize) {
+          flushTiles();
+          if (options.beforeDeliverySubmit) {
+            await this.waitForSubmittedWork(); await options.beforeDeliverySubmit();
+          }
+        }
       }
 
       // A superseded generation stops before the next batch is submitted: the
@@ -4520,6 +4560,7 @@
       // requesting a proxy. Unsupported local modules use the CPU renderer,
       // and must not first pay for a WebGPU proxy that cannot be presented.
       if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return this.refuseRender("unsupported-local-adjustment");
+      if (this.deliveryActivityTimer) await this.acquireForegroundDeliveryBudget();
       const renderStartedAt = performance.now();
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
       if (sourceSize) this.maskSourceSize = {sessionId,...sourceSize};

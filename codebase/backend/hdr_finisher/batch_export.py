@@ -1,4 +1,4 @@
-"""One isolated low-priority photo at a time; the exact CPU exporters are unchanged."""
+"""One isolated low-priority photo at a time, sharing GPU delivery."""
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
@@ -33,6 +33,8 @@ class BatchExports:
     def __init__(self, snapshot, record_path=RECORD_PATH, runner=None):
         self.snapshot, self.record_path, self.runner = snapshot, Path(record_path), runner or self._subprocess
         self.condition, self.jobs = Condition(), {}
+        self._closing = False
+        self._child = None
         self.thread = Thread(target=self._run, daemon=True, name="batch-export")
         self.thread.start()
     def read_records(self): return read_records(self.record_path)
@@ -58,10 +60,22 @@ class BatchExports:
                 job["state"] = {"pause":"paused","resume":"queued","cancel":"cancelling"}[action]
                 self.condition.notify_all()
         return self.status(identity)
+    def close(self):
+        with self.condition:
+            self._closing = True
+            for job in self.jobs.values():
+                if job["state"] not in {"finished", "cancelled", "failed"}: job["state"] = "cancelling"
+            self.condition.notify_all()
+        self.thread.join(timeout=3)
+        if self._child is not None and self._child.poll() is None:
+            self._child.terminate()
+        self.thread.join(timeout=3)
+
     def _run(self):
         while True:
             with self.condition:
-                self.condition.wait_for(lambda: any(j["state"] in {"queued","cancelling"} for j in self.jobs.values()))
+                self.condition.wait_for(lambda: self._closing or any(j["state"] in {"queued","cancelling"} for j in self.jobs.values()))
+                if self._closing and not any(j["state"] in {"queued","cancelling"} for j in self.jobs.values()): return
                 job = next(j for j in self.jobs.values() if j["state"] in {"queued","cancelling"})
             preset = ExportPreset.model_validate(job["preset"])
             for sequence, photo in enumerate(job["photos"], 1):
@@ -82,7 +96,7 @@ class BatchExports:
                             job["estimated_seconds"] = round(elapsed / job["completed"] * (job["total"] - job["completed"]))
                 try:
                     if self.runner == self._subprocess:
-                        results = self._subprocess(photo, preset, job["directory"], sequence, progress)
+                        results = self._subprocess(photo, preset, job["directory"], sequence, progress, lambda: job["state"] == "cancelling")
                     else:
                         results = self.runner(photo, preset, job["directory"], sequence)
                 except Exception as error:
@@ -108,12 +122,13 @@ class BatchExports:
         temporary = self.record_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(records, indent=2), encoding="utf-8")
         os.replace(temporary, self.record_path)
-    def _subprocess(self, photo, preset, directory, sequence, progress=None):
+    def _subprocess(self, photo, preset, directory, sequence, progress=None, cancelled=lambda: False):
         with tempfile.TemporaryDirectory(prefix="hdr-batch-") as temporary:
             task = Path(temporary) / "task.json"
             result = Path(temporary) / "result.json"
             progress_file = Path(temporary) / "progress.json"
-            task.write_text(json.dumps({"photo":photo,"preset":preset.model_dump(mode="json"),"directory":directory,"sequence":sequence,"progress":str(progress_file)}), encoding="utf-8")
+            cancel_file = Path(temporary) / "cancel"
+            task.write_text(json.dumps({"photo":photo,"preset":preset.model_dump(mode="json"),"directory":directory,"sequence":sequence,"progress":str(progress_file),"cancel":str(cancel_file)}), encoding="utf-8")
             env = dict(os.environ)
             # Use the same native-library threading as an ordinary export.
             # Isolation, below-normal priority and serial photos protect Grade.
@@ -125,7 +140,9 @@ class BatchExports:
             flags = (getattr(subprocess,"BELOW_NORMAL_PRIORITY_CLASS",0) | getattr(subprocess,"CREATE_NO_WINDOW",0)) if os.name == "nt" else 0
             command = [sys.executable,"--batch-export-worker",str(task),str(result)] if getattr(sys,"frozen",False) else [sys.executable,"-m","hdr_finisher.batch_export_worker",str(task),str(result)]
             with subprocess.Popen(command, env=env, creationflags=flags, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as child:
+                self._child = child
                 while True:
+                    if cancelled(): cancel_file.touch()
                     try:
                         _, stderr = child.communicate(timeout=.25)
                         break
@@ -133,10 +150,15 @@ class BatchExports:
                         if progress is not None:
                             try: progress(json.loads(progress_file.read_text(encoding="utf-8")))
                             except (OSError, ValueError): pass
-                if child.returncode: raise RuntimeError(stderr[-2000:] or "Export worker stopped.")
+                self._child = None
+                if child.returncode:
+                    if cancelled():
+                        try: return json.loads(progress_file.read_text(encoding="utf-8"))
+                        except (OSError, ValueError): return []
+                    raise RuntimeError(stderr[-2000:] or "Export worker stopped.")
             return json.loads(result.read_text(encoding="utf-8"))
 
-def export_photo(photo, preset, directory, sequence, progress=None):
+def export_photo(photo, preset, directory, sequence, progress=None, cancelled=lambda: False):
     from .sessions import SessionStore
     from .projects import open_document, validate_saved_document
     from .exporters import build_export_backends
@@ -148,11 +170,13 @@ def export_photo(photo, preset, directory, sequence, progress=None):
         else:
             payload = store.create_session(Path(photo["source_path"]), owns_source_path=False)
             session = store.get(payload.session_id)
+        session.delivery_cancelled = cancelled
         backends = build_export_backends(probe_capabilities())
         original_white = session.hdr_reference_white_nits
         if not photo.get("grade"):
             photo = dict(photo, sdr_only=session.analysis.classification.value == "SDR_ONLY")
         for version in preset.versions:
+            if cancelled(): break
             row = {"photo":photo["path"],"version":version.name}
             if photo.get("sdr_only") and version.settings.format in {"avif_gain_map","jpeg_ultrahdr","jpegxl_hdr"}:
                 results.append(dict(row,outcome="skipped",reason="SDR only: no HDR grade."))
@@ -169,6 +193,7 @@ def export_photo(photo, preset, directory, sequence, progress=None):
                     settings = version.settings.model_copy(update={"output_path":str(staged),"overwrite":False,"path_grant":None,"edit_revision":None})
                     response = backends[settings.format].export(session, settings)
                     if not response.accepted: raise RuntimeError(response.message)
+                    if cancelled(): break
                     # Hard links publish a completed file atomically and fail if it exists.
                     candidate, number = target, 1
                     while True:
@@ -183,7 +208,9 @@ def export_photo(photo, preset, directory, sequence, progress=None):
                                 renderer=response.renderer,fallback_reason=response.fallback_reason)
                     if response.delivery_notes: done["reason"] = " ".join(response.delivery_notes)
                     results.append(done)
-            except Exception as error: results.append(dict(row,outcome="failed",reason=str(error)))
+            except Exception as error:
+                if cancelled(): break
+                results.append(dict(row,outcome="failed",reason=str(error)))
             if progress: progress(results)
     finally: store.clear()
     return results
