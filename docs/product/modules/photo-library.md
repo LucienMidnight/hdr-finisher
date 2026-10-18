@@ -211,6 +211,15 @@ fails as recorded above; export, Proof and their limits were not changed.
    pipelines warmed at launch; no scope analysis on Library draws; a
    running cache size total instead of listing the folder after every
    picture; window shown before the backend is ready.
+   Exploration started October 18; first findings are in
+   `output/library-speed-exploration/findings.md`. All nine known SDR saved
+   thumbnail failures pass 8-bit rounding, then fail after quality-100 JPEG
+   encoding. The two HDR failures expose gain-map precision and gamut
+   clipping. Source development and repeated cache-directory scans are
+   measured costs. Single/full-screen remain on the quick decoder; matching
+   Grade requires its source development and full-source measurements.
+   No speed or codec behaviour changed. Whole-screen and idle saved-picture
+   timings remain unqualified after interrupted UI runs; the brief stays open.
 10. **Polish pass** (held until the features are done):
     - Slice 4 reminders: test the blocked-shadows warning on dark and noisy
       RAWs; Steve to review the exposure-warning wording.

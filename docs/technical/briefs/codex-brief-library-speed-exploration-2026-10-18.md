@@ -64,12 +64,21 @@ Steve's yardstick is Windows Explorer showing the same folder.
    today (measured), and what changing it would touch.
 7. **Thumbnail file size.** How much of reading and holding a thumbnail
    is due to its size (about 830 KB). Measure only; no pixel changes.
+8. **Saved thumbnail agreement.** Why the saved thumbnail files exceed
+   Grade agreement limits on 9 SDR and 2 HDR photos even at maximum JPEG
+   quality. Separate source/development differences from quantisation,
+   JPEG compression, gain-map reconstruction and colour-gamut losses.
+   Keep the agreed limits; investigate without changing the codec.
+9. **Single and full-screen agreement.** What would be needed for these
+   views to match Grade, including the source decoder and full-source
+   measurements, and what that would cost in speed, memory and reuse.
+   Keep their current quick decoder during this exploration.
 
 ## What to deliver
 
 - A findings report at `output/library-speed-exploration/findings.md`,
   with the map, the stage tables, the floor, the repeated work and your
-  answers to 5 to 7. Mark every number as measured or estimated, and say
+  answers to 5 to 9. Mark every number as measured or estimated, and say
   whether the operating system's disk cache was cold or warm.
 - Your recommendation: the three changes you think would close the
   largest gaps, with rough gains, risks and what each would touch.
@@ -99,3 +108,22 @@ Steve's yardstick is Windows Explorer showing the same folder.
 If something in this brief does not match the code (for example, a path
 or a process that does not exist), say so and carry on with what is
 there. Ask before anything that would change behaviour.
+
+## October 18 investigation checkpoint
+
+Started after the Fuji DR-only correction (`364cd6c`). Questions 8 and 9
+above record Steve's additions. First findings and measurement boundaries:
+`output/library-speed-exploration/findings.md`.
+
+All nine known SDR failures pass 8-bit rounding and exceed the existing
+limits after quality-100 JPEG encoding. The two HDR failures expose gain-map
+precision and saturated-colour clipping. No codec or limit was changed.
+Single/full-screen still use the quick decoder; the report describes the
+source work and estimated extra cost required for Grade agreement.
+
+The study remains open: clean whole-screen/cached-launch timing, physical
+cold-drive/Explorer comparison, three-photo idle saved-picture timing and
+resource-use measurements remain. Interrupted UI runs are not acceptance
+results. Temporary probes live under output; no speed implementation was
+made. Fast checks for the preceding Fuji change: 534 JavaScript passed;
+2297 Python passed, 3 skipped.
