@@ -4,7 +4,7 @@ All changes remain uncommitted on viewport-bounded-preview-phase-2-wip. Previous
 
 ## PRD reconciliation after owner review
 
-Steve asked whether native processing had already been addressed. Read the current `ai/docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`, sections 2, 3, 4.1, 4.4, 5.2, 5.4, 14.10 and 14.13, and the October 3 post-testing continuation prompt. The earlier proposed native-every-zoom change is held pending this reconciliation; the owner's question does not authorize building it.
+Steve asked whether native processing had already been addressed. Read the current `ai/docs/product/archive/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`, sections 2, 3, 4.1, 4.4, 5.2, 5.4, 14.10 and 14.13, and the October 3 post-testing continuation prompt. The earlier proposed native-every-zoom change is held pending this reconciliation; the owner's question does not authorize building it.
 
 Native means source pixel resolution, independent of CPU/GPU execution and independent of whether the entire image or only a region is processed. Current interactive preview is GPU; exact CPU full-size Proof/export is a separate reference contract. Section 5.2 calls for visible-region-plus-margin rendering at/above 100%; 14.10 already extends region routing to custom views below 100% whenever the image is partly offscreen. Region routing does not itself imply native source resolution. The later October 3 `91e4a12` decision explicitly uses stepped reduced source sizes below 100%; current `requiredProcessingLongEdge`/`steppedProcessingLongEdge` implement that, and a step can reach native before 100%. Explicit Full override also selects native processing. Stable selected-tier interaction remains in force.
 

@@ -24,7 +24,7 @@ to him one at a time, each with the trade-off and what could break.
 
 Read first, relative to the git root:
 
-- `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`: section 2
+- `docs/product/archive/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`: section 2
   (principles), 5.5 (what phase 4 is), 7 (exit: "Removed code listed; suites
   green"), and all of section 15. Section 15.7 is the carry-forward list and
   the list of checks that still describe the old design.

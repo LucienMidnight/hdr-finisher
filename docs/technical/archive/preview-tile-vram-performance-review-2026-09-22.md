@@ -10,8 +10,8 @@ selected tier (Full = tiled), why are there extreme performance problems — Ful
 switching hangs, local adjustments take seconds to land, and is the GPU silently
 falling back to CPU?
 
-**Related documents:** `docs/product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md`
-(phases 4–8, global gates), `docs/product/HDR_Finisher_PRD_v1.2.md` (§11b PERF-03…07),
+**Related documents:** `docs/product/archive/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md`
+(phases 4–8, global gates), `docs/product/archive/HDR_Finisher_PRD_v1.2.md` (§11b PERF-03…07),
 `docs/technical/archive/phase-5-masks-locals-detail-evidence-2026-09-19.md` (halo and cache
 measurements), `docs/technical/archive/sprint-wrap-evidence-2026-09-21.md`.
 

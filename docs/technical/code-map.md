@@ -1,7 +1,7 @@
 # Code map
 
 Where things live after the October 8 modularization sprint. Read this before
-searching the code. The [sprint PRD](../product/Codebase_Modularization_Sprint_PRD_2026-10-06.md)
+searching the code. The [sprint PRD](../product/archive/Codebase_Modularization_Sprint_PRD_2026-10-06.md)
 records the moves and validation.
 
 **Keep it current.** A commit that moves code between files, or adds or

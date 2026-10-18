@@ -21,7 +21,7 @@ remote and are not pushed.
 how to report, and that old projects may break before 1.0. Where this prompt
 or the PRD seems to ask for more testing than it allows, `AGENTS.md` wins.
 
-Then read, in `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`:
+Then read, in `docs/product/archive/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`:
 section 2 (principles), section 15.7 (the list these items come from) and
 16.22 (how phase 4 closed). You do not need the rest of section 16.
 

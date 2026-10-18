@@ -28,7 +28,7 @@ pass.
 
 Read first, relative to the git root:
 
-- `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`: sections 2,
+- `docs/product/archive/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`: sections 2,
   4, 5.1, 5.4 and 6, then all of 15 (15.1 deferrals, 15.2 acceptances, 15.3
   known limits, 15.7 carry-forward list) and 16 (phase 4 so far).
 - `docs/technical/archive/viewport-phase3-baseline-before-cleanup-2026-10-05.md`,

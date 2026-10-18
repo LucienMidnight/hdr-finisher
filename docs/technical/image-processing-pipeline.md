@@ -302,7 +302,7 @@ The JPEG Ultra HDR exporter currently performs a bounded, SDR-guided filter on t
 
 ### 10.1 Established facts
 
-The first shared interactive authored-image denoising implementation was removed on August 25, 2026. The surviving rollback record is in the [main PRD](../product/HDR_Finisher_PRD_v1.2.md#denoise-implementation-rollback-2026-08-25). The prototype itself was reverted before a durable implementation commit, so its exact removed code is not an authoritative source.
+The first shared interactive authored-image denoising implementation was removed on August 25, 2026. The surviving rollback record is in the [main PRD](../product/archive/HDR_Finisher_PRD_v1.2.md#denoise-implementation-rollback-2026-08-25). The prototype itself was reverted before a durable implementation commit, so its exact removed code is not an authoritative source.
 
 Observed failures were:
 

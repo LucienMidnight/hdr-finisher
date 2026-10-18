@@ -32,7 +32,7 @@ an uncommitted edit that belongs to someone else: leave it out of your commits.
 report to Steve (owner, not a coder) and that nothing is kept for old projects
 before 1.0.
 
-Then read, in `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`,
+Then read, in `docs/product/archive/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`,
 the paragraphs in section 15.7 that start "Removed October 6", "Opening older
 projects", "Old-preferences code removed" and "Legacy code still present".
 They say what was removed that day and how older projects are handled now.

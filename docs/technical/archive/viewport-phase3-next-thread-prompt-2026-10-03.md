@@ -7,7 +7,7 @@ Workspace: `D:\AI\AI Projects\HDR Finisher Tool`. Git root: `ai`; executable/tes
 **How Steve wants the work run:** batch related changes and validate them together. Build with the fast checks only (Node unit tests, CPU-only reference tests, syntax), add a fast CPU test that de-risks a design before any GPU run, then run the slow Electron/GPU validations once, chained in as few commands as possible. Still run every relevant slow check once, and say which timings are single observations.
 
 Read these first, relative to the git root:
-- `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md` (exit criteria, owner decisions, sections 14.17–14.22).
+- `docs/product/archive/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md` (exit criteria, owner decisions, sections 14.17–14.22).
 - `docs/technical/archive/viewport-phase3-exit-audit-2026-10-03.md`.
 - `docs/technical/archive/viewport-phase3-resampled-mask-evidence-2026-10-03.md` (latest slice).
 - `docs/technical/archive/viewport-phase3-native-feather-evidence-2026-10-03.md` and `viewport-phase3-native-shift-evidence-2026-10-03.md` (previous slices). Follow earlier evidence links only as needed.

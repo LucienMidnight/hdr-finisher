@@ -423,8 +423,8 @@ Overall, the two reports are complementary. The supplied report is stronger on s
 
 ## Reviewed references
 
-- `docs/product/HDR_Finisher_PRD_v1.2.md`
-- `docs/product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md`
+- `docs/product/archive/HDR_Finisher_PRD_v1.2.md`
+- `docs/product/archive/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md`
 - `docs/technical/archive/sprint-wrap-evidence-2026-09-21.md`
 - `frontend/app.js`
 - `frontend/webgpu-preview.js`
