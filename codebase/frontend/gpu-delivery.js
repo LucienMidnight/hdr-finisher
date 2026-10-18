@@ -16,6 +16,8 @@
       const response=await fetch("/api/delivery/gpu/next");if(!response.ok)throw Error("Delivery queue unavailable.");job=await response.json();
       if(!job){await pause(50);continue;}
       identity=job.id;
+      const timings={},started=performance.now();let mark=started;
+      const stamp=name=>{const now=performance.now();timings[name]=(timings[name]||0)+now-mark;mark=now;};
       if(!gpu?.available){gpu=new HDRWebGPUPreview(canvas);if(!await gpu.initialize())throw Error("WebGPU is unavailable.");}
       if(gpu.adapterInfo?.fallback)throw Error("No hardware GPU is available.");
       gpu.resetSession(job.id);
@@ -40,11 +42,13 @@
       gpu.setMemoryBudget(creativeBudget/(1024**3));
       finishing=new HDRGpuDeliveryFinishing(gpu,permit);await finishing.initialize();
       gpu.device.pushErrorScope("out-of-memory");gpu.device.pushErrorScope("validation");
+      stamp("setup_ms");
       try{
         for(const lane of ["hdr","sdr"]){
           await permit();
           const signature=JSON.stringify(job.adjustments.shared.geometry);
           const proxy=await gpu.loadProxy(job.id,lane,Math.max(256,job.width,job.height),signature,0,"source");
+          stamp("source_ms");
           const capture=finishing.texture(proxy.width,proxy.height,"rgba16float"),delivery={texture:capture};
           const denoise=job.denoise[lane];
           if(denoise?.enabled){
@@ -52,20 +56,24 @@
               throw Error("GPU Denoise analysis failed.");
           }
           else gpu.denoiseSourceSelector && (gpu.denoiseSourceSelector.selected="original");
+          stamp("denoise_ms");
           const result=await gpu.renderTo(canvas,job.id,lane,job.adjustments,sampleCurvePoints,Math.max(256,job.width,job.height),job.locals,0,null,job.white,
             {width:job.width,height:job.height},{delivery,beforeDeliverySubmit:permit,measureOnly:true});
           if(!result?.rendered && result?.execution!=="direct")throw Error(`GPU delivery refused the grade: ${result?.reason||JSON.stringify(result?.refusals)}`);
           if(!delivery.params)throw Error("GPU delivery produced no finished image.");job.params=delivery.params;
-          const texture=await finishing.finish(capture,job,lane),pixels=await finishing.read(texture);
+          stamp("creative_ms");
+          const texture=await finishing.finish(capture,job,lane);stamp("finishing_ms");
+          const pixels=await finishing.read(texture);stamp("readback_ms");
           const uploaded=await fetch(`/api/delivery/gpu/${job.id}/pixels/${lane}`,{method:"POST",body:pixels});
           if(!uploaded.ok)throw Error("GPU encoder handoff failed.");
+          stamp("handoff_ms");
         }
       }finally{
         const validation=await gpu.device.popErrorScope(),oom=await gpu.device.popErrorScope();
         if(validation||oom)throw Error((validation||oom).message);
       }
       finishing.destroy();finishing=null;gpu.resetSession(null);
-      await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+      await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({timings_ms:timings,total_ms:performance.now()-started})});
     }catch(error){
       console.error("GPU delivery",error);
       finishing?.destroy();finishing=null;gpu?.resetSession(null);

@@ -28,6 +28,57 @@ _clients = {}
 _activity = {"until": 0., "bytes": 0, "budget": 536870912}
 
 
+# One priority step per this many seconds of waiting. Visible Library pictures
+# (15) still go before export (20), but an export waits at most about 25 s.
+AGING_SECONDS_PER_STEP = 5.
+# A claimed job that the renderer has not finished by then falls back to the CPU.
+RENDER_DEADLINE_SECONDS = 180.
+# A finished job's directory is read within moments; an unclaimed one belongs
+# to a worker that may have died. Both are removed after these ages.
+FINISHED_SPOOL_SECONDS = 120.
+ABANDONED_SPOOL_SECONDS = 1800.
+
+
+# The renderer's messages when it gives the GPU up to Grade or to a more
+# urgent delivery. Those jobs go back in the queue; they are not GPU failures.
+PREEMPTED_REASONS = {
+    "A higher-priority delivery needs the GPU.",
+    "GPU delivery released the shared memory budget for Grade.",
+    "Grade needs the shared GPU memory budget.",
+}
+
+
+def _effective_priority(value, now=None):
+    now = time.time() if now is None else now
+    return value["priority"] - max(0., now - value["created"]) / AGING_SECONDS_PER_STEP
+
+
+def _age(path):
+    try: return time.time() - path.stat().st_mtime
+    except OSError: return 0.
+
+
+def _sweep(root, active):
+    for directory in root.glob("delivery-*"):
+        if directory.name in active:
+            continue
+        finished = (directory / "result.json").exists() or (directory / "cancelled").exists()
+        if (finished and _age(directory / ("result.json" if (directory / "result.json").exists() else "cancelled")) > FINISHED_SPOOL_SECONDS) \
+                or _age(directory) > ABANDONED_SPOOL_SECONDS:
+            with _lock: _sessions.pop(directory.name, None)
+            shutil.rmtree(directory, ignore_errors=True)
+
+
+def _remove_stale_roots(current):
+    # Spools from earlier launches lose their heartbeat when that app exits.
+    for other in current.parent.glob("hdr-gpu-delivery-*"):
+        if other == current or not other.is_dir():
+            continue
+        beat = other / "heartbeat"
+        if _age(beat if beat.exists() else other) > 300:
+            shutil.rmtree(other, ignore_errors=True)
+
+
 def session(identity):
     with _lock:
         return _sessions.get(identity)
@@ -90,15 +141,13 @@ def _render_pair(frame, owner, settings, adjustments):
             "denoise": (getattr(frame, "denoise", None) or DenoiseDocumentSettings()).model_dump(mode="json"),
             "finishing": settings.output_finishing.model_dump(mode="json"),
             "priority": getattr(frame, "delivery_priority", 20), "created": time.time()})
-        deadline = time.monotonic() + 180
-        while not (directory / "result.json").exists():
-            if getattr(frame, "delivery_cancelled", lambda: False)():
-                from concurrent.futures import CancelledError
-                raise CancelledError("Delivery cancelled.")
-            if time.monotonic() > deadline or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 10:
-                raise RuntimeError("The GPU delivery renderer stopped or timed out.")
-            time.sleep(.03)
-        reply = json.loads((directory / "result.json").read_text(encoding="utf-8"))
+        reply = _wait_for_result(directory, root, frame)
+        while reply.get("error") in PREEMPTED_REASONS:
+            # Give the GPU back, then wait for another turn with the same
+            # request (and its original queue time).
+            for name in ("result.json", "claimed", "hdr.bin", "sdr.bin"):
+                (directory / name).unlink(missing_ok=True)
+            reply = _wait_for_result(directory, root, frame)
         if reply.get("error"):
             raise RuntimeError(reply["error"])
         result = {}
@@ -108,6 +157,9 @@ def _render_pair(frame, owner, settings, adjustments):
                 raise ValueError("GPU delivery returned invalid pixels.")
             result[lane] = image
         record = {"renderer": "gpu", "fallback_reason": None}
+        from .library_diagnostics import log
+        log("gpu_delivery_rendered", width=output[0], height=output[1], priority=getattr(frame, "delivery_priority", 20),
+            total_ms=reply.get("total_ms"), **{k: round(v, 1) for k, v in reply.get("timings_ms", {}).items()})
     except (OSError, ValueError, RuntimeError) as error:
         record = {"renderer": "cpu", "fallback_reason": str(error)}
     finally:
@@ -123,11 +175,29 @@ def _render_pair(frame, owner, settings, adjustments):
     return result
 
 
+def _wait_for_result(directory, root, frame):
+    # Queue time is not render time: a job waiting behind Library pictures
+    # or another export keeps waiting while the renderer is alive. Only a
+    # claimed job has a render deadline.
+    deadline = None
+    while not (directory / "result.json").exists():
+        if getattr(frame, "delivery_cancelled", lambda: False)():
+            from concurrent.futures import CancelledError
+            raise CancelledError("Delivery cancelled.")
+        if deadline is None and (directory / "claimed").exists():
+            deadline = time.monotonic() + RENDER_DEADLINE_SECONDS
+        if (deadline is not None and time.monotonic() > deadline) or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 10:
+            raise RuntimeError("The GPU delivery renderer stopped or timed out.")
+        time.sleep(.03)
+    return json.loads((directory / "result.json").read_text(encoding="utf-8"))
+
+
 def create_gpu_delivery_router():
     # Set before any Library/batch children are spawned; they inherit this one
     # app-owned spool, including in frozen builds.
     root = Path(tempfile.mkdtemp(prefix="hdr-gpu-delivery-"))
     os.environ[ROOT_ENV] = str(root)
+    _remove_stale_roots(root)
     atexit.register(shutil.rmtree, root, ignore_errors=True)
     router = APIRouter(prefix="/api/delivery/gpu")
     active = {}
@@ -145,6 +215,7 @@ def create_gpu_delivery_router():
             if not directory.exists() or (directory / "cancelled").exists():
                 active.pop(key, None)
                 with _lock: _sessions.pop(key, None)
+        _sweep(root, active)
 
     @router.post("/activity")
     async def activity(request: Request):
@@ -166,11 +237,14 @@ def create_gpu_delivery_router():
         higher = False
         priority_reason = None
         if identity in active:
-            current_priority = active[identity][1]["priority"]
+            # Compare waiting-adjusted priorities, so a job that waited its
+            # turn is not interrupted by each newly queued Library picture.
+            now = time.time()
+            current_priority = _effective_priority(active[identity][1], now)
             for path in root.glob("delivery-*/request.json"):
                 if (path.parent / "claimed").exists() or (path.parent / "cancelled").exists(): continue
                 try:
-                    if json.loads(path.read_text(encoding="utf-8"))["priority"] < current_priority:
+                    if _effective_priority(json.loads(path.read_text(encoding="utf-8")), now) < current_priority:
                         higher = True
                         priority_reason = "A higher-priority delivery needs the GPU."
                         break
@@ -194,7 +268,8 @@ def create_gpu_delivery_router():
                 except (OSError, ValueError): continue
         if not candidates:
             return None
-        value, directory = min(candidates, key=lambda pair: (pair[0]["priority"], pair[0]["created"]))
+        now = time.time()
+        value, directory = min(candidates, key=lambda pair: (_effective_priority(pair[0], now), pair[0]["created"]))
         (directory / "claimed").touch()
         image = np.load(directory / "source.npy", mmap_mode="r", allow_pickle=False)
         reference = np.load(directory / "reference.npy", mmap_mode="r", allow_pickle=False) if (directory / "reference.npy").exists() else None

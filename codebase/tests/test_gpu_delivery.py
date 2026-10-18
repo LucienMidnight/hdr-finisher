@@ -105,3 +105,110 @@ def test_delivery_does_not_hold_the_blanket_library_pause(monkeypatch):
         assert pauses==[]
         assert client.post("/api/session/photo/adjustments").status_code==200
         assert pauses==[True]
+
+
+def _broker(tmp_path, monkeypatch):
+    monkeypatch.setattr(delivery, "PREFERENCES_PATH", tmp_path / "policy.json")
+    monkeypatch.delenv(delivery.FORCE_CPU_ENV, raising=False)
+    monkeypatch.setattr(gpu_delivery, "_clients", {})
+    monkeypatch.setenv(gpu_delivery.ROOT_ENV, "")
+    app = FastAPI(); app.include_router(gpu_delivery.create_gpu_delivery_router())
+    return app
+
+
+def _frame(priority=20):
+    return SimpleNamespace(image=np.full((4,6,3), .18, dtype=np.float32), local_adjustments=[],
+        adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings(), delivery_priority=priority)
+
+
+def test_a_queued_job_waits_past_the_render_deadline_and_still_uses_the_gpu(tmp_path, monkeypatch):
+    # Waiting behind other delivery work is not a GPU failure (Steve's batch
+    # fell back to the CPU while visible Library pictures held the queue).
+    app = _broker(tmp_path, monkeypatch)
+    monkeypatch.setattr(gpu_delivery, "RENDER_DEADLINE_SECONDS", .2)
+    frame = _frame()
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
+        client.get("/api/delivery/gpu/permit")
+        pending = worker.submit(gpu_delivery.render_pair, frame, ExportSettings(), frame.adjustments)
+        end = time.monotonic() + .6
+        while time.monotonic() < end:
+            client.get("/api/delivery/gpu/permit")
+            time.sleep(.05)
+        assert not pending.done()
+        job = client.get("/api/delivery/gpu/next").json()
+        for lane in ("hdr", "sdr"):
+            client.post(f"/api/delivery/gpu/{job['id']}/pixels/{lane}", content=np.full((4,6,4), .18, dtype="<f4").tobytes())
+        client.post(f"/api/delivery/gpu/{job['id']}/complete", json={})
+        assert pending.result(timeout=5) is not None
+        assert frame._delivery_record == {"renderer": "gpu", "fallback_reason": None}
+
+
+def test_a_claimed_job_past_the_render_deadline_falls_back(tmp_path, monkeypatch):
+    app = _broker(tmp_path, monkeypatch)
+    monkeypatch.setattr(gpu_delivery, "RENDER_DEADLINE_SECONDS", .2)
+    frame = _frame()
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
+        client.get("/api/delivery/gpu/permit")
+        pending = worker.submit(gpu_delivery.render_pair, frame, ExportSettings(), frame.adjustments)
+        while client.get("/api/delivery/gpu/next").json() is None: time.sleep(.01)
+        end = time.monotonic() + 3
+        while not pending.done() and time.monotonic() < end:
+            client.get("/api/delivery/gpu/permit"); time.sleep(.05)
+        assert pending.result(timeout=1) is None
+        assert frame._delivery_record["renderer"] == "cpu"
+
+
+def test_waiting_export_gets_the_gpu_before_newer_visible_library_pictures(tmp_path, monkeypatch):
+    app = _broker(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        client.get("/api/delivery/gpu/permit")
+        root = gpu_delivery.Path(gpu_delivery.os.environ[gpu_delivery.ROOT_ENV])
+        now = time.time()
+        for name, priority, created in (("delivery-export", 20, now - 60), ("delivery-library", 15, now)):
+            directory = root / name; directory.mkdir()
+            np.save(directory / "source.npy", np.zeros((4,6,3), np.float32))
+            gpu_delivery._atomic(directory / "request.json", {"id": name, "width": 6, "height": 4, "output": [6, 4], "white": 203,
+                "adjustments": AdjustmentState().model_dump(mode="json"), "locals": [], "denoise": DenoiseDocumentSettings().model_dump(mode="json"),
+                "finishing": {}, "priority": priority, "created": created})
+        assert client.get("/api/delivery/gpu/next").json()["id"] == "delivery-export"
+
+
+def test_finished_and_stale_spools_are_removed(tmp_path, monkeypatch):
+    app = _broker(tmp_path, monkeypatch)
+    import os
+    with TestClient(app) as client:
+        client.get("/api/delivery/gpu/permit")
+        root = gpu_delivery.Path(gpu_delivery.os.environ[gpu_delivery.ROOT_ENV])
+        old = time.time() - 3600
+        finished = root / "delivery-finished"; finished.mkdir()
+        (finished / "result.json").write_text("{}"); (finished / "hdr.bin").write_bytes(b"x" * 16)
+        os.utime(finished / "result.json", (old, old))
+        fresh = root / "delivery-fresh"; fresh.mkdir(); (fresh / "result.json").write_text("{}")
+        client.get("/api/delivery/gpu/permit")
+        assert not finished.exists() and fresh.exists()
+    stale = root.parent / "hdr-gpu-delivery-stale-test"; stale.mkdir(exist_ok=True)
+    (stale / "heartbeat").touch(); os.utime(stale / "heartbeat", (old, old))
+    _broker(tmp_path, monkeypatch)
+    assert not stale.exists()
+
+
+def test_a_preempted_job_returns_to_the_queue_instead_of_falling_back(tmp_path, monkeypatch):
+    # Steve's batch photos were rendered on the CPU whenever a visible Library
+    # picture arrived; giving the GPU up is not a GPU failure.
+    app = _broker(tmp_path, monkeypatch)
+    frame = _frame()
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
+        client.get("/api/delivery/gpu/permit")
+        pending = worker.submit(gpu_delivery.render_pair, frame, ExportSettings(), frame.adjustments)
+        while (job := client.get("/api/delivery/gpu/next").json()) is None: time.sleep(.01)
+        client.post(f"/api/delivery/gpu/{job['id']}/complete", json={"error": "A higher-priority delivery needs the GPU."})
+        deadline = time.monotonic() + 5
+        while (again := client.get("/api/delivery/gpu/next").json()) is None:
+            assert time.monotonic() < deadline and not pending.done()
+            client.get("/api/delivery/gpu/permit"); time.sleep(.01)
+        assert again["id"] == job["id"]
+        for lane in ("hdr", "sdr"):
+            client.post(f"/api/delivery/gpu/{again['id']}/pixels/{lane}", content=np.full((4,6,4), .18, dtype="<f4").tobytes())
+        client.post(f"/api/delivery/gpu/{again['id']}/complete", json={})
+        assert pending.result(timeout=5) is not None
+        assert frame._delivery_record == {"renderer": "gpu", "fallback_reason": None}
