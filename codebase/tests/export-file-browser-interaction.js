@@ -76,13 +76,13 @@ async function main() {
     await page.locator('[data-workflow-tab="export"]').click();
     await page.locator("#batch-run").waitFor({ state: "visible" });
     await page.waitForFunction(() => document.querySelectorAll("#batch-grid .batch-photo").length === 1);
-    const chooseDirectory = async () => {
+    const chooseDirectory = async (directory) => {
       if (await page.evaluate(() => Boolean(desktop))) {
         if (!global.HDRFinisherElectronTestHarness?.selectExportDirectory) throw new Error("Desktop folder selection needs the Electron test harness.");
-        await global.HDRFinisherElectronTestHarness.selectExportDirectory(outputDirectory);
+        await global.HDRFinisherElectronTestHarness.selectExportDirectory(directory);
         await page.locator("#batch-directory").locator("xpath=ancestor::section").getByRole("button", { name: "Choose folder…", exact: true }).click();
-      } else await page.locator("#batch-directory").fill(outputDirectory);
-      await page.waitForFunction(directory => document.getElementById("batch-directory")?.value === directory, outputDirectory);
+      } else await page.locator("#batch-directory").fill(directory);
+      await page.waitForFunction(directory => document.getElementById("batch-directory")?.value === directory, directory);
     };
 
     const exports = [];
@@ -93,14 +93,17 @@ async function main() {
       { format: "jpeg_ultrahdr", extension: ".jpg" },
     ]) {
       const filename = `edge-${testCase.format}-${runId}`;
-      const expectedOutput = path.join(outputDirectory, `${filename}${testCase.extension}`);
+      // A new folder makes the visible update prove the asynchronous picker finished.
+      const destination = path.join(outputDirectory, `${testCase.format}-${runId}`);
+      fs.mkdirSync(destination, { recursive: true });
+      const expectedOutput = path.join(destination, `${filename}${testCase.extension}`);
       await page.locator("#export-format").selectOption(testCase.format);
       if (testCase.format === "sdr_jpeg") {
         if (!await page.locator("#jpeg-advanced-settings").evaluate(details => details.open)) await page.locator("#jpeg-advanced-settings > summary").click();
         await page.locator("#jpeg-chroma-subsampling").selectOption("422");
       }
       await page.locator("#batch-pattern").fill(filename);
-      await chooseDirectory();
+      await chooseDirectory(destination);
       const exportResponsePromise = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/batch-export" && response.request().method() === "POST", { timeout: 120000 });
       await page.locator("#batch-run").click();
       const response = await exportResponsePromise;
