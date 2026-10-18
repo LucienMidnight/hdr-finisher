@@ -128,9 +128,10 @@ Working rules for coding agents, including how much to test:
    pictures on the GPU. Brief:
    [codex-brief-gpu-delivery-build-2026-10-18](../technical/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
    Details: [export-and-proof](modules/export-and-proof.md).
-2. **Library thumbnails as fast as Explorer.** Camera previews show first
-   (built October 18), but filling a whole folder is still too slow. See
-   [photo-library](modules/photo-library.md).
+2. **Library speed plan** (October 18): develop each photo once, draw
+   Library pictures live on the GPU, move RAW development to the GPU, one
+   scheduler. Phase 0 quick wins first. See
+   [photo-library](modules/photo-library.md), open work item 1.
 3. **Starting exposure at zero and RAW tuning.** This was meant to come
    before paste, but paste shipped first. See
    [import-and-raw](modules/import-and-raw.md).

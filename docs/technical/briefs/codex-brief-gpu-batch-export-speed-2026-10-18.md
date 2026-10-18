@@ -4,7 +4,7 @@
 **Date:** October 18, 2026
 **Branch:** `film-look-rebuild`, from its current tip.
 **Module PRD:** `docs/product/modules/export-and-proof.md`. Update it as
-this lands. Related: `codex-brief-library-saved-picture-speed-2026-10-18.md`
+this lands. Related: `archive/briefs/codex-brief-library-saved-picture-speed-2026-10-18.md`
 (the same CPU stages slow Library pictures).
 
 ## What Steve sees

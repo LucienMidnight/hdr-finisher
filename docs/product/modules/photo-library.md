@@ -53,6 +53,8 @@ Library PRD, section 4. These later decisions replace older ones:
 | Dragging photos onto a folder asks first, for now. | Steve, 2026-10-11 |
 | `.hdrfinisher` projects stay out of the Library. | 2026-10-11 |
 | Pause of saved-grade picture work lasts one app session. | 2026-10-18 |
+| **Library pictures: speed first, accuracy "close enough to enjoy".** Thumbnails must be very fast and give a good SDR and HDR preview for culling and group grading. Larger pictures must look close enough to the export to enjoy full screen, with no noticeably wrong colour or tone; they need not be precise. Judged by eye. Export and Proof keep their strict limits. | Steve, 2026-10-18 |
+| **Prove GPU development first.** Before building the rest of the speed plan, Claude (not Codex) prototypes full-quality RAW development on the GPU to show whether it is fast enough. | Steve, 2026-10-18 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
 
 **Paste rules (built):** values measured from one photo are never pasted
@@ -112,6 +114,13 @@ fails as recorded above; export, Proof and their limits were not changed.
 - Copy and paste of grades (Ctrl+C, Ctrl+V, Ctrl+Shift+V with the tick
   list). Pictures for grades changed in bulk go through a durable queue
   with Pause/Resume in Activity, resume on launch, visible photos first.
+  Paste is usable as soon as something is ticked (October 18): the check
+  that counts changed photos runs alongside, and photos not yet prepared
+  are prepared after confirming, with "Preparing 3 of 12 photos for
+  paste…" in the status bar. A RAW grid thumbnail now runs Grade's own
+  import and keeps the starting grade it produced, so paste does not
+  develop that photo again. Each photo is developed at most once even
+  when the check and the paste ask together.
 - Batch export pages and states (see Export and Proof).
 - Saved-grade pictures now use the shared hidden GPU delivery renderer,
   including locals, Denoise and resize; CPU fallback records its reason.
@@ -167,68 +176,99 @@ fails as recorded above; export, Proof and their limits were not changed.
 
 ## 5. Open work, in order
 
-1. **Thumbnail speed:** meet the fresh-folder targets (every visible cell
-   shows a picture within 1 s p90; real thumbnails about 2 s p90; a second
-   launch shows 90% of visible thumbnails within 100 ms).
-2. **Saved-grade picture speed** (brief:
-   [codex-brief-library-saved-picture-speed-2026-10-18](../../technical/briefs/codex-brief-library-saved-picture-speed-2026-10-18.md)).
-   Remaining ideas that don't change pixels: reuse a source Grade or the
-   Library already decoded, faster lens correction, and moving Denoise
-   preparation and transport off the critical path. Any reduced-resolution
-   decode must pass the perceptual limits first.
-3. **RAW picture agreement** (Import and RAW module): zero Exposure and
+1. **Library speed plan** (Claude, October 18, from the speed exploration:
+   [findings](../../technical/archive/library-speed-exploration-findings-2026-10-18.md)).
+   Targets unchanged: every visible cell shows a picture within 1 s p90;
+   real pictures about 2 s p90; a second launch shows 90% of visible
+   thumbnails within 100 ms; a changed photo on screen shows its new grade
+   in about 1 s when idle.
+
+   What the exploration showed: a correct RAW picture costs 5 to 10 s of
+   CPU development (42 MP: decode 2.6 s, colour-range handling 1.1 s,
+   full-source measurements 0.9 s, reduction 0.4 s); the GPU draw is about
+   60 ms. Saved-grade pictures take 17.5 s median. The same RAW is
+   developed separately for the grid, Single, Grade and saved pictures.
+   Thumbnail files fail the Grade agreement limits on 11 of 32 lanes even at
+   JPEG quality 100 (8-bit gain-map precision and gamut clipping). The
+   camera preview floor off the USB drive is 54 ms median / 79 ms p90.
+
+   Design:
+   - **Develop once, draw live.** Each photo is developed once with Grade's
+     full-quality development and measurements into a stored scene version:
+     640 px for every photo the grid has shown, and 2560 px for photos
+     opened in Single, full-screen or given a grade, within a bounded disk
+     allowance (this absorbs "full-size pictures on disk" from Leftovers).
+     Every Library picture, unedited, pasted or saved grade, is drawn on
+     the GPU from that version with Grade's own shaders, the way Grade's
+     Fit view works. Recently drawn pictures stay in the memory pool.
+     Finished-picture files are no longer made for display. A pasted grade
+     needs only a redraw, not a new development. *Pending Steve's decision;
+     it replaces the October 17 gain-map thumbnail decision and the October
+     18 "save the displayed GPU picture" decision.*
+   - **Development on the GPU, same maths, CPU fallback.** Step (a):
+     camera colour, colour-range handling, measurements and reduction.
+     Step (b): highlight repair and the AHD demosaic, ported from the
+     bundled LibRaw. Estimated 0.6 to 2.8 s per cold 42 MP RAW instead of
+     5 to 10 s; to be proven by a prototype first.
+   - **One scheduler** for Library work: one ranked queue with ageing,
+     duplicate requests merged by source identity, a cap on simultaneous
+     full developments (about 485 MB each at 42 MP), and the shared GPU
+     queue for draws. Order: Grade, the selected photo, visible cells,
+     visible pasted or saved grades, read-ahead, background pictures,
+     indexing.
+   - **Camera preview first** stays.
+   - **Single and full-screen** keep the quick decoder until GPU
+     development is fast, then move to the shared developed version so
+     they match Grade.
+
+   Steve, October 18: accuracy matters less than speed in the Library (see
+   Decisions), so "draw live" is no longer needed for accuracy; whether to
+   draw live or keep picture files is decided after the GPU prototype. The
+   prototype comes first.
+
+   Phases:
+   P. GPU development prototype (Claude): does full-quality development of
+      a 42 MP RAW on the GPU come in well under the current 5 to 10 s?
+   0. Quick wins, independent of the rest (brief:
+      [codex-brief-library-speed-quick-wins-2026-10-18](../../technical/briefs/codex-brief-library-speed-quick-wins-2026-10-18.md)):
+      window before the backend is ready (7.3 s today), a running cache
+      size total (2.2 s per save at 5,000 entries), GPU warmed at launch
+      (first draw 5.0 s against 0.23 s warm).
+   1. Develop once, draw live, with the scheduler. Scope analysis and the
+      thumbnail capture path go with it.
+   2. GPU development step (a).
+   3. GPU development step (b).
+   4. Single and full-screen onto the shared developed version.
+
+   Still unmeasured: Explorer on the same folder, a clean 70-cell run,
+   on-screen saved-picture timing (the Electron window was lost in driver
+   runs), loaded-grid use and peak memory.
+2. **RAW picture agreement** (Import and RAW module): zero Exposure and
    plain-number paste are implemented; resolve the separate quick decoder
    mismatch and finish strict checks and Steve's comparison-sheet review.
-4. **Looks (slice 7):** one Looks menu; Apply Look window with
+3. **Looks (slice 7):** one Looks menu; Apply Look window with
    favourites, user folders and a small built-in starter set; preview on
    hover; "Save as look preset" from the paste window. Not built.
-5. **Linked photos (slice 7b):** Link grades, chain icon, "linked with N
+4. **Linked photos (slice 7b):** Link grades, chain icon, "linked with N
    other photos" in Grade, Unlink, a Linked filter. Crop, lens and local
    adjustments never link. Not built. **Two decisions open.**
-6. **Batch export metadata (slice 8 follow-ups):** bundled ExifTool (lens
+5. **Batch export metadata (slice 8 follow-ups):** bundled ExifTool (lens
    names from maker notes, the Focus and drive group), title and caption,
    a creator/copyright/usage template written into exports, privacy
    options, "Set name" for an unknown lens. Not built.
-7. **Portable projects (slice 10):** Export project, a Projects section,
+6. **Portable projects (slice 10):** Export project, a Projects section,
    Merge or Keep separate, "Missing" frames, manual relink. Not built.
    **Two decisions open.**
-8. **Leftovers:**
+7. **Leftovers:**
    - Comfort cap for the HDR grid (1000 nits default, adjustable). Not built.
-   - Full-size pictures on disk (Zstandard, 10 GB), memory setting. Not built.
+   - Full-size pictures on disk: now part of the speed plan (item 1).
    - Indexing settings (processor use, pause on battery, pins to leave
      out). Not built.
    - Offline drives: dimmed thumbnails and a Grade message. Text-only today.
    - Drag a folder in from Explorer to pin it. Not built.
-   - Smaller thumbnail files (see Known problems; about 830 KB each). Try
-     a lower JPEG quality (90 to 95), 4:2:0 for the base, and a half- or
-     quarter-size gain map; keep the overshoot protection and the exact
-     highlight-compression limit. Agree a size target and perceptual
-     tolerance first, check against the current files on real photos, and
-     run `tests/library-thumbnail-colour.js`. Changes pixels, so Steve
-     sees the trade-off. Deferred by Steve, October 18.
-9. **Speed architecture leftovers:** one ranked helper queue instead of
-   lanes; helper priority that follows what Steve is doing; Library GPU
-   pipelines warmed at launch; no scope analysis on Library draws; a
-   running cache size total instead of listing the folder after every
-   picture; window shown before the backend is ready.
-   Exploration started October 18; first findings are in
-   `output/library-speed-exploration/findings.md`. All nine known SDR saved
-   thumbnail failures pass 8-bit rounding, then fail after quality-100 JPEG
-   encoding. The two HDR failures expose gain-map precision and gamut
-   clipping. Source development and repeated cache-directory scans are
-   measured costs. Single/full-screen remain on the quick decoder; matching
-   Grade requires its source development and full-source measurements.
-   Bounded follow-up mapped all six full-quality RAW image stages to GPU ports
-   preserving the maths. Estimated GPU-resident subtotal is 0.23–1.18 s for
-   42 MP, excluding file/unpack/upload and other work; not prototyped or built.
-   OS-cache-bypassed USB embedded-preview floor: 54 ms median / 79 ms p90.
-   Three idle GPU saved-grade productions: 17.5 s median / 30.0 s p90 including
-   first-renderer warm-up. Explorer observation was blocked by computer-use
-   startup; saved-picture display lost the Electron window, so on-screen
-   acceptance remains unqualified. Loaded-grid utilisation and peak-memory
-   studies are deferred by Steve. No speed or codec behaviour changed. Work
-   stopped as requested; the brief retains the explicit gaps.
-10. **Polish pass** (held until the features are done):
+   - Smaller thumbnail files: replaced by the speed plan if Steve accepts
+     drawing pictures live (item 1); otherwise still deferred.
+8. **Polish pass** (held until the features are done):
     - Slice 4 reminders: test the blocked-shadows warning on dark and noisy
       RAWs; Steve to review the exposure-warning wording.
     - Overlay colours: Steve asked for them in the menu bar; they are in the
@@ -240,7 +280,7 @@ fails as recorded above; export, Proof and their limits were not changed.
       with no photo (Reconnect), unreadable or newer settings file, not
       enough room on the drive, interrupted move buttons.
     - One Library settings page.
-11. Installer and a methodical bug hunt.
+9. Installer and a methodical bug hunt.
 
 ## 6. Decisions waiting on Steve
 
