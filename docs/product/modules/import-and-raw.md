@@ -51,6 +51,7 @@ Rules in force:
 | Camera RAW uses a camera-linear bridge: LibRaw unpack and AHD demosaic, unity white balance through 16-bit, then float32 white balance and camera RGB to ACEScg. Opposed-colour highlight reconstruction removes magenta clipping. | 2026-09-03 |
 | **Exposure starts at zero.** RAW development is tuned so that the camera JPEG, the RAW as first shown, and Grade's starting point roughly agree. The Library's starting look must match Grade's. Every RAW grade saved before the change will look brighter or darker; no migration. The strict testing rule applies (RAW import). | Steve, 2026-10-11 |
 | Generic, not tuned to one camera. | 2026-10-09 |
+| A RAW's starting brightness follows how it was shot, like the camera JPEG. No per-photo automatic meter, visible or hidden. Brief: [codex-brief-raw-starting-exposure-zero](../../technical/briefs/codex-brief-raw-starting-exposure-zero-2026-10-18.md). | Steve, 2026-10-18 |
 
 ## 5. Current state (October 18, 2026)
 
