@@ -120,7 +120,7 @@ def export_photo(photo, preset, directory, sequence):
     from .projects import open_document, validate_saved_document
     from .exporters import build_export_backends
     from .capabilities import probe_capabilities
-    store = SessionStore()
+    store = SessionStore(grade_import_parallel=True)
     results = []
     try:
         if photo.get("grade"): session = open_document(store, validate_saved_document(photo["grade"]), Path(photo["source_path"]))
@@ -129,8 +129,8 @@ def export_photo(photo, preset, directory, sequence):
             session = store.get(payload.session_id)
         backends = build_export_backends(probe_capabilities())
         original_white = session.hdr_reference_white_nits
-        if not photo.get("grade") and session.analysis.classification.value == "SDR_ONLY":
-            photo = dict(photo, sdr_only=True)
+        if not photo.get("grade"):
+            photo = dict(photo, sdr_only=session.analysis.classification.value == "SDR_ONLY")
         for version in preset.versions:
             row = {"photo":photo["path"],"version":version.name}
             if photo.get("sdr_only") and version.settings.format in {"avif_gain_map","jpeg_ultrahdr","jpegxl_hdr"}:

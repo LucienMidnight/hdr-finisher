@@ -4,6 +4,8 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from .config import APP_DATA_DIR
+from .raw_import import RAW_EXTENSIONS
+from .models import SourceInterpretationOverride
 from .batch_export import BatchExports
 from .export_presets import ExportPreset, ExportPresets
 
@@ -33,9 +35,14 @@ def create_batch_router(store, grants=None, desktop=False):
             facts = json.loads(rows[0][0]) if rows and rows[0][0] else {}
             current = store.current()
             unsaved = bool(current and grades.sessions.get(str(current.session_id)) == key and current.dirty)
+            compatibility = "known" if grade or source.suffix.lower() in RAW_EXTENSIONS else "unknown"
+            sdr_only = False
+            if not grade and current and current.interpretation_override == SourceInterpretationOverride() and Path(current.source_path).resolve() == source.resolve():
+                sdr_only = current.analysis.classification.value == "SDR_ONLY"
+                compatibility = "known"
             return {"path":key,"source_path":str(source),"name":document.get("name") or source.name,"copy_name":document.get("name", "") if "|copy|" in key else "",
                     "grade":grade,"rating":document.get("marks",{}).get("rating",0),"capture_time":facts.get("capture_time"),"unsaved":unsaved,
-                    "sdr_only":bool(document.get("sdr_only",False))}
+                    "sdr_only":sdr_only,"hdr_compatibility":compatibility}
     queue = BatchExports(snapshot)
     store.batch_exports = queue
     store.batch_export = queue
