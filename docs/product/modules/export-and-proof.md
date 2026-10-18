@@ -80,33 +80,32 @@ Settings rules (from v1.2 section 5, still in force):
 - A shared force-CPU delivery preference in Settings → Performance, and
   `HDR_FINISHER_FORCE_CPU_DELIVERY=1` (environment wins). Export, Proof
   through export, and saved-grade Library workers read the same policy.
-  Preference changes apply to new work without an app restart. Current
-  delivery remains CPU-only with the switch either on or off.
+  Preference changes apply to new work without an app restart.
 - Export results now record `renderer` and `fallback_reason`; batch results
   retain and display them. Saved-grade picture results record them too.
 
+- Step 2: hidden Electron renderer reuses Grade's shaders, stock tables,
+  masks and Denoise. Finished film passes through GPU Lanczos resize,
+  edge-aware multiscale output sharpening and the shared output limiter,
+  then the existing encoders. Both lanes fall back together with a reason
+  on unavailable hardware, allocation failure or render failure.
+- Small decoded 96×64 fixture, resized to 72×48 with standard sharpening:
+  HDR ΔE ITP mean 0.625 / p99.9 2.756; SDR ΔE 2000 mean 0.565 /
+  p99.9 2.782. Both pass; decoded HDR peak 668.73 nits against 1000.
+
 **Not built**
 
-- **GPU export, GPU batch export, GPU Proof, GPU Library pictures.** Export
-  and Proof still render on the CPU. A 45-photo batch of graded RAWs is
-  about 5,800 s, almost all film stock and Denoise at full size. Batch
-  export runs one below-normal CPU process per photo.
-- GPU delivery is stopped at brief step 2: the Grade GPU graph has no
-  delivery resize or output-sharpening stage. Its Detail and scan sharpening
-  are creative stages, not output finishing. No hidden delivery renderer or
-  GPU encoder handoff has landed. Steps 3–5 depend on that shared graph.
-- The small GPU/CPU perceptual and decoded-HDR check cannot run until the
-  GPU delivery path exists; no GPU-delivery accuracy or speed claim yet.
-- The three perceptual comparisons as checks. The helper exists, but
-  nothing uses it yet, because the GPU paths don't exist.
+- Batch GPU scheduling, cross-operation Proof reuse and GPU Library pictures
+  are the next steps of the delivery brief.
+- No broad GPU-delivery accuracy or speed claim: Steve tests first.
 - Proof covers the three HDR formats only.
 
 ## 6. Open work, in order
 
 1. **GPU delivery.** Brief:
    [codex-brief-gpu-delivery-build-2026-10-18](../../technical/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
-   Force-CPU switch complete. Next: shared GPU output resize/sharpening,
-   GPU single export, GPU batch, GPU Proof, GPU Library pictures.
+   Steps 1–2 complete. Next: GPU batch scheduling, GPU Proof reuse and
+   GPU Library pictures.
 2. Replace the old file-side parity allowance (`target × 1.01 + 1`) with
    the zero-upward-allowance check, once GPU delivery exists.
 3. Batch-export metadata follow-ups (shared with Photo Library): bundled

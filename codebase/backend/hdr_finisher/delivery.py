@@ -55,7 +55,7 @@ def renderer_record():
     elif policy["force_cpu"]:
         reason = "CPU forced in Performance settings."
     else:
-        reason = "GPU delivery is not implemented: the shared GPU graph lacks export resize and output sharpening."
+        reason = "The GPU delivery renderer is unavailable."
     return {"renderer": "cpu", "fallback_reason": reason}
 
 

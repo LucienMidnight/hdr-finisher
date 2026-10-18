@@ -54,6 +54,7 @@ if (process.env.HDR_FINISHER_DISABLE_GPU === "1") {
 
 const recentProjects = createRecentProjects(path.join(app.getPath("userData"), "recent-projects.json"));
 
+let deliveryWindow = null;
 let backend = null;
 let mainWindow = null;
 let forceClose = false;
@@ -1318,6 +1319,13 @@ if (!gotLock) {
       }
       buildMenu();
       await createWindow();
+      setTimeout(async () => {
+      if (shuttingDown) return;
+      deliveryWindow = new BrowserWindow({show:false, webPreferences:{
+        contextIsolation:true, nodeIntegration:false, sandbox:true, backgroundThrottling:false,
+      }});
+      await deliveryWindow.loadURL(`${backend.url}/static/gpu-delivery.html`).catch(error => console.error("GPU delivery startup",error));
+      }, 1000);
       if (!app.isPackaged && (process.env.HDR_FINISHER_DEV_LIBRARY_WINDOW === "1" || process.env.HDR_FINISHER_DEV_LIBRARY_BROWSER === "1")) {
         await createWindow("library");
       }

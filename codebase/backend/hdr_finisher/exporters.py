@@ -154,6 +154,15 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
 def _render_export_branch(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState
 ) -> np.ndarray:
+    from .gpu_delivery import render_pair
+    pair = render_pair(session, settings, adjustments)
+    if pair is not None:
+        result = pair[kind.value]
+        if kind.value in settings.editing_measurements:
+            from .scopes import scope_peak_value
+            peak = scope_peak_value(result, kind, session.color_context) * .18 / session.hdr_reference_white_nits if kind == PreviewKind.HDR else float(np.max(result @ np.array([.2126, .7152, .0722], dtype=np.float32)))
+            settings._exact_measurements[kind.value] = {"peak": peak}
+        return result
     color_context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
     source = _denoised_export_source(session, kind)
     image = apply_adjustments(
@@ -231,6 +240,7 @@ def _execute_export(
         )
         _require_overwrite_permission(output_path, settings)
         prepared = prepare()
+        rendering = getattr(session, "_delivery_record", rendering)
         with NamedTemporaryFile(
             prefix=f".{output_path.stem}.",
             suffix=prepared.staging_suffix,

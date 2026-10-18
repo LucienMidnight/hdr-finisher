@@ -3860,6 +3860,17 @@
       "launch": {
         "method": "electron"
       }
+    },
+    {
+      "path": "tests/gpu-delivery-smoke.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "Small GPU and forced-CPU export, delivery resize/sharpening, decoded perceptual limits and HDR peak.",
+      "launch": {
+        "method": "electron"
+      }
     }
   ]
 }

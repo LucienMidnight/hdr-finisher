@@ -1732,7 +1732,7 @@
           detailResultTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST),
           filmTexture: make("rgba16float", attachment),
           // A measurement copies its patch out of the finished tile.
-          finishTexture: make("rgba16float", analysis ? attachment | GPUTextureUsage.COPY_SRC : attachment),
+          finishTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC),
           spatialATexture: spatialActive ? makeSpatial() : null,
           spatialBTexture: spatialActive ? makeSpatial() : null,
           spatialWidth,
@@ -2212,6 +2212,8 @@
 
       const result = await this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
         measureOnly,
+        delivery: sourceOptions?.delivery,
+        beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
         analysisPatch: sourceOptions?.analysisPatch,
         neutralPaperAnchor: highlightAnchorOnly && lane === "hdr" && adjustments.hdr.film_look.film_stock === "none",
         analysisMasks: sourceOptions?.analysisMasks,
@@ -4029,7 +4031,13 @@
           pass(baseView, pipelines.base, bindWith(sourceView, binding), region.width, region.height);
           this.encodeClarityPass(encoder, reduced.createView(), pipelines.clarityReduce, bindWith(baseView, binding), texels, true);
           batchTiles += 1;
-          if (batchTiles >= tileBatchSize) flushTiles();
+          if (batchTiles >= tileBatchSize) {
+          flushTiles();
+          if (options.beforeDeliverySubmit) {
+            await this.waitForSubmittedWork();
+            await options.beforeDeliverySubmit();
+          }
+        }
         }
         if (!cancelled) {
           // Any slot carries the frame size and the map's plan, which is all
@@ -4180,6 +4188,13 @@
 
           this.encodeFilmChain(encoder, pipelines, graph, localSource.createView(),
             (source, spatial, original) => bind(source, spatial, original), params, width, height);
+        }
+        if (options.delivery) {
+          encoder.copyTextureToTexture(
+            {texture:graph.finishTexture, origin:[tile.rect.x-tile.haloRect.x,tile.rect.y-tile.haloRect.y]},
+            {texture:options.delivery.texture, origin:[tile.rect.x,tile.rect.y]},
+            [tile.rect.width,tile.rect.height]);
+          options.delivery.params = new Float32Array(params);
         }
         // The finished tile is measured before it is composited, because the
         // composite encodes for the display and this has to read the picture.
@@ -4779,6 +4794,9 @@
         // Show noise needs the original and a reconstruction per tile, so it
         // hands Tiled the original even when a whole-frame resolve is resident.
         const tiled = await this.encodeTiledGeneration(canvas, context, noiseView ? proxy : sourceProxy, surface, pipelines, params, {
+          delivery: sourceOptions?.delivery,
+          beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
+          tileBatchSize: sourceOptions?.delivery ? 1 : undefined,
           tileSize: sourceOptions?.tileSize,
           serial,
           viewport: sourceOptions?.viewport || null,
@@ -5081,6 +5099,11 @@
         this.encodeFilmChain(encoder, pipelines, intermediate, localSource.createView(),
           (source, spatial, original) => makeBindGroup(source, spatial, this.paramBuffer, original),
           params, proxy.width, proxy.height);
+      }
+      if (sourceOptions?.delivery) {
+        encoder.copyTextureToTexture({texture:intermediate.finishTexture},
+          {texture:sourceOptions.delivery.texture}, [proxy.width,proxy.height]);
+        sourceOptions.delivery.params = new Float32Array(params);
       }
       // A settled render splits here: the finished picture has to exist before
       // its peak can be measured, and the measured peak has to exist before the
@@ -6596,7 +6619,7 @@
       const createTexture = () => this.device.createTexture({
         size: { width, height },
         format: "rgba16float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
       });
       // PRD 4.3: an allocation failure records a durable backoff. This render
       // retains the last valid presentation; the next plan selects Tiled. The

@@ -433,6 +433,10 @@ class SessionStore:
             _remove_owned_source(previous.source_path)
 
     def get(self, session_id: str) -> LoadedSession:
+        from .gpu_delivery import session as delivery_session
+        retained = delivery_session(session_id)
+        if retained is not None:
+            return retained
         session = self.current()
         if session is None or session.session_id != session_id:
             raise KeyError(f"Session '{session_id}' was not found.")

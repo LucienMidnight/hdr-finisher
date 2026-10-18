@@ -122,6 +122,7 @@ function packagedExecutable() {
     env: launchEnvironment,
     timeout: 180000,
   });
+  app.on("window", page => { page.on("console", msg => { if(msg.type()==="error")console.error("[renderer]",msg.text()); }); page.on("pageerror", error=>console.error("[renderer]",error)); });
   const window = await app.firstWindow({ timeout: 180000 });
   await require("./electron-initial-load").waitForInitialLoad(app, window);
   // The launcher pid Playwright tracks is the shell on Windows; the main
@@ -285,7 +286,7 @@ function packagedExecutable() {
       // Opt-in benchmark placement: keep a test window wholly on the named
       // primary display, rather than straddling mixed HDR/SDR monitors.
       const displayContext = await app.evaluate(({ screen, BrowserWindow }, pinPrimary) => {
-        const win = BrowserWindow.getAllWindows()[0];
+        const win = BrowserWindow.getAllWindows().find(win => !win.webContents.getURL().includes("gpu-delivery.html"));
         if (pinPrimary && win) {
           const area = screen.getPrimaryDisplay().workArea;
           if (win.isMaximized()) win.unmaximize();
