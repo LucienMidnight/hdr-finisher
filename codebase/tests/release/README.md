@@ -121,12 +121,35 @@ start-up signals (`body[data-ready="true"]` and the Library frame's
 do the same or wait on those signals directly. A driver run outside the
 runner, under plain Chromium, still waits for `networkidle` and times out.
 
-Unresolved: opening a large cold folder (about 400 new photos) once dropped
-the Playwright connection to Electron, with Chromium logging "Too large write
-data is pending". That is the DevTools server's 256 MB send buffer filling,
-most likely from request/response events for many picture requests while a
-driver listens to them. Drivers that listen to every request should keep
-cold folders small, or detach their listeners before opening a large one.
+### The app window closing mid-driver (diagnosed October 18, 2026)
+
+Unresolved: Library drivers on a cold folder sometimes stop with "Target
+page, context or browser has been closed" (seen in
+library-thumbnail-scroll.js, and as "Too large write data is pending" with a
+400-photo folder). The cause is the hidden GPU delivery window. It uploads
+each finished picture to the sidecar as one raw float buffer
+(`gpu-delivery.js`, about 70 MB for a 1709x2560 saved-grade picture).
+Chromium copies a buffer upload body, escaped as text, into the DevTools
+request event Playwright listens to. One such event passed Playwright's
+256 MB message limit ("Max payload size exceeded"). The Electron main process
+then grew from about 110 MB to 1.3 GB in ten seconds as undeliverable
+DevTools data queued up, and exited with code 1. No crash dump is written,
+because Playwright launches Electron with `--disable-breakpad`. It is
+intermittent because it needs a saved-grade picture delivery while a driver
+is connected. The app outside tests has no DevTools client and is unaffected.
+
+Sending the upload as a `Blob` keeps it out of DevTools events (checked: an
+ArrayBuffer body was copied in full, a Blob body not at all, with the same
+bytes received). That change is in the export and Proof delivery path, so it
+waits for Steve's decision.
+
+To see why a window closed, the runner prints the main-process events
+(window closed, quit, renderer or GPU process gone) when the page closes;
+they are kept in `logs/runner-main-events.log` in the run's profile.
+`HDR_FINISHER_RUNNER_HEARTBEAT=1` adds a 2-second memory line per process to
+that log, and `DEBUG=pw:browser` prints Playwright's connection errors. Name
+a custom `HDR_FINISHER_ELECTRON_TEST_USER_DATA` folder with `test-` in it,
+or the sidecar uses the real Library cache in `%LOCALAPPDATA%`.
 
 ## Known failures
 
