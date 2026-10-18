@@ -76,7 +76,7 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','sdr
     for(let n=4;n<=24;n++){const photo=path.join(folder,`photo-${String(n).padStart(2,'0')}.png`);fs.copyFileSync(photos[(n-1)%3],photo);visualPhotos.push(photo);}
     await page.evaluate(paths=>batchExport.open(paths),visualPhotos);
     await page.waitForFunction(()=>document.querySelectorAll('.batch-photo img').length===24&&[...document.querySelectorAll('.batch-photo img')].every(i=>i.naturalWidth>0));
-    let job={id:'visual-job' ,state:'running',completed:1,total:48,active_photo:photos[0],photo_completed:1,photo_total:2,estimated_seconds:30,results:[{photo:photos[0],version:'SDR',outcome:'exported',output_path:'D:/Exports/first_SDR.jpg'}]};
+    let job={id:'visual-job' ,directory:'D:/Exports',state:'running',completed:1,total:48,active_photo:photos[0],photo_completed:1,photo_total:2,estimated_seconds:30,results:[{photo:photos[0],version:'SDR',outcome:'exported',output_path:'D:/Exports/first_SDR.jpg'}]};
     await page.route('**/api/batch-export',route=>route.fulfill({json:job}));
     await page.route('**/api/batch-export/visual-job',route=>{
       if(route.request().method()==='POST')job={...job,state:JSON.parse(route.request().postData()).action==='pause'?'paused':'running'};
@@ -99,6 +99,11 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','sdr
       return {grid:rect('batch-grid'),strip:rect('batch-run-strip'),rail:rect('export-sheet'),top:document.querySelector('.top-bar').getBoundingClientRect().toJSON()};
     });
     assert.ok(bounds.grid.bottom<=bounds.strip.top+1,'grid ends above fixed progress strip');
+    // The preset has no HDR version, so an SDR-only photo loses nothing and is not flagged.
+    assert.equal(await page.locator('.batch-flag').count(),0);
+    // Preset rail, batch and control panel headers share one baseline.
+    const headers=await page.evaluate(()=>['#batch-preset-rail .panel-title','.batch-header .panel-title','#export-sheet .panel-title'].map(s=>Math.round(document.querySelector(s).getBoundingClientRect().top)));
+    assert.ok(Math.max(...headers)-Math.min(...headers)<=2,`column headers line up: ${headers}`);
     assert.ok(bounds.rail.top>=bounds.top.bottom-1,'control panel clears the top bar');
     assert.equal(await page.locator('#viewer-status-dock').isVisible(),false);
     assert.ok(await page.locator('.batch-photo').first().evaluate(el=>el.lastChild.getBoundingClientRect().bottom<=el.getBoundingClientRect().bottom+1),'tile must retain the full caption');
@@ -109,9 +114,11 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','sdr
     await page.locator('#batch-grid').evaluate(el=>el.scrollTop=el.scrollHeight);
     assert.equal(await page.locator('#batch-run-strip').evaluate(el=>el.getBoundingClientRect().top),stripTop,'scrolling cannot move the status strip');
     await page.locator('#batch-grid').evaluate(el=>el.scrollTop=0);
-    job={...job,state:'finished',completed:48,active_photo:null,photo_completed:2,results:visualPhotos.flatMap(photo=>['SDR','PNG'].map(version=>({photo,version,outcome:'exported',output_path:`D:/Exports/${path.basename(photo)}_${version}`})))};
+    job={...job,state:'finished',completed:48,active_photo:null,photo_completed:2,results:visualPhotos.flatMap(photo=>['SDR','PNG'].map(version=>({photo,version,outcome:'exported',output_path:`D:/Exports/${version}/${path.parse(photo).name}_${version}.${version==='SDR'?'jpg':'png'}`})))};
     await page.waitForFunction(()=>!document.getElementById('batch-results').hidden);
     assert.equal(await page.locator('.batch-result').count(),48);
+    // Results name the written file with its sub-folder, and say the outcome plainly.
+    assert.deepEqual(await page.locator('.batch-result').first().locator('span').allInnerTexts(),['SDR/first_SDR.jpg','first.png · SDR','Exported']);
     await page.screenshot({path:path.join(output,`finished-${size}.png`)});
     await page.locator('#batch-close').click();
     assert.equal(await page.locator('#batch-run-strip').isVisible(),false);
