@@ -82,7 +82,7 @@
       img.style.visibility='hidden'; img.onerror=()=>{img.style.visibility='hidden';};
       img.decoding = 'async'; mode(img,hdr()); img.src = entry.url;
       await img.decode(); if (!current()) return;
-      img.style.visibility='visible';
+      img.style.visibility='';
       mode(img,hdr()); img.dataset.kept = String(!!entry.meta.kept); img.dataset.pictureKey = entry.meta.key; img.dataset.picturePath = photo.path; img.dataset.pictureEdge = edge;
       return entry.meta;
     }

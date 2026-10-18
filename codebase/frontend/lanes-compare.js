@@ -15,7 +15,7 @@ async function applyComparisonUrl(url) {
   }
   els.comparisonCanvas.style.display = "none";
   els.comparisonImage.style.display = "block";
-  els.comparisonImage.style.visibility="visible";
+  els.comparisonImage.style.visibility="";
   return true;
 }
 

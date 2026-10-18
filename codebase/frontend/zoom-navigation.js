@@ -177,7 +177,7 @@ async function refreshNavigationThumbnail() {
     navigationThumbnail.key = key;
     els.navigationThumbImage.style.visibility="hidden";
     els.navigationThumbImage.onerror=()=>{els.navigationThumbImage.style.visibility="hidden";};
-    els.navigationThumbImage.onload = ()=>{els.navigationThumbImage.style.visibility="visible";updateNavigationViewport();};
+    els.navigationThumbImage.onload = ()=>{els.navigationThumbImage.style.visibility="";updateNavigationViewport();};
     els.navigationThumbImage.src = url;
     if (previous) URL.revokeObjectURL(previous);
   } catch (error) {

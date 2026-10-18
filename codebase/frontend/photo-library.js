@@ -3,7 +3,7 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   document.addEventListener("error",event=>{if(event.target instanceof HTMLImageElement)event.target.style.visibility="hidden";},true);
-  document.addEventListener("load",event=>{if(event.target instanceof HTMLImageElement)event.target.style.visibility="visible";},true);
+  document.addEventListener("load",event=>{if(event.target instanceof HTMLImageElement)event.target.style.visibility="";},true);
   const library = $("library"), grid = $("library-grid"), space = $("grid-space"), film = $("filmstrip");
   const state = { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, zoomScale: 1, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
     pins: [], cells: new Map(), filmCells: new Map(), size: 190,

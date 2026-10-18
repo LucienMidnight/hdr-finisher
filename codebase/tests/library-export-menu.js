@@ -15,6 +15,8 @@ for (const photo of photos) fs.copyFileSync(path.join(root,'tests','fixtures','s
     page.on('pageerror', error=>errors.push(error.message)); page.setDefaultTimeout(30000);
     await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
     await page.evaluate(()=>activateWorkflowTab('import'));
+    // A Grade picture that finishes loading behind the Library must stay hidden (it floated over the grid, October 18).
+    assert.equal(await page.evaluate(()=>{const image=document.getElementById('preview-image');image.dispatchEvent(new Event('load'));return getComputedStyle(image).visibility;}),'hidden');
     const iframe=page.locator('#library-frame'), frame=page.frameLocator('#library-frame');
     await iframe.evaluate((el,folder)=>el.contentWindow.HDRLibrary.browse(folder),folder);
     const cells=frame.locator('.library-cell');
