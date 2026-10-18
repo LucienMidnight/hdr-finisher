@@ -73,3 +73,32 @@ yours.
 
 A short plain-language note: the new per-photo times, how long a 48-photo
 paste takes, and how Steve should launch the build to try it.
+
+## Investigation checkpoint (October 18, 2026)
+
+Steve asked to wrap up because credits were low. Speed work remains open.
+Only GPU stage timing diagnostics were retained; the half-size RAW and
+in-process JPEG experiments were removed before qualification. No export
+encoder, gain-map calculation or finished pixels changed.
+
+Three read-only badminton sources used GPU delivery. Trial stages from
+`codebase/output/library-saved-picture-speed/baseline/backend.log`:
+
+| Photo | Source | Render | Encode | Total |
+| --- | ---: | ---: | ---: | ---: |
+| DSC07314.ARW | 11.3 s | 32.1 s | 5.1 s | 48.8 s |
+| DSC07320.ARW | 14.0 s | 10.1 s | 5.5 s | 29.6 s |
+| DSC07321.ARW | 10.0 s | 7.0 s | 3.9 s | 20.9 s |
+
+These are investigation timings, not an idle acceptance result: the first
+picture includes GPU warm-up and other app/test activity was present.
+No new 48-photo paste time is qualified. Do not extrapolate these as a speed
+improvement. The one-second and perceptual acceptance targets remain unmet
+and unqualified respectively.
+
+After warm-up, diagnostics point to source preparation, Denoise preparation
+and encoding ahead of creative GPU execution (about 0.8 s in the last two
+pictures). The final diagnostics also separate encoder handoff from source
+transport; the initial trial's source bucket included the previous handoff.
+Resume with a controlled few-photo run and qualify each shortcut against the
+existing perceptual limits before retaining it. The active brief stays here.

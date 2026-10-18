@@ -95,9 +95,25 @@ local adjustments, crop and lens corrections are unticked by default.
   p90 against a 1 s target. Real thumbnails and filling the cache are
   still too slow. See [known limitations](../../known-limitations.md),
   "Library thumbnail cache qualification".
-- The about-1-second saved-grade update target still needs Steve’s RAW
-  test. GPU delivery is implemented; decode, source access and CPU fallback
-  can still delay a picture. No speed sweep was run for this build.
+- **Saved-grade pictures take about 16 s each, not about 1 s** (badminton
+  RAWs, October 18, GPU route). The stages are: about 8 to 10 s reopening
+  and developing the full 42 MP RAW on the CPU (2.5 s decode, 3.1 s lens
+  correction, the rest colour and analysis); 4 to 7 s GPU work, mostly
+  Denoise preparation and transport (the creative render itself is about
+  0.8 s); and 2 to 5 s for the Ultra HDR encode.
+  - Two saved-grade pictures are now made at once (two helper lanes, two
+    queue items in flight), so one photo's CPU development overlaps the
+    previous photo's GPU work and encode. Not yet measured on Steve's photos.
+  - **Tried and rejected (Claude, October 18):** decoding the RAW at half
+    size (2x2 binning) for Library pictures. It cut source preparation from
+    7.6 s to 2.5 s, but the finished picture failed the perceptual limits
+    against a full-size decode on DSC07216 (HDR ΔE ITP mean 2.37 / p99.9 80;
+    SDR ΔE 2000 mean 0.67 / p99.9 19), concentrated in bright highlights.
+    Codex's earlier half-size and in-process-encoder trials were also
+    removed before they qualified.
+- Library pictures compete with batch export for the GPU and the CPU. The
+  October 18 fairness changes in Export and Proof stop them from forcing
+  export onto the CPU.
 - The Library's starting look still uses the metered exposure, and adds
   +0.25 EV on top (`library_pictures.py` `default_look`), so it may not
   match Grade (see Import and RAW).
@@ -107,9 +123,12 @@ local adjustments, crop and lens corrections are unticked by default.
 1. **Thumbnail speed:** meet the fresh-folder targets (every visible cell
    shows a picture within 1 s p90; real thumbnails about 2 s p90; a second
    launch shows 90% of visible thumbnails within 100 ms).
-2. **Try GPU saved-grade pictures:** rendering is built under the GPU
-   delivery brief; confirm that a visible changed photo updates within about
-   1 s when idle, including paste with locals and Denoise.
+2. **Saved-grade picture speed** (brief:
+   [codex-brief-library-saved-picture-speed-2026-10-18](../../technical/briefs/codex-brief-library-saved-picture-speed-2026-10-18.md)).
+   Remaining ideas that don't change pixels: reuse a source Grade or the
+   Library already decoded, faster lens correction, and moving Denoise
+   preparation and transport off the critical path. Any reduced-resolution
+   decode must pass the perceptual limits first.
 3. **Starting exposure** (Import and RAW module), then make the Library's
    starting look match Grade's.
 4. **Looks (slice 7):** one Looks menu; Apply Look window with

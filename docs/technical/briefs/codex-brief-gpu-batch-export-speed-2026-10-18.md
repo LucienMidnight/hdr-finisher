@@ -77,3 +77,12 @@ usable, and Library pictures don't starve export.
 
 A plain-language note: seconds per photo before and after, how much of it
 is now GPU, and how to launch the build.
+
+## Status (Claude, October 18, 2026)
+
+Done, uncommitted until the fast checks pass: items 3 and 4, plus part of
+item 2 (two photo workers overlap CPU decode with the GPU step). The main
+cause was found: preempted or long-queued exports fell back to the CPU.
+Details are in the Export and Proof module PRD. Still open in item 2:
+moving pixels to and from the renderer without the disk round trip, and
+measuring the per-photo time with these changes on Steve's batch.

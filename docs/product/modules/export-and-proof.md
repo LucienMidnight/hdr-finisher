@@ -118,9 +118,36 @@ Settings rules (from v1.2 section 5, still in force):
   The artificial two-second wait after the quick reminder is removed. Library
   pictures keep skipping the decoded peak correction/check.
 
+- **Sharing the GPU fairly (Claude, October 18, after Steve's first GPU
+  batch).** In that batch the first four photos were rendered on the CPU
+  ("A higher-priority delivery needs the GPU"), and the batch estimated about
+  96 s per photo. Each newly queued visible Library picture interrupted the
+  running export, and an interrupted export fell back to the CPU. A job
+  waiting in the queue also fell back after 180 s. With the Library paused,
+  the same batch ran at about 17 s per photo: about 10 to 12 s of GPU work,
+  including transport, and 6 to 8 s of CPU preparation. Now:
+  - a job interrupted by Grade or by a more urgent delivery goes back in the
+    queue with its original queue time, and is never sent to the CPU for that
+    reason;
+  - the 180 s render deadline starts when the renderer claims the job, not
+    while it waits;
+  - jobs are chosen and preempted by priority lowered one step per 5 s of
+    waiting, so a waiting export gets its turn within about 25 s;
+  - batch export runs two photo workers at once (`HDR_FINISHER_BATCH_PARALLEL`,
+    default 2), so one photo's CPU decode overlaps the previous photo's GPU
+    render, and results keep photo order;
+  - finished or abandoned spool directories are removed (after 2 and 30
+    minutes), and spool roots from earlier launches are removed at start;
+  - each GPU render logs `gpu_delivery_rendered` with its stage timings in
+    `backend.log`.
+
 **Not built**
 
 - No broad GPU-delivery accuracy or speed claim: Steve tests first. The
+  per-photo time with the fairness changes is not yet measured.
+- The GPU step still moves full-size float pixels through disk files in both
+  directions (a 486 MB source and two 163 MB lanes for a 42 MP photo at a
+  4000 px output). That transport is part of the 10 to 12 s. The
   about-1-second saved-grade update target is not yet measured on his RAWs.
 - Creative rendering is tiled, but delivery finishing still needs full-frame
   scratch. Large sharpened originals can exceed the shared memory budget and
