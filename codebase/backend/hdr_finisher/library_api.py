@@ -311,8 +311,9 @@ def create_library_router(worker, browser, store=None):
             states = marks.grades.describe(request.paths)
             for photo in result["photos"]:
                 item = states.get(photo["path"], {})
-                key = kept.key(photo["path"], item.get("grade_identity", ""))
-                item["pictureCurrent"] = bool(kept.current_meta(photo["path"], item.get("grade_identity", "")))
+                picture=kept.current_meta(photo["path"], item.get("grade_identity", ""))
+                item["picture_key"] = picture["key"] if picture else ""
+                item["pictureCurrent"] = bool(picture)
                 item["picture_updating"] = bool(item.get("edited") and not item["pictureCurrent"])
                 photo.update(item)
                 if item.get("edited") and not item["pictureCurrent"]: kept.ensure(photo["path"])
@@ -686,7 +687,7 @@ def create_library_router(worker, browser, store=None):
     @router.post("/picture")
     async def picture(command: PictureRequest, request: Request):
         if store is not None:
-            cached = await run_in_threadpool(kept.cached, command.path)
+            cached = await run_in_threadpool(kept.cached, command.path, command.edge)
             if cached: return cached
             await run_in_threadpool(kept.ensure, command.path)
         command.path = str(marks.source_path(command.path))

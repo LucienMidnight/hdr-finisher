@@ -166,7 +166,7 @@ class Thumbnails:
             for path in dict.fromkeys(paths):
                 try:
                     source = str(self.marks.source_path(path))
-                    saved = self.kept.cached(path) if self.kept else None
+                    saved = self.kept.cached(path,edge) if self.kept else None
                     request = self.kept.request(path) if self.kept else {}
                     key = thumbnail_key(source, edge, request.get('grade_identity', ''), saved['key'] if saved else '')
                     info = {'path': path, 'key': key, 'kept': bool(saved), 'edge': edge}

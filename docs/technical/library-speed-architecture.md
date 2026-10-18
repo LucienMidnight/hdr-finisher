@@ -199,3 +199,23 @@ today with a different, already-open source.
 2. Use more disk for display-size pictures in exchange for about 1 s per
    Single flip (3.4).
 3. Let the helper run at full speed while the Library is in front (3.5).
+
+
+## October 18: saved thumbnail before the large picture
+
+A save from Grade reuses the guarded decoded source for a separate 256-pixel
+saved-grade picture, including virtual copies. Grid and filmstrip requests
+can use it while the existing large picture is pending. The large render
+starts after the small picture finishes, with a short delay for display.
+Both sizes reject changed source files, changed grades and cancelled saves.
+The large producer and export rendering/output are unchanged.
+
+Visible/selected paths move ahead of queued background pictures; an unrelated
+helper job can be cancelled to let them through. Large pictures already
+rendering from an open source cannot stop midway through a rendering pass,
+so rapid further saves can still exceed the idle five-second target.
+
+Focused RAW check with Portra 400 and Denoise: the current saved grade reached
+the Library in 4.641 s after autosave and 2.274 s after explicit Save, with
+large-picture work allowed to finish between the idle measurements. Both
+Library lanes and Export used the current saved grade; the source was unchanged.

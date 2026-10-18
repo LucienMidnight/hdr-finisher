@@ -51,6 +51,12 @@ class PictureQueue:
                     else: self.kept.worker.cancel(job)
         if 'paths' in request:
             self.visible=[str(self.marks._path(p)) for p in request['paths']]
+            with self.marks._lock:
+                pending={row[0] for row in self.marks._query('SELECT path FROM picture_jobs')}
+            if pending.intersection(self.visible):
+                with self.kept._lock:
+                    background=[job for path,job in self.kept.jobs.items() if path not in self.visible and not isinstance(job,Event)]
+                for job in background: self.kept.worker.cancel(job)
         return self.status()
 
     def run(self):

@@ -92,7 +92,7 @@ def test_open_save_is_async_and_guards_publication(setup, monkeypatch, tmp_path,
     calls = []
     def encode(path, hdr, sdr, *args):
         calls.append(1)
-        if len(calls) == 1:
+        if (change != "next_photo" and len(calls) == 1) or (change == "next_photo" and max(hdr.shape[:2]) > 512):
             entered.set()
             assert release.wait(5)
         Path(path).write_bytes(b"test")
@@ -143,6 +143,44 @@ def test_open_save_is_async_and_guards_publication(setup, monkeypatch, tmp_path,
             assert kept.cached(photo) is None
         if change == "next_photo":
             wait_for(lambda: image_ref() is None)
+    finally:
+        release.set()
+        kept.close()
+
+
+def test_saved_thumbnail_arrives_before_large_picture_and_never_reuses_old_grade(setup, monkeypatch, tmp_path):
+    photo, store, session, marks, grades = setup
+    grade = saved(setup)
+    entered, release = Event(), Event()
+    def encode(path, hdr, sdr, *args):
+        if max(hdr.shape[:2]) > 512:
+            entered.set()
+            assert release.wait(5)
+        Path(path).write_bytes(b"test")
+    monkeypatch.setattr(exporters, "write_jpeg_gainmap_renditions", encode)
+    kept = marks.kept = KeptPictures(tmp_path, marks, Worker())
+    snapshot = capture_source(session)
+    snapshot["image"] = np.tile(snapshot["image"], (17, 12, 1))
+    try:
+        kept.schedule(photo, grade, source=snapshot)
+        assert entered.wait(5)
+        wait_for(lambda: kept.cached(photo, 900) is not None)
+        thumbnail = kept.cached(photo, 900)
+        assert kept.cached(photo.as_posix(), 900)["key"] == thumbnail["key"]
+        assert kept.current_meta(photo, thumbnail["grade_identity"])["key"] == thumbnail["key"]
+        assert thumbnail["edge"] == 256
+        assert thumbnail["grade_identity"] == kept.request(photo)["grade_identity"]
+        assert kept.cached(photo) is None, "Large work must remain pending"
+        edit(store, session, exposure=2)
+        grades.save(str(session.session_id))
+        assert kept.cached(photo, 900) is None, "Old grade must disappear immediately"
+        release.set()
+        wait_for(lambda: kept.cached(photo) is not None)
+        assert kept.cached(photo)["grade_identity"] != thumbnail["grade_identity"]
+        assert kept.cached(photo)["grade_identity"] == kept.request(photo)["grade_identity"]
+        assert kept.current_meta(photo, kept.request(photo)["grade_identity"])["key"] == kept.cached(photo)["key"]
+        photo.write_bytes(photo.read_bytes() + b"changed")
+        assert kept.cached(photo, 900) is None, "Changed sources must invalidate both sizes"
     finally:
         release.set()
         kept.close()

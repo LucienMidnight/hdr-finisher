@@ -22,6 +22,7 @@ _LOCK=RLock()
 EDGES=(512,1024,1920)
 PICTURE_VERSION="saved-screen-v1"
 RETRY_SECONDS=30
+THUMBNAIL_EDGE=256
 
 def identity(grade):
     return sha256(json.dumps(grade_key(grade),sort_keys=True,separators=(",",":")).encode()).hexdigest()
@@ -212,6 +213,7 @@ class KeptPictures:
         self.root=Path(root);self.marks=marks;self.worker=worker;self.cache=LibraryPictureCache(root)
         self.jobs={};self._lock=RLock();self._closed=False
         self._requested=set();self._retry_after={};self._refreshing=False
+        self._quick_producer=ThreadPoolExecutor(max_workers=1,thread_name_prefix="hdr-kept-thumbnail")
         self._open_producer=ThreadPoolExecutor(max_workers=1,thread_name_prefix="hdr-kept-open")
         from .library_picture_queue import PictureQueue
         self.queue=PictureQueue(self)
@@ -248,27 +250,58 @@ class KeptPictures:
             finally:
                 with self._lock: self._refreshing=False
         Thread(target=refresh,name="hdr-kept-refresh",daemon=True).start()
-    def cached(self,path):
+    def cached(self,path,edge=None):
         request=self.request(path)
         if not request["edited"]: return None
+        quick=self.quick_meta(path,request["grade_identity"]) if edge is not None else None
+        if quick and edge<=512: return quick
         key=self.key(request["path"],request["grade_identity"])
         try:
             meta=json.loads((self.cache.root/(key+".json")).read_text())
             picture=self.cache.root/(key+"."+meta["extension"])
             if (not picture.is_file() or meta["grade_identity"]!=request["grade_identity"]
-                    or meta.get("picture_version")!=PICTURE_VERSION or meta.get("edge")!=request["edited_edge"]): return None
-            if meta.get("source_stat")!=self.source_stat(path): return None
+                    or meta.get("picture_version")!=PICTURE_VERSION or meta.get("edge")!=request["edited_edge"]): return quick
+            if meta.get("source_stat")!=self.source_stat(path): return quick
             os.utime(picture,None);os.utime(self.cache.root/(key+".json"),None)
             return meta|{"key":key,"kept":True,"cache_hit":True}
+        except (OSError,ValueError,KeyError): return quick
+    def quick_meta(self,path,grade_id):
+        path=str(self.marks._path(path))
+        key=kept_picture_key(path,grade_id,THUMBNAIL_EDGE)
+        try:
+            meta=json.loads((self.cache.root/(key+".json")).read_text())
+            if (meta.get("grade_identity")!=grade_id or meta.get("source_stat")!=self.source_stat(path)
+                    or meta.get("picture_version")!=PICTURE_VERSION or meta.get("edge")!=THUMBNAIL_EDGE): return None
+            if not (self.cache.root/(key+"."+meta["extension"])).is_file(): return None
+            return meta|{"key":key,"kept":True,"cache_hit":True}
         except (OSError,ValueError,KeyError): return None
+
+    def make_quick(self,path,request,source,job,stat,saved_at):
+        result=None
+        try:
+            result=produce(self.root,str(self_source(path)),request["grade"],THUMBNAIL_EDGE,cancelled=job.is_set,source=source)
+            with self.marks._lock,self._lock:
+                if (self._closed or job.is_set() or self.request(path)["grade_identity"]!=request["grade_identity"]
+                        or self.source_stat(path)!=stat or not self.cache.managed.preferences()["enabled"]): return
+                key=kept_picture_key(request["path"],request["grade_identity"],THUMBNAIL_EDGE)
+                Path(result["temporary"]).replace(self.cache.root/(key+"."+result["extension"]))
+                atomic_json(self.cache.root/(key+".json"),{k:v for k,v in result.items() if k!="temporary"}|{"source_stat":stat,"saved_at":saved_at})
+            log("kept_thumbnail_saved",photo=path,key=key,save_to_written_ms=(time.time()-saved_at)*1000)
+        except CancelledError: pass
+        except Exception as error: log("kept_thumbnail_failed",photo=path,reason=str(error))
+        finally:
+            source.clear()
+            if result: Path(result["temporary"]).unlink(missing_ok=True)
+
     def current_meta(self, path, grade_id):
+        quick=self.quick_meta(path,grade_id)
         key = self.key(path, grade_id)
         try:
             meta = json.loads((self.cache.root / (key + ".json")).read_text())
             if (meta.get("grade_identity") != grade_id or meta.get("source_stat") != self.source_stat(path)
-                    or meta.get("picture_version") != PICTURE_VERSION or meta.get("edge") != preferences(self.root)["edited_edge"]): return None
-            return meta if (self.cache.root / (key + "." + meta["extension"])).is_file() else None
-        except (OSError, ValueError, KeyError): return None
+                    or meta.get("picture_version") != PICTURE_VERSION or meta.get("edge") != preferences(self.root)["edited_edge"]): return quick
+            return meta|{"key":key} if (self.cache.root / (key + "." + meta["extension"])).is_file() else quick
+        except (OSError, ValueError, KeyError): return quick
     @staticmethod
     def source_stat(path):
         s=self_source(path).stat();return [s.st_size,s.st_mtime_ns]
@@ -326,12 +359,20 @@ class KeptPictures:
                     stat=self.source_stat(path)
                     if source is not None:
                         job=Event()
+                        quick_future=None
+                        if request["edited_edge"]>THUMBNAIL_EDGE and max(source["image"].shape[:2])>THUMBNAIL_EDGE:
+                            quick_future=self._quick_producer.submit(self.make_quick,path,request,dict(source),job,stat,saved_at)
                         def check_open():
                             while self.worker.status()["paused"] and not job.is_set():
                                 time.sleep(.05)
                             return job.is_set()
                         def build_open():
                             try:
+                                if quick_future is not None:
+                                    quick_future.result()
+                                    # Let the visible thumbnail decode and reach the
+                                    # grid before large background work takes CPU.
+                                    job.wait(2)
                                 return produce(self.root,str(self_source(path)),request["grade"],request["edited_edge"],cancelled=check_open,source=source)
                             finally:
                                 source.clear()
@@ -390,6 +431,7 @@ class KeptPictures:
                 else: self.worker.cancel(job)
             self.jobs.clear()
         self.queue.stop.set()
+        self._quick_producer.shutdown(wait=False,cancel_futures=True)
         self._open_producer.shutdown(wait=False,cancel_futures=True)
 
     def pixels(self,key,lane):
