@@ -1122,6 +1122,12 @@
   let gridFrame = 0, filmFrame = 0;
   grid.addEventListener("scroll", () => { if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); }); });
   film.addEventListener("scroll", () => { if (!filmFrame) filmFrame = requestAnimationFrame(() => { filmFrame = 0; paintFilm(); }); });
+  // An ordinary mouse wheel scrolls up and down; the filmstrip only scrolls sideways.
+  film.addEventListener("wheel", event => {
+    if (event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    event.preventDefault();
+    film.scrollLeft += event.deltaY * (event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? film.clientWidth : 1);
+  }, { passive: false });
   let resizeTimer;
   new ResizeObserver(() => { paintGrid(); paintFilm(); clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state.view === "single" && state.active) showSingle(); }, 150); }).observe($("single-stage"));
   new ResizeObserver(() => { paintGrid(); paintFilm(); }).observe(grid);

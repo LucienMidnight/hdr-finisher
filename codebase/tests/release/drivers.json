@@ -3839,6 +3839,17 @@
       }
     },
     {
+      "path": "tests/library-filmstrip-wheel.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "core",
+      "protects": "A vertical mouse wheel scrolls the Single view filmstrip sideways.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
       "path": "tests/library-export-menu.js",
       "areas": [
         "export-proof",
