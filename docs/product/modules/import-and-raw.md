@@ -52,6 +52,7 @@ Rules in force:
 | **Exposure starts at zero.** RAW development is tuned so that the camera JPEG, the RAW as first shown, and Grade's starting point roughly agree. The Library's starting look must match Grade's. Every RAW grade saved before the change will look brighter or darker; no migration. The strict testing rule applies (RAW import). | Steve, 2026-10-11 |
 | Generic, not tuned to one camera. | 2026-10-09 |
 | A RAW's starting brightness follows how it was shot, like the camera JPEG. No per-photo automatic meter, visible or hidden. Brief: [codex-brief-raw-starting-exposure-zero](../../technical/briefs/codex-brief-raw-starting-exposure-zero-2026-10-18.md). | Steve, 2026-10-18 |
+| **Nothing that shapes the look is baked into import.** No starting tone curve, hidden or pre-set in Curves: Film Look applies its own curves, and renders and passes must start neutral too. RAW gets one fixed brightness calibration for all cameras plus brightness information the file records (such as DNG `BaselineExposure`). Contrast comes from visible tools; the start may look flatter than the camera JPEG. Brightness against the camera JPEG is judged by eye, replacing the ±1/3 EV target. A camera-like start may come later as a visible Look. | Steve, 2026-10-18 |
 
 ## 5. Current state (October 18, 2026)
 
