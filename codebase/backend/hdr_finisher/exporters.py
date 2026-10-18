@@ -37,6 +37,7 @@ from .jpegxl import (
     validate_sdr_jpegxl,
 )
 from .test_pattern import build_hdr_test_pattern
+from .hdr_ceiling import decoded_channel_nits, delivery_ceiling_nits, encode_within_ceiling
 
 
 SDR_WHITE_NITS = 203.0
@@ -380,8 +381,20 @@ class SDRJPEGXLExportBackend(ExportBackend):
         )
 
 
-def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None):
-    """Encode finished renditions; also used by Library pictures. No rendering."""
+def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None, ceiling_nits=None):
+    """Encode finished renditions; also used by Library pictures. No rendering.
+
+    The decoded file never exceeds ``ceiling_nits`` (hdr_ceiling).
+    """
+    def encode(hdr):
+        _write_avif_gainmap_once(staged_output, hdr, sdr_image, settings, reference_white_nits,
+            gainmaputil=gainmaputil, timings_ms=timings_ms)
+        return Path(staged_output)
+    encode_within_ceiling(hdr_image, reference_white_nits, encode,
+        lambda written: decoded_channel_nits(written, "avif_gain_map"), ceiling_nits)
+
+
+def _write_avif_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None):
     gainmaputil = gainmaputil or resolve_binary("avifgainmaputil")
     timings_ms = timings_ms if timings_ms is not None else {}
     with TemporaryDirectory(prefix="hdr_finisher_export_") as temp_dir_name:
@@ -419,8 +432,20 @@ def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
         )
         timings_ms["encode"] = round((perf_counter() - started) * 1000.0, 3)
 
-def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None):
-    """Encode finished renditions with the same writer as JPEG export."""
+def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, ceiling_nits=None):
+    """Encode finished renditions with the same writer as JPEG export.
+
+    The decoded file never exceeds ``ceiling_nits`` (hdr_ceiling).
+    """
+    def encode(hdr):
+        _write_jpeg_gainmap_once(staged_output, hdr, sdr_image, settings, reference_white_nits,
+            ultrahdr_app=ultrahdr_app, exif_payload=exif_payload)
+        return Path(staged_output)
+    encode_within_ceiling(hdr_image, reference_white_nits, encode,
+        lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits)
+
+
+def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None):
     ultrahdr_app = ultrahdr_app or resolve_binary("ultrahdr_app")
     with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
@@ -492,7 +517,8 @@ class AVIFGainMapExportBackend(ExportBackend):
             def write(staged_output: Path) -> None:
                 write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203),
-                    gainmaputil=gainmaputil, timings_ms=timings_ms)
+                    gainmaputil=gainmaputil, timings_ms=timings_ms,
+                    ceiling_nits=delivery_ceiling_nits(finishing_adjustments))
 
             def validate(staged_output: Path) -> str | None:
                 started = perf_counter()
@@ -552,7 +578,8 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             def write(staged_output: Path) -> None:
                 write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
-                    exif_payload=_source_exif_payload(session, settings.metadata_policy))
+                    exif_payload=_source_exif_payload(session, settings.metadata_policy),
+                    ceiling_nits=delivery_ceiling_nits(finishing_adjustments))
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",
@@ -583,12 +610,15 @@ class JPEGXLHDRExportBackend(ExportBackend):
         def prepare() -> _PreparedExport:
             finishing_adjustments = _finishing_adjustments_for_export(session)
             hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
-            payload = encode_hdr_jpegxl(
+            reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
+            exif_payload = _source_exif_payload(session, settings.metadata_policy)
+            payload = encode_within_ceiling(
                 hdr_image,
-                int(settings.quality),
-                settings.jpegxl_precision,
-                exif_payload=_source_exif_payload(session, settings.metadata_policy),
-                reference_white_nits=getattr(session, "hdr_reference_white_nits", 203),
+                reference_white_nits,
+                lambda hdr: encode_hdr_jpegxl(hdr, int(settings.quality), settings.jpegxl_precision,
+                    exif_payload=exif_payload, reference_white_nits=reference_white_nits),
+                _decoded_jpegxl_channel_nits,
+                delivery_ceiling_nits(finishing_adjustments),
             )
             shape = hdr_image.shape[:2]
             return _PreparedExport(
@@ -612,6 +642,13 @@ class JPEGXLHDRExportBackend(ExportBackend):
 
 class ExportProcessError(RuntimeError):
     """Raised when an external export command fails."""
+
+
+def _decoded_jpegxl_channel_nits(payload: bytes) -> np.ndarray:
+    with TemporaryDirectory(prefix="hdr_finisher_ceiling_") as temp_dir:
+        path = Path(temp_dir) / "check.jxl"
+        path.write_bytes(payload)
+        return decoded_channel_nits(path, "jpegxl_hdr")
 
 
 def _resolve_output_path(session_id: str, settings: ExportSettings, suffix: str) -> str:

@@ -1133,6 +1133,17 @@ so this is not decoder rounding. The existing file-side parity checker
 allows `target * 1.01 + 1` (1011 nits here) and only records Proof-scale
 overshoot; those checks must be replaced when the encoding fix is ready.
 
+**Encoding fix (Claude, October 18):** every HDR delivery writer (Ultra HDR, AVIF
+and JPEG XL gain-map and PQ files, including Library pictures and Proof) now decodes
+its own output and, only where a pixel exceeds the ceiling, lowers the encoder input in
+that neighbourhood with a smooth fade and encodes again (`hdr_ceiling.py`). The ceiling
+is the highlight compression target while that section is on, otherwise the 10,000-nit
+codec limit; pictures more than 20% below it skip the check (largest measured codec
+overshoot: 12%). On Steve's badminton RAWs the 1000-nit target was exceeded by up to
+73 nits (Ultra HDR), 26 (AVIF) and 7 (JPEG XL); fixed files land 972 to 998 nits, and
+their colour difference from the graded render matches today's within 0.14 ΔE ITP mean.
+A file that cannot be brought under its ceiling fails the export rather than overshooting.
+
 A trial encode/decode/retry correction that scaled the whole HDR lane
 was rejected and removed. On the 96 by 54 mixed-colour fixture at quality
 95, its decoded JPEG and AVIF differed from the finished render by mean

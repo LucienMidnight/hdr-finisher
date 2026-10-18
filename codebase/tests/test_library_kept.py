@@ -15,7 +15,7 @@ class Worker:
 def test_corrected_producer_uses_same_export_renditions_and_never_changes_open_grade(setup,monkeypatch,tmp_path):
     photo,store,session,marks,grades=setup
     grade=saved(setup); captured={}
-    def encode(path,hdr,sdr,settings,white):
+    def encode(path,hdr,sdr,settings,white,**options):
         captured.update(hdr=hdr.copy(),sdr=sdr.copy(),white=white);Path(path).write_bytes(b"test")
     monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",encode)
     previous=session.edit_document().model_dump(mode="json")
@@ -112,7 +112,7 @@ def test_failed_encode_retries_after_cooldown_without_another_save(setup,monkeyp
     from hdr_finisher import library_kept
     photo,store,session,marks,grades=setup
     grade=saved(setup);calls=[];events=[]
-    def encode(path,*args):
+    def encode(path,*args,**options):
         calls.append(path)
         if len(calls)==1: raise exporters.ExportProcessError("forced encoder failure")
         Path(path).write_bytes(b"picture")
@@ -260,7 +260,7 @@ def test_saved_picture_is_fitted_after_crop_and_encoded_for_screen(setup, tmp_pa
     grade=session.edit_document().model_dump(mode="json")
     monkeypatch.setattr("hdr_finisher.sessions.SessionStore.prepare_session",lambda *a,**k:session)
     captured={}
-    def encode(path,hdr,sdr,settings,white):
+    def encode(path,hdr,sdr,settings,white,**options):
         captured.update(settings=settings,size=hdr.shape[:2]);Path(path).write_bytes(b"test")
     monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",encode)
     result=produce(tmp_path,photo,grade,128)
@@ -278,7 +278,7 @@ def test_background_refresh_remakes_existing_grade_without_save(setup, tmp_path,
     photo,store,session,marks,grades=setup
     grade=saved(setup)
     sidecar=Path(str(photo)+".hdrf");before=sidecar.read_bytes();requests=[]
-    def encode(path,*args): Path(path).write_bytes(b"picture")
+    def encode(path,*args,**options): Path(path).write_bytes(b"picture")
     monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",encode)
     class BackgroundWorker(Worker):
         def submit_library(self,kind,**request):
@@ -317,7 +317,7 @@ def test_shrink_first_render_receives_crop_aware_reduced_source(setup, tmp_path,
         shapes.append(frame.image.shape[:2])
         return apply_geometry(frame.image,adjustments.shared.geometry)
     monkeypatch.setattr(exporters,"_render_export_branch",render)
-    monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",lambda path,*args:Path(path).write_bytes(b"test"))
+    monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",lambda path,*args,**options:Path(path).write_bytes(b"test"))
     result=produce(tmp_path,photo,grade,edge)
     try:
         available=max(geometry_output_dimensions(4200,2800,geometry))
@@ -347,6 +347,6 @@ def test_shrink_releases_both_full_size_sources_before_render(setup, tmp_path, m
         assert frame.sdr_reference_image.shape==frame.image.shape
         return frame.image
     monkeypatch.setattr(exporters,"_render_export_branch",render)
-    monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",lambda path,*args:Path(path).write_bytes(b"test"))
+    monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",lambda path,*args,**options:Path(path).write_bytes(b"test"))
     result=produce(tmp_path,photo,grade,64,source=source)
     Path(result["temporary"]).unlink()

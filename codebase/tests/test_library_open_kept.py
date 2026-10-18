@@ -28,7 +28,7 @@ def test_open_and_reopened_sources_have_identical_renditions(setup, monkeypatch,
     photo, store, session, marks, grades = setup
     grade = saved(setup)
     renditions = []
-    def encode(path, hdr, sdr, *args):
+    def encode(path, hdr, sdr, *args, **options):
         renditions.append((hdr.copy(), sdr.copy()))
         Path(path).write_bytes(b"test")
     monkeypatch.setattr(exporters, "write_jpeg_gainmap_renditions", encode)
@@ -63,7 +63,7 @@ def test_absolute_hdr_white_guard_preserves_exact_renditions_and_jpeg(tmp_path, 
         assert (source is not None) == (opened_white == saved_white)
         grade = session.edit_document().model_dump(mode="json")
         captures = []
-        def encode(path, hdr, sdr, *args):
+        def encode(path, hdr, sdr, *args, **options):
             captures.append((hdr.copy(), sdr.copy()))
             writer(path, hdr, sdr, *args)
         monkeypatch.setattr(exporters, "write_jpeg_gainmap_renditions", encode)
@@ -90,7 +90,7 @@ def test_open_save_is_async_and_guards_publication(setup, monkeypatch, tmp_path,
     grade = saved(setup)
     entered, release = Event(), Event()
     calls = []
-    def encode(path, hdr, sdr, *args):
+    def encode(path, hdr, sdr, *args, **options):
         calls.append(1)
         if (change != "next_photo" and len(calls) == 1) or (change == "next_photo" and max(hdr.shape[:2]) > 512):
             entered.set()
@@ -152,7 +152,7 @@ def test_saved_thumbnail_arrives_before_large_picture_and_never_reuses_old_grade
     photo, store, session, marks, grades = setup
     grade = saved(setup)
     entered, release = Event(), Event()
-    def encode(path, hdr, sdr, *args):
+    def encode(path, hdr, sdr, *args, **options):
         if max(hdr.shape[:2]) > 512:
             entered.set()
             assert release.wait(5)
