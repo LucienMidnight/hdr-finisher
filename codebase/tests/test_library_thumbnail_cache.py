@@ -134,7 +134,8 @@ def test_initial_lookup_never_schedules_a_cpu_render(tmp_path):
     source = tmp_path/'photo.png'; source.write_bytes(b'photo')
     service = Thumbnails(tmp_path/'profile', Worker(), Marks())
     result = service.batch([str(source)], 360, populate=False)
-    assert result == {'ready': [], 'pending': [str(source)], 'errors': []}
+    assert result == {'ready': [], 'pending': [str(source)], 'errors': [],
+        'tickets': {str(source): thumbnail_key(source, THUMBNAIL_EDGE)}}
     assert not service.jobs
 
 
@@ -153,3 +154,56 @@ def test_any_grid_width_finds_the_one_cached_picture(tmp_path):
     (folder/(next(iter(made))+'.jpg')).write_bytes(b'cached')
     for width in (360,391,520,1440):
         assert service.batch([str(source)],width)['ready'][0]['cache_hit']
+
+
+
+def test_camera_preview_then_gpu_thumbnail_without_raw_decode(tmp_path, monkeypatch):
+    from io import BytesIO
+    from types import SimpleNamespace
+    from PIL import Image
+    import rawpy
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.library_raw import RawBrowsing
+    photo = tmp_path/'camera.ARW'; photo.write_bytes(b'original RAW')
+    preview = BytesIO(); Image.new('RGB', (48, 32), (140, 90, 30)).save(preview, format='JPEG')
+    opened = []
+    class Raw:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def open_file(self, path): opened.append(path)
+        def extract_thumb(self): return SimpleNamespace(format=rawpy.ThumbFormat.JPEG, data=preview.getvalue())
+        def unpack(self): pytest.fail('Camera first paint must not unpack a RAW')
+        def postprocess(self, **kwargs): pytest.fail('Camera first paint must not demosaic a RAW')
+    monkeypatch.setattr(rawpy, 'RawPy', Raw)
+    monkeypatch.setattr(RawBrowsing, 'request', lambda *args, **kwargs: pytest.fail('No full RAW read'))
+    class Worker:
+        def status(self): return {'paused': False}
+        def submit_library(self, *args, **kwargs): pytest.fail('No CPU thumbnail render')
+    profile = tmp_path/'profile'
+    app = FastAPI(); app.include_router(create_library_router(Worker(), MediaBrowserStore(profile)))
+    client = TestClient(app)
+    batch = lambda: client.post('/api/library/thumbnails', json={'paths':[str(photo)], 'edge':360}).json()
+    miss = batch(); assert miss['pending'] == [str(photo)]
+    result = client.post('/api/library/picture', json={'path':str(photo), 'edge':640, 'quality':'fast'})
+    assert result.status_code == 200, result.text
+    assert result.json()['route'] == 'camera-preview-placeholder'
+    assert result.json()['url'].startswith('data:image/jpeg;base64,') and len(opened) == 1
+    sdr = np.full((32, 48, 3), .25, np.float32)
+    hdr = linear_srgb_to_acescg(sdr * .18)
+    body = np.stack((hdr, sdr)).astype('<f2').tobytes()
+    key = miss['tickets'][str(photo)]
+    uploaded = client.post('/api/library/thumbnail/'+key, params={'path':str(photo), 'width':48, 'height':32}, content=body)
+    assert uploaded.status_code == 200, uploaded.text
+    ready = batch()
+    assert not ready['pending'] and ready['ready'][0]['cache_hit'] and len(opened) == 1
+    file = client.get(ready['ready'][0]['url'])
+    assert file.content.startswith(b'\xff\xd8')
+    assert photo.read_bytes() == b'original RAW'
+    # A source replacement invalidates the upload ticket and cannot publish stale pixels.
+    photo.write_bytes(b'changed RAW source')
+    stale = client.post('/api/library/thumbnail/'+key, params={'path':str(photo), 'width':48, 'height':32}, content=body)
+    assert stale.status_code == 409
+    assert batch()['pending'] == [str(photo)]

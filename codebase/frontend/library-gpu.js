@@ -69,7 +69,9 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
 }
 window.HDRLibraryPictures = (() => {
   const surface = document.createElement("canvas");
-  let renderer, ready, queue = Promise.resolve(), draws = 0;
+  let renderer, ready, queue = Promise.resolve(), draws = 0, foreground = 0;
+  let cacheQueue = Promise.resolve();
+  const finished = new WeakMap();
   async function initialize() {
     if (!ready) ready = (async () => {
       const started = performance.now();
@@ -82,6 +84,7 @@ window.HDRLibraryPictures = (() => {
   }
   function show(meta, canvas, signal, isCurrent, hdr = false) {
     const queued = performance.now();
+    foreground++;
     const pending = queue.catch(() => {}).then(async () => {
       if (signal.aborted || !isCurrent()) return;
       HDRLibraryStopwatch("draw_dispatched", { key: meta.key, queue_ms: performance.now() - queued });
@@ -110,10 +113,52 @@ window.HDRLibraryPictures = (() => {
       canvas.dataset.rendition = hdr ? "hdr" : "sdr";
       canvas.dataset.surface = gpu.surfaceKeys.get(canvas);
       canvas.dataset.peakNits = hdr ? "1000" : "203";
+      if (meta.edge <= 640 && !meta.route?.endsWith("-placeholder") && canvas.closest(".library-cell")) {
+        const pixels = await gpu.analyzeScope(canvas, {width:meta.width,height:meta.height,tier:"picture",raw:true});
+        if (pixels) finished.set(meta, {lane:hdr ? "hdr" : "sdr", pixels});
+      }
       return result;
-    });
+    }).finally(() => { foreground--; });
     queue = pending;
     return pending;
+  }
+  function saveThumbnail(meta, path, key, signal, isCurrent) {
+    const captured = finished.get(meta); finished.delete(meta);
+    if (!captured) return Promise.resolve();
+    const task = cacheQueue.catch(() => {}).then(async () => {
+      // Do not put cache rendering ahead of visible work. At most one small
+      // rendition is in flight, and Grade/scroll cancellation stops the rest.
+      while (foreground && !signal.aborted && isCurrent()) await new Promise(resolve => setTimeout(resolve,20));
+      if (signal.aborted || !isCurrent()) return;
+      const permission = await fetch("/api/library/thumbnail-work", {signal});
+      if (!permission.ok || (await permission.json()).paused) return;
+      const pending = queue.catch(() => {}).then(async () => {
+        if (signal.aborted || !isCurrent()) return;
+        const gpu = await initialize(), canvas = document.createElement("canvas");
+        gpu.librarySignal = signal; gpu.libraryMeta = meta;
+        const lane = captured.lane === "hdr" ? "sdr" : "hdr";
+        const adjustments = structuredClone(meta.adjustments);
+        adjustments.hdr.highlight_compression_target_nits = 1000;
+        const result = await gpu.renderTo(canvas,meta.key,lane,adjustments,sampleCurvePoints,meta.edge,[],0,null,meta.white,
+          {width:meta.width,height:meta.height},{scopeAnalysis:true,isCurrent,measureOnly:true});
+        if (result?.execution !== "direct" || signal.aborted || !isCurrent()) return;
+        const other = await gpu.analyzeScope(canvas,{width:meta.width,height:meta.height,tier:"picture",raw:true});
+        gpu.scopeSources.delete(canvas);
+        if (!other) return;
+        const hdr = captured.lane === "hdr" ? captured.pixels : other;
+        const sdr = captured.lane === "sdr" ? captured.pixels : other;
+        const body = new Uint16Array(hdr.halves.length + sdr.halves.length);
+        body.set(hdr.halves); body.set(sdr.halves,hdr.halves.length);
+        return body;
+      });
+      queue = pending;
+      const body = await pending;
+      if (!body || signal.aborted || !isCurrent()) return;
+      const query = new URLSearchParams({path,width:meta.width,height:meta.height});
+      const response = await fetch(`/api/library/thumbnail/${key}?${query}`,{method:"POST",body,signal});
+      if (!response.ok && response.status !== 409) throw Error("Thumbnail could not be saved.");
+    }).catch(error => { if (error.name !== "AbortError") console.debug("Library thumbnail:",error.message); });
+    cacheQueue = task; return task;
   }
   async function showKept(meta, canvas, signal, isCurrent, hdr = false) {
     const queued = performance.now();
@@ -158,7 +203,7 @@ window.HDRLibraryPictures = (() => {
       return gpu.rawPictures.convert(meta, signal);
     }); queue = task; return task;
   }
-  return Object.freeze({ show: (meta, ...args) => meta.kept ? showKept(meta, ...args) : show(meta, ...args), initialize, prepare,
+  return Object.freeze({ show: (meta, ...args) => meta.kept ? showKept(meta, ...args) : show(meta, ...args), initialize, prepare, saveThumbnail,
     configure: async limits => { (await initialize()).libraryLimits = limits; },
     resident: key => !!renderer?.rawPictures?.get(key),
     snapshot: () => renderer?.rawPictures?.snapshot() || {pictures:0,bytes:0} });

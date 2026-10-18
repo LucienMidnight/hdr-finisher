@@ -47,7 +47,7 @@ class LibraryRoute(APIRoute):
         handler = super().get_route_handler()
         async def checked(request):
             async def context():
-                if request.method != "POST":
+                if request.method != "POST" or "application/json" not in request.headers.get("content-type", ""):
                     return dict(request.query_params)
                 try:
                     body = await request.json()
@@ -262,6 +262,24 @@ def create_library_router(worker, browser, store=None):
     @router.post("/thumbnails")
     def thumbnail_batch(request: ThumbnailRequest):
         return thumbnails.batch(request.paths, request.edge, request.priority, request.client, request.wanted, request.populate)
+
+    @router.get("/thumbnail-work")
+    def thumbnail_work():
+        return {"paused": worker.status()["paused"]}
+
+    @router.post("/thumbnail/{key}")
+    async def save_scene_thumbnail(key: str, request: Request, path: str, width: int, height: int):
+        from .library_thumbnails import THUMBNAIL_EDGE
+        limit = THUMBNAIL_EDGE * THUMBNAIL_EDGE * 12
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > limit:
+                raise HTTPException(413, "Thumbnail is too large.")
+        try:
+            return await run_in_threadpool(thumbnails.store_scene, path, key, width, height, body)
+        except (ValueError, OSError, CancelledError) as error:
+            raise HTTPException(409, str(error)) from error
 
     @router.get("/thumbnail/{key}")
     def thumbnail_file(key: str):
@@ -696,6 +714,12 @@ def create_library_router(worker, browser, store=None):
                 cached = await run_in_threadpool(raw_thumbnails.cached, command.path)
                 if cached:
                     return cached
+            if command.quality == "fast" and command.edge < 1280:
+                from .library_pictures import camera_preview
+                try:
+                    return await run_in_threadpool(camera_preview, command.path, command.edge)
+                except Exception as error:
+                    log("camera_preview_unavailable", path=command.path, reason=str(error))
             future = raw_browsing.request(command.path, command.priority)
             while not future.done():
                 if raw_browsing.paused():

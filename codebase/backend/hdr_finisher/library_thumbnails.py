@@ -148,8 +148,46 @@ class Thumbnails:
             raise ValueError('Invalid thumbnail key.')
         return self.managed.directory('library-thumbnails') / (key + '.jpg')
 
+    def store_scene(self, path, key, width, height, body):
+        """Encode GPU-finished HDR/SDR pixels; never open or grade the source."""
+        preferences = self.managed.preferences()
+        if not preferences['enabled']:
+            return {'ok': False}
+        if not 0 < min(width, height) <= max(width, height) <= THUMBNAIL_EDGE or len(body) != width * height * 12:
+            raise ValueError('Invalid thumbnail pixels.')
+        def current_key():
+            source = self.marks.source_path(path)
+            saved = self.kept.cached(path, THUMBNAIL_EDGE) if self.kept else None
+            request = self.kept.request(path) if self.kept else {}
+            return thumbnail_key(source, THUMBNAIL_EDGE, request.get('grade_identity', ''), saved['key'] if saved else '')
+        if current_key() != key:
+            raise ValueError('Photo or grade changed before thumbnail save.')
+        pixels = np.frombuffer(body, dtype='<f2').astype(np.float32).reshape(2, height, width, 3)
+        if not np.isfinite(pixels).all():
+            raise ValueError('Invalid thumbnail pixels.')
+        from .color import acescg_to_linear_bt2020, linear_bt2020_to_acescg
+        hdr = linear_bt2020_to_acescg(np.clip(acescg_to_linear_bt2020(pixels[0]), 0, 10000 * .18 / 203))
+        encoded = encode(hdr, pixels[1])
+        self.managed.prepare()
+        destination = self.file(key)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(dir=destination.parent, suffix='.tmp', delete=False) as handle:
+            temp = Path(handle.name)
+            handle.write(encoded)
+        try:
+            if preferences != self.managed.preferences() or current_key() != key:
+                raise CancelledError('Photo, grade or cache settings changed.')
+            os.replace(temp, destination)
+        finally:
+            temp.unlink(missing_ok=True)
+        self.managed.trim()
+        from .library_diagnostics import log
+        log('thumbnail_scene_saved', path=path, key=key)
+        return {'ok': True, 'key': key}
+
     def batch(self, paths, edge, priority=10, client="", wanted=None, populate=True):
         ready, pending, errors, requests = [], [], [], []
+        tickets = {}
         edge = THUMBNAIL_EDGE
         with self.lock:
             if client and wanted is not None:
@@ -181,6 +219,7 @@ class Thumbnails:
                         os.utime(file, None)
                         ready.append(info | {'url': '/api/library/thumbnail/' + key, 'cache_hit': True})
                         continue
+                    tickets[path] = key
                     self.touched[key] = monotonic()
                     job = self.jobs.get(key)
                     if job and job[1].done():
@@ -194,7 +233,9 @@ class Thumbnails:
                         else:
                             pending.append(path)
                         continue
-                    if populate and not job and len(self.jobs) < 64:
+                    from .library_raw import camera_raw
+                    gpu_source = not saved and camera_raw(source)
+                    if populate and not gpu_source and not job and len(self.jobs) < 64:
                         kept = saved | {'file': str(self.kept.cache.root / (saved['key'] + '.' + saved['extension']))} if saved else None
                         job = [None, Future()]
                         self.jobs[key] = job
@@ -205,4 +246,4 @@ class Thumbnails:
                     errors.append({'path': path, 'message': str(exc)})
         if requests:
             Thread(target=self.dispatch, args=(requests,), name='library-thumbnail-requests', daemon=True).start()
-        return {'ready': ready, 'pending': pending, 'errors': errors}
+        return {'ready': ready, 'pending': pending, 'errors': errors, 'tickets': tickets}

@@ -22,9 +22,9 @@ test('recent pool obeys budget and cleared in-flight decodes cannot repopulate i
 
 test('a miss draws immediately while gain-map creation is still pending, once per cell',async()=>{
  let finished=false,misses=0;
- const cache=create({identity:p=>p.path,image,api:async(_r,b)=>({ready:finished?b.paths.map(path=>({path,key:path,url:'/thumb/'+path})):[],pending:finished?[]:b.paths,errors:[]})});
+ const cache=create({identity:p=>p.path,image,api:async(_r,b)=>({ready:finished?b.paths.map(path=>({path,key:path,url:'/thumb/'+path})):[],pending:finished?[]:b.paths,errors:[],tickets:{cold:'scene-ticket'}})});
  const img=image();let shown=false;
- const pending=cache.show({path:'cold'},100,img,()=>true,()=>false,()=>{misses++;assert.equal(img.src,'');}).then(()=>shown=true);
+ const pending=cache.show({path:'cold'},100,img,()=>true,()=>false,ticket=>{misses++;assert.equal(ticket,'scene-ticket');assert.equal(img.src,'');}).then(()=>shown=true);
  await tick();assert.equal(misses,1);assert.equal(shown,false);
  await tick();assert.equal(misses,1);
  finished=true;await pending;assert.equal(img.src,'/thumb/cold');assert.equal(misses,1);cache.clear();

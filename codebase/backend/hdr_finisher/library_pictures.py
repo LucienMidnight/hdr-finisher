@@ -260,6 +260,24 @@ def check_cancelled(cancelled):
         raise CancelledError("Library picture was cancelled.")
 
 
+def camera_preview(path, edge):
+    """Extract the camera JPEG without unpacking or demosaicing the RAW."""
+    import base64
+    import rawpy
+    started = perf_counter()
+    with rawpy.RawPy() as raw:
+        raw.open_file(str(path))
+        thumb = raw.extract_thumb()
+        image = Image.open(BytesIO(thumb.data)) if thumb.format == rawpy.ThumbFormat.JPEG else Image.fromarray(thumb.data)
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        image.thumbnail((edge, edge))
+        output = BytesIO()
+        image.save(output, format="JPEG", quality=90)
+    log("camera_preview_ready", path=str(path), duration_ms=(perf_counter()-started)*1000)
+    return {"route": "camera-preview-placeholder", "url": "data:image/jpeg;base64," + base64.b64encode(output.getvalue()).decode(),
+        "width": image.width, "height": image.height, "edge": edge, "kept": False}
+
+
 def embedded_picture(path, edge):
     import rawpy
     with rawpy.RawPy() as raw:

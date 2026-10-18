@@ -323,20 +323,34 @@
     });
     const started = performance.now();
     const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
-    const miss = () => {
-      // A file miss must not wait for the background CPU gain-map producer.
+    const miss = ticket => {
       const fallback = document.createElement("canvas"); cell.fallback = fallback;
-      canvas.replaceWith(fallback);
-      void loadAndShow(photo, cell.edge, fallback, cell.controller, current).then(meta => {
+      fallback.hidden = true; frame.append(fallback);
+      void (async () => {
+        let prepared = null;
+        if (rawTypes.has(photo.type)) {
+          const preview = await api("/api/library/picture", {path:photo.path, edge:cell.edge, quality:"fast", priority:5}, cell.controller.signal);
+          if (!current()) return;
+          if (preview.url) {
+            canvas.src = preview.url; await canvas.decode();
+            if (!current()) return;
+            canvas.style.visibility = ""; element.classList.remove("loading");
+            HDRLibraryStopwatch("camera_preview_shown", {path:photo.path,duration_ms:performance.now()-started});
+          } else prepared = Promise.resolve(preview);
+        }
+        const meta = await loadAndShow(photo, cell.edge, fallback, cell.controller, current, 10, prepared);
         if (!meta || !current() || !cell.fallback) return;
-        void thumbnails.populate(photo, cell.edge);
+        fallback.hidden = false; canvas.hidden = true;
         cell.scene = meta; cell.meta = meta; cell.elapsed = performance.now() - started;
         element.classList.remove("loading");
-      }).catch(error => { if (current() && !aborted(error)) removeUnreadable(photo,error); });
+        // Cache work yields to the visible GPU queue and reuses its decoded source.
+        if (!meta.kept && ticket) void HDRLibraryPictures.saveThumbnail(meta, photo.path, ticket, cell.controller.signal, current);
+        else void thumbnails.populate(photo, cell.edge);
+      })().catch(error => { if (current() && !aborted(error)) removeUnreadable(photo,error); });
     };
     thumbnails.show(photo, cell.edge, canvas, current, () => state.hdr, miss).then(meta => {
       if (!meta || !current()) return;
-      cell.fallback?.replaceWith(canvas); cell.fallback = null; cell.scene = null;
+      cell.fallback?.remove(); canvas.hidden = false; cell.fallback = null; cell.scene = null;
       cell.meta = meta; cell.elapsed = performance.now() - started;
       element.classList.remove("loading");
       overlays?.attach(photo,canvas,meta,cell.controller,current);

@@ -43,7 +43,7 @@
             const result = await api('/api/library/thumbnails', {paths:chunk.map(e => e.photo.path), edge, priority,client,wanted,populate:false});
             for (const meta of result.ready) { const entry = chunk.find(e => e.photo.path === meta.path); if (entry) void accept(entry, meta); }
             for (const failure of result.errors) { const entry = chunk.find(e => e.photo.path === failure.path); if (entry) { entries.delete(entry.id); entry.reject(new Error(failure.message)); } }
-            for (const path of result.pending) { const entry = chunk.find(e => e.photo.path === path); if (entry) { entry.missed = true; for (const notify of entry.missListeners || []) notify(); queued.add(entry); } }
+            for (const path of result.pending) { const entry = chunk.find(e => e.photo.path === path); if (entry) { entry.missed = true; entry.ticket = result.tickets?.[path]; for (const notify of entry.missListeners || []) notify(); queued.add(entry); } }
           }
         }));
       } catch(error) { for (const entry of waiting) { entries.delete(entry.id); entry.reject(error); } }
@@ -70,7 +70,7 @@
       const pending = get(photo,edge);
       const waiting = entries.get(key(photo,edge));
       let notified = false;
-      const notify = () => { if (!notified && current()) { notified = true; onMiss?.(); } };
+      const notify = () => { if (!notified && current()) { notified = true; onMiss?.(waiting?.ticket); } };
       if (onMiss && waiting && !waiting.ready) {
         (waiting.missListeners ||= []).push(notify);
         if (waiting.missed) notify();

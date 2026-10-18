@@ -15,7 +15,39 @@ This page prevents implemented, validated, expected, and planned behavior from b
 | Physical HDR browser checks | Maintained Windows evidence | Not maintained | Required on Kubuntu 26.04; not yet recorded |
 | Auto proof target | Uses Windows telemetry when available | Use fixed target | Use fixed/custom target; exact headroom unavailable |
 
-## Library thumbnail cache qualification (October 17, 2026)
+## Library thumbnail cache qualification (October 17–18, 2026)
+
+October 18: camera RAW grid/filmstrip misses now extract the embedded camera
+JPEG without a full RAW read, then replace it with the real scene picture.
+Native gain-map hits still bypass the placeholder. The displayed GPU lane
+is read back from its finished texture; the other lane is rendered on the
+GPU from the same source, after visible draws and only while Grade/export
+allow background work. The Library-only JPEG writer packages those pixels
+at the fixed 640-pixel size. It does not re-open or CPU-grade a camera RAW.
+Saved-grade pictures retain their existing finished-picture path. Uploads
+reject changed source/grade identities and cache preferences. Export, Proof,
+Single, Compare, native zoom, pinned shaders and timing limits are unchanged.
+
+Qualification: 532 Node tests and 2261 Python tests passed (three skips),
+including a camera-first/no-full-read/cache-hit behavior test; the focused
+Stage C GPU check passed. A real ARW copied into a disposable one-photo
+folder showed its camera preview in 60 ms, saved its GPU-produced real
+thumbnail, and showed that cached thumbnail in 24 ms after an actual app
+relaunch, without another camera preview or RAW decode. These are one-photo
+checks, not a qualification of the full-folder targets or a cold OS disk.
+
+Remaining: the badminton folder at default size has 70 visible photos.
+The visible-screen check did not finish filling their persistent thumbnails
+within 60 seconds; only 68 first pictures and 45 real-picture events were
+recorded (first-picture p90 3.66 s; real-picture p90 21.24 s). The full scroll check also timed out
+waiting for cache warming, with a RAW transport released before a GPU draw.
+The 1 s first-picture / 2 s real-picture / 100 ms cached-folder targets have
+not been qualified for that folder. The scene reader still reads entire
+82 MB RAWs, so its HDD throughput, first shader compilation and saved-grade
+work remain costs. No timing budget was relaxed. Full-folder cache filling
+and reliable handoff from RAW transport to GPU draws need follow-up.
+
+Earlier October 17 qualification (CPU cache producer, before this change):
 
 Grid and filmstrip use native gain-map JPEG thumbnails; Single, Compare and
 full-screen keep their scene-linear GPU path. Separate thumbnail, full-size
@@ -28,7 +60,8 @@ independent cache Settings, and the disk-cache revisit passed their focused
 checks. On a miss, the scene picture is GPU-drawn before requesting a gain-map
 file. CPU file creation uses one background worker, yields between stages to
 visible work, and pauses for Grade/export. It never holds a scene-cache lock
-while yielding. GPU readback for file creation has not been implemented.
+while yielding. GPU readback for file creation was not yet implemented in
+that October 17 version; the October 18 path above supersedes it.
 Steve agreed to measure first visits against the same scroll driver on
 pre-cache `ef4326c`, plus 15% noise, rather than Claude's post-first-screen
 clock. The unchanged driver measured 925 ms median / 7478 ms p90 on that

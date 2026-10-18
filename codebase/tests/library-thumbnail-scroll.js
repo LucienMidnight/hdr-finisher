@@ -20,7 +20,34 @@ const folder = process.env.SCROLL_FOLDER || 'D:\\Photos\\HDR Test Images';
   await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
   await page.evaluate(()=>activateWorkflowTab('import'));
   const frame=page.frame({url:/\/library(?:\?|$)/});await frame.waitForFunction(()=>window.HDRLibrary);
-  await frame.locator('#thumbnail-size').evaluate(e=>{e.value=360;e.dispatchEvent(new Event('input',{bubbles:true}));});
+  await frame.locator('#thumbnail-size').evaluate((e,size)=>{e.value=size;e.dispatchEvent(new Event('input',{bubbles:true}));},Number(process.env.SCROLL_SIZE || 360));
+  if (process.env.SCROLL_VISIBLE_ONLY) {
+   await frame.evaluate(()=>{
+    window.previewMeasurements=[];
+    const original=window.HDRLibraryStopwatch;
+    window.HDRLibraryStopwatch=(stage,details)=>{if(['camera_preview_shown','picture_shown'].includes(stage)) previewMeasurements.push({stage,...details});original(stage,details);};
+   });
+   await frame.evaluate(folder=>HDRLibrary.browse(folder),folder);
+   const paths=await frame.evaluate(()=>{
+    const bounds=document.querySelector('#library-grid').getBoundingClientRect();
+    return [...document.querySelectorAll('#grid-space .library-cell')].filter(cell=>{const r=cell.getBoundingClientRect();return r.bottom>bounds.top && r.top<bounds.bottom;}).map(cell=>cell.dataset.path);
+   });
+   let complete=true;
+   try {await frame.waitForFunction(paths=>paths.every(path=>[...document.querySelectorAll('#grid-space .library-cell')].some(cell=>cell.dataset.path===path && cell.querySelector('img')?.dataset.pictureKey)),paths,{timeout:60000});}
+   catch {complete=false;}
+   const metrics=await frame.evaluate(paths=>{
+    const events=previewMeasurements.filter(e=>paths.includes(e.path));
+    const first=new Map(),real=new Map();
+    for(const e of events){if(!first.has(e.path))first.set(e.path,e.duration_ms);if(e.stage==='picture_shown'&&!real.has(e.path))real.set(e.path,e.duration_ms);}
+    const p90=values=>{const a=[...values].sort((a,b)=>a-b);return a.length?a[Math.floor((a.length-1)*.9)]:null;};
+    return {visible:paths.length,camera_previews:events.filter(e=>e.stage==='camera_preview_shown').length,first: first.size,real:real.size,first_p90_ms:p90(first.values()),real_p90_ms:p90(real.values())};
+   },paths);
+   console.log(JSON.stringify({complete,...metrics}));
+   fs.writeFileSync(path.join(output,'visible-results.json'),JSON.stringify({complete,...metrics},null,2));
+   assert.ok(complete,'Visible real thumbnails must reach the persistent cache');
+   assert.deepEqual(errors,[]);
+   return;
+  }
   await frame.evaluate(()=>{
    window.scrollMeasurements=[];let starts=new WeakMap();window.resetScrollMeasurements=()=>{scrollMeasurements.length=0;starts=new WeakMap();};
    const observer=new MutationObserver(records=>{for(const r of records){
@@ -34,19 +61,19 @@ const folder = process.env.SCROLL_FOLDER || 'D:\\Photos\\HDR Test Images';
    await frame.evaluate(()=>resetScrollMeasurements());
    if(pass===0) {await frame.evaluate(folder=>HDRLibrary.browse(folder),folder);await page.waitForTimeout(8000);}
    if(pass===1) {
-    const deadline=Date.now()+240000;let warmed=false;
-    while(Date.now()<deadline) {
-     const status=await frame.evaluate(async()=>{
-      const paths=HDRLibrary.getSnapshot().paths;
-      const edge=Number(document.querySelector('#grid-space img[data-picture-edge]')?.dataset.pictureEdge||360);
-      const r=await fetch('/api/library/thumbnails',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,edge,client:"scroll-driver-warmup",wanted:paths})});return r.json();
-     });
-     if(status.errors.length) throw new Error(JSON.stringify(status.errors));
-     const saved=await frame.evaluate(async()=>{const r=await fetch('/api/library/settings-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:HDRLibrary.getSnapshot().paths})});return r.json();});
-     if(!status.pending.length && saved.photos.every(p=>!p.edited||p.pictureCurrent)) {warmed=true;break;}
-     await page.waitForTimeout(500);
+    // Cache production now consumes GPU-finished pictures. Visit each screen
+    // and let its real images reach the cache rather than asking the CPU to
+    // re-decode the whole folder. This also keeps requests below the API cap.
+    const warmGrid=frame.locator('#library-grid');
+    const dimensions=await warmGrid.evaluate(g=>({height:g.scrollHeight-g.clientHeight,step:Math.max(100,g.clientHeight*.8)}));
+    for(let y=0;y<dimensions.height+dimensions.step;y+=dimensions.step) {
+     await warmGrid.evaluate((g,y)=>{g.scrollTop=y;},Math.min(y,dimensions.height));
+     await frame.waitForFunction(()=>{
+      const grid=document.querySelector('#library-grid'),bounds=grid.getBoundingClientRect();
+      return [...document.querySelectorAll('#grid-space .library-cell')].filter(cell=>{const r=cell.getBoundingClientRect();return r.bottom>bounds.top && r.top<bounds.bottom;})
+       .every(cell=>{const img=cell.querySelector('img');return img?.dataset.pictureKey && img.complete && !img.hidden;});
+     },null,{timeout:90000});
     }
-    assert.ok(warmed,"All thumbnail and saved-grade files must finish before warm measurements");
     await frame.evaluate(()=>resetScrollMeasurements());
     warmRequestStart=requests.length;
    }
