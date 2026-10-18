@@ -220,6 +220,8 @@ def _execute_export(
     timings_ms: dict[str, float] | None = None,
 ) -> ExportResponse:
     """Run the shared prepare/write/validate/replace export lifecycle."""
+    from .delivery import renderer_record
+    rendering = renderer_record()
     output_path: Path | None = None
     staged_output: Path | None = None
     timings = timings_ms if timings_ms is not None else {}
@@ -247,6 +249,7 @@ def _execute_export(
         message = str(exc) if failure_prefix is None else f"{failure_prefix}: {exc}"
         return ExportResponse(
             accepted=False,
+            **rendering,
             backend=backend.name,
             message=message,
             output_path=str(output_path) if output_path is not None else settings.output_path,
@@ -259,6 +262,7 @@ def _execute_export(
         message = f"{message} {' '.join(prepared.notes)}"
     return ExportResponse(
         accepted=True,
+        **rendering,
         backend=backend.name,
         message=message,
         delivery_notes=list(prepared.notes),

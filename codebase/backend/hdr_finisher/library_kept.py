@@ -109,6 +109,8 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
     from .sessions import SessionStore
     from . import exporters
     from .library_pictures import check_cancelled
+    from .delivery import renderer_record
+    rendering = renderer_record()
     started=perf_counter();document=validate_saved_document(grade)
     def check(): check_cancelled(cancelled)
     check()
@@ -169,7 +171,7 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
         writer(temp,hdr,sdr,settings,document.hdr_reference_white_nits);check()  # Library pictures skip the HDR peak check (Steve, October 18)
         encode_ms=(perf_counter()-encode_started)*1000
         log("kept_encoded", path=str(path), grade_identity=identity(grade), duration_ms=encode_ms)
-        return {"temporary":str(temp),"extension":extension,"grade_identity":identity(grade),
+        return {**rendering,"temporary":str(temp),"extension":extension,"grade_identity":identity(grade),
             "width":hdr.shape[1],"height":hdr.shape[0],"source_width":source_width,"source_height":source_height,"edge":edge,"white":203,
             "source_route":source_route,"source_ms":source_ms,"render_ms":render_ms,"encode_ms":encode_ms,
             "picture_version":PICTURE_VERSION,"stored_bytes":temp.stat().st_size,

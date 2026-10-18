@@ -341,6 +341,7 @@
     selectSettingsTab(tab);
     renderSettings();
     void window.HDRLibraryCacheSettings?.refresh();
+    void window.HDRDeliverySettings?.refresh();
     openDialog(byId("settings-dialog"), document.querySelector(`[data-settings-tab="${tab}"]`));
   }
 

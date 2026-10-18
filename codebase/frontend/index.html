@@ -1686,6 +1686,8 @@
           <div class="button-row"><button id="library-cache-change" type="button" class="button-secondary">Change folder…</button><button id="library-cache-reveal" type="button" class="button-secondary">Show in Explorer</button><button id="library-cache-portable" type="button" class="button-secondary" hidden>Use portable cache</button><button id="library-cache-clear" type="button" class="button-secondary">Clear cache…</button></div>
           <p class="helper">Each allowance removes its own least recently used files. Full-size pictures never displace thumbnails or saved-grade pictures. Disabled reads existing cache files and saves no new cache files. Your photos and grades are never cleared.</p>
 
+          <label class="checkbox-row"><input id="settings-force-cpu-delivery" type="checkbox" disabled> Force CPU for export, Proof and saved-grade Library pictures</label>
+          <p id="settings-delivery-status" class="helper" aria-live="polite">Loading delivery settings…</p>
           <label class="settings-field">Rendering mode
             <select id="settings-rendering-mode">
               <option value="auto">Auto · Recommended</option>
@@ -1879,6 +1881,7 @@
   <script src="/static/app-dialog.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/status-manager.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/library-cache-settings.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/delivery-settings.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/application-shell.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/path-geometry.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/curve-editor.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

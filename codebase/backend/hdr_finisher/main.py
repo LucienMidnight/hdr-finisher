@@ -401,6 +401,8 @@ media_browser_store = MediaBrowserStore(thumbnail_worker=library_worker)
 app.include_router(create_library_router(library_worker, media_browser_store, store))
 from .batch_export_api import create_batch_router
 app.include_router(create_batch_router(store, desktop_path_grants, bool(desktop_authoring_secret)))
+from .delivery import create_delivery_router
+app.include_router(create_delivery_router())
 import_jobs = ImportJobManager(store, media_browser_store, workers=1)
 atexit.register(import_jobs.close)
 external_proof_tokens: dict[str, tuple[str, float]] = {}

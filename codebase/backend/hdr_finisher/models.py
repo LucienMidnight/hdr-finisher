@@ -1356,6 +1356,8 @@ class ExportSettings(_EncodingSettings):
 
 
 class ExportResponse(BaseModel):
+    renderer: Literal["cpu", "gpu"] = "cpu"
+    fallback_reason: str | None = None
     accepted: bool
     backend: str
     message: str

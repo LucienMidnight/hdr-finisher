@@ -77,6 +77,13 @@ Settings rules (from v1.2 section 5, still in force):
   peak. On Steve's RAWs at 1000 nits, files that overshot by up to 73 nits
   land between 972 and 998.
 - The perceptual comparison helper (`delivery_colour.py`), with tests.
+- A shared force-CPU delivery preference in Settings → Performance, and
+  `HDR_FINISHER_FORCE_CPU_DELIVERY=1` (environment wins). Export, Proof
+  through export, and saved-grade Library workers read the same policy.
+  Preference changes apply to new work without an app restart. Current
+  delivery remains CPU-only with the switch either on or off.
+- Export results now record `renderer` and `fallback_reason`; batch results
+  retain and display them. Saved-grade picture results record them too.
 
 **Not built**
 
@@ -84,8 +91,12 @@ Settings rules (from v1.2 section 5, still in force):
   and Proof still render on the CPU. A 45-photo batch of graded RAWs is
   about 5,800 s, almost all film stock and Denoise at full size. Batch
   export runs one below-normal CPU process per photo.
-- The force-CPU switch (setting and environment variable).
-- Renderer and fallback reason in export results.
+- GPU delivery is stopped at brief step 2: the Grade GPU graph has no
+  delivery resize or output-sharpening stage. Its Detail and scan sharpening
+  are creative stages, not output finishing. No hidden delivery renderer or
+  GPU encoder handoff has landed. Steps 3–5 depend on that shared graph.
+- The small GPU/CPU perceptual and decoded-HDR check cannot run until the
+  GPU delivery path exists; no GPU-delivery accuracy or speed claim yet.
 - The three perceptual comparisons as checks. The helper exists, but
   nothing uses it yet, because the GPU paths don't exist.
 - Proof covers the three HDR formats only.
@@ -94,8 +105,8 @@ Settings rules (from v1.2 section 5, still in force):
 
 1. **GPU delivery.** Brief:
    [codex-brief-gpu-delivery-build-2026-10-18](../../technical/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
-   Order: force-CPU switch, GPU single export, GPU batch, GPU Proof, GPU
-   Library pictures.
+   Force-CPU switch complete. Next: shared GPU output resize/sharpening,
+   GPU single export, GPU batch, GPU Proof, GPU Library pictures.
 2. Replace the old file-side parity allowance (`target × 1.01 + 1`) with
    the zero-upward-allowance check, once GPU delivery exists.
 3. Batch-export metadata follow-ups (shared with Photo Library): bundled
