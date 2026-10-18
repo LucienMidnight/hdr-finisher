@@ -90,6 +90,16 @@ Steve has been asked whether these pictures may use Grade's decoder,
 with slower cold thumbnails, or whether matching stays open. The brief
 stays active until that decision, required checks and Steve's sheet review.
 
+Validation at `a2263fe`: 534 Node checks passed. Full Python: 2285 passed,
+3 skipped, one old RAW-gain expectation subsequently updated; all 53 focused
+checks then passed. Ten slow drivers passed, including RAW import, real-RAW
+preview/export agreement, GPU delivery and full-size Proof/export identity
+in Ultra HDR JPEG, gain-map AVIF and HDR JPEG XL. Four UI drivers failed
+(file-browser state, Proof-size browser closure, thumbnail settings timeout,
+saved-picture refresh response field); thumbnail colour measurements passed.
+No unrelated UI repairs were made and protected photo/project hashes stayed
+unchanged. The Library agreement failure above remains open.
+
 **Affected saved work:** 28 RAW `.hdrfinisher` projects and 56 graded RAW
 `.hdrf` files were identified read-only in HDR Test Images, Play_Raw,
 20261017 badminton, test-photos-delete-later and the two viewport fixtures.

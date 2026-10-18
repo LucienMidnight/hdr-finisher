@@ -81,6 +81,18 @@ on 15/16 SDR comparisons. Steve's decoder decision is pending because
 this brief forbids changing demosaic/reconstruction. Required validation
 and Steve's final visual review remain open; do not archive this brief yet.
 
+Validation at commit `a2263fe`: Node 534 passed. The full Python run had
+2285 passed, 3 skipped and one old RAW pixel expectation; that expectation
+was updated for the approved calibration, then all 53 focused checks passed.
+Ten slow drivers passed, including RAW import, fullscreen Library, real-RAW
+preview/export agreement, GPU delivery and full-size Proof/export identity
+for Ultra HDR JPEG, gain-map AVIF and HDR JPEG XL. Four UI drivers failed:
+file-browser selection state, Proof-size browser closure, thumbnail settings
+checkbox timeout (its colour measurements passed), and saved-picture refresh
+reading an undefined response field. These were recorded without changing
+unrelated UI behavior. Protected source/project hashes remained unchanged.
+Library agreement and Steve's visual judgment remain unresolved.
+
 ## Steps
 
 1. **Measure first, change nothing.** Done October 18: 16 photos, five

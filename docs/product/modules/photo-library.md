@@ -67,6 +67,13 @@ local adjustments, crop and lens corrections are unticked by default.
 
 ## 4. Current state (October 18, 2026)
 
+RAW zero-start validation at `a2263fe`: fullscreen RAW browsing passed.
+Thumbnail colour measurements passed, but that driver's settings checkbox
+timed out; the saved-picture refresh driver failed reading an undefined
+response field. These UI failures remain recorded without unrelated repairs.
+The separate quick RAW decoder still fails Grade agreement on 15/16 photos;
+Steve's decoder decision and visual review remain open in the RAW brief.
+
 **Built**
 
 - Slices 0 to 6 including 2b: docked and pop-out Library, culling marks,
