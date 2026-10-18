@@ -333,3 +333,5 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .grade-paste-dialog summary > .checkbox-row { display: inline-flex !important; }
 .grade-paste-dialog summary > small { margin-left: 8px; }
 .grade-paste-dialog details > .library-ask-body { padding: 8px 18px; }
+
+img:not([src]), img[src=""] { visibility:hidden; }

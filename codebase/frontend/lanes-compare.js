@@ -1,4 +1,5 @@
 async function applyComparisonUrl(url) {
+  els.comparisonImage.style.visibility="hidden";
   try {
     await new Promise((resolve, reject) => {
       els.comparisonImage.onload = () => resolve();
@@ -14,6 +15,7 @@ async function applyComparisonUrl(url) {
   }
   els.comparisonCanvas.style.display = "none";
   els.comparisonImage.style.display = "block";
+  els.comparisonImage.style.visibility="visible";
   return true;
 }
 

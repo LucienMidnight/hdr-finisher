@@ -1123,3 +1123,6 @@ function observeGraphEditorSizes() {
   graphEditorResizeObserver.observe(els.sdrToneEqualizerEditor);
 }
 
+// A failed picture leaves the application surface, never a browser error icon.
+document.addEventListener("error",event=>{if(event.target instanceof HTMLImageElement)event.target.style.visibility="hidden";},true);
+document.addEventListener("load",event=>{if(event.target instanceof HTMLImageElement)event.target.style.visibility="visible";},true);

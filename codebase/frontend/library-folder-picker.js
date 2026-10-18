@@ -69,7 +69,7 @@
           if (!current()) return;
           item.url = URL.createObjectURL(blob);
           image.onload = () => { if (current()) { image.hidden = false; frame.classList.remove("loading"); } };
-          image.onerror = () => { if (current()) { frame.classList.remove("loading"); $("picker-preview-note").textContent = "Preview unavailable."; } };
+          image.onerror = () => { image.hidden=true; if (current()) { frame.classList.remove("loading"); $("picker-preview-note").textContent = "Preview unavailable."; } };
           image.alt = `Preview of ${entry.name}`; image.src = item.url;
           $("picker-preview-note").textContent = `${entry.size == null ? "" : `${Math.round(entry.size / 1024).toLocaleString()} KB · `}${entry.kind_label}`;
           $("picker-preview-hint").textContent = "Temporary browser preview. Photos stay in their folders.";
