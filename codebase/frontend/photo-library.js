@@ -137,6 +137,8 @@
     for (const cell of map.values()) { cell.controller.abort(); cell.element.remove(); }
     map.clear();
   }
+  // Cells on screen now, without the finished cells kept just beyond it.
+  const shownCells = map => [...map.values()].filter(cell => map.shown?.has(cell.photo.path));
   const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.picture_key || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}|${!!photo.picture_updating}`;
   const thumbnails = HDRLibraryThumbnails.create({api, identity:pictureIdentity});
   // One stored thumbnail size, scaled to fit any cell (matches THUMBNAIL_EDGE).
@@ -358,16 +360,22 @@
     }).catch(error => { if (current() && !aborted(error)) removeUnreadable(photo,error); });
     return cell;
   }
+  // Finished cached-picture cells stay built for one screen beyond each edge, so
+  // scrolling back shows them at once. Cells still loading are dropped as before.
   function reconcile(map, start, end, container, position) {
-    const wanted = new Set(state.photos.slice(start, end).map((photo) => photo.path));
+    const span = end - start, keepStart = Math.max(0, start - span), keepEnd = Math.min(state.photos.length, end + span);
+    const kept = (cell, index) => index >= start && index < end || index >= keepStart && index < keepEnd && cell.meta && !cell.fallback;
+    const wanted = new Map(state.photos.slice(keepStart, keepEnd).map((photo, offset) => [photo.path, keepStart + offset]));
+    map.shown = new Set(state.photos.slice(start, end).map(photo => photo.path));
     for (const [path, cell] of map) {
-      if (wanted.has(path)) continue;
+      if (wanted.has(path) && kept(cell, wanted.get(path))) continue;
       cell.controller.abort(); cell.element.remove(); map.delete(path);
     }
-    for (let index = start; index < end; index += 1) {
+    for (let index = keepStart; index < keepEnd; index += 1) {
       const photo = state.photos[index];
       let cell = map.get(photo.path);
       if (cell && (cell.edge !== thumbnailEdge() || cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.identity !== pictureIdentity(photo))) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
+      if (!cell && (index < start || index >= end)) continue;
       if (!cell) { cell = makeCell(photo, container, index); map.set(photo.path, cell); }
       position(cell.element, index);
       const active = state.selection.has(photo.path);
@@ -586,7 +594,7 @@
   });
   void compare.init();
   overlays = HDRLibraryOverlays.create({api,status,active:()=>state.active, surfaces:()=>[
-    ...[...state.cells.values(),...state.filmCells.values()].filter(s=>s.meta).map(s=>({...s,current:()=>state.active&&s.element.isConnected&&!s.controller.signal.aborted})),
+    ...[...shownCells(state.cells),...shownCells(state.filmCells)].filter(s=>s.meta).map(s=>({...s,current:()=>state.active&&s.element.isConnected&&!s.controller.signal.aborted})),
     ...(state.view==="single"&&!compare.enabled()&&state.fitMeta?[{photo:selected(),canvas:$("single-picture"),meta:state.fitMeta,controller:state.single,current:()=>state.active&&state.view==="single"&&!compare.enabled()}]:[]),
     ...(compare.enabled()&&state.view==="single"?compare.surfaces().filter(s=>s.meta).map(s=>({...s,canvas:s.fit,current:()=>state.active&&compare.enabled()&&s.fit.isConnected&&!s.controller.signal.aborted})):[])
   ]});
@@ -1087,7 +1095,7 @@
         }
         // A first saved grade is not yet marked edited in this page. Check only
         // visible pictures as well, so returning from Grade discovers it.
-        const visible = new Set([...state.cells.keys(), ...state.filmCells.keys(), selected()?.path]);
+        const visible = new Set([...shownCells(state.cells), ...shownCells(state.filmCells)].map(cell => cell.photo.path).concat(selected()?.path));
         const paths = state.allPhotos.filter(photo => photo.storage === "database" || photo.edited || visible.has(photo.path)).map(photo => photo.path);
         // Grid order, so the photo top-left on screen is made first.
         const onScreen = state.photos.map(photo => photo.path).filter(path => visible.has(path));
@@ -1270,8 +1278,8 @@
   HDRLibraryStopwatch("ready");
   window.HDRLibraryThumbnailPool = thumbnails;
   window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
-    overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
-    filmVisible: state.filmCells.size, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomScale: state.zoomScale, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
+    overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: shownCells(state.cells).length,
+    filmVisible: shownCells(state.filmCells).length, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomScale: state.zoomScale, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
   (async () => {
     try {
       await api("/api/library/picture-settings", {screen_edge:singleEdge()});

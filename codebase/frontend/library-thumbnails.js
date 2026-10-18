@@ -1,7 +1,8 @@
 /* Native gain-map images: batch metadata, asynchronous decoding and a bounded recent pool. */
 (function(root) {
   'use strict';
-  function create({api, identity, image = () => new Image(), budget = 256 * 1024 ** 2}) {
+  // 512 MiB fits an 8 GB machine (Steve, 2026-10-18).
+  function create({api, identity, image = () => new Image(), budget = 512 * 1024 ** 2}) {
     const entries = new Map(), queued = new Set();
     let timer, polling = false, bytes = 0, wanted = [];
     const client = globalThis.crypto?.randomUUID?.() || String(Math.random());
@@ -23,8 +24,10 @@
         await decoded.decode();
         if (entries.get(entry.id) !== entry) return;
         entry.url = meta.url; entry.image = decoded; entry.meta = meta; entry.ready = true;
-        // Conservative allowance: decoded base + RGB gain map + compositor copies.
-        entry.bytes = decoded.naturalWidth * decoded.naturalHeight * 24 + (meta.url.startsWith('data:') ? meta.url.length * 2 : 0);
+        // Measured October 18 in Electron: a held, off-screen 640 px gain-map image costs
+        // about 4.6 bytes per pixel, mostly its encoded file. On-screen GPU copies belong
+        // to the visible cells and Chromium's own bounded cache, not to this pool.
+        entry.bytes = decoded.naturalWidth * decoded.naturalHeight * 6 + (meta.url.startsWith('data:') ? meta.url.length * 2 : 0);
         bytes += entry.bytes; touch(entry); entry.resolve(entry); trim();
       } catch(error) { entries.delete(entry.id); entry.reject(error); }
     }
@@ -53,11 +56,11 @@
       const id = key(photo, edge); let entry = entries.get(id);
       if (entry) { entry.priority = Math.min(entry.priority,priority); touch(entry); return entry.promise; }
       // Bound queued metadata as well as decoded pixels when the user scrolls fast.
-      if (entries.size >= 256) {
+      if (entries.size >= 512) {
         for (const [oldId, old] of entries) {
           if (old.ready) { entries.delete(oldId); bytes -= old.bytes; }
           else { entries.delete(oldId); queued.delete(old); old.reject(new DOMException('Scrolled past','AbortError')); }
-          if (entries.size < 192) break;
+          if (entries.size < 384) break;
         }
       }
       entry = {id,photo,edge,priority};

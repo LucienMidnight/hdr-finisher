@@ -53,6 +53,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | Dragging photos onto a folder asks first, for now. | Steve, 2026-10-11 |
 | `.hdrfinisher` projects stay out of the Library. | 2026-10-11 |
 | Pause of saved-grade picture work lasts one app session. | 2026-10-18 |
+| **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
 
 **Paste rules (built):** values measured from one photo are never pasted
 (measured highlight peak, matched lens profile, file interpretation,
@@ -76,6 +77,12 @@ local adjustments, crop and lens corrections are unticked by default.
 - Live HDR/SDR switch.
 - Thumbnail cache: gain-map thumbnails, managed folder and settings, batched
   requests, recent pool, read-ahead. One 640 px size per photo (October 18).
+- Scrolling back (October 18): finished cells within one screen of the edge
+  are kept, so they reappear at once. Further back, the 512 MB recent pool
+  answers without a backend request. A held 640 px thumbnail measured about
+  1.2 MB (4.6 bytes per pixel, mostly the encoded file); the pool counts
+  6 bytes per pixel, so it holds about 300 thumbnails. Cells still loading,
+  or showing the GPU-drawn first picture, are not kept.
 - Camera previews first for camera RAWs, then GPU-finished thumbnails
   written to the cache (`6bda55c`, October 18). One real RAW showed its
   camera preview in 60 ms, and its cached thumbnail after a relaunch in
@@ -89,6 +96,13 @@ local adjustments, crop and lens corrections are unticked by default.
   The existing disk picture cache remains and refreshes old CPU entries.
 
 **Known problems**
+
+- **Thumbnail files are large: about 830 KB each** at 640 px (JPEG
+  quality 100, no chroma subsampling, full-size RGB gain map;
+  `library_thumbnail_codec.py`). The 2 GB thumbnail allowance holds only
+  about 2,400 photos, and each file read and held in memory costs more
+  than it needs to. Shrinking them changes pixels, so it needs the
+  perceptual check against the current files.
 
 - **Thumbnails for a whole folder are still too slow.** On the badminton
   folder (372 Sony RAWs on a USB HDD), first pictures measured 3.66 s

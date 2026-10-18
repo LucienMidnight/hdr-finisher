@@ -3803,6 +3803,17 @@
       }
     },
     {
+      "path": "tests/library-scroll-back.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Library scroll-back: finished cells kept one screen beyond the edge; recent pool answers further back within 512 MiB.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
       "path": "tests/library-thumbnail-colour.js",
       "areas": [
         "library",

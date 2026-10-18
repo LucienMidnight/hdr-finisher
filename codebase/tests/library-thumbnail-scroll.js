@@ -89,7 +89,7 @@ const folder = process.env.SCROLL_FOLDER || 'D:\\Photos\\HDR Test Images';
    const q=f=>Math.round(times[Math.floor((times.length-1)*f)]);
    const pool=await frame.evaluate(()=>HDRLibraryThumbnailPool.snapshot());
    const result={pass:pass+1,cells:times.length,median:q(.5),p90:q(.9),max:q(1),pool,slow:measurements.filter(m=>m.ms>300)};results.push(result);console.log(JSON.stringify(result));
-   assert.ok(pool.bytes<=256*1024**2,'Recent decoded pool stays within 256 MiB');
+   assert.ok(pool.bytes<=512*1024**2,'Recent decoded pool stays within 512 MiB');
   }
   fs.writeFileSync(path.join(output,'results.json'),JSON.stringify(results,null,2));
   assert.ok(requests.length > 0, 'Request tracking must observe real Library traffic');
