@@ -175,7 +175,14 @@ class LibraryGrades:
             self._put(path, state)
             log("grade_conflict", photo=path, action="saving paused; both grades retained")
             return True
-        return bool(state.get("conflict"))
+        if state.get("conflict"):
+            # The file holds our last saved grade again, so nothing conflicts any
+            # more. Keep the grade that was briefly there as the previous grade.
+            state["previous_grade"] = state.pop("external", None) or state.get("previous_grade")
+            state["conflict"] = False
+            self._put(path, state)
+            log("grade_conflict_cleared", photo=path, action="file matches the saved grade; other grade kept as previous")
+        return False
 
     def save(self, session_id):
         started = perf_counter()
@@ -305,6 +312,8 @@ class LibraryGrades:
                     result = self.status(session_id)
                     result.update(reload=True, grade=grade)
                     return result
+            elif state.get("conflict"):
+                self._check(path, state, grade)
             return self.status(session_id)
 
     def resolve(self, session_id, choice, expected_external):
@@ -313,8 +322,9 @@ class LibraryGrades:
         with self.store._lock, self.marks._lock:
             state = self._get(path)
             if grade_key(grade) != grade_key(expected_external):
-                self._check(path, state, grade)
-                return {**self.status(session_id), "changed_again": True}
+                if self._check(path, state, grade):
+                    return {**self.status(session_id), "changed_again": True}
+                return self.status(session_id)  # The conflict went away; nothing to choose.
             if choice == "cancel":
                 return self.status(session_id)
             if choice == "both":

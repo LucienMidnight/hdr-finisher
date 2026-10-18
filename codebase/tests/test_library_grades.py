@@ -324,3 +324,23 @@ def test_indexing_many_large_saved_grades_does_not_lock_the_library(setup, tmp_p
     documents = [{"grade": {"exposure": n}, "grade_history": {}} for n in range(45)]
     grades.observe_documents(paths, documents)
     assert [grades._get(path)["indexed_grade"] for path in paths] == [{"exposure": n} for n in range(45)]
+
+
+def test_conflict_clears_when_the_file_returns_to_the_saved_grade(setup):
+    """Steve, October 18, 2026: a stale conflict reopened its dialog on every close."""
+    photo, store, session, marks, grades = setup
+    saved(setup)
+    edit(store, session, 2)
+    document = settings(photo)
+    baseline = deepcopy(document["grade"])
+    external = deepcopy(baseline)
+    external["global_adjustments"]["hdr"]["exposure"] = 3
+    document["grade"] = external
+    outside(photo, document)
+    assert grades.save(str(session.session_id))["conflict"]
+    document["grade"] = baseline
+    outside(photo, document)
+
+    assert not grades.check(str(session.session_id), unsaved=True)["conflict"]
+    assert grades._get(str(photo))["previous_grade"] == external
+    assert "changed_again" not in grades.resolve(str(session.session_id), "mine", external)
