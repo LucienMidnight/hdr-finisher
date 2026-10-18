@@ -111,6 +111,23 @@ and frontend-source support are fast-suite helpers, not standalone drivers.
 Test tooling implementation lives under tests/release/ and is not a driver.
 The test fails for an unlisted driver, missing listed file or duplicate entry.
 
+## Page waits under Electron (October 18, 2026)
+
+The app polls its sidecar for as long as it is open, so Playwright's
+`networkidle` never arrives. `run-in-electron.js` serves every `networkidle`
+wait in `goto`, `reload` and `waitForLoadState` as `load` plus the app's own
+start-up signals (`body[data-ready="true"]` and the Library frame's
+`window.HDRLibrary`). Drivers keep asking for `networkidle`; new drivers may
+do the same or wait on those signals directly. A driver run outside the
+runner, under plain Chromium, still waits for `networkidle` and times out.
+
+Unresolved: opening a large cold folder (about 400 new photos) once dropped
+the Playwright connection to Electron, with Chromium logging "Too large write
+data is pending". That is the DevTools server's 256 MB send buffer filling,
+most likely from request/response events for many picture requests while a
+driver listens to them. Drivers that listen to every request should keep
+cold folders small, or detach their listeners before opening a large one.
+
 ## Known failures
 
 Add a `known-failures.json` entry only for an already documented unresolved
