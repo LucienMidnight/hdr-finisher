@@ -111,6 +111,13 @@ local adjustments, crop and lens corrections are unticked by default.
     SDR ΔE 2000 mean 0.67 / p99.9 19), concentrated in bright highlights.
     Codex's earlier half-size and in-process-encoder trials were also
     removed before they qualified.
+- **Opening a folder** ("Reading folder…") took about 3.4 s for the
+  372-photo badminton folder, after a 25 ms folder read. Each visit rewrote
+  every photo's virtual-copy state, one database write at a time, and
+  re-read settings files several times. Fixed October 18 (`58c0324`):
+  about 0.6 s, with identical listings and database contents. The remaining
+  time is mostly the membership reconcile (about 0.2 s, run twice) and the
+  index update (0.1 s).
 - Library pictures compete with batch export for the GPU and the CPU. The
   October 18 fairness changes in Export and Proof stop them from forcing
   export onto the CPU.
