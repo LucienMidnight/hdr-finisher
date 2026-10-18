@@ -13,6 +13,7 @@ const {
   isProjectPath,
   isSourcePath,
   pathKey,
+  withinGrantedPath,
   safeSuggestedName,
 } = require("./lib/validation");
 const { backendCommand: resolveBackendCommand } = require("./lib/runtime");
@@ -862,15 +863,16 @@ function registerIpc() {
     }
     return results;
   });
-  handle("desktop:reveal-path", async (filePath) => {
+  // Activity in the Library window can reveal a finished batch too.
+  handleWindow("desktop:reveal-path", async (_record, filePath) => {
     const resolved = path.resolve(String(filePath || ""));
-    if (!grantedExportPaths.has(pathKey(resolved))) throw new Error("Only exports created in this run can be revealed.");
+    if (!withinGrantedPath(resolved, grantedExportPaths)) throw new Error("Only exports created in this run can be revealed.");
     shell.showItemInFolder(resolved);
     return true;
   });
   handle("desktop:open-path", async (filePath) => {
     const resolved = path.resolve(String(filePath || ""));
-    if (!grantedExportPaths.has(pathKey(resolved))) throw new Error("Only exports created in this run can be opened.");
+    if (!withinGrantedPath(resolved, grantedExportPaths)) throw new Error("Only exports created in this run can be opened.");
     return shell.openPath(resolved);
   });
   handle("desktop:open-proof", async (url) => {
