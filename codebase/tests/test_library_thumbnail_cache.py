@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from hdr_finisher.library_cache import LibraryCache
 from hdr_finisher.library_thumbnail_codec import encode
-from hdr_finisher.library_thumbnails import build, thumbnail_key, Thumbnails
+from hdr_finisher.library_thumbnails import build, THUMBNAIL_EDGE, thumbnail_key, Thumbnails
 from hdr_finisher.library_kept import jpeg_renditions
 from hdr_finisher.color import linear_srgb_to_acescg, acescg_to_linear_srgb
 
@@ -88,7 +88,7 @@ def test_cached_hit_returns_while_a_miss_is_still_queued(tmp_path):
     for p in sources:p.write_bytes(b'photo')
     service=Thumbnails(tmp_path/'profile',Worker(),Marks())
     service.managed.prepare(); folder=service.managed.directory('library-thumbnails');folder.mkdir()
-    key=thumbnail_key(sources[0],360);(folder/(key+'.jpg')).write_bytes(b'cached')
+    key=thumbnail_key(sources[0],THUMBNAIL_EDGE);(folder/(key+'.jpg')).write_bytes(b'cached')
     result=service.batch(list(map(str,sources)),360)
     assert result['ready'][0]['path']==str(sources[0])
     assert result['pending']==[str(sources[1])]
@@ -136,3 +136,20 @@ def test_initial_lookup_never_schedules_a_cpu_render(tmp_path):
     result = service.batch([str(source)], 360, populate=False)
     assert result == {'ready': [], 'pending': [str(source)], 'errors': []}
     assert not service.jobs
+
+
+def test_any_grid_width_finds_the_one_cached_picture(tmp_path):
+    class Marks:
+        def source_path(self,p):return Path(p)
+    class Worker:
+        def submit_library(self,*args,**kwargs):return 'job',Future()
+        def cancel(self,job):pass
+    source=tmp_path/'a.png';source.write_bytes(b'photo')
+    service=Thumbnails(tmp_path/'profile',Worker(),Marks())
+    service.managed.prepare(); folder=service.managed.directory('library-thumbnails');folder.mkdir()
+    service.batch([str(source)],444)
+    made=service.jobs.copy()
+    assert len(made)==1
+    (folder/(next(iter(made))+'.jpg')).write_bytes(b'cached')
+    for width in (360,391,520,1440):
+        assert service.batch([str(source)],width)['ready'][0]['cache_hit']

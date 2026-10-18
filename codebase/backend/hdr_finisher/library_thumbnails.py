@@ -16,6 +16,11 @@ from .library_pictures import LibraryPictureCache, PICTURE_VERSION, decode_pictu
 from .models import AdjustmentState, ExportSettings, PreviewKind
 
 
+# One stored size per photo; the grid scales it to any cell size. Keying on
+# the cell's exact width missed the cache whenever the window changed.
+THUMBNAIL_EDGE = 640
+
+
 def thumbnail_key(path, edge, grade_identity='', kept_key=''):
     source = Path(path).resolve(strict=True)
     stat = source.stat()
@@ -145,6 +150,7 @@ class Thumbnails:
 
     def batch(self, paths, edge, priority=10, client="", wanted=None, populate=True):
         ready, pending, errors, requests = [], [], [], []
+        edge = THUMBNAIL_EDGE
         with self.lock:
             if client and wanted is not None:
                 self.clients[client] = (monotonic(), {(p,edge) for p in wanted})

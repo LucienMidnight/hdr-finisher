@@ -139,11 +139,8 @@
   }
   const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.picture_key || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}|${!!photo.picture_updating}`;
   const thumbnails = HDRLibraryThumbnails.create({api, identity:pictureIdentity});
-  let largestGridWidth = 1600;
-  const thumbnailEdge = () => {
-    if (grid.clientWidth) largestGridWidth = grid.clientWidth;
-    return Math.min(1440, Math.ceil((HDRLibraryLayout.gridLayout(state.photos.length, largestGridWidth, grid.clientHeight, 0, 360).cellWidth - 17) * (window.devicePixelRatio || 1)));
-  };
+  // One stored thumbnail size, scaled to fit any cell (matches THUMBNAIL_EDGE).
+  const thumbnailEdge = () => 640;
   const cacheChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('hdr-library-cache') : null;
   cacheChannel?.addEventListener('message', () => { thumbnails.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); });
   window.addEventListener("message",event => { if(event.origin === location.origin && event.data?.type === "hdr-library-cache-changed") { thumbnails.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); } });
