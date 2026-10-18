@@ -73,12 +73,17 @@ Steve's yardstick is Windows Explorer showing the same folder.
    views to match Grade, including the source decoder and full-source
    measurements, and what that would cost in speed, memory and reuse.
    Keep their current quick decoder during this exploration.
+10. **GPU-first development (Steve's priority follow-up).** Map Grade's
+    demosaic, highlight repair, camera RGB development, import gamut handling,
+    full-source HDR analysis and reduction onto existing GPU work or required
+    ports. Keep the maths and existing perceptual limits. Give clearly labelled
+    rough 42 MP GPU timing estimates or an outside-product prototype.
 
 ## What to deliver
 
 - A findings report at `output/library-speed-exploration/findings.md`,
   with the map, the stage tables, the floor, the repeated work and your
-  answers to 5 to 9. Mark every number as measured or estimated, and say
+  answers to 5 to 10. Mark every number as measured or estimated, and say
   whether the operating system's disk cache was cold or warm.
 - Your recommendation: the three changes you think would close the
   largest gaps, with rough gains, risks and what each would touch.
@@ -127,3 +132,24 @@ resource-use measurements remain. Interrupted UI runs are not acceptance
 results. Temporary probes live under output; no speed implementation was
 made. Fast checks for the preceding Fuji change: 534 JavaScript passed;
 2297 Python passed, 3 skipped.
+
+## Bounded follow-up outcome — stopped as requested
+
+The report now includes question 10's stage map and estimates, an unbuffered
+70-photo embedded-JPEG floor on the original USB HDD, and three sequential idle
+GPU saved-grade productions with stage medians/p90. The GPU six-stage estimate
+is 0.23–1.18 s excluding file/unpack/upload and other listed work; it has not
+been prototyped or qualified. Preview floor was 54 ms median / 79 ms p90 with
+Windows' data cache bypassed and drive cache uncontrolled. Saved production
+was 17.5 s median / 30.0 s p90 including first-renderer warm-up.
+
+Explorer observation was blocked by the computer-use app-server launch failure.
+After all three saved files completed, the display attempt again lost the
+Electron window. Neither Explorer timing nor save-to-on-screen acceptance is
+claimed. Loaded-grid utilisation and peak-memory work were skipped as Steve
+requested. Whole-screen/cached-launch qualification also remains open from the
+checkpoint. No more runs or implementation are authorised by this continuation.
+Slow measurement runtime for the continuation was about four minutes, within
+the 30-minute total ceiling including the checkpoint. Product behaviour is
+unchanged; documentation and probe summaries were checked. The brief remains
+active to preserve the explicit gaps; no acceptance target was relaxed.

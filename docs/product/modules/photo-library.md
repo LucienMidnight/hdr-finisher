@@ -218,8 +218,16 @@ fails as recorded above; export, Proof and their limits were not changed.
    clipping. Source development and repeated cache-directory scans are
    measured costs. Single/full-screen remain on the quick decoder; matching
    Grade requires its source development and full-source measurements.
-   No speed or codec behaviour changed. Whole-screen and idle saved-picture
-   timings remain unqualified after interrupted UI runs; the brief stays open.
+   Bounded follow-up mapped all six full-quality RAW image stages to GPU ports
+   preserving the maths. Estimated GPU-resident subtotal is 0.23–1.18 s for
+   42 MP, excluding file/unpack/upload and other work; not prototyped or built.
+   OS-cache-bypassed USB embedded-preview floor: 54 ms median / 79 ms p90.
+   Three idle GPU saved-grade productions: 17.5 s median / 30.0 s p90 including
+   first-renderer warm-up. Explorer observation was blocked by computer-use
+   startup; saved-picture display lost the Electron window, so on-screen
+   acceptance remains unqualified. Loaded-grid utilisation and peak-memory
+   studies are deferred by Steve. No speed or codec behaviour changed. Work
+   stopped as requested; the brief retains the explicit gaps.
 10. **Polish pass** (held until the features are done):
     - Slice 4 reminders: test the blocked-shadows warning on dark and noisy
       RAWs; Steve to review the exposure-warning wording.
