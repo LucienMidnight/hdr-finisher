@@ -2,11 +2,23 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
+  document.addEventListener("error",event=>{if(event.target instanceof HTMLImageElement)event.target.style.visibility="hidden";},true);
+  document.addEventListener("load",event=>{if(event.target instanceof HTMLImageElement)event.target.style.visibility="visible";},true);
   const library = $("library"), grid = $("library-grid"), space = $("grid-space"), film = $("filmstrip");
   const state = { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, zoomScale: 1, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
     pins: [], cells: new Map(), filmCells: new Map(), size: 190,
     selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0,
     folderSelection: new Set(), folderAnchor: "", collection: null, smartFilters: null, allFacts: false, labelNames: {}, indexing: null };
+  const sortKey="hdr-finisher:library-source-sorts";
+  function sourceSortKey(place) {
+    if(place.kind)return `${place.kind}:${place.name}`;
+    const path=(place.path||"").replaceAll("\\","/").replace(/\/$/,"").toLowerCase();
+    const pin=state.pins.map(p=>p.path.replaceAll("\\","/").replace(/\/$/,"").toLowerCase()).filter(p=>path===p||path.startsWith(p+"/")).sort((a,b)=>b.length-a.length)[0];
+    return `folder:${pin||path}`;
+  }
+  function readSorts(){try{return JSON.parse(localStorage.getItem(sortKey)||"{}");}catch{return {};}}
+  function saveSourceSort(){const values=readSorts();values[sourceSortKey(state.collection||{path:state.path})]={sort:state.sort,descending:state.descending};localStorage.setItem(sortKey,JSON.stringify(values));}
+  function restoreSourceSort(place){const saved=readSorts()[sourceSortKey(place)]||{sort:"time",descending:false};state.sort=saved.sort;state.descending=!!saved.descending;paintSort();}
   const standalone = parent === window, libraryDesktop = standalone ? window.hdrFinisherDesktop : null;
   const navigation = HDRLibraryNavigation.create({ root: document.querySelector(".library-nav"), refresh: () => refreshPins() });
   const applyTheme = theme => { document.documentElement.dataset.theme = ["default-dark", "default-light", "studio-gray"].includes(theme) ? theme : "default-dark"; };
@@ -125,7 +137,7 @@
     for (const cell of map.values()) { cell.controller.abort(); cell.element.remove(); }
     map.clear();
   }
-  const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}|${!!photo.picture_updating}`;
+  const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.picture_key || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}|${!!photo.picture_updating}`;
   const thumbnails = HDRLibraryThumbnails.create({api, identity:pictureIdentity});
   let largestGridWidth = 1600;
   const thumbnailEdge = () => {
@@ -298,7 +310,7 @@
     const element = document.createElement("div");
     element.className = "library-cell loading"; element.setAttribute("role", "option"); element.dataset.path = photo.path;
     const frame = document.createElement("div"); frame.className = "picture-frame";
-    const canvas = document.createElement("img"); canvas.alt = photo.name; frame.append(canvas);
+    const canvas = document.createElement("img"); canvas.alt = ""; canvas.style.visibility="hidden"; frame.append(canvas);
     const name = document.createElement("span"); name.className = "name"; name.textContent = photo.name;
     element.append(frame, name); container.append(element);
     const cell = { element, canvas, controller: new AbortController(), photo, index, edge:thumbnailEdge(), identity:pictureIdentity(photo) };
@@ -602,7 +614,7 @@
     if (!state.active || state.view !== "single") return;
     if (compare.enabled()) { void compare.show(); return; }
     const photo = selected(), edge = singleEdge();
-    const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}` : "";
+    const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.picture_key || ""}|${photo.bytes}|${photo.mtime_ns}` : "";
     if (identity && identity === state.singleIdentity && !state.single?.signal.aborted) { positionZoom(); return; }
     state.singleIdentity = identity;
     state.single?.abort(); state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; state.fitMeta = null; $("native-picture").hidden = true;
@@ -761,6 +773,7 @@
   const browseCollection = (kind, name) => openPlace({ kind, name });
   async function openPlace(place) {
     const path = place.path || "";
+    restoreSourceSort(place);
     state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells);
     state.collection = place.kind ? { kind: place.kind, name: place.name } : null; state.smartFilters = null; albums.setActive(place.kind === "album" ? place.name : ""); smart.setActive(place.kind === "smart" ? place.name : "");
     if (path) state.lastFolder = path;  // Where a deleted album's view returns to.
@@ -994,8 +1007,8 @@
     film.scrollLeft = anchor * FILM_PITCH;
   }
   paintSort(); paintSize();
-  $("sort-menu").addEventListener("click", event => { const item = event.target.closest("[data-sort]"); if (!item) return; state.sort = item.dataset.sort; paintSort(); applyQuery(); });
-  $("sort-dir").addEventListener("click", () => { state.descending = !state.descending; paintSort(); applyQuery(); });
+  $("sort-menu").addEventListener("click", event => { const item = event.target.closest("[data-sort]"); if (!item) return; state.sort = item.dataset.sort; saveSourceSort(); paintSort(); applyQuery(); });
+  $("sort-dir").addEventListener("click", () => { state.descending = !state.descending; saveSourceSort(); paintSort(); applyQuery(); });
   $("raw-only").addEventListener("click", () => { state.filters.raw = !state.filters.raw; $("raw-only").setAttribute("aria-pressed", String(!!state.filters.raw)); applyQuery(); });
   $("filter-clear").addEventListener("click", () => { state.filters = { rules: [], raw: state.filters.raw }; ruleFilters.render(); applyQuery(); });
   const ruleFilters = HDRLibraryFilters.create({ bar: $("filter-rules"), addButton: $("filter-add"), photos: () => state.allPhotos,
@@ -1073,8 +1086,8 @@
           const row = byPath.get(photo.path);
           // A photo that has not loaded yet has no pictureCurrent. Treat missing as
           // false, or every newly shown thumbnail is thrown away and drawn twice.
-          if (row && ((row.grade_identity || "") !== (photo.grade_identity || "") || !!row.pictureCurrent !== !!photo.pictureCurrent || !!row.picture_updating !== !!photo.picture_updating)) {
-            Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity, pictureCurrent: row.pictureCurrent, picture_updating: row.picture_updating });
+          if (row && ((row.grade_identity || "") !== (photo.grade_identity || "") || (row.picture_key || "") !== (photo.picture_key || "") || !!row.pictureCurrent !== !!photo.pictureCurrent || !!row.picture_updating !== !!photo.picture_updating)) {
+            Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity, picture_key: row.picture_key, pictureCurrent: row.pictureCurrent, picture_updating: row.picture_updating });
             for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }
             changed = true;
           }
