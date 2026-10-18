@@ -483,7 +483,11 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     # background scan never queues ahead of the folder the user just clicked.
     Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()
     Thread(target=decode, args=("check",), name="hdr-library-check", daemon=True).start()
-    Thread(target=decode, args=("kept",), name="hdr-library-kept", daemon=True).start()
+    # Two saved-grade picture lanes: one photo's CPU source preparation
+    # overlaps the previous photo's GPU render and encode. Each holds one
+    # full photo; the shared GPU queue still renders one picture at a time.
+    for index in range(2):
+        Thread(target=decode, args=("kept",), name=f"hdr-library-kept-{index}", daemon=True).start()
     # Exactly one CPU gain-map producer; never occupies a visible decode lane.
     Thread(target=decode, args=("thumbnail",), name="hdr-library-thumbnail", daemon=True).start()
     reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1, "picture_workers": 6, "index_workers": 1})

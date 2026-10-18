@@ -1,7 +1,10 @@
-"""Durable latest-grade picture work; only one background item is dispatched."""
+"""Durable latest-grade picture work; up to PARALLEL_PICTURES items are dispatched."""
 from threading import Event, Thread
 import time
 
+
+# Saved-grade pictures made at the same time (see library_worker kept lanes).
+PARALLEL_PICTURES = 2
 
 class PictureQueue:
     def __init__(self, kept):
@@ -60,11 +63,15 @@ class PictureQueue:
         while not self.stop.wait(.25):
             if self.paused or self.kept._closed: continue
             with self.kept._lock:
-                if self.kept.jobs or self.kept._requested: continue
+                # Two in flight, matching the helper's two saved-picture lanes:
+                # one prepares its source while the other renders and encodes.
+                if len(self.kept.jobs) >= PARALLEL_PICTURES or self.kept._requested: continue
+                running=set(self.kept.jobs)
             with self.marks._lock: rows=self.marks._query('SELECT path,grade_id FROM picture_jobs')
             order={path:index for index,path in enumerate(self.visible)}
             rows=sorted(rows,key=lambda row:order.get(row[0],len(order)))
             for path,grade_id in rows:
+                if path in running: continue
                 if time.monotonic()<self.kept._retry_after.get(path,0): continue
                 try:
                     current=self.kept.request(path)
