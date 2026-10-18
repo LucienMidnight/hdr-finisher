@@ -1,4 +1,4 @@
-"""Disposable scene-linear library pictures. No Grade import/correction route."""
+"""Disposable Library pictures; RAW thumbnails share Grade's source decode."""
 from __future__ import annotations
 
 from collections import OrderedDict
@@ -26,7 +26,7 @@ from .models import AdjustmentState
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
-PICTURE_VERSION = "library-scene-raw-zero-v3"
+PICTURE_VERSION = "library-scene-raw-grade-thumbnail-v4"
 CACHE_LIMIT_BYTES = 2 * 1024**3
 _CACHE_LOCKS = [RLock() for _ in range(64)]
 _TRIM_LOCK = RLock()
@@ -313,6 +313,14 @@ def decode_picture(path, edge, quality):
                 return linear_dng_picture(path, inspection, edge)
             if inspection.route != DngRoute.MOSAICED_RAW_DNG:
                 raise ValueError("This DNG cannot be read by Grade.")
+        if quality == "grade-thumbnail":
+            pixels, descriptor, metadata, analysis, reference = loader.load_image(path)
+            grade = starting_adjustments(analysis, reference)
+            return reduce_picture(pixels, edge), reduce_picture(reference, edge) if reference is not None else None, {
+                "route": "grade-raw-thumbnail", "raw_input": True,
+                "starting_look": grade.model_dump(mode="json"),
+                "raw_start_brightness": metadata.get("raw_start_brightness"),
+                "source_width": pixels.shape[1], "source_height": pixels.shape[0]}
         import_started = perf_counter()
         import rawpy
         log("picture_decoder_import", path=str(path), duration_ms=(perf_counter()-import_started)*1000)

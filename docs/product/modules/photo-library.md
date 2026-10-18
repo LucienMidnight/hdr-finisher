@@ -71,8 +71,21 @@ RAW zero-start validation at `a2263fe`: fullscreen RAW browsing passed.
 Thumbnail colour measurements passed, but that driver's settings checkbox
 timed out; the saved-picture refresh driver failed reading an undefined
 response field. These UI failures remain recorded without unrelated repairs.
-The separate quick RAW decoder still fails Grade agreement on 15/16 photos;
-Steve's decoder decision and visual review remain open in the RAW brief.
+Steve subsequently approved Grade's decoder/full-source measurements for
+unedited RAW grid/filmstrip thumbnails and their kept pictures. The camera
+preview still shows first. Single/fullscreen retain the quick RAW/GPU route
+for the speed exploration; saved-grade pictures already use Grade's decoder.
+Five badminton photos measured cold visible median 4.64 s / p90 4.78 s,
+versus quick-route 0.55 s / 2.54 s (added 4.09 s / 2.25 s). Camera preview
+median 34 ms; kept by 4.86 s / 4.93 s. Application caches were empty; Windows'
+file cache was not flushed. No speed optimization was attempted.
+All 16 RAW comparison sources now pass SDR/HDR Grade agreement before
+thumbnail JPEG compression. The unchanged kept JPEG transport passes 7/16
+SDR and 14/16 HDR; compression agreement remains open, separately from the
+resolved source decoder mismatch. See Import and RAW for the limits/results.
+Follow-up checks: 534 Node / 2291 Python passed (3 skipped), plus the
+five-photo Electron route/render/keep measurement. Kept JPEG agreement still
+fails as recorded above; export, Proof and their limits were not changed.
 
 **Built**
 
@@ -144,10 +157,11 @@ Steve's decoder decision and visual review remain open in the RAW brief.
 - Library pictures compete with batch export for the GPU and the CPU. The
   October 18 fairness changes in Export and Proof stop them from forcing
   export onto the CPU.
-- Camera RAW starts at Exposure 0 with the shared Grade starting state,
+- Camera RAW grid/filmstrip thumbnails start at Exposure 0 with Grade's state,
   the approved −0.8 EV calibration and documented file brightness. Its
-  separate quick decode still fails the agreed perceptual Grade-match
-  limits; the decoder decision and final review remain open (Import and RAW).
+  grid/filmstrip thumbnail decode now uses Grade and full-source measurements.
+  Single/fullscreen quick decoding remains deferred to the speed exploration;
+  final visual review remains open (Import and RAW).
   Non-RAW starts are unchanged. Unedited and saved-grade cache versions
   invalidate pictures from the previous RAW start.
 

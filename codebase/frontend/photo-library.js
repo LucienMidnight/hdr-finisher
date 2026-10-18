@@ -331,13 +331,14 @@
       void (async () => {
         let prepared = null;
         if (rawTypes.has(photo.type)) {
-          const preview = await api("/api/library/picture", {path:photo.path, edge:cell.edge, quality:"fast", priority:5}, cell.controller.signal);
+          const preview = await api("/api/library/picture", {path:photo.path, edge:cell.edge, quality:"fast", purpose:"thumbnail", priority:5}, cell.controller.signal);
           if (!current()) return;
           if (preview.url) {
             canvas.src = preview.url; await canvas.decode();
             if (!current()) return;
             canvas.style.visibility = ""; element.classList.remove("loading");
             HDRLibraryStopwatch("camera_preview_shown", {path:photo.path,duration_ms:performance.now()-started});
+            prepared = api("/api/library/picture", {path:photo.path, edge:cell.edge, quality:"quick", purpose:"thumbnail", priority:10}, cell.controller.signal);
           } else prepared = Promise.resolve(preview);
         }
         const meta = await loadAndShow(photo, cell.edge, fallback, cell.controller, current, 10, prepared);

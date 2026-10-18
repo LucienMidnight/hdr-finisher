@@ -11,6 +11,40 @@ from hdr_finisher.library_pictures import LibraryPictureCache, SIDECAR_SUFFIX, p
 from hdr_finisher.library_worker import LibraryWorker
 
 
+def test_raw_thumbnail_keeps_grade_pixels_and_full_source_start(tmp_path, monkeypatch):
+    from hdr_finisher import library_pictures as pictures
+    from hdr_finisher.analysis import classify_hdr
+    from hdr_finisher.import_defaults import starting_adjustments
+    source = tmp_path / "photo.ARW"
+    source.write_bytes(b"read-only fixture")
+    pixels = np.full((80, 160, 3), .18, dtype=np.float32)
+    pixels[1, 1] = 20
+    analysis = classify_hdr(pixels, {}, ".arw")
+    expected = starting_adjustments(analysis).model_dump(mode="json")
+    calls = []
+    def load(path):
+        calls.append(path)
+        return pixels, None, {"raw_input": True}, analysis, None
+    monkeypatch.setattr(pictures.loader, "load_image", load)
+    cache = LibraryPictureCache(tmp_path / "cache")
+    result = cache.build(source, 64, "grade-thumbnail")
+    assert result["route"] == "grade-raw-thumbnail"
+    assert result["adjustments"] == expected
+    with np.load(cache.file(result["key"])) as stored:
+        np.testing.assert_array_equal(stored["pixels"], pictures.reduce_picture(pixels, 64).astype(np.float16))
+    assert cache.build(source, 64, "grade-thumbnail")["cache_hit"]
+    assert len(calls) == 1
+    assert source.read_bytes() == b"read-only fixture"
+
+
+def test_raw_camera_placeholder_does_not_load_grade(tmp_path, monkeypatch):
+    from hdr_finisher import library_pictures as pictures
+    source = tmp_path / "photo.ARW"
+    monkeypatch.setattr(pictures.loader, "load_image", lambda *_: pytest.fail("Placeholder decoded Grade"))
+    monkeypatch.setattr(pictures, "embedded_picture", lambda *_: np.ones((4, 8, 3), dtype=np.float32))
+    assert pictures.decode_picture(source, 64, "fast")[2]["route"] == "embedded-placeholder"
+
+
 def photo(tmp_path, name="photo.png"):
     path = tmp_path / name
     path.parent.mkdir(parents=True, exist_ok=True)

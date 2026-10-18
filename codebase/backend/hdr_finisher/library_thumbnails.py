@@ -45,16 +45,18 @@ def build(root, path, edge, key, kept=None, cancelled=None):
             hdr, sdr, _ = decode_avif(Path(kept['file']))
         hdr, sdr = reduce_picture(hdr, edge), reduce_picture(sdr, edge)
     else:
+        from .library_raw import camera_raw
+        quality = 'grade-thumbnail' if camera_raw(path) else 'quick'
         if enabled:
             cache = LibraryPictureCache(root)
-            meta = cache.build(path, edge, 'quick', getattr(cancelled, 'cancelled', cancelled))
+            meta = cache.build(path, edge, quality, getattr(cancelled, 'cancelled', cancelled))
             check_cancelled(cancelled)
             with np.load(cache.file(meta['key']), allow_pickle=False) as stored:
                 pixels = stored['pixels'].astype(np.float32)
                 reference = stored['reference'].astype(np.float32) if 'reference' in stored else None
             adjustments = AdjustmentState.model_validate(meta['adjustments'])
         else:
-            pixels, reference, meta = decode_picture(Path(path), edge, 'quick')
+            pixels, reference, meta = decode_picture(Path(path), edge, quality)
             starting = meta.pop('starting_look', None)
             adjustments = AdjustmentState.model_validate(starting) if starting else default_look(pixels, reference, meta.pop('raw_input', False), Path(path).suffix.lower())
         adjustments.hdr.highlight_compression_target_nits = 1000

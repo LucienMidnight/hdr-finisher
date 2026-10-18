@@ -76,10 +76,27 @@ versions. The final 16-photo sheet includes DSCF4011 and uses finished code.
 Fuji meaning/sign was confirmed independently in darktable's documented
 DR100/200/400 tests, not inferred from DSCF4011.
 
-The separate quick Library decoder fails the agreed Grade-match limits
-on 15/16 SDR comparisons. Steve's decoder decision is pending because
-this brief forbids changing demosaic/reconstruction. Required validation
-and Steve's final visual review remain open; do not archive this brief yet.
+Steve approved Grade's existing decoder and full-source measurements for
+unedited RAW grid/filmstrip thumbnails and their kept pictures, with the
+camera preview first. This explicitly overrides the decoder constraint for
+those thumbnails only. Single/fullscreen retain the separate quick RAW/GPU
+decoder for the speed exploration; saved-grade pictures already use Grade.
+Cold visible thumbnails on five badminton photos: median 4.64 s / p90 4.78 s,
+versus quick-route 0.55 s / 2.54 s; added 4.09 s / 2.25 s. Camera preview
+median 34 ms; kept by median 4.86 s / p90 4.93 s. Application caches were empty,
+Windows' file cache was not flushed, and no speed optimization was attempted.
+Steve's final visual review remains open; do not archive this brief yet.
+
+Follow-up validation: all 16 Grade-decoded thumbnail sources pass the
+agreed SDR/HDR limits after scene-cache storage. The unchanged kept JPEG
+transport passes 7/16 SDR and 14/16 HDR; compression agreement remains open
+(worst SDR p99.9 3.60; HDR mean 1.79 / p99.9 21.34). The decoder change
+does not modify this codec. The five-photo Electron timing check confirmed
+camera preview, Grade-only thumbnail routing, unchanged quick browse routing,
+GPU display and successful keeping of the compressed pictures.
+Fast follow-up checks: 534 Node and 2291 Python passed, 3 skipped. The
+16-photo scene comparison passed; its kept JPEG comparison failed as above.
+Export/Proof output and agreed tolerances were not changed by this follow-up.
 
 Validation at commit `a2263fe`: Node 534 passed. The full Python run had
 2285 passed, 3 skipped and one old RAW pixel expectation; that expectation

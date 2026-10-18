@@ -64,7 +64,7 @@ gain-map decoding, metadata panel, import progress and cancel.
 −0.8 EV linear calibration for every camera RAW. No scene meter, starting
 curve, contrast preset or camera-style rendering is added. HDR and SDR
 Exposure start at 0; source peak measurements follow calibrated pixels.
-Grade and Library use one starting-adjustment implementation. Non-camera
+Grade and Library thumbnails use one starting-adjustment implementation. Non-camera
 starts, including linear DNG and authored SDR, retain their existing behavior.
 
 Fuji RAF tag `RawExposureBias` (0x9650) is read as its signed rational and
@@ -82,13 +82,34 @@ The finished-code 16-photo comparison, including DSCF4011, is at
 `output/raw-start-measure/comparison.html`; camera-JPEG brightness is for
 Steve's visual judgment, not an EV pass/fail threshold.
 
-**Validation still open:** the existing quick Library RAW decoder fails
-the agreed Grade-match limits on 15/16 comparison photos (SDR ΔE 2000
-mean <1, p99.9 ≤3; HDR ΔE ITP same limits). Sharing neutral defaults does
-not remove its different demosaic/reconstruction and source measurements.
-Steve has been asked whether these pictures may use Grade's decoder,
-with slower cold thumbnails, or whether matching stays open. The brief
-stays active until that decision, required checks and Steve's sheet review.
+**Thumbnail decoder decision (October 18):** Steve approved Grade's decoder
+and full-source measurements for unedited RAW grid/filmstrip thumbnails and
+their kept pictures. These explicitly request a separate thumbnail route;
+camera JPEG preview still appears first, then Grade-decoded pixels render
+on the GPU and are kept. Single/fullscreen browsing retains its separate
+quick RAW/GPU decoder, including its existing differences, for the speed
+exploration. Saved-grade pictures already use Grade's decoder.
+
+Cold sequential thumbnails on five badminton photos, with empty application
+caches and Windows' file cache left alone: visible median 4.64 s / p90 4.78 s,
+versus quick-route 0.55 s / 2.54 s; added 4.09 s / 2.25 s. Camera preview
+median 34 ms; finished thumbnail kept by median 4.86 s / p90 4.93 s. No speed
+optimization was attempted. The agreed perceptual limits remain SDR ΔE 2000
+and HDR ΔE ITP mean <1, p99.9 ≤3; Steve's final sheet review remains open.
+
+Finished-source validation: all 16 comparison photos pass both SDR and HDR
+limits after scene-cache storage, using Grade's exact starting state. The
+unchanged kept gain-map JPEG transport passes 7/16 SDR and 14/16 HDR; nine
+SDR and two HDR photos exceed the limits after compression. Worst SDR
+p99.9 is 3.60; worst HDR mean is 1.79 and p99.9 is 21.34. This remaining
+encoding limitation is recorded; the thumbnail codec was not changed in
+the decoder task. Source decoding and the kept JPEG must not be described
+as equivalent validation results.
+
+Follow-up checks: 534 Node and 2291 Python passed (3 skipped); the Electron
+five-photo thumbnail routing/render/keep measurement passed. The separate
+16-photo comparison passed every scene-cache result but failed the kept
+JPEG results listed above. No export/Proof code or tolerances changed.
 
 Validation at `a2263fe`: 534 Node checks passed. Full Python: 2285 passed,
 3 skipped, one old RAW-gain expectation subsequently updated; all 53 focused
@@ -120,9 +141,10 @@ outside this camera-RAW change. No source/project/sidecar was rewritten.
 
 ## 6. Open work, in order
 
-1. **Finish validation of the zero RAW start:** resolve the quick Library
-   decoder mismatch, run the required RAW/export/Proof checks and obtain
-   Steve's visual review of the final sheet. Priority 3; strict RAW testing.
+1. **Finish validation of the zero RAW start:** obtain Steve's visual review
+   of the final sheet. Kept thumbnail JPEG compression still exceeds the
+   agreed perceptual limits on some photos. The unchanged quick
+   Single/fullscreen decoder is deferred to the speed exploration.
 2. Linux mounted drives in Locations.
 3. Unrecognised TIFF colour profiles: ask, or say clearly what was assumed.
 4. Source workflow checks (Photoshop EXR, GIMP, Adobe and DxO linear DNG)

@@ -96,6 +96,7 @@ class PictureRequest(BaseModel):
     path: str
     edge: int = Field(default=320, ge=64, le=2560)
     quality: Literal["fast", "quick"] = "quick"
+    purpose: Literal["browse", "thumbnail"] = "browse"
     priority: int = Field(default=10, ge=0, le=100)
 
 
@@ -708,6 +709,15 @@ def create_library_router(worker, browser, store=None):
             await run_in_threadpool(kept.ensure, command.path)
         command.path = str(marks.source_path(command.path))
         if await run_in_threadpool(camera_raw, command.path):
+            if command.purpose == "thumbnail":
+                if command.quality == "fast":
+                    from .library_pictures import camera_preview
+                    try:
+                        return await run_in_threadpool(camera_preview, command.path, command.edge)
+                    except Exception as error:
+                        log("camera_preview_unavailable", path=command.path, reason=str(error))
+                return await helper_result(request, "picture", path=command.path,
+                    edge=command.edge, quality="grade-thumbnail", priority=command.priority)
             if command.edge < 1280:
                 cached = await run_in_threadpool(raw_thumbnails.cached, command.path)
                 if cached:
