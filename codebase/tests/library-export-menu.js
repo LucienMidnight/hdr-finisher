@@ -81,6 +81,17 @@ for (const photo of photos) fs.copyFileSync(path.join(root,'tests','fixtures','s
     assert.equal(await page.locator('.batch-photo[aria-selected="true"]').count(),3);
     assert.equal(await page.locator('#batch-run').isVisible(),true);
     assert.ok(await page.locator('#export-format option').count()>0,'format choices without a Grade photo');
+    // Guarantee HDR peak: off by default, offered only for HDR formats, carried in the export settings.
+    await page.locator('#export-format').selectOption('jpeg_ultrahdr');
+    await page.locator('#export-guarantee-peak-field').evaluate(el=>el.closest('details').open=true);
+    assert.equal(await page.locator('#export-guarantee-peak-field').isVisible(),true);
+    assert.equal(await page.locator('#export-guarantee-peak').isChecked(),false);
+    await page.locator('#export-guarantee-peak-field label').click();
+    assert.equal(await page.evaluate(()=>currentExportSettings().guarantee_hdr_peak),true);
+    await page.locator('#jpeg-advanced-settings').screenshot({path:path.join(output,'guarantee-peak.png')});
+    await page.locator('#export-format').selectOption('sdr_jpeg');
+    assert.equal(await page.locator('#export-guarantee-peak-field').isVisible(),false);
+    await page.locator('#export-format').selectOption('jpeg_ultrahdr');
     await page.screenshot({path:path.join(output,'export-from-library.png')});
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({menuEnabled:true,openInExport:3,selectAll:3}));

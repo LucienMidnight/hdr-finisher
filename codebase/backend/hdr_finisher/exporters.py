@@ -524,7 +524,7 @@ class AVIFGainMapExportBackend(ExportBackend):
                 write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203),
                     gainmaputil=gainmaputil, timings_ms=timings_ms,
-                    ceiling_nits=delivery_ceiling_nits(finishing_adjustments), notes=notes)
+                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments), notes=notes)
 
             def validate(staged_output: Path) -> str | None:
                 started = perf_counter()
@@ -586,7 +586,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
                     exif_payload=_source_exif_payload(session, settings.metadata_policy),
-                    ceiling_nits=delivery_ceiling_nits(finishing_adjustments), notes=notes)
+                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments), notes=notes)
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",
@@ -627,7 +627,7 @@ class JPEGXLHDRExportBackend(ExportBackend):
                 lambda hdr: encode_hdr_jpegxl(hdr, int(settings.quality), settings.jpegxl_precision,
                     exif_payload=exif_payload, reference_white_nits=reference_white_nits),
                 _decoded_jpegxl_channel_nits,
-                delivery_ceiling_nits(finishing_adjustments),
+                _peak_ceiling(settings, finishing_adjustments),
                 notes,
             )
             shape = hdr_image.shape[:2]
@@ -653,6 +653,11 @@ class JPEGXLHDRExportBackend(ExportBackend):
 
 class ExportProcessError(RuntimeError):
     """Raised when an external export command fails."""
+
+
+def _peak_ceiling(settings: ExportSettings, adjustments: AdjustmentState) -> float | None:
+    """The HDR peak to guarantee, only when the export preset asks for it."""
+    return delivery_ceiling_nits(adjustments) if getattr(settings, "guarantee_hdr_peak", False) else None
 
 
 def _decoded_jpegxl_channel_nits(payload: bytes) -> np.ndarray:

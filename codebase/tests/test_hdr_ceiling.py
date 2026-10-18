@@ -79,7 +79,8 @@ def test_an_export_that_stays_over_target_is_accepted_with_a_note(monkeypatch, t
     adjustments.hdr.highlight_compression_target_nits = 1000
     session = SimpleNamespace(session_id="note", image=scene(4000), adjustments=adjustments, hdr_reference_white_nits=203,
         sdr_reference_image=None, local_adjustments=[])
-    result = backend.export(session, ExportSettings(format="jpegxl_hdr", quality=90, output_path=str(tmp_path / "note")))
+    result = backend.export(session, ExportSettings(format="jpegxl_hdr", quality=90, guarantee_hdr_peak=True,
+        output_path=str(tmp_path / "note")))
     assert result.accepted and result.output_path
     assert result.delivery_notes and "12 above the 1000-nit target" in result.delivery_notes[0]
     assert result.delivery_notes[0] in result.message
@@ -122,6 +123,28 @@ def test_real_encoders_land_at_or_under_a_bright_edge_peak(tmp_path, format_name
     adjustments.hdr.highlight_compression_target_nits = 1000
     session = SimpleNamespace(session_id="ceiling", image=checker, adjustments=adjustments, hdr_reference_white_nits=203,
         sdr_reference_image=None, local_adjustments=[])
-    result = backend.export(session, ExportSettings(format=format_name, quality=90, output_path=str(tmp_path / "edge")))
+    result = backend.export(session, ExportSettings(format=format_name, quality=90, guarantee_hdr_peak=True,
+        output_path=str(tmp_path / "edge")))
     assert result.accepted, result.message
     assert hdr_delivery.decoded_hdr_peak_nits(Path(result.output_path), format_name) <= 1000
+
+
+def test_the_guarantee_is_off_by_default_and_then_never_decodes(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from hdr_finisher import exporters
+    from hdr_finisher.capabilities import probe_capabilities
+    from hdr_finisher.models import AdjustmentState, ExportSettings
+    assert ExportSettings().guarantee_hdr_peak is False
+    backend = exporters.build_export_backends(probe_capabilities())["jpegxl_hdr"]
+    if backend.capability.status.value != "available":
+        pytest.skip(backend.capability.detail)
+    def never(payload):
+        raise AssertionError("The peak check ran although the preset did not ask for it.")
+    monkeypatch.setattr(exporters, "_decoded_jpegxl_channel_nits", never)
+    adjustments = AdjustmentState()
+    adjustments.hdr.highlight_section_enabled = True
+    adjustments.hdr.highlight_compression_target_nits = 1000
+    session = SimpleNamespace(session_id="off", image=scene(4000), adjustments=adjustments, hdr_reference_white_nits=203,
+        sdr_reference_image=None, local_adjustments=[])
+    result = backend.export(session, ExportSettings(format="jpegxl_hdr", quality=90, output_path=str(tmp_path / "off")))
+    assert result.accepted and result.delivery_notes == []

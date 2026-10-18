@@ -1337,12 +1337,15 @@ class ExportSettings(_EncodingSettings):
         *_ENCODING_FIELD_ORDER[:10],
         "sdr_png_bit_depth",
         *_ENCODING_FIELD_ORDER[10:],
-        "metadata_policy", "output_path", "path_grant", "overwrite", "overwrite_target",
+        "metadata_policy", "guarantee_hdr_peak", "output_path", "path_grant", "overwrite", "overwrite_target",
         "edit_revision", "output_finishing", "editing_measurements",
     )
 
     sdr_png_bit_depth: Literal[8, 16] = 8
     metadata_policy: Literal["none", "copyright", "all_except_location", "all_including_location"] = "none"
+    # Decode each HDR file and correct any pixel above the highlight target.
+    # Off by default: it costs seconds per photo whose highlights reach it.
+    guarantee_hdr_peak: bool = False
     output_path: str | None = None
     path_grant: str | None = None
     overwrite: bool = False

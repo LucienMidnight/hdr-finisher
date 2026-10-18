@@ -1141,6 +1141,8 @@ const els = {
   exportDithering: document.getElementById("export-dithering"),
   exportDitheringNote: document.getElementById("export-dithering-note"),
   exportMetadataPolicyField: document.getElementById("export-metadata-policy-field"),
+  exportGuaranteePeakField: document.getElementById("export-guarantee-peak-field"),
+  exportGuaranteePeak: document.getElementById("export-guarantee-peak"),
   exportMetadataPolicy: document.getElementById("export-metadata-policy"),
   exportMetadataPolicyNote: document.getElementById("export-metadata-policy-note"),
   exportResolvedEncoding: document.getElementById("export-resolved-encoding"),

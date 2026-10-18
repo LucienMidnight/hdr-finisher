@@ -117,13 +117,15 @@ def encode_within_ceiling(
 
     ``encode`` turns a finished HDR image into a delivery; ``decode`` returns
     that delivery's per-pixel brightest channel in nits at the same size.
-    Without ``ceiling_nits`` only the codec limit is enforced. A delivery that
+    Without ``ceiling_nits`` the delivery is encoded once and not checked. A delivery that
     still overshoots after every correction is returned anyway, with a note
     in ``notes`` saying how far over it is (Steve: export, then explain).
     """
-    ceiling = min(float(ceiling_nits or CODEC_LIMIT_NITS), CODEC_LIMIT_NITS)
     current = hdr_image
     delivery = encode(current)
+    if ceiling_nits is None:
+        return delivery
+    ceiling = min(float(ceiling_nits), CODEC_LIMIT_NITS)
     if ceiling <= 0.0:
         return delivery
     # The largest codec overshoot measured (October 18, 2026) was 12%, on an

@@ -166,7 +166,7 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
     try:
         writer=exporters.write_jpeg_gainmap_renditions if format=="jpeg" else exporters.write_avif_gainmap_renditions
         encode_started=perf_counter()
-        writer(temp,hdr,sdr,settings,document.hdr_reference_white_nits,ceiling_nits=exporters.delivery_ceiling_nits(adjustments));check()
+        writer(temp,hdr,sdr,settings,document.hdr_reference_white_nits);check()  # Library pictures skip the HDR peak check (Steve, October 18)
         encode_ms=(perf_counter()-encode_started)*1000
         log("kept_encoded", path=str(path), grade_identity=identity(grade), duration_ms=encode_ms)
         return {"temporary":str(temp),"extension":extension,"grade_identity":identity(grade),

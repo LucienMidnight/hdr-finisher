@@ -1142,7 +1142,11 @@ codec limit; pictures more than 20% below it skip the check (largest measured co
 overshoot: 12%). On Steve's badminton RAWs the 1000-nit target was exceeded by up to
 73 nits (Ultra HDR), 26 (AVIF) and 7 (JPEG XL); fixed files land 972 to 998 nits, and
 their colour difference from the graded render matches today's within 0.14 ΔE ITP mean.
-A file that cannot be brought under its ceiling fails the export rather than overshooting.
+A file that cannot be brought under its ceiling is still exported; the export message and
+the batch result say how many nits over the target it is. The check is an option per export
+preset version, **Guarantee HDR peak** (Advanced export settings, HDR formats only), off by
+default because it adds seconds per photo whose highlights reach the target. Library
+pictures never run it (Steve, October 18).
 
 A trial encode/decode/retry correction that scaled the whole HDR lane
 was rejected and removed. On the 96 by 54 mixed-colour fixture at quality

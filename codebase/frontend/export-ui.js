@@ -306,6 +306,7 @@ function currentExportSettings(outputPath = null, overwrite = false, pathGrant =
       jpegxl_precision: els.jpegxlPrecision.value,
       dithering: els.exportDithering.value,
       metadata_policy: els.exportMetadataPolicy.disabled ? "none" : els.exportMetadataPolicy.value,
+      guarantee_hdr_peak: els.exportGuaranteePeak?.checked === true,
       output_path: outputPath,
       path_grant: pathGrant,
       overwrite,
@@ -478,6 +479,8 @@ function renderFormatCards() {
     : format === "sdr_png" ? Number(els.sdrPngBitDepth.value)
     : format === "jpegxl_hdr" ? Number(String(els.jpegxlPrecision.value).match(/\d+/)?.[0] || 12)
     : 8;
+  // The HDR peak guarantee only applies to HDR deliveries.
+  els.exportGuaranteePeakField?.classList.toggle("hidden", !["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"].includes(format));
   const ditherApplicable = selectedBitDepth === 8 && format !== "jpegxl_hdr";
   els.exportDithering.disabled = !ditherApplicable;
   els.exportDitheringField.classList.toggle("disabled-setting", !ditherApplicable);
