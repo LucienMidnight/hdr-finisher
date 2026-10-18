@@ -121,3 +121,23 @@ def test_sdr_only_skips_hdr_without_partial_output(tmp_path):
     assert [r["outcome"] for r in results]==["skipped","exported"]
     assert "no HDR grade" in results[0]["reason"]
     assert not list(tmp_path.rglob("*.tmp*"))
+
+
+def test_real_workers_overlap_two_photos_and_keep_result_order(tmp_path):
+    # One photo decodes on the CPU while the previous one is on the GPU.
+    started, release = [], Event()
+    photos = {str(i): {"path": str(i), "source_path": f"{i}.raw", "grade": {"n": i}} for i in range(3)}
+    class Overlapping(BatchExports):
+        def _subprocess(self, photo, preset, directory, sequence, progress=None, cancelled=lambda: False):
+            started.append(photo["path"])
+            if photo["path"] == "0": assert release.wait(5)
+            return [{"photo": photo["path"], "version": v.name, "outcome": "exported", "output_path": photo["path"] + v.name} for v in preset.versions]
+    queue = Overlapping(photos.__getitem__, tmp_path / "records.json")
+    job = queue.start(list(photos), preset(), tmp_path)
+    deadline = monotonic() + 5
+    while "1" not in started and monotonic() < deadline: sleep(.01)
+    assert started[:2] == ["0", "1"]
+    release.set()
+    final = wait_job(queue, job["id"])
+    assert [row["photo"] for row in final["results"]] == ["0", "0", "1", "1", "2", "2"]
+    assert final["completed"] == 6

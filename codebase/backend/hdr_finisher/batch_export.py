@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from threading import Condition, Thread
+from threading import Condition, Lock, Thread
 from time import monotonic
 from uuid import uuid4
 from .config import APP_DATA_DIR
@@ -34,7 +34,8 @@ class BatchExports:
         self.snapshot, self.record_path, self.runner = snapshot, Path(record_path), runner or self._subprocess
         self.condition, self.jobs = Condition(), {}
         self._closing = False
-        self._child = None
+        self._children = set()
+        self._record_lock = Lock()
         self.thread = Thread(target=self._run, daemon=True, name="batch-export")
         self.thread.start()
     def read_records(self): return read_records(self.record_path)
@@ -67,8 +68,8 @@ class BatchExports:
                 if job["state"] not in {"finished", "cancelled", "failed"}: job["state"] = "cancelling"
             self.condition.notify_all()
         self.thread.join(timeout=3)
-        if self._child is not None and self._child.poll() is None:
-            self._child.terminate()
+        for child in list(self._children):
+            if child.poll() is None: child.terminate()
         self.thread.join(timeout=3)
 
     def _run(self):
@@ -78,22 +79,25 @@ class BatchExports:
                 if self._closing and not any(j["state"] in {"queued","cancelling"} for j in self.jobs.values()): return
                 job = next(j for j in self.jobs.values() if j["state"] in {"queued","cancelling"})
             preset = ExportPreset.model_validate(job["preset"])
-            for sequence, photo in enumerate(job["photos"], 1):
-                with self.condition:
-                    self.condition.wait_for(lambda: job["state"] != "paused")
-                    if job["state"] == "cancelling": break
-                    job["state"] = "running"
-                    job["active_photo"] = photo["path"]
-                    previous = list(job["results"])
-                    job["photo_completed"] = 0
+            # Real workers overlap: one photo's CPU decode runs while the
+            # previous photo is on the GPU (the GPU queue still renders one at
+            # a time). Each worker holds one full photo, so memory stays bounded.
+            parallel = self._parallel() if self.runner == self._subprocess else 1
+            per_photo, running = {}, set()
+            def publish():
+                job["results"] = [row for key in sorted(per_photo) for row in per_photo[key]]
+                job["completed"] = len(job["results"])
+                active = sorted(running)
+                job["active_photo"] = job["photos"][active[0] - 1]["path"] if active else None
+                job["photo_completed"] = len(per_photo.get(active[0], [])) if active else 0
+                if job["completed"]:
+                    elapsed = monotonic() - job["started"]
+                    job["estimated_seconds"] = round(elapsed / job["completed"] * (job["total"] - job["completed"]))
+            def one(sequence, photo):
                 def progress(results):
                     with self.condition:
-                        job["results"] = previous + results
-                        job["completed"] = len(job["results"])
-                        job["photo_completed"] = len(results)
-                        if job["completed"]:
-                            elapsed = monotonic() - job["started"]
-                            job["estimated_seconds"] = round(elapsed / job["completed"] * (job["total"] - job["completed"]))
+                        per_photo[sequence] = list(results)
+                        publish()
                 try:
                     if self.runner == self._subprocess:
                         results = self._subprocess(photo, preset, job["directory"], sequence, progress, lambda: job["state"] == "cancelling")
@@ -101,17 +105,39 @@ class BatchExports:
                         results = self.runner(photo, preset, job["directory"], sequence)
                 except Exception as error:
                     results = [{"photo":photo["path"],"version":v.name,"outcome":"failed","reason":str(error)} for v in preset.versions]
-                progress(results)
-                with self.condition: job["active_photo"] = None
+                with self.condition:
+                    per_photo[sequence] = list(results)
+                    running.discard(sequence)
+                    publish()
+                    self.condition.notify_all()
                 try: self._record(photo, preset, results)
                 except OSError as error:
                     with self.condition: job["record_warning"] = f"Files completed, but the export record could not be saved: {error}"
+            threads = []
+            for sequence, photo in enumerate(job["photos"], 1):
+                with self.condition:
+                    self.condition.wait_for(lambda: job["state"] == "cancelling" or (job["state"] != "paused" and len(running) < parallel))
+                    if job["state"] == "cancelling": break
+                    job["state"] = "running"
+                    running.add(sequence)
+                    publish()
+                thread = Thread(target=one, args=(sequence, photo), daemon=True, name=f"batch-export-{sequence}")
+                threads.append(thread)
+                thread.start()
+            for thread in threads:
+                thread.join()
             with self.condition:
                 job["state"] = "cancelled" if job["state"] == "cancelling" else "finished"
                 job["estimated_seconds"] = 0
+    @staticmethod
+    def _parallel():
+        try: return max(1, min(4, int(os.environ.get("HDR_FINISHER_BATCH_PARALLEL", "2"))))
+        except ValueError: return 2
     def _record(self, photo, preset, results):
         exported = [r for r in results if r["outcome"] in {"exported","renamed"}]
         if not exported: return
+        with self._record_lock: self._write_record(photo, preset, exported)
+    def _write_record(self, photo, preset, exported):
         try: records = json.loads(self.record_path.read_text(encoding="utf-8"))
         except FileNotFoundError: records = {}
         previous = records.get(photo["path"], {})
@@ -140,7 +166,7 @@ class BatchExports:
             flags = (getattr(subprocess,"BELOW_NORMAL_PRIORITY_CLASS",0) | getattr(subprocess,"CREATE_NO_WINDOW",0)) if os.name == "nt" else 0
             command = [sys.executable,"--batch-export-worker",str(task),str(result)] if getattr(sys,"frozen",False) else [sys.executable,"-m","hdr_finisher.batch_export_worker",str(task),str(result)]
             with subprocess.Popen(command, env=env, creationflags=flags, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as child:
-                self._child = child
+                self._children.add(child)
                 while True:
                     if cancelled(): cancel_file.touch()
                     try:
@@ -150,7 +176,7 @@ class BatchExports:
                         if progress is not None:
                             try: progress(json.loads(progress_file.read_text(encoding="utf-8")))
                             except (OSError, ValueError): pass
-                self._child = None
+                self._children.discard(child)
                 if child.returncode:
                     if cancelled():
                         try: return json.loads(progress_file.read_text(encoding="utf-8"))
