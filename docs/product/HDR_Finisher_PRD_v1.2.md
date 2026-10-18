@@ -1054,8 +1054,100 @@ the CPU as the fallback when there is no usable GPU or the GPU fails.
 - This settles point 2 in favour of one GPU implementation for preview and
   export. Where the GPU export runs (the app window, or a backend GPU
   path) is left to the implementation brief.
-- Not started. The brief waits until the October 17 Library work is
-  finished and checked.
+- Plan approved with perceptual tolerances and a decoded HDR ceiling
+  requirement; implementation policy and the CPU encoder finding follow.
+
+### GPU delivery implementation policy (Steve, October 18, 2026)
+
+The GPU export plan is approved: a hidden Electron renderer reuses Grade's
+renderer and shaders. Export resizing and output sharpening must be included
+in the shared GPU graph, after the creative look and before the final output
+highlight limiter. Matching preset versions reuse the same finished lanes.
+Grade takes scheduling priority, followed by visible Library pictures in
+top-left order, then background export. GPU work yields between bounded
+submissions and shares a memory budget. Closing the last visible app window
+cancels the batch cleanly; completed files remain. Keep the Library disk
+picture cache, populated from GPU results. Start implementation with the
+working CPU fallback and a force-CPU environment switch.
+
+**Perceptual acceptance limits, proposed before measuring:** use CIEDE2000
+(Delta E 2000) for the finished SDR pixels, and BT.2124 Delta E ITP for the
+finished HDR pixels. ITP is the perceptually scaled ICtCp difference, not an
+unscaled Euclidean ICtCp distance. For each image and each lane independently,
+require an arithmetic mean below 1.0 and a 99.9th percentile at or below 3.0.
+These numbers keep the average below the chosen one-unit perceptual threshold
+while allowing a small tail of differences. They are engineering acceptance
+limits, not a guarantee of invisibility under every viewing condition.
+There is no maximum-per-pixel colour-difference limit. Apply the same limits
+to all three comparisons:
+
+- GPU export against CPU fallback.
+- Proof against export, including GPU Proof followed by CPU fallback export.
+- GPU Library picture against GPU export at the same size and settings.
+
+Compare SDR in D65 Lab from finished display-linear sRGB, using the same
+white and colour conversion for both images. Compare HDR in absolute nits,
+converted to BT.2020 PQ ICtCp with the BT.2124 weighting
+`720 * sqrt(dI^2 + 0.25*dCt^2 + dCp^2)`. Never independently normalize peaks,
+tone-map away HDR differences, or discard pixels based on their error.
+Include grain and local adjustments; compare equal dimensions and the same
+recipe, source, and grain coordinates. For finished files, decode the files
+before measuring. For Library readback, compare the finished GPU texture
+before monitor-specific presentation. Existing stage tolerances stay in
+force; none is loosened by these additional whole-image limits.
+
+Metric references: [CIEDE2000 implementation](https://github.com/colour-science/colour/blob/develop/colour/difference/delta_e.py)
+and [Dolby, Delta E ITP and its one-JND scale](https://professional.dolby.com/siteassets/content-creation/dolby-vision-for-content-creators/dolby-vision_best-practices_facility.certificationv1.4.pdf).
+
+Proof and export reuse one finished result when the same renderer is
+available. A later CPU fallback does not invalidate an earlier GPU Proof;
+that pair must meet the same perceptual limits. Record the chosen renderer
+and any fallback reason with each export result.
+
+**Separate exact brightness requirement:** every finished HDR pixel must
+respect the highlight compression target on both CPU and GPU paths. Decode
+exported HDR files and check their maximum, including small Proof files.
+The established BT.2020 per-channel render ceiling is retained; it also bounds
+BT.2020 luminance. Colour-difference percentiles never excuse a brightness
+ceiling violation. Codec ringing, gain-map interpolation and compression
+overshoot are not rounding.
+
+**Rounding direction (Steve, October 18): downward.** For a 1000-nit target,
+990 nits is acceptable and 1010 is not. Use zero upward allowance when
+checking decoded exported pixels. Absorb encoder and decoder rounding below
+the target. This is a ceiling requirement, not permission to dim the whole
+picture until it passes; finished Proof/export and GPU/CPU comparisons must
+still satisfy the perceptual limits above.
+
+For scale, at 1000 nits half a PQ code is approximately 4.494 nits at 10 bits,
+1.121 nits at 12 bits, and 0.070 nit at 16 bits. For linear half-float decode
+at 1.0 = 203 nits, half a representable step is 0.3965 nit. These are examples
+of representation precision, not allowances above the target. Metadata peaks
+are not evidence of decoded pixel peaks.
+
+**Implementation finding before GPU work:** the existing CPU Ultra HDR
+encoder can exceed the new ceiling. A neutral-edge fixture (64 by 48,
+quality 90, 1000-nit target) decoded to 1006.91-nit luminance and a
+1008.27-nit maximum channel. Its decoder half-float step was 0.793 nit,
+so this is not decoder rounding. The existing file-side parity checker
+allows `target * 1.01 + 1` (1011 nits here) and only records Proof-scale
+overshoot; those checks must be replaced when the encoding fix is ready.
+
+A trial encode/decode/retry correction that scaled the whole HDR lane
+was rejected and removed. On the 96 by 54 mixed-colour fixture at quality
+95, its decoded JPEG and AVIF differed from the finished render by mean
+Delta E ITP 26.15 and 29.27, respectively, far outside the mean limit of
+1.0. Small downward rounding does not authorize this change in appearance.
+The brief prohibits changing encoders and gain-map maths; resolving this
+contradiction needs a codec-specific approach before GPU integration.
+
+The perceptual comparison helper and a read-only decoded HDR ceiling check
+are implemented, with tests for all three HDR formats. The latter accepts
+990 nits and rejects even one 1010-nit pixel at a 1000-nit target. It does not
+yet gate publication or correct encoding. CPU export,
+Proof, Library and GPU routing are unchanged at this checkpoint. Strict
+post-encode ceiling enforcement, the force-CPU switch and GPU delivery are
+not yet implemented. No claim of compliance is made for the current encoders.
 
 The original note follows.
 
