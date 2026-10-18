@@ -332,7 +332,6 @@ function requestSessionExport(outputPath, overwrite, pathGrant = null, overwrite
 }
 
 function prepareExportRail() {
-  if (!state.session) return;
   if (!els.exportDirectory.value.trim()) els.exportDirectory.value = state.defaultExportDirectory;
   renderCapabilities();
   renderFormatCards();

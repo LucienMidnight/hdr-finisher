@@ -62,7 +62,11 @@ def test_three_photos_two_versions_match_single_export_exactly(tmp_path,formats)
     copy=deepcopy(photos[0]);copy["path"]+="|copy|disposable";copy["copy_name"]="Virtual copy";copy["grade"]["global_adjustments"]["sdr"]["exposure"]=1.;photos.append(copy)
     output=tmp_path/"out";output.mkdir()
     all_results=[]
-    for sequence,photo in enumerate(photos,1):all_results.extend(export_photo(photo,p,output,sequence))
+    for sequence,photo in enumerate(photos,1):
+        progress=[]
+        all_results.extend(export_photo(photo,p,output,sequence,lambda rows:progress.append(deepcopy(rows))))
+        assert [len(rows) for rows in progress]==[1,2]
+        assert all(Path(rows[-1]["output_path"]).is_file() for rows in progress)
     assert len(all_results)==6
     assert all(row["outcome"]=="exported" for row in all_results),all_results
     backends=build_export_backends(caps)

@@ -441,8 +441,6 @@ function renderDockSummary() {
 
 function activateWorkflowTab(workflow, { focus = false, batch = false } = {}) {
   const next = ["import", "grade", "proof", "export"].includes(workflow) ? workflow : "import";
-  // Batch export from the Library needs no photo open in Grade.
-  if (next !== "import" && !state.session && !(next === "grade" && state.gradeOpen) && !(next === "export" && batch)) return;
   if (next === "import" && state.gradeOpen) void cancelActiveImport();
   if (next !== "grade") abandonPerspectiveDraft();
   if (next !== "grade" && state.rotateDraftGeometry) closeRotateMode(false);
@@ -457,7 +455,12 @@ function activateWorkflowTab(workflow, { focus = false, batch = false } = {}) {
     if (active && focus) button.focus();
   });
   if (next === "export") prepareExportRail();
-  if (next === "proof" && state.currentView !== "hdr") switchLane("hdr");
+  if (next === "proof" && state.session && state.currentView !== "hdr") switchLane("hdr");
+  if (!state.session) {
+    els.emptyState.style.display="grid";
+    els.emptyState.querySelector(".empty-state-title").textContent=next==="proof"?"No photo is open":"Drop a RAW or image anywhere on Grade";
+    els.emptyState.querySelector(".empty-state-copy").textContent=next==="proof"?"Open a photo in Grade to see its proof. You can manage proof settings here.":"Open a RAW, HDR image, JPEG, or PNG to start grading.";
+  }
   renderWorkflowContext();
   window.HDRProofing?.render();
   window.dispatchEvent(new CustomEvent("hdrfinisher:workflowchange", { detail: { workflow: next } }));

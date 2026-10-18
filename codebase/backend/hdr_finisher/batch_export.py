@@ -42,7 +42,7 @@ class BatchExports:
         directory = str(Path(directory).resolve(strict=True))
         photos = [self.snapshot(path) for path in dict.fromkeys(paths)]
         job = {"id":uuid4().hex,"state":"queued","completed":0,"total":len(photos)*len(preset.versions),"results":[],"directory":directory,"estimated_seconds":None,
-               "photos":photos,"preset":preset.model_dump(mode="json"),"started":monotonic()}
+               "active_photo":None,"photo_completed":0,"photo_total":len(preset.versions),"photos":photos,"preset":preset.model_dump(mode="json"),"started":monotonic()}
         with self.condition:
             self.jobs[job["id"]] = job
             self.condition.notify_all()
@@ -69,14 +69,26 @@ class BatchExports:
                     self.condition.wait_for(lambda: job["state"] != "paused")
                     if job["state"] == "cancelling": break
                     job["state"] = "running"
-                try: results = self.runner(photo, preset, job["directory"], sequence)
+                    job["active_photo"] = photo["path"]
+                    previous = list(job["results"])
+                    job["photo_completed"] = 0
+                def progress(results):
+                    with self.condition:
+                        job["results"] = previous + results
+                        job["completed"] = len(job["results"])
+                        job["photo_completed"] = len(results)
+                        if job["completed"]:
+                            elapsed = monotonic() - job["started"]
+                            job["estimated_seconds"] = round(elapsed / job["completed"] * (job["total"] - job["completed"]))
+                try:
+                    if self.runner == self._subprocess:
+                        results = self._subprocess(photo, preset, job["directory"], sequence, progress)
+                    else:
+                        results = self.runner(photo, preset, job["directory"], sequence)
                 except Exception as error:
                     results = [{"photo":photo["path"],"version":v.name,"outcome":"failed","reason":str(error)} for v in preset.versions]
-                with self.condition:
-                    job["results"].extend(results)
-                    job["completed"] += len(results)
-                    elapsed = monotonic() - job["started"]
-                    job["estimated_seconds"] = round(elapsed / job["completed"] * (job["total"] - job["completed"]))
+                progress(results)
+                with self.condition: job["active_photo"] = None
                 try: self._record(photo, preset, results)
                 except OSError as error:
                     with self.condition: job["record_warning"] = f"Files completed, but the export record could not be saved: {error}"
@@ -96,11 +108,12 @@ class BatchExports:
         temporary = self.record_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(records, indent=2), encoding="utf-8")
         os.replace(temporary, self.record_path)
-    def _subprocess(self, photo, preset, directory, sequence):
+    def _subprocess(self, photo, preset, directory, sequence, progress=None):
         with tempfile.TemporaryDirectory(prefix="hdr-batch-") as temporary:
             task = Path(temporary) / "task.json"
             result = Path(temporary) / "result.json"
-            task.write_text(json.dumps({"photo":photo,"preset":preset.model_dump(mode="json"),"directory":directory,"sequence":sequence}), encoding="utf-8")
+            progress_file = Path(temporary) / "progress.json"
+            task.write_text(json.dumps({"photo":photo,"preset":preset.model_dump(mode="json"),"directory":directory,"sequence":sequence,"progress":str(progress_file)}), encoding="utf-8")
             env = dict(os.environ)
             # Use the same native-library threading as an ordinary export.
             # Isolation, below-normal priority and serial photos protect Grade.
@@ -111,11 +124,19 @@ class BatchExports:
             env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
             flags = (getattr(subprocess,"BELOW_NORMAL_PRIORITY_CLASS",0) | getattr(subprocess,"CREATE_NO_WINDOW",0)) if os.name == "nt" else 0
             command = [sys.executable,"--batch-export-worker",str(task),str(result)] if getattr(sys,"frozen",False) else [sys.executable,"-m","hdr_finisher.batch_export_worker",str(task),str(result)]
-            completed = subprocess.run(command, env=env, creationflags=flags, capture_output=True, text=True)
-            if completed.returncode: raise RuntimeError(completed.stderr[-2000:] or "Export worker stopped.")
+            with subprocess.Popen(command, env=env, creationflags=flags, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as child:
+                while True:
+                    try:
+                        _, stderr = child.communicate(timeout=.25)
+                        break
+                    except subprocess.TimeoutExpired:
+                        if progress is not None:
+                            try: progress(json.loads(progress_file.read_text(encoding="utf-8")))
+                            except (OSError, ValueError): pass
+                if child.returncode: raise RuntimeError(stderr[-2000:] or "Export worker stopped.")
             return json.loads(result.read_text(encoding="utf-8"))
 
-def export_photo(photo, preset, directory, sequence):
+def export_photo(photo, preset, directory, sequence, progress=None):
     from .sessions import SessionStore
     from .projects import open_document, validate_saved_document
     from .exporters import build_export_backends
@@ -134,7 +155,9 @@ def export_photo(photo, preset, directory, sequence):
         for version in preset.versions:
             row = {"photo":photo["path"],"version":version.name}
             if photo.get("sdr_only") and version.settings.format in {"avif_gain_map","jpeg_ultrahdr","jpegxl_hdr"}:
-                results.append(dict(row,outcome="skipped",reason="SDR only: no HDR grade.")); continue
+                results.append(dict(row,outcome="skipped",reason="SDR only: no HDR grade."))
+                if progress: progress(results)
+                continue
             try:
                 from .color_context import RenderColorContext
                 session.hdr_reference_white_nits = version.reference_white or original_white
@@ -158,5 +181,6 @@ def export_photo(photo, preset, directory, sequence):
                             candidate = target.with_stem(f"{target.stem} ({number})")
                     results.append(dict(row,outcome="renamed" if number > 1 else "exported",output_path=str(candidate)))
             except Exception as error: results.append(dict(row,outcome="failed",reason=str(error)))
+            if progress: progress(results)
     finally: store.clear()
     return results
