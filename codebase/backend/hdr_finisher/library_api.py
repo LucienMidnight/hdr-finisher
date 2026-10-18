@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 import os
+import time
 from pathlib import Path
 from concurrent.futures import CancelledError
 from typing import Literal
@@ -98,6 +99,11 @@ class PictureRequest(BaseModel):
     quality: Literal["fast", "quick"] = "quick"
     purpose: Literal["browse", "thumbnail"] = "browse"
     priority: int = Field(default=10, ge=0, le=100)
+
+
+class SensorRequest(BaseModel):
+    path: str
+    edge: int = Field(default=320, ge=64, le=2560)
 
 
 class ThumbnailRequest(BaseModel):
@@ -749,6 +755,46 @@ def create_library_router(worker, browser, store=None):
         if cached:
             return cached
         return await helper_result(request, "picture", retain_picture=True, **command.model_dump())
+
+    # Camera RAW grid thumbnails developed on the GPU by the Library window.
+    # Anything the GPU route does not cover answers 204 and keeps the CPU route.
+    from . import library_gpu_raw
+    @router.post("/raw-sensor")
+    async def raw_sensor(command: SensorRequest):
+        if store is not None:
+            cached = await run_in_threadpool(kept.cached, command.path, command.edge)
+            if cached: return cached
+            await run_in_threadpool(kept.ensure, command.path)
+        command.path = str(marks.source_path(command.path))
+        if worker.status()["paused"]:
+            return JSONResponse({"detail": "library_pending"}, status_code=202)
+        try:
+            cached = await run_in_threadpool(cache.cached, command.path, command.edge, "grade-thumbnail")
+            if cached: return cached
+            started = time.perf_counter()
+            header, payload = await run_in_threadpool(library_gpu_raw.sensor, Path(command.path))
+            log("gpu_raw_sensor", path=command.path, duration_ms=(time.perf_counter() - started) * 1000,
+                bytes=sum(len(part) for part in payload), lens=bool(header.get("lens_grid")))
+        except library_gpu_raw.NotEligible as reason:
+            log("gpu_raw_not_eligible", path=command.path, reason=str(reason))
+            return Response(status_code=204)
+        except (ValueError, OSError) as error:
+            raise HTTPException(status_code=400, detail=user_error(error)) from error
+        header["edge"] = command.edge
+        return Response(library_gpu_raw.frame(header, *payload), media_type="application/octet-stream")
+
+    @router.post("/raw-developed")
+    async def raw_developed(request: Request):
+        try:
+            header, payload = library_gpu_raw.unframe(await request.body())
+            path = str(marks.source_path(header["path"]))
+            started = time.perf_counter()
+            result = await run_in_threadpool(library_gpu_raw.developed, cache, path, header, payload)
+            store_ms = (time.perf_counter() - started) * 1000
+        except (ValueError, OSError, KeyError) as error:
+            raise HTTPException(status_code=409, detail=user_error(error)) from error
+        log("gpu_raw_developed", path=path, key=result.get("key"), store_ms=store_ms, **(header.get("timing_ms") or {}))
+        return result
 
     from .library_overlays import OverlayMaps
     from .raw_import import RAW_EXTENSIONS

@@ -87,6 +87,19 @@
       return result;
     }
   }
+  // Camera RAW grid thumbnails develop on the GPU when they can. Photos the
+  // GPU route does not cover, and any GPU failure, use Grade's CPU development.
+  function rawThumbnail(photo, edge, signal) {
+    const cpu = () => api("/api/library/picture", {path:photo.path, edge, quality:"quick", purpose:"thumbnail", priority:10}, signal);
+    if (!HDRLibraryGpuRaw.enabled()) return cpu();
+    return pictureRequests.submit(() => HDRLibraryGpuRaw.thumbnail(photo.path, edge, signal), signal, 10).then(
+      result => result || cpu(),
+      error => {
+        if (aborted(error)) throw error;
+        HDRLibraryStopwatch("gpu_raw_fallback", {path:photo.path, reason:error.message});
+        return cpu();
+      });
+  }
   const { showMenu, closeMenu: closeFolderMenu, make } = HDRLibraryDialogs;
   const sameName = (a, b) => a.toLocaleLowerCase() === b.toLocaleLowerCase();
   const belongs = (photo, place) => (place.kind === "album" ? photo.albums || [] : photo.marks?.tags || []).some(name => sameName(name, place.name));
@@ -338,7 +351,7 @@
             if (!current()) return;
             canvas.style.visibility = ""; element.classList.remove("loading");
             HDRLibraryStopwatch("camera_preview_shown", {path:photo.path,duration_ms:performance.now()-started});
-            prepared = api("/api/library/picture", {path:photo.path, edge:cell.edge, quality:"quick", purpose:"thumbnail", priority:10}, cell.controller.signal);
+            prepared = rawThumbnail(photo, cell.edge, cell.controller.signal);
           } else prepared = Promise.resolve(preview);
         }
         const meta = await loadAndShow(photo, cell.edge, fallback, cell.controller, current, 10, prepared);

@@ -229,6 +229,28 @@ fails as recorded above; export, Proof and their limits were not changed.
    Phases:
    P. GPU development prototype (Claude): does full-quality development of
       a 42 MP RAW on the GPU come in well under the current 5 to 10 s?
+      **Answered yes (October 18–19).** The prototype
+      (`codebase/tools/gpu_raw_prototype`) ports highlight repair, LibRaw's
+      AHD demosaic, colour, measurements and reduction to WebGPU. On 14 Bayer
+      RAWs from five makes, finished pictures match Grade's CPU development
+      far inside the agreed limits (SDR ΔE 2000 mean ≤ 0.006; HDR ΔE ITP
+      mean ≤ 0.018, p99.9 ≤ 2.8 at 2560 px) and all six measurements match.
+      GPU development: 0.10 to 0.20 s per photo, against 2.0 to 5.6 s.
+      **Grid thumbnails on branch `gpu-raw-library` (not merged):** camera
+      RAW grid and filmstrip thumbnails develop on the GPU in the Library
+      window (`frontend/library-gpu-raw.js`, `library_gpu_raw.py`), with
+      Grade's automatic Lensfun correction (vignetting gain, then exact
+      full-size distortion and colour-fringe coordinates on a 16-pixel
+      grid) before measuring, and store the result where Grade's CPU
+      development would. X-Trans, DNG and anything else keep the CPU route,
+      as does any GPU failure. In the app a cold thumbnail takes about 0.5
+      to 0.8 s (unpack 0.1 to 0.4 s, transfer about 0.1 to 0.2 s, GPU 0.07
+      to 0.18 s, store 0.07 s) against 2.4 to 8 s; five real RAWs, two with
+      lens corrections, pass the agreed limits (worst: HDR mean 0.13,
+      p99.9 1.3). Not yet covered: the starting document for paste (paste
+      prepares a GPU-developed photo the slow way), GPU memory budgeting with
+      Grade and delivery (each development holds up to about 2 GB briefly),
+      Single and full-screen views, saved-grade pictures.
    0. Quick wins, independent of the rest (brief:
       [codex-brief-library-speed-quick-wins-2026-10-18](../../technical/briefs/codex-brief-library-speed-quick-wins-2026-10-18.md)):
       window before the backend is ready (7.3 s today), a running cache

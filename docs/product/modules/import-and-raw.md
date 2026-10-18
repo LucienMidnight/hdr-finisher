@@ -142,8 +142,17 @@ They retain their saved control values and change brightness; no migration.
 The Alkeria linear-DNG test project's old source path is missing; it is
 outside this camera-RAW change. No source/project/sidecar was rewritten.
 
+**GPU development (October 18–19, prototype plus Library grid thumbnails on
+branch `gpu-raw-library`, not merged):** Grade's camera RAW development for
+Bayer sensors runs on the GPU with the same maths (opposed-colour highlight
+repair, LibRaw 0.22.1 AHD, camera RGB to ACEScg, automatic Lensfun
+correction, import gamut projection, calibration, measurements). Results and
+limits: Photo Library module, speed plan phase P. Grade's own import still
+develops on the CPU.
+
 **Not built**
 
+- GPU development for Grade's import, X-Trans sensors and DNG.
 - Complete Library-to-Grade RAW picture agreement and Steve's final
   brightness review (implementation and limitation above).
 - Linux: mounted drives (`/media`, `/run/media`, `/mnt`) are not listed

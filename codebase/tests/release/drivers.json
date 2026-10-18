@@ -3826,6 +3826,18 @@
       }
     },
     {
+      "path": "tests/library-gpu-raw.js",
+      "areas": [
+        "library",
+        "lens"
+      ],
+      "tier": "area",
+      "protects": "Camera RAW grid thumbnails developed on the GPU, including Lensfun correction, against Grade's CPU development; disposable photo copies only.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
       "path": "tests/library-grade-paste.js",
       "areas": [
         "library",

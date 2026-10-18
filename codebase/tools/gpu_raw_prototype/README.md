@@ -44,3 +44,14 @@ development takes 0.10 to 0.20 s per photo, end to end including readback,
 against 2.0 to 5.6 s for the CPU development. Unpacking adds 0.06 s
 (uncompressed Sony) to 0.27 s (compressed CR2/NEF/ORF); sending the mosaic to
 the page 70 to 220 ms.
+
+## In the app (branch `gpu-raw-library`)
+
+The same module develops camera RAW grid thumbnails in the Library window
+(`library_gpu_raw.py` hands out the unpacked mosaic and stores the result).
+That route adds Grade's automatic Lensfun correction on the GPU: vignetting
+gain from a small Lensfun grid, then distortion and colour-fringe
+coordinates that Lensfun computes at full size every 16 pixels, applied
+before the measurements as Grade does. `tests/library-gpu-raw.js` checks it
+in the real app against Grade's CPU development (helper:
+`compare_library.py`).

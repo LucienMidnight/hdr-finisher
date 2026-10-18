@@ -22,7 +22,7 @@ const server = http.createServer((request, response) => {
   }
   let file;
   if (url === "/") file = path.join(here, "page.html");
-  else if (url === "/pipeline.js") file = path.join(here, "pipeline.js");
+  else if (url === "/library-gpu-raw.js") file = path.join(here, "..", "..", "frontend", "library-gpu-raw.js");
   else if (url.startsWith("/data/")) { const [, , name, base] = url.split("/"); file = path.join(root, path.basename(name), path.basename(base)); }
   if (!file || !fs.existsSync(file)) { response.writeHead(404); response.end(); return; }
   response.writeHead(200, { "Content-Type": file.endsWith(".js") ? "text/javascript" : file.endsWith(".html") ? "text/html" : "application/octet-stream" });
