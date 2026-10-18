@@ -7,7 +7,7 @@
     for(;;){const response=await fetch(`/api/delivery/gpu/permit${identity?"?identity="+identity:""}`);if(!response.ok)throw Error("Delivery scheduler unavailable.");
       const value=await response.json();
       if(value.cancelled)throw Error("GPU delivery job cancelled.");
-      if(value.preempt)throw Error("GPU delivery released the shared memory budget for Grade.");
+      if(value.preempt)throw Error(value.reason);
       if(value.ready)return;await pause(30);}
   }
   for(;;){
@@ -23,7 +23,14 @@
       const [width,height]=window.HDRGeometryResample?.outputDimensions?.(job.width,job.height,job.adjustments.shared.geometry)||[job.width,job.height];
       // Reserve all full-frame finishing scratch before admitting the creative
       // graph. It can choose its existing tiled route within the remainder.
-      const reserve=job.width*job.height*32+job.output[0]*job.output[1]*96;
+      const filmPixels=width*height,outputPixels=job.output[0]*job.output[1];
+      // Count the largest live finishing stage, including the two-pass resize
+      // and six float scratch images used by sharpening. An unsharpened export
+      // must not be refused for sharpening buffers it never allocates.
+      const resizeBytes=(width!==job.output[0]||height!==job.output[1])
+        ?16*(filmPixels+job.output[0]*height+outputPixels):0;
+      const reserve=Math.max(filmPixels*24,resizeBytes,
+        outputPixels*(job.finishing.sharpening==="off"?32:96))+32*1024*1024;
       if(reserve>job.budget*.8)throw Error("GPU delivery finishing exceeds the available memory budget.");
       const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
         headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:job.budget})});

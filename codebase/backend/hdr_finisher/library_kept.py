@@ -14,13 +14,13 @@ import numpy as np
 from .gainmap_decoders import GainMapDecodeError
 from .library_grades import grade_key
 from .library_pictures import LibraryPictureCache, reduce_picture
-from .models import EditDocument, ExportSettings, PreviewKind
+from .models import EditDocument, ExportSettings, OutputFinishingSettings, PreviewKind
 from .projects import validate_saved_document
 from .library_diagnostics import log
 
 _LOCK=RLock()
 EDGES=(512,1024,1920)
-PICTURE_VERSION="saved-screen-v1"
+PICTURE_VERSION="saved-screen-gpu-v2"
 RETRY_SECONDS=30
 THUMBNAIL_EDGE=256
 
@@ -100,7 +100,7 @@ def render_source_edge(width, height, geometry, target):
     return low
 
 
-def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=None):
+def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=None, priority=15):
     """One read-only corrected decode + reduced renditions via the export graph.
 
     Shared renderer calls only; export/Proof, their source and budgets are unchanged.
@@ -139,7 +139,8 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
         sdr_reference_image=(reduce_picture(session.sdr_reference_image,reduced_edge)
             if session.sdr_reference_image is not None else None),
         adjustments=document.global_adjustments,local_adjustments=document.local_adjustments,denoise=document.denoise,
-        color_context=session.color_context,hdr_reference_white_nits=document.hdr_reference_white_nits)
+        color_context=session.color_context,hdr_reference_white_nits=document.hdr_reference_white_nits,
+        delivery_priority=priority,delivery_cancelled=cancelled or (lambda: False))
     # Drop the private session/cache and its full-size references before rendering.
     del session
     source_ms=(perf_counter()-source_started)*1000
@@ -147,7 +148,8 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
     render_started=perf_counter()
     settings=ExportSettings(quality=95,jpeg_chroma_subsampling="444",
         jpeg_gain_map_quality=95,jpeg_gain_map_scale="full",
-        avif_bit_depth=8,avif_gain_map_quality=95,avif_gain_map_scale="full",dithering="off")
+        avif_bit_depth=8,avif_gain_map_quality=95,avif_gain_map_scale="full",dithering="off",
+        output_finishing=OutputFinishingSettings(resize_mode="long_edge",long_edge=edge))
     adjustments=exporters._finishing_adjustments_for_export(frame)
     adjustments.shared.overlay_mode="off"
     check();hdr=exporters._render_export_branch(frame,settings,PreviewKind.HDR,adjustments)
@@ -155,7 +157,7 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
     check()
     from .finishing import geometry_output_dimensions
     source_width,source_height=geometry_output_dimensions(source_width,source_height,geometry)
-    hdr=reduce_picture(hdr,edge);sdr=reduce_picture(sdr,edge)
+    rendering=getattr(frame,"_delivery_record",rendering)
     render_ms=(perf_counter()-render_started)*1000
     log("kept_rendered", path=str(path), grade_identity=identity(grade), duration_ms=render_ms)
     from .library_cache import LibraryCache
@@ -372,10 +374,7 @@ class KeptPictures:
                             try:
                                 if quick_future is not None:
                                     quick_future.result()
-                                    # Let the visible thumbnail decode and reach the
-                                    # grid before large background work takes CPU.
-                                    job.wait(2)
-                                return produce(self.root,str(self_source(path)),request["grade"],request["edited_edge"],cancelled=check_open,source=source)
+                                return produce(self.root,str(self_source(path)),request["grade"],request["edited_edge"],cancelled=check_open,source=source,priority=priority)
                             finally:
                                 source.clear()
                         future=self._open_producer.submit(build_open)

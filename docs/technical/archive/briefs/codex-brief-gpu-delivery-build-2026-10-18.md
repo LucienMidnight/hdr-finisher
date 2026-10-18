@@ -139,3 +139,11 @@ A short plain-language note for Steve:
 If the code contradicts this brief, stop and say so before working around
 it. Do not invent a new architecture. The approved one is in the Export and Proof module PRD. When a step lands,
 update that module PRD (Current state, Open work) in the same commit.
+
+## Outcome (October 18, 2026)
+
+Steps 1–5 are implemented in local commits. The current state, small decoded
+fixture result, remaining real-photo qualification and Steve's first trial
+are recorded in `docs/product/modules/export-and-proof.md`; Library details
+are in `docs/product/modules/photo-library.md`. No broader performance or
+accuracy claim is made. Testing stayed within this brief's light checks.

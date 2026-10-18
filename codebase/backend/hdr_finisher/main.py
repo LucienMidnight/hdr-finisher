@@ -371,9 +371,12 @@ class DesktopRequestBoundary:
                 headers["X-Content-Type-Options"] = "nosniff"
             await send(message)
 
-        # Resource scheduling only: keep the grading/export implementations
-        # unchanged, and preserve receive so disconnect cancellation still works.
-        if request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade"):
+        # Delivery has its own GPU priority/budget admission. Holding the old
+        # blanket Library pause while export waits would prevent visible pictures
+        # from reaching that queue. Grade/import still pause the decode helper.
+        delivery_request = (request.url.path.startswith("/api/session/") and
+            request.url.path.endswith(("/export", "/proof/artifact")))
+        if not delivery_request and (request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade")):
             with library_worker.busy():
                 await self.app(scope, receive, send_hardened)
         else:

@@ -84,6 +84,9 @@ local adjustments, crop and lens corrections are unticked by default.
   list). Pictures for grades changed in bulk go through a durable queue
   with Pause/Resume in Activity, resume on launch, visible photos first.
 - Batch export pages and states (see Export and Proof).
+- Saved-grade pictures now use the shared hidden GPU delivery renderer,
+  including locals, Denoise and resize; CPU fallback records its reason.
+  The existing disk picture cache remains and refreshes old CPU entries.
 
 **Known problems**
 
@@ -92,8 +95,9 @@ local adjustments, crop and lens corrections are unticked by default.
   p90 against a 1 s target. Real thumbnails and filling the cache are
   still too slow. See [known limitations](../../known-limitations.md),
   "Library thumbnail cache qualification".
-- **Saved-grade pictures are made on the CPU,** 35 to 60 s each. The fix
-  is GPU Library pictures (Export and Proof module, priority 1).
+- The about-1-second saved-grade update target still needs Steve’s RAW
+  test. GPU delivery is implemented; decode, source access and CPU fallback
+  can still delay a picture. No speed sweep was run for this build.
 - The Library's starting look still uses the metered exposure, and adds
   +0.25 EV on top (`library_pictures.py` `default_look`), so it may not
   match Grade (see Import and RAW).
@@ -103,8 +107,9 @@ local adjustments, crop and lens corrections are unticked by default.
 1. **Thumbnail speed:** meet the fresh-folder targets (every visible cell
    shows a picture within 1 s p90; real thumbnails about 2 s p90; a second
    launch shows 90% of visible thumbnails within 100 ms).
-2. **GPU saved-grade pictures** (built under the GPU delivery brief): a
-   changed photo on screen shows its new grade within about 1 s when idle.
+2. **Try GPU saved-grade pictures:** rendering is built under the GPU
+   delivery brief; confirm that a visible changed photo updates within about
+   1 s when idle, including paste with locals and Denoise.
 3. **Starting exposure** (Import and RAW module), then make the Library's
    starting look match Grade's.
 4. **Looks (slice 7):** one Looks menu; Apply Look window with

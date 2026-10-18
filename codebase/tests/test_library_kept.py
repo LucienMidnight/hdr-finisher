@@ -16,10 +16,13 @@ def test_corrected_producer_uses_same_export_renditions_and_never_changes_open_g
     photo,store,session,marks,grades=setup
     grade=saved(setup); captured={}
     def encode(path,hdr,sdr,settings,white,**options):
-        captured.update(hdr=hdr.copy(),sdr=sdr.copy(),white=white);Path(path).write_bytes(b"test")
+        captured.update(hdr=hdr.copy(),sdr=sdr.copy(),white=white,settings=settings);Path(path).write_bytes(b"test")
     monkeypatch.setattr(exporters,"write_jpeg_gainmap_renditions",encode)
     previous=session.edit_document().model_dump(mode="json")
     result=produce(tmp_path,photo,grade,512)
+    assert captured["settings"].output_finishing.resize_mode == "long_edge"
+    assert captured["settings"].output_finishing.long_edge == 512
+    assert not captured["settings"].guarantee_hdr_peak
     settings=ExportSettings(quality=75,jpeg_gain_map_quality=75,jpeg_gain_map_scale="half",dithering="off")
     adjustments=exporters._finishing_adjustments_for_export(session);adjustments.shared.overlay_mode="off"
     np.testing.assert_array_equal(captured["hdr"],exporters._render_export_branch(session,settings,PreviewKind.HDR,adjustments))

@@ -253,6 +253,7 @@
           active,bytes:this.resourceMemorySnapshot().resident.totalBytes,budget})});
       if (!response.ok) throw Error("Delivery accounting unavailable");
       const value = await response.json(); this.deliveryBudgetBytes = value.budget;
+      this.gpuAllocator?.setBudget(this.memoryBudgetBytes());
       return value;
     }
 

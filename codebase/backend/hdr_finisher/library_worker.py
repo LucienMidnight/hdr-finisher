@@ -427,7 +427,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     result = {"id":job["id"],"result":output}
                 elif job["command"] == "kept":
                     from .library_kept import produce
-                    output = produce(root, job["path"], job["grade"], job["edge"], cancelled=check)
+                    output = produce(root, job["path"], job["grade"], job["edge"], cancelled=check, priority=job.get("priority",80))
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "grid-thumbnail":
                     from .library_thumbnails import build

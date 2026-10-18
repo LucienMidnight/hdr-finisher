@@ -109,17 +109,31 @@ Settings rules (from v1.2 section 5, still in force):
   source identity, grade, locals, Denoise, white, finishing and force-CPU policy.
   Reduced Proof remains explicitly labelled and uses the same graph at its size.
 
+- Step 5: saved-grade Library producers use the shared GPU graph for both
+  lanes, including local adjustments, Denoise and delivery resize before the
+  limiter. Visible queued pictures outrank background export, retaining the
+  existing top-left request order. Single export and Proof no longer hold
+  the old blanket Library pause while waiting for delivery. Results fill the existing gain-map disk
+  picture cache; the cache version changes so old CPU pictures are regenerated.
+  The artificial two-second wait after the quick reminder is removed. Library
+  pictures keep skipping the decoded peak correction/check.
+
 **Not built**
 
-- GPU Library pictures remain in the delivery brief.
-- No broad GPU-delivery accuracy or speed claim: Steve tests first.
+- No broad GPU-delivery accuracy or speed claim: Steve tests first. The
+  about-1-second saved-grade update target is not yet measured on his RAWs.
+- Creative rendering is tiled, but delivery finishing still needs full-frame
+  scratch. Large sharpened originals can exceed the shared memory budget and
+  fall back to CPU with that reason; unsharpened work reserves no sharpening scratch.
 - Proof covers the three HDR formats only.
 
 ## 6. Open work, in order
 
 1. **GPU delivery.** Brief:
-   [codex-brief-gpu-delivery-build-2026-10-18](../../technical/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
-   Steps 1–4 complete. Next: GPU Library pictures.
+   [codex-brief-gpu-delivery-build-2026-10-18](../../technical/archive/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
+   Steps 1–5 implemented. Steve to try one badminton export, a small batch,
+   Proof, and a Library grade paste. Real-photo responsiveness and the broader
+   perceptual comparisons remain unqualified under the light-testing brief.
 2. Replace the old file-side parity allowance (`target × 1.01 + 1`) with
    the zero-upward-allowance check, once GPU delivery exists.
 3. Batch-export metadata follow-ups (shared with Photo Library): bundled

@@ -163,8 +163,22 @@ def create_gpu_delivery_router():
     def permit(identity: str | None = None):
         (root / "heartbeat").touch()
         accounting()
+        higher = False
+        priority_reason = None
+        if identity in active:
+            current_priority = active[identity][1]["priority"]
+            for path in root.glob("delivery-*/request.json"):
+                if (path.parent / "claimed").exists() or (path.parent / "cancelled").exists(): continue
+                try:
+                    if json.loads(path.read_text(encoding="utf-8"))["priority"] < current_priority:
+                        higher = True
+                        priority_reason = "A higher-priority delivery needs the GPU."
+                        break
+                except (OSError, ValueError, KeyError): continue
+        preempt = time.monotonic() < _activity["until"] or higher
         return {"cancelled": bool(identity and identity not in active),
-            "preempt": time.monotonic() < _activity["until"], "ready": time.monotonic() >= _activity["until"],
+            "reason": priority_reason if higher else "GPU delivery released the shared memory budget for Grade.",
+            "preempt": preempt, "ready": not preempt,
             "budget": max(0, _activity["budget"] - _activity["bytes"])}
 
     @router.get("/next")
@@ -175,7 +189,7 @@ def create_gpu_delivery_router():
             return None
         candidates = []
         for path in root.glob("delivery-*/request.json"):
-            if not (path.parent / "claimed").exists():
+            if not (path.parent / "claimed").exists() and not (path.parent / "cancelled").exists():
                 try: candidates.append((json.loads(path.read_text(encoding="utf-8")), path.parent))
                 except (OSError, ValueError): continue
         if not candidates:
