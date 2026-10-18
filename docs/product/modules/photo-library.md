@@ -172,6 +172,13 @@ local adjustments, crop and lens corrections are unticked by default.
      out). Not built.
    - Offline drives: dimmed thumbnails and a Grade message. Text-only today.
    - Drag a folder in from Explorer to pin it. Not built.
+   - Smaller thumbnail files (see Known problems; about 830 KB each). Try
+     a lower JPEG quality (90 to 95), 4:2:0 for the base, and a half- or
+     quarter-size gain map; keep the overshoot protection and the exact
+     highlight-compression limit. Agree a size target and perceptual
+     tolerance first, check against the current files on real photos, and
+     run `tests/library-thumbnail-colour.js`. Changes pixels, so Steve
+     sees the trade-off. Deferred by Steve, October 18.
 9. **Speed architecture leftovers:** one ranked helper queue instead of
    lanes; helper priority that follows what Steve is doing; Library GPU
    pipelines warmed at launch; no scope analysis on Library draws; a
