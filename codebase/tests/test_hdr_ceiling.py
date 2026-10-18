@@ -56,10 +56,33 @@ def test_a_clean_codec_is_encoded_once_and_left_alone():
     np.testing.assert_array_equal(delivered, original)
 
 
-def test_an_uncorrectable_codec_fails_loudly():
-    with pytest.raises(hdr_ceiling.CeilingError, match="above"):
-        hdr_ceiling.encode_within_ceiling(scene(), 203, lambda image: image,
-            lambda image: np.full(image.shape[:2], 5000.0, np.float32), 1000)
+def test_an_uncorrectable_codec_still_delivers_and_says_how_far_over():
+    """Steve, October 18: export the file, then explain; never fail over a peak."""
+    notes = []
+    delivered = hdr_ceiling.encode_within_ceiling(scene(), 203, lambda image: image,
+        lambda image: np.full(image.shape[:2], 1012.0, np.float32), 1000, notes)
+    assert delivered is not None
+    assert notes == ["HDR peak is 1012 nits, 12 above the 1000-nit target after correction; the file was exported anyway."]
+
+
+def test_an_export_that_stays_over_target_is_accepted_with_a_note(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from hdr_finisher import exporters
+    from hdr_finisher.capabilities import probe_capabilities
+    from hdr_finisher.models import AdjustmentState, ExportSettings
+    backend = exporters.build_export_backends(probe_capabilities())["jpegxl_hdr"]
+    if backend.capability.status.value != "available":
+        pytest.skip(backend.capability.detail)
+    monkeypatch.setattr(exporters, "_decoded_jpegxl_channel_nits", lambda payload: np.full((96, 128), 1012.0, np.float32))
+    adjustments = AdjustmentState()
+    adjustments.hdr.highlight_section_enabled = True
+    adjustments.hdr.highlight_compression_target_nits = 1000
+    session = SimpleNamespace(session_id="note", image=scene(4000), adjustments=adjustments, hdr_reference_white_nits=203,
+        sdr_reference_image=None, local_adjustments=[])
+    result = backend.export(session, ExportSettings(format="jpegxl_hdr", quality=90, output_path=str(tmp_path / "note")))
+    assert result.accepted and result.output_path
+    assert result.delivery_notes and "12 above the 1000-nit target" in result.delivery_notes[0]
+    assert result.delivery_notes[0] in result.message
 
 
 def test_pictures_far_below_the_ceiling_are_not_decoded_or_changed():

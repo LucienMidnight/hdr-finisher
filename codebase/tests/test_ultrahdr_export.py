@@ -205,7 +205,7 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
     monkeypatch.setattr(exporter_module, "apply_adjustments", fake_adjustments)
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
     # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
-    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None: encode(image))
+    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None: encode(image))
     def fake_denoise(source: Path, output: Path, _binary: Path, *, gain_map_quality: int) -> None:
         observed["final_gain_map_quality"] = gain_map_quality
         output.write_bytes(source.read_bytes())
@@ -242,7 +242,7 @@ def test_ultrahdr_export_honors_explicit_half_resolution_gain_map(monkeypatch, t
     monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: binary)
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
     # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
-    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None: encode(image))
+    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None: encode(image))
     def fake_denoise(source: Path, output: Path, _binary: Path, *, gain_map_quality: int) -> None:
         observed["final_gain_map_quality"] = [str(gain_map_quality)]
         output.write_bytes(source.read_bytes())
@@ -371,7 +371,7 @@ def test_avif_export_applies_quality_to_gain_map_and_replaces_atomically(monkeyp
     monkeypatch.setattr(exporter_module, "_write_hdr_y4m", lambda path, _image, **_kwargs: path.write_bytes(b"hdr"))
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
     # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
-    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None: encode(image))
+    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None: encode(image))
     monkeypatch.setattr(exporter_module, "_validate_avif_output", lambda _path, **_kwargs: "validated")
 
     result = AVIFGainMapExportBackend(_available_capability()).export(
@@ -492,7 +492,7 @@ def test_validation_rejects_missing_iso_metadata(monkeypatch, tmp_path: Path) ->
     )
     monkeypatch.setattr(exporter_module, "_run_command", lambda command: subprocess.CompletedProcess(command, 0, "", ""))
     # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
-    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None: encode(image))
+    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None: encode(image))
     with pytest.raises(ExportProcessError, match="ISO 21496-1"):
         _validate_ultrahdr_output(output, tmp_path / "ultrahdr_app.exe")
 

@@ -1359,6 +1359,8 @@ class ExportResponse(BaseModel):
     output_path: str | None = None
     timings_ms: dict[str, float] = Field(default_factory=dict)
     measurement_warnings: list[str] = Field(default_factory=list)
+    # Exported, but something the user may care about (an HDR peak over target).
+    delivery_notes: list[str] = Field(default_factory=list)
 
 
 class DirectoryPickRequest(BaseModel):

@@ -179,7 +179,9 @@ def export_photo(photo, preset, directory, sequence, progress=None):
                         except FileExistsError:
                             number += 1
                             candidate = target.with_stem(f"{target.stem} ({number})")
-                    results.append(dict(row,outcome="renamed" if number > 1 else "exported",output_path=str(candidate)))
+                    done = dict(row,outcome="renamed" if number > 1 else "exported",output_path=str(candidate))
+                    if response.delivery_notes: done["reason"] = " ".join(response.delivery_notes)
+                    results.append(done)
             except Exception as error: results.append(dict(row,outcome="failed",reason=str(error)))
             if progress: progress(results)
     finally: store.clear()

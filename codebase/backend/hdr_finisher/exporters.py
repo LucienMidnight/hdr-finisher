@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 import os
 from pathlib import Path
@@ -205,6 +205,7 @@ class _PreparedExport:
     staging_suffix: str
     write: Callable[[Path], None]
     validate: Callable[[Path], str | None]
+    notes: list[str] = field(default_factory=list)
 
 
 def _execute_export(
@@ -253,10 +254,14 @@ def _execute_export(
         )
     finally:
         _remove_incomplete_output(staged_output)
+    message = success_message(output_path, validation)
+    if prepared.notes:
+        message = f"{message} {' '.join(prepared.notes)}"
     return ExportResponse(
         accepted=True,
         backend=backend.name,
-        message=success_message(output_path, validation),
+        message=message,
+        delivery_notes=list(prepared.notes),
         output_path=str(output_path),
         timings_ms=timings,
         measurement_warnings=measurement_warnings(settings.editing_measurements, settings._exact_measurements),
@@ -381,7 +386,7 @@ class SDRJPEGXLExportBackend(ExportBackend):
         )
 
 
-def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None, ceiling_nits=None):
+def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None, ceiling_nits=None, notes=None):
     """Encode finished renditions; also used by Library pictures. No rendering.
 
     The decoded file never exceeds ``ceiling_nits`` (hdr_ceiling).
@@ -391,7 +396,7 @@ def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
             gainmaputil=gainmaputil, timings_ms=timings_ms)
         return Path(staged_output)
     encode_within_ceiling(hdr_image, reference_white_nits, encode,
-        lambda written: decoded_channel_nits(written, "avif_gain_map"), ceiling_nits)
+        lambda written: decoded_channel_nits(written, "avif_gain_map"), ceiling_nits, notes)
 
 
 def _write_avif_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None):
@@ -432,7 +437,7 @@ def _write_avif_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
         )
         timings_ms["encode"] = round((perf_counter() - started) * 1000.0, 3)
 
-def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, ceiling_nits=None):
+def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, ceiling_nits=None, notes=None):
     """Encode finished renditions with the same writer as JPEG export.
 
     The decoded file never exceeds ``ceiling_nits`` (hdr_ceiling).
@@ -442,7 +447,7 @@ def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
             ultrahdr_app=ultrahdr_app, exif_payload=exif_payload)
         return Path(staged_output)
     encode_within_ceiling(hdr_image, reference_white_nits, encode,
-        lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits)
+        lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits, notes)
 
 
 def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None):
@@ -508,6 +513,7 @@ class AVIFGainMapExportBackend(ExportBackend):
         timings_ms: dict[str, float] = {}
 
         def prepare() -> _PreparedExport:
+            notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             phase_started = perf_counter()
             hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
@@ -518,7 +524,7 @@ class AVIFGainMapExportBackend(ExportBackend):
                 write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203),
                     gainmaputil=gainmaputil, timings_ms=timings_ms,
-                    ceiling_nits=delivery_ceiling_nits(finishing_adjustments))
+                    ceiling_nits=delivery_ceiling_nits(finishing_adjustments), notes=notes)
 
             def validate(staged_output: Path) -> str | None:
                 started = perf_counter()
@@ -531,7 +537,7 @@ class AVIFGainMapExportBackend(ExportBackend):
                 timings_ms["validate"] = round((perf_counter() - started) * 1000.0, 3)
                 return result
 
-            return _PreparedExport(".gainmap.tmp.avif", write, validate)
+            return _PreparedExport(".gainmap.tmp.avif", write, validate, notes)
 
         def success(path: Path, validation: str | None) -> str:
             message = f"AVIF gain map export finished at {path}"
@@ -567,6 +573,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             )
 
         def prepare() -> _PreparedExport:
+            notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
             sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
@@ -579,12 +586,13 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
                     exif_payload=_source_exif_payload(session, settings.metadata_policy),
-                    ceiling_nits=delivery_ceiling_nits(finishing_adjustments))
+                    ceiling_nits=delivery_ceiling_nits(finishing_adjustments), notes=notes)
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",
                 write,
                 lambda staged: _validate_ultrahdr_output(staged, ultrahdr_app),
+                notes,
             )
 
         return _execute_export(
@@ -608,6 +616,7 @@ class JPEGXLHDRExportBackend(ExportBackend):
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
 
         def prepare() -> _PreparedExport:
+            notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
             reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
@@ -619,6 +628,7 @@ class JPEGXLHDRExportBackend(ExportBackend):
                     exif_payload=exif_payload, reference_white_nits=reference_white_nits),
                 _decoded_jpegxl_channel_nits,
                 delivery_ceiling_nits(finishing_adjustments),
+                notes,
             )
             shape = hdr_image.shape[:2]
             return _PreparedExport(
@@ -627,6 +637,7 @@ class JPEGXLHDRExportBackend(ExportBackend):
                 lambda staged: validate_jpegxl(
                     staged.read_bytes(), shape, settings.jpegxl_precision
                 ),
+                notes,
             )
 
         return _execute_export(

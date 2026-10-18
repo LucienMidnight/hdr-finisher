@@ -38,6 +38,11 @@ class CeilingError(RuntimeError):
     pass
 
 
+def ceiling_note(peak: float, ceiling: float) -> str:
+    return (f"HDR peak is {peak:.0f} nits, {peak - ceiling:.0f} above the {ceiling:.0f}-nit target "
+            "after correction; the file was exported anyway.")
+
+
 def delivery_ceiling_nits(adjustments) -> float:
     """The promised HDR peak: the highlight compression target when it is on."""
     hdr = adjustments.hdr
@@ -106,12 +111,15 @@ def encode_within_ceiling(
     encode: Callable[[np.ndarray], T],
     decode: Callable[[T], np.ndarray],
     ceiling_nits: float | None = None,
+    notes: list[str] | None = None,
 ) -> T:
     """Encode, check every decoded pixel, and correct only where it overshot.
 
     ``encode`` turns a finished HDR image into a delivery; ``decode`` returns
     that delivery's per-pixel brightest channel in nits at the same size.
-    Without ``ceiling_nits`` only the codec limit is enforced.
+    Without ``ceiling_nits`` only the codec limit is enforced. A delivery that
+    still overshoots after every correction is returned anyway, with a note
+    in ``notes`` saying how far over it is (Steve: export, then explain).
     """
     ceiling = min(float(ceiling_nits or CODEC_LIMIT_NITS), CODEC_LIMIT_NITS)
     current = hdr_image
@@ -135,6 +143,6 @@ def encode_within_ceiling(
         current[..., :3] *= _correction(ratio, margin)[..., None]
         delivery = encode(current)
     peak = float(np.max(decode(delivery)))
-    if peak > ceiling:
-        raise CeilingError(f"The HDR file still decodes to {peak:.1f} nits, above its {ceiling:.1f}-nit ceiling.")
+    if peak > ceiling and notes is not None:
+        notes.append(ceiling_note(peak, ceiling))
     return delivery
