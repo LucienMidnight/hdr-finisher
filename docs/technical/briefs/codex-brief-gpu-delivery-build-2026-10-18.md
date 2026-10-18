@@ -76,9 +76,28 @@ Land each step as its own small commit that Steve can try.
    app is otherwise idle. Include local adjustments and Denoise. Write the
    result into the existing Library disk cache.
 
-If the GPU renderer lacks something export needs, stop at that step, say
-what is missing in plain words, and carry on with the steps that do not
-depend on it.
+If the GPU renderer lacks something export needs, **build it on the GPU**
+as part of the step. Stop only if it can't be built without breaking a
+constraint below (for example, changing an encoder), and then say why in
+plain words.
+
+### Clarification after step 1 (October 18, 2026)
+
+Step 1 landed (`767619c`). Codex stopped at step 2 because Grade's GPU
+graph has no delivery resize or output sharpening. That was the brief's
+fault: the stop rule was ambiguous. **Building them is part of step 2,
+not a reason to stop.** The approved design already says so: "Export
+resizing and output sharpening must be included in the shared GPU graph,
+after the creative look and before the final output highlight limiter."
+
+- Add delivery resize and output sharpening to the shared GPU graph, with
+  the same settings and order as today's CPU export.
+- Their result must match the CPU export within the perceptual limits
+  (ΔE 2000 / ΔE ITP, mean below 1.0, p99.9 at or below 3.0). Pixel-identical
+  is not required.
+- Then carry on with steps 2 to 5 without stopping again. Library pictures
+  (step 5) need the resize too.
+- Testing stays light, as above. Steve tests first.
 
 ## Constraints
 
