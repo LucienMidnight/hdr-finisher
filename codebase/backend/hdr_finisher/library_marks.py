@@ -223,6 +223,17 @@ class LibraryMarks:
             photos, warnings, rebuilt, removed = [], [], [], []
             observed_paths, observed_documents = [], []
             self.conflicts.scan(paths)
+            # One directory read per folder tells which photos have settings,
+            # instead of a failed file open for every photo without one.
+            listings = {}
+            def absent(path):
+                if "|copy|" in str(path): return False
+                folder = path.parent
+                if folder not in listings:
+                    try: listings[folder] = {entry.name for entry in folder.iterdir()}
+                    except OSError: listings[folder] = None
+                names = listings[folder]
+                return names is not None and self._sidecar(path).name not in names
             for position, value in enumerate(paths):
                 path, row = Path(value), cached.get(value)
                 files = getattr(self, "file_commands", None)
@@ -231,7 +242,7 @@ class LibraryMarks:
                     continue
                 invalid = False
                 try:
-                    document = documents[position] if documents is not None else self._document(path)
+                    document = documents[position] if documents is not None else (None if absent(path) else self._document(path))
                 except ValueError as error:
                     problem("settings_read_failed", path, error, "settings left untouched; database marks retained")
                     document = None
@@ -262,9 +273,14 @@ class LibraryMarks:
                             db.execute("DELETE FROM album_photos WHERE path = ?", (value,))
                 finally:
                     db.close()
+            # The folder listing reuses these under the same lock instead of
+            # reading every settings file a second time.
+            self.recent_documents = dict(zip(observed_paths, observed_documents))
             if getattr(self, "grades", None): self.grades.observe_documents(observed_paths, observed_documents)
             if getattr(self, "copies", None):
-                for value, document in zip(observed_paths, observed_documents): self.copies.observe(value, document)
+                states = self.copies.states([value for value in observed_paths if "|copy|" not in value])
+                for value, document in zip(observed_paths, observed_documents):
+                    self.copies.observe(value, document, states.get(value, {}))
             if getattr(self, "membership", None):
                 self.membership.reconcile()
                 self.membership.describe(photos)

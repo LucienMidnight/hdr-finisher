@@ -585,16 +585,14 @@ def create_library_router(worker, browser, store=None):
         by_path = {row["path"]: row for row in records["photos"]}
         for photo in result["photos"]:
             photo.update(by_path[photo["path"]])
-            if store is not None:
-                try:
-                    saved = kept.request(photo["path"])
-                    photo.update(edited=saved["edited"], grade_identity=saved["grade_identity"])
-                except (ValueError, OSError):
-                    photo.update(edited=False)
+            # Edited state and grade identity come from library_grades.describe
+            # below, for every photo and copy at once.
         result.update(warnings=records["warnings"], undo_available=records["undo_available"])
         if root is not None:
             index.checks.seed({**result,"photos":[dict(photo) for photo in result["photos"]]})
-        if store is not None: result["photos"] = marks.copies.expand(result["photos"])
+        if store is not None:
+            result["photos"] = marks.copies.expand(result["photos"], getattr(marks, "recent_documents", None))
+            marks.recent_documents = {}
         if store is not None:
             saved_states = store.library_grades.describe([photo["path"] for photo in result["photos"]])
             for photo in result["photos"]:

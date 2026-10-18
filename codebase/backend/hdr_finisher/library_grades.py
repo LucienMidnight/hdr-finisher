@@ -120,12 +120,14 @@ class LibraryGrades:
                         row = db.execute("SELECT state FROM photo_grades WHERE path=?", (str(path),)).fetchone()
                         state = json.loads(row[0]) if row else {}; document = document or {}
                         if "grade" not in document and not state: continue
+                        before = deepcopy(state)
                         state["indexed_grade"] = document.get("grade")
                         for field in ("session_start", "previous_grade"):
                             if field in document.get("grade_history", {}) and field not in state:
                                 state[field] = deepcopy(document["grade_history"][field])
                         if document.get("grade_default"): state["default"] = document["grade_default"]
-                        db.execute("INSERT OR REPLACE INTO photo_grades VALUES (?, ?)", (str(path), json.dumps(state)))
+                        if state != before:
+                            db.execute("INSERT OR REPLACE INTO photo_grades VALUES (?, ?)", (str(path), json.dumps(state)))
             finally: db.close()
 
     def describe(self, paths):

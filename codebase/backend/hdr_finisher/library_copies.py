@@ -50,11 +50,11 @@ class LibraryCopies:
     def put(self, db, path, state):
         db.execute("INSERT OR REPLACE INTO library_copies VALUES (?, ?)", (source(path), json.dumps(state)))
 
-    def items(self, path, document=None):
-        state = self.state(path)
+    def items(self, path, document=None, state=None, known=False):
+        state = self.state(path) if state is None else state
         if state.get("pending"): return deepcopy(state["desired"])
         if not Path(source(path)).parent.exists(): return deepcopy(state.get("baseline",[]))
-        if document is None: document = self.marks._document(Path(source(path)))
+        if document is None and not known: document = self.marks._document(Path(source(path)))
         return self.validate(document)
 
     def document(self, value):
@@ -65,11 +65,14 @@ class LibraryCopies:
         return {"format":"HDR Finisher Photo", "schema_version":1, **deepcopy(item),
                 "grade_default": item.get("grade_default") or physical.get("grade_default")}
 
-    def observe(self, path, document):
+    def observe(self, path, document, state=None):
         if is_copy(path): return
-        state = self.state(path)
+        state = self.state(path) if state is None else state
         if state.get("pending"): return
         items = self.validate(document)
+        # Every folder open reads every photo; write only what changed. One
+        # write per photo per visit cost about 1.5 s on a 372-photo folder.
+        if state == {"baseline": items}: return
         db = self.marks._connect()
         try:
             with db:
@@ -264,20 +267,31 @@ class LibraryCopies:
             for path, _, item in removed: log("virtual_copy_removed", photo=path, copy=item["photo_id"], action="photo untouched; removal undoable")
             return {"photos":[], "count":len(removed), "warnings":warnings, "undo_available":bool(self.marks._undo), "copies_changed":bool(removed)}
 
-    def expand(self, photos):
+    def states(self, paths):
+        states = {}
+        for start in range(0, len(paths), 800):
+            chunk = [source(p) for p in paths[start:start+800]]
+            for path, value in self.marks._query("SELECT source, state FROM library_copies WHERE source IN (" + ",".join("?" for _ in chunk) + ")", chunk):
+                states[path] = json.loads(value)
+        return states
+
+    def expand(self, photos, documents=None):
+        """``documents``: settings already read in this request, by path."""
         output=[]
+        documents = documents or {}
+        states = self.states([photo["path"] for photo in photos if not is_copy(photo["path"])])
         for photo in photos:
             if is_copy(photo["path"]): output.append(photo); continue
-            try: items=self.items(photo["path"])
+            try: items=self.items(photo["path"], documents.get(photo["path"]), states.get(source(photo["path"]), {}), photo["path"] in documents)
             except ValueError as error:
                 # One unreadable settings file must not blank the whole folder.
                 problem("copies_read_failed",photo["path"],error,"copies hidden; settings left untouched"); items=[]
             photo["copy_count"]=len(items); output.append(photo)
+            if not items: continue
             rows=self.marks._rows([photo["path"]+SEPARATOR+i["photo_id"] for i in items])
             for order,item in enumerate(items):
                 key=photo["path"]+SEPARATOR+item["photo_id"]
                 copy={**photo,**rows.get(key,self.row(photo["path"],item)),"source_path":photo["path"],"copy_id":item["photo_id"],"copy_order":order,
                       "name":photo["name"]+" · "+item["name"],"copy_name":item["name"],"copy_count":0}
-                state=self.marks.kept.request(key)
-                copy.update(edited=state["edited"],grade_identity=state["grade_identity"]);output.append(copy)
+                output.append(copy)
         return output

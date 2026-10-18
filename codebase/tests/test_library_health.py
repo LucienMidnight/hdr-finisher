@@ -82,7 +82,9 @@ def test_failure_flood_is_one_group_with_three_examples(library, monkeypatch, ca
     def broken(path):
         raise ValueError("invalid settings") from OSError(errno.EACCES, "system says no")
     monkeypatch.setattr(store, "_document", broken)
-    store.read([photos[0].parent / f"{i}.png" for i in range(10000)])
+    # A folder that cannot be listed: every settings read is attempted (and
+    # fails), rather than skipped because the listing shows no settings file.
+    store.read([photos[0].parent / "unlisted" / f"{i}.png" for i in range(10000)])
     lines = [line for line in capsys.readouterr().err.splitlines() if "settings_read_failed" in line]
     assert len(lines) == 1
     fields = json.loads(lines[0].split("settings_read_failed ", 1)[1])
