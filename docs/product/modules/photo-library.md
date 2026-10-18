@@ -247,7 +247,10 @@ fails as recorded above; export, Proof and their limits were not changed.
       to 0.8 s (unpack 0.1 to 0.4 s, transfer about 0.1 to 0.2 s, GPU 0.07
       to 0.18 s, store 0.07 s) against 2.4 to 8 s; five real RAWs, two with
       lens corrections, pass the agreed limits (worst: HDR mean 0.13,
-      p99.9 1.3). Not yet covered: the starting document for paste (paste
+      p99.9 1.3). Whole folder, four at a time as the grid asks: 23
+      badminton RAWs in 11.3 s (0.49 s each) against 24 in 110 s (4.6 s
+      each) on the CPU route; reading each 85 MB RAW off the USB drive is
+      now the main cost (`tools/gpu_raw_prototype/folder_speed.js`). Not yet covered: the starting document for paste (paste
       prepares a GPU-developed photo the slow way), GPU memory budgeting with
       Grade and delivery (each development holds up to about 2 GB briefly),
       Single and full-screen views, saved-grade pictures.
