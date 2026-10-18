@@ -70,11 +70,21 @@ implemented is your choice.
 ## Implementation status, October 18
 
 Steve approved −0.8 EV. The code now applies that fixed calibration,
-documented Fuji RawExposureBias compensation, neutral shared starting
+Fuji maker-note DR-mode compensation, neutral shared starting
 adjustments, plain Exposure paste and new source/Library/saved-grade cache
 versions. The final 16-photo sheet includes DSCF4011 and uses finished code.
-Fuji meaning/sign was confirmed independently in darktable's documented
-DR100/200/400 tests, not inferred from DSCF4011.
+Steve corrected the Fuji policy after the whole RawExposureBias value
+overshot: ignore its camera base offset. Use actual maker-note DR100 or
+Auto-at-100 = 0 EV, DR200 = +1 EV, DR400 = +2 EV. Missing/unclear settings
+use plain calibration. DSCF6495 records Auto DR100; DSCF4011 Manual DR400.
+No DR setting is inferred from RawExposureBias. Camera-source and Library
+cache versions were invalidated for this correction. Fast checks only,
+as Steve requested.
+The regenerated sheet reports DSCF4011 +0.55 EV (DR400, +2 EV correction)
+and DSCF6495 −0.68 EV (Auto DR100, no correction).
+
+DR-only correction: 534 JavaScript checks and 2297 Python checks passed
+(3 skipped). Fast checks only at Steve's request; no new GPU sweep.
 
 Steve approved Grade's existing decoder and full-source measurements for
 unedited RAW grid/filmstrip thumbnails and their kept pictures, with the

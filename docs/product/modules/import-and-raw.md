@@ -67,14 +67,27 @@ Exposure start at 0; source peak measurements follow calibrated pixels.
 Grade and Library thumbnails use one starting-adjustment implementation. Non-camera
 starts, including linear DNG and authored SDR, retain their existing behavior.
 
-Fuji RAF tag `RawExposureBias` (0x9650) is read as its signed rational and
-compensated by its negative in EV, including the recorded base offset.
-[Darktable's documentation](https://docs.darktable.org/lua/stable/lua.scripts.manual/scripts/contrib/fujifilm_dynamic_range/)
-independently confirms the meaning/sign across DR100/200/400 on X100S and
-X100V. The comparison files record −1.13 EV (DSCF6495) and −2.72 EV
-(DSCF4011). Missing/malformed information gets the plain calibration;
-no offset is guessed from a DR mode or a single photo. DNG BaselineExposure
-is applied once on mosaiced routes; linear DNG keeps its existing route.
+Fuji correction uses the actual maker-note DR selection, read without image
+decoding from the RAF's embedded JPEG: DR100/Auto-at-100 adds 0 EV, DR200
+adds 1 EV, DR400 adds 2 EV. `DynamicRangeSetting` (0x1402) selects the valid
+manual `DevelopmentDynamicRange` (0x1403) or `AutoDynamicRange` (0x140b).
+Missing, malformed, unsupported or unclear settings receive only the fixed
+calibration. `RawExposureBias` is ignored: its built-in camera base offset
+made the earlier whole-bias compensation overshoot. DSCF6495 records Auto
+DR100 and DSCF4011 Manual DR400. Source/thumbnail/saved-picture versions
+were invalidated again. DNG BaselineExposure still applies once on mosaiced
+routes; linear DNG keeps its existing route.
+
+Regenerated comparison gaps after the DR-only correction: DSCF4011 +0.55 EV
+(DR400, +2 EV) and DSCF6495 −0.68 EV (Auto DR100, no correction). These
+are descriptive brightness gaps, not pass/fail targets. The known saved
+Fuji project affected by this policy correction is DSCF4011.hdrfinisher;
+the existing saved-work inventory found no DSCF6495 project/graded sidecar.
+No source photo or saved grade was written.
+
+DR-only correction validation: 534 JavaScript checks passed; Python 2297
+passed, 3 skipped. The 16-photo sheet was regenerated. Fast checks only,
+as Steve requested; no new GPU or export sweep.
 
 Source mip, unedited Library and saved-grade picture versions have changed
 so pictures from the old start regenerate. Exposure pastes as a plain number.

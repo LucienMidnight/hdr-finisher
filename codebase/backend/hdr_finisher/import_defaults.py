@@ -1,5 +1,6 @@
 """Neutral import defaults shared by Grade and Library; no image metering."""
 import struct
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -11,14 +12,12 @@ from .models import AdjustmentState
 RAW_CALIBRATION_EV = -0.8
 
 
-def fuji_raw_exposure_bias(path):
-    """Read RAF tag 0x9650, without decoding an image or guessing a DR mode.
+def fuji_dynamic_range(path):
+    """Read the actual DR percentage from the embedded JPEG's Fuji maker notes.
 
-    RAF directory layout and signed 16-bit rational: ExifTool FujiFilm.pm.
-    Meaning/sign independently documented and tested across DR100/200/400:
-    https://docs.darktable.org/lua/stable/lua.scripts.manual/scripts/contrib/fujifilm_dynamic_range/
-    A negative bias records a reduction; compensate by its negative in EV.
-    Missing, malformed or unsupported metadata receives no compensation.
+    ExifTool FujiFilm.pm: 0x1402 selects manual/auto, 0x1403 is valid
+    for manual only, 0x140b records the automatic selection. RawExposureBias
+    includes a camera base offset and is deliberately not used.
     """
     if Path(path).suffix.lower() != '.raf':
         return None
@@ -27,44 +26,48 @@ def fuji_raw_exposure_bias(path):
             header = handle.read(100)
             if len(header) != 100 or not header.startswith(b'FUJIFILMCCD-RAW '):
                 return None
-            offset, length = struct.unpack_from('>II', header, 92)
-            if offset < 100 or not 4 <= length <= 1024 * 1024:
+            offset, length = struct.unpack_from('>II', header, 84)
+            if offset < 100 or not 2 <= length <= 64 * 1024 * 1024:
                 return None
             handle.seek(offset)
-            directory = handle.read(length)
-        if len(directory) != length:
+            jpeg = handle.read(length)
+        if len(jpeg) != length:
             return None
-        count = struct.unpack_from('>I', directory)[0]
-        if count >= 256:
+        from PIL import Image
+        with Image.open(BytesIO(jpeg)) as image:
+            note = image.getexif().get_ifd(34665).get(37500)
+        if not isinstance(note, bytes) or note[:8] != b'FUJIFILM':
             return None
-        position = 4
-        bias = None
+        offset = struct.unpack_from('<I', note, 8)[0]
+        if offset < 12:
+            return None
+        count = struct.unpack_from('<H', note, offset)[0]
+        if count > 1024 or offset + 2 + count * 12 + 4 > len(note):
+            return None
+        fields = {}
         for _ in range(count):
-            tag, size = struct.unpack_from('>HH', directory, position)
-            position += 4
-            if position + size > length:
-                return None
-            if tag == 0x9650:
-                if size != 4 or bias is not None:
+            position = offset + 2 + _ * 12
+            tag, kind, size = struct.unpack_from('<HHI', note, position)
+            if tag in {0x1402, 0x1403, 0x140b}:
+                if kind != 3 or size != 1 or tag in fields:
                     return None
-                numerator, denominator = struct.unpack_from('>hh', directory, position)
-                if denominator <= 0:
-                    return None
-                bias = numerator / denominator
-            position += size
-        return bias
-    except (OSError, struct.error):
+                fields[tag] = struct.unpack_from('<H', note, position + 8)[0]
+        setting = fields.get(0x1402)
+        selected = fields.get(0x1403) if setting == 1 else fields.get(0x140b) if setting == 0 else {
+            0x100: 100, 0x201: 400}.get(setting)
+        return selected if selected in {100, 200, 400} else None
+    except (OSError, ValueError, TypeError, struct.error):
         return None
 
 
 def calibrate_camera_raw(pixels, path):
     """One uniform linear gain plus explicitly recorded Fuji brightness."""
-    bias = fuji_raw_exposure_bias(path)
-    recorded_ev = -bias if bias is not None else 0.0
+    dr = fuji_dynamic_range(path)
+    recorded_ev = {200: 1.0, 400: 2.0}.get(dr, 0.0)
     pixels *= np.float32(2.0 ** (RAW_CALIBRATION_EV + recorded_ev))
     return {'calibration_ev': RAW_CALIBRATION_EV,
             'recorded_brightness_ev': recorded_ev,
-            'fuji_raw_exposure_bias_ev': bias}
+            'fuji_dynamic_range_percent': dr}
 
 
 def apply_import_defaults(adjustments, reference):
