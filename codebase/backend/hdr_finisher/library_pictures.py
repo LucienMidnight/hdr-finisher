@@ -20,7 +20,7 @@ from . import loader, raw_import
 from .import_defaults import calibrate_camera_raw, starting_adjustments
 from .library_diagnostics import audited, problem, log
 from .analysis import classify_hdr
-from .color import map_negative_acescg, normalize_to_acescg
+from .color import display_referred_sdr, map_negative_acescg, normalize_to_acescg, sdr_file_renditions
 from .desktop_security import SOURCE_EXTENSIONS
 from .models import AdjustmentState
 from .render_cache import encode_rgba_proxy_rows
@@ -274,7 +274,7 @@ def default_look(pixels, reference, raw_input, suffix):
     sample = pixels[::max(1, int(np.ceil(max(pixels.shape[:2]) / 256)))].copy()
     analysis = classify_hdr(sample, {}, suffix)
     grade = starting_adjustments(analysis, reference)
-    if not raw_input:
+    if not raw_input and reference is None:
         # Preserve existing non-camera starts; camera RAW has no Library lift.
         grade.hdr.exposure += .25
         grade.sdr.exposure += .25
@@ -426,6 +426,9 @@ def decode_picture(path, edge, quality):
     reference = metadata.get("sdr_reference_image")
     if reference is not None:
         reference = reduce_picture(reference, edge)
+    elif space is not None and display_referred_sdr(space, transfer, suffix):
+        # The same start as Grade's import: the file is the SDR rendition.
+        pixels, reference = sdr_file_renditions(pixels)
     return pixels, reference, {"route": "quick-" + suffix[1:], "color_unconfirmed": space is None,
         "source_width": metadata.get("source_width", image.shape[1]), "source_height": metadata.get("source_height", image.shape[0])}
 

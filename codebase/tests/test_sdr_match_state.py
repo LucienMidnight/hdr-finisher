@@ -282,6 +282,7 @@ def test_replacing_an_authored_sdr_rendition_requires_consent(tmp_path: Path) ->
 
 
 def test_match_action_materializes_visible_controls_and_is_one_undo_step(tmp_path: Path) -> None:
+    # A plain PNG is its own SDR rendition, so matching it replaces that with consent.
     store, session_id = _store_with_source(tmp_path)
     session = store.get(session_id)
     session.adjustments.sdr.exposure = 0.65
@@ -290,7 +291,7 @@ def test_match_action_materializes_visible_controls_and_is_one_undo_step(tmp_pat
     session.denoise.sdr.enabled = True
     session.denoise.sdr.controls.amount = 0.17
 
-    matched = store.apply_sdr_match_action(session_id, expected_revision=0)
+    matched = store.apply_sdr_match_action(session_id, expected_revision=0, authored_sdr_override_consent=True)
     assert matched.revision == 1
     assert matched.document.sdr_match.materialized_status in {"matched", "needs_review"}
     assert matched.document.global_adjustments.sdr.use_authored_base is False
@@ -331,7 +332,7 @@ def test_repeated_materialized_match_recomputes_and_copies_current_hdr_denoise(t
     session.denoise.sdr.enabled = True
     session.denoise.sdr.controls.amount = 0.24
 
-    matched = store.apply_sdr_match_action(session_id, expected_revision=0)
+    matched = store.apply_sdr_match_action(session_id, expected_revision=0, authored_sdr_override_consent=True)
     assert matched.document.denoise.sdr.controls.amount == 0.62
 
     changed = session.denoise.model_copy(deep=True)
@@ -345,7 +346,7 @@ def test_repeated_materialized_match_recomputes_and_copies_current_hdr_denoise(t
     assert changed_state.document.sdr_match == matched.document.sdr_match
     assert changed_state.document.denoise.sdr.controls.amount == 0.62
 
-    rematched = store.apply_sdr_match_action(session_id, expected_revision=2)
+    rematched = store.apply_sdr_match_action(session_id, expected_revision=2, authored_sdr_override_consent=True)
     assert rematched.document.denoise.sdr == rematched.document.denoise.hdr
     assert rematched.document.denoise.sdr.controls.amount == 0.88
 

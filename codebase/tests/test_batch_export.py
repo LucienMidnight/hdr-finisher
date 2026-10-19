@@ -59,7 +59,7 @@ def test_three_photos_two_versions_match_single_export_exactly(tmp_path,formats)
         if format in required and caps[required[format]].status.value!="available":pytest.skip(caps[required[format]].detail)
     p=preset(formats)
     photos=[fixture_photo(tmp_path,i) for i in (1,2)]
-    copy=deepcopy(photos[0]);copy["path"]+="|copy|disposable";copy["copy_name"]="Virtual copy";copy["grade"]["global_adjustments"]["sdr"]["exposure"]=1.;photos.append(copy)
+    copy=deepcopy(photos[0]);copy["path"]+="|copy|disposable";copy["copy_name"]="Virtual copy";copy["grade"]["global_adjustments"]["hdr"]["exposure"]=1.;photos.append(copy)
     output=tmp_path/"out";output.mkdir()
     all_results=[]
     for sequence,photo in enumerate(photos,1):

@@ -12,6 +12,8 @@ from .import_bands import map_import_negative
 
 from .analysis import classify_hdr
 from .color import (
+    display_referred_sdr,
+    sdr_file_renditions,
     detect_color_space,
     map_negative_acescg,
     detect_transfer_function,
@@ -209,6 +211,14 @@ def load_image(
         metadata["linear_reference_note"] = (
             "Source 1.0 diffuse white normalized to HDR Finisher scene-linear 0.18 diffuse white."
         )
+    # A plain SDR file is a finished picture (Steve, 2026-10-19): the file is
+    # the SDR rendition, as a gain-map file's base is, and HDR shows it with
+    # its white at reference white. No generated SDR, no extra brightening.
+    if (sdr_reference_image is None and not metadata.get("needs_color_override")
+            and not metadata.get("decoder_normalized_to_acescg")
+            and display_referred_sdr(metadata.get("color_space"), metadata.get("transfer_function"), suffix)):
+        normalized, sdr_reference_image = sdr_file_renditions(normalized)
+        metadata["sdr_file_rendition"] = True
     # Unknown/conflicting primaries must be resolved before an irreversible
     # AP1 gamut operation. All resolved import routes share this boundary,
     # including decoder-normalized RAW, DNG and JPEG Ultra HDR.

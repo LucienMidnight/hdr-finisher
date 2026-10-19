@@ -339,7 +339,8 @@ def test_source_mip_levels_persist_across_sessions() -> None:
     assert restarted.status_code == 200
     assert restarted.headers["x-source-level-state"] == "disk"
     assert restarted.content == cold.content
-    assert source_store.diagnostics()["cold_builds"] == builds_before + 1
+    # A plain PNG carries its own SDR rendition, cached beside the scene.
+    assert source_store.diagnostics()["cold_builds"] == builds_before + 2
 
 
 def test_materialized_sdr_match_uses_the_ordinary_acescg_webgpu_source() -> None:
@@ -1444,7 +1445,9 @@ def test_proxy_body_is_sent_before_cache_write_and_prune(tmp_path, monkeypatch):
             assert message['body'] == response.body
             events.append('picture')
     asyncio.run(response({'type': 'http'}, None, sent))
-    assert events == ['picture', 'write', 'prune']
+    # The picture goes out first; the scene and the file's own SDR rendition
+    # are then each written and pruned.
+    assert events[0] == 'picture' and events[1:].count('write') == 2 and events[-1] == 'prune'
 
 
 def test_overlay_omits_grain_without_changing_the_saved_grade(monkeypatch) -> None:

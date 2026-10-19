@@ -103,6 +103,9 @@ def test_open_save_is_async_and_guards_publication(setup, monkeypatch, tmp_path,
     # measure only references held by the producer, including its reduced frame.
     if change == "next_photo":
         snapshot["image"] = np.tile(session.image, (17, 12, 1))
+        # A plain SDR file carries its own SDR rendition at the same size.
+        if snapshot["sdr_reference_image"] is not None:
+            snapshot["sdr_reference_image"] = np.tile(session.sdr_reference_image, (17, 12, 1))
     image_ref = weakref.ref(snapshot["image"])
     checking_save = [True]
     original_stat = kept.source_stat
@@ -161,6 +164,8 @@ def test_saved_thumbnail_arrives_before_large_picture_and_never_reuses_old_grade
     kept = marks.kept = KeptPictures(tmp_path, marks, Worker())
     snapshot = capture_source(session)
     snapshot["image"] = np.tile(snapshot["image"], (17, 12, 1))
+    if snapshot["sdr_reference_image"] is not None:
+        snapshot["sdr_reference_image"] = np.tile(snapshot["sdr_reference_image"], (17, 12, 1))
     try:
         kept.schedule(photo, grade, source=snapshot)
         assert entered.wait(5)
