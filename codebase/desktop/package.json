@@ -36,6 +36,7 @@
     "asar": true,
     "files": [
       "main.js",
+      "starting.html",
       "preload.js",
       "lib/**/*.js",
       { "from": "../frontend", "to": "shared", "filter": ["photo-transition.js"] },

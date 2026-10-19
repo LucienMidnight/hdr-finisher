@@ -1114,7 +1114,7 @@ async function createWindow(role = "main") {
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.setMenuBarVisibility(false);
   window.webContents.on("will-navigate", (event, url) => {
-    if (new URL(url).origin !== new URL(backend.url).origin) event.preventDefault();
+    if (!backend || new URL(url).origin !== new URL(backend.url).origin) event.preventDefault();
   });
   window.webContents.on("render-process-gone", () => { record.ready = false; });
   window.on("close", (event) => {
@@ -1163,13 +1163,19 @@ async function createWindow(role = "main") {
   for (const eventName of ["move", "resize", "enter-full-screen", "leave-full-screen"]) {
     window.on(eventName, () => scheduleWindowDisplayState(record));
   }
-  window.once("ready-to-show", () => { if (!window.isDestroyed()) window.show(); });
+  window.once("ready-to-show", () => {
+    if (!window.isDestroyed()) {
+      window.show();
+      libraryStage("window_visible", { role, duration_ms: Date.now() - libraryAppStarted });
+    }
+  });
   const secondaryPage = !app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_BROWSER === "1"
     ? "/static/media-browser-standalone.html"
     : !app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_WINDOW === "1"
       ? "/static/window-foundation.html" : "/library";
   try {
-    await window.loadURL(isMain ? backend.url : `${backend.url}${secondaryPage}`);
+    if (isMain && !backend) await window.loadFile(path.join(__dirname, "starting.html"));
+    else await window.loadURL(isMain ? backend.url : `${backend.url}${secondaryPage}`);
   } catch (error) {
     // Another same-origin navigation can supersede this page load. The
     // backend is already ready; only genuine load failures reach startup.
@@ -1314,7 +1320,9 @@ if (!gotLock) {
     loadApplicationPreferences();
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {
+      await createWindow();
       await startBackend();
+      if (shuttingDown || !mainWindow || mainWindow.isDestroyed()) return;
       const activeBackend = backend;
       session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`] }, (details, callback) => {
         details.requestHeaders["X-HDR-Finisher-Token"] = activeBackend.authoringSecret;
@@ -1325,7 +1333,7 @@ if (!gotLock) {
         screen.on(eventName, scheduleDisplayState);
       }
       buildMenu();
-      await createWindow();
+      await mainWindow.loadURL(backend.url);
       setTimeout(async () => {
       if (shuttingDown) return;
       deliveryWindow = new BrowserWindow({show:false, webPreferences:{

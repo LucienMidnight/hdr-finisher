@@ -50,8 +50,8 @@ release workflow and the focused release runner. `v0.9.0` (October 9) and
 - The Flatpak metainfo has no 0.9.1 release entry.
 - Whether 0.9.0 and 0.9.1 were published as GitHub releases can't be told
   from the code. Steve to confirm.
-- The app window waits for the backend to start before it appears (see
-  Photo Library speed leftovers).
+- October 19: the window shows Starting… while the backend starts, then
+  loads the app when it is ready.
 - Explicit interfaces between frontend feature files (Modularization
   section 9) were proposed as a next sprint and not done.
 
@@ -60,7 +60,6 @@ release workflow and the focused release runner. `v0.9.0` (October 9) and
 1. Linux: show the HDR warning only once a photo is open.
 2. Add the 0.9.1 Flatpak release entry at the next release.
 3. Releases link in the Updates panel.
-4. Show the window before the backend is ready.
 5. Explicit interfaces between frontend feature files, if Steve wants it.
 
 ## 6. Detail and history
