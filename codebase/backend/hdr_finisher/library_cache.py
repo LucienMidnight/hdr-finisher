@@ -3,15 +3,14 @@ import json
 import os
 from pathlib import Path
 from threading import RLock
-from time import monotonic
+import sqlite3
 from tempfile import NamedTemporaryFile
 
 DIRECTORIES = ('library-pictures', 'library-full-pictures', 'library-raw-thumbnails', 'library-thumbnails')
 ALLOWANCES = {'thumbnail': 2, 'full_size': 10, 'saved_grade': 2}
 LIMITS = (1, 2, 5, 10, 20)
 _LOCK = RLock()
-TRIM_INTERVAL_S = 20.0
-_LAST_TRIM = {}
+_LEDGERS = {}
 MARKER = '.hdr-finisher-cache'
 
 
@@ -59,7 +58,7 @@ class LibraryCache:
             if directory.is_symlink() or getattr(directory, 'is_junction', lambda: False)():
                 continue
             for file in directory.glob('*'):
-                if file.is_symlink() or not file.is_file():
+                if file.is_symlink() or not file.is_file() or file.suffix == '.tmp' or file.name.startswith('kept-'):
                     continue
                 try:
                     result.append((file.stat().st_mtime_ns, file.stat().st_size, file))
@@ -75,13 +74,79 @@ class LibraryCache:
             return 'saved_grade'
         return 'thumbnail'
 
-    def usage(self):
-        used = {name: 0 for name in ALLOWANCES}
-        for _, size, file in self.entries():
-            used[self.allowance(file)] += size
-        return {**self.preferences(), 'used_bytes': sum(used.values()),
-                **{name + '_used_bytes': size for name, size in used.items()}}
+    def _ledger(self, reconcile=True):
+        """Shared across backend/helper processes; rebuild once per process start.
 
+        Only final published files count. Settings usage and actual eviction
+        reconcile outside edits; routine publications never list the folder.
+        """
+        root = self.prepare()
+        key = str(root.resolve())
+        if key not in _LEDGERS:
+            db = sqlite3.connect(root / '.library-cache-size.sqlite3', timeout=30, check_same_thread=False)
+            db.execute('PRAGMA journal_mode=WAL')
+            db.executescript("""
+                CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, category TEXT, size INTEGER);
+                CREATE TABLE IF NOT EXISTS totals(category TEXT PRIMARY KEY, size INTEGER);
+            """)
+            _LEDGERS[key] = db
+            try:
+                if reconcile:
+                    self._reconcile(db)
+            except BaseException:
+                del _LEDGERS[key]
+                db.close()
+                raise
+        return _LEDGERS[key]
+
+    def _reconcile(self, db):
+        db.execute('BEGIN IMMEDIATE')
+        try:
+            entries = self.entries()
+            db.execute('DELETE FROM files')
+            db.execute('DELETE FROM totals')
+            db.executemany('INSERT INTO files VALUES (?, ?, ?)',
+                           [(str(file), self.allowance(file), size) for _, size, file in entries])
+            db.execute('INSERT INTO totals SELECT category, SUM(size) FROM files GROUP BY category')
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+
+    def record(self, file):
+        """Record a final publication/replacement or removal in constant time."""
+        file = Path(file)
+        with _LOCK:
+            db = self._ledger()
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                old = db.execute('SELECT category, size FROM files WHERE path=?', (str(file),)).fetchone()
+                if old:
+                    db.execute('UPDATE totals SET size=size-? WHERE category=?', (old[1], old[0]))
+                db.execute('DELETE FROM files WHERE path=?', (str(file),))
+                try:
+                    size = file.stat().st_size
+                except FileNotFoundError:
+                    size = None
+                if size is not None:
+                    category = self.allowance(file)
+                    db.execute('INSERT INTO files VALUES (?, ?, ?)', (str(file), category, size))
+                    db.execute('INSERT INTO totals VALUES (?, ?) ON CONFLICT(category) DO UPDATE SET size=size+excluded.size', (category, size))
+                db.commit()
+            except BaseException:
+                db.rollback()
+                raise
+
+    def _used(self, db):
+        return {**{name: 0 for name in ALLOWANCES}, **dict(db.execute('SELECT category, size FROM totals'))}
+
+    def usage(self):
+        with _LOCK:
+            db = self._ledger(reconcile=False)
+            self._reconcile(db)  # Settings is also the explicit drift-recovery point.
+            used = self._used(db)
+            return {**self.preferences(), 'used_bytes': sum(used.values()),
+                    **{name + '_used_bytes': size for name, size in used.items()}}
 
     def update(self, change):
         if set(change) - {'enabled', 'location', *(name + '_limit_gb' for name in ALLOWANCES)}:
@@ -130,21 +195,22 @@ class LibraryCache:
             return {'freed_bytes': freed, **self.usage()}
 
     def trim_soon(self):
-        """Routine trim after a saved picture: listing a large cache takes
-        seconds, so this runs at most every 20 s per cache folder."""
-        location = str(self.preferences()['location'])
-        now = monotonic()
-        if now - _LAST_TRIM.get(location, -1e9) < TRIM_INTERVAL_S:
-            return
-        _LAST_TRIM[location] = now
+        """Check running totals on every save; enumerate only for eviction."""
         self.trim()
 
     def trim(self, limit_bytes=None, allowance='thumbnail'):
         if allowance not in ALLOWANCES:
             raise ValueError('Unknown Library cache allowance.')
         with _LOCK:
-            entries = self.entries()
+            db = self._ledger()
             preferences = self.preferences()
+            used = self._used(db)
+            limits = {name: limit_bytes if limit_bytes is not None and name == allowance
+                      else preferences[name + '_limit_gb'] * 1024 ** 3 for name in ALLOWANCES}
+            if all(used[name] <= limits[name] for name in ALLOWANCES):
+                return
+            self._reconcile(db)
+            entries = self.entries()
             for name in ALLOWANCES:
                 owned = [item for item in entries if self.allowance(item[2]) == name]
                 total = sum(size for _, size, _ in owned)
@@ -164,5 +230,6 @@ class LibraryCache:
                         try:
                             file.unlink()
                             total -= size
+                            self.record(file)
                         except FileNotFoundError:
-                            pass
+                            self.record(file)

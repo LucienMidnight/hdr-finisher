@@ -41,6 +41,7 @@ class RawThumbnails:
                 return None
             except (OSError, ValueError, EOFError):
                 file.unlink(missing_ok=True)
+                self.managed.record(file)
                 return None
 
     def store(self, meta, body):
@@ -66,6 +67,7 @@ class RawThumbnails:
                 np.savez_compressed(handle, pixels=pixels, metadata=np.asarray(json.dumps(facts)))
             try:
                 os.replace(temp, self.file(key))
+                self.managed.record(self.file(key))
             finally:
                 temp.unlink(missing_ok=True)
             self.managed.trim_soon()

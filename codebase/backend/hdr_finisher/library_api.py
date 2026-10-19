@@ -222,6 +222,7 @@ def create_library_router(worker, browser, store=None):
 
     @asynccontextmanager
     async def lifespan(_app):
+        await run_in_threadpool(thumbnails.managed.usage)
         await run_in_threadpool(file_commands.start)
         await run_in_threadpool(marks.writer.start, lambda: worker.status()["paused"])
         try:

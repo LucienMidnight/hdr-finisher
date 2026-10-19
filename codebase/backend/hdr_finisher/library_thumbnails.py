@@ -97,6 +97,7 @@ def build(root, path, edge, key, kept=None, cancelled=None):
     try:
         check_cancelled(cancelled)
         os.replace(temp, directory / (key + '.jpg'))
+        managed.record(directory / (key + '.jpg'))
     finally:
         temp.unlink(missing_ok=True)
     managed.trim_soon()
@@ -181,6 +182,7 @@ class Thumbnails:
             if preferences != self.managed.preferences() or current_key() != key:
                 raise CancelledError('Photo, grade or cache settings changed.')
             os.replace(temp, destination)
+            self.managed.record(destination)
         finally:
             temp.unlink(missing_ok=True)
         self.managed.trim_soon()

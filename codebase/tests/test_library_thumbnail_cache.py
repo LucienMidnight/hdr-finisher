@@ -209,18 +209,42 @@ def test_camera_preview_then_gpu_thumbnail_without_raw_decode(tmp_path, monkeypa
     assert batch()['pending'] == [str(photo)]
 
 
-def test_routine_trim_lists_a_large_cache_at_most_every_20_seconds(tmp_path, monkeypatch):
-    from hdr_finisher import library_cache
-    cache = library_cache.LibraryCache(tmp_path)
-    listings = []
-    monkeypatch.setattr(library_cache.LibraryCache, "entries", lambda self, location=None: listings.append(1) or [])
-    clock = [1000.0]
-    monkeypatch.setattr(library_cache, "monotonic", lambda: clock[0])
-    cache.trim_soon(); cache.trim_soon(); cache.trim_soon()
-    assert len(listings) == 1
-    clock[0] += library_cache.TRIM_INTERVAL_S
-    cache.trim_soon()
-    assert len(listings) == 2
-    # Settings changes and explicit limits still trim at once.
-    cache.trim(); cache.trim(limit_bytes=0)
-    assert len(listings) == 4
+def test_running_total_publications_replacements_drift_and_clear(tmp_path, monkeypatch):
+    from time import perf_counter
+    cache = LibraryCache(tmp_path)
+    root = cache.prepare()
+    folder = cache.directory('library-thumbnails'); folder.mkdir()
+    for index in range(5000):
+        (folder / f'{index}.jpg').write_bytes(b'x')
+    assert cache.usage()['used_bytes'] == 5000
+    entries = cache.entries
+    monkeypatch.setattr(cache, 'entries', lambda *args: pytest.fail('Routine save must not list the cache'))
+    times = []
+    for size in range(10, 20):
+        file = folder / 'new.jpg'; file.write_bytes(b'x' * size)
+        start = perf_counter(); cache.record(file); cache.trim_soon()
+        times.append((perf_counter() - start) * 1000)
+        assert cache._used(cache._ledger())['thumbnail'] == 5000 + size
+    print(f'Cache bookkeeping at 5000 entries: worst {max(times):.2f} ms (limit 50 ms)')
+    assert max(times) < 50
+    monkeypatch.setattr(cache, 'entries', entries)
+    # Outside deletion and replacement are recovered when settings reads usage.
+    (folder / '0.jpg').unlink(); (folder / '1.jpg').write_bytes(b'xxxxx')
+    assert cache.usage()['used_bytes'] == 5022
+    cache.trim(limit_bytes=10)
+    assert cache.usage()['used_bytes'] <= 10
+    cache.clear()
+    assert cache._used(cache._ledger())['thumbnail'] == 0
+
+
+def test_cache_total_shared_with_another_process_and_recovers_on_restart(tmp_path):
+    import subprocess, sys
+    cache = LibraryCache(tmp_path); root = cache.prepare()
+    folder = cache.directory('library-thumbnails'); folder.mkdir()
+    assert cache.usage()['used_bytes'] == 0
+    code = "from hdr_finisher.library_cache import LibraryCache; from pathlib import Path; import sys; c=LibraryCache(sys.argv[1]); p=c.directory('library-thumbnails')/'child.jpg'; p.write_bytes(b'123'); c.record(p); c.trim_soon()"
+    subprocess.run([sys.executable, '-c', code, str(tmp_path)], check=True, env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "backend")})
+    assert cache._used(cache._ledger())['thumbnail'] == 3
+    (folder / 'child.jpg').unlink()
+    subprocess.run([sys.executable, '-c', "from hdr_finisher.library_cache import LibraryCache; import sys; c=LibraryCache(sys.argv[1]); assert c._used(c._ledger())['thumbnail'] == 0", str(tmp_path)], check=True, env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "backend")})
+    assert cache._used(cache._ledger())['thumbnail'] == 0

@@ -394,6 +394,8 @@ class KeptPictures:
                             temp=Path(result["temporary"]);key=self.key(path,request["grade_identity"])
                             os.replace(temp,self.cache.root/(key+"."+result["extension"]))
                             atomic_json(self.cache.root/(key+".json"),{k:v for k,v in result.items() if k!="temporary"}|{"source_stat":stat,"saved_at":saved_at})
+                            self.cache.managed.record(self.cache.root/(key+"."+result["extension"]))
+                            self.cache.managed.record(self.cache.root/(key+".json"))
                             self.jobs.pop(path,None)
                             self._retry_after.pop(path,None)
                         self.queue.done(path,request["grade_identity"])
@@ -453,7 +455,10 @@ class KeptPictures:
                 else: raise ValueError("Unsupported kept picture format.")
             except (OSError, ValueError, EOFError, KeyError, GainMapDecodeError, ExportProcessError) as error:
                 metadata.unlink(missing_ok=True)
-                if path is not None: path.unlink(missing_ok=True)
+                self.cache.managed.record(metadata)
+                if path is not None:
+                    path.unlink(missing_ok=True)
+                    self.cache.managed.record(path)
                 log("kept_picture_unreadable",key=key,reason=str(error),
                     action="damaged entry removed; retry on Library use")
                 raise ValueError("Saved Library picture is unavailable; request it again.") from error

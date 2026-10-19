@@ -135,7 +135,8 @@ class OverlayMaps:
             if file.exists(): os.utime(file,None)
             return meta|{"key":key,"cache_hit":True,"stored_bytes":file.stat().st_size if file.exists() else 0}
         except FileNotFoundError:return None
-        except (OSError,ValueError,EOFError):file.unlink(missing_ok=True);return None
+        except (OSError,ValueError,EOFError):
+            file.unlink(missing_ok=True);self.cache.managed.record(file);return None
     def build(self,path,kind="exposure",quality="half",cancelled=None):
         existing=self.cached(path,kind,quality)
         if existing:return existing
@@ -166,6 +167,7 @@ class OverlayMaps:
             check_cancelled(cancelled)
             if map_key(path,kind,quality)!=key:raise ValueError("The source photo changed; overlay was not published.")
             os.replace(temp,self.file(key))
+            self.cache.managed.record(self.file(key))
         finally:temp.unlink(missing_ok=True)
         self.cache.trim();log("overlay_map_saved",**meta)
         return meta|{"key":key,"cache_hit":False,"stored_bytes":self.file(key).stat().st_size}

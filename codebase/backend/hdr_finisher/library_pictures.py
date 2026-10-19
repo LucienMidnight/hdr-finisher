@@ -123,6 +123,7 @@ class LibraryPictureCache:
                 temporary = Path(handle.name)
                 json.dump(document, handle)
             os.replace(temporary, destination)
+            self.managed.record(destination)
         finally:
             if temporary:
                 temporary.unlink(missing_ok=True)
@@ -147,6 +148,7 @@ class LibraryPictureCache:
         except (OSError, ValueError, EOFError) as error:
             problem("cache_corrupt", destination, error, "damaged entry removed; picture rebuilt")
             destination.unlink(missing_ok=True)
+            self.managed.record(destination)
             return None
 
     @audited("cache_build")
@@ -205,6 +207,7 @@ class LibraryPictureCache:
                     save(handle, **arrays)
                 check_cancelled(cancelled)
                 os.replace(temporary, destination)
+                self.managed.record(destination)
             finally:
                 if temporary:
                     temporary.unlink(missing_ok=True)

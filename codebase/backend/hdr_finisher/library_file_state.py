@@ -76,7 +76,8 @@ def pictures(root, item, delete=False):
     from .library_overlays import VERSION as MAP_VERSION
     from .library_kept import kept_picture_key
     from .library_cache import LibraryCache
-    root=LibraryCache(root).directory('library-pictures')
+    managed=LibraryCache(root)
+    root=managed.directory('library-pictures')
     if not root.exists(): return
     old,new=item['old'],item.get('new','')
     pairs=[(r['path'],mapped(r['path'],old,new)) for r in item['rows'].get('photo_grades',[])]
@@ -111,3 +112,4 @@ def pictures(root, item, delete=False):
             with temporary.open('wb') as f: np.savez_compressed(f,**arrays)
             os.replace(temporary,root/(key+suffix));file.unlink(missing_ok=True)
         except (OSError,ValueError,KeyError): continue
+    managed.usage()

@@ -259,9 +259,9 @@ fails as recorded above; export, Proof and their limits were not changed.
       thumbnail is ready, never the unedited look. GPU jobs run two at a
       time outside the grid's request slots (camera previews had queued
       behind them) and the grid and filmstrip share one job per photo.
-      Routine cache trims after a saved picture run at most every 20 s
-      (`trim_soon`): on Steve's large cache each listing took about 3 s and
-      held up every stored thumbnail. `tests/library-gpu-raw-grid.js`
+      October 19: a shared running size ledger replaces the interim 20 s
+      trim limit. Each saved picture updates its allowance total; only
+      eviction, startup recovery and settings drift recovery list files. `tests/library-gpu-raw-grid.js`
       checks the stages. Not yet covered: the starting document for paste (paste
       prepares a GPU-developed photo the slow way), GPU memory budgeting with
       Grade and delivery (each development holds up to about 2 GB briefly),
