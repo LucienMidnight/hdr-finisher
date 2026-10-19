@@ -228,6 +228,12 @@ Settings rules (from v1.2 section 5, still in force):
 
 ## 6. Open work, in order
 
+0. **GPU export speed, end to end** (Steve, October 20: before the live
+   recorded test session). Batch export is about 13.6 s per photo and a
+   full-size Maximum Fidelity export about 33 s. Export RAW preparation is
+   still CPU, the GPU stage is far longer than the render needs, encoding is
+   5 to 6 s, and large sharpened originals fall back to the CPU. Brief:
+   [codex-brief-export-gpu-speed-2026-10-20](../../technical/briefs/codex-brief-export-gpu-speed-2026-10-20.md).
 1. **GPU delivery.** Brief:
    [codex-brief-gpu-delivery-build-2026-10-18](../../technical/archive/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
    Steps 1–5 implemented. Steve to try one badminton export, a small batch,
