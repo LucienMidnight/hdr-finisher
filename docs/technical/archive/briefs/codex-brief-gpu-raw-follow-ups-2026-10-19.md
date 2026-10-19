@@ -2,6 +2,7 @@
 ## HDR Finisher
 
 **Date:** October 19, 2026
+**Status:** Complete. Outcomes below; remaining speed goals are recorded explicitly.
 **Branch:** `gpu-raw-library`, from its current tip.
 **Module PRDs:** `docs/product/modules/photo-library.md` (section 5, item 1,
 "Not yet covered") and `docs/product/modules/export-and-proof.md` ("Not
@@ -160,6 +161,8 @@ manual Lensfun corrections on DSC07060/61, grain and a local adjustment.
 Worst HDR mean 0.09243 / p99.9 1.80228; SDR 0.05364 / 0.83131, before encoding.
 All use the unchanged limits. Cold two-size preparation takes 1.92-2.34 s,
 cached requests about 6 ms; prepared neighbour navigation takes 56 ms. These
+measurements include 1.24-1.54 s GPU development with scheduler checks, the
+largest cold stage. The total and stage timings
 are observations under the existing 5% timing allowance, not a new speed
 guarantee. First native preparation measured 3.44-4.40 s including full-source
 transfer; this is the remaining cost when entering 100%, not when panning.
@@ -174,7 +177,31 @@ The first two UI attempts passed native zoom but tried a hidden toolbar
 button to exit full screen; correcting the driver to use its keyboard
 shortcut resolved that test-control failure. No production retry or guard.
 
-Next: part 6 report only. Ask before slow work or pushing.
+### Part 6 outcome - October 19
+
+Completed as report only in the Photo Library module PRD, "Other RAW
+families: GPU work estimate". It distinguishes eligible ordinary Bayer
+cameras from X-Trans, Bayer mosaic DNG, linear DNG and distinct four-colour,
+non-RGB or layered sensors. Estimates: small metadata-family additions
+2-5 working days; X-Trans about 2-4 weeks; declared DNG subsets 1-2 weeks,
+current supported DNG/profile/mandatory-correction coverage 2-4 weeks;
+different sensor families about 4-8 weeks each, with substantial uncertainty.
+These are local-code engineering estimates, not measured promises. No GPU
+support for those families was implemented; existing CPU routes remain.
+
+All six parts are complete, plus the separately requested delivered HDR
+ceiling fix. Parts 1-2 committed together, followed by the ceiling repair,
+then parts 3, 4, 5 and this report in order. Remaining product goals are
+documented: about-one-second saved pictures are not yet achieved; batch RAW
+preparation is still CPU; large sharpened originals still need tiled
+finishing to fit GPU memory; Steve's HDR visual review and healthy-MacBook
+test remain external checks. No hardware guards/retries and no push.
+
+Checks for this documentation group: 541 Node passed; 2315 Python passed,
+3 skipped, 19 existing warnings (7 min 35 s). No further GPU driver because
+part 6 changes no executable behaviour. The part 5
+native-cache focused check covers the final code change after its full-suite
+run; the final Python suite also includes that change.
 
 ### Intended result
 

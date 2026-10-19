@@ -154,6 +154,8 @@ fails as recorded above; export, Proof and their limits were not changed.
   cached requests about 6 ms, prepared neighbour flip 56 ms. First native
   preparation 3.44-4.40 s including transfer; no previous like-for-like
   three-photo Single baseline. Existing 5% timing allowance applies.
+  GPU development including scheduler checks is the largest measured cold
+  stage (1.24-1.54 s of the 1.92-2.34 s two-size preparation).
   Checks: 541 Node / 2315 Python passed (3 skipped, 19 existing warnings),
   focused native/cache 20 passed; Single/native and four-make grid drivers
   passed serially. The driver now exits full screen with the keyboard
@@ -225,6 +227,40 @@ fails as recorded above; export, Proof and their limits were not changed.
   remains open (Import and RAW).
   Non-RAW starts are unchanged. Unedited and saved-grade cache versions
   invalidate pictures from the previous RAW start.
+
+### Other RAW families: GPU work estimate (October 19, part 6)
+
+Report only; these unsupported developments keep the CPU route and recorded
+fallback reasons. A RAF extension does not itself mean X-Trans: eligible
+Bayer RAFs can already use the GPU. Likewise, adding another ordinary Bayer
+camera supported by LibRaw is not automatically a new GPU algorithm.
+
+These are rough engineering estimates for one developer, including focused
+qualification and integration, not measured delivery promises. They assume
+representative files are available and exclude a LibRaw codec upgrade or
+reverse engineering a new proprietary format.
+
+| Family | What is missing | Rough size |
+| --- | --- | --- |
+| Additional ordinary Bayer cameras | Check the existing sensor bridge supplies valid black/white levels, as-shot white balance, three-colour camera matrix and orientation. Fix only missing metadata fields, then qualify bright highlights and lens corrections. LibRaw still unpacks compressed sensor data on the CPU. Cameras already satisfying this contract need qualification rather than a new shader. | Small: 2-5 working days per new metadata family; no new code if it already qualifies. |
+| X-Trans (6 by 6 CFA) | Replace the shader's hardcoded 2 by 2 CFA addressing and Bayer AHD interpolation/homogeneity passes with the full-quality X-Trans development used by Grade. Audit highlight repair neighbourhoods and preserve the full-source measurements, colour handling, lens order, bounded memory and Grade preemption. Then qualify several sensor generations at Fit/native with highlights, grain and locals. Merely changing the CFA table cannot make Bayer AHD correct for X-Trans. | Large: about 2-4 weeks. |
+| Bayer mosaic DNG | Classify the primary image correctly, preserve DNG calibration/profile and brightness semantics, then feed eligible Bayer mosaics into the shared GPU development. Honor mandatory operations and their order; do not remove the blanket DNG exclusion before those semantics are covered. | Medium: about 1-2 weeks for a declared simple subset; 2-4 weeks for all currently supported mosaic DNG cases and mandatory corrections. |
+| Linear DNG | No demosaic is needed. Bridge the existing decoded linear pixels, black/white normalization, camera/profile colour conversion, exposure/brightness metadata, crop/orientation and mandatory operations into the GPU path. Existing RGB finishing can be reused. The current CPU implementation supports specific OpcodeList3 GainMap and WarpRectilinear variants; GPU equivalents must preserve their order and prevent a second Lensfun correction. Unsupported mandatory operations remain rejected. | Medium: about 1-2 weeks for a declared subset; roughly 2-4 weeks for the currently supported linear cases with correction/profile coverage. This overlaps the mosaic DNG infrastructure, not an additive estimate. |
+| Distinct four-colour, non-RGB CFA, unusual CFA or layered sensors | Define a source representation, calibration and colour transform matching Grade's existing CPU route; implement the family-specific reconstruction instead of forcing the three-channel Bayer pipeline onto it. Layered data needs a different unpacked input. Scope from real sample files before implementation. | Large and uncertain: about 4-8 weeks per sensor family; format decoding work could extend it. |
+
+The estimates follow the local eligibility and implementation boundaries in
+`library_gpu_raw.sensor`, `raw_import._camera_linear_metadata_from_libraw`,
+the WGSL CFA/AHD passes in `frontend/library-gpu-raw.js`, and the primary-image,
+profile and opcode handling in `linear_dng.py`. DNG container support alone
+does not establish correct development. Missing/software/lost GPU remains
+the CPU fallback for every supported family. No additional GPU support was
+built in part 6, and no numerical limit changed.
+
+For any chosen extension, acceptance should reuse the existing perceptual
+limits before encoding (HDR/SDR mean below 1.0, p99.9 at most 3.0), Fit/native,
+grain/locals and lens cases, the exact delivered HDR ceiling after encoding,
+and shared memory/preemption checks. Start with the family Steve needs and
+its representative photos; no broad format project is implied here.
 
 ## 5. Open work, in order
 
@@ -316,8 +352,8 @@ fails as recorded above; export, Proof and their limits were not changed.
       checks the stages. GPU-developed starting documents now feed paste (part 3).
       Shared GPU memory budgeting with Grade and delivery is built in part 4.
       Single and full-screen are built in part 5. Saved-grade pictures are built in parts
-      1–2 of the follow-up; the remaining items are
-      briefed in [codex-brief-gpu-raw-follow-ups-2026-10-19](../../technical/briefs/codex-brief-gpu-raw-follow-ups-2026-10-19.md).
+      1–2 of the follow-up; part 6 reports unsupported families above.
+      Completed brief and outcome: [codex-brief-gpu-raw-follow-ups-2026-10-19](../../technical/archive/briefs/codex-brief-gpu-raw-follow-ups-2026-10-19.md).
    0. **Quick wins built October 19** ([brief and outcome](../../technical/archive/briefs/codex-brief-library-speed-quick-wins-2026-10-18.md)):
       the window appears before the backend; a shared running cache total
       replaces folder listings after each save and the interim 20 s trim limit.
