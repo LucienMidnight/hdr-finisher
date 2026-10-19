@@ -42,11 +42,11 @@ Library PRD, section 4. These later decisions replace older ones:
 
 | Decision | Date |
 | --- | --- |
-| Grid and filmstrip thumbnails are one gain-map file each (Ultra HDR JPEG), in a managed disk cache. Full-size Single and full-screen pictures stay scene-linear, drawn by the GPU. | Steve, 2026-10-17 |
+| ~~Grid and filmstrip thumbnails are one gain-map file each (Ultra HDR JPEG), in a managed disk cache.~~ Replaced October 19 by "Develop once, draw live". Full-size Single and full-screen pictures stay scene-linear, drawn by the GPU. | Steve, 2026-10-17 |
 | One cache folder, default `%LOCALAPPDATA%\HDR Finisher\Cache` (on C:), with a folder chooser, on/off, size controls and Clear. Thumbnails, full-size pictures and saved-grade pictures have separate allowances. | Steve, 2026-10-17 |
 | **One stored thumbnail size per photo, scaled to the cell.** No size per window width. | Steve, 2026-10-18 |
 | **Picture tiers:** tier 0 is the camera's embedded preview (under 0.2 s), replaced in place by the real thumbnail. The visible swap is accepted; a blur-then-wipe is the fallback if it bothers Steve. | Steve, 2026-10-12 |
-| The real thumbnail saved to the cache comes from the GPU picture already made for display. It is not decoded and rendered again on the CPU. | Steve, 2026-10-18 |
+| ~~The real thumbnail saved to the cache comes from the GPU picture already made for display. It is not decoded and rendered again on the CPU.~~ Replaced October 19 by "Develop once, draw live". | Steve, 2026-10-18 |
 | The Export page stays and grows; Quick export… runs a preset on a selection. | Steve, 2026-10-11 |
 | Exposure pastes as a plain number, including RAW; starting Exposure is zero. | Steve, 2026-10-11 |
 | No photo-count size target as a product idea; tested on a large library internally. | Steve, 2026-10-11 |
@@ -55,6 +55,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | Pause of saved-grade picture work lasts one app session. | 2026-10-18 |
 | **Library pictures: speed first, accuracy "close enough to enjoy".** Thumbnails must be very fast and give a good SDR and HDR preview for culling and group grading. Larger pictures must look close enough to the export to enjoy full screen, with no noticeably wrong colour or tone; they need not be precise. Judged by eye. Export and Proof keep their strict limits. | Steve, 2026-10-18 |
 | **Prove GPU development first.** Before building the rest of the speed plan, Claude (not Codex) prototypes full-quality RAW development on the GPU to show whether it is fast enough. | Steve, 2026-10-18 |
+| **Develop once, draw live.** Each photo is developed once into a stored version; every Library picture (unedited, pasted or saved grade) is drawn live on the GPU from it with Grade's shaders. Finished-picture files are no longer made for display; a pasted grade is a redraw. Replaces the October 17 gain-map thumbnail decision and the October 18 "save the displayed GPU picture" decision. | Steve, 2026-10-19 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
 
 **Paste rules (built):** values measured from one photo are never pasted
@@ -292,9 +293,10 @@ its representative photos; no broad format project is implied here.
      the GPU from that version with Grade's own shaders, the way Grade's
      Fit view works. Recently drawn pictures stay in the memory pool.
      Finished-picture files are no longer made for display. A pasted grade
-     needs only a redraw, not a new development. *Pending Steve's decision;
-     it replaces the October 17 gain-map thumbnail decision and the October
-     18 "save the displayed GPU picture" decision.*
+     needs only a redraw, not a new development. **Approved by Steve,
+     October 19**; it replaces the October 17 gain-map thumbnail decision and
+     the October 18 "save the displayed GPU picture" decision. Brief:
+     [codex-brief-library-draw-live-2026-10-19](../../technical/briefs/codex-brief-library-draw-live-2026-10-19.md).
    - **Development on the GPU, same maths, CPU fallback.** Step (a):
      camera colour, colour-range handling, measurements and reduction.
      Step (b): highlight repair and the AHD demosaic, ported from the
