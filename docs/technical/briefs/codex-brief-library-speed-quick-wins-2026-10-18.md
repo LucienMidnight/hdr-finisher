@@ -2,7 +2,15 @@
 ## HDR Finisher
 
 **Date:** October 18, 2026
-**Branch:** `film-look-rebuild`, from its current tip.
+**Branch:** `gpu-raw-library`, from its current tip (it holds the GPU RAW
+thumbnail work this builds on; not yet merged into `film-look-rebuild`).
+
+**Updated October 19 (Claude):** Steve's real cache made each listing take
+about 3 s and held up every stored thumbnail, so `LibraryCache.trim_soon()`
+now limits routine trims to one every 20 s. That is an interim fix: replace it
+with the running total below and remove `trim_soon`'s time limit. GPU warm-up
+now also covers the GPU RAW development module (`frontend/library-gpu-raw.js`):
+its device and pipelines take 0.2 to 0.8 s on first use.
 **Module PRDs:** `docs/product/modules/photo-library.md` (open work item 1,
 phase 0) and `docs/product/modules/desktop-and-release.md` (window before
 the backend). Update both as this lands.
@@ -18,7 +26,7 @@ Library speed design. None changes any picture.
 | --- | --- | --- |
 | Show the app window before the backend is ready | Backend ready 7.26 s after launch; the window appears only then | The window appears at once, with a calm "Starting…" state, and becomes usable when the backend is ready |
 | Keep a running total of the Library cache size instead of listing the cache folder after each saved picture | 17 ms at 70 entries, 197 ms at 1,000, 2.2 s at 5,000, per publication | Saving pictures stays fast however big the cache grows |
-| Warm the Library's GPU pipelines and the hidden delivery renderer during idle time after launch | First Library GPU draw 5.0 s; later draws about 0.23 s | The first picture after launch appears as fast as the rest |
+| Warm the Library's GPU pipelines, the GPU RAW development pipelines and the hidden delivery renderer during idle time after launch | First Library GPU draw 5.0 s; later draws about 0.23 s | The first picture after launch appears as fast as the rest |
 
 ## Outcome spec
 
