@@ -392,6 +392,18 @@ confirmed retired files are removed while source scenes, starting documents
 and an original outside the cache remain; its temporary-directory teardown
 hit the existing open SQLite ledger handle on Windows.
 
+Cleanup group 3 removes the obsolete saved-picture resolution preference,
+menu, polling and Activity queue entry. Activity retains Pause/Resume for
+actual Library scene reading through the helper's existing pause gate; resume
+does not release Grade/import/export pauses. Shared document identity and
+atomic writes now live in library_documents.py; their contents and saved
+document behavior are unchanged. No tests removed in this group.
+Validation: fast Node checks still have only the obsolete thumbnail-pool load
+failure; full Python collection stops at seven modules importing removed
+code. The focused live/grade run passed 28 checks; one live-scene test still
+sets the renamed document-provider field and is updated in group 5. No GPU
+output processing changed; the paste interaction check follows group 5.
+
 Part 4b built October 19: Single/full-screen true 100% detail follows the
 selected-photo exception above, including saved grades, rotation and locals.
 Fit stays on screen while a separate, selected-only full-size scene is

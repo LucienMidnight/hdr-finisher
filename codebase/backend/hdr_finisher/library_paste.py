@@ -5,7 +5,7 @@ from pathlib import Path
 from threading import Lock
 from .models import EditDocument
 from .library_grades import grade_key
-from .library_kept import atomic_json
+from .library_documents import atomic_json
 from .raw_import import RAW_EXTENSIONS
 
 
@@ -82,13 +82,12 @@ class LibraryPaste:
 
     def starting_document(self, path):
         source=self.marks.source_path(path)
-        kept=getattr(self.marks,'kept',None)
-        if kept is not None:
-            # A grid thumbnail already ran Grade's import for this photo version.
-            try:
-                document=kept.cache.default_document(source)
-                if document: return EditDocument.model_validate(document).model_dump(mode='json')
-            except (OSError,ValueError): pass
+        from .library_pictures import LibraryPictureCache
+        # Live scenes retain Grade's starting document for this photo version.
+        try:
+            document=LibraryPictureCache(self.marks.database.parent).default_document(source)
+            if document: return EditDocument.model_validate(document).model_dump(mode='json')
+        except (OSError,ValueError): pass
         from .sessions import SessionStore
         from .library_diagnostics import log
         log("paste_cpu_fallback", path=str(source), reason="No retained starting document for this photo version.")

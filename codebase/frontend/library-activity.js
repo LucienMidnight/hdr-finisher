@@ -34,13 +34,12 @@
     return (jobs[0] || "Activity") + (jobs.length > 1 ? ` +${jobs.length - 1}` : "") + extra;
   }
   function create({ button, panel, api, status, onHealth }) {
-    let health = null, pictures = null, exports = null;
+    let health = null, exports = null;
     const pending = new Set();
     const node = (tag, text, className) => { const item = document.createElement(tag); item.textContent = text; if (className) item.className = className; return item; };
     async function refresh() {
-      const values = await Promise.allSettled([api("/api/library/health"), api("/api/library/paste-pictures"), api("/api/batch-export")]);
-      if (values[1].status === "fulfilled") pictures = values[1].value;
-      if (values[2].status === "fulfilled") exports = values[2].value;
+      const values = await Promise.allSettled([api("/api/library/health"), api("/api/batch-export")]);
+      if (values[1].status === "fulfilled") exports = values[1].value;
       if (values[0].status === "fulfilled") update(values[0].value);
     }
     function action(label, key, route, body) {
@@ -60,11 +59,10 @@
       const focused = panel.contains(document.activeElement) ? document.activeElement.dataset.action : null;
       const writer = health.writer, index = health.index;
       panel.replaceChildren(node("h2", "Activity", "panel-title"));
-      if (pictures?.pending || pictures?.failed?.length) {
+      if (health.helper.pending || health.helper.manual_paused) {
         const section = node("section", "", "library-activity-job");
-        section.append(node("p", `Saved-grade pictures: ${count(pictures.completed)} done · ${count(pictures.pending)} waiting${pictures.paused ? " · Paused" : ""}`));
-        section.append(action(pictures.paused ? "Resume pictures" : "Pause pictures", "pictures-pause", "/api/library/paste-pictures", {action:pictures.paused ? "resume" : "pause"}));
-        for (const failure of pictures.failed || []) section.append(node("p", typeof failure === "string" ? failure : `${failure.path}: ${failure.message || failure.reason}`));
+        section.append(node("p", `Reading Library scenes${health.helper.paused ? " · Paused" : ""}`));
+        section.append(action(health.helper.manual_paused ? "Resume reading" : "Pause reading", "scenes-pause", "/api/library/scene-work", {action:health.helper.manual_paused ? "resume" : "pause"}));
         panel.append(section);
       }
       for (const job of exports?.jobs || (exports?.id ? [exports] : [])) {
@@ -124,7 +122,7 @@
       if (index.state === "failed") panel.append(node("p", "Indexing stopped. Saved marks are safe; choose Re-scan to try again."));
       if (focused) ([...panel.querySelectorAll("button")].find(item => item.dataset.action === focused) || button).focus();
     }
-    function update(next) { health = next; button.hidden = false; button.textContent = (pictures?.pending ? `Updating pictures · ${count(pictures.pending)} waiting · ` : "") + (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next); onHealth?.(next); render(); }
+    function update(next) { health = next; button.hidden = false; button.textContent = (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next); onHealth?.(next); render(); }
     function close() { panel.hidden = true; button.setAttribute("aria-expanded", "false"); }
     button.addEventListener("click", () => { panel.hidden = !panel.hidden; button.setAttribute("aria-expanded", String(!panel.hidden)); render(); if (!panel.hidden) panel.querySelector("button")?.focus(); });
     document.addEventListener("pointerdown", event => { if (!panel.contains(event.target) && !button.contains(event.target)) close(); });

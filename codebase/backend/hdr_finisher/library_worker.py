@@ -281,7 +281,7 @@ class LibraryWorker:
     def status(self) -> dict:
         with self._lock:
             return {**self.info, "running": bool(self._process and self._process.is_alive()),
-                    "pending": len(self._pending), "paused": bool(self._paused),
+                    "pending": len(self._pending), "paused": bool(self._paused), "manual_paused": "manual" in self._paused,
                     "failure": self._failure, "restarts": self._restarts, "recovering": self._recovering}
 
     def close(self) -> None:

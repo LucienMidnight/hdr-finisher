@@ -241,18 +241,11 @@ def create_library_router(worker, browser, store=None):
     add_smart_album_routes(router, marks, index)
     if store is not None:
         add_grade_routes(router, marks, store)
-        from .library_kept import KeptPictures, preferences as picture_preferences
-        marks.kept = kept = KeptPictures(browser.root, marks, worker)
-
-        @router.get("/picture-settings")
-        def picture_settings(): return kept.usage()
-
-        @router.post("/picture-settings")
-        def set_picture_settings(change: dict):
-            return command(lambda: (picture_preferences(browser.root, change), kept.cache.managed.trim(), kept.usage())[-1])
+        from .library_documents import LibraryDocuments
+        documents = LibraryDocuments(marks)
 
     from .library_live import LivePictures, quality as live_quality, recipe as live_recipe
-    live = LivePictures(browser.root, marks, kept if store is not None else None)
+    live = LivePictures(browser.root, marks, documents if store is not None else None)
 
     @router.post("/fallback-picture")
     async def fallback_picture(command: LiveSceneRequest, request: Request):
@@ -368,6 +361,13 @@ def create_library_router(worker, browser, store=None):
     def health():
         return {"writer": marks.writer.status(), "helper": {"restarts": 0, **worker.status()},
             "index": index.status(), "file_commands": file_commands.status(), "conflicts": marks.conflicts.status(), "problems": recent()}
+
+    @router.post("/scene-work")
+    def scene_work(request: dict):
+        if request.get("action") not in {"pause", "resume"}:
+            raise HTTPException(400, "Choose pause or resume.")
+        worker.pause("manual", request["action"] == "pause")
+        return worker.status()
 
     @router.post("/writer")
     def writer_command(request: WriterRequest):
@@ -553,7 +553,7 @@ def create_library_router(worker, browser, store=None):
             photo.update(rows.get(photo["path"], {"marks": Marks().model_dump(), "albums": [], "storage": "none"}))
             if store is not None:
                 try:
-                    saved = kept.request(photo["path"])
+                    saved = documents.request(photo["path"])
                     photo.update(edited=saved["edited"], grade_identity=saved["grade_identity"])
                 except (ValueError, OSError):
                     photo.update(edited=False)
@@ -840,7 +840,7 @@ def create_library_router(worker, browser, store=None):
         return command.model_dump() # Viewing state is transient, never a grade or preference.
     @router.post("/overlay-map")
     async def overlay_map(command: OverlayRequest, request: Request):
-        if store is not None and kept.request(command.path)["edited"]:
+        if store is not None and documents.request(command.path)["edited"]:
             return {"unavailable":"Overlay is measured from the original; this photo is shown with its saved grade."}
         path = str(marks.source_path(command.path))
         # A format with no source clipping limit must not imply a clean exposure map.

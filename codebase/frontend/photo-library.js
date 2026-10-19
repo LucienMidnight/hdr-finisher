@@ -94,7 +94,7 @@
     labelName: label => state.labelNames[label] || "",
     updated: result => {
       if (result.grade_changed) {
-        invalidateGradePictures((result.photos || []).map(photo => photo.path), false);
+        invalidateGradePictures((result.photos || []).map(photo => photo.path));
         clearCells(state.cells); clearCells(state.filmCells);
         paintGrid(); paintFilm(); if (state.view === "single") showSingle();
       }
@@ -139,7 +139,7 @@
   }
   // Cells on screen now, without the finished cells kept just beyond it.
   const shownCells = map => [...map.values()].filter(cell => map.shown?.has(cell.photo.path));
-  const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.picture_key || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}|${!!photo.picture_updating}`;
+  const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}`;
   function pictureMode(img, hdr) {
     img.style.dynamicRangeLimit = hdr ? 'no-limit' : 'standard';
     img.dataset.rendition = hdr ? 'hdr' : 'sdr'; img.dataset.peakNits = hdr ? '1000' : '203';
@@ -383,8 +383,6 @@
       cell.element.classList.toggle("active", active); cell.element.setAttribute("aria-selected", String(active));
       cell.element.classList.toggle("lead", active && index === state.index);
       cell.element.classList.toggle("rejected", photo.marks?.pick === "reject");
-      cell.element.querySelector(".library-picture-updating")?.remove();
-      if (photo.picture_updating) { const mark = make("span", "library-picture-updating library-edited", state.picturesPaused ? "Paused" : "Updating"); mark.title = state.picturesPaused ? "Library picture work is paused. Resume it in Activity." : "Showing the default look while the saved-grade picture is updated."; mark.setAttribute("role", "status"); cell.element.append(mark); }
       cell.element.querySelector(".library-marks")?.remove(); cell.element.append(culling.strip(photo));
     }
   }
@@ -521,10 +519,9 @@
     await pollSettings();
   }
   const commandState = () => postParent("command-state", {selected: state.selection.size, copied: pasteGrades.available()});
-  function invalidateGradePictures(paths, updating = true) {
+  function invalidateGradePictures(paths) {
     const targets = new Set(paths);
     for (const map of [state.cells, state.filmCells]) for (const [path, cell] of map) if (targets.has(path)) { cell.controller.abort(); cell.element.remove(); map.delete(path); }
-    if (updating) for (const photo of state.allPhotos) if (targets.has(photo.path)) { photo.pictureCurrent = false; photo.picture_updating = true; }
     if (targets.has(selected()?.path)) { state.single?.abort(); state.fitMeta = null; state.nativeMeta = null; }
   }
   const pasteGrades = HDRGradePaste.create({api, status,
@@ -602,8 +599,7 @@
   function updateSingleCaption() {
     if (compare.enabled()) compare.captions();
     if (!selected()) return;
-    const updating = selected().picture_updating ? " · Updating saved-grade picture · showing default look" : "";
-    $("single-caption").replaceChildren(document.createTextNode(selected().name + updating), culling.strip(selected()));
+    $("single-caption").replaceChildren(document.createTextNode(selected().name), culling.strip(selected()));
   }
   function select(index, scroll = false, mode = "single") {
     if (!state.photos.length) return;
@@ -633,7 +629,7 @@
     if (!state.active || state.view !== "single") return;
     if (compare.enabled()) { void compare.show(); return; }
     const photo = selected(), edge = singleEdge();
-    const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.picture_key || ""}|${photo.bytes}|${photo.mtime_ns}` : "";
+    const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}` : "";
     if (identity && identity === state.singleIdentity && !state.single?.signal.aborted) { positionZoom(); return; }
     state.singleIdentity = identity;
     const fullIdentity = photo ? `${photo.path}|${photo.bytes}|${photo.mtime_ns}` : "";
@@ -1011,14 +1007,6 @@
     $("filter-button").setAttribute("aria-expanded", String(!$("library-filterbar").hidden));
   }
   function toggleFilters() { $("library-filterbar").hidden = !$("library-filterbar").hidden; paintFilterButton(); }
-  $("picture-settings").addEventListener("click", async () => {
-    try {
-      const prefs = await api("/api/library/picture-settings");
-      const answer = await HDRLibraryDialogs.ask({ title: "Library pictures", message: `Saved-grade picture resolution. The Library cache location and separate size limits are in Settings › Performance.`, fields: [
-        { name: "edge", label: "Edited-picture resolution", options: [{value:"screen",label:"Screen size"}, "512", "1024", "1920"], value: String(prefs.edited_resolution) }], confirm: "Save" });
-      if (answer) { await api("/api/library/picture-settings", { edited_resolution: answer.edge === "screen" ? "screen" : Number(answer.edge) }); status("Library picture settings saved."); }
-    } catch (error) { status(error.message); }
-  });
   $("filter-button").addEventListener("click", toggleFilters);
   let openPopover = null;
   function closePopover() { if (!openPopover) return; openPopover.menu.hidden = true; openPopover.button.setAttribute("aria-expanded", "false"); openPopover = null; }
@@ -1127,21 +1115,13 @@
         // visible pictures as well, so returning from Grade discovers it.
         const visible = new Set([...shownCells(state.cells), ...shownCells(state.filmCells)].map(cell => cell.photo.path).concat(selected()?.path));
         const paths = state.allPhotos.filter(photo => photo.storage === "database" || photo.edited || visible.has(photo.path)).map(photo => photo.path);
-        // Grid order, so the photo top-left on screen is made first.
-        const onScreen = state.photos.map(photo => photo.path).filter(path => visible.has(path));
-        void api("/api/library/paste-pictures", {paths:onScreen}).then(pictures => {
-          if (!!pictures?.paused === !!state.picturesPaused) return;
-          state.picturesPaused = !!pictures?.paused; paintGrid();
-        }).catch(() => {});
         const result = await api("/api/library/settings-status", { paths });
         const byPath = new Map(result.photos.map(photo => [photo.path, photo]));
         let changed = false;
         for (const photo of state.allPhotos) {
           const row = byPath.get(photo.path);
-          // A photo that has not loaded yet has no pictureCurrent. Treat missing as
-          // false, or every newly shown thumbnail is thrown away and drawn twice.
-          if (row && ((row.grade_identity || "") !== (photo.grade_identity || "") || (row.picture_key || "") !== (photo.picture_key || "") || !!row.pictureCurrent !== !!photo.pictureCurrent || !!row.picture_updating !== !!photo.picture_updating)) {
-            Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity, picture_key: row.picture_key, pictureCurrent: row.pictureCurrent, picture_updating: row.picture_updating });
+          if (row && (row.grade_identity || "") !== (photo.grade_identity || "")) {
+            Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity });
             for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }
             changed = true;
           }
@@ -1311,7 +1291,6 @@
     filmVisible: shownCells(state.filmCells).length, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomScale: state.zoomScale, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
   (async () => {
     try {
-      await api("/api/library/picture-settings", {screen_edge:singleEdge()});
       const options = await api("/api/library/options"); state.timing = options.timing;
       browsingLimits = options.browsing || browsingLimits;
       void HDRLibraryPictures.configure(browsingLimits).catch(() => {});

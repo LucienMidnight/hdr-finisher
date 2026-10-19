@@ -71,12 +71,12 @@ def develop_cpu(root, path, document, edge, cancelled=None):
 
 
 class LivePictures:
-    def __init__(self, root, marks, kept=None):
+    def __init__(self, root, marks, documents=None):
         self.cache = LibraryPictureCache(root)
-        self.root, self.marks, self.kept = root, marks, kept
+        self.root, self.marks, self.documents = root, marks, documents
 
     def document(self, path):
-        return self.kept.request(path)["grade"] if self.kept else None
+        return self.documents.request(path)["grade"] if self.documents else None
 
     def describe(self, path, metadata):
         document = self.document(path) or {}

@@ -136,7 +136,7 @@ class LibraryGrades:
             chunk = [str(p) for p in paths[start:start+800]]
             for path, value in self.marks._query("SELECT path, state FROM photo_grades WHERE path IN (" + ",".join("?" for _ in chunk) + ")", chunk):
                 states[path] = json.loads(value)
-        from .library_kept import identity
+        from .library_documents import identity
         result = {}
         exports = getattr(self.store, "batch_export", None)
         export_records = exports.read_records() if exports else None
