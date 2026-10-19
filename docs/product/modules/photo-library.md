@@ -137,7 +137,9 @@ fails as recorded above; export, Proof and their limits were not changed.
   and Denoise. The same GPU delivery graph remains shared with export.
   One cold DSC07072 picture improved from 10.13 to 6.71 s; encoding was the
   largest individual stage (2.43 s). The about-1-second goal is not reached.
-  The separate delivered HDR ceiling repair precedes brief parts 3–6.
+  Saved pictures also enforce enabled highlight targets after encoding;
+  cache v6 refreshes earlier pictures. Export and Proof checks cover the
+  shared correction; no encoder or gain-map maths changed.
 
 **Known problems**
 

@@ -31,16 +31,10 @@ BLOCK = 16
 STRENGTH = 2.0
 MARGINS = (0.003, 0.006, 0.012, 0.025, 0.05, 0.1)
 CODEC_LIMIT_NITS = 10000.0
-CHECK_HEADROOM = 1.25
 
 
-class CeilingError(RuntimeError):
+class CeilingError(ValueError):
     pass
-
-
-def ceiling_note(peak: float, ceiling: float) -> str:
-    return (f"HDR peak is {peak:.0f} nits, {peak - ceiling:.0f} above the {ceiling:.0f}-nit target "
-            "after correction; the file was exported anyway.")
 
 
 def delivery_ceiling_nits(adjustments) -> float:
@@ -117,9 +111,9 @@ def encode_within_ceiling(
 
     ``encode`` turns a finished HDR image into a delivery; ``decode`` returns
     that delivery's per-pixel brightest channel in nits at the same size.
-    Without ``ceiling_nits`` the delivery is encoded once and not checked. A delivery that
-    still overshoots after every correction is returned anyway, with a note
-    in ``notes`` saying how far over it is (Steve: export, then explain).
+    Without ``ceiling_nits`` the delivery is encoded once and not checked.
+    A delivery that still overshoots after every correction is rejected;
+    export and Proof must never publish it as satisfying the target.
     """
     current = hdr_image
     delivery = encode(current)
@@ -127,12 +121,6 @@ def encode_within_ceiling(
         return delivery
     ceiling = min(float(ceiling_nits), CODEC_LIMIT_NITS)
     if ceiling <= 0.0:
-        return delivery
-    # The largest codec overshoot measured (October 18, 2026) was 12%, on an
-    # AVIF saturated highlight. Pictures this far below the ceiling cannot
-    # reach it, so they skip the decode (about 1.5 s Ultra HDR, 5 s AVIF at
-    # 2560 px).
-    if float(np.max(channel_nits(hdr_image, reference_white_nits))) * CHECK_HEADROOM <= ceiling:
         return delivery
     for margin in MARGINS:
         decoded = decode(delivery)
@@ -145,6 +133,6 @@ def encode_within_ceiling(
         current[..., :3] *= _correction(ratio, margin)[..., None]
         delivery = encode(current)
     peak = float(np.max(decode(delivery)))
-    if peak > ceiling and notes is not None:
-        notes.append(ceiling_note(peak, ceiling))
+    if peak > ceiling:
+        raise CeilingError(f"Decoded HDR peak {peak:.3f} nits exceeds {ceiling:g} nits after correction.")
     return delivery

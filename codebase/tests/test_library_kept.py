@@ -7,7 +7,7 @@ from test_library_grades import setup, saved, edit
 from hdr_finisher.library_kept import produce, identity, preferences, KeptPictures, atomic_json, PICTURE_VERSION
 from hdr_finisher.library_pictures import LibraryPictureCache
 from hdr_finisher import exporters
-from hdr_finisher.models import ExportSettings, PreviewKind
+from hdr_finisher.models import EditDocument, ExportSettings, PreviewKind
 
 class Worker:
     def status(self): return {"paused":False}
@@ -28,11 +28,12 @@ def test_gpu_raw_picture_skips_cpu_preparation_and_keeps_encoder_settings(setup,
     def forbidden(*args, **kwargs):
         raise AssertionError("GPU RAW must not prepare a CPU session")
     monkeypatch.setattr(SessionStore, "prepare_session", forbidden)
-    def encode(path, rendered_hdr, rendered_sdr, settings, white):
+    def encode(path, rendered_hdr, rendered_sdr, settings, white, **options):
         np.testing.assert_array_equal(rendered_hdr, hdr)
         np.testing.assert_array_equal(rendered_sdr, sdr)
         assert settings.quality == 95 and settings.jpeg_gain_map_quality == 95
         assert settings.output_finishing.long_edge == 512 and settings.dithering == "off"
+        assert options["ceiling_nits"] == exporters._peak_ceiling(settings, EditDocument.model_validate(grade).global_adjustments)
         Path(path).write_bytes(b"encoded")
     monkeypatch.setattr(exporters, "write_jpeg_gainmap_renditions", encode)
     result = produce(tmp_path, raw, grade, 512)

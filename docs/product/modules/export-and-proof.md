@@ -56,7 +56,7 @@ Settings rules (from v1.2 section 5, still in force):
 | **Scheduling:** Grade first, then visible Library pictures (top-left first), then background export. GPU work yields between bounded submissions and shares one memory budget. Closing the last visible window cancels a batch cleanly; finished files stay. | Steve, 2026-10-18 |
 | **Perceptual limits** for GPU against CPU, Proof against export, and Library picture against export: SDR ΔE 2000 and HDR ΔE ITP (BT.2124), per image and per lane, mean below 1.0, 99.9th percentile at or below 3.0. No per-pixel maximum. Include grain and local adjustments. | Steve, 2026-10-18 |
 | **HDR ceiling:** no finished HDR pixel above the highlight compression target, on every path, measured on decoded files, rounding down (zero upward allowance). | Steve, 2026-10-18 |
-| **Guarantee HDR peak** is a per-preset-version option (Advanced, HDR formats only), off by default, because the decode-and-correct check adds seconds per photo. A file that stays over target is still delivered, with a note giving how many nits over. Library pictures never run it. | Steve, 2026-10-18 |
+| Enabled highlight targets are mandatory after encoding for export, Proof and saved Library pictures. Decode every file, correct local overshoots, reject any file still over target. With Highlights off, the optional per-version codec check enforces 10,000 nits. This supersedes the optional-target and deliver-anyway decision. | Steve, 2026-10-19 |
 | Each export result records which renderer made it and any fallback reason. | Steve, 2026-10-18 |
 | The Export page stays and grows. Two routes: the Export page and Quick export… with a preset. It must leave room for print settings and watermarks. | Steve, 2026-10-11 |
 | Export presets carry every Export setting, typed sizes, a naming pattern and a sub-folder; one run can make several versions (for example HDR AVIF and SDR JPEG). Presets are JSON files in the `Export` sub-folder of the preset library. | 2026-10-17 |
@@ -73,9 +73,9 @@ Settings rules (from v1.2 section 5, still in force):
   numbered names on collisions, per-file results. Exported and "Edited
   since last export" states feed the Library.
 - Proof: reduced size (1,200 px) or full size, through the export pipeline.
-- HDR ceiling check and correction (`hdr_ceiling.py`) behind Guarantee HDR
-  peak. On Steve's RAWs at 1000 nits, files that overshot by up to 73 nits
-  land between 972 and 998.
+- HDR ceiling check and local correction (`hdr_ceiling.py`) always enforce
+  an enabled highlight target, including default presets and full-size Proof.
+  Dim inputs are decoded too; files still over target are rejected and removed.
 - The perceptual comparison helper (`delivery_colour.py`), with tests.
 - A shared force-CPU delivery preference in Settings → Performance, and
   `HDR_FINISHER_FORCE_CPU_DELIVERY=1` (environment wins). Export, Proof
@@ -116,7 +116,8 @@ Settings rules (from v1.2 section 5, still in force):
   the old blanket Library pause while waiting for delivery. Results fill the existing gain-map disk
   picture cache; the cache version changes so old CPU pictures are regenerated.
   The artificial two-second wait after the quick reminder is removed. Library
-  pictures keep skipping the decoded peak correction/check.
+  pictures also enforce enabled highlight targets after encoding; cache v6
+  refreshes pictures made before this rule.
 
 - **Sharing the GPU fairly (Claude, October 18, after Steve's first GPU
   batch).** In that batch the first four photos were rendered on the CPU
@@ -152,8 +153,21 @@ Settings rules (from v1.2 section 5, still in force):
   guards or workarounds were added. Original pairs remain available in
   `codebase/output/gpu-raw-followups/HDR-screen-pairs/compare.html`.
   Fast checks: 540 Node / 2311 Python passed (3 skipped); GPU and forced-CPU
-  export/Proof smoke passed. Existing DSC07060 JPEG ceiling overshoot
-  (1213 versus 800 nits, also on the old route) is the next explicit repair.
+  export/Proof smoke passed.
+- October 19, delivered HDR ceiling repair: DSC07060 input is exactly 800
+  nits, but gain-map reconstruction reached 1213.147. Independent direct
+  libultrahdr decode and gamut conversion confirmed the measurement; the
+  old default bypassed correction. Enabled targets are now mandatory on
+  export, Proof and saved pictures, with no dim-input skip or deliver-anyway
+  exception. Existing local correction and encoders are unchanged. At 4000 px,
+  GPU export and full-size Proof both peak at 797.075 nits; forced CPU both
+  peak at 781.706. Each Proof is byte-identical to its export. GPU export
+  took 31.64 s; forced CPU took 137.32 s (full RAW grade). Tests: 540 Node,
+  2311 Python passed (3 skipped, 19 existing serializer warnings); focused
+  encoder/Proof checks 65 passed, covering JPEG, AVIF and JPEG XL. The first
+  real test driver's synchronous decoder blocked its network loop; after
+  asynchronous inspection, the connection error did not repeat. No production
+  retry or hardware guard. The HDR comparison page includes the ceiling pair.
 
 **Not built**
 

@@ -3906,6 +3906,17 @@
       "launch": {
         "method": "electron"
       }
+    },
+    {
+      "path": "tests/gpu-delivery-ceiling.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "Saved DSC07060 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off.",
+      "launch": {
+        "method": "electron"
+      }
     }
   ]
 }

@@ -670,8 +670,10 @@ class ExportProcessError(RuntimeError):
 
 
 def _peak_ceiling(settings: ExportSettings, adjustments: AdjustmentState) -> float | None:
-    """The HDR peak to guarantee, only when the export preset asks for it."""
-    return delivery_ceiling_nits(adjustments) if getattr(settings, "guarantee_hdr_peak", False) else None
+    """Always enforce an enabled highlight target, including in Proof."""
+    if adjustments.hdr.highlight_section_enabled or settings.guarantee_hdr_peak:
+        return delivery_ceiling_nits(adjustments)
+    return None
 
 
 def _decoded_jpegxl_channel_nits(payload: bytes) -> np.ndarray:

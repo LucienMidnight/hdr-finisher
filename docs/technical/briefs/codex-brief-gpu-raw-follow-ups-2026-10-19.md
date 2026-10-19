@@ -65,15 +65,32 @@ Checks: 540 Node passed; 2311 Python passed, 3 skipped, 19 serializer warnings
 CPU export/Proof smoke passed, decoded peak 668.73 against 1000 nits. All
 qualification instrumentation restored; captures remain only in ignored output.
 
-**Next, before parts 3–6:** repair DSC07060's existing encoded ceiling defect.
-Encoder input peaks at exactly 800.000 nits, but its JPEG reaches 1213.147
-BT.2020 channel nits and 1055.428 luminance nits, on the old route too. Direct
-libultrahdr half-float decode and independent gamut conversion agree with
-the app measurement. This is real reconstruction overshoot, not measurement
-or RAM handoff error. The current optional decoded correction is bypassed by
-default; exercising it on this input reaches 797.075 nits in 14.81 s without
-an encoder/gain-map change. Export and Proof regression checks are required.
-Parts 3–6 have not started. Ask before slow work or pushing.
+### Delivered HDR ceiling repair - October 19
+
+DSC07060 input is exactly 800.000 nits, but its old JPEG reaches 1213.147
+BT.2020 channel nits and 1055.428 luminance nits. Independent direct
+libultrahdr half-float decode and gamut conversion confirm the measurement.
+The default bypassed the existing correction, including Proof and Library.
+
+Enabled targets are now enforced on every encoded export, Proof and saved
+picture. Dim inputs are also decoded; files still over target are rejected
+and removed. Existing local correction, encoders and gain-map maths stay.
+With Highlights off, the optional setting checks the 10,000-nit codec ceiling.
+Saved-picture cache v6 refreshes earlier pictures.
+
+Real saved DSC07060 at 4000 px: GPU export and full-size Proof peak at
+797.075 nits; forced CPU both reach 781.706. Each Proof is byte-identical to
+its export. GPU export took 31.64 s; CPU 137.32 s. Exact checking adds decode
+and correction time. The original HDR viewer also includes this ceiling pair.
+
+Checks: 540 Node passed; 2311 Python passed, 3 skipped, 19 existing serializer
+warnings (11 min 13 s, overlapping the real CPU check). Focused encoder/Proof
+checks: 65 passed, covering JPEG, AVIF and JPEG XL. The real driver first
+hit a connection reset after synchronous external decode blocked its network
+loop; asynchronous inspection fixed the setup and the error did not repeat.
+No production retries, guards or card workarounds.
+
+Next: parts 3-6 in order. Ask before slow work or pushing.
 
 ### Intended result
 

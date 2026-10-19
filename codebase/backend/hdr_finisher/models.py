@@ -1343,8 +1343,8 @@ class ExportSettings(_EncodingSettings):
 
     sdr_png_bit_depth: Literal[8, 16] = 8
     metadata_policy: Literal["none", "copyright", "all_except_location", "all_including_location"] = "none"
-    # Decode each HDR file and correct any pixel above the highlight target.
-    # Off by default: it costs seconds per photo whose highlights reach it.
+    # With Highlights off, optionally enforce the 10,000-nit codec ceiling.
+    # An enabled highlight target is always enforced, including in Proof.
     guarantee_hdr_peak: bool = False
     output_path: str | None = None
     path_grant: str | None = None
