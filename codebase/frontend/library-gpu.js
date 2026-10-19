@@ -1,6 +1,11 @@
 /* Independent picture transport; Grade's renderer and pinned shaders are reused unchanged. */
 window.clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 class HDRLibraryGPU extends HDRWebGPUPreview {
+  async reportDeliveryActivity(active) {
+    // A live draw owns a background lease. It must never announce Grade activity.
+    if (this.liveMode) return {reserved:0};
+    return super.reportDeliveryActivity(active);
+  }
   resourceMemorySnapshot() {
     const value = super.resourceMemorySnapshot();
     const referenced = new Map([...this.proxies.values()].filter(p => this.rawPictures?.owns(p.texture))
@@ -64,7 +69,7 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
       return proxy;
     }
     const started = performance.now();
-    const url = this.libraryMeta?.route === "camera-raw-scene" ? `/api/library/raw-thumbnail/${sessionId}` : `/api/library/pixels/${sessionId}?lane=${lane}`;
+    const url = this.libraryMeta?.route === "library-live" ? `/api/library/live-pixels/${sessionId}?lane=${lane}` : this.libraryMeta?.route === "camera-raw-scene" ? `/api/library/raw-thumbnail/${sessionId}` : `/api/library/pixels/${sessionId}?lane=${lane}`;
     const response = await fetch(url, { signal: this.librarySignal });
     if (!response.ok) throw new Error("The cached picture is unavailable; revisit this photo.");
     const width = Number(response.headers.get("X-Image-Width"));
@@ -91,15 +96,23 @@ window.HDRLibraryPictures = (() => {
   let initializationDemand = false;
   async function initialize(warm = false, beforeNext = async () => {}) {
     if (!warm) initializationDemand = true;
+    if (renderer && !renderer.available && renderer.deviceLost) {
+      clearInterval(renderer.deliveryActivityTimer); ready = null; renderer = null;
+    }
     if (!ready) ready = (async () => {
       const started = performance.now();
       renderer = new HDRLibraryGPU(surface);
       renderer.libraryLimits = configuredLimits;
       if (!await renderer.initialize(() => beforeNext(() => initializationDemand))) throw new Error("Library pictures need WebGPU on this computer.");
+      if (renderer.adapterInfo?.fallback) {
+        clearInterval(renderer.deliveryActivityTimer);
+        const device = renderer.device; renderer.device = null; device?.destroy();
+        throw Error("Library live drawing requires a hardware GPU.");
+      }
       HDRLibraryStopwatch("renderer_setup", { duration_ms: performance.now() - started });
       return renderer;
     })();
-    return ready;
+    try { return await ready; } catch (error) { ready = null; throw error; }
   }
   function show(meta, canvas, signal, isCurrent, hdr = false) {
     const queued = performance.now();
@@ -111,6 +124,11 @@ window.HDRLibraryPictures = (() => {
       if (signal.aborted || !isCurrent()) return;
       // Keep the accepted frame at its own shape while conversion and pixels load.
       // renderTo resizes through its presentation gate when the new frame is ready.
+      gpu.liveMode = meta.route === "library-live";
+      if (gpu.liveMode && gpu.adapterInfo?.fallback) throw Error("Library live drawing requires a hardware GPU.");
+      if (!gpu.liveMode && !gpu.deliveryActivityTimer) {
+        gpu.deliveryActivityTimer = setInterval(()=>gpu.reportDeliveryActivity().catch(()=>{}),100);
+      }
       gpu.librarySignal = signal;
       gpu.libraryMeta = meta;
       if (meta.route === "camera-raw-gpu" && !gpu.rawPictures?.get(meta.key)) {
@@ -122,17 +140,24 @@ window.HDRLibraryPictures = (() => {
       const adjustments = structuredClone(meta.adjustments);
       adjustments.hdr.highlight_compression_target_nits = 1000;
       const started = performance.now();
-      const result = await gpu.renderTo(canvas, meta.key, hdr ? "hdr" : "sdr", adjustments,
+      const lease = meta.route === "library-live" ? await HDRLibraryScenes.lease(meta, signal) : null;
+      if (lease) { clearInterval(gpu.deliveryActivityTimer); gpu.deliveryActivityTimer = null; }
+      let result;
+      try {
+      result = await gpu.renderTo(canvas, meta.key, hdr ? "hdr" : "sdr", adjustments,
         sampleCurvePoints, meta.edge, [], 0, null, meta.white,
-        { width: meta.width, height: meta.height }, { scopeAnalysis: true, isCurrent });
+        { width: meta.width, height: meta.height }, { scopeAnalysis: true, isCurrent, ...(lease ? {beforeDeliverySubmit:lease.check} : {}) });
       await gpu.waitForSubmittedWork();
+      } finally {
+        if (lease) { gpu.resetSession(null); await lease.release(); }
+      }
       if (signal.aborted || !isCurrent()) return;
       if (!result?.rendered && result?.execution !== "direct") throw new Error("The library picture could not be drawn.");
       HDRLibraryStopwatch("picture_drawn", { key: meta.key, duration_ms: performance.now() - started, first: draws++ === 0, kept: false });
       canvas.dataset.rendition = hdr ? "hdr" : "sdr";
       canvas.dataset.surface = gpu.surfaceKeys.get(canvas);
       canvas.dataset.peakNits = hdr ? "1000" : "203";
-      if (meta.edge <= 640 && !meta.route?.endsWith("-placeholder") && canvas.closest(".library-cell")) {
+      if (meta.route !== "library-live" && meta.edge <= 640 && !meta.route?.endsWith("-placeholder") && canvas.closest(".library-cell")) {
         const pixels = await gpu.analyzeScope(canvas, {width:meta.width,height:meta.height,tier:"picture",raw:true});
         if (pixels) finished.set(meta, {lane:hdr ? "hdr" : "sdr", pixels});
       }

@@ -310,6 +310,10 @@
     if (state.view === "single") showSingle();
   }
   $("hdr-button").addEventListener("click", toggleHDR);
+  window.addEventListener("hdrfinisher:webgpulost",()=>{
+    clearCells(state.cells); clearCells(state.filmCells);
+    setTimeout(()=>{paintGrid();paintFilm();},100);
+  });
   function removeUnreadable(photo, error) {
     if (error.status !== 400) { status(error.message); return; }
     const currentPath = selected()?.path, anchorPath = state.photos[state.anchor]?.path;
@@ -345,6 +349,53 @@
     });
     const started = performance.now();
     const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
+    if (!photo.edited && !photo.copy_id) {
+      void (async () => {
+        const fallback = document.createElement("canvas"); cell.fallback = fallback;
+        fallback.hidden = true; frame.append(fallback);
+        const preview = fetch("/api/library/preview", {method:"POST", signal:cell.controller.signal,
+          headers:{"Content-Type":"application/json"},body:JSON.stringify({path:photo.path})}).then(async response => {
+          if (response.status !== 200) return;
+          const meta = await response.json();
+          if (!current() || cell.meta || !meta.url) return;
+          canvas.src = meta.url; canvas.dataset.preview = "true";
+          await canvas.decode();
+          if (current() && !cell.meta) { canvas.style.visibility=""; element.classList.remove("loading"); }
+        }).catch(()=>{});
+        let cpuShown = false;
+        while (current()) {
+          try {
+            const gpu = await HDRLibraryPictures.initialize();
+            if (gpu.adapterInfo?.fallback) throw Error("Hardware GPU unavailable.");
+            const meta = await HDRLibraryScenes.load(photo.path, cell.edge, cell.controller.signal);
+            if (!current()) return;
+            await drawPicture(meta, fallback, cell.controller, current);
+            if (!current()) return;
+            cell.meta = cell.scene = meta; cell.elapsed = performance.now() - started;
+            fallback.hidden = false; canvas.hidden = true; element.classList.remove("loading");
+            fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
+            HDRLibraryStopwatch("picture_shown",{path:photo.path,key:meta.key,duration_ms:cell.elapsed});
+            overlays?.attach(photo,fallback,meta,cell.controller,current);
+            return;
+          } catch(error) {
+            if (aborted(error) || !current()) return;
+            if (error.libraryYield) { await sleep(50,cell.controller.signal); continue; }
+            if (!cpuShown) {
+              const meta = await api("/api/library/fallback-picture",{path:photo.path},cell.controller.signal);
+              if (!current()) return;
+              canvas.src=meta.url; await canvas.decode();
+              if (!current()) return;
+              canvas.hidden=false; canvas.style.visibility=""; fallback.hidden=true;
+              canvas.dataset.preview="false"; canvas.dataset.cpuFallback="true";
+              thumbnails.mode(canvas,state.hdr); element.classList.remove("loading");
+              cpuShown=true;
+            }
+            await sleep(2000,cell.controller.signal);
+          }
+        }
+      })().catch(error=>{if(current()&&!aborted(error))removeUnreadable(photo,error);});
+      return cell;
+    }
     const miss = ticket => {
       void (async () => {
         let prepared = null;
@@ -391,7 +442,7 @@
   // scrolling back shows them at once. Cells still loading are dropped as before.
   function reconcile(map, start, end, container, position) {
     const span = end - start, keepStart = Math.max(0, start - span), keepEnd = Math.min(state.photos.length, end + span);
-    const kept = (cell, index) => index >= start && index < end || index >= keepStart && index < keepEnd && cell.meta && !cell.fallback;
+    const kept = (cell, index) => index >= start && index < end || index >= keepStart && index < keepEnd && cell.meta && (!cell.fallback || cell.scene?.route === "library-live");
     const wanted = new Map(state.photos.slice(keepStart, keepEnd).map((photo, offset) => [photo.path, keepStart + offset]));
     map.shown = new Set(state.photos.slice(start, end).map(photo => photo.path));
     for (const [path, cell] of map) {
@@ -432,7 +483,7 @@
     const forward = grid.scrollTop >= lastGridTop; lastGridTop = grid.scrollTop;
     const first = forward ? layout.last : Math.max(0, layout.first - screen);
     const last = forward ? Math.min(state.photos.length, layout.last + screen) : layout.first;
-    thumbnails.plan(state.photos.slice(layout.first,layout.last),state.photos.slice(first,last), thumbnailEdge());
+    thumbnails.plan(state.photos.slice(layout.first,layout.last).filter(p=>p.edited||p.copy_id),state.photos.slice(first,last).filter(p=>p.edited||p.copy_id), thumbnailEdge());
   }
   let lastFilmLeft = 0;
   let FILM_PITCH = 119; // filmstrip tile width plus the 3px gap
@@ -443,7 +494,7 @@
     const last = Math.min(state.photos.length, Math.ceil((film.scrollLeft + film.clientWidth) / FILM_PITCH));
     reconcile(state.filmCells, first, last, $("film-space"), (element, index) => { element.style.left = `${3 + index * FILM_PITCH}px`; });
     const forward = film.scrollLeft >= lastFilmLeft; lastFilmLeft = film.scrollLeft;
-    thumbnails.plan(state.photos.slice(first,last),forward ? state.photos.slice(last,Math.min(state.photos.length,last + last - first)) : state.photos.slice(Math.max(0,first - (last-first)),first),thumbnailEdge());
+    thumbnails.plan(state.photos.slice(first,last).filter(p=>p.edited||p.copy_id),(forward ? state.photos.slice(last,Math.min(state.photos.length,last + last - first)) : state.photos.slice(Math.max(0,first - (last-first)),first)).filter(p=>p.edited||p.copy_id),thumbnailEdge());
   }
   function updateDetails() {
     if (window.HDRLibraryCommands) commandState();

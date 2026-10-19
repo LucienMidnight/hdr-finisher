@@ -1,0 +1,79 @@
+"""Stored source identity, read-only grades and the existing cache controls."""
+from copy import deepcopy
+from types import SimpleNamespace
+import numpy as np
+from PIL import Image
+import pytest
+from hdr_finisher.library_live import LivePictures, develop_cpu, quality, session
+from hdr_finisher.library_marks import LibraryMarks
+from hdr_finisher.models import AdjustmentState, RawImportSettings
+
+
+def photo(tmp_path):
+    path=tmp_path/"photo.png"
+    Image.new("RGB",(800,400),(160,90,60)).save(path)
+    return path
+
+
+def test_one_import_stores_both_sizes_and_finishing_reuses_source(tmp_path, monkeypatch):
+    from hdr_finisher.sessions import SessionStore
+    original=SessionStore.prepare_session; calls=[]
+    def prepare(self,*args,**kwargs):
+        calls.append(args[0]);return original(self,*args,**kwargs)
+    monkeypatch.setattr(SessionStore,"prepare_session",prepare)
+    path=photo(tmp_path);before=path.read_bytes();root=tmp_path/"cache"
+    small=develop_cpu(root,path,None,640)
+    large=develop_cpu(root,path,None,2560)
+    assert len(calls)==1
+    assert (small["width"],small["height"])==(640,320)
+    assert (large["width"],large["height"])==(800,400)
+    service=LivePictures(root,LibraryMarks(root))
+    a=service.describe(path,small)
+    document={"global_adjustments":deepcopy(a["adjustments"])}
+    document["global_adjustments"]["hdr"]["exposure"]=2
+    service.kept=SimpleNamespace(request=lambda path:{"grade":document})
+    b=service.describe(path,small)
+    assert a["source_key"]==b["source_key"] and a["key"]!=b["key"]
+    assert b["adjustments"]["hdr"]["exposure"]==2
+    assert quality(None)==quality(document)
+    assert session(b["key"]).adjustments.hdr.exposure==2
+    assert service.cache.default_document(path) is not None
+    assert path.read_bytes()==before and not list(tmp_path.glob("*.hdrf"))
+
+
+def test_source_settings_invalidate_scene_but_not_another_finishing_edit():
+    a={"source":{"raw_import_settings":RawImportSettings().model_dump(mode="json")}}
+    b=deepcopy(a);b["source"]["raw_import_settings"]["lens"]["mode"]="off"
+    assert quality(a)!=quality(b)
+    assert quality({"hdr_reference_white_nits":100})!=quality(None)
+
+
+def test_cache_off_keeps_scene_in_memory_and_clear_removes_stored_scene(tmp_path):
+    path=photo(tmp_path);root=tmp_path/"cache"
+    live=LivePictures(root,LibraryMarks(root))
+    live.cache.managed.update({"enabled":False})
+    meta=develop_cpu(root,path,None,640)
+    live.cache.accept_transient(meta)
+    described=live.describe(path,meta)
+    body,width,height,stride,space=live.pixels(described["key"],"hdr")
+    assert (width,height)==(640,320) and len(body)==stride*height
+    assert not list(root.rglob("*.npz"))
+    live.cache.managed.update({"enabled":True})
+    stored=develop_cpu(root,path,None,640)
+    assert live.cache.file(stored["key"]).is_file()
+    live.cache.managed.clear()
+    assert not live.cache.file(stored["key"]).is_file()
+
+
+def test_worker_accepts_live_scene_and_cancelled_work_stays_cancelled(tmp_path):
+    from hdr_finisher.library_worker import LibraryWorker
+    worker=LibraryWorker(tmp_path/"cache")
+    try:
+        worker.pause("grading",True)
+        job,future=worker.submit_library("live-scene",path=str(photo(tmp_path)),document=None,edge=640)
+        worker.cancel(job)
+        worker.pause("grading",False)
+        with pytest.raises(Exception):future.result(timeout=10)
+        job,future=worker.submit_library("live-scene",path=str(tmp_path/"photo.png"),document=None,edge=640)
+        assert future.result(timeout=20)["quality"]==quality(None)
+    finally:worker.close()

@@ -388,6 +388,9 @@ class SessionStore:
             _remove_owned_source(previous.source_path)
 
     def get(self, session_id: str) -> LoadedSession:
+        from .library_live import session as library_session
+        retained = library_session(session_id)
+        if retained is not None: return retained
         from .gpu_delivery import session as delivery_session
         retained = delivery_session(session_id)
         if retained is not None:

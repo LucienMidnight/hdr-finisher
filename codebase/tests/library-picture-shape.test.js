@@ -5,7 +5,7 @@ for(const route of ['camera-raw-gpu','cached-picture']) test(`Library ${route} k
  const canvas={width:600,height:400,dataset:{}},controller=new AbortController();
  class Base {
   constructor(){this.surfaceKeys=new Map();}
-  async initialize(){return true;}
+  async initialize(){this.deliveryActivityTimer=1;return true;}
   async renderTo(target){renderStarted.resolve();await pixels.promise;target.width=400;target.height=600;return {rendered:true};}
   async waitForSubmittedWork(){}
  }

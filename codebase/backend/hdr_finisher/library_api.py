@@ -101,6 +101,13 @@ class PictureRequest(BaseModel):
     priority: int = Field(default=10, ge=0, le=100)
 
 
+class LiveSceneRequest(BaseModel):
+    path: str
+    edge: Literal[640, 2560] = 640
+    gpu: bool = True
+    priority: int = Field(default=30, ge=0, le=100)
+
+
 class SensorRequest(BaseModel):
     path: str
     edge: int = Field(default=320, ge=64, le=2560)
@@ -271,6 +278,102 @@ def create_library_router(worker, browser, store=None):
     from .library_thumbnails import Thumbnails
     thumbnails = Thumbnails(browser.root, worker, marks, kept if store is not None else None)
 
+    from .library_live import LivePictures, quality as live_quality, recipe as live_recipe
+    live = LivePictures(browser.root, marks, kept if store is not None else None)
+
+    @router.post("/fallback-picture")
+    async def fallback_picture(command: FolderRequest, request: Request):
+        from .library_thumbnails import thumbnail_key
+        path = str(marks.source_path(command.path))
+        key = thumbnail_key(path, 640)
+        if not thumbnails.file(key).is_file():
+            result = await helper_result(request, "grid-thumbnail", path=path, edge=640, key=key, priority=30)
+            if isinstance(result, Response): return result
+            if result.get("data"):
+                return {"url": "data:image/jpeg;base64," + result["data"], "key":key}
+        return {"url": "/api/library/thumbnail/" + key, "key":key}
+
+    @router.post("/preview")
+    async def live_preview(command: FolderRequest):
+        from .library_pictures import camera_preview
+        path = str(marks.source_path(command.path))
+        if not await run_in_threadpool(camera_raw, path):
+            return Response(status_code=204)
+        try:
+            return await run_in_threadpool(camera_preview, path, 640)
+        except (ValueError, OSError):
+            return Response(status_code=204)
+
+    @router.get("/live-pixels/{key}")
+    def live_pixels(key: str, lane: Literal["hdr", "sdr"] = "hdr"):
+        try:
+            body, width, height, stride, space = live.pixels(key, lane)
+        except (KeyError, ValueError, OSError, EOFError) as error:
+            raise HTTPException(404, "Stored scene unavailable; request it again.") from error
+        return Response(body, media_type="application/octet-stream", headers={
+            "X-Image-Width": str(width), "X-Image-Height": str(height),
+            "X-Bytes-Per-Row": str(stride), "X-Working-Space": space,
+            "Cache-Control": "private, no-store"})
+
+    @router.post("/live-scene")
+    async def live_scene(command: LiveSceneRequest, request: Request):
+        document = await run_in_threadpool(live.document, command.path)
+        path = str(marks.source_path(command.path))
+        source_quality = live_quality(document)
+        cached = await run_in_threadpool(live.cache.cached, path, command.edge, source_quality)
+        if cached:
+            return await run_in_threadpool(live.describe, command.path, cached)
+        if worker.status()["paused"]:
+            return JSONResponse({"detail": "library_pending"}, status_code=202)
+        if command.gpu:
+            from . import library_gpu_raw
+            from .models import RawImportSettings, SourceInterpretationOverride
+            inputs = live_recipe(document)
+            try:
+                if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
+                    raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")
+                header, parts = await run_in_threadpool(library_gpu_raw.sensor, Path(path),
+                    RawImportSettings.model_validate(inputs["raw_import_settings"]))
+            except library_gpu_raw.NotEligible:
+                return Response(status_code=204)
+            header.update(edge=command.edge, source_quality=source_quality, item_path=command.path)
+            return Response(library_gpu_raw.frame(header, *parts), media_type="application/octet-stream")
+        result = await helper_result(request, "live-scene", path=path, document=document,
+            edge=command.edge, priority=command.priority)
+        if isinstance(result, Response): return result
+        live.cache.accept_transient(result)
+        return await run_in_threadpool(live.describe, command.path, result)
+
+    @router.post("/live-developed")
+    async def live_developed(request: Request):
+        from . import library_gpu_raw
+        try:
+            header, body = library_gpu_raw.unframe(await request.body())
+            item = header["item_path"]
+            document = await run_in_threadpool(live.document, item)
+            if header["source_quality"] != live_quality(document):
+                raise ValueError("Source settings changed during development.")
+            path = str(marks.source_path(item))
+            class SceneCache:
+                def build(self, source, edge, _quality, decoded):
+                    pixels, reference, metadata = decoded
+                    default = metadata.get("default_document") or {}
+                    fingerprint = default.get("source", {}).get("fingerprint_sha256")
+                    if document:
+                        expected = document.get("source", {}).get("fingerprint_sha256")
+                        if expected and expected != fingerprint:
+                            raise ValueError("The source photo changed; its saved grade cannot be shown.")
+                        metadata.pop("default_document", None)
+                    metadata["source_fingerprint_sha256"] = fingerprint
+                    result = live.cache.build(source, edge, header["source_quality"],
+                        decoded=(pixels, reference, metadata))
+                    live.cache.accept_transient(result)
+                    return result
+            result = await run_in_threadpool(library_gpu_raw.developed, SceneCache(), path, header, body)
+            return await run_in_threadpool(live.describe, item, result)
+        except (ValueError, OSError, KeyError) as error:
+            raise HTTPException(409, str(error)) from error
+
     @router.post("/thumbnails")
     def thumbnail_batch(request: ThumbnailRequest):
         return thumbnails.batch(request.paths, request.edge, request.priority, request.client, request.wanted, request.populate)
@@ -321,6 +424,7 @@ def create_library_router(worker, browser, store=None):
     def clear_library_cache(change: dict):
         thumbnails.cancel()
         cache.transient.clear()
+        live.cache.transient.clear()
         return command(thumbnails.managed.clear, change.get("location"))
 
     from .library_file_commands import add_file_routes

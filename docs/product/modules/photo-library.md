@@ -116,6 +116,24 @@ fails as recorded above; export, Proof and their limits were not changed.
 
 **Built**
 
+- October 19, draw-live part 1: unedited grid and filmstrip cells draw stored
+  640 px scenes with Grade's shaders, after the camera preview. One development
+  also keeps the 2560 px scene in the existing managed allowances; scene identity
+  includes source interpretation, RAW settings and reference white, but excludes
+  finishing edits. Cache off uses bounded RAM transport. These cells no longer
+  request, read or write finished thumbnail JPEGs. Finished live cells stay built
+  one screen beyond each edge. New scene work uses background GPU admission and
+  releases its picture graph before delivery takes the reservation.
+  A three-RAW plus PNG real-app check passed stored reuse and induced device-loss
+  recovery without a relaunch. Repeated scene metadata requests took 8-21 ms;
+  the four-photo cold grid took 8.7 s overall. No matched whole-grid baseline or
+  70-cell measurement yet; the 100 ms/2 s targets are not claimed. Live finished
+  pixels passed Grade's agreed perceptual limits for one RAW and a PNG in both
+  lanes (worst SDR mean 0.015, p99.9 0.046), without the old thumbnail codec.
+  CPU-made thumbnail fallback is requested only by visible cells and retries
+  hardware GPU drawing automatically. Saved/pasted grades, Single/full-screen,
+  source overlays and the old saved-picture queue remain for the next parts.
+
 - Slices 0 to 6 including 2b: docked and pop-out Library, culling marks,
   tags and colour labels, albums and smart albums, filter rules, sorting
   remembered per source, background indexing, folder checks, grades in

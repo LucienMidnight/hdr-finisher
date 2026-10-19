@@ -51,6 +51,8 @@ PREEMPTED_REASONS = {
 
 
 def _effective_priority(value, now=None):
+    if value.get("background"):
+        return float("inf")
     now = time.time() if now is None else now
     return value["priority"] - max(0., now - value["created"]) / AGING_SECONDS_PER_STEP
 
@@ -333,7 +335,8 @@ def create_gpu_delivery_router():
             now = time.time()
             value = raw_jobs.setdefault(identity, {"priority": 15, "created": now,
                 "granted": False, "bytes": 0})
-            value.update(expires=time.monotonic() + 30, bytes=max(0, int(payload["bytes"])))
+            value.update(expires=time.monotonic() + 30, bytes=max(0, int(payload["bytes"])),
+                background=bool(payload.get("background")))
             if payload.get("release"): value["granted"] = False
             available = max(0, _activity["budget"] - _activity["bytes"])
             if value["bytes"] > available:

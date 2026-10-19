@@ -320,3 +320,29 @@ def test_raw_job_keeps_sensor_and_developed_pixels_in_memory(tmp_path, monkeypat
         assert result["measurements"] == measurements
         assert seen == [document.source.raw_import_settings]
         assert result["source_width"] == 4 and result["source_height"] == 6
+
+
+def test_live_background_draw_does_not_age_ahead_of_export(tmp_path, monkeypatch):
+    app = _broker(tmp_path, monkeypatch)
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
+        client.get("/api/delivery/gpu/permit")
+        url = "/api/delivery/gpu/raw-budget/live"
+        assert client.post(url, json={"bytes":400,"background":True}).json()["granted"]
+        frame = _frame()
+        pending = worker.submit(gpu_delivery.render_pair, frame, ExportSettings(), frame.adjustments)
+        root = gpu_delivery.Path(gpu_delivery.os.environ[gpu_delivery.ROOT_ENV])
+        deadline = time.monotonic()+5
+        while not list(root.glob("delivery-*/request.json")):
+            assert time.monotonic()<deadline
+            time.sleep(.01)
+        value = client.post(url,json={"bytes":400,"background":True}).json()
+        assert value["preempt"]
+        client.delete(url)
+        assert not client.post(url,json={"bytes":400,"background":True}).json()["granted"]
+        job = client.get("/api/delivery/gpu/next").json()
+        assert job and not client.get("/api/delivery/gpu/permit",params={"identity":job["id"]}).json()["preempt"]
+        for lane in ("hdr","sdr"):
+            client.post(f"/api/delivery/gpu/{job['id']}/pixels/{lane}",content=np.full((4,6,4),.18,dtype="<f4").tobytes())
+        client.post(f"/api/delivery/gpu/{job['id']}/complete",json={})
+        assert pending.result(timeout=5) is not None
+        assert client.post(url,json={"bytes":400,"background":True}).json()["granted"]
