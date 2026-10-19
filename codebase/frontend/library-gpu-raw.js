@@ -635,13 +635,14 @@
 
   // A camera RAW grid thumbnail: the backend unpacks the sensor, this window
   // develops it on the GPU, the backend stores it where Grade's CPU development
-  // would. Resolves null when the photo keeps the CPU route.
-  async function thumbnail(path, edge, signal) {
+  // would. Resolves null when the photo keeps the CPU route. An edited photo
+  // (savedGradeOnly) answers with its saved-grade picture or a wait.
+  async function develop(path, edge, signal, savedGradeOnly) {
     const begun = performance.now();
     let response;
     for (;;) {
       response = await fetch("/api/library/raw-sensor", { method: "POST", signal,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, edge }) });
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, edge, saved_grade_only: savedGradeOnly }) });
       if (response.status !== 202) break;
       await wait(150, signal);
     }
@@ -676,6 +677,44 @@
     const result = await stored.json();
     if (!stored.ok) { const error = new Error(result.detail || "Library request failed."); error.status = stored.status; throw error; }
     return result;
+  }
+
+  // At most two photos in flight: their sensor transfers must never hold up
+  // camera previews or other Library requests. Scrolled-past jobs are dropped.
+  const LIMIT = 2, waiting = [], inflight = new Map();
+  let running = 0;
+  const cancelled = () => new DOMException("Cancelled", "AbortError");
+  function pump() {
+    while (running < LIMIT && waiting.length) {
+      const job = waiting.shift();
+      if (job.signal.aborted) { job.reject(cancelled()); continue; }
+      running++;
+      Promise.resolve().then(job.task).then(job.resolve, job.reject).finally(() => { running--; pump(); });
+    }
+  }
+  // The grid and the filmstrip can ask for the same photo: they share one job,
+  // which stops only when every asker has scrolled past it.
+  function thumbnail(path, edge, signal, { savedGradeOnly = false } = {}) {
+    const key = `${path}|${edge}|${savedGradeOnly}`;
+    let job = inflight.get(key);
+    if (!job) {
+      const controller = new AbortController();
+      job = { controller, users: 0 };
+      job.promise = new Promise((resolve, reject) => {
+        waiting.push({ signal: controller.signal, resolve, reject, task: () => develop(path, edge, controller.signal, savedGradeOnly) });
+        pump();
+      }).finally(() => { if (inflight.get(key) === job) inflight.delete(key); });
+      job.promise.catch(() => {});
+      inflight.set(key, job);
+    }
+    job.users++;
+    return new Promise((resolve, reject) => {
+      const leave = () => { job.users--; if (job.users <= 0) job.controller.abort(); reject(cancelled()); };
+      if (signal?.aborted) { leave(); return; }
+      signal?.addEventListener("abort", leave, { once: true });
+      job.promise.then(value => { signal?.removeEventListener("abort", leave); resolve(value); },
+        error => { signal?.removeEventListener("abort", leave); reject(error); });
+    });
   }
 
   const exported = Object.freeze({ developRaw, thumbnail, enabled, quantile, reducedSize });

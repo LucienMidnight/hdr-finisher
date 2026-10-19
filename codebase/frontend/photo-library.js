@@ -92,13 +92,33 @@
   function rawThumbnail(photo, edge, signal) {
     const cpu = () => api("/api/library/picture", {path:photo.path, edge, quality:"quick", purpose:"thumbnail", priority:10}, signal);
     if (!HDRLibraryGpuRaw.enabled()) return cpu();
-    return pictureRequests.submit(() => HDRLibraryGpuRaw.thumbnail(photo.path, edge, signal), signal, 10).then(
-      result => result || cpu(),
+    return HDRLibraryGpuRaw.thumbnail(photo.path, edge, signal, {savedGradeOnly:!!photo.edited}).then(
+      result => result && !result.waiting_for_saved_grade ? result : cpu(),
       error => {
         if (aborted(error)) throw error;
         HDRLibraryStopwatch("gpu_raw_fallback", {path:photo.path, reason:error.message});
         return cpu();
       });
+  }
+  // A camera RAW cell with a cache ticket shows two stages: the camera's own
+  // preview, then the saved thumbnail, which is also what a later visit shows.
+  // The GPU develops and saves it without drawing an interim picture. An edited
+  // photo waits for its saved-grade picture instead of showing the unedited
+  // look. Resolves true when settled, a picture to draw, or null for the CPU route.
+  async function savedRawThumbnail(photo, ticket, signal, isCurrent) {
+    let meta;
+    try { meta = await HDRLibraryGpuRaw.thumbnail(photo.path, thumbnailEdge(), signal, {savedGradeOnly:!!photo.edited}); }
+    catch (error) {
+      if (aborted(error)) throw error;
+      HDRLibraryStopwatch("gpu_raw_fallback", {path:photo.path, reason:error.message});
+      return null;
+    }
+    if (!meta) return null;
+    if (meta.waiting_for_saved_grade) return true;
+    if (meta.kept) { await thumbnails.populate(photo, thumbnailEdge()); return true; }
+    try { if (await HDRLibraryPictures.makeThumbnail(meta, photo.path, ticket, signal, isCurrent)) return true; }
+    catch (error) { if (aborted(error)) throw error; }
+    return meta;
   }
   const { showMenu, closeMenu: closeFolderMenu, make } = HDRLibraryDialogs;
   const sameName = (a, b) => a.toLocaleLowerCase() === b.toLocaleLowerCase();
@@ -339,21 +359,23 @@
     const started = performance.now();
     const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
     const miss = ticket => {
-      const fallback = document.createElement("canvas"); cell.fallback = fallback;
-      fallback.hidden = true; frame.append(fallback);
       void (async () => {
         let prepared = null;
         if (rawTypes.has(photo.type)) {
           const preview = await api("/api/library/picture", {path:photo.path, edge:cell.edge, quality:"fast", purpose:"thumbnail", priority:5}, cell.controller.signal);
           if (!current()) return;
           if (preview.url) {
-            canvas.src = preview.url; await canvas.decode();
+            canvas.src = preview.url; canvas.dataset.preview = "true"; await canvas.decode();
             if (!current()) return;
             canvas.style.visibility = ""; element.classList.remove("loading");
             HDRLibraryStopwatch("camera_preview_shown", {path:photo.path,duration_ms:performance.now()-started});
-            prepared = rawThumbnail(photo, cell.edge, cell.controller.signal);
+            const settled = ticket && HDRLibraryGpuRaw.enabled() ? await savedRawThumbnail(photo, ticket, cell.controller.signal, current) : null;
+            if (settled === true || !current()) return;
+            prepared = settled ? Promise.resolve(settled) : rawThumbnail(photo, cell.edge, cell.controller.signal);
           } else prepared = Promise.resolve(preview);
         }
+        const fallback = document.createElement("canvas"); cell.fallback = fallback;
+        fallback.hidden = true; frame.append(fallback);
         const meta = await loadAndShow(photo, cell.edge, fallback, cell.controller, current, 10, prepared);
         if (!meta || !current() || !cell.fallback) return;
         fallback.hidden = false; canvas.hidden = true;

@@ -207,3 +207,20 @@ def test_camera_preview_then_gpu_thumbnail_without_raw_decode(tmp_path, monkeypa
     stale = client.post('/api/library/thumbnail/'+key, params={'path':str(photo), 'width':48, 'height':32}, content=body)
     assert stale.status_code == 409
     assert batch()['pending'] == [str(photo)]
+
+
+def test_routine_trim_lists_a_large_cache_at_most_every_20_seconds(tmp_path, monkeypatch):
+    from hdr_finisher import library_cache
+    cache = library_cache.LibraryCache(tmp_path)
+    listings = []
+    monkeypatch.setattr(library_cache.LibraryCache, "entries", lambda self, location=None: listings.append(1) or [])
+    clock = [1000.0]
+    monkeypatch.setattr(library_cache, "monotonic", lambda: clock[0])
+    cache.trim_soon(); cache.trim_soon(); cache.trim_soon()
+    assert len(listings) == 1
+    clock[0] += library_cache.TRIM_INTERVAL_S
+    cache.trim_soon()
+    assert len(listings) == 2
+    # Settings changes and explicit limits still trim at once.
+    cache.trim(); cache.trim(limit_bytes=0)
+    assert len(listings) == 4

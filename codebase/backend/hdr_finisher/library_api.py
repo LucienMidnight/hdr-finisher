@@ -104,6 +104,9 @@ class PictureRequest(BaseModel):
 class SensorRequest(BaseModel):
     path: str
     edge: int = Field(default=320, ge=64, le=2560)
+    # An edited photo waits for its saved-grade picture instead of showing
+    # the unedited look first.
+    saved_grade_only: bool = False
 
 
 class ThumbnailRequest(BaseModel):
@@ -247,7 +250,7 @@ def create_library_router(worker, browser, store=None):
 
         @router.post("/picture-settings")
         def set_picture_settings(change: dict):
-            return command(lambda: (picture_preferences(browser.root, change), kept.cache.trim(), kept.remake_missing(), kept.usage())[-1])
+            return command(lambda: (picture_preferences(browser.root, change), kept.cache.managed.trim(), kept.remake_missing(), kept.usage())[-1])
 
         @router.post("/kept-picture")
         def request_kept(request: FolderRequest):
@@ -765,6 +768,8 @@ def create_library_router(worker, browser, store=None):
             cached = await run_in_threadpool(kept.cached, command.path, command.edge)
             if cached: return cached
             await run_in_threadpool(kept.ensure, command.path)
+            if command.saved_grade_only:
+                return {"waiting_for_saved_grade": True}
         command.path = str(marks.source_path(command.path))
         if worker.status()["paused"]:
             return JSONResponse({"detail": "library_pending"}, status_code=202)

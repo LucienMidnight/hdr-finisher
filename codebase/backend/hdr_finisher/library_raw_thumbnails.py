@@ -68,7 +68,7 @@ class RawThumbnails:
                 os.replace(temp, self.file(key))
             finally:
                 temp.unlink(missing_ok=True)
-            self.managed.trim()
+            self.managed.trim_soon()
 
     def pixels(self, key):
         with self.lock, np.load(self.file(key), allow_pickle=False) as stored:

@@ -3826,6 +3826,18 @@
       }
     },
     {
+      "path": "tests/library-gpu-raw-grid.js",
+      "areas": [
+        "library",
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "Camera RAW grid cells show two stages (camera preview, then the saved thumbnail) with no interim drawing; disposable photo copies only.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
       "path": "tests/library-gpu-raw.js",
       "areas": [
         "library",

@@ -16,7 +16,8 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
   await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
   const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>!!window.HDRLibrary);
   await lib.evaluate(folder=>HDRLibrary.browse(folder),folder);
-  await lib.waitForFunction(()=>document.querySelectorAll('#grid-space canvas[data-picture-key]').length===3,null,{timeout:90000});
+  // Each cell finished: a drawn picture or, for camera RAWs, its saved thumbnail.
+  await lib.waitForFunction(()=>[...document.querySelectorAll('#grid-space .library-cell')].filter(cell=>cell.querySelector('canvas[data-picture-key],img[data-picture-key]')).length===3,null,{timeout:90000});
   await lib.locator('.library-cell').filter({hasText:'photo-1.ARW'}).click();await page.keyboard.press('f');
   await lib.waitForFunction(()=>document.querySelector('#single-picture').dataset.picturePath?.endsWith('photo-1.ARW')&&Number(document.querySelector('#single-picture').dataset.pictureEdge)>=1280,null,{timeout:90000});
   await lib.evaluate(async()=>{

@@ -82,10 +82,13 @@
       try { entry = await pending; }
       finally { if (waiting?.missListeners) waiting.missListeners = waiting.missListeners.filter(f => f !== notify); }
       if (!current()) return;
-      img.style.visibility='hidden'; img.onerror=()=>{img.style.visibility='hidden';};
+      // A camera preview stays on screen until the saved thumbnail replaces it.
+      const preview = img.dataset.preview === 'true';
+      if (!preview) img.style.visibility='hidden';
+      img.onerror=()=>{img.style.visibility='hidden';};
       img.decoding = 'async'; mode(img,hdr()); img.src = entry.url;
       await img.decode(); if (!current()) return;
-      img.style.visibility='';
+      img.style.visibility=''; delete img.dataset.preview;
       mode(img,hdr()); img.dataset.kept = String(!!entry.meta.kept); img.dataset.pictureKey = entry.meta.key; img.dataset.picturePath = photo.path; img.dataset.pictureEdge = edge;
       return entry.meta;
     }

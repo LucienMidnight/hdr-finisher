@@ -3,12 +3,15 @@ import json
 import os
 from pathlib import Path
 from threading import RLock
+from time import monotonic
 from tempfile import NamedTemporaryFile
 
 DIRECTORIES = ('library-pictures', 'library-full-pictures', 'library-raw-thumbnails', 'library-thumbnails')
 ALLOWANCES = {'thumbnail': 2, 'full_size': 10, 'saved_grade': 2}
 LIMITS = (1, 2, 5, 10, 20)
 _LOCK = RLock()
+TRIM_INTERVAL_S = 20.0
+_LAST_TRIM = {}
 MARKER = '.hdr-finisher-cache'
 
 
@@ -125,6 +128,16 @@ class LibraryCache:
                 except FileNotFoundError:
                     pass
             return {'freed_bytes': freed, **self.usage()}
+
+    def trim_soon(self):
+        """Routine trim after a saved picture: listing a large cache takes
+        seconds, so this runs at most every 20 s per cache folder."""
+        location = str(self.preferences()['location'])
+        now = monotonic()
+        if now - _LAST_TRIM.get(location, -1e9) < TRIM_INTERVAL_S:
+            return
+        _LAST_TRIM[location] = now
+        self.trim()
 
     def trim(self, limit_bytes=None, allowance='thumbnail'):
         if allowance not in ALLOWANCES:

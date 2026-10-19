@@ -250,7 +250,19 @@ fails as recorded above; export, Proof and their limits were not changed.
       p99.9 1.3). Whole folder, four at a time as the grid asks: 23
       badminton RAWs in 11.3 s (0.49 s each) against 24 in 110 s (4.6 s
       each) on the CPU route; reading each 85 MB RAW off the USB drive is
-      now the main cost (`tools/gpu_raw_prototype/folder_speed.js`). Not yet covered: the starting document for paste (paste
+      now the main cost (`tools/gpu_raw_prototype/folder_speed.js`).
+      **After Steve's first try (October 19):** a camera RAW cell now shows
+      two stages, its camera preview and then its saved thumbnail; the GPU
+      develops and saves the thumbnail without drawing an interim picture,
+      so the cell is the same file a later visit shows and stays built when
+      scrolling. An edited RAW shows its preview until its saved-grade
+      thumbnail is ready, never the unedited look. GPU jobs run two at a
+      time outside the grid's request slots (camera previews had queued
+      behind them) and the grid and filmstrip share one job per photo.
+      Routine cache trims after a saved picture run at most every 20 s
+      (`trim_soon`): on Steve's large cache each listing took about 3 s and
+      held up every stored thumbnail. `tests/library-gpu-raw-grid.js`
+      checks the stages. Not yet covered: the starting document for paste (paste
       prepares a GPU-developed photo the slow way), GPU memory budgeting with
       Grade and delivery (each development holds up to about 2 GB briefly),
       Single and full-screen views, saved-grade pictures.

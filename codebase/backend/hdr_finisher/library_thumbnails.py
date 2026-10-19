@@ -99,7 +99,7 @@ def build(root, path, edge, key, kept=None, cancelled=None):
         os.replace(temp, directory / (key + '.jpg'))
     finally:
         temp.unlink(missing_ok=True)
-    managed.trim()
+    managed.trim_soon()
     return {'key': key, 'kept': bool(kept), 'edge': edge}
 
 
@@ -183,7 +183,7 @@ class Thumbnails:
             os.replace(temp, destination)
         finally:
             temp.unlink(missing_ok=True)
-        self.managed.trim()
+        self.managed.trim_soon()
         from .library_diagnostics import log
         log('thumbnail_scene_saved', path=path, key=key)
         return {'ok': True, 'key': key}

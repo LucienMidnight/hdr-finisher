@@ -267,7 +267,7 @@ class LibraryPictureCache:
 
     @audited("cache_trim")
     def trim(self):
-        self.managed.trim()
+        self.managed.trim_soon()
 
 
 def default_look(pixels, reference, raw_input, suffix):
