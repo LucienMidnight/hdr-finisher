@@ -90,6 +90,8 @@ class LibraryPaste:
                 if document: return EditDocument.model_validate(document).model_dump(mode='json')
             except (OSError,ValueError): pass
         from .sessions import SessionStore
+        from .library_diagnostics import log
+        log("paste_cpu_fallback", path=str(source), reason="No retained starting document for this photo version.")
         session=SessionStore().prepare_session(source,owns_source_path=False)
         return session.edit_document().model_dump(mode='json')
 

@@ -130,3 +130,26 @@ def test_paste_reuses_thumbnail_start_and_develops_each_photo_once(setup, monkey
     for thread in threads: thread.start()
     for thread in threads: thread.join()
     assert imports==['fresh.png'] and grades._get(str(fresh))['default']
+
+
+def test_gpu_raw_start_is_reused_by_simultaneous_paste_requests(setup, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from types import SimpleNamespace
+    from hdr_finisher import library_gpu_raw
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    from test_library_gpu_raw import _header, _payload
+    photo, store, session, marks, grades = setup
+    raw = photo.with_name('shown.ARW')
+    raw.write_bytes(b'disposable sensor source')
+    cache = LibraryPictureCache(marks.database.parent)
+    library_gpu_raw.developed(cache, str(raw), _header(raw), _payload(8,12,(.1,.2,.3)))
+    marks.kept = SimpleNamespace(cache=cache)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Paste must reuse the GPU development, without CPU preparation')
+    monkeypatch.setattr(SessionStore, 'prepare_session', forbidden)
+    paste = LibraryPaste(grades)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(lambda _: paste.document(str(raw)), range(3)))
+    assert results[0] == results[1] == results[2]
+    assert results[0][1] == cache.default_document(raw)
+    assert grades._get(str(raw))['default'] == results[0][1]

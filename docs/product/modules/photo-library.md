@@ -121,6 +121,13 @@ fails as recorded above; export, Proof and their limits were not changed.
   import and keeps the starting grade it produced, so paste does not
   develop that photo again. Each photo is developed at most once even
   when the check and the paste ask together.
+- October 19, GPU RAW follow-up part 3: GPU thumbnails retain the starting
+  document, full-source measurements, RAW settings and source fingerprint.
+  Concurrent paste checks reuse it through the existing per-photo lock.
+  Missing documents keep the CPU fallback with a recorded reason; scene cache
+  v6 rebuilds older thumbnails once. Real app preparation: 4.364 s on CPU
+  versus 0.031 s for three concurrent reuse requests (5% timing allowance).
+  No rendered pixels change; the existing picture qualification still applies.
 - Batch export pages and states (see Export and Proof).
 - Saved-grade pictures now use the shared hidden GPU delivery renderer,
   including locals, Denoise and resize; CPU fallback records its reason.
@@ -277,8 +284,8 @@ fails as recorded above; export, Proof and their limits were not changed.
       October 19: a shared running size ledger replaces the interim 20 s
       trim limit. Each saved picture updates its allowance total; only
       eviction, startup recovery and settings drift recovery list files. `tests/library-gpu-raw-grid.js`
-      checks the stages. Not yet covered: the starting document for paste (paste
-      prepares a GPU-developed photo the slow way), GPU memory budgeting with
+      checks the stages. GPU-developed starting documents now feed paste (part 3).
+      Not yet covered: GPU memory budgeting with
       Grade and delivery (each development holds up to about 2 GB briefly),
       Single and full-screen views. Saved-grade pictures are built in parts
       1–2 of the follow-up; the remaining items are

@@ -90,7 +90,23 @@ hit a connection reset after synchronous external decode blocked its network
 loop; asynchronous inspection fixed the setup and the error did not repeat.
 No production retries, guards or card workarounds.
 
-Next: parts 3-6 in order. Ask before slow work or pushing.
+### Part 3 outcome - October 19
+
+GPU RAW thumbnails now retain their starting document, full-source measures,
+RAW settings and source fingerprint in the existing picture cache. Paste
+reuses it under the existing per-photo lock; simultaneous checks cannot
+repeat development. Older scene cache entries rebuild once (v6). Missing
+starting documents retain CPU preparation with a recorded reason.
+
+Real app timing: CPU preparation 4.364 s; three concurrent reuse requests
+0.031 s total, within the proposed 5% timing-noise allowance. No rendering
+maths or pixels change; parts 1-2 picture qualification remains applicable.
+Try: let a fresh RAW thumbnail develop in Library, then paste a grade.
+
+Checks: 540 Node passed; 2312 Python passed, 3 skipped, 19 existing warnings
+(8 min); focused backend 14 passed; real Electron paste/reuse passed.
+
+Next: parts 4-6 in order. Ask before slow work or pushing.
 
 ### Intended result
 

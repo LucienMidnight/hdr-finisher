@@ -3917,6 +3917,17 @@
       "launch": {
         "method": "electron"
       }
+    },
+    {
+      "path": "tests/library-gpu-raw-paste.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "core",
+      "protects": "GPU thumbnail starting documents are reused by concurrent paste preparation, change checks and unchanged paste.",
+      "launch": {
+        "method": "electron"
+      }
     }
   ]
 }

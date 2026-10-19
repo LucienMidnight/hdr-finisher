@@ -20,7 +20,8 @@ import numpy as np
 from . import raw_import
 from .color import _ACESCG_TO_LINEAR_BT2020
 from .import_defaults import RAW_CALIBRATION_EV, fuji_dynamic_range, starting_adjustments
-from .models import HDRAnalysis, HDRClassification, RawImportSettings
+from .models import EditDocument, HDRAnalysis, HDRClassification, RawImportSettings, SourceImageDescriptor, SourceReference
+from .source_luminance import describe_source_luminance
 
 ROUTE = "gpu-raw-thumbnail"
 # LibRaw constants used by AHD's CIELab conversion (dcraw xyz_rgb, d65_white).
@@ -91,6 +92,7 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
     recorded = {200: 1.0, 400: 2.0}.get(dr, 0.0)
     header = {
         "path": str(path), "identity": identity, "width": width, "height": height, "flip": flip,
+        "raw_import_settings": settings.model_dump(mode="json"),
         "cfa_raw": colors.reshape(-1).tolist(),
         "cfa_rgb": [int(metadata.raw_channel_to_rgb[c]) for c in colors.reshape(-1)],
         "raw_black": metadata.raw_black_level.tolist(), "raw_white": metadata.raw_white_level.tolist(),
@@ -237,9 +239,22 @@ def developed(cache, path: str, header: dict, payload) -> dict:
         peak_luma_linear=peaks["peak_luma"], robust_peak_luma_linear=robust["luma"],
         peak_bt2020_linear=peaks["peak_bt2020"], robust_peak_bt2020_linear=robust["bt2020"],
         badge_message="")
+    from .sessions import _sha256_file
+    look = starting_adjustments(analysis)
+    source_info = SourceImageDescriptor(filename=source.name, suffix=source.suffix,
+        width=int(header["source_width"]), height=int(header["source_height"]),
+        channels=3, dtype="float32", transfer_function="linear")
+    document = EditDocument(hdr_reference_white_nits=203, global_adjustments=look,
+        source=SourceReference(filename=source.name, durable_path=str(source),
+            byte_size=source.stat().st_size, fingerprint_sha256=_sha256_file(source),
+            raw_import_settings=RawImportSettings.model_validate(header.get("raw_import_settings", {})),
+            luminance=describe_source_luminance(source_info, {}, has_authored_sdr=False)))
+    if _identity(source) != list(header["identity"]):
+        raise ValueError("Photo changed while its Library picture was being developed.")
     metadata = {
         "route": ROUTE, "raw_input": True, "renderer": "gpu",
-        "starting_look": starting_adjustments(analysis).model_dump(mode="json"),
+        "starting_look": look.model_dump(mode="json"),
+        "default_document": document.model_dump(mode="json"),
         "raw_start_brightness": header.get("raw_start_brightness"),
         "lens_correction_applied": bool(header.get("lens_corrected")),
         "source_width": int(header["source_width"]), "source_height": int(header["source_height"]),

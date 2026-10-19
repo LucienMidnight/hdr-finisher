@@ -665,7 +665,8 @@
     const measured = performance.now();
     const robust = { luma: quantile(developed.samples, 0, 0.9999), channel: quantile(developed.samples, 1, 0.9999), bt2020: quantile(developed.samples, 2, 0.9999) };
     const quantileMs = performance.now() - measured;
-    const header = { path: meta.path, identity: meta.identity, edge, flip: meta.flip, height: picture.height, width: picture.width,
+    const header = { path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
+      edge, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       timing_ms: { sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };

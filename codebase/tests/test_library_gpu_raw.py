@@ -60,6 +60,12 @@ def test_developed_picture_is_stored_where_grade_development_would_be(tmp_path):
         peak_luma_linear=2.0, robust_peak_luma_linear=1.5, peak_bt2020_linear=2.6,
         robust_peak_bt2020_linear=1.9, badge_message=""))
     assert result["adjustments"] == expected.model_dump(mode="json")
+    from hdr_finisher.models import EditDocument
+    from hashlib import sha256
+    document = EditDocument.model_validate(cache.default_document(photo))
+    assert document.global_adjustments == expected
+    assert document.source.fingerprint_sha256 == sha256(photo.read_bytes()).hexdigest()
+    assert document.source.durable_path == str(photo.resolve())
     # Grade's own request for this photo now finds it in the cache.
     cached = cache.cached(photo, 640, "grade-thumbnail")
     assert cached and cached["key"] == result["key"] and cached["route"] == gpu_raw.ROUTE
