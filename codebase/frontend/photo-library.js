@@ -372,6 +372,10 @@
             const settled = ticket && HDRLibraryGpuRaw.enabled() ? await savedRawThumbnail(photo, ticket, cell.controller.signal, current) : null;
             if (settled === true || !current()) return;
             prepared = settled ? Promise.resolve(settled) : rawThumbnail(photo, cell.edge, cell.controller.signal);
+          } else if (preview.kept && ticket) {
+            // Its saved-grade picture is ready: one stage, the thumbnail file made from it.
+            await thumbnails.populate(photo, cell.edge);
+            return;
           } else prepared = Promise.resolve(preview);
         }
         const fallback = document.createElement("canvas"); cell.fallback = fallback;

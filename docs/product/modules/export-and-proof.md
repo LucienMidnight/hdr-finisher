@@ -161,7 +161,7 @@ Settings rules (from v1.2 section 5, still in force):
    Steps 1–5 implemented. Steve to try one badminton export, a small batch,
    Proof, and a Library grade paste. Real-photo responsiveness and the broader
    perceptual comparisons remain unqualified under the light-testing brief.
-   - **Before the next pre-release check (Steve, October 18):** send the
+   - **Done October 19 (Steve approved):** send the
      GPU delivery pixel upload (`frontend/gpu-delivery.js`, about 70 MB
      per saved-grade picture) as a `Blob` instead of a plain buffer. Test
      runs only: the plain buffer is copied into the test tool's debugging

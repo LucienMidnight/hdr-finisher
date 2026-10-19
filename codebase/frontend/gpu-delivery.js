@@ -64,7 +64,9 @@
           stamp("creative_ms");
           const texture=await finishing.finish(capture,job,lane);stamp("finishing_ms");
           const pixels=await finishing.read(texture);stamp("readback_ms");
-          const uploaded=await fetch(`/api/delivery/gpu/${job.id}/pixels/${lane}`,{method:"POST",body:pixels});
+          // A Blob body sends the same bytes but stays out of DevTools request events, which a
+          // test connection copies in full and can overflow (release README, October 18).
+          const uploaded=await fetch(`/api/delivery/gpu/${job.id}/pixels/${lane}`,{method:"POST",body:new Blob([pixels])});
           if(!uploaded.ok)throw Error("GPU encoder handoff failed.");
           stamp("handoff_ms");
         }

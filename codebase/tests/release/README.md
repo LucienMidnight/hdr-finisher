@@ -140,8 +140,9 @@ is connected. The app outside tests has no DevTools client and is unaffected.
 
 Sending the upload as a `Blob` keeps it out of DevTools events (checked: an
 ArrayBuffer body was copied in full, a Blob body not at all, with the same
-bytes received). That change is in the export and Proof delivery path, so it
-waits for Steve's decision.
+bytes received). Steve approved it on October 19; `gpu-delivery.js` now sends
+a `Blob`. library-kept-pictures.js, proof-size-interaction.js and the edited
+photo in library-gpu-raw-grid.js then ran to completion.
 
 To see why a window closed, the runner prints the main-process events
 (window closed, quit, renderer or GPU process gone) when the page closes;

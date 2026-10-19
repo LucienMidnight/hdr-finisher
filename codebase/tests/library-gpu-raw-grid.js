@@ -60,7 +60,9 @@ if (withEdited) {
             const src = node.getAttribute('src'), kind = src.startsWith('data:') ? 'preview' : src.includes('/thumbnail/') ? 'saved' : 'other';
             if (entry.pictures.at(-1) !== kind + ':' + src.slice(-24)) entry.pictures.push(kind + ':' + src.slice(-24));
           }
-          for (const added of change.addedNodes || []) if (added.tagName === 'CANVAS') entry.canvases++;
+          // Overlay layers are not pictures; a picture canvas means an interim drawing.
+          for (const added of change.addedNodes || []) if (added.tagName === 'CANVAS') (entry.canvasKinds ||= []).push(added.className || 'picture');
+          entry.canvases = (entry.canvasKinds || []).filter(kind => kind === 'picture').length;
         }
       }).observe(win.document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
     });
