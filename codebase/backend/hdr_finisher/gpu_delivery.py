@@ -253,6 +253,7 @@ def create_gpu_delivery_router():
         return {"cancelled": bool(identity and identity not in active),
             "reason": priority_reason if higher else "GPU delivery released the shared memory budget for Grade.",
             "preempt": preempt, "ready": not preempt,
+            "idle": not active and not any(root.glob("delivery-*/request.json")),
             "budget": max(0, _activity["budget"] - _activity["bytes"])}
 
     @router.get("/next")

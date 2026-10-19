@@ -583,7 +583,7 @@
       }).decision;
     }
 
-    async initialize() {
+    async initialize(beforePipeline = async () => {}) {
       if (!navigator.gpu) {
         this.detail = "WebGPU is unavailable in this browser";
         return false;
@@ -652,19 +652,22 @@
           addressModeV: "clamp-to-edge",
         });
         this.pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] });
-        this.scopePipeline = this.device.createRenderPipeline({
+        await beforePipeline();
+        this.scopePipeline = await this.device.createRenderPipelineAsync({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: "scopeFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         });
-        this.settledScopePipeline = this.device.createRenderPipeline({
+        await beforePipeline();
+        this.settledScopePipeline = await this.device.createRenderPipelineAsync({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: "settledScopeFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         });
-        this.outputPicturePipeline = this.device.createRenderPipeline({
+        await beforePipeline();
+        this.outputPicturePipeline = await this.device.createRenderPipelineAsync({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: "outputPictureFragmentMain", targets: [{ format: "rgba16float" }] },
@@ -678,16 +681,20 @@
           ],
         });
         this.maskPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.maskBindGroupLayout] });
+        const maskPipeline = async entry => {
+          await beforePipeline();
+          return this.createMaskPipeline(entry, true);
+        };
         this.maskPipelines = {
-          sceneLuminance: this.createMaskPipeline("sceneLuminanceFragmentMain"),
-          qualify: this.createMaskPipeline("lumaQualificationFragmentMain"),
-          refine: this.createMaskPipeline("maskRefinementFragmentMain"),
-          downsample: this.createMaskPipeline("maskDownsampleFragmentMain"),
-          upsample: this.createMaskPipeline("maskUpsampleFragmentMain"),
-          combine: this.createMaskPipeline("maskCombineFragmentMain"),
-          linearGradient: this.createMaskPipeline("linearGradientFragmentMain"),
-          shapeRaster: this.createMaskPipeline("shapeRasterFragmentMain"),
-          brushRegionalErase: this.createMaskPipeline("brushRegionalEraseFragmentMain"),
+          sceneLuminance: await maskPipeline("sceneLuminanceFragmentMain"),
+          qualify: await maskPipeline("lumaQualificationFragmentMain"),
+          refine: await maskPipeline("maskRefinementFragmentMain"),
+          downsample: await maskPipeline("maskDownsampleFragmentMain"),
+          upsample: await maskPipeline("maskUpsampleFragmentMain"),
+          combine: await maskPipeline("maskCombineFragmentMain"),
+          linearGradient: await maskPipeline("linearGradientFragmentMain"),
+          shapeRaster: await maskPipeline("shapeRasterFragmentMain"),
+          brushRegionalErase: await maskPipeline("brushRegionalEraseFragmentMain"),
         };
         const lostDevice = this.device;
         this.device.lost.then((info) => {
@@ -6391,8 +6398,8 @@
       return target;
     }
 
-    createMaskPipeline(entryPoint) {
-      return this.device.createRenderPipeline({
+    createMaskPipeline(entryPoint, asynchronous = false) {
+      return this.device[asynchronous ? "createRenderPipelineAsync" : "createRenderPipeline"]({
         layout: this.maskPipelineLayout,
         vertex: { module: this.maskModule, entryPoint: "vertexMain" },
         fragment: { module: this.maskModule, entryPoint, targets: [{ format: "r16float" }] },
@@ -6456,75 +6463,76 @@
       }
     }
 
-    pipelineFor(format) {
+    pipelineFor(format, factory = null) {
+      const create = factory || (descriptor => this.device.createRenderPipeline(descriptor));
       if (this.pipelines.has(format)) return this.pipelines.get(format);
-      const base = this.device.createRenderPipeline({
+      const base = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "baseFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const response = this.device.createRenderPipeline({
+      const response = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "filmResponseFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const local = this.device.createRenderPipeline({
+      const local = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localAdjustmentFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const localCandidate = this.device.createRenderPipeline({
+      const localCandidate = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localCandidateFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const localDetailHorizontal = this.device.createRenderPipeline({
+      const localDetailHorizontal = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localDetailHorizontalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const localDetailVertical = this.device.createRenderPipeline({
+      const localDetailVertical = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localDetailVerticalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const localDetailComposite = this.device.createRenderPipeline({
+      const localDetailComposite = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localDetailCompositeFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const localDetailMix = this.device.createRenderPipeline({
+      const localDetailMix = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localDetailMixFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const detailHorizontal = this.device.createRenderPipeline({
+      const detailHorizontal = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "detailHorizontalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const detailVertical = this.device.createRenderPipeline({
+      const detailVertical = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "detailVerticalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const detailComposite = this.device.createRenderPipeline({
+      const detailComposite = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "detailCompositeFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const clarityPipeline = (entryPoint) => this.device.createRenderPipeline({
+      const clarityPipeline = (entryPoint) => create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint, targets: [{ format: CLARITY_MAP_FORMAT }] },
@@ -6535,37 +6543,37 @@
       const clarityBlurHorizontal = clarityPipeline("clarityBlurHorizontalFragmentMain");
       const clarityBlurVertical = clarityPipeline("clarityBlurVerticalFragmentMain");
       const claritySurround = clarityPipeline("claritySurroundFragmentMain");
-      const extract =this.device.createRenderPipeline({
+      const extract =create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "spatialExtractFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const blurHorizontal = this.device.createRenderPipeline({
+      const blurHorizontal = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "spatialBlurHorizontalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const blurVertical = this.device.createRenderPipeline({
+      const blurVertical = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "spatialBlurVerticalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const finish = this.device.createRenderPipeline({
+      const finish = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "finishFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const composite = this.device.createRenderPipeline({
+      const composite = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "fragmentMain", targets: [{ format }] },
         primitive: { topology: "triangle-list" },
       });
-      const placeholder = this.device.createRenderPipeline({
+      const placeholder = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "placeholderFragmentMain", targets: [{ format }] },
@@ -6574,7 +6582,7 @@
       // Max blending is what lets every tile accumulate into one grid without
       // a readback each. `one`/`one` with operation `max` is a plain maximum:
       // the factors are ignored for min and max operations.
-      const scopePeakTile = this.device.createRenderPipeline({
+      const scopePeakTile = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: {
@@ -6590,17 +6598,17 @@
         },
         primitive: { topology: "triangle-list" },
       });
-      const lensExtract = this.device.createRenderPipeline({
+      const lensExtract = create({
         layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
         fragment:{module:this.module,entryPoint:"lensExtractFragmentMain",targets:[{format:"rgba16float"}]},
         primitive:{topology:"triangle-list"},
       });
-      const lensHorizontal = this.device.createRenderPipeline({
+      const lensHorizontal = create({
         layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
         fragment:{module:this.module,entryPoint:"lensHorizontalFragmentMain",targets:[{format:"rgba16float"}]},
         primitive:{topology:"triangle-list"},
       });
-      const lensVertical = this.device.createRenderPipeline({
+      const lensVertical = create({
         layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
         fragment:{module:this.module,entryPoint:"lensVerticalFragmentMain",targets:[{format:"rgba16float",
           blend:{color:{operation:"add",srcFactor:"one",dstFactor:"one"},alpha:{operation:"add",srcFactor:"one",dstFactor:"one"}}}]},
@@ -6608,13 +6616,13 @@
       });
       const pipelines = {
         lensExtract, lensHorizontal, lensVertical,
-        peakCandidateLocal: this.device.createRenderPipeline({
+        peakCandidateLocal: create({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: "peakCandidateLocalFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         }),
-        ...Object.fromEntries(["lens", "scatter", "structure", "scan"].map((name) => [name, this.device.createRenderPipeline({
+        ...Object.fromEntries(["lens", "scatter", "structure", "scan"].map((name) => [name, create({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: `${name}FragmentMain`, targets: [{ format: "rgba16float" }] },
@@ -6644,8 +6652,24 @@
         composite,
         placeholder,
       };
-      this.pipelines.set(format, pipelines);
+      if (!factory) this.pipelines.set(format, pipelines);
       return pipelines;
+    }
+
+    async warmPipelines(format, beforeNext) {
+      if (this.pipelines.has(format)) return;
+      const pending = [];
+      const staged = this.pipelineFor(format, descriptor => {
+        const token = {}; pending.push([token, descriptor]); return token;
+      });
+      const compiled = new Map();
+      for (const [token, descriptor] of pending) {
+        await beforeNext();
+        if (this.pipelines.has(format)) return; // Foreground already needed it.
+        compiled.set(token, await this.device.createRenderPipelineAsync(descriptor));
+      }
+      if (!this.pipelines.has(format)) this.pipelines.set(format,
+        Object.fromEntries(Object.entries(staged).map(([name, token]) => [name, compiled.get(token)])));
     }
 
     ensureIntermediate(canvas, width, height, spatialActive = false, detailActive = false) {

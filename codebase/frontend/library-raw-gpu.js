@@ -118,7 +118,7 @@ window.HDRLibraryRawGPU = (() => {
     }
     function clear() { for(const key of [...cache.keys()]) remove(key); }
     device.lost.then(clear);
-    return {get,convert,proxy,clear,release:texture=>{for(const [key,entry] of cache) if(entry.texture===texture) remove(key);},owns:texture=>[...cache.values()].some(e=>e.texture===texture),
+    return {get,convert,proxy,clear,initialize,release:texture=>{for(const [key,entry] of cache) if(entry.texture===texture) remove(key);},owns:texture=>[...cache.values()].some(e=>e.texture===texture),
       configure:limits=>{pictureLimit=limits?.gpu_pictures||10;trim(new Set());},
       snapshot:()=>({pictures:[...cache.values()].filter(e=>e.meta.edge>=1280).length,bytes:[...cache.values()].reduce((n,e)=>n+e.byteSize,0),limitBytes:byteLimit})};
   }

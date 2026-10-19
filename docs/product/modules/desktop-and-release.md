@@ -51,7 +51,8 @@ release workflow and the focused release runner. `v0.9.0` (October 9) and
 - Whether 0.9.0 and 0.9.1 were published as GitHub releases can't be told
   from the code. Steve to confirm.
 - October 19: the window shows Starting… while the backend starts, then
-  loads the app when it is ready.
+  loads the app when it is ready. Measured visible in 0.424 s from launch
+  (limit 1.5 s); remembered bounds and the Library window use the same shell.
 - Explicit interfaces between frontend feature files (Modularization
   section 9) were proposed as a next sprint and not done.
 

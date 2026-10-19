@@ -78,3 +78,31 @@ outside these three areas, stop and ask before going further.
 
 In plain language for Steve: what changed, the three measured results
 against the limits, and which checks ran.
+
+## Outcome — October 19, 2026
+
+Completed on `gpu-raw-library`, as three local commits. No merge or push.
+No shader maths, development, decoder, codec or picture-format changes.
+
+- Window visible 424 ms from Electron launch, including its startup: passes 1.5 s.
+  The app check captured and verified the local Starting… screen before the backend.
+- Cache bookkeeping worst 2.76 ms at 5,000 entries: passes 50 ms. A shared SQLite
+  allowance ledger records final publications/replacements/removals. Startup,
+  settings usage and eviction reconcile outside changes. Routine trim checks
+  totals every time, with no 20-second limit and no directory listing under budget.
+- First Library draw after idle launch 38.3 ms; later median 7.1 ms: passes
+  the 500 ms alternative. Measured through the normal SDR GPU picture renderer
+  with the existing 640 px gradient fixture, including transport and draw.
+  Warm-up includes Library display/conversion, GPU RAW and hidden delivery pipelines;
+  it uses existing descriptors, compiles asynchronously and yields to user work.
+
+Validation: Node fast suite and Python fast suite; sequential Electron
+`startup-state.js` and `library-gpu-raw-grid.js` at 2560×1440. The RAW grid
+includes four camera makes and an edited saved-grade photo, using disposable
+copies. No release check or installer build.
+
+Check results: 539 Node tests passed. The full Python suite had 2,306 passes,
+three skips and one failure for the new script's missing asset-version token.
+The token was added; all 21 checks in that affected module then passed. The
+14 cache behavior tests also passed after the final startup-scan refinement.
+Both focused Electron drivers passed, including the edited RAW saved picture.

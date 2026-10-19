@@ -266,11 +266,16 @@ fails as recorded above; export, Proof and their limits were not changed.
       prepares a GPU-developed photo the slow way), GPU memory budgeting with
       Grade and delivery (each development holds up to about 2 GB briefly),
       Single and full-screen views, saved-grade pictures.
-   0. Quick wins, independent of the rest (brief:
-      [codex-brief-library-speed-quick-wins-2026-10-18](../../technical/briefs/codex-brief-library-speed-quick-wins-2026-10-18.md)):
-      window before the backend is ready (7.3 s today), a running cache
-      size total (2.2 s per save at 5,000 entries), GPU warmed at launch
-      (first draw 5.0 s against 0.23 s warm).
+   0. **Quick wins built October 19** ([brief and outcome](../../technical/archive/briefs/codex-brief-library-speed-quick-wins-2026-10-18.md)):
+      the window appears before the backend; a shared running cache total
+      replaces folder listings after each save and the interim 20 s trim limit.
+      Library display/conversion, GPU RAW development and the hidden delivery
+      renderer warm their existing pipelines after launch when idle. Compilation
+      is asynchronous, yields between pipelines and gives way to a real photo;
+      missing/software GPUs skip warm-up. No shader or picture changes.
+      Window visible in 0.424 s (limit 1.5 s); cache bookkeeping worst 2.76 ms
+      at 5,000 entries (limit 50 ms); first idle-launch Library draw 38.3 ms
+      (limit 500 ms), warm median 7.1 ms on the 640 px gradient fixture.
    1. Develop once, draw live, with the scheduler. Scope analysis and the
       thumbnail capture path go with it.
    2. GPU development step (a).

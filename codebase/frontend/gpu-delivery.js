@@ -1,7 +1,20 @@
 /* One serial hidden renderer, reusing Grade's class, masks, stocks and Denoise. */
 (async () => {
   const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-  const canvas=document.createElement("canvas");let gpu,identity=null;
+  const canvas=document.createElement("canvas");let gpu,identity=null,initializing;
+  async function initialize(beforeNext = async () => {}) {
+    if(gpu?.available)return gpu;
+    if(!initializing) initializing=(async()=>{
+      gpu=new HDRWebGPUPreview(canvas);
+      if(!await gpu.initialize(()=>beforeNext(()=>identity!==null)))throw Error("WebGPU is unavailable.");
+      return gpu;
+    })().finally(()=>{initializing=null;});
+    return initializing;
+  }
+  HDRIdleWarmup.run("delivery", async beforeNext => {
+    await initialize(beforeNext);
+    await gpu.warmPipelines("rgba16float",beforeNext);
+  },()=>identity!==null);
   setInterval(()=>fetch("/api/delivery/gpu/permit").catch(()=>{}),1000);
   async function permit(){
     for(;;){const response=await fetch(`/api/delivery/gpu/permit${identity?"?identity="+identity:""}`);if(!response.ok)throw Error("Delivery scheduler unavailable.");
@@ -18,7 +31,7 @@
       identity=job.id;
       const timings={},started=performance.now();let mark=started;
       const stamp=name=>{const now=performance.now();timings[name]=(timings[name]||0)+now-mark;mark=now;};
-      if(!gpu?.available){gpu=new HDRWebGPUPreview(canvas);if(!await gpu.initialize())throw Error("WebGPU is unavailable.");}
+      await initialize();
       if(gpu.adapterInfo?.fallback)throw Error("No hardware GPU is available.");
       gpu.resetSession(job.id);
       gpu.executionOverride="tiled";

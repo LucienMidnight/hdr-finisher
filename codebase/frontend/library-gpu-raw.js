@@ -425,7 +425,7 @@
   // One device and one set of pipelines for the Library window; developments
   // run one at a time so a scrolled grid never holds several sources at once.
   let shared = null, queue = Promise.resolve();
-  async function gpu() {
+  async function gpu(beforeNext = async () => {}) {
     if (shared) return shared;
     shared = (async () => {
       if (!navigator.gpu) throw new Error("WebGPU is unavailable.");
@@ -440,7 +440,8 @@
       device.lost.then(() => { shared = null; });
       const pipelines = {};
       for (const [name, code] of Object.entries({ NORMALIZE, DILATE, RESIDUAL, REPAIR, GREEN, HOMOGENEITY, COMBINE, REMAP, REDUCE })) {
-        pipelines[name] = device.createComputePipeline({ layout: "auto", compute: { module: device.createShaderModule({ code }), entryPoint: "main" } });
+        await beforeNext();
+        pipelines[name] = await device.createComputePipelineAsync({ layout: "auto", compute: { module: device.createShaderModule({ code }), entryPoint: "main" } });
       }
       return { device, pipelines, errors };
     })();
@@ -695,6 +696,7 @@
   // The grid and the filmstrip can ask for the same photo: they share one job,
   // which stops only when every asker has scrolled past it.
   function thumbnail(path, edge, signal, { savedGradeOnly = false } = {}) {
+    root.HDRIdleWarmup?.touch();
     const key = `${path}|${edge}|${savedGradeOnly}`;
     let job = inflight.get(key);
     if (!job) {
@@ -717,7 +719,8 @@
     });
   }
 
-  const exported = Object.freeze({ developRaw, thumbnail, enabled, quantile, reducedSize });
+  const warmup = async beforeNext => { if (enabled()) await gpu(() => beforeNext(() => inflight.size > 0)); };
+  const exported = Object.freeze({ developRaw, thumbnail, enabled, quantile, reducedSize, warmup });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

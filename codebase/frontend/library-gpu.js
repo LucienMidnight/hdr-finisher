@@ -30,9 +30,9 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     HDRLibraryStopwatch("highlight_analysis", { duration_ms: performance.now() - started });
     return result;
   }
-  pipelineFor(format) {
+  pipelineFor(format, factory = null) {
     const started = performance.now();
-    const result = super.pipelineFor(format);
+    const result = super.pipelineFor(format, factory);
     HDRLibraryStopwatch("pipeline", { duration_ms: performance.now() - started });
     return result;
   }
@@ -70,13 +70,16 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
 window.HDRLibraryPictures = (() => {
   const surface = document.createElement("canvas");
   let renderer, ready, queue = Promise.resolve(), draws = 0, foreground = 0;
-  let cacheQueue = Promise.resolve();
+  let cacheQueue = Promise.resolve(), configuredLimits;
   const finished = new WeakMap();
-  async function initialize() {
+  let initializationDemand = false;
+  async function initialize(warm = false, beforeNext = async () => {}) {
+    if (!warm) initializationDemand = true;
     if (!ready) ready = (async () => {
       const started = performance.now();
       renderer = new HDRLibraryGPU(surface);
-      if (!await renderer.initialize()) throw new Error("Library pictures need WebGPU on this computer.");
+      renderer.libraryLimits = configuredLimits;
+      if (!await renderer.initialize(() => beforeNext(() => initializationDemand))) throw new Error("Library pictures need WebGPU on this computer.");
       HDRLibraryStopwatch("renderer_setup", { duration_ms: performance.now() - started });
       return renderer;
     })();
@@ -163,6 +166,7 @@ window.HDRLibraryPictures = (() => {
   // Both renditions drawn off screen and saved as the cell's thumbnail, so the
   // grid's next picture is the saved file a later visit shows too.
   function makeThumbnail(meta, path, key, signal, isCurrent) {
+    window.HDRIdleWarmup?.touch();
     const pending = queue.catch(() => {}).then(async () => {
       if (signal.aborted || !isCurrent()) return null;
       const gpu = await initialize();
@@ -227,6 +231,7 @@ window.HDRLibraryPictures = (() => {
     }); queue = task; return task;
   }
   function prepare(meta, signal, isCurrent = () => true) {
+    window.HDRIdleWarmup?.touch();
     const task = queue.catch(() => {}).then(async () => {
       if (signal.aborted || !isCurrent()) return;
       const gpu = await initialize();
@@ -235,8 +240,20 @@ window.HDRLibraryPictures = (() => {
       return gpu.rawPictures.convert(meta, signal);
     }); queue = task; return task;
   }
+  window.HDRIdleWarmup?.run("library", async beforeNext => {
+    await beforeNext();
+    const gpu = await initialize(true, beforeNext);
+    if (gpu.adapterInfo?.fallback) return;
+    await gpu.warmPipelines("rgba16float", beforeNext);
+    await gpu.warmPipelines(navigator.gpu.getPreferredCanvasFormat(), beforeNext);
+    await beforeNext();
+    gpu.rawPictures ||= HDRLibraryRawGPU.create(gpu);
+    await gpu.rawPictures.initialize();
+    await beforeNext();
+    await HDRLibraryGpuRaw.warmup(beforeNext);
+  }, () => foreground > 0);
   return Object.freeze({ show: (meta, ...args) => meta.kept ? showKept(meta, ...args) : show(meta, ...args), initialize, prepare, saveThumbnail, makeThumbnail,
-    configure: async limits => { (await initialize()).libraryLimits = limits; },
+    configure: async limits => { configuredLimits = limits; if (renderer) renderer.libraryLimits = limits; },
     resident: key => !!renderer?.rawPictures?.get(key),
     snapshot: () => renderer?.rawPictures?.snapshot() || {pictures:0,bytes:0} });
 })();

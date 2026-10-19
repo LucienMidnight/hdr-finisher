@@ -111,6 +111,7 @@ function packagedExecutable() {
   const diagnosticGpuArgs = process.env.HDR_FINISHER_ELECTRON_DISABLE_GPU_SANDBOX === "1"
     ? ["--disable-gpu-sandbox"]
     : [];
+  const launchStarted = Date.now();
   const app = await playwright._electron.launch({
     // An absolute app path. `.` is not enough: Electron falls back to its own
     // `resources/app` when the app argument is not resolved, and this
@@ -127,7 +128,21 @@ function packagedExecutable() {
   const visible = app.windows().find(page => !page.url().includes("gpu-delivery.html"));
   if (visible) window = visible;
   if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] initial", window.url());
+  if (testPath.replaceAll("\\", "/").endsWith("startup-state.js")) {
+    await window.locator('[role="status"]').waitFor({timeout:10000});
+    const starting = await window.locator('[role="status"]').textContent();
+    if (starting !== "Starting…") throw Error(`Expected calm startup screen, got ${starting}`);
+    fs.mkdirSync(path.resolve(DESKTOP_DIRECTORY,"../output"),{recursive:true});
+    await window.screenshot({path:path.resolve(DESKTOP_DIRECTORY,"../output/starting-screen.png")});
+  }
   await require("./electron-initial-load").waitForInitialLoad(app, window);
+  if (testPath.replaceAll("\\", "/").endsWith("startup-state.js")) {
+    const log = fs.readFileSync(path.join(userDataDirectory,"logs/backend.log"),"utf8");
+    const line = log.split("\n").find(line => line.includes("[library] window_visible"));
+    const timing = Math.round(JSON.parse(line.slice(line.indexOf("{"))).time * 1000 - launchStarted);
+    console.log(`Window visible: ${timing} ms (limit 1500 ms); Starting… screen verified.`);
+    if (timing > 1500) throw Error(`Window visibility exceeded 1500 ms: ${timing}`);
+  }
   if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] loaded", window.url());
   // The launcher pid Playwright tracks is the shell on Windows; the main
   // process pid is what owns the window and the backend sidecar, so shutdown

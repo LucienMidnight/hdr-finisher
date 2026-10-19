@@ -274,6 +274,11 @@ def create_library_router(worker, browser, store=None):
     def thumbnail_batch(request: ThumbnailRequest):
         return thumbnails.batch(request.paths, request.edge, request.priority, request.client, request.wanted, request.populate)
 
+    @router.get("/warmup-idle")
+    def warmup_idle():
+        status = worker.status()
+        return {"idle": not status["paused"] and not status["pending"]}
+
     @router.get("/thumbnail-work")
     def thumbnail_work():
         return {"paused": worker.status()["paused"]}
