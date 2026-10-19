@@ -147,7 +147,8 @@ Settings rules (from v1.2 section 5, still in force):
   per-photo time with the fairness changes is not yet measured.
 - The GPU step still moves full-size float pixels through disk files in both
   directions (a 486 MB source and two 163 MB lanes for a 42 MP photo at a
-  4000 px output). That transport is part of the 10 to 12 s. The
+  4000 px output). That transport is part of the 10 to 12 s (briefed in
+  [codex-brief-gpu-raw-follow-ups-2026-10-19](../../technical/briefs/codex-brief-gpu-raw-follow-ups-2026-10-19.md), part 2). The
   about-1-second saved-grade update target is not yet measured on his RAWs.
 - Creative rendering is tiled, but delivery finishing still needs full-frame
   scratch. Large sharpened originals can exceed the shared memory budget and

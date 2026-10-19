@@ -265,7 +265,8 @@ fails as recorded above; export, Proof and their limits were not changed.
       checks the stages. Not yet covered: the starting document for paste (paste
       prepares a GPU-developed photo the slow way), GPU memory budgeting with
       Grade and delivery (each development holds up to about 2 GB briefly),
-      Single and full-screen views, saved-grade pictures.
+      Single and full-screen views, saved-grade pictures. All of these are
+      briefed in [codex-brief-gpu-raw-follow-ups-2026-10-19](../../technical/briefs/codex-brief-gpu-raw-follow-ups-2026-10-19.md).
    0. **Quick wins built October 19** ([brief and outcome](../../technical/archive/briefs/codex-brief-library-speed-quick-wins-2026-10-18.md)):
       the window appears before the backend; a shared running cache total
       replaces folder listings after each save and the interim 20 s trim limit.
