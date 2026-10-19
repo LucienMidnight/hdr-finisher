@@ -74,28 +74,11 @@ def pictures(root, item, delete=False):
     import numpy as np
     from .library_pictures import PICTURE_VERSION
     from .library_overlays import VERSION as MAP_VERSION
-    from .library_kept import kept_picture_key
     from .library_cache import LibraryCache
     managed=LibraryCache(root)
     root=managed.directory('library-pictures')
     if not root.exists(): return
     old,new=item['old'],item.get('new','')
-    pairs=[(r['path'],mapped(r['path'],old,new)) for r in item['rows'].get('photo_grades',[])]
-    if (old,new) not in pairs: pairs.append((old,new))
-    for file in list(root.glob('*.json')):
-        try:
-            meta=json.loads(file.read_text(encoding='utf-8')); grade=meta.get('grade_identity')
-            if grade is None: continue
-            pair=next(((a,b) for a,b in pairs if file.stem==kept_picture_key(a,grade,meta['edge'])),None)
-            if pair is None: continue
-            picture=root/(file.stem+'.'+meta['extension'])
-            if delete:
-                file.unlink(missing_ok=True);picture.unlink(missing_ok=True);continue
-            key=kept_picture_key(pair[1],grade,meta['edge'])
-            if picture.exists(): os.replace(picture,root/(key+'.'+meta['extension']))
-            meta['path']=mapped(meta.get('path',pair[0]),old,new)
-            durable(root/(key+'.json'),meta);file.unlink(missing_ok=True)
-        except (OSError,ValueError,KeyError): continue
     for file in list(root.glob('*.npz')):
         try:
             with np.load(file,allow_pickle=False) as data:

@@ -143,7 +143,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "grid-thumbnail", "live-scene", "live-fallback"}:
+        if command not in {"picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -354,8 +354,6 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     state = {"paused": paused, "foreground": 0, "checking": 0}
 
     def lane(job):
-        if job["command"] == "grid-thumbnail":
-            return "thumbnail"
         if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
             return "picture"
         if job["command"] == "overlay":
@@ -391,7 +389,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     continue
                 if kind == "check":
                     state["checking"] += 1
-                elif kind not in {"index", "kept", "thumbnail"}:
+                elif kind not in {"index", "kept"}:
                     state["foreground"] += 1
 
             waited = [0.]
@@ -400,31 +398,22 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 # Background indexing waits for visible work, grading and export.
                 while not cancelled.is_set() and not stopping.is_set():
                     with condition:
-                        # Maps/kept pictures outrank folder checks. Only checks
+                        # Maps outrank folder checks. Only checks
                         # wait for that lane, never the reverse (including a
                         # second queued map while the first one is running).
                         allowed = {"index", "check"} if kind == "check" else {"index", "kept"}
-                        if kind in {"kept", "thumbnail"}:
+                        if kind == "kept":
                             allowed.add("check")
-                        allowed.add("thumbnail")
-                        # A saved-grade thumbnail only resizes/re-encodes an
-                        # existing picture. Slow source decodes must not starve
-                        # it; the explicit Grade/import/export pause still wins.
-                        saved_thumbnail = kind == "thumbnail" and bool(job.get("kept"))
-                        if (not state["paused"] and (saved_thumbnail or (
+                        if (not state["paused"] and (
                                 not state["foreground"]
-                                and (kind in {"check", "kept", "thumbnail"} or not state["checking"])
-                                and all(lane(item[2]) in allowed for item in queue)))):
+                                and (kind in {"check", "kept"} or not state["checking"])
+                                and all(lane(item[2]) in allowed for item in queue))):
                             break
                     time.sleep(0.05)
                 waited[0] += time.perf_counter()-wait_started
                 return cancelled.is_set() or stopping.is_set()
 
-            check = yielding if kind in {"index", "check", "kept", "thumbnail"} else cancelled.is_set
-            # Decode-cache locks must never be held while yielding to a visible
-            # request that may need that same cache entry.
-            if kind == "thumbnail":
-                yielding.cancelled = cancelled.is_set
+            check = yielding if kind in {"index", "check", "kept"} else cancelled.is_set
             try:
                 if job["command"] == "overlay":
                     from .library_overlays import OverlayMaps
@@ -437,10 +426,6 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 elif job["command"] == "live-scene":
                     from .library_live import develop_cpu
                     output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set)
-                    result = {"id": job["id"], "result": output}
-                elif job["command"] == "grid-thumbnail":
-                    from .library_thumbnails import build
-                    output = build(root, job["path"], job["edge"], job["key"], job.get("kept"), check)
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
@@ -473,7 +458,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 jobs.pop(job["id"], None)
                 if kind == "check":
                     state["checking"] -= 1
-                elif kind not in {"index", "kept", "thumbnail"}:
+                elif kind not in {"index", "kept"}:
                     state["foreground"] -= 1
             if not cancelled.is_set() and not stopping.is_set():
                 try:
@@ -492,13 +477,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     # background scan never queues ahead of the folder the user just clicked.
     Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()
     Thread(target=decode, args=("check",), name="hdr-library-check", daemon=True).start()
-    # Two saved-grade picture lanes: one photo's CPU source preparation
-    # overlaps the previous photo's GPU render and encode. Each holds one
-    # full photo; the shared GPU queue still renders one picture at a time.
+    # Retain the two map workers; saved-picture production has been removed.
     for index in range(2):
         Thread(target=decode, args=("kept",), name=f"hdr-library-kept-{index}", daemon=True).start()
-    # Exactly one CPU gain-map producer; never occupies a visible decode lane.
-    Thread(target=decode, args=("thumbnail",), name="hdr-library-thumbnail", daemon=True).start()
     reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1, "picture_workers": 6, "index_workers": 1})
     try:
         while _parent_is_alive(parent_pid):
@@ -520,7 +501,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "grid-thumbnail", "live-scene", "live-fallback"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback"}:
                     message["queued_at"] = time.time()
                     sequence += 1
                     jobs[message["id"]] = Event()

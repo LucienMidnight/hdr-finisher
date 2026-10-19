@@ -117,15 +117,6 @@ class SensorRequest(BaseModel):
     saved_grade_only: bool = False
 
 
-class ThumbnailRequest(BaseModel):
-    populate: bool = True
-    client: str = Field(default="", max_length=80)
-    wanted: list[str] | None = Field(default=None, max_length=256)
-    paths: list[str] = Field(max_length=256)
-    edge: int = Field(default=360, ge=64, le=1440)
-    priority: int = Field(default=10, ge=0, le=100)
-
-
 class NativeRequest(BaseModel):
     path: str
     center_x: float = Field(default=.5, ge=0, le=1)
@@ -230,7 +221,7 @@ def create_library_router(worker, browser, store=None):
 
     @asynccontextmanager
     async def lifespan(_app):
-        await run_in_threadpool(thumbnails.managed.usage)
+        await run_in_threadpool(cache.managed.usage)
         await run_in_threadpool(file_commands.start)
         await run_in_threadpool(marks.writer.start, lambda: worker.status()["paused"])
         try:
@@ -259,17 +250,6 @@ def create_library_router(worker, browser, store=None):
         @router.post("/picture-settings")
         def set_picture_settings(change: dict):
             return command(lambda: (picture_preferences(browser.root, change), kept.cache.managed.trim(), kept.usage())[-1])
-
-        @router.get("/kept-pixels/{key}")
-        def kept_pixels(key: str, lane: Literal["hdr", "sdr"] = "sdr"):
-            try: body, width, height, stride = kept.pixels(key, lane)
-            except (ValueError, OSError, EOFError) as exc:
-                raise HTTPException(status_code=404, detail="Saved Library picture is unavailable; request it again.") from exc
-            return Response(body, media_type="application/octet-stream", headers={
-                "X-Image-Width": str(width), "X-Image-Height": str(height), "X-Bytes-Per-Row": str(stride)})
-
-    from .library_thumbnails import Thumbnails
-    thumbnails = Thumbnails(browser.root, worker, marks, kept if store is not None else None)
 
     from .library_live import LivePictures, quality as live_quality, recipe as live_recipe
     live = LivePictures(browser.root, marks, kept if store is not None else None)
@@ -362,58 +342,24 @@ def create_library_router(worker, browser, store=None):
         except (ValueError, OSError, KeyError) as error:
             raise HTTPException(409, str(error)) from error
 
-    @router.post("/thumbnails")
-    def thumbnail_batch(request: ThumbnailRequest):
-        return thumbnails.batch(request.paths, request.edge, request.priority, request.client, request.wanted, request.populate)
-
     @router.get("/warmup-idle")
     def warmup_idle():
         status = worker.status()
         return {"idle": not status["paused"] and not status["pending"]}
 
-    @router.get("/thumbnail-work")
-    def thumbnail_work():
-        return {"paused": worker.status()["paused"]}
-
-    @router.post("/thumbnail/{key}")
-    async def save_scene_thumbnail(key: str, request: Request, path: str, width: int, height: int):
-        from .library_thumbnails import THUMBNAIL_EDGE
-        limit = THUMBNAIL_EDGE * THUMBNAIL_EDGE * 12
-        body = bytearray()
-        async for chunk in request.stream():
-            body.extend(chunk)
-            if len(body) > limit:
-                raise HTTPException(413, "Thumbnail is too large.")
-        try:
-            return await run_in_threadpool(thumbnails.store_scene, path, key, width, height, body)
-        except (ValueError, OSError, CancelledError) as error:
-            raise HTTPException(409, str(error)) from error
-
-    @router.get("/thumbnail/{key}")
-    def thumbnail_file(key: str):
-        try:
-            file = thumbnails.file(key)
-            body = file.read_bytes()
-            os.utime(file, None)
-        except (ValueError, OSError):
-            raise HTTPException(404, "Thumbnail was cleared; it will be made again.")
-        return Response(body, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=31536000, immutable"})
-
     @router.get("/cache-settings")
     def cache_settings():
-        return thumbnails.managed.usage()
+        return cache.managed.usage()
 
     @router.post("/cache-settings")
     def set_cache_settings(change: dict):
-        thumbnails.cancel()
-        return command(thumbnails.managed.update, change)
+        return command(cache.managed.update, change)
 
     @router.post("/cache-clear")
     def clear_library_cache(change: dict):
-        thumbnails.cancel()
         cache.transient.clear()
         live.cache.transient.clear()
-        return command(thumbnails.managed.clear, change.get("location"))
+        return command(cache.managed.clear, change.get("location"))
 
     from .library_file_commands import add_file_routes
     file_commands = add_file_routes(router, marks, browser, index, worker, store)
@@ -805,9 +751,6 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/picture")
     async def picture(command: PictureRequest, request: Request):
-        if store is not None:
-            cached = await run_in_threadpool(kept.cached, command.path, command.edge)
-            if cached: return cached
         command.path = str(marks.source_path(command.path))
         if await run_in_threadpool(camera_raw, command.path):
             if command.purpose == "thumbnail":
@@ -856,11 +799,6 @@ def create_library_router(worker, browser, store=None):
     from . import library_gpu_raw
     @router.post("/raw-sensor")
     async def raw_sensor(command: SensorRequest):
-        if store is not None:
-            cached = await run_in_threadpool(kept.cached, command.path, command.edge)
-            if cached: return cached
-            if command.saved_grade_only:
-                return {"waiting_for_saved_grade": True}
         command.path = str(marks.source_path(command.path))
         if worker.status()["paused"]:
             return JSONResponse({"detail": "library_pending"}, status_code=202)

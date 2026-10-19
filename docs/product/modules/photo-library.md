@@ -376,6 +376,22 @@ in this group; obsolete producer tests are scheduled for group 5. Validation:
 command stopped at collection in the three obsolete producer/queue test
 modules, which still import removed code; they are retired in group 5.
 
+Cleanup group 2 removes finished-thumbnail batch/file routes, the detached
+producer and its worker lane, saved-picture readers, and the unused frontend
+file-thumbnail pool. Cache controls use LibraryCache directly. Normal cache
+reconciliation now removes old JPEG/AVIF display files and their metadata,
+including abandoned saved-picture temporary images and old selected cache
+locations. It only visits marked, non-linked cache directories; stored NPZ
+scenes and retained starting documents remain. No tests removed in this group.
+Validation: 539 Node checks passed; the retired thumbnail-pool test module
+fails to load. Full Python collection stops at the four obsolete file-feature
+test modules, scheduled for group 5. All 19 live/source-cache Python checks
+passed. The focused app grid check passed, including visible CPU fallback,
+automatic GPU recovery and repeated live draws. A disposable cache check
+confirmed retired files are removed while source scenes, starting documents
+and an original outside the cache remain; its temporary-directory teardown
+hit the existing open SQLite ledger handle on Windows.
+
 Part 4b built October 19: Single/full-screen true 100% detail follows the
 selected-photo exception above, including saved grades, rotation and locals.
 Fit stays on screen while a separate, selected-only full-size scene is

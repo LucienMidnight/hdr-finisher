@@ -102,6 +102,9 @@ class LibraryCache:
     def _reconcile(self, db):
         db.execute('BEGIN IMMEDIATE')
         try:
+            preferences = self.preferences()
+            for location in [preferences['location'], *preferences['old_locations']]:
+                self._discard_finished_pictures(location)
             entries = self.entries()
             db.execute('DELETE FROM files')
             db.execute('DELETE FROM totals')
@@ -112,6 +115,38 @@ class LibraryCache:
         except BaseException:
             db.rollback()
             raise
+
+    @staticmethod
+    def _discard_finished_pictures(location):
+        """Retired display files have no producer or reader. Never follow links."""
+        root = Path(location)
+        if (root.is_symlink() or getattr(root, 'is_junction', lambda: False)()
+                or not (root / MARKER).is_file()):
+            return
+        for name in ('library-pictures', 'library-thumbnails'):
+            directory = root / name
+            if directory.is_symlink() or getattr(directory, 'is_junction', lambda: False)():
+                continue
+            for file in directory.glob('*'):
+                if file.is_symlink() or not file.is_file():
+                    continue
+                obsolete = file.suffix in ('.jpg', '.avif')
+                if name == 'library-thumbnails':
+                    obsolete = obsolete or file.suffix == '.tmp'
+                elif file.suffix == '.json':
+                    try:
+                        metadata = json.loads(file.read_text(encoding='utf-8'))
+                        obsolete = isinstance(metadata, dict) and (
+                            'picture_version' in metadata or
+                            ('grade_identity' in metadata and metadata.get('extension') in ('jpg', 'avif')))
+                    except (OSError, ValueError):
+                        continue
+                if obsolete:
+                    file.unlink(missing_ok=True)
+                    if file.suffix in ('.jpg', '.avif'):
+                        companion = file.with_suffix('.json')
+                        if not companion.is_symlink():
+                            companion.unlink(missing_ok=True)
 
     def record(self, file):
         """Record a final publication/replacement or removal in constant time."""

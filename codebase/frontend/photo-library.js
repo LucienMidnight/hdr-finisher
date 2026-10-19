@@ -95,7 +95,7 @@
     updated: result => {
       if (result.grade_changed) {
         invalidateGradePictures((result.photos || []).map(photo => photo.path), false);
-        thumbnails.clear(); clearCells(state.cells); clearCells(state.filmCells);
+        clearCells(state.cells); clearCells(state.filmCells);
         paintGrid(); paintFilm(); if (state.view === "single") showSingle();
       }
       if(result.files_changed) { void filesChanged(result); return; }
@@ -140,12 +140,15 @@
   // Cells on screen now, without the finished cells kept just beyond it.
   const shownCells = map => [...map.values()].filter(cell => map.shown?.has(cell.photo.path));
   const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.picture_key || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}|${!!photo.picture_updating}`;
-  const thumbnails = HDRLibraryThumbnails.create({api, identity:pictureIdentity});
-  // One stored thumbnail size, scaled to fit any cell (matches THUMBNAIL_EDGE).
+  function pictureMode(img, hdr) {
+    img.style.dynamicRangeLimit = hdr ? 'no-limit' : 'standard';
+    img.dataset.rendition = hdr ? 'hdr' : 'sdr'; img.dataset.peakNits = hdr ? '1000' : '203';
+  }
+  // One stored scene size, scaled to fit any cell.
   const thumbnailEdge = () => 640;
   const cacheChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('hdr-library-cache') : null;
-  cacheChannel?.addEventListener('message', () => { thumbnails.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); });
-  window.addEventListener("message",event => { if(event.origin === location.origin && event.data?.type === "hdr-library-cache-changed") { thumbnails.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); } });
+  cacheChannel?.addEventListener('message', () => { clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); });
+  window.addEventListener("message",event => { if(event.origin === location.origin && event.data?.type === "hdr-library-cache-changed") { clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); } });
   const recentPictures = new Map();
   const rawTypes = new Set(["ARW", "CR2", "CR3", "NEF", "NRW", "RAF", "RW2", "ORF", "ORI", "PEF", "DNG", "SRW"]);
   const rawCandidate = photo => photo && rawTypes.has(photo.type) && !photo.edited && !photo.copy_id
@@ -244,7 +247,7 @@
             fallback.src = meta.url; await fallback.decode();
             if (!isCurrent()) return;
             canvas.after(fallback); canvas.style.visibility = "hidden";
-            thumbnails.mode(fallback,state.hdr);
+            pictureMode(fallback,state.hdr);
           }
           await sleep(2000,controller.signal);
         }
@@ -262,7 +265,7 @@
     state.hdr = !state.hdr; state.displayEpoch += 1;
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr));
     for (const cell of [...state.cells.values(), ...state.filmCells.values()]) {
-      thumbnails.mode(cell.canvas, state.hdr);
+      pictureMode(cell.canvas, state.hdr);
       if (cell.fallback && cell.scene) void drawPicture(cell.scene, cell.fallback, cell.controller,
         () => cell.element.isConnected && !cell.controller.signal.aborted).catch(() => {});
     }
@@ -348,7 +351,7 @@
               if (!current()) return;
               canvas.hidden=false; canvas.style.visibility=""; fallback.hidden=true;
               canvas.dataset.preview="false"; canvas.dataset.cpuFallback="true";
-              thumbnails.mode(canvas,state.hdr); element.classList.remove("loading");
+              pictureMode(canvas,state.hdr); element.classList.remove("loading");
               cpuShown=true;
             }
             await sleep(2000,cell.controller.signal);
@@ -519,7 +522,6 @@
   }
   const commandState = () => postParent("command-state", {selected: state.selection.size, copied: pasteGrades.available()});
   function invalidateGradePictures(paths, updating = true) {
-    thumbnails.clear();
     const targets = new Set(paths);
     for (const map of [state.cells, state.filmCells]) for (const [path, cell] of map) if (targets.has(path)) { cell.controller.abort(); cell.element.remove(); map.delete(path); }
     if (updating) for (const photo of state.allPhotos) if (targets.has(photo.path)) { photo.pictureCurrent = false; photo.picture_updating = true; }
@@ -1304,7 +1306,6 @@
   }
   // Read-only status for the focused interaction driver; no test-only behavior.
   HDRLibraryStopwatch("ready");
-  window.HDRLibraryThumbnailPool = thumbnails;
   window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
     overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: shownCells(state.cells).length,
     filmVisible: shownCells(state.filmCells).length, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomScale: state.zoomScale, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
