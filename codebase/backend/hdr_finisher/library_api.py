@@ -239,7 +239,6 @@ def create_library_router(worker, browser, store=None):
             await run_in_threadpool(raw_browsing.close)
             file_commands._stop.set()
             index.close()
-            if store is not None: kept.close()
             await run_in_threadpool(marks.writer.close)
 
     router = APIRouter(prefix="/api/library", lifespan=lifespan, route_class=LibraryRoute)
@@ -259,13 +258,7 @@ def create_library_router(worker, browser, store=None):
 
         @router.post("/picture-settings")
         def set_picture_settings(change: dict):
-            return command(lambda: (picture_preferences(browser.root, change), kept.cache.managed.trim(), kept.remake_missing(), kept.usage())[-1])
-
-        @router.post("/kept-picture")
-        def request_kept(request: FolderRequest):
-            # Slice 7 can request the same producer for a photo not open in Grade.
-            kept.schedule(request.path)
-            return {"queued": True}
+            return command(lambda: (picture_preferences(browser.root, change), kept.cache.managed.trim(), kept.usage())[-1])
 
         @router.get("/kept-pixels/{key}")
         def kept_pixels(key: str, lane: Literal["hdr", "sdr"] = "sdr"):
@@ -445,12 +438,7 @@ def create_library_router(worker, browser, store=None):
             states = marks.grades.describe(request.paths)
             for photo in result["photos"]:
                 item = states.get(photo["path"], {})
-                picture=kept.current_meta(photo["path"], item.get("grade_identity", ""))
-                item["picture_key"] = picture["key"] if picture else ""
-                item["pictureCurrent"] = bool(picture)
-                item["picture_updating"] = bool(item.get("edited") and not item["pictureCurrent"])
                 photo.update(item)
-                if item.get("edited") and not item["pictureCurrent"]: kept.ensure(photo["path"])
         return result
 
     @router.get("/settings-status")
@@ -625,7 +613,6 @@ def create_library_router(worker, browser, store=None):
                     photo.update(edited=False)
         if store is not None:
             result["photos"] = marks.copies.expand(result["photos"])
-            kept.remake_missing()
         if store is not None:
             saved_states = store.library_grades.describe([photo["path"] for photo in result["photos"]])
             for photo in result["photos"]:
@@ -821,7 +808,6 @@ def create_library_router(worker, browser, store=None):
         if store is not None:
             cached = await run_in_threadpool(kept.cached, command.path, command.edge)
             if cached: return cached
-            await run_in_threadpool(kept.ensure, command.path)
         command.path = str(marks.source_path(command.path))
         if await run_in_threadpool(camera_raw, command.path):
             if command.purpose == "thumbnail":
@@ -873,7 +859,6 @@ def create_library_router(worker, browser, store=None):
         if store is not None:
             cached = await run_in_threadpool(kept.cached, command.path, command.edge)
             if cached: return cached
-            await run_in_threadpool(kept.ensure, command.path)
             if command.saved_grade_only:
                 return {"waiting_for_saved_grade": True}
         command.path = str(marks.source_path(command.path))

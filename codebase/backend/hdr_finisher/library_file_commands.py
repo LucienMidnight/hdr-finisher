@@ -67,9 +67,6 @@ class FileCommands:
         if self.worker is not None:
             with self.worker._lock: jobs=list(self.worker._requests)
             for job in jobs: self.worker.cancel(job)
-        kept=getattr(self.marks,'kept',None)
-        if kept:
-            with kept._lock: kept.jobs.clear()
         with self.index._state: self.index._generation+=1
         with self.index.checks.lock: self.index.checks.revision+=1
 

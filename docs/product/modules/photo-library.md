@@ -354,7 +354,7 @@ intended behavior; all 74 related checks then passed. No GPU check directly
 covers these settings-only call-site removals; no additional GPU run was made.
 The old queue is not yet removed.
 
-Part 4 remaining cleanup, blocked by automatic approval review: remove the
+Part 4 remaining cleanup, explicitly approved by Steve October 19: remove the
 saved-picture producer/reader and durable queue; remove finished-thumbnail
 routes and the detached thumbnail producer; remove the saved-picture settings
 and Activity entry, retaining Pause/Resume for actual scene development;
@@ -362,9 +362,19 @@ remove GPU thumbnail capture and its second off-screen render; retire tests
 that only exercise those removed file features and update paste tests to
 expect live redraws. Keep shared document identity/atomic-write helpers,
 source cache controls, visible CPU fallback, original files and sidecars.
-The review rejected a scripted multi-file removal as too broad. No part of
-that rejected removal was applied. The three small call-site changes are the
-production edits committed for part 4a.
+Perform the cleanup as five small local commits: saved-picture producer and
+queue; thumbnail routes and producer; settings and Activity; thumbnail
+capture; tests. Run the fast checks after each. Remove tests in the final
+group and list them in that commit. Native colour and timing comparisons
+follow this cleanup.
+
+Cleanup group 1 removes saved-picture production, open-Grade source capture,
+the durable queue and all scheduling entry points. Document helpers and old
+readers remain only until their consumer groups are removed. No tests removed
+in this group; obsolete producer tests are scheduled for group 5. Validation:
+543 Node checks and all 7 live-scene Python checks passed. The full Python
+command stopped at collection in the three obsolete producer/queue test
+modules, which still import removed code; they are retired in group 5.
 
 Part 4b built October 19: Single/full-screen true 100% detail follows the
 selected-photo exception above, including saved grades, rotation and locals.

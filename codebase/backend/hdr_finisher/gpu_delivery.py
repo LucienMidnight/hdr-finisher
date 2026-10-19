@@ -192,66 +192,6 @@ def _render_pair(frame, owner, settings, adjustments):
 
 
 
-def render_raw_picture(path, document, edge, priority=15, cancelled=None):
-    """Full sensor development followed by saved-grade delivery, with no CPU decode.
-
-    Reduced scene pixels also reach the backend in RAM for Grade's geometry,
-    Denoise and local-mask source readers. Full sensor pixels never leave the GPU.
-    Failure returns a reason to the caller, which retains the ordinary CPU path.
-    """
-    from . import library_gpu_raw
-    from .delivery import preferences
-    from .library_kept import render_source_edge
-    from .library_diagnostics import log
-    from .models import ExportSettings, OutputFinishingSettings, SourceInterpretationOverride
-    from .sessions import _sha256_file
-    started = time.perf_counter()
-    try:
-        if preferences()["effective_force_cpu"]:
-            raise library_gpu_raw.NotEligible("CPU delivery was requested.")
-        root = Path(os.environ[ROOT_ENV]) if os.environ.get(ROOT_ENV) else None
-        if root is None or not (root / "heartbeat").exists() or _age(root / "heartbeat") > 5:
-            raise library_gpu_raw.NotEligible("The GPU delivery renderer is unavailable.")
-        if document.interpretation_override != SourceInterpretationOverride():
-            raise library_gpu_raw.NotEligible("The saved source has a custom interpretation.")
-        source_identity = library_gpu_raw._identity(Path(path))
-        fingerprint = _sha256_file(Path(path))
-        if document.source.fingerprint_sha256 and fingerprint != document.source.fingerprint_sha256:
-            raise ValueError("The source photo changed; its Library picture was left unavailable.")
-        header, parts = library_gpu_raw.sensor(Path(path), document.source.raw_import_settings)
-        if header["identity"] != source_identity:
-            raise ValueError("Photo changed while its Library picture was being developed.")
-        full_height, full_width = (header["width"], header["height"]) if header["flip"] in (5, 6) else (header["height"], header["width"])
-        reduced_edge = render_source_edge(full_width, full_height, document.global_adjustments.shared.geometry, edge)
-        scale = min(1., reduced_edge / max(full_width, full_height))
-        width, height = max(1, round(full_width * scale)), max(1, round(full_height * scale))
-        settings = ExportSettings(output_finishing=OutputFinishingSettings(resize_mode="long_edge", long_edge=edge))
-        adjustments = document.global_adjustments.model_copy(deep=True)
-        adjustments.shared.overlay_mode = "off"
-        for lane in ("hdr", "sdr"):
-            getattr(adjustments, lane).film_look.halation_view_map = False
-            getattr(adjustments, lane).film_look.grain_view_map = False
-        source_ms = (time.perf_counter() - started) * 1000
-        frame = SimpleNamespace(image=np.empty((height, width, 3), dtype=np.float32),
-            adjustments=adjustments, local_adjustments=document.local_adjustments, denoise=document.denoise,
-            hdr_reference_white_nits=document.hdr_reference_white_nits, delivery_priority=priority,
-            delivery_cancelled=cancelled or (lambda: False),
-            raw_development={"body": library_gpu_raw.frame(header, *parts), "edge": reduced_edge,
-                "flip": header["flip"], "width": header["width"], "height": header["height"]})
-        del parts
-        rendered = render_pair(frame, settings, adjustments)
-        if rendered is None:
-            raise library_gpu_raw.NotEligible(frame._delivery_record["fallback_reason"])
-        if library_gpu_raw._identity(Path(path)) != header["identity"]:
-            raise ValueError("Photo changed while its Library picture was being developed.")
-        return {"lanes": rendered, "source_width": full_width, "source_height": full_height,
-            "source_ms": source_ms, "render_ms": (time.perf_counter()-started)*1000-source_ms,
-            "measurements": frame._raw_measurements, "timings_ms": frame._delivery_timings}
-    except (library_gpu_raw.NotEligible, OSError, RuntimeError) as error:
-        log("kept_gpu_raw_fallback", path=str(path), reason=str(error))
-        return None
-
-
 def _wait_for_result(directory, root, frame):
     # Queue time is not render time: a job waiting behind Library pictures
     # or another export keeps waiting while the renderer is alive. Only a

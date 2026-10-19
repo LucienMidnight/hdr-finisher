@@ -143,7 +143,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "native", "scan", "tree", "metadata", "kept", "kept-check", "overlay", "grid-thumbnail", "live-scene", "live-fallback"}:
+        if command not in {"picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "grid-thumbnail", "live-scene", "live-fallback"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -358,7 +358,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             return "thumbnail"
         if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
             return "picture"
-        if job["command"] in {"kept", "overlay"}:
+        if job["command"] == "overlay":
             return "kept"
         if job.get("checking"):
             return "check"
@@ -437,10 +437,6 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 elif job["command"] == "live-scene":
                     from .library_live import develop_cpu
                     output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set)
-                    result = {"id": job["id"], "result": output}
-                elif job["command"] == "kept":
-                    from .library_kept import produce
-                    output = produce(root, job["path"], job["grade"], job["edge"], cancelled=check, priority=job.get("priority",80))
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "grid-thumbnail":
                     from .library_thumbnails import build
@@ -524,7 +520,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept", "kept-check", "overlay", "grid-thumbnail", "live-scene", "live-fallback"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "grid-thumbnail", "live-scene", "live-fallback"}:
                     message["queued_at"] = time.time()
                     sequence += 1
                     jobs[message["id"]] = Event()

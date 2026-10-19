@@ -198,7 +198,3 @@ def add_paste_routes(router,grades):
     def paste_grade(request:dict): return call(lambda:paste.paste(request.get('paths',[]),request.get('selection'),request.get('preview',False)))
     @router.post('/grade-prepare')
     def prepare_grade(request:dict): return call(lambda:paste.prepare(request['path']))
-    @router.get('/paste-pictures')
-    def pictures(): return grades.marks.kept.queue_status()
-    @router.post('/paste-pictures')
-    def pictures_command(request:dict): return call(lambda:grades.marks.kept.queue_command(request))
