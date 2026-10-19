@@ -36,6 +36,13 @@ thumbnail, and showed that cached thumbnail in 24 ms after an actual app
 relaunch, without another camera preview or RAW decode. These are one-photo
 checks, not a qualification of the full-folder targets or a cold OS disk.
 
+October 19: saved-grade thumbnail encoding no longer yields to unrelated
+Library source decoding; it still respects the Grade/import/export pause.
+The app contention check produced its saved thumbnail in 1.11 s while a slow
+DNG request remained active. The HDR Test Images visible-screen check still
+failed to finish all persistent thumbnails within 60 s; DNG source decoding
+remains on the existing CPU fallback. This is not full-folder qualification.
+
 Remaining: the badminton folder at default size has 70 visible photos.
 The visible-screen check did not finish filling their persistent thumbnails
 within 60 seconds; only 68 first pictures and 45 real-picture events were

@@ -37,13 +37,14 @@
       const waiting = [...queued].filter(entry => entries.get(entry.id) === entry && !entry.ready && !entry.decoding);
       queued.clear();
       try {
-        const edges = [...new Set(waiting.map(entry => `${entry.edge}:${entry.priority >= 30 ? 30 : 10}`))];
+        const edges = [...new Set(waiting.map(entry => `${entry.edge}:${entry.priority >= 30 ? 30 : 10}:${!!entry.populate}`))];
         await Promise.all(edges.map(async spec => {
-          const [edge, priority] = spec.split(':').map(Number);
-          const group = waiting.filter(entry => entry.edge === edge && (entry.priority >= 30 ? 30 : 10) === priority);
+          const [edgeText, priorityText, populateText] = spec.split(':');
+          const edge = Number(edgeText), priority = Number(priorityText), populate = populateText === 'true';
+          const group = waiting.filter(entry => entry.edge === edge && (entry.priority >= 30 ? 30 : 10) === priority && !!entry.populate === populate);
           for (let offset = 0; offset < group.length; offset += 256) {
             const chunk = group.slice(offset, offset + 256);
-            const result = await api('/api/library/thumbnails', {paths:chunk.map(e => e.photo.path), edge, priority,client,wanted,populate:false});
+            const result = await api('/api/library/thumbnails', {paths:chunk.map(e => e.photo.path), edge, priority,client,wanted,populate});
             for (const meta of result.ready) { const entry = chunk.find(e => e.photo.path === meta.path); if (entry) void accept(entry, meta); }
             for (const failure of result.errors) { const entry = chunk.find(e => e.photo.path === failure.path); if (entry) { entries.delete(entry.id); entry.reject(new Error(failure.message)); } }
             for (const path of result.pending) { const entry = chunk.find(e => e.photo.path === path); if (entry) { entry.missed = true; entry.ticket = result.tickets?.[path]; for (const notify of entry.missListeners || []) notify(); queued.add(entry); } }
@@ -93,7 +94,10 @@
       return entry.meta;
     }
     async function populate(photo, edge) {
-      // Called only after the scene picture has reached the screen.
+      // Keep demand alive until publication: scrolling or a stale job can cancel
+      // the first request while the cell still waits for its saved-grade image.
+      const entry = entries.get(key(photo, edge));
+      if (entry && !entry.ready) { entry.populate = true; queued.add(entry); schedule(); }
       try { await api('/api/library/thumbnails', {paths:[photo.path],edge,priority:90,populate:true}); }
       catch (_) { /* A cache write cannot turn a displayed photo into an error. */ }
     }

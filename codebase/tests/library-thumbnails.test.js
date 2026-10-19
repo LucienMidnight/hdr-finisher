@@ -29,3 +29,15 @@ test('a miss draws immediately while gain-map creation is still pending, once pe
  await tick();assert.equal(misses,1);
  finished=true;await pending;assert.equal(img.src,'/thumb/cold');assert.equal(misses,1);cache.clear();
 });
+
+test('a saved-grade miss retries population after the first job is cancelled',async()=>{
+ let submissions=0,finished=false;
+ const cache=create({identity:p=>p.path,image,api:async(_route,body)=>{
+  if(body.populate && ++submissions>=2)finished=true;
+  return {ready:finished?body.paths.map(path=>({path,key:path,url:'/thumb/'+path,kept:true})):[],pending:finished?[]:body.paths,errors:[],tickets:{edited:'saved-grade-ticket'}};
+ }});
+ const img=image();
+ await cache.show({path:'edited'},100,img,()=>true,()=>false,()=>void cache.populate({path:'edited'},100));
+ assert.ok(submissions>=2,'Polling renews the saved-grade thumbnail job');
+ assert.equal(img.src,'/thumb/edited');assert.equal(img.dataset.kept,'true');cache.clear();
+});

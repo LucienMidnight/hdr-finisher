@@ -66,6 +66,36 @@ if (withEdited) {
         }
       }).observe(win.document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
     });
+    const slowSource = "D:/Photos/HDR Test Images/DJI Samples/DJI_0072.DNG";
+    const contention = fs.existsSync(slowSource) ? slowSource : null;
+    if (withEdited) await library.evaluate((element, {editedPath, contention}) => {
+      const win = element.contentWindow, original = win.fetch.bind(win);
+      // Reproduce a thumbnail job lost during scrolling. Polling must renew it
+      // without changing folders or replacing the saved grade with a default look.
+      win.__lostThumbnail = { dropped: false, attempts: 0 };
+      win.__slowDecode = new win.AbortController();
+      win.fetch = (url, options) => {
+        if (String(url) === '/api/library/thumbnails' && options?.body) {
+          const body = JSON.parse(options.body);
+          if (body.populate && body.paths.includes(editedPath)) {
+            win.__lostThumbnail.attempts++;
+            if (!win.__lostThumbnail.dropped) {
+              win.__lostThumbnail.dropped = true;
+              win.__lostThumbnail.started = performance.now();
+              if (contention) {
+                win.__lostThumbnail.sourcePending = true;
+                void original('/api/library/picture', {method:'POST', signal:win.__slowDecode.signal,
+                  headers:{'Content-Type':'application/json'}, body:JSON.stringify({path:contention,edge:640,quality:'quick',purpose:'thumbnail',priority:10})})
+                  .then(() => {win.__lostThumbnail.sourcePending = false;}, () => {});
+              }
+              return new Promise(resolve => setTimeout(resolve, 1000)).then(() =>
+                original(url, {...options, body: JSON.stringify({...body, populate: false})}));
+            }
+          }
+        }
+        return original(url, options);
+      };
+    }, {editedPath:editedCopy, contention});
     const started = Date.now();
     await library.evaluate((element, folder) => element.contentWindow.HDRLibrary.browse(folder), folder);
     const names = [...unedited.map(p => path.basename(p)), ...(withEdited ? [path.basename(edited)] : [])];
@@ -74,6 +104,16 @@ if (withEdited) {
     if (withEdited) {
       try { await frame.locator('.library-cell img[data-kept="true"]').first().waitFor({ timeout: Number(process.env.HDR_FINISHER_KEPT_WAIT_MS || 180000) }); }
       catch (error) { await dump(); throw error; }
+      const progress = await library.evaluate(element => {
+        const win = element.contentWindow, value = win.__lostThumbnail;
+        return {...value, elapsedMs: performance.now() - value.started};
+      });
+      if (contention) {
+        assert.equal(progress.sourcePending, true, 'The saved thumbnail appears before the slow DNG decode finishes');
+        assert.ok(progress.elapsedMs < 10000, `Saved thumbnail must finish within 10 s under contention: ${progress.elapsedMs} ms`);
+      }
+      console.log(JSON.stringify({savedThumbnailUnderContention:progress}));
+      await library.evaluate(element => element.contentWindow.__slowDecode.abort());
     }
     await library.evaluate(async (element, count) => {
       const win = element.contentWindow;
@@ -100,7 +140,12 @@ if (withEdited) {
       }
       assert.ok(cells.some(entry => entry.pictures.at(-1)?.startsWith('saved')), `${photo} ends on its saved thumbnail`);
     }
-    if (withEdited) assert.deepEqual(fs.readFileSync(editedCopy + '.hdrf'), sidecar, 'Browsing does not re-save the grade');
+    if (withEdited) {
+      const recovery = await library.evaluate(element => element.contentWindow.__lostThumbnail);
+      assert.ok(recovery.dropped && recovery.attempts >= 2, 'The saved-grade cell recovers its lost thumbnail job');
+      console.log(JSON.stringify({savedGradeRecovery: recovery}));
+      assert.deepEqual(fs.readFileSync(editedCopy + '.hdrf'), sidecar, 'Browsing does not re-save the grade');
+    }
   } finally {
     await browser.close();
     fs.rmSync(folder, { recursive: true, force: true });

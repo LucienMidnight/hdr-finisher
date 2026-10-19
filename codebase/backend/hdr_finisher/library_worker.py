@@ -407,9 +407,14 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         if kind in {"kept", "thumbnail"}:
                             allowed.add("check")
                         allowed.add("thumbnail")
-                        if (not state["paused"] and not state["foreground"]
+                        # A saved-grade thumbnail only resizes/re-encodes an
+                        # existing picture. Slow source decodes must not starve
+                        # it; the explicit Grade/import/export pause still wins.
+                        saved_thumbnail = kind == "thumbnail" and bool(job.get("kept"))
+                        if (not state["paused"] and (saved_thumbnail or (
+                                not state["foreground"]
                                 and (kind in {"check", "kept", "thumbnail"} or not state["checking"])
-                                and all(lane(item[2]) in allowed for item in queue)):
+                                and all(lane(item[2]) in allowed for item in queue)))):
                             break
                     time.sleep(0.05)
                 waited[0] += time.perf_counter()-wait_started

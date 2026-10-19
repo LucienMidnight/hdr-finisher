@@ -276,6 +276,12 @@ fails as recorded above; export, Proof and their limits were not changed.
       Window visible in 0.424 s (limit 1.5 s); cache bookkeeping worst 2.76 ms
       at 5,000 entries (limit 50 ms); first idle-launch Library draw 38.3 ms
       (limit 500 ms), warm median 7.1 ms on the 640 px gradient fixture.
+      Follow-up October 19: saved-grade thumbnail re-encoding uses its existing
+      single helper lane without yielding to unrelated Library source decodes;
+      the Grade/import/export pause still applies. Pending cells renew cache
+      production after a lost request instead of only polling for a file.
+      App check: saved thumbnail ready in 1.11 s (10 s limit) while a slow
+      DNG request remained active, including recovery from a dropped request.
    1. Develop once, draw live, with the scheduler. Scope analysis and the
       thumbnail capture path go with it.
    2. GPU development step (a).

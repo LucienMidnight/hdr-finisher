@@ -65,3 +65,47 @@ def test_running_map_and_queued_map_do_not_deadlock_folder_check(tmp_path, monke
         # This test runs the helper in-process; restore its diagnostic sink.
         from hdr_finisher import library_diagnostics
         library_diagnostics._sink = None
+
+
+def test_saved_grade_thumbnail_progresses_while_source_decode_is_busy(tmp_path, monkeypatch):
+    from hdr_finisher import library_pictures, library_thumbnails, library_diagnostics
+    incoming, outgoing = Queue(), Queue()
+    decode_started, release_decode, thumbnail_done = Event(), Event(), Event()
+
+    class Connection:
+        def poll(self, timeout):
+            time.sleep(.001)
+            return not incoming.empty()
+        def recv(self): return incoming.get(timeout=3)
+        def send(self, value): outgoing.put(value)
+        def close(self): pass
+
+    def picture(self, *args):
+        decode_started.set()
+        assert release_decode.wait(5)
+        return {}
+
+    def thumbnail(root, path, edge, key, kept, cancelled):
+        assert kept
+        assert not cancelled()
+        thumbnail_done.set()
+        return {}
+
+    monkeypatch.setattr(library_worker, "_lower_priority", lambda: "test")
+    monkeypatch.setattr(library_pictures.LibraryPictureCache, "build", picture)
+    monkeypatch.setattr(library_thumbnails, "build", thumbnail)
+    thread = Thread(target=library_worker._worker_main_impl,
+                    args=(Connection(), str(tmp_path), __import__("os").getpid(), False), daemon=True)
+    thread.start()
+    try:
+        while outgoing.get(timeout=3).get("event") != "ready": pass
+        incoming.put(dict(command="picture", id="slow", priority=10, path="slow.dng", edge=640, quality="quick"))
+        assert decode_started.wait(3)
+        incoming.put(dict(command="grid-thumbnail", id="saved", priority=90, path="edited.arw", edge=640, key="saved", kept={"file":"already-saved.jpg"}))
+        assert thumbnail_done.wait(3), "A saved-grade thumbnail must not wait for a source decode"
+        assert not release_decode.is_set()
+    finally:
+        release_decode.set()
+        incoming.put({"command":"stop"})
+        thread.join(timeout=3)
+        library_diagnostics._sink = None
