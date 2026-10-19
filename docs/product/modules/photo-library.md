@@ -57,6 +57,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Prove GPU development first.** Before building the rest of the speed plan, Claude (not Codex) prototypes full-quality RAW development on the GPU to show whether it is fast enough. | Steve, 2026-10-18 |
 | **Develop once, draw live.** Each photo is developed once into a stored version; every Library picture (unedited, pasted or saved grade) is drawn live on the GPU from it with Grade's shaders. Finished-picture files are no longer made for display; a pasted grade is a redraw. Replaces the October 17 gain-map thumbnail decision and the October 18 "save the displayed GPU picture" decision. | Steve, 2026-10-19 |
 | **No usable GPU: visible-only CPU fallback.** Keep the existing CPU-made pictures only when the GPU is missing, software-only or lost. Make them only for photos on screen (visible cells, Single and full-screen), with no background picture queue and no pre-making pictures for pasted photos that are not visible. After device loss or driver reset, automatically return to live GPU drawing when a usable GPU becomes available; fallback must not latch for the session. As with CPU export, keep this route working without speed work or new features. | Steve, 2026-10-19 |
+| **Batch Export tiles share live Library drawing.** Visible photo tiles use the same live GPU renderer and visible-only CPU fallback. While export or Proof is running they are background work: draw each tile once and retain it, never redraw for progress updates, and yield GPU memory and turns to delivery. Verify export time per photo with the page open versus closed on the same three photos; the agreed timing noise allowance is 5%. | Steve, 2026-10-19 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
 
 **CPU fallback implementation boundary (approved October 19, not yet built):**
@@ -70,6 +71,15 @@ saved-picture background queue, paste-triggered picture production or
 read-ahead production of CPU-finished files. Visible demand controls fallback
 work; normal GPU use draws live. The live-draw implementation must verify
 visible-only requests and automatic GPU recovery before marking this built.
+
+**Shared Export tile acceptance (approved October 19, not yet built):**
+The batch Export page is an approved consumer of the shared live renderer.
+During export or Proof, tile drawing has background priority and must yield
+GPU memory and turns needed by delivery. Draw each visible tile once and
+retain its picture; progress updates must not trigger another draw. Before
+marking this built, measure export time per photo with the page open and
+closed, using the same three photos and export settings. An increase within
+5% is accepted as timing noise. No timing result has been recorded yet.
 
 **Paste rules (built):** values measured from one photo are never pasted
 (measured highlight peak, matched lens profile, file interpretation,
