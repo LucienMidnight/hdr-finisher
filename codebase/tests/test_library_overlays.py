@@ -23,10 +23,10 @@ def test_map_cache_is_invalidated_after_source_change(tmp_path):
 
 def test_thumbnail_allowance_evicts_oldest_overlay(tmp_path):
     cache=LibraryPictureCache(tmp_path);cache.managed.prepare();cache.root.mkdir()
-    for name,size in [('a.map.npz',110),('b.npz',10),('c.jpg',40)]: (cache.root/name).write_bytes(b'x'*size)
+    for name,size in [('a.map.npz',110),('b.npz',10),('c.json',40)]: (cache.root/name).write_bytes(b'x'*size)
     import os
     os.utime(cache.root/"a.map.npz",(1,1))
-    cache.managed.trim(limit_bytes=100);assert not(cache.root/'a.map.npz').exists();assert(cache.root/'b.npz').exists();assert(cache.root/'c.jpg').exists()
+    cache.managed.trim(limit_bytes=100);assert not(cache.root/'a.map.npz').exists();assert(cache.root/'b.npz').exists();assert(cache.root/'c.json').exists()
 
 
 def test_normalized_source_does_not_call_midtone_blocked():

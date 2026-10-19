@@ -124,8 +124,8 @@ runner, under plain Chromium, still waits for `networkidle` and times out.
 ### The app window closing mid-driver (diagnosed October 18, 2026)
 
 Unresolved: Library drivers on a cold folder sometimes stop with "Target
-page, context or browser has been closed" (seen in
-library-thumbnail-scroll.js, and as "Too large write data is pending" with a
+page, context or browser has been closed" (seen in a retired thumbnail driver,
+and as "Too large write data is pending" with a
 400-photo folder). The cause is the hidden GPU delivery window. It uploads
 each finished picture to the sidecar as one raw float buffer
 (`gpu-delivery.js`, about 70 MB for a 1709x2560 saved-grade picture).
@@ -141,8 +141,9 @@ is connected. The app outside tests has no DevTools client and is unaffected.
 Sending the upload as a `Blob` keeps it out of DevTools events (checked: an
 ArrayBuffer body was copied in full, a Blob body not at all, with the same
 bytes received). Steve approved it on October 19; `gpu-delivery.js` now sends
-a `Blob`. library-kept-pictures.js, proof-size-interaction.js and the edited
-photo in library-gpu-raw-grid.js then ran to completion.
+a `Blob`. The saved-picture checks and proof-size-interaction.js then ran to
+completion. The finished-thumbnail drivers were retired with live Library
+drawing on October 20; library-live-grid.js now covers RAW cells and recovery.
 
 To see why a window closed, the runner prints the main-process events
 (window closed, quit, renderer or GPU process gone) when the page closes;

@@ -5,9 +5,6 @@ import pytest
 from test_library_grades import setup, saved, settings
 from hdr_finisher.library_copies import LibraryCopies
 from hdr_finisher.library_paste import LibraryPaste
-from hdr_finisher.library_kept import KeptPictures, identity
-from hdr_finisher.library_marks import LibraryMarks
-from hdr_finisher.library_grades import LibraryGrades
 from hdr_finisher.sessions import SessionStore
 
 HDR='global_adjustments.hdr.exposure'
@@ -49,26 +46,6 @@ def test_never_pasted_fields_and_preferences(setup):
     with pytest.raises(ValueError,match='Unknown'):paste.paste([str(photo)],{'lanes':['hdr'],'settings':['hdr_reference_white_nits']})
 
 
-def test_pending_pictures_survive_restart_resume_and_coalesce_latest_grade(setup):
-    photo,store,session,marks,grades=setup;grade=saved(setup)
-    kept=KeptPictures(marks.database.parent,marks,None);marks.kept=kept
-    kept.queue_command({'action':'pause'})
-    kept.enqueue(str(photo),grade)
-    changed=deepcopy(grade);changed['global_adjustments']['hdr']['exposure']=2
-    state=grades._get(str(photo));state.update(desired=changed,pending=True);grades._put(str(photo),state)
-    kept.enqueue(str(photo),changed)
-    assert kept.queue_status()['pending']==1
-    kept.close()
-    restarted_marks=LibraryMarks(marks.database.parent);LibraryGrades(restarted_marks,SessionStore())
-    restarted=KeptPictures(marks.database.parent,restarted_marks,None)
-    # Pending work survives a restart, but a pause lasts one app session (Steve, October 18, 2026).
-    assert restarted.queue_status()['pending']==1 and not restarted.queue_status()['paused']
-    assert restarted_marks._query('SELECT grade_id FROM picture_jobs')[0][0]==identity(changed)
-    restarted.queue_command({'action':'resume','paths':[str(photo)]})
-    assert not restarted.queue_status()['paused']
-    restarted.close()
-
-
 def test_open_paste_saves_immediately_and_grade_undo_has_before_document(setup):
     photo,store,session,marks,grades=setup;saved(setup)
     paste=LibraryPaste(grades);paste.copy(str(photo))
@@ -105,9 +82,8 @@ def test_real_paste_copies_plain_exposure_and_defers_offline_target(setup):
     assert settings(target)['grade']==starting
 
 
-def test_paste_reuses_thumbnail_start_and_develops_each_photo_once(setup, monkeypatch):
+def test_paste_reuses_scene_start_and_develops_each_photo_once(setup, monkeypatch):
     import threading, time
-    from types import SimpleNamespace
     from hdr_finisher.library_pictures import LibraryPictureCache
     photo,store,session,marks,grades=setup
     shown=photo.with_name('shown.png');shown.write_bytes(photo.read_bytes())
@@ -116,13 +92,12 @@ def test_paste_reuses_thumbnail_start_and_develops_each_photo_once(setup, monkey
     start['source'].update(filename=shown.name,durable_path=str(shown.resolve()))
     start['global_adjustments']['hdr']['exposure']=.7
     cache=LibraryPictureCache(marks.database.parent);cache.keep_default_document(shown,start)
-    marks.kept=SimpleNamespace(cache=cache)
     imports=[];real=SessionStore.prepare_session
     def counted(self,path,**options):
         imports.append(Path(path).name);time.sleep(.2);return real(self,path,**options)
     monkeypatch.setattr(SessionStore,'prepare_session',counted)
     paste=LibraryPaste(grades)
-    # A photo the grid already developed takes Grade's start from the thumbnail work.
+    # A photo the grid already developed takes Grade's start from the stored scene.
     assert paste.document(str(shown))[1]['global_adjustments']['hdr']['exposure']==.7
     assert imports==[]
     # The paste check and the paste itself may ask for the same new photo at once.
@@ -134,7 +109,6 @@ def test_paste_reuses_thumbnail_start_and_develops_each_photo_once(setup, monkey
 
 def test_gpu_raw_start_is_reused_by_simultaneous_paste_requests(setup, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
-    from types import SimpleNamespace
     from hdr_finisher import library_gpu_raw
     from hdr_finisher.library_pictures import LibraryPictureCache
     from test_library_gpu_raw import _header, _payload
@@ -143,7 +117,6 @@ def test_gpu_raw_start_is_reused_by_simultaneous_paste_requests(setup, monkeypat
     raw.write_bytes(b'disposable sensor source')
     cache = LibraryPictureCache(marks.database.parent)
     library_gpu_raw.developed(cache, str(raw), _header(raw), _payload(8,12,(.1,.2,.3)))
-    marks.kept = SimpleNamespace(cache=cache)
     def forbidden(*args, **kwargs):
         raise AssertionError('Paste must reuse the GPU development, without CPU preparation')
     monkeypatch.setattr(SessionStore, 'prepare_session', forbidden)

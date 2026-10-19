@@ -142,19 +142,14 @@ def test_retired_helper_facts_are_discarded(setup):
     assert c.marks._query('SELECT * FROM files WHERE path=?',(str(destination/photo.name),))
 
 
-def test_quick_and_kept_pictures_follow_without_new_identity(setup):
+def test_stored_scenes_follow_without_new_identity(setup):
     import numpy as np
     from hdr_finisher.library_pictures import LibraryPictureCache,picture_key
-    from hdr_finisher.library_kept import KeptPictures, PICTURE_VERSION
     photo,destination,c,doc=setup;cache=LibraryPictureCache(c.browser.root);cache.managed.prepare();cache.root.mkdir()
     old_key=picture_key(photo,512,'quick');meta={'path':str(photo),'edge':512,'quality':'quick'}
     with cache.file(old_key).open('wb') as f:np.savez_compressed(f,pixels=np.zeros((2,2,3)),metadata=np.asarray(json.dumps(meta)))
-    kept=KeptPictures(c.browser.root,c.marks,None);grade_id='grade-identity';key=kept.key(str(photo),grade_id)
-    (cache.root/(key+'.jpg')).write_bytes(b'kept picture');(cache.root/(key+'.json')).write_text(json.dumps({'grade_identity':grade_id,'extension':'jpg','source_stat':[photo.stat().st_size,photo.stat().st_mtime_ns],'edge':2560,'picture_version':PICTURE_VERSION}))
     perform(c,photo,destination);new=destination/photo.name
     assert cache.file(picture_key(new,512,'quick')).exists() and not cache.file(old_key).exists()
-    new_key=kept.key(str(new),grade_id);assert (cache.root/(new_key+'.jpg')).read_bytes()==b'kept picture'
-    assert kept.current_meta(str(new),grade_id)
 
 
 def test_real_pending_grade_history_and_copies_travel(tmp_path):

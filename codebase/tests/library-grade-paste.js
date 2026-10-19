@@ -31,7 +31,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     const edit=exposure=>page.evaluate(async exposure=>{const adjustments=structuredClone(state.adjustments);adjustments.hdr.exposure=exposure;await queueEditCommand('set_global_adjustments',{adjustments});await HDRGradeSaving.save();},exposure);
     await open(photos[0]);await page.waitForFunction(()=>HDRGradeSaving.ready());
     await edit(.75);await written(photos[0]);
-    // Saved targets have a visible previous grade, so stale pictures are detectable.
+    // Saved targets have a visible previous grade, so stale drawings are detectable.
     for(const photo of photos.slice(1)){await open(photo);await edit(.25);await written(photo);}
     await page.evaluate(()=>activateWorkflowTab('import'));
     const iframe=page.locator('#library-frame'), frame=page.frameLocator('#library-frame');
@@ -70,13 +70,16 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     await frame.locator('#library-grid').press('Control+z');assert.equal((await firstUndo).status(),200);await written(photos[1]);
     const describe=await api('grade-copy');
     assert.deepEqual(describe.selection.settings,['global_adjustments.hdr.exposure']);
-    const oldKeys={};
-    for(const target of targets){
-      const deadline=Date.now()+60000;let picture;
-      do{picture=await api('picture',{path:target,edge:256,quality:'quick',priority:1});if(!picture.kept)await page.waitForTimeout(100);}while(!picture.kept&&Date.now()<deadline);
-      assert.equal(picture.kept,true,'previous saved picture ready: '+target);oldKeys[target]=picture.key;
-    }
-    await api('paste-pictures',{action:'pause'});
+    const scene=target=>iframe.evaluate((el,target)=>el.contentWindow.HDRLibraryScenes.load(target,640),target);
+    const drawn=async keys=>page.waitForFunction(keys=>{
+      const doc=document.querySelector('#library-frame').contentDocument;
+      return Object.entries(keys).every(([path,key])=>[...doc.querySelectorAll('#grid-space .library-cell')]
+        .some(cell=>cell.dataset.path===path&&[...cell.querySelectorAll('canvas[data-picture-key]')]
+          .some(canvas=>!canvas.hidden&&canvas.dataset.pictureKey===key)));
+    },keys,{timeout:60000});
+    const oldScenes={},oldKeys={};
+    for(const target of targets){oldScenes[target]=await scene(target);oldKeys[target]=oldScenes[target].key;}
+    await drawn(oldKeys);
     await physical('target.png').click();await physical('other.png').click({modifiers:['Control']});await copyCell.click({modifiers:['Control']});
     assert.equal((await iframe.evaluate(el=>el.contentWindow.HDRLibraryCommands.selection())).length,3);
     await frame.locator('#library-grid').press('Control+Shift+v');await dialog.waitFor();
@@ -88,13 +91,15 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     const pasted=page.waitForResponse(response=>response.url().endsWith('/api/library/grade-paste')&&!JSON.parse(response.request().postData()).preview);
     await dialog.getByRole('button',{name:'Paste onto 3 photos',exact:true}).click();
     const result=await (await pasted).json();assert.equal(result.count,3);assert.equal(result.undo_available,true);
-    await frame.locator('.library-picture-updating').first().waitFor();
-    // Picture work is paused above, so the mark says so rather than Updating.
-    await frame.locator('.library-picture-updating').filter({hasText:/^Paused$/}).first().waitFor();
-    await page.screenshot({path:path.join(output,'paste-updating.png')});
-    const stale=await iframe.evaluate((el,oldKeys)=>[...el.contentDocument.querySelectorAll('.library-cell')].filter(cell=>oldKeys[cell.dataset.path]).some(cell=>[...cell.querySelectorAll('[data-picture-key]')].some(picture=>picture.dataset.pictureKey===oldKeys[cell.dataset.path])),oldKeys);
-    assert.equal(stale,false,'no old saved picture remains displayed after paste');
-    for(const target of targets){const picture=await api('picture',{path:target,edge:256,quality:'quick',priority:1});assert.equal(Boolean(picture.kept),false,'default while updating');assert.notEqual(picture.key,oldKeys[target]);}
+    const pastedKeys={};
+    for(const target of targets){
+      const picture=await scene(target);
+      assert.equal(picture.source_key,oldScenes[target].source_key,'Paste reuses the developed scene');
+      assert.equal(picture.adjustments.hdr.exposure,.75);
+      assert.notEqual(picture.key,oldKeys[target]);pastedKeys[target]=picture.key;
+    }
+    await drawn(pastedKeys);
+    await page.screenshot({path:path.join(output,'paste-live.png')});
     await savedWhen(photos[1],saved=>saved.grade.global_adjustments.hdr.exposure===.75&&saved.virtual_copies?.find(copy=>copy.name==='Paste target')?.grade.global_adjustments.hdr.exposure===.75);
     await savedWhen(photos[2],saved=>saved.grade.global_adjustments.hdr.exposure===.75);
     assert.deepEqual(await page.evaluate(()=>window.__pages.filter(page=>page!=='import')),[],'paste stays on the Library');
@@ -104,11 +109,11 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     await frame.locator('#library-grid').press('Control+z');const restored=await(await undo).json();assert.equal(restored.grade_changed,true);
     await savedWhen(photos[1],saved=>saved.grade.global_adjustments.hdr.exposure===.25&&saved.virtual_copies?.find(copy=>copy.name==='Paste target')?.grade.global_adjustments.hdr.exposure===.25);
     await savedWhen(photos[2],saved=>saved.grade.global_adjustments.hdr.exposure===.25);
-    for(const target of targets){const picture=await api('picture',{path:target,edge:256,quality:'quick',priority:1});assert.equal(picture.kept,true);assert.equal(picture.key,oldKeys[target]);}
+    for(const target of targets){const picture=await scene(target);assert.equal(picture.key,oldKeys[target]);assert.equal(picture.source_key,oldScenes[target].source_key);assert.equal(picture.adjustments.hdr.exposure,.25);}
+    await drawn(oldKeys);
     saved=JSON.parse(fs.readFileSync(photos[1]+'.hdrf','utf8'));assert.equal(saved.grade.global_adjustments.hdr.exposure,.25);assert.equal(saved.virtual_copies.find(copy=>copy.name==='Paste target').grade.global_adjustments.hdr.exposure,.25);
-    await api('paste-pictures',{action:'resume'});
     for(let i=0;i<photos.length;i++)assert.deepEqual(fs.readFileSync(photos[i]),originals[i]);
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({checks:'native text clipboard, single confirmation, expandable picker, remembered HDR exposure only, three targets including virtual copy, default while updating, single Undo restores saved grades and picture keys',screenshots:output}));
+    console.log(JSON.stringify({checks:'native text clipboard, single confirmation, expandable picker, remembered HDR exposure only, three targets including virtual copy, live redraw reuses stored scenes, single Undo restores saved grades and drawings',screenshots:output}));
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

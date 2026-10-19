@@ -31,7 +31,7 @@ def test_one_import_stores_both_sizes_and_finishing_reuses_source(tmp_path, monk
     a=service.describe(path,small)
     document={"global_adjustments":deepcopy(a["adjustments"])}
     document["global_adjustments"]["hdr"]["exposure"]=2
-    service.kept=SimpleNamespace(request=lambda path:{"grade":document})
+    service.documents=SimpleNamespace(request=lambda path:{"grade":document})
     b=service.describe(path,small)
     assert a["source_key"]==b["source_key"] and a["key"]!=b["key"]
     assert b["adjustments"]["hdr"]["exposure"]==2
@@ -147,3 +147,30 @@ def test_save_revert_and_copy_do_not_launch_finished_picture_work(tmp_path):
     marks.writer.drain()
     assert path.read_bytes()==before
     assert not list((tmp_path/"app").rglob("*.jpg"))
+
+
+def test_retired_file_routes_are_gone_and_scene_resume_preserves_other_pauses(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.library_worker import LibraryWorker
+    from hdr_finisher.media_browser import MediaBrowserStore
+    profile=tmp_path/"profile"; worker=LibraryWorker(profile)
+    app=FastAPI(); app.include_router(create_library_router(worker,MediaBrowserStore(profile)))
+    client=TestClient(app)
+    try:
+        for method, route in [('post','kept-picture'),('post','thumbnails'),('get','thumbnail/old'),
+                              ('post','thumbnail/old'),('get','kept-pixels/old'),('post','thumbnail-work'),
+                              ('get','paste-pictures'),('post','paste-pictures'),
+                              ('get','picture-settings'),('post','picture-settings')]:
+            assert getattr(client,method)('/api/library/'+route).status_code==404
+        worker.pause('grading',True)
+        paused=client.post('/api/library/scene-work',json={'action':'pause'}).json()
+        assert paused['paused'] and paused['manual_paused']
+        resumed=client.post('/api/library/scene-work',json={'action':'resume'}).json()
+        assert resumed['paused'] and not resumed['manual_paused']
+        worker.pause('grading',False)
+        assert not worker.status()['paused']
+        assert client.post('/api/library/scene-work',json={'action':'clear'}).status_code==400
+    finally:
+        client.close(); worker.close()

@@ -283,45 +283,6 @@ def test_memory_job_has_no_pixel_files_and_rejects_incomplete_lanes(tmp_path, mo
                     SharedMemory(name=description["name"])
 
 
-def test_raw_job_keeps_sensor_and_developed_pixels_in_memory(tmp_path, monkeypatch):
-    from hdr_finisher import library_gpu_raw
-    from hdr_finisher.models import EditDocument, SourceReference, SourceLuminanceDescriptor
-    app = _broker(tmp_path, monkeypatch)
-    photo = tmp_path / "camera.ARW"; photo.write_bytes(b"sensor fixture")
-    document = EditDocument(hdr_reference_white_nits=203, source=SourceReference(filename=photo.name,
-        luminance=SourceLuminanceDescriptor(luminance_semantics="scene_relative", transfer_function="linear")))
-    stat = photo.stat()
-    header = {"width": 6, "height": 4, "flip": 6, "identity": [stat.st_size, stat.st_mtime_ns]}
-    seen = []
-    def sensor(path, settings):
-        seen.append(settings)
-        return header, [b"sensor!!"]
-    monkeypatch.setattr(library_gpu_raw, "sensor", sensor)
-    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
-        client.get("/api/delivery/gpu/permit")
-        pending = worker.submit(gpu_delivery.render_raw_picture, photo, document, 256)
-        while (job := client.get("/api/delivery/gpu/next").json()) is None:
-            time.sleep(.01)
-        assert (job["width"], job["height"]) == (4, 6)
-        meta, payload = library_gpu_raw.unframe(client.get(f"/api/delivery/gpu/{job['id']}/raw-sensor").content)
-        assert meta == header and bytes(payload) == b"sensor!!"
-        planes = np.arange(72, dtype="<f4").reshape(3,4,6)
-        measurements = {"peaks": {"peak": 2.}, "robust": {"channel": 1.5}}
-        response = client.post(f"/api/delivery/gpu/{job['id']}/raw-developed",
-            content=library_gpu_raw.frame(measurements, planes.tobytes()))
-        assert response.status_code == 204
-        np.testing.assert_array_equal(gpu_delivery.session(job["id"]).image,
-            np.rot90(planes.transpose(1,2,0), k=-1))
-        for lane in ("hdr", "sdr"):
-            assert client.post(f"/api/delivery/gpu/{job['id']}/pixels/{lane}",
-                content=np.full((6,4,4), .2, dtype="<f4").tobytes()).status_code == 204
-        client.post(f"/api/delivery/gpu/{job['id']}/complete", json={})
-        result = pending.result(timeout=5)
-        assert result["measurements"] == measurements
-        assert seen == [document.source.raw_import_settings]
-        assert result["source_width"] == 4 and result["source_height"] == 6
-
-
 def test_live_background_draw_does_not_age_ahead_of_export(tmp_path, monkeypatch):
     app = _broker(tmp_path, monkeypatch)
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:

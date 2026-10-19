@@ -74,7 +74,7 @@ because of this fallback. Its numerical routines are shared with CPU export
 and other CPU rendering; no CPU speed work is planned.
 The old `library_kept` producer/reader, `library_thumbnails` queue and durable
 `library_picture_queue` are **not** required by this fallback. Their removal
-is still open; until removed, legacy entry points can still start old work.
+is built in cleanup groups 1-5 below; their file-producing entry points are gone.
 
 **Shared Export tiles built in part 3 (October 19):**
 Visible tiles share the live renderer and CPU fallback. Tile work has
@@ -414,6 +414,28 @@ load failure; full Python collection still stops at the seven old imports.
 The focused live-grid app check passed after capture removal, including
 visible CPU fallback, automatic GPU recovery, Single and cache reuse.
 
+Cleanup group 5 built October 20: retires the saved-picture producer/queue, thumbnail-file,
+capture, file-stage and decoded-thumbnail-pool tests. Their driver registry
+entries are removed. Cache allowance, clearing, disabled-cache and fallback
+codec colour checks remain in test_library_cache.py; the JPEG decoder needed
+only by that codec check now lives in test support. Grade identity, history,
+file moves and paste checks use the shared document reader and stored scenes.
+The paste app check verifies live redraws for three targets including a
+virtual copy, reuse of the developed scenes, one Undo and untouched originals.
+New regressions check retired routes return 404, scene Resume preserves other
+pause reasons, and ordinary cache cleanup removes retired pictures from both
+current and former marked cache locations while retaining scenes, starting
+documents and files outside the cache. No allowance or tolerance changed.
+Native colour and timing comparisons remain the next work after cleanup.
+
+Group 5 validation: all 539 Node checks and 2,272 Python checks passed
+(3 skipped). The first full Python run found one overlay-cache fixture that
+still expected a retired JPEG to survive; it now uses a retained JSON entry,
+with the same eviction limit and cross-allowance protection. The full rerun
+passed. The focused paste app check passed, including native text clipboard,
+selective paste, virtual-copy bulk paste, live redraw and one Undo. The five
+cleanup groups are complete; native colour/timing acceptance remains open.
+
 Part 4b built October 19: Single/full-screen true 100% detail follows the
 selected-photo exception above, including saved grades, rotation and locals.
 Fit stays on screen while a separate, selected-only full-size scene is
@@ -523,8 +545,10 @@ crop route; its move to live native scenes remains open with that cleanup.
       behind them) and the grid and filmstrip share one job per photo.
       October 19: a shared running size ledger replaces the interim 20 s
       trim limit. Each saved picture updates its allowance total; only
-      eviction, startup recovery and settings drift recovery list files. `tests/library-gpu-raw-grid.js`
-      checks the stages. GPU-developed starting documents now feed paste (part 3).
+      eviction, startup recovery and settings drift recovery list files. The
+      former file-stage test was retired with live drawing; library-live-grid.js
+      now checks live RAW cells and recovery. GPU-developed starting documents
+      feed paste (part 3).
       Shared GPU memory budgeting with Grade and delivery is built in part 4.
       Single and full-screen are built in part 5. Saved-grade pictures are built in parts
       1–2 of the follow-up; part 6 reports unsupported families above.

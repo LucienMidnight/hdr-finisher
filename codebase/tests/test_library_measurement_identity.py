@@ -2,7 +2,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 from test_library_grades import setup, edit, settings, saved
 from hdr_finisher.library_grades import grade_key
-from hdr_finisher.library_kept import identity, KeptPictures
+from hdr_finisher.library_documents import identity, LibraryDocuments
 
 
 def measurements(store, session):
@@ -26,7 +26,7 @@ def test_untouched_measurements_preserved_but_not_edited(setup, tmp_path):
     assert settings(photo)["grade"] == measured
     assert not grades.describe([photo])[str(photo)]["edited"]
     assert not calls
-    assert not KeptPictures(tmp_path, marks, None).request(photo)["edited"]
+    assert not LibraryDocuments(marks).request(photo)["edited"]
     assert grades.history.available([photo])["counts"]["original"] == 0
     edit(store, session)
     grades.save(str(session.session_id)); marks.writer.drain()

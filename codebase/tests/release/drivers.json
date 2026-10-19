@@ -1227,17 +1227,6 @@
       }
     },
     {
-      "path": "tests/library-kept-pictures.js",
-      "areas": [
-        "library"
-      ],
-      "tier": "full",
-      "protects": "Slice 3 Stage A: one real window, disposable originals and app profile.",
-      "launch": {
-        "method": "electron"
-      }
-    },
-    {
       "path": "tests/library-measurement-identity.js",
       "areas": [
         "library"
@@ -1301,17 +1290,6 @@
       "protects": "Serial real-camera launch, six maps, save-to-picture and folder-check coverage.",
       "launch": {
         "method": "native"
-      }
-    },
-    {
-      "path": "tests/library-saved-picture-refresh.js",
-      "areas": [
-        "library"
-      ],
-      "tier": "full",
-      "protects": "Saved grades refresh the existing Library, including a RAW without bright peaks.",
-      "launch": {
-        "method": "electron"
       }
     },
     {
@@ -3508,18 +3486,6 @@
       }
     },
     {
-      "path": "tests/performance/library-open-source-parity.py",
-      "areas": [
-        "library"
-      ],
-      "tier": "diagnostic",
-      "protects": "Compare real corrected-source routes exactly on a disposable source copy.",
-      "launch": {
-        "method": "python",
-        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
-      }
-    },
-    {
       "path": "tests/performance/library-raw-deep-dive-summary.py",
       "areas": [
         "library"
@@ -3792,52 +3758,6 @@
       }
     },
     {
-      "path": "tests/library-thumbnail-scroll.js",
-      "areas": [
-        "library"
-      ],
-      "tier": "area",
-      "protects": "Native compressed Library thumbnails: cold/warm scroll latency, no GPU draws and bounded recent pool.",
-      "launch": {
-        "method": "electron"
-      }
-    },
-    {
-      "path": "tests/library-scroll-back.js",
-      "areas": [
-        "library"
-      ],
-      "tier": "area",
-      "protects": "Library scroll-back: finished cells kept one screen beyond the edge; recent pool answers further back within 512 MiB.",
-      "launch": {
-        "method": "electron"
-      }
-    },
-    {
-      "path": "tests/library-thumbnail-colour.js",
-      "areas": [
-        "library",
-        "ui"
-      ],
-      "tier": "area",
-      "protects": "Native thumbnail versus GPU SDR colour and HDR peak/reference white; independent cache Settings controls.",
-      "launch": {
-        "method": "electron"
-      }
-    },
-    {
-      "path": "tests/library-gpu-raw-grid.js",
-      "areas": [
-        "library",
-        "ui"
-      ],
-      "tier": "area",
-      "protects": "Camera RAW grid cells show two stages (camera preview, then the saved thumbnail) with no interim drawing; disposable photo copies only.",
-      "launch": {
-        "method": "electron"
-      }
-    },
-    {
       "path": "tests/library-gpu-raw.js",
       "areas": [
         "library",
@@ -3856,7 +3776,7 @@
         "ui"
       ],
       "tier": "area",
-      "protects": "Library grade clipboard, single confirmation and settings persistence, virtual-copy bulk paste, default updating pictures and one-step Undo.",
+      "protects": "Library grade clipboard, single confirmation and settings persistence, virtual-copy bulk paste, live redraw from the same stored scenes and one-step Undo.",
       "launch": {
         "method": "electron"
       }
