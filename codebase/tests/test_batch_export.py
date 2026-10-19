@@ -31,6 +31,16 @@ def fixture_photo(tmp_path, number=1):
 def preset(formats=("sdr_png","sdr_jpeg")):
     return ExportPreset(name="Delivery",versions=[ExportVersion(name=f"Version {i}",pattern="{filename}_{copy}_{sequence:3}_{date:YYYYMMDD}_{rating}_{version}",subfolder=f"set{i}",settings=ExportSettings(format=f,dithering="off")) for i,f in enumerate(formats,1)])
 
+
+def test_peak_check_is_saved_independently_for_each_preset_version(tmp_path):
+    library = ExportPresets(tmp_path / "presets")
+    delivery = preset(("jpeg_ultrahdr", "jpegxl_hdr"))
+    assert all(not version.settings.guarantee_hdr_peak for version in delivery.versions)
+    delivery.versions[1].settings.guarantee_hdr_peak = True
+    library.save(delivery)
+    restored = library.list()[0]
+    assert [version.settings.guarantee_hdr_peak for version in restored.versions] == [False, True]
+
 def wait_job(queue,identity,states={"finished","cancelled"}):
     deadline=monotonic()+20
     while monotonic()<deadline:

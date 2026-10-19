@@ -66,7 +66,7 @@ def test_proof_request_order_signature_and_export_conversion_are_stable(tmp_path
         "jpeg_gain_map_scale", "jpeg_chroma_subsampling", "avif_bit_depth",
         "avif_chroma_subsampling", "avif_gain_map_chroma_subsampling",
         "avif_gain_map_quality", "avif_gain_map_scale", "jpegxl_precision", "dithering",
-        "long_edge", "full_size", "output_finishing", "force", "editing_measurements",
+        "long_edge", "full_size", "output_finishing", "guarantee_hdr_peak", "force", "editing_measurements",
     )
     # Cache identity follows rendering policy, while a forced refresh keeps the
     # same pixels and identity. Check this behaviour instead of pinning a hash.
@@ -76,6 +76,7 @@ def test_proof_request_order_signature_and_export_conversion_are_stable(tmp_path
     signature = ProofArtifactStore._request_signature
     context = RenderColorContext(203)
     gpu_key = signature("session", request, context)
+    assert signature("session", request.model_copy(update={"guarantee_hdr_peak": True}), context) != gpu_key
     assert signature("session", request.model_copy(update={"force": True}), context) == gpu_key
     monkeypatch.setenv(delivery.FORCE_CPU_ENV, "1")
     cpu_key = signature("session", request, context)
@@ -88,7 +89,7 @@ def test_proof_request_order_signature_and_export_conversion_are_stable(tmp_path
         "format", "quality", "jpeg_gain_map_quality", "jpeg_gain_map_scale",
         "jpeg_chroma_subsampling", "avif_bit_depth", "avif_chroma_subsampling",
         "avif_gain_map_chroma_subsampling", "avif_gain_map_quality", "avif_gain_map_scale",
-        "jpegxl_precision", "dithering", "output_finishing",
+        "jpegxl_precision", "dithering", "output_finishing", "guarantee_hdr_peak",
     ):
         assert getattr(converted, name) == getattr(request, name)
     assert converted.output_path == "proof.jpg"

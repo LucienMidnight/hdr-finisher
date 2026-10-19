@@ -1,4 +1,4 @@
-"""Decoded HDR files never exceed the finished peak; only overshoots are corrected."""
+"""Optional decoded HDR peak check, local correction and delivery notes."""
 import numpy as np
 import pytest
 
@@ -56,13 +56,32 @@ def test_a_clean_codec_is_encoded_once_and_left_alone():
     np.testing.assert_array_equal(delivered, original)
 
 
-def test_an_uncorrectable_codec_rejects_the_delivery():
-    with pytest.raises(hdr_ceiling.CeilingError, match="1012.000 nits exceeds 1000"):
-        hdr_ceiling.encode_within_ceiling(scene(), 203, lambda image: image,
-            lambda image: np.full(image.shape[:2], 1012.0, np.float32), 1000)
+@pytest.mark.parametrize("peak, checks", [(799, 0), (800, 0), (801, 1)])
+def test_twenty_percent_headroom_boundary(peak, checks):
+    decoded = []
+    hdr_ceiling.encode_within_ceiling(scene(peak), 203, lambda image: image,
+        lambda image: decoded.append(True) or hdr_ceiling.channel_nits(image), 1000)
+    assert len(decoded) == checks
 
 
-def test_an_export_that_stays_over_target_is_rejected_and_removed(monkeypatch, tmp_path):
+def test_proof_preserves_the_peak_option_and_its_cache_signature():
+    from hdr_finisher.models import ProofArtifactRequest
+    off = ProofArtifactRequest()
+    on = ProofArtifactRequest(guarantee_hdr_peak=True)
+    assert not off.to_export_settings('off.jpg').guarantee_hdr_peak
+    assert on.to_export_settings('on.jpg').guarantee_hdr_peak
+    assert off.model_dump_json() != on.model_dump_json()
+
+
+def test_an_uncorrectable_codec_delivers_with_a_note():
+    notes = []
+    delivered = hdr_ceiling.encode_within_ceiling(scene(), 203, lambda image: image,
+        lambda image: np.full(image.shape[:2], 1012.0, np.float32), 1000, notes)
+    assert delivered is not None
+    assert len(notes) == 1 and "12 above the 1000-nit target" in notes[0]
+
+
+def test_an_export_that_stays_over_target_is_delivered_with_a_note(monkeypatch, tmp_path):
     from types import SimpleNamespace
     from hdr_finisher import exporters
     from hdr_finisher.capabilities import probe_capabilities
@@ -76,20 +95,20 @@ def test_an_export_that_stays_over_target_is_rejected_and_removed(monkeypatch, t
     adjustments.hdr.highlight_compression_target_nits = 1000
     session = SimpleNamespace(session_id="note", image=scene(4000), adjustments=adjustments, hdr_reference_white_nits=203,
         sdr_reference_image=None, local_adjustments=[])
-    result = backend.export(session, ExportSettings(format="jpegxl_hdr", quality=90,
+    result = backend.export(session, ExportSettings(format="jpegxl_hdr", quality=90, guarantee_hdr_peak=True,
         output_path=str(tmp_path / "note")))
-    assert not result.accepted
-    assert "1012.000 nits exceeds 1000" in result.message
-    assert not list(tmp_path.iterdir())
+    assert result.accepted
+    assert "12 above the 1000-nit target" in result.delivery_notes[0]
+    assert list(tmp_path.iterdir())
 
 
-def test_pictures_far_below_the_ceiling_are_still_decoded():
+def test_pictures_far_below_the_ceiling_skip_decoding():
     """The ceiling is the highlight compression target, not the picture's own peak."""
     decoded = []
     original = scene(peak_nits=600)
     delivered = hdr_ceiling.encode_within_ceiling(original, 203, lambda image: image,
         lambda image: decoded.append(image) or np.full(image.shape[:2], 650.0, np.float32), 1000)
-    assert len(decoded) == 1
+    assert len(decoded) == 0
     np.testing.assert_array_equal(delivered, original)
 
 
@@ -120,7 +139,7 @@ def test_real_encoders_land_at_or_under_a_bright_edge_peak(tmp_path, format_name
     adjustments.hdr.highlight_compression_target_nits = 1000
     session = SimpleNamespace(session_id="ceiling", image=checker, adjustments=adjustments, hdr_reference_white_nits=203,
         sdr_reference_image=None, local_adjustments=[])
-    result = backend.export(session, ExportSettings(format=format_name, quality=90,
+    result = backend.export(session, ExportSettings(format=format_name, quality=90, guarantee_hdr_peak=True,
         output_path=str(tmp_path / "edge")))
     assert result.accepted, result.message
     assert hdr_delivery.decoded_hdr_peak_nits(Path(result.output_path), format_name) <= 1000
@@ -135,13 +154,14 @@ def test_real_encoders_land_at_or_under_a_bright_edge_peak(tmp_path, format_name
     store = ProofArtifactStore()
     try:
         proof = store.create(session, ProofArtifactRequest(adjustments=adjustments,
-            format=format_name, quality=90, full_size=True), backend)
+            format=format_name, quality=90, guarantee_hdr_peak=True, full_size=True), backend)
         assert proof.sha256 == hashlib.sha256(Path(result.output_path).read_bytes()).hexdigest()
     finally:
         store.clear()
 
 
-def test_highlights_off_without_codec_check_does_not_decode(monkeypatch, tmp_path):
+@pytest.mark.parametrize("highlights", [False, True])
+def test_default_option_does_not_decode_even_with_highlights_enabled(monkeypatch, tmp_path, highlights):
     from types import SimpleNamespace
     from hdr_finisher import exporters
     from hdr_finisher.capabilities import probe_capabilities
@@ -154,7 +174,7 @@ def test_highlights_off_without_codec_check_does_not_decode(monkeypatch, tmp_pat
         raise AssertionError("The peak check ran although the preset did not ask for it.")
     monkeypatch.setattr(exporters, "_decoded_jpegxl_channel_nits", never)
     adjustments = AdjustmentState()
-    adjustments.hdr.highlight_section_enabled = False
+    adjustments.hdr.highlight_section_enabled = highlights
     adjustments.hdr.highlight_compression_target_nits = 1000
     session = SimpleNamespace(session_id="off", image=scene(4000), adjustments=adjustments, hdr_reference_white_nits=203,
         sdr_reference_image=None, local_adjustments=[])

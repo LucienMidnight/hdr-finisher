@@ -55,7 +55,7 @@ Settings rules (from v1.2 section 5, still in force):
 | **Approved GPU architecture:** a hidden Electron renderer reuses Grade's renderer and shaders. Export resize and output sharpening join the shared GPU graph, after the creative look and before the final highlight limiter. Preset versions that share rendering reuse the same finished lanes. | Steve, 2026-10-18 |
 | **Scheduling:** Grade first, then visible Library pictures (top-left first), then background export. GPU work yields between bounded submissions and shares one memory budget. Closing the last visible window cancels a batch cleanly; finished files stay. | Steve, 2026-10-18 |
 | **Perceptual limits** for GPU against CPU, Proof against export, and Library picture against export: SDR ΔE 2000 and HDR ΔE ITP (BT.2124), per image and per lane, mean below 1.0, 99.9th percentile at or below 3.0. No per-pixel maximum. Include grain and local adjustments. | Steve, 2026-10-18 |
-| **HDR ceiling:** no finished HDR pixel above the highlight compression target, on every path, measured on decoded files, rounding down (zero upward allowance). | Steve, 2026-10-18 |
+| **HDR ceiling:** Guarantee HDR peak is optional per preset version, HDR formats only, off by default. Off encodes once without a decoded peak check. On checks near-target files and applies local correction; any remaining overshoot is delivered with its nits-over-target note. Library pictures skip the check. | Steve, 2026-10-18 |
 | Enabled highlight targets are mandatory after encoding for export, Proof and saved Library pictures. Decode every file, correct local overshoots, reject any file still over target. With Highlights off, the optional per-version codec check enforces 10,000 nits. This supersedes the optional-target and deliver-anyway decision. | Steve, 2026-10-19 |
 | Each export result records which renderer made it and any fallback reason. | Steve, 2026-10-18 |
 | The Export page stays and grows. Two routes: the Export page and Quick export… with a preset. It must leave room for print settings and watermarks. | Steve, 2026-10-11 |
@@ -73,9 +73,16 @@ Settings rules (from v1.2 section 5, still in force):
   numbered names on collisions, per-file results. Exported and "Edited
   since last export" states feed the Library.
 - Proof: reduced size (1,200 px) or full size, through the export pipeline.
-- HDR ceiling check and local correction (`hdr_ceiling.py`) always enforce
-  an enabled highlight target, including default presets and full-size Proof.
-  Dim inputs are decoded too; files still over target are rejected and removed.
+- Guarantee HDR peak is back in each preset version's Advanced settings for
+  HDR formats only, off by default (Steve restored the October 18 decision,
+  October 19). Off encodes each file once with no decoded peak check. On
+  skips pictures whose finished peak is at least 20% below target, otherwise
+  checks the decoded file and applies the existing local correction. A file
+  still over target is delivered with a note stating how many nits over.
+  With Highlights off, the enabled option uses the 10,000-nit codec ceiling.
+  Library pictures never run this check; cache v7 refreshes checked pictures.
+  Proof carries the same option and includes it in its cache identity; changing
+  it invalidates the current Proof. No encoder or gain-map maths changed.
 - The perceptual comparison helper (`delivery_colour.py`), with tests.
 - A shared force-CPU delivery preference in Settings → Performance, and
   `HDR_FINISHER_FORCE_CPU_DELIVERY=1` (environment wins). Export, Proof
@@ -157,9 +164,10 @@ Settings rules (from v1.2 section 5, still in force):
 - October 19, delivered HDR ceiling repair: DSC07060 input is exactly 800
   nits, but gain-map reconstruction reached 1213.147. Independent direct
   libultrahdr decode and gamut conversion confirmed the measurement; the
-  old default bypassed correction. Enabled targets are now mandatory on
-  export, Proof and saved pictures, with no dim-input skip or deliver-anyway
-  exception. Existing local correction and encoders are unchanged. At 4000 px,
+  old default bypassed correction. The initial change made targets mandatory;
+  Steve subsequently restored the October 18 optional policy above. The
+  DSC07060 local correction remains available when explicitly enabled.
+  Existing correction and encoders are unchanged. At 4000 px,
   GPU export and full-size Proof both peak at 797.075 nits; forced CPU both
   peak at 781.706. Each Proof is byte-identical to its export. GPU export
   took 31.64 s; forced CPU took 137.32 s (full RAW grade). Tests: 540 Node,
@@ -168,6 +176,44 @@ Settings rules (from v1.2 section 5, still in force):
   real test driver's synchronous decoder blocked its network loop; after
   asynchronous inspection, the connection error did not repeat. No production
   retry or hardware guard. The HDR comparison page includes the ceiling pair.
+
+- October 19, optional HDR peak cost, measured on disposable DSC07060,
+  DSC07061 and DSC07072 copies at a 1000-nit target, reference white 203:
+  Ultra HDR JPEG quality 95, 4:4:4, gain map 95/full, 4000 px long edge,
+  no output sharpening. GPU delivery, already-open RAW sessions, one warm-up
+  export per photo before the recorded off/on pair. These are steady-state
+  export-request times, not batch throughput or cold RAW loading times.
+  Existing 5% timing-noise allowance applies; one recorded pair per photo.
+  Off averaged **5.12 seconds/photo** (4.97-5.33): exactly one encode and
+  zero peak-check decodes on all three. On DSC07072, checking without
+  correction took **7.71 seconds**, versus 4.97 off (2.74 seconds extra):
+  one encode and one decode, peak 823.825 nits. On DSC07060, checking and
+  correcting took **23.95 seconds**, versus 5.33 off (18.63 seconds extra):
+  three encodes and three decodes, peaks 1469.477 -> 1082.640 -> 988.525 nits.
+  The existing local correction is retained. On DSC07061 the dim-picture
+  skip took **5.44 seconds**, versus 5.07 off: one encode, zero decodes.
+  Its extra 0.38 seconds is the input-peak scan (measured 0.365 seconds),
+  not unexplained timing drift. Decode and re-encode work dominate the
+  option's extra cost; turning it off removes them.
+  Count/timing instrumentation was temporary and restored after measurement;
+  no production counters, retries, encoder changes or hardware guards.
+  The first setup assumed every sidecar contained a grade; DSC07061 has
+  none, so the harness now uses its starting document. Warm-up also removes
+  the first render/compilation cost from the recorded comparisons.
+  Restoring the option exposed Proof discarding it; its request now preserves
+  the switch, and Proof displays/caches any remaining-overshoot delivery note.
+  Real DSC07060 opt-in export and full-size Proof remain byte-identical,
+  both 797.075 nits against its saved 800-nit target. GPU and forced-CPU
+  export/Proof smoke also pass (decoded peak 668.726 / 1000 nits).
+  Validation: 541 Node passed. Full Python run: 2320 passed, 3 skipped,
+  19 existing serializer warnings; its one failure was the old Proof request
+  field-list contract. Updated that contract for the restored option and
+  verified cache identity, conversion, per-version saving and cached notes
+  (4 focused checks passed). Final ceiling/note checks: 17 passed, covering
+  real JPEG, AVIF and JPEG XL export/Proof. The initial focused JPEG/JXL
+  identity failures exposed Proof discarding the option; carrying it through
+  fixes them. Real opt-in DSC07060, GPU/CPU delivery smoke and Advanced
+  settings Electron checks passed, serially at 2560 by 1440. No push.
 
 **Not built**
 

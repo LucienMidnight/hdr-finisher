@@ -74,6 +74,7 @@ class ProofArtifact:
     renderer: str = "cpu"
     fallback_reason: str | None = None
     delivery_cache: tuple | None = None
+    delivery_notes: tuple[str, ...] = ()
 
 
 @dataclass
@@ -305,6 +306,7 @@ class ProofArtifactStore:
             full_size=full_size,
             exact_measurements=export_settings._exact_measurements if full_size else None,
             renderer=result.renderer,
+            delivery_notes=tuple(result.delivery_notes),
             fallback_reason=result.fallback_reason,
             delivery_cache=getattr(proxy_session, "_delivery_cache", None),
         )
@@ -599,6 +601,7 @@ class ProofArtifactStore:
         return ProofArtifactResponse(
             artifact_id=artifact.artifact_id,
             renderer=artifact.renderer, fallback_reason=artifact.fallback_reason,
+            delivery_notes=list(artifact.delivery_notes),
             format=artifact.format,
             media_type=artifact.media_type,
             byte_size=artifact.path.stat().st_size,

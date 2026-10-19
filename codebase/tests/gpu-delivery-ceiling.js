@@ -1,5 +1,4 @@
-// Real saved RAW: the enabled highlight target applies to export and Proof,
-// with the optional codec-ceiling switch left at its default (off).
+// Real saved RAW: opting in corrects DSC07060 for export and Proof.
 const {chromium}=require("playwright");
 const fs=require("node:fs"),path=require("node:path"),assert=require("node:assert/strict");
 const {execFileSync,execFile}=require("node:child_process");
@@ -34,12 +33,12 @@ const harness=global.HDRFinisherElectronTestHarness;
     const state=await api(`/api/session/${id}/edit-state`,undefined,"GET");
     await api(`/api/session/${id}/edit-state?expected_revision=${state.revision}`,document,"PUT");
     const results=[];
-    for(const force_cpu of process.argv.includes("--cpu-only")?[true]:[false,true]){
+    for(const force_cpu of process.argv.includes("--cpu-only")?[true]:process.argv.includes("--gpu-only")?[false]:[false,true]){
       await api("/api/delivery/preferences",{force_cpu});
       const renderer=force_cpu?"cpu":"gpu",file=path.join(output,renderer+".jpg");
       await harness.selectExportPath(file);
       const destination=await page.evaluate(()=>window.hdrFinisherDesktop.chooseExportPath({extension:"jpg",suggestedName:"ceiling.jpg"}));
-      const settings={format:"jpeg_ultrahdr",quality:95,jpeg_chroma_subsampling:"444",
+      const settings={format:"jpeg_ultrahdr",quality:95,guarantee_hdr_peak:true,jpeg_chroma_subsampling:"444",
         jpeg_gain_map_quality:95,jpeg_gain_map_scale:"full",dithering:"off",
         output_finishing:{resize_mode:"long_edge",long_edge:4000,sharpening:"off"}};
       const start=Date.now();

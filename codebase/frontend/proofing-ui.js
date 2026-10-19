@@ -204,6 +204,7 @@
             quality: Number(els.exportQuality.value) || 85,
             jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value) || 100,
             jpeg_gain_map_scale: els.jpegGainMapScale.value || "full",
+            guarantee_hdr_peak: els.exportGuaranteePeak?.checked === true,
             jpeg_chroma_subsampling: els.jpegUltrahdrChromaSubsampling.value || "420",
             avif_bit_depth: Number(els.avifBitDepth.value) || 10,
             avif_chroma_subsampling: els.avifChromaSubsampling.value || "420",
@@ -408,6 +409,7 @@
     const result = state.proofReconstruction;
     const details = [proofSizeLabel(), `${proofFormatLabel()} · ${proofPreviewLabel()}`];
     details.push(...(state.proofArtifact?.measurement_warnings || []));
+    details.push(...(state.proofArtifact?.delivery_notes || []));
     if (state.proofPreview !== "hdr") details.push(`reference ${result.target_label}`);
     details.push(`${result.resolved_headroom.toFixed(2)} stops`);
     if (result.display_label) details.push(result.display_label);

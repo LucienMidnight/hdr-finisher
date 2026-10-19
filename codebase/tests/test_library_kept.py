@@ -33,7 +33,7 @@ def test_gpu_raw_picture_skips_cpu_preparation_and_keeps_encoder_settings(setup,
         np.testing.assert_array_equal(rendered_sdr, sdr)
         assert settings.quality == 95 and settings.jpeg_gain_map_quality == 95
         assert settings.output_finishing.long_edge == 512 and settings.dithering == "off"
-        assert options["ceiling_nits"] == exporters._peak_ceiling(settings, EditDocument.model_validate(grade).global_adjustments)
+        assert options.get("ceiling_nits") is None
         Path(path).write_bytes(b"encoded")
     monkeypatch.setattr(exporters, "write_jpeg_gainmap_renditions", encode)
     result = produce(tmp_path, raw, grade, 512)

@@ -20,7 +20,7 @@ from .library_diagnostics import log
 
 _LOCK=RLock()
 EDGES=(512,1024,1920)
-PICTURE_VERSION="saved-screen-gpu-raw-v6"
+PICTURE_VERSION="saved-screen-gpu-raw-v7"
 RETRY_SECONDS=30
 THUMBNAIL_EDGE=256
 
@@ -187,8 +187,7 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
     try:
         writer=exporters.write_jpeg_gainmap_renditions if format=="jpeg" else exporters.write_avif_gainmap_renditions
         encode_started=perf_counter()
-        writer(temp,hdr,sdr,settings,document.hdr_reference_white_nits,
-               ceiling_nits=exporters._peak_ceiling(settings,document.global_adjustments));check()
+        writer(temp,hdr,sdr,settings,document.hdr_reference_white_nits);check()  # Library pictures skip the optional delivery check.
         encode_ms=(perf_counter()-encode_started)*1000
         log("kept_encoded", path=str(path), grade_identity=identity(grade), duration_ms=encode_ms)
         return {**rendering,"temporary":str(temp),"extension":extension,"grade_identity":identity(grade),

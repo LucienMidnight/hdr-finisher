@@ -1037,6 +1037,7 @@ function bindEvents() {
     els.sdrPngBitDepth,
     els.exportDithering,
     els.exportMetadataPolicy,
+    els.exportGuaranteePeak,
   ].forEach((control) => control?.addEventListener("change", () => {
     markExportPresetCustom();
     renderFormatCards();

@@ -161,6 +161,8 @@ fails as recorded above; export, Proof and their limits were not changed.
   passed serially. The driver now exits full screen with the keyboard
   shortcut after two test-control failures clicking its hidden toolbar.
 - Batch export pages and states (see Export and Proof).
+- October 19, restored delivery policy: Library pictures skip the optional
+  decoded HDR peak check. Saved-picture cache v7 refreshes checked entries.
 - Saved-grade pictures now use the shared hidden GPU delivery renderer,
   including locals, Denoise and resize; CPU fallback records its reason.
   The existing disk picture cache remains and refreshes old CPU entries.
