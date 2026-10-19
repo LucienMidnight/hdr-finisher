@@ -123,7 +123,7 @@ def test_open_save_is_async_and_guards_publication(setup, monkeypatch, tmp_path,
             del session
         elif change == "new_save":
             edit(store, session, exposure=2)
-            # Returns while the previous encode is blocked, and cancels that job.
+            # Saving settings returns immediately and starts no replacement picture job.
             grades.save(str(session.session_id))
             wait_for(lambda: list(kept.jobs.values())[0].is_set() is False and len(calls) == 1)
         elif change == "source_changed":
@@ -138,7 +138,7 @@ def test_open_save_is_async_and_guards_publication(setup, monkeypatch, tmp_path,
             document["grade"] = state["baseline"]
             Path(str(photo)+".hdrf").write_text(json.dumps(document))
         release.set()
-        if change in {"next_photo", "new_save"}:
+        if change == "next_photo":
             wait_for(lambda: kept.cached(photo) is not None)
             assert kept.cached(photo)["grade_identity"] == kept.request(photo)["grade_identity"]
         else:
@@ -180,10 +180,8 @@ def test_saved_thumbnail_arrives_before_large_picture_and_never_reuses_old_grade
         grades.save(str(session.session_id))
         assert kept.cached(photo, 900) is None, "Old grade must disappear immediately"
         release.set()
-        wait_for(lambda: kept.cached(photo) is not None)
-        assert kept.cached(photo)["grade_identity"] != thumbnail["grade_identity"]
-        assert kept.cached(photo)["grade_identity"] == kept.request(photo)["grade_identity"]
-        assert kept.current_meta(photo, kept.request(photo)["grade_identity"])["key"] == kept.cached(photo)["key"]
+        kept._open_producer.shutdown(wait=True)
+        assert kept.cached(photo) is None, "Saving a new grade must not make a replacement file"
         photo.write_bytes(photo.read_bytes() + b"changed")
         assert kept.cached(photo, 900) is None, "Changed sources must invalidate both sizes"
     finally:

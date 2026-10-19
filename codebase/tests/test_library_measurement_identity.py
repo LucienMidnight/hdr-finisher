@@ -31,8 +31,7 @@ def test_untouched_measurements_preserved_but_not_edited(setup, tmp_path):
     edit(store, session)
     grades.save(str(session.session_id)); marks.writer.drain()
     assert grades.describe([photo])[str(photo)]["edited"]
-    assert len(calls) == 1
-    assert calls[0][1]["source"]["image"] is session.image
+    assert not calls, "A real edit is saved without starting a finished-picture file job"
 
 
 def test_measurements_on_real_edit_keep_picture_identity(setup):

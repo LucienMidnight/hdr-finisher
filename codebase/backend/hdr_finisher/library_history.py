@@ -120,20 +120,11 @@ class LibraryHistory:
                     import json
                     for path, state in pending.items():
                         db.execute("INSERT OR REPLACE INTO photo_grades VALUES (?, ?)", (path, json.dumps(state)))
-                        if getattr(getattr(marks, "kept", None), "queue", None):
-                            from .library_kept import identity
-                            db.execute("INSERT INTO picture_jobs(path,grade_id) VALUES (?,?) ON CONFLICT(path) DO UPDATE SET grade_id=excluded.grade_id,reason=''", (path, identity(state["desired"])))
                 marks._save(rows, docs, finalize)
             if undo and plans:
                 marks._undo.append({"command": lambda: self.rewrite(list(before), targets=before, expected=after, undo=False, save_open=save_open)})
-            for path, _, _, _, session, _, target in plans:
-                if (not session or save_open) and getattr(marks, "kept", None): marks.kept.enqueue(path, target) if hasattr(marks.kept, "enqueue") else marks.kept.schedule(path, target)
             descriptions = grades.describe([row["path"] for row in rows])
             for row in rows:
                 row.update(descriptions.get(row["path"], {}))
-                kept = getattr(marks, "kept", None)
-                if kept:
-                    row["pictureCurrent"] = bool(kept.current_meta(row["path"], row["grade_identity"]))
-                    row["picture_updating"] = bool(row.get("edited") and not row["pictureCurrent"])
             log("grade_revert", target=kind or "undo", count=len(plans), action="previous grade retained")
             return {"photos": rows, "count": len(plans), "session": payload, "warnings": [], "undo_available": bool(marks._undo), "grade_changed": True}

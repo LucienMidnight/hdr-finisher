@@ -212,7 +212,6 @@ class LibraryCopies:
             if made:
                 self.marks._undo.append({"command":lambda:self.remove_many([row["path"] for row in made], undo=False, skip_open=False)})
             for row in made:
-                if getattr(self.marks, "kept", None): self.marks.kept.schedule(row["path"])
                 log("virtual_copy_created", photo=source(row["path"]), copy=row["photo_id"], start=start)
             return {"photos":made, "path":made[-1]["path"] if made else None, "count":len(made),
                     "warnings":[], "undo_available":bool(self.marks._undo), "copies_changed":bool(made)}

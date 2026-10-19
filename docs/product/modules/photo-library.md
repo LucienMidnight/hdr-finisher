@@ -60,26 +60,29 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Batch Export tiles share live Library drawing.** Visible photo tiles use the same live GPU renderer and visible-only CPU fallback. While export or Proof is running they are background work: draw each tile once and retain it, never redraw for progress updates, and yield GPU memory and turns to delivery. Verify export time per photo with the page open versus closed on the same three photos; the agreed timing noise allowance is 5%. | Steve, 2026-10-19 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
 
-**CPU fallback implementation boundary (approved October 19, not yet built):**
-The existing CPU development/default-look code in `library_pictures.py`, CPU
-thumbnail rendering in `library_thumbnails.py`, Library-only JPEG writer in
-`library_thumbnail_codec.py`, and saved-grade CPU render/encode/read routines
-in `library_kept.py` remain available for this fallback, together with their
-necessary cache, worker and API plumbing. Shared export renderers and
-encoders remain unchanged. Retaining these routines does not retain the
-saved-picture background queue, paste-triggered picture production or
-read-ahead production of CPU-finished files. Visible demand controls fallback
-work; normal GPU use draws live. The live-draw implementation must verify
-visible-only requests and automatic GPU recovery before marking this built.
+**CPU fallback implementation boundary (approved October 19):**
+The visible live surfaces use `library_live.fallback_picture`, which keeps the
+existing CPU adjustment/geometry/local-mask code, `_denoised_export_source`
+and highlight compression, plus `library_thumbnail_codec.encode` for the
+returned HDR/SDR JPEG. `library_pictures` remains the scene cache and source
+reduction layer; the worker and `/fallback-picture` route serve visible
+requests. The JPEG is returned in memory rather than saved as another cache
+file. The Library retries hardware drawing after GPU loss automatically.
+The Library-only fallback helper, JPEG codec and request plumbing remain
+because of this fallback. Its numerical routines are shared with CPU export
+and other CPU rendering; no CPU speed work is planned.
+The old `library_kept` producer/reader, `library_thumbnails` queue and durable
+`library_picture_queue` are **not** required by this fallback. Their removal
+is still open; until removed, legacy entry points can still start old work.
 
-**Shared Export tile acceptance (approved October 19, not yet built):**
-The batch Export page is an approved consumer of the shared live renderer.
-During export or Proof, tile drawing has background priority and must yield
-GPU memory and turns needed by delivery. Draw each visible tile once and
-retain its picture; progress updates must not trigger another draw. Before
-marking this built, measure export time per photo with the page open and
-closed, using the same three photos and export settings. An increase within
-5% is accepted as timing noise. No timing result has been recorded yet.
+**Shared Export tiles built in part 3 (October 19):**
+Visible tiles share the live renderer and CPU fallback. Tile work has
+background GPU admission, its working graph is released after drawing, and
+progress updates reuse the completed canvas. On the same three RAW photos,
+mean export time was 33.094 s per photo with the page closed and 33.756 s
+open (+2.0%, within the approved 5% noise allowance). The focused real-app
+check confirmed no redraw on progress updates. Exported files and Proof
+output did not change.
 
 **Paste rules (built):** values measured from one photo are never pasted
 (measured highlight peak, matched lens profile, file interpretation,
@@ -339,6 +342,28 @@ as maximum-fidelity Ultra HDR JPEG, closed/open Export page times were
 was 33.094 s closed and 33.756 s open: +2.0%, inside the approved 5% noise
 allowance. Completed tiles drew once and progress updates drew none.
 The browsing targets and 70-cell/memory comparison remain unmeasured.
+
+Part 4a built October 19: saving, paste/revert/Undo and virtual-copy creation
+no longer enqueue finished-picture files. Grade documents and settings writes
+remain unchanged. A focused behavioral check covers save, revert and copy
+with picture producers forbidden. All 543 Node checks passed. The full Python
+run passed 2,325 checks, skipped 3, and failed 3 old expectations that saving
+would create another finished file. Those expectations were updated for the
+intended behavior; all 74 related checks then passed. No GPU check directly
+covers these settings-only call-site removals; no additional GPU run was made.
+The old queue is not yet removed.
+
+Part 4 remaining cleanup, blocked by automatic approval review: remove the
+saved-picture producer/reader and durable queue; remove finished-thumbnail
+routes and the detached thumbnail producer; remove the saved-picture settings
+and Activity entry, retaining Pause/Resume for actual scene development;
+remove GPU thumbnail capture and its second off-screen render; retire tests
+that only exercise those removed file features and update paste tests to
+expect live redraws. Keep shared document identity/atomic-write helpers,
+source cache controls, visible CPU fallback, original files and sidecars.
+The review rejected a scripted multi-file removal as too broad. No part of
+that rejected removal was applied. The three small call-site changes are the
+only production edits committed for part 4.
 
 ## 5. Open work, in order
 

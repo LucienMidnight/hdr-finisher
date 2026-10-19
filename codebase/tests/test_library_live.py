@@ -100,3 +100,27 @@ def test_live_geometry_and_visible_cpu_fallback_keep_the_saved_grade(tmp_path):
     assert not list(root.rglob("*.jpg"))
     service.cache.managed.update({"enabled":False})
     assert fallback_picture(root,path,saved,640)["url"].startswith("data:image/jpeg;base64,")
+
+
+def test_save_revert_and_copy_do_not_launch_finished_picture_work(tmp_path):
+    from hdr_finisher.sessions import SessionStore
+    from hdr_finisher.library_grades import LibraryGrades
+    from hdr_finisher.library_copies import LibraryCopies
+    from test_library_grades import edit
+    path=photo(tmp_path); before=path.read_bytes()
+    store=SessionStore(); opened=store.get(store.create_session(path,owns_source_path=False).session_id)
+    marks=LibraryMarks(tmp_path/"app"); grades=LibraryGrades(marks,store)
+    grades.attach(str(opened.session_id))
+    def forbidden(*args,**kwargs):
+        raise AssertionError("Saving settings must not launch a finished-picture job")
+    marks.kept=SimpleNamespace(schedule=forbidden,enqueue=forbidden)
+    edit(store,opened); grades.save(str(opened.session_id))
+    marks.writer.drain()
+    copies=LibraryCopies(marks); made=copies.create(str(path),"current","Live copy")
+    assert made["path"]
+    store.clear()
+    result=grades.history.revert([str(path)],"original")
+    assert result["count"]==1
+    marks.writer.drain()
+    assert path.read_bytes()==before
+    assert not list((tmp_path/"app").rglob("*.jpg"))

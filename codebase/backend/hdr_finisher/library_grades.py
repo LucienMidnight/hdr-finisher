@@ -228,10 +228,6 @@ class LibraryGrades:
                 session.dirty = False
             registered = perf_counter()
             log("grade_save_queued", photo=path, action="grade retained; settings writer notified")
-            if (getattr(self.marks, "kept", None) and grade_key(desired) != grade_key(state.get("default"))
-                    and grade_key(desired) != grade_key(state.get("baseline"))):
-                from .library_kept import capture_source
-                self.marks.kept.schedule(path, desired, source=capture_source(session))
             scheduled = perf_counter()
             result = self.status(session_id)
             ended = perf_counter()
