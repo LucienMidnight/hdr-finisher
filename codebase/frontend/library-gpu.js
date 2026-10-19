@@ -1,6 +1,22 @@
 /* Independent picture transport; Grade's renderer and pinned shaders are reused unchanged. */
 window.clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 class HDRLibraryGPU extends HDRWebGPUPreview {
+  resourceMemorySnapshot() {
+    const value = super.resourceMemorySnapshot();
+    const referenced = new Map([...this.proxies.values()].filter(p => this.rawPictures?.owns(p.texture))
+      .map(p => [p.texture, p.byteSize || 0]));
+    const extra = Math.max(0, (this.rawPictures?.snapshot().bytes || 0) -
+      [...referenced.values()].reduce((a, b) => a + b, 0));
+    for (const category of [value.resident, value.cached]) {
+      category.categories.libraryRetainedBytes = extra;
+      category.totalBytes += extra;
+    }
+    value.peakLogicalBytes += extra;
+    value.totals.residentBytes += extra;
+    value.totals.cachedBytes += extra;
+    value.totals.peakLogicalBytes += extra;
+    return value;
+  }
   evictGpuCacheEntry(kind, key) {
     const proxy = kind === "source-proxy" ? this.proxies.get(key) : null;
     if (proxy && this.rawPictures?.owns(proxy.texture)) { this.rawPictures.release(proxy.texture); return; }

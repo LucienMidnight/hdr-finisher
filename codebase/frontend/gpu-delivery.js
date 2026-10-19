@@ -49,7 +49,7 @@
         const result=await HDRLibraryGpuRaw.developRaw({meta,
           mosaic:new Uint8Array(body,4+length,meta.mosaic_bytes),
           lensData:meta.lens_grid?new Float32Array(body,4+length+meta.lens_offset,meta.lens_grid.floats):null,
-          edges:[job.raw.edge]});
+          edges:[job.raw.edge],beforeSubmit:permit,memoryBudget:scratch});
         await permit();
         const picture=result.reduced[job.raw.edge];
         const robust={luma:HDRLibraryGpuRaw.quantile(result.samples,0,.9999),

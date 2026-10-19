@@ -215,3 +215,9 @@ Settings rules (from v1.2 section 5, still in force):
   [Viewport_Bounded_GPU_Preview_PRD section 3](../archive/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md)
 - User guide: [export](../../user-guide/export.md), [proof](../../user-guide/proof.md)
 - Known limits: [known limitations, export and proofing](../../known-limitations.md)
+
+October 19, RAW follow-up part 4: Library RAW reservations now join Grade
+and delivery in the same scheduler, including Grade preemption and delivery
+queue ageing. Large sharpened originals still exceed the budget: the six
+full-frame float scratch images need tiled resize and sharpening with filter
+overlap, multiscale passes and matching boundaries before that can change.

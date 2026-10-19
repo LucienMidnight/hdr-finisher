@@ -91,7 +91,10 @@
   // GPU route does not cover, and any GPU failure, use Grade's CPU development.
   function rawThumbnail(photo, edge, signal) {
     const cpu = () => api("/api/library/picture", {path:photo.path, edge, quality:"quick", purpose:"thumbnail", priority:10}, signal);
-    if (!HDRLibraryGpuRaw.enabled()) return cpu();
+    if (!HDRLibraryGpuRaw.enabled()) {
+      HDRLibraryStopwatch("gpu_raw_fallback", {path:photo.path, reason:"WebGPU is unavailable or disabled."});
+      return cpu();
+    }
     return HDRLibraryGpuRaw.thumbnail(photo.path, edge, signal, {savedGradeOnly:!!photo.edited}).then(
       result => result && !result.waiting_for_saved_grade ? result : cpu(),
       error => {

@@ -128,6 +128,17 @@ fails as recorded above; export, Proof and their limits were not changed.
   v6 rebuilds older thumbnails once. Real app preparation: 4.364 s on CPU
   versus 0.031 s for three concurrent reuse requests (5% timing allowance).
   No rendered pixels change; the existing picture qualification still applies.
+- October 19, GPU RAW follow-up part 4: Library RAW, delivery and Grade now
+  share the broker's memory budget. Background RAW and delivery are admitted
+  one at a time; both yield to Grade and use the existing queue ageing.
+  RAW reserves 44 bytes per sensor pixel plus 64 MiB, releases intermediates
+  early and submits 128-row bands. Preemption frees buffers before releasing
+  the reservation, then requeues without CPU fallback. Missing/software/lost
+  GPU and insufficient memory retain CPU fallback with a recorded reason.
+  Three badminton pictures still pass (worst HDR mean 0.0266 / p99.9 0.0774;
+  SDR 0.0182 / 0.0590). RAW GPU time is about 1.0-1.6 s including the new
+  scheduler checks. Try scrolling Library while adjusting a photo in Grade
+  with batch export running; Grade retains priority.
 - Batch export pages and states (see Export and Proof).
 - Saved-grade pictures now use the shared hidden GPU delivery renderer,
   including locals, Denoise and resize; CPU fallback records its reason.
@@ -285,9 +296,8 @@ fails as recorded above; export, Proof and their limits were not changed.
       trim limit. Each saved picture updates its allowance total; only
       eviction, startup recovery and settings drift recovery list files. `tests/library-gpu-raw-grid.js`
       checks the stages. GPU-developed starting documents now feed paste (part 3).
-      Not yet covered: GPU memory budgeting with
-      Grade and delivery (each development holds up to about 2 GB briefly),
-      Single and full-screen views. Saved-grade pictures are built in parts
+      Shared GPU memory budgeting with Grade and delivery is built in part 4.
+      Not yet covered: Single and full-screen views. Saved-grade pictures are built in parts
       1–2 of the follow-up; the remaining items are
       briefed in [codex-brief-gpu-raw-follow-ups-2026-10-19](../../technical/briefs/codex-brief-gpu-raw-follow-ups-2026-10-19.md).
    0. **Quick wins built October 19** ([brief and outcome](../../technical/archive/briefs/codex-brief-library-speed-quick-wins-2026-10-18.md)):

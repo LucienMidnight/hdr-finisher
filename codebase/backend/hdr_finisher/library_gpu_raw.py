@@ -259,5 +259,6 @@ def developed(cache, path: str, header: dict, payload) -> dict:
         "lens_correction_applied": bool(header.get("lens_corrected")),
         "source_width": int(header["source_width"]), "source_height": int(header["source_height"]),
         "gpu_development_ms": header.get("gpu_ms"),
+        "gpu_memory_peak_bytes": header.get("memory_peak_bytes"),
     }
     return cache.build(source, edge, "grade-thumbnail", decoded=(pixels, None, metadata))

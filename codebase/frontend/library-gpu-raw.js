@@ -24,6 +24,7 @@
     b0: vec4<f32>, b1: vec4<f32>, b2: vec4<f32>,   // ACEScg -> BT.2020 rows
     misc: vec4<f32>,        // calibration gain, lens flags, gain grid w, h
     lensc: vec4<f32>,       // lens coordinate grid w, h, offset in the lens buffer
+    dispatch: vec4<u32>,    // row offset for bounded background submissions
   };
   @group(0) @binding(0) var<uniform> p: P;
   fn W() -> i32 { return i32(p.dims.x); }
@@ -41,7 +42,8 @@
   @group(0) @binding(6) var<storage, read_write> counts: array<atomic<u32>>;
   var<workgroup> wgCount: array<atomic<u32>, 3>;
   @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) g: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  fn main(@builtin(global_invocation_id) g0: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+    let g = g0 + vec3<u32>(0u, p.dispatch.y, 0u);
     if (li < 3u) { atomicStore(&wgCount[li], 0u); }
     workgroupBarrier();
     let c = i32(g.x); let r = i32(g.y);
@@ -68,7 +70,8 @@
   @group(0) @binding(1) var<storage, read> coarse: array<u32>;
   @group(0) @binding(2) var<storage, read_write> dilated: array<u32>;
   @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  fn main(@builtin(global_invocation_id) g0: vec3<u32>) {
+    let g = g0 + vec3<u32>(0u, p.dispatch.y, 0u);
     let cw = i32(p.dims2.x); let chh = i32(p.dims2.y);
     let x = i32(g.x); let y = i32(g.y);
     if (x >= cw || y >= chh) { return; }
@@ -110,8 +113,9 @@
   ${OPPOSED}
   var<workgroup> sums: array<f32, 768>;
   @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) g: vec3<u32>, @builtin(local_invocation_index) li: u32,
-          @builtin(workgroup_id) wg: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
+  fn main(@builtin(global_invocation_id) g0: vec3<u32>, @builtin(local_invocation_index) li: u32,
+          @builtin(workgroup_id) wg0: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
+    let g = g0 + vec3<u32>(0u, p.dispatch.y, 0u);
     let c = i32(g.x); let r = i32(g.y);
     var value = vec3<f32>(0.0); var count = vec3<f32>(0.0);
     if (c < W() && r < H()) {
@@ -127,6 +131,7 @@
       if (li < step) { for (var k = 0u; k < 3u; k++) { sums[k * 256u + li] += sums[k * 256u + li + step]; } }
       workgroupBarrier();
     }
+    let wg = wg0 + vec3<u32>(0u, p.dispatch.y / 16u, 0u);
     let slot = (wg.y * nw.x + wg.x) * 6u;
     if (li == 0u) { for (var k = 0u; k < 3u; k++) { partials[slot + k] = sums[k * 256u]; } }
     workgroupBarrier();
@@ -145,7 +150,8 @@
   @group(0) @binding(3) var<storage, read_write> ints: array<u32>;
   ${OPPOSED}
   @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  fn main(@builtin(global_invocation_id) g0: vec3<u32>) {
+    let g = g0 + vec3<u32>(0u, p.dispatch.y, 0u);
     let c = i32(g.x); let r = i32(g.y);
     if (c >= W() || r >= H()) { return; }
     let i = u32(r * W() + c);
@@ -163,7 +169,8 @@
   fn px(r: i32, c: i32) -> i32 { return i32(ints[u32(r * W() + c)]); }
   fn ulim(x: i32, y: i32, z: i32) -> i32 { return clamp(x, min(y, z), max(y, z)); }
   @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  fn main(@builtin(global_invocation_id) g0: vec3<u32>) {
+    let g = g0 + vec3<u32>(0u, p.dispatch.y, 0u);
     let c = i32(g.x); let r = i32(g.y);
     if (c >= W() || r >= H()) { return; }
     let i = u32(r * W() + c);
@@ -217,7 +224,8 @@
   const HOMOGENEITY = COMMON + AHD_RGB + /* wgsl */ `
   @group(0) @binding(3) var<storage, read_write> homo: array<u32>;
   @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  fn main(@builtin(global_invocation_id) g0: vec3<u32>) {
+    let g = g0 + vec3<u32>(0u, p.dispatch.y, 0u);
     let c = i32(g.x); let r = i32(g.y);
     if (c >= W() || r >= H()) { return; }
     let i = u32(r * W() + c);
@@ -330,7 +338,8 @@
     return out;
   }
   @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) g: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  fn main(@builtin(global_invocation_id) g0: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+    let g = g0 + vec3<u32>(0u, p.dispatch.y, 0u);
     if (li < 3u) { atomicStore(&wgPeak[li], 0u); }
     workgroupBarrier();
     let c = i32(g.x); let r = i32(g.y);
@@ -370,7 +379,8 @@
     return inB[i];
   }
   @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) g: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  fn main(@builtin(global_invocation_id) g0: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+    let g = g0 + vec3<u32>(0u, p.dispatch.y, 0u);
     if (li < 3u) { atomicStore(&wgPeak[li], 0u); }
     workgroupBarrier();
     let c = i32(g.x); let r = i32(g.y);
@@ -431,6 +441,9 @@
       if (!navigator.gpu) throw new Error("WebGPU is unavailable.");
       const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
       if (!adapter) throw new Error("No WebGPU adapter.");
+      if (adapter.isFallbackAdapter || /swiftshader|llvmpipe|lavapipe|software rasterizer/i.test(
+        [adapter.info?.vendor, adapter.info?.architecture, adapter.info?.device, adapter.info?.description].join(" ")))
+        throw new Error("No hardware GPU is available.");
       const device = await adapter.requestDevice({ requiredLimits: {
         maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
         maxBufferSize: adapter.limits.maxBufferSize,
@@ -491,7 +504,7 @@
     return low + (high - low) * (position - lo);
   }
 
-  async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false }) {
+  async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity }) {
     const { device, pipelines, errors } = await gpu();
     errors.length = 0;
     const w = meta.width, h = meta.height, n = w * h;
@@ -500,8 +513,14 @@
     const outW = turned ? h : w, outH = turned ? w : h;
     const st = meta.sample_stride, sw = Math.ceil(outW / st), sh = Math.ceil(outH / st);
     const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
-    const owned = [];
-    const make = bytes => { const buffer = device.createBuffer({ size: Math.max(4, Math.ceil(bytes / 4) * 4), usage }); owned.push(buffer); return buffer; };
+    const owned = new Set(); let liveBytes = 0, peakBytes = 0;
+    const own = buffer => { owned.add(buffer); liveBytes += buffer.size; peakBytes = Math.max(peakBytes, liveBytes); return buffer; };
+    const release = buffer => { if (owned.delete(buffer)) { liveBytes -= buffer.size; buffer.destroy(); } };
+    const make = bytes => {
+      const size = Math.max(4, Math.ceil(bytes / 4) * 4);
+      if (liveBytes + size > memoryBudget) throw Error("GPU RAW development exceeds the reserved memory budget.");
+      return own(device.createBuffer({ size, usage }));
+    };
     const timings = {}; let mark = performance.now();
     const stage = async name => { if (syncStages) await device.queue.onSubmittedWorkDone(); const now = performance.now(); timings[name] = (timings[name] || 0) + now - mark; mark = now; };
     try {
@@ -522,7 +541,7 @@
       setF(19, [meta.calibration_gain, lensFlags, lens?.gain_width || 2, lens?.gain_height || 2]);
       setF(20, [lens?.coordinate_width || 2, lens?.coordinate_height || 2, (lens?.gain_width || 0) * (lens?.gain_height || 0), 0]);
       const uniform = device.createBuffer({ size: params.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-      owned.push(uniform);
+      own(uniform);
       device.queue.writeBuffer(uniform, 0, params);
 
       const mosaicBuf = make(n * 2);
@@ -535,52 +554,62 @@
       const coarse = make(cw * chh * 4), dilated = make(cw * chh * 4), counts = make(16);
       const wgX = Math.ceil(w / 16), wgY = Math.ceil(h / 16);
       const partials = make(wgX * wgY * 6 * 4);
-      const run = (name, entries, x, y) => {
+      const run = async (name, entries, x, y) => {
         const pipe = pipelines[name];
         const group = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: entries.map((buffer, binding) => ({ binding, resource: { buffer } })) });
-        const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
-        pass.setPipeline(pipe); pass.setBindGroup(0, group); pass.dispatchWorkgroups(x, y); pass.end();
-        device.queue.submit([encoder.finish()]);
+        const band = beforeSubmit && name !== "REDUCE" ? 8 : y;
+        for (let row = 0; row < y; row += band) {
+          if (beforeSubmit) await beforeSubmit();
+          if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, row * 16, 0, 0]));
+          const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
+          pass.setPipeline(pipe); pass.setBindGroup(0, group); pass.dispatchWorkgroups(x, Math.min(band, y - row)); pass.end();
+          device.queue.submit([encoder.finish()]);
+          if (beforeSubmit) await device.queue.onSubmittedWorkDone();
+        }
       };
       const read = async (buffer, bytes) => {
-        const staging = device.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const staging = own(device.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }));
         const encoder = device.createCommandEncoder(); encoder.copyBufferToBuffer(buffer, 0, staging, 0, bytes); device.queue.submit([encoder.finish()]);
-        await staging.mapAsync(GPUMapMode.READ); const copy = staging.getMappedRange().slice(0); staging.destroy(); return copy;
+        await staging.mapAsync(GPUMapMode.READ); const copy = staging.getMappedRange().slice(0); release(staging); return copy;
       };
 
-      run("NORMALIZE", [uniform, mosaicBuf, norm, ints, clip, coarse, counts], wgX, wgY);
+      await run("NORMALIZE", [uniform, mosaicBuf, norm, ints, clip, coarse, counts], wgX, wgY);
       const clipped = new Uint32Array(await read(counts, 16)).slice(0, 3);
       let chroma = [0, 0, 0];
       if (clipped.some(v => v > 0)) {
-        run("DILATE", [uniform, coarse, dilated], Math.ceil(cw / 16), Math.ceil(chh / 16));
-        run("RESIDUAL", [uniform, norm, dilated, partials], wgX, wgY);
+        await run("DILATE", [uniform, coarse, dilated], Math.ceil(cw / 16), Math.ceil(chh / 16));
+        await run("RESIDUAL", [uniform, norm, dilated, partials], wgX, wgY);
         const sums = new Float32Array(await read(partials, wgX * wgY * 6 * 4));
         const total = [0, 0, 0, 0, 0, 0];
         for (let k = 0; k < sums.length; k += 6) for (let j = 0; j < 6; j++) total[j] += sums[k + j];
         // raw_import keeps a correction only with more than 100 nearby samples.
         chroma = [0, 1, 2].map(k => total[3 + k] > 100 ? Math.fround(total[k] / total[3 + k]) : 0);
         setF(8, chroma); device.queue.writeBuffer(uniform, 0, params);
-        run("REPAIR", [uniform, norm, clip, ints], wgX, wgY);
+        await run("REPAIR", [uniform, norm, clip, ints], wgX, wgY);
       }
       await stage("highlights");
+      await device.queue.onSubmittedWorkDone();
+      for (const buffer of [mosaicBuf, norm, clip, coarse, dilated, counts, partials]) release(buffer);
 
       const gpack = make(n * 4);
-      run("GREEN", [uniform, ints, gpack], wgX, wgY);
+      await run("GREEN", [uniform, ints, gpack], wgX, wgY);
       const homo = make(n * 4);
-      run("HOMOGENEITY", [uniform, ints, gpack, homo], wgX, wgY);
+      await run("HOMOGENEITY", [uniform, ints, gpack, homo], wgX, wgY);
       await stage("demosaic");
       const planes = [make(n * 4), make(n * 4), make(n * 4)];
       const peaks = make(16), samples = make(sw * sh * 3 * 4);
       const grid = make(lens ? lensData.byteLength : 4);
       if (lens) device.queue.writeBuffer(grid, 0, lensData.buffer, lensData.byteOffset, lensData.byteLength);
-      run("COMBINE", [uniform, ints, gpack, homo, ...planes, peaks, samples, grid], wgX, wgY);
+      await run("COMBINE", [uniform, ints, gpack, homo, ...planes, peaks, samples, grid], wgX, wgY);
+      await device.queue.onSubmittedWorkDone();
+      for (const buffer of [ints, gpack, homo]) release(buffer);
       if (lensFlags & 2) {
         // Lens geometry reads neighbours, so it runs as its own pass.
-        for (const buffer of [ints, gpack, homo, norm]) buffer.destroy();
         const corrected = [make(n * 4), make(n * 4), make(n * 4)];
-        run("REMAP", [uniform, ...planes, ...corrected, peaks, samples, grid], wgX, wgY);
+        await run("REMAP", [uniform, ...planes, ...corrected, peaks, samples, grid], wgX, wgY);
         await stage("lens");
-        for (const buffer of planes) buffer.destroy();
+        await device.queue.onSubmittedWorkDone();
+        for (const buffer of planes) release(buffer);
         planes.splice(0, 3, ...corrected);
       }
       await stage("combine_colour_measure");
@@ -593,14 +622,18 @@
           const mid = make(h * rw * 4), out = make(rh * rw * 4);
           for (const [src, dst, inLen, outLen, across, axis] of [[plane, mid, w, rw, h, 0], [mid, out, h, rh, rw, 1]]) {
             const settings = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-            owned.push(settings);
+            own(settings);
             device.queue.writeBuffer(settings, 0, new Uint32Array([inLen, outLen, across, axis]));
-            run("REDUCE", [settings, src, dst], Math.ceil(outLen / 16), Math.ceil(across / 16));
+            await run("REDUCE", [settings, src, dst], Math.ceil(outLen / 16), Math.ceil(across / 16));
           }
+          await device.queue.onSubmittedWorkDone();
+          release(mid);
           reduced[edge].planes.push(out);
         }
       }
       await stage("reduce");
+      await device.queue.onSubmittedWorkDone();
+      for (const buffer of planes) release(buffer);
       for (const edge of Object.keys(reduced)) {
         const r = reduced[edge];
         r.planes = await Promise.all(r.planes.map(buffer => read(buffer, r.height * r.width * 4)));
@@ -609,11 +642,12 @@
       const sampleData = new Float32Array(await read(samples, sw * sh * 3 * 4));
       await stage("readback");
       if (errors.length) throw new Error(errors.join("\n"));
-      return { timings, errors: [...errors], clipped: [...clipped], chroma,
+      return { timings, memory_peak_bytes: peakBytes, errors: [...errors], clipped: [...clipped], chroma,
         peaks: { peak: peakValues[0], peak_luma: peakValues[1], peak_bt2020: peakValues[2] },
         samples: sampleData, sampleShape: [sh, sw], reduced };
     } finally {
-      for (const buffer of owned) buffer.destroy();
+      await device.queue.onSubmittedWorkDone().catch(() => {});
+      for (const buffer of [...owned]) release(buffer);
     }
   }
 
@@ -630,8 +664,9 @@
 
   const wait = (ms, signal) => new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new DOMException("Cancelled", "AbortError"));
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("Cancelled", "AbortError")); }, { once: true });
+    const stop = () => { clearTimeout(timer); reject(new DOMException("Cancelled", "AbortError")); };
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
+    signal?.addEventListener("abort", stop, { once: true });
   });
 
   // A camera RAW grid thumbnail: the backend unpacks the sensor, this window
@@ -658,7 +693,36 @@
     const lensData = meta.lens_grid ? new Float32Array(body, 4 + length + meta.lens_offset, meta.lens_grid.floats) : null;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
-    const developed = await serial(() => developRaw({ mosaic, meta, lensData, edges: [edge] }));
+    const developed = await serial(async () => {
+      await gpu();
+      const id = crypto.randomUUID(), bytes = meta.width * meta.height * 44 + 64 * 1024 * 1024;
+      const url = `/api/delivery/gpu/raw-budget/${id}`;
+      const lease = async release => {
+        if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+        const response = await fetch(url, { method: "POST", signal,
+          headers: {"Content-Type": "application/json"}, body: JSON.stringify({bytes, release}) });
+        if (!response.ok) throw Error("GPU memory scheduler unavailable.");
+        return response.json();
+      };
+      try {
+        for (;;) {
+          const value = await lease(false);
+          if (value.fallback) throw Error(value.fallback);
+          if (!value.granted || value.preempt) {
+            if (value.granted) await lease(true);
+            await wait(50, signal); continue;
+          }
+          const beforeSubmit = async () => {
+            const status = await lease(false);
+            if (!status.granted || status.preempt || status.fallback) { const error = Error("Yielding GPU RAW to shared work."); error.yieldRaw = true; throw error; }
+          };
+          try { return await developRaw({mosaic, meta, lensData, edges:[edge], beforeSubmit, memoryBudget:bytes}); }
+          catch (error) { if (!error.yieldRaw) throw error; }
+          // developRaw's finally has freed every buffer before Grade sees zero.
+          await lease(true); await wait(50, signal);
+        }
+      } finally { await fetch(url, {method:"DELETE"}).catch(() => {}); }
+    });
     const gpuMs = performance.now() - started;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const picture = developed.reduced[edge];
@@ -669,6 +733,7 @@
       edge, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
+      memory_peak_bytes: developed.memory_peak_bytes,
       timing_ms: { sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
     let text = new TextEncoder().encode(JSON.stringify(header));
     const padded = new Uint8Array(text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32); padded.set(text); text = padded;

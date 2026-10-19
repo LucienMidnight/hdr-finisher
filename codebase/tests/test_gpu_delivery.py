@@ -121,6 +121,48 @@ def _frame(priority=20):
         adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings(), delivery_priority=priority)
 
 
+def test_raw_reservation_yields_without_releasing_live_memory(tmp_path, monkeypatch):
+    app = _broker(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        post = lambda name, **extra: client.post('/api/delivery/gpu/raw-budget/' + name,
+            json={"bytes": 400, **extra}).json()
+        client.post('/api/delivery/gpu/activity', json={"bytes":100,"budget":1000})
+        assert post('first')["granted"]
+        assert not post('second')["granted"]
+        status = client.post('/api/delivery/gpu/activity', json={"active":True,"bytes":100,"budget":1000}).json()
+        assert status == {"reserved":400,"budget":600}
+        assert post('first')["preempt"]
+        # The frontend releases only after all submitted work and buffers end.
+        assert client.post('/api/delivery/gpu/activity', json={"bytes":100,"budget":1000}).json()["reserved"] == 400
+        assert not post('first', release=True)["granted"]
+        assert post('first')["granted"]  # Keeps its original place in the queue.
+        client.delete('/api/delivery/gpu/raw-budget/first')
+        assert post('second')["granted"]
+        client.delete('/api/delivery/gpu/raw-budget/second')
+        assert client.post('/api/delivery/gpu/raw-budget/large', json={"bytes":901}).json()["fallback"]
+        assert client.post('/api/delivery/gpu/activity', json={"bytes":100,"budget":1000}).json()["reserved"] == 0
+
+
+def test_old_export_is_not_starved_by_new_raw_thumbnails(tmp_path, monkeypatch):
+    app = _broker(tmp_path, monkeypatch)
+    with TestClient(app) as client, gpu_delivery.DeliveryMemory() as memory:
+        client.post('/api/delivery/gpu/activity', json={"bytes":0,"budget":1000})
+        assert client.post('/api/delivery/gpu/raw-budget/raw',json={"bytes":400}).json()["granted"]
+        root = gpu_delivery.Path(gpu_delivery.os.environ[gpu_delivery.ROOT_ENV])
+        directory = root / 'delivery-export'; directory.mkdir()
+        description, _ = memory.allocate((4,6,3), np.zeros((4,6,3), np.float32))
+        gpu_delivery._atomic(directory / 'request.json', {"memory":{"source":description,"reference":None},
+            "id":"export", "width":6,"height":4,"output":[6,4],"white":203,
+            "adjustments":AdjustmentState().model_dump(mode='json'),"locals":[],
+            "denoise":DenoiseDocumentSettings().model_dump(mode='json'),"finishing":{},
+            "priority":20,"created":time.time()-60})
+        assert client.get('/api/delivery/gpu/next').json() is None
+        assert client.post('/api/delivery/gpu/raw-budget/raw',json={"bytes":400}).json()["preempt"]
+        client.post('/api/delivery/gpu/raw-budget/raw',json={"bytes":400,"release":True})
+        assert client.get('/api/delivery/gpu/next').json()["id"] == 'export'
+        assert not client.post('/api/delivery/gpu/raw-budget/new',json={"bytes":400}).json()["granted"]
+
+
 def test_a_queued_job_waits_past_the_render_deadline_and_still_uses_the_gpu(tmp_path, monkeypatch):
     # Waiting behind other delivery work is not a GPU failure (Steve's batch
     # fell back to the CPU while visible Library pictures held the queue).

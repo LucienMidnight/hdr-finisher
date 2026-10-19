@@ -106,7 +106,43 @@ Try: let a fresh RAW thumbnail develop in Library, then paste a grade.
 Checks: 540 Node passed; 2312 Python passed, 3 skipped, 19 existing warnings
 (8 min); focused backend 14 passed; real Electron paste/reuse passed.
 
-Next: parts 4-6 in order. Ask before slow work or pushing.
+### Part 4 outcome - October 19
+
+Library RAW reservations now use the delivery broker's budget alongside
+resident Grade/Library resources. One background GPU job runs at a time;
+Grade preempts at bounded submissions, and delivery's existing queue ageing
+also applies to RAW thumbnails. Admission is locked across request threads.
+RAW frees its buffers before releasing the reservation and requeues after
+preemption, with no CPU fallback for queue waits. Closed/cancelled work drops
+its reservation; abandoned requests expire. True insufficient memory and
+missing/software/lost GPUs retain the recorded CPU fallback.
+
+RAW scratch reserves 44 bytes per sensor pixel plus 64 MiB. Early release of
+intermediates keeps the working set inside it; allocation peak is recorded.
+The reserved uniform slot 21 supplies the row offset for 128-row submissions;
+pixel coordinates, reductions and maths stay unchanged. Retained Library
+scenes outside the current proxy are now included in shared accounting.
+
+Three badminton thumbnails pass: worst HDR mean 0.0266 / p99.9 0.0774, SDR
+0.0182 / 0.0590. GPU RAW takes 1.0-1.6 s including scheduler checks versus
+about 4.8 s for CPU development. This is not a like-for-like speedup claim
+against the earlier saved-picture timing; scheduler checks add round trips.
+Real GPU and forced-CPU export/Proof smoke passes, delivered peak 668.73 nits
+against 1000. HDR mean 0.6250 / p99.9 2.7562; SDR 0.5647 / 2.7821.
+
+Large sharpened originals still need full-frame finishing scratch (six float
+images, 96 bytes/output pixel). Staying on GPU requires tiled resize and
+multiscale sharpening with filter overlap and matching boundaries; increasing
+the shared budget cannot make those allocations fit. The existing memory
+fallback remains. Try Library scrolling and batch export while adjusting
+Grade; the broker reserves Grade's turn before admitting another RAW job.
+
+Checks: 541 Node passed; 2314 Python passed, 3 skipped, 19 existing warnings
+(8 min 15 s). Focused broker: 13 passed, including reservation accounting,
+Grade preemption and aged export fairness. Two serial Electron drivers passed:
+RAW picture agreement and GPU/CPU export/Proof. No numeric limits changed.
+
+Next: parts 5-6 in order. Ask before slow work or pushing.
 
 ### Intended result
 

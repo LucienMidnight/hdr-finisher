@@ -15,6 +15,7 @@ import time
 from types import SimpleNamespace
 from uuid import uuid4
 from threading import RLock
+from functools import wraps
 import numpy as np
 from fastapi import APIRouter, HTTPException, Request, Response
 from .color_context import RenderColorContext
@@ -275,9 +276,28 @@ def create_gpu_delivery_router():
     atexit.register(shutil.rmtree, root, ignore_errors=True)
     router = APIRouter(prefix="/api/delivery/gpu")
     active = {}
+    raw_jobs = {}
+    budget_lock = RLock()
+
+    def budget_locked(function):
+        @wraps(function)
+        def call(*args, **kwargs):
+            with budget_lock: return function(*args, **kwargs)
+        return call
+
+    def waiting_deliveries():
+        for path in root.glob("delivery-*/request.json"):
+            if (path.parent / "claimed").exists() or (path.parent / "cancelled").exists(): continue
+            try: yield json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError): continue
+
+    def raw_reserved():
+        return sum(v["bytes"] for v in raw_jobs.values() if v["granted"])
 
     def accounting():
         now = time.monotonic()
+        for key, value in list(raw_jobs.items()):
+            if value["expires"] < now: raw_jobs.pop(key, None)
         for key in list(_clients):
             if _clients[key]["expires"] < now: _clients.pop(key, None)
         values = list(_clients.values())
@@ -294,17 +314,49 @@ def create_gpu_delivery_router():
     @router.post("/activity")
     async def activity(request: Request):
         value = await request.json()
-        key = str(value.get("id", "grade"))[:80]
-        _clients[key] = {"expires": time.monotonic() + 2,
-            "until": time.monotonic() + .25 if value.get("active") else 0.,
-            "bytes": max(0, int(value.get("bytes", 0))),
-            "budget": max(0, int(value.get("budget", 536870912)))}
-        accounting()
-        reserved = sum(v[1].get("reservation", 0) for v in active.values())
-        return {"reserved": reserved,
-            "budget": max(0, _activity["budget"] - _activity["bytes"] + _clients[key]["bytes"] - reserved)}
+        with budget_lock:
+            key = str(value.get("id", "grade"))[:80]
+            _clients[key] = {"expires": time.monotonic() + 2,
+                "until": time.monotonic() + .25 if value.get("active") else 0.,
+                "bytes": max(0, int(value.get("bytes", 0))),
+                "budget": max(0, int(value.get("budget", 536870912)))}
+            accounting()
+            reserved = raw_reserved() + sum(v[1].get("reservation", 0) for v in active.values())
+            return {"reserved": reserved,
+                "budget": max(0, _activity["budget"] - _activity["bytes"] + _clients[key]["bytes"] - reserved)}
+
+    @router.post("/raw-budget/{identity}")
+    async def raw_budget(identity: str, request: Request):
+        payload = await request.json()
+        with budget_lock:
+            accounting()
+            now = time.time()
+            value = raw_jobs.setdefault(identity, {"priority": 15, "created": now,
+                "granted": False, "bytes": 0})
+            value.update(expires=time.monotonic() + 30, bytes=max(0, int(payload["bytes"])))
+            if payload.get("release"): value["granted"] = False
+            available = max(0, _activity["budget"] - _activity["bytes"])
+            if value["bytes"] > available:
+                # Resident Grade resources count even when its controls are idle.
+                return {"fallback": "GPU RAW development exceeds the available shared memory budget."}
+            priority = _effective_priority(value, now)
+            higher = any(_effective_priority(v, now) < priority for v in waiting_deliveries())
+            higher = higher or any(v is not value and
+                (_effective_priority(v, now), v["created"]) < (priority, value["created"])
+                for v in raw_jobs.values())
+            preempt = time.monotonic() < _activity["until"] or higher
+            if not value["granted"] and not payload.get("release") and not preempt and not active and not raw_reserved():
+                value["granted"] = True
+            return {"granted": value["granted"], "preempt": preempt, "budget": available}
+
+    @router.delete("/raw-budget/{identity}")
+    @budget_locked
+    def raw_release(identity: str):
+        raw_jobs.pop(identity, None)
+        return {}
 
     @router.get("/permit")
+    @budget_locked
     def permit(identity: str | None = None):
         (root / "heartbeat").touch()
         accounting()
@@ -315,6 +367,9 @@ def create_gpu_delivery_router():
             # turn is not interrupted by each newly queued Library picture.
             now = time.time()
             current_priority = _effective_priority(active[identity][1], now)
+            if any(_effective_priority(v, now) < current_priority for v in raw_jobs.values()):
+                higher = True
+                priority_reason = "A higher-priority delivery needs the GPU."
             for path in root.glob("delivery-*/request.json"):
                 if (path.parent / "claimed").exists() or (path.parent / "cancelled").exists(): continue
                 try:
@@ -327,14 +382,15 @@ def create_gpu_delivery_router():
         return {"cancelled": bool(identity and identity not in active),
             "reason": priority_reason if higher else "GPU delivery released the shared memory budget for Grade.",
             "preempt": preempt, "ready": not preempt,
-            "idle": not active and not any(root.glob("delivery-*/request.json")),
+            "idle": not active and not raw_jobs and not any(root.glob("delivery-*/request.json")),
             "budget": max(0, _activity["budget"] - _activity["bytes"])}
 
     @router.get("/next")
+    @budget_locked
     def next_job():
         (root / "heartbeat").touch()
         accounting()
-        if time.monotonic() < _activity["until"] or active:
+        if time.monotonic() < _activity["until"] or active or raw_reserved():
             return None
         candidates = []
         for path in root.glob("delivery-*/request.json"):
@@ -345,6 +401,9 @@ def create_gpu_delivery_router():
             return None
         now = time.time()
         value, directory = min(candidates, key=lambda pair: (_effective_priority(pair[0], now), pair[0]["created"]))
+        if any((_effective_priority(v, now), v["created"]) <
+               (_effective_priority(value, now), value["created"]) for v in raw_jobs.values()):
+            return None
         (directory / "claimed").touch()
         memory = DeliveryMemory()
         image = memory.attach(value["memory"]["source"])
@@ -394,13 +453,14 @@ def create_gpu_delivery_router():
 
     @router.post("/{identity}/reserve")
     async def reserve(identity: str, request: Request):
-        accounting()
-        if identity not in active: raise HTTPException(404, "GPU delivery job expired.")
         requested = max(0, int((await request.json())["bytes"]))
-        if requested > max(0, _activity["budget"] - _activity["bytes"]):
-            raise HTTPException(409, "Grade needs the shared GPU budget.")
-        active[identity][1]["reservation"] = requested
-        return {}
+        with budget_lock:
+            accounting()
+            if identity not in active: raise HTTPException(404, "GPU delivery job expired.")
+            if requested > max(0, _activity["budget"] - _activity["bytes"]):
+                raise HTTPException(409, "Grade needs the shared GPU budget.")
+            active[identity][1]["reservation"] = requested
+            return {}
 
     @router.post("/{identity}/pixels/{lane}")
     async def pixels(identity: str, lane: str, request: Request):
