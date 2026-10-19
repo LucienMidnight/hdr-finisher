@@ -53,6 +53,17 @@ for(const source of [...sources,path.join(root,'tests/fixtures/sdr_gradient.png'
   assert.deepEqual([...new Set(fallback.requested)].sort(),fallback.paths.sort(),'CPU files are only requested for visible cells');
   await library.evaluate(element=>{const w=element.contentWindow;w.navigator.gpu.requestAdapter=w.__requestAdapter;});
   await settled();
+  const singleStarted=Date.now();
+  await library.evaluate(element=>{
+   const d=element.contentWindow.document;
+   [...d.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path.endsWith('sdr_gradient.png')).click();
+   d.getElementById('single-view').click();
+  });
+  await page.waitForFunction(()=>{
+   const c=document.querySelector('#library-frame').contentWindow.document.getElementById('single-picture');
+   return c.dataset.picturePath?.endsWith('sdr_gradient.png')&&Number(c.dataset.pictureEdge)===2560;
+  },null,{timeout:60000});
+  report.singleMs=Date.now()-singleStarted;
   assert.deepEqual(errors,[],'No page errors');
   fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify({coldMs,...report},null,2));
   console.log(JSON.stringify({coldMs,reuse:report.rows.map(r=>({name:r.name,ms:r.reuseMs})),residentBytes:report.memory.resident.totalBytes,gpuRecovery:true}));

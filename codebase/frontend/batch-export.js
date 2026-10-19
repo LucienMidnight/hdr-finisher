@@ -1,6 +1,6 @@
 /* The batch owns Library identities, never the live Grade document. */
 (() => {
-  const model = {paths:[],photos:[],presets:[],draft:null,saved:null,version:0,job:null,selected:new Set(),directory:"",grant:null,initialized:false,thumbnailEpoch:0,thumbnailURLs:new Map(),anchor:0,grid:true,closedJob:null};
+  const model = {paths:[],photos:[],presets:[],draft:null,saved:null,version:0,job:null,selected:new Set(),directory:"",grant:null,initialized:false,anchor:0,grid:true,closedJob:null};
   const $ = id => document.getElementById(id);
   const node = (tag, text = "", cls = "") => { const e = document.createElement(tag); e.textContent=text; e.className=cls; return e; };
   const button = (text, fn) => { const b=node("button",text,"button-secondary"); b.type="button"; b.onclick=()=>Promise.resolve(fn()).catch(report); return b; };
@@ -69,14 +69,12 @@
       let row=old.get(p.path);
       if(!row){
         row=node("div","","batch-photo");row.dataset.path=p.path;row.tabIndex=0;row.setAttribute("role","option");
-        const picture=node("div","","batch-picture"),img=node("img");img.alt="";img.hidden=true;img.decoding="async";
-        img.onload=()=>{img.hidden=false;picture.classList.remove("failed");};img.onerror=()=>{img.hidden=true;picture.classList.add("failed");picture.setAttribute("aria-label","Picture unavailable");};
-        picture.append(img);row.append(picture,node("div","","batch-caption"));
+        const picture=node("div","","batch-picture"),canvas=node("canvas");canvas.hidden=true;
+        picture.append(canvas);row.append(picture,node("div","","batch-caption"));
       }
       row.onclick=event=>selectPhoto(index,event);row.onkeydown=event=>{if([" ","Enter"].includes(event.key)){event.preventDefault();selectPhoto(index,event);}};
       row.setAttribute("aria-selected",String(model.selected.has(p.path)));
-      const picture=row.firstChild,img=picture.querySelector("img"),url=model.thumbnailURLs.get(p.path);
-      if(url&&img.getAttribute("src")!==url){img.hidden=true;img.src=url;}
+      const picture=row.firstChild;
       const caption=row.lastChild;caption.replaceChildren(node("strong",p.name+(p.copy_name?` · ${p.copy_name}`:"")),node("small",`${fileCount(p)} files`));
       for(const flag of [p.unsaved?"Unsaved changes in Grade · last saved grade used":"",hdrSkipped(p)?"SDR only · HDR version skipped":""])if(flag)caption.append(node("span",flag,"batch-flag"));
       picture.querySelectorAll(".batch-badge,progress").forEach(e=>e.remove());
@@ -88,6 +86,7 @@
       return row;
     });
     if(tiles.length!==grid.children.length||tiles.some((e,i)=>e!==grid.children[i]))grid.replaceChildren(...tiles);
+    syncTiles();
     example();
   }
   function renderJob(){
@@ -101,8 +100,37 @@
     $("batch-results").hidden=!done;
     $("batch-results").replaceChildren(...j.results.map(r=>{const item=node("li","","batch-result");item.append(node("span",writtenName(r.output_path,j.directory)),node("span",`${model.photos.find(p=>p.path===r.photo)?.name||r.photo} · ${r.version}`),node("span",(OUTCOMES[r.outcome]||r.outcome)+(r.renderer?` · ${r.renderer.toUpperCase()}`:"")+(r.fallback_reason?` · ${r.fallback_reason}`:"")+(r.reason?` · ${r.reason}`:""),`batch-outcome batch-outcome-${r.outcome}`));return item;}));
   }
-  async function thumbnails(epoch, paths){if(epoch!==model.thumbnailEpoch||!paths.length)return;const response=await api("/api/library/thumbnails",{paths:paths.slice(0,256),wanted:paths.slice(0,256),client:"batch-export",edge:360,priority:5});if(epoch!==model.thumbnailEpoch)return;for(const item of response.ready)model.thumbnailURLs.set(item.path,item.url);for(const failure of response.errors||[]){const tile=[...$("batch-grid").children].find(e=>e.dataset.path===failure.path);tile?.firstChild.classList.add("failed");}renderGrid();const remaining=[...response.pending,...paths.slice(256)];if(remaining.length)setTimeout(()=>thumbnails(epoch,remaining).catch(report),800);}
-  async function setPhotos(paths){model.paths=[...new Set(paths)];model.photos=(await api("/api/batch-export/photos",{paths:model.paths})).photos;model.selected.clear();model.anchor=0;renderGrid();thumbnails(++model.thumbnailEpoch,model.paths).catch(report);}
+  // Observation changes demand, while progress polls only update badges.
+  const tileJobs=new Map();
+  const observer=new IntersectionObserver(entries=>{
+    for(const entry of entries){
+      const job=tileJobs.get(entry.target);if(!job)continue;
+      job.visible=entry.isIntersecting&&document.body.dataset.workflow==="export";
+      if(!job.visible){job.controller?.abort();job.controller=null;continue;}
+      startTile(entry.target,job);
+    }
+  });
+  function startTile(row,job){
+    if(job.done||job.controller||!job.visible)return;
+    const owner=$("library-frame")?.contentWindow,tiles=owner?.HDRLibraryLiveTiles;
+    if(!tiles){setTimeout(()=>{if(row.isConnected)startTile(row,job);},100);return;}
+    const controller=new AbortController();job.controller=controller;
+    const current=()=>row.isConnected&&job.visible&&!controller.signal.aborted&&document.body.dataset.workflow==="export";
+    tiles.draw(row.dataset.path,row.querySelector("canvas"),controller.signal,current,false).then(meta=>{
+      if(current()&&meta){job.done=true;row.firstChild.classList.remove("failed");}
+    }).catch(error=>{if(current()){row.firstChild.classList.add("failed");row.firstChild.setAttribute("aria-label",error.message);}})
+      .finally(()=>{if(job.controller===controller)job.controller=null;});
+  }
+  function syncTiles(){
+    for(const [row,job] of tileJobs)if(!row.isConnected){job.controller?.abort();observer.unobserve(row);tileJobs.delete(row);}
+    for(const row of $("batch-grid")?.children||[]){
+      if(!tileJobs.has(row)){const job={visible:false,done:false,controller:null};tileJobs.set(row,job);observer.observe(row);}
+    }
+  }
+  window.addEventListener("hdrfinisher:webgpulost",()=>{
+    for(const [row,job] of tileJobs){job.controller?.abort();job.controller=null;job.done=false;row.querySelector("canvas").hidden=true;startTile(row,job);}
+  });
+  async function setPhotos(paths){model.paths=[...new Set(paths)];model.photos=(await api("/api/batch-export/photos",{paths:model.paths})).photos;model.selected.clear();model.anchor=0;renderGrid();}
   async function folder(){const selected=await desktop?.chooseBatchExportDirectory?.(model.directory);if(selected){model.directory=selected.path;model.grant=selected.grant;}else if(!desktop)model.directory=$("batch-directory").value;$("batch-directory").value=model.directory;return selected;}
   async function run(preset=model.draft,paths=model.paths){capture();if(!paths.length)throw Error("Add photos from the Library before exporting.");if(!model.directory)await folder();if(!model.directory)return;if(desktop&&!model.grant){if(!await folder())return;}if(model.photos.some(p=>p.unsaved)&&!await HDRDialogs.confirm("The photo open in Grade has unsaved changes. This batch exports its last saved grade.",{title:"Export saved grades",confirmLabel:"Export"}))return;const job=await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant});model.grant=null;model.job=job;localStorage.setItem("last-export-directory",model.directory);localStorage.setItem("last-export-preset",preset.id);poll();}
   async function poll(){if(!model.job)return;model.job=await api(`/api/batch-export/${model.job.id}`);window.dispatchEvent(new CustomEvent("batch-export-activity",{detail:model.job}));renderJob();renderGrid();if(!terminal(model.job))setTimeout(()=>poll().catch(report),750);}
@@ -131,6 +159,11 @@
     for(const [id,label,fn] of [["pause","Pause",()=>control(model.job?.state==="paused"?"resume":"pause")],["cancel","Cancel",()=>control("cancel")],["reveal","Show in Explorer",()=>desktop?.revealPath?.(model.job?.results.find(r=>r.output_path)?.output_path)],["close","Close",()=>{model.closedJob=model.job?.id;renderJob();}]]){const b=button(label,fn);b.id="batch-"+id;actions.append(b);}
     line.append(progress,eta,actions);const meter=node("progress","","status-entry-progress");meter.id="batch-meter";meter.setAttribute("aria-label","Overall export progress");const results=node("ul");results.id="batch-results";strip.append(line,meter,results);panel.append(header,notice,grid,empty,strip);document.body.append(panel);view(true);
     $("export-sheet").addEventListener("change",()=>capture());$("export-sheet").addEventListener("input",()=>capture());await loadPresets();}
-  new MutationObserver(()=>{if(document.body.dataset.workflow==="export")init().then(async()=>{if(!model.paths.length&&window.HDRGradeSaving?.item()){await setPhotos([window.HDRGradeSaving.item()]);view(false);}}).catch(report);}).observe(document.body,{attributes:true,attributeFilter:["data-workflow"]});
+  new MutationObserver(()=>{
+    for(const [row,job] of tileJobs){
+      if(document.body.dataset.workflow!=="export"){job.visible=false;job.controller?.abort();job.controller=null;}
+      else {observer.unobserve(row);observer.observe(row);}
+    }
+    if(document.body.dataset.workflow==="export")init().then(async()=>{if(!model.paths.length&&window.HDRGradeSaving?.item()){await setPhotos([window.HDRGradeSaving.item()]);view(false);}}).catch(report);}).observe(document.body,{attributes:true,attributeFilter:["data-workflow"]});
   window.batchExport={open,quick,reveal:path=>desktop?.revealPath?.(path),activity:()=>model.job,add:paths=>setPhotos([...model.paths,...paths]),control};
 })();

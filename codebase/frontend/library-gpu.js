@@ -117,7 +117,7 @@ window.HDRLibraryPictures = (() => {
   function show(meta, canvas, signal, isCurrent, hdr = false) {
     const queued = performance.now();
     foreground++;
-    const pending = queue.catch(() => {}).then(async () => {
+    const render = async () => {
       if (signal.aborted || !isCurrent()) return;
       HDRLibraryStopwatch("draw_dispatched", { key: meta.key, queue_ms: performance.now() - queued });
       const gpu = await initialize();
@@ -167,7 +167,9 @@ window.HDRLibraryPictures = (() => {
         if (pixels) finished.set(meta, {lane:hdr ? "hdr" : "sdr", pixels});
       }
       return result;
-    }).finally(() => { foreground--; });
+    };
+    const pending = (meta.route === "library-live" ? HDRLibraryScenes.draw(render,signal,meta.draw_priority ?? 10)
+      : queue.catch(()=>{}).then(render)).finally(() => { foreground--; });
     queue = pending;
     return pending;
   }

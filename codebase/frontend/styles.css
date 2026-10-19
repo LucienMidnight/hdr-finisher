@@ -9317,7 +9317,7 @@ body:not([data-workflow="export"]) .batch-grid-panel { display:none; }
 .batch-photo[aria-selected="true"] { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); background:var(--accent-bed); }
 .batch-photo:focus-visible { outline:1px solid var(--accent); outline-offset:-1px; }
 .batch-picture { position:relative; display:flex; align-items:center; justify-content:center; aspect-ratio:4/3; background:var(--deep); }
-.batch-picture img { width:100%; height:100%; object-fit:contain; position:absolute; }
+.batch-picture :is(img,canvas) { width:100%; height:100%; object-fit:contain; position:absolute; }
 .batch-picture.failed::after { content:"Picture unavailable"; color:var(--muted); font-size:12px; }
 .batch-caption { display:grid; gap:6px; padding:10px; font-size:12px; text-transform:none; }
 .batch-caption strong { color:var(--text); font-weight:500; overflow-wrap:anywhere; }

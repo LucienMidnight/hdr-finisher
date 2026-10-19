@@ -6,7 +6,16 @@ window.HDRLibraryScenes = (() => {
     const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
     signal?.addEventListener("abort", stop, {once:true});
   });
-  async function load(path, edge, signal) {
+  const sources = HDRLibrarySceneScheduler.create(2);
+  const draws = HDRLibrarySceneScheduler.create(1);
+  async function load(path, edge, signal, priority = 10) {
+    let meta = await sources.submit(path, (shared, importance) => develop(path,edge,shared,importance), signal, priority);
+    // One development stores both sizes. A waiter asking for the other size
+    // reads it after the shared development; it never starts another import.
+    if (meta.edge !== edge) meta = await sources.submit(path+"|"+edge, (shared,importance)=>develop(path,edge,shared,importance), signal, priority);
+    return {...meta, draw_priority:priority};
+  }
+  async function develop(path, edge, signal, importance) {
     if (HDRLibraryGpuRaw.enabled()) {
       try {
         const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal);
@@ -15,7 +24,7 @@ window.HDRLibraryScenes = (() => {
     }
     for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",signal,
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false})});
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance()})});
       if (response.status === 202) { await wait(150, signal); continue; }
       const meta = await response.json();
       if (!response.ok) throw Error(meta.detail || "The stored scene could not be prepared.");
@@ -44,5 +53,7 @@ window.HDRLibraryScenes = (() => {
     catch(error) { await release(); throw error; }
     return {check:async()=>{ if (!await check()) {const error=Error("Library draw yielded to Grade or delivery.");error.libraryYield=true;throw error;} },release};
   }
-  return Object.freeze({load,lease});
+  return Object.freeze({load,lease,
+    draw:(task,signal,priority=10)=>draws.submit(crypto.randomUUID(),task,signal,priority),
+    snapshot:()=>({sources:sources.snapshot(),draws:draws.snapshot()})});
 })();

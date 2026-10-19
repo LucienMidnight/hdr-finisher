@@ -3955,6 +3955,14 @@
       "tier": "core",
       "protects": "Live Library HDR and SDR pictures agree with Grade before any thumbnail codec.",
       "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/library-export-live-tiles.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Visible Export tiles draw once, retain through progress and keep three-photo export throughput within its agreed allowance.",
+      "launch": {"method": "electron"}
     }
+
   ]
 }

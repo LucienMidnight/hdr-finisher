@@ -53,7 +53,7 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','sdr
     assert.equal(await page.locator('#batch-modified').textContent(),'Modified');
     await page.locator('#batch-preset-editor').getByRole('button',{name:'Revert',exact:true}).click();
     assert.equal(await page.locator('#batch-pattern').inputValue(),'{filename}_{sequence:3}_{version}');
-    console.log('grid ready');await page.waitForFunction(()=>[...document.querySelectorAll('.batch-photo img')].every(i=>i.naturalWidth>0));await page.screenshot({path:path.join(output,'export-grid.png')});
+    console.log('grid ready');await page.waitForFunction(()=>[...document.querySelectorAll('.batch-photo canvas')].every(i=>i.dataset.liveTile&&!i.hidden));await page.screenshot({path:path.join(output,'export-grid.png')});
     console.log('opening quick');await page.evaluate(paths=>window.batchExport.quick(paths),photos);console.log('quick opened');
     const dialog=page.getByRole('dialog',{name:'Quick export…',exact:true});await dialog.waitFor();
     assert.match(await dialog.innerText(),/3 photos/);assert.match(await dialog.innerText(),/SDR.*PNG/s);
@@ -65,7 +65,7 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','sdr
     await page.locator('#batch-grid-panel').getByRole('button',{name:'Clear',exact:true}).click();
     await page.waitForFunction(()=>document.querySelectorAll('.batch-photo').length===0);
     await page.evaluate(paths=>batchExport.open(paths),photos);
-    await page.waitForFunction(()=>[...document.querySelectorAll('.batch-photo img')].every(i=>i.naturalWidth>0));
+    await page.waitForFunction(()=>[...document.querySelectorAll('.batch-photo canvas')].every(i=>i.dataset.liveTile&&!i.hidden));
     // Exercise selection modifiers without the old hidden checkboxes.
     await page.locator('.batch-photo').nth(0).click();
     await page.locator('.batch-photo').nth(2).click({modifiers:['Shift']});
@@ -75,7 +75,7 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','sdr
     const visualPhotos=[...photos];
     for(let n=4;n<=24;n++){const photo=path.join(folder,`photo-${String(n).padStart(2,'0')}.png`);fs.copyFileSync(photos[(n-1)%3],photo);visualPhotos.push(photo);}
     await page.evaluate(paths=>batchExport.open(paths),visualPhotos);
-    await page.waitForFunction(()=>document.querySelectorAll('.batch-photo img').length===24&&[...document.querySelectorAll('.batch-photo img')].every(i=>i.naturalWidth>0));
+    await page.waitForFunction(()=>document.querySelectorAll('.batch-photo canvas').length===24&&[...document.querySelectorAll('.batch-photo')].filter(row=>{const r=row.getBoundingClientRect(),g=document.getElementById('batch-grid').getBoundingClientRect();return r.top<g.bottom&&r.bottom>g.top;}).every(row=>row.querySelector('canvas').dataset.liveTile));
     let job={id:'visual-job' ,directory:'D:/Exports',state:'running',completed:1,total:48,active_photo:photos[0],photo_completed:1,photo_total:2,estimated_seconds:30,results:[{photo:photos[0],version:'SDR',outcome:'exported',output_path:'D:/Exports/first_SDR.jpg'}]};
     await page.route('**/api/batch-export',route=>route.fulfill({json:job}));
     await page.route('**/api/batch-export/visual-job',route=>{

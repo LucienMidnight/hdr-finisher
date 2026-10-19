@@ -177,7 +177,7 @@
       for (const item of photos) {
         if (!current()) break;
         try {
-          const meta = await HDRLibraryScenes.load(item.path,2560,controller.signal);
+          const meta = await HDRLibraryScenes.load(item.path,2560,controller.signal,item.path===photo.path?0:50);
           if (!current()) break;
           if (meta?.route === "gpu-raw-thumbnail") await HDRLibraryPictures.prepare(meta,controller.signal,current);
           if (!current()) break;
@@ -191,7 +191,7 @@
     key: (photo, edge) => `${pictureIdentity(photo)}|${edge}`,
     load: (photo, edge, signal) => {
       const cached = recentPictures.get(pictureIdentity(photo));
-      return cached?.edge >= edge ? Promise.resolve(cached) : HDRLibraryScenes.load(photo.path,edge,signal);
+      return cached?.edge >= edge ? Promise.resolve(cached) : HDRLibraryScenes.load(photo.path,edge,signal,50);
     },
   });
   function clearPrefetch() { readAhead.clear(); stopRawAhead(); }
@@ -218,7 +218,7 @@
       while (isCurrent() && !controller.signal.aborted) {
         try {
           await HDRLibraryPictures.initialize();
-          const meta = await (prepared || HDRLibraryScenes.load(photo.path,edge,controller.signal));
+          const meta = await (prepared || HDRLibraryScenes.load(photo.path,edge,controller.signal,priority));
           prepared = null;
           if (!isCurrent()) return;
           await drawPicture(meta,canvas,controller,isCurrent);
@@ -583,7 +583,7 @@
       { label: "Photo actions", onError: error => status(error.message) });
   }
   const compare = HDRLibraryCompare.create({api,status,load:loadAndShow,preparePicture:(photo,edge,signal) =>
-    HDRLibraryScenes.load(photo.path,edge,signal),
+    HDRLibraryScenes.load(photo.path,edge,signal,0),
     prepareNative:prepareRawNative,draw:drawPicture,strip:culling.strip,
     selected,photos:()=>state.photos,allPhotos:()=>state.allPhotos,active:()=>state.active,
     choose:path=>select(state.photos.findIndex(p=>p.path===path)),setView,
@@ -642,7 +642,7 @@
     status(`Loading ${photo.name}…`);
     try {
       startRawAhead();
-      const prepared = readAhead.take(photo, 2560);
+      const prepared = HDRLibraryScenes.load(photo.path,2560,controller.signal,0);
       const neighbours = [state.photos[state.index + 1], state.photos[state.index - 1]].filter(Boolean);
       readAhead.update(photo, neighbours, 2560);
       const meta = await loadAndShow(photo, 2560, $("single-picture"), controller, current, 0, prepared);

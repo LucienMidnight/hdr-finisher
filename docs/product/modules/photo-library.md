@@ -317,6 +317,29 @@ the next parts; this commit does not claim their removal or the speed targets.
 Fast checks: 541 Node tests and the full Python suite. Focused GPU checks:
 live grid/device recovery and live pictures with rotation, locals and Denoise.
 
+**Live drawing, part 3 (October 19):** Stored-scene requests share a priority
+scheduler across grid, filmstrip, Single, Compare and read-ahead. Duplicate
+requests merge and promote to the most urgent waiter. A departed waiter
+cannot cancel another visible user's development; the final departed waiter
+cancels the work. Two full developments at most, with one serial draw lane.
+Selected photos precede visible cells, then read-ahead. Existing backend
+Grade pauses, shared GPU budgets and delivery preemption still govern work;
+indexing remains behind browsing on the helper. Age breaks sustained Library
+queue starvation. Visible batch Export tiles now use that same scheduler and renderer through
+the Library frame. Intersection observation starts and cancels demand; a
+completed tile is retained when progress badges change. Source and draw work
+wait behind active delivery, and each draw releases its working graph before
+releasing its background lease. Finished-file queues remain scheduled for removal.
+
+Part 3 validation: all 543 Node checks and 2,327 Python checks passed
+(3 skipped). The live grid/recovery/Single check and the shared Export tile
+check passed. With the same three full-size RAW photos exported individually
+as maximum-fidelity Ultra HDR JPEG, closed/open Export page times were
+31.959/34.176 s, 34.422/35.095 s and 32.901/31.996 s. Mean time per photo
+was 33.094 s closed and 33.756 s open: +2.0%, inside the approved 5% noise
+allowance. Completed tiles drew once and progress updates drew none.
+The browsing targets and 70-cell/memory comparison remain unmeasured.
+
 ## 5. Open work, in order
 
 1. **Library speed plan** (Claude, October 18, from the speed exploration:
