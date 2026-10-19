@@ -404,6 +404,16 @@ code. The focused live/grade run passed 28 checks; one live-scene test still
 sets the renamed document-provider field and is updated in group 5. No GPU
 output processing changed; the paste interaction check follows group 5.
 
+Cleanup group 4 removes GPU finished-thumbnail readback/capture, both
+off-screen rendition builders, their save queue, and the saved-file compositor.
+Ordinary live draws, Grade's graph and visible CPU fallback remain unchanged.
+No tests removed in this group.
+
+Group 4 validation: 539 Node checks passed with the obsolete thumbnail-pool
+load failure; full Python collection still stops at the seven old imports.
+The focused live-grid app check passed after capture removal, including
+visible CPU fallback, automatic GPU recovery, Single and cache reuse.
+
 Part 4b built October 19: Single/full-screen true 100% detail follows the
 selected-photo exception above, including saved grades, rotation and locals.
 Fit stays on screen while a separate, selected-only full-size scene is
