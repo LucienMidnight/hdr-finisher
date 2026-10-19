@@ -200,7 +200,7 @@
     if (!active) {
       compare.cancel();
       clearCells(state.cells); clearCells(state.filmCells); clearPrefetch(); state.single?.abort();
-      state.scan?.abort(); state.native?.abort();
+      state.scan?.abort(); state.native?.abort(); state.nativeSource?.abort();
     } else if ((state.path || state.collection) && !state.photos.length) void reopen();
     else { paintGrid(); paintFilm(); if (state.view === "single") showSingle(); }
   }
@@ -582,8 +582,8 @@
       ...(chosen.some(item => item.copy_id) ? [{ separator: true }, { label: "Remove virtual copy…", key: "Del", danger: true, run: () => removeCopy(chosen) }] : [])],
       { label: "Photo actions", onError: error => status(error.message) });
   }
-  const compare = HDRLibraryCompare.create({api,status,load:loadAndShow,preparePicture:(photo,edge,signal) =>
-    HDRLibraryScenes.load(photo.path,edge,signal,0),
+  const compare = HDRLibraryCompare.create({api,status,load:(photo,edge,...args)=>loadAndShow(photo,2560,...args),preparePicture:(photo,edge,signal) =>
+    HDRLibraryScenes.load(photo.path,2560,signal,0),
     prepareNative:prepareRawNative,draw:drawPicture,strip:culling.strip,
     selected,photos:()=>state.photos,allPhotos:()=>state.allPhotos,active:()=>state.active,
     choose:path=>select(state.photos.findIndex(p=>p.path===path)),setView,
@@ -634,6 +634,11 @@
     const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.picture_key || ""}|${photo.bytes}|${photo.mtime_ns}` : "";
     if (identity && identity === state.singleIdentity && !state.single?.signal.aborted) { positionZoom(); return; }
     state.singleIdentity = identity;
+    const fullIdentity = photo ? `${photo.path}|${photo.bytes}|${photo.mtime_ns}` : "";
+    if (state.fullIdentity !== fullIdentity || state.nativeSource?.signal.aborted) {
+      state.nativeSource?.abort(); state.fullDetail = null; state.fullSceneQuality = null;
+      state.fullIdentity = fullIdentity; state.nativeSource = new AbortController();
+    }
     state.single?.abort(); state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; state.fitMeta = null; $("native-picture").hidden = true;
     if (!photo || !state.active || state.view !== "single") return;
     compare.hide();
@@ -647,6 +652,10 @@
       readAhead.update(photo, neighbours, 2560);
       const meta = await loadAndShow(photo, 2560, $("single-picture"), controller, current, 0, prepared);
       if (!meta || !current()) return;
+      if (state.fullSceneQuality && state.fullSceneQuality !== meta.quality) {
+        state.nativeSource?.abort(); state.nativeSource = new AbortController(); state.fullDetail = null;
+      }
+      state.fullSceneQuality = meta.quality;
       state.fitMeta = meta; positionZoom(); if (state.zoom) void showNative();
       updateSingleCaption();
       status(`${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
@@ -678,7 +687,6 @@
   }
   async function showNative() {
     const photo = selected(); if (!photo || !state.fitMeta || !state.zoom || !state.active || state.view !== "single") return;
-    if (photo.edited) { state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; $("native-picture").hidden = true; positionZoom(); status("Saved Library picture enlarged. Check detail in Grade."); return; }
     const stage = $("single-stage"), dpr = window.devicePixelRatio || 1, scale = state.zoomScale, percent = `${Math.round(scale * 100)}%`;
     const fit = state.fitMeta;
     if (fit.source_width && fit.width >= fit.source_width * scale) {
@@ -689,12 +697,25 @@
     const current = () => state.active && state.zoom && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
     status(`Loading ${percent} · ${photo.name}…`);
     try {
-      await prepareRawNative(photo,controller.signal);
-      const meta = await api("/api/library/native", { path: photo.path, center_x: state.zoomX, center_y: state.zoomY,
-        width: Math.max(64, Math.min(4096, Math.ceil(stage.clientWidth * dpr / scale))), height: Math.max(64, Math.min(4096, Math.ceil(stage.clientHeight * dpr / scale))), priority: 0 }, controller.signal);
+      // Development belongs to the selected photo, not the zoom gesture. A
+      // zoom-out or pan cancels presentation while this one source completes.
+      if (!state.fullDetail) {
+        const pending = HDRLibraryScenes.load(photo.path,100000,state.nativeSource.signal,0);
+        state.fullDetail = pending;
+        pending.catch(()=>{ if (state.fullDetail === pending) state.fullDetail = null; });
+      }
+      let full = await state.fullDetail;
       if (!current()) return;
-      // Fit and native pictures share the exact same starting look.
-      meta.adjustments = state.fitMeta.adjustments;
+      if (full.grade_identity !== state.fitMeta.grade_identity) {
+        // Finishing changes describe the same stored source with the new grade.
+        state.fullDetail = HDRLibraryScenes.load(photo.path,100000,state.nativeSource.signal,0);
+        full = await state.fullDetail;
+        if (!current()) return;
+      }
+      const width = Math.min(full.width,Math.ceil(stage.clientWidth*dpr/scale)), height = Math.min(full.height,Math.ceil(stage.clientHeight*dpr/scale));
+      const x = Math.max(0,Math.min(full.width-width,Math.round(state.zoomX*full.width-width/2)));
+      const y = Math.max(0,Math.min(full.height-height,Math.round(state.zoomY*full.height-height/2)));
+      const meta = {...full,crop_x:0,crop_y:0,viewport:{x,y,width,height}};
       // Draw off screen, then swap. Drawing into the shown canvas would show the new
       // crop at the old crop's place for a frame, a flicker during and after a pan.
       const next = $("native-picture-next");
@@ -703,9 +724,12 @@
       const shown = $("native-picture");
       shown.id = "native-picture-next"; shown.hidden = true; shown.removeAttribute("aria-label"); shown.setAttribute("aria-hidden", "true");
       next.id = "native-picture"; next.removeAttribute("aria-hidden"); next.setAttribute("aria-label", "Native-resolution crop");
-      state.nativeMeta = meta; next.dataset.picturePath = photo.path; positionZoom();
+      state.nativeMeta = {...meta,width,height,crop_x:x,crop_y:y}; next.dataset.picturePath = photo.path; positionZoom();
       status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
-    } catch (error) { if (!aborted(error) && current()) status(`${percent} unavailable · ${error.message}`); }
+    } catch (error) {
+      if (error.libraryYield && current()) { setTimeout(()=>{ if (current()) void showNative(); },100); }
+      else if (!aborted(error) && current()) status(`${percent} unavailable · ${error.message}`);
+    }
     finally { if (state.native === controller) state.nativeLoading = false; }
   }
   function toggleZoom(point) {
@@ -776,7 +800,7 @@
     $("zoom-button").disabled = view !== "single";
     $("grid-view").setAttribute("aria-pressed", String(view === "grid")); $("single-view").setAttribute("aria-pressed", String(view === "single"));
     if (view === "single") { clearCells(state.cells); select(state.index, true, "preserve"); }
-    else { state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.filmCells); paintGrid(); }
+    else { state.single?.abort(); state.native?.abort(); state.nativeSource?.abort(); clearPrefetch(); clearCells(state.filmCells); paintGrid(); }
   }
   function setReview(review) {
     if (review && !selected()) return;

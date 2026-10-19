@@ -9,7 +9,8 @@ window.HDRLibraryScenes = (() => {
   const sources = HDRLibrarySceneScheduler.create(2);
   const draws = HDRLibrarySceneScheduler.create(1);
   async function load(path, edge, signal, priority = 10) {
-    let meta = await sources.submit(path, (shared, importance) => develop(path,edge,shared,importance), signal, priority);
+    const identity = path + (edge === 100000 ? "|native" : "");
+    let meta = await sources.submit(identity, (shared, importance) => develop(path,edge,shared,importance), signal, priority);
     // One development stores both sizes. A waiter asking for the other size
     // reads it after the shared development; it never starts another import.
     if (meta.edge !== edge) meta = await sources.submit(path+"|"+edge, (shared,importance)=>develop(path,edge,shared,importance), signal, priority);
@@ -31,11 +32,20 @@ window.HDRLibraryScenes = (() => {
       return meta;
     }
   }
-  async function lease(meta, signal) {
+  async function lease(meta, signal, nativeBudget = false) {
     const url = `/api/delivery/gpu/raw-budget/${crypto.randomUUID()}`;
     // Grade's planner still enforces the shared budget. Reserve room for a small
     // picture graph, including its source and transient render targets.
-    const bytes = meta.width * meta.height * 64 + 64 * 1024 * 1024;
+    let bytes = meta.width * meta.height * 64 + 64 * 1024 * 1024;
+    // Native inspection uses Grade's bounded viewport graph. Wait for the
+    // broker's existing budget; never increase it or compete with delivery.
+    if (nativeBudget) {
+      const response = await fetch(url,{method:"POST",signal,headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({bytes:0,background:true})});
+      if (!response.ok) throw Error("Library GPU scheduling unavailable.");
+      bytes = (await response.json()).budget;
+      if (!(bytes > 0)) throw Error("Library GPU budget is unavailable.");
+    }
     const check = async (acquiring = false) => {
       const response = await fetch(url,{method:"POST",signal,headers:{"Content-Type":"application/json"},
         body:JSON.stringify({bytes,background:true})});
@@ -51,7 +61,7 @@ window.HDRLibraryScenes = (() => {
     const release = () => fetch(url,{method:"DELETE"}).catch(()=>{});
     try { while (!await check(true)) await wait(50,signal); }
     catch(error) { await release(); throw error; }
-    return {check:async()=>{ if (!await check()) {const error=Error("Library draw yielded to Grade or delivery.");error.libraryYield=true;throw error;} },release};
+    return {bytes,check:async()=>{ if (!await check()) {const error=Error("Library draw yielded to Grade or delivery.");error.libraryYield=true;throw error;} },release};
   }
   return Object.freeze({load,lease,
     draw:(task,signal,priority=10)=>draws.submit(crypto.randomUUID(),task,signal,priority),

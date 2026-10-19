@@ -103,7 +103,7 @@ class PictureRequest(BaseModel):
 
 class LiveSceneRequest(BaseModel):
     path: str
-    edge: Literal[640, 2560] = 640
+    edge: Literal[640, 2560, 100000] = 640
     gpu: bool = True
     priority: int = Field(default=30, ge=0, le=100)
 

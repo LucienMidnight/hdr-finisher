@@ -48,6 +48,29 @@ def test_source_settings_invalidate_scene_but_not_another_finishing_edit():
     assert quality({"hdr_reference_white_nits":100})!=quality(None)
 
 
+def test_native_scene_is_requested_separately_and_retained_in_full_cache(tmp_path, monkeypatch):
+    from hdr_finisher.sessions import SessionStore
+    original = SessionStore.prepare_session
+    calls = []
+    def prepare(self, *args, **kwargs):
+        calls.append(args[0])
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(SessionStore, "prepare_session", prepare)
+    path = tmp_path / "large.png"
+    Image.new("RGB", (3000, 400), (160, 90, 60)).save(path)
+    root = tmp_path / "cache"
+    fit = develop_cpu(root, path, None, 2560)
+    service = LivePictures(root, LibraryMarks(root))
+    assert not service.cache.cached(path, 100000, quality(None))
+    native = develop_cpu(root, path, None, 100000)
+    again = develop_cpu(root, path, None, 100000)
+    assert len(calls) == 2, "Only the explicit native request develops the photo again"
+    assert fit["width"] == 2560 and native["width"] == 3000
+    assert again["key"] == native["key"] and again["cache_hit"]
+    assert service.cache.file(native["key"]).parent == service.cache.full_root
+    assert service.cache.managed.preferences()["enabled"]
+
+
 def test_cache_off_keeps_scene_in_memory_and_clear_removes_stored_scene(tmp_path):
     path=photo(tmp_path);root=tmp_path/"cache"
     live=LivePictures(root,LibraryMarks(root))

@@ -58,6 +58,8 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     return result;
   }
   async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", revision = 0, sourceIdentity = "source", options = {}) {
+    if (this.libraryMeta?.edge === 100000 && this.liveMode)
+      return super.loadProxy(sessionId,lane,longEdge,geometrySignature,revision,sourceIdentity,options);
     const key = this.libraryMeta?.route === "library-live" ? `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}` : `${sessionId}:${lane}`;
     if (this.proxies.has(key)) return this.proxies.get(key);
     if (["camera-raw-gpu", "gpu-raw-thumbnail"].includes(this.libraryMeta?.route)) {
@@ -140,24 +142,51 @@ window.HDRLibraryPictures = (() => {
       const adjustments = structuredClone(meta.adjustments);
       adjustments.hdr.highlight_compression_target_nits = 1000;
       const started = performance.now();
-      const lease = meta.route === "library-live" ? await HDRLibraryScenes.lease(meta, signal) : null;
+      const native = meta.edge === 100000 && gpu.liveMode;
+      const lease = meta.route === "library-live" ? await HDRLibraryScenes.lease(meta, signal, native) : null;
       if (lease) { clearInterval(gpu.deliveryActivityTimer); gpu.deliveryActivityTimer = null; }
-      let result;
+      let result, refusal;
+      const previousBudget = gpu.deliveryBudgetBytes;
       try {
       if (gpu.liveMode && gpu.sessionId !== meta.key) gpu.resetSession(meta.key);
       const lane = hdr ? "hdr" : "sdr", denoise = meta.denoise?.[lane];
+      if (native) {
+        gpu.deliveryBudgetBytes = Math.min(gpu.memoryBudgetBytes(),lease.bytes);
+        gpu.gpuAllocator?.setBudget(gpu.memoryBudgetBytes());
+        // Establish this scene's working space at Fit before Grade requests a
+        // native region. The offscreen canvas is swapped only after detail is ready.
+        await gpu.renderTo(canvas,meta.key,lane,adjustments,sampleCurvePoints,2560,meta.locals || [],0,null,meta.white,
+          {width:meta.width,height:meta.height},{isCurrent,beforeDeliverySubmit:lease.check});
+      }
+      const edge = native ? Math.max(meta.scene_width,meta.scene_height,meta.width,meta.height) : Math.max(256,meta.edge);
       if (denoise?.enabled) {
-        if (!await gpu.analyzeDenoiseProxy(meta.key,lane,adjustments,Math.max(256,meta.edge),0,"source",denoise.controls)) throw Error("Library Denoise analysis failed.");
+        if (!await gpu.analyzeDenoiseProxy(meta.key,lane,adjustments,edge,0,"source",denoise.controls)) throw Error("Library Denoise analysis failed.");
       } else if (gpu.denoiseSourceSelector) gpu.denoiseSourceSelector.selected = "original";
       result = await gpu.renderTo(canvas, meta.key, lane, adjustments,
-        sampleCurvePoints, Math.max(256,meta.edge), meta.locals || [], 0, null, meta.white,
-        { width: meta.width, height: meta.height }, { scopeAnalysis: true, isCurrent, ...(lease ? {beforeDeliverySubmit:lease.check} : {}) });
+        sampleCurvePoints, edge, meta.locals || [], 0, null, meta.white,
+        { width: meta.width, height: meta.height }, { scopeAnalysis: !native, isCurrent,
+          ...(native ? {viewport:meta.viewport,frameSize:{width:meta.width,height:meta.height}} : {}),
+          ...(lease ? {beforeDeliverySubmit:lease.check} : {}) });
+      if (native && result?.rendered && isCurrent() && !signal.aborted) {
+        // Retain only the visible crop after Grade finishes its frame-anchored
+        // viewport graph. The full presentation target is released below.
+        const r = meta.viewport, context = canvas.getContext("webgpu");
+        await lease.check();
+        canvas.width = r.width; canvas.height = r.height;
+        gpu.configureSurface(canvas,context,hdr);
+        const encoder = gpu.device.createCommandEncoder();
+        encoder.copyTextureToTexture({texture:gpu.presentationTarget.texture,origin:{x:r.x,y:r.y}},
+          {texture:context.getCurrentTexture()},[r.width,r.height]);
+        gpu.device.queue.submit([encoder.finish()]);
+      }
       await gpu.waitForSubmittedWork();
+      refusal = gpu.lastRenderRefusal?.reason;
       } finally {
+        if (native) { gpu.deliveryBudgetBytes = previousBudget; gpu.gpuAllocator?.setBudget(gpu.memoryBudgetBytes()); }
         if (lease) { gpu.resetSession(null); await lease.release(); }
       }
       if (signal.aborted || !isCurrent()) return;
-      if (!result?.rendered && result?.execution !== "direct") throw new Error("The library picture could not be drawn.");
+      if (!result?.rendered && result?.execution !== "direct") throw new Error("The library picture could not be drawn: " + (result?.reason || refusal || "render refused"));
       HDRLibraryStopwatch("picture_drawn", { key: meta.key, duration_ms: performance.now() - started, first: draws++ === 0, kept: false });
       canvas.dataset.rendition = hdr ? "hdr" : "sdr";
       canvas.dataset.surface = gpu.surfaceKeys.get(canvas);

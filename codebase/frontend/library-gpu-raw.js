@@ -736,7 +736,7 @@
     for (const storedEdge of nativeMode ? [100000] : [...new Set([2560,640,edge])]) {
       const picture = developed.reduced[storedEdge];
       const header = { path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
-      edge:storedEdge, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode, flip: meta.flip, height: picture.height, width: picture.width,
+      edge:storedEdge, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
@@ -799,7 +799,7 @@
   }
 
   const warmup = async beforeNext => { if (enabled()) await gpu(() => beforeNext(() => inflight.size > 0)); };
-  const exported = Object.freeze({ developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal) => thumbnail(path, edge, signal, {liveScene:true}) });
+  const exported = Object.freeze({ developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

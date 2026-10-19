@@ -56,6 +56,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Library pictures: speed first, accuracy "close enough to enjoy".** Thumbnails must be very fast and give a good SDR and HDR preview for culling and group grading. Larger pictures must look close enough to the export to enjoy full screen, with no noticeably wrong colour or tone; they need not be precise. Judged by eye. Export and Proof keep their strict limits. | Steve, 2026-10-18 |
 | **Prove GPU development first.** Before building the rest of the speed plan, Claude (not Codex) prototypes full-quality RAW development on the GPU to show whether it is fast enough. | Steve, 2026-10-18 |
 | **Develop once, draw live.** Each photo is developed once into a stored version; every Library picture (unedited, pasted or saved grade) is drawn live on the GPU from it with Grade's shaders. Finished-picture files are no longer made for display; a pasted grade is a redraw. Replaces the October 17 gain-map thumbnail decision and the October 18 "save the displayed GPU picture" decision. | Steve, 2026-10-19 |
+| **One exception to develop once: selected-photo true 100% detail.** Enlarge the stored 2560 picture immediately while the selected photo develops at full size, then swap to true detail. Keep the full-size scene for that photo so later zooms reuse it, including a zoom-out while development is pending. Never pre-develop neighbours at full size. Use the existing full-size cache allowance; no disk allowance increases are approved. | Steve, 2026-10-19 |
 | **No usable GPU: visible-only CPU fallback.** Keep the existing CPU-made pictures only when the GPU is missing, software-only or lost. Make them only for photos on screen (visible cells, Single and full-screen), with no background picture queue and no pre-making pictures for pasted photos that are not visible. After device loss or driver reset, automatically return to live GPU drawing when a usable GPU becomes available; fallback must not latch for the session. As with CPU export, keep this route working without speed work or new features. | Steve, 2026-10-19 |
 | **Batch Export tiles share live Library drawing.** Visible photo tiles use the same live GPU renderer and visible-only CPU fallback. While export or Proof is running they are background work: draw each tile once and retain it, never redraw for progress updates, and yield GPU memory and turns to delivery. Verify export time per photo with the page open versus closed on the same three photos; the agreed timing noise allowance is 5%. | Steve, 2026-10-19 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
@@ -363,7 +364,29 @@ expect live redraws. Keep shared document identity/atomic-write helpers,
 source cache controls, visible CPU fallback, original files and sidecars.
 The review rejected a scripted multi-file removal as too broad. No part of
 that rejected removal was applied. The three small call-site changes are the
-only production edits committed for part 4.
+production edits committed for part 4a.
+
+Part 4b built October 19: Single/full-screen true 100% detail follows the
+selected-photo exception above, including saved grades, rotation and locals.
+Fit stays on screen while a separate, selected-only full-size scene is
+developed. Zoom-out, pan and routine status redraws retain that development;
+later zooms reuse it. Source settings invalidate it, and finishing changes
+redescribe the cached source with the latest grade. Full-size scenes use the
+existing full-size cache and its controls. Grade's unchanged viewport graph
+renders detail under the shared background GPU lease; only the visible crop
+stays on the GPU after the working graph is released. Compare Fit requests
+now use the supported stored 2560 tier rather than obsolete 1280/1920 tiers.
+
+Part 4b validation: 543 Node checks and 2,329 Python checks passed (3 skipped).
+The focused app check passed for an edited, rotated 3200-pixel PNG with a
+local adjustment and a 7968 × 5320 RAW: enlarged Fit immediately, one
+full-size development, reuse across pending and completed zoom cycles,
+no full-size neighbour development, actual detail pixels and bounded native
+working resources. Compare Fit also uses stored scenes. The existing
+640-pixel HDR/SDR colour check passed within its agreed perceptual guide.
+Native timing and the Fit/100% perceptual comparison with scale-dependent
+effects remain open. Compare's detail view still uses the legacy native
+crop route; its move to live native scenes remains open with that cleanup.
 
 ## 5. Open work, in order
 
