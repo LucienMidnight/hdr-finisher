@@ -249,6 +249,16 @@ Settings rules (from v1.2 section 5, still in force):
    location and serial numbers).
 4. AVIF gain-map denoise: only if a corpus shows a net benefit.
 
+**Ideas (not scheduled)**
+
+- **Speck detector for GPU output** (Steve, October 19, 2026). Steve's RTX
+  4070 Ti has faulty graphics memory that leaves bright orange/red specks in
+  some exports (also in Resolve and Affinity), and one GPU RAW test picked up
+  a garbage value from it. A cheap check could look for isolated pixels far
+  brighter or more saturated than their neighbours, then re-render or fall
+  back to the CPU. Risk: flagging real specular highlights, stars or LEDs.
+  Not planned for now; Steve will test on a healthy MacBook.
+
 ## 7. Detail and history
 
 - Full October 18 policy text, metric definitions and the encoder finding:
