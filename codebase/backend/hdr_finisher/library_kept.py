@@ -20,7 +20,7 @@ from .library_diagnostics import log
 
 _LOCK=RLock()
 EDGES=(512,1024,1920)
-PICTURE_VERSION="saved-screen-fuji-dr-mode-v4"
+PICTURE_VERSION="saved-screen-gpu-raw-v5"
 RETRY_SECONDS=30
 THUMBNAIL_EDGE=256
 
@@ -114,52 +114,69 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
     started=perf_counter();document=validate_saved_document(grade)
     def check(): check_cancelled(cancelled)
     check()
-    source_started=perf_counter()
-    source_route="open-photo" if source is not None else "reopened-photo"
-    if source is None:
-        session=SessionStore().prepare_session(Path(path),owns_source_path=False,
-            raw_import_settings=document.source.raw_import_settings,
-            interpretation_override=document.interpretation_override,
-            hdr_reference_white_nits=document.hdr_reference_white_nits,cancelled=cancelled)
-    else:
-        # Retain the reopened route's fingerprint protection without decoding.
-        # This small sequential read also catches a source changed before save.
-        from .sessions import _sha256_file
-        if _sha256_file(Path(path))!=source["source_fingerprint_sha256"]:
-            raise ValueError("The source photo changed; its Library picture was left unavailable.")
-        session=SimpleNamespace(**source)
-        source.clear()  # The request/queue no longer owns full-size arrays.
-    check()
-    if document.source.fingerprint_sha256 and session.source_fingerprint_sha256!=document.source.fingerprint_sha256:
-        raise ValueError("The source photo changed; its Library picture was left unavailable.")
-    source_height,source_width=session.image.shape[:2]
-    geometry=document.global_adjustments.shared.geometry
-    reduced_edge=render_source_edge(source_width,source_height,geometry,edge)
-    frame=SimpleNamespace(image=reduce_picture(session.image,reduced_edge),
-        sdr_reference_image=(reduce_picture(session.sdr_reference_image,reduced_edge)
-            if session.sdr_reference_image is not None else None),
-        adjustments=document.global_adjustments,local_adjustments=document.local_adjustments,denoise=document.denoise,
-        color_context=session.color_context,hdr_reference_white_nits=document.hdr_reference_white_nits,
-        delivery_priority=priority,delivery_cancelled=cancelled or (lambda: False))
-    # Drop the private session/cache and its full-size references before rendering.
-    del session
-    source_ms=(perf_counter()-source_started)*1000
-    log("kept_source_ready", path=str(path), grade_identity=identity(grade), route=source_route, duration_ms=source_ms)
-    render_started=perf_counter()
     settings=ExportSettings(quality=95,jpeg_chroma_subsampling="444",
         jpeg_gain_map_quality=95,jpeg_gain_map_scale="full",
         avif_bit_depth=8,avif_gain_map_quality=95,avif_gain_map_scale="full",dithering="off",
         output_finishing=OutputFinishingSettings(resize_mode="long_edge",long_edge=edge))
-    adjustments=exporters._finishing_adjustments_for_export(frame)
-    adjustments.shared.overlay_mode="off"
-    check();hdr=exporters._render_export_branch(frame,settings,PreviewKind.HDR,adjustments)
-    check();sdr=exporters._render_export_branch(frame,settings,PreviewKind.SDR,adjustments)
-    check()
-    from .finishing import geometry_output_dimensions
-    source_width,source_height=geometry_output_dimensions(source_width,source_height,geometry)
-    rendering=getattr(frame,"_delivery_record",rendering)
-    render_ms=(perf_counter()-render_started)*1000
-    log("kept_rendered", path=str(path), grade_identity=identity(grade), duration_ms=render_ms)
+    gpu_result = None
+    if source is None:
+        from .raw_import import RAW_EXTENSIONS
+        if Path(path).suffix.lower() in RAW_EXTENSIONS:
+            from .gpu_delivery import render_raw_picture
+            gpu_result = render_raw_picture(path, document, edge, priority, cancelled)
+    if gpu_result is not None:
+        hdr, sdr = gpu_result["lanes"]["hdr"], gpu_result["lanes"]["sdr"]
+        source_width, source_height = gpu_result["source_width"], gpu_result["source_height"]
+        from .finishing import geometry_output_dimensions
+        source_width, source_height = geometry_output_dimensions(source_width, source_height, document.global_adjustments.shared.geometry)
+        source_route = "gpu-raw-photo"
+        source_ms, render_ms = gpu_result["source_ms"], gpu_result["render_ms"]
+        rendering = {"renderer": "gpu", "fallback_reason": None}
+        log("kept_gpu_raw_rendered", path=str(path), sensor_ms=source_ms, render_ms=render_ms,
+            **gpu_result["timings_ms"])
+    else:
+        source_started=perf_counter()
+        source_route="open-photo" if source is not None else "reopened-photo"
+        if source is None:
+            session=SessionStore().prepare_session(Path(path),owns_source_path=False,
+                raw_import_settings=document.source.raw_import_settings,
+                interpretation_override=document.interpretation_override,
+                hdr_reference_white_nits=document.hdr_reference_white_nits,cancelled=cancelled)
+        else:
+            # Retain the reopened route's fingerprint protection without decoding.
+            # This small sequential read also catches a source changed before save.
+            from .sessions import _sha256_file
+            if _sha256_file(Path(path))!=source["source_fingerprint_sha256"]:
+                raise ValueError("The source photo changed; its Library picture was left unavailable.")
+            session=SimpleNamespace(**source)
+            source.clear()  # The request/queue no longer owns full-size arrays.
+        check()
+        if document.source.fingerprint_sha256 and session.source_fingerprint_sha256!=document.source.fingerprint_sha256:
+            raise ValueError("The source photo changed; its Library picture was left unavailable.")
+        source_height,source_width=session.image.shape[:2]
+        geometry=document.global_adjustments.shared.geometry
+        reduced_edge=render_source_edge(source_width,source_height,geometry,edge)
+        frame=SimpleNamespace(image=reduce_picture(session.image,reduced_edge),
+            sdr_reference_image=(reduce_picture(session.sdr_reference_image,reduced_edge)
+                if session.sdr_reference_image is not None else None),
+            adjustments=document.global_adjustments,local_adjustments=document.local_adjustments,denoise=document.denoise,
+            color_context=session.color_context,hdr_reference_white_nits=document.hdr_reference_white_nits,
+            delivery_priority=priority,delivery_cancelled=cancelled or (lambda: False))
+        # Drop the private session/cache and its full-size references before rendering.
+        del session
+        source_ms=(perf_counter()-source_started)*1000
+        log("kept_source_ready", path=str(path), grade_identity=identity(grade), route=source_route, duration_ms=source_ms)
+        render_started=perf_counter()
+        adjustments=exporters._finishing_adjustments_for_export(frame)
+        adjustments.shared.overlay_mode="off"
+        check();hdr=exporters._render_export_branch(frame,settings,PreviewKind.HDR,adjustments)
+        check();sdr=exporters._render_export_branch(frame,settings,PreviewKind.SDR,adjustments)
+        check()
+        from .finishing import geometry_output_dimensions
+        source_width,source_height=geometry_output_dimensions(source_width,source_height,geometry)
+        rendering=getattr(frame,"_delivery_record",rendering)
+        render_ms=(perf_counter()-render_started)*1000
+        log("kept_rendered", path=str(path), grade_identity=identity(grade), duration_ms=render_ms)
     from .library_cache import LibraryCache
     managed=LibraryCache(root)
     if not managed.preferences()["enabled"]: raise CancelledError("Library cache disabled.")
@@ -176,6 +193,7 @@ def produce(root, path, grade, edge=2560, format="jpeg", cancelled=None, source=
         return {**rendering,"temporary":str(temp),"extension":extension,"grade_identity":identity(grade),
             "width":hdr.shape[1],"height":hdr.shape[0],"source_width":source_width,"source_height":source_height,"edge":edge,"white":203,
             "source_route":source_route,"source_ms":source_ms,"render_ms":render_ms,"encode_ms":encode_ms,
+            "gpu_raw_timings_ms":gpu_result["timings_ms"] if gpu_result else None,
             "picture_version":PICTURE_VERSION,"stored_bytes":temp.stat().st_size,
             "make_ms":round((perf_counter()-started)*1000,2),"route":"saved-gain-map"}
     except BaseException:

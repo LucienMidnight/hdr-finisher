@@ -57,12 +57,12 @@ def _identity(path: Path) -> list[int]:
     return [stat.st_size, stat.st_mtime_ns]
 
 
-def sensor(path: Path) -> tuple[dict, list]:
+def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict, list]:
     """Unpack the visible mosaic and describe Grade's development of it."""
     path = Path(path).resolve(strict=True)
     if path.suffix.lower() not in raw_import.RAW_EXTENSIONS or path.suffix.lower() == ".dng":
         raise NotEligible("not an ordinary camera RAW")
-    settings = RawImportSettings()
+    settings = settings or RawImportSettings()
     highlights = settings.highlight_reconstruction
     if not highlights.enabled or highlights.method != raw_import.OPPOSED_COLOR_METHOD:
         raise NotEligible("highlight reconstruction differs from the GPU route")
@@ -107,7 +107,7 @@ def sensor(path: Path) -> tuple[dict, list]:
         "sample_stride": max(1, int(np.ceil(np.sqrt((out_h * out_w) / 2_000_000)))),
         "lens": {field: exif.get(field) for field in LENS_FIELDS},
     }
-    lens = _lens_grid(header["lens"], width, height, flip)
+    lens = _lens_grid(header["lens"], width, height, flip, settings.lens)
     parts = [memoryview(mosaic).cast("B")]
     header["mosaic_bytes"] = mosaic.nbytes
     padding = (-mosaic.nbytes) % 4
@@ -119,8 +119,8 @@ def sensor(path: Path) -> tuple[dict, list]:
     return header, parts
 
 
-def _lens_settings(info: dict):
-    lens = RawImportSettings().lens
+def _lens_settings(info: dict, lens=None):
+    lens = lens or RawImportSettings().lens
     return lens.model_copy(update={
         "focal_length_mm": lens.focal_length_mm or info.get("focal_length_mm"),
         "aperture": lens.aperture or info.get("aperture"),
@@ -128,7 +128,7 @@ def _lens_settings(info: dict):
     })
 
 
-def _lens_grid(info: dict, width: int, height: int, flip: int) -> tuple[dict, np.ndarray] | None:
+def _lens_grid(info: dict, width: int, height: int, flip: int, settings=None) -> tuple[dict, np.ndarray] | None:
     """Grade's automatic Lensfun correction on a small grid over the turned picture.
 
     Grade corrects the full source, after colour conversion and before its
@@ -138,7 +138,7 @@ def _lens_grid(info: dict, width: int, height: int, flip: int) -> tuple[dict, np
     vary smoothly, so the remap lands within about a pixel at full size.
     Returns None when no profile applies, as Grade's automatic mode does.
     """
-    lens = _lens_settings(info)
+    lens = _lens_settings(info, settings)
     if lens.mode == "off":
         return None
     import lensfunpy

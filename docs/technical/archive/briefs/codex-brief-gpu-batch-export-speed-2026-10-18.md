@@ -86,3 +86,10 @@ cause was found: preempted or long-queued exports fell back to the CPU.
 Details are in the Export and Proof module PRD. Still open in item 2:
 moving pixels to and from the renderer without the disk round trip, and
 measuring the per-photo time with these changes on Steve's batch.
+
+## October 19 outcome
+
+The GPU RAW follow-up brief takes over the disk round trip and batch-stage
+measurement. Its parts 1-2 replace pixel files with shared RAM. Scheduling,
+cleanup and fairness remain as built here; later work is tracked by the
+module PRD and codex-brief-gpu-raw-follow-ups-2026-10-19.md.

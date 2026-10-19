@@ -160,14 +160,14 @@ def test_a_claimed_job_past_the_render_deadline_falls_back(tmp_path, monkeypatch
 
 def test_waiting_export_gets_the_gpu_before_newer_visible_library_pictures(tmp_path, monkeypatch):
     app = _broker(tmp_path, monkeypatch)
-    with TestClient(app) as client:
+    with TestClient(app) as client, gpu_delivery.DeliveryMemory() as memory:
         client.get("/api/delivery/gpu/permit")
         root = gpu_delivery.Path(gpu_delivery.os.environ[gpu_delivery.ROOT_ENV])
         now = time.time()
         for name, priority, created in (("delivery-export", 20, now - 60), ("delivery-library", 15, now)):
             directory = root / name; directory.mkdir()
-            np.save(directory / "source.npy", np.zeros((4,6,3), np.float32))
-            gpu_delivery._atomic(directory / "request.json", {"id": name, "width": 6, "height": 4, "output": [6, 4], "white": 203,
+            description, _ = memory.allocate((4,6,3), np.zeros((4,6,3), np.float32))
+            gpu_delivery._atomic(directory / "request.json", {"memory": {"source": description, "reference": None}, "id": name, "width": 6, "height": 4, "output": [6, 4], "white": 203,
                 "adjustments": AdjustmentState().model_dump(mode="json"), "locals": [], "denoise": DenoiseDocumentSettings().model_dump(mode="json"),
                 "finishing": {}, "priority": priority, "created": created})
         assert client.get("/api/delivery/gpu/next").json()["id"] == "delivery-export"
@@ -212,3 +212,69 @@ def test_a_preempted_job_returns_to_the_queue_instead_of_falling_back(tmp_path, 
         client.post(f"/api/delivery/gpu/{again['id']}/complete", json={})
         assert pending.result(timeout=5) is not None
         assert frame._delivery_record == {"renderer": "gpu", "fallback_reason": None}
+
+
+def test_memory_job_has_no_pixel_files_and_rejects_incomplete_lanes(tmp_path, monkeypatch):
+    import json
+    from multiprocessing.shared_memory import SharedMemory
+    import pytest
+    app = _broker(tmp_path, monkeypatch)
+    frame = _frame()
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
+        client.get("/api/delivery/gpu/permit")
+        pending = worker.submit(gpu_delivery.render_pair, frame, ExportSettings(), frame.adjustments)
+        while (job := client.get("/api/delivery/gpu/next").json()) is None:
+            time.sleep(.01)
+        assert "memory" not in job
+        directory = gpu_delivery.Path(gpu_delivery.os.environ[gpu_delivery.ROOT_ENV]) / job["id"]
+        record = json.loads((directory / "request.json").read_text())
+        assert {path.name for path in directory.iterdir()} == {"request.json", "claimed"}
+        np.testing.assert_array_equal(gpu_delivery.session(job["id"]).image, frame.image)
+        assert client.post(f"/api/delivery/gpu/{job['id']}/pixels/hdr", content=b"short").status_code == 400
+        client.post(f"/api/delivery/gpu/{job['id']}/complete", json={})
+        assert pending.result(timeout=5) is None
+        assert "incomplete lanes" in frame._delivery_record["fallback_reason"]
+        assert not directory.exists()
+        for description in record["memory"].values():
+            if description:
+                with pytest.raises(FileNotFoundError):
+                    SharedMemory(name=description["name"])
+
+
+def test_raw_job_keeps_sensor_and_developed_pixels_in_memory(tmp_path, monkeypatch):
+    from hdr_finisher import library_gpu_raw
+    from hdr_finisher.models import EditDocument, SourceReference, SourceLuminanceDescriptor
+    app = _broker(tmp_path, monkeypatch)
+    photo = tmp_path / "camera.ARW"; photo.write_bytes(b"sensor fixture")
+    document = EditDocument(hdr_reference_white_nits=203, source=SourceReference(filename=photo.name,
+        luminance=SourceLuminanceDescriptor(luminance_semantics="scene_relative", transfer_function="linear")))
+    stat = photo.stat()
+    header = {"width": 6, "height": 4, "flip": 6, "identity": [stat.st_size, stat.st_mtime_ns]}
+    seen = []
+    def sensor(path, settings):
+        seen.append(settings)
+        return header, [b"sensor!!"]
+    monkeypatch.setattr(library_gpu_raw, "sensor", sensor)
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
+        client.get("/api/delivery/gpu/permit")
+        pending = worker.submit(gpu_delivery.render_raw_picture, photo, document, 256)
+        while (job := client.get("/api/delivery/gpu/next").json()) is None:
+            time.sleep(.01)
+        assert (job["width"], job["height"]) == (4, 6)
+        meta, payload = library_gpu_raw.unframe(client.get(f"/api/delivery/gpu/{job['id']}/raw-sensor").content)
+        assert meta == header and bytes(payload) == b"sensor!!"
+        planes = np.arange(72, dtype="<f4").reshape(3,4,6)
+        measurements = {"peaks": {"peak": 2.}, "robust": {"channel": 1.5}}
+        response = client.post(f"/api/delivery/gpu/{job['id']}/raw-developed",
+            content=library_gpu_raw.frame(measurements, planes.tobytes()))
+        assert response.status_code == 204
+        np.testing.assert_array_equal(gpu_delivery.session(job["id"]).image,
+            np.rot90(planes.transpose(1,2,0), k=-1))
+        for lane in ("hdr", "sdr"):
+            assert client.post(f"/api/delivery/gpu/{job['id']}/pixels/{lane}",
+                content=np.full((6,4,4), .2, dtype="<f4").tobytes()).status_code == 204
+        client.post(f"/api/delivery/gpu/{job['id']}/complete", json={})
+        result = pending.result(timeout=5)
+        assert result["measurements"] == measurements
+        assert seen == [document.source.raw_import_settings]
+        assert result["source_width"] == 4 and result["source_height"] == 6

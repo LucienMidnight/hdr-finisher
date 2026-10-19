@@ -459,7 +459,7 @@
   function reducedSize(meta, edge) {
     const turned = meta.flip === 5 || meta.flip === 6;
     const outH = turned ? meta.width : meta.height, outW = turned ? meta.height : meta.width;
-    const scale = edge / Math.max(outH, outW);
+    const scale = Math.min(1, edge / Math.max(outH, outW));
     const h = Math.max(1, pyRound(outH * scale)), w = Math.max(1, pyRound(outW * scale));
     return turned ? [w, h] : [h, w];
   }

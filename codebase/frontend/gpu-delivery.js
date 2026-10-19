@@ -34,6 +34,34 @@
       await initialize();
       if(gpu.adapterInfo?.fallback)throw Error("No hardware GPU is available.");
       gpu.resetSession(job.id);
+      if(job.raw){
+        // RAW scratch is released before the creative graph starts.
+        const scratch=job.raw.width*job.raw.height*44+64*1024*1024;
+        if(scratch>job.budget)throw Error("GPU RAW development exceeds the available memory budget.");
+        const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:job.budget})});
+        if(!lease.ok)throw Error("Grade needs the shared GPU memory budget.");
+        await permit();
+        const response=await fetch(`/api/delivery/gpu/${job.id}/raw-sensor`);
+        if(!response.ok)throw Error("GPU RAW sensor handoff failed.");
+        const body=await response.arrayBuffer(),length=new DataView(body).getUint32(0,true);
+        const meta=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,length)));
+        const result=await HDRLibraryGpuRaw.developRaw({meta,
+          mosaic:new Uint8Array(body,4+length,meta.mosaic_bytes),
+          lensData:meta.lens_grid?new Float32Array(body,4+length+meta.lens_offset,meta.lens_grid.floats):null,
+          edges:[job.raw.edge]});
+        await permit();
+        const picture=result.reduced[job.raw.edge];
+        const robust={luma:HDRLibraryGpuRaw.quantile(result.samples,0,.9999),
+          channel:HDRLibraryGpuRaw.quantile(result.samples,1,.9999),bt2020:HDRLibraryGpuRaw.quantile(result.samples,2,.9999)};
+        const text=new TextEncoder().encode(JSON.stringify({peaks:result.peaks,robust,timings:result.timings}));
+        const header=new Uint8Array(text.length+((4-(text.length%4))%4)).fill(32);header.set(text);
+        const prefix=new Uint32Array([header.length]);
+        const stored=await fetch(`/api/delivery/gpu/${job.id}/raw-developed`,{method:"POST",
+          body:new Blob([prefix,header,...picture.planes])});
+        if(!stored.ok)throw Error("GPU RAW development handoff failed.");
+        stamp("raw_development_ms");
+      }
       gpu.executionOverride="tiled";
       const [width,height]=window.HDRGeometryResample?.outputDimensions?.(job.width,job.height,job.adjustments.shared.geometry)||[job.width,job.height];
       // Reserve all full-frame finishing scratch before admitting the creative

@@ -12,6 +12,34 @@ from hdr_finisher.models import ExportSettings, PreviewKind
 class Worker:
     def status(self): return {"paused":False}
 
+
+def test_gpu_raw_picture_skips_cpu_preparation_and_keeps_encoder_settings(setup, monkeypatch, tmp_path):
+    from hdr_finisher import gpu_delivery
+    from hdr_finisher.sessions import SessionStore
+    photo, store, session, marks, grades = setup
+    grade = saved(setup)
+    raw = tmp_path / "source.ARW"
+    raw.write_bytes(b"sensor fixture")
+    hdr = np.full((32, 48, 3), .1, dtype=np.float32)
+    sdr = np.full_like(hdr, .2)
+    monkeypatch.setattr(gpu_delivery, "render_raw_picture", lambda *args: {
+        "lanes": {"hdr": hdr, "sdr": sdr}, "source_width": 6000, "source_height": 4000,
+        "source_ms": 20., "render_ms": 80., "timings_ms": {"source_ms": 5.}})
+    def forbidden(*args, **kwargs):
+        raise AssertionError("GPU RAW must not prepare a CPU session")
+    monkeypatch.setattr(SessionStore, "prepare_session", forbidden)
+    def encode(path, rendered_hdr, rendered_sdr, settings, white):
+        np.testing.assert_array_equal(rendered_hdr, hdr)
+        np.testing.assert_array_equal(rendered_sdr, sdr)
+        assert settings.quality == 95 and settings.jpeg_gain_map_quality == 95
+        assert settings.output_finishing.long_edge == 512 and settings.dithering == "off"
+        Path(path).write_bytes(b"encoded")
+    monkeypatch.setattr(exporters, "write_jpeg_gainmap_renditions", encode)
+    result = produce(tmp_path, raw, grade, 512)
+    assert result["source_route"] == "gpu-raw-photo" and result["renderer"] == "gpu"
+    assert (result["source_width"], result["source_height"]) == (4800, 3200)
+    Path(result["temporary"]).unlink()
+
 def test_corrected_producer_uses_same_export_renditions_and_never_changes_open_grade(setup,monkeypatch,tmp_path):
     photo,store,session,marks,grades=setup
     grade=saved(setup); captured={}

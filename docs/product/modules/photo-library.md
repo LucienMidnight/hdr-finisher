@@ -2,7 +2,7 @@
 
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
-- **Last status check:** October 18, 2026, against the code.
+- **Last status check:** October 19, 2026, against the code.
 - **Code:** backend `library_*.py` (helper, index, sidecars, thumbnails,
   pictures, kept pictures, paste, picture queue, file commands); frontend
   `photo-library.js`, `library-*.js`, `grade-paste.js`; mock-ups in
@@ -125,6 +125,19 @@ fails as recorded above; export, Proof and their limits were not changed.
 - Saved-grade pictures now use the shared hidden GPU delivery renderer,
   including locals, Denoise and resize; CPU fallback records its reason.
   The existing disk picture cache remains and refreshes old CPU entries.
+- October 19, GPU RAW follow-ups parts 1–2: cold saved-grade Bayer RAW
+  pictures develop on the GPU, with saved lens settings and full-source
+  measurements. Missing/software/lost GPUs and unsupported RAW settings keep
+  the CPU fallback and its recorded reason. No half-size RAW development.
+  Delivery pixels travel through job-owned shared RAM; only metadata spools
+  remain. Three disposable badminton RAWs pass before-encoding colour limits
+  at 2560 and Fit/1280, two with manual Lensfun correction (Samyang 135 mm
+  profile, exercising distortion and vignetting). Worst HDR mean 0.0642 /
+  p99.9 1.550; worst SDR mean 0.0238 / p99.9 0.233. DSC07060 includes grain
+  and Denoise. The same GPU delivery graph remains shared with export.
+  One cold DSC07072 picture improved from 10.13 to 6.71 s; encoding was the
+  largest individual stage (2.43 s). The about-1-second goal is not reached.
+  The separate delivered HDR ceiling repair precedes brief parts 3–6.
 
 **Known problems**
 
@@ -265,7 +278,8 @@ fails as recorded above; export, Proof and their limits were not changed.
       checks the stages. Not yet covered: the starting document for paste (paste
       prepares a GPU-developed photo the slow way), GPU memory budgeting with
       Grade and delivery (each development holds up to about 2 GB briefly),
-      Single and full-screen views, saved-grade pictures. All of these are
+      Single and full-screen views. Saved-grade pictures are built in parts
+      1–2 of the follow-up; the remaining items are
       briefed in [codex-brief-gpu-raw-follow-ups-2026-10-19](../../technical/briefs/codex-brief-gpu-raw-follow-ups-2026-10-19.md).
    0. **Quick wins built October 19** ([brief and outcome](../../technical/archive/briefs/codex-brief-library-speed-quick-wins-2026-10-18.md)):
       the window appears before the backend; a shared running cache total

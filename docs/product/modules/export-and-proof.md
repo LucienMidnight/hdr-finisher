@@ -2,7 +2,7 @@
 
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
-- **Last status check:** October 18, 2026, against the code.
+- **Last status check:** October 19, 2026, against the code.
 - **Code:** `exporters.py`, `batch_export.py`, `batch_export*.py`,
   `export_presets.py`, `proofing.py`, `hdr_ceiling.py`, `delivery_colour.py`,
   `jpegxl.py`; frontend `export-ui.js`, `batch-export.js`.
@@ -141,15 +141,26 @@ Settings rules (from v1.2 section 5, still in force):
   - each GPU render logs `gpu_delivery_rendered` with its stage timings in
     `backend.log`.
 
+- October 19, GPU RAW follow-ups parts 1–2: workers and the hidden renderer
+  exchange source and finished pixels in job-owned OS shared RAM, retaining
+  Blob uploads, metadata-spool cleanup, fairness and CPU fallback. Controlled
+  disk/RAM replays have byte-identical encoder inputs and final JPEGs.
+  Colour agreement is qualified before encoding, under the unchanged limits;
+  the exact HDR ceiling is checked after encoding. The single requested
+  repeat moved the bad values on DSC07061/DSC07072, attributed by Steve to
+  his faulty RTX 4070 Ti VRAM. Previous SDR errors did not repeat. No hardware
+  guards or workarounds were added. Original pairs remain available in
+  `codebase/output/gpu-raw-followups/HDR-screen-pairs/compare.html`.
+  Fast checks: 540 Node / 2311 Python passed (3 skipped); GPU and forced-CPU
+  export/Proof smoke passed. Existing DSC07060 JPEG ceiling overshoot
+  (1213 versus 800 nits, also on the old route) is the next explicit repair.
+
 **Not built**
 
 - No broad GPU-delivery accuracy or speed claim: Steve tests first. The
   per-photo time with the fairness changes is not yet measured.
-- The GPU step still moves full-size float pixels through disk files in both
-  directions (a 486 MB source and two 163 MB lanes for a 42 MP photo at a
-  4000 px output). That transport is part of the 10 to 12 s (briefed in
-  [codex-brief-gpu-raw-follow-ups-2026-10-19](../../technical/briefs/codex-brief-gpu-raw-follow-ups-2026-10-19.md), part 2). The
-  about-1-second saved-grade update target is not yet measured on his RAWs.
+- The about-1-second saved-grade update goal is not reached; the measured
+  GPU RAW saved picture takes 6.71 s, with encoding largest.
 - Creative rendering is tiled, but delivery finishing still needs full-frame
   scratch. Large sharpened originals can exceed the shared memory budget and
   fall back to CPU with that reason; unsharpened work reserves no sharpening scratch.

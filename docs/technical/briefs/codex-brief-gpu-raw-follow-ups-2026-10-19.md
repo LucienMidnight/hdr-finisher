@@ -12,6 +12,71 @@ to `archive/briefs/` with an outcome note when this one takes it over.
 
 ## Goal
 
+### Parts 1–2 outcome — October 19
+
+Steve approved combining parts 1–2. Cold saved-grade Bayer RAW pictures now
+use GPU development with saved lens settings and full-source measurements.
+Delivery source and finished lanes travel through job-owned OS shared RAM;
+only metadata spools remain. Blob uploads, fairness, cleanup and recorded
+CPU fallback remain. No half-size RAW decode, encoder or gain-map changes.
+
+Steve's corrected qualification rule: colour agreement is measured **before
+encoding**, with the same mean < 1.0 / p99.9 <= 3.0 at Fit and native size.
+The exact HDR ceiling remains measured **after encoding**. Three disposable
+badminton RAWs pass at 2560 and Fit/1280. DSC07060 and DSC07061 additionally
+exercise manual Lensfun distortion and vignetting (Samyang 135 mm profile);
+DSC07060 retains its grain and Denoise. Worst HDR mean 0.06417 / p99.9 1.54996;
+worst SDR mean 0.02381 / p99.9 0.23240. DSC07072's isolated RAW comparison also
+passes (HDR p99.9 0.39779). No numeric limit changed.
+
+Controlled disk/RAM replays have byte-identical encoder inputs and final
+JPEGs. The single requested rerun moved the bad values: DSC07061/DSC07072 now
+have 256 changed HDR red values starting at (161,674), instead of earlier
+(33,578) SDR / (417,866) HDR locations. Previous SDR failures did not repeat.
+Steve attributes these moving failures to his known faulty RTX 4070 Ti VRAM,
+also observed in Resolve/Affinity. No retries, guards or hardware workarounds.
+The garbage widened the encoder gain-map range, changing HDR quantization;
+SHA-256 before Blob upload and after shared-memory receipt matches exactly.
+Original before/after JPEG pairs are preserved byte-for-byte with the viewer:
+`codebase/output/gpu-raw-followups/HDR-screen-pairs/compare.html`.
+
+The cold DSC07072 saved picture improved from 10.13 s to 6.71 s: sensor 0.26 s,
+GPU RAW 1.09 s, remaining delivery 2.79 s, encode 2.43 s (largest stage).
+The about-1-second goal is not reached. Initial batch samples were 12.33 to
+13.46 s/photo; no timing tolerance preceded those observations. The focused
+stage measurement below uses the proposed 5% timing noise allowance, two
+batch workers, 4000 px, JPEG 95/444/full gain map, no sharpening. Per-photo
+stage times overlap across workers; throughput is total batch time / 3.
+
+Batch throughput: 14.03 → 13.64 s/photo.
+
+| Photo | RAW prep s, disk → RAM | Active GPU s, disk → RAM | Encode s, disk → RAM | Upload s, disk → RAM |
+| --- | ---: | ---: | ---: | ---: |
+| DSC07060 | 3.75 → 3.60 | 11.29 → 10.59 | 5.13 → 5.86 | 0.88 → 0.70 |
+| DSC07061 | 3.79 → 3.62 | 7.64 → 6.70 | 5.57 → 5.44 | 0.88 → 0.46 |
+| DSC07072 | 3.48 → 3.69 | 7.60 → 7.90 | 4.76 → 4.99 | 0.77 → 0.70 |
+
+Encoding is the largest individual stage. Removing disk transport does not
+remove CPU RAW preparation from batch export. One-sample stage variations
+are observations, not a claim that every stage got faster.
+
+Checks: 540 Node passed; 2311 Python passed, 3 skipped, 19 serializer warnings
+(6 min 27 s); focused backend checks 56 passed. Real Electron GPU and forced-
+CPU export/Proof smoke passed, decoded peak 668.73 against 1000 nits. All
+qualification instrumentation restored; captures remain only in ignored output.
+
+**Next, before parts 3–6:** repair DSC07060's existing encoded ceiling defect.
+Encoder input peaks at exactly 800.000 nits, but its JPEG reaches 1213.147
+BT.2020 channel nits and 1055.428 luminance nits, on the old route too. Direct
+libultrahdr half-float decode and independent gamut conversion agree with
+the app measurement. This is real reconstruction overshoot, not measurement
+or RAM handoff error. The current optional decoded correction is bypassed by
+default; exercising it on this input reaches 797.075 nits in 14.81 s without
+an encoder/gain-map change. Export and Proof regression checks are required.
+Parts 3–6 have not started. Ask before slow work or pushing.
+
+### Intended result
+
 Camera RAW development runs on the GPU wherever the app develops a RAW, not
 only for unedited grid and filmstrip thumbnails. Above all, an edited photo's
 saved-grade picture takes close to the target of about 1 s instead of about
