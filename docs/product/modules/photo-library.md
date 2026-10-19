@@ -75,8 +75,9 @@ timed out; the saved-picture refresh driver failed reading an undefined
 response field. These UI failures remain recorded without unrelated repairs.
 Steve subsequently approved Grade's decoder/full-source measurements for
 unedited RAW grid/filmstrip thumbnails and their kept pictures. The camera
-preview still shows first. Single/fullscreen retain the quick RAW/GPU route
-for the speed exploration; saved-grade pictures already use Grade's decoder.
+preview still shows first. Single/fullscreen now share the GPU-developed
+Bayer RAW scene (October 19, part 5); saved-grade pictures use the delivery
+renderer and Grade's decoder settings.
 Five badminton photos measured cold visible median 4.64 s / p90 4.78 s,
 versus quick-route 0.55 s / 2.54 s (added 4.09 s / 2.25 s). Camera preview
 median 34 ms; kept by 4.86 s / 4.93 s. Application caches were empty; Windows'
@@ -139,6 +140,24 @@ fails as recorded above; export, Proof and their limits were not changed.
   SDR 0.0182 / 0.0590). RAW GPU time is about 1.0-1.6 s including the new
   scheduler checks. Try scrolling Library while adjusting a photo in Grade
   with batch export running; Grade retains priority.
+- October 19, GPU RAW follow-up part 5: grid, Single, Compare and full-screen
+  use one full-quality Bayer development, reduced directly to 640 and 2560 px.
+  Concurrent requests merge; neighbours retain textures in the bounded GPU
+  cache. First native zoom develops one full GPU source into RAM, then pans
+  reuse viewport crops. Another source replaces it; no full native disk file.
+  CPU fallback uses Grade's full development and logs its reason. Scene cache
+  v7 refreshes older views; separate CPU/GPU crop keys prevent stale fallback
+  crops. Saved-grade zoom behaviour is unchanged.
+  Three badminton RAWs, two manually lens-corrected, pass with grain/locals
+  at Fit and native detail: worst HDR mean 0.09243 / p99.9 1.80228, SDR
+  0.05364 / 0.83131 before encoding. Cold two-size preparation 1.92-2.34 s;
+  cached requests about 6 ms, prepared neighbour flip 56 ms. First native
+  preparation 3.44-4.40 s including transfer; no previous like-for-like
+  three-photo Single baseline. Existing 5% timing allowance applies.
+  Checks: 541 Node / 2315 Python passed (3 skipped, 19 existing warnings),
+  focused native/cache 20 passed; Single/native and four-make grid drivers
+  passed serially. The driver now exits full screen with the keyboard
+  shortcut after two test-control failures clicking its hidden toolbar.
 - Batch export pages and states (see Export and Proof).
 - Saved-grade pictures now use the shared hidden GPU delivery renderer,
   including locals, Denoise and resize; CPU fallback records its reason.
@@ -202,8 +221,8 @@ fails as recorded above; export, Proof and their limits were not changed.
 - Camera RAW grid/filmstrip thumbnails start at Exposure 0 with Grade's state,
   the approved −0.8 EV calibration and documented file brightness. Its
   grid/filmstrip thumbnail decode now uses Grade and full-source measurements.
-  Single/fullscreen quick decoding remains deferred to the speed exploration;
-  final visual review remains open (Import and RAW).
+  Single/fullscreen now share the GPU development; final visual review
+  remains open (Import and RAW).
   Non-RAW starts are unchanged. Unedited and saved-grade cache versions
   invalidate pictures from the previous RAW start.
 
@@ -250,9 +269,8 @@ fails as recorded above; export, Proof and their limits were not changed.
      visible pasted or saved grades, read-ahead, background pictures,
      indexing.
    - **Camera preview first** stays.
-   - **Single and full-screen** keep the quick decoder until GPU
-     development is fast, then move to the shared developed version so
-     they match Grade.
+   - **Single and full-screen** use the shared GPU-developed Bayer scene
+     (built October 19, part 5), with full-quality CPU fallback.
 
    Steve, October 18: accuracy matters less than speed in the Library (see
    Decisions), so "draw live" is no longer needed for accuracy; whether to
@@ -297,7 +315,7 @@ fails as recorded above; export, Proof and their limits were not changed.
       eviction, startup recovery and settings drift recovery list files. `tests/library-gpu-raw-grid.js`
       checks the stages. GPU-developed starting documents now feed paste (part 3).
       Shared GPU memory budgeting with Grade and delivery is built in part 4.
-      Not yet covered: Single and full-screen views. Saved-grade pictures are built in parts
+      Single and full-screen are built in part 5. Saved-grade pictures are built in parts
       1–2 of the follow-up; the remaining items are
       briefed in [codex-brief-gpu-raw-follow-ups-2026-10-19](../../technical/briefs/codex-brief-gpu-raw-follow-ups-2026-10-19.md).
    0. **Quick wins built October 19** ([brief and outcome](../../technical/archive/briefs/codex-brief-library-speed-quick-wins-2026-10-18.md)):
@@ -320,14 +338,14 @@ fails as recorded above; export, Proof and their limits were not changed.
       thumbnail capture path go with it.
    2. GPU development step (a).
    3. GPU development step (b).
-   4. Single and full-screen onto the shared developed version.
+   4. **Built October 19:** Single and full-screen onto the shared developed version.
 
    Still unmeasured: Explorer on the same folder, a clean 70-cell run,
    on-screen saved-picture timing (the Electron window was lost in driver
    runs), loaded-grid use and peak memory.
 2. **RAW picture agreement** (Import and RAW module): zero Exposure and
-   plain-number paste are implemented; resolve the separate quick decoder
-   mismatch and finish strict checks and Steve's comparison-sheet review.
+   plain-number paste and the shared Single/full-screen development are
+   implemented; Steve's comparison-sheet review remains open.
 3. **Looks (slice 7):** one Looks menu; Apply Look window with
    favourites, user folders and a small built-in starter set; preview on
    hover; "Save as look preset" from the paste window. Not built.

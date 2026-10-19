@@ -3928,6 +3928,17 @@
       "launch": {
         "method": "electron"
       }
+    },
+    {
+      "path": "tests/library-gpu-raw-single.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "core",
+      "protects": "GPU-developed grid and screen pictures share development, neighbouring Single/full-screen views retain scenes, and native GPU crops agree with Grade at Fit and 100%.",
+      "launch": {
+        "method": "electron"
+      }
     }
   ]
 }

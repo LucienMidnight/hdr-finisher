@@ -209,42 +209,25 @@
     const controller = new AbortController(); rawController = controller;
     const generation = ++rawGeneration; rawPlanSignature = signature;
     const current = () => state.active && !controller.signal.aborted && generation === rawGeneration;
-    async function prepareReady(result) {
-      if (!current() || result.paused) return;
-      // View first, then travel order. Submit one GPU conversion at a time so
-      // foreground draws and Grade get an opportunity between background jobs.
-      const heldPaths = new Set([photo,...neighbours.slice(0, Math.max(1,browsingLimits.gpu_pictures-3)),...neighbours.slice(-2)]
-        .filter(rawCandidate).slice(0,browsingLimits.gpu_pictures).map(p => p.source_path || p.path));
-      for (const meta of result.ready.filter(meta => heldPaths.has(meta.path))) {
+    void (async () => {
+      for (const item of photos) {
         if (!current()) break;
-        const item = photos.find(p => (p.source_path || p.path) === meta.path);
-        if (!item || HDRLibraryPictures.resident(meta.key)) continue;
-        await HDRLibraryPictures.prepare(meta, controller.signal, current);
-        if (!current()) break;
-        const old = recentPictures.get(pictureIdentity(item));
-        if (!old?.kept) recentPictures.set(pictureIdentity(item),meta);
-        while (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
-        break;
+        try {
+          const meta = await rawThumbnail(item,2560,controller.signal);
+          if (!current()) break;
+          if (meta?.route === "gpu-raw-thumbnail") await HDRLibraryPictures.prepare(meta,controller.signal,current);
+          if (!current()) break;
+          recentPictures.set(pictureIdentity(item),meta);
+          while (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
+        } catch(error) { if (!aborted(error)) console.debug("Library read-ahead:",error.message); }
       }
-    }
-    async function poll() {
-      if (!current()) return;
-      try { await prepareReady(await api("/api/library/raw-ready",undefined,controller.signal)); }
-      catch(error) { if (!aborted(error)) console.debug("Library read-ahead:",error.message); }
-      if (current()) rawTimer = setTimeout(poll,100);
-    }
-    const retained = photos.map(p=>recentPictures.get(pictureIdentity(p)))
-      .filter(meta=>meta?.route === "camera-raw-gpu" && meta.edge >= 1280 && HDRLibraryPictures.resident(meta.key))
-      .map(meta=>meta.transport_key);
-    void api("/api/library/raw-plan", {paths:photos.map(p=>p.path),retained,...browsingSize,client:rawClient,revision:generation},controller.signal)
-      .then(prepareReady).then(() => { if (current()) rawTimer = setTimeout(poll,50); })
-      .catch(error => { if (!aborted(error)) console.debug("Library read-ahead:",error.message); });
+    })();
   }
   const readAhead = HDRLibraryReadAhead.create({
     key: (photo, edge) => `${pictureIdentity(photo)}|${edge}`,
     load: (photo, edge, signal) => {
       const cached = recentPictures.get(pictureIdentity(photo));
-      return cached?.edge === edge ? Promise.resolve(cached) : api("/api/library/picture", { path: photo.path, edge, quality: "quick", priority: 50 }, signal);
+      return cached?.edge >= edge ? Promise.resolve(cached) : api("/api/library/picture", { path: photo.path, edge, quality: "quick", priority: 50 }, signal);
     },
   });
   function clearPrefetch() { readAhead.clear(); stopRawAhead(); }
@@ -270,7 +253,8 @@
     // drawPicture still reports any initialization failure through its usual path.
     void HDRLibraryPictures.initialize().catch(() => {});
     const slow = ["DNG", "HEIC", "HEIF", "TIF", "TIFF"].includes(photo.type);
-    const response = prepared || api("/api/library/picture", { path: photo.path, edge, quality: slow ? "fast" : "quick", priority }, controller.signal);
+    const response = prepared || (rawCandidate(photo) ? rawThumbnail(photo,2560,controller.signal)
+      : api("/api/library/picture", { path: photo.path, edge, quality: slow ? "fast" : "quick", priority }, controller.signal));
     // A grid or previous Single picture gives immediate feedback while the larger one loads.
     response.catch(() => {});
     const seed = priority === 0 ? recentPictures.get(pictureIdentity(photo)) : null;
@@ -629,7 +613,9 @@
       ...(chosen.some(item => item.copy_id) ? [{ separator: true }, { label: "Remove virtual copy…", key: "Del", danger: true, run: () => removeCopy(chosen) }] : [])],
       { label: "Photo actions", onError: error => status(error.message) });
   }
-  const compare = HDRLibraryCompare.create({api,status,load:loadAndShow,draw:drawPicture,strip:culling.strip,
+  const compare = HDRLibraryCompare.create({api,status,load:loadAndShow,preparePicture:(photo,edge,signal) =>
+    rawCandidate(photo) ? rawThumbnail(photo,2560,signal) : api("/api/library/picture",{path:photo.path,edge,quality:"quick",priority:50},signal),
+    prepareNative:prepareRawNative,draw:drawPicture,strip:culling.strip,
     selected,photos:()=>state.photos,allPhotos:()=>state.allPhotos,active:()=>state.active,
     choose:path=>select(state.photos.findIndex(p=>p.path===path)),setView,
     zoom:()=>({enabled:state.zoom,x:state.zoomX,y:state.zoomY,scale:state.zoomScale}),
@@ -688,7 +674,7 @@
     try {
       startRawAhead();
       const retained = recentPictures.get(pictureIdentity(photo));
-      const prepared = rawCandidate(photo) ? (retained?.route === "camera-raw-gpu" && retained.edge >= 1280 && HDRLibraryPictures.resident(retained.key)
+      const prepared = rawCandidate(photo) ? (retained?.route === "gpu-raw-thumbnail" && retained.edge >= 1280 && HDRLibraryPictures.resident(retained.key)
         ? Promise.resolve(retained) : null) : readAhead.take(photo, edge);
       const neighbours = [state.photos[state.index + 1], state.photos[state.index - 1]].filter(Boolean);
       // Preserve the selected job, including an unfinished read-ahead decode.
@@ -716,6 +702,14 @@
       native.hidden = false;
     }
   }
+  async function prepareRawNative(photo, signal) {
+    if (!rawCandidate(photo)) return;
+    if (!HDRLibraryGpuRaw.enabled()) {
+      HDRLibraryStopwatch("gpu_raw_fallback",{path:photo.path,reason:"WebGPU is unavailable or disabled."}); return;
+    }
+    try { await HDRLibraryGpuRaw.thumbnail(photo.path,2560,signal,{nativeMode:true}); }
+    catch(error) { if (aborted(error)) throw error; HDRLibraryStopwatch("gpu_raw_fallback",{path:photo.path,reason:error.message}); }
+  }
   async function showNative() {
     const photo = selected(); if (!photo || !state.fitMeta || !state.zoom || !state.active || state.view !== "single") return;
     if (photo.edited) { state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; $("native-picture").hidden = true; positionZoom(); status("Saved Library picture enlarged. Check detail in Grade."); return; }
@@ -729,6 +723,7 @@
     const current = () => state.active && state.zoom && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
     status(`Loading ${percent} · ${photo.name}…`);
     try {
+      await prepareRawNative(photo,controller.signal);
       const meta = await api("/api/library/native", { path: photo.path, center_x: state.zoomX, center_y: state.zoomY,
         width: Math.max(64, Math.min(4096, Math.ceil(stage.clientWidth * dpr / scale))), height: Math.max(64, Math.min(4096, Math.ceil(stage.clientHeight * dpr / scale))), priority: 0 }, controller.signal);
       if (!current()) return;

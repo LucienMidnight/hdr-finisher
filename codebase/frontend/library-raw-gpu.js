@@ -54,6 +54,25 @@ window.HDRLibraryRawGPU = (() => {
     }
     async function convert(meta, signal) {
       if (get(meta.key)) return get(meta.key);
+      if (meta.route === 'gpu-raw-thumbnail') {
+        await gpu.acquireForegroundDeliveryBudget();
+        gpu.activeRenderCount++;
+        let texture;
+        try {
+          const response = await fetch('/api/library/pixels/' + meta.key + '?lane=hdr', {signal});
+          if (!response.ok) throw Error('The GPU-developed scene is unavailable; revisit this photo.');
+          const body = await response.arrayBuffer();
+          const width = Number(response.headers.get('X-Image-Width')), height = Number(response.headers.get('X-Image-Height'));
+          texture = device.createTexture({size:[width,height],format:'rgba16float',
+            usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.COPY_SRC});
+          device.queue.writeTexture({texture},body,{bytesPerRow:Number(response.headers.get('X-Bytes-Per-Row')),rowsPerImage:height},[width,height]);
+          await device.queue.onSubmittedWorkDone();
+          const entry = {texture,meta,byteSize:body.byteLength};
+          cache.set(meta.key,entry); trim(new Set([meta.key]));
+          return entry;
+        } catch(error) { texture?.destroy(); throw error; }
+        finally { gpu.activeRenderCount--; }
+      }
       const [hp, vp] = await initialize();
       const started = performance.now();
       const response = await fetch('/api/library/raw-transport/' + meta.transport_key, {signal});

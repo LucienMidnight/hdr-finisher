@@ -91,3 +91,29 @@ def test_invalid_gpu_pixels_are_rejected(tmp_path):
     cache = LibraryPictureCache(tmp_path / "cache")
     with pytest.raises(ValueError, match="invalid"):
         gpu_raw.developed(cache, str(photo), _header(photo), _payload(8, 12, (np.nan, 0.1, 0.1)))
+
+
+def test_native_gpu_source_is_retained_once_and_cropped_without_cpu_decode(tmp_path, monkeypatch):
+    photo = tmp_path / "photo.ARW"; photo.write_bytes(b"read-only native fixture")
+    cache = LibraryPictureCache(tmp_path / "cache")
+    header = _header(photo, height=8, width=12)
+    header.update(native_mode=True, edge=100000, source_width=12, source_height=8)
+    from hdr_finisher import library_pictures
+    monkeypatch.setattr(library_pictures, "decode_picture", lambda *a, **k: (
+        np.full((8,12,3), .05, dtype=np.float32), None, {"route":"camera-raw", "raw_input":True}))
+    cpu_crop = cache.build_native(photo,.5,.5,6,4)
+    result = gpu_raw.developed(cache, str(photo), header, _payload(8,12,(.1,.2,.3)))
+    assert result == {"native_ready":True,"renderer":"gpu"}
+    assert cache.gpu_native_ready(photo)
+    from hdr_finisher import library_pictures
+    monkeypatch.setattr(library_pictures, "decode_picture", lambda *a, **k: pytest.fail("native GPU scene must not redevelop on CPU"))
+    crop = cache.build_native(photo,.5,.5,6,4)
+    assert crop['key'] != cpu_crop['key']
+    assert (crop['width'],crop['height'],crop['crop_x'],crop['crop_y']) == (6,4,3,2)
+    assert crop['renderer'] == 'gpu'
+    assert cache.default_document(photo)
+    other = tmp_path / 'other.ARW';other.write_bytes(b'another photo')
+    header = _header(other,height=8,width=12)
+    header.update(native_mode=True,source_width=12,source_height=8)
+    gpu_raw.developed(cache,str(other),header,_payload(8,12,(.2,.3,.4)))
+    assert cache.gpu_native_ready(other) and not cache.gpu_native_ready(photo)

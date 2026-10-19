@@ -55,7 +55,7 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
   async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", revision = 0, sourceIdentity = "source", options = {}) {
     const key = `${sessionId}:${lane}`;
     if (this.proxies.has(key)) return this.proxies.get(key);
-    if (this.libraryMeta?.route === "camera-raw-gpu") {
+    if (["camera-raw-gpu", "gpu-raw-thumbnail"].includes(this.libraryMeta?.route)) {
       this.rawPictures ||= HDRLibraryRawGPU.create(this);
       this.rawPictures.configure(this.libraryLimits);
       const entry = await this.rawPictures.convert(this.libraryMeta, this.librarySignal);

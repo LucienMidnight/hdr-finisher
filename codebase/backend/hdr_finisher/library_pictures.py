@@ -26,7 +26,7 @@ from .models import AdjustmentState
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
-PICTURE_VERSION = "library-scene-gpu-document-v6"
+PICTURE_VERSION = "library-scene-gpu-views-v7"
 CACHE_LIMIT_BYTES = 2 * 1024**3
 _CACHE_LOCKS = [RLock() for _ in range(64)]
 _TRIM_LOCK = RLock()
@@ -221,9 +221,10 @@ class LibraryPictureCache:
     def build_native(self, path, center_x, center_y, width, height, cancelled=None):
         """One retained native source in the helper; only viewport crops reach the GPU."""
         path = Path(path).resolve(strict=True)
-        quality = f"native:{center_x:.8f}:{center_y:.8f}:{width}:{height}"
         edge = max(width, height)
         with self._native_lock:
+            kind = "native-gpu" if self.gpu_native_ready(path) else "native"
+            quality = f"{kind}:{center_x:.8f}:{center_y:.8f}:{width}:{height}"
             check_cancelled(cancelled)
             cached = self.cached(path, edge, quality)
             if cached:
@@ -252,6 +253,16 @@ class LibraryPictureCache:
             facts = dict(metadata, route="native-" + metadata["route"], source_width=source_width,
                 source_height=source_height, crop_x=x, crop_y=y, starting_look=grade)
             return self.build(path, edge, quality, cancelled, (crop, ref, facts))
+
+    def gpu_native_ready(self, path):
+        with self._native_lock:
+            return (self._native_source is not None and
+                self._native_source[0] == picture_key(path, 100000, "native") and
+                self._native_source[3].get("renderer") == "gpu")
+
+    def retain_gpu_native(self, path, pixels, metadata, grade):
+        with self._native_lock:
+            self._native_source = (picture_key(path, 100000, "native"), pixels, None, metadata, grade)
 
     def pause_native(self, paused):
         self._native_paused = bool(paused)
@@ -347,7 +358,7 @@ def decode_picture(path, edge, quality):
                 return linear_dng_picture(path, inspection, edge)
             if inspection.route != DngRoute.MOSAICED_RAW_DNG:
                 raise ValueError("This DNG cannot be read by Grade.")
-        if quality == "grade-thumbnail":
+        if quality in {"grade-thumbnail", "native"}:
             # Grade's own import, so the starting document paste needs is kept too.
             from .sessions import SessionStore
             session = SessionStore().prepare_session(Path(path), owns_source_path=False)

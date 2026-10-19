@@ -104,6 +104,7 @@ class PictureRequest(BaseModel):
 class SensorRequest(BaseModel):
     path: str
     edge: int = Field(default=320, ge=64, le=2560)
+    native_mode: bool = False
     # An edited photo waits for its saved-grade picture instead of showing
     # the unedited look first.
     saved_grade_only: bool = False
@@ -780,7 +781,9 @@ def create_library_router(worker, browser, store=None):
         if worker.status()["paused"]:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
         try:
-            cached = await run_in_threadpool(cache.cached, command.path, command.edge, "grade-thumbnail")
+            if command.native_mode and cache.gpu_native_ready(command.path):
+                return {"native_ready": True}
+            cached = None if command.native_mode else await run_in_threadpool(cache.cached, command.path, command.edge, "grade-thumbnail")
             if cached: return cached
             started = time.perf_counter()
             header, payload = await run_in_threadpool(library_gpu_raw.sensor, Path(command.path))
@@ -837,6 +840,9 @@ def create_library_router(worker, browser, store=None):
     @router.post("/native")
     async def native(command: NativeRequest, request: Request):
         command.path = str(marks.source_path(command.path))
+        if cache.gpu_native_ready(command.path):
+            return await run_in_threadpool(cache.build_native, command.path, command.center_x,
+                command.center_y, command.width, command.height)
         return await helper_result(request, "native", priority=0, **command.model_dump())
 
     @router.get("/pixels/{key}")

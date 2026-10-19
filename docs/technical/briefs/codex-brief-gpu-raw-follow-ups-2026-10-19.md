@@ -142,7 +142,39 @@ Checks: 541 Node passed; 2314 Python passed, 3 skipped, 19 existing warnings
 Grade preemption and aged export fairness. Two serial Electron drivers passed:
 RAW picture agreement and GPU/CPU export/Proof. No numeric limits changed.
 
-Next: parts 5-6 in order. Ask before slow work or pushing.
+### Part 5 outcome - October 19
+
+Grid, Single, Compare and full-screen Bayer RAW pictures now share the same
+GPU development and full-source measurements. One development produces 640
+and 2560 px scenes directly from the full source; concurrent requests merge.
+Neighbours retain GPU textures within the existing bounded cache. First
+100% zoom develops one full source on the GPU into RAM; subsequent viewport
+crops reuse it. Moving to another photo replaces that one retained source.
+No full-size native scene is written to disk. CPU fallback uses Grade's full
+development, with a recorded reason. Scene cache v7 refreshes older views;
+CPU and GPU native crops have separate keys so fallback crops cannot shadow
+a newly developed GPU source. Saved-grade zoom behaviour is unchanged.
+
+Three badminton RAWs pass at 2560, Fit/1280 and native viewport detail, with
+manual Lensfun corrections on DSC07060/61, grain and a local adjustment.
+Worst HDR mean 0.09243 / p99.9 1.80228; SDR 0.05364 / 0.83131, before encoding.
+All use the unchanged limits. Cold two-size preparation takes 1.92-2.34 s,
+cached requests about 6 ms; prepared neighbour navigation takes 56 ms. These
+are observations under the existing 5% timing allowance, not a new speed
+guarantee. First native preparation measured 3.44-4.40 s including full-source
+transfer; this is the remaining cost when entering 100%, not when panning.
+There is no like-for-like previous Single timing for this three-photo setup.
+
+Try: let neighbouring RAWs finish, open Single, use the arrow keys, enter
+full screen and click 100%. The same starting look now follows each view.
+Checks: 541 Node passed; 2315 Python passed, 3 skipped, 19 existing warnings
+(9 min 32 s); focused native/cache checks 20 passed after the crop-key fix.
+The Single driver and four-make unedited grid driver pass, run serially.
+The first two UI attempts passed native zoom but tried a hidden toolbar
+button to exit full screen; correcting the driver to use its keyboard
+shortcut resolved that test-control failure. No production retry or guard.
+
+Next: part 6 report only. Ask before slow work or pushing.
 
 ### Intended result
 

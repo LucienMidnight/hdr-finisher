@@ -63,6 +63,7 @@
       const current=()=>enabled&&o.active()&&!c.signal.aborted&&s.photo?.path===s.fit.dataset.picturePath;
       s.note.textContent=`Loading ${percent}…`;
       try{
+        await o.prepareNative?.(s.photo,c.signal);
         const m=await o.api('/api/library/native',{path:s.photo.path,center_x:z.x,center_y:z.y,width:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientWidth*dpr/z.scale))),height:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientHeight*dpr/z.scale)))},c.signal);
         if(!current())return;m.adjustments=s.meta.adjustments;await o.draw(m,s.native,c,current);if(!current())return;
         s.nativeMeta=m;s.native.dataset.picturePath=s.photo.path;s.note.textContent='';position();o.drawOverlay?.(s.photo,s.fit,s.meta,s.controller,current);
@@ -79,7 +80,7 @@
       }));
       if(generation!==gen)return;
       const i=o.photos().findIndex(p=>p.path===o.selected()?.path);
-      for(const p of [o.photos()[i+1],o.photos()[i-1]])if(p&&p.path!==left?.path){const c=new AbortController();ahead.push(c);o.api('/api/library/picture',{path:p.path,edge:1280,quality:'quick',priority:50},c.signal).catch(()=>{});}
+      for(const p of [o.photos()[i+1],o.photos()[i-1]])if(p&&p.path!==left?.path){const c=new AbortController();ahead.push(c);(o.preparePicture?.(p,1280,c.signal)||o.api('/api/library/picture',{path:p.path,edge:1280,quality:'quick',priority:50},c.signal)).catch(()=>{});}
     }
     function zoom(point,side=sides[1]){
       const z=o.zoom();let x=z.x,y=z.y;

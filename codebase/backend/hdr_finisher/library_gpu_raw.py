@@ -261,4 +261,11 @@ def developed(cache, path: str, header: dict, payload) -> dict:
         "gpu_development_ms": header.get("gpu_ms"),
         "gpu_memory_peak_bytes": header.get("memory_peak_bytes"),
     }
+    if header.get("native_mode"):
+        if (pixels.shape[1], pixels.shape[0]) != (int(header["source_width"]), int(header["source_height"])):
+            raise ValueError("The native GPU development is not full size.")
+        cache.keep_default_document(source, metadata.pop("default_document"))
+        metadata.pop("starting_look")
+        cache.retain_gpu_native(source, pixels, metadata, look.model_dump(mode="json"))
+        return {"native_ready": True, "renderer": "gpu"}
     return cache.build(source, edge, "grade-thumbnail", decoded=(pixels, None, metadata))

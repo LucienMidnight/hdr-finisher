@@ -673,27 +673,8 @@
   // develops it on the GPU, the backend stores it where Grade's CPU development
   // would. Resolves null when the photo keeps the CPU route. An edited photo
   // (savedGradeOnly) answers with its saved-grade picture or a wait.
-  async function develop(path, edge, signal, savedGradeOnly) {
-    const begun = performance.now();
-    let response;
-    for (;;) {
-      response = await fetch("/api/library/raw-sensor", { method: "POST", signal,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, edge, saved_grade_only: savedGradeOnly }) });
-      if (response.status !== 202) break;
-      await wait(150, signal);
-    }
-    if (response.status === 204) return null;
-    if (!response.ok) { const error = new Error((await response.json().catch(() => ({}))).detail || "Library request failed."); error.status = response.status; throw error; }
-    if ((response.headers.get("Content-Type") || "").includes("application/json")) return response.json();
-    const body = await response.arrayBuffer();
-    const sensorMs = performance.now() - begun;
-    const length = new DataView(body).getUint32(0, true);
-    const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(body, 4, length)));
-    const mosaic = new Uint8Array(body, 4 + length, meta.mosaic_bytes);
-    const lensData = meta.lens_grid ? new Float32Array(body, 4 + length + meta.lens_offset, meta.lens_grid.floats) : null;
-    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-    const started = performance.now();
-    const developed = await serial(async () => {
+  async function scheduledDevelopment({mosaic, meta, lensData, edges}, signal) {
+    return serial(async () => {
       await gpu();
       const id = crypto.randomUUID(), bytes = meta.width * meta.height * 44 + 64 * 1024 * 1024;
       const url = `/api/delivery/gpu/raw-budget/${id}`;
@@ -716,34 +697,61 @@
             const status = await lease(false);
             if (!status.granted || status.preempt || status.fallback) { const error = Error("Yielding GPU RAW to shared work."); error.yieldRaw = true; throw error; }
           };
-          try { return await developRaw({mosaic, meta, lensData, edges:[edge], beforeSubmit, memoryBudget:bytes}); }
+          try { return await developRaw({mosaic, meta, lensData, edges, beforeSubmit, memoryBudget:bytes}); }
           catch (error) { if (!error.yieldRaw) throw error; }
           // developRaw's finally has freed every buffer before Grade sees zero.
           await lease(true); await wait(50, signal);
         }
       } finally { await fetch(url, {method:"DELETE"}).catch(() => {}); }
     });
+  }
+
+  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false) {
+    const begun = performance.now();
+    let response;
+    for (;;) {
+      response = await fetch("/api/library/raw-sensor", { method: "POST", signal,
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, edge, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
+      if (response.status !== 202) break;
+      await wait(150, signal);
+    }
+    if (response.status === 204) return null;
+    if (!response.ok) { const error = new Error((await response.json().catch(() => ({}))).detail || "Library request failed."); error.status = response.status; throw error; }
+    if ((response.headers.get("Content-Type") || "").includes("application/json")) return response.json();
+    const body = await response.arrayBuffer();
+    const sensorMs = performance.now() - begun;
+    const length = new DataView(body).getUint32(0, true);
+    const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(body, 4, length)));
+    const mosaic = new Uint8Array(body, 4 + length, meta.mosaic_bytes);
+    const lensData = meta.lens_grid ? new Float32Array(body, 4 + length + meta.lens_offset, meta.lens_grid.floats) : null;
+    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+    const started = performance.now();
+    const developed = await scheduledDevelopment({mosaic, meta, lensData, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
     const gpuMs = performance.now() - started;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-    const picture = developed.reduced[edge];
     const measured = performance.now();
     const robust = { luma: quantile(developed.samples, 0, 0.9999), channel: quantile(developed.samples, 1, 0.9999), bt2020: quantile(developed.samples, 2, 0.9999) };
     const quantileMs = performance.now() - measured;
-    const header = { path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
-      edge, flip: meta.flip, height: picture.height, width: picture.width,
+    let selectedResult;
+    for (const storedEdge of nativeMode ? [100000] : [...new Set([2560,640,edge])]) {
+      const picture = developed.reduced[storedEdge];
+      const header = { path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
+      edge:storedEdge, native_mode:nativeMode, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
       timing_ms: { sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
-    let text = new TextEncoder().encode(JSON.stringify(header));
-    const padded = new Uint8Array(text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32); padded.set(text); text = padded;
-    const out = new Uint8Array(4 + text.length + picture.height * picture.width * 12);
-    new DataView(out.buffer).setUint32(0, text.length, true); out.set(text, 4);
-    picture.planes.forEach((plane, k) => out.set(new Uint8Array(plane), 4 + text.length + k * plane.byteLength));
-    const stored = await fetch("/api/library/raw-developed", { method: "POST", signal, headers: { "Content-Type": "application/octet-stream" }, body: out });
-    const result = await stored.json();
-    if (!stored.ok) { const error = new Error(result.detail || "Library request failed."); error.status = stored.status; throw error; }
-    return result;
+      let text = new TextEncoder().encode(JSON.stringify(header));
+      const padded = new Uint8Array(text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32); padded.set(text); text = padded;
+      const out = new Uint8Array(4 + text.length + picture.height * picture.width * 12);
+      new DataView(out.buffer).setUint32(0, text.length, true); out.set(text, 4);
+      picture.planes.forEach((plane, k) => out.set(new Uint8Array(plane), 4 + text.length + k * plane.byteLength));
+      const stored = await fetch("/api/library/raw-developed", { method: "POST", signal, headers: { "Content-Type": "application/octet-stream" }, body: new Blob([out]) });
+      const result = await stored.json();
+      if (!stored.ok) { const error = new Error(result.detail || "Library request failed."); error.status = stored.status; throw error; }
+      if (storedEdge === edge || nativeMode) selectedResult = result;
+    }
+    return selectedResult;
   }
 
   // At most two photos in flight: their sensor transfers must never hold up
@@ -761,15 +769,15 @@
   }
   // The grid and the filmstrip can ask for the same photo: they share one job,
   // which stops only when every asker has scrolled past it.
-  function thumbnail(path, edge, signal, { savedGradeOnly = false } = {}) {
+  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false } = {}) {
     root.HDRIdleWarmup?.touch();
-    const key = `${path}|${edge}|${savedGradeOnly}`;
+    const key = `${path}|${savedGradeOnly}|${nativeMode}`;
     let job = inflight.get(key);
     if (!job) {
       const controller = new AbortController();
       job = { controller, users: 0 };
       job.promise = new Promise((resolve, reject) => {
-        waiting.push({ signal: controller.signal, resolve, reject, task: () => develop(path, edge, controller.signal, savedGradeOnly) });
+        waiting.push({ signal: controller.signal, resolve, reject, task: () => develop(path, edge, controller.signal, savedGradeOnly, nativeMode) });
         pump();
       }).finally(() => { if (inflight.get(key) === job) inflight.delete(key); });
       job.promise.catch(() => {});
@@ -780,7 +788,12 @@
       const leave = () => { job.users--; if (job.users <= 0) job.controller.abort(); reject(cancelled()); };
       if (signal?.aborted) { leave(); return; }
       signal?.addEventListener("abort", leave, { once: true });
-      job.promise.then(value => { signal?.removeEventListener("abort", leave); resolve(value); },
+      job.promise.then(value => {
+        signal?.removeEventListener("abort", leave);
+        if (value && !value.kept && !nativeMode && value.edge !== edge)
+          resolve(develop(path, edge, signal, savedGradeOnly));
+        else resolve(value);
+      },
         error => { signal?.removeEventListener("abort", leave); reject(error); });
     });
   }
