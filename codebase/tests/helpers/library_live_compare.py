@@ -6,7 +6,9 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"backend"))
 from hdr_finisher.adjustments import apply_adjustments,apply_hdr_output_highlight_compression,apply_sdr_output_highlight_compression
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.delivery_colour import compare_finished_pixels
-from hdr_finisher.models import AdjustmentState,PreviewKind
+from hdr_finisher.models import AdjustmentState,PreviewKind,LocalAdjustment,DenoiseDocumentSettings
+from hdr_finisher.exporters import _denoised_export_source
+from types import SimpleNamespace
 
 data=json.loads(Path(sys.argv[1]).read_text());root=Path(data["location"]);results=[]
 for row in data["rows"]:
@@ -17,8 +19,10 @@ for row in data["rows"]:
     grade=AdjustmentState.model_validate(meta["adjustments"]);grade.hdr.highlight_compression_target_nits=1000
     context=RenderColorContext(meta["white"]);checks=[]
     for lane in ("hdr","sdr"):
-        expected=apply_adjustments(image,grade,PreviewKind(lane),sdr_reference_image=reference,
-            include_grain=True,include_output_highlight_compression=False,color_context=context)
+        frame=SimpleNamespace(image=image,denoise=DenoiseDocumentSettings.model_validate(meta.get("denoise",{})))
+        expected=apply_adjustments(_denoised_export_source(frame,PreviewKind(lane)),grade,PreviewKind(lane),sdr_reference_image=reference,
+            include_grain=True,include_output_highlight_compression=False,color_context=context,
+            local_adjustments=grade.enabled_locals([LocalAdjustment.model_validate(item) for item in meta.get("locals",[])]))
         expected=apply_hdr_output_highlight_compression(expected,grade,color_context=context) if lane=="hdr" else apply_sdr_output_highlight_compression(expected,grade)
         actual=np.frombuffer(base64.b64decode(row["lanes"][lane]),dtype="<f2").reshape(meta["height"],meta["width"],3).astype(np.float32)
         metric=compare_finished_pixels(expected,actual,lane)

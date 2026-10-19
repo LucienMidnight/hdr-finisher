@@ -5,6 +5,23 @@ const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-li
 fs.mkdirSync(folder,{recursive:true});
 const sources=['D:/test-photos-delete-later/DSC07072.ARW',path.join(root,'tests/fixtures/sdr_gradient.png')];
 const photos=sources.map(source=>{const p=path.join(folder,path.basename(source));fs.copyFileSync(source,p);return p;});
+const edited=path.join(folder,'edited.png');fs.copyFileSync(sources[1],edited);photos.push(edited);
+execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+import sys,json
+from pathlib import Path
+sys.path.insert(0,'backend')
+from hdr_finisher.sessions import SessionStore
+from hdr_finisher.models import LocalAdjustment
+p=Path(sys.argv[1]);session=SessionStore().prepare_session(p,owns_source_path=False)
+a=session.edit_document().model_dump(mode='json');b=json.loads(json.dumps(a))
+b['global_adjustments']['hdr']['exposure']=.6
+b['global_adjustments']['sdr']['exposure']=.3
+b['global_adjustments']['shared']['geometry']['rotation']=90
+local=LocalAdjustment();local.hdr_grade.exposure=.25;local.sdr_grade.exposure=.15
+b['local_adjustments']=[local.model_dump(mode='json')]
+b['denoise']['hdr']['enabled']=True
+p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo','schema_version':1,'photo_id':'live-test','marks':{},'albums':[],'grade':b,'grade_default':a}),encoding='utf8')
+`,edited],{cwd:root});
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL);
  const result=await page.locator('#library-frame').evaluate(async(element,photos)=>{

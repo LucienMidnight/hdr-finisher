@@ -17,7 +17,7 @@ import numpy as np
 from .color_context import RenderColorContext
 from .library_pictures import LibraryPictureCache, reduce_picture
 from .models import AdjustmentState, DenoiseDocumentSettings, LocalAdjustment, RawImportSettings, SourceInterpretationOverride
-from .render_cache import SessionRenderCache
+from .render_cache import SessionRenderCache, encode_rgba_proxy_rows
 
 _registry = OrderedDict()
 _registry_lock = RLock()
@@ -88,6 +88,11 @@ class LivePictures:
             path=str(path), adjustments=document.get("global_adjustments") or metadata["adjustments"],
             locals=document.get("local_adjustments", []), denoise=document.get("denoise", {}),
             white=document.get("hdr_reference_white_nits", 203), grade_identity=grade_id)
+        from .finishing import geometry_output_dimensions
+        adjustments = AdjustmentState.model_validate(result["adjustments"])
+        result["scene_width"], result["scene_height"] = metadata["width"], metadata["height"]
+        result["width"], result["height"] = geometry_output_dimensions(metadata["width"], metadata["height"], adjustments.shared.geometry)
+        result["source_width"], result["source_height"] = geometry_output_dimensions(metadata["source_width"], metadata["source_height"], adjustments.shared.geometry)
         with _registry_lock:
             _registry[identity] = (self, deepcopy(result))
             _registry.move_to_end(identity)
@@ -100,7 +105,11 @@ class LivePictures:
             owner, metadata = _registry[identity]
         if owner is not self:
             raise ValueError("Scene belongs to another Library.")
-        return self.cache.pixels(metadata["source_key"], lane)
+        frame = self.frame(metadata)
+        from .models import PreviewKind
+        pixels, space, _ = frame.render_cache.geometry_source_proxy(PreviewKind(lane), metadata["edge"], frame.adjustments)
+        body, stride = encode_rgba_proxy_rows(pixels, 0, pixels.shape[0], prefer_half=True, pixel_format="rgba16float")
+        return body, pixels.shape[1], pixels.shape[0], stride, space
 
     def frame(self, metadata):
         # No resident decoded scene pool in the backend: each endpoint owns its
@@ -124,3 +133,37 @@ def session(identity):
     with _registry_lock:
         entry = _registry.get(identity)
     return entry[0].frame(entry[1]) if entry else None
+
+
+def fallback_picture(root, path, document, edge, cancelled=None):
+    """Visible request only: the existing numerical renderer and JPEG codec.
+
+    Return the CPU picture to its requester; no durable work or output queue.
+    """
+    import base64
+    from .library_pictures import check_cancelled
+    from .library_thumbnail_codec import encode
+    from .adjustments import apply_adjustments, apply_hdr_output_highlight_compression, apply_sdr_output_highlight_compression
+    from .exporters import _denoised_export_source
+    from .models import PreviewKind
+    cache = LibraryPictureCache(root)
+    metadata = develop_cpu(root, path, document, edge, cancelled)
+    cache.accept_transient(metadata)
+    service = LivePictures(root, None)
+    service.cache = cache
+    service.document = lambda _: document
+    frame = service.frame(service.describe(path, metadata))
+    adjustments = frame.adjustments.model_copy(deep=True)
+    adjustments.hdr.highlight_compression_target_nits = 1000
+    def render(kind):
+        check_cancelled(cancelled)
+        image = apply_adjustments(_denoised_export_source(frame, kind), adjustments, kind,
+            sdr_reference_image=frame.sdr_reference_image, include_grain=True,
+            include_output_highlight_compression=False,
+            local_adjustments=adjustments.enabled_locals(frame.local_adjustments), color_context=frame.color_context)
+        check_cancelled(cancelled)
+        return (apply_hdr_output_highlight_compression(image, adjustments, color_context=frame.color_context)
+            if kind == PreviewKind.HDR else apply_sdr_output_highlight_compression(image, adjustments))
+    body = encode(render(PreviewKind.HDR), render(PreviewKind.SDR), frame.hdr_reference_white_nits)
+    check_cancelled(cancelled)
+    return {"url":"data:image/jpeg;base64," + base64.b64encode(body).decode()}

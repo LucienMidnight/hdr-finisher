@@ -77,3 +77,26 @@ def test_worker_accepts_live_scene_and_cancelled_work_stays_cancelled(tmp_path):
         job,future=worker.submit_library("live-scene",path=str(tmp_path/"photo.png"),document=None,edge=640)
         assert future.result(timeout=20)["quality"]==quality(None)
     finally:worker.close()
+
+
+def test_live_geometry_and_visible_cpu_fallback_keep_the_saved_grade(tmp_path):
+    from hdr_finisher.library_live import fallback_picture
+    from hdr_finisher.sessions import SessionStore
+    from base64 import b64decode
+    from io import BytesIO
+    path=photo(tmp_path);root=tmp_path/"cache"
+    default=SessionStore().prepare_session(path,owns_source_path=False).edit_document().model_dump(mode="json")
+    saved=deepcopy(default);saved["global_adjustments"]["shared"]["geometry"]["rotation"]=90
+    saved["global_adjustments"]["sdr"]["exposure"]=1
+    service=LivePictures(root,LibraryMarks(root),SimpleNamespace(request=lambda path:{"grade":saved}))
+    metadata=develop_cpu(root,path,saved,640)
+    meta=service.describe(path,metadata)
+    body,width,height,stride,_=service.pixels(meta["key"],"sdr")
+    assert (width,height)==(320,640)==(meta["width"],meta["height"])
+    assert len(body)==stride*height
+    rendered=fallback_picture(root,path,saved,640)
+    with Image.open(BytesIO(b64decode(rendered["url"].split(",",1)[1]))) as image:
+        assert image.size==(320,640)
+    assert not list(root.rglob("*.jpg"))
+    service.cache.managed.update({"enabled":False})
+    assert fallback_picture(root,path,saved,640)["url"].startswith("data:image/jpeg;base64,")

@@ -87,42 +87,6 @@
       return result;
     }
   }
-  // Camera RAW grid thumbnails develop on the GPU when they can. Photos the
-  // GPU route does not cover, and any GPU failure, use Grade's CPU development.
-  function rawThumbnail(photo, edge, signal) {
-    const cpu = () => api("/api/library/picture", {path:photo.path, edge, quality:"quick", purpose:"thumbnail", priority:10}, signal);
-    if (!HDRLibraryGpuRaw.enabled()) {
-      HDRLibraryStopwatch("gpu_raw_fallback", {path:photo.path, reason:"WebGPU is unavailable or disabled."});
-      return cpu();
-    }
-    return HDRLibraryGpuRaw.thumbnail(photo.path, edge, signal, {savedGradeOnly:!!photo.edited}).then(
-      result => result && !result.waiting_for_saved_grade ? result : cpu(),
-      error => {
-        if (aborted(error)) throw error;
-        HDRLibraryStopwatch("gpu_raw_fallback", {path:photo.path, reason:error.message});
-        return cpu();
-      });
-  }
-  // A camera RAW cell with a cache ticket shows two stages: the camera's own
-  // preview, then the saved thumbnail, which is also what a later visit shows.
-  // The GPU develops and saves it without drawing an interim picture. An edited
-  // photo waits for its saved-grade picture instead of showing the unedited
-  // look. Resolves true when settled, a picture to draw, or null for the CPU route.
-  async function savedRawThumbnail(photo, ticket, signal, isCurrent) {
-    let meta;
-    try { meta = await HDRLibraryGpuRaw.thumbnail(photo.path, thumbnailEdge(), signal, {savedGradeOnly:!!photo.edited}); }
-    catch (error) {
-      if (aborted(error)) throw error;
-      HDRLibraryStopwatch("gpu_raw_fallback", {path:photo.path, reason:error.message});
-      return null;
-    }
-    if (!meta) return null;
-    if (meta.waiting_for_saved_grade) return true;
-    if (meta.kept) { await thumbnails.populate(photo, thumbnailEdge()); return true; }
-    try { if (await HDRLibraryPictures.makeThumbnail(meta, photo.path, ticket, signal, isCurrent)) return true; }
-    catch (error) { if (aborted(error)) throw error; }
-    return meta;
-  }
   const { showMenu, closeMenu: closeFolderMenu, make } = HDRLibraryDialogs;
   const sameName = (a, b) => a.toLocaleLowerCase() === b.toLocaleLowerCase();
   const belongs = (photo, place) => (place.kind === "album" ? photo.albums || [] : photo.marks?.tags || []).some(name => sameName(name, place.name));
@@ -202,7 +166,7 @@
     const photo = selected();
     const neighbours = Array.from({length:browsingLimits.ahead}, (_,i) => state.photos[state.index + (i+1)*rawDirection]);
     neighbours.push(state.photos[state.index - rawDirection], state.photos[state.index - 2*rawDirection]);
-    const photos = [photo,...neighbours].filter(rawCandidate);
+    const photos = [photo,...neighbours].filter(Boolean);
     const signature = photos.map(pictureIdentity).join(";");
     if (signature === rawPlanSignature) return;
     rawController?.abort(); clearTimeout(rawTimer);
@@ -213,7 +177,7 @@
       for (const item of photos) {
         if (!current()) break;
         try {
-          const meta = await rawThumbnail(item,2560,controller.signal);
+          const meta = await HDRLibraryScenes.load(item.path,2560,controller.signal);
           if (!current()) break;
           if (meta?.route === "gpu-raw-thumbnail") await HDRLibraryPictures.prepare(meta,controller.signal,current);
           if (!current()) break;
@@ -227,7 +191,7 @@
     key: (photo, edge) => `${pictureIdentity(photo)}|${edge}`,
     load: (photo, edge, signal) => {
       const cached = recentPictures.get(pictureIdentity(photo));
-      return cached?.edge >= edge ? Promise.resolve(cached) : api("/api/library/picture", { path: photo.path, edge, quality: "quick", priority: 50 }, signal);
+      return cached?.edge >= edge ? Promise.resolve(cached) : HDRLibraryScenes.load(photo.path,edge,signal);
     },
   });
   function clearPrefetch() { readAhead.clear(); stopRawAhead(); }
@@ -249,48 +213,43 @@
   }
   async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null) {
     const started = performance.now();
-    // Set up the existing GPU while the helper prepares this visible picture.
-    // drawPicture still reports any initialization failure through its usual path.
-    void HDRLibraryPictures.initialize().catch(() => {});
-    const slow = ["DNG", "HEIC", "HEIF", "TIF", "TIFF"].includes(photo.type);
-    const response = prepared || (rawCandidate(photo) ? rawThumbnail(photo,2560,controller.signal)
-      : api("/api/library/picture", { path: photo.path, edge, quality: slow ? "fast" : "quick", priority }, controller.signal));
-    // A grid or previous Single picture gives immediate feedback while the larger one loads.
-    response.catch(() => {});
-    const seed = priority === 0 ? recentPictures.get(pictureIdentity(photo)) : null;
-    if (seed) {
-      try {
-        await drawPicture(seed, canvas, controller, isCurrent);
-        if (isCurrent()) { canvas.dataset.picturePath = photo.path; canvas.dataset.pictureKey = seed.key; canvas.dataset.pictureEdge = seed.edge; HDRLibraryStopwatch("picture_seed_shown", {path: photo.path, key: seed.key}); }
-      } catch (error) { if (aborted(error) || !isCurrent()) return; }
-    }
-    let meta = await response;
-    if (!isCurrent()) return;
-    if (seed?.key !== meta.key || canvas.dataset.pictureKey !== meta.key) await drawPicture(meta, canvas, controller, isCurrent);
-    if (!isCurrent()) return;
-    canvas.dataset.picturePath = photo.path; canvas.dataset.pictureEdge = meta.edge; canvas.dataset.pictureKey = meta.key;
-    canvas.closest(".library-cell")?.classList.remove("loading");
-    HDRLibraryStopwatch("picture_shown", { path: photo.path, key: meta.key, kept: !!meta.kept, duration_ms: performance.now() - started });
-    diagnostics(photo, meta, performance.now() - started);
-    if (slow && meta.route.endsWith("-placeholder")) {
-      meta = await api("/api/library/picture", { path: photo.path, edge, quality: "quick", priority: priority + 1 }, controller.signal);
-      if (!isCurrent()) return;
-      await drawPicture(meta, canvas, controller, isCurrent);
-      if (!isCurrent()) return;
-    }
-    photo.pictureCurrent = !!meta.kept;
-    const remembered = pictureIdentity(photo);
-    const oldPicture = recentPictures.get(remembered);
-    if (!oldPicture || meta.kept || !oldPicture.kept && meta.edge >= oldPicture.edge) {
-      recentPictures.delete(remembered); recentPictures.set(remembered, meta);
-    }
-    if (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
-    canvas.closest(".library-cell")?.querySelector(".library-edited")?.setAttribute("title", meta.kept ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. The Library will try making it again automatically.");
-    canvas.dataset.pictureEdge = meta.edge;
-    canvas.dataset.pictureKey = meta.key;
-    canvas.dataset.picturePath = photo.path;
-    overlays?.attach(photo,canvas,meta,controller,isCurrent);
-    return meta;
+    let fallback = null;
+    try {
+      while (isCurrent() && !controller.signal.aborted) {
+        try {
+          await HDRLibraryPictures.initialize();
+          const meta = await (prepared || HDRLibraryScenes.load(photo.path,edge,controller.signal));
+          prepared = null;
+          if (!isCurrent()) return;
+          await drawPicture(meta,canvas,controller,isCurrent);
+          if (!isCurrent()) return;
+          fallback?.remove(); fallback = null; canvas.style.visibility = "";
+          canvas.dataset.picturePath = photo.path; canvas.dataset.pictureEdge = meta.edge; canvas.dataset.pictureKey = meta.key;
+          recentPictures.set(pictureIdentity(photo),meta);
+          if (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
+          HDRLibraryStopwatch("picture_shown", {path:photo.path,key:meta.key,duration_ms:performance.now()-started});
+          diagnostics(photo,meta,performance.now()-started);
+          overlays?.attach(photo,canvas,meta,controller,isCurrent);
+          return meta;
+        } catch(error) {
+          prepared = null;
+          if (aborted(error) || !isCurrent()) return;
+          if (error.libraryYield) { await sleep(50,controller.signal); continue; }
+          if (HDRLibraryPictures.usable()) throw error;
+          if (!fallback) {
+            const meta = await api("/api/library/fallback-picture",{path:photo.path,edge},controller.signal);
+            if (!isCurrent()) return;
+            fallback = document.createElement("img"); fallback.alt = photo.name;
+            fallback.className = canvas.className; fallback.style.cssText="width:100%;height:100%;object-fit:contain"; fallback.dataset.cpuFallback = "true";
+            fallback.src = meta.url; await fallback.decode();
+            if (!isCurrent()) return;
+            canvas.after(fallback); canvas.style.visibility = "hidden";
+            thumbnails.mode(fallback,state.hdr);
+          }
+          await sleep(2000,controller.signal);
+        }
+      }
+    } finally { fallback?.remove(); }
   }
   async function drawPicture(meta, canvas, controller, isCurrent) {
     for (;;) {
@@ -312,7 +271,8 @@
   $("hdr-button").addEventListener("click", toggleHDR);
   window.addEventListener("hdrfinisher:webgpulost",()=>{
     clearCells(state.cells); clearCells(state.filmCells);
-    setTimeout(()=>{paintGrid();paintFilm();},100);
+    state.single?.abort(); state.singleIdentity="";
+    setTimeout(()=>{paintGrid();paintFilm();if(state.view==="single")showSingle();},100);
   });
   function removeUnreadable(photo, error) {
     if (error.status !== 400) { status(error.message); return; }
@@ -349,7 +309,7 @@
     });
     const started = performance.now();
     const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
-    if (!photo.edited && !photo.copy_id) {
+    {
       void (async () => {
         const fallback = document.createElement("canvas"); cell.fallback = fallback;
         fallback.hidden = true; frame.append(fallback);
@@ -380,8 +340,9 @@
           } catch(error) {
             if (aborted(error) || !current()) return;
             if (error.libraryYield) { await sleep(50,cell.controller.signal); continue; }
+            if (HDRLibraryPictures.usable()) throw error;
             if (!cpuShown) {
-              const meta = await api("/api/library/fallback-picture",{path:photo.path},cell.controller.signal);
+              const meta = await api("/api/library/fallback-picture",{path:photo.path,edge:cell.edge},cell.controller.signal);
               if (!current()) return;
               canvas.src=meta.url; await canvas.decode();
               if (!current()) return;
@@ -396,47 +357,6 @@
       })().catch(error=>{if(current()&&!aborted(error))removeUnreadable(photo,error);});
       return cell;
     }
-    const miss = ticket => {
-      void (async () => {
-        let prepared = null;
-        if (rawTypes.has(photo.type)) {
-          const preview = await api("/api/library/picture", {path:photo.path, edge:cell.edge, quality:"fast", purpose:"thumbnail", priority:5}, cell.controller.signal);
-          if (!current()) return;
-          if (preview.url) {
-            canvas.src = preview.url; canvas.dataset.preview = "true"; await canvas.decode();
-            if (!current()) return;
-            canvas.style.visibility = ""; element.classList.remove("loading");
-            HDRLibraryStopwatch("camera_preview_shown", {path:photo.path,duration_ms:performance.now()-started});
-            const settled = ticket && HDRLibraryGpuRaw.enabled() ? await savedRawThumbnail(photo, ticket, cell.controller.signal, current) : null;
-            if (settled === true || !current()) return;
-            prepared = settled ? Promise.resolve(settled) : rawThumbnail(photo, cell.edge, cell.controller.signal);
-          } else if (preview.kept && ticket) {
-            // Its saved-grade picture is ready: one stage, the thumbnail file made from it.
-            await thumbnails.populate(photo, cell.edge);
-            return;
-          } else prepared = Promise.resolve(preview);
-        }
-        const fallback = document.createElement("canvas"); cell.fallback = fallback;
-        fallback.hidden = true; frame.append(fallback);
-        const meta = await loadAndShow(photo, cell.edge, fallback, cell.controller, current, 10, prepared);
-        if (!meta || !current() || !cell.fallback) return;
-        fallback.hidden = false; canvas.hidden = true;
-        cell.scene = meta; cell.meta = meta; cell.elapsed = performance.now() - started;
-        element.classList.remove("loading");
-        // Cache work yields to the visible GPU queue and reuses its decoded source.
-        if (!meta.kept && ticket) void HDRLibraryPictures.saveThumbnail(meta, photo.path, ticket, cell.controller.signal, current);
-        else void thumbnails.populate(photo, cell.edge);
-      })().catch(error => { if (current() && !aborted(error)) removeUnreadable(photo,error); });
-    };
-    thumbnails.show(photo, cell.edge, canvas, current, () => state.hdr, miss).then(meta => {
-      if (!meta || !current()) return;
-      cell.fallback?.remove(); canvas.hidden = false; cell.fallback = null; cell.scene = null;
-      cell.meta = meta; cell.elapsed = performance.now() - started;
-      element.classList.remove("loading");
-      overlays?.attach(photo,canvas,meta,cell.controller,current);
-      HDRLibraryStopwatch("picture_shown", {path:photo.path,key:meta.key,kept:!!meta.kept,duration_ms:cell.elapsed});
-    }).catch(error => { if (current() && !aborted(error)) removeUnreadable(photo,error); });
-    return cell;
   }
   // Finished cached-picture cells stay built for one screen beyond each edge, so
   // scrolling back shows them at once. Cells still loading are dropped as before.
@@ -483,7 +403,6 @@
     const forward = grid.scrollTop >= lastGridTop; lastGridTop = grid.scrollTop;
     const first = forward ? layout.last : Math.max(0, layout.first - screen);
     const last = forward ? Math.min(state.photos.length, layout.last + screen) : layout.first;
-    thumbnails.plan(state.photos.slice(layout.first,layout.last).filter(p=>p.edited||p.copy_id),state.photos.slice(first,last).filter(p=>p.edited||p.copy_id), thumbnailEdge());
   }
   let lastFilmLeft = 0;
   let FILM_PITCH = 119; // filmstrip tile width plus the 3px gap
@@ -494,7 +413,6 @@
     const last = Math.min(state.photos.length, Math.ceil((film.scrollLeft + film.clientWidth) / FILM_PITCH));
     reconcile(state.filmCells, first, last, $("film-space"), (element, index) => { element.style.left = `${3 + index * FILM_PITCH}px`; });
     const forward = film.scrollLeft >= lastFilmLeft; lastFilmLeft = film.scrollLeft;
-    thumbnails.plan(state.photos.slice(first,last).filter(p=>p.edited||p.copy_id),(forward ? state.photos.slice(last,Math.min(state.photos.length,last + last - first)) : state.photos.slice(Math.max(0,first - (last-first)),first)).filter(p=>p.edited||p.copy_id),thumbnailEdge());
   }
   function updateDetails() {
     if (window.HDRLibraryCommands) commandState();
@@ -665,7 +583,7 @@
       { label: "Photo actions", onError: error => status(error.message) });
   }
   const compare = HDRLibraryCompare.create({api,status,load:loadAndShow,preparePicture:(photo,edge,signal) =>
-    rawCandidate(photo) ? rawThumbnail(photo,2560,signal) : api("/api/library/picture",{path:photo.path,edge,quality:"quick",priority:50},signal),
+    HDRLibraryScenes.load(photo.path,edge,signal),
     prepareNative:prepareRawNative,draw:drawPicture,strip:culling.strip,
     selected,photos:()=>state.photos,allPhotos:()=>state.allPhotos,active:()=>state.active,
     choose:path=>select(state.photos.findIndex(p=>p.path===path)),setView,
@@ -724,13 +642,10 @@
     status(`Loading ${photo.name}…`);
     try {
       startRawAhead();
-      const retained = recentPictures.get(pictureIdentity(photo));
-      const prepared = rawCandidate(photo) ? (retained?.route === "gpu-raw-thumbnail" && retained.edge >= 1280 && HDRLibraryPictures.resident(retained.key)
-        ? Promise.resolve(retained) : null) : readAhead.take(photo, edge);
+      const prepared = readAhead.take(photo, 2560);
       const neighbours = [state.photos[state.index + 1], state.photos[state.index - 1]].filter(Boolean);
-      // Preserve the selected job, including an unfinished read-ahead decode.
-      readAhead.update(photo, neighbours.filter(item => !rawCandidate(item)), edge);
-      const meta = await loadAndShow(photo, edge, $("single-picture"), controller, current, 0, prepared);
+      readAhead.update(photo, neighbours, 2560);
+      const meta = await loadAndShow(photo, 2560, $("single-picture"), controller, current, 0, prepared);
       if (!meta || !current()) return;
       state.fitMeta = meta; positionZoom(); if (state.zoom) void showNative();
       updateSingleCaption();

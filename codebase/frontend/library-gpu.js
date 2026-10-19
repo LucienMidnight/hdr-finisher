@@ -58,7 +58,7 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     return result;
   }
   async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", revision = 0, sourceIdentity = "source", options = {}) {
-    const key = `${sessionId}:${lane}`;
+    const key = this.libraryMeta?.route === "library-live" ? `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}` : `${sessionId}:${lane}`;
     if (this.proxies.has(key)) return this.proxies.get(key);
     if (["camera-raw-gpu", "gpu-raw-thumbnail"].includes(this.libraryMeta?.route)) {
       this.rawPictures ||= HDRLibraryRawGPU.create(this);
@@ -144,8 +144,13 @@ window.HDRLibraryPictures = (() => {
       if (lease) { clearInterval(gpu.deliveryActivityTimer); gpu.deliveryActivityTimer = null; }
       let result;
       try {
-      result = await gpu.renderTo(canvas, meta.key, hdr ? "hdr" : "sdr", adjustments,
-        sampleCurvePoints, meta.edge, [], 0, null, meta.white,
+      if (gpu.liveMode && gpu.sessionId !== meta.key) gpu.resetSession(meta.key);
+      const lane = hdr ? "hdr" : "sdr", denoise = meta.denoise?.[lane];
+      if (denoise?.enabled) {
+        if (!await gpu.analyzeDenoiseProxy(meta.key,lane,adjustments,Math.max(256,meta.edge),0,"source",denoise.controls)) throw Error("Library Denoise analysis failed.");
+      } else if (gpu.denoiseSourceSelector) gpu.denoiseSourceSelector.selected = "original";
+      result = await gpu.renderTo(canvas, meta.key, lane, adjustments,
+        sampleCurvePoints, Math.max(256,meta.edge), meta.locals || [], 0, null, meta.white,
         { width: meta.width, height: meta.height }, { scopeAnalysis: true, isCurrent, ...(lease ? {beforeDeliverySubmit:lease.check} : {}) });
       await gpu.waitForSubmittedWork();
       } finally {
@@ -295,6 +300,7 @@ window.HDRLibraryPictures = (() => {
   }, () => foreground > 0);
   return Object.freeze({ show: (meta, ...args) => meta.kept ? showKept(meta, ...args) : show(meta, ...args), initialize, prepare, saveThumbnail, makeThumbnail,
     configure: async limits => { configuredLimits = limits; if (renderer) renderer.libraryLimits = limits; },
+    usable: () => !!renderer?.available && !renderer.deviceLost && !renderer.adapterInfo?.fallback,
     resident: key => !!renderer?.rawPictures?.get(key),
     snapshot: () => renderer?.rawPictures?.snapshot() || {pictures:0,bytes:0} });
 })();

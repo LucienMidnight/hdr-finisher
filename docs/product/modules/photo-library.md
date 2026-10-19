@@ -306,6 +306,17 @@ grain/locals and lens cases, the exact delivered HDR ceiling after encoding,
 and shared memory/preemption checks. Start with the family Steve needs and
 its representative photos; no broad format project is implied here.
 
+**Live drawing, part 2 (October 19):** Grid and filmstrip cells now draw
+saved grades and virtual copies as well as unedited photos. Single Fit and
+full-screen Fit use the same 2560 px scenes. Grade's local masks, geometry
+and Denoise are passed through its renderer. The visible-only CPU fallback
+uses the existing numerical adjustments, Denoise and Library JPEG codec;
+it returns its picture directly, including with the disk cache disabled.
+The old saved-picture queue and native-detail route remain open work for
+the next parts; this commit does not claim their removal or the speed targets.
+Fast checks: 541 Node tests and the full Python suite. Focused GPU checks:
+live grid/device recovery and live pictures with rotation, locals and Denoise.
+
 ## 5. Open work, in order
 
 1. **Library speed plan** (Claude, October 18, from the speed exploration:

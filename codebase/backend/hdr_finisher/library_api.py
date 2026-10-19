@@ -282,16 +282,11 @@ def create_library_router(worker, browser, store=None):
     live = LivePictures(browser.root, marks, kept if store is not None else None)
 
     @router.post("/fallback-picture")
-    async def fallback_picture(command: FolderRequest, request: Request):
-        from .library_thumbnails import thumbnail_key
+    async def fallback_picture(command: LiveSceneRequest, request: Request):
+        document = await run_in_threadpool(live.document, command.path)
         path = str(marks.source_path(command.path))
-        key = thumbnail_key(path, 640)
-        if not thumbnails.file(key).is_file():
-            result = await helper_result(request, "grid-thumbnail", path=path, edge=640, key=key, priority=30)
-            if isinstance(result, Response): return result
-            if result.get("data"):
-                return {"url": "data:image/jpeg;base64," + result["data"], "key":key}
-        return {"url": "/api/library/thumbnail/" + key, "key":key}
+        return await helper_result(request, "live-fallback", path=path, document=document,
+            edge=command.edge, priority=command.priority)
 
     @router.post("/preview")
     async def live_preview(command: FolderRequest):
