@@ -1074,7 +1074,7 @@ def _denoised_ultrahdr_gain_map_jpeg(
     # much overlap makes stripe boundaries numerically equivalent to a single
     # full-frame pass while bounding scratch memory on large RAW exports.
     halo = radius * 2
-    for row_start in range(0, height, stripe_rows):
+    def filter_stripe(row_start):
         row_end = min(height, row_start + stripe_rows)
         crop_start = max(0, row_start - halo)
         crop_end = min(height, row_end + halo)
@@ -1093,7 +1093,21 @@ def _denoised_ultrahdr_gain_map_jpeg(
         encoded = np.clip(
             np.round(filtered[core_start:core_end] * np.float32(255.0)), 0, 255
         ).astype(np.uint8)
-        result.paste(Image.fromarray(encoded), (0, row_start))
+        return row_start, encoded
+
+    # Two stripes bound scratch and overlap NumPy work without changing the
+    # filter, its overlap, operation order, or the serial JPEG writer. Keep at
+    # most two results in flight even for very tall originals.
+    from collections import deque
+    rows = iter(range(0, height, stripe_rows))
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="ultrahdr-stripe") as pool:
+        pending = deque(pool.submit(filter_stripe, row) for row in [next(rows, None), next(rows, None)] if row is not None)
+        while pending:
+            row_start, encoded = pending.popleft().result()
+            result.paste(Image.fromarray(encoded), (0, row_start))
+            row = next(rows, None)
+            if row is not None:
+                pending.append(pool.submit(filter_stripe, row))
 
     buffer = BytesIO()
     # Multi-channel Ultra HDR maps must retain full chroma resolution.

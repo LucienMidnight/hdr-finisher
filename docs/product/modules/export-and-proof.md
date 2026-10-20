@@ -215,6 +215,20 @@ Settings rules (from v1.2 section 5, still in force):
   fixes them. Real opt-in DSC07060, GPU/CPU delivery smoke and Advanced
   settings Electron checks passed, serially at 2560 by 1440. No push.
 
+- October 20, GPU export speed part 1 and first encoding improvement: measured
+  a three-photo 4000 px batch at 33.439 s (11.146 s/photo); full-size Maximum
+  Fidelity DSC07060 export at 28.747 s, excluding 2.869 s to open the RAW.
+  Encoding is the largest full-size stage (15.371 s). Two unchanged gain-map
+  filter stripes now run concurrently with bounded scratch; JPEG writing
+  remains serial. Isolated full-size filtering/repackaging fell from 7.766 s
+  to 6.382 s, with complete repackaged files byte-identical on three badminton
+  photos and the full-size single. These are encoding replays, not a new
+  end-to-end claim. Neither the 5 s batch nor under-15 s single target is met.
+  RAW preparation, GPU overhead and tiled finishing remain open. Validation:
+  539 Node and 2275 Python passed (3 skipped); GPU/forced-CPU export and Proof
+  smoke passed, including the existing perceptual limits and opt-in ceiling.
+  Guarantee HDR peak remains optional and off by default (brief a3170de).
+
 **Not built**
 
 - No broad GPU-delivery accuracy or speed claim: Steve tests first. The

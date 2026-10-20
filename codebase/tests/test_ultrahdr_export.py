@@ -628,3 +628,22 @@ def test_real_no_headroom_export_and_proof_preserve_both_renditions(tmp_path, hd
         import hashlib
         assert proof.sha256==hashlib.sha256(path.read_bytes()).hexdigest()
     finally: proof_store.clear()
+
+
+@pytest.mark.parametrize("stripe_rows", [1, 17, 256])
+def test_parallel_gain_map_stripes_keep_identical_jpeg_bytes(monkeypatch, stripe_rows):
+    random = np.random.default_rng(194)
+    images = []
+    for _ in range(2):
+        pixels = random.integers(0, 256, (259, 97, 3), dtype=np.uint8)
+        buffer = io.BytesIO()
+        Image.fromarray(pixels).save(buffer, format="JPEG", quality=95, subsampling=0)
+        images.append(buffer.getvalue())
+    actual = _denoised_ultrahdr_gain_map_jpeg(*images, quality=95, stripe_rows=stripe_rows)
+    executor = exporter_module.ThreadPoolExecutor
+    def serial_executor(*args, **kwargs):
+        kwargs["max_workers"] = 1
+        return executor(*args, **kwargs)
+    monkeypatch.setattr(exporter_module, "ThreadPoolExecutor", serial_executor)
+    expected = _denoised_ultrahdr_gain_map_jpeg(*images, quality=95, stripe_rows=stripe_rows)
+    assert actual == expected

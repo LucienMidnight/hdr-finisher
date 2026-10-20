@@ -138,3 +138,49 @@ why, and how to try it.
 
 If anything here conflicts with the code, or a part turns out much larger
 than it looks, stop and ask before inventing a new pattern.
+
+## Working record (October 20)
+
+Timing targets proposed before changes: at most 5 s/photo batch throughput
+at 4000 px, and under 15 s for a full-size Maximum Fidelity export request.
+These reflect seconds-per-photo delivery; retain the 5% noise allowance.
+Full-size timing excludes opening the RAW in Grade; record opening separately.
+
+Part 1 baseline, disposable copies, optional peak guarantee off, two batch
+workers: 3-photo batch 33.439 s (11.146 s/photo); DSC07060 Maximum Fidelity
+full-size request 28.747 s, opening 2.869 s separately. Its GPU job takes
+11.221 s; encoding 15.371 s, including gain-map filtering/repackaging 8.027 s.
+Encoding is the largest full-size cost. No production behaviour changed
+for this measurement; temporary hooks restored byte-for-byte.
+
+Stage seconds for DSC07060 (both lanes combined). Batch time is one photo's
+latency within the two-worker run; it is not throughput. Queue/broker is
+request wait minus renderer time, including claim/return overhead.
+
+| Stage | Batch photo, 4000 px | Full-size single |
+|---|---:|---:|
+| RAW opening/preparation | 3.735 | 2.869 (before export request) |
+| Queue/broker | 7.194 | 0.378 |
+| GPU setup | 0.003 | 0.039 |
+| Source transport | 1.335 | 1.206 |
+| Denoise preparation | 2.875 | 2.411 |
+| Creative tiles (including submission waits) | 2.901 | 3.310 |
+| Finishing | 1.859 | 1.503 |
+| Readback | 0.326 | 0.706 |
+| Finished-pixel transfer | 0.472 | 2.047 |
+| Encoding | 3.959 | 15.371 |
+| Validation | 0.113 | 0.556 |
+
+Scheduler permits are nested in the GPU stages: 690 calls per job, 2.019 s
+for the batch photo and 1.659 s for the full-size single. Finishing includes
+unpacking film, resize for the batch, clipping and the final limiter.
+The full-size case has no resize or output sharpening.
+
+Part 4 first improvement (largest measured cost): overlap two unchanged
+gain-map filter stripes, with only two results in flight and a serial JPEG
+writer. Complete repackaged JPEG bytes match the old serial writer on all
+three batch outputs and the full-size single. The full-size filtering and
+repackaging step fell from 7.766 s to 6.382 s; batch-sized files save about
+0.2-0.3 s. These are isolated encoding replays, not new end-to-end timings.
+Neither timing target is achieved yet. Encoders, filter maths and its halo
+remain unchanged.
