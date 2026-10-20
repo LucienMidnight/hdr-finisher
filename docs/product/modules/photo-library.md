@@ -621,8 +621,9 @@ crop route; its move to live native scenes remains open with that cleanup.
 
 ### 5.1 Non-RAW Library source speed: batch plan (October 20, 2026)
 
-**Status: planned, no implementation batches complete.** Steve requested a
-single plan covering all supported non-RAW formats, delivered in small batches.
+**Status: Batch 0 baseline and contracts recorded October 20; GPU implementation
+has not started.** Steve requested a single plan covering all supported non-RAW
+formats, delivered in small batches.
 This extends item 1 above; the completed Bayer RAW work remains separate.
 Update each batch here with its commit, outcome and remaining limits when built.
 Do not mark a format complete merely because it draws on the GPU.
@@ -705,6 +706,178 @@ operations are already performed inside decoders, preventing double conversion.
 Missing representative files stay explicit coverage gaps, not claimed passes.
 Done: baseline and adapter contracts recorded here; one reusable focused
 measurement/check driver, extending existing drivers where practical.
+
+**Batch 0 findings (October 20, 2026; driver commit `ffbdc5f`).** Measurement/check driver:
+`codebase/tests/performance/library-source-baseline.py`, using the sample
+manifest beside it and optional `--synthetic`. It wraps existing import
+boundaries and consumes the helper's existing queue/storage diagnostics;
+production decoding, drawing, gates and allowances are unchanged. Run from
+`codebase` with the .venv Python, `--manifest
+tests/performance/library-source-samples.json --synthetic --repeats 3`.
+Sources are copied without sidecars to disposable folders, verified by SHA-256,
+and each round uses a fresh isolated cache/profile. Original sidecars are never
+opened by the driver.
+
+Protocol chosen before the final comparisons: 16 cases (8 existing files plus
+8 generated cases), three repeats **each** of sequential 640 then 2560 and
+simultaneously submitted 640/2560, followed by two cached opens in each round.
+No other test work runs during the final timing collection. Helper startup,
+sample generation/copying and preservation hashes are outside the timer; OS file
+cache is uncontrolled. Report medians/ranges, use the existing 5% allowance for
+matched comparisons, and do not infer p90 or first paint from three repeats.
+The initial diagnostic established the concurrent-import risk; it is excluded
+from the timing baseline.
+
+Actual dispatch starts in `loader.load_image`. Its BMP branch shares the
+bitmap decoder but BMP is **not** in the Library's supported-extension list;
+this work adds no format. All supported non-RAW routes still enter
+`SessionStore.prepare_session` from `library_live.develop_cpu`: full source
+decode, full-source analysis, starting document/look, then independent linear
+reductions for 2560/640 and existing half-float scene storage. The source hash
+runs concurrently with import. No Bayer RAW bridge accepts these RGB arrays.
+
+| Input / current decoder boundary | Already performed before the common loader boundary |
+| --- | --- |
+| Ordinary JPG/JPEG, PNG: Pillow | EXIF transpose, RGB conversion (8-bit even for a higher-precision bitmap), integer normalization; successful arbitrary ICC conversion to encoded sRGB via ImageCms. Failed ICC conversion keeps current classification/manual gate. Never apply the original ICC again to converted samples. |
+| TIFF: tifffile first series/page | Layout/plane normalization, integer dtype-range division or float32 samples; profile **name classification**, not a general ICC transform. No TIFF orientation-tag transform in this route today. Preserve that observed behaviour; orientation/profile support beyond it is a separate gap, not silently “fixed” by the adapter. |
+| EXR: OpenEXR.InputFile | Three separate FLOAT channel reads into HWC float32; top-level RGB, otherwise preferred layered Combined RGB. Dimensions come from dataWindow extents; displayWindow padding/origin placement is not performed. Chromaticities/colorInteropID resolve primaries or retain the conflict/missing-metadata gate. No transfer/gamut conversion yet. |
+| Radiance HDR/PFM: imageio.v3 | Plugin read plus float32 cast, declared scene-linear/LINEAR; common colour detection resolves scene-linear to sRGB. Actual plugin availability/precision must be qualified; these are not proved by the cast. |
+| JPEG XL: imagecodecs/libjxl, in process | Declared bit-depth normalization (not uint16 container maximum). Trusted HDR Finisher hfmd marker triggers transfer/primaries conversion to ACEScg; third-party values retain the manual interpretation gate. No external JXL process. Trusted SDR JXL currently returns ACEScg without a separate authored SDR reference; do not claim that rendition is already supplied. |
+| Plain/direct AVIF: avifdec and PNG readback | Container metadata inspection, decoder transforms/YUV-to-RGB, full 16-bit PNG intermediary, then CICP transfer/primaries conversion to linear ACEScg. PQ/HLG decoded scale is 203 nits; unknown transfer rejects before irreversible interpretation. |
+| ISO gain-map AVIF: avifgainmaputil + imagecodecs primary decode, or avifdec for reconstructed SDR | Tool reconstructs HDR at larger headroom to BT.2020/PQ PNG; base/alternate headroom decides whether SDR is the actual base or a reconstructed rendition. Both renditions are already converted (HDR ACEScg; SDR linear sRGB). Includes process launches and PNG/intermediary I/O; map formula is inside the tool. |
+| Ultra HDR JPEG: Pillow + libultrahdr CLI | Pillow separately decodes/orients/ICC-converts the SDR base and applies sRGB EOTF. CLI reconstructs linear RGBA16f; decoder applies .18 scaling and chosen sRGB/BT.2020-to-ACEScg transform, then orientation. Returns linear-sRGB base plus HDR ACEScg at the 203-nit decoder scale. Base decoding may be duplicated inside libultrahdr. |
+| HEIC/HEIF: pillow-heif/libheif | Primary image/high-precision RGB and NCLX/profile interpretation; plain/direct encoded samples still need common conversion. Apple auxiliary map is selected by type, normalized/resized and reconstructed in linear Display P3 using MakerNote headroom; SDR base is already linear sRGB. HDR P3-to-ACEScg remains in the common loader. Unreadable auxiliary data retains existing SDR-base/error metadata behaviour. |
+
+Common loader work is still required after those boundaries: finite/range
+handling, any remaining transfer/primaries conversion, decoder-to-project
+reference-white ratio **once**, optional linear 1.0 diffuse-white to .18,
+ordinary authored-SDR rendition formation, resolved-colour negative mapping,
+and source analysis. Do not repeat EOTF, ICC, gain reconstruction or .18 scaling
+on already converted decoder output. Interpretation overrides retain the
+current loader order, including overrides of decoder-normalized sources;
+changing that order is not authorised by Batch 0.
+
+**Sample coverage.** Existing files in the manifest: ordinary
+`DSC_3931_01.jpg` from the Zebras Crossing darktable folder; the local
+DxO-neutral 16-bit PP TIFF (unknown-profile gate); the reported darktable
+`A7R00619.exr` (BT.2020); fixture `linear_unconfirmed.exr` (manual gate);
+LichtFeld's `alps_field_1k.hdr`; `samples/hdr_reference.avif` (inspection
+confirms ISO gain map, **not** direct HDR); the reported urbanscape ISO AVIF;
+and local `iphone-12-pro-HDR.heic`.
+Generated 1536 x 1024 cases: EXIF orientation 6 / sRGB ICC JPEG, ordinary ICC
+PNG, profiled uint16 TIFF, SDR JXL, 12-bit PQ HDR JXL with a 100-nit project
+and an in-memory saved-grade recipe, Ultra HDR JPEG, float PFM with highlights,
+and explicitly tagged 10-bit direct-PQ AVIF. Generated ramps cover route
+contracts, not photographic quality/speed acceptance. The saved-grade recipe
+does not read/write a real sidecar; saved-sidecar/reuse behaviour remains
+covered by the existing fast Library tests.
+
+**Baseline outcome.** Fourteen cases completed all three repeats in both modes
+(84 rounds); HDR and PFM stopped on their first decode because this .venv has
+no suitable imageio backend. The diagnostic deliberately exits nonzero for
+these coverage gaps. It does not install a backend or claim a format pass.
+
+- Reported EXR: sequential tier-pair median **7.765 s**, range 7.736–7.780 s;
+  concurrent pair **11.705 s**, range 11.684–11.754 s. Sequential stage medians:
+  decoder boundary 3.182 s, colour/range 2.814 s, analysis .714 s, reduction
+  .718 s, storage .113 s. Hash 3.429 s overlaps import and is not extra wall time.
+- Reported ISO AVIF: sequential tier-pair median **4.183 s**, range 4.159–4.201 s;
+  concurrent pair **5.712 s**, range 5.678–5.732 s. Sequential stage medians:
+  metadata .855 s, combined HDR tool work 1.732 s, colour/range .880 s,
+  decoder residual .155 s, analysis .085 s, reduction .053 s, storage .192 s.
+  These helper tier-pair timings are not matched comparisons with the earlier
+  single-call diagnostic, and show no implementation speedup.
+- Every successful sequential round imported **once** and reused the other tier;
+  every simultaneous backend pair imported **twice**. Both imports hash, decode,
+  analyse and reduce; per-tier storage locks prevent duplicate final writes,
+  but act too late to prevent duplicated preparation. This is far beyond 5%
+  noise on the two reported slow files. The page's path-keyed source scheduler
+  normally merges demands before making HTTP calls, so this is a backend
+  boundary finding, not proof that every normal page open duplicates work.
+- All 84 cached reopen pairs hit the stored scenes, with **zero** preparation
+  calls; the largest pair of helper metadata requests took 12.24 ms. That
+  excludes page/HTTP transport and GPU drawing. Idle helper queue wait was
+  at most 1.58 ms; it says nothing about a loaded Library or Grade pause.
+- The Apple HEIC exercised actual auxiliary reconstruction and a separate SDR
+  reference. Controlled HDR JXL recorded exactly one decoder-203/project-100
+  normalization; orientation-6 JPEG returned transposed dimensions. No
+  original, copied source or existing original sidecar was modified.
+
+Remaining coverage gaps: no plain/direct-HDR HEIF sample, no real direct-HDR
+AVIF or real SDR/HDR JXL speed sample (generated cases only), no third-party
+unmarked JXL measurement, no real Ultra HDR JPEG (generated case only), no HLG
+case, arbitrary non-sRGB ICC JPEG/PNG, TIFF orientation/float-profile cases,
+and nonzero EXR windows/layered-channel conflicts in the measured set. The
+unconfirmed EXR and ProPhoto TIFF exercise unresolved interpretation, not a
+claim that their final colour is qualified. HDR/PFM require a working decoder
+backend before precision/colour can be qualified. Photographic PNG speed,
+saved-sidecar presentation, colour agreement and first-paint qualification
+remain for the relevant implementation/acceptance batches.
+
+
+**Timing boundaries and limits.** Each run records helper queue wait, parallel
+file hash, decoder/metadata boundaries, colour/range work, analysis, reductions
+and existing storage events; also import/AVIF substage stopwatches and source
+facts. Nested wrapper times are excluded from their parent's exclusive time;
+inclusive containers are retained separately. Concurrent work totals and
+parallel hash time must **not** be added to request wall time. “Codec combined”
+includes embedded metadata, layout/range operations and uninstrumented codec
+work. External tool phases combine codec/reconstruction, launch and
+intermediary I/O; pure codec time and pure gain maths are **unmeasured** inside
+them. AVIF's existing reconstruction stopwatch also includes PNG readback.
+Storage includes half conversion, serialization, bookkeeping and trim dispatch.
+
+The existing page stopwatch separates draw dispatch queue, pixel fetch,
+renderer setup and completed `picture_drawn` (after GPU completion). Its
+`first` flag is renderer-global, not request-to-first-paint. Pixel fetch
+includes backend stored-scene read/conversion/transport; writeTexture upload
+has no separate timer. HTTP/page source-queue wait, standalone upload,
+request-to-first-visible/final paint, loaded-grid behaviour, Explorer comparison
+and peak RAM/GPU use are **unmeasured in this baseline**. No first/final picture
+speed goal or colour/perceptual agreement is claimed from these source-only
+runs. No GPU check directly covers this diagnostic-only change. Validation: fast
+Node suite 539 passed; fast .venv Python suite 2,277 passed / 3 skipped; the
+new driver's source/sidecar-preservation check passed separately. No GPU
+implementation, push or installer work was performed.
+
+**Batch 1 adapter contract (design only).**
+
+- A decoded plane/band descriptor carries HWC RGB dimensions, selected channels,
+  row stride, dtype, effective bits, integer code range, alpha/channel policy
+  and ownership/lifetime. Keep float/negative values until the existing finite
+  and negative-colour boundary; do not prematurely quantize to stored half.
+  Preserve decoder precision, data/display-window bounds and origin, and
+  actual EXIF/container orientation application status.
+- Carry original and effective primaries/transfer, raw ICC or resolved profile
+  plus whether CPU ICC was applied, confidence/conflicts/manual overrides,
+  decoder-normalized flag, decoder/project reference white, linear-reference
+  convention and explicit applied-operation flags. An ACEScg/LINEAR payload
+  bypasses transfer/gamut work already done. Arbitrary ICC stays CPU-owned
+  unless safely representable; failed/unknown interpretation keeps its gate.
+- Optional authored SDR/base/map planes carry their own colour/range,
+  dimensions/orientation, exact-base flag and gain-family metadata. ISO
+  direction/headrooms/gamma/offsets, Ultra HDR's formula and Apple headroom
+  remain separate. Current final-scene decoders can bridge initially; exposing
+  raw base/map planes is later adapter work, not a capability proved here.
+- Identity includes source path/stat/fingerprint, decoder/colour version and
+  `library_live.recipe` (interpretation, white and RAW settings as today).
+  Finishing edits change the document/draw identity only. Merge in-flight work
+  by **source recipe across tiers**, with shared cancellation/priority demand,
+  before codec allocation/upload; recheck source and recipe before publishing.
+- One full-source measurement result supplies existing analysis, luminance facts,
+  starting adjustments and default document. One preparation produces both
+  existing scene tiers (HDR ACEScg, optional SDR linear sRGB); keep selected
+  native detail as the only full-size exception. Reduce only in linear light.
+  Use bounded transfers and existing broker/memory/cache limits; release
+  intermediates before reservations, yield to Grade/delivery and retain explicit
+  unsupported/unavailable/lost-GPU fallback reasons and recovery.
+
+**Readiness.** Batch 1 may start on ordinary JPEG/PNG using these contracts.
+Backend source-recipe coalescing, equivalent source measurements/default
+document construction, explicit ICC ownership and ordinary SDR preservation
+are prerequisites of its implementation, not completed work. All later-format
+and presentation gaps above remain open. No shader, import/export/Proof output,
+image tolerance, original/sidecar or allowance changes are part of Batch 0.
 
 **Batch 1 — shared RGB GPU preparation, ordinary JPEG/PNG first.** Add the
 Library adapter contract (sample layout/precision, source dimensions,
