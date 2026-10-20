@@ -151,3 +151,14 @@ def test_real_workers_overlap_two_photos_and_keep_result_order(tmp_path):
     final = wait_job(queue, job["id"])
     assert [row["photo"] for row in final["results"]] == ["0", "0", "1", "1", "2", "2"]
     assert final["completed"] == 6
+
+
+def test_three_workers_with_16_gb_two_below_and_the_setting_wins(monkeypatch):
+    from hdr_finisher import resource_preflight
+    from hdr_finisher.resource_preflight import ResourceSnapshot
+    monkeypatch.delenv("HDR_FINISHER_BATCH_PARALLEL", raising=False)
+    for total, expected in ((64 * 1024 ** 3, 3), (16 * 1024 ** 3, 3), (8 * 1024 ** 3, 2), (None, 2)):
+        monkeypatch.setattr(resource_preflight, "detect_memory_resources", lambda total=total: ResourceSnapshot(total, None, "test"))
+        assert BatchExports._parallel() == expected
+    monkeypatch.setenv("HDR_FINISHER_BATCH_PARALLEL", "1")
+    assert BatchExports._parallel() == 1

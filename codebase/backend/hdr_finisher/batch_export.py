@@ -131,8 +131,15 @@ class BatchExports:
                 job["estimated_seconds"] = 0
     @staticmethod
     def _parallel():
-        try: return max(1, min(4, int(os.environ.get("HDR_FINISHER_BATCH_PARALLEL", "2"))))
-        except ValueError: return 2
+        # Each worker peaks at about 1.6 GB on a 42 MP RAW (October 20). With the
+        # GPU turn down to ~2.7 s, the workers' CPU stages set the pace: three
+        # exported six badminton RAWs in 41 s against 50 s for two; four were no
+        # faster. Machines under 16 GB keep two.
+        try: return max(1, min(4, int(os.environ["HDR_FINISHER_BATCH_PARALLEL"])))
+        except (KeyError, ValueError): pass
+        from .resource_preflight import detect_memory_resources
+        total = detect_memory_resources().total_ram_bytes
+        return 3 if total is not None and total >= 16 * 1024 ** 3 else 2
     def _record(self, photo, preset, results):
         exported = [r for r in results if r["outcome"] in {"exported","renamed"}]
         if not exported: return
