@@ -1312,6 +1312,11 @@ def adaptive_denoise_model(
     # a crop costs no new measurement and cannot move the result.
     native = session.render_cache.native_denoise_source(*request)
     if native is not None:
+        # A GPU delivery job's worker measured this before queueing for the GPU
+        # (gpu_delivery._native_denoise_models), on these same pixels.
+        measured = getattr(session, "native_denoise_models", {}).get(kind.value)
+        if measured is not None:
+            return measured
         image, source_epoch = native
         key = (session_id, "native", source_epoch)
         return _cached_denoise_model(

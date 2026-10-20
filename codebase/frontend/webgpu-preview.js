@@ -4845,7 +4845,7 @@
         const tiled = await this.encodeTiledGeneration(canvas, context, noiseView ? proxy : sourceProxy, surface, pipelines, params, {
           delivery: sourceOptions?.delivery,
           beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
-          tileBatchSize: sourceOptions?.delivery ? 1 : undefined,
+          tileBatchSize: sourceOptions?.delivery ? 4 : undefined,
           tileSize: sourceOptions?.tileSize,
           serial,
           viewport: sourceOptions?.viewport || null,

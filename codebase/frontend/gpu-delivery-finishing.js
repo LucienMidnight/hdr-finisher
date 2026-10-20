@@ -4,6 +4,11 @@
  */
 window.HDRGpuDeliveryFinishing = class {
   constructor(gpu, permit) { this.gpu=gpu; this.device=gpu.device; this.permit=permit; this.owned=new Set(); }
+  // Rows per submission. Each submission waits for the GPU, so 128-row strips of
+  // a 42 MP image spent more time in round trips than in work. About 4 M pixels
+  // keeps each submission to a few milliseconds of GPU time, so Grade can still
+  // take the GPU back promptly. The split never changes a pixel.
+  strip(width) { return Math.min(4096,Math.max(128,Math.floor(4194304/Math.max(1,width)/8)*8)); }
   texture(width,height,format="rgba32float") {
     const value=this.device.createTexture({size:[width,height],format,
       usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.COPY_SRC|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});
@@ -76,7 +81,8 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
   async run(mode,src,dst,{axis=0,radius=0,hdr=false,amounts=[0,0],allowance=.12,fine=src,medium=src,residual=src}={}) {
     const buffer=this.device.createBuffer({size:48,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
     try {
-      for(let row=0;row<dst.height;row+=128){
+      const rows=this.strip(dst.width);
+      for(let row=0;row<dst.height;row+=rows){
         await this.permit();
         this.device.queue.writeBuffer(buffer,0,new Float32Array([mode,axis,radius,hdr?1:0,...amounts,allowance,0,row,0,0,0]));
         const group=this.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[
@@ -85,7 +91,7 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
           {binding:4,resource:dst.createView()},{binding:5,resource:{buffer}},{binding:6,resource:{buffer:this.ranges}},
         ]});
         const encoder=this.device.createCommandEncoder();const pass=encoder.beginComputePass();
-        pass.setPipeline(this.pipeline);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(dst.width/8),Math.ceil(Math.min(128,dst.height-row)/8));pass.end();
+        pass.setPipeline(this.pipeline);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(dst.width/8),Math.ceil(Math.min(rows,dst.height-row)/8));pass.end();
         this.device.queue.submit([encoder.finish()]);await this.gpu.waitForSubmittedWork();
       }
     } finally {buffer.destroy();}
@@ -133,9 +139,10 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
     const dummy=this.texture(1,1,"rgba16float");
     const bind=gpu.bindGraphResources(image.createView(),dummy.createView(),{buffer},dummy.createView());
     try{
-      for(let row=0;row<height;row+=128){await this.permit();const encoder=this.device.createCommandEncoder();
+      const rows=this.strip(width);
+      for(let row=0;row<height;row+=rows){await this.permit();const encoder=this.device.createCommandEncoder();
         const pass=encoder.beginRenderPass({colorAttachments:[{view:finished.createView(),loadOp:row?"load":"clear",storeOp:"store"}]});
-        pass.setScissorRect(0,row,width,Math.min(128,height-row));pass.setPipeline(pipeline);pass.setBindGroup(0,bind);pass.draw(3);pass.end();
+        pass.setScissorRect(0,row,width,Math.min(rows,height-row));pass.setPipeline(pipeline);pass.setBindGroup(0,bind);pass.draw(3);pass.end();
         this.device.queue.submit([encoder.finish()]);await gpu.waitForSubmittedWork();}
     }finally{buffer.destroy();this.release(image);this.release(dummy);}
     return finished;
