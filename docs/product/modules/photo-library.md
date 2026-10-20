@@ -621,8 +621,10 @@ crop route; its move to live native scenes remains open with that cleanup.
 
 ### 5.1 Non-RAW Library source speed: batch plan (October 20, 2026)
 
-**Status: Batches 1-3 built for qualified cases; Batch 2 HDR/PFM remains blocked.
-Batch 4 investigated October 20; GPU implementation deferred by Steve.** Steve requested a single plan covering all supported non-RAW
+**Status: Batches 1-3 retained for qualified cases; Batch 2 HDR/PFM remains blocked.
+Batch 4 investigation closed and production GPU implementation shelved.
+Batches 5-7 are shelved as a sequence; cold-folder admission and DNG work take priority
+(Steve, October 20).** Steve requested a single plan covering all supported non-RAW
 formats, delivered in small batches.
 This extends item 1 above; the completed Bayer RAW work remains separate.
 Update each batch here with its commit, outcome and remaining limits when built.
@@ -1271,6 +1273,57 @@ non-unit gamma/unequal offsets, 12-bit/ICC/orientation and all new-route GPU
 analysis, reuse/preemption/recovery checks remain unqualified. Existing app
 routes are unchanged. Batch 5 can be scoped independently, but cannot inherit
 an implemented/qualified ISO GPU reconstruction foundation.
+
+**Closeout and next priority (Steve, October 20).** Preserve the committed
+ordinary RGB, EXR/TIFF and JXL/plain AVIF/HEIF gains from Batches 1-3, together
+with their recorded exclusions and known failures. Keep ISO AVIF's existing CPU
+reconstruction and the reproducible diagnostic probe. No rollback, new ISO GPU
+route or continuation into Batches 5-7 is authorised by this closeout. Those
+batches below remain shelved proposals, not the current execution order. The
+unfinished HDR/PFM, gain-map and mixed-format acceptance work remains open;
+this closeout does not claim all formats or cold-folder targets are met.
+
+**Cold-folder/DNG investigation (October 20; proposal, not built).** Existing
+owner-app logs confirm DJI_0071.JPG at 205.5 s, DJI_0072.DNG at 159.7 s,
+DJI_0072-2.DNG at 201.7 s and DJI_0071.DNG at 296.7 s until final grid display.
+The frontend's two source slots encompass CPU fallback as well as GPU work.
+A controlled scheduler check held both with unfinished DNG jobs: the JPEG
+could not start. A disposable admission prototype serialised slow demand
+before the unchanged two-slot scheduler and let a JPEG finish while the first
+DNG was still running. This proves the admission mechanism only, not a live
+folder speedup. Merely reordering waiting jobs cannot help once both slots
+are occupied. Cache-hit discovery, selected-photo priority, cancellation and
+merged requests must also survive a production change; keep Grade priority
+and existing memory/concurrency allowances.
+
+One read-only full-resolution DJI_0071.DNG load with Library-helper native
+thread settings took 82.6 s under cProfile: mandatory corrections 79.5 s,
+including WarpRectilinear 75.2 s and GainMap 4.2 s; RAW decode/demosaic about
+1.1 s. This original is 8000 x 6000 Bayer with mandatory GainMap then
+WarpRectilinear, not a simple DNG that can safely bypass the blanket GPU
+exclusion. Separate unprofiled loads took 6.2 s for DJI_0071-2-HDR.dng and
+8.4 s for DSC00264_DxO-optical-corr-only.dng: both are linear DNGs without
+listed mandatory operations. These are single diagnostic import samples,
+not matched improvements, cold-grid p90 or pure disk-cold timings. The existing
+5% matched-timing noise allowance and picture agreement limits remain.
+No owner cache was cleared and no source/sidecar was changed.
+
+Recommended next work: bounded slow-job admission that leaves capacity for
+other visible files, plus Activity reporting for frontend waiting/running
+source and draw work and backend preparation. Then a narrow Library-only GPU
+trial of the existing DJI GainMap/WarpRectilinear variants after their current
+CPU demosaic, with DNG colour/brightness/crop/orientation and exact operation
+order preserved. Measure actual cold-grid display and finished SDR/HDR
+agreement before adoption. Linear-DNG GPU colour/analysis/reduction is a
+separate follow-up through the RGB foundation. Do not remove DNG eligibility
+gates wholesale, skip required corrections, change Grade/export/Proof, raise
+budgets or promise a GPU speedup from these CPU profiles. Production queue,
+Activity and DNG GPU changes have not been implemented by this investigation. Fast
+checks: 539 Node passed; 2,303 Python passed, 3 skipped. The previously recorded
+`test_source_ownership_merges_tiers_promotes_and_rejects_stale_publication`
+failure reproduced (stale publication was not rejected after rewriting the
+source). It was not investigated or changed in this documentation-only work.
+No GPU check was needed because no app or shader code changed.
 
 **Batch 4 — gain-map AVIF.** Prioritise the measured AVIF bottleneck. Establish
 access to decoded base/map samples and all required ISO gain-map metadata;
