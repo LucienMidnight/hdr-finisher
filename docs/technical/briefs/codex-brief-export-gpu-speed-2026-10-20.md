@@ -198,7 +198,58 @@ full-source GPU-developed image resident through creative finishing, while
 passing its measurements back to initialise the starting settings and
 Denoise. Existing Grade/Library source reuse, CPU fallback, priority,
 yielding, budget and optional Guarantee HDR peak must remain intact.
-Await Steve's decision under the Questions protocol before introducing
-that pattern. Parts 2, 3 and 5 remain unfinished, and part 4 has only the
+Steve approved that pattern on October 20: keep the developed image on
+one device through finishing, hand measurements back for starting settings
+and Denoise, admit it within the shared budget with two workers, wait for
+memory rather than using CPU for pressure, and preserve Grade priority,
+fallback, yielding and the optional peak guarantee. Also investigate the
+7.2 s batch queue/broker stage. Parts 2, 3 and 5 remain unfinished, and part 4 has only the
 first isolated improvement described above. No post-change end-to-end
 speed target has been demonstrated.
+
+
+Wrap-up at Steve's request to limit remaining credit use (October 20).
+The approved resident-image implementation is saved, not enabled, in Git
+stash commit `424d7e00adf2bc54c85da73e517debe89f708e7d` (message begins
+"WIP resident RAW delivery"). Restore deliberately on this branch with
+`git stash apply 424d7e00adf2bc54c85da73e517debe89f708e7d`; the user's
+untracked blender fixture was excluded. No experiment source is active.
+The previously committed, byte-identical gain-map stripe overlap remains.
+
+The resident batch measured 35.741 s for three photos (11.914 s/photo),
+against 33.439 s (11.146 s/photo): about 6.9% slower, outside the agreed
+5% noise allowance. Neither speed target is achieved. Source upload fell
+from roughly 1.3 s to a few milliseconds, but the implementation still
+reads back the complete developed source for the CPU session and Denoise.
+This large handoff serializes work previously overlapped with GPU delivery.
+A persistent, authenticated scheduler connection reduced fresh submission
+permit overhead from roughly 2.9 s to 1.2 s in the experiment, preserving
+per-submission priority and yield decisions. These changes are saved with
+the experiment rather than presented as a completed speed improvement.
+
+The baseline 7.194 s queue/broker stage includes time behind another
+photo's GPU turn. Instrumented resident runs showed roughly 47 ms to claim
+the first job, while the second waited about 15.2 s behind it. Two workers
+share a serialized GPU lane and a 2 GiB budget; adding workers does not
+remove that work. Cutting the queue requires shortening the active GPU
+turn, especially moving full-source CPU handoff outside its lease or
+replacing it with measurements and the small windows needed for Denoise.
+The latter needs a real lazy CPU source/fallback design, not a dummy image.
+Cold creative pipeline compilation also remains a material cost. No new
+priority, worker-count or budget policy was introduced in the active code.
+
+Validation of the saved experiment: 539 Node tests passed; full Python
+suite 2280 passed, 3 skipped; final focused Python tests 18 passed after
+scheduler authentication changes. Eight tiled versus full-frame finishing
+comparisons (HDR/SDR, four sharpening settings) were byte-identical.
+GPU plus forced-CPU export/Proof smoke passed, including the optional peak
+guarantee. Three full-size badminton RAWs completed GPU rendering, with
+manual Lensfun test correction on two disposable copies. The comparison
+finished just before wrap-up: all 12 HDR/SDR native/Fit checks passed the
+agreed mean < 1 and p999 <= 3 limits (highest p999: 2.216).
+The saved-RAW ceiling driver and final end-to-end single-export timing were
+not completed for this experiment. Full RAW/export/Proof qualification
+must finish before restoring it as active product code. Earlier rejected
+experiments and setup failures are not performance or quality passes.
+The before-encoding ceiling remains mandatory; the after-encoding check
+remains optional Guarantee HDR peak, off by default, per Steve's correction.
