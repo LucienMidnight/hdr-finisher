@@ -19,9 +19,9 @@ window.HDRLibraryScenes = (() => {
   async function develop(path, edge, signal, importance) {
     if (HDRLibraryGpuRaw.enabled()) {
       try {
-        const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal);
+        const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance);
         if (meta) return meta;
-      } catch (error) { if (error.name === "AbortError") throw error; }
+      } catch (error) { if (error.name === "AbortError") throw error; console.warn("Library source CPU fallback:",error.message); }
     }
     for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",signal,

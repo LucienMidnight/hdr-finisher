@@ -15,7 +15,7 @@ def test_source_baseline_counts_preparations_without_touching_source_or_sidecar(
     before = source.read_bytes()
     result = driver.measure({"name": "png", "path": str(source)}, repeats=1)
     assert result["summary"]["sequential"]["preparations"] == [1]
-    assert result["summary"]["paired"]["preparations"][0] in (1, 2)
+    assert result["summary"]["paired"]["preparations"] == [1]
     assert all(run["sources"][0]["has_reference"] for run in result["runs"])
     assert source.read_bytes() == before
     assert sidecar.read_bytes() == b"existing sidecar must not be read or changed"

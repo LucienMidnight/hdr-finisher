@@ -103,6 +103,7 @@ class PictureRequest(BaseModel):
 
 class LiveSceneRequest(BaseModel):
     path: str
+    source_job: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     edge: Literal[640, 2560, 100000] = 640
     gpu: bool = True
     priority: int = Field(default=30, ge=0, le=100)
@@ -276,6 +277,21 @@ def create_library_router(worker, browser, store=None):
             "X-Bytes-Per-Row": str(stride), "X-Working-Space": space,
             "Cache-Control": "private, no-store"})
 
+    from .library_source_jobs import SourceJobs
+    source_jobs = SourceJobs()
+
+    @router.post("/live-source/{token}")
+    def touch_live_source(token: str):
+        try:
+            return source_jobs.check(token, file_commands.epoch)
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @router.delete("/live-source/{token}")
+    def release_live_source(token: str):
+        source_jobs.release(token)
+        return {"released": True}
+
     @router.post("/live-scene")
     async def live_scene(command: LiveSceneRequest, request: Request):
         document = await run_in_threadpool(live.document, command.path)
@@ -283,38 +299,62 @@ def create_library_router(worker, browser, store=None):
         source_quality = live_quality(document)
         cached = await run_in_threadpool(live.cache.cached, path, command.edge, source_quality)
         if cached:
+            live.cache.accept_transient(cached)
             return await run_in_threadpool(live.describe, command.path, cached)
         if worker.status()["paused"]:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
-        if command.gpu:
-            from . import library_gpu_raw
-            from .models import RawImportSettings, SourceInterpretationOverride
-            inputs = live_recipe(document)
-            try:
-                if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
-                    raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")
-                header, parts = await run_in_threadpool(library_gpu_raw.sensor, Path(path),
-                    RawImportSettings.model_validate(inputs["raw_import_settings"]))
-            except library_gpu_raw.NotEligible:
-                return Response(status_code=204)
-            header.update(edge=command.edge, source_quality=source_quality, item_path=command.path)
-            return Response(library_gpu_raw.frame(header, *parts), media_type="application/octet-stream")
-        result = await helper_result(request, "live-scene", path=path, document=document,
-            edge=command.edge, priority=command.priority)
-        if isinstance(result, Response): return result
-        live.cache.accept_transient(result)
-        return await run_in_threadpool(live.describe, command.path, result)
+        token = source_jobs.claim(path, source_quality, command.edge, command.priority, file_commands.epoch, command.source_job)
+        if token is None:
+            return JSONResponse({"detail": "library_pending"}, status_code=202)
+        transfer = False
+        try:
+            if command.gpu:
+                from . import library_gpu_raw, library_rgb
+                from .models import RawImportSettings, SourceInterpretationOverride
+                inputs = live_recipe(document)
+                try:
+                    if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png"}:
+                        header, parts = await run_in_threadpool(library_rgb.decoded, Path(path), inputs)
+                    else:
+                        if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
+                            raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")
+                        header, parts = await run_in_threadpool(library_gpu_raw.sensor, Path(path),
+                            RawImportSettings.model_validate(inputs["raw_import_settings"]))
+                except library_gpu_raw.NotEligible as error:
+                    log("source_cpu_fallback", path=path, reason=str(error))
+                    return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
+                source_jobs.check(token, file_commands.epoch)
+                if await request.is_disconnected():
+                    raise HTTPException(499, "Library request cancelled.")
+                header.update(edge=command.edge, source_quality=source_quality, item_path=command.path, source_job=token)
+                transfer = True
+                return Response(library_gpu_raw.frame(header, *parts), media_type="application/octet-stream")
+            result = await helper_result(request, "live-scene", path=path, document=document,
+                edge=command.edge, priority=command.priority, source_token=token)
+            if isinstance(result, Response): return result
+            source_jobs.check(token, file_commands.epoch)
+            live.cache.accept_transient(result)
+            return await run_in_threadpool(live.describe, command.path, result)
+        finally:
+            if not transfer:
+                source_jobs.release(token)
 
     @router.post("/live-developed")
     async def live_developed(request: Request):
         from . import library_gpu_raw
         try:
             header, body = library_gpu_raw.unframe(await request.body())
+            if header.get("source_job"):
+                source_jobs.check(header["source_job"], file_commands.epoch)
             item = header["item_path"]
             document = await run_in_threadpool(live.document, item)
             if header["source_quality"] != live_quality(document):
                 raise ValueError("Source settings changed during development.")
             path = str(marks.source_path(item))
+            if header.get("source_job"):
+                owner = source_jobs.check(header["source_job"], file_commands.epoch)
+                if owner["path"] != path or owner["quality"] != header["source_quality"] or (owner["edge"] == 100000) != (header["edge"] == 100000):
+                    raise ValueError("Developed source does not match its preparation owner.")
             class SceneCache:
                 def build(self, source, edge, _quality, decoded):
                     pixels, reference, metadata = decoded
@@ -326,11 +366,17 @@ def create_library_router(worker, browser, store=None):
                             raise ValueError("The source photo changed; its saved grade cannot be shown.")
                         metadata.pop("default_document", None)
                     metadata["source_fingerprint_sha256"] = fingerprint
+                    if header.get("source_job"):
+                        source_jobs.check(header["source_job"], file_commands.epoch)
+                    if header["source_quality"] != live_quality(live.document(item)):
+                        raise ValueError("Source settings changed during development.")
                     result = live.cache.build(source, edge, header["source_quality"],
                         decoded=(pixels, reference, metadata))
                     live.cache.accept_transient(result)
                     return result
-            result = await run_in_threadpool(library_gpu_raw.developed, SceneCache(), path, header, body)
+            from . import library_rgb
+            adapter = library_rgb if header.get("rgb") else library_gpu_raw
+            result = await run_in_threadpool(adapter.developed, SceneCache(), path, header, body)
             return await run_in_threadpool(live.describe, item, result)
         except (ValueError, OSError, KeyError) as error:
             raise HTTPException(409, str(error)) from error
@@ -350,6 +396,7 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/cache-clear")
     def clear_library_cache(change: dict):
+        source_jobs.invalidate()
         cache.transient.clear()
         live.cache.transient.clear()
         return command(cache.managed.clear, change.get("location"))
@@ -399,7 +446,7 @@ def create_library_router(worker, browser, store=None):
         except (ValueError, OSError) as error:
             raise HTTPException(status_code=400, detail=user_error(error)) from error
 
-    async def helper_result(request, command, *, retain_picture=False, **arguments):
+    async def helper_result(request, command, *, retain_picture=False, source_token=None, **arguments):
         arguments["trace_id"] = request.headers.get("X-Library-Request")
         epoch = file_commands.epoch
         try:
@@ -410,8 +457,12 @@ def create_library_router(worker, browser, store=None):
         except (RuntimeError, ValueError, OSError) as error:
             log("helper_request_failed", operation=command, paths=arguments, reason=str(error), action="request stopped; saved marks retained")
             raise HTTPException(status_code=503, detail=helper_error(error)) from error
+        if source_token:
+            source_jobs.bind(source_token, lambda: worker.cancel(job_id), lambda priority: worker.prioritize(job_id, priority))
         try:
             while not future.done():
+                if source_token:
+                    source_jobs.check(source_token, file_commands.epoch)
                 if worker.status()["paused"]:
                     return JSONResponse({"detail": "library_pending"}, status_code=202,
                         headers={"Retry-After": "0.1", "Cache-Control": "no-store"})

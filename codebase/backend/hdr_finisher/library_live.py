@@ -9,7 +9,7 @@ from copy import deepcopy
 from hashlib import sha256
 import json
 from pathlib import Path
-from threading import RLock
+from threading import RLock, Condition
 from types import SimpleNamespace
 
 import numpy as np
@@ -33,14 +33,17 @@ def recipe(document):
 
 
 def quality(document):
-    return "live-scene-v1:" + sha256(json.dumps(recipe(document), sort_keys=True).encode()).hexdigest()
+    from .loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
+    identity = {"recipe": recipe(document), "decoder": SOURCE_DECODER_VERSION,
+                "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-v1"}
+    return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
-def develop_cpu(root, path, document, edge, cancelled=None):
+def _develop_cpu(root, path, document, edge, cancelled=None, cache=None):
     """One existing full development produces both stored sizes; no CPU finishing."""
     from .sessions import SessionStore
     from .models import EditDocument
-    cache = LibraryPictureCache(root)
+    cache = cache or LibraryPictureCache(root)
     source_quality = quality(document)
     cached = cache.cached(path, edge, source_quality)
     if cached:
@@ -59,7 +62,8 @@ def develop_cpu(root, path, document, edge, cancelled=None):
         metadata = {"route": "library-live", "renderer": "cpu", "raw_input": True,
             "starting_look": source.starting_adjustments().model_dump(mode="json"),
             "source_width": source.image.shape[1], "source_height": source.image.shape[0],
-            "source_fingerprint_sha256": source.source_fingerprint_sha256}
+            "source_fingerprint_sha256": source.source_fingerprint_sha256,
+            "source_timings_ms": source.metadata.get("import_timings_ms")}
         if not document:
             metadata["default_document"] = source.edit_document().model_dump(mode="json")
         item = cache.build(path, size, source_quality, cancelled,
@@ -68,6 +72,54 @@ def develop_cpu(root, path, document, edge, cancelled=None):
         if size == edge:
             result = item
     return result
+
+
+_cpu_flights = {}
+_cpu_condition = Condition()
+
+
+def develop_cpu(root, path, document, edge, cancelled=None):
+    """Coalesce helper calls before allocating a decoder, across scene tiers."""
+    from .library_pictures import picture_key, check_cancelled
+    key = (str(root), picture_key(path, 100000 if edge == 100000 else 0, quality(document)))
+    demand = cancelled or (lambda: False)
+    with _cpu_condition:
+        flight = _cpu_flights.get(key)
+        owner = flight is None
+        if owner:
+            flight = {"users": [], "done": False, "cache": LibraryPictureCache(root)}
+            _cpu_flights[key] = flight
+        flight["users"].append(demand)
+    try:
+        if owner:
+            try:
+                def all_cancelled():
+                    with _cpu_condition:
+                        return all(user() for user in flight["users"])
+                flight["result"] = _develop_cpu(root, path, document, edge, all_cancelled, flight["cache"])
+            except BaseException as error:
+                flight["error"] = error
+            finally:
+                with _cpu_condition:
+                    flight["done"] = True
+                    _cpu_condition.notify_all()
+        else:
+            with _cpu_condition:
+                while not flight["done"]:
+                    check_cancelled(cancelled)
+                    _cpu_condition.wait(.05)
+        check_cancelled(cancelled)
+        if "error" in flight:
+            raise flight["error"]
+        result = dict(flight["result"]) if owner else flight["cache"].cached(path, edge, quality(document))
+        if not result:
+            raise ValueError("Source changed during Library preparation.")
+        return result
+    finally:
+        with _cpu_condition:
+            flight["users"].remove(demand)
+            if not flight["users"] and _cpu_flights.get(key) is flight:
+                del _cpu_flights[key]
 
 
 class LivePictures:

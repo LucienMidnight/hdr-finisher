@@ -621,8 +621,7 @@ crop route; its move to live native scenes remains open with that cleanup.
 
 ### 5.1 Non-RAW Library source speed: batch plan (October 20, 2026)
 
-**Status: Batch 0 baseline and contracts recorded October 20; GPU implementation
-has not started.** Steve requested a single plan covering all supported non-RAW
+**Status: Batch 0 recorded; Batch 1 built October 20 for ordinary JPEG/PNG.** Steve requested a single plan covering all supported non-RAW
 formats, delivered in small batches.
 This extends item 1 above; the completed Bayer RAW work remains separate.
 Update each batch here with its commit, outcome and remaining limits when built.
@@ -840,7 +839,7 @@ Node suite 539 passed; fast .venv Python suite 2,277 passed / 3 skipped; the
 new driver's source/sidecar-preservation check passed separately. No GPU
 implementation, push or installer work was performed.
 
-**Batch 1 adapter contract (design only).**
+**Batch 1 adapter contract.**
 
 - A decoded plane/band descriptor carries HWC RGB dimensions, selected channels,
   row stride, dtype, effective bits, integer code range, alpha/channel policy
@@ -872,12 +871,68 @@ implementation, push or installer work was performed.
   intermediates before reservations, yield to Grade/delivery and retain explicit
   unsupported/unavailable/lost-GPU fallback reasons and recovery.
 
-**Readiness.** Batch 1 may start on ordinary JPEG/PNG using these contracts.
-Backend source-recipe coalescing, equivalent source measurements/default
-document construction, explicit ICC ownership and ordinary SDR preservation
-are prerequisites of its implementation, not completed work. All later-format
-and presentation gaps above remain open. No shader, import/export/Proof output,
-image tolerance, original/sidecar or allowance changes are part of Batch 0.
+**Batch 1 outcome (October 20).** The Library-only RGB adapter retains the
+existing Pillow orientation/ICC boundary and its decoded uint8 HWC RGB
+precision, layout, profile/transfer state, reference white and stat/fingerprint
+identity. Arbitrary ICC conversion stays on the CPU. Encoded RGB travels packed
+to the GPU; sRGB transfer, colour matrices, negative-colour handling, full-source
+peaks/strided quantiles and linear reduction reuse the RAW preparation maths.
+The authored SDR rendition has its own planes and full-source peak. Equivalent
+analysis, starting adjustments and default documents are supplied directly,
+without a full Grade session. Grade's default loader, RAW numerical development,
+export, Proof, shaders, tolerances and all cache/memory allowances are unchanged.
+
+Backend ownership now coalesces a source recipe across 640/2560 before decode,
+with priority promotion, cancellation, short-lived ownership/heartbeat and
+source/recipe/epoch checks before publication. The CPU helper also coalesces
+concurrent preparations. Native remains separate and selected-only; finishing
+changes keep the scene identity. Transient native cache hits now reuse their
+existing bounded storage. Shared background admission yields and resumes on
+preemption; unsupported operations report their reason and retain CPU fallback.
+
+**Matched measurement.** `tests/library-rgb-source.js` exercises the actual
+GPU route (the original baseline driver remains CPU instrumentation). Protocol
+chosen before comparisons: the 2000 × 1168 photographic `DSC_3931_01.jpg` and
+its decoded lossless PNG, three fresh-scene repeats per route, alternating
+CPU/GPU order, warm processes/pipelines, uncontrolled Windows file cache.
+Concurrent 640/2560 requests through the same page scheduler measure source
+preparation through stored metadata, including transport/storage. Median JPEG
+fell **844 → 654 ms (22.5%)**, PNG **864 → 684 ms (20.8%)**, beyond the retained
+5% noise allowance. GPU stage medians across these formats: upload 20 ms,
+colour/measurements 104 ms, reduction 59–63 ms, readback 63–68 ms; measured serial
+queue wait was 0 ms. Decoder boundary was 41/77 ms (JPEG/PNG), CPU baseline
+colour/analysis about 400 ms. Stage fields have different/overlapping boundaries
+and must not be summed into a pipeline total. Broker/backend queue wait,
+metadata/hash/storage/HTTP individually, process peak RAM, first/final draw and
+first paint remain unmeasured; these medians are neither p90 nor first-paint
+claims. An earlier comparison overlapped pytest and was discarded.
+
+**Validation.** Fast checks: 539 Node, 2,285 Python passed (3 skipped), plus
+seven focused adapter/API checks after helper heartbeat renewal. Registered
+Electron drivers `library-rgb-source.js` and `library-rgb-native.js` run serially
+at 2560 × 1440. Source checks pass for photographic JPEG/PNG, saved rotation,
+locals and Denoise, both scene sizes, native scene pixels/reuse and forced
+preemption without CPU fallback. Finished HDR/SDR agreement retains the existing
+mean < 1 / p99.9 ≤ 3 perceptual limits (worst HDR mean 0.075, p99.9 0.351).
+Photographic JPEG/PNG grid cells, saved-grade native detail, selected-only reuse,
+CPU picture fallback and automatic hardware recovery pass. Native resident
+resources were 238–240 MB against the unchanged 2 GiB budget. The native driver
+now reloads between Compare and recovery to avoid an asynchronous view change
+that invalidated its earlier grid assertion.
+Default documents also match Grade at a non-default 100-nit white. Backend tests
+cover concurrent tiers, cancellation, promotion, invalidation and stale
+publication. Original sources/sidecars are preserved; the pre-existing EXR
+sidecar remains untouched with its recorded SHA-256.
+
+**Remaining limits/readiness.** Only ordinary JPEG/PNG using the existing
+8-bit Pillow RGB boundary is qualified. Gain-map JPEG, interpretation overrides,
+unresolved profiles and unavailable/failed GPU operations retain explicit CPU
+routes; no later-format adapter has started. High-precision/windowed/linear
+inputs must extend the contract rather than pass through this packed 8-bit
+entry point. Batch 2 can build on the shared preparation/ownership foundation;
+its real-format and HDR/PFM decoder gaps from Batch 0 remain its own work. The
+existing open native perceptual comparison for scale-dependent effects and
+Library p90/first-paint targets remain open.
 
 **Batch 1 — shared RGB GPU preparation, ordinary JPEG/PNG first.** Add the
 Library adapter contract (sample layout/precision, source dimensions,

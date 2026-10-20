@@ -184,7 +184,7 @@ def measure(sample, repeats):
                     cached_ms = (perf_counter() - started) * 1000
                     warm = summarize(events[first:])
                     preparations = cold["calls"].get("prepare_session", 0)
-                    assert preparations in (1, 2), cold
+                    assert preparations == 1, cold
                     if mode == "sequential":
                         assert preparations == 1, cold
                     assert warm["calls"].get("prepare_session", 0) == 0, warm

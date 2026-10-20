@@ -674,7 +674,9 @@
   // would. Resolves null when the photo keeps the CPU route. An edited photo
   // (savedGradeOnly) answers with its saved-grade picture or a wait.
   async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false}, signal) {
+    const queued=performance.now();
     return serial(async () => {
+      const queueMs=performance.now()-queued;
       await gpu();
       const id = crypto.randomUUID(), bytes = meta.width * meta.height * 44 + 64 * 1024 * 1024;
       const url = `/api/delivery/gpu/raw-budget/${id}`;
@@ -693,11 +695,17 @@
             if (value.granted) await lease(true);
             await wait(50, signal); continue;
           }
+          let touched = 0;
           const beforeSubmit = async () => {
+            if(meta.source_job && performance.now()-touched>5000){
+              const check=await fetch("/api/library/live-source/"+meta.source_job,{method:"POST",signal});
+              if(!check.ok) throw Error("Library source preparation was invalidated."); touched=performance.now();
+            }
             const status = await lease(false);
             if (!status.granted || status.preempt || status.fallback) { const error = Error("Yielding GPU RAW to shared work."); error.yieldRaw = true; throw error; }
           };
-          try { return await developRaw({mosaic, meta, lensData, edges, beforeSubmit, memoryBudget:bytes}); }
+          try { const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, memoryBudget:bytes});
+            result.timings.queue=queueMs; return result; }
           catch (error) { if (!error.yieldRaw) throw error; }
           // developRaw's finally has freed every buffer before Grade sees zero.
           await lease(true); await wait(50, signal);
@@ -706,16 +714,21 @@
     });
   }
 
-  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false) {
+  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30) {
     const begun = performance.now();
+    const sourceJob=liveScene ? crypto.randomUUID().replaceAll("-", "") : null;
+    try {
     let response;
     for (;;) {
       response = await fetch(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", signal,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, gpu:true} : { path, edge, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, gpu:true,source_job:sourceJob,priority:importance()} : { path, edge, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
       if (response.status !== 202) break;
       await wait(150, signal);
     }
-    if (response.status === 204) return null;
+    if (response.status === 204) {
+      root.HDRLibraryStopwatch?.("source_cpu_fallback", {path});
+      console.info("Library CPU source:", response.headers.get("X-Library-Fallback")); return null;
+    }
     if (!response.ok) { const error = new Error((await response.json().catch(() => ({}))).detail || "Library request failed."); error.status = response.status; throw error; }
     if ((response.headers.get("Content-Type") || "").includes("application/json")) return response.json();
     const body = await response.arrayBuffer();
@@ -735,15 +748,15 @@
     let selectedResult;
     for (const storedEdge of nativeMode ? [100000] : [...new Set([2560,640,edge])]) {
       const picture = developed.reduced[storedEdge];
-      const header = { path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
+      const header = { rgb:meta.rgb, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
       edge:storedEdge, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
-      timing_ms: { sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
+      timing_ms: { ...developed.timings, decode:meta.decode_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
       let text = new TextEncoder().encode(JSON.stringify(header));
       const padded = new Uint8Array(text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32); padded.set(text); text = padded;
-      const out = new Uint8Array(4 + text.length + picture.height * picture.width * 12);
+      const out = new Uint8Array(4 + text.length + picture.height * picture.width * (meta.rgb ? 24 : 12));
       new DataView(out.buffer).setUint32(0, text.length, true); out.set(text, 4);
       picture.planes.forEach((plane, k) => out.set(new Uint8Array(plane), 4 + text.length + k * plane.byteLength));
       const stored = await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed", { method: "POST", signal, headers: { "Content-Type": "application/octet-stream" }, body: new Blob([out]) });
@@ -752,6 +765,7 @@
       if (storedEdge === edge || nativeMode) selectedResult = result;
     }
     return selectedResult;
+    } finally { if(sourceJob) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{}); }
   }
 
   // At most two photos in flight: their sensor transfers must never hold up
@@ -769,7 +783,7 @@
   }
   // The grid and the filmstrip can ask for the same photo: they share one job,
   // which stops only when every asker has scrolled past it.
-  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false } = {}) {
+  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30 } = {}) {
     root.HDRIdleWarmup?.touch();
     const key = `${path}|${savedGradeOnly}|${nativeMode}|${liveScene}`;
     let job = inflight.get(key);
@@ -777,7 +791,7 @@
       const controller = new AbortController();
       job = { controller, users: 0 };
       job.promise = new Promise((resolve, reject) => {
-        waiting.push({ signal: controller.signal, resolve, reject, task: () => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene) });
+        waiting.push({ signal: controller.signal, resolve, reject, task: () => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene, importance) });
         pump();
       }).finally(() => { if (inflight.get(key) === job) inflight.delete(key); });
       job.promise.catch(() => {});
@@ -791,7 +805,7 @@
       job.promise.then(value => {
         signal?.removeEventListener("abort", leave);
         if (value && !value.kept && !nativeMode && value.edge !== edge)
-          resolve(develop(path, edge, signal, savedGradeOnly, nativeMode, liveScene));
+          resolve(develop(path, edge, signal, savedGradeOnly, nativeMode, liveScene, importance));
         else resolve(value);
       },
         error => { signal?.removeEventListener("abort", leave); reject(error); });
@@ -799,7 +813,7 @@
   }
 
   const warmup = async beforeNext => { if (enabled()) await gpu(() => beforeNext(() => inflight.size > 0)); };
-  const exported = Object.freeze({ developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000}) });
+  const exported = Object.freeze({ shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

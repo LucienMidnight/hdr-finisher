@@ -137,6 +137,13 @@ class LibraryPictureCache:
             if real:
                 return real
         key = picture_key(path, edge, quality)
+        with self.transient_lock:
+            body = self.transient.get(key)
+            if body is not None:
+                with np.load(BytesIO(body), allow_pickle=False) as stored:
+                    metadata = json.loads(str(stored["metadata"]))
+                return metadata | {"key": key, "cache_hit": True, "stored_bytes": 0,
+                    "_transient": base64.b64encode(body).decode()}
         destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
         if not destination.is_file():
             return None

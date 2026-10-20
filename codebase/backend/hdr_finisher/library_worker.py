@@ -162,6 +162,13 @@ class LibraryWorker:
                 problem("helper_send_failed", arguments.get("path", arguments.get("paths", [])), exc, "request retained for automatic helper restart")
         return job_id, future
 
+    def prioritize(self, job_id, priority):
+        with self._lock:
+            request = self._requests.get(job_id)
+            if request and priority < request["priority"]:
+                request["priority"] = priority
+                self._send({"command": "prioritize", "id": job_id, "priority": priority})
+
     def submit_browse_picture(self, **arguments) -> tuple[str, Future]:
         """Non-RAW browsing owns its job, independently of HTTP waiters."""
         from .library_pictures import picture_key

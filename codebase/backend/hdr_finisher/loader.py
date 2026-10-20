@@ -284,7 +284,7 @@ def _linear_dng_library_exposure_ev(image: np.ndarray) -> float:
     return round(metered_exposure_ev, 3)
 
 
-def _load_with_pillow(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
+def _load_with_pillow(path: Path, *, encoded_samples: bool = False) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         from PIL import Image, ImageOps
     except ImportError as exc:
@@ -319,6 +319,8 @@ def _load_with_pillow(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
             metadata["color_space"] = "sRGB"
         array = np.asarray(image)
         metadata["bit_depth"] = str(array.dtype)
+        if encoded_samples:
+            return np.array(array, copy=True), metadata
         normalized = array.astype(np.float32)
         normalized *= np.float32(1.0 / 255.0)
         del array

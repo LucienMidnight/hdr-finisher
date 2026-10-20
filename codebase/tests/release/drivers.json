@@ -3899,6 +3899,20 @@
         "method": "python",
         "requires": "Provide --manifest with representative read-only sources; --synthetic adds controlled cases; choose --repeats before comparisons."
       }
+    },
+    {
+      "path": "tests/library-rgb-source.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Ordinary JPEG/PNG shared GPU preparation preserves authored SDR, full-source defaults, both tiers and native reuse against Grade.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/library-rgb-native.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "JPEG/PNG cells and saved-grade native detail preserve selected-only reuse and recover automatically after device loss.",
+      "launch": {"method": "electron"}
     }
   ]
 }
