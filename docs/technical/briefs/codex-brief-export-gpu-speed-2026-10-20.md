@@ -253,3 +253,18 @@ must finish before restoring it as active product code. Earlier rejected
 experiments and setup failures are not performance or quality passes.
 The before-encoding ceiling remains mandatory; the after-encoding check
 remains optional Guarantee HDR peak, off by default, per Steve's correction.
+
+## Claude's continuation (October 20)
+
+Codex ran out of credits; Claude continued. The 7.2 s batch "queue" was time
+behind the other worker's GPU turn, and most of that turn was waiting rather
+than GPU work: ~690 scheduler requests per photo, a second upload of identical
+SDR source pixels, 128-row finishing strips and one-tile creative batches each
+followed by a full GPU drain, and a 2-3 s CPU Denoise noise measurement made
+mid-turn. Fixing those cut the mean GPU turn from about 7.7 s to 2.7 s with
+byte-identical batch files; three workers (16 GB or more) then took a six-photo
+batch from 72.7 s to 40.8 s (about 5.2 s/photo once full). Details, checks and
+what remains are in the Export and Proof module PRD (October 20 entry and Open
+work item 0). The resident-image stash was not applied: with the GPU turn this
+short, GPU RAW development for export is worth re-measuring, because the CPU
+workers now set the pace.

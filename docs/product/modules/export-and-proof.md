@@ -229,6 +229,43 @@ Settings rules (from v1.2 section 5, still in force):
   smoke passed, including the existing perceptual limits and opt-in ceiling.
   Guarantee HDR peak remains optional and off by default (brief a3170de).
 
+- October 20, GPU export speed (Claude, after Codex ran out of credits).
+  Measured on six disposable badminton RAW copies, 4000 px Ultra HDR JPEG 95,
+  4:4:4, full gain map, no sharpening. In a batch the GPU handles one photo at
+  a time, so its turn sets the pace; most of that turn was waiting, not work.
+  Changes, none of which changes an output byte:
+  - the renderer reuses a "ready" answer from the scheduler for 0.1 s instead
+    of asking before each of ~690 small GPU batches (~3 ms each);
+  - without an authored SDR base the SDR lane reuses the HDR source upload
+    (identical pixels) instead of fetching it again (~0.9 s);
+  - finishing works in strips of about 4 M pixels instead of 128 rows, and
+    the creative render submits four tiles per batch, as Grade's preview does;
+  - the worker measures the full-size Denoise noise model before queueing,
+    instead of the renderer waiting 2-3 s mid-turn for the same measurement;
+  - three batch workers on machines with 16 GB or more (peak ~1.6 GB each),
+    two below; `HDR_FINISHER_BATCH_PARALLEL` still overrides.
+
+  | | Before | After |
+  |---|---:|---:|
+  | GPU turn per photo, mean | about 7.7 s | 2.7 s |
+  | Six-photo batch | 72.7 s | 40.8 s |
+  | Pace once the pipeline is full | 10.5 s/photo | about 5.2 s/photo |
+  | Full-size Maximum Fidelity single | 28.7 s | 24.2-24.8 s |
+
+  All six batch files were byte-identical to the "before" run. Two workers
+  took 50.2 s, four 41.1 s (no gain over three). The batch is now limited by
+  the workers' CPU stages (RAW preparation ~3.7 s, encoding ~4 s), and the
+  single export by encoding (~13 s, mostly the gain-map filter and the
+  external Ultra HDR tool). Four gain-map filter stripes instead of two saved
+  only 0.6 s for more memory and were not kept. Each GPU job's turn is now
+  logged as `gpu_delivery_turn` in backend.log, per lane.
+  On Steve's card two full-size runs of the same code differed in 81 isolated
+  pixels (faulty graphics memory); compare full-size runs by pixels, not bytes.
+  Checks: 539 Node, 2277 Python (3 skipped); GPU delivery smoke (unchanged
+  limits: HDR mean 0.625 / p99.9 2.756, SDR 0.565 / 2.782, peak 668.73 nits)
+  and the DSC07060 ceiling check (GPU export and Proof 797.075 nits, CPU
+  781.706, target 800) passed.
+
 **Not built**
 
 - No broad GPU-delivery accuracy or speed claim: Steve tests first. The
@@ -243,11 +280,14 @@ Settings rules (from v1.2 section 5, still in force):
 ## 6. Open work, in order
 
 0. **GPU export speed, end to end** (Steve, October 20: before the live
-   recorded test session). Batch export is about 13.6 s per photo and a
-   full-size Maximum Fidelity export about 33 s. Export RAW preparation is
-   still CPU, the GPU stage is far longer than the render needs, encoding is
-   5 to 6 s, and large sharpened originals fall back to the CPU. Brief:
+   recorded test session). Brief:
    [codex-brief-export-gpu-speed-2026-10-20](../../technical/briefs/codex-brief-export-gpu-speed-2026-10-20.md).
+   Batch pace is now about 5.2 s/photo (target 5 s) and the GPU turn 2.7 s;
+   see the October 20 entry above. Still open: the full-size single export
+   (24 s against under 15 s), which is now mostly CPU encoding; export RAW
+   development on the GPU (the CPU workers, not the GPU, now set the batch
+   pace, so this may now pay off); tiled finishing for large sharpened
+   originals (an unqualified version is in Git stash `424d7e0`).
 1. **GPU delivery.** Brief:
    [codex-brief-gpu-delivery-build-2026-10-18](../../technical/archive/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
    Steps 1–5 implemented. Steve to try one badminton export, a small batch,
