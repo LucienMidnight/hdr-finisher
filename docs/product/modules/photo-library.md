@@ -575,6 +575,8 @@ crop route; its move to live native scenes remains open with that cleanup.
    3. GPU development step (b).
    4. **Built October 19:** Single and full-screen onto the shared developed version.
 
+   Non-RAW source preparation has its own batch plan in section 5.1 below.
+
    Still unmeasured: Explorer on the same folder, a clean 70-cell run,
    on-screen saved-picture timing (the Electron window was lost in driver
    runs), loaded-grid use and peak memory.
@@ -616,6 +618,201 @@ crop route; its move to live native scenes remains open with that cleanup.
       enough room on the drive, interrupted move buttons.
     - One Library settings page.
 9. Installer and a methodical bug hunt.
+
+### 5.1 Non-RAW Library source speed: batch plan (October 20, 2026)
+
+**Status: planned, no implementation batches complete.** Steve requested a
+single plan covering all supported non-RAW formats, delivered in small batches.
+This extends item 1 above; the completed Bayer RAW work remains separate.
+Update each batch here with its commit, outcome and remaining limits when built.
+Do not mark a format complete merely because it draws on the GPU.
+
+**Problem and starting evidence.** Non-RAW live scenes currently use
+`library_live.develop_cpu` and Grade's full `SessionStore.prepare_session`
+before storing the 640/2560 scenes. Finishing already draws live on the GPU.
+The Bayer sensor bridge cannot accept these decoded RGB files. A single
+empty-application-cache investigation on October 20 measured:
+
+- `5M071612_finished.avif`, 1433 x 1920: scene preparation 3.62 s;
+  import decode 3.05 s, including HDR reconstruction 1.65 s and decoder
+  colour conversion 0.80 s. Cached scene metadata request 10.8 ms.
+- `A7R00619.exr`, 7980 x 5320: scene preparation 7.74 s; decode 3.19 s,
+  colour conversion 2.79 s, full-source analysis 0.71 s. Cached request 10.4 ms.
+
+These are diagnostic single samples, not p90 results or end-to-end first-paint
+measurements. Windows' file cache was not flushed. Other formats have not
+been timed. Neither file has the quick camera-preview placeholder RAW uses.
+
+**Scope and shared design.** Build one Library RGB source-preparation service,
+with small decoder adapters rather than a second complete pipeline per format.
+Decode compressed samples with the existing codec where necessary on the CPU;
+move supported transfer decoding, colour transforms, range handling,
+measurements and reduction onto the GPU. Gain-map reconstruction is an
+additional adapter stage, before scene reduction. Reuse existing Grade maths,
+Library stored scenes, document identity, transport and broker admission.
+Keep format semantics outside the ordinary Bayer demosaic path.
+
+| Work group | Inputs | Special handling |
+| --- | --- | --- |
+| Ordinary pictures | Standard JPG/JPEG, PNG; ordinary TIFF and HEIF | Orientation, ICC profiles, precision and the authored SDR rendition. JPG and JPEG are the same format. |
+| Direct HDR / linear RGB | EXR, HDR, PFM, JPEG XL, direct-HDR AVIF/HEIF and applicable TIFF | Declared primaries/transfer, PQ/HLG reference white, float/integer precision, EXR channels/windows, and existing manual interpretation gates. |
+| Gain-map pictures | Ultra HDR JPEG, ISO gain-map AVIF, Apple gain-map HEIC/HEIF | Decode base plus map and reconstruct using each format's own metadata; retain both HDR and authored SDR renditions. |
+
+Dispatch by file contents and metadata, not just extension: TIFF, AVIF and
+HEIF can belong to different groups. JPEG XL currently decodes in-process
+through imagecodecs/libjxl; it shares the RGB foundation and does not need a
+new finishing renderer. Third-party JPEG XL interpretation requirements stay.
+DNG, including linear DNG, remains in the separate RAW-family plan because
+its profiles, calibration and mandatory operations need their own treatment.
+Do not add new supported formats as part of this work.
+
+**Rules applying to every batch:**
+
+- Preserve source interpretation, orientation, crop/data-window semantics,
+  reference white, negative-colour handling, source measurements, starting
+  grade and source fingerprint. Do not analyse only a small thumbnail when
+  full-source peaks or other measurements affect the grade. Do not resize
+  encoded PQ/HLG/gamma samples as though they were linear light.
+- Preserve original files and sidecars. Finishing changes reuse the scene;
+  source/interpretation changes invalidate it. Merge concurrent grid,
+  filmstrip, Single and Export-tile requests for one source recipe. One
+  preparation supplies the existing 640 and 2560 tiers; selected-only native
+  detail remains the explicit exception and must retain/reuse its full scene.
+- Use bounded uploads/bands and existing shared GPU memory admission. Yield
+  to Grade and delivery, free intermediates before releasing reservations,
+  and do not increase cache, RAM or GPU allowances. Keep existing read-ahead
+  policy; no new background full-size development or finished-picture queue.
+- The existing visible CPU fallback remains for unavailable/lost/software
+  GPUs and unsupported operations, with a recorded reason. Retry hardware
+  after recovery; do not turn transient preemption into CPU fallback. CPU
+  compressed-file decoding in the normal GPU route is not itself fallback.
+  No optimisation project for the CPU rendering fallback.
+- Keep Grade import, export and Proof behaviour unchanged. Prefer Library
+  adapters around shared routines; if a shared change affects those outputs,
+  apply their strict validation rules before committing it.
+
+**Batch 0 — representative baseline and decoder contracts.** Inventory actual
+routes and choose a small representative sample set: ordinary JPEG and PNG,
+profiled/16-bit TIFF, EXR, HDR/PFM, SDR and HDR JPEG XL, direct-HDR AVIF/HEIF,
+and each supported gain-map family. Include orientation, non-sRGB colour,
+manual interpretation, non-default reference white, a saved grade and bright
+highlights across the set; do not require every combination for every codec.
+Use disposable copies/caches and existing stopwatch hooks. Split queue wait,
+metadata/hash, codec decode, gain reconstruction, colour/range conversion,
+analysis, reduction, storage, upload and first draw. Check repeated opens and
+paired 640/2560 requests. Record decoder output contracts and which colour
+operations are already performed inside decoders, preventing double conversion.
+Missing representative files stay explicit coverage gaps, not claimed passes.
+Done: baseline and adapter contracts recorded here; one reusable focused
+measurement/check driver, extending existing drivers where practical.
+
+**Batch 1 — shared RGB GPU preparation, ordinary JPEG/PNG first.** Add the
+Library adapter contract (sample layout/precision, source dimensions,
+orientation, colour/transfer/profile, reference white, optional SDR/base/map,
+source identity). Implement the supported common transforms, full-source
+measurements and linear reduction under background admission. Start with
+standard JPEG and PNG, exercising both SDR preservation and scene reuse.
+Retain CPU ICC interpretation where an arbitrary profile cannot safely be
+represented by the shared GPU operations; report that boundary rather than
+silently replacing it with sRGB. Store the same scene/document products as
+today without constructing an unnecessary full Grade session where equivalent
+metadata and measurements can be supplied directly.
+Done: real JPEG/PNG cells, saved-grade redraws, both scene sizes and selected
+native detail work; focused colour, identity, memory and recovery checks pass.
+
+**Batch 2 — EXR, HDR/PFM and TIFF adapters.** Feed existing decoded linear or
+encoded high-precision samples into batch 1. Profile EXR channel reads and
+compressed-block work; investigate reading RGB together if the bindings and
+measured cost justify it. Preserve selected layered channels, data-window
+handling, chromaticities/conflicts and manual overrides. TIFF retains its
+existing bit depth, float, profile and orientation semantics. Avoid converting
+whole full-size arrays to repeated intermediate copies before GPU upload.
+Done: supported cases use shared GPU preparation, decoder time is separated
+from GPU time, and unsupported cases keep an explicit existing fallback.
+
+**Batch 3 — JPEG XL and plain/direct-HDR AVIF/HEIF adapters.** Separate encoded
+sample decode from colour preparation where current decoders combine them.
+Use the in-process JPEG XL decode already present. Preserve its declared
+precision and interpretation gate. For AVIF, measure external process and PNG
+intermediate costs; select an in-process or raw-buffer path only after checking
+the bundled decoder's capabilities and validating the same metadata/precision.
+HEIF retains its current primary-image and colour metadata interpretation.
+Do not route gain-map files through a plain primary-image final scene.
+Done: SDR, PQ/HLG and supported linear cases share GPU preparation, reference
+white is applied once, and cache/native/saved-grade behaviour agrees.
+
+**Batch 4 — gain-map AVIF.** Prioritise the measured AVIF bottleneck. Establish
+access to decoded base/map samples and all required ISO gain-map metadata;
+prototype Library GPU reconstruction and colour conversion with the existing
+CPU decoder as the comparison route. Remove full-resolution PNG/intermediate
+round trips where the qualified decoder interface permits it. Preserve base
+versus alternate headroom direction, map dimensions, orientation, gamut,
+offsets, gamma and both SDR/HDR renditions. Keep reconstruction at sufficient
+resolution for correct full-source measurements before reduction. If the
+bundled interface cannot expose the map safely, record the remaining codec
+work and retain the existing route rather than claiming this batch complete.
+Done: real gain-map AVIF files pass both lanes and first-preparation timings
+identify any remaining decode floor.
+
+**Batch 5 — Ultra HDR JPEG and Apple HDR HEIF gain maps.** Reuse batch 4's
+base/map transport and scheduling, with separate reconstruction adapters for
+libultrahdr and Apple's supported metadata. Do not treat ISO, Adobe/libultrahdr
+and Apple map formulas as interchangeable. Preserve the actual SDR base,
+headroom/reference-white rules, orientation and current handling of missing
+or unreadable auxiliary data. Avoid decoding the same base twice where the
+chosen codec can expose both products. Keep export/Proof decoders intact.
+Done: both families pass focused SDR/HDR comparison, source identity and
+fallback checks; format-specific unsupported cases are listed here.
+
+**Batch 6 — fast first pictures, only where useful.** After the final-scene
+route works, use batch 0 timings to choose decoder-supported reduced or
+embedded previews for slow formats. Standard JPEG's reduced decode and a
+colour-aware gain-map SDR base are candidates, not promised capabilities for
+every codec. Label these as temporary pictures and replace them reliably with
+the final live scene; never cache an SDR stand-in as final HDR. Reuse ongoing
+decoding where possible and bound extra work so previews do not delay final
+scenes. Formats without a cheap preview retain the normal loading state.
+Done: navigation, cancellation, grade/source changes and GPU recovery cannot
+leave a stale stand-in; first-paint improvement is measured for enabled routes.
+
+**Batch 7 — focused mixed-format acceptance and closeout.** Exercise a small
+mixed folder in grid/filmstrip, Single/full-screen, Compare Fit, selected true
+100% detail and visible Batch Export tiles. Cover unedited and saved/pasted
+grades, finishing-only scene reuse, interpretation invalidation, concurrent
+requests, cache off/clear, relaunch and device recovery. Check responsiveness
+while Grade/delivery owns priority. Reuse the existing export-tile timing
+check only if shared tile scheduling changed. Retire replaced Library-only
+preparation code/tests once all its consumers move; retain supported fallback.
+Done: record which formats/routes are built, measured waits and remaining
+codec limits here, with no blanket claim that all decoding runs on the GPU.
+
+**Validation and acceptance for the batches:**
+
+- Existing Library picture guide: finished SDR Delta E 2000 / HDR Delta E ITP
+  mean below 1.0 and p99.9 at or below 3.0, against Grade at the same display
+  size and recipe, in both lanes. No hard per-pixel maximum. Review ordinary
+  SDR files and authored SDR bases as well as HDR highlights. Preserve the
+  existing hard highlight-target rule when enabled and use the existing
+  agreed checks for measurements; do not invent looser tolerances.
+- Existing speed goals remain: first picture within 1 s p90, final pictures
+  about 2 s p90, 90% of visible cached thumbnails within 100 ms on relaunch,
+  changed visible grade about 1 s when idle. Separate first paint, final draw,
+  cached metadata and codec-only timings. Single samples above do not qualify
+  these goals. Use 5% timing noise allowance for matched comparisons; seek
+  substantial reduction in the stage being changed and record unmet goals
+  honestly. The baseline batch chooses the representative sample count and
+  repeats before collecting comparisons; no broad camera sweep is required.
+- For every implementation batch run the repository's fast Node and .venv
+  Python checks, then one or two directly relevant GPU checks, serially via
+  the Electron runner at 2560 x 1440. Add new drivers to the release inventory.
+  Keep slow validation within roughly 30 minutes per related group; ask
+  before exceeding it, following AGENTS.md. Documentation-only updates need
+  the fast checks, with no GPU run. Full sweeps/installers are outside scope.
+- Each batch is independently reviewable and locally committed, with a short
+  outcome and any failures. Batch 0 precedes batch 1; batches 2 and 3 build on
+  batch 1; batch 4 builds on the AVIF contract from batch 3; batch 5 follows
+  batch 4; batch 6 follows qualification of its chosen formats; batch 7 closes
+  the integrated work. No push or installer is included.
 
 ## 6. Decisions waiting on Steve
 
