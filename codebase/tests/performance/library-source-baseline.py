@@ -308,23 +308,138 @@ def profile_avif_decode(path, repeats):
         "tool includes launch, decode, YUV conversion and PNG write; read includes disk, PNG decode and float normalization. Launch-only version probe is separate. OS cache uncontrolled; no peak memory or first paint."}
 
 
+def parse_iso_metadata_probe(text):
+    """Diagnostic only: retain exact ISO fractions and all three channels.
+
+    The production display-oriented parser is deliberately not changed.
+    This data must not authorize GPU reconstruction on its own.
+    """
+    import re
+    from fractions import Fraction
+    required = {"base_headroom": 1, "alternate_headroom": 1,
+                "gain_map_min": 3, "gain_map_max": 3, "base_offset": 3,
+                "alternate_offset": 3, "gain_map_gamma": 3}
+    fields = {}
+    for line in text.splitlines():
+        match = re.match(r"\s*\*\s*([^:]+):\s*(.*)$", line)
+        if not match:
+            continue
+        key = match[1].strip().lower().replace(" ", "_")
+        if key in required:
+            pairs = re.findall(r"as fraction: ([-+]?\d+)/(\d+)", match[2])
+            if len(pairs) != required[key]:
+                raise ValueError("Missing ISO channel fractions: " + key)
+            # Fraction rejects zero denominators; JSON retains the original n/d.
+            values = [float(Fraction(int(n), int(d))) for n, d in pairs]
+            fields[key] = {"fractions": [[int(n), int(d)] for n, d in pairs], "values": values}
+        elif key == "use_base_color_space":
+            if match[2].strip() not in {"True", "False"}:
+                raise ValueError("Invalid ISO colour-space selector")
+            fields[key] = match[2].strip() == "True"
+    if set(fields) != set(required) | {"use_base_color_space"}:
+        raise ValueError("Incomplete ISO gain-map metadata")
+    if any(value <= 0 for value in fields["gain_map_gamma"]["values"]):
+        raise ValueError("Invalid ISO gain-map gamma")
+    return fields
+
+
+def profile_iso_gainmap(path, repeats):
+    """Inspect the unqualified map boundary; NEVER publish it as a scene.
+
+    Matched protocol: supplied files, three repeats by default, alternating
+    existing CPU decode and candidate extraction order. No GPU speedup claim.
+    """
+    import inspect
+    import imagecodecs
+    import numpy as np
+    from hdr_finisher import gainmap_decoders as gain, library_rgb
+    from hdr_finisher.library_live import recipe
+    from hdr_finisher.binaries import resolve_binary
+    path = path.resolve(strict=True)
+    original_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+    sidecar = path.with_name(path.name + ".hdrf")
+    sidecar_hash = hashlib.sha256(sidecar.read_bytes()).hexdigest() if sidecar.exists() else None
+    rows = []
+    with tempfile.TemporaryDirectory(prefix="hdr-iso-interface-") as directory:
+        source = Path(directory) / path.name
+        shutil.copyfile(path, source)
+        info = gain.inspect_avif(source)
+        if not info.get("gain_map_present"):
+            raise ValueError("ISO profile requires a gain-map AVIF")
+        utility = resolve_binary("avifgainmaputil")
+        text = gain._run([str(utility), "printmetadata", str(source)]).stdout
+        fields = parse_iso_metadata_probe(text)
+        try:
+            library_rgb.decoded(source, recipe(None))
+        except library_rgb.NotEligible as error:
+            rejection = str(error)
+        else:
+            raise AssertionError("Unqualified ISO input published as ordinary RGB")
+        try:
+            imagecodecs.avif_decode(source.read_bytes(), index=1)
+        except Exception as error:
+            index_probe = str(error)
+        else:
+            index_probe = "index=1 returned an image; this is not proof of auxiliary-map selection"
+        for repeat in range(repeats):
+            for mode in (["cpu", "extract_png"] if repeat % 2 == 0 else ["extract_png", "cpu"]):
+                started = perf_counter()
+                if mode == "cpu":
+                    hdr, sdr, metadata = gain.decode_avif(source)
+                    elapsed = (perf_counter() - started) * 1000
+                    assert hdr.shape == sdr.shape and np.isfinite(hdr).all() and np.isfinite(sdr).all()
+                    row = {"mode": mode, "repeat": repeat, "total_ms": elapsed,
+                           "stages_ms": metadata["decode_timings_ms"], "shape": list(hdr.shape),
+                           "sdr_base_preserved": metadata["sdr_base_preserved"],
+                           "decoder_reference_white_nits": metadata["decoder_reference_white_nits"]}
+                    del hdr, sdr
+                else:
+                    png = Path(directory) / "map.png"
+                    gain._run([str(utility), "extractgainmap", str(source), str(png)])
+                    tool_ms = (perf_counter() - started) * 1000
+                    read_started = perf_counter()
+                    samples = imagecodecs.png_decode(png.read_bytes())
+                    read_ms = (perf_counter() - read_started) * 1000
+                    row = {"mode": mode, "repeat": repeat, "tool_ms": tool_ms, "read_ms": read_ms,
+                           "total_ms": tool_ms + read_ms, "shape": list(samples.shape),
+                           "dtype": str(samples.dtype), "sample_range": [int(samples.min()), int(samples.max())],
+                           "png_bytes": png.stat().st_size,
+                           "warning": "RGB at native map dimensions; not libavif's pre-RGB full-base YUV resampling"}
+                rows.append(row)
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == original_hash
+    assert (hashlib.sha256(sidecar.read_bytes()).hexdigest() if sidecar.exists() else None) == sidecar_hash
+    return {"path": str(path), "sha256": original_hash, "sidecar_sha256": sidecar_hash,
+            "repeats": repeats, "timing_noise_percent": 5, "info": gain._without_raw(info),
+            "iso_metadata": fields, "imagecodecs_version": imagecodecs.avif_version(),
+            "binding_signature": str(inspect.signature(imagecodecs.avif_decode)),
+            "index_1_probe": index_probe, "library_rejection": rejection, "runs": rows,
+            "medians_ms": {mode: statistics.median(row["total_ms"] for row in rows if row["mode"] == mode)
+                           for mode in ("cpu", "extract_png")},
+            "qualified_gpu_interface": False,
+            "boundary": "CPU is existing full reconstruction/colour decoder, not whole Library preparation. Extraction is map-only and NOT a competing route. Tool includes launch/decode/write; read includes PNG decode. Nested decoder stages overlap. OS cache uncontrolled; no GPU/queue/upload/readback, p90, first paint or peak memory measured."}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--exr-read-profile", type=Path)
     parser.add_argument("--avif-decode-profile", type=Path)
+    parser.add_argument("--iso-gainmap-profile", type=Path)
     parser.add_argument("--synthetic", action="store_true", help="Add eight controlled codec/interpretation cases")
     parser.add_argument("--repeats", type=int, default=3)
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats must be positive")
+    if args.iso_gainmap_profile:
+        print(json.dumps(profile_iso_gainmap(args.iso_gainmap_profile, args.repeats)))
+        return 0
     if args.avif_decode_profile:
         print(json.dumps(profile_avif_decode(args.avif_decode_profile,args.repeats)))
         return 0
     if args.exr_read_profile:
         print(json.dumps(profile_exr_reads(args.exr_read_profile,args.repeats)))
         return 0
-    if not args.manifest: parser.error("--manifest is required unless profiling EXR reads")
+    if not args.manifest: parser.error("--manifest is required unless profiling a decoder interface")
     scratch = tempfile.TemporaryDirectory(prefix="hdr-test-rgb-samples-")
     samples = json.loads(args.manifest.read_text(encoding="utf-8-sig"))
     if args.synthetic:

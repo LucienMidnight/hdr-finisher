@@ -12,7 +12,18 @@ if(process.argv.includes('--codecs')){
  const cases=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_codec_samples.py'),folder],{cwd:root,encoding:'utf8'}));
  sources=cases.sources;photos.push(...cases.photos);
 }
-const edited=path.join(folder,'edited.png');fs.copyFileSync(png,edited);photos.push(edited);
+const isoRoute=process.argv.includes('--iso-blocked');
+if(isoRoute){
+ photos.length=0;sources=[];
+ for(const [name,original] of [['reference.avif',path.join(root,'samples/hdr_reference.avif')],
+   ['urbanscape.avif','D:/Photos/Play_Raw/HDR exercise on urbanscape/5M071612_finished.avif']]){
+  const target=path.join(folder,name);fs.copyFileSync(original,target);photos.push(target);
+ }
+ const reversed=path.join(folder,'hdr-base.avif');
+ execFileSync(path.join(root,'bin/avifgainmaputil.exe'),['swapbase',photos[0],reversed,'-q','100','--qgain-map','100','-s','10']);
+ photos.push(reversed);
+}
+const edited=path.join(folder,isoRoute?'edited.avif':'edited.png');fs.copyFileSync(isoRoute?photos[1]:png,edited);photos.push(edited);
 let editedTiff=null,layeredExr=null,bt709Tiff=null,whiteExr=null;
 if(process.argv.includes('--precision')){
  editedTiff=path.join(folder,'edited-16bit.tif');photos.push(editedTiff);
@@ -62,15 +73,16 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
 }
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage();page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log(m.text());});await page.goto(process.env.HDR_FINISHER_URL);
- const result=await page.locator('#library-frame').evaluate(async(element,{photos,cpuScene})=>{
+ const result=await page.locator('#library-frame').evaluate(async(element,{photos,cpuScene,isoRoute})=>{
   const w=element.contentWindow,gpu=await w.HDRLibraryPictures.initialize(),original=gpu.renderTo,rows=[];
   if(cpuScene)w.localStorage.setItem("library-gpu-raw","off");
   let captured;
   // Force one mid-preparation broker preemption. It must yield and retry,
   // retaining the decoded RGB source rather than asking for CPU development.
-  const originalFetch=w.fetch.bind(w);let leases=0,yielded=false;
+  const originalFetch=w.fetch.bind(w);let leases=0,yielded=false;const fallbackReasons=[];
   w.fetch=async(url,options)=>{
    const response=await originalFetch(url,options);
+   if(isoRoute&&response.status===204&&String(url).includes('/api/library/live-scene'))fallbackReasons.push(response.headers.get('X-Library-Fallback'));
    if(String(url).includes('/api/delivery/gpu/raw-budget/')&&options?.method==='POST'&&!JSON.parse(options.body).release&&++leases===15){
     yielded=true;const value=await response.json();return new w.Response(JSON.stringify({...value,preempt:true}),{status:200,headers:{'Content-Type':'application/json'}});
    }
@@ -81,7 +93,7 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
   for(const photo of photos){
    const begun=performance.now();
    const [meta,large]=await Promise.all([w.HDRLibraryScenes.load(photo,640),w.HDRLibraryScenes.load(photo,2560)]),lanes={};
-   if(cpuScene ? meta.renderer!=='cpu' : (meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference!==meta.rgb_contract.colour.authored_sdr)) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
+   if(cpuScene||isoRoute ? meta.renderer!=='cpu' : (meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference!==meta.rgb_contract.colour.authored_sdr)) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
    const prepareMs=performance.now()-begun;
    const native=await w.HDRLibraryScenes.load(photo,100000);
    const again=await w.HDRLibraryScenes.load(photo,100000);
@@ -96,9 +108,12 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
    }
    rows.push({photo,meta,large,native,prepareMs,lanes});
   }
-  gpu.renderTo=original;w.fetch=originalFetch;if(!yielded&&!cpuScene)throw Error("Preemption was not exercised");return {location,rows,yielded};
- },{photos,cpuScene});
- if(!cpuScene)console.log("RGB source preemption yielded and resumed without CPU fallback.");
+  gpu.renderTo=original;w.fetch=originalFetch;if(!yielded&&!cpuScene&&!isoRoute)throw Error("Preemption was not exercised");
+  if(isoRoute&&(!fallbackReasons.length||fallbackReasons.some(reason=>!reason?.includes("Gain-map AVIF"))))throw Error("ISO fallback reason missing: "+JSON.stringify(fallbackReasons));
+  return {location,rows,yielded,fallbackReasons};
+ },{photos,cpuScene,isoRoute});
+ if(isoRoute)console.log("ISO preparation retained explicit CPU fallback; GPU finished drawing is not GPU reconstruction.");
+ if(!cpuScene&&!isoRoute)console.log("RGB source preemption yielded and resumed without CPU fallback.");
  const timing=await page.locator('#library-frame').evaluate(async(element,cases)=>{
   const w=element.contentWindow,rows=[];
   for(const item of cases){

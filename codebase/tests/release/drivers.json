@@ -3894,11 +3894,18 @@
       "path": "tests/performance/library-source-baseline.py",
       "areas": ["library"],
       "tier": "diagnostic",
-      "protects": "Non-RAW source-stage baseline and paired-tier/cache preparation counts.",
+      "protects": "Non-RAW source-stage baseline, paired-tier/cache counts and ISO map-interface/CPU decode diagnostics.",
       "launch": {
         "method": "python",
-        "requires": "Provide --manifest with representative read-only sources; --synthetic adds controlled cases; choose --repeats before comparisons."
+        "requires": "Provide --manifest with representative read-only sources; --synthetic adds controlled cases; or use --iso-gainmap-profile FILE for the unqualified map boundary. Choose --repeats before comparisons."
       }
+    },
+    {
+      "path": "tests/library-iso-source.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "ISO AVIF explicitly retains CPU reconstruction; real SDR/HDR-base scenes, full-source peaks, both tiers, cached native reuse and saved-grade live HDR/SDR drawing agree with Grade.",
+      "launch": {"method": "electron"}
     },
     {
       "path": "tests/library-rgb-source.js",

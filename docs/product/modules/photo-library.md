@@ -621,7 +621,8 @@ crop route; its move to live native scenes remains open with that cleanup.
 
 ### 5.1 Non-RAW Library source speed: batch plan (October 20, 2026)
 
-**Status: Batch 0 recorded; Batch 1 built October 20 for ordinary JPEG/PNG.** Steve requested a single plan covering all supported non-RAW
+**Status: Batches 1-3 built for qualified cases; Batch 2 HDR/PFM remains blocked.
+Batch 4 investigated October 20; GPU reconstruction remains incomplete.** Steve requested a single plan covering all supported non-RAW
 formats, delivered in small batches.
 This extends item 1 above; the completed Bayer RAW work remains separate.
 Update each batch here with its commit, outcome and remaining limits when built.
@@ -1129,6 +1130,85 @@ HEIF retains its current primary-image and colour metadata interpretation.
 Do not route gain-map files through a plain primary-image final scene.
 Done: SDR, PQ/HLG and supported linear cases share GPU preparation, reference
 white is applied once, and cache/native/saved-grade behaviour agrees.
+
+**Batch 4 outcome (October 20) — implementation incomplete.** No qualified
+base/map interface was adopted. ISO AVIF retains full-resolution CPU
+reconstruction and both renditions; GPU finishing is not GPU reconstruction.
+Grade/export/Proof, interpretation order, numerical boundaries, reference white,
+scheduling and all allowances are unchanged. Batch 5 has not started and is not
+ready to reuse a shared gain-map reconstruction foundation.
+
+**Codec blocker.** Bundled avifgainmaputil/avifdec use libavif 1.4.1.
+imagecodecs/libavif 1.4.2 exposes primary/frame RGB through
+`avif_decode(data, index=None, numthreads=None, out=None)`, without auxiliary-map
+selection or structured ISO metadata. `index=1` rejects both real inputs as out
+of frame range. pillow-heif 1.8.0/libheif 1.23.4 has an auxiliary accessor, but
+no installed AVIF decoder (HEVC only). Pillow's libavif 1.3.0 binding exposes
+only `get_info`/`get_frame`, returning primary RGB without map access.
+
+The CLI **can** extract maps as 16-bit RGB PNG and print exact rational
+headrooms, per-channel min/max/gamma/offsets and the base-colour-space selector.
+This is a candidate interface, not a qualified reconstruction contract.
+Urbanscape has a 1433×1920 limited-range 10-bit YUV420 base and 717×960 full-range
+10-bit YUV444 map; the reference has a 1024×576 8-bit base and same-size 10-bit
+map. Both have sRGB base, BT.2020/PQ alternate and no orientation transform.
+[libavif reconstruction](https://github.com/AOMediaCodec/libavif/blob/v1.4.1/src/gainmap.c)
+scales map **YUV to base dimensions before RGB conversion**, at native map depth.
+[Extraction](https://github.com/AOMediaCodec/libavif/blob/v1.4.1/apps/avifgainmaputil/extractgainmap_command.cc)
+exports original-size RGB instead. Resizing that PNG changes the operation order
+and quantization; agreement is unqualified. Re-encoding the map as AVIF/Y4M is
+not a direct decoded-plane binding. Equal-size base/map RGB precision and CPU
+output quantization also remain unqualified; no pixel-agreement or impossibility
+claim follows from source inspection alone.
+
+Remaining codec work: expose original base/map YUV or libavif-equivalent RGB
+**after** full-base map scaling, with exact structured ISO metadata,
+range/depth/layout, dimensions, transforms and colour/application flags. Pin and
+validate the codec boundary before Library GPU ISO maths. Preserve the existing
+imagecodecs-authored SDR when the base is SDR; HDR-base inputs currently
+reconstruct SDR through encoded AVIF and avifdec. Bypassing those quantization
+stages needs validation too. The existing display-oriented metadata parser was
+left unchanged; the diagnostic retains all rational/channel values and rejects
+missing fields, zero denominators and nonpositive gamma.
+
+**Measurements.** Extended the registered `library-source-baseline.py` with
+`--iso-gainmap-profile FILE`. Protocol chosen before collection: tracked reference,
+real urbanscape and a disposable quality-100 `swapbase` reference, three repeats each,
+alternating existing CPU decode and map extraction order, uncontrolled Windows
+file cache. Copies exclude sidecars; original source/sidecar hashes are checked.
+Reversed-case creation is outside the timer. This is a codec probe, **not a new
+Library route comparison or a measured improvement**; the 5% allowance remains.
+
+Existing decoder medians: reference **1.62 s**, urbanscape **3.53 s**, reversed
+HDR-base **3.33 s**. Urbanscape nested medians: inspection 457 ms, HDR tool/PNG
+readback 1,798 ms, SDR decode 63 ms, metadata process 417 ms, colour 783 ms.
+Reversed SDR reconstruction/intermediates took 1,788 ms. Map-only PNG extraction
+and read medians were 492/598/497 ms; they omit primary decode/reconstruction and
+are not competing-route timings. Tool timers combine launch, decode, maths and
+intermediate I/O; pure decode/gain maths are unisolated. Nested medians are not
+additive. Queueing, Library analysis/reduction, upload/readback, first paint,
+p90 and peak process memory are unmeasured here. The tool/intermediate floor
+remains.
+
+**Validation.** Diagnostic tests cover exact rational precision, both headroom
+directions, unequal gamma/offset channels and signed min/max; these validate
+parsing, not GPU maths. The real reference probe checks uint16 map output,
+both finite CPU renditions, 203-nit white, preservation and adapter rejection.
+Registered `library-iso-source.js` ran through Electron at 2560×1440: both real
+files, reversed HDR-base and a disposable saved-grade urbanscape pass stored
+scene-half agreement, full-source starting peaks, concurrent 640/2560, cached
+native identity/reuse and live HDR/SDR colour. Explicit CPU reconstruction
+reasons are verified with GPU preparation enabled. Worst finished mean/p99.9
+**0.075/0.186**, within unchanged mean <1 / p99.9 ≤3. No preemption/recovery
+claim is made for a new route. Fast checks: **539 Node / 2,304 Python passed,
+3 Python skipped**. The unchanged ownership failure did not reproduce in this
+run; it was not repaired. The known HEIF SDR driver failure was not rerun.
+
+Photographic non-unit gamma/unequal offsets, 12-bit maps, ISO orientation/ICC,
+and new-route full-source/default-document equivalence remain untested. No GPU
+reconstruction was enabled. Batch 2 blockers and the known Batch 3 failures were
+not investigated or repaired. Originals/sidecars are preserved, including the
+Blender sidecar SHA-256 recorded above.
 
 **Batch 4 — gain-map AVIF.** Prioritise the measured AVIF bottleneck. Establish
 access to decoded base/map samples and all required ISO gain-map metadata;
