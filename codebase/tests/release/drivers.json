@@ -3889,7 +3889,16 @@
       "tier": "core",
       "protects": "Visible Export tiles draw once, retain through progress and keep three-photo export throughput within its agreed allowance.",
       "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/performance/library-source-baseline.py",
+      "areas": ["library"],
+      "tier": "diagnostic",
+      "protects": "Non-RAW source-stage baseline and paired-tier/cache preparation counts.",
+      "launch": {
+        "method": "python",
+        "requires": "Provide --manifest with representative read-only sources; --synthetic adds controlled cases; choose --repeats before comparisons."
+      }
     }
-
   ]
 }
