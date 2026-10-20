@@ -174,3 +174,30 @@ def test_retired_file_routes_are_gone_and_scene_resume_preserves_other_pauses(tm
         assert client.post('/api/library/scene-work',json={'action':'clear'}).status_code==400
     finally:
         client.close(); worker.close()
+
+
+def test_live_plan_checks_cache_and_size_without_starting_preparation(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.media_browser import MediaBrowserStore
+    class NoPreparation:
+        def submit_library(self, *args, **kwargs):
+            pytest.fail("A cache check must never start preparation")
+    path = photo(tmp_path)
+    before = path.read_bytes()
+    profile = tmp_path / "profile"
+    app = FastAPI()
+    app.include_router(create_library_router(NoPreparation(), MediaBrowserStore(profile)))
+    with TestClient(app) as client:
+        cold = client.post('/api/library/live-plan', json={'path':str(path),'edge':640})
+        assert cold.status_code == 200
+        assert cold.json()['cached'] is None
+        assert cold.json()['bytes'] == len(before)
+        develop_cpu(profile, path, None, 640)
+        warm = client.post('/api/library/live-plan', json={'path':str(path),'edge':640})
+        assert warm.status_code == 200
+        assert warm.json()['cached']['edge'] == 640
+        assert warm.json()['cached']['key']
+        assert warm.json()['revision'] == cold.json()['revision']
+    assert path.read_bytes() == before

@@ -20,3 +20,37 @@ test('full developments are capped and queued work is discarded when it leaves t
  await assert.rejects(discarded,{name:'AbortError'});block.resolve();await Promise.all([a,b]);
  assert.equal(peak,2);assert.equal(cancelledRan,false);
 });
+
+test('expensive work leaves a slot for lighter files without exceeding two developments',async()=>{
+ const queue=create(2,undefined,{heavyLimit:1}),a=gate(),b=gate(),started=[];
+ let running=0,peak=0;
+ const task=(name,block)=>async()=>{started.push(name);peak=Math.max(peak,++running);await block?.promise;running--;};
+ const first=queue.submit('large-tiff',task('large-tiff',a),undefined,10,{heavy:true,cost:5});
+ const second=queue.submit('large-dng',task('large-dng',b),undefined,10,{heavy:true,cost:5});
+ const quick=queue.submit('small-jpeg',task('small-jpeg'),undefined,10,{cost:1});
+ await quick;assert.deepEqual(started,['large-tiff','small-jpeg']);assert.equal(peak,2);
+ a.resolve();await first;
+ // An expensive-only tail still runs to completion.
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(started,['large-tiff','small-jpeg','large-dng']);b.resolve();await second;
+});
+test('cost ordering ages waiting work and preserves selected-photo priority',async()=>{
+ let time=0;const queue=create(1,()=>time),block=gate(),started=[];
+ const running=queue.submit('block',()=>block.promise);
+ const old=queue.submit('old',async()=>started.push('old'),undefined,10,{cost:5});
+ time=6000;
+ const cheap=queue.submit('cheap',async()=>started.push('cheap'),undefined,10,{cost:0});
+ const selected=queue.submit('selected',async()=>started.push('selected'),undefined,0,{cost:5});
+ block.resolve();await Promise.all([running,old,cheap,selected]);
+ assert.deepEqual(started,['selected','old','cheap']);
+});
+
+test('cancelling a running expensive decoder does not release its slot before it stops',async()=>{
+ const queue=create(2,undefined,{heavyLimit:1}),block=gate(),cancel=new AbortController(),started=[];
+ const first=queue.submit('running',async()=>{started.push('running');await block.promise;},cancel.signal,10,{heavy:true});
+ await new Promise(resolve=>setImmediate(resolve));cancel.abort();await assert.rejects(first,{name:'AbortError'});
+ const next=queue.submit('next',async()=>started.push('next'),undefined,10,{heavy:true});
+ const quick=queue.submit('quick',async()=>started.push('quick'));
+ await quick;assert.deepEqual(started,['running','quick']);
+ block.resolve();await next;assert.deepEqual(started,['running','quick','next']);
+});

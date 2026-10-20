@@ -6,14 +6,45 @@ window.HDRLibraryScenes = (() => {
     const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
     signal?.addEventListener("abort", stop, {once:true});
   });
-  const sources = HDRLibrarySceneScheduler.create(2);
+  // Lightweight cache discovery never queues behind full developments. Keep
+  // one of the two existing source slots available for likely lighter work.
+  const probes = HDRLibrarySceneScheduler.create(2);
+  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1});
+  const history = new Map();
+  const largeBytes = 32 * 1024 * 1024;
+  async function prepared(path, edge, signal, priority, identity) {
+    const plan = await probes.submit(path+"|"+edge, async shared => {
+      const response = await fetch("/api/library/live-plan", {method:"POST",signal:shared,
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge})});
+      const result = await response.json();
+      if (!response.ok) throw Error(result.detail || "The photo could not be checked.");
+      return result;
+    }, signal, priority);
+    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+    if (plan.cached) return plan.cached;
+    const previous = history.get(path);
+    const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
+    const heavy = plan.bytes >= largeBytes || elapsed >= 2000;
+    const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
+    return sources.submit(identity, async (shared, importance) => {
+      const started = performance.now();
+      try { return await develop(path, edge, shared, importance); }
+      finally {
+        if (!shared.aborted) {
+          history.delete(path);
+          history.set(path, {revision:plan.revision,ms:performance.now()-started});
+          if (history.size > 256) history.delete(history.keys().next().value);
+        }
+      }
+    }, signal, priority, {heavy,cost});
+  }
   const draws = HDRLibrarySceneScheduler.create(1);
   async function load(path, edge, signal, priority = 10) {
     const identity = path + (edge === 100000 ? "|native" : "");
-    let meta = await sources.submit(identity, (shared, importance) => develop(path,edge,shared,importance), signal, priority);
+    let meta = await prepared(path, edge, signal, priority, identity);
     // One development stores both sizes. A waiter asking for the other size
     // reads it after the shared development; it never starts another import.
-    if (meta.edge !== edge) meta = await sources.submit(path+"|"+edge, (shared,importance)=>develop(path,edge,shared,importance), signal, priority);
+    if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge);
     return {...meta, draw_priority:priority};
   }
   async function develop(path, edge, signal, importance) {
@@ -65,5 +96,5 @@ window.HDRLibraryScenes = (() => {
   }
   return Object.freeze({load,lease,
     draw:(task,signal,priority=10)=>draws.submit(crypto.randomUUID(),task,signal,priority),
-    snapshot:()=>({sources:sources.snapshot(),draws:draws.snapshot()})});
+    snapshot:()=>({probes:probes.snapshot(),sources:sources.snapshot(),draws:draws.snapshot()})});
 })();

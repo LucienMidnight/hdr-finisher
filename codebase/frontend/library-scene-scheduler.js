@@ -1,19 +1,21 @@
 /* Shared bounded work with merged demand and priority promotion. */
 (function(root){
   "use strict";
-  function create(limit=2,now=()=>Date.now()){
-    const jobs=new Map(),waiting=[];let active=0,sequence=0;
+  function create(limit=2,now=()=>Date.now(),{heavyLimit=limit}={}){
+    const jobs=new Map(),waiting=[];let active=0,heavyActive=0,sequence=0;
     const cancelled=()=>new DOMException("Cancelled","AbortError");
-    const score=job=>job.priority-(now()-job.created)/1000;
+    const score=job=>job.priority+job.cost-(now()-job.created)/1000;
     function pump(){
       while(active<limit&&waiting.length){
         waiting.sort((a,b)=>score(a)-score(b)||a.sequence-b.sequence);
-        const job=waiting.shift();
+        const index=waiting.findIndex(job=>!job.heavy||heavyActive<heavyLimit);
+        if(index<0)break;
+        const [job]=waiting.splice(index,1);
         if(job.controller.signal.aborted){if(jobs.get(job.key)===job)jobs.delete(job.key);continue;}
-        active++;job.running=true;
+        active++;if(job.heavy)heavyActive++;job.running=true;
         Promise.resolve().then(()=>job.task(job.controller.signal,()=>job.priority))
           .then(value=>settle(job,null,value),error=>settle(job,error))
-          .finally(()=>{active--;if(jobs.get(job.key)===job)jobs.delete(job.key);pump();});
+          .finally(()=>{active--;if(job.heavy)heavyActive--;if(jobs.get(job.key)===job)jobs.delete(job.key);pump();});
       }
     }
     function settle(job,error,value){
@@ -21,10 +23,10 @@
       for(const user of job.users){user.signal?.removeEventListener("abort",user.stop);error?user.reject(error):user.resolve(value);}
       job.users.clear();
     }
-    function submit(key,task,signal,priority=10){
+    function submit(key,task,signal,priority=10,{heavy=false,cost=0}={}){
       if(signal?.aborted)return Promise.reject(cancelled());
       let job=jobs.get(key);
-      if(!job){job={key,task,priority,created:now(),sequence:sequence++,controller:new AbortController(),users:new Set()};jobs.set(key,job);waiting.push(job);}
+      if(!job){job={key,task,priority,heavy,cost:Math.max(0,Math.min(5,cost)),created:now(),sequence:sequence++,controller:new AbortController(),users:new Set()};jobs.set(key,job);waiting.push(job);}
       job.priority=Math.min(job.priority,priority);
       const result=new Promise((resolve,reject)=>{
         const user={signal,resolve,reject};

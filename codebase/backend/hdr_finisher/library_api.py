@@ -292,6 +292,18 @@ def create_library_router(worker, browser, store=None):
         source_jobs.release(token)
         return {"released": True}
 
+    @router.post("/live-plan")
+    def live_plan(command: LiveSceneRequest):
+        # Cache discovery and stat only: never decode or claim a source slot.
+        document = live.document(command.path)
+        path = marks.source_path(command.path)
+        stat = path.stat()
+        cached = live.cache.cached(str(path), command.edge, live_quality(document))
+        if cached:
+            live.cache.accept_transient(cached)
+        return {"cached": live.describe(command.path, cached) if cached else None,
+                "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}"}
+
     @router.post("/live-scene")
     async def live_scene(command: LiveSceneRequest, request: Request):
         document = await run_in_threadpool(live.document, command.path)

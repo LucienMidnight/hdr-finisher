@@ -1283,7 +1283,7 @@ batches below remain shelved proposals, not the current execution order. The
 unfinished HDR/PFM, gain-map and mixed-format acceptance work remains open;
 this closeout does not claim all formats or cold-folder targets are met.
 
-**Cold-folder/DNG investigation (October 20; proposal, not built).** Existing
+**Cold-folder/DNG investigation (October 20; initial diagnosis).** Existing
 owner-app logs confirm DJI_0071.JPG at 205.5 s, DJI_0072.DNG at 159.7 s,
 DJI_0072-2.DNG at 201.7 s and DJI_0071.DNG at 296.7 s until final grid display.
 The frontend's two source slots encompass CPU fallback as well as GPU work.
@@ -1324,6 +1324,59 @@ checks: 539 Node passed; 2,303 Python passed, 3 skipped. The previously recorded
 failure reproduced (stale publication was not rejected after rewriting the
 source). It was not investigated or changed in this documentation-only work.
 No GPU check was needed because no app or shader code changed.
+
+**Loading-order adjustment (October 20; implemented with this commit).**
+Cache discovery now runs on a separate bounded two-request queue and never
+starts decoding. A cache hit bypasses occupied source slots. Cold preparations
+keep the existing total limit of two, but at most one predicted expensive
+source runs at once. The estimate is independent of file extension: files at
+least 32 MiB, or files whose last preparation in this Library session took at
+least two seconds, use the expensive allowance. A small bounded cost penalty
+favours likely cheaper waiting work; existing demand promotion, queue aging,
+last-subscriber cancellation and shared grid/filmstrip development remain.
+Timings are bounded to 256 source entries and discarded when the source's
+size/modification identity changes. The size threshold is a conservative
+scheduling heuristic, not a decoder timeout, memory-budget change or measured
+speed guarantee. In an expensive-only folder, preparation is deliberately
+serial; the spare capacity remains available for newly visible lighter files.
+
+Focused behavioural checks cover an expensive TIFF/DNG-shaped pair allowing
+a small file through, cache hits during occupied work, shared requests at two
+sizes, selection, aging, cancellation, failure cleanup and learned small-file
+costs. Source decoding, corrections, colour/brightness, Grade/export/Proof and
+GPU memory limits are unchanged. No claim is made that an unexpectedly slow
+small file can be interrupted or that the cold-folder timing goals are met.
+
+Validation: 546 Node checks passed; 2,305 Python checks passed, 3 skipped.
+The focused `library-live-grid.js` Electron check passed at 2560 x 1440,
+covering cold loading, cached reuse, GPU recovery and selected-photo display.
+The earlier stale-publication failure did not reproduce in this run. These
+checks validate scheduling/integration, not a new DJI cold-folder benchmark.
+
+**Open follow-ups after loading order (Steve, October 20).**
+
+- Activity must include frontend probes, waiting/running source and draw jobs,
+  and backend preparation, with the current file and waiting counts. The
+  loading-order change alone does not fix the silent Activity button.
+- Refine extension-independent cost estimates with cheap dimensions/required
+  operations where safe and useful; evaluate retained cost history and
+  representative mixed-folder cold first/final display times. Stat size and
+  session timing are the initial estimate, not a reliable decoder prediction.
+- Add actual processing checkpoints or separately stoppable decoder workers
+  for unexpectedly slow/hung files of any format. Aborting a request or racing
+  a timer cannot safely reclaim a native decoder that is still executing.
+  Preserve completed stages where possible instead of repeatedly restarting.
+- Evaluate more/adaptive source concurrency against memory and responsiveness
+  within existing broker budgets. Do not simply raise the two-slot limit;
+  measure the expensive-only throughput trade-off of reserved capacity too.
+- Trial Library GPU GainMap/WarpRectilinear after current CPU demosaic,
+  preserving exact operation order and DNG colour, brightness, crop and
+  orientation. The common correction code is not DJI-specific; the severe
+  measured case is DJI, not proof that every DNG is equally slow. Cover other
+  applicable DNG variants before widening eligibility; keep mandatory ops.
+- Evaluate linear-DNG GPU colour/analysis/reduction separately through the RGB
+  foundation. Keep ISO gain-map AVIF and the remaining format-batch work
+  shelved as recorded above, with earlier sprint gains preserved.
 
 **Batch 4 — gain-map AVIF.** Prioritise the measured AVIF bottleneck. Establish
 access to decoded base/map samples and all required ISO gain-map metadata;
