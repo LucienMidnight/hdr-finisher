@@ -555,7 +555,7 @@ def _select_apple_gainmap_aux_type(aux: dict[str, Any]) -> str | None:
 
 
 def _load_heif(
-    path: Path, *, cancelled: Callable[[], bool] | None = None
+    path: Path, *, cancelled: Callable[[], bool] | None = None, primary_samples_only: bool = False
 ) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         from pillow_heif import open_heif
@@ -567,6 +567,10 @@ def _load_heif(
     heif_file = open_heif(path, convert_hdr_to_8bit=False)
     primary = heif_file[heif_file.primary_index]
     info = dict(primary.info)
+    if primary_samples_only and info.get("aux"):
+        raise LoaderError("HEIF auxiliary images retain their existing reconstruction route.")
+    if primary_samples_only and info.get("icc_profile"):
+        raise LoaderError("HEIF ICC interpretation retains Grade's CPU loader.")
     array = np.asarray(heif_file)
     bit_depth = int(info.get("bit_depth", 8))
     profile_desc = _heif_profile_description(info)
@@ -581,6 +585,9 @@ def _load_heif(
         "heif_has_aux": bool(info.get("aux")),
         "heif_container_mimetype": heif_file.mimetype,
     }
+    if primary_samples_only:
+        metadata["heif_primary_index"] = heif_file.primary_index
+        metadata["heif_icc_present"] = bool(info.get("icc_profile"))
     if apple_hdr:
         metadata.update(apple_hdr)
     if "nclx_profile" in info:

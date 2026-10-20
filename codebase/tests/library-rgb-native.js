@@ -3,7 +3,11 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-rgb-native',String(Date.now()));
 fs.mkdirSync(folder,{recursive:true});
-const raw=path.join(folder,'photo.jpg'),edited=path.join(folder,'edited.png');
+const codecs=process.argv.includes('--codecs');
+const raw=path.join(folder,codecs?'photo.jxl':'photo.jpg'),edited=path.join(folder,codecs?'edited.heic':'edited.png');
+if(codecs){
+ execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_codec_native.py'),folder],{cwd:root});
+}else{
 execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',"from PIL import Image;import sys;Image.open(sys.argv[1]).resize((3200,1869)).save(sys.argv[2],quality=95)",'D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_exported/DSC_3931_01.jpg',raw]);
 execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
 import sys,json
@@ -19,6 +23,7 @@ b['global_adjustments']['sdr']['exposure']=.3
 local=LocalAdjustment();local.sdr_grade.exposure=.2;b['local_adjustments']=[local.model_dump(mode='json')]
 p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo','schema_version':1,'photo_id':'native-test','marks':{},'albums':[],'grade':b,'grade_default':a}),encoding='utf8')
 `,edited],{cwd:root});
+}
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'||m.type()==='warning')console.log('PAGE',m.text());});
  await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
@@ -92,7 +97,7 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
  // Both ordinary formats draw real grid cells and retain their authored SDR.
  for(const photo of [raw,edited]){
   const meta=await frame.evaluate((el,p)=>el.contentWindow.HDRLibraryScenes.load(p,640),photo);
-  assert.equal(meta.renderer,'gpu');assert.ok(meta.rgb_adapter&&meta.has_reference);
+  assert.equal(meta.renderer,'gpu');assert.ok(meta.rgb_adapter);assert.equal(meta.has_reference,meta.rgb_contract.colour.authored_sdr);
  }
  await frame.evaluate(async el=>{
   const w=el.contentWindow,gpu=await w.HDRLibraryPictures.initialize();
@@ -108,6 +113,6 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
   const d=document.querySelector('#library-frame').contentWindow.document;
   return [...d.querySelectorAll('#grid-space canvas[data-picture-key]')].filter(c=>!c.hidden).length===2;
  },null,{timeout:120000});
- console.log('Photographic JPEG/PNG cells, selected native reuse, memory and automatic hardware recovery passed.');
+ console.log('Photographic RGB cells, selected native reuse, memory and automatic hardware recovery passed.');
  assert.deepEqual(errors,[]);fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify(rows,null,2));console.log(JSON.stringify(rows));
 }finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

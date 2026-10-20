@@ -276,15 +276,51 @@ def profile_exr_reads(path, repeats):
         "boundary":"binding calls include compressed-block work and returned channel buffers; pure decompression and interleave are not isolated"}
 
 
+def profile_avif_decode(path, repeats):
+    """Compare transport choices; launch probe is NOT subtracted from decode."""
+    import subprocess
+    import numpy as np
+    from hdr_finisher import gainmap_decoders as gain
+    from hdr_finisher.binaries import resolve_binary
+    decoder=resolve_binary("avifdec");info=gain.inspect_avif(path)
+    if info.get("gain_map_present"):raise ValueError("Use a plain/direct AVIF for transport profiling")
+    rows=[];reference=None
+    with tempfile.TemporaryDirectory(prefix="hdr-avif-profile-") as directory:
+        png=Path(directory)/"decoded.png"
+        for repeat in range(repeats):
+            start=perf_counter();gain._run([str(decoder),"--version"]);launch=(perf_counter()-start)*1000
+            for mode in (["png","png0","inprocess"] if repeat%2==0 else ["inprocess","png0","png"]):
+                start=perf_counter()
+                if mode=="inprocess":
+                    array=gain._decode_avif_primary_pixels(path,bit_depth=int(info["bit_depth"]))
+                    tool=None;read=None;size=None
+                else:
+                    gain._run([str(decoder),"-d","16",*(["--png-compress","0"] if mode=="png0" else []),str(path),str(png)])
+                    tool=(perf_counter()-start)*1000;read_start=perf_counter()
+                    array=gain._decode_png_pixels(png);read=(perf_counter()-read_start)*1000;size=png.stat().st_size
+                    if reference is None:reference=array.copy()
+                    else:np.testing.assert_array_equal(reference,array)
+                rows.append({"repeat":repeat,"mode":mode,"total_ms":(perf_counter()-start)*1000,
+                    "tool_ms":tool,"png_read_normalize_ms":read,"png_bytes":size,"launch_probe_ms":launch,
+                    "encoded_mean_difference":float(np.mean(np.abs(array-reference))),
+                    "encoded_max_difference":float(np.max(np.abs(array-reference)))})
+    return {"path":str(path),"repeats":repeats,"runs":rows,"boundary":
+        "tool includes launch, decode, YUV conversion and PNG write; read includes disk, PNG decode and float normalization. Launch-only version probe is separate. OS cache uncontrolled; no peak memory or first paint."}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--exr-read-profile", type=Path)
+    parser.add_argument("--avif-decode-profile", type=Path)
     parser.add_argument("--synthetic", action="store_true", help="Add eight controlled codec/interpretation cases")
     parser.add_argument("--repeats", type=int, default=3)
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats must be positive")
+    if args.avif_decode_profile:
+        print(json.dumps(profile_avif_decode(args.avif_decode_profile,args.repeats)))
+        return 0
     if args.exr_read_profile:
         print(json.dumps(profile_exr_reads(args.exr_read_profile,args.repeats)))
         return 0

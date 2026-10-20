@@ -13,8 +13,25 @@ window.HDRLibraryRGB = (() => {
   fn eotf(value:f32)->f32 {
     if(p.dims2.z==1u){return value;}
     let x=max(value,0.0);
+    if(p.dims2.z==3u){
+      let v=pow(clamp(x,0.0,1.0),1.0/(2523.0/32.0));
+      return pow(max(v-3424.0/4096.0,0.0)/max(2413.0/128.0-2392.0/128.0*v,1e-10),1.0/(2610.0/16384.0))*10000.0*p.lensc.w;
+    }
+    if(p.dims2.z==4u){
+      let v=clamp(x,0.0,1.0);
+      return select((exp((v-0.55991073)/0.17883277)+0.28466892)/12.0,v*v/3.0,v<=0.5);
+    }
+    if(p.dims2.z==5u){return select(pow((x+0.099)/1.099,1.0/0.45),x/4.5,x<0.081);}
     if(p.dims2.z==2u){let v=clamp(x,0.0,1.0);return select(pow((v+0.099)/1.099,1.0/0.45),v/4.5,v<0.081);}
     return select(pow((x+0.055)/1.055,2.4),x/12.92,x<=0.04045);
+  }
+  fn linear_rgb(i:u32)->vec3<f32> {
+    var lin=vec3<f32>(eotf(encoded(i)),eotf(encoded(i+1u)),eotf(encoded(i+2u)));
+    if(p.dims2.z==4u){
+      let y=dot(lin,vec3<f32>(0.2627,0.6780,0.0593));
+      lin=lin*pow(max(y,0.0),0.2)*1000.0*p.lensc.w;
+    }
+    return lin;
   }`;
 
   // Decoded RGB shares full-source measurement and linear reduction with RAW.
@@ -26,7 +43,7 @@ window.HDRLibraryRGB = (() => {
     if(li<3u){atomicStore(&wgPeak[li],0u);} workgroupBarrier();
     if(g.x<p.dims.x && g.y<p.dims.y){
       let i=(g.y*p.dims.x+g.x)*3u;
-      let lin=vec3<f32>(eotf(encoded(i)),eotf(encoded(i+1u)),eotf(encoded(i+2u)));
+      let lin=linear_rgb(i);
       let aces=vec3<f32>(dot(p.m0.xyz,lin),dot(p.m1.xyz,lin),dot(p.m2.xyz,lin));
       finish(aces,i32(g.y),i32(g.x));
     }
@@ -40,7 +57,7 @@ window.HDRLibraryRGB = (() => {
   @compute @workgroup_size(16,16) fn main(@builtin(global_invocation_id) g0:vec3<u32>){
     let g=g0+vec3<u32>(0u,p.dispatch.y,0u);if(g.x>=p.dims.x||g.y>=p.dims.y){return;}
     let i=g.y*p.dims.x+g.x;let k=i*3u;
-    let lin=vec3<f32>(eotf(encoded(k)),eotf(encoded(k+1u)),eotf(encoded(k+2u)));
+    let lin=linear_rgb(k);
     let aces=vec3<f32>(dot(p.m0.xyz,lin),dot(p.m1.xyz,lin),dot(p.m2.xyz,lin));
     let rendition=max(vec3<f32>(dot(p.x0.xyz,aces),dot(p.x1.xyz,aces),dot(p.x2.xyz,aces)),vec3<f32>(0.0));
     outR[i]=rendition.x;outG[i]=rendition.y;outB[i]=rendition.z;
@@ -77,10 +94,11 @@ window.HDRLibraryRGB = (() => {
       const u32 = new Uint32Array(params), f32 = new Float32Array(params);
       const setU = (slot, values) => values.forEach((v, k) => { u32[slot * 4 + k] = v; });
       const setF = (slot, values) => values.forEach((v, k) => { f32[slot * 4 + k] = v; });
-      setU(0, [w, h, 0, st]); setU(1, [0, meta.layout?.dtype === "float32" ? 1 : 0, meta.colour.transfer === "LINEAR" || meta.colour.transfer === "ACEScg" ? 1 : meta.colour.transfer === "BT.709" ? 2 : 0, sw]);
+      setU(0, [w, h, 0, st]); setU(1, [0, meta.layout?.dtype === "float32" ? 1 : 0, meta.colour.transfer === "LINEAR" || meta.colour.transfer === "ACEScg" ? 1 : meta.colour.transfer === "BT.709" ? 2 : meta.colour.transfer === "PQ" ? 3 : meta.colour.transfer === "HLG" ? 4 : meta.colour.transfer === "BT.2020" ? 5 : 0, sw]);
       meta.rgb_to_acescg.forEach((row, k) => setF(10 + k, row));
       meta.acescg_to_srgb.forEach((row, k) => setF(13 + k, row));
       meta.acescg_to_bt2020.forEach((row, k) => setF(16 + k, row));
+      setF(20, [0, 0, 0, .18 / meta.colour.reference_white_nits]);
       setF(19, [(meta.colour.authored_sdr ? .18 : 1) * (meta.colour.scale || 1), 0, 0, 0]);
       const uniform = device.createBuffer({ size: params.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       own(uniform);

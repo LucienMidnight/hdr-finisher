@@ -3927,6 +3927,10 @@
       "tier": "core",
       "protects": "JPEG/PNG cells and saved-grade native detail preserve selected-only reuse and recover automatically after device loss.",
       "launch": {"method": "electron"}
-    }
+    },
+    {"path":"tests/library-codec-source.js","areas":["library"],"tier":"area",
+      "protects":"JXL/AVIF/HEIF precision, transfer, scene tiers and cached/native reuse against Grade.","launch":{"method":"electron"}},
+    {"path":"tests/library-codec-native.js","areas":["library"],"tier":"area",
+      "protects":"JXL/HEIF cells, selected native reuse, saved grades and automatic GPU recovery.","launch":{"method":"electron"}}
   ]
 }

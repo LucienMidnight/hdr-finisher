@@ -1035,6 +1035,90 @@ whole full-size arrays to repeated intermediate copies before GPU upload.
 Built for qualified EXR/TIFF cases; decoder and GPU times are separated.
 HDR/PFM remain blocked as above; unsupported cases retain explicit reasons.
 
+**Batch 3 outcome (October 20).** Library-only JXL/plain AVIF/HEIF adapters
+separate normalized-range float32 RGB from colour preparation. JXL retains
+in-process libjxl, declared integer/float precision, trusted marker and
+third-party interpretation gate. HEIF keeps primary selection, high-precision
+normalization and profile/NCLX interpretation. Decoder-owned orientation is
+not repeated; unexposed original JXL/HEIF orientation values are recorded as
+unknown. ICC and HEIF auxiliary data retain explicit CPU routes; gain-map AVIF
+and Apple HEIF cannot publish a plain-primary final scene. Reconstruction has
+not started. Grade/export/Proof defaults and numerical paths, tolerances and
+all allowances remain unchanged. Recipe v3 refreshes older scenes once.
+
+Library-only GPU operations add PQ and vector HLG, including its
+luminance-dependent OOTF and project reference white. Linear/sRGB/BT.709 reuse
+the shared path, preserving Grade's BT.2020 curve for sRGB-labelled BT.2020.
+JXL/AVIF overrides still act **after** original decoder normalization at 203 nits:
+that first transform stays CPU-owned on override cases, followed by GPU
+preparation. Otherwise transfer/matrix/reference scale is applied once on the
+GPU. Finite/negative boundaries, authored HEIF SDR, equivalent full-source
+analysis/documents, both tiers and selected-only native detail are retained.
+JXL/plain AVIF keep Grade's existing lack of a separate authored SDR rendition.
+No high-precision buffer uses packed uint8. Coalescing, priority, cancellation,
+publication, preemption and hardware recovery retain the existing machinery.
+
+**AVIF decision/measurement.** Installed avifdec 1.4.1 exposes PNG/JPEG/Y4M,
+not raw RGB; the installed imagecodecs binding has no output-depth option.
+`library-source-baseline.py --avif-decode-profile FILE --repeats 3` compares
+three alternating repeats of default PNG, uncompressed PNG and in-process RGB
+on libavif's photographic cosmos PQ and Kodak SDR examples. Launch-only version
+probes measured 181–188 ms, separately, not subtracted from decoding. In-process
+RGB took 7–8 ms but changed encoded samples (mean differences .00024/.00118),
+so Library retains **16-bit PNG**, with compression disabled. Samples match
+exactly; tool-stage medians fell 334→209 ms for PQ and 270→209 ms for SDR.
+PNG read/decode/float-normalization was about 6 versus 9–10 ms. Tool time includes
+launch, codec/YUV work and PNG write; pure decode/write are not isolated.
+Temporary files grow but are not persistent cache products. Official fixture
+URLs, revisions and SHA-256 values are pinned in `library_codec_samples.py`.
+
+**Actual-route comparison.** Protocol chosen before comparison: three fresh-scene
+repeats per route, alternating CPU/GPU order, warm processes, uncontrolled
+Windows file cache, concurrent 640/2560 through stored metadata. Inputs: a
+2000×1168 photographic lossless JXL made from `DSC_3931_01.jpg`, real 1024×428
+cosmos direct-PQ AVIF and real 1280×854 libheif example HEIF. Medians fell
+**716→538 ms (24.9%) JXL**, **797→636 ms (20.3%) AVIF**, **432→387 ms (10.4%) HEIF**,
+beyond the retained 5% noise allowance. GPU-route decode/metadata medians were
+136/401/52 ms, upload 26/10/15 ms, colour/measurements 53/21/39 ms, reduction
+30/28/29 ms and readback 38/30/37 ms (JXL/AVIF/HEIF). Page serial-queue median
+was zero. Nested fetch/decode/GPU timers overlap and must not be summed.
+Backend queueing, individual hash/storage/HTTP, first paint/final draw, p90 and
+process peak memory remain unmeasured; Library latency targets are not qualified.
+
+**Validation/limits.** Node fast checks: 539 passed. Full Python: 2,300 passed,
+3 skipped, one failure in the unchanged
+`test_source_ownership_merges_tiers_promotes_and_rejects_stale_publication`:
+its immediate PNG rewrite was not rejected. The source-ownership/key code
+and this test are unchanged; this unrelated failure was left open. Final
+focused Library Python checks: 23 passed, the same ownership failure.
+Registered source/native
+Electron drivers ran serially at 2560×1440. Scene-half precision, full-source
+starting peaks, both tiers, cached identity, native reuse and forced preemption
+pass. Photographic JXL/AVIF and controlled tagged HEIF pass finished HDR/SDR
+mean <1 / p99.9 ≤3 (worst qualifying SDR .207/.986; HDR .078/.351).
+Controlled cases cover 12-bit PQ, HLG JXL/AVIF/HEIF, signed float16/float32
+linear JXL, linear AVIF, 100-nit white, 1.0 diffuse white, post-decoder overrides,
+unmarked JXL resolution and saved rotation/locals/Denoise. Real ISO AVIF/Apple
+HEIF adapter rejection is checked. Photographic JXL/HEIF cells, selected-only
+native reuse, saved grades, visible fallback and automatic recovery pass;
+native resident resources were 238–240 MB within the unchanged 2 GiB budget.
+
+The source driver retains one **existing HEIF SDR rendering failure**:
+untagged real example HEIF measures mean **1.669**, p99.9 **3.119**. Its stored
+scenes and HDR pass. `--only example.heic --cpu-reference` reproduces the same
+SDR failure through unchanged CPU preparation. No renderer/tolerance was changed
+to accept it. Results: `output/library-rgb-source/1792496524591` (GPU) and
+`1792496676588` (CPU oracle); the source driver exits failed for this issue.
+Native camera direct-HDR HEIF, third-party photographic HDR JXL and real codec
+orientation cases remain coverage gaps; controlled files cover transfer and
+precision. Original sources/sidecars, including the Blender sidecar hash, are
+preserved. HDR/PFM's missing-backend blocker remains open Batch 2 work.
+
+**Batch 4 readiness.** Shared samples/metadata/ownership and GPU transfers are
+ready. A qualified base/map interface is still required: in-process primary
+decode was not adopted, and Batch 3 supplies neither map access nor
+reconstruction. Batch 4 may start with that codec-boundary investigation.
+
 **Batch 3 — JPEG XL and plain/direct-HDR AVIF/HEIF adapters.** Separate encoded
 sample decode from colour preparation where current decoders combine them.
 Use the in-process JPEG XL decode already present. Preserve its declared

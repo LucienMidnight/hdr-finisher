@@ -12,12 +12,12 @@ from .models import SourceInterpretationOverride, SourceImageDescriptor, SourceR
 from .import_defaults import starting_adjustments
 from .source_luminance import describe_source_luminance
 
-VERSION = "library-rgb-v2"
+VERSION = "library-rgb-v3"
 
 
 def decoded(path, inputs):
     path = Path(path).resolve(strict=True)
-    if path.suffix.lower() in {".exr", ".hdr", ".pfm", ".tif", ".tiff"}:
+    if path.suffix.lower() in {".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
         return decoded_precision(path, inputs)
     if path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
         raise NotEligible("RGB preparation currently supports ordinary JPEG/PNG only")
@@ -68,7 +68,22 @@ def decoded_precision(path, inputs):
     start = perf_counter()
     suffix = path.suffix.lower()
     facts = {}
-    if suffix == ".exr":
+    if suffix == ".jxl":
+        pixels, metadata = loader.decode_jpegxl(path, encoded_samples=True)
+        facts.update(orientation=None, effective_bits=int(metadata["bit_depth"]), sample_type=metadata["sample_type"], jpegxl_info=metadata["jpegxl_info"])
+    elif suffix == ".avif":
+        try:
+            pixels, _, metadata = loader.decode_avif(path, encoded_samples=True)
+        except loader.GainMapDecodeError as error:
+            raise NotEligible(str(error)) from error
+        facts.update(effective_bits=int(metadata["bit_depth"]), intermediate_bits=16, orientation=metadata["orientation"])
+    elif suffix in {".heic", ".heif"}:
+        try:
+            pixels, metadata = loader._load_heif(path, primary_samples_only=True)
+        except loader.LoaderError as error:
+            raise NotEligible(str(error)) from error
+        facts.update(orientation=None, effective_bits=int(metadata["bit_depth"]), primary_index=metadata["heif_primary_index"])
+    elif suffix == ".exr":
         pixels, metadata = loader._load_exr(path, combined_channels=True)
         import OpenEXR
         file = OpenEXR.InputFile(str(path))
@@ -101,6 +116,13 @@ def decoded_precision(path, inputs):
     decode_ms = (perf_counter() - start) * 1000
     original_interpretation = {key:metadata.get(key) for key in ("color_space","transfer_function","needs_color_override")}
     override = {k: v for k, v in inputs["interpretation_override"].items() if v is not None}
+    decoder_normalized = bool(metadata.get("decoder_normalized_to_acescg"))
+    sample_space = metadata.get("sample_color_space")
+    sample_transfer = metadata.get("sample_transfer_function")
+    if decoder_normalized and override:
+        # Grade applies overrides AFTER decoder normalization at 203 nits.
+        # Keep this less common first transform CPU-owned, then use the shared GPU.
+        pixels = color.normalize_to_acescg_bounded(pixels, sample_space, sample_transfer)
     for key in ("color_space", "transfer_function"):
         if override.get(key): metadata[key] = override[key]
     if override.get("color_space"): metadata["needs_color_override"] = False
@@ -109,13 +131,17 @@ def decoded_precision(path, inputs):
     metadata["transfer_function"] = metadata.get("transfer_function") or color.detect_transfer_function(metadata, suffix)
     if metadata.get("needs_color_override") or metadata["color_space"] is None:
         raise NotEligible("Unresolved source primaries retain Grade's interpretation gate")
-    transfer = color._canonical_transfer_function(metadata["transfer_function"])
-    space = color._canonical_colourspace(metadata["color_space"], transfer)
+    operation_space = sample_space if decoder_normalized and not override else metadata["color_space"]
+    operation_transfer = sample_transfer if decoder_normalized and not override else metadata["transfer_function"]
+    transfer = color._canonical_transfer_function(operation_transfer)
+    space = color._canonical_colourspace(operation_space, transfer)
     if transfer is None:
         transfer = "sRGB" if space in {color.SRGB_COLOURSPACE, color.DISPLAY_P3_COLOURSPACE} else "LINEAR"
-    if transfer not in {"LINEAR", "ACEScg", "sRGB", "BT.709"}:
+    if transfer not in {"LINEAR", "ACEScg", "sRGB", "BT.709", "PQ", "HLG"}:
         raise NotEligible("RGB transfer " + str(transfer) + " retains Grade's CPU normalization")
-    if space == color.ACESCG_COLOURSPACE and transfer != "BT.709": transfer = "LINEAR"
+    if transfer in {"PQ", "HLG"} and suffix not in {".jxl", ".avif", ".heic", ".heif"}:
+        raise NotEligible("PQ/HLG preparation is qualified only for Batch 3 codecs")
+    if space == color.ACESCG_COLOURSPACE and transfer not in {"BT.709", "PQ", "HLG"}: transfer = "LINEAR"
     linear_reference = override.get("linear_reference") or "scene_0_18"
     if linear_reference == "diffuse_white_1_0" and str(metadata["transfer_function"]).upper() != "LINEAR":
         raise loader.LoaderError("The 1.0 diffuse-white reference is only valid for linear sources.")
@@ -129,8 +155,13 @@ def decoded_precision(path, inputs):
     for row in range(0, pixels.shape[0], 128):
         pixels[row:row+128] = sanitize_finite_array(pixels[row:row+128])
     h, w = pixels.shape[:2]
-    authored = color.display_referred_sdr(metadata["color_space"], metadata["transfer_function"], suffix)
-    matrix = color.normalize_to_acescg(np.eye(3, dtype=np.float32), metadata["color_space"], "LINEAR").T
+    authored = not decoder_normalized and color.display_referred_sdr(metadata["color_space"], metadata["transfer_function"], suffix)
+    matrix_space = "BT.2020" if transfer in {"PQ", "HLG"} else operation_space
+    matrix = color.normalize_to_acescg(np.eye(3, dtype=np.float32), matrix_space, "LINEAR").T
+    # Grade asks the source colourspace to decode "sRGB"; BT.2020 uses
+    # its own (BT.709-coefficient) curve, without clipping float highlights.
+    if transfer == "sRGB" and space == color.BT2020_COLOURSPACE:
+        transfer = "BT.2020"
     scale = .18 if linear_reference == "diffuse_white_1_0" else 1.
     descriptor = SourceImageDescriptor(filename=path.name, suffix=suffix, width=w, height=h, channels=3,
         dtype="float32", source_color_space=metadata.get("source_color_space_label",metadata["color_space"]),
@@ -147,9 +178,10 @@ def decoded_precision(path, inputs):
             "code_range":None, "ownership":"request-owned", "alpha":"discarded by Grade decoder",
             "data_window":facts.get("dataWindow",[0,0,w,h]), "display_window":facts.get("displayWindow",[0,0,w,h]),
             "origin":facts.get("dataWindow",[0,0])[:2], "decoder_facts":facts},
-        "orientation":{"original":facts.get("orientation",1), "applied":False},
-        "colour":{"primaries":metadata["color_space"], "transfer":transfer, "decoder_normalized":False,
-            "eotf_applied":False, "matrix_applied":False, "reference_scale_applied":False,
+        "orientation":{"original":facts.get("orientation",1), "applied":suffix in {".jxl", ".avif", ".heic", ".heif"}},
+        "colour":{"primaries":operation_space, "transfer":transfer, "decoder_normalized":bool(decoder_normalized and override),
+            "grade_decoder_normalized":decoder_normalized,
+            "eotf_applied":bool(decoder_normalized and override), "matrix_applied":bool(decoder_normalized and override), "reference_scale_applied":False,
             "original_interpretation":original_interpretation, "reference_white_nits":inputs["hdr_reference_white_nits"],
             "linear_reference":linear_reference, "authored_sdr":authored, "scale":scale,
             "decoder_metadata":metadata, "descriptor":descriptor.model_dump(mode="json"), "override":override},

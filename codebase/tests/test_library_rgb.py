@@ -1,3 +1,6 @@
+import hashlib
+from pathlib import Path
+
 from concurrent.futures import ThreadPoolExecutor, CancelledError
 from threading import Event
 
@@ -118,7 +121,8 @@ def test_shared_source_priority_and_clear_reach_bound_helper(tmp_path):
     jobs.invalidate()
     assert cancelled==[True]
 
-def test_http_source_coalesces_before_decode_and_clear_blocks_publication(tmp_path, monkeypatch):
+@pytest.mark.parametrize("suffix",["png","jxl"])
+def test_http_source_coalesces_before_decode_and_clear_blocks_publication(tmp_path, monkeypatch, suffix):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from hdr_finisher.library_api import create_library_router
@@ -126,7 +130,11 @@ def test_http_source_coalesces_before_decode_and_clear_blocks_publication(tmp_pa
     from hdr_finisher.library_gpu_raw import unframe, frame
     class Helper:
         def status(self):return {'running':True,'paused':False,'pending':0,'failure':None}
-    path=tmp_path/'photo.png';Image.new('RGB',(8,4)).save(path)
+    path=tmp_path/('photo.'+suffix)
+    if suffix=='jxl':
+        from hdr_finisher.jpegxl import encode_sdr_jpegxl
+        path.write_bytes(encode_sdr_jpegxl(np.full((4,8,3),.5,np.float32),100))
+    else:Image.new('RGB',(8,4)).save(path)
     app=FastAPI();app.include_router(create_library_router(Helper(),MediaBrowserStore(tmp_path/'profile')))
     client=TestClient(app);calls=[];original=library_rgb.decoded
     def counted(*args,**kwargs):calls.append(1);return original(*args,**kwargs)
@@ -222,3 +230,102 @@ def test_precision_publication_matches_grade_document(tmp_path,authored):
     result=library_rgb.developed(cache,path,header,body)
     assert result["has_reference"]==authored
     assert cache.default_document(path)==expected.edit_document().model_dump(mode="json")
+
+@pytest.mark.parametrize("transfer,bits,dtype",[("sRGB",8,"uint8"),("PQ",12,"uint16"),("HLG",16,"uint16"),("PQ",32,"float32")])
+def test_jxl_samples_precision_gate_and_normalized_override_order(tmp_path, transfer, bits, dtype):
+    import sys
+    sys.path.insert(0,str(Path(__file__).parent/'helpers'))
+    from library_codec_samples import marked_jxl
+    from hdr_finisher import jpegxl,color
+    path=tmp_path/'photo.jxl'
+    values=np.linspace(0,1,120,dtype=np.float32).reshape(5,8,3)
+    if dtype.startswith('uint'):values=np.round(values*((1<<bits)-1)).astype(dtype)
+    marked_jxl(path,values,transfer,bits=bits)
+    raw,metadata=jpegxl.decode_jpegxl(path,encoded_samples=True)
+    expected,normal=jpegxl.decode_jpegxl(path)
+    np.testing.assert_array_equal(color.normalize_to_acescg_bounded(raw.copy(),'sRGB' if transfer=='sRGB' else 'BT.2020',transfer),expected)
+    assert metadata['color_space']==normal['color_space']=='ACEScg'
+    header,parts=library_rgb.decoded(path,recipe(None))
+    np.testing.assert_array_equal(np.frombuffer(parts[0],dtype='<f4').reshape(values.shape),raw)
+    assert header['layout']['effective_bits']==bits and header['layout']['dtype']=='float32'
+    assert header['colour']['transfer']==transfer and not header['colour']['authored_sdr']
+    inputs=recipe(None);inputs['hdr_reference_white_nits']=100
+    inputs['interpretation_override'].update(color_space='BT.2020',transfer_function='BT.709')
+    overridden,parts=library_rgb.decoded(path,inputs)
+    np.testing.assert_array_equal(np.frombuffer(parts[0],dtype='<f4').reshape(values.shape),expected)
+    assert overridden['colour']['transfer']=='BT.709' and overridden['colour']['eotf_applied']
+    # The marker is required even when libjxl can decode the samples.
+    path.write_bytes(__import__('imagecodecs').jpegxl_encode(np.zeros((5,8,3),np.uint8),lossless=True))
+    with pytest.raises(library_rgb.NotEligible,match='primaries'):library_rgb.decoded(path,recipe(None))
+    inputs['interpretation_override']['color_space']=None
+    with pytest.raises(library_rgb.NotEligible,match='primaries'):library_rgb.decoded(path,inputs)
+
+
+def test_plain_avif_rejects_gainmap_before_primary_decode(tmp_path,monkeypatch):
+    from hdr_finisher import gainmap_decoders as gain
+    path=tmp_path/'photo.avif';path.write_bytes(b'not read')
+    monkeypatch.setattr(gain,'resolve_binary',lambda name:path)
+    monkeypatch.setattr(gain,'inspect_avif',lambda path:{'gain_map_present':True})
+    def forbidden(*a,**k):pytest.fail('gain-map primary decoded as a final scene')
+    monkeypatch.setattr(gain,'_decode_avif_pixels',forbidden)
+    with pytest.raises(library_rgb.NotEligible,match='Gain-map AVIF'):library_rgb.decoded(path,recipe(None))
+
+
+def test_plain_heif_selects_primary_and_rejects_auxiliary(tmp_path,monkeypatch):
+    import pillow_heif
+    from hdr_finisher import loader
+    path=tmp_path/'photo.heic';path.write_bytes(b'not read')
+    class Primary:
+        mode='RGB;16'
+        info={'bit_depth':10,'nclx_profile':{'color_primaries':9,'transfer_characteristics':18}}
+    primary=Primary()
+    class Container:
+        primary_index=1;mimetype='image/heic'
+        def __getitem__(self,index):assert index==1;return primary
+        def __array__(self,dtype=None,copy=None):return np.full((4,8,3),32768,dtype=np.uint16)
+    monkeypatch.setattr(pillow_heif,'open_heif',lambda *a,**k:Container())
+    monkeypatch.setattr(loader,'_read_apple_hdr_metadata',lambda path:{})
+    header,parts=library_rgb.decoded(path,recipe(None))
+    assert header['layout']['decoder_facts']['primary_index']==1
+    assert header['colour']['transfer']=='HLG' and header['layout']['effective_bits']==10
+    np.testing.assert_allclose(np.frombuffer(parts[0],dtype='<f4'),32768/65535)
+    primary.info['aux']={'urn:com:apple:photo:2020:aux:hdrgainmap':[2]}
+    with pytest.raises(library_rgb.NotEligible,match='auxiliary'):library_rgb.decoded(path,recipe(None))
+
+@pytest.mark.parametrize("suffix,transfer",[("jxl",16),("avif",18),("heic",13)])
+def test_codec_publication_preserves_grade_start_document(tmp_path,suffix,transfer):
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    from hdr_finisher import jpegxl
+    import imagecodecs,pillow_heif
+    path=tmp_path/('photo.'+suffix)
+    values=np.linspace(0,1,120,dtype=np.float32).reshape(5,8,3)
+    if suffix=='jxl':path.write_bytes(jpegxl.encode_hdr_jpegxl(values*2,100,'uint12'))
+    elif suffix=='avif':path.write_bytes(imagecodecs.avif_encode(np.round(values*4095).astype(np.uint16),level=100,speed=10,
+        bitspersample=12,primaries=9,transfer=transfer,matrix=9))
+    else:
+        h=pillow_heif.from_bytes('RGB',(8,5),np.round(values*255).astype(np.uint8).tobytes())
+        h.save(path,quality=100,save_nclx_profile=True,color_primaries=9,transfer_characteristics=transfer,matrix_coefficients=9)
+    expected=SessionStore().prepare_session(path,owns_source_path=False,hdr_reference_white_nits=100)
+    header,_=library_rgb.decoded(path,recipe({'hdr_reference_white_nits':100}))
+    a=expected.analysis;reference=expected.sdr_reference_image
+    header.update(height=5,width=8,source_height=5,source_width=8,edge=640,source_quality=quality(None),memory_peak_bytes=1,
+        peaks={'peak':a.peak_linear,'peak_luma':a.peak_luma_linear,'peak_bt2020':a.peak_bt2020_linear,
+               'sdr':float(np.max(reference)) if reference is not None else 0},
+        robust={'channel':a.robust_peak_linear,'luma':a.robust_peak_luma_linear,'bt2020':a.robust_peak_bt2020_linear})
+    planes=[expected.image.transpose(2,0,1)]
+    if reference is not None:planes.append(reference.transpose(2,0,1))
+    cache=LibraryPictureCache(tmp_path/'cache')
+    result=library_rgb.developed(cache,path,header,np.concatenate(planes).astype('<f4').tobytes())
+    assert result['has_reference']==(reference is not None)
+    assert cache.default_document(path)==expected.edit_document().model_dump(mode='json')
+
+
+def test_real_gainmap_files_keep_existing_route():
+    from pathlib import Path
+    root=Path(__file__).resolve().parents[1]
+    for path in [root/'samples/hdr_reference.avif',root/'local-test-media/inputs/iphone-12-pro-HDR.heic']:
+        if not path.exists():continue
+        before=hashlib.sha256(path.read_bytes()).hexdigest()
+        with pytest.raises(library_rgb.NotEligible,match='reconstruction route'):
+            library_rgb.decoded(path,recipe(None))
+        assert hashlib.sha256(path.read_bytes()).hexdigest()==before

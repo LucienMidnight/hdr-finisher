@@ -7,7 +7,11 @@ const photographic='D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_expor
 const jpeg=path.join(folder,'photo.jpg'),png=path.join(folder,'photo.png');
 fs.copyFileSync(photographic,jpeg);
 execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',"from PIL import Image;import sys;Image.open(sys.argv[1]).save(sys.argv[2])",jpeg,png]);
-const sources=[jpeg,png],photos=[...sources];
+let sources=[jpeg,png];const photos=[...sources];
+if(process.argv.includes('--codecs')){
+ const cases=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_codec_samples.py'),folder],{cwd:root,encoding:'utf8'}));
+ sources=cases.sources;photos.push(...cases.photos);
+}
 const edited=path.join(folder,'edited.png');fs.copyFileSync(png,edited);photos.push(edited);
 let editedTiff=null,layeredExr=null,bt709Tiff=null,whiteExr=null;
 if(process.argv.includes('--precision')){
@@ -46,17 +50,21 @@ b['local_adjustments']=[local.model_dump(mode='json')]
 b['denoise']['hdr']['enabled']=True
 p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo','schema_version':1,'photo_id':'live-test','marks':{},'albums':[],'grade':b,'grade_default':a}),encoding='utf8')
 `,target],{cwd:root});
-// Protocol chosen before comparisons: same JPEG and decoded photographic PNG,
+const only=process.argv.includes('--only')?process.argv[process.argv.indexOf('--only')+1]:null;
+const cpuScene=process.argv.includes('--cpu-reference');
+if(only){photos.splice(0,photos.length,...photos.filter(photo=>path.basename(photo)===only));sources=[];}
+// Protocol chosen before comparisons: matched photographic source set,
 // three cold-scene repeats per route, alternating order; OS cache uncontrolled.
 const comparisons=[];
-for(let repeat=0;repeat<3;repeat++)for(const format of ['jpg','png'])for(const mode of (repeat%2?['gpu','cpu']:['cpu','gpu'])){
- const file=path.join(folder,`${mode}-${repeat}.${format}`);
- fs.copyFileSync(format==='jpg'?jpeg:png,file);comparisons.push({file,mode,repeat,format});
+for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of (repeat%2?['gpu','cpu']:['cpu','gpu'])){
+ const format=path.extname(source).slice(1),file=path.join(folder,`${mode}-${repeat}.${format}`);
+ fs.copyFileSync(source,file);comparisons.push({file,mode,repeat,format});
 }
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage();page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log(m.text());});await page.goto(process.env.HDR_FINISHER_URL);
- const result=await page.locator('#library-frame').evaluate(async(element,photos)=>{
+ const result=await page.locator('#library-frame').evaluate(async(element,{photos,cpuScene})=>{
   const w=element.contentWindow,gpu=await w.HDRLibraryPictures.initialize(),original=gpu.renderTo,rows=[];
+  if(cpuScene)w.localStorage.setItem("library-gpu-raw","off");
   let captured;
   // Force one mid-preparation broker preemption. It must yield and retry,
   // retaining the decoded RGB source rather than asking for CPU development.
@@ -73,7 +81,7 @@ for(let repeat=0;repeat<3;repeat++)for(const format of ['jpg','png'])for(const m
   for(const photo of photos){
    const begun=performance.now();
    const [meta,large]=await Promise.all([w.HDRLibraryScenes.load(photo,640),w.HDRLibraryScenes.load(photo,2560)]),lanes={};
-   if(meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference!==meta.rgb_contract.colour.authored_sdr) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
+   if(cpuScene ? meta.renderer!=='cpu' : (meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference!==meta.rgb_contract.colour.authored_sdr)) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
    const prepareMs=performance.now()-begun;
    const native=await w.HDRLibraryScenes.load(photo,100000);
    const again=await w.HDRLibraryScenes.load(photo,100000);
@@ -88,9 +96,9 @@ for(let repeat=0;repeat<3;repeat++)for(const format of ['jpg','png'])for(const m
    }
    rows.push({photo,meta,large,native,prepareMs,lanes});
   }
-  gpu.renderTo=original;w.fetch=originalFetch;if(!yielded)throw Error("Preemption was not exercised");return {location,rows,yielded};
- },photos);
- console.log("RGB source preemption yielded and resumed without CPU fallback.");
+  gpu.renderTo=original;w.fetch=originalFetch;if(!yielded&&!cpuScene)throw Error("Preemption was not exercised");return {location,rows,yielded};
+ },{photos,cpuScene});
+ if(!cpuScene)console.log("RGB source preemption yielded and resumed without CPU fallback.");
  const timing=await page.locator('#library-frame').evaluate(async(element,cases)=>{
   const w=element.contentWindow,rows=[];
   for(const item of cases){
@@ -106,7 +114,7 @@ for(let repeat=0;repeat<3;repeat++)for(const format of ['jpg','png'])for(const m
   w.localStorage.removeItem('library-gpu-raw');return rows;
  },comparisons);
  fs.writeFileSync(path.join(folder,'timing.json'),JSON.stringify(timing,null,2));
- for(const format of ['jpg','png']){
+ for(const format of sources.map(source=>path.extname(source).slice(1))){
   const median=values=>values.sort((a,b)=>a-b)[Math.floor(values.length/2)];
   const cpu=median(timing.filter(r=>r.format===format&&r.mode==='cpu').map(r=>r.ms));
   const gpu=median(timing.filter(r=>r.format===format&&r.mode==='gpu').map(r=>r.ms));

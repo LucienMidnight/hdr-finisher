@@ -313,7 +313,7 @@ def create_library_router(worker, browser, store=None):
                 from .models import RawImportSettings, SourceInterpretationOverride
                 inputs = live_recipe(document)
                 try:
-                    if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff"}:
+                    if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
                         header, parts = await run_in_threadpool(library_rgb.decoded, Path(path), inputs)
                     else:
                         if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
