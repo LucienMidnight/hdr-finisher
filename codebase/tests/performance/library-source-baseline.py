@@ -309,10 +309,11 @@ def profile_avif_decode(path, repeats):
 
 
 def parse_iso_metadata_probe(text):
-    """Diagnostic only: retain exact ISO fractions and all three channels.
+    """Diagnostic only: parse printed fractions and three labelled channels.
 
     The production display-oriented parser is deliberately not changed.
-    This data must not authorize GPU reconstruction on its own.
+    libavif 1.4.1 printmetadata repeats R in G/B: these are printed values,
+    not proof of the stored per-channel metadata. Never authorize GPU with it.
     """
     import re
     from fractions import Fraction

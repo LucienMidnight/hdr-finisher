@@ -3901,6 +3901,16 @@
       }
     },
     {
+      "path": "tests/performance/library-iso-native.py",
+      "areas": ["library"],
+      "tier": "diagnostic",
+      "protects": "Isolated pinned-libavif base/map metadata, native precision, full-size YUV map scaling and exact HDR compatibility investigation; does not qualify GPU preparation.",
+      "launch": {
+        "method": "python",
+        "requires": "Build tools/iso-gainmap-probe against pinned libavif first; supply --probe EXE --source AVIF and choose --repeats before comparison. See photo-library section 5.1."
+      }
+    },
+    {
       "path": "tests/library-iso-source.js",
       "areas": ["library"],
       "tier": "core",

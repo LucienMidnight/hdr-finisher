@@ -622,7 +622,7 @@ crop route; its move to live native scenes remains open with that cleanup.
 ### 5.1 Non-RAW Library source speed: batch plan (October 20, 2026)
 
 **Status: Batches 1-3 built for qualified cases; Batch 2 HDR/PFM remains blocked.
-Batch 4 investigated October 20; GPU reconstruction remains incomplete.** Steve requested a single plan covering all supported non-RAW
+Batch 4 investigated October 20; GPU implementation deferred by Steve.** Steve requested a single plan covering all supported non-RAW
 formats, delivered in small batches.
 This extends item 1 above; the completed Bayer RAW work remains separate.
 Update each batch here with its commit, outcome and remaining limits when built.
@@ -1131,14 +1131,14 @@ Do not route gain-map files through a plain primary-image final scene.
 Done: SDR, PQ/HLG and supported linear cases share GPU preparation, reference
 white is applied once, and cache/native/saved-grade behaviour agrees.
 
-**Batch 4 outcome (October 20) — implementation incomplete.** No qualified
-base/map interface was adopted. ISO AVIF retains full-resolution CPU
+**Batch 4 outcome (October 20) — GPU implementation deferred.** No new
+base/map interface was adopted by the app. ISO AVIF retains full-resolution CPU
 reconstruction and both renditions; GPU finishing is not GPU reconstruction.
 Grade/export/Proof, interpretation order, numerical boundaries, reference white,
 scheduling and all allowances are unchanged. Batch 5 has not started and is not
 ready to reuse a shared gain-map reconstruction foundation.
 
-**Codec blocker.** Bundled avifgainmaputil/avifdec use libavif 1.4.1.
+**Installed-interface limits.** Bundled avifgainmaputil/avifdec use libavif 1.4.1.
 imagecodecs/libavif 1.4.2 exposes primary/frame RGB through
 `avif_decode(data, index=None, numthreads=None, out=None)`, without auxiliary-map
 selection or structured ISO metadata. `index=1` rejects both real inputs as out
@@ -1146,9 +1146,12 @@ of frame range. pillow-heif 1.8.0/libheif 1.23.4 has an auxiliary accessor, but
 no installed AVIF decoder (HEVC only). Pillow's libavif 1.3.0 binding exposes
 only `get_info`/`get_frame`, returning primary RGB without map access.
 
-The CLI **can** extract maps as 16-bit RGB PNG and print exact rational
-headrooms, per-channel min/max/gamma/offsets and the base-colour-space selector.
-This is a candidate interface, not a qualified reconstruction contract.
+The CLI **can** extract maps as 16-bit RGB PNG and print rational metadata.
+Follow-up native testing found `printmetadata` repeats channel R for G/B
+([`FormatFractions`](https://github.com/AOMediaCodec/libavif/blob/v1.4.1/apps/avifgainmaputil/printmetadata_command.cc)
+passes the same pointer three times). Both real files have
+unequal stored min/max channels, so that text is unsafe as reconstruction input.
+The existing CPU reconstruction itself uses the correct structured metadata.
 Urbanscape has a 1433×1920 limited-range 10-bit YUV420 base and 717×960 full-range
 10-bit YUV444 map; the reference has a 1024×576 8-bit base and same-size 10-bit
 map. Both have sRGB base, BT.2020/PQ alternate and no orientation transform.
@@ -1156,20 +1159,20 @@ map. Both have sRGB base, BT.2020/PQ alternate and no orientation transform.
 scales map **YUV to base dimensions before RGB conversion**, at native map depth.
 [Extraction](https://github.com/AOMediaCodec/libavif/blob/v1.4.1/apps/avifgainmaputil/extractgainmap_command.cc)
 exports original-size RGB instead. Resizing that PNG changes the operation order
-and quantization; agreement is unqualified. Re-encoding the map as AVIF/Y4M is
-not a direct decoded-plane binding. Equal-size base/map RGB precision and CPU
-output quantization also remain unqualified; no pixel-agreement or impossibility
-claim follows from source inspection alone.
+and quantization. Y4M writes raw YUV without re-encoding, but its CLI output
+does not supply the complete structured reconstruction contract. The follow-up
+bridge below resolves native sample access for the tested files; it does not
+yet qualify Library GPU reconstruction.
 
-Remaining codec work: expose original base/map YUV or libavif-equivalent RGB
-**after** full-base map scaling, with exact structured ISO metadata,
-range/depth/layout, dimensions, transforms and colour/application flags. Pin and
-validate the codec boundary before Library GPU ISO maths. Preserve the existing
-imagecodecs-authored SDR when the base is SDR; HDR-base inputs currently
+Remaining implementation work: productionise the diagnostic native interface
+below, including packaging, cancellation, bounded transport and fail-closed
+interpretation gates; then implement and validate Library GPU ISO maths.
+Preserve the existing imagecodecs-authored SDR when the base is SDR; HDR-base inputs currently
 reconstruct SDR through encoded AVIF and avifdec. Bypassing those quantization
 stages needs validation too. The existing display-oriented metadata parser was
-left unchanged; the diagnostic retains all rational/channel values and rejects
-missing fields, zero denominators and nonpositive gamma.
+left unchanged; the text diagnostic retains what the CLI prints and rejects
+missing fields, zero denominators and nonpositive gamma. It cannot recover the
+G/B values hidden by the CLI reporting bug.
 
 **Measurements.** Extended the registered `library-source-baseline.py` with
 `--iso-gainmap-profile FILE`. Protocol chosen before collection: tracked reference,
@@ -1209,6 +1212,65 @@ and new-route full-source/default-document equivalence remain untested. No GPU
 reconstruction was enabled. Batch 2 blockers and the known Batch 3 failures were
 not investigated or repaired. Originals/sidecars are preserved, including the
 Blender sidecar SHA-256 recorded above.
+
+**Follow-up feasibility investigation (October 20).** A direct interface is
+possible; absence from installed Python bindings is not a codec impossibility.
+Built the isolated `tools/iso-gainmap-probe` using libavif v1.4.1
+(commit `6543b22b5bc706c53f038a16fe515f921556d9b3`), libyuv 1922
+(`6067afde563c3946eebd94f146b3824ab7a97a9c`) and decode-only AOM v3.13.2,
+MSVC Release, generic AOM CPU. Public APIs expose native-depth RGBA base/map,
+full-base-size map after native YUV scaling, exact per-channel fractions,
+colour/range/depth/dimensions, ICC presence and unapplied transform flags.
+This is an investigation executable, not bundled or called by the app.
+
+Registered `tests/performance/library-iso-native.py`: same three matched files,
+three alternating CPU/probe repeats chosen before collection, unchanged 5%
+noise allowance, copies and source/sidecar hashes. All nine native HDR RGB16
+buffers matched existing tool PNG samples **exactly**; all nine native primary
+RGB buffers matched the installed imagecodecs primary **exactly**. The real
+half-size map case therefore has a viable full-resolution decode boundary.
+HDR compatibility includes native-depth RGB gain maths, RGB→10-bit YUV→16-bit
+RGB, not merely a 16-bit reconstruction buffer. The existing route takes HDR
+headroom from inspect's **two-decimal** display; the probe preserves it rather
+than silently changing to exact headroom. These compatibility stages matter
+when designing the GPU path, including output chroma subsampling.
+
+New CPU decoder medians: reference **1.67 s**, urbanscape **3.85 s**, reversed
+**3.36 s**. Diagnostic native totals were **0.73/2.45/0.65 s**, respectively,
+but are **not a speedup comparison**: they include raw extraction/writes and
+CPU HDR reconstruction, omit reversed SDR reconstruction and working-colour
+conversion, and do not run Library analysis/reduction or GPU work. Urbanscape
+native decode alone was about **1.33 s**, HDR maths/output conversions about
+**0.62 s**; these nested stages exclude process launch and overlap the total.
+No actual new Library route, GPU improvement, first paint, p90 or peak process
+memory was measured. The decoder/intermediate floor is still material.
+
+Reproduce with CMake/VS2022: build pinned libavif with shared libraries,
+`AVIF_CODEC_AOM=LOCAL`, `AVIF_CODEC_AOM_ENCODE=OFF`, `AVIF_LIBYUV=LOCAL`,
+`AOM_TARGET_CPU=generic`, apps/tests off; build `tools/iso-gainmap-probe` with
+`AVIF_SOURCE` pointing to that checkout and `AVIF_IMPORT_LIBRARY` to its Release
+`avif.lib`, and place its `avif.dll` beside the probe. Run the registered Python
+driver with `--probe EXE --source FILE --repeats 3`. Build/downloads and all
+sample-generation work are outside measured boundaries.
+
+Follow-up validation: native Release build and all nine matched precision
+comparisons completed; **539 Node / 2,304 Python passed, 3 Python skipped**.
+No GPU driver covers this isolated codec probe; no app/GPU code changed, so
+no additional GPU sweep was run. Earlier focused Electron findings stand.
+
+**Decision (Steve, October 20): defer Batch 4 GPU implementation; keep the
+findings and reproducible probe.** The bridge is feasible, but GPU support is
+still a substantial separate implementation: decoder distribution, exact ISO
+maths plus compatibility quantization, both lanes, transport/memory ownership,
+and the full Library validation matrix. The maintenance cost is not yet
+justified by a measured Library speed gain.
+Do not equate the partial prototype's timings with user-visible gain.
+The investigation is complete for this feasibility decision; Batch 4 production
+implementation remains incomplete. HDR-base SDR compatibility, controlled
+non-unit gamma/unequal offsets, 12-bit/ICC/orientation and all new-route GPU
+analysis, reuse/preemption/recovery checks remain unqualified. Existing app
+routes are unchanged. Batch 5 can be scoped independently, but cannot inherit
+an implemented/qualified ISO GPU reconstruction foundation.
 
 **Batch 4 — gain-map AVIF.** Prioritise the measured AVIF bottleneck. Establish
 access to decoded base/map samples and all required ISO gain-map metadata;
