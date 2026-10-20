@@ -4,12 +4,22 @@ window.HDRLibraryRGB = (() => {
   "use strict";
   const {gpu,COMMON,TURN,FINISHING,reducedSize}=HDRLibraryGpuRaw.shared;
   const compiled=new WeakMap();
-  // Decoded RGB shares full-source measurement and linear reduction with RAW.
-  // ICC and orientation have already been applied by the CPU decoder.
-  const RGB = COMMON + TURN + FINISHING + /* wgsl */ `
+  const INPUT = `
   @group(0) @binding(1) var<storage, read> rgbInput: array<u32>;
-  fn encoded(i:u32)->f32{return f32((rgbInput[i>>2u]>>((i&3u)*8u))&255u)*(1.0/255.0);}
-  fn eotf(x:f32)->f32 { return select(pow((x + 0.055) / 1.055, 2.4), x / 12.92, x <= 0.04045); }
+  fn encoded(i:u32)->f32 {
+    if(p.dims2.y==1u){return bitcast<f32>(rgbInput[i]);}
+    return f32((rgbInput[i>>2u]>>((i&3u)*8u))&255u)*(1.0/255.0);
+  }
+  fn eotf(value:f32)->f32 {
+    if(p.dims2.z==1u){return value;}
+    let x=max(value,0.0);
+    if(p.dims2.z==2u){let v=clamp(x,0.0,1.0);return select(pow((v+0.099)/1.099,1.0/0.45),v/4.5,v<0.081);}
+    return select(pow((x+0.055)/1.055,2.4),x/12.92,x<=0.04045);
+  }`;
+
+  // Decoded RGB shares full-source measurement and linear reduction with RAW.
+  // Decoder orientation and ICC policy is carried explicitly in the contract.
+  const RGB = COMMON + TURN + FINISHING + INPUT + /* wgsl */ `
   @compute @workgroup_size(16,16)
   fn main(@builtin(global_invocation_id) g0:vec3<u32>, @builtin(local_invocation_index) li:u32) {
     let g=g0+vec3<u32>(0u,p.dispatch.y,0u);
@@ -22,14 +32,11 @@ window.HDRLibraryRGB = (() => {
     }
     workgroupBarrier(); if(li<3u){atomicMax(&peaks[li],atomicLoad(&wgPeak[li]));}
   }`;
-  const RGB_SDR = COMMON + /* wgsl */ `
-  @group(0) @binding(1) var<storage,read> rgbInput:array<u32>;
-  fn encoded(i:u32)->f32{return f32((rgbInput[i>>2u]>>((i&3u)*8u))&255u)*(1.0/255.0);}
+  const RGB_SDR = COMMON + INPUT + /* wgsl */ `
   @group(0) @binding(4) var<storage,read_write> outR:array<f32>;
   @group(0) @binding(5) var<storage,read_write> outG:array<f32>;
   @group(0) @binding(6) var<storage,read_write> outB:array<f32>;
   @group(0) @binding(7) var<storage,read_write> peaks:array<atomic<u32>>;
-  fn eotf(x:f32)->f32 {return select(pow((x+0.055)/1.055,2.4),x/12.92,x<=0.04045);}
   @compute @workgroup_size(16,16) fn main(@builtin(global_invocation_id) g0:vec3<u32>){
     let g=g0+vec3<u32>(0u,p.dispatch.y,0u);if(g.x>=p.dims.x||g.y>=p.dims.y){return;}
     let i=g.y*p.dims.x+g.x;let k=i*3u;
@@ -70,19 +77,19 @@ window.HDRLibraryRGB = (() => {
       const u32 = new Uint32Array(params), f32 = new Float32Array(params);
       const setU = (slot, values) => values.forEach((v, k) => { u32[slot * 4 + k] = v; });
       const setF = (slot, values) => values.forEach((v, k) => { f32[slot * 4 + k] = v; });
-      setU(0, [w, h, 0, st]); setU(1, [0, 0, outW, sw]);
+      setU(0, [w, h, 0, st]); setU(1, [0, meta.layout?.dtype === "float32" ? 1 : 0, meta.colour.transfer === "LINEAR" || meta.colour.transfer === "ACEScg" ? 1 : meta.colour.transfer === "BT.709" ? 2 : 0, sw]);
       meta.rgb_to_acescg.forEach((row, k) => setF(10 + k, row));
       meta.acescg_to_srgb.forEach((row, k) => setF(13 + k, row));
       meta.acescg_to_bt2020.forEach((row, k) => setF(16 + k, row));
-      setF(19, [0.18, 0, 0, 0]);
+      setF(19, [(meta.colour.authored_sdr ? .18 : 1) * (meta.colour.scale || 1), 0, 0, 0]);
       const uniform = device.createBuffer({ size: params.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       own(uniform);
       device.queue.writeBuffer(uniform, 0, params);
 
       if(beforeSubmit) await beforeSubmit();
-      const mosaicBuf = make(n * 3);
+      const mosaicBuf = make(meta.mosaic_bytes);
       const whole = Math.floor(mosaic.byteLength / 4) * 4;
-      const transferBand = w * 128 * 3;
+      const transferBand = w * 128 * 3 * (meta.layout?.dtype === "float32" ? 4 : 1);
       for(let offset=0;offset<whole;offset+=transferBand){
         if(beforeSubmit) await beforeSubmit();
         device.queue.writeBuffer(mosaicBuf,offset,mosaic.buffer,mosaic.byteOffset+offset,Math.min(transferBand,whole-offset));
@@ -111,10 +118,10 @@ window.HDRLibraryRGB = (() => {
         await staging.mapAsync(GPUMapMode.READ); const copy = staging.getMappedRange().slice(0); release(staging); return copy;
       };
 
-        planes = Array.from({length:6},()=>make(n*4));
+        planes = Array.from({length:meta.colour.authored_sdr ? 6 : 3},()=>make(n*4));
         peaks = make(16); samples = make(sw*sh*3*4);
         await run("RGB", [uniform,mosaicBuf,null,null,...planes.slice(0,3),peaks,samples],wgX,wgY);
-        await run("RGB_SDR",[uniform,mosaicBuf,null,null,...planes.slice(3),peaks],wgX,wgY);
+        if(meta.colour.authored_sdr) await run("RGB_SDR",[uniform,mosaicBuf,null,null,...planes.slice(3),peaks],wgX,wgY);
         await device.queue.onSubmittedWorkDone(); release(mosaicBuf);
         await stage("colour_measure");
       const reduced = {};

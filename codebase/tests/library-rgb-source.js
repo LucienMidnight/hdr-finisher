@@ -9,13 +9,34 @@ fs.copyFileSync(photographic,jpeg);
 execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',"from PIL import Image;import sys;Image.open(sys.argv[1]).save(sys.argv[2])",jpeg,png]);
 const sources=[jpeg,png],photos=[...sources];
 const edited=path.join(folder,'edited.png');fs.copyFileSync(png,edited);photos.push(edited);
-execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+let editedTiff=null,layeredExr=null,bt709Tiff=null,whiteExr=null;
+if(process.argv.includes('--precision')){
+ editedTiff=path.join(folder,'edited-16bit.tif');photos.push(editedTiff);
+ execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`import sys,numpy as np,tifffile
+from PIL import Image,ImageCms
+profile=ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
+a=np.asarray(Image.open(sys.argv[1])).astype(np.uint16)*257
+tifffile.imwrite(sys.argv[2],a,photometric='rgb',extratags=[(34675,'B',len(profile),profile,False),(274,'H',1,6,False)])`,jpeg,editedTiff]);
+ layeredExr=path.join(folder,'signed-layer.exr');photos.push(layeredExr);
+ execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`import sys,numpy as np,OpenEXR,Imath
+from PIL import Image
+a=np.asarray(Image.open(sys.argv[1]).resize((192,128))).astype(np.float32)/255*4-.5
+h=OpenEXR.Header(192,128);names=['Combined.R','Combined.G','Combined.B']
+h['channels']={n:Imath.Channel(Imath.PixelType(Imath.PixelType.FLOAT)) for n in names}
+h['dataWindow']=Imath.Box2i(Imath.V2i(-10,3),Imath.V2i(181,130));h['colorInteropID']=b'lin_rec2020_scene'
+f=OpenEXR.OutputFile(sys.argv[2],h);f.writePixels({n:a[...,i].tobytes() for i,n in enumerate(names)});f.close()`,jpeg,layeredExr]);
+ bt709Tiff=path.join(folder,'bt709.tif');fs.copyFileSync(editedTiff,bt709Tiff);photos.push(bt709Tiff);
+ whiteExr=path.join(folder,'white100.exr');fs.copyFileSync(layeredExr,whiteExr);photos.push(whiteExr);
+}
+for(const target of [edited,editedTiff,layeredExr,bt709Tiff,whiteExr].filter(Boolean))execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
 import sys,json
 from pathlib import Path
 sys.path.insert(0,'backend')
 from hdr_finisher.sessions import SessionStore
-from hdr_finisher.models import LocalAdjustment
-p=Path(sys.argv[1]);session=SessionStore().prepare_session(p,owns_source_path=False)
+from hdr_finisher.models import LocalAdjustment,SourceInterpretationOverride
+p=Path(sys.argv[1])
+override=SourceInterpretationOverride(transfer_function='BT.709') if p.stem=='bt709' else SourceInterpretationOverride(linear_reference='diffuse_white_1_0') if p.stem=='white100' else SourceInterpretationOverride()
+session=SessionStore().prepare_session(p,owns_source_path=False,interpretation_override=override,hdr_reference_white_nits=100 if p.stem=='white100' else 203)
 a=session.edit_document().model_dump(mode='json');b=json.loads(json.dumps(a))
 b['global_adjustments']['hdr']['exposure']=.6
 b['global_adjustments']['sdr']['exposure']=.3
@@ -24,7 +45,7 @@ local=LocalAdjustment();local.hdr_grade.exposure=.25;local.sdr_grade.exposure=.1
 b['local_adjustments']=[local.model_dump(mode='json')]
 b['denoise']['hdr']['enabled']=True
 p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo','schema_version':1,'photo_id':'live-test','marks':{},'albums':[],'grade':b,'grade_default':a}),encoding='utf8')
-`,edited],{cwd:root});
+`,target],{cwd:root});
 // Protocol chosen before comparisons: same JPEG and decoded photographic PNG,
 // three cold-scene repeats per route, alternating order; OS cache uncontrolled.
 const comparisons=[];
@@ -52,7 +73,7 @@ for(let repeat=0;repeat<3;repeat++)for(const format of ['jpg','png'])for(const m
   for(const photo of photos){
    const begun=performance.now();
    const [meta,large]=await Promise.all([w.HDRLibraryScenes.load(photo,640),w.HDRLibraryScenes.load(photo,2560)]),lanes={};
-   if(meta.renderer!=='gpu'||!meta.rgb_adapter||!large.has_reference) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
+   if(meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference!==meta.rgb_contract.colour.authored_sdr) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
    const prepareMs=performance.now()-begun;
    const native=await w.HDRLibraryScenes.load(photo,100000);
    const again=await w.HDRLibraryScenes.load(photo,100000);

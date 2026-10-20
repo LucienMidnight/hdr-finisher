@@ -948,6 +948,83 @@ metadata and measurements can be supplied directly.
 Done: real JPEG/PNG cells, saved-grade redraws, both scene sizes and selected
 native detail work; focused colour, identity, memory and recovery checks pass.
 
+**Batch 2 outcome (October 20).** Qualified EXR/TIFF cases now use float32
+samples with shared GPU transfer/matrix preparation, negative-colour handling,
+full-source measurements and linear reduction, without an 8-bit intermediate.
+The existing TIFF decoder owns integer normalization and profile classification;
+its orientation tag remains unapplied, matching Grade. Planar TIFF is interleaved
+once for transport. The contract retains source integer range/precision, EXR
+channel types/selected layers, data/display windows and origin, chromaticities,
+conflicts, original interpretation and applied-operation flags. Overrides retain
+the loader's order, including 1.0 diffuse-white scaling. Supported transfers are
+linear, sRGB and BT.709; PQ/HLG and unresolved/arbitrary profiles retain explicit
+CPU routes and interpretation gates. HDR/PFM plumbing is **not qualified**.
+
+The baseline driver's new `--exr-read-profile` compared three alternating
+separate/together reads on the real darktable EXR, checking samples exactly.
+OpenEXR 3.5's combined call reduced median binding time **2.92 to 1.02 s**.
+This includes channel buffers/compressed-block work; pure decompression is not
+isolated. Only Library opts into this call and records channel/interleave times;
+Grade retains its separate-channel calls. Combined reads temporarily hold three
+channel byte buffers plus the interleaved image, releasing the byte buffers
+before subsequent preparation. Process peak memory was not measured.
+
+Preparation still supplies equivalent analysis/default documents and both
+640/2560 scenes without a Grade session. Selected-only native detail shares the
+route. Linear inputs use three planes; authored SDR TIFF keeps its own three
+reference planes. Uploads use 128-row bands. Existing source-recipe coalescing,
+identity/publication checks, priority, cancellation, preemption, visible CPU
+fallback and hardware recovery remain shared. Recipe v2 refreshes older scenes
+once. No Grade/export/Proof numerical default, pinned shader, tolerance or
+memory/cache allowance changed.
+
+**Matched measurement.** The registered `library-precision-source.js` exercises
+the actual GPU route on disposable copies of darktable `A7R00619.exr`
+(7980 × 5320) and Lightroom `DJI_0072-Lightroom-reference.tif` (float32,
+8000 × 6000). Protocol chosen before comparison: three fresh-scene repeats per
+route, alternating CPU/GPU order, warm processes/pipelines, uncontrolled Windows
+file cache, concurrent 640/2560 requests through stored metadata. With combined
+EXR reads, median preparation fell **9.80 to 5.75 s (41.3%)** for EXR and
+**7.59 to 5.11 s (32.7%)** for TIFF, beyond the retained 5% noise allowance.
+These supersede the earlier separate-read EXR measurement.
+
+GPU-route stage medians (EXR/TIFF): decoder plus metadata 3.30/2.72 s,
+upload 369/378 ms, colour/measurements 240/226 ms, reduction 132/60 ms,
+readback 52/45 ms, page serial queue 0/0.1 ms. Decode includes container/layout
+work. Adapter finite sanitization, framing and HTTP sit inside broader source
+fetch time; GPU stages include scheduler checks, and reduction excludes timed
+readback. CPU quantiles use the GPU's bounded full-source sample. Nested source
+fetch/GPU timers overlap these stages and must not be summed. Backend queueing,
+hash/storage/HTTP individually, first paint, p90 and process peak RAM/GPU memory
+remain unmeasured. Five-second preparation still misses the about-two-second
+aspiration.
+
+**Validation.** Fast checks: 539 Node / 2,291 Python passed, 3 Python skipped.
+Two registered focused Electron checks run serially at 2560 × 1440:
+`library-precision-source.js` and `library-precision-rendition.js` (reusing the
+JPEG/PNG driver). They pass real EXR/float TIFF scene-half agreement, both
+finished lanes, full-source starting peaks, concurrent tiers, cached reopen,
+selected native reuse, reservation bounds and forced preemption without CPU
+fallback. Real-file worst SDR mean/p99.9: 0.2913/0.4544; HDR: 0.0254/0.0685,
+within unchanged mean < 1 / p99.9 ≤ 3. Additional cases cover photographic
+uint16 TIFF, signed layered EXR with offset windows, saved rotation/locals/
+Denoise, BT.709 override, 100-nit white with 1.0 diffuse white and JPEG/PNG
+regression. Backend checks cover planar/integer/float samples, layer/window
+preservation, interpretation gates/order and equivalent starting documents.
+Originals/sidecars are preserved; the pre-existing Blender sidecar retains
+SHA-256 `69F50AE23B96291A8F3D98CFAF1AAA571C658831AA939F6C9BD54E7E855ADC29`.
+
+**Remaining blocker/readiness.** The existing imageio v3 route raises
+`OSError: Could not find a backend ... with iomode r` on real `alps_field_1k.hdr`
+and a valid signed little-endian float PFM. Installed requirements include
+imageio but no capable optional backend; imageio suggests its OpenCV extra for
+HDR and PyAV/OpenCV for PFM. No backend was added or substituted, so HDR/PFM
+precision/colour remain untested and these formats are not marked complete.
+Unknown/conflicting EXR primaries and ROMM/ProPhoto TIFF retain manual review;
+unsupported transfers retain CPU normalization. Batch 3 can start independently
+on the shared precision/ownership foundation; HDR/PFM qualification remains
+open Batch 2 work. No later format batch started.
+
 **Batch 2 — EXR, HDR/PFM and TIFF adapters.** Feed existing decoded linear or
 encoded high-precision samples into batch 1. Profile EXR channel reads and
 compressed-block work; investigate reading RGB together if the bindings and
@@ -955,8 +1032,8 @@ measured cost justify it. Preserve selected layered channels, data-window
 handling, chromaticities/conflicts and manual overrides. TIFF retains its
 existing bit depth, float, profile and orientation semantics. Avoid converting
 whole full-size arrays to repeated intermediate copies before GPU upload.
-Done: supported cases use shared GPU preparation, decoder time is separated
-from GPU time, and unsupported cases keep an explicit existing fallback.
+Built for qualified EXR/TIFF cases; decoder and GPU times are separated.
+HDR/PFM remain blocked as above; unsupported cases retain explicit reasons.
 
 **Batch 3 — JPEG XL and plain/direct-HDR AVIF/HEIF adapters.** Separate encoded
 sample decode from colour preparation where current decoders combine them.

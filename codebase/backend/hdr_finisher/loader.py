@@ -419,7 +419,7 @@ def _classify_icc_profile_name(profile_name: str) -> str:
 
 
 def _load_exr(
-    path: Path, *, cancelled: Callable[[], bool] | None = None
+    path: Path, *, cancelled: Callable[[], bool] | None = None, combined_channels: bool = False
 ) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         import OpenEXR
@@ -436,10 +436,24 @@ def _load_exr(
         float_type = Imath.PixelType(Imath.PixelType.FLOAT)
         channel_names = _select_exr_rgb_channels(header.get("channels", {}).keys())
         image = np.empty((height, width, 3), dtype=np.float32)
-        for index, name in enumerate(channel_names):
+        read_timings = None
+        if combined_channels:
+            # Library-only opt-in. One binding call shares compressed-block work.
             _raise_if_cancelled(cancelled)
-            channel = np.frombuffer(file.channel(name, float_type), dtype=np.float32)
-            image[..., index] = channel.reshape(height, width)
+            started = perf_counter()
+            channels = file.channels(list(channel_names), float_type)
+            read_ms = (perf_counter() - started) * 1000
+            started = perf_counter()
+            for index, channel in enumerate(channels):
+                _raise_if_cancelled(cancelled)
+                image[..., index] = np.frombuffer(channel, dtype=np.float32).reshape(height, width)
+            del channels, channel
+            read_timings = {"channels": read_ms, "interleave": (perf_counter() - started) * 1000}
+        else:
+            for index, name in enumerate(channel_names):
+                _raise_if_cancelled(cancelled)
+                channel = np.frombuffer(file.channel(name, float_type), dtype=np.float32)
+                image[..., index] = channel.reshape(height, width)
     finally:
         close = getattr(file, "close", None)
         if callable(close):
@@ -467,6 +481,8 @@ def _load_exr(
         "color_space_source": color_space_source,
         "needs_color_override": not color_space_confident,
     }
+    if read_timings is not None:
+        metadata["library_exr_timings_ms"] = read_timings
     if metadata_conflict:
         metadata["color_space_note"] = (
             "EXR chromaticities and colorInteropID disagree. Manual source interpretation is required."

@@ -144,3 +144,81 @@ def test_http_source_coalesces_before_decode_and_clear_blocks_publication(tmp_pa
         assert not list((tmp_path/'profile').rglob('*.npz'))
         assert path.read_bytes() and not path.with_name(path.name+'.hdrf').exists()
     finally:client.close()
+
+
+@pytest.mark.parametrize("dtype,planar", [("uint16",False),("float32",True)])
+def test_precision_tiff_preserves_decoder_samples_and_override_order(tmp_path, dtype, planar):
+    import tifffile
+    from hdr_finisher import loader
+    path=tmp_path/"photo.tif"
+    array=np.arange(120,dtype=np.float32).reshape(5,8,3)/20-.5
+    if dtype=="uint16":array=np.clip(array*10000,0,65535).astype(dtype)
+    else:array=array.astype(dtype)
+    tifffile.imwrite(path,array.transpose(2,0,1) if planar else array,photometric="rgb",
+        planarconfig="separate" if planar else "contig",extratags=[(274,"H",1,6,False)])
+    inputs=recipe(None)
+    with pytest.raises(library_rgb.NotEligible,match="primaries"):
+        library_rgb.decoded(path,inputs)
+    inputs["interpretation_override"].update(color_space="BT.2020",transfer_function="LINEAR",linear_reference="diffuse_white_1_0")
+    header,parts=library_rgb.decoded(path,inputs)
+    actual=np.frombuffer(parts[0],dtype="<f4").reshape(5,8,3)
+    np.testing.assert_array_equal(actual,loader._load_tiff(path)[0])
+    assert header["orientation"]=={"original":6,"applied":False}
+    assert header["colour"]["scale"]==.18 and not header["colour"]["authored_sdr"]
+    assert header["layout"]["dtype"]=="float32"
+    assert header["layout"]["decoder_facts"]["bits_per_sample"]==array.dtype.itemsize*8
+    if dtype=="float32":assert actual.min()<0
+
+
+def test_precision_exr_windows_layers_and_conflict_gate(tmp_path):
+    import OpenEXR,Imath
+    path=tmp_path/"layer.exr"
+    header=OpenEXR.Header(8,4)
+    header["channels"]={n:Imath.Channel(Imath.PixelType(Imath.PixelType.FLOAT)) for n in ["Combined.R","Combined.G","Combined.B"]}
+    header["dataWindow"]=Imath.Box2i(Imath.V2i(-3,2),Imath.V2i(4,5))
+    header["colorInteropID"]=b"lin_rec2020_scene"
+    values=np.linspace(-.5,4,32,dtype=np.float32)
+    file=OpenEXR.OutputFile(str(path),header)
+    file.writePixels({n:values.tobytes() for n in header["channels"]});file.close()
+    result,parts=library_rgb.decoded(path,recipe(None))
+    assert result["layout"]["channels"]==["Combined.R","Combined.G","Combined.B"]
+    assert result["layout"]["data_window"]==[-3,2,5,6]
+    assert result["layout"]["origin"]==[-3,2]
+    np.testing.assert_array_equal(np.frombuffer(parts[0],dtype="<f4").reshape(4,8,3)[...,0].ravel(),values)
+
+
+def test_precision_hdr_backend_failure_has_explicit_fallback(tmp_path,monkeypatch):
+    path=tmp_path/"photo.pfm";path.write_bytes(b"PF")
+    def unavailable(path):raise OSError("No imageio backend for PFM")
+    monkeypatch.setattr(library_rgb.loader,"_load_hdr_like",unavailable)
+    with pytest.raises(library_rgb.NotEligible,match="imageio decoder unavailable.*PFM"):
+        library_rgb.decoded(path,recipe(None))
+
+
+@pytest.mark.parametrize("authored",[False,True])
+def test_precision_publication_matches_grade_document(tmp_path,authored):
+    import tifffile
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    path=tmp_path/"photo.tif"
+    values=np.linspace(0,65535,120,dtype=np.uint16).reshape(5,8,3)
+    profile=ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    tifffile.imwrite(path,values,photometric="rgb",extratags=[(34675,"B",len(profile),profile,False)])
+    inputs=recipe(None)
+    if not authored:inputs["interpretation_override"].update(color_space="BT.2020",transfer_function="LINEAR")
+    from hdr_finisher.models import SourceInterpretationOverride
+    expected=SessionStore().prepare_session(path,owns_source_path=False,hdr_reference_white_nits=100,
+        interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]))
+    inputs["hdr_reference_white_nits"]=100
+    header,_=library_rgb.decoded(path,inputs)
+    a=expected.analysis
+    header.update(height=5,width=8,source_height=5,source_width=8,edge=640,source_quality=quality(None),memory_peak_bytes=1,
+        peaks={"peak":a.peak_linear,"peak_luma":a.peak_luma_linear,"peak_bt2020":a.peak_bt2020_linear,
+            "sdr":float(np.max(expected.sdr_reference_image)) if authored else 0},
+        robust={"channel":a.robust_peak_linear,"luma":a.robust_peak_luma_linear,"bt2020":a.robust_peak_bt2020_linear})
+    planes=[expected.image.transpose(2,0,1)]
+    if authored:planes.append(expected.sdr_reference_image.transpose(2,0,1))
+    body=np.concatenate(planes).astype("<f4").tobytes()
+    cache=LibraryPictureCache(tmp_path/"cache")
+    result=library_rgb.developed(cache,path,header,body)
+    assert result["has_reference"]==authored
+    assert cache.default_document(path)==expected.edit_document().model_dump(mode="json")

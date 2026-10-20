@@ -3908,6 +3908,20 @@
       "launch": {"method": "electron"}
     },
     {
+      "path": "tests/library-precision-rendition.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Authored uint16 TIFF and JPEG/PNG preserve SDR, saved finishing edits, full-source defaults and native reuse.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/library-precision-source.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "EXR/TIFF float preparation, concurrent tiers, native reuse and finished pixels against Grade.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/library-rgb-native.js",
       "areas": ["library"],
       "tier": "core",

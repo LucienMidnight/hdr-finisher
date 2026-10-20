@@ -14,10 +14,15 @@ data=json.loads(Path(sys.argv[1]).read_text());root=Path(data["location"]);resul
 for row in data["rows"]:
     from hdr_finisher.sessions import SessionStore
     from hdr_finisher.library_pictures import reduce_picture
-    session=SessionStore().prepare_session(Path(row["photo"]), owns_source_path=False)
+    from hdr_finisher.models import SourceInterpretationOverride
+    photo=Path(row["photo"]);sidecar=photo.with_name(photo.name+".hdrf")
+    document=json.loads(sidecar.read_text())["grade"] if sidecar.exists() else {}
+    session=SessionStore().prepare_session(photo, owns_source_path=False,
+        interpretation_override=SourceInterpretationOverride.model_validate(document.get("interpretation_override",{})),
+        hdr_reference_white_nits=document.get("hdr_reference_white_nits",203))
     meta=row["meta"]
     image=reduce_picture(session.image,meta["edge"])
-    reference=reduce_picture(session.sdr_reference_image,meta["edge"])
+    reference=reduce_picture(session.sdr_reference_image,meta["edge"]) if session.sdr_reference_image is not None else None
     # Starting values come from full-source measurements, not the reduced scene.
     for lane in ("hdr","sdr"):
         field="highlight_compression_source_peak_nits" if lane=="hdr" else "highlight_compression_source_peak_percent"
@@ -28,6 +33,9 @@ for row in data["rows"]:
         file=next(root.glob("library-*/"+product["source_key"]+".npz"))
         with np.load(file) as stored:
             for field,original in (("pixels",session.image),("reference",session.sdr_reference_image)):
+                if original is None:
+                    assert field not in stored.files
+                    continue
                 expected=reduce_picture(original,product["edge"])
                 actual=stored[field].astype(np.float32)
                 assert expected.shape==actual.shape

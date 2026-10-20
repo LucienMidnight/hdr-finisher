@@ -249,14 +249,46 @@ def synthetic_samples(folder):
                          "hdr.jxl", "sdr.jxl", "ultrahdr.jpg", "linear.pfm", "direct-pq.avif")]
 
 
+def profile_exr_reads(path, repeats):
+    """Compare legacy channel calls with one binding call; no source writes."""
+    import OpenEXR, Imath
+    import numpy as np
+    from hdr_finisher.loader import _select_exr_rgb_channels
+    rows=[]
+    reference=None
+    for repeat in range(repeats):
+        for mode in (["separate","together"] if repeat%2==0 else ["together","separate"]):
+            file=OpenEXR.InputFile(str(path))
+            try:
+                header=file.header();names=_select_exr_rgb_channels(header["channels"].keys())
+                dtype=Imath.PixelType(Imath.PixelType.FLOAT)
+                start=perf_counter()
+                channels=([file.channel(name,dtype) for name in names] if mode=="separate" else file.channels(list(names),dtype))
+                elapsed=(perf_counter()-start)*1000
+                if reference is None:reference=channels
+                else:
+                    for actual,expected in zip(channels,reference):
+                        np.testing.assert_array_equal(np.frombuffer(actual,dtype="f4"),np.frombuffer(expected,dtype="f4"))
+                rows.append({"mode":mode,"repeat":repeat,"read_ms":elapsed})
+            finally:file.close()
+    return {"path":str(path),"repeats":repeats,"reads":rows,
+        "medians_ms":{mode:statistics.median(row["read_ms"] for row in rows if row["mode"]==mode) for mode in ["separate","together"]},
+        "boundary":"binding calls include compressed-block work and returned channel buffers; pure decompression and interleave are not isolated"}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", required=True, type=Path)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--exr-read-profile", type=Path)
     parser.add_argument("--synthetic", action="store_true", help="Add eight controlled codec/interpretation cases")
     parser.add_argument("--repeats", type=int, default=3)
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats must be positive")
+    if args.exr_read_profile:
+        print(json.dumps(profile_exr_reads(args.exr_read_profile,args.repeats)))
+        return 0
+    if not args.manifest: parser.error("--manifest is required unless profiling EXR reads")
     scratch = tempfile.TemporaryDirectory(prefix="hdr-test-rgb-samples-")
     samples = json.loads(args.manifest.read_text(encoding="utf-8-sig"))
     if args.synthetic:
