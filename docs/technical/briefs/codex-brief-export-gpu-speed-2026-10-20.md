@@ -184,3 +184,21 @@ repackaging step fell from 7.766 s to 6.382 s; batch-sized files save about
 0.2-0.3 s. These are isolated encoding replays, not new end-to-end timings.
 Neither timing target is achieved yet. Encoders, filter maths and its halo
 remain unchanged.
+
+Part 2 experiment, not retained: running full-source GPU RAW development as
+one delivery job and creative finishing as a second job made the same
+three-photo batch take 40.958 s (13.653 s/photo), against the 33.439 s
+baseline (11.146 s/photo). It adds a full developed-image readback and a
+second upload, plus another turn in the GPU queue. All three used the GPU;
+this is a performance rejection, not a perceptual qualification. The
+experimental source changes were removed before committing this record.
+
+Continuing part 2 efficiently needs a larger delivery change: keep the
+full-source GPU-developed image resident through creative finishing, while
+passing its measurements back to initialise the starting settings and
+Denoise. Existing Grade/Library source reuse, CPU fallback, priority,
+yielding, budget and optional Guarantee HDR peak must remain intact.
+Await Steve's decision under the Questions protocol before introducing
+that pattern. Parts 2, 3 and 5 remain unfinished, and part 4 has only the
+first isolated improvement described above. No post-change end-to-end
+speed target has been demonstrated.
