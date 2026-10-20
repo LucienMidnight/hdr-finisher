@@ -93,9 +93,13 @@ including at tile edges.
 - **Perceptual limits:** SDR ΔE 2000 and HDR ΔE ITP, mean below 1.0,
   p99.9 at or below 3.0, judged before encoding (Steve, October 19). Compare
   GPU against CPU, and Proof against export. Check at Fit and at 100%.
-- **Exact HDR ceiling after encoding**, on every route.
-- Encoders and gain-map maths don't change. "Guarantee HDR peak" keeps its
-  current behaviour and stays off by default.
+- **HDR ceiling:** the finished render (before encoding) never exceeds the
+  highlight target, on every route. The check after encoding stays
+  **optional**: "Guarantee HDR peak" keeps its current behaviour (per preset
+  version, off by default, with the dim-picture skip and the deliver-anyway
+  note), as Steve restored it on October 19. Don't make it mandatory. When
+  it's on, it must still work and give the same results.
+- Encoders and gain-map maths don't change.
 - Proof keeps showing the same result as export.
 - Grade keeps GPU priority. The October 18 fairness rules (no CPU fallback
   for preemption or queue waits), the shared memory budget, and Library and
