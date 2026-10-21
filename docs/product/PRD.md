@@ -82,15 +82,24 @@ may not contradict these.
 Denoise, Film Look, Black & White, preview and scopes, Proof, export and
 batch export, the photo Library, desktop packaging for three platforms.
 
+**V1 additions (Steve, October 21, 2026):** a healing brush in the local
+adjustment module, and hue selection as a local-adjustment mask. Both are
+required for v1 and not built; details belong to the [Grade PRD](modules/grade.md).
+
 **Out of scope (decided):** compositing and layers, pixel painting and
-retouching, AI-based selection or generation, stacks for bursts, face
+retouching beyond the v1 healing brush, AI-based selection or generation,
+stacks for bursts, face
 recognition, maps, cloud sync, phone companion, tethering, printing, web
 galleries, slideshows and video. Details are in each module's
 out-of-scope list.
 
-**Later, not planned yet:** an MCP server so an AI assistant can operate
-the app (before 1.0, its own PRD when it starts), and AI search and
-tagging (version 2 at the earliest).
+**Deferred to v2 (Steve, October 21, 2026):** Library Looks, linked
+photos, portable projects, and an MCP server so an AI assistant can
+operate the app. These are not v1 launch requirements. The MCP server
+will have its own PRD when work starts. Existing Film Look presets remain
+in v1; the deferred Looks feature is the Library browser and workflow.
+
+**Later, not planned yet:** AI search and tagging (version 2 at the earliest).
 
 ## 4. How the app is built
 
@@ -115,11 +124,11 @@ Working rules for coding agents, including how much to test:
 | Module | Covers | Main code | PRD | State, October 18 |
 | --- | --- | --- | --- | --- |
 | Import and RAW | Input formats, camera RAW and DNG development, source interpretation, starting look | `loader.py`, `raw_import.py`, `linear_dng.py`, `gainmap_decoders.py`, `sessions.py` | [import-and-raw](modules/import-and-raw.md) | Built. **RAW Exposure zero implemented; Library picture agreement and final review open.** |
-| Grade | HDR and SDR controls, curves, Detail, local adjustments and masks, Denoise, Black & White, SDR Match, presets | `adjustments.py`, `local_adjustments.py`, `denoise_adaptive.py`, `sdr_match.py`, `frontend/*` panels | [grade](modules/grade.md) | Built. Desaturation controls, preset management and the Match fault open. |
+| Grade | HDR and SDR controls, curves, Detail, local adjustments and masks, Denoise, Black & White, SDR Match, presets | `adjustments.py`, `local_adjustments.py`, `denoise_adaptive.py`, `sdr_match.py`, `frontend/*` panels | [grade](modules/grade.md) | Built. V1 healing brush and hue-selection mask not built; desaturation controls, preset management and the Match fault open. |
 | Film Look | Stocks, papers, lens filter, grain, halation, Looks | `film_stock.py`, `film_grain.py`, `film_stocks/`, shaders | [film-look](modules/film-look.md) | Rebuild phases 1 to 6 built. Grain data mostly estimates. |
 | Preview and GPU | WebGPU preview, viewport-bounded rendering, zoom, scopes, GPU memory, CPU/GPU parity | `webgpu-*.js`, `gpu-*.js`, `render_cache.py`, `scopes.py` | [preview-and-gpu](modules/preview-and-gpu.md) | Built. Several performance follow-ups open. |
 | Export and Proof | Output formats, settings, presets, batch export, Proof, HDR ceiling, **GPU delivery** | `exporters.py`, `batch_export.py`, `proofing.py`, `hdr_ceiling.py` | [export-and-proof](modules/export-and-proof.md) | CPU export built. **GPU export, Proof and Library pictures not built (top priority).** |
-| Photo Library | Browsing, culling, albums, sidecars, thumbnails, paste, Library pictures | `library_*.py`, `photo-library.js`, `library-*.js` | [photo-library](modules/photo-library.md) | Slices 0 to 6 and paste built. Looks, links, portable projects, metadata not built. |
+| Photo Library | Browsing, culling, albums, sidecars, thumbnails, paste, Library pictures | `library_*.py`, `photo-library.js`, `library-*.js` | [photo-library](modules/photo-library.md) | Slices 0 to 6 and paste built. Metadata not built; Library Looks, links and portable projects deferred to v2. |
 | Desktop and release | Electron shell, windows, packaging, updates, platforms, release process | `codebase/desktop/`, `packaging/`, `.github/` | [desktop-and-release](modules/desktop-and-release.md) | 0.9.1 tagged. Linux leftovers open. |
 
 ## 6. Priorities (Steve, October 18, 2026)
@@ -135,18 +144,22 @@ Working rules for coding agents, including how much to test:
 3. **Starting exposure at zero and RAW tuning.** This was meant to come
    before paste, but paste shipped first. See
    [import-and-raw](modules/import-and-raw.md).
-4. The rest of the Library order: Looks, linked photos, batch-export
-   metadata, portable projects, leftovers, then the polish pass. See
+4. The remaining v1 Library work: batch-export metadata, leftovers, then
+   the polish pass. Library Looks, linked photos and portable projects are
+   deferred to v2 (Steve, October 21, 2026). See
    [photo-library](modules/photo-library.md).
+5. **V1 local adjustments** (Steve, October 21, 2026): add a healing brush
+   and a hue-selection mask. Both are unbuilt v1 requirements; see
+   [grade](modules/grade.md).
 
 ## 7. Waiting on Steve
 
 | Item | Kind | Module |
 | --- | --- | --- |
-| Linked photos: whole grade or chosen groups; where the link is stored | Decision | Photo Library |
-| Portable projects: one-file packing; project index file ending | Decision | Photo Library |
+| V2 linked photos: whole grade or chosen groups; where the link is stored | Deferred decision | Photo Library |
+| V2 portable projects: one-file packing; project index file ending | Deferred decision | Photo Library |
 | Comfort cap: roll-off or clip; grid only or everywhere | Decision | Photo Library |
-| Looks: one menu or two | Decision | Photo Library |
+| V2 Library Looks: one menu or two | Deferred decision | Photo Library |
 | Nested tags; what "HDR" means for an unedited photo | Decision | Photo Library |
 | Film grain values, Looks and lens filter by eye | Test | Film Look |
 | Black & White slider strength, fade points and presets | Test | Grade |

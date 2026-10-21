@@ -2,6 +2,19 @@
 
 Local adjustments are an ordered stage between global color grading and post-local finishing. Film Look, vignette, and final grain therefore retain their existing order, including the grain-last contract.
 
+## V1 additions planned (Steve, October 21, 2026)
+
+- **Healing brush:** required in the local adjustment module for v1. Not
+  implemented; interaction, saved edit representation and rendering design
+  remain to be specified.
+- **Hue-selection mask:** required as a local-adjustment mask for v1,
+  including use in the existing combined-mask workflow. Not implemented;
+  selection controls and hue evaluation remain to be specified.
+
+These are planned requirements, not part of the shipping contracts below.
+The [Grade module PRD](../product/modules/grade.md) owns their scope and
+implementation status.
+
 ## State contract
 
 `EditDocument` is the versioned public document. It contains the source reference and SHA-256 fingerprint, source-interpretation override, global `AdjustmentState`, and up to 256 ordered `LocalAdjustment` records. Every local record owns a stable UUID, name, bypass and opacity state, one shared recursive `MaskExpression`, and independent HDR and SDR `LocalGrade` payloads. Mask-expression nodes also carry stable IDs and an enabled state so the UI can address, bypass, and change the blend operator of individual sub-masks without splitting the owning local grade.

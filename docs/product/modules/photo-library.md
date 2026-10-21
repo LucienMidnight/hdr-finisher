@@ -68,6 +68,12 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Batch Export tiles share live Library drawing.** Visible photo tiles use the same live GPU renderer and visible-only CPU fallback. While export or Proof is running they are background work: draw each tile once and retain it, never redraw for progress updates, and yield GPU memory and turns to delivery. Verify export time per photo with the page open versus closed on the same three photos; the agreed timing noise allowance is 5%. | Steve, 2026-10-19 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
 
+**V2 scope decision (Steve, October 21, 2026):** Library Looks (slice 7),
+linked photos (slice 7b) and portable projects (slice 10) are deferred to
+v2. They are not v1 launch requirements. Their scope and unresolved
+decisions are retained below for v2 planning. Existing Film Look presets
+are unaffected.
+
 **CPU fallback implementation boundary (approved October 19):**
 The visible live surfaces use `library_live.fallback_picture`, which keeps the
 existing CPU adjustment/geometry/local-mask code, `_denoised_export_source`
@@ -475,7 +481,7 @@ Native timing and the Fit/100% perceptual comparison with scale-dependent
 effects remain open. Compare's detail view still uses the legacy native
 crop route; its move to live native scenes remains open with that cleanup.
 
-## 5. Open work, in order
+## 5. V1 open work, in order
 
 1. **Library speed plan** (Claude, October 18, from the speed exploration:
    [findings](../../technical/archive/library-speed-exploration-findings-2026-10-18.md)).
@@ -600,20 +606,11 @@ crop route; its move to live native scenes remains open with that cleanup.
 2. **RAW picture agreement** (Import and RAW module): zero Exposure and
    plain-number paste and the shared Single/full-screen development are
    implemented; Steve's comparison-sheet review remains open.
-3. **Looks (slice 7):** one Looks menu; Apply Look window with
-   favourites, user folders and a small built-in starter set; preview on
-   hover; "Save as look preset" from the paste window. Not built.
-4. **Linked photos (slice 7b):** Link grades, chain icon, "linked with N
-   other photos" in Grade, Unlink, a Linked filter. Crop, lens and local
-   adjustments never link. Not built. **Two decisions open.**
-5. **Batch export metadata (slice 8 follow-ups):** bundled ExifTool (lens
+3. **Batch export metadata (slice 8 follow-ups):** bundled ExifTool (lens
    names from maker notes, the Focus and drive group), title and caption,
    a creator/copyright/usage template written into exports, privacy
    options, "Set name" for an unknown lens. Not built.
-6. **Portable projects (slice 10):** Export project, a Projects section,
-   Merge or Keep separate, "Missing" frames, manual relink. Not built.
-   **Two decisions open.**
-7. **Leftovers:**
+4. **Leftovers:**
    - Comfort cap for the HDR grid (1000 nits default, adjustable). Not built.
    - Full-size pictures on disk: now part of the speed plan (item 1).
    - Indexing settings (processor use, pause on battery, pins to leave
@@ -622,7 +619,7 @@ crop route; its move to live native scenes remains open with that cleanup.
    - Drag a folder in from Explorer to pin it. Not built.
    - Smaller thumbnail files: replaced by the speed plan if Steve accepts
      drawing pictures live (item 1); otherwise still deferred.
-8. **Polish pass** (held until the features are done):
+5. **Polish pass** (held until the v1 features are done):
     - Slice 4 reminders: test the blocked-shadows warning on dark and noisy
       RAWs; Steve to review the exposure-warning wording.
     - Overlay colours: Steve asked for them in the menu bar; they are in the
@@ -634,7 +631,7 @@ crop route; its move to live native scenes remains open with that cleanup.
       with no photo (Reconnect), unreadable or newer settings file, not
       enough room on the drive, interrupted move buttons.
     - One Library settings page.
-9. Installer and a methodical bug hunt.
+6. Installer and a methodical bug hunt.
 
 ### 5.1 Non-RAW Library source speed: batch plan (October 20, 2026)
 
@@ -1636,16 +1633,28 @@ codec limits here, with no blanket claim that all decoding runs on the GPU.
 
 ## 6. Decisions waiting on Steve
 
-- Linked photos: whole grade or chosen groups; where the link is stored.
-- Portable projects: one-file packing; the project index file ending.
+- **V2, deferred:** linked photos: whole grade or chosen groups; where the link is stored.
+- **V2, deferred:** portable projects: one-file packing; the project index file ending.
 - Comfort cap: roll-off or clip; grid only or everywhere.
-- Looks: one menu or two. Image-dependent settings when pasting: re-run
-  or copy the numbers.
+- **V2, deferred:** Library Looks: one menu or two.
+- Image-dependent settings when pasting: re-run or copy the numbers.
 - Nested tags. What "HDR" means for an unedited photo (proposed: HDR
   Finisher's default rendering). One focus overlay or two. How often
   folders are checked.
 
-## 7. Not planned
+## 7. V2 work and other deferred ideas
+
+**Deferred to v2 (Steve, October 21, 2026); not built:**
+
+- **Library Looks (slice 7):** one Looks menu; Apply Look window with
+  favourites, user folders and a small built-in starter set; preview on
+  hover; "Save as look preset" from the paste window.
+- **Linked photos (slice 7b):** Link grades, chain icon, "linked with N
+  other photos" in Grade, Unlink, a Linked filter. Crop, lens and local
+  adjustments never link. Two decisions remain open (section 6).
+- **Portable projects (slice 10):** Export project, a Projects section,
+  Merge or Keep separate, "Missing" frames, manual relink. Two decisions
+  remain open (section 6).
 
 **Decided out:** stacks for bursts, "open in another app", batch rename of
 originals, deleting whole folders, reading or writing other apps' ratings

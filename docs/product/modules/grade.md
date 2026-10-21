@@ -23,7 +23,8 @@ every edit must be undoable.
   (SDR), Curves, Color Grading, Detail, Black & White, Vignette, Denoise.
 - Crop, rotate, straighten, perspective, lens corrections.
 - Local adjustments and masks (brush, gradients, luminance, colour,
-  combined masks).
+  combined masks). V1 must add a healing brush in the local adjustment
+  module and hue selection as a local-adjustment mask; neither is built.
 - Match entire HDR grade (SDR Match).
 - Group presets, history and undo, saving (autosave and explicit save),
   projects.
@@ -40,6 +41,7 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | Detail (Texture, Clarity, Sharpen) is corrective and separate from Film Look's fixed-scale character. Global Detail runs after the colour grade and before local adjustments; local Detail runs inside each local grade. | 2026-09 |
 | Match entire HDR grade captures the whole HDR recipe (global, locals, Detail, Film Look, vignette, grain) and builds an SDR base from it. SDR controls stay as trims. Rematch and Revert are single history steps. | 2026-09 |
 | HDR Lift/Gamma/Gain is deprecated now that Exposure Bands exists. Remove it after real-photo checks, unless a workflow needs it. The SDR trims stay. | 2026-08, pending |
+| A healing brush in the local adjustment module and hue selection as a local-adjustment mask are required for v1. Both are unbuilt; detailed interaction and rendering design remain to be specified. | Steve, 2026-10-21 |
 | Slider drags make one undo step per gesture. | 2026-08 |
 | Only the current project schema is accepted; older projects are rejected with a message. No migration before 1.0. | 2026-10 |
 
@@ -50,6 +52,12 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
 (save, apply, delete), autosave, history, projects.
 
 **Not built or open**
+
+- **V1 healing brush:** add healing within the local adjustment module.
+  Not built; tool behaviour and rendering design remain to be specified.
+- **V1 hue-selection mask:** add hue selection as a local-adjustment mask,
+  compatible with the existing combined-mask workflow. Not built; selection
+  controls and hue evaluation remain to be specified.
 
 - **Highlight and Shadow Desaturation** as general Color controls
   (COLOR-DESAT-01). They were removed from Film Look in the rebuild and
@@ -82,11 +90,14 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
    Microcontrast (DETAIL-01), local Clarity cost (CLARITY-01).
 6. Local-grade transfer between lanes (its own piece of work).
 7. Remove unused legacy shader inputs, if confirmed unused.
+8. **Required for v1 (Steve, October 21, 2026):** healing brush in the
+   local adjustment module, and hue selection as a local-adjustment mask.
+   Specify and implement both; neither is built.
 
 ## 6. Out of scope
 
-Pixel painting and retouching, layers and compositing, AI-based
-selection.
+Pixel painting and retouching beyond the required v1 healing brush,
+layers and compositing, AI-based selection.
 
 ## 7. Detail and history
 
