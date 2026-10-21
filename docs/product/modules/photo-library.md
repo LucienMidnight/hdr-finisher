@@ -1283,6 +1283,25 @@ batches below remain shelved proposals, not the current execution order. The
 unfinished HDR/PFM, gain-map and mixed-format acceptance work remains open;
 this closeout does not claim all formats or cold-folder targets are met.
 
+**Activity reporting (October 21, built).** Activity now lists filenames and
+actual waiting/running source, cache-check and drawing jobs, including backend
+RAW development and individual DNG brightness/distortion corrections. Resource
+waits are distinct from execution; cancelled native work stays visible as
+stopping until it returns. Reading Pause retains its existing gate and explains
+that work already executing can still finish. Existing export, indexing,
+settings-writing and file-command sections remain. No estimated percentages.
+Stage transitions include source paths, elapsed stage time and completion,
+cancellation or failure in Library diagnostics; failed frontend jobs retain a
+bounded file/reason entry until retried. Frontend/backend rows for one file are
+combined. No decoder isolation, extra source slots or pixel changes.
+
+Validation: required fast suites passed 548 Node / 2,305 Python (3 skipped),
+plus the focused backend Activity test added afterwards (25 RGB/source checks).
+The live-grid Electron check passed at 2560 x 1440: cold drawing, cached reuse,
+selected-photo display and GPU recovery. This is Activity/route validation,
+not a matched DNG speed measurement. Native decoders remain cooperatively
+cancellable only at the existing checkpoints.
+
 **Cold-folder/DNG investigation (October 20; initial diagnosis).** Existing
 owner-app logs confirm DJI_0071.JPG at 205.5 s, DJI_0072.DNG at 159.7 s,
 DJI_0072-2.DNG at 201.7 s and DJI_0071.DNG at 296.7 s until final grid display.

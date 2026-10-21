@@ -39,7 +39,7 @@ def quality(document):
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
-def _develop_cpu(root, path, document, edge, cancelled=None, cache=None):
+def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progress=None):
     """One existing full development produces both stored sizes; no CPU finishing."""
     from .sessions import SessionStore
     from .models import EditDocument
@@ -49,7 +49,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None):
     if cached:
         return cached
     inputs = recipe(document)
-    source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled,
+    source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
         raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
         interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]),
         hdr_reference_white_nits=inputs["hdr_reference_white_nits"])
@@ -57,6 +57,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None):
         wanted = EditDocument.model_validate(document).source.fingerprint_sha256
         if wanted and wanted != source.source_fingerprint_sha256:
             raise ValueError("The source photo changed; its saved grade cannot be shown.")
+    if progress: progress("reduction", "Reducing and storing Library pictures")
     result = None
     for size in sorted({640, 2560, edge}, reverse=True):
         metadata = {"route": "library-live", "renderer": "cpu", "raw_input": True,
@@ -78,7 +79,7 @@ _cpu_flights = {}
 _cpu_condition = Condition()
 
 
-def develop_cpu(root, path, document, edge, cancelled=None):
+def develop_cpu(root, path, document, edge, cancelled=None, progress=None):
     """Coalesce helper calls before allocating a decoder, across scene tiers."""
     from .library_pictures import picture_key, check_cancelled
     key = (str(root), picture_key(path, 100000 if edge == 100000 else 0, quality(document)))
@@ -96,7 +97,7 @@ def develop_cpu(root, path, document, edge, cancelled=None):
                 def all_cancelled():
                     with _cpu_condition:
                         return all(user() for user in flight["users"])
-                flight["result"] = _develop_cpu(root, path, document, edge, all_cancelled, flight["cache"])
+                flight["result"] = _develop_cpu(root, path, document, edge, all_cancelled, flight["cache"], progress)
             except BaseException as error:
                 flight["error"] = error
             finally:
@@ -187,7 +188,7 @@ def session(identity):
     return entry[0].frame(entry[1]) if entry else None
 
 
-def fallback_picture(root, path, document, edge, cancelled=None):
+def fallback_picture(root, path, document, edge, cancelled=None, progress=None):
     """Visible request only: the existing numerical renderer and JPEG codec.
 
     Return the CPU picture to its requester; no durable work or output queue.
@@ -199,7 +200,7 @@ def fallback_picture(root, path, document, edge, cancelled=None):
     from .exporters import _denoised_export_source
     from .models import PreviewKind
     cache = LibraryPictureCache(root)
-    metadata = develop_cpu(root, path, document, edge, cancelled)
+    metadata = develop_cpu(root, path, document, edge, cancelled, progress=progress)
     cache.accept_transient(metadata)
     service = LivePictures(root, None)
     service.cache = cache

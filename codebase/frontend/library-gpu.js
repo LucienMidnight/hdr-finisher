@@ -192,7 +192,7 @@ window.HDRLibraryPictures = (() => {
       canvas.dataset.peakNits = hdr ? "1000" : "203";
       return result;
     };
-    const pending = (meta.route === "library-live" ? HDRLibraryScenes.draw(render,signal,meta.draw_priority ?? 10)
+    const pending = (meta.route === "library-live" ? HDRLibraryScenes.draw(render,signal,meta.draw_priority ?? 10,meta.path)
       : queue.catch(()=>{}).then(render)).finally(() => { foreground--; });
     queue = pending;
     return pending;

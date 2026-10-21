@@ -8,8 +8,14 @@ window.HDRLibraryScenes = (() => {
   });
   // Lightweight cache discovery never queues behind full developments. Keep
   // one of the two existing source slots available for likely lighter work.
-  const probes = HDRLibrarySceneScheduler.create(2);
-  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1});
+  const changed = (job,state,error) => {
+    window.dispatchEvent?.(new Event("library-work-changed"));
+    window.HDRLibraryStopwatch?.("scene_"+state,{path:job.path,request:String(job.sequence),
+      key:job.stage,duration_ms:performance.now()-(job.loggedAt || performance.now()),reason:error?.message});
+    job.loggedAt=performance.now();
+  };
+  const probes = HDRLibrarySceneScheduler.create(2, undefined, {onChange:changed});
+  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed});
   const history = new Map();
   const largeBytes = 32 * 1024 * 1024;
   async function prepared(path, edge, signal, priority, identity) {
@@ -19,7 +25,7 @@ window.HDRLibraryScenes = (() => {
       const result = await response.json();
       if (!response.ok) throw Error(result.detail || "The photo could not be checked.");
       return result;
-    }, signal, priority);
+    }, signal, priority, {path,stage:"Checking stored picture"});
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     if (plan.cached) return plan.cached;
     const previous = history.get(path);
@@ -36,9 +42,9 @@ window.HDRLibraryScenes = (() => {
           if (history.size > 256) history.delete(history.keys().next().value);
         }
       }
-    }, signal, priority, {heavy,cost});
+    }, signal, priority, {heavy,cost,path,stage:"Reading and developing source"});
   }
-  const draws = HDRLibrarySceneScheduler.create(1);
+  const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed});
   async function load(path, edge, signal, priority = 10) {
     const identity = path + (edge === 100000 ? "|native" : "");
     let meta = await prepared(path, edge, signal, priority, identity);
@@ -90,11 +96,12 @@ window.HDRLibraryScenes = (() => {
       return value.granted && !value.preempt;
     };
     const release = () => fetch(url,{method:"DELETE"}).catch(()=>{});
-    try { while (!await check(true)) await wait(50,signal); }
+    try { while (!await check(true)) { draws.stage(meta.path,"Waiting for GPU drawing",true); await wait(50,signal); } draws.stage(meta.path,"Drawing picture on GPU"); }
     catch(error) { await release(); throw error; }
     return {bytes,check:async()=>{ if (!await check()) {const error=Error("Library draw yielded to Grade or delivery.");error.libraryYield=true;throw error;} },release};
   }
   return Object.freeze({load,lease,
-    draw:(task,signal,priority=10)=>draws.submit(crypto.randomUUID(),task,signal,priority),
+    stage:(path,stage,waiting=false)=>sources.stage(path,stage,waiting),
+    draw:(task,signal,priority=10,path="Photo")=>draws.submit(crypto.randomUUID(),task,signal,priority,{path,stage:"Drawing picture on GPU"}),
     snapshot:()=>({probes:probes.snapshot(),sources:sources.snapshot(),draws:draws.snapshot()})});
 })();

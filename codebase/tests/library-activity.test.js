@@ -37,3 +37,13 @@ test("requested folder checks show Grade wait while timed empty checks stay quie
   health.index.checks.folders = [{ failure: "drive unplugged" }];
   assert.ok(summary(health).endsWith("Needs attention: 1"));
 });
+
+test("Library work names every active file and distinguishes waiting and stopping", () => {
+  const {sceneWork}=require("../frontend/library-activity.js"), health=rest();
+  health.helper.jobs=[{path:"C:/photos/one.dng",stage:"Correcting DNG distortion",state:"running"}];
+  const work=sceneWork(health,{sources:{jobs:[{path:"C:/photos/two.jpg",stage:"Reading source",state:"waiting"},{path:"C:/photos/three.png",stage:"Drawing picture on GPU",state:"stopping"}]}});
+  assert.equal(work.jobs.length,3); assert.match(work.text,/2 active.*1 waiting/);
+  assert.match(work.lines.find(l=>l.includes("one.dng")),/one.dng.*Correcting DNG distortion/);
+  assert.match(work.lines.find(l=>l.includes("two.jpg")),/two.jpg.*Waiting/);assert.match(work.lines.find(l=>l.includes("three.png")),/three.png.*Stopping after current step/);
+  assert.deepEqual(sceneWork(rest()).lines,[]);
+});

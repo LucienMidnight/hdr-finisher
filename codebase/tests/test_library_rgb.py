@@ -329,3 +329,20 @@ def test_real_gainmap_files_keep_existing_route():
         with pytest.raises(library_rgb.NotEligible,match='reconstruction route'):
             library_rgb.decoded(path,recipe(None))
         assert hashlib.sha256(path.read_bytes()).hexdigest()==before
+
+
+def test_backend_preparation_reports_file_until_cancelled_execution_returns():
+    from hdr_finisher.library_source_jobs import SourceJobs
+    jobs = SourceJobs()
+    def decode():
+        assert jobs.snapshot() == [{"path": "one.dng", "stage": "Reading and developing source", "state": "running"}]
+        jobs.release("token")
+        assert jobs.snapshot()[0]["state"] == "stopping"
+        return 12
+    assert jobs.preparing("token", "one.dng", decode) == 12
+    assert jobs.snapshot() == []
+    def fail():
+        raise ValueError("Missing camera colour matrix")
+    with pytest.raises(ValueError, match="camera colour"):
+        jobs.preparing("token", "bad.dng", fail)
+    assert jobs.snapshot() == []

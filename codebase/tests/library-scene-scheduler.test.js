@@ -54,3 +54,18 @@ test('cancelling a running expensive decoder does not release its slot before it
  await quick;assert.deepEqual(started,['running','quick']);
  block.resolve();await next;assert.deepEqual(started,['running','quick','next']);
 });
+
+test("Activity retains running cancellations until work exits and records failures", async()=>{
+  const transitions=[], queue=create(1,()=>Date.now(),{onChange:(job,state,error)=>transitions.push([job.path,state,error?.message])});
+  let finish; const abort=new AbortController();
+  const active=queue.submit("a",()=>new Promise(resolve=>finish=resolve),abort.signal,10,{path:"one.dng",stage:"Reading source"});
+  await Promise.resolve();
+  const waiting=queue.submit("b",()=>{throw Error("Unreadable source");},null,10,{path:"two.jpg"});
+  assert.equal(queue.snapshot().jobs[1].state,"waiting");
+  abort.abort();await assert.rejects(active,{name:"AbortError"});
+  assert.equal(queue.snapshot().jobs.find(j=>j.path==="one.dng").state,"stopping");finish();
+  await assert.rejects(waiting,/Unreadable source/);await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(queue.snapshot().jobs.length,0);
+  assert.ok(transitions.some(t=>t[0]==="one.dng"&&t[1]==="cancelled"));
+  assert.ok(transitions.some(t=>t[0]==="two.jpg"&&t[1]==="failed"&&t[2]==="Unreadable source"));
+});

@@ -308,8 +308,9 @@ def _apply_raw_corrections(
                 (*dng_inspection.required_opcodes, *dng_inspection.optional_opcodes),
                 key=lambda opcode: opcode.index,
             ),
-            cancelled=cancelled,
+            cancelled=cancelled, progress=progress,
         )
+        if progress: progress("dng_colour", "Converting DNG colour")
         color_metadata = color_metadata_from_mapping(dng_inspection.metadata)
         transform = build_color_transform(color_metadata)
         transform_normalized_to_acescg_in_place(

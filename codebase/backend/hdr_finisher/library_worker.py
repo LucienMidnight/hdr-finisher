@@ -23,6 +23,7 @@ class LibraryWorker:
         self._ready = Event()
         self._pending: dict[str, Future] = {}
         self._requests = {}
+        self._work = {}
         self._stop = Event()
         self._restarts = 0
         self._recovering = False
@@ -203,6 +204,8 @@ class LibraryWorker:
         with self._lock:
             future = self._pending.pop(job_id, None)
             self._requests.pop(job_id, None)
+            if job_id in self._work:
+                self._work[job_id]["state"] = "stopping"
             if future is None:
                 return False
             future.cancel()
@@ -252,10 +255,20 @@ class LibraryWorker:
                     record = message["record"]
                     log(record.pop("event"), **record)
                     continue
+                if message.get("event") == "work":
+                    with self._lock:
+                        if message.get("done"):
+                            self._work.pop(message["id"], None)
+                        else:
+                            previous = self._work.get(message["id"], {})
+                            self._work[message["id"]] = dict(path=message.get("path"), stage=message["stage"],
+                                state=previous.get("state", "running" if message["id"] in self._pending else "stopping"))
+                    continue
                 if message.get("event") == "ready":
                     log("helper_ready", pid=message.get("pid"))
                     log("helper_start", pid=message.get("pid"), action="helper ready")
                     with self._lock:
+                        self._work.clear()
                         self.info = message
                         ready = True
                         self._recovering = False
@@ -288,6 +301,7 @@ class LibraryWorker:
     def status(self) -> dict:
         with self._lock:
             return {**self.info, "running": bool(self._process and self._process.is_alive()),
+                    "jobs": list(self._work.values()) + [dict(path=r.get("path"),stage="Waiting to read source",state="waiting") for k,r in self._requests.items() if k not in self._work and r.get("command") in {"live-scene","live-fallback"}],
                     "pending": len(self._pending), "paused": bool(self._paused), "manual_paused": "manual" in self._paused,
                     "failure": self._failure, "restarts": self._restarts, "recovering": self._recovering}
 
@@ -420,6 +434,15 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 waited[0] += time.perf_counter()-wait_started
                 return cancelled.is_set() or stopping.is_set()
 
+            last_stage = [None, time.perf_counter()]
+            def progress(stage, text):
+                if stage == last_stage[0]: return
+                now = time.perf_counter()
+                log("preparation_stage", job=job["id"], path=job.get("path"), stage=stage,
+                    previous_stage=last_stage[0], duration_ms=(now-last_stage[1])*1000)
+                last_stage[:] = [stage, now]
+                reply({"event":"work", "id":job["id"], "path":job.get("path"), "stage":text})
+            if job["command"] in {"live-scene", "live-fallback"}: progress("reading", "Reading source")
             check = yielding if kind in {"index", "check", "kept"} else cancelled.is_set
             try:
                 if job["command"] == "overlay":
@@ -428,11 +451,11 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     result = {"id":job["id"],"result":output}
                 elif job["command"] == "live-fallback":
                     from .library_live import fallback_picture
-                    output = fallback_picture(root, job["path"], job.get("document"), job["edge"], cancelled.is_set)
+                    output = fallback_picture(root, job["path"], job.get("document"), job["edge"], cancelled.is_set, progress=progress)
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "live-scene":
                     from .library_live import develop_cpu
-                    output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set)
+                    output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set, progress=progress)
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
@@ -467,6 +490,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     state["checking"] -= 1
                 elif kind not in {"index", "kept"}:
                     state["foreground"] -= 1
+            reply({"event":"work", "id":job["id"], "done":True})
             if not cancelled.is_set() and not stopping.is_set():
                 try:
                     reply(result)

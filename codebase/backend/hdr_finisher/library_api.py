@@ -30,6 +30,7 @@ class StopwatchEvent(BaseModel):
     key: str | None = Field(default=None, max_length=64)
     duration_ms: float | None = None
     queue_ms: float | None = None
+    reason: str | None = Field(default=None, max_length=2048)
     first: bool | None = None
     kept: bool | None = None
 
@@ -326,11 +327,11 @@ def create_library_router(worker, browser, store=None):
                 inputs = live_recipe(document)
                 try:
                     if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
-                        header, parts = await run_in_threadpool(library_rgb.decoded, Path(path), inputs)
+                        header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs)
                     else:
                         if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
                             raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")
-                        header, parts = await run_in_threadpool(library_gpu_raw.sensor, Path(path),
+                        header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_gpu_raw.sensor, Path(path),
                             RawImportSettings.model_validate(inputs["raw_import_settings"]))
                 except library_gpu_raw.NotEligible as error:
                     log("source_cpu_fallback", path=path, reason=str(error))
@@ -418,7 +419,7 @@ def create_library_router(worker, browser, store=None):
 
     @router.get("/health")
     def health():
-        return {"writer": marks.writer.status(), "helper": {"restarts": 0, **worker.status()},
+        return {"preparation": source_jobs.snapshot(), "writer": marks.writer.status(), "helper": {"restarts": 0, **worker.status()},
             "index": index.status(), "file_commands": file_commands.status(), "conflicts": marks.conflicts.status(), "problems": recent()}
 
     @router.post("/scene-work")

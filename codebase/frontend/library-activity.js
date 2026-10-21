@@ -23,12 +23,23 @@
     if (index.waiting || index.checkWaiting) return "Checking folders waits while Grade is busy";
     return `Checking for new photos${running ? " · " + running.path.split(/[\\/]/).at(-1) : ""}`;
   }
+  function sceneWork(health, snapshot = {}) {
+    const all = [...Object.values(snapshot).flatMap(queue => queue.jobs || []), ...(health.preparation || []), ...(health.helper.jobs || [])].filter(job => job.path);
+    const jobs = [...new Map(all.map(job=>[job.path,job])).values()];
+    const waiting=jobs.filter(j=>j.state==="waiting").length;
+    const running=jobs.length-waiting;
+    const failures=Object.values(snapshot).flatMap(queue=>queue.failures || []);
+    return {jobs, failures, text:`Library pictures · ${running} active · ${waiting} waiting`,
+      lines:jobs.map(j=>`${j.path.split(/[\\/]/).at(-1)} · ${j.state==="waiting" ? "Waiting: " : j.state==="stopping" ? "Stopping after current step: " : ""}${j.stage}${health.helper.paused && j.state!=="waiting" ? " · current work still finishing" : ""}`)};
+  }
   function summary(health) {
     const writer = health.writer, index = health.index, jobs = [];
     if (writer.waiting) jobs.push(writerText(writer));
     if (checkText(index)) jobs.push(checkText(index));
     if (index.state === "indexing" || index.state === "retrying" || index.paused) jobs.push(indexText(index));
     if (health.file_commands?.jobs?.length) jobs.unshift(`File commands: ${health.file_commands.jobs[0].done} of ${health.file_commands.jobs[0].total}`);
+    const work = sceneWork(health, typeof window !== "undefined" ? window.HDRLibraryScenes?.snapshot() : undefined);
+    if (work.jobs.length || health.helper.manual_paused) jobs.unshift(work.jobs.length ? work.text : "Library reading paused");
     const problems = (health.file_commands?.attention?.length || 0) + writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length + (index.checks?.folders || []).filter(folder => folder.failure || folder.warnings?.length).length;
     const extra = problems ? ` · Needs attention: ${count(problems)}` : index.state === "failed" || index.state === "retrying" || health.helper.failure || health.helper.recovering ? " · Needs attention" : "";
     return (jobs[0] || "Activity") + (jobs.length > 1 ? ` +${jobs.length - 1}` : "") + extra;
@@ -59,9 +70,12 @@
       const focused = panel.contains(document.activeElement) ? document.activeElement.dataset.action : null;
       const writer = health.writer, index = health.index;
       panel.replaceChildren(node("h2", "Activity", "panel-title"));
-      if (health.helper.pending || health.helper.manual_paused) {
+      const work = sceneWork(health, window.HDRLibraryScenes?.snapshot());
+      for(const failure of work.failures) panel.append(node("p",`${failure.path.split(/[\\/]/).at(-1)} · ${failure.reason}`));
+      if (work.jobs.length || health.helper.pending || health.helper.manual_paused) {
         const section = node("section", "", "library-activity-job");
-        section.append(node("p", `Reading Library scenes${health.helper.paused ? " · Paused" : ""}`));
+        section.append(node("p", work.text + (health.helper.paused ? " · Reading paused" : "")));
+        for (const line of work.lines) section.append(node("p", line));
         section.append(action(health.helper.manual_paused ? "Resume reading" : "Pause reading", "scenes-pause", "/api/library/scene-work", {action:health.helper.manual_paused ? "resume" : "pause"}));
         panel.append(section);
       }
@@ -123,13 +137,14 @@
       if (focused) ([...panel.querySelectorAll("button")].find(item => item.dataset.action === focused) || button).focus();
     }
     function update(next) { health = next; button.hidden = false; button.textContent = (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next); onHealth?.(next); render(); }
+    window.addEventListener("library-work-changed", () => { queueMicrotask(() => { if (health) update(health); }); });
     function close() { panel.hidden = true; button.setAttribute("aria-expanded", "false"); }
     button.addEventListener("click", () => { panel.hidden = !panel.hidden; button.setAttribute("aria-expanded", String(!panel.hidden)); render(); if (!panel.hidden) panel.querySelector("button")?.focus(); });
     document.addEventListener("pointerdown", event => { if (!panel.contains(event.target) && !button.contains(event.target)) close(); });
     document.addEventListener("keydown", event => { if (event.key === "Escape" && !panel.hidden) { event.preventDefault(); event.stopPropagation(); close(); button.focus(); } });
     return Object.freeze({ refresh, update });
   }
-  const exported = Object.freeze({ create, summary, writerText, indexText });
+  const exported = Object.freeze({ create, summary, writerText, indexText, sceneWork });
   if (typeof module !== "undefined") module.exports = exported;
   else window.HDRLibraryActivity = exported;
 })();
