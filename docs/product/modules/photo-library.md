@@ -1283,6 +1283,16 @@ batches below remain shelved proposals, not the current execution order. The
 unfinished HDR/PFM, gain-map and mixed-format acceptance work remains open;
 this closeout does not claim all formats or cold-folder targets are met.
 
+**HDR keyboard toggle (October 21, built).** H now invokes the HDR button's
+click action. A previous mouse click could leave that button focused; pressing
+H switched Chromium to keyboard focus styling and painted a purple ring separate
+from the HDR state. The shortcut clears that leftover focus and ignores key
+repeat, so a press toggles once. Ordinary Tab/keyboard focus remains visible.
+The focused Electron DNG check verifies click/H state, repeat and focus behavior
+at 2560 x 1440. Required fast checks: 549 Node passed; Python 2,328 passed,
+3 skipped, with the unchanged intermittent source-ownership failure described
+below. No installer or push.
+
 **Activity reporting (October 21, built).** Activity now lists filenames and
 actual waiting/running source, cache-check and drawing jobs, including backend
 RAW development and individual DNG brightness/distortion corrections. Resource

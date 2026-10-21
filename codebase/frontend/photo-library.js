@@ -1194,7 +1194,16 @@
     else if (key === "delete") { event.preventDefault(); fileCommands.remove(state.photos.filter(photo => state.selection.has(photo.path))).catch(error => status(error.message)); }
     else if (key === " ") { event.preventDefault(); setView(state.view === "grid" ? "single" : "grid"); }
     else if (key === "z") { event.preventDefault(); toggleZoom(); }
-    else if (key === "h") { event.preventDefault(); toggleHDR(); }
+    else if (key === "h") {
+      event.preventDefault();
+      if (!event.repeat) {
+        const button = $("hdr-button");
+        // A previous mouse click can leave focus here. Keyboard modality
+        // would then paint a second ring unrelated to the toggle state.
+        if (document.activeElement === button) button.blur();
+        button.click();
+      }
+    }
     else if (key === "g") setView("grid");
     else if (key === "f") setReview(!state.review);
     else if (key === "escape") { if (state.review) setReview(false); else setView("grid"); }

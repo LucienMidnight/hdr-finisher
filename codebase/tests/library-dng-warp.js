@@ -15,6 +15,13 @@ for(let repeat=0;repeat<(geometryOnly?0:repeats);repeat++)for(const mode of (rep
 }
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
+ const frame=page.frameLocator('#library-frame'),button=frame.locator('#hdr-button');
+ await button.click();const clicked=await button.getAttribute('aria-pressed');await page.keyboard.press('h');
+ assert.notEqual(await button.getAttribute('aria-pressed'),clicked);
+ assert.equal(await button.evaluate(b=>b.matches(':focus-visible')),false,'H must not leave an extra focus ring');
+ await page.keyboard.down('h');const held=await button.getAttribute('aria-pressed');await page.keyboard.down('h');assert.equal(await button.getAttribute('aria-pressed'),held);await page.keyboard.up('h');
+ await page.keyboard.press('Tab');await button.focus();assert.equal(await button.evaluate(b=>b.matches(':focus-visible')),true,'normal keyboard focus remains visible');await button.evaluate(b=>b.blur());
+ console.log('H shortcut matches click; keyboard focus retained');
  const probes=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_dng_geometry.py')],{cwd:root,encoding:'utf8',maxBuffer:1<<24}));
  const geometry=await page.locator('#library-frame').evaluate(async(element,probes)=>{
   const w=element.contentWindow;let worst=0;
