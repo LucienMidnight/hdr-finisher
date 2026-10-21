@@ -47,7 +47,6 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
     quality: state.scopeQuality,
     channelMode: state.scopeChannelMode,
     tier,
-    estimatePeak: state.scopeExactPeak,
     generation: requestGeneration,
     longEdge: effectiveLongEdge,
     resolution,
@@ -207,7 +206,7 @@ async function runGpuScopeRequest(request) {
   // the rest of the scope is drawn from. Only settled: during a drag the
   // proxy peak is the right trade, and it is labelled as such.
   let exactPeak = null;
-  if (request.estimatePeak && tier === "settled" && !scopeRegion) {
+  if (tier === "settled" && !scopeRegion) {
     exactPeak = await measureExactScopePeak({ lane });
     // The measurement is a render of its own and takes time. Anything that
     // moved underneath it invalidates this payload exactly as it would have
@@ -347,7 +346,7 @@ async function runScopeRequest(request) {
       state.previewScheduler?.recordStaleResult();
       return false;
     }
-    if (request.estimatePeak && tier === "settled" && !request.scopeRegion) {
+    if (tier === "settled" && !request.scopeRegion) {
       const measured = await measureExactScopePeak({lane});
       if (generation !== state.scopeGeneration || request.sessionId !== state.session?.session_id) return false;
       applyEditingScopePeak(payload, measured, lane);
@@ -378,7 +377,7 @@ async function runScopeRequest(request) {
 
 function applyAcceptedCpuScopePeak(payload, request) {
   const accepted = state.acceptedPresentation;
-  if (payload?.peak_exact === false || !state.scopeExactPeak || request.scopeRegion || payload?.preview_kind !== "hdr"
+  if (payload?.peak_exact === false || request.scopeRegion || payload?.preview_kind !== "hdr"
     || accepted?.transport === "WebGPU" || accepted?.lane !== request.lane
     || accepted?.generation !== state.previewGeneration[request.lane]
     || accepted?.geometrySignature !== geometrySignature() || !accepted?.exact

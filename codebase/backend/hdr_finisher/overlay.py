@@ -50,8 +50,8 @@ def _false_color_overlay(image: np.ndarray, adjustments: AdjustmentState, opacit
     anchor = adjustments.shared.false_color_band_anchor
     reference_white = np.float32(color_context.hdr_reference_white_nits if anchor == "project" else (100 if anchor == "100_nits" else 203))
     peak_nits = np.float32(adjustments.shared.false_color_ceiling_nits)
-    analysis_context = color_context if anchor == "project" else RenderColorContext(int(reference_white))
-    luminance_nits = _luminance_nits(image, kind, analysis_context)
+    # The anchor moves the bands, not the source-to-nits interpretation.
+    luminance_nits = _luminance_nits(image, kind, color_context)
 
     highlight_start = max(reference_white, min(reference_white * 2.0, peak_nits * 0.5))
     bands = np.array(

@@ -7,7 +7,9 @@ async function initializeDesktopBridge() {
   if (!desktop) return;
   desktop.onMenuCommand(({ command, payload }) => handleDesktopCommand(command, payload));
   desktop.onOpenRequest((selection) => {
-    void openDesktopSelection(selection).catch((error) => {
+    const opening = selection.kind === "byte-source"
+      ? importByteFile(new File([selection.bytes], selection.name)) : openDesktopSelection(selection);
+    void opening.catch((error) => {
       console.error(error);
       showUploadError(error?.message || "Could not open that source image.");
     });
@@ -33,6 +35,7 @@ async function initializeDesktopBridge() {
 }
 
 async function handleDesktopCommand(command, payload = null) {
+  if (["copy-grade", "paste-grade", "paste-grade-choose", "quick-export"].includes(command)) return window.HDRLibraryHost?.dispatch(command);
   if (command === "close-photo") {
     let allowed = false;
     try { allowed = await window.HDRGradeSaving.leave("closing the app"); }
@@ -168,7 +171,6 @@ async function initializeApplicationShell() {
         ? "auto" : normalizedPreviewResolution(preferences.previewResolution);
       const selectablePreviewResolution = preferredPreviewResolution;
       state.fasterDragging = preferences.fasterDragging === true;
-      if (els.previewFasterDragging) els.previewFasterDragging.checked = state.fasterDragging;
       if (preferences.navigationWindow !== state.navigationWindowMode) setNavigationWindowMode(preferences.navigationWindow);
       if (options.initial) {
         state.previewResolutionOverride = selectablePreviewResolution !== "auto";

@@ -9,6 +9,7 @@ const {
   isSourcePath,
   pathKey,
   safeSuggestedName,
+  withinGrantedPath,
 } = require("../lib/validation");
 
 test("Windows path keys are case-insensitive without changing POSIX identity", () => {
@@ -117,4 +118,16 @@ test("desktop backend paths follow Windows, macOS, and Linux bundle conventions"
     "C:\\Program Files\\HDR Finisher\\resources\\backend\\HDR Finisher Backend.exe",
   );
   assert.deepEqual(windowsCommand.args, ["--desktop-sidecar", "--parent-pid", "43"]);
+});
+
+test("a granted export folder covers files exported inside it, and nothing beside it", () => {
+  const path = require("node:path");
+  const os = require("node:os");
+  const folder = path.join(os.tmpdir(), "Batch Exports");
+  const granted = new Set([pathKey(folder)]);
+  assert.equal(withinGrantedPath(folder, granted), true);
+  assert.equal(withinGrantedPath(path.join(folder, "HDR", "photo_v1.jpg"), granted), true);
+  assert.equal(withinGrantedPath(path.join(os.tmpdir(), "Batch Exports Other", "photo.jpg"), granted), false);
+  assert.equal(withinGrantedPath(path.join(folder, "..", "secret.txt"), granted), false);
+  if (process.platform === "win32") assert.equal(withinGrantedPath(path.join(folder.toUpperCase(), "Photo.JPG"), granted), true);
 });

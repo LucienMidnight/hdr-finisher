@@ -204,6 +204,8 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
     monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: binary)
     monkeypatch.setattr(exporter_module, "apply_adjustments", fake_adjustments)
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
+    # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
+    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None: encode(image))
     def fake_denoise(source: Path, output: Path, _binary: Path, *, gain_map_quality: int) -> None:
         observed["final_gain_map_quality"] = gain_map_quality
         output.write_bytes(source.read_bytes())
@@ -239,6 +241,8 @@ def test_ultrahdr_export_honors_explicit_half_resolution_gain_map(monkeypatch, t
 
     monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: binary)
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
+    # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
+    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None: encode(image))
     def fake_denoise(source: Path, output: Path, _binary: Path, *, gain_map_quality: int) -> None:
         observed["final_gain_map_quality"] = [str(gain_map_quality)]
         output.write_bytes(source.read_bytes())
@@ -366,6 +370,8 @@ def test_avif_export_applies_quality_to_gain_map_and_replaces_atomically(monkeyp
     monkeypatch.setattr(exporter_module, "_write_sdr_y4m", lambda path, _image, **_kwargs: path.write_bytes(b"base"))
     monkeypatch.setattr(exporter_module, "_write_hdr_y4m", lambda path, _image, **_kwargs: path.write_bytes(b"hdr"))
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
+    # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
+    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None: encode(image))
     monkeypatch.setattr(exporter_module, "_validate_avif_output", lambda _path, **_kwargs: "validated")
 
     result = AVIFGainMapExportBackend(_available_capability()).export(
@@ -485,6 +491,8 @@ def test_validation_rejects_missing_iso_metadata(monkeypatch, tmp_path: Path) ->
         + _jpeg_bytes((200, 200, 200))
     )
     monkeypatch.setattr(exporter_module, "_run_command", lambda command: subprocess.CompletedProcess(command, 0, "", ""))
+    # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
+    monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None: encode(image))
     with pytest.raises(ExportProcessError, match="ISO 21496-1"):
         _validate_ultrahdr_output(output, tmp_path / "ultrahdr_app.exe")
 
@@ -620,3 +628,22 @@ def test_real_no_headroom_export_and_proof_preserve_both_renditions(tmp_path, hd
         import hashlib
         assert proof.sha256==hashlib.sha256(path.read_bytes()).hexdigest()
     finally: proof_store.clear()
+
+
+@pytest.mark.parametrize("stripe_rows", [1, 17, 256])
+def test_parallel_gain_map_stripes_keep_identical_jpeg_bytes(monkeypatch, stripe_rows):
+    random = np.random.default_rng(194)
+    images = []
+    for _ in range(2):
+        pixels = random.integers(0, 256, (259, 97, 3), dtype=np.uint8)
+        buffer = io.BytesIO()
+        Image.fromarray(pixels).save(buffer, format="JPEG", quality=95, subsampling=0)
+        images.append(buffer.getvalue())
+    actual = _denoised_ultrahdr_gain_map_jpeg(*images, quality=95, stripe_rows=stripe_rows)
+    executor = exporter_module.ThreadPoolExecutor
+    def serial_executor(*args, **kwargs):
+        kwargs["max_workers"] = 1
+        return executor(*args, **kwargs)
+    monkeypatch.setattr(exporter_module, "ThreadPoolExecutor", serial_executor)
+    expected = _denoised_ultrahdr_gain_map_jpeg(*images, quality=95, stripe_rows=stripe_rows)
+    assert actual == expected

@@ -1,0 +1,10 @@
+[
+ {"name":"ordinary-photo-jpeg","path":"D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_exported/DSC_3931_01.jpg"},
+ {"name":"profiled-photo-tiff","path":"local-test-media/inputs/linear-dng/dxo-neutral-reference/DSC06885_DxO-neutral-16bit-PP.tif"},
+ {"name":"darktable-exr","path":"D:/Photos/Play_Raw/Lakeland landscape in dry Summer/darktable_exported/A7R00619.exr"},
+ {"name":"manual-exr","path":"tests/fixtures/linear_unconfirmed.exr"},
+ {"name":"radiance-hdr","path":"D:/AI/AI Projects/Gaussian Splat/LichtFeld-Studio-0.5.3/src/visualizer/gui/assets/environments/alps_field_1k.hdr"},
+ {"name":"reference-avif","path":"samples/hdr_reference.avif"},
+ {"name":"urbanscape-iso-avif","path":"D:/Photos/Play_Raw/HDR exercise on urbanscape/5M071612_finished.avif"},
+ {"name":"apple-heic","path":"local-test-media/inputs/iphone-12-pro-HDR.heic"}
+]

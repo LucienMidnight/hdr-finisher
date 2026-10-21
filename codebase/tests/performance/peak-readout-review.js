@@ -39,7 +39,6 @@ async function main() {
       return {
         at,
         panel: row || null,
-        exactPeakOption: document.querySelector('#scope-exact-peak')?.checked ?? null,
         zoom: state.zoomMode === 'fit' ? 'fit' : state.zoomPercent,
         processedLongEdge: state.acceptedPresentation?.processedLongEdge ?? null,
         execution: state.acceptedPresentation?.execution ?? null,
@@ -53,19 +52,13 @@ async function main() {
     await c.open(page, project, false);
     await settled();
     await read('Fit, as opened');
-    await page.locator('#scope-exact-peak').check();
-    await settled();
-    await read('Fit, Exact Peak on');
     await page.evaluate(() => setCustomZoom(100));
     await settled();
-    await read('100%, Exact Peak on');
-    await page.locator('#scope-exact-peak').uncheck();
-    await settled();
-    await read('100%, Exact Peak off');
+    await read('100%, automatic peak');
     await page.evaluate(() => applyExecutionOverride('tiled'));
     await page.waitForFunction(() => state.acceptedPresentation?.execution === 'tiled', null, { timeout: 180000 });
     await settled();
-    await read('100%, Exact Peak off, tiled route forced');
+    await read('100%, automatic peak, tiled route forced');
     report.status = 'complete';
   } catch (error) {
     report.status = 'failed';

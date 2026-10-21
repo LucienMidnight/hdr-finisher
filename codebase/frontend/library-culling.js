@@ -51,7 +51,7 @@
       }
       if (photo.edited) {
         const mark = document.createElement("span"); mark.className = "library-edited"; mark.append(icon(EDITED_ICON));
-        mark.title = photo.pictureCurrent ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. Open it in Grade and save to update the picture.";
+        mark.title = "Saved grade";
         mark.setAttribute("aria-label", mark.title); root.append(mark);
       }
       if (value.pick !== "unmarked") {

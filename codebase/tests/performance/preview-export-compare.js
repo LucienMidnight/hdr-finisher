@@ -79,9 +79,8 @@ async function main() {
   const manifest = { project, lanes: [] };
   try {
     await c.open(page, project, false);
-    // The editing peak estimate is off by default; the peak verdict compares
-    // that estimate with the export, so turn it on the way the user would.
-    await page.evaluate(() => { els.scopeExactPeak.checked = true; els.scopeExactPeak.dispatchEvent(new Event('change')); });
+    // Settled scopes always include the bounded editing peak estimate.
+    await page.evaluate(() => refreshScopes(scopeLongEdge('settled'), { tier: 'settled' }));
     report.viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }));
     if (args.includes('--luma-graph')) {
       report.lumaGraph = await page.evaluate(async ([OPERATOR, OPERAND]) => {

@@ -153,7 +153,7 @@ def _loaded_session(tmp_path: Path, *, suffix: str, metadata: dict, authored_sdr
 
 
 @pytest.mark.parametrize(("suffix", "metadata", "authored_sdr"), (
-    (".arw", {"raw_input": True, "recommended_exposure_ev": 1.25}, False),
+    (".arw", {"raw_input": True}, False),
     (".avif", {}, True),
     (".tif", {}, False),
 ))
@@ -173,5 +173,5 @@ def test_the_starting_state_is_the_one_a_new_import_gets(
         assert imported.sdr.use_authored_base is True
         assert imported.sdr.highlight_section_enabled is False
     if metadata.get("raw_input"):
-        assert imported.hdr.exposure == pytest.approx(1.25)
-        assert imported.sdr.exposure == pytest.approx(1.25)
+        assert imported.hdr.exposure == 0
+        assert imported.sdr.exposure == 0

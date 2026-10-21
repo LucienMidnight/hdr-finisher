@@ -20,7 +20,7 @@
     name: { label: "File name", kind: "text", get: photo => (photo.source_path || photo.path).split(/[\\/]/).at(-1) || photo.name },
     search: { label: "File name or tag", kind: "text", get: photo => [photo.name || "", ...(photo.marks?.tags || [])] },
     copy: { label: "Virtual copy", kind: "choice", get: photo => photo.copy_id ? "Virtual copy" : "Original" },
-    state: { label: "Edited", kind: "choice", get: photo => photo.edited ? "Edited" : "Not edited" },
+    state: { label: "State", kind: "choice", get: photo => [photo.edited ? "Edited" : "Not edited", ...(photo.exported ? ["Exported"] : []), ...(photo.edited_since_export ? ["Edited since last export"] : [])] },
     camera: { label: "Camera", kind: "choice", none: "Not recorded", get: photo => photo.camera },
     lens: { label: "Lens", kind: "choice", none: "Not recorded", get: photo => photo.lens },
     iso: { label: "ISO", kind: "range", get: photo => photo.iso },

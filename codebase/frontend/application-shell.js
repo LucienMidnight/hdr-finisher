@@ -87,7 +87,8 @@
   }
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    if (THEME_IDS.includes(stored.theme)) document.documentElement.dataset.theme = stored.theme;
+    const startupTheme = window.hdrFinisherDesktop?.startupTheme || stored.theme;
+    if (THEME_IDS.includes(startupTheme)) document.documentElement.dataset.theme = startupTheme;
     if (stored.viewerFrame) document.documentElement.style.setProperty("--frame-color", resolveFrameColor(stored.viewerFrame));
   } catch {}
   const FOLDER_FIELDS = [
@@ -339,6 +340,8 @@
   function openSettings(tab = "general") {
     selectSettingsTab(tab);
     renderSettings();
+    void window.HDRLibraryCacheSettings?.refresh();
+    void window.HDRDeliverySettings?.refresh();
     openDialog(byId("settings-dialog"), document.querySelector(`[data-settings-tab="${tab}"]`));
   }
 

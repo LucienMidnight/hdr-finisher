@@ -274,6 +274,7 @@ def apply_opcode_list3(
     opcodes: Iterable[DngOpcode],
     *,
     cancelled: Callable[[], bool] | None = None,
+    progress: Callable[[str, str], None] | None = None,
 ) -> tuple[np.ndarray, tuple[dict[str, object], ...]]:
     result = np.asarray(image, dtype=np.float32)
     diagnostics: list[dict[str, object]] = []
@@ -284,6 +285,8 @@ def apply_opcode_list3(
                 diagnostics.append(_diagnostic(opcode, "skipped_optional_wrong_stage"))
                 continue
             raise DngOpcodeError(f"{opcode.name} is not supported in {opcode.list_name}")
+        if progress and opcode.opcode_id in {9, 1}:
+            progress("dng_gain_map" if opcode.opcode_id == 9 else "dng_warp", "Applying DNG brightness correction" if opcode.opcode_id == 9 else "Correcting DNG distortion")
         if opcode.opcode_id == 9:
             result = apply_gain_map(result, parse_gain_map(opcode.parameters), cancelled=cancelled)
             diagnostics.append(_diagnostic(opcode, "applied"))

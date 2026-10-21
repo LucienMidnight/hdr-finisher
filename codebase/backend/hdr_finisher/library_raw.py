@@ -64,7 +64,8 @@ def camera_raw(path):
 class RawBrowsing:
     def __init__(self, root, paused=lambda: False, ram=None):
         self.limits = allowances(ram or machine_memory())
-        self.root = Path(root) / "library-raw-thumbnails"
+        from .library_cache import LibraryCache
+        self.managed = LibraryCache(root)
         self.cv = Condition()
         self.paused = paused
         self.raw = OrderedDict()
@@ -80,6 +81,10 @@ class RawBrowsing:
         self.sequence = 0
         self.failure = None
         self.plan_revisions = OrderedDict()
+
+    @property
+    def root(self):
+        return self.managed.directory("library-raw-thumbnails")
 
     def start(self):
         with self.cv:

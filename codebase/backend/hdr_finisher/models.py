@@ -1337,12 +1337,15 @@ class ExportSettings(_EncodingSettings):
         *_ENCODING_FIELD_ORDER[:10],
         "sdr_png_bit_depth",
         *_ENCODING_FIELD_ORDER[10:],
-        "metadata_policy", "output_path", "path_grant", "overwrite", "overwrite_target",
+        "metadata_policy", "guarantee_hdr_peak", "output_path", "path_grant", "overwrite", "overwrite_target",
         "edit_revision", "output_finishing", "editing_measurements",
     )
 
     sdr_png_bit_depth: Literal[8, 16] = 8
     metadata_policy: Literal["none", "copyright", "all_except_location", "all_including_location"] = "none"
+    # Optional decoded HDR peak check and local correction, per preset version.
+    # Off by default: encode once without checking the decoded peak.
+    guarantee_hdr_peak: bool = False
     output_path: str | None = None
     path_grant: str | None = None
     overwrite: bool = False
@@ -1353,12 +1356,16 @@ class ExportSettings(_EncodingSettings):
 
 
 class ExportResponse(BaseModel):
+    renderer: Literal["cpu", "gpu"] = "cpu"
+    fallback_reason: str | None = None
     accepted: bool
     backend: str
     message: str
     output_path: str | None = None
     timings_ms: dict[str, float] = Field(default_factory=dict)
     measurement_warnings: list[str] = Field(default_factory=list)
+    # Exported, but something the user may care about (an HDR peak over target).
+    delivery_notes: list[str] = Field(default_factory=list)
 
 
 class DirectoryPickRequest(BaseModel):
@@ -1375,7 +1382,7 @@ class FavoritePathRequest(BaseModel):
 
 class DesktopPathGrantRequest(BaseModel):
     path: str
-    intent: Literal["source-open", "source-relink", "project-open", "project-save", "export-file"]
+    intent: Literal["source-open", "source-relink", "project-open", "project-save", "export-directory", "export-file"]
 
 
 class DesktopPathGrantResponse(BaseModel):
@@ -1408,7 +1415,7 @@ class DesktopProjectSaveRequest(BaseModel):
 class ProofArtifactRequest(_EncodingSettings):
     _serialized_field_order: ClassVar[tuple[str, ...]] = (
         "adjustments", "edit_revision", *_ENCODING_FIELD_ORDER,
-        "long_edge", "full_size", "output_finishing", "force", "editing_measurements",
+        "long_edge", "full_size", "output_finishing", "guarantee_hdr_peak", "force", "editing_measurements",
     )
 
     adjustments: AdjustmentState | None = None
@@ -1418,6 +1425,7 @@ class ProofArtifactRequest(_EncodingSettings):
     # A full-size proof is the export itself: the session's own source at its
     # own resolution, not a downscaled level. ``long_edge`` is ignored for it.
     full_size: bool = False
+    guarantee_hdr_peak: bool = False
     # An explicit Build proof is the user's escape hatch when they suspect the
     # cached artifact rather than the grade, so it rebuilds instead of replaying
     # the cache. Excluded from the request signature: a forced build must land
@@ -1435,6 +1443,7 @@ class ProofArtifactRequest(_EncodingSettings):
             output_path=output_path,
             overwrite=True,
             output_finishing=self.output_finishing,
+            guarantee_hdr_peak=self.guarantee_hdr_peak,
         )
 
 
@@ -1469,7 +1478,10 @@ class JPEGGainMapProofMetadata(BaseModel):
 
 
 class ProofArtifactResponse(BaseModel):
+    delivery_notes: list[str] = Field(default_factory=list)
     artifact_id: str
+    renderer: Literal["gpu", "cpu"] = "cpu"
+    fallback_reason: str | None = None
     format: str
     media_type: str
     byte_size: int

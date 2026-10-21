@@ -7,10 +7,13 @@ from time import perf_counter
 
 import numpy as np
 
+from .import_defaults import calibrate_camera_raw
 from .import_bands import map_import_negative
 
 from .analysis import classify_hdr
 from .color import (
+    display_referred_sdr,
+    sdr_file_renditions,
     detect_color_space,
     map_negative_acescg,
     detect_transfer_function,
@@ -38,7 +41,7 @@ EXR_COLOR_INTEROP_SPACES = {
 # Provenance for the persistent source mip cache (PRD 5.3). Bump either
 # constant when a change alters the decoded scene-linear pixels for the same
 # file; stale levels are then ignored and removed by version.
-SOURCE_DECODER_VERSION = "hdr-finisher-loader-v1"
+SOURCE_DECODER_VERSION = "hdr-finisher-loader-fuji-dr-mode-v3"
 SOURCE_COLOR_TRANSFORM_VERSION = "acescg-negative-neutral-v2"
 
 # Display-P3 and sRGB share D65, so the hot-path linear conversion is a fixed
@@ -208,6 +211,14 @@ def load_image(
         metadata["linear_reference_note"] = (
             "Source 1.0 diffuse white normalized to HDR Finisher scene-linear 0.18 diffuse white."
         )
+    # A plain SDR file is a finished picture (Steve, 2026-10-19): the file is
+    # the SDR rendition, as a gain-map file's base is, and HDR shows it with
+    # its white at reference white. No generated SDR, no extra brightening.
+    if (sdr_reference_image is None and not metadata.get("needs_color_override")
+            and not metadata.get("decoder_normalized_to_acescg")
+            and display_referred_sdr(metadata.get("color_space"), metadata.get("transfer_function"), suffix)):
+        normalized, sdr_reference_image = sdr_file_renditions(normalized)
+        metadata["sdr_file_rendition"] = True
     # Unknown/conflicting primaries must be resolved before an irreversible
     # AP1 gamut operation. All resolved import routes share this boundary,
     # including decoder-normalized RAW, DNG and JPEG Ultra HDR.
@@ -216,7 +227,7 @@ def load_image(
             normalized, map_negative_acescg, cancelled=cancelled
         )
     if metadata.get("raw_input"):
-        metadata["recommended_exposure_ev"] = _recommended_raw_exposure_ev(normalized)
+        metadata["raw_start_brightness"] = calibrate_camera_raw(normalized, path)
     normalize_ms = (perf_counter() - normalize_started) * 1000.0
     descriptor = SourceImageDescriptor(
         filename=path.name,
@@ -245,8 +256,8 @@ def load_image(
     return normalized, descriptor, metadata, analysis, sdr_reference_image
 
 
-def _recommended_raw_exposure_ev(image: np.ndarray) -> float:
-    """Return a bounded photographic starting exposure without altering RAW pixels."""
+def _linear_dng_library_exposure_ev(image: np.ndarray) -> float:
+    """Preserve the existing non-camera linear-DNG Library start."""
     if image.ndim != 3 or image.shape[2] < 3 or image.size == 0:
         return 0.0
     height, width = image.shape[:2]
@@ -273,7 +284,7 @@ def _recommended_raw_exposure_ev(image: np.ndarray) -> float:
     return round(metered_exposure_ev, 3)
 
 
-def _load_with_pillow(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
+def _load_with_pillow(path: Path, *, encoded_samples: bool = False) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         from PIL import Image, ImageOps
     except ImportError as exc:
@@ -308,6 +319,8 @@ def _load_with_pillow(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
             metadata["color_space"] = "sRGB"
         array = np.asarray(image)
         metadata["bit_depth"] = str(array.dtype)
+        if encoded_samples:
+            return np.array(array, copy=True), metadata
         normalized = array.astype(np.float32)
         normalized *= np.float32(1.0 / 255.0)
         del array
@@ -406,7 +419,7 @@ def _classify_icc_profile_name(profile_name: str) -> str:
 
 
 def _load_exr(
-    path: Path, *, cancelled: Callable[[], bool] | None = None
+    path: Path, *, cancelled: Callable[[], bool] | None = None, combined_channels: bool = False
 ) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         import OpenEXR
@@ -423,10 +436,24 @@ def _load_exr(
         float_type = Imath.PixelType(Imath.PixelType.FLOAT)
         channel_names = _select_exr_rgb_channels(header.get("channels", {}).keys())
         image = np.empty((height, width, 3), dtype=np.float32)
-        for index, name in enumerate(channel_names):
+        read_timings = None
+        if combined_channels:
+            # Library-only opt-in. One binding call shares compressed-block work.
             _raise_if_cancelled(cancelled)
-            channel = np.frombuffer(file.channel(name, float_type), dtype=np.float32)
-            image[..., index] = channel.reshape(height, width)
+            started = perf_counter()
+            channels = file.channels(list(channel_names), float_type)
+            read_ms = (perf_counter() - started) * 1000
+            started = perf_counter()
+            for index, channel in enumerate(channels):
+                _raise_if_cancelled(cancelled)
+                image[..., index] = np.frombuffer(channel, dtype=np.float32).reshape(height, width)
+            del channels, channel
+            read_timings = {"channels": read_ms, "interleave": (perf_counter() - started) * 1000}
+        else:
+            for index, name in enumerate(channel_names):
+                _raise_if_cancelled(cancelled)
+                channel = np.frombuffer(file.channel(name, float_type), dtype=np.float32)
+                image[..., index] = channel.reshape(height, width)
     finally:
         close = getattr(file, "close", None)
         if callable(close):
@@ -454,6 +481,8 @@ def _load_exr(
         "color_space_source": color_space_source,
         "needs_color_override": not color_space_confident,
     }
+    if read_timings is not None:
+        metadata["library_exr_timings_ms"] = read_timings
     if metadata_conflict:
         metadata["color_space_note"] = (
             "EXR chromaticities and colorInteropID disagree. Manual source interpretation is required."
@@ -526,7 +555,7 @@ def _select_apple_gainmap_aux_type(aux: dict[str, Any]) -> str | None:
 
 
 def _load_heif(
-    path: Path, *, cancelled: Callable[[], bool] | None = None
+    path: Path, *, cancelled: Callable[[], bool] | None = None, primary_samples_only: bool = False
 ) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         from pillow_heif import open_heif
@@ -538,6 +567,10 @@ def _load_heif(
     heif_file = open_heif(path, convert_hdr_to_8bit=False)
     primary = heif_file[heif_file.primary_index]
     info = dict(primary.info)
+    if primary_samples_only and info.get("aux"):
+        raise LoaderError("HEIF auxiliary images retain their existing reconstruction route.")
+    if primary_samples_only and info.get("icc_profile"):
+        raise LoaderError("HEIF ICC interpretation retains Grade's CPU loader.")
     array = np.asarray(heif_file)
     bit_depth = int(info.get("bit_depth", 8))
     profile_desc = _heif_profile_description(info)
@@ -552,6 +585,9 @@ def _load_heif(
         "heif_has_aux": bool(info.get("aux")),
         "heif_container_mimetype": heif_file.mimetype,
     }
+    if primary_samples_only:
+        metadata["heif_primary_index"] = heif_file.primary_index
+        metadata["heif_icc_present"] = bool(info.get("icc_profile"))
     if apple_hdr:
         metadata.update(apple_hdr)
     if "nclx_profile" in info:

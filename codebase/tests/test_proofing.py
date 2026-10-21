@@ -305,13 +305,15 @@ class _FailOnceWithPartialArtifactBackend:
         )
 
 
-def test_proof_proxy_preserves_local_adjustments(monkeypatch, tmp_path: Path) -> None:
+def test_proof_proxy_preserves_local_adjustments_and_delivery_notes(monkeypatch, tmp_path: Path) -> None:
     captured = {}
 
     class CapturingBackend(_FakeBackend):
         def export(self, session: object, settings: object) -> ExportResponse:
             captured["locals"] = getattr(session, "local_adjustments")
-            return super().export(session, settings)
+            result = super().export(session, settings)
+            result.delivery_notes = ["HDR peak is 1012 nits, 12 above the 1000-nit target after correction; the file was exported anyway."]
+            return result
 
     proof_store = ProofArtifactStore()
     proof_store.root = tmp_path
@@ -333,13 +335,17 @@ def test_proof_proxy_preserves_local_adjustments(monkeypatch, tmp_path: Path) ->
         lambda *_args, **_kwargs: np.full((12, 16, 3), 0.18, dtype=np.float32),
     )
 
-    proof_store.create(
+    proof = proof_store.create(
         session,
         ProofArtifactRequest(adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256),
         CapturingBackend(),
     )
 
     assert captured == {"locals": local_sentinel}
+    assert "12 above the 1000-nit target" in proof.delivery_notes[0]
+    cached = proof_store.create(session,
+        ProofArtifactRequest(adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256), CapturingBackend())
+    assert cached.delivery_notes == proof.delivery_notes
 
 
 def test_proof_proxy_preserves_denoise(monkeypatch, tmp_path: Path) -> None:

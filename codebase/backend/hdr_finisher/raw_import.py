@@ -308,8 +308,9 @@ def _apply_raw_corrections(
                 (*dng_inspection.required_opcodes, *dng_inspection.optional_opcodes),
                 key=lambda opcode: opcode.index,
             ),
-            cancelled=cancelled,
+            cancelled=cancelled, progress=progress,
         )
+        if progress: progress("dng_colour", "Converting DNG colour")
         color_metadata = color_metadata_from_mapping(dng_inspection.metadata)
         transform = build_color_transform(color_metadata)
         transform_normalized_to_acescg_in_place(
@@ -382,6 +383,10 @@ def _apply_raw_corrections(
         image = transform_float32_bounded(
             aces2065, aces2065_to_acescg, cancelled=cancelled
         )
+    if inspection.dng_inspection is not None and not plan.opcode_plan:
+        # Opcode route already applies this in its DNG colour transform.
+        baseline = float(inspection.dng_inspection.metadata.get("baseline_exposure", 0.0))
+        image *= np.float32(2.0 ** baseline)
     return _RawCorrectionResult(image, lens_settings, lens_metadata, opcode_audit)
 
 

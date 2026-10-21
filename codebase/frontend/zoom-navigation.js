@@ -175,7 +175,9 @@ async function refreshNavigationThumbnail() {
     const previous = navigationThumbnail.url;
     navigationThumbnail.url = url;
     navigationThumbnail.key = key;
-    els.navigationThumbImage.onload = updateNavigationViewport;
+    els.navigationThumbImage.style.visibility="hidden";
+    els.navigationThumbImage.onerror=()=>{els.navigationThumbImage.style.visibility="hidden";};
+    els.navigationThumbImage.onload = ()=>{els.navigationThumbImage.style.visibility="";updateNavigationViewport();};
     els.navigationThumbImage.src = url;
     if (previous) URL.revokeObjectURL(previous);
   } catch (error) {

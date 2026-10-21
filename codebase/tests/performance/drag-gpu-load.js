@@ -151,7 +151,7 @@ async function measureDrag(page, zoom) {
     await idle(page);
     await page.evaluate(() => {
       // P5: full detail while dragging is the default; make sure the opt-in is off.
-      const faster = document.getElementById("preview-faster-dragging");
+      const faster = document.getElementById("settings-faster-dragging");
       if (faster?.checked) {
         faster.checked = false;
         faster.dispatchEvent(new Event("change", { bubbles: true }));

@@ -362,6 +362,30 @@ def compute_peak_stops(image: np.ndarray) -> float | None:
     return float(np.log2(peak / 0.18))
 
 
+SDR_FILE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".heic", ".heif"})
+# Scene-linear value placed at the project's reference white in HDR.
+SDR_FILE_SCENE_WHITE = 0.18
+
+
+def display_referred_sdr(color_space: str | None, transfer_function: str | None, suffix: str) -> bool:
+    """An ordinary bitmap encoded for display: a finished SDR picture."""
+    if suffix.lower() not in SDR_FILE_SUFFIXES:
+        return False
+    transfer = _canonical_transfer_function(transfer_function)
+    if transfer in {"sRGB", "BT.709"}:
+        return True
+    return transfer is None and _canonical_colourspace(color_space, None) in {SRGB_COLOURSPACE, DISPLAY_P3_COLOURSPACE}
+
+
+def sdr_file_renditions(normalized: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The file as the SDR rendition, and the scene with file white at reference white.
+
+    The SDR rendition is display-linear sRGB, as gain-map files keep their base.
+    """
+    reference = np.clip(acescg_to_linear_srgb(normalized), 0.0, None).astype(np.float32)
+    return (normalized * np.float32(SDR_FILE_SCENE_WHITE)).astype(np.float32), reference
+
+
 def _canonical_transfer_function(value: str | None) -> str | None:
     if value is None:
         return None

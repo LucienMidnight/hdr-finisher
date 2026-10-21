@@ -97,7 +97,7 @@ def test_restore_session_is_unsaved_when_open_and_preserves_its_picture_identity
 
 @pytest.mark.parametrize("recorded",[True,False])
 def test_closed_original_is_no_saved_grade_and_next_open_is_fresh(setup,recorded):
-    from hdr_finisher.library_kept import KeptPictures
+    from hdr_finisher.library_documents import LibraryDocuments
     photo,store,session,marks,grades=setup
     old=saved(setup);store.clear()
     if not recorded:
@@ -107,8 +107,7 @@ def test_closed_original_is_no_saved_grade_and_next_open_is_fresh(setup,recorded
     assert grades.history.revert([photo],"original")["count"]==1
     marks.writer.drain();assert settings(photo)["grade"] is None
     assert settings(photo)["grade_history"]["previous_grade"]==old
-    kept=KeptPictures(marks.database.parent,marks,None)
-    assert not kept.request(photo)["edited"] and kept.cached(photo) is None
+    assert not LibraryDocuments(marks).request(photo)["edited"]
     fresh_store=SessionStore();fresh=fresh_store.get(fresh_store.create_session(photo,owns_source_path=False).session_id)
     reopened=store.get(store.create_session(photo,owns_source_path=False).session_id)
     attached=grades.attach(str(reopened.session_id))

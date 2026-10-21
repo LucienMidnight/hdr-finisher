@@ -237,9 +237,39 @@
       // dedicated video memory, or the stated fallback, lowered by verified
       // adapter facts and the allocation probe.
       if (this.memoryBudget === "auto" && this.gpuBudget?.budgetBytes > 0) {
-        return this.gpuBudget.budgetBytes;
+        return Number.isFinite(this.deliveryBudgetBytes) ? Math.min(this.gpuBudget.budgetBytes, this.deliveryBudgetBytes) : this.gpuBudget.budgetBytes;
       }
-      return normalized;
+      return Number.isFinite(this.deliveryBudgetBytes) ? Math.min(normalized, this.deliveryBudgetBytes) : normalized;
+    }
+
+    async reportDeliveryActivity(active = this.activeRenderCount > 0 || this.activeScopeCount > 0 || this.deliveryWaitingCount > 0) {
+      if (globalThis.location?.pathname?.endsWith("gpu-delivery.html")) return {reserved:0};
+      this.deliveryClientId ||= crypto.randomUUID();
+      // Report the configured/calibrated budget, before the shared deduction.
+      const previous = this.deliveryBudgetBytes; this.deliveryBudgetBytes = null;
+      const budget = this.memoryBudgetBytes(); this.deliveryBudgetBytes = previous;
+      const response = await fetch("/api/delivery/gpu/activity", {method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({id:this.deliveryClientId,
+          active,bytes:this.resourceMemorySnapshot().resident.totalBytes,budget})});
+      if (!response.ok) throw Error("Delivery accounting unavailable");
+      const value = await response.json(); this.deliveryBudgetBytes = value.budget;
+      this.gpuAllocator?.setBudget(this.memoryBudgetBytes());
+      return value;
+    }
+
+    async acquireForegroundDeliveryBudget() {
+      if (!this.deliveryActivityTimer) return;
+      // Grade wins at the next bounded submission. Wait for the hidden
+      // renderer to release its reservation before admitting a new graph.
+      this.deliveryWaitingCount = (this.deliveryWaitingCount || 0) + 1;
+      try {
+        for (;;) {
+          const value = await this.reportDeliveryActivity(true);
+          if (!value.reserved) return;
+          await new Promise(resolve => setTimeout(resolve, 20));
+        }
+      } catch { /* Delivery service unavailable: ordinary Grade admission. */ }
+      finally { this.deliveryWaitingCount -= 1; }
     }
 
     /**
@@ -553,7 +583,7 @@
       }).decision;
     }
 
-    async initialize() {
+    async initialize(beforePipeline = async () => {}) {
       if (!navigator.gpu) {
         this.detail = "WebGPU is unavailable in this browser";
         return false;
@@ -622,19 +652,22 @@
           addressModeV: "clamp-to-edge",
         });
         this.pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] });
-        this.scopePipeline = this.device.createRenderPipeline({
+        await beforePipeline();
+        this.scopePipeline = await this.device.createRenderPipelineAsync({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: "scopeFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         });
-        this.settledScopePipeline = this.device.createRenderPipeline({
+        await beforePipeline();
+        this.settledScopePipeline = await this.device.createRenderPipelineAsync({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: "settledScopeFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         });
-        this.outputPicturePipeline = this.device.createRenderPipeline({
+        await beforePipeline();
+        this.outputPicturePipeline = await this.device.createRenderPipelineAsync({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: "outputPictureFragmentMain", targets: [{ format: "rgba16float" }] },
@@ -648,16 +681,20 @@
           ],
         });
         this.maskPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.maskBindGroupLayout] });
+        const maskPipeline = async entry => {
+          await beforePipeline();
+          return this.createMaskPipeline(entry, true);
+        };
         this.maskPipelines = {
-          sceneLuminance: this.createMaskPipeline("sceneLuminanceFragmentMain"),
-          qualify: this.createMaskPipeline("lumaQualificationFragmentMain"),
-          refine: this.createMaskPipeline("maskRefinementFragmentMain"),
-          downsample: this.createMaskPipeline("maskDownsampleFragmentMain"),
-          upsample: this.createMaskPipeline("maskUpsampleFragmentMain"),
-          combine: this.createMaskPipeline("maskCombineFragmentMain"),
-          linearGradient: this.createMaskPipeline("linearGradientFragmentMain"),
-          shapeRaster: this.createMaskPipeline("shapeRasterFragmentMain"),
-          brushRegionalErase: this.createMaskPipeline("brushRegionalEraseFragmentMain"),
+          sceneLuminance: await maskPipeline("sceneLuminanceFragmentMain"),
+          qualify: await maskPipeline("lumaQualificationFragmentMain"),
+          refine: await maskPipeline("maskRefinementFragmentMain"),
+          downsample: await maskPipeline("maskDownsampleFragmentMain"),
+          upsample: await maskPipeline("maskUpsampleFragmentMain"),
+          combine: await maskPipeline("maskCombineFragmentMain"),
+          linearGradient: await maskPipeline("linearGradientFragmentMain"),
+          shapeRaster: await maskPipeline("shapeRasterFragmentMain"),
+          brushRegionalErase: await maskPipeline("brushRegionalEraseFragmentMain"),
         };
         const lostDevice = this.device;
         this.device.lost.then((info) => {
@@ -672,6 +709,10 @@
           }));
         });
         this.available = true;
+        if (!globalThis.location?.pathname?.endsWith("gpu-delivery.html")) {
+          this.deliveryActivityTimer ||= setInterval(() => this.reportDeliveryActivity().catch(()=>{}), 100);
+          this.reportDeliveryActivity(false).catch(()=>{});
+        }
         this.detail = this.adapterInfo.fallback
           ? "WebGPU software adapter active; HDR presentation is not authoritative"
           : `WebGPU settled authoring renderer ready (${this.adapterInfo.description})`;
@@ -1732,7 +1773,7 @@
           detailResultTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST),
           filmTexture: make("rgba16float", attachment),
           // A measurement copies its patch out of the finished tile.
-          finishTexture: make("rgba16float", analysis ? attachment | GPUTextureUsage.COPY_SRC : attachment),
+          finishTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC),
           spatialATexture: spatialActive ? makeSpatial() : null,
           spatialBTexture: spatialActive ? makeSpatial() : null,
           spatialWidth,
@@ -2107,6 +2148,7 @@
 
     async renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
       if (!this.available || !this.device) return false;
+      if (this.deliveryActivityTimer) await this.acquireForegroundDeliveryBudget();
       if (sourceSize) this.maskSourceSize = {sessionId,...sourceSize};
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
       if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
@@ -2212,6 +2254,9 @@
 
       const result = await this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
         measureOnly,
+        delivery: sourceOptions?.delivery,
+        beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
+        tileBatchSize: sourceOptions?.tileBatchSize,
         analysisPatch: sourceOptions?.analysisPatch,
         neutralPaperAnchor: highlightAnchorOnly && lane === "hdr" && adjustments.hdr.film_look.film_stock === "none",
         analysisMasks: sourceOptions?.analysisMasks,
@@ -4029,7 +4074,13 @@
           pass(baseView, pipelines.base, bindWith(sourceView, binding), region.width, region.height);
           this.encodeClarityPass(encoder, reduced.createView(), pipelines.clarityReduce, bindWith(baseView, binding), texels, true);
           batchTiles += 1;
-          if (batchTiles >= tileBatchSize) flushTiles();
+          if (batchTiles >= tileBatchSize) {
+          flushTiles();
+          if (options.beforeDeliverySubmit) {
+            await this.waitForSubmittedWork();
+            await options.beforeDeliverySubmit();
+          }
+        }
         }
         if (!cancelled) {
           // Any slot carries the frame size and the map's plan, which is all
@@ -4181,6 +4232,13 @@
           this.encodeFilmChain(encoder, pipelines, graph, localSource.createView(),
             (source, spatial, original) => bind(source, spatial, original), params, width, height);
         }
+        if (options.delivery) {
+          encoder.copyTextureToTexture(
+            {texture:graph.finishTexture, origin:[tile.rect.x-tile.haloRect.x,tile.rect.y-tile.haloRect.y]},
+            {texture:options.delivery.texture, origin:[tile.rect.x,tile.rect.y]},
+            [tile.rect.width,tile.rect.height]);
+          options.delivery.params = new Float32Array(params);
+        }
         // The finished tile is measured before it is composited, because the
         // composite encodes for the display and this has to read the picture.
         // On a measurement pass this is the only thing the tile is for.
@@ -4262,7 +4320,12 @@
         // not make the pan cache believe its tiles are in the retained frame.
         if (!measureOnly) scheduler.acceptTile(tile.key, plan.generation);
         batchTiles += 1;
-        if (batchTiles >= tileBatchSize) flushTiles();
+        if (batchTiles >= tileBatchSize) {
+          flushTiles();
+          if (options.beforeDeliverySubmit) {
+            await this.waitForSubmittedWork(); await options.beforeDeliverySubmit();
+          }
+        }
       }
 
       // A superseded generation stops before the next batch is submitted: the
@@ -4505,6 +4568,7 @@
       // requesting a proxy. Unsupported local modules use the CPU renderer,
       // and must not first pay for a WebGPU proxy that cannot be presented.
       if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return this.refuseRender("unsupported-local-adjustment");
+      if (this.deliveryActivityTimer) await this.acquireForegroundDeliveryBudget();
       const renderStartedAt = performance.now();
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
       if (sourceSize) this.maskSourceSize = {sessionId,...sourceSize};
@@ -4779,6 +4843,9 @@
         // Show noise needs the original and a reconstruction per tile, so it
         // hands Tiled the original even when a whole-frame resolve is resident.
         const tiled = await this.encodeTiledGeneration(canvas, context, noiseView ? proxy : sourceProxy, surface, pipelines, params, {
+          delivery: sourceOptions?.delivery,
+          beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
+          tileBatchSize: sourceOptions?.delivery ? 4 : undefined,
           tileSize: sourceOptions?.tileSize,
           serial,
           viewport: sourceOptions?.viewport || null,
@@ -5081,6 +5148,11 @@
         this.encodeFilmChain(encoder, pipelines, intermediate, localSource.createView(),
           (source, spatial, original) => makeBindGroup(source, spatial, this.paramBuffer, original),
           params, proxy.width, proxy.height);
+      }
+      if (sourceOptions?.delivery) {
+        encoder.copyTextureToTexture({texture:intermediate.finishTexture},
+          {texture:sourceOptions.delivery.texture}, [proxy.width,proxy.height]);
+        sourceOptions.delivery.params = new Float32Array(params);
       }
       // A settled render splits here: the finished picture has to exist before
       // its peak can be measured, and the measured peak has to exist before the
@@ -6326,8 +6398,8 @@
       return target;
     }
 
-    createMaskPipeline(entryPoint) {
-      return this.device.createRenderPipeline({
+    createMaskPipeline(entryPoint, asynchronous = false) {
+      return this.device[asynchronous ? "createRenderPipelineAsync" : "createRenderPipeline"]({
         layout: this.maskPipelineLayout,
         vertex: { module: this.maskModule, entryPoint: "vertexMain" },
         fragment: { module: this.maskModule, entryPoint, targets: [{ format: "r16float" }] },
@@ -6391,75 +6463,76 @@
       }
     }
 
-    pipelineFor(format) {
+    pipelineFor(format, factory = null) {
+      const create = factory || (descriptor => this.device.createRenderPipeline(descriptor));
       if (this.pipelines.has(format)) return this.pipelines.get(format);
-      const base = this.device.createRenderPipeline({
+      const base = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "baseFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const response = this.device.createRenderPipeline({
+      const response = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "filmResponseFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const local = this.device.createRenderPipeline({
+      const local = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localAdjustmentFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const localCandidate = this.device.createRenderPipeline({
+      const localCandidate = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localCandidateFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const localDetailHorizontal = this.device.createRenderPipeline({
+      const localDetailHorizontal = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localDetailHorizontalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const localDetailVertical = this.device.createRenderPipeline({
+      const localDetailVertical = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localDetailVerticalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const localDetailComposite = this.device.createRenderPipeline({
+      const localDetailComposite = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localDetailCompositeFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const localDetailMix = this.device.createRenderPipeline({
+      const localDetailMix = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "localDetailMixFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const detailHorizontal = this.device.createRenderPipeline({
+      const detailHorizontal = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "detailHorizontalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const detailVertical = this.device.createRenderPipeline({
+      const detailVertical = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "detailVerticalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const detailComposite = this.device.createRenderPipeline({
+      const detailComposite = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "detailCompositeFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const clarityPipeline = (entryPoint) => this.device.createRenderPipeline({
+      const clarityPipeline = (entryPoint) => create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint, targets: [{ format: CLARITY_MAP_FORMAT }] },
@@ -6470,37 +6543,37 @@
       const clarityBlurHorizontal = clarityPipeline("clarityBlurHorizontalFragmentMain");
       const clarityBlurVertical = clarityPipeline("clarityBlurVerticalFragmentMain");
       const claritySurround = clarityPipeline("claritySurroundFragmentMain");
-      const extract =this.device.createRenderPipeline({
+      const extract =create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "spatialExtractFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const blurHorizontal = this.device.createRenderPipeline({
+      const blurHorizontal = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "spatialBlurHorizontalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const blurVertical = this.device.createRenderPipeline({
+      const blurVertical = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "spatialBlurVerticalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const finish = this.device.createRenderPipeline({
+      const finish = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "finishFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
-      const composite = this.device.createRenderPipeline({
+      const composite = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "fragmentMain", targets: [{ format }] },
         primitive: { topology: "triangle-list" },
       });
-      const placeholder = this.device.createRenderPipeline({
+      const placeholder = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "placeholderFragmentMain", targets: [{ format }] },
@@ -6509,7 +6582,7 @@
       // Max blending is what lets every tile accumulate into one grid without
       // a readback each. `one`/`one` with operation `max` is a plain maximum:
       // the factors are ignored for min and max operations.
-      const scopePeakTile = this.device.createRenderPipeline({
+      const scopePeakTile = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: {
@@ -6525,17 +6598,17 @@
         },
         primitive: { topology: "triangle-list" },
       });
-      const lensExtract = this.device.createRenderPipeline({
+      const lensExtract = create({
         layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
         fragment:{module:this.module,entryPoint:"lensExtractFragmentMain",targets:[{format:"rgba16float"}]},
         primitive:{topology:"triangle-list"},
       });
-      const lensHorizontal = this.device.createRenderPipeline({
+      const lensHorizontal = create({
         layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
         fragment:{module:this.module,entryPoint:"lensHorizontalFragmentMain",targets:[{format:"rgba16float"}]},
         primitive:{topology:"triangle-list"},
       });
-      const lensVertical = this.device.createRenderPipeline({
+      const lensVertical = create({
         layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
         fragment:{module:this.module,entryPoint:"lensVerticalFragmentMain",targets:[{format:"rgba16float",
           blend:{color:{operation:"add",srcFactor:"one",dstFactor:"one"},alpha:{operation:"add",srcFactor:"one",dstFactor:"one"}}}]},
@@ -6543,13 +6616,13 @@
       });
       const pipelines = {
         lensExtract, lensHorizontal, lensVertical,
-        peakCandidateLocal: this.device.createRenderPipeline({
+        peakCandidateLocal: create({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: "peakCandidateLocalFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         }),
-        ...Object.fromEntries(["lens", "scatter", "structure", "scan"].map((name) => [name, this.device.createRenderPipeline({
+        ...Object.fromEntries(["lens", "scatter", "structure", "scan"].map((name) => [name, create({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: `${name}FragmentMain`, targets: [{ format: "rgba16float" }] },
@@ -6579,8 +6652,24 @@
         composite,
         placeholder,
       };
-      this.pipelines.set(format, pipelines);
+      if (!factory) this.pipelines.set(format, pipelines);
       return pipelines;
+    }
+
+    async warmPipelines(format, beforeNext) {
+      if (this.pipelines.has(format)) return;
+      const pending = [];
+      const staged = this.pipelineFor(format, descriptor => {
+        const token = {}; pending.push([token, descriptor]); return token;
+      });
+      const compiled = new Map();
+      for (const [token, descriptor] of pending) {
+        await beforeNext();
+        if (this.pipelines.has(format)) return; // Foreground already needed it.
+        compiled.set(token, await this.device.createRenderPipelineAsync(descriptor));
+      }
+      if (!this.pipelines.has(format)) this.pipelines.set(format,
+        Object.fromEntries(Object.entries(staged).map(([name, token]) => [name, compiled.get(token)])));
     }
 
     ensureIntermediate(canvas, width, height, spatialActive = false, detailActive = false) {
@@ -6596,7 +6685,7 @@
       const createTexture = () => this.device.createTexture({
         size: { width, height },
         format: "rgba16float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
       });
       // PRD 4.3: an allocation failure records a durable backoff. This render
       // retains the last valid presentation; the next plan selects Tiled. The

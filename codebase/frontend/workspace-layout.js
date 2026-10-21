@@ -36,7 +36,6 @@ function initializeSourceRailState() {
     state.compactWorkspace = event.matches;
     state.compactSourceOpen = false;
     closeOverlayPopover({ restoreFocus: false });
-    closePreviewPopover({ restoreFocus: false });
     applyResponsiveWorkspaceState();
     scheduleLayoutSettled();
   });
@@ -378,7 +377,6 @@ function initializeBoundedTooltips() {
 }
 
 function toggleOverlayPopover() {
-  closePreviewPopover({ restoreFocus: false });
   const open = els.overlayPopover.classList.toggle("hidden") === false;
   els.overlayToggle.setAttribute("aria-expanded", String(open));
 }
@@ -387,18 +385,6 @@ function closeOverlayPopover({ restoreFocus = true } = {}) {
   els.overlayPopover.classList.add("hidden");
   els.overlayToggle.setAttribute("aria-expanded", "false");
   if (restoreFocus) els.overlayToggle.focus();
-}
-
-function togglePreviewPopover() {
-  closeOverlayPopover({ restoreFocus: false });
-  const open = els.previewPopover.classList.toggle("hidden") === false;
-  els.previewToggle.setAttribute("aria-expanded", String(open));
-}
-
-function closePreviewPopover({ restoreFocus = true } = {}) {
-  els.previewPopover.classList.add("hidden");
-  els.previewToggle.setAttribute("aria-expanded", "false");
-  if (restoreFocus) els.previewToggle.focus();
 }
 
 function toggleAnalysisDock() {
@@ -453,9 +439,8 @@ function renderDockSummary() {
     : "Full-resolution processing stats";
 }
 
-function activateWorkflowTab(workflow, { focus = false } = {}) {
+function activateWorkflowTab(workflow, { focus = false, batch = false } = {}) {
   const next = ["import", "grade", "proof", "export"].includes(workflow) ? workflow : "import";
-  if (next !== "import" && !state.session && !(next === "grade" && state.gradeOpen)) return;
   if (next === "import" && state.gradeOpen) void cancelActiveImport();
   if (next !== "grade") abandonPerspectiveDraft();
   if (next !== "grade" && state.rotateDraftGeometry) closeRotateMode(false);
@@ -470,7 +455,12 @@ function activateWorkflowTab(workflow, { focus = false } = {}) {
     if (active && focus) button.focus();
   });
   if (next === "export") prepareExportRail();
-  if (next === "proof" && state.currentView !== "hdr") switchLane("hdr");
+  if (next === "proof" && state.session && state.currentView !== "hdr") switchLane("hdr");
+  if (!state.session) {
+    els.emptyState.style.display="grid";
+    els.emptyState.querySelector(".empty-state-title").textContent=next==="proof"?"No photo is open":"Drop a RAW or image anywhere on Grade";
+    els.emptyState.querySelector(".empty-state-copy").textContent=next==="proof"?"Open a photo in Grade to see its proof. You can manage proof settings here.":"Open a RAW, HDR image, JPEG, or PNG to start grading.";
+  }
   renderWorkflowContext();
   window.HDRProofing?.render();
   window.dispatchEvent(new CustomEvent("hdrfinisher:workflowchange", { detail: { workflow: next } }));

@@ -18,6 +18,12 @@ BACKEND = ROOT / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
+if __name__ == "__main__" and len(sys.argv) == 4 and sys.argv[1] == "--batch-export-worker":
+    from hdr_finisher.batch_export_worker import main as batch_main
+    sys.argv = [sys.argv[0], *sys.argv[2:]]
+    batch_main()
+    raise SystemExit(0)
+
 from hdr_finisher.launcher import run, run_desktop_sidecar
 
 

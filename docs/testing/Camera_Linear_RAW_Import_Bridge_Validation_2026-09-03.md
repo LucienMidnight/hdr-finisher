@@ -1,7 +1,7 @@
 # Camera-Linear RAW Import Bridge Validation
 
 **Date:** September 3, 2026  
-**Sprint:** [Camera-Linear RAW Import Bridge](../product/Camera_Linear_RAW_Import_Bridge_Sprint_PRD_2026-09-03.md)  
+**Sprint:** [Camera-Linear RAW Import Bridge](../product/archive/Camera_Linear_RAW_Import_Bridge_Sprint_PRD_2026-09-03.md)  
 **Engineering result:** Pass  
 **Product-owner visual result:** Accepted; sprint closed September 3, 2026. Niagara, both Canon files, and the unclipped Nikon fixture pass; Sony `DSC04375.ARW` passes after exposure normalization; Sony `DSC00264.ARW` matches darktable's opposed-color limitation. The Fujifilm RAF is accepted with a documented low-exposure blue residual in clipped speculars.
 

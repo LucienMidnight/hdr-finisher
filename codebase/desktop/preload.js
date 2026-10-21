@@ -9,6 +9,7 @@ function subscribe(channel, callback) {
 
 contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   apiVersion: 2,
+  startupTheme: process.argv.find(value => value.startsWith("--hdr-finisher-theme="))?.split("=")[1] || "default-dark",
   platform: process.platform,
   environment: () => ipcRenderer.invoke("desktop:environment"),
   videoMemory: () => ipcRenderer.invoke("desktop:video-memory"),
@@ -19,6 +20,9 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   saveGradingPreset: (preset) => ipcRenderer.invoke("desktop:save-grading-preset", preset),
   deleteGradingPreset: (presetId) => ipcRenderer.invoke("desktop:delete-grading-preset", presetId),
   setPreferences: (preferences) => ipcRenderer.invoke("desktop:set-preferences", preferences),
+  chooseLibraryCacheDirectory: () => ipcRenderer.invoke("desktop:choose-library-cache-directory"),
+  libraryCacheOptions: () => ipcRenderer.invoke("desktop:library-cache-options"),
+  revealLibraryCacheDirectory: (folder) => ipcRenderer.invoke("desktop:reveal-library-cache-directory", folder),
   choosePreferenceDirectory: (key) => ipcRenderer.invoke("desktop:choose-preference-directory", key),
   revealPreferenceDirectory: (key) => ipcRenderer.invoke("desktop:reveal-preference-directory", key),
   checkForUpdates: (options) => ipcRenderer.invoke("desktop:check-for-updates", options),
@@ -31,8 +35,20 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   getLibraryWindow: () => ipcRenderer.invoke("desktop:get-library-window"),
   dockLibrary: (state) => ipcRenderer.invoke("desktop:dock-library", state),
   focusLibrary: () => ipcRenderer.invoke("desktop:focus-library"),
+  prepareLibraryPaste: (paths) => ipcRenderer.invoke("desktop:prepare-library-paste", paths),
+  completeLibraryPaste: (requestId, allowed) => ipcRenderer.invoke("desktop:complete-library-paste", requestId, allowed),
+  forwardLibraryAction: (action, detail) => ipcRenderer.invoke("desktop:forward-library-action", action, detail),
+  setLibraryCommandState: (state) => ipcRenderer.invoke("desktop:set-library-command-state", state),
+  sendLibraryCommand: (command) => ipcRenderer.invoke("desktop:send-library-command", command),
+  chooseBatchExportDirectory: (initialPath) => ipcRenderer.invoke("desktop:choose-batch-export-directory", initialPath),
   chooseSourceInMain: () => ipcRenderer.invoke("desktop:choose-source-in-main"),
   onLibraryWindowChanged: (callback) => subscribe("desktop:library-window", callback),
+  openDroppedFileInMain: async (file) => {
+    let filePath = "";
+    try { filePath = webUtils.getPathForFile(file); } catch {}
+    return ipcRenderer.invoke("desktop:open-drop-in-main", filePath
+      ? { path: filePath } : { name: file.name, bytes: await file.arrayBuffer() });
+  },
   openSourceInMain: (filePath, itemKey) => ipcRenderer.invoke("desktop:open-source-in-main", filePath, itemKey),
   grantSourcePath: (filePath) => ipcRenderer.invoke("desktop:grant-source-path", filePath),
   grantProjectPath: (filePath, intent) => ipcRenderer.invoke("desktop:grant-project-path", filePath, intent),

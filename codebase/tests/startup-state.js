@@ -29,7 +29,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
     }
 
     const startup = await page.evaluate(() => ({
-      fasterDragging: document.querySelector("#preview-faster-dragging")?.checked,
+      fasterDragging: document.querySelector("#settings-faster-dragging")?.checked,
       scopeZoom: document.querySelector("#scope-zoom")?.value,
       compareLayout: document.querySelector("#preview-stage")?.dataset.compareLayout,
       sourceCollapsed: document.querySelector(".source-rail")?.classList.contains("collapsed"),
@@ -55,6 +55,26 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
       throw new Error(`Startup did not return to defaults. Expected ${JSON.stringify(expected)}, received ${JSON.stringify(startup)}.`);
     }
 
+    const library = page.frame({url:/\/library(?:\?|$)/});
+    await library.waitForFunction(() => HDRIdleWarmup.results.library === "ready", null, {timeout:120000});
+    const fixture = require("node:path").resolve(__dirname,"fixtures/sdr_gradient.png");
+    const timing = await library.evaluate(async photo => {
+      const meta = await fetch("/api/library/picture", {method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({path:photo,edge:640,quality:"quick"})}).then(r=>r.json());
+      if (!meta.key) throw Error(JSON.stringify(meta));
+      const canvas=document.createElement("canvas"); document.body.append(canvas);
+      const times=[];
+      for(let index=0;index<5;index++) {
+        const start=performance.now();
+        await HDRLibraryPictures.show(meta,canvas,new AbortController().signal,()=>true,false);
+        times.push(performance.now()-start);
+      }
+      canvas.remove();
+      const warm=times.slice(1).sort((a,b)=>a-b);
+      return {first:times[0],median:(warm[1]+warm[2])/2,raw:HDRIdleWarmup.results.library};
+    }, fixture);
+    console.log(`First Library GPU draw: ${timing.first.toFixed(1)} ms; warm median ${timing.median.toFixed(1)} ms (limit 500 ms or 2× median).`);
+    if (timing.first > 500 && timing.first > 2*timing.median) throw Error("First Library GPU draw exceeded the idle-launch limit.");
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
     console.log("Ephemeral startup-state browser test passed.");
   } finally {

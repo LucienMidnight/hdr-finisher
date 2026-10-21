@@ -10,7 +10,7 @@ specific file, rule or message.
   gaps. Section 12 explains the library-wide health report and diagnostics.
 - The Library is still being built, and its controls change often. A
   how-to-use guide will be written when they settle. Product intent lives in
-  the [Photo Library PRD](../product/Photo_Library_PRD_2026-10-09.md).
+  the [Photo Library PRD](../product/archive/Photo_Library_PRD_2026-10-09.md).
 
 Terms used here:
 

@@ -370,10 +370,6 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert 'id="overlay-toggle"' in html
     assert 'aria-controls="overlay-popover"' in html
     assert '>Overlays</button>' in html
-    assert 'id="preview-toggle"' in html
-    assert 'aria-controls="preview-popover"' in html
-    assert '>Preview</button>' in html
-    assert 'id="preview-faster-dragging"' in html
     assert "compact-workspace" in css
     assert "source-overlay-open" in css
     for selector in ("app-shell", "top-bar", "workspace-main", "source-rail", "grade-rail", "viewer-panel"):

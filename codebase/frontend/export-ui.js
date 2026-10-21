@@ -286,12 +286,9 @@ async function chooseExportDirectory() {
   await openMediaBrowser("export_directory", els.exportDirectory.value);
 }
 
-function requestSessionExport(outputPath, overwrite, pathGrant = null, overwriteTarget = null) {
+function currentExportSettings(outputPath = null, overwrite = false, pathGrant = null, overwriteTarget = null) {
   const resizeMode = els.exportResizeMode?.value || "original";
-  return fetch(`/api/session/${state.session.session_id}/export`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  return {
       format: els.exportFormat.value,
       editing_measurements: editingMeasurementsForDelivery(),
       quality: Number(els.exportQuality.value),
@@ -309,6 +306,7 @@ function requestSessionExport(outputPath, overwrite, pathGrant = null, overwrite
       jpegxl_precision: els.jpegxlPrecision.value,
       dithering: els.exportDithering.value,
       metadata_policy: els.exportMetadataPolicy.disabled ? "none" : els.exportMetadataPolicy.value,
+      guarantee_hdr_peak: els.exportGuaranteePeak?.checked === true,
       output_path: outputPath,
       path_grant: pathGrant,
       overwrite,
@@ -323,12 +321,18 @@ function requestSessionExport(outputPath, overwrite, pathGrant = null, overwrite
         sharpening: els.exportSharpening.value,
         method: "edge_aware_multiscale",
       },
-    }),
+    };
+}
+
+function requestSessionExport(outputPath, overwrite, pathGrant = null, overwriteTarget = null) {
+  return fetch(`/api/session/${state.session.session_id}/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(currentExportSettings(outputPath, overwrite, pathGrant, overwriteTarget)),
   });
 }
 
 function prepareExportRail() {
-  if (!state.session) return;
   if (!els.exportDirectory.value.trim()) els.exportDirectory.value = state.defaultExportDirectory;
   renderCapabilities();
   renderFormatCards();
@@ -342,11 +346,6 @@ function openExportSheet() {
 }
 
 function renderCapabilities() {
-  const keys = ["avif_gain_map_encoder", "ultrahdr_encoder", "jpegxl_export"];
-  const available = keys.filter((key) => state.capabilities[key]?.status === "available").length;
-  els.capabilitySummary.textContent = `${available}/3 encoders ready`;
-  els.capabilitySummary.className = `capability-chip ${available >= 2 ? "ready" : "attention"}`;
-
   document.querySelectorAll("[data-capability-for]").forEach((element) => {
     const capability = state.capabilities[element.dataset.capabilityFor];
     const ready = capability?.status === "available";
@@ -480,6 +479,8 @@ function renderFormatCards() {
     : format === "sdr_png" ? Number(els.sdrPngBitDepth.value)
     : format === "jpegxl_hdr" ? Number(String(els.jpegxlPrecision.value).match(/\d+/)?.[0] || 12)
     : 8;
+  // The HDR peak guarantee only applies to HDR deliveries.
+  els.exportGuaranteePeakField?.classList.toggle("hidden", !["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"].includes(format));
   const ditherApplicable = selectedBitDepth === 8 && format !== "jpegxl_hdr";
   els.exportDithering.disabled = !ditherApplicable;
   els.exportDitheringField.classList.toggle("disabled-setting", !ditherApplicable);

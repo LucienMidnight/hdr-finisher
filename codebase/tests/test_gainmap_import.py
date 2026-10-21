@@ -43,8 +43,9 @@ def test_plain_jpeg_still_uses_the_sdr_pillow_path(tmp_path: Path) -> None:
     assert descriptor.suffix == ".jpg"
     assert analysis.classification == HDRClassification.SDR_ONLY
     assert metadata.get("jpeg_ultrahdr") is None
-    assert sdr_reference is None
-    assert image.shape == (8, 12, 3)
+    # A plain SDR file is its own SDR rendition; HDR places its white at 0.18.
+    assert metadata["sdr_file_rendition"] is True
+    assert sdr_reference.shape == image.shape == (8, 12, 3)
 
 
 def test_avif_preview_decodes_only_the_color_managed_primary_rendition(
@@ -145,7 +146,7 @@ def test_jpeg_embedded_image_marker_does_not_imply_a_gain_map(tmp_path: Path) ->
 
     assert analysis.classification == HDRClassification.SDR_ONLY
     assert metadata.get("jpeg_ultrahdr") is None
-    assert sdr_reference is None
+    assert metadata["sdr_file_rendition"] is True
 
 
 def test_gainmap_jpeg_never_silently_falls_back_when_decoder_is_missing(

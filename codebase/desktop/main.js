@@ -13,6 +13,7 @@ const {
   isProjectPath,
   isSourcePath,
   pathKey,
+  withinGrantedPath,
   safeSuggestedName,
 } = require("./lib/validation");
 const { backendCommand: resolveBackendCommand } = require("./lib/runtime");
@@ -54,6 +55,7 @@ if (process.env.HDR_FINISHER_DISABLE_GPU === "1") {
 
 const recentProjects = createRecentProjects(path.join(app.getPath("userData"), "recent-projects.json"));
 
+let deliveryWindow = null;
 let backend = null;
 let mainWindow = null;
 let forceClose = false;
@@ -67,6 +69,10 @@ let pendingOpenPaths = [];
 let rendererReady = false;
 const windows = new Map();
 let libraryWindowState = null;
+let libraryCommandState = { selected: 0, copied: false, active: false };
+let libraryPasteRequest = 0;
+const pendingLibraryPastes = new Map();
+const libraryCommands = new Set(["copy-grade", "paste-grade", "paste-grade-choose", "quick-export", "add-export-selection"]);
 let processDiagnostics = null;
 let windowFailure = null;
 const knownProjectPaths = new Set();
@@ -74,6 +80,7 @@ const grantedExportPaths = new Set();
 
 const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
   schemaVersion: 3,
+  theme: "default-dark",
   defaultReferenceWhiteNits: 203,
   renderingMode: "auto",
   previewResolution: "auto",
@@ -117,6 +124,7 @@ function sanitizeApplicationPreferences(value = {}) {
     : {};
   return {
     schemaVersion: 3,
+    theme: ["default-dark", "default-light", "studio-gray"].includes(value.theme) ? value.theme : "default-dark",
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
     previewResolution: tiers.includes(String(value.previewResolution)) ? String(value.previewResolution) : "auto",
@@ -552,6 +560,56 @@ function registerIpc() {
     const record = validateSender(event);
     return callback(record, ...args);
   });
+  handleWindow("desktop:set-library-command-state", (record, next = {}) => {
+    libraryCommandState = { selected: Math.max(0, Number(next.selected) || 0), copied: Boolean(next.copied), active: record.role === "library" || Boolean(next.active) };
+    buildMenu(); return true;
+  });
+  handle("desktop:send-library-command", (command) => {
+    if (!libraryCommands.has(command)) throw new Error("Unknown Library command.");
+    windows.get("library")?.window.webContents.send("desktop:menu-command", { command }); return true;
+  });
+  handleWindow("desktop:forward-library-action", (record, action, detail = {}) => {
+    if (record.role !== "library" || !["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection"].includes(action)) throw new Error("Invalid Library action.");
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
+    mainWindow.webContents.send("desktop:library-window", { ...detail, action });
+    if (["quick-export", "export-selection"].includes(action)) { mainWindow.show(); mainWindow.focus(); }
+    return true;
+  });
+  handleWindow("desktop:prepare-library-paste", (record, paths) => {
+    if (record.role !== "library" || !Array.isArray(paths) || paths.some(value => typeof value !== "string")) throw new Error("Invalid paste selection.");
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    const requestId = ++libraryPasteRequest;
+    return new Promise(resolve => {
+      const timer = setTimeout(() => { pendingLibraryPastes.delete(requestId); resolve(false); }, 300000);
+      pendingLibraryPastes.set(requestId, { resolve, timer });
+      mainWindow.show(); mainWindow.focus();
+      mainWindow.webContents.send("desktop:library-window", { action: "prepare-paste", requestId, paths });
+    });
+  });
+  handle("desktop:complete-library-paste", (requestId, allowed) => {
+    const pending = pendingLibraryPastes.get(requestId);
+    if (!pending) return false;
+    clearTimeout(pending.timer); pendingLibraryPastes.delete(requestId); pending.resolve(allowed === true); return true;
+  });
+  handleWindow("desktop:open-drop-in-main", async (record, dropped) => {
+    if (record.role !== "library") throw new Error("Only Library can forward a dropped file.");
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
+    let selection;
+    if (typeof dropped?.path === "string") {
+      const filePath = dropped.path;
+      if (isProjectPath(filePath)) {
+        selection = { kind: "project", ...(await grantPath(filePath, "project-open")) };
+        knownProjectPaths.add(pathKey(selection.path || filePath));
+      } else if (isSourcePath(filePath)) {
+        selection = { kind: "source", ...(await grantPath(filePath, "source-open")) };
+      } else throw new Error("This file type cannot be opened in HDR Finisher.");
+    } else if (typeof dropped?.name === "string" && isSourcePath(dropped.name) && dropped.bytes instanceof ArrayBuffer) {
+      selection = { kind: "byte-source", name: dropped.name, bytes: dropped.bytes };
+    } else throw new Error("The dropped file could not be read. Use File › Open to select it.");
+    mainWindow.show(); mainWindow.focus();
+    mainWindow.webContents.send("desktop:open-request", selection);
+    return true;
+  });
   handleWindow("desktop:open-source-in-main", async (record, filePath, itemKey) => {
     if (record.role !== "library") throw new Error("Only the library window can request a source open.");
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
@@ -639,6 +697,24 @@ function registerIpc() {
     persistApplicationPreferences();
     buildMenu();
     return applicationPreferences;
+  });
+  handle("desktop:choose-library-cache-directory", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {title:"Choose Library cache folder", properties:["openDirectory", "createDirectory"]});
+    return result.canceled ? null : result.filePaths[0];
+  });
+  handle("desktop:library-cache-options", () => {
+    const directory = process.env.PORTABLE_EXECUTABLE_DIR || (app.isPackaged ? path.dirname(process.execPath) : null);
+    if (!directory) return {};
+    const probe = path.join(directory, `.hdr-cache-probe-${crypto.randomUUID()}`);
+    try { fs.writeFileSync(probe, "", {flag:"wx"}); return {portable:path.join(directory, "Cache")}; }
+    catch { return {}; }
+    finally { try { fs.unlinkSync(probe); } catch {} }
+  });
+  handle("desktop:reveal-library-cache-directory", async (folder) => {
+    if (typeof folder !== "string" || !path.isAbsolute(folder)) throw new Error("Invalid cache folder.");
+    fs.mkdirSync(folder, {recursive:true});
+    const problem = await shell.openPath(folder);
+    if (problem) throw new Error(problem);
   });
   handle("desktop:choose-preference-directory", async (key) => {
     if (!["projectSave", "projectImport", "fileSave", "fileImport", "presetSave"].includes(key)) throw new Error("Unknown folder preference.");
@@ -735,6 +811,17 @@ function registerIpc() {
     else { forceClose = true; mainWindow.close(); }
     return true;
   });
+  handle("desktop:choose-batch-export-directory", async (initialPath) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Choose export folder",
+      defaultPath: typeof initialPath === "string" && initialPath ? initialPath : directoryPreference("fileSave", "pictures"),
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const selection = await grantPath(result.filePaths[0], "export-directory");
+    grantedExportPaths.add(pathKey(selection.path || result.filePaths[0]));
+    return selection;
+  });
   handle("desktop:choose-export-directory", async (initialPath) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "Choose export folder",
@@ -776,15 +863,16 @@ function registerIpc() {
     }
     return results;
   });
-  handle("desktop:reveal-path", async (filePath) => {
+  // Activity in the Library window can reveal a finished batch too.
+  handleWindow("desktop:reveal-path", async (_record, filePath) => {
     const resolved = path.resolve(String(filePath || ""));
-    if (!grantedExportPaths.has(pathKey(resolved))) throw new Error("Only exports created in this run can be revealed.");
+    if (!withinGrantedPath(resolved, grantedExportPaths)) throw new Error("Only exports created in this run can be revealed.");
     shell.showItemInFolder(resolved);
     return true;
   });
   handle("desktop:open-path", async (filePath) => {
     const resolved = path.resolve(String(filePath || ""));
-    if (!grantedExportPaths.has(pathKey(resolved))) throw new Error("Only exports created in this run can be opened.");
+    if (!withinGrantedPath(resolved, grantedExportPaths)) throw new Error("Only exports created in this run can be opened.");
     return shell.openPath(resolved);
   });
   handle("desktop:open-proof", async (url) => {
@@ -843,6 +931,12 @@ function sendCommand(command, payload = null) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:menu-command", { command, payload });
 }
 
+function sendLibraryMenuCommand(command) {
+  const library = windows.get("library")?.window;
+  if (library?.isFocused()) library.webContents.send("desktop:menu-command", { command });
+  else sendCommand(command);
+}
+
 function sendWindowState(window = mainWindow) {
   if (!window || window.isDestroyed()) return;
   window.webContents.send("desktop:window-state", {
@@ -880,6 +974,11 @@ function buildMenu() {
       submenu: [
         { label: "Undo", enabled: hasDocument, click: () => sendCommand("undo") },
         { label: "Redo", enabled: hasDocument, click: () => sendCommand("redo") },
+        { type: "separator" },
+        { label: "Copy grade", enabled: libraryCommandState.active && libraryCommandState.selected === 1, click: () => sendLibraryMenuCommand("copy-grade") },
+        { label: "Paste grade", enabled: libraryCommandState.active && libraryCommandState.selected > 0 && libraryCommandState.copied, click: () => sendLibraryMenuCommand("paste-grade") },
+        { label: "Paste grade (choose settings)…", enabled: libraryCommandState.active && libraryCommandState.selected > 0 && libraryCommandState.copied, click: () => sendLibraryMenuCommand("paste-grade-choose") },
+        { label: "Quick export…", enabled: libraryCommandState.active && libraryCommandState.selected > 0, click: () => sendLibraryMenuCommand("quick-export") },
         { type: "separator" },
         { label: "Settings…", click: () => sendCommand("settings") },
         { type: "separator" },
@@ -992,10 +1091,11 @@ async function createWindow(role = "main") {
     ...windowChromeOptions(),
     // Library uses native chrome, including Windows snap.
     ...(isMain ? {} : { frame: true }),
-    backgroundColor: "#101415",
+    backgroundColor: ({ "default-light": "#eaeaea", "studio-gray": "#2e2e2e" })[applicationPreferences.theme] || "#101415",
     title: isMain ? "HDR Finisher" : "HDR Finisher — Library",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
+      additionalArguments: [`--hdr-finisher-theme=${applicationPreferences.theme}`],
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -1014,7 +1114,7 @@ async function createWindow(role = "main") {
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.setMenuBarVisibility(false);
   window.webContents.on("will-navigate", (event, url) => {
-    if (new URL(url).origin !== new URL(backend.url).origin) event.preventDefault();
+    if (!backend || new URL(url).origin !== new URL(backend.url).origin) event.preventDefault();
   });
   window.webContents.on("render-process-gone", () => { record.ready = false; });
   window.on("close", (event) => {
@@ -1053,9 +1153,9 @@ async function createWindow(role = "main") {
     if (isMain) {
       mainWindow = null;
       windowFailure = null;
-      // Main owns the app lifetime, even while a secondary window is open.
-      if (!shuttingDown) void beginShutdown();
+
     }
+    if (!windows.size && !shuttingDown) void beginShutdown();
   });
   for (const eventName of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
     window.on(eventName, () => sendWindowState(window));
@@ -1063,13 +1163,19 @@ async function createWindow(role = "main") {
   for (const eventName of ["move", "resize", "enter-full-screen", "leave-full-screen"]) {
     window.on(eventName, () => scheduleWindowDisplayState(record));
   }
-  window.once("ready-to-show", () => { if (!window.isDestroyed()) window.show(); });
+  window.once("ready-to-show", () => {
+    if (!window.isDestroyed()) {
+      window.show();
+      libraryStage("window_visible", { role, duration_ms: Date.now() - libraryAppStarted });
+    }
+  });
   const secondaryPage = !app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_BROWSER === "1"
     ? "/static/media-browser-standalone.html"
     : !app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_WINDOW === "1"
       ? "/static/window-foundation.html" : "/library";
   try {
-    await window.loadURL(isMain ? backend.url : `${backend.url}${secondaryPage}`);
+    if (isMain && !backend) await window.loadFile(path.join(__dirname, "starting.html"));
+    else await window.loadURL(isMain ? backend.url : `${backend.url}${secondaryPage}`);
   } catch (error) {
     // Another same-origin navigation can supersede this page load. The
     // backend is already ready; only genuine load failures reach startup.
@@ -1155,6 +1261,11 @@ async function beginShutdown() {
     saveWindowBounds(record);
     if (!record.window.isDestroyed()) record.window.destroy();
   }
+  if (backend) {
+    await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
+      headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)}).catch(()=>{});
+  }
+  deliveryWindow?.destroy();deliveryWindow=null;
   await stopBackend();
   app.quit();
 }
@@ -1209,7 +1320,9 @@ if (!gotLock) {
     loadApplicationPreferences();
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {
+      await createWindow();
       await startBackend();
+      if (shuttingDown || !mainWindow || mainWindow.isDestroyed()) return;
       const activeBackend = backend;
       session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`] }, (details, callback) => {
         details.requestHeaders["X-HDR-Finisher-Token"] = activeBackend.authoringSecret;
@@ -1220,7 +1333,14 @@ if (!gotLock) {
         screen.on(eventName, scheduleDisplayState);
       }
       buildMenu();
-      await createWindow();
+      await mainWindow.loadURL(backend.url);
+      setTimeout(async () => {
+      if (shuttingDown) return;
+      deliveryWindow = new BrowserWindow({show:false, webPreferences:{
+        contextIsolation:true, nodeIntegration:false, sandbox:true, backgroundThrottling:false,
+      }});
+      await deliveryWindow.loadURL(`${backend.url}/static/gpu-delivery.html`).catch(error => console.error("GPU delivery startup",error));
+      }, 1000);
       if (!app.isPackaged && (process.env.HDR_FINISHER_DEV_LIBRARY_WINDOW === "1" || process.env.HDR_FINISHER_DEV_LIBRARY_BROWSER === "1")) {
         await createWindow("library");
       }

@@ -150,11 +150,8 @@ function assert(condition, message) {
         metrics: JSON.stringify(state.gpuPreview.tiledExecutionMetrics || null),
       };
 
-      // 4 -- automatic estimate disclosure, including the estimate toggle and a
-      // reachable refusal. The toggle selects bounded estimation or the preview peak.
-      const readPanel = async (enabled) => {
-        state.scopeExactPeak = enabled;
-        if (els.scopeExactPeak) els.scopeExactPeak.checked = enabled;
+      // 4 -- automatic estimate disclosure, including a reachable refusal.
+      const readPanel = async () => {
         const applied = await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
         await new Promise((resolve) => setTimeout(resolve, 400));
         const payload = state.lastScope;
@@ -166,8 +163,7 @@ function assert(condition, message) {
           measuredLongEdge: payload?.peak_measured_long_edge,
         };
       };
-      const panelOn = await readPanel(true);
-      const panelOff = await readPanel(false);
+      const panelOn = await readPanel();
       // Make the bounded analysis refuse, as it can for an over-budget graph.
       // Keep a positive fallback-label guard for an enabled estimate.
       exactScopePeakCache.clear();
@@ -176,15 +172,14 @@ function assert(condition, message) {
       });
       let panelRefused;
       try {
-        panelRefused = await readPanel(true);
+        panelRefused = await readPanel();
       } finally {
         renderer.measureEditingPeak = originalMeasure;
         exactScopePeakCache.clear();
       }
 
       return {
-        longEdge, nativeEdge, directPeak, tiled, measured, measurements, before, after, panelOn, panelOff, panelRefused,
-        checkboxDefault: document.getElementById("scope-exact-peak")?.defaultChecked,
+        longEdge, nativeEdge, directPeak, tiled, measured, measurements, before, after, panelOn, panelRefused,
       };
     }, Boolean(input));
 
@@ -230,17 +225,14 @@ function assert(condition, message) {
       + `${result.measurements[0].processedBound}/4194304 pixels, `
       + `${Math.round(result.measured.durationMs)} ms  PASS`);
 
-    assert(result.checkboxDefault === false, "The exact-peak preference must default to off during authoring");
     assert(result.panelOn.applied && result.panelOn.exact === false && result.panelOn.label === "Peak (estimate)"
       && result.panelOn.measuredLongEdge === result.nativeEdge,
       `The panel did not disclose its native-patch estimate: ${JSON.stringify(result.panelOn)}`);
-    assert(result.panelOff.applied && result.panelOff.exact === false && result.panelOff.label === "Peak (preview)",
-      `The disabled estimate did not retain the preview peak: ${JSON.stringify(result.panelOff)}`);
     assert(result.panelRefused.applied && result.panelRefused.exact === false
       && result.panelRefused.label === "Peak (preview)",
       `The panel did not disclose the refused measurement fallback: ${JSON.stringify(result.panelRefused)}`);
     console.log(`panel disclosure    on -> "${result.panelOn.label}" at ${result.panelOn.measuredLongEdge}, `
-      + `off -> "${result.panelOff.label}", refused -> "${result.panelRefused.label}"  PASS`);
+      + `refused -> "${result.panelRefused.label}"  PASS`);
 
     if (input) {
       const gain = result.panelOn.peakValue - result.panelRefused.peakValue;

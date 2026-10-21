@@ -14,7 +14,7 @@ The Peak and automatic highlight-anchor design is Steve's and is the product's d
 ## Context
 
 - Workspace `D:\AI\AI Projects\HDR Finisher Tool`; git root `ai`; run tests from `ai\codebase`; branch `viewport-bounded-preview-phase-2-wip`. Check HEAD and status first; do not reset. Latest local commits are `cf15236` and `66eb873` (not pushed).
-- Read first, relative to the git root: `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md` sections 2, 4.1, 4.3, 5.3, 14.9, 14.11, 14.17, 14.23, 14.25 and 15; `docs/technical/archive/viewport-phase3-texture-peak-evidence-2026-10-02.md`.
+- Read first, relative to the git root: `docs/product/archive/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md` sections 2, 4.1, 4.3, 5.3, 14.9, 14.11, 14.17, 14.23, 14.25 and 15; `docs/technical/archive/viewport-phase3-texture-peak-evidence-2026-10-02.md`.
 - Related open items in section 15: P3-PEAK-02 (maximum Sharpen: the measurement finishes in budget but misses the patch holding export's maximum) and the automatic-anchor redesign (its re-measure is why a Fit edit takes about 1.0-1.6 s to settle). Say in the proposal whether your approach also resolves these, or leaves them.
 
 ## What is known

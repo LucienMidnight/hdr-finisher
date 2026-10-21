@@ -23,6 +23,24 @@ Choose the output **Format**, then choose **Web Default**, **Web Optimized**, or
 
 Advanced Export Settings starts collapsed and remains keyboard-operable. Within each submenu, the choice used by that format's Web Default carries the suffix **· Web Default**. Options that are not defaults are intentionally unlabeled.
 
+### Guarantee HDR peak
+
+An advanced option for each preset version, shown for HDR formats only, and off by default. The encoder can push a few highlights above the highlight compression target after saving. Ultra HDR is the most prone to this, AVIF less so, and JPEG XL rarely. Most overshoots are small (up to 73 nits over a 1000-nit target on test RAWs), but one photo reached 1213 nits against an 800-nit target.
+
+- **Off:** each file is encoded once and not checked afterwards. This is the fastest choice. A file can exceed its target.
+- **On:** a file whose highlights come near the target is decoded, measured and, if needed, corrected locally and re-encoded. Files well below their target (more than 20% under) skip the check. A file still over target after correction is delivered anyway, with a note giving how many nits over.
+
+Measured cost (October 19, 2026; three 42 MP badminton RAWs, Ultra HDR at 1000 nits, 4000 px long edge, GPU export, photo already open):
+
+| Case | Seconds per photo |
+|---|---|
+| Off | about 5.1 |
+| On, file needs no correction | about 7.7 (+2.7) |
+| On, file needs correction | about 24 (+19) |
+| On, file well below its target | about 5.4 (+0.4) |
+
+Turn it on for client deliveries where the peak must stay at or below the target. Leave it off for drafts and large batches. Library pictures never run this check. The details are in the [Export and Proof module PRD](../product/modules/export-and-proof.md).
+
 All built-ins use original cropped dimensions, prevent enlargement, and leave output sharpening off. Format-specific mappings are:
 
 | Format | Web Default | Web Optimized | Maximum Fidelity |

@@ -38,5 +38,6 @@ def test_frontend_contract_split_preserves_the_reviewed_inventory() -> None:
     # 87 since October 7, 2026: checks that pinned only the wording of the
     # code were retired (Codebase Modularization Sprint, phase 1). What is left
     # pins page structure, styles, numbers, limits and shader maths.
-    assert len(test_names) == 87
+    # Peak estimate opt-in was removed in favor of automatic measurement.
+    assert len(test_names) == 86
     assert len(test_names) == len(set(test_names))

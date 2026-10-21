@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from test_library_grades import setup, edit, saved, settings
 from hdr_finisher.library_grades import grade_key
-from hdr_finisher.library_kept import identity, KeptPictures
+from hdr_finisher.library_documents import identity, LibraryDocuments
 from hdr_finisher.models import OverlayMode
 
 
@@ -19,7 +19,7 @@ def overlay(store, session):
     return session.edit_document().model_dump(mode="json")
 
 
-def test_overlay_only_save_is_not_edited_and_has_no_kept_picture(setup, tmp_path):
+def test_overlay_only_save_is_not_edited(setup, tmp_path):
     photo, store, session, marks, grades = setup
     default = session.edit_document().model_dump(mode="json")
     viewed = overlay(store, session)
@@ -31,9 +31,7 @@ def test_overlay_only_save_is_not_edited_and_has_no_kept_picture(setup, tmp_path
     marks.writer.drain()
     assert settings(photo)["grade"] == viewed
     assert not grades.describe([photo])[str(photo)]["edited"]
-    kept = KeptPictures(tmp_path, marks, SimpleNamespace(status=lambda: {"paused": False}))
-    assert not kept.request(photo)["edited"]
-    assert kept.cached(photo) is None
+    assert not LibraryDocuments(marks).request(photo)["edited"]
     assert grades.history.available([photo])["counts"]["original"] == 0
     store.clear()
     assert grades.history.available([photo])["counts"]["original"] == 0

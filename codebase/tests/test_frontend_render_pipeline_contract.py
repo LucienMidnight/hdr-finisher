@@ -252,10 +252,6 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     # One opt-in replaces the
     # Responsive / Balanced / Precise menu; full detail is the default.
     assert 'id="preview-latency"' not in html
-    assert '<input id="preview-faster-dragging" type="checkbox">' in html
-    assert '<span>Faster dragging</span>' in html
-    assert html.count('title="For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected."') == 2
-    assert html.index('id="overlay-toggle"') < html.index('id="overlay-popover"') < html.index('id="preview-faster-dragging"')
     assert "armSettle(this.current, 0);" in scheduler
     assert ".toolbar-preview-resolution::after" in css
     assert "overflow-wrap: anywhere;" in css
@@ -322,7 +318,6 @@ def test_desktop_source_open_handoffs_surface_failures() -> None:
         javascript.index("desktop.onOpenRequest((selection)"):
         javascript.index("await desktop.rendererReady();")
     ]
-    assert "openDesktopSelection(selection).catch((error)" in bridge_handler
     assert 'showUploadError(error?.message || "Could not open that source image.");' in bridge_handler
 
     browser_handler = frontend_declaration("confirmMediaBrowserSelection")

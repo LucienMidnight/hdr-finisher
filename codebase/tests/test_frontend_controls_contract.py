@@ -159,8 +159,9 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
     diagnostics = html.split('data-settings-panel="diagnostics"', 1)[1].split("</section>", 1)[0]
     for control in ("settings-execution-override", "settings-preview-resolution", "settings-roi-preview"):
         assert f'id="{control}"' in diagnostics
-    general = html.split('data-settings-panel="general"', 1)[1].split("</section>", 1)[0]
-    assert 'id="settings-gpu-memory-limit"' in general
+    performance = html.split('data-settings-panel="performance"', 1)[1].split("</section>", 1)[0]
+    for control in ("settings-rendering-mode", "settings-faster-dragging", "settings-gpu-memory-limit", "preview-quality-status"):
+        assert f'id="{control}"' in performance
     # Help in user terms: what you see and when, not millisecond targets.
     for target in ("33 ms", "66 ms", "150 ms"):
         assert target not in html

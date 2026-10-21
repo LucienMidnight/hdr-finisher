@@ -2,15 +2,27 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
+  document.addEventListener("error",event=>{if(event.target instanceof HTMLImageElement)event.target.style.visibility="hidden";},true);
+  document.addEventListener("load",event=>{if(event.target instanceof HTMLImageElement)event.target.style.visibility="";},true);
   const library = $("library"), grid = $("library-grid"), space = $("grid-space"), film = $("filmstrip");
-  const state = { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
+  const state = { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, zoomScale: 1, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid",
     pins: [], cells: new Map(), filmCells: new Map(), size: 190,
     selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0,
     folderSelection: new Set(), folderAnchor: "", collection: null, smartFilters: null, allFacts: false, labelNames: {}, indexing: null };
+  const sortKey="hdr-finisher:library-source-sorts";
+  function sourceSortKey(place) {
+    if(place.kind)return `${place.kind}:${place.name}`;
+    const path=(place.path||"").replaceAll("\\","/").replace(/\/$/,"").toLowerCase();
+    const pin=state.pins.map(p=>p.path.replaceAll("\\","/").replace(/\/$/,"").toLowerCase()).filter(p=>path===p||path.startsWith(p+"/")).sort((a,b)=>b.length-a.length)[0];
+    return `folder:${pin||path}`;
+  }
+  function readSorts(){try{return JSON.parse(localStorage.getItem(sortKey)||"{}");}catch{return {};}}
+  function saveSourceSort(){const values=readSorts();values[sourceSortKey(state.collection||{path:state.path})]={sort:state.sort,descending:state.descending};localStorage.setItem(sortKey,JSON.stringify(values));}
+  function restoreSourceSort(place){const saved=readSorts()[sourceSortKey(place)]||{sort:"time",descending:false};state.sort=saved.sort;state.descending=!!saved.descending;paintSort();}
   const standalone = parent === window, libraryDesktop = standalone ? window.hdrFinisherDesktop : null;
   const navigation = HDRLibraryNavigation.create({ root: document.querySelector(".library-nav"), refresh: () => refreshPins() });
   const applyTheme = theme => { document.documentElement.dataset.theme = ["default-dark", "default-light", "studio-gray"].includes(theme) ? theme : "default-dark"; };
-  try { applyTheme(JSON.parse(localStorage.getItem("hdr-finisher:application-preferences:v1") || "{}").theme); } catch {}
+  try { applyTheme(libraryDesktop?.startupTheme || JSON.parse(localStorage.getItem("hdr-finisher:application-preferences:v1") || "{}").theme); } catch {}
   if (!standalone) applyTheme(parent.document.documentElement.dataset.theme);
   window.addEventListener("storage", event => { if (event.key === "hdr-finisher:application-preferences:v1") { try { applyTheme(JSON.parse(event.newValue || "{}").theme); } catch {} } });
   const postParent = (action, detail = {}) => {
@@ -22,9 +34,26 @@
           if (current.fullscreen !== detail.enabled) return libraryDesktop.performWindowAction("fullscreen");
         }) : null;
       task?.catch(error => status(error.message));
+      if (["grade-replaced", "quick-export", "export-selection", "command-state", "add-export-selection"].includes(action)) void libraryDesktop.forwardLibraryAction?.(action, detail).catch(error => status(error.message));
     }
   };
   const status = (message) => { $("library-status").textContent = message; };
+  // Capture OS drops anywhere; internal photo/folder drags keep their own handlers.
+  const externalDrop = event => Array.from(event.dataTransfer?.types || []).includes("Files")
+    && !Array.from(event.dataTransfer?.types || []).some(type => type.startsWith("application/x-hdr-library-"));
+  for (const name of ["dragenter", "dragover"]) document.addEventListener(name, event => {
+    if (!externalDrop(event)) return;
+    event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy";
+  }, true);
+  document.addEventListener("drop", event => {
+    if (!externalDrop(event)) return;
+    event.preventDefault(); event.stopPropagation();
+    const files = Array.from(event.dataTransfer.files || []);
+    if (files.length !== 1) { status("Drop one image or project at a time, as with File › Open."); return; }
+    if (!standalone) void parent.HDRLibraryHost.openDrop(files[0]).catch(error => status(error.message));
+    else if (libraryDesktop) void libraryDesktop.openDroppedFileInMain(files[0]).catch(error => status(error.message));
+    else status("Opening dropped files requires the editor window.");
+  }, true);
   const confirmChange = (message, undoAvailable) => { status(message); $("library-undo").hidden = !undoAvailable; };
   const aborted = (error) => error?.name === "AbortError";
   const sleep = (ms, signal) => new Promise((resolve, reject) => {
@@ -64,6 +93,11 @@
   const culling = HDRLibraryCulling.create({ confirm: confirmChange, photos: () => state.allPhotos, selection: () => state.view === "single" && compare.enabled() ? new Set([selected()?.path]) : state.selection, api, status,
     labelName: label => state.labelNames[label] || "",
     updated: result => {
+      if (result.grade_changed) {
+        invalidateGradePictures((result.photos || []).map(photo => photo.path));
+        clearCells(state.cells); clearCells(state.filmCells);
+        paintGrid(); paintFilm(); if (state.view === "single") showSingle();
+      }
       if(result.files_changed) { void filesChanged(result); return; }
       if(result.copies_changed) { void refreshPins(); void reopen(); return; }
       if (result.smart_changed) { void smart.refresh().then(() => smart.poll()).then(result => { if (result && state.collection?.kind === "smart") { state.allPhotos = result.photos; state.smartFilters = result.filters; applyQuery(); } }); }
@@ -103,7 +137,24 @@
     for (const cell of map.values()) { cell.controller.abort(); cell.element.remove(); }
     map.clear();
   }
-  const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${!!photo.pictureCurrent}`;
+  // Cells on screen now, without the finished cells kept just beyond it.
+  const shownCells = map => [...map.values()].filter(cell => map.shown?.has(cell.photo.path));
+  const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}`;
+  function pictureMode(img, hdr) {
+    img.style.dynamicRangeLimit = hdr ? 'no-limit' : 'standard';
+    img.dataset.rendition = hdr ? 'hdr' : 'sdr'; img.dataset.peakNits = hdr ? '1000' : '203';
+  }
+  // One stored scene size, scaled to fit any cell.
+  const thumbnailEdge = () => 640;
+  const tilePool = HDRLibraryTilePool.create(undefined, cell => {
+    cell.controller.abort(); cell.element.remove();
+    // Explicitly release the detached canvas backing store on eviction.
+    if (cell.fallback) cell.fallback.width = cell.fallback.height = 0;
+  });
+  const tileKey = (map, identity) => `${map === state.cells ? "grid" : "film"}|${identity}|${state.hdr}|${thumbnailEdge()}`;
+  const cacheChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('hdr-library-cache') : null;
+  cacheChannel?.addEventListener('message', () => { tilePool.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); });
+  window.addEventListener("message",event => { if(event.origin === location.origin && event.data?.type === "hdr-library-cache-changed") { tilePool.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); } });
   const recentPictures = new Map();
   const rawTypes = new Set(["ARW", "CR2", "CR3", "NEF", "NRW", "RAF", "RW2", "ORF", "ORI", "PEF", "DNG", "SRW"]);
   const rawCandidate = photo => photo && rawTypes.has(photo.type) && !photo.edited && !photo.copy_id
@@ -124,58 +175,42 @@
     const photo = selected();
     const neighbours = Array.from({length:browsingLimits.ahead}, (_,i) => state.photos[state.index + (i+1)*rawDirection]);
     neighbours.push(state.photos[state.index - rawDirection], state.photos[state.index - 2*rawDirection]);
-    const photos = [photo,...neighbours].filter(rawCandidate);
+    const photos = [photo,...neighbours].filter(Boolean);
     const signature = photos.map(pictureIdentity).join(";");
     if (signature === rawPlanSignature) return;
     rawController?.abort(); clearTimeout(rawTimer);
     const controller = new AbortController(); rawController = controller;
     const generation = ++rawGeneration; rawPlanSignature = signature;
     const current = () => state.active && !controller.signal.aborted && generation === rawGeneration;
-    async function prepareReady(result) {
-      if (!current() || result.paused) return;
-      // View first, then travel order. Submit one GPU conversion at a time so
-      // foreground draws and Grade get an opportunity between background jobs.
-      const heldPaths = new Set([photo,...neighbours.slice(0, Math.max(1,browsingLimits.gpu_pictures-3)),...neighbours.slice(-2)]
-        .filter(rawCandidate).slice(0,browsingLimits.gpu_pictures).map(p => p.source_path || p.path));
-      for (const meta of result.ready.filter(meta => heldPaths.has(meta.path))) {
+    void (async () => {
+      for (const item of photos) {
         if (!current()) break;
-        const item = photos.find(p => (p.source_path || p.path) === meta.path);
-        if (!item || HDRLibraryPictures.resident(meta.key)) continue;
-        await HDRLibraryPictures.prepare(meta, controller.signal, current);
-        if (!current()) break;
-        const old = recentPictures.get(pictureIdentity(item));
-        if (!old?.kept) recentPictures.set(pictureIdentity(item),meta);
-        while (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
-        break;
+        try {
+          const meta = await HDRLibraryScenes.load(item.path,2560,controller.signal,item.path===photo.path?0:50);
+          if (!current()) break;
+          if (meta?.route === "gpu-raw-thumbnail") await HDRLibraryPictures.prepare(meta,controller.signal,current);
+          if (!current()) break;
+          recentPictures.set(pictureIdentity(item),meta);
+          while (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
+        } catch(error) { if (!aborted(error)) console.debug("Library read-ahead:",error.message); }
       }
-    }
-    async function poll() {
-      if (!current()) return;
-      try { await prepareReady(await api("/api/library/raw-ready",undefined,controller.signal)); }
-      catch(error) { if (!aborted(error)) console.debug("Library read-ahead:",error.message); }
-      if (current()) rawTimer = setTimeout(poll,100);
-    }
-    const retained = photos.map(p=>recentPictures.get(pictureIdentity(p)))
-      .filter(meta=>meta?.route === "camera-raw-gpu" && meta.edge >= 1280 && HDRLibraryPictures.resident(meta.key))
-      .map(meta=>meta.transport_key);
-    void api("/api/library/raw-plan", {paths:photos.map(p=>p.path),retained,...browsingSize,client:rawClient,revision:generation},controller.signal)
-      .then(prepareReady).then(() => { if (current()) rawTimer = setTimeout(poll,50); })
-      .catch(error => { if (!aborted(error)) console.debug("Library read-ahead:",error.message); });
+    })();
   }
   const readAhead = HDRLibraryReadAhead.create({
     key: (photo, edge) => `${pictureIdentity(photo)}|${edge}`,
     load: (photo, edge, signal) => {
       const cached = recentPictures.get(pictureIdentity(photo));
-      return cached?.edge === edge ? Promise.resolve(cached) : api("/api/library/picture", { path: photo.path, edge, quality: "quick", priority: 50 }, signal);
+      return cached?.edge >= edge ? Promise.resolve(cached) : HDRLibraryScenes.load(photo.path,edge,signal,50);
     },
   });
   function clearPrefetch() { readAhead.clear(); stopRawAhead(); }
   function setActive(active) {
     state.active = active;
     if (!active) {
+      tilePool.clear();
       compare.cancel();
       clearCells(state.cells); clearCells(state.filmCells); clearPrefetch(); state.single?.abort();
-      state.scan?.abort(); state.native?.abort();
+      state.scan?.abort(); state.native?.abort(); state.nativeSource?.abort();
     } else if ((state.path || state.collection) && !state.photos.length) void reopen();
     else { paintGrid(); paintFilm(); if (state.view === "single") showSingle(); }
   }
@@ -188,45 +223,43 @@
   }
   async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null) {
     const started = performance.now();
-    // Set up the existing GPU while the helper prepares this visible picture.
-    // drawPicture still reports any initialization failure through its usual path.
-    void HDRLibraryPictures.initialize().catch(() => {});
-    const slow = ["DNG", "HEIC", "HEIF", "TIF", "TIFF"].includes(photo.type);
-    const response = prepared || api("/api/library/picture", { path: photo.path, edge, quality: slow ? "fast" : "quick", priority }, controller.signal);
-    // A grid or previous Single picture gives immediate feedback while the larger one loads.
-    response.catch(() => {});
-    const seed = priority === 0 ? recentPictures.get(pictureIdentity(photo)) : null;
-    if (seed) {
-      try {
-        await drawPicture(seed, canvas, controller, isCurrent);
-        if (isCurrent()) { canvas.dataset.picturePath = photo.path; canvas.dataset.pictureKey = seed.key; canvas.dataset.pictureEdge = seed.edge; HDRLibraryStopwatch("picture_seed_shown", {path: photo.path, key: seed.key}); }
-      } catch (error) { if (aborted(error) || !isCurrent()) return; }
-    }
-    let meta = await response;
-    if (!isCurrent()) return;
-    if (seed?.key !== meta.key || canvas.dataset.pictureKey !== meta.key) await drawPicture(meta, canvas, controller, isCurrent);
-    if (!isCurrent()) return;
-    HDRLibraryStopwatch("picture_shown", { path: photo.path, key: meta.key, kept: !!meta.kept, duration_ms: performance.now() - started });
-    diagnostics(photo, meta, performance.now() - started);
-    if (slow && meta.route.endsWith("-placeholder")) {
-      meta = await api("/api/library/picture", { path: photo.path, edge, quality: "quick", priority: priority + 1 }, controller.signal);
-      if (!isCurrent()) return;
-      await drawPicture(meta, canvas, controller, isCurrent);
-      if (!isCurrent()) return;
-    }
-    photo.pictureCurrent = !!meta.kept;
-    const remembered = pictureIdentity(photo);
-    const oldPicture = recentPictures.get(remembered);
-    if (!oldPicture || meta.kept || !oldPicture.kept && meta.edge >= oldPicture.edge) {
-      recentPictures.delete(remembered); recentPictures.set(remembered, meta);
-    }
-    if (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
-    canvas.closest(".library-cell")?.querySelector(".library-edited")?.setAttribute("title", meta.kept ? "Saved grade" : "This photo has a saved grade, but its Library picture is not current. The Library will try making it again automatically.");
-    canvas.dataset.pictureEdge = meta.edge;
-    canvas.dataset.pictureKey = meta.key;
-    canvas.dataset.picturePath = photo.path;
-    overlays?.attach(photo,canvas,meta,controller,isCurrent);
-    return meta;
+    let fallback = null;
+    try {
+      while (isCurrent() && !controller.signal.aborted) {
+        try {
+          await HDRLibraryPictures.initialize();
+          const meta = await (prepared || HDRLibraryScenes.load(photo.path,edge,controller.signal,priority));
+          prepared = null;
+          if (!isCurrent()) return;
+          await drawPicture(meta,canvas,controller,isCurrent);
+          if (!isCurrent()) return;
+          fallback?.remove(); fallback = null; canvas.style.visibility = "";
+          canvas.dataset.picturePath = photo.path; canvas.dataset.pictureEdge = meta.edge; canvas.dataset.pictureKey = meta.key;
+          recentPictures.set(pictureIdentity(photo),meta);
+          if (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
+          HDRLibraryStopwatch("picture_shown", {path:photo.path,key:meta.key,duration_ms:performance.now()-started});
+          diagnostics(photo,meta,performance.now()-started);
+          overlays?.attach(photo,canvas,meta,controller,isCurrent);
+          return meta;
+        } catch(error) {
+          prepared = null;
+          if (aborted(error) || !isCurrent()) return;
+          if (error.libraryYield) { await sleep(50,controller.signal); continue; }
+          if (HDRLibraryPictures.usable()) throw error;
+          if (!fallback) {
+            const meta = await api("/api/library/fallback-picture",{path:photo.path,edge},controller.signal);
+            if (!isCurrent()) return;
+            fallback = document.createElement("img"); fallback.alt = photo.name;
+            fallback.className = canvas.className; fallback.style.cssText="width:100%;height:100%;object-fit:contain"; fallback.dataset.cpuFallback = "true";
+            fallback.src = meta.url; await fallback.decode();
+            if (!isCurrent()) return;
+            canvas.after(fallback); canvas.style.visibility = "hidden";
+            pictureMode(fallback,state.hdr);
+          }
+          await sleep(2000,controller.signal);
+        }
+      }
+    } finally { fallback?.remove(); }
   }
   async function drawPicture(meta, canvas, controller, isCurrent) {
     for (;;) {
@@ -236,15 +269,25 @@
     }
   }
   function toggleHDR() {
+    tilePool.clear();
     state.hdr = !state.hdr; state.displayEpoch += 1;
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr));
     for (const cell of [...state.cells.values(), ...state.filmCells.values()]) {
-      if (cell.meta) void drawPicture(cell.meta, cell.canvas, cell.controller, () => state.active && cell.element.isConnected && !cell.controller.signal.aborted)
-        .catch(error => { if (!aborted(error)) status(error.message); });
+      pictureMode(cell.canvas, state.hdr);
+      if (cell.fallback && cell.scene) void drawPicture(cell.scene, cell.fallback, cell.controller,
+        () => cell.element.isConnected && !cell.controller.signal.aborted).then(() => {
+          if (!cell.controller.signal.aborted) cell.displayEpoch = state.displayEpoch;
+        }).catch(() => {});
     }
     if (state.view === "single") showSingle();
   }
   $("hdr-button").addEventListener("click", toggleHDR);
+  window.addEventListener("hdrfinisher:webgpulost",()=>{
+    tilePool.clear();
+    clearCells(state.cells); clearCells(state.filmCells);
+    state.single?.abort(); state.singleIdentity="";
+    setTimeout(()=>{paintGrid();paintFilm();if(state.view==="single")showSingle();},100);
+  });
   function removeUnreadable(photo, error) {
     if (error.status !== 400) { status(error.message); return; }
     const currentPath = selected()?.path, anchorPath = state.photos[state.anchor]?.path;
@@ -264,10 +307,10 @@
     const element = document.createElement("div");
     element.className = "library-cell loading"; element.setAttribute("role", "option"); element.dataset.path = photo.path;
     const frame = document.createElement("div"); frame.className = "picture-frame";
-    const canvas = document.createElement("canvas"); canvas.setAttribute("aria-label", photo.name); frame.append(canvas);
+    const canvas = document.createElement("img"); canvas.alt = ""; canvas.style.visibility="hidden"; frame.append(canvas);
     const name = document.createElement("span"); name.className = "name"; name.textContent = photo.name;
     element.append(frame, name); container.append(element);
-    const cell = { element, canvas, controller: new AbortController(), photo, index };
+    const cell = { element, canvas, controller: new AbortController(), photo, index, edge:thumbnailEdge(), identity:pictureIdentity(photo) };
     element.addEventListener("click", (event) => select(state.photos.findIndex((item) => item.path === photo.path), false, event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "single"));
     element.addEventListener("dblclick", () => { select(state.photos.findIndex((item) => item.path === photo.path)); openGrade(); });
     element.addEventListener("pointerenter", () => { if (state.timing && cell.meta) diagnostics(photo, cell.meta, cell.elapsed); });
@@ -279,25 +322,87 @@
       event.dataTransfer.setData(HDRLibraryAlbums.DRAG, String(state.selection.size)); event.dataTransfer.effectAllowed = "copyMove";
     });
     const started = performance.now();
-    loadAndShow(photo, container === $("film-space") ? 192 : 512, canvas, cell.controller,
-      () => state.active && element.isConnected && !cell.controller.signal.aborted).then((meta) => {
-        if (!meta) return;
-        cell.meta = meta; cell.elapsed = performance.now() - started;
-        element.classList.remove("loading");
-      }).catch((error) => { if (!aborted(error) && !cell.controller.signal.aborted) removeUnreadable(photo, error); });
-    return cell;
-  }
-  function reconcile(map, start, end, container, position) {
-    const wanted = new Set(state.photos.slice(start, end).map((photo) => photo.path));
-    for (const [path, cell] of map) {
-      if (wanted.has(path)) continue;
-      cell.controller.abort(); cell.element.remove(); map.delete(path);
+    const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
+    {
+      void (async () => {
+        const fallback = document.createElement("canvas"); cell.fallback = fallback;
+        fallback.hidden = true; frame.append(fallback);
+        const preview = fetch("/api/library/preview", {method:"POST", signal:cell.controller.signal,
+          headers:{"Content-Type":"application/json"},body:JSON.stringify({path:photo.path})}).then(async response => {
+          if (response.status !== 200) return;
+          const meta = await response.json();
+          if (!current() || cell.meta || !meta.url) return;
+          canvas.src = meta.url; canvas.dataset.preview = "true";
+          await canvas.decode();
+          if (current() && !cell.meta) { canvas.style.visibility=""; element.classList.remove("loading"); }
+        }).catch(()=>{});
+        let cpuShown = false;
+        while (current()) {
+          try {
+            const gpu = await HDRLibraryPictures.initialize();
+            if (gpu.adapterInfo?.fallback) throw Error("Hardware GPU unavailable.");
+            const meta = await HDRLibraryScenes.load(photo.path, cell.edge, cell.controller.signal);
+            if (!current()) return;
+            await drawPicture(meta, fallback, cell.controller, current);
+            if (!current()) return;
+            cell.meta = cell.scene = meta; cell.displayEpoch = state.displayEpoch; cell.elapsed = performance.now() - started;
+            fallback.hidden = false; canvas.hidden = true; canvas.removeAttribute("src"); element.classList.remove("loading");
+            fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
+            HDRLibraryStopwatch("picture_shown",{path:photo.path,key:meta.key,duration_ms:cell.elapsed});
+            overlays?.attach(photo,fallback,meta,cell.controller,current);
+            return;
+          } catch(error) {
+            if (aborted(error) || !current()) return;
+            if (error.libraryYield) { await sleep(50,cell.controller.signal); continue; }
+            if (HDRLibraryPictures.usable()) throw error;
+            if (!cpuShown) {
+              const meta = await api("/api/library/fallback-picture",{path:photo.path,edge:cell.edge},cell.controller.signal);
+              if (!current()) return;
+              canvas.src=meta.url; await canvas.decode();
+              if (!current()) return;
+              canvas.hidden=false; canvas.style.visibility=""; fallback.hidden=true;
+              canvas.dataset.preview="false"; canvas.dataset.cpuFallback="true";
+              pictureMode(canvas,state.hdr); element.classList.remove("loading");
+              cpuShown=true;
+            }
+            await sleep(2000,cell.controller.signal);
+          }
+        }
+      })().catch(error=>{if(current()&&!aborted(error))removeUnreadable(photo,error);});
+      return cell;
     }
-    for (let index = start; index < end; index += 1) {
+  }
+  // Finished cached-picture cells stay built for one screen beyond each edge, so
+  // scrolling back shows them at once. Cells still loading are dropped as before.
+  function reconcile(map, start, end, container, position) {
+    const span = end - start, keepStart = Math.max(0, start - span), keepEnd = Math.min(state.photos.length, end + span);
+    const kept = (cell, index) => index >= start && index < end || index >= keepStart && index < keepEnd && cell.meta && (!cell.fallback || cell.scene?.route === "library-live");
+    const wanted = new Map(state.photos.slice(keepStart, keepEnd).map((photo, offset) => [photo.path, keepStart + offset]));
+    map.shown = new Set(state.photos.slice(start, end).map(photo => photo.path));
+    for (const [path, cell] of map) {
+      if (wanted.has(path) && kept(cell, wanted.get(path))) continue;
+      cell.element.remove(); map.delete(path);
+      if (cell.meta && cell.scene?.route === "library-live" && cell.displayEpoch === state.displayEpoch && !cell.controller.signal.aborted) {
+        // Budget 16 bytes per pixel for the live surface and presentation buffers.
+        overlays?.detach(cell.fallback);
+        tilePool.put(tileKey(map, cell.identity), cell, cell.fallback.width * cell.fallback.height * 16);
+      } else cell.controller.abort();
+    }
+    for (let index = keepStart; index < keepEnd; index += 1) {
       const photo = state.photos[index];
       let cell = map.get(photo.path);
-      if (cell && (cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.photo.grade_identity !== photo.grade_identity)) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
-      if (!cell) { cell = makeCell(photo, container, index); map.set(photo.path, cell); }
+      if (cell && (cell.edge !== thumbnailEdge() || cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.identity !== pictureIdentity(photo))) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
+      if (!cell && (index < start || index >= end)) continue;
+      if (!cell) {
+        cell = tilePool.take(tileKey(map, pictureIdentity(photo)));
+        if (cell) {
+          container.append(cell.element); cell.photo = photo; cell.index = index;
+          overlays?.attach(photo, cell.fallback, cell.meta, cell.controller,
+            () => state.active && cell.element.isConnected && !cell.controller.signal.aborted);
+        }
+        else cell = makeCell(photo, container, index);
+        map.set(photo.path, cell);
+      }
       position(cell.element, index);
       const active = state.selection.has(photo.path);
       cell.element.classList.toggle("active", active); cell.element.setAttribute("aria-selected", String(active));
@@ -306,6 +411,7 @@
       cell.element.querySelector(".library-marks")?.remove(); cell.element.append(culling.strip(photo));
     }
   }
+  let lastGridTop = 0;
   function paintGrid() {
     const count = state.photos.length ? String(state.photos.length) : ""; if ($("place-count").textContent !== count) $("place-count").textContent = count;
     if (!state.active || state.view !== "grid") return;
@@ -319,16 +425,23 @@
     reconcile(state.cells, layout.first, layout.last, space, (element, index) => {
       element.style.cssText = `left:${3 + (index % layout.columns) * layout.cellWidth}px;top:${3 + Math.floor(index / layout.columns) * layout.rowHeight}px;width:${layout.cellWidth - 3}px;height:${layout.rowHeight - 3}px`;
     });
+    const screen = Math.max(layout.columns, layout.last - layout.first);
+    const forward = grid.scrollTop >= lastGridTop; lastGridTop = grid.scrollTop;
+    const first = forward ? layout.last : Math.max(0, layout.first - screen);
+    const last = forward ? Math.min(state.photos.length, layout.last + screen) : layout.first;
   }
-  const FILM_PITCH = 119; // a 116px filmstrip tile plus the 3px gap
+  let lastFilmLeft = 0;
+  let FILM_PITCH = 119; // filmstrip tile width plus the 3px gap
   function paintFilm() {
     if (!state.active || state.view !== "single" || state.review) { clearCells(state.filmCells); return; }
     $("film-space").style.width = `${state.photos.length * FILM_PITCH + 3}px`;
     const first = Math.max(0, Math.floor((film.scrollLeft - 3) / FILM_PITCH));
     const last = Math.min(state.photos.length, Math.ceil((film.scrollLeft + film.clientWidth) / FILM_PITCH));
     reconcile(state.filmCells, first, last, $("film-space"), (element, index) => { element.style.left = `${3 + index * FILM_PITCH}px`; });
+    const forward = film.scrollLeft >= lastFilmLeft; lastFilmLeft = film.scrollLeft;
   }
   function updateDetails() {
+    if (window.HDRLibraryCommands) commandState();
     const photo = selected(); const root = $("details"), tagFocused = document.activeElement?.id === "library-tag-input"; root.replaceChildren();
     if (!photo || !state.selection.size) { root.textContent = "Select a photo."; return; }
     const one = state.selection.size === 1 && state.selection.has(photo.path);
@@ -430,6 +543,43 @@
     confirmChange(`${revert.done} ${plural(result.count, "photo")}.${target === "saved" ? "" : ` ${result.count === 1 ? "It keeps" : "Each keeps"} its previous grade.`}${result.undo_available ? " Ctrl+Z undoes it." : ""}`, result.undo_available);
     await pollSettings();
   }
+  const commandState = () => postParent("command-state", {selected: state.selection.size, copied: pasteGrades.available()});
+  function invalidateGradePictures(paths) {
+    const targets = new Set(paths);
+    tilePool.discard(cell => targets.has(cell.photo.path));
+    for (const map of [state.cells, state.filmCells]) for (const [path, cell] of map) if (targets.has(path)) { cell.controller.abort(); cell.element.remove(); map.delete(path); }
+    if (targets.has(selected()?.path)) { state.single?.abort(); state.fitMeta = null; state.nativeMeta = null; }
+  }
+  const pasteGrades = HDRGradePaste.create({api, status,
+    prepare: paths => standalone ? libraryDesktop?.prepareLibraryPaste?.(paths) ?? Promise.resolve(false) : parent.HDRLibraryHost.preparePaste(paths),
+    changed: (_clipboard, result) => {
+      commandState(); if (!result) return;
+      const paths = (result.photos || []).map(photo => photo.path);
+      invalidateGradePictures(paths.length ? paths : [...state.selection]);
+      for (const row of result.photos || []) { const photo = state.allPhotos.find(photo => photo.path === row.path); if (photo) Object.assign(photo, row); }
+      culling.setUndo(result.undo_available);
+      if (result.session) postParent("grade-replaced", {session:result.session});
+      confirmChange(`Pasted grade onto ${plural(result.count, "photo")}. Each keeps its previous grade. ${(result.warnings || []).map(warning => typeof warning === "string" ? warning : `${warning.path.split(/[\\/]/).at(-1)}: ${warning.message}`).join(" ")} Ctrl+Z undoes it.`, result.undo_available);
+      applyQuery(); paintGrid(); paintFilm(); if (state.view === "single") showSingle();
+      void activity.refresh();
+    }
+  });
+  const safeCommand = work => Promise.resolve().then(work).catch(error => status(error.message));
+  const commands = Object.freeze({copy: () => safeCommand(() => state.selection.size === 1 && pasteGrades.copy(selected()?.path)),
+    paste: (choose = false) => safeCommand(() => pasteGrades.paste([...state.selection], choose)),
+    quickExport: () => { if (state.selection.size) postParent("quick-export", {paths:[...state.selection]}); },
+    openExport: () => { if (state.selection.size) postParent("export-selection", {paths:[...state.selection]}); },
+    selection: () => [...state.selection], canCopy: () => state.selection.size === 1, canPaste: () => !!state.selection.size && pasteGrades.available()});
+  window.HDRLibraryCommands = commands;
+  function libraryCommand(command) {
+    if (document.querySelector("dialog[open]") || document.activeElement?.matches("input,textarea,select,[contenteditable]")) return;
+    if (command === "copy-grade") return commands.copy();
+    if (command === "paste-grade" || command === "paste-grade-choose") return commands.paste(command === "paste-grade-choose");
+    if (command === "quick-export") return commands.quickExport();
+    if (command === "undo") return culling.undo();
+  }
+  libraryDesktop?.onMenuCommand?.(({command}) => libraryCommand(command));
+  void pasteGrades.refresh().catch(() => {});
   async function photoMenu(event, photo) {
     event.preventDefault();
     const index = state.photos.findIndex(item => item.path === photo.path);
@@ -440,6 +590,11 @@
       for (const [target, revert] of Object.entries(REVERTS)) if (counts[target]) grades.push({ label: revert.label, run: () => revertGrades(paths, target, counts[target]) });
     } catch (error) { status(error.message); }
     const chosen = state.photos.filter(item => state.selection.has(item.path));
+    grades.push({label:"Copy grade", key:"Ctrl+C", disabled:!commands.canCopy(), run:commands.copy},
+      {label:"Paste grade", key:"Ctrl+V", disabled:!commands.canPaste(), run:() => commands.paste()},
+      {label:"Paste grade (choose settings)…", key:"Ctrl+Shift+V", disabled:!commands.canPaste(), run:() => commands.paste(true)},
+      {separator:true}, {label:"Quick export…",key:"Ctrl+Shift+E",run:commands.quickExport},
+      {label:"Open in Export",run:commands.openExport});
     grades.push({ label: "Create virtual copy…", run: () => createCopy(chosen) });
     if (one && photo.copy_id) grades.push({ label: "Rename copy…", run: () => renameCopy(photo) });
     showMenu(event, [{ header: one ? photo.name : `${paths.length.toLocaleString()} photos` },
@@ -452,15 +607,17 @@
       ...(chosen.some(item => item.copy_id) ? [{ separator: true }, { label: "Remove virtual copy…", key: "Del", danger: true, run: () => removeCopy(chosen) }] : [])],
       { label: "Photo actions", onError: error => status(error.message) });
   }
-  const compare = HDRLibraryCompare.create({api,status,load:loadAndShow,draw:drawPicture,strip:culling.strip,
+  const compare = HDRLibraryCompare.create({api,status,load:(photo,edge,...args)=>loadAndShow(photo,2560,...args),preparePicture:(photo,edge,signal) =>
+    HDRLibraryScenes.load(photo.path,2560,signal,0),
+    prepareNative:prepareRawNative,draw:drawPicture,strip:culling.strip,
     selected,photos:()=>state.photos,allPhotos:()=>state.allPhotos,active:()=>state.active,
     choose:path=>select(state.photos.findIndex(p=>p.path===path)),setView,
-    zoom:()=>({enabled:state.zoom,x:state.zoomX,y:state.zoomY}),
-    setZoom:(enabled,x,y)=>{state.zoom=enabled;state.zoomX=x;state.zoomY=y;$("zoom-button").setAttribute("aria-pressed",String(enabled));}
+    zoom:()=>({enabled:state.zoom,x:state.zoomX,y:state.zoomY,scale:state.zoomScale}),
+    setZoom:(enabled,x,y,scale=state.zoomScale)=>{state.zoom=enabled;state.zoomX=x;state.zoomY=y;state.zoomScale=scale;$("zoom-button").setAttribute("aria-pressed",String(enabled));}
   });
   void compare.init();
   overlays = HDRLibraryOverlays.create({api,status,active:()=>state.active, surfaces:()=>[
-    ...[...state.cells.values(),...state.filmCells.values()].filter(s=>s.meta).map(s=>({...s,current:()=>state.active&&s.element.isConnected&&!s.controller.signal.aborted})),
+    ...[...shownCells(state.cells),...shownCells(state.filmCells)].filter(s=>s.meta).map(s=>({...s,current:()=>state.active&&s.element.isConnected&&!s.controller.signal.aborted})),
     ...(state.view==="single"&&!compare.enabled()&&state.fitMeta?[{photo:selected(),canvas:$("single-picture"),meta:state.fitMeta,controller:state.single,current:()=>state.active&&state.view==="single"&&!compare.enabled()}]:[]),
     ...(compare.enabled()&&state.view==="single"?compare.surfaces().filter(s=>s.meta).map(s=>({...s,canvas:s.fit,current:()=>state.active&&compare.enabled()&&s.fit.isConnected&&!s.controller.signal.aborted})):[])
   ]});
@@ -501,6 +658,11 @@
     const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}` : "";
     if (identity && identity === state.singleIdentity && !state.single?.signal.aborted) { positionZoom(); return; }
     state.singleIdentity = identity;
+    const fullIdentity = photo ? `${photo.path}|${photo.bytes}|${photo.mtime_ns}` : "";
+    if (state.fullIdentity !== fullIdentity || state.nativeSource?.signal.aborted) {
+      state.nativeSource?.abort(); state.fullDetail = null; state.fullSceneQuality = null;
+      state.fullIdentity = fullIdentity; state.nativeSource = new AbortController();
+    }
     state.single?.abort(); state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; state.fitMeta = null; $("native-picture").hidden = true;
     if (!photo || !state.active || state.view !== "single") return;
     compare.hide();
@@ -509,14 +671,15 @@
     status(`Loading ${photo.name}…`);
     try {
       startRawAhead();
-      const retained = recentPictures.get(pictureIdentity(photo));
-      const prepared = rawCandidate(photo) ? (retained?.route === "camera-raw-gpu" && retained.edge >= 1280 && HDRLibraryPictures.resident(retained.key)
-        ? Promise.resolve(retained) : null) : readAhead.take(photo, edge);
+      const prepared = HDRLibraryScenes.load(photo.path,2560,controller.signal,0);
       const neighbours = [state.photos[state.index + 1], state.photos[state.index - 1]].filter(Boolean);
-      // Preserve the selected job, including an unfinished read-ahead decode.
-      readAhead.update(photo, neighbours.filter(item => !rawCandidate(item)), edge);
-      const meta = await loadAndShow(photo, edge, $("single-picture"), controller, current, 0, prepared);
+      readAhead.update(photo, neighbours, 2560);
+      const meta = await loadAndShow(photo, 2560, $("single-picture"), controller, current, 0, prepared);
       if (!meta || !current()) return;
+      if (state.fullSceneQuality && state.fullSceneQuality !== meta.quality) {
+        state.nativeSource?.abort(); state.nativeSource = new AbortController(); state.fullDetail = null;
+      }
+      state.fullSceneQuality = meta.quality;
       state.fitMeta = meta; positionZoom(); if (state.zoom) void showNative();
       updateSingleCaption();
       status(`${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
@@ -526,41 +689,77 @@
     const canvas = $("single-picture"), native = $("native-picture"), stage = $("single-stage"), meta = state.nativeMeta || state.fitMeta;
     stage.classList.toggle("zoomed", state.zoom);
     if (!state.zoom || !meta) { canvas.style.cssText = ""; native.hidden = true; return; }
-    const dpr = window.devicePixelRatio || 1, width = meta.source_width || meta.width * 2, height = meta.source_height || meta.height * 2;
+    const dpr = window.devicePixelRatio || 1, scale = state.zoomScale;
+    const width = (meta.source_width || meta.width * 2) * scale, height = (meta.source_height || meta.height * 2) * scale;
     const center = HDRLibraryZoom.center(state.zoomX, state.zoomY, width, height, stage.clientWidth * dpr, stage.clientHeight * dpr);
     state.zoomX = center.x; state.zoomY = center.y;
     const left = stage.clientWidth / 2 - center.x * width / dpr, top = stage.clientHeight / 2 - center.y * height / dpr;
     canvas.style.cssText = `position:absolute;width:${width / dpr}px;height:${height / dpr}px;left:${left}px;top:${top}px;object-fit:fill`;
     if (state.nativeMeta) {
       const crop = state.nativeMeta;
-      native.style.cssText = `width:${crop.width / dpr}px;height:${crop.height / dpr}px;left:${left + crop.crop_x / dpr}px;top:${top + crop.crop_y / dpr}px`;
+      native.style.cssText = `width:${crop.width * scale / dpr}px;height:${crop.height * scale / dpr}px;left:${left + crop.crop_x * scale / dpr}px;top:${top + crop.crop_y * scale / dpr}px`;
       native.hidden = false;
     }
   }
+  async function prepareRawNative(photo, signal) {
+    if (!rawCandidate(photo)) return;
+    if (!HDRLibraryGpuRaw.enabled()) {
+      HDRLibraryStopwatch("gpu_raw_fallback",{path:photo.path,reason:"WebGPU is unavailable or disabled."}); return;
+    }
+    try { await HDRLibraryGpuRaw.thumbnail(photo.path,2560,signal,{nativeMode:true}); }
+    catch(error) { if (aborted(error)) throw error; HDRLibraryStopwatch("gpu_raw_fallback",{path:photo.path,reason:error.message}); }
+  }
   async function showNative() {
     const photo = selected(); if (!photo || !state.fitMeta || !state.zoom || !state.active || state.view !== "single") return;
-    if (photo.edited) { state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; $("native-picture").hidden = true; positionZoom(); status("Saved Library picture enlarged. Check detail in Grade."); return; }
+    const stage = $("single-stage"), dpr = window.devicePixelRatio || 1, scale = state.zoomScale, percent = `${Math.round(scale * 100)}%`;
+    const fit = state.fitMeta;
+    if (fit.source_width && fit.width >= fit.source_width * scale) {
+      state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; $("native-picture").hidden = true; positionZoom();
+      status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`); return;
+    }
     state.native?.abort(); const controller = new AbortController(); state.native = controller; state.nativeLoading = true;
-    const stage = $("single-stage"), dpr = window.devicePixelRatio || 1;
     const current = () => state.active && state.zoom && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
-    status(`Loading 100% · ${photo.name}…`);
+    status(`Loading ${percent} · ${photo.name}…`);
     try {
-      const meta = await api("/api/library/native", { path: photo.path, center_x: state.zoomX, center_y: state.zoomY,
-        width: Math.max(64, Math.min(4096, Math.ceil(stage.clientWidth * dpr))), height: Math.max(64, Math.min(4096, Math.ceil(stage.clientHeight * dpr))), priority: 0 }, controller.signal);
+      // Development belongs to the selected photo, not the zoom gesture. A
+      // zoom-out or pan cancels presentation while this one source completes.
+      if (!state.fullDetail) {
+        const pending = HDRLibraryScenes.load(photo.path,100000,state.nativeSource.signal,0);
+        state.fullDetail = pending;
+        pending.catch(()=>{ if (state.fullDetail === pending) state.fullDetail = null; });
+      }
+      let full = await state.fullDetail;
       if (!current()) return;
-      // Fit and native pictures share the exact same starting look.
-      meta.adjustments = state.fitMeta.adjustments;
-      await drawPicture(meta, $("native-picture"), controller, current);
+      if (full.grade_identity !== state.fitMeta.grade_identity) {
+        // Finishing changes describe the same stored source with the new grade.
+        state.fullDetail = HDRLibraryScenes.load(photo.path,100000,state.nativeSource.signal,0);
+        full = await state.fullDetail;
+        if (!current()) return;
+      }
+      const width = Math.min(full.width,Math.ceil(stage.clientWidth*dpr/scale)), height = Math.min(full.height,Math.ceil(stage.clientHeight*dpr/scale));
+      const x = Math.max(0,Math.min(full.width-width,Math.round(state.zoomX*full.width-width/2)));
+      const y = Math.max(0,Math.min(full.height-height,Math.round(state.zoomY*full.height-height/2)));
+      const meta = {...full,crop_x:0,crop_y:0,viewport:{x,y,width,height}};
+      // Draw off screen, then swap. Drawing into the shown canvas would show the new
+      // crop at the old crop's place for a frame, a flicker during and after a pan.
+      const next = $("native-picture-next");
+      await drawPicture(meta, next, controller, current);
       if (!current()) return;
-      state.nativeMeta = meta; $("native-picture").dataset.picturePath = photo.path; positionZoom();
-      status(`100% · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
-    } catch (error) { if (!aborted(error) && current()) status(`100% unavailable · ${error.message}`); }
+      const shown = $("native-picture");
+      shown.id = "native-picture-next"; shown.hidden = true; shown.removeAttribute("aria-label"); shown.setAttribute("aria-hidden", "true");
+      next.id = "native-picture"; next.removeAttribute("aria-hidden"); next.setAttribute("aria-label", "Native-resolution crop");
+      state.nativeMeta = {...meta,width,height,crop_x:x,crop_y:y}; next.dataset.picturePath = photo.path; positionZoom();
+      status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
+    } catch (error) {
+      if (error.libraryYield && current()) { setTimeout(()=>{ if (current()) void showNative(); },100); }
+      else if (!aborted(error) && current()) status(`${percent} unavailable · ${error.message}`);
+    }
     finally { if (state.native === controller) state.nativeLoading = false; }
   }
   function toggleZoom(point) {
     if (state.view !== "single" || !selected()) return;
     if (compare.enabled()) { compare.zoom(); return; }
-    state.zoom = !state.zoom; state.native?.abort(); state.nativeLoading = false; state.nativeMeta = null;
+    state.zoom = !state.zoom; state.zoomScale = 1; state.native?.abort(); state.nativeLoading = false; state.nativeMeta = null;
     if (state.zoom && point && state.fitMeta) {
       const stage = $("single-stage"), meta = state.fitMeta;
       const center = HDRLibraryZoom.click(point.x, point.y, stage.clientWidth, stage.clientHeight, meta.source_width || meta.width, meta.source_height || meta.height);
@@ -583,8 +782,8 @@
     if (Math.abs(dx) + Math.abs(dy) < 4 && !drag.moved) return;
     drag.moved = true; state.native?.abort();
     const meta = state.nativeMeta || state.fitMeta, dpr = window.devicePixelRatio || 1;
-    state.zoomX = drag.centerX - dx * dpr / (meta.source_width || meta.width * 2);
-    state.zoomY = drag.centerY - dy * dpr / (meta.source_height || meta.height * 2);
+    state.zoomX = drag.centerX - dx * dpr / ((meta.source_width || meta.width * 2) * state.zoomScale);
+    state.zoomY = drag.centerY - dy * dpr / ((meta.source_height || meta.height * 2) * state.zoomScale);
     positionZoom(); clearTimeout(nativeTimer); nativeTimer = setTimeout(showNative, 120);
   });
   function endPan(event) {
@@ -596,6 +795,28 @@
     else { const rect = singleStage.getBoundingClientRect(); toggleZoom({ x: event.clientX - rect.left, y: event.clientY - rect.top }); }
   }
   singleStage.addEventListener("pointerup", endPan); singleStage.addEventListener("pointercancel", endPan);
+  singleStage.addEventListener("wheel", event => {
+    if (state.view !== "single" || !state.fitMeta || !selected() || compare.enabled()) return;
+    event.preventDefault();
+    const meta = state.nativeMeta || state.fitMeta, dpr = window.devicePixelRatio || 1, rect = singleStage.getBoundingClientRect();
+    const sourceWidth = meta.source_width || meta.width * 2, sourceHeight = meta.source_height || meta.height * 2;
+    const width = singleStage.clientWidth * dpr, height = singleStage.clientHeight * dpr;
+    const fit = HDRLibraryZoom.fitScale(sourceWidth, sourceHeight, width, height);
+    const from = state.zoom ? state.zoomScale : fit;
+    const to = HDRLibraryZoom.wheel(from, event.deltaY * (event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? 400 : 1), fit);
+    if (to === from) return;
+    state.native?.abort(); clearTimeout(nativeTimer);
+    if (to <= fit) {
+      state.zoom = false; state.nativeLoading = false; state.nativeMeta = null;
+      $("zoom-button").setAttribute("aria-pressed", "false"); positionZoom();
+      status(`${state.index + 1} of ${state.photos.length.toLocaleString()} · ${selected().name}`); return;
+    }
+    const start = state.zoom ? { x: state.zoomX, y: state.zoomY } : { x: .5, y: .5 };
+    const center = HDRLibraryZoom.anchor(start.x, start.y, (event.clientX - rect.left) * dpr, (event.clientY - rect.top) * dpr, width, height, sourceWidth, sourceHeight, from, to);
+    state.zoom = true; state.zoomScale = to; state.zoomX = center.x; state.zoomY = center.y;
+    $("zoom-button").setAttribute("aria-pressed", "true");
+    positionZoom(); nativeTimer = setTimeout(showNative, 150);
+  }, { passive: false });
   function setView(view) {
     if (view === "single" && !selected()) return;
     if (view !== "single") compare.hide();
@@ -603,7 +824,7 @@
     $("zoom-button").disabled = view !== "single";
     $("grid-view").setAttribute("aria-pressed", String(view === "grid")); $("single-view").setAttribute("aria-pressed", String(view === "single"));
     if (view === "single") { clearCells(state.cells); select(state.index, true, "preserve"); }
-    else { state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.filmCells); paintGrid(); }
+    else { state.single?.abort(); state.native?.abort(); state.nativeSource?.abort(); clearPrefetch(); clearCells(state.filmCells); paintGrid(); }
   }
   function setReview(review) {
     if (review && !selected()) return;
@@ -623,6 +844,7 @@
   const browseCollection = (kind, name) => openPlace({ kind, name });
   async function openPlace(place) {
     const path = place.path || "";
+    restoreSourceSort(place);
     state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells);
     state.collection = place.kind ? { kind: place.kind, name: place.name } : null; state.smartFilters = null; albums.setActive(place.kind === "album" ? place.name : ""); smart.setActive(place.kind === "smart" ? place.name : "");
     if (path) state.lastFolder = path;  // Where a deleted album's view returns to.
@@ -811,15 +1033,6 @@
     $("filter-button").setAttribute("aria-expanded", String(!$("library-filterbar").hidden));
   }
   function toggleFilters() { $("library-filterbar").hidden = !$("library-filterbar").hidden; paintFilterButton(); }
-  $("picture-settings").addEventListener("click", async () => {
-    try {
-      const prefs = await api("/api/library/picture-settings");
-      const answer = await HDRLibraryDialogs.ask({ title: "Library pictures", message: `${(prefs.used_bytes / 1024**3).toFixed(2)} GB in use. Older edited pictures are remade in the background. Saved pictures have their own storage allowance.`, fields: [
-        { name: "limit", label: "Storage limit (GB)", type: "number", min: 1, step: 1, value: String(Math.round(prefs.limit_bytes / 1024**3)) },
-        { name: "edge", label: "Edited-picture resolution", options: [{value:"screen",label:"Screen size"}, "512", "1024", "1920"], value: String(prefs.edited_resolution) }], confirm: "Save" });
-      if (answer) { await api("/api/library/picture-settings", { limit_bytes: Math.round(Number(answer.limit) * 1024**3), edited_resolution: answer.edge === "screen" ? "screen" : Number(answer.edge) }); status("Library picture settings saved."); }
-    } catch (error) { status(error.message); }
-  });
   $("filter-button").addEventListener("click", toggleFilters);
   let openPopover = null;
   function closePopover() { if (!openPopover) return; openPopover.menu.hidden = true; openPopover.button.setAttribute("aria-expanded", "false"); openPopover = null; }
@@ -844,10 +1057,21 @@
     const label = state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending";
     $("sort-dir").dataset.descending = String(state.descending); $("sort-dir").setAttribute("aria-label", label); $("sort-dir").title = label;
   }
-  function paintSize() { const input = $("thumbnail-size"); input.parentElement.style.setProperty("--fill-w", `${(input.value - input.min) / (input.max - input.min) * 100}%`); }
+  function paintSize() {
+    const input = $("thumbnail-size"), anchor = film.scrollLeft / FILM_PITCH;
+    input.parentElement.style.setProperty("--fill-w", `${(input.value - input.min) / (input.max - input.min) * 100}%`);
+    const width = Math.round(state.size * 116 / 190), pictureHeight = Math.round(width * 80 / 116);
+    FILM_PITCH = width + 3;
+    film.style.setProperty("--film-width", `${width}px`);
+    film.style.setProperty("--film-picture-height", `${pictureHeight}px`);
+    film.style.setProperty("--film-tile-height", `${pictureHeight + 25}px`);
+    film.style.setProperty("--film-height", `${pictureHeight + 31}px`);
+    $("film-space").style.width = `${state.photos.length * FILM_PITCH + 3}px`;
+    film.scrollLeft = anchor * FILM_PITCH;
+  }
   paintSort(); paintSize();
-  $("sort-menu").addEventListener("click", event => { const item = event.target.closest("[data-sort]"); if (!item) return; state.sort = item.dataset.sort; paintSort(); applyQuery(); });
-  $("sort-dir").addEventListener("click", () => { state.descending = !state.descending; paintSort(); applyQuery(); });
+  $("sort-menu").addEventListener("click", event => { const item = event.target.closest("[data-sort]"); if (!item) return; state.sort = item.dataset.sort; saveSourceSort(); paintSort(); applyQuery(); });
+  $("sort-dir").addEventListener("click", () => { state.descending = !state.descending; saveSourceSort(); paintSort(); applyQuery(); });
   $("raw-only").addEventListener("click", () => { state.filters.raw = !state.filters.raw; $("raw-only").setAttribute("aria-pressed", String(!!state.filters.raw)); applyQuery(); });
   $("filter-clear").addEventListener("click", () => { state.filters = { rules: [], raw: state.filters.raw }; ruleFilters.render(); applyQuery(); });
   const ruleFilters = HDRLibraryFilters.create({ bar: $("filter-rules"), addButton: $("filter-add"), photos: () => state.allPhotos,
@@ -915,20 +1139,23 @@
         }
         // A first saved grade is not yet marked edited in this page. Check only
         // visible pictures as well, so returning from Grade discovers it.
-        const visible = new Set([...state.cells.keys(), ...state.filmCells.keys(), selected()?.path]);
+        const visible = new Set([...shownCells(state.cells), ...shownCells(state.filmCells)].map(cell => cell.photo.path).concat(selected()?.path));
         const paths = state.allPhotos.filter(photo => photo.storage === "database" || photo.edited || visible.has(photo.path)).map(photo => photo.path);
         const result = await api("/api/library/settings-status", { paths });
         const byPath = new Map(result.photos.map(photo => [photo.path, photo]));
         let changed = false;
         for (const photo of state.allPhotos) {
           const row = byPath.get(photo.path);
-          if (row && (row.grade_identity !== photo.grade_identity || row.pictureCurrent !== photo.pictureCurrent)) {
-            Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity, pictureCurrent: row.pictureCurrent });
+          if (row && (row.grade_identity || "") !== (photo.grade_identity || "")) {
+            tilePool.discard(cell => cell.photo.path === photo.path);
+            Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity });
             for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }
             changed = true;
           }
+          // A missing write_reason means "". A false change here restarts Compare
+          // every second, before its pictures can finish loading.
           if (row && JSON.stringify(row.marks) === JSON.stringify(photo.marks) && JSON.stringify(row.albums) === JSON.stringify(photo.albums)
-              && (row.storage !== photo.storage || row.write_reason !== photo.write_reason)) {
+              && (row.storage !== photo.storage || (row.write_reason || "") !== (photo.write_reason || ""))) {
             photo.storage = row.storage; photo.write_reason = row.write_reason || ""; changed = true;
           }
         }
@@ -947,10 +1174,16 @@
     if (state.active && !document.hidden) { try { await api("/api/library/checks", { client: checkClient, visible: state.path }); await activity.refresh(); } catch (error) { console.debug("Library index:", error.message); } }
     setTimeout(pollIndexing, 1000);
   }
-  $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintSize(); paintGrid(); });
+  $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintSize(); paintGrid(); paintFilm(); });
   let gridFrame = 0, filmFrame = 0;
   grid.addEventListener("scroll", () => { if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); }); });
   film.addEventListener("scroll", () => { if (!filmFrame) filmFrame = requestAnimationFrame(() => { filmFrame = 0; paintFilm(); }); });
+  // An ordinary mouse wheel scrolls up and down; the filmstrip only scrolls sideways.
+  film.addEventListener("wheel", event => {
+    if (event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    event.preventDefault();
+    film.scrollLeft += event.deltaY * (event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? film.clientWidth : 1);
+  }, { passive: false });
   let resizeTimer;
   new ResizeObserver(() => { paintGrid(); paintFilm(); clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state.view === "single" && state.active) showSingle(); }, 150); }).observe($("single-stage"));
   new ResizeObserver(() => { paintGrid(); paintFilm(); }).observe(grid);
@@ -958,6 +1191,8 @@
     if (event.origin !== location.origin || event.source !== parent || event.data?.type !== "hdr-library-host") return;
     if (event.data.action === "theme") applyTheme(event.data.theme);
     if (event.data.action === "active") setActive(event.data.enabled);
+    if (event.data.action === "add-export-selection") postParent("add-export-selection", {paths:[...state.selection]});
+    if (event.data.action === "command") libraryCommand(event.data.command);
     if (event.data.action === "add-folder") openPicker();
     if (event.data.action === "restore") void restoreState(event.data.state).catch(error => status(error.message));
   });
@@ -966,6 +1201,9 @@
     if (document.querySelector("dialog[open]") || event.target.matches("input,textarea,select,[contenteditable]") || event.target.closest(".library-filter-panel,.library-folder-menu")) return;
     const key = event.key.toLowerCase();
     if (event.ctrlKey || event.metaKey) {
+      if (key === "c") { event.preventDefault(); void commands.copy(); }
+      if (key === "v") { event.preventDefault(); void commands.paste(event.shiftKey); }
+      if (key === "e" && event.shiftKey) { event.preventDefault(); commands.quickExport(); }
       if (key === "f") { event.preventDefault(); toggleFilters(); }
       if (key === "a") { event.preventDefault(); state.selection = new Set(state.photos.map(photo => photo.path)); updateDetails(); paintGrid(); paintFilm(); }
       if (key === "z") { event.preventDefault(); void culling.undo(); }
@@ -983,7 +1221,16 @@
     else if (key === "delete") { event.preventDefault(); fileCommands.remove(state.photos.filter(photo => state.selection.has(photo.path))).catch(error => status(error.message)); }
     else if (key === " ") { event.preventDefault(); setView(state.view === "grid" ? "single" : "grid"); }
     else if (key === "z") { event.preventDefault(); toggleZoom(); }
-    else if (key === "h") { event.preventDefault(); toggleHDR(); }
+    else if (key === "h") {
+      event.preventDefault();
+      if (!event.repeat) {
+        const button = $("hdr-button");
+        // A previous mouse click can leave focus here. Keyboard modality
+        // would then paint a second ring unrelated to the toggle state.
+        if (document.activeElement === button) button.blur();
+        button.click();
+      }
+    }
     else if (key === "g") setView("grid");
     else if (key === "f") setReview(!state.review);
     else if (key === "escape") { if (state.review) setReview(false); else setView("grid"); }
@@ -1029,7 +1276,7 @@
   function portableState() {
     return { path: state.path, collection: state.collection, selected: selected()?.path, selection: [...state.selection], anchor: state.photos[state.anchor]?.path,
       sort: state.sort, descending: state.descending, filters: state.filters, size: state.size, view: state.view,
-      hdr: state.hdr, zoom: state.zoom, zoomX: state.zoomX, zoomY: state.zoomY,
+      hdr: state.hdr, zoom: state.zoom, zoomX: state.zoomX, zoomY: state.zoomY, zoomScale: state.zoomScale,
       gridScroll: grid.scrollTop, filmScroll: film.scrollLeft, filterOpen: !$("library-filterbar").hidden,
       leftClosed: library.classList.contains("library-left-closed"), rightClosed: library.classList.contains("library-right-closed") };
   }
@@ -1037,7 +1284,7 @@
     if (!saved) return;
     state.sort = saved.sort || "time"; state.descending = !!saved.descending; state.filters = { rules: saved.filters?.rules || [], any: false, raw: !!saved.filters?.raw };
     state.size = saved.size || 190; state.hdr = !!saved.hdr; state.zoom = !!saved.zoom;
-    state.zoomX = saved.zoomX ?? .5; state.zoomY = saved.zoomY ?? .5;
+    state.zoomX = saved.zoomX ?? .5; state.zoomY = saved.zoomY ?? .5; state.zoomScale = saved.zoomScale || 1;
     $("thumbnail-size").value = state.size; paintSort(); paintSize();
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr)); $("zoom-button").setAttribute("aria-pressed", String(state.zoom));
     $("raw-only").setAttribute("aria-pressed", String(state.filters.raw));
@@ -1076,11 +1323,10 @@
   // Read-only status for the focused interaction driver; no test-only behavior.
   HDRLibraryStopwatch("ready");
   window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
-    overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: state.cells.size,
-    filmVisible: state.filmCells.size, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
+    overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: shownCells(state.cells).length,
+    filmVisible: shownCells(state.filmCells).length, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomScale: state.zoomScale, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
   (async () => {
     try {
-      await api("/api/library/picture-settings", {screen_edge:singleEdge()});
       const options = await api("/api/library/options"); state.timing = options.timing;
       browsingLimits = options.browsing || browsingLimits;
       void HDRLibraryPictures.configure(browsingLimits).catch(() => {});

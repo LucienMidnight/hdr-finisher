@@ -1,6 +1,8 @@
-"""Disposable scene-linear library pictures. No Grade import/correction route."""
+"""Disposable Library pictures; RAW thumbnails share Grade's source decode."""
 from __future__ import annotations
 
+from collections import OrderedDict
+import base64
 from concurrent.futures import CancelledError
 from hashlib import sha256
 from io import BytesIO
@@ -15,15 +17,16 @@ import numpy as np
 from PIL import Image, ImageCms, ImageOps
 
 from . import loader, raw_import
+from .import_defaults import calibrate_camera_raw, starting_adjustments
 from .library_diagnostics import audited, problem, log
 from .analysis import classify_hdr
-from .color import map_negative_acescg, normalize_to_acescg
+from .color import display_referred_sdr, map_negative_acescg, normalize_to_acescg, sdr_file_renditions
 from .desktop_security import SOURCE_EXTENSIONS
 from .models import AdjustmentState
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
-PICTURE_VERSION = "library-scene-v2"
+PICTURE_VERSION = "library-scene-gpu-views-v7"
 CACHE_LIMIT_BYTES = 2 * 1024**3
 _CACHE_LOCKS = [RLock() for _ in range(64)]
 _TRIM_LOCK = RLock()
@@ -45,15 +48,55 @@ def picture_key(path, edge, quality):
     return sha256(f"{PICTURE_VERSION}:{path}:{stat.st_mtime_ns}:{stat.st_size}:{edge}:{quality}".encode()).hexdigest()
 
 
+def default_document_key(path):
+    # One per photo version, whatever thumbnail size developed it.
+    return picture_key(path, 0, "default-document")
+
+
 class LibraryPictureCache:
-    def __init__(self, root, limit=CACHE_LIMIT_BYTES):
-        self.root = Path(root) / "library-pictures"
-        self.full_root = Path(root) / "library-full-pictures"
-        self.limit = limit
-        self._known_bytes = None
+    def __init__(self, root):
+        from .library_cache import LibraryCache
+        self.managed = LibraryCache(root)
+        self.transient = OrderedDict()
+        self.transient_lock = RLock()
         self._native_lock = RLock()
         self._native_source = None
         self._native_paused = False
+
+    def accept_transient(self, result):
+        body = result.pop('_transient', None)
+        if body:
+            with self.transient_lock:
+                self.transient[result['key']] = base64.b64decode(body)
+                self.transient.move_to_end(result['key'])
+                while sum(map(len, self.transient.values())) > 256 * 1024**2:
+                    self.transient.popitem(last=False)
+        return result
+
+    def transient_result(self, key, arrays, metadata):
+        stream = BytesIO()
+        np.savez(stream, **arrays)
+        result = metadata | {'key': key, 'cache_hit': False, 'stored_bytes': 0,
+            '_transient': base64.b64encode(stream.getvalue()).decode()}
+        # Also retain it in this helper for repeat requests; transport stays in RAM.
+        self.accept_transient(dict(result))
+        return result
+
+    def open(self, key, file=None):
+        with self.transient_lock:
+            body = self.transient.get(key)
+            if body is not None:
+                self.transient.move_to_end(key)
+                return BytesIO(body)
+        return file or self.file(key)
+
+    @property
+    def root(self):
+        return self.managed.directory("library-pictures")
+
+    @property
+    def full_root(self):
+        return self.managed.directory("library-full-pictures")
 
     def file(self, key):
         if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
@@ -61,9 +104,46 @@ class LibraryPictureCache:
         large = self.full_root / (key + ".npz")
         return large if large.is_file() else self.root / (key + ".npz")
 
+    def default_document(self, path):
+        """Grade's starting document kept by a thumbnail development, if the photo is unchanged."""
+        try:
+            return json.loads((self.root / (default_document_key(path) + ".json")).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def keep_default_document(self, path, document):
+        if not self.managed.preferences()['enabled']:
+            return
+        self.managed.prepare()
+        destination = self.root / (default_document_key(path) + ".json")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with NamedTemporaryFile("w", encoding="utf-8", dir=destination.parent, suffix=".tmp", delete=False) as handle:
+                temporary = Path(handle.name)
+                json.dump(document, handle)
+            os.replace(temporary, destination)
+            self.managed.record(destination)
+        finally:
+            if temporary:
+                temporary.unlink(missing_ok=True)
+
     @audited("cache_cached")
     def cached(self, path, edge, quality):
+        # "fast" asks for a stand-in only until the real picture exists. Once it
+        # is cached, the stand-in would just show first and then be swapped.
+        if quality == "fast":
+            real = self.cached(path, edge, "quick")
+            if real:
+                return real
         key = picture_key(path, edge, quality)
+        with self.transient_lock:
+            body = self.transient.get(key)
+            if body is not None:
+                with np.load(BytesIO(body), allow_pickle=False) as stored:
+                    metadata = json.loads(str(stored["metadata"]))
+                return metadata | {"key": key, "cache_hit": True, "stored_bytes": 0,
+                    "_transient": base64.b64encode(body).decode()}
         destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
         if not destination.is_file():
             return None
@@ -75,6 +155,7 @@ class LibraryPictureCache:
         except (OSError, ValueError, EOFError) as error:
             problem("cache_corrupt", destination, error, "damaged entry removed; picture rebuilt")
             destination.unlink(missing_ok=True)
+            self.managed.record(destination)
             return None
 
     @audited("cache_build")
@@ -102,6 +183,9 @@ class LibraryPictureCache:
             # A file changed during decoding must never publish under the old identity.
             if picture_key(path, edge, quality) != key:
                 raise ValueError("Photo changed while its library picture was being read.")
+            default_document = metadata.pop("default_document", None)
+            if default_document is not None:
+                self.keep_default_document(path, default_document)
             look_started = perf_counter()
             starting_look = metadata.pop("starting_look", None)
             grade = AdjustmentState.model_validate(starting_look) if starting_look else default_look(
@@ -117,6 +201,9 @@ class LibraryPictureCache:
             if reference is not None:
                 arrays["reference"] = np.clip(reference, 0, 65504).astype(np.float16)
             destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
+            if not self.managed.preferences()['enabled']:
+                return self.transient_result(key, arrays, metadata)
+            self.managed.prepare()
             destination.parent.mkdir(parents=True, exist_ok=True)
             temporary = None
             try:
@@ -127,13 +214,12 @@ class LibraryPictureCache:
                     save(handle, **arrays)
                 check_cancelled(cancelled)
                 os.replace(temporary, destination)
+                self.managed.record(destination)
             finally:
                 if temporary:
                     temporary.unlink(missing_ok=True)
             result = metadata | {"key": key, "cache_hit": False, "stored_bytes": destination.stat().st_size}
             with _TRIM_LOCK:
-                if self._known_bytes is not None:
-                    self._known_bytes += result["stored_bytes"]
                 self.trim()
             log("picture_stored", path=str(path), key=key, duration_ms=(perf_counter()-store_started)*1000)
             return result
@@ -142,9 +228,10 @@ class LibraryPictureCache:
     def build_native(self, path, center_x, center_y, width, height, cancelled=None):
         """One retained native source in the helper; only viewport crops reach the GPU."""
         path = Path(path).resolve(strict=True)
-        quality = f"native:{center_x:.8f}:{center_y:.8f}:{width}:{height}"
         edge = max(width, height)
         with self._native_lock:
+            kind = "native-gpu" if self.gpu_native_ready(path) else "native"
+            quality = f"{kind}:{center_x:.8f}:{center_y:.8f}:{width}:{height}"
             check_cancelled(cancelled)
             cached = self.cached(path, edge, quality)
             if cached:
@@ -157,7 +244,9 @@ class LibraryPictureCache:
                 check_cancelled(cancelled)
                 if picture_key(path, 100000, "native") != identity:
                     raise ValueError("Photo changed while its native picture was being read.")
-                grade = default_look(pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
+                starting_look = metadata.pop("starting_look", None)
+                grade = AdjustmentState.model_validate(starting_look) if starting_look else default_look(
+                    pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
                 source = (identity, pixels, reference, metadata, grade.model_dump(mode="json"))
                 if not self._native_paused:
                     self._native_source = source
@@ -172,6 +261,16 @@ class LibraryPictureCache:
                 source_height=source_height, crop_x=x, crop_y=y, starting_look=grade)
             return self.build(path, edge, quality, cancelled, (crop, ref, facts))
 
+    def gpu_native_ready(self, path):
+        with self._native_lock:
+            return (self._native_source is not None and
+                self._native_source[0] == picture_key(path, 100000, "native") and
+                self._native_source[3].get("renderer") == "gpu")
+
+    def retain_gpu_native(self, path, pixels, metadata, grade):
+        with self._native_lock:
+            self._native_source = (picture_key(path, 100000, "native"), pixels, None, metadata, grade)
+
     def pause_native(self, paused):
         self._native_paused = bool(paused)
         if paused:
@@ -180,73 +279,50 @@ class LibraryPictureCache:
     @audited("cache_pixels")
     def pixels(self, key, lane="hdr"):
         path = self.file(key)
-        with np.load(path, allow_pickle=False) as stored:
+        with np.load(self.open(key, path), allow_pickle=False) as stored:
             reference = lane == "sdr" and "reference" in stored
             pixels = stored["reference" if reference else "pixels"].astype(np.float32)
-        os.utime(path, None)
+        if path.exists(): os.utime(path, None)
         body, stride = encode_rgba_proxy_rows(pixels, 0, pixels.shape[0], prefer_half=True, pixel_format="rgba16float")
         return body, pixels.shape[1], pixels.shape[0], stride, "linear-srgb" if reference else "acescg"
 
     @audited("cache_trim")
     def trim(self):
-        self._trim_directory(self.full_root)
-        # Saved grades cost a render to remake. Disposable grid/full pictures
-        # have separate allowances and can never evict their gain-map files.
-        self._trim_directory(self.root, {".npz"})
-        self._trim_directory(self.root, {".jpg", ".avif", ".json"})
-
-    def _trim_directory(self, directory, extensions=None):
-        # One eviction batch only on overflow, keeping a 10% gap below the limit.
-        with _TRIM_LOCK:
-            entries = []
-            from .library_kept import preferences
-            if (self.root.parent / "library-picture-preferences.json").exists():
-                self.limit = preferences(self.root.parent)["limit_bytes"]
-            for path in directory.glob("*"):
-                if path.suffix not in (extensions or {".npz", ".jpg", ".avif", ".json"}): continue
-                try:
-                    stat = path.stat()
-                    entries.append((stat.st_mtime_ns, stat.st_size, path))
-                except FileNotFoundError as error:
-                    problem("cache_trim_missing", path, error, "entry already removed; continue eviction")
-                    continue
-            total = sum(size for _, size, _ in entries)
-            self._known_bytes = total
-            if total <= self.limit:
-                return
-            for _, size, path in sorted(entries, key=lambda entry: (0 if entry[2].name.endswith(".map.npz") else 1 if entry[2].suffix == ".npz" else 2, entry[0])):
-                if total <= self.limit * .9:
-                    break
-                try:
-                    path.unlink()
-                    total -= size
-                    self._known_bytes = total
-                except FileNotFoundError as error:
-                    problem("cache_trim_missing", path, error, "entry already removed; continue eviction")
+        self.managed.trim_soon()
 
 
 def default_look(pixels, reference, raw_input, suffix):
     sample = pixels[::max(1, int(np.ceil(max(pixels.shape[:2]) / 256)))].copy()
-    exposure = loader._recommended_raw_exposure_ev(sample) if raw_input else 0.
     analysis = classify_hdr(sample, {}, suffix)
-    grade = AdjustmentState()
-    grade.hdr.exposure = exposure
-    grade.sdr.exposure = exposure
-    if reference is not None:
-        grade.sdr.highlight_section_enabled = False
-    from .sessions import LoadedSession
-    from types import SimpleNamespace
-    proxy = SimpleNamespace(analysis=analysis, sdr_reference_image=reference,
-        hdr_reference_white_nits=203, adjustments=grade)
-    LoadedSession._sync_highlight_source_peaks(proxy)
-    grade.hdr.exposure += .25
-    grade.sdr.exposure += .25
+    grade = starting_adjustments(analysis, reference)
+    if not raw_input and reference is None:
+        # Preserve existing non-camera starts; camera RAW has no Library lift.
+        grade.hdr.exposure += .25
+        grade.sdr.exposure += .25
     return grade
 
 
 def check_cancelled(cancelled):
     if cancelled and cancelled():
         raise CancelledError("Library picture was cancelled.")
+
+
+def camera_preview(path, edge):
+    """Extract the camera JPEG without unpacking or demosaicing the RAW."""
+    import base64
+    import rawpy
+    started = perf_counter()
+    with rawpy.RawPy() as raw:
+        raw.open_file(str(path))
+        thumb = raw.extract_thumb()
+        image = Image.open(BytesIO(thumb.data)) if thumb.format == rawpy.ThumbFormat.JPEG else Image.fromarray(thumb.data)
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        image.thumbnail((edge, edge))
+        output = BytesIO()
+        image.save(output, format="JPEG", quality=90)
+    log("camera_preview_ready", path=str(path), duration_ms=(perf_counter()-started)*1000)
+    return {"route": "camera-preview-placeholder", "url": "data:image/jpeg;base64," + base64.b64encode(output.getvalue()).decode(),
+        "width": image.width, "height": image.height, "edge": edge, "kept": False}
 
 
 def embedded_picture(path, edge):
@@ -289,6 +365,17 @@ def decode_picture(path, edge, quality):
                 return linear_dng_picture(path, inspection, edge)
             if inspection.route != DngRoute.MOSAICED_RAW_DNG:
                 raise ValueError("This DNG cannot be read by Grade.")
+        if quality in {"grade-thumbnail", "native"}:
+            # Grade's own import, so the starting document paste needs is kept too.
+            from .sessions import SessionStore
+            session = SessionStore().prepare_session(Path(path), owns_source_path=False)
+            pixels, reference = session.image, session.sdr_reference_image
+            return reduce_picture(pixels, edge), reduce_picture(reference, edge) if reference is not None else None, {
+                "route": "grade-raw-thumbnail", "raw_input": True,
+                "starting_look": session.starting_adjustments().model_dump(mode="json"),
+                "default_document": session.edit_document().model_dump(mode="json"),
+                "raw_start_brightness": session.metadata.get("raw_start_brightness"),
+                "source_width": pixels.shape[1], "source_height": pixels.shape[0]}
         import_started = perf_counter()
         import rawpy
         log("picture_decoder_import", path=str(path), duration_ms=(perf_counter()-import_started)*1000)
@@ -316,8 +403,11 @@ def decode_picture(path, edge, quality):
                 pixels = normalize_to_acescg(pixels, "sRGB", "LINEAR")
             # Source saturation, before display tone mapping: neutral white, no reconstruction.
             pixels[clipped] = np.max(pixels[clipped], axis=1)[:, None]
+            if suffix == ".dng":
+                pixels *= np.float32(2.0 ** float(inspection.metadata.get("baseline_exposure", 0.0)))
+            brightness = calibrate_camera_raw(pixels, path)
             log("picture_source_reduced", path=str(path), duration_ms=(perf_counter()-reduce_started)*1000)
-            return pixels, None, {"route": "native-raw" if quality == "native" else "quick-half-raw", "raw_input": True,
+            return pixels, None, {"route": "native-raw" if quality == "native" else "quick-half-raw", "raw_input": True, "raw_start_brightness": brightness,
                 "source_width": transport.shape[1] * (1 if quality == "native" else 2), "source_height": transport.shape[0] * (1 if quality == "native" else 2)}
     if quality == "fast" and suffix in {".heic", ".heif", ".tif", ".tiff"}:
         # Only accept a real decoder-supported picture, never reinterpret arbitrary bytes.
@@ -357,6 +447,9 @@ def decode_picture(path, edge, quality):
     reference = metadata.get("sdr_reference_image")
     if reference is not None:
         reference = reduce_picture(reference, edge)
+    elif space is not None and display_referred_sdr(space, transfer, suffix):
+        # The same start as Grade's import: the file is the SDR rendition.
+        pixels, reference = sdr_file_renditions(pixels)
     return pixels, reference, {"route": "quick-" + suffix[1:], "color_unconfirmed": space is None,
         "source_width": metadata.get("source_width", image.shape[1]), "source_height": metadata.get("source_height", image.shape[0])}
 
@@ -378,4 +471,8 @@ def linear_dng_picture(path, inspection, edge):
     transform_normalized_to_acescg_in_place(working, build_color_transform(color),
         color.baseline_exposure, highlight_recovery_limit=None)
     working[clipped] = np.max(working[clipped], axis=1)[:, None]
-    return working, None, {"route": "quick-linear-dng", "raw_input": True, "source_width": source_width, "source_height": source_height}
+    grade = default_look(working, None, False, ".dng")
+    exposure = loader._linear_dng_library_exposure_ev(working[::max(1, int(np.ceil(max(working.shape[:2]) / 256)))].copy())
+    grade.hdr.exposure += exposure
+    grade.sdr.exposure += exposure
+    return working, None, {"route": "quick-linear-dng", "starting_look": grade.model_dump(mode="json"), "source_width": source_width, "source_height": source_height}

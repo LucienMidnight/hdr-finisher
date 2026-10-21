@@ -35,7 +35,7 @@ the exact percentile method belong in local maintainer QA notes.
 
 ## Viewport-Bounded GPU Preview
 
-Plan and limits: `docs/product/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`.
+Plan and limits: `docs/product/archive/Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`.
 Every driver opens projects in a disposable session and never saves them. Run
 Electron drivers one at a time with `HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440`.
 

@@ -2,7 +2,7 @@
 async function waitForInitialLoad(app, page) {
   await page.waitForURL(url => /^https?:$/.test(url.protocol), { waitUntil: "load", timeout: 180000 });
   await app.evaluate(async ({ BrowserWindow }) => {
-    const contents = BrowserWindow.getAllWindows()[0].webContents;
+    const contents = BrowserWindow.getAllWindows().find(win => !win.webContents.getURL?.()?.includes("gpu-delivery.html")).webContents;
     if (contents.isLoadingMainFrame()) {
       await new Promise((resolve, reject) => {
         const cleanup = () => {

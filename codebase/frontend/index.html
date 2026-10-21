@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HDR Finisher</title>
   <link rel="icon" type="image/svg+xml" href="/static/assets/brand/hdr-finisher-favicon-small.svg">
-  <link rel="stylesheet" href="/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__">
+  <script src="/static/theme-startup.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><link rel="stylesheet" href="/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__">
 </head>
 <body>
   <header class="window-chrome" aria-label="Application menu">
@@ -35,6 +35,10 @@
           <button type="button" role="menuitem" data-desktop-command="undo">Undo</button>
           <button type="button" role="menuitem" data-desktop-command="redo">Redo</button>
           <span class="window-menu-separator" role="separator"></span>
+          <button type="button" role="menuitem" data-desktop-command="copy-grade" disabled>Copy grade</button>
+          <button type="button" role="menuitem" data-desktop-command="paste-grade" disabled>Paste grade</button>
+          <button type="button" role="menuitem" data-desktop-command="paste-grade-choose" disabled>Paste grade (choose settings)…</button>
+          <button type="button" role="menuitem" data-desktop-command="quick-export" disabled>Quick export…</button>
           <button type="button" role="menuitem" data-native-edit="cut">Cut</button>
           <button type="button" role="menuitem" data-native-edit="copy">Copy</button>
           <button type="button" role="menuitem" data-native-edit="paste">Paste</button>
@@ -272,8 +276,6 @@
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
             <button id="overlay-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="overlay-popover" aria-haspopup="dialog" aria-pressed="false">Overlays</button>
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
-            <button id="preview-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="preview-popover" aria-haspopup="dialog">Preview</button>
-            <span class="viewer-tool-divider" aria-hidden="true">|</span>
             <button id="frame-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="frame-popover" aria-haspopup="dialog" title="Set the neutral surround behind the image, kept separate from the application theme.">Frame</button>
           </div>
           <div id="overlay-popover" class="overlay-popover hidden">
@@ -318,20 +320,6 @@
               </div>
               <input id="overlay-threshold" type="range" min="10" max="4000" step="10" value="100" data-path="shared.overlay_threshold">
               <p class="helper overlay-control-note">Highlights pixels at or above this reference-nit level.</p>
-            </div>
-          </div>
-          <div id="preview-popover" class="overlay-popover preview-popover hidden">
-            <div class="popover-heading">
-              <span>Preview</span>
-              <button id="preview-close" class="text-button" type="button">Close</button>
-            </div>
-            <label class="checkbox-row preview-faster-dragging" for="preview-faster-dragging" title="For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected.">
-              <input id="preview-faster-dragging" type="checkbox">
-              <span>Faster dragging</span>
-            </label>
-            <div class="preview-popover-status">
-              <span>Current preview size</span>
-              <strong id="preview-quality-status" aria-live="polite">Standard</strong>
             </div>
           </div>
           <div id="frame-popover" class="overlay-popover frame-popover hidden">
@@ -505,10 +493,6 @@
                 <option value="detailed" selected>Detailed</option>
                 <option value="reference">Reference</option>
               </select>
-            </label>
-            <label class="scope-exact-peak-control" for="scope-exact-peak" title="Editing uses a bounded peak estimate. Proof and export measure the complete image exactly.">
-              <span>Peak estimate</span>
-              <input type="checkbox" id="scope-exact-peak">
             </label>
             <label class="scope-zoom-control" for="scope-zoom">
               <span>Scope zoom</span>
@@ -1394,7 +1378,7 @@
             <div class="control-row" data-control-path="current.film_look.stock_separation"><div class="control-heading"><label class="tooltip-trigger" for="film-stock-separation" data-tooltip="Pushes the stock&#39;s colors further apart, or closer together, in the negative. Greys are unchanged.">Color Separation</label><output data-value-path="current.film_look.stock_separation">0%</output></div><input id="film-stock-separation" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.stock_separation"></div>
           </div>
 <div class="slider-group-tile film-effect-tile">
-<div class="film-module-header"><strong>Halation</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.halation_enabled"> Enabled</label></div>
+<div class="film-module-header"><strong>Halation</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.halation_enabled" aria-label="Halation"> <span class="film-toggle-state">Enabled</span></label></div>
 <div class="film-map-actions"><button class="local-overlay-toggle film-map-toggle" type="button" aria-pressed="false" data-path="current.film_look.halation_view_map" data-show-label="Show halation map" data-hide-label="Hide halation map" data-tooltip="Shows where the halation glow can appear, as a grayscale map. It shows placement, not strength: Amount and Hue do not change it. Preview only: never exported."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show halation map</span></button></div>
 <div class="control-pair">
             <div class="control-row" data-control-path="current.film_look.halation_amount"><div class="control-heading"><label for="film-halation-amount">Amount</label><output data-value-path="current.film_look.halation_amount">0%</output></div><input id="film-halation-amount" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.halation_amount"></div>
@@ -1407,7 +1391,7 @@
 </div>
 <div class="control-row" data-control-path="current.film_look.film_resolution"><div class="control-heading"><label for="film-resolution">Film Resolution</label><output data-value-path="current.film_look.film_resolution">100%</output></div><input id="film-resolution" type="range" min="0" max="100" step="1" value="100" data-path="current.film_look.film_resolution"></div>
 <div class="slider-group-tile film-effect-tile">
-<div class="film-module-header"><strong>Grain</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.grain_enabled"> Enabled</label></div>
+<div class="film-module-header"><strong>Grain</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.grain_enabled" aria-label="Grain"> <span class="film-toggle-state">Enabled</span></label></div>
 <div class="film-map-actions"><button class="local-overlay-toggle film-map-toggle" type="button" aria-pressed="false" data-path="current.film_look.grain_view_map" data-show-label="Show grain map" data-hide-label="Hide grain map" data-tooltip="Shows the grain field alone on mid-gray, at the strength each tone of the picture receives. Preview only: never exported."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show grain map</span></button></div>
 <div class="control-pair">
             <label class="select-control"><span class="tooltip-trigger" data-tooltip="Color negative builds grain from three dye layers of different sizes. Black &amp; white uses one layer of sharper silver grains and has no color grain.">Film Type</span><select id="film-grain-type" data-path="current.film_look.grain_film_type"><option value="color_negative" selected>Color negative</option><option value="black_and_white">Black &amp; white</option></select></label>
@@ -1474,7 +1458,6 @@
       <div>
         <h1 class="panel-title">Control Panel</h1>
       </div>
-      <span class="capability-chip" id="capability-summary">Checking encoders…</span>
     </div>
 
     <section class="export-choice-section" aria-labelledby="export-format-title">
@@ -1554,6 +1537,7 @@
           <select id="export-metadata-policy" aria-describedby="export-metadata-policy-note"><option value="none" selected>None</option><option value="copyright">Copyright only</option><option value="all_except_location">All except location</option><option value="all_including_location">All including location</option></select>
           <small class="helper visually-hidden" id="export-metadata-policy-note">Color, HDR, and gain-map signaling is always retained. “All including location” may expose GPS coordinates.</small>
         </label>
+        <div id="export-guarantee-peak-field"><label class="checkbox-row" title="Checks HDR files near the target and corrects overshoots locally. Adds time for decoding and correction; files still over target are delivered with a note."><input id="export-guarantee-peak" type="checkbox" aria-describedby="export-guarantee-peak-note"> Guarantee HDR peak<small class="helper visually-hidden" id="export-guarantee-peak-note">Checks HDR files near the target and corrects overshoots locally. Adds time for decoding and correction; files still over target are delivered with a note.</small></label></div>
         <p class="helper export-resolved-encoding" id="export-resolved-encoding"></p>
         <p class="helper export-resolved-encoding" id="export-reference-white"></p>
         </div>
@@ -1662,6 +1646,7 @@
     <div class="settings-layout">
       <nav class="settings-nav" aria-label="Settings sections">
         <button type="button" class="active" data-settings-tab="general" aria-selected="true">General</button>
+        <button type="button" data-settings-tab="performance" aria-selected="false">Performance</button>
         <button type="button" data-settings-tab="appearance" aria-selected="false">Appearance</button>
         <button type="button" data-settings-tab="locations" aria-selected="false">Locations</button>
         <button type="button" data-settings-tab="shortcuts" aria-selected="false">Shortcuts</button>
@@ -1679,6 +1664,30 @@
             </select>
           </label>
           <p id="hdr-reference-white-note" class="helper">Updates the active project when one is open and becomes the default for new sources. It does not set export peak, display peak, proof target, or Windows SDR white.</p>
+        </section>
+        <section data-settings-panel="performance" hidden>
+          <h3>Performance</h3>
+          <h4>Library thumbnail cache</h4>
+          <label class="checkbox-row"><input id="library-cache-enabled" type="checkbox" aria-label="Library thumbnail cache"><span id="library-cache-state">Enabled</span></label>
+          <label class="settings-field">Thumbnails
+            <select id="library-cache-thumbnail-limit"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option></select>
+          </label>
+          <p id="library-cache-thumbnail-usage" class="helper"></p>
+          <label class="settings-field">Full-size pictures
+            <select id="library-cache-full_size-limit"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option></select>
+          </label>
+          <p id="library-cache-full_size-usage" class="helper"></p>
+          <label class="settings-field">Saved-grade pictures
+            <select id="library-cache-saved_grade-limit"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option></select>
+          </label>
+          <p id="library-cache-saved_grade-usage" class="helper"></p>
+          <p id="library-cache-usage" class="helper" aria-live="polite"></p>
+          <p id="library-cache-location" class="helper" style="overflow-wrap:anywhere"></p>
+          <div class="button-row"><button id="library-cache-change" type="button" class="button-secondary">Change folder…</button><button id="library-cache-reveal" type="button" class="button-secondary">Show in Explorer</button><button id="library-cache-portable" type="button" class="button-secondary" hidden>Use portable cache</button><button id="library-cache-clear" type="button" class="button-secondary">Clear cache…</button></div>
+          <p class="helper">Each allowance removes its own least recently used files. Full-size pictures never displace thumbnails or saved-grade pictures. Disabled reads existing cache files and saves no new cache files. Your photos and grades are never cleared.</p>
+
+          <label class="checkbox-row"><input id="settings-force-cpu-delivery" type="checkbox" disabled> Force CPU for export, Proof and saved-grade Library pictures</label>
+          <p id="settings-delivery-status" class="helper" aria-live="polite">Loading delivery settings…</p>
           <label class="settings-field">Rendering mode
             <select id="settings-rendering-mode">
               <option value="auto">Auto · Recommended</option>
@@ -1706,6 +1715,10 @@
             <input id="settings-gpu-memory-custom" type="number" min="0.25" max="64" step="0.25" inputmode="decimal" value="2">
           </label>
           <p class="helper">How much of your graphics card the preview may use. Auto uses up to half of the card's own memory, or 2 GiB when the card's memory can't be read. More memory lets the preview process the whole image in one fast pass. Choose a lower limit if you run other graphics-heavy apps at the same time. Export is unaffected.</p>
+          <div class="preview-popover-status">
+            <span>Current preview size</span>
+            <strong id="preview-quality-status" aria-live="polite">Standard</strong>
+          </div>
         </section>
         <section data-settings-panel="appearance" hidden>
           <h3>Appearance</h3>
@@ -1859,7 +1872,8 @@
   <script src="/static/whole-image-preview-pipe.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/gpu-render-plan.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/gpu-params.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
-  <script src="/static/webgpu-preview.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/idle-warmup.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/webgpu-preview.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/preview-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/tile-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/render-coordinator.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
@@ -1867,6 +1881,8 @@
   <script src="/static/desktop-chrome.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app-dialog.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/status-manager.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/library-cache-settings.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/delivery-settings.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/application-shell.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/path-geometry.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/curve-editor.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
@@ -1884,6 +1900,8 @@
   <script src="/static/sdr-match-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/edit-commands.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/export-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/export-patterns.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/batch-export.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/session-import.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/project-documents.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/grade-saving.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

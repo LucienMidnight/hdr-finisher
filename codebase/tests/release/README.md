@@ -111,6 +111,48 @@ and frontend-source support are fast-suite helpers, not standalone drivers.
 Test tooling implementation lives under tests/release/ and is not a driver.
 The test fails for an unlisted driver, missing listed file or duplicate entry.
 
+## Page waits under Electron (October 18, 2026)
+
+The app polls its sidecar for as long as it is open, so Playwright's
+`networkidle` never arrives. `run-in-electron.js` serves every `networkidle`
+wait in `goto`, `reload` and `waitForLoadState` as `load` plus the app's own
+start-up signals (`body[data-ready="true"]` and the Library frame's
+`window.HDRLibrary`). Drivers keep asking for `networkidle`; new drivers may
+do the same or wait on those signals directly. A driver run outside the
+runner, under plain Chromium, still waits for `networkidle` and times out.
+
+### The app window closing mid-driver (diagnosed October 18, 2026)
+
+Unresolved: Library drivers on a cold folder sometimes stop with "Target
+page, context or browser has been closed" (seen in a retired thumbnail driver,
+and as "Too large write data is pending" with a
+400-photo folder). The cause is the hidden GPU delivery window. It uploads
+each finished picture to the sidecar as one raw float buffer
+(`gpu-delivery.js`, about 70 MB for a 1709x2560 saved-grade picture).
+Chromium copies a buffer upload body, escaped as text, into the DevTools
+request event Playwright listens to. One such event passed Playwright's
+256 MB message limit ("Max payload size exceeded"). The Electron main process
+then grew from about 110 MB to 1.3 GB in ten seconds as undeliverable
+DevTools data queued up, and exited with code 1. No crash dump is written,
+because Playwright launches Electron with `--disable-breakpad`. It is
+intermittent because it needs a saved-grade picture delivery while a driver
+is connected. The app outside tests has no DevTools client and is unaffected.
+
+Sending the upload as a `Blob` keeps it out of DevTools events (checked: an
+ArrayBuffer body was copied in full, a Blob body not at all, with the same
+bytes received). Steve approved it on October 19; `gpu-delivery.js` now sends
+a `Blob`. The saved-picture checks and proof-size-interaction.js then ran to
+completion. The finished-thumbnail drivers were retired with live Library
+drawing on October 20; library-live-grid.js now covers RAW cells and recovery.
+
+To see why a window closed, the runner prints the main-process events
+(window closed, quit, renderer or GPU process gone) when the page closes;
+they are kept in `logs/runner-main-events.log` in the run's profile.
+`HDR_FINISHER_RUNNER_HEARTBEAT=1` adds a 2-second memory line per process to
+that log, and `DEBUG=pw:browser` prints Playwright's connection errors. Name
+a custom `HDR_FINISHER_ELECTRON_TEST_USER_DATA` folder with `test-` in it,
+or the sidecar uses the real Library cache in `%LOCALAPPDATA%`.
+
 ## Known failures
 
 Add a `known-failures.json` entry only for an already documented unresolved

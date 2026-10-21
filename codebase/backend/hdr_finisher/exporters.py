@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 import os
 from pathlib import Path
@@ -37,6 +37,7 @@ from .jpegxl import (
     validate_sdr_jpegxl,
 )
 from .test_pattern import build_hdr_test_pattern
+from .hdr_ceiling import decoded_channel_nits, delivery_ceiling_nits, encode_within_ceiling
 
 
 SDR_WHITE_NITS = 203.0
@@ -153,6 +154,15 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
 def _render_export_branch(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState
 ) -> np.ndarray:
+    from .gpu_delivery import render_pair
+    pair = render_pair(session, settings, adjustments)
+    if pair is not None:
+        result = pair[kind.value]
+        if kind.value in settings.editing_measurements:
+            from .scopes import scope_peak_value
+            peak = scope_peak_value(result, kind, session.color_context) * .18 / session.hdr_reference_white_nits if kind == PreviewKind.HDR else float(np.max(result @ np.array([.2126, .7152, .0722], dtype=np.float32)))
+            settings._exact_measurements[kind.value] = {"peak": peak}
+        return result
     color_context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
     source = _denoised_export_source(session, kind)
     image = apply_adjustments(
@@ -204,6 +214,7 @@ class _PreparedExport:
     staging_suffix: str
     write: Callable[[Path], None]
     validate: Callable[[Path], str | None]
+    notes: list[str] = field(default_factory=list)
 
 
 def _execute_export(
@@ -218,6 +229,8 @@ def _execute_export(
     timings_ms: dict[str, float] | None = None,
 ) -> ExportResponse:
     """Run the shared prepare/write/validate/replace export lifecycle."""
+    from .delivery import renderer_record
+    rendering = renderer_record()
     output_path: Path | None = None
     staged_output: Path | None = None
     timings = timings_ms if timings_ms is not None else {}
@@ -227,6 +240,7 @@ def _execute_export(
         )
         _require_overwrite_permission(output_path, settings)
         prepared = prepare()
+        rendering = getattr(session, "_delivery_record", rendering)
         with NamedTemporaryFile(
             prefix=f".{output_path.stem}.",
             suffix=prepared.staging_suffix,
@@ -245,6 +259,7 @@ def _execute_export(
         message = str(exc) if failure_prefix is None else f"{failure_prefix}: {exc}"
         return ExportResponse(
             accepted=False,
+            **rendering,
             backend=backend.name,
             message=message,
             output_path=str(output_path) if output_path is not None else settings.output_path,
@@ -252,10 +267,15 @@ def _execute_export(
         )
     finally:
         _remove_incomplete_output(staged_output)
+    message = success_message(output_path, validation)
+    if prepared.notes:
+        message = f"{message} {' '.join(prepared.notes)}"
     return ExportResponse(
         accepted=True,
+        **rendering,
         backend=backend.name,
-        message=success_message(output_path, validation),
+        message=message,
+        delivery_notes=list(prepared.notes),
         output_path=str(output_path),
         timings_ms=timings,
         measurement_warnings=measurement_warnings(settings.editing_measurements, settings._exact_measurements),
@@ -380,8 +400,20 @@ class SDRJPEGXLExportBackend(ExportBackend):
         )
 
 
-def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None):
-    """Encode finished renditions; also used by Library pictures. No rendering."""
+def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None, ceiling_nits=None, notes=None):
+    """Encode finished renditions; also used by Library pictures. No rendering.
+
+    The decoded file never exceeds ``ceiling_nits`` (hdr_ceiling).
+    """
+    def encode(hdr):
+        _write_avif_gainmap_once(staged_output, hdr, sdr_image, settings, reference_white_nits,
+            gainmaputil=gainmaputil, timings_ms=timings_ms)
+        return Path(staged_output)
+    encode_within_ceiling(hdr_image, reference_white_nits, encode,
+        lambda written: decoded_channel_nits(written, "avif_gain_map"), ceiling_nits, notes)
+
+
+def _write_avif_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None):
     gainmaputil = gainmaputil or resolve_binary("avifgainmaputil")
     timings_ms = timings_ms if timings_ms is not None else {}
     with TemporaryDirectory(prefix="hdr_finisher_export_") as temp_dir_name:
@@ -419,8 +451,20 @@ def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
         )
         timings_ms["encode"] = round((perf_counter() - started) * 1000.0, 3)
 
-def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None):
-    """Encode finished renditions with the same writer as JPEG export."""
+def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, ceiling_nits=None, notes=None):
+    """Encode finished renditions with the same writer as JPEG export.
+
+    The decoded file never exceeds ``ceiling_nits`` (hdr_ceiling).
+    """
+    def encode(hdr):
+        _write_jpeg_gainmap_once(staged_output, hdr, sdr_image, settings, reference_white_nits,
+            ultrahdr_app=ultrahdr_app, exif_payload=exif_payload)
+        return Path(staged_output)
+    encode_within_ceiling(hdr_image, reference_white_nits, encode,
+        lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits, notes)
+
+
+def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None):
     ultrahdr_app = ultrahdr_app or resolve_binary("ultrahdr_app")
     with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
@@ -483,6 +527,7 @@ class AVIFGainMapExportBackend(ExportBackend):
         timings_ms: dict[str, float] = {}
 
         def prepare() -> _PreparedExport:
+            notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             phase_started = perf_counter()
             hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
@@ -492,7 +537,8 @@ class AVIFGainMapExportBackend(ExportBackend):
             def write(staged_output: Path) -> None:
                 write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203),
-                    gainmaputil=gainmaputil, timings_ms=timings_ms)
+                    gainmaputil=gainmaputil, timings_ms=timings_ms,
+                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments), notes=notes)
 
             def validate(staged_output: Path) -> str | None:
                 started = perf_counter()
@@ -505,7 +551,7 @@ class AVIFGainMapExportBackend(ExportBackend):
                 timings_ms["validate"] = round((perf_counter() - started) * 1000.0, 3)
                 return result
 
-            return _PreparedExport(".gainmap.tmp.avif", write, validate)
+            return _PreparedExport(".gainmap.tmp.avif", write, validate, notes)
 
         def success(path: Path, validation: str | None) -> str:
             message = f"AVIF gain map export finished at {path}"
@@ -541,6 +587,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             )
 
         def prepare() -> _PreparedExport:
+            notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
             sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
@@ -552,12 +599,14 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             def write(staged_output: Path) -> None:
                 write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
-                    exif_payload=_source_exif_payload(session, settings.metadata_policy))
+                    exif_payload=_source_exif_payload(session, settings.metadata_policy),
+                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments), notes=notes)
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",
                 write,
                 lambda staged: _validate_ultrahdr_output(staged, ultrahdr_app),
+                notes,
             )
 
         return _execute_export(
@@ -581,14 +630,19 @@ class JPEGXLHDRExportBackend(ExportBackend):
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
 
         def prepare() -> _PreparedExport:
+            notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
-            payload = encode_hdr_jpegxl(
+            reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
+            exif_payload = _source_exif_payload(session, settings.metadata_policy)
+            payload = encode_within_ceiling(
                 hdr_image,
-                int(settings.quality),
-                settings.jpegxl_precision,
-                exif_payload=_source_exif_payload(session, settings.metadata_policy),
-                reference_white_nits=getattr(session, "hdr_reference_white_nits", 203),
+                reference_white_nits,
+                lambda hdr: encode_hdr_jpegxl(hdr, int(settings.quality), settings.jpegxl_precision,
+                    exif_payload=exif_payload, reference_white_nits=reference_white_nits),
+                _decoded_jpegxl_channel_nits,
+                _peak_ceiling(settings, finishing_adjustments),
+                notes,
             )
             shape = hdr_image.shape[:2]
             return _PreparedExport(
@@ -597,6 +651,7 @@ class JPEGXLHDRExportBackend(ExportBackend):
                 lambda staged: validate_jpegxl(
                     staged.read_bytes(), shape, settings.jpegxl_precision
                 ),
+                notes,
             )
 
         return _execute_export(
@@ -612,6 +667,18 @@ class JPEGXLHDRExportBackend(ExportBackend):
 
 class ExportProcessError(RuntimeError):
     """Raised when an external export command fails."""
+
+
+def _peak_ceiling(settings: ExportSettings, adjustments: AdjustmentState) -> float | None:
+    """Check decoded HDR peaks only when this preset version asks for it."""
+    return delivery_ceiling_nits(adjustments) if settings.guarantee_hdr_peak else None
+
+
+def _decoded_jpegxl_channel_nits(payload: bytes) -> np.ndarray:
+    with TemporaryDirectory(prefix="hdr_finisher_ceiling_") as temp_dir:
+        path = Path(temp_dir) / "check.jxl"
+        path.write_bytes(payload)
+        return decoded_channel_nits(path, "jpegxl_hdr")
 
 
 def _resolve_output_path(session_id: str, settings: ExportSettings, suffix: str) -> str:
@@ -1007,7 +1074,7 @@ def _denoised_ultrahdr_gain_map_jpeg(
     # much overlap makes stripe boundaries numerically equivalent to a single
     # full-frame pass while bounding scratch memory on large RAW exports.
     halo = radius * 2
-    for row_start in range(0, height, stripe_rows):
+    def filter_stripe(row_start):
         row_end = min(height, row_start + stripe_rows)
         crop_start = max(0, row_start - halo)
         crop_end = min(height, row_end + halo)
@@ -1026,7 +1093,21 @@ def _denoised_ultrahdr_gain_map_jpeg(
         encoded = np.clip(
             np.round(filtered[core_start:core_end] * np.float32(255.0)), 0, 255
         ).astype(np.uint8)
-        result.paste(Image.fromarray(encoded), (0, row_start))
+        return row_start, encoded
+
+    # Two stripes bound scratch and overlap NumPy work without changing the
+    # filter, its overlap, operation order, or the serial JPEG writer. Keep at
+    # most two results in flight even for very tall originals.
+    from collections import deque
+    rows = iter(range(0, height, stripe_rows))
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="ultrahdr-stripe") as pool:
+        pending = deque(pool.submit(filter_stripe, row) for row in [next(rows, None), next(rows, None)] if row is not None)
+        while pending:
+            row_start, encoded = pending.popleft().result()
+            result.paste(Image.fromarray(encoded), (0, row_start))
+            row = next(rows, None)
+            if row is not None:
+                pending.append(pool.submit(filter_stripe, row))
 
     buffer = BytesIO()
     # Multi-channel Ultra HDR maps must retain full chroma resolution.

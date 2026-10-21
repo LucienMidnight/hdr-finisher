@@ -254,6 +254,18 @@
   ],
   "drivers": [
     {
+      "path": "tests/overlay-backlog.js",
+      "areas": [
+        "preview",
+        "library"
+      ],
+      "tier": "area",
+      "protects": "Latest-only instruments, grain drag memory and Library recovery",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
       "path": "desktop/tests/confirmation-focus.js",
       "areas": [
         "ui"
@@ -1215,17 +1227,6 @@
       }
     },
     {
-      "path": "tests/library-kept-pictures.js",
-      "areas": [
-        "library"
-      ],
-      "tier": "full",
-      "protects": "Slice 3 Stage A: one real window, disposable originals and app profile.",
-      "launch": {
-        "method": "electron"
-      }
-    },
-    {
       "path": "tests/library-measurement-identity.js",
       "areas": [
         "library"
@@ -1289,17 +1290,6 @@
       "protects": "Serial real-camera launch, six maps, save-to-picture and folder-check coverage.",
       "launch": {
         "method": "native"
-      }
-    },
-    {
-      "path": "tests/library-saved-picture-refresh.js",
-      "areas": [
-        "library"
-      ],
-      "tier": "full",
-      "protects": "Saved grades refresh the existing Library, including a RAW without bright peaks.",
-      "launch": {
-        "method": "electron"
       }
     },
     {
@@ -2025,7 +2015,7 @@
         "preview"
       ],
       "tier": "diagnostic",
-      "protects": "§8.1 headline latency under the §8 measurement rule.",
+      "protects": "\u00a78.1 headline latency under the \u00a78 measurement rule.",
       "launch": {
         "method": "electron"
       }
@@ -3005,7 +2995,7 @@
         "preview"
       ],
       "tier": "full",
-      "protects": "scope peak toggle interaction",
+      "protects": "Automatic editing peak and preview replacement",
       "launch": {
         "method": "electron"
       }
@@ -3496,18 +3486,6 @@
       }
     },
     {
-      "path": "tests/performance/library-open-source-parity.py",
-      "areas": [
-        "library"
-      ],
-      "tier": "diagnostic",
-      "protects": "Compare real corrected-source routes exactly on a disposable source copy.",
-      "launch": {
-        "method": "python",
-        "requires": "Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic."
-      }
-    },
-    {
       "path": "tests/performance/library-raw-deep-dive-summary.py",
       "areas": [
         "library"
@@ -3764,6 +3742,226 @@
           "tests/performance/zoom-block-continuity.js"
         ]
       }
+    },
+    {
+      "path": "desktop/tests/overlay-feedback.js",
+      "areas": [
+        "preview",
+        "library",
+        "ui",
+        "film"
+      ],
+      "tier": "area",
+      "protects": "GPU analysis overlays, Library review controls and file drops, Performance settings and theme restart.",
+      "launch": {
+        "method": "native"
+      }
+    },
+    {
+      "path": "tests/library-gpu-raw.js",
+      "areas": [
+        "library",
+        "lens"
+      ],
+      "tier": "area",
+      "protects": "Camera RAW grid thumbnails developed on the GPU, including Lensfun correction, against Grade's CPU development; disposable photo copies only.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-grade-paste.js",
+      "areas": [
+        "library",
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "Library grade clipboard, single confirmation and settings persistence, virtual-copy bulk paste, live redraw from the same stored scenes and one-step Undo.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/batch-export-ui.js",
+      "areas": [
+        "export-proof",
+        "library"
+      ],
+      "tier": "core",
+      "protects": "Batch preset versions, saved setting round trip, filename examples, Grid/Preview and Quick export dialog.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-filmstrip-wheel.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "core",
+      "protects": "A vertical mouse wheel scrolls the Single view filmstrip sideways.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-export-menu.js",
+      "areas": [
+        "export-proof",
+        "library"
+      ],
+      "tier": "core",
+      "protects": "Library selection reaches Export without a photo open in Grade: menu availability, Open in Export and Select all.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/gpu-delivery-smoke.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "Small GPU and forced-CPU export, delivery resize/sharpening, decoded perceptual limits and HDR peak.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/gpu-delivery-ceiling.js",
+      "areas": [
+        "export-proof"
+      ],
+      "tier": "core",
+      "protects": "Saved DSC07060 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-gpu-raw-paste.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "core",
+      "protects": "GPU thumbnail starting documents are reused by concurrent paste preparation, change checks and unchanged paste.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
+      "path": "tests/library-gpu-raw-single.js",
+      "areas": [
+        "library"
+      ],
+      "tier": "core",
+      "protects": "GPU-developed grid and screen pictures share development, neighbouring Single/full-screen views retain scenes, and native GPU crops agree with Grade at Fit and 100%.",
+      "launch": {
+        "method": "electron"
+      }
     }
+,
+    {
+        "path": "tests/library-scroll-cache.js",
+        "areas": ["library"],
+        "tier": "area",
+        "protects": "Completed live thumbnail surfaces survive scrolling beyond one screen without backend work or lost pixels.",
+        "launch": {"method": "electron"}
+      },
+      {
+      "path": "tests/library-live-grid.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Visible live cells reuse stored scenes without finished JPEGs and recover after GPU device loss.",
+      "launch": {"method": "electron"}
+    }
+,
+    {
+      "path": "tests/library-live-picture.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Live Library HDR and SDR pictures agree with Grade before any thumbnail codec.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/library-live-native.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Selected-photo native detail shows Fit immediately and reuses one full-size development across zooms.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/library-export-live-tiles.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Visible Export tiles draw once, retain through progress and keep three-photo export throughput within its agreed allowance.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/performance/library-source-baseline.py",
+      "areas": ["library"],
+      "tier": "diagnostic",
+      "protects": "Non-RAW source-stage baseline, paired-tier/cache counts and ISO map-interface/CPU decode diagnostics.",
+      "launch": {
+        "method": "python",
+        "requires": "Provide --manifest with representative read-only sources; --synthetic adds controlled cases; or use --iso-gainmap-profile FILE for the unqualified map boundary. Choose --repeats before comparisons."
+      }
+    },
+    {
+      "path": "tests/performance/library-iso-native.py",
+      "areas": ["library"],
+      "tier": "diagnostic",
+      "protects": "Isolated pinned-libavif base/map metadata, native precision, full-size YUV map scaling and exact HDR compatibility investigation; does not qualify GPU preparation.",
+      "launch": {
+        "method": "python",
+        "requires": "Build tools/iso-gainmap-probe against pinned libavif first; supply --probe EXE --source AVIF and choose --repeats before comparison. See photo-library section 5.1."
+      }
+    },
+    {
+      "path": "tests/library-iso-source.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "ISO AVIF explicitly retains CPU reconstruction; real SDR/HDR-base scenes, full-source peaks, both tiers, cached native reuse and saved-grade live HDR/SDR drawing agree with Grade.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/library-dng-warp.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Eligible DNG GainMap/warp and linear preparation preserve finished SDR/HDR, borders, responsive Activity, mixed-folder routing and the H toggle.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/library-rgb-source.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Ordinary JPEG/PNG shared GPU preparation preserves authored SDR, full-source defaults, both tiers and native reuse against Grade.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/library-precision-rendition.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Authored uint16 TIFF and JPEG/PNG preserve SDR, saved finishing edits, full-source defaults and native reuse.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/library-precision-source.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "EXR/TIFF float preparation, concurrent tiers, native reuse and finished pixels against Grade.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/library-rgb-native.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "JPEG/PNG cells and saved-grade native detail preserve selected-only reuse and recover automatically after device loss.",
+      "launch": {"method": "electron"}
+    },
+    {"path":"tests/library-codec-source.js","areas":["library"],"tier":"area",
+      "protects":"JXL/AVIF/HEIF precision, transfer, scene tiers and cached/native reuse against Grade.","launch":{"method":"electron"}},
+    {"path":"tests/library-codec-native.js","areas":["library"],"tier":"area",
+      "protects":"JXL/HEIF cells, selected native reuse, saved grades and automatic GPU recovery.","launch":{"method":"electron"}}
   ]
 }

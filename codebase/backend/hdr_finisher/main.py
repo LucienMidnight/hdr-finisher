@@ -89,6 +89,8 @@ from .models import (
     SessionSummary,
     SourceInterpretationOverride,
 )
+from .instrument_work import InstrumentWork
+
 from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .cpu_strips import StripExecutionRefused
@@ -369,9 +371,12 @@ class DesktopRequestBoundary:
                 headers["X-Content-Type-Options"] = "nosniff"
             await send(message)
 
-        # Resource scheduling only: keep the grading/export implementations
-        # unchanged, and preserve receive so disconnect cancellation still works.
-        if request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade"):
+        # Delivery has its own GPU priority/budget admission. Holding the old
+        # blanket Library pause while export waits would prevent visible pictures
+        # from reaching that queue. Grade/import still pause the decode helper.
+        delivery_request = (request.url.path.startswith("/api/session/") and
+            request.url.path.endswith(("/export", "/proof/artifact")))
+        if not delivery_request and (request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade")):
             with library_worker.busy():
                 await self.app(scope, receive, send_hardened)
         else:
@@ -386,6 +391,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+instrument_work = InstrumentWork()
 store = SessionStore(grade_import_parallel=True)
 atexit.register(store.clear)
 capabilities = probe_capabilities()
@@ -396,6 +402,12 @@ library_worker = LibraryWorker(MediaBrowserStore().root)
 atexit.register(library_worker.close)
 media_browser_store = MediaBrowserStore(thumbnail_worker=library_worker)
 app.include_router(create_library_router(library_worker, media_browser_store, store))
+from .batch_export_api import create_batch_router
+app.include_router(create_batch_router(store, desktop_path_grants, bool(desktop_authoring_secret)))
+from .delivery import create_delivery_router
+app.include_router(create_delivery_router())
+from .gpu_delivery import create_gpu_delivery_router
+app.include_router(create_gpu_delivery_router())
 import_jobs = ImportJobManager(store, media_browser_store, workers=1)
 atexit.register(import_jobs.close)
 external_proof_tokens: dict[str, tuple[str, float]] = {}
@@ -984,7 +996,7 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
 
 
 @app.post("/api/session/{session_id}/overlay/{kind}")
-def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
+async def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest, http_request: Request) -> Response:
     try:
         session, adjustments = _resolve_edit_request(session_id, request.adjustments, request.edit_revision)
     except KeyError as exc:
@@ -997,26 +1009,37 @@ def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
 
     preview_long_edge = request.long_edge or session.preview.long_edge
     _guard_preview_resources(session, preview_long_edge)
-    try:
+    # Exposure instruments measure the grade, not random film-grain excursions.
+    adjustments = adjustments.model_copy(deep=True)
+    adjustments.hdr.film_look.grain_enabled = False
+    adjustments.sdr.film_look.grain_enabled = False
+
+    def render(is_current):
         processed = session.render_cache.adjusted_frame(
             adjustments,
             kind,
             preview_long_edge,
+            is_current=is_current,
             local_adjustments=adjustments.enabled_locals((
                 request.local_adjustments
                 if request.local_adjustments is not None
                 else session.local_adjustments
             ) if request.include_locals else []),
         )
-        body, media_type = encode_processed_overlay_bytes(processed, adjustments, kind, session.color_context)
+        return encode_processed_overlay_bytes(processed, adjustments, kind, session.color_context)
+    try:
+        body, media_type = await instrument_work.run((session_id, kind, "overlay"), http_request, render)
+    except StaleRender:
+        return JSONResponse(status_code=409, content={"detail": "Stale overlay request dropped."})
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return Response(content=body, media_type=media_type)
 
 
 @app.get("/api/session/{session_id}/scopes")
-def scopes(
+async def scopes(
     session_id: str,
+    http_request: Request,
     kind: PreviewKind = PreviewKind.HDR,
     mode: ScopeMode = ScopeMode.HISTOGRAM,
     bins: int | None = Query(default=None, ge=32, le=384),
@@ -1033,23 +1056,30 @@ def scopes(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
-    return session.render_cache.scope_result(
-        session.adjustments,
-        kind,
-        long_edge,
-        mode.value,
-        bins or 256,
-        columns,
-        int(max_nits.value),
-        local_adjustments=session.adjustments.enabled_locals(session.local_adjustments),
-        channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
-    )
+    def render(is_current):
+        return session.render_cache.scope_result(
+            session.adjustments,
+            kind,
+            long_edge,
+            mode.value,
+            bins or 256,
+            columns,
+            int(max_nits.value),
+            is_current=is_current,
+            local_adjustments=session.adjustments.enabled_locals(session.local_adjustments),
+            channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
+        )
+    try:
+        return await instrument_work.run((session_id, kind, "scopes"), http_request, render)
+    except StaleRender:
+        return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})
 
 
 @app.post("/api/session/{session_id}/scopes")
-def scopes_for_adjustments(
+async def scopes_for_adjustments(
     session_id: str,
     request: PreviewRequest,
+    http_request: Request,
     kind: PreviewKind = PreviewKind.HDR,
     mode: ScopeMode = ScopeMode.HISTOGRAM,
     bins: int | None = Query(default=None, ge=32, le=384),
@@ -1064,9 +1094,8 @@ def scopes_for_adjustments(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
-    token = store.next_scope_token(session_id, kind)
-    try:
-        result = session.render_cache.scope_result(
+    def render(is_current):
+        return session.render_cache.scope_result(
             adjustments,
             kind,
             long_edge,
@@ -1074,7 +1103,7 @@ def scopes_for_adjustments(
             bins or 256,
             columns,
             int(max_nits.value),
-            is_current=lambda: session.scope_tokens[kind] == token,
+            is_current=is_current,
             local_adjustments=adjustments.enabled_locals((
                 request.local_adjustments
                 if request.local_adjustments is not None
@@ -1088,6 +1117,8 @@ def scopes_for_adjustments(
                 request.scope_region.height,
             ) if request.scope_region is not None else None,
         )
+    try:
+        result = await instrument_work.run((session_id, kind, "scopes"), http_request, render)
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})
     result.tier = request.tier
@@ -1281,6 +1312,11 @@ def adaptive_denoise_model(
     # a crop costs no new measurement and cannot move the result.
     native = session.render_cache.native_denoise_source(*request)
     if native is not None:
+        # A GPU delivery job's worker measured this before queueing for the GPU
+        # (gpu_delivery._native_denoise_models), on these same pixels.
+        measured = getattr(session, "native_denoise_models", {}).get(kind.value)
+        if measured is not None:
+            return measured
         image, source_epoch = native
         key = (session_id, "native", source_epoch)
         return _cached_denoise_model(

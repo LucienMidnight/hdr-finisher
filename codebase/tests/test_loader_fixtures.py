@@ -27,7 +27,10 @@ def test_load_real_png_fixture() -> None:
     assert image.shape == (16, 24, 3)
     assert metadata["bit_depth"] == "uint8"
     assert analysis.classification == HDRClassification.SDR_ONLY
-    assert sdr_reference is None
+    # The file is the SDR rendition; the scene places its white at reference white.
+    from hdr_finisher.color import acescg_to_linear_srgb
+    np.testing.assert_allclose(acescg_to_linear_srgb(image / 0.18), sdr_reference, atol=1e-5)
+    assert float(sdr_reference.max()) == pytest.approx(1.0, abs=1e-3)
 
 
 def test_load_real_tiff_fixture_with_hdr_headroom() -> None:
@@ -154,10 +157,12 @@ def test_pillow_import_converts_embedded_icc_profile_to_srgb(tmp_path) -> None:
     profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
     Image.new("RGB", (4, 3), (128, 128, 128)).save(source_path, icc_profile=profile)
 
-    loaded, descriptor, metadata, *_ = load_image(source_path)
+    loaded, descriptor, metadata, _analysis, reference = load_image(source_path)
     assert descriptor.source_color_space == "sRGB"
     assert metadata["icc_converted_to_srgb"] is True
-    assert float(loaded.mean()) == pytest.approx(0.216, abs=0.01)
+    # Mid grey 128 decodes to linear 0.216; the scene holds it at 0.18 of that.
+    assert float(reference.mean()) == pytest.approx(0.216, abs=0.01)
+    assert float(loaded.mean()) == pytest.approx(0.216 * 0.18, abs=0.002)
 
 
 def test_load_float_tiff_with_deflate_predictor(tmp_path) -> None:

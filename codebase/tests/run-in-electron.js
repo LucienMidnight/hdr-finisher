@@ -111,6 +111,7 @@ function packagedExecutable() {
   const diagnosticGpuArgs = process.env.HDR_FINISHER_ELECTRON_DISABLE_GPU_SANDBOX === "1"
     ? ["--disable-gpu-sandbox"]
     : [];
+  const launchStarted = Date.now();
   const app = await playwright._electron.launch({
     // An absolute app path. `.` is not enough: Electron falls back to its own
     // `resources/app` when the app argument is not resolved, and this
@@ -122,12 +123,79 @@ function packagedExecutable() {
     env: launchEnvironment,
     timeout: 180000,
   });
-  const window = await app.firstWindow({ timeout: 180000 });
+  app.on("window", page => { page.on("console", msg => { if(msg.type()==="error")console.error("[renderer]",msg.text()); }); page.on("pageerror", error=>console.error("[renderer]",error)); });
+  let window = await app.firstWindow({ timeout: 180000 });
+  const visible = app.windows().find(page => !page.url().includes("gpu-delivery.html"));
+  if (visible) window = visible;
+  if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] initial", window.url());
+  if (testPath.replaceAll("\\", "/").endsWith("startup-state.js")) {
+    await window.locator('[role="status"]').waitFor({timeout:10000});
+    const starting = await window.locator('[role="status"]').textContent();
+    if (starting !== "Starting…") throw Error(`Expected calm startup screen, got ${starting}`);
+    fs.mkdirSync(path.resolve(DESKTOP_DIRECTORY,"../output"),{recursive:true});
+    await window.screenshot({path:path.resolve(DESKTOP_DIRECTORY,"../output/starting-screen.png")});
+  }
   await require("./electron-initial-load").waitForInitialLoad(app, window);
+  if (testPath.replaceAll("\\", "/").endsWith("startup-state.js")) {
+    const log = fs.readFileSync(path.join(userDataDirectory,"logs/backend.log"),"utf8");
+    const line = log.split("\n").find(line => line.includes("[library] window_visible"));
+    const timing = Math.round(JSON.parse(line.slice(line.indexOf("{"))).time * 1000 - launchStarted);
+    console.log(`Window visible: ${timing} ms (limit 1500 ms); Starting… screen verified.`);
+    if (timing > 1500) throw Error(`Window visibility exceeded 1500 ms: ${timing}`);
+  }
+  if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] loaded", window.url());
   // The launcher pid Playwright tracks is the shell on Windows; the main
   // process pid is what owns the window and the backend sidecar, so shutdown
   // is anchored to it.
   const electronMainProcessId = await app.evaluate(() => process.pid);
+
+  // When the window goes away mid-driver, Playwright only says "Target page,
+  // context or browser has been closed". These lines tell the causes apart: a
+  // renderer or GPU crash, the app closing its window or quitting, the main
+  // process dying, or the debugging connection dropping while the app runs on.
+  let runnerStopping = false;
+  const mainEventsPath = path.join(userDataDirectory, "logs", "runner-main-events.log");
+  await app.evaluate(({ app: electronApp, BrowserWindow, webContents }, logPath) => {
+    const fs = process.getBuiltinModule("node:fs");
+    fs.mkdirSync(process.getBuiltinModule("node:path").dirname(logPath), { recursive: true });
+    const record = (event, details = {}) => {
+      try { fs.appendFileSync(logPath, `${JSON.stringify({ at: new Date().toISOString(), uptime: process.uptime(), event, ...details })}\n`); } catch { /* best effort */ }
+    };
+    const watch = contents => {
+      contents.on("render-process-gone", (_event, details) => record("render-process-gone", { url: contents.getURL(), reason: details.reason, exitCode: details.exitCode }));
+      contents.on("destroyed", () => record("webcontents-destroyed", { id: contents.id }));
+    };
+    webContents.getAllWebContents().forEach(watch);
+    electronApp.on("web-contents-created", (_event, contents) => watch(contents));
+    for (const win of BrowserWindow.getAllWindows()) win.on("closed", () => record("window-closed", { id: win.id }));
+    electronApp.on("browser-window-created", (_event, win) => win.on("closed", () => record("window-closed", { id: win.id })));
+    electronApp.on("child-process-gone", (_event, details) => record("child-process-gone", details));
+    for (const name of ["before-quit", "will-quit", "quit", "window-all-closed"]) electronApp.on(name, () => record(name));
+    process.on("uncaughtException", error => record("uncaught-exception", { message: String(error?.stack || error) }));
+    process.on("exit", code => record("main-exit", { code }));
+    if (process.env.HDR_FINISHER_RUNNER_HEARTBEAT === "1") {
+      // Opt-in memory heartbeat: shows growth before a silent death.
+      setInterval(() => {
+        const metrics = electronApp.getAppMetrics().map(item => `${item.type}:${item.pid}:${Math.round(item.memory.workingSetSize / 1024)}MB`);
+        record("heartbeat", { rssMB: Math.round(process.memoryUsage().rss / 2 ** 20), heapMB: Math.round(process.memoryUsage().heapUsed / 2 ** 20), metrics });
+      }, 2000).unref();
+    }
+    record("runner-diagnostics-installed", { pid: process.pid });
+  }, mainEventsPath);
+  const mainAlive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const reportGone = (what) => {
+    if (runnerStopping) return;
+    const report = () => {
+      let events = "";
+      try { events = fs.readFileSync(mainEventsPath, "utf8").trim(); } catch { /* none */ }
+      console.error(`[runner] ${what}; Electron main process ${mainAlive(electronMainProcessId) ? "still running" : "gone"}; main-process events:\n${events || "(none)"}`);
+    };
+    // Give the main process a moment to write what it saw.
+    setTimeout(report, 1500).unref?.();
+  };
+  window.on("crash", () => reportGone("page crashed (renderer)"));
+  window.on("close", () => reportGone("page closed"));
+  app.on("close", () => reportGone("Electron application connection closed"));
   // Performance drivers are loaded below, after launch. Expose the real tree
   // root so they can take read-only OS memory snapshots without guessing from
   // Playwright's Windows launcher process.
@@ -208,10 +276,37 @@ function packagedExecutable() {
     }
   }
 
+  // The app polls its sidecar for as long as it is open (grade saving, GPU
+  // delivery, Library workers), so Playwright's `networkidle` never arrives
+  // and a driver that asks for it times out before testing anything. Every
+  // `networkidle` wait is served instead by the page's `load` event plus the
+  // app's own start-up signals: the shell's `body[data-ready]` and the
+  // Library frame's `window.HDRLibrary`. Pages other than the app shell get
+  // `load` alone.
+  const appReady = async (response) => {
+    const shell = await window.evaluate(() => !!document.getElementById("library-frame")).catch(() => false);
+    if (!shell) return response;
+    await window.waitForFunction(() => document.body?.dataset.ready === "true"
+      && document.getElementById("library-frame")?.contentWindow?.HDRLibrary, null, { timeout: 60000 });
+    return response;
+  };
+  const settled = (options) => options?.waitUntil === "networkidle" ? { ...options, waitUntil: "load" } : options;
   const navigate = window.goto.bind(window);
-  window.goto = (url, options) => {
+  window.goto = async (url, options) => {
     const target = new URL(String(url), origin);
-    return navigate(`${origin}${target.pathname}${target.search}${target.hash}`, options);
+    const response = await navigate(`${origin}${target.pathname}${target.search}${target.hash}`, settled(options));
+    return options?.waitUntil === "networkidle" ? appReady(response) : response;
+  };
+  const reload = window.reload.bind(window);
+  window.reload = async (options) => {
+    const response = await reload(settled(options));
+    return options?.waitUntil === "networkidle" ? appReady(response) : response;
+  };
+  const waitForLoadState = window.waitForLoadState.bind(window);
+  window.waitForLoadState = async (state, options) => {
+    if (state !== "networkidle") return waitForLoadState(state, options);
+    await waitForLoadState("load", options);
+    return appReady();
   };
   // The window is the app; closing it is the runner's job, not the test's.
   window.close = async () => {};
@@ -241,6 +336,7 @@ function packagedExecutable() {
   const stop = () => {
     if (stopped) return;
     stopped = true;
+    runnerStopping = true;
     const child = app.process();
     // The launcher command is a shell on Windows; killing it can orphan the
     // Electron tree. The main process pid is the tree root that matters.
@@ -285,7 +381,7 @@ function packagedExecutable() {
       // Opt-in benchmark placement: keep a test window wholly on the named
       // primary display, rather than straddling mixed HDR/SDR monitors.
       const displayContext = await app.evaluate(({ screen, BrowserWindow }, pinPrimary) => {
-        const win = BrowserWindow.getAllWindows()[0];
+        const win = BrowserWindow.getAllWindows().find(win => !win.webContents.getURL().includes("gpu-delivery.html"));
         if (pinPrimary && win) {
           const area = screen.getPrimaryDisplay().workArea;
           if (win.isMaximized()) win.unmaximize();
@@ -339,6 +435,20 @@ function packagedExecutable() {
       if (![1, 2].includes(response)) throw new Error('Tests may Discard or Cancel, never Save fixtures');
       await app.evaluate(({ dialog }, value) => { dialog.hdrFinisherTestUnsavedResponse = value; }, response);
     },
+    selectExportDirectory: async (selectedDirectory) => {
+      const resolved = path.resolve(selectedDirectory);
+      if (!fs.statSync(resolved).isDirectory()) throw new Error('Test export destination must be an existing directory');
+      await app.evaluate(({ dialog }, directory) => {
+        const previous = dialog.showOpenDialog;
+        dialog.showOpenDialog = async (...args) => {
+          // Consume only the batch folder picker, then restore the real dialog.
+          const options = args.at(-1);
+          if (options?.title !== "Choose export folder" || !options?.properties?.includes("openDirectory")) return previous.apply(dialog, args);
+          dialog.showOpenDialog = previous;
+          return { canceled: false, filePaths: [directory] };
+        };
+      }, resolved);
+    },
     selectExportPath: async (selectedPath) => {
       if (fs.existsSync(selectedPath)) throw new Error('Test export destination must be new');
       await app.evaluate(({ dialog }, filePath) => {
@@ -348,6 +458,7 @@ function packagedExecutable() {
     close: async () => stop(),
   };
 
+  if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] start driver");
   process.argv = [process.argv[0], path.resolve(testPath), ...testArguments];
   // Set require.main as a direct Node invocation would, including drivers
   // whose standalone entry point is guarded by require.main === module.

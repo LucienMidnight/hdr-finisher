@@ -1,4 +1,4 @@
-"""Small scene thumbnails, with an allowance independent of full-size pictures."""
+"""Small RAW scene thumbnails under the Library thumbnail allowance."""
 from io import BytesIO
 import json
 import os
@@ -14,9 +14,13 @@ from .render_cache import encode_rgba_proxy_rows
 
 class RawThumbnails:
     def __init__(self, root):
-        self.root = Path(root) / "library-raw-thumbnails"
-        self.limit = 2 * 1024**3
+        from .library_cache import LibraryCache
+        self.managed = LibraryCache(root)
         self.lock = RLock()
+
+    @property
+    def root(self):
+        return self.managed.directory("library-raw-thumbnails")
 
     def file(self, key):
         if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
@@ -37,9 +41,12 @@ class RawThumbnails:
                 return None
             except (OSError, ValueError, EOFError):
                 file.unlink(missing_ok=True)
+                self.managed.record(file)
                 return None
 
     def store(self, meta, body):
+        if not self.managed.preferences()["enabled"]:
+            return
         key, path, _ = identity(meta["path"])
         if key != meta["transport_key"]:
             raise ValueError("Photo changed before its thumbnail was saved.")
@@ -53,22 +60,17 @@ class RawThumbnails:
             raise ValueError("Invalid RAW thumbnail pixels.")
         facts = {name: meta[name] for name in ("path", "width", "height", "edge", "adjustments", "white", "has_reference", "source_width", "source_height")}
         with self.lock:
+            self.managed.prepare()
             self.root.mkdir(parents=True, exist_ok=True)
             with NamedTemporaryFile(dir=self.root, suffix=".tmp", delete=False) as handle:
                 temp = Path(handle.name)
                 np.savez_compressed(handle, pixels=pixels, metadata=np.asarray(json.dumps(facts)))
             try:
                 os.replace(temp, self.file(key))
+                self.managed.record(self.file(key))
             finally:
                 temp.unlink(missing_ok=True)
-            entries = [(p.stat().st_mtime_ns, p.stat().st_size, p) for p in self.root.glob("*.npz")]
-            total = sum(size for _, size, _ in entries)
-            if total > self.limit:
-                for _, size, entry in sorted(entries):
-                    if total <= self.limit * .9:
-                        break
-                    entry.unlink(missing_ok=True)
-                    total -= size
+            self.managed.trim_soon()
 
     def pixels(self, key):
         with self.lock, np.load(self.file(key), allow_pickle=False) as stored:

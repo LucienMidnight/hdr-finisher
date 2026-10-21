@@ -25,14 +25,16 @@ const { chromium } = require('playwright');
       const measure = measureExactScopePeak;
       measureExactScopePeak = (...args) => { window.peakToggleCalls++; return measure(...args); };
     });
-    for (const checked of [true, false, true]) {
-      const before = await page.evaluate(() => ({ generation: state.scopeGeneration, calls: window.peakToggleCalls }));
-      await page.evaluate(on => { els.scopeExactPeak.checked = on; els.scopeExactPeak.dispatchEvent(new Event('change')); }, checked);
-      await page.waitForFunction(old => state.scopeGeneration > old && !state.gpuScopeRequestInFlight
-        && !state.scopeRequestInFlight && state.lastScope?.tier === 'settled' && !els.scopeFreshness.classList.contains('updating'), before.generation, { timeout: 30000 });
-      const result = await page.evaluate(() => ({ calls: window.peakToggleCalls, label: state.lastScope.stats[0].label }));
-      assert.equal(result.calls > before.calls, checked, 'Only the enabled toggle requests bounded editing peak measurement');
-      if (!checked) assert.equal(result.label, 'Peak (preview)');
+    assert.equal(await page.locator('#scope-exact-peak').count(), 0);
+    for (let i=0; i<2; i++) {
+      const before = await page.evaluate(() => window.peakToggleCalls);
+      await page.evaluate(async () => {
+        exactScopePeakCache.clear();
+        await refreshScopes(scopeLongEdge('settled'), {tier:'settled'});
+      });
+      await page.waitForFunction(() => !state.gpuScopeRequestInFlight && !state.scopeRequestInFlight
+        && !els.scopeFreshness.classList.contains('updating'), null, {timeout:30000});
+      assert((await page.evaluate(() => window.peakToggleCalls)) > before, 'Settled scopes must always request the bounded peak');
     }
     await page.evaluate(async () => {
       invalidatePreview(state.currentView, { markDirty: false });
@@ -43,6 +45,6 @@ const { chromium } = require('playwright');
     await page.waitForFunction(() => !state.scopeAwaitingPresentation && !state.gpuScopeRequestInFlight
       && !els.scopeFreshness.classList.contains('updating') && els.scopeFreshness.textContent === 'Settled', null, { timeout: 30000 });
     assert.deepEqual(errors, []);
-    console.log('PASS: Peak estimate on/off/on settles, controls editing measurement, and resumes after preview replacement.');
+    console.log('PASS: Automatic editing peak settles and resumes after preview replacement.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

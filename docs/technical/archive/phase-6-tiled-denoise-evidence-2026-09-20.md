@@ -1,7 +1,7 @@
 # Phase 6 — tiled Denoise evidence and reconstruction
 
 **Recorded:** 2026-09-20
-**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
+**Sprint:** [Stable Exact Preview Tiers and Full-Resolution Processing](../../product/archive/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md)
 **Status:** **all five exit gates met.**
 **Adapter:** NVIDIA `lovelace` (RTX 4070 Ti), not a fallback, headless Edge with
 `--enable-unsafe-webgpu --enable-features=Vulkan,UseSkiaRenderer`

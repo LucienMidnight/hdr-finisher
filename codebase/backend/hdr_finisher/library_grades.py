@@ -113,14 +113,21 @@ class LibraryGrades:
             try:
                 with db:
                     for path, document in zip(paths, documents):
-                        state = self._get(str(path)); document = document or {}
+                        if document is None and not self.marks.source_path(path).parent.is_dir(): continue
+                        # Read through this connection: once its write grows past the
+                        # page cache it holds the file exclusively, and a second
+                        # connection would wait on it until "database is locked".
+                        row = db.execute("SELECT state FROM photo_grades WHERE path=?", (str(path),)).fetchone()
+                        state = json.loads(row[0]) if row else {}; document = document or {}
                         if "grade" not in document and not state: continue
+                        before = deepcopy(state)
                         state["indexed_grade"] = document.get("grade")
                         for field in ("session_start", "previous_grade"):
                             if field in document.get("grade_history", {}) and field not in state:
                                 state[field] = deepcopy(document["grade_history"][field])
                         if document.get("grade_default"): state["default"] = document["grade_default"]
-                        db.execute("INSERT OR REPLACE INTO photo_grades VALUES (?, ?)", (str(path), json.dumps(state)))
+                        if state != before:
+                            db.execute("INSERT OR REPLACE INTO photo_grades VALUES (?, ?)", (str(path), json.dumps(state)))
             finally: db.close()
 
     def describe(self, paths):
@@ -129,12 +136,15 @@ class LibraryGrades:
             chunk = [str(p) for p in paths[start:start+800]]
             for path, value in self.marks._query("SELECT path, state FROM photo_grades WHERE path IN (" + ",".join("?" for _ in chunk) + ")", chunk):
                 states[path] = json.loads(value)
-        from .library_kept import identity
+        from .library_documents import identity
         result = {}
+        exports = getattr(self.store, "batch_export", None)
+        export_records = exports.read_records() if exports else None
         for path in paths:
             state = states.get(str(path), {})
             grade = state.get("desired") if state.get("pending") else state.get("indexed_grade", state.get("baseline"))
             result[str(path)] = {"edited": grade is not None and grade_key(grade) != grade_key(state.get("default")), "grade_identity": identity(grade)}
+            if exports: result[str(path)].update(exports.export_state(str(path), grade, export_records))
         return result
 
     def path(self, session_id):
@@ -167,7 +177,14 @@ class LibraryGrades:
             self._put(path, state)
             log("grade_conflict", photo=path, action="saving paused; both grades retained")
             return True
-        return bool(state.get("conflict"))
+        if state.get("conflict"):
+            # The file holds our last saved grade again, so nothing conflicts any
+            # more. Keep the grade that was briefly there as the previous grade.
+            state["previous_grade"] = state.pop("external", None) or state.get("previous_grade")
+            state["conflict"] = False
+            self._put(path, state)
+            log("grade_conflict_cleared", photo=path, action="file matches the saved grade; other grade kept as previous")
+        return False
 
     def save(self, session_id):
         started = perf_counter()
@@ -211,10 +228,6 @@ class LibraryGrades:
                 session.dirty = False
             registered = perf_counter()
             log("grade_save_queued", photo=path, action="grade retained; settings writer notified")
-            if (getattr(self.marks, "kept", None) and grade_key(desired) != grade_key(state.get("default"))
-                    and grade_key(desired) != grade_key(state.get("baseline"))):
-                from .library_kept import capture_source
-                self.marks.kept.schedule(path, desired, source=capture_source(session) if "|copy|" not in path else None)
             scheduled = perf_counter()
             result = self.status(session_id)
             ended = perf_counter()
@@ -297,6 +310,8 @@ class LibraryGrades:
                     result = self.status(session_id)
                     result.update(reload=True, grade=grade)
                     return result
+            elif state.get("conflict"):
+                self._check(path, state, grade)
             return self.status(session_id)
 
     def resolve(self, session_id, choice, expected_external):
@@ -305,8 +320,9 @@ class LibraryGrades:
         with self.store._lock, self.marks._lock:
             state = self._get(path)
             if grade_key(grade) != grade_key(expected_external):
-                self._check(path, state, grade)
-                return {**self.status(session_id), "changed_again": True}
+                if self._check(path, state, grade):
+                    return {**self.status(session_id), "changed_again": True}
+                return self.status(session_id)  # The conflict went away; nothing to choose.
             if choice == "cancel":
                 return self.status(session_id)
             if choice == "both":

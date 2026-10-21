@@ -37,7 +37,10 @@ async function main() {
     if (!reservedNameRejected) throw new Error("Windows reserved project filenames were not rejected.");
 
     // Open the shared import action; the Library now owns the start screen.
-    const fixture = path.resolve("tests", "fixtures", "hdr_headroom.tiff");
+    const fixtureDirectory = path.join(outputDirectory, `source-${runId}`);
+    fs.mkdirSync(fixtureDirectory, { recursive: true });
+    const fixture = path.join(fixtureDirectory, "hdr_headroom.tiff");
+    fs.copyFileSync(path.resolve("tests", "fixtures", "hdr_headroom.tiff"), fixture);
     let chooser = null;
     if (await page.evaluate(() => Boolean(desktop))) {
       await page.evaluate(() => { void requestSourceImport(); });
@@ -64,14 +67,23 @@ async function main() {
       control.value = "0.2";
       control.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    // Batch export deliberately uses the saved grade; finish this edit first.
+    await page.evaluate(async () => {
+      await state.editCommandQueue;
+      await syncGlobalEditState();
+      if (!await HDRGradeSaving.save()) throw new Error("Could not save the disposable export photo.");
+    });
     await page.locator('[data-workflow-tab="export"]').click();
-    await page.locator("#jpeg-advanced-settings > summary").click();
-    await page.locator("#export-directory").fill(outputDirectory);
-    await page.locator("#export-directory-browse").click();
-    await page.locator("#directory-browser").waitFor({ state: "visible" });
-    await page.waitForFunction((directory) => document.getElementById("directory-browser-path")?.value === directory, outputDirectory);
-    await page.locator("#directory-browser-select").click();
-    await page.locator("#directory-browser").waitFor({ state: "hidden" });
+    await page.locator("#batch-run").waitFor({ state: "visible" });
+    await page.waitForFunction(() => document.querySelectorAll("#batch-grid .batch-photo").length === 1);
+    const chooseDirectory = async (directory) => {
+      if (await page.evaluate(() => Boolean(desktop))) {
+        if (!global.HDRFinisherElectronTestHarness?.selectExportDirectory) throw new Error("Desktop folder selection needs the Electron test harness.");
+        await global.HDRFinisherElectronTestHarness.selectExportDirectory(directory);
+        await page.locator("#batch-directory").locator("xpath=ancestor::section").getByRole("button", { name: "Choose folder…", exact: true }).click();
+      } else await page.locator("#batch-directory").fill(directory);
+      await page.waitForFunction(directory => document.getElementById("batch-directory")?.value === directory, directory);
+    };
 
     const exports = [];
     for (const testCase of [
@@ -81,25 +93,32 @@ async function main() {
       { format: "jpeg_ultrahdr", extension: ".jpg" },
     ]) {
       const filename = `edge-${testCase.format}-${runId}`;
-      const expectedOutput = path.join(outputDirectory, `${filename}${testCase.extension}`);
+      // A new folder makes the visible update prove the asynchronous picker finished.
+      const destination = path.join(outputDirectory, `${testCase.format}-${runId}`);
+      fs.mkdirSync(destination, { recursive: true });
+      const expectedOutput = path.join(destination, `${filename}${testCase.extension}`);
       await page.locator("#export-format").selectOption(testCase.format);
       if (testCase.format === "sdr_jpeg") {
+        if (!await page.locator("#jpeg-advanced-settings").evaluate(details => details.open)) await page.locator("#jpeg-advanced-settings > summary").click();
         await page.locator("#jpeg-chroma-subsampling").selectOption("422");
       }
-      await page.locator("#export-filename").fill(filename);
-      const exportResponsePromise = page.waitForResponse((response) => response.url().includes("/export") && response.request().method() === "POST", { timeout: 120000 });
-      if (global.HDRFinisherElectronTestHarness) {
-        await global.HDRFinisherElectronTestHarness.selectExportPath(expectedOutput);
-      }
-      await page.locator("#export-confirm-button").click();
+      await page.locator("#batch-pattern").fill(filename);
+      await chooseDirectory(destination);
+      const exportResponsePromise = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/batch-export" && response.request().method() === "POST", { timeout: 120000 });
+      await page.locator("#batch-run").click();
       const response = await exportResponsePromise;
-      const payload = await response.json();
-      await page.waitForFunction(() => !document.getElementById("export-result")?.classList.contains("hidden"), null, { timeout: 120000 });
+      const accepted = await response.json();
+      if (response.status() !== 200 || !accepted.id) throw new Error(`Batch export was not accepted: ${JSON.stringify(accepted)}`);
+      await page.waitForFunction(id => {
+        const job = batchExport.activity();
+        return job?.id === id && ["finished", "failed", "cancelled"].includes(job.state);
+      }, accepted.id, { timeout: 120000 });
+      const payload = await page.evaluate(() => batchExport.activity());
       exports.push({
         format: testCase.format,
         status: response.status(),
         payload,
-        displayedPath: await page.locator("#export-result-path").textContent(),
+        displayedPath: await page.locator("#batch-results").textContent(),
         chromaSubsampling: testCase.format === "sdr_jpeg" ? await page.locator("#jpeg-chroma-subsampling").inputValue() : null,
         outputExists: fs.existsSync(expectedOutput),
         outputBytes: fs.existsSync(expectedOutput) ? fs.statSync(expectedOutput).size : 0,
@@ -108,11 +127,13 @@ async function main() {
 
     const result = {
       fileChooserMultiple: chooser ? chooser.isMultiple() : null,
-      selectedDirectory: await page.locator("#export-directory").inputValue(),
+      selectedDirectory: await page.locator("#batch-directory").inputValue(),
       exports,
       browserErrors,
     };
-    if (exports.some((entry) => entry.status !== 200 || !entry.payload.accepted || !entry.outputExists || entry.outputBytes === 0)
+    if (exports.some((entry) => entry.status !== 200 || entry.payload.state !== "finished" || entry.payload.completed !== 1
+      || entry.payload.results.length !== 1 || entry.payload.results[0].outcome !== "exported"
+      || !entry.displayedPath.includes(entry.payload.results[0].output_path) || !entry.outputExists || entry.outputBytes === 0)
       || exports.find((entry) => entry.format === "sdr_jpeg")?.chromaSubsampling !== "422"
       || browserErrors.length) {
       throw new Error(`Export/file-browser regression failed: ${JSON.stringify(result)}`);

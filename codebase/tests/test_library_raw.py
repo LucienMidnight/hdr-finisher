@@ -44,15 +44,15 @@ def test_full_size_disk_eviction_cannot_remove_thumbnail(tmp_path, monkeypatch):
     from PIL import Image
     source = tmp_path / "photo.png"
     Image.new("RGB", (8, 8)).save(source)
-    cache = LibraryPictureCache(tmp_path / "cache", limit=1024**2)
+    cache = LibraryPictureCache(tmp_path / "cache")
     monkeypatch.setattr("hdr_finisher.library_pictures.decode_picture", lambda *args: (
         np.ones((8, 8, 3), dtype=np.float32), None, {"route": "test"}))
     thumb = cache.build(source, 128)
     full = cache.build(source, 2560)
     assert cache.file(full["key"]).parent == cache.full_root
     assert cache.file(thumb["key"]).parent == cache.root
-    cache.limit = thumb["stored_bytes"] + 1
-    cache.trim()
+    cache.managed.trim(limit_bytes=full["stored_bytes"] - 1, allowance="full_size")
+    assert not (cache.full_root / (full["key"] + ".npz")).exists()
     assert cache.file(thumb["key"]).is_file()
 
 

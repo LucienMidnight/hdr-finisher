@@ -23,6 +23,7 @@ class LibraryWorker:
         self._ready = Event()
         self._pending: dict[str, Future] = {}
         self._requests = {}
+        self._work = {}
         self._stop = Event()
         self._restarts = 0
         self._recovering = False
@@ -86,6 +87,7 @@ class LibraryWorker:
                         return
                     self._ready.clear()
                     self._recovering = True
+                    self._work.clear()
                     process = self._process
                     self._connection = None
                     log("helper_stopped", reason=repr(error), pending=len(self._pending), action="waiting requests retained; Grade unaffected")
@@ -143,7 +145,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "native", "scan", "tree", "metadata", "kept", "kept-check", "overlay"}:
+        if command not in {"picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -161,6 +163,13 @@ class LibraryWorker:
             except (EOFError, OSError) as exc:
                 problem("helper_send_failed", arguments.get("path", arguments.get("paths", [])), exc, "request retained for automatic helper restart")
         return job_id, future
+
+    def prioritize(self, job_id, priority):
+        with self._lock:
+            request = self._requests.get(job_id)
+            if request and priority < request["priority"]:
+                request["priority"] = priority
+                self._send({"command": "prioritize", "id": job_id, "priority": priority})
 
     def submit_browse_picture(self, **arguments) -> tuple[str, Future]:
         """Non-RAW browsing owns its job, independently of HTTP waiters."""
@@ -196,6 +205,8 @@ class LibraryWorker:
         with self._lock:
             future = self._pending.pop(job_id, None)
             self._requests.pop(job_id, None)
+            if job_id in self._work:
+                self._work[job_id]["state"] = "stopping"
             if future is None:
                 return False
             future.cancel()
@@ -245,10 +256,20 @@ class LibraryWorker:
                     record = message["record"]
                     log(record.pop("event"), **record)
                     continue
+                if message.get("event") == "work":
+                    with self._lock:
+                        if message.get("done"):
+                            self._work.pop(message["id"], None)
+                        else:
+                            previous = self._work.get(message["id"], {})
+                            self._work[message["id"]] = dict(path=message.get("path"), stage=message["stage"],
+                                state=previous.get("state", "running" if message["id"] in self._pending else "stopping"))
+                    continue
                 if message.get("event") == "ready":
                     log("helper_ready", pid=message.get("pid"))
                     log("helper_start", pid=message.get("pid"), action="helper ready")
                     with self._lock:
+                        self._work.clear()
                         self.info = message
                         ready = True
                         self._recovering = False
@@ -281,7 +302,8 @@ class LibraryWorker:
     def status(self) -> dict:
         with self._lock:
             return {**self.info, "running": bool(self._process and self._process.is_alive()),
-                    "pending": len(self._pending), "paused": bool(self._paused),
+                    "jobs": list(self._work.values()) + [dict(path=r.get("path"),stage="Waiting to read source",state="waiting") for k,r in self._requests.items() if k not in self._work and r.get("command") in {"live-scene","live-fallback"}],
+                    "pending": len(self._pending), "paused": bool(self._paused), "manual_paused": "manual" in self._paused,
                     "failure": self._failure, "restarts": self._restarts, "recovering": self._recovering}
 
     def close(self) -> None:
@@ -297,6 +319,7 @@ class LibraryWorker:
             pending = list(self._pending.values())
             self._pending.clear()
             self._requests.clear()
+            self._work.clear()
         for future in pending:
             future.cancel()
         if process is not None:
@@ -332,10 +355,12 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
 
 
 def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> None:
-    # Set these before importing numpy or any decoder. Native libraries must
-    # not create a full-size thread pool in the background process.
+    # Scale native decode/render work within one photo, leaving half the logical
+    # processors for Grade and foreground work. The process remains below normal
+    # priority and the existing Grade/export pause gate still takes precedence.
+    native_threads = max(1, (os.cpu_count() or 2) // 2)
     for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
-        os.environ[name] = "1"
+        os.environ[name] = str(native_threads)
     priority = _lower_priority()
     from .media_browser import MediaBrowserStore, MediaBrowserInterpretationRequired
     from .launcher import _parent_is_alive
@@ -352,9 +377,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     state = {"paused": paused, "foreground": 0, "checking": 0}
 
     def lane(job):
-        if job["command"] in {"picture", "native"}:
+        if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
             return "picture"
-        if job["command"] in {"kept", "overlay"}:
+        if job["command"] == "overlay":
             return "kept"
         if job.get("checking"):
             return "check"
@@ -396,29 +421,43 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 # Background indexing waits for visible work, grading and export.
                 while not cancelled.is_set() and not stopping.is_set():
                     with condition:
-                        # Maps/kept pictures outrank folder checks. Only checks
+                        # Maps outrank folder checks. Only checks
                         # wait for that lane, never the reverse (including a
                         # second queued map while the first one is running).
                         allowed = {"index", "check"} if kind == "check" else {"index", "kept"}
                         if kind == "kept":
                             allowed.add("check")
-                        if (not state["paused"] and not state["foreground"]
+                        if (not state["paused"] and (
+                                not state["foreground"]
                                 and (kind in {"check", "kept"} or not state["checking"])
-                                and all(lane(item[2]) in allowed for item in queue)):
+                                and all(lane(item[2]) in allowed for item in queue))):
                             break
                     time.sleep(0.05)
                 waited[0] += time.perf_counter()-wait_started
                 return cancelled.is_set() or stopping.is_set()
 
+            last_stage = [None, time.perf_counter()]
+            def progress(stage, text):
+                if stage == last_stage[0]: return
+                now = time.perf_counter()
+                log("preparation_stage", job=job["id"], path=job.get("path"), stage=stage,
+                    previous_stage=last_stage[0], duration_ms=(now-last_stage[1])*1000)
+                last_stage[:] = [stage, now]
+                reply({"event":"work", "id":job["id"], "path":job.get("path"), "stage":text})
+            if job["command"] in {"live-scene", "live-fallback"}: progress("reading", "Reading source")
             check = yielding if kind in {"index", "check", "kept"} else cancelled.is_set
             try:
                 if job["command"] == "overlay":
                     from .library_overlays import OverlayMaps
                     output = OverlayMaps(root).build(job["path"],job["kind"],job["quality"],cancelled=check)
                     result = {"id":job["id"],"result":output}
-                elif job["command"] == "kept":
-                    from .library_kept import produce
-                    output = produce(root, job["path"], job["grade"], job["edge"], cancelled=check)
+                elif job["command"] == "live-fallback":
+                    from .library_live import fallback_picture
+                    output = fallback_picture(root, job["path"], job.get("document"), job["edge"], cancelled.is_set, progress=progress)
+                    result = {"id": job["id"], "result": output}
+                elif job["command"] == "live-scene":
+                    from .library_live import develop_cpu
+                    output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set, progress=progress)
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
@@ -443,16 +482,17 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 result = {"id": job["id"], "error": str(exc), "reason": exc.reason,
                           "profile_name": exc.profile_name}
             except Exception as exc:
-                if not isinstance(exc, CancelledError):
+                if not isinstance(exc, CancelledError) and not cancelled.is_set():
                     log("helper_job_failed", operation=job["command"], paths=job.get("path", job.get("paths")), reason=repr(exc), action="request failed; saved marks retained")
                 result = {"id": job["id"], "error": str(exc)}
-            log("helper_job_cancelled" if cancelled.is_set() or stopping.is_set() else "helper_job_finished", job=job["id"], request=job.get("trace_id"), operation=job["command"], path=job.get("path"), work_ms=round((time.perf_counter()-started-waited[0])*1000, 2), yield_ms=round(waited[0]*1000, 2))
+            log("helper_job_cancelled" if cancelled.is_set() or stopping.is_set() else "helper_job_finished", job=job["id"], request=job.get("trace_id"), operation=job["command"], path=job.get("path"), outcome="cancelled" if cancelled.is_set() or stopping.is_set() else "failed" if "error" in result else "completed", last_stage=last_stage[0], stage_ms=round((time.perf_counter()-last_stage[1])*1000,2), work_ms=round((time.perf_counter()-started-waited[0])*1000, 2), yield_ms=round(waited[0]*1000, 2))
             with condition:
                 jobs.pop(job["id"], None)
                 if kind == "check":
                     state["checking"] -= 1
                 elif kind not in {"index", "kept"}:
                     state["foreground"] -= 1
+            reply({"event":"work", "id":job["id"], "done":True})
             if not cancelled.is_set() and not stopping.is_set():
                 try:
                     reply(result)
@@ -470,7 +510,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     # background scan never queues ahead of the folder the user just clicked.
     Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()
     Thread(target=decode, args=("check",), name="hdr-library-check", daemon=True).start()
-    Thread(target=decode, args=("kept",), name="hdr-library-kept", daemon=True).start()
+    # Retain the two map workers; saved-picture production has been removed.
+    for index in range(2):
+        Thread(target=decode, args=("kept",), name=f"hdr-library-kept-{index}", daemon=True).start()
     reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1, "picture_workers": 6, "index_workers": 1})
     try:
         while _parent_is_alive(parent_pid):
@@ -492,7 +534,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept", "kept-check", "overlay"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback"}:
                     message["queued_at"] = time.time()
                     sequence += 1
                     jobs[message["id"]] = Event()

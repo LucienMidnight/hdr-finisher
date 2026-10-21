@@ -73,9 +73,14 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     await library.waitForFunction(() => document.querySelectorAll("#grid-space canvas").length > 0 && [...document.querySelectorAll("#grid-space canvas")].every(canvas => canvas.dataset.pictureKey), null, { timeout: 60000 });
     await page.screenshot({ path: path.join(output, "grid.png") });
     const first = await library.locator("#grid-space .library-cell").first().getAttribute("data-path");
+    // The picture a grid cell drew must now be in the persistent cache. Ask
+    // for the size that cell drew at, not a fixed size, so the check follows
+    // the Library's one stored thumbnail size.
     const cache = await library.evaluate(async photo => {
-      return (await fetch("/api/library/picture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: photo, edge: 512, quality: "quick" }) })).json();
+      const edge = Number(Array.from(document.querySelectorAll("#grid-space .library-cell")).find(cell => cell.dataset.path === photo)?.querySelector("[data-picture-edge]")?.dataset.pictureEdge);
+      return { edge, ...(await (await fetch("/api/library/picture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: photo, edge, quality: "quick" }) })).json()) };
     }, first);
+    assert.ok(cache.edge > 0, "Grid cell records the size it drew at");
     assert.equal(cache.cache_hit, true); assert.ok(cache.stored_bytes > 0);
     await library.evaluate(() => { const grid = document.getElementById("library-grid"); grid.scrollTop = grid.scrollHeight; });
     await library.waitForFunction(first => ![...document.querySelectorAll("#grid-space .library-cell")].some(cell => cell.dataset.path === first), first);
@@ -152,11 +157,17 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
       await page.evaluate(() => activateWorkflowTab("import"));
       await library.waitForFunction(() => HDRLibrary.getSnapshot().active);
       await library.evaluate(folder => HDRLibrary.browse(folder), rawFolder);
-      await library.waitForFunction(() => document.querySelectorAll("#grid-space canvas").length === 3 && [...document.querySelectorAll("#grid-space canvas")].every(canvas => canvas.dataset.pictureKey), null, { timeout: 60000 });
+      // A cell first draws on a canvas, then shows the cached thumbnail as an
+      // img and drops the canvas; either one carries the drawn picture's key.
+      await library.waitForFunction(() => { const cells = [...document.querySelectorAll("#grid-space .library-cell")]; return cells.length === 3 && cells.every(cell => cell.querySelector("[data-picture-key]")); }, null, { timeout: 60000 });
       assert.equal(await library.evaluate(() => HDRLibrary.getSnapshot().count), 3);
       await page.screenshot({ path: path.join(output, "real-formats.png") });
       for (const source of rawSources) {
-        const cached = await library.evaluate(async photo => (await fetch("/api/library/picture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: photo, edge: 512, quality: /\.heic$/i.test(photo) ? "fast" : "quick" }) })).json(), path.join(rawFolder, path.basename(source)));
+        const cached = await library.evaluate(async photo => {
+          const edge = Number(Array.from(document.querySelectorAll("#grid-space .library-cell")).find(cell => cell.dataset.path === photo)?.querySelector("[data-picture-edge]")?.dataset.pictureEdge);
+          return { edge, ...(await (await fetch("/api/library/picture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: photo, edge, quality: /\.heic$/i.test(photo) ? "fast" : "quick" }) })).json()) };
+        }, path.join(rawFolder, path.basename(source)));
+        assert.ok(cached.edge > 0, `${path.basename(source)} grid cell records the size it drew at`);
         assert.equal(cached.cache_hit, true);
         console.log("[library format]", path.basename(source), cached.route);
       }

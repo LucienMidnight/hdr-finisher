@@ -11,6 +11,70 @@ from hdr_finisher.library_pictures import LibraryPictureCache, SIDECAR_SUFFIX, p
 from hdr_finisher.library_worker import LibraryWorker
 
 
+class _GradeSession:
+    """Stands in for Grade's import of a RAW, which the thumbnail reuses whole."""
+    def __init__(self, pixels, start, document):
+        self.image, self.sdr_reference_image, self.metadata = pixels, None, {"raw_input": True}
+        self._start, self._document = start, document
+
+    def starting_adjustments(self):
+        return self._start
+
+    def edit_document(self):
+        return self._document
+
+
+def _grade_import(monkeypatch, pixels):
+    from hdr_finisher.analysis import classify_hdr
+    from hdr_finisher.import_defaults import starting_adjustments
+    from hdr_finisher.models import EditDocument, SourceLuminanceDescriptor, SourceReference
+    from hdr_finisher.sessions import SessionStore
+    start = starting_adjustments(classify_hdr(pixels, {}, ".arw"))
+    calls = []
+    def prepare(self, path, **options):
+        calls.append(path)
+        luminance = SourceLuminanceDescriptor(luminance_semantics="scene_relative", transfer_function="linear")
+        document = EditDocument(hdr_reference_white_nits=203, global_adjustments=start,
+            source=SourceReference(filename=Path(path).name, durable_path=str(Path(path).resolve()), luminance=luminance))
+        return _GradeSession(pixels, start, document)
+    monkeypatch.setattr(SessionStore, "prepare_session", prepare)
+    return start, calls
+
+
+def test_raw_thumbnail_keeps_grade_pixels_full_source_start_and_starting_document(tmp_path, monkeypatch):
+    from hdr_finisher import library_pictures as pictures
+    source = tmp_path / "photo.ARW"
+    source.write_bytes(b"read-only fixture")
+    pixels = np.full((80, 160, 3), .18, dtype=np.float32)
+    pixels[1, 1] = 20
+    start, calls = _grade_import(monkeypatch, pixels)
+    cache = LibraryPictureCache(tmp_path / "cache")
+    result = cache.build(source, 64, "grade-thumbnail")
+    assert result["route"] == "grade-raw-thumbnail"
+    assert result["adjustments"] == start.model_dump(mode="json")
+    assert "default_document" not in result
+    with np.load(cache.file(result["key"])) as stored:
+        np.testing.assert_array_equal(stored["pixels"], pictures.reduce_picture(pixels, 64).astype(np.float16))
+    # Paste reads Grade's starting document from here instead of importing again.
+    kept = cache.default_document(source)
+    assert kept["global_adjustments"] == start.model_dump(mode="json")
+    assert kept["source"]["durable_path"] == str(source.resolve())
+    assert cache.build(source, 64, "grade-thumbnail")["cache_hit"]
+    assert len(calls) == 1
+    assert source.read_bytes() == b"read-only fixture"
+    # A changed photo is a different version: its old starting document is not used.
+    os.utime(source, ns=(source.stat().st_atime_ns, source.stat().st_mtime_ns + 10**9))
+    assert cache.default_document(source) is None
+
+
+def test_raw_camera_placeholder_does_not_load_grade(tmp_path, monkeypatch):
+    from hdr_finisher import library_pictures as pictures
+    source = tmp_path / "photo.ARW"
+    monkeypatch.setattr(pictures.loader, "load_image", lambda *_: pytest.fail("Placeholder decoded Grade"))
+    monkeypatch.setattr(pictures, "embedded_picture", lambda *_: np.ones((4, 8, 3), dtype=np.float32))
+    assert pictures.decode_picture(source, 64, "fast")[2]["route"] == "embedded-placeholder"
+
+
 def photo(tmp_path, name="photo.png"):
     path = tmp_path / name
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,8 +133,7 @@ def test_cache_discards_oldest_in_a_batch(tmp_path):
     a = cache.build(photo(tmp_path, "a.png"), 128)
     b = cache.build(photo(tmp_path, "b.png"), 128)
     os.utime(cache.file(a["key"]), (1, 1))
-    cache.limit = int(b["stored_bytes"] / .9) + 1
-    cache.trim()
+    cache.managed.trim(limit_bytes=int(b["stored_bytes"] / .9) + 1)
     assert not cache.file(a["key"]).exists()
     assert cache.file(b["key"]).exists()
 
@@ -161,3 +224,16 @@ def test_non_raw_browse_waiters_share_job_across_pause_and_promote_it(tmp_path):
         assert LibraryPictureCache(helper.root).cached(source, 2560, "quick")["key"] == result["key"]
     finally:
         helper.close()
+
+
+def test_stand_in_request_gets_the_real_picture_once_it_is_cached(tmp_path, monkeypatch):
+    source = photo(tmp_path)
+    routes = {"fast": "embedded-placeholder", "quick": "quick-linear-dng"}
+    monkeypatch.setattr("hdr_finisher.library_pictures.decode_picture",
+        lambda path, edge, quality: (np.ones((12, 24, 3), dtype=np.float32), None, {"route": routes[quality]}))
+    cache = LibraryPictureCache(tmp_path / "app-data")
+    assert cache.build(source, 512, "fast")["route"] == "embedded-placeholder"
+    real = cache.build(source, 512, "quick")
+    assert real["route"] == "quick-linear-dng"
+    assert cache.cached(source, 512, "fast")["key"] == real["key"]
+    assert cache.build(source, 512, "fast")["route"] == "quick-linear-dng"

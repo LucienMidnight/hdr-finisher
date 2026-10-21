@@ -45,6 +45,16 @@ function pathKey(value, platform = process.platform) {
   return platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
+// A granted export folder covers the files a batch export writes inside it.
+function withinGrantedPath(value, granted, platform = process.platform) {
+  const key = pathKey(value, platform);
+  const separator = platform === "win32" ? "\\" : "/";
+  for (const root of granted) {
+    if (key === root || key.startsWith(root.endsWith(separator) ? root : root + separator)) return true;
+  }
+  return false;
+}
+
 function allowedProjectUrl(value) {
   try {
     const candidate = new URL(value);
@@ -77,4 +87,5 @@ module.exports = {
   isSourcePath,
   pathKey,
   safeSuggestedName,
+  withinGrantedPath,
 };

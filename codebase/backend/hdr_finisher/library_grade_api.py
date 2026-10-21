@@ -10,7 +10,7 @@ from .projects import open_document, validate_saved_document
 
 
 class GradeRequest(BaseModel):
-    action: Literal["attach", "capture", "save", "check", "resolve", "load", "discard"]
+    action: Literal["attach", "capture", "save", "check", "resolve", "load", "discard", "discard-for-paste"]
     choice: Literal["mine", "file", "both", "cancel"] = "cancel"
     document: dict | None = None
     recovery: bool = False
@@ -26,6 +26,8 @@ def add_grade_routes(router, marks, store):
     grades = LibraryGrades(marks, store)
     from .library_copies import LibraryCopies
     copies = LibraryCopies(marks)
+    from .library_paste import add_paste_routes
+    add_paste_routes(router, grades)
 
     class OpenSettingsRequest(BaseModel):
         path: str
@@ -108,6 +110,18 @@ def add_grade_routes(router, marks, store):
                 return result
             if request.action == "resolve":
                 return grades.resolve(session_id, request.choice, request.document)
+            if request.action == "discard-for-paste":
+                path = grades.path(session_id)
+                document, _ = grades.paste.document(path)
+                session = open_document(store, validate_saved_document(document), marks.source_path(path), reuse_session_id=session_id)
+                new_id = str(session.session_id)
+                grades.sessions[new_id] = path
+                grades.starts[new_id] = document
+                session.dirty = False
+                session.undo_history.clear()
+                session.redo_history.clear()
+                grades.discard_recovery(new_id)
+                return {"session": session.to_payload()}
             if request.action == "discard":
                 grades.discard_recovery(session_id)
                 return {"discarded": True}

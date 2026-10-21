@@ -15,6 +15,78 @@ This page prevents implemented, validated, expected, and planned behavior from b
 | Physical HDR browser checks | Maintained Windows evidence | Not maintained | Required on Kubuntu 26.04; not yet recorded |
 | Auto proof target | Uses Windows telemetry when available | Use fixed target | Use fixed/custom target; exact headroom unavailable |
 
+## Library thumbnail cache qualification (October 17–18, 2026)
+
+October 18: camera RAW grid/filmstrip misses now extract the embedded camera
+JPEG without a full RAW read, then replace it with the real scene picture.
+Native gain-map hits still bypass the placeholder. The displayed GPU lane
+is read back from its finished texture; the other lane is rendered on the
+GPU from the same source, after visible draws and only while Grade/export
+allow background work. The Library-only JPEG writer packages those pixels
+at the fixed 640-pixel size. It does not re-open or CPU-grade a camera RAW.
+Saved-grade pictures retain their existing finished-picture path. Uploads
+reject changed source/grade identities and cache preferences. Export, Proof,
+Single, Compare, native zoom, pinned shaders and timing limits are unchanged.
+
+Qualification: 532 Node tests and 2261 Python tests passed (three skips),
+including a camera-first/no-full-read/cache-hit behavior test; the focused
+Stage C GPU check passed. A real ARW copied into a disposable one-photo
+folder showed its camera preview in 60 ms, saved its GPU-produced real
+thumbnail, and showed that cached thumbnail in 24 ms after an actual app
+relaunch, without another camera preview or RAW decode. These are one-photo
+checks, not a qualification of the full-folder targets or a cold OS disk.
+
+October 19: saved-grade thumbnail encoding no longer yields to unrelated
+Library source decoding; it still respects the Grade/import/export pause.
+The app contention check produced its saved thumbnail in 1.11 s while a slow
+DNG request remained active. The HDR Test Images visible-screen check still
+failed to finish all persistent thumbnails within 60 s; DNG source decoding
+remains on the existing CPU fallback. This is not full-folder qualification.
+
+Remaining: the badminton folder at default size has 70 visible photos.
+The visible-screen check did not finish filling their persistent thumbnails
+within 60 seconds; only 68 first pictures and 45 real-picture events were
+recorded (first-picture p90 3.66 s; real-picture p90 21.24 s). The full scroll check also timed out
+waiting for cache warming, with a RAW transport released before a GPU draw.
+The 1 s first-picture / 2 s real-picture / 100 ms cached-folder targets have
+not been qualified for that folder. The scene reader still reads entire
+82 MB RAWs, so its HDD throughput, first shader compilation and saved-grade
+work remain costs. No timing budget was relaxed. Full-folder cache filling
+and reliable handoff from RAW transport to GPU draws need follow-up.
+
+Earlier October 17 qualification (CPU cache producer, before this change):
+
+Grid and filmstrip use native gain-map JPEG thumbnails; Single, Compare and
+full-screen keep their scene-linear GPU path. Separate thumbnail, full-size
+and saved-grade allowances default to 2, 10 and 2 GB, with LRU eviction only
+inside each allowance. The default cache is under LocalAppData; old Roaming
+caches are left untouched, with no migration.
+
+This work is not fully qualified. Native HDR display, GPU colour agreement,
+independent cache Settings, and the disk-cache revisit passed their focused
+checks. On a miss, the scene picture is GPU-drawn before requesting a gain-map
+file. CPU file creation uses one background worker, yields between stages to
+visible work, and pauses for Grade/export. It never holds a scene-cache lock
+while yielding. GPU readback for file creation was not yet implemented in
+that October 17 version; the October 18 path above supersedes it.
+Steve agreed to measure first visits against the same scroll driver on
+pre-cache `ef4326c`, plus 15% noise, rather than Claude's post-first-screen
+clock. The unchanged driver measured 925 ms median / 7478 ms p90 on that
+revision (80 cells, disposable profile, 2560x1440); an external observer
+captured the cold result before the old app's missing thumbnail-pool API
+stopped the driver. Cold limits are 1063.75 ms / 8599.7 ms. The current run
+measured 1064 ms / 7232 ms: p90 passed, median missed by 0.25 ms. No timing
+rerun was made. First-draw shader compilation, source decoding and saved-grade
+remakes remain visible costs.
+
+With every gain-map file explicitly warmed, both revisit passes made zero
+scene-picture or pixel requests: p90 was 2 ms on both, maxima 2 / 214 ms,
+within the unchanged 100 / 300 ms limits. Cache hits need no scene pictures:
+captions use photo metadata and overlays request their own maps. Claude's
+third pass still used scene fallbacks (99 picture requests / 60 pixel fetches),
+so it was not equivalent to this explicit cache warm-up. The recent pool
+stays under 256 MiB. Export and Proof paths were not changed.
+
 ## Input limitations
 
 - Supported manual source spaces are limited to linear sRGB/Rec.709, linear Display P3, linear Rec.2020, and ACEScg, plus PQ/HLG/sRGB transfer choices.
@@ -43,7 +115,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 
 ## Steve's testing feedback (October 16, 2026)
 
-- Peak estimate now controls the additional bounded editing-peak measurement on GPU and CPU preview. On shows the estimate; off shows the peak in the preview samples. A scope request waiting for its matching GPU frame retries after that frame arrives, clearing Updating. Export and Proof measurement are unchanged.
+- Settled editing scopes always request the additional bounded peak measurement on GPU and CPU preview. Interactive updates keep the fast preview reading. If the bounded measurement is unavailable, the scope explicitly says Peak (preview). A scope waiting for its matching GPU frame retries after it arrives. Export and Proof measurement are unchanged.
 - Save As previously had no in-app recent-project list; Library and the initial Library screen list photos, not project files. Steve chose Recent projects. File and the header now expose the last ten successfully opened or saved projects, stored in the desktop profile. Existing projects enter the list when next opened; this includes Steve's previously saved project. Browser mode stores its history locally. Missing files report an error and keep the current project open.
 - Project opening now pauses and drains Library grade polling before replacing the backend session. This fixes the reproduced old-photo 404. Retiring a photo clears its Match/grade-saving messages, and late Match results cannot change the next photo. The delayed-open check passed with a scratch copy of Steve's RAW project; opening did not rewrite the project or create a source sidecar. His original project and RAW hashes were unchanged.
 - **Crop follow-up: medium-sized, deferred.** The source pixels and source-relative crop are retained, but reopening Crop currently frames the already-cropped preview and composes another crop inside it. Editing the same crop needs an uncropped editing preview with the saved crop handles restored, then a careful return to the committed preview. Main risks are crop/rotate/perspective coordinate handoff, mask alignment, undo, saved-project reopening, and export/Proof geometry agreement. No crop implementation or export/Proof changes were made in this brief.
@@ -58,6 +130,7 @@ The four targeted checks for Claude's logo, Film panel, Navigate and RAW-toggle 
 - Native zoom uses source-resolution viewport processing; magnified views below 100% use stepped processing sizes. Preview/export and cross-scale agreement have the specific limitations recorded in PRD 15.1, 15.2 and 15.7.
 - WebGPU is the settled authoring preview where parity and device support are validated; explicit proof and export remain backend-authoritative.
 - Technical Processing and Execution describe the accepted viewer frame; auxiliary renders do not change those route labels (CF-ROUTE-08 fixed October 7).
+- Editor exposure overlays omit film grain so random grain excursions do not paint warning speckles. Overlay and CPU scope work share two render slots; superseded/disconnected requests stop at render boundaries. Visible pictures in a detached Library keep loading during a grading gesture. Library source-map jobs already cancel on disconnect and use a separate bounded helper lane.
 - Routine scopes analyze the current preview proxy, not every full-source pixel. Tiny source-resolution features can be reduced by proxy downsampling.
 - With a 1 GiB preview budget, Full tiled slider overlap can enter the CPU settle branch for superseded/coalesced work, and guaranteed tiled interactive drafts are refused after source preparation. These Phase 4 findings remain open (PRD CF-ROUTE-06/07); warm runs sent no CPU picture request.
 - An SDR-compatible representation is not true HDR output.

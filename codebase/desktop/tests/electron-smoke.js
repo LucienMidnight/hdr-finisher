@@ -188,7 +188,7 @@ async function main() {
     assert.equal(headerGeometry.productNameHeight, headerGeometry.productMarkHeight);
     for (const [toggle, popover, screenshotName] of [
       ["#overlay-toggle", "#overlay-popover", "viewer-overlays-anchored.png"],
-      ["#preview-toggle", "#preview-popover", "viewer-preview-anchored.png"],
+      ["#frame-toggle", "#frame-popover", "viewer-frame-anchored.png"],
     ]) {
       await window.locator(toggle).click();
       const anchorGeometry = await window.evaluate(([toggleSelector, popoverSelector]) => {
@@ -238,7 +238,7 @@ async function main() {
             && Math.abs((viewerTools.top + viewerTools.height / 2) - (viewerLane.top + viewerLane.height / 2)) <= 0.5),
           viewerToolbarCentered: Boolean(viewerBar && viewerLane && viewerTools
             && Math.abs((viewerTools.left + viewerTools.width / 2) - (viewerLane.right + (viewerBar.right - viewerLane.right) / 2)) <= 0.75),
-          persistentViewerMenus: ["#overlay-toggle", "#preview-toggle"].every((selector) => {
+          persistentViewerMenus: ["#overlay-toggle", "#frame-toggle"].every((selector) => {
             const control = rect(selector);
             return control && control.width > 0 && control.left >= viewerBar.left && control.right <= viewerBar.right;
           }),

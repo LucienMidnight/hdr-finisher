@@ -310,3 +310,37 @@ def test_sidecar_and_project_export_and_proof_are_byte_identical(setup, tmp_path
         assert hashes[0] == hashes[1]
     finally:
         proofs.clear()
+
+
+def test_indexing_many_large_saved_grades_does_not_lock_the_library(setup, tmp_path):
+    """A big indexing write must not wait on its own reads (October 18, 2026)."""
+    _, _, _, marks, grades = setup
+    folder = tmp_path / "shoot"
+    folder.mkdir()
+    paths = [str(folder / f"DSC{n:05}.ARW") for n in range(45)]
+    bulky = {"history": ["x" * 4000] * 40}
+    for path in paths:
+        grades._put(path, {"default": bulky, "previous_grade": bulky})
+    documents = [{"grade": {"exposure": n}, "grade_history": {}} for n in range(45)]
+    grades.observe_documents(paths, documents)
+    assert [grades._get(path)["indexed_grade"] for path in paths] == [{"exposure": n} for n in range(45)]
+
+
+def test_conflict_clears_when_the_file_returns_to_the_saved_grade(setup):
+    """Steve, October 18, 2026: a stale conflict reopened its dialog on every close."""
+    photo, store, session, marks, grades = setup
+    saved(setup)
+    edit(store, session, 2)
+    document = settings(photo)
+    baseline = deepcopy(document["grade"])
+    external = deepcopy(baseline)
+    external["global_adjustments"]["hdr"]["exposure"] = 3
+    document["grade"] = external
+    outside(photo, document)
+    assert grades.save(str(session.session_id))["conflict"]
+    document["grade"] = baseline
+    outside(photo, document)
+
+    assert not grades.check(str(session.session_id), unsaved=True)["conflict"]
+    assert grades._get(str(photo))["previous_grade"] == external
+    assert "changed_again" not in grades.resolve(str(session.session_id), "mine", external)

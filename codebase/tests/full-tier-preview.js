@@ -83,9 +83,7 @@ function assert(condition, message) {
       `CPU Full response did not carry its exact scope peak: ${JSON.stringify(stripPeaks)}`);
     // CPU authoring reports its accepted preview peak with an honest preview label.
     await page.evaluate(() => {
-      const exactPeak = document.querySelector("#scope-exact-peak");
-      exactPeak.checked = true;
-      exactPeak.dispatchEvent(new Event("change", { bubbles: true }));
+      void refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
     });
     try {
       await page.waitForFunction(() => state.lastScope?.peak_exact === false
@@ -99,7 +97,6 @@ function assert(condition, message) {
         scopeGeneration: state.scopeGeneration,
         previewGeneration: state.previewGeneration,
         currentView: state.currentView,
-        scopeExactPeak: state.scopeExactPeak,
         inFlight: state.scopeRequestInFlight && {
           lane: state.scopeRequestInFlight.lane,
           tier: state.scopeRequestInFlight.tier,

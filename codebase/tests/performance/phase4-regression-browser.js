@@ -49,7 +49,7 @@ const fasterDraggingOn = (mode) => !['off', 'precise'].includes(mode);
     for (const preference of preferences) {
       await page.evaluate((mode) => {
         // Keep legacy command-line aliases, but test the current on/off control.
-        const faster = document.getElementById("preview-faster-dragging");
+        const faster = document.getElementById("settings-faster-dragging");
         const on = !["off", "precise"].includes(mode);
         if (faster && faster.checked !== on) {
           faster.checked = on;

@@ -203,11 +203,9 @@ def old_film_look(grade):
     return grade
 
 def test_folder_lists_and_grades_open_when_settings_hold_a_removed_setting(setup,tmp_path):
-    from hdr_finisher.library_kept import KeptPictures
     photo,store,session,marks,grades=setup;c=copies(setup);grade=saved(setup)
     key=c.create(photo)["path"];marks.writer.drain()
     doc=settings(photo);old_film_look(doc["grade"]);old_film_look(doc["virtual_copies"][0]["grade"]);outside(photo,doc)
-    marks.kept=KeptPictures(tmp_path/"app",marks,None)
     rows=c.expand([{**r,"name":photo.name} for r in marks.read([photo])["photos"]])
     assert [r["path"] for r in rows]==[str(photo),key] and rows[0]["copy_count"]==1
     for value in (photo,key):

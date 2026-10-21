@@ -6,7 +6,7 @@ from uuid import uuid4
 from threading import RLock
 from pydantic import BaseModel, ConfigDict, Field
 from fastapi import HTTPException
-from .library_kept import atomic_json, identity
+from .library_documents import atomic_json, identity
 from .library_grades import grade_key
 from .library_marks import Marks, clean_names
 from .library_diagnostics import log
@@ -118,7 +118,10 @@ class SmartAlbums:
         with self.marks._lock, self._cache_lock:
             scope = getattr(self.marks,"membership",None)
             pins = scope.pins() if scope else []
-            stamp = self.version() + (json.dumps(pins) if scope else "")
+            from .batch_export import RECORD_PATH, read_records, export_state
+            records = read_records()
+            record_version = str(RECORD_PATH.stat().st_mtime_ns) if RECORD_PATH.exists() else ""
+            stamp = self.version() + record_version + (json.dumps(pins) if scope else "")
             if version == stamp: return {"version":stamp,"photos":None}
             if self._version == stamp: return {"version":stamp,"photos":deepcopy(self._snapshot)}
             photos=[]
@@ -136,7 +139,7 @@ class SmartAlbums:
                 def grade_status(key, fallback=None, default=None):
                     s=states.get(key,{})
                     grade=s.get("desired") if s.get("pending") else s.get("indexed_grade",s.get("baseline",fallback))
-                    return {"edited":grade is not None and grade_key(grade)!=grade_key(s.get("default",default)), "grade_identity":identity(grade)}
+                    return {"edited":grade is not None and grade_key(grade)!=grade_key(s.get("default",default)), "grade_identity":identity(grade), **export_state(key, grade, records)}
                 for path,size,modified,facts in files:
                     row={"path":path,"name":Path(path).name,"type":Path(path).suffix[1:].upper(),"bytes":size,"mtime_ns":modified,"indexed":True,
                          "marks":Marks().model_dump(),"albums":[],"storage":"none",**(json.loads(facts) if facts else {}),**rows.get(path,{}),**grade_status(path)}

@@ -40,7 +40,7 @@
     current = payload.session.session_id;
     loadedGrade = true;
     result = {};
-    await activateDesktopSession(payload.session, "");
+    await activateDesktopSession(payload.session, "", null, { stayOnTab: true });
     state.documentDirty = recovery;
     syncDesktopDocumentState();
     render();
@@ -216,10 +216,8 @@
   }
   async function refresh(session) {
     if (!session) return;
-    const workflow = state.activeWorkflow;
     current = session.session_id; readySession = null;
-    await activateDesktopSession(session, "");
-    if (workflow !== "grade") activateWorkflowTab(workflow);
+    await activateDesktopSession(session, "", null, { stayOnTab: true });
     state.documentDirty = Boolean(session.dirty); result = {}; render(); syncDesktopDocumentState();
   }
   // The revert choices open as a menu under the button. The current grade is kept as the previous grade.
@@ -293,7 +291,7 @@
   let picturePauseTimer;
   const pausePictures = paused => fetch("/api/library-worker/pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "grading", paused }) }).catch(() => {});
   document.addEventListener("pointerdown", event => {
-    if (state.activeWorkflow === "grade" && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true); }
+    if (state.activeWorkflow === "grade" && !window.HDRLibraryHost?.isDetached() && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true); }
   }, true);
   for (const event of ["pointerup", "pointercancel", "blur"]) window.addEventListener(event, () => { clearTimeout(picturePauseTimer); picturePauseTimer = setTimeout(() => pausePictures(false), 300); });
   window.setInterval(() => { if (!busy && !asking) tickFlight = tick(); }, 500);

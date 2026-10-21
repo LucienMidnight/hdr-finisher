@@ -57,8 +57,13 @@ def _inspect_jpegxl_payload(payload: bytes) -> dict[str, Any]:
 
 
 def decode_jpegxl(
-    path: Path, *, cancelled: Callable[[], bool] | None = None
+    path: Path, *, cancelled: Callable[[], bool] | None = None, encoded_samples: bool = False
 ) -> tuple[np.ndarray, dict[str, Any]]:
+    """Library may request normalized-range samples before colour conversion.
+
+    In that mode sample_* describes the returned buffer, while the remaining
+    metadata preserves Grade's post-decoder interpretation and override order.
+    """
     _raise_if_cancelled(cancelled)
     try:
         import imagecodecs
@@ -99,7 +104,7 @@ def decode_jpegxl(
     transfer = app_metadata.get("transfer_function")
     confident = bool(color_space and transfer)
     if confident:
-        image = normalize_to_acescg_bounded(
+        image = encoded if encoded_samples else normalize_to_acescg_bounded(
             encoded, str(color_space), str(transfer), cancelled=cancelled
         )
         metadata_color = "ACEScg"
@@ -125,6 +130,9 @@ def decode_jpegxl(
         metadata["jpegxl_app_metadata"] = app_metadata
         metadata["source_reference_white_nits"] = app_metadata.get("reference_white_nits")
     if confident:
+        if encoded_samples:
+            metadata["sample_color_space"] = color_space
+            metadata["sample_transfer_function"] = transfer
         metadata["decoder_normalized_to_acescg"] = True
         if transfer in {"PQ", "HLG"}:
             metadata["decoder_reference_white_nits"] = 203.0

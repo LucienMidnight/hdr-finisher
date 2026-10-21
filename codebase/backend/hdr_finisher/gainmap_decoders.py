@@ -197,6 +197,7 @@ def decode_avif(
     *,
     progress: Callable[[str, str], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    encoded_samples: bool = False,
 ) -> tuple[np.ndarray, np.ndarray | None, dict[str, Any]]:
     """Decode plain, direct-HDR, or ISO 21496-1 gain-map AVIF to ACEScg."""
     avifdec = resolve_binary("avifdec")
@@ -212,15 +213,19 @@ def decode_avif(
 
     inspect_ms = (perf_counter() - inspect_started) * 1000.0
     if info.get("gain_map_present"):
+        if encoded_samples:
+            raise GainMapDecodeError("Gain-map AVIF retains its existing reconstruction route.")
         image, sdr, metadata = _decode_avif_gain_map(
             path, info, progress=progress, cancelled=cancelled
         )
         metadata.setdefault("decode_timings_ms", {})["inspect"] = round(inspect_ms, 3)
         return image, sdr, metadata
 
+    if encoded_samples and info.get("icc_profile") not in {None, "Absent"}:
+        raise GainMapDecodeError("AVIF ICC interpretation retains Grade's CPU loader.")
     if progress:
         progress("decoding_avif", "Decoding full-resolution AVIF")
-    encoded = _decode_avif_pixels(path, avifdec, cancelled=cancelled)
+    encoded = _decode_avif_pixels(path, avifdec, cancelled=cancelled, uncompressed_png=encoded_samples)
     color_space = _cicp_color_space(info.get("color_primaries"))
     transfer = _cicp_transfer(info.get("transfer_char"))
     if transfer is None:
@@ -228,7 +233,7 @@ def decode_avif(
             f"Unsupported or missing AVIF transfer characteristic {info.get('transfer_char')!r}; "
             "manual interpretation after an irreversible decode would be unsafe."
         )
-    hdr = normalize_to_acescg_bounded(
+    hdr = encoded if encoded_samples else normalize_to_acescg_bounded(
         encoded, color_space, transfer, cancelled=cancelled
     )
     metadata = {
@@ -246,7 +251,10 @@ def decode_avif(
     }
     if transfer in {"PQ", "HLG"}:
         metadata["decoder_reference_white_nits"] = 203.0
-    return hdr.astype(np.float32), None, metadata
+    if encoded_samples:
+        metadata["sample_color_space"] = color_space
+        metadata["sample_transfer_function"] = transfer
+    return hdr.astype(np.float32, copy=False), None, metadata
 
 
 def decode_avif_preview(path: Path) -> np.ndarray:
@@ -417,12 +425,13 @@ def _decode_avif_pixels(
     output: Path | None = None,
     *,
     cancelled: Callable[[], bool] | None = None,
+    uncompressed_png: bool = False,
 ) -> np.ndarray:
     if output is not None:
         png_path = output
         png_path.parent.mkdir(parents=True, exist_ok=True)
         _run(
-            [str(avifdec), "-d", "16", str(path), str(png_path)],
+            [str(avifdec), "-d", "16", *(["--png-compress", "0"] if uncompressed_png else []), str(path), str(png_path)],
             cancelled=cancelled,
         )
         return _decode_png_pixels(png_path)
@@ -430,7 +439,7 @@ def _decode_avif_pixels(
     with TemporaryDirectory(prefix="hdr_finisher_avif_decode_") as temp_name:
         png_path = Path(temp_name) / "decoded.png"
         _run(
-            [str(avifdec), "-d", "16", str(path), str(png_path)],
+            [str(avifdec), "-d", "16", *(["--png-compress", "0"] if uncompressed_png else []), str(path), str(png_path)],
             cancelled=cancelled,
         )
         return _decode_png_pixels(png_path)

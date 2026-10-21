@@ -5,7 +5,7 @@ const {declarations} = require('./frontend-source.js');
 const peakSource = declarations('applyAcceptedCpuScopePeak', 'applyEditingScopePeak', 'recordDisplayedScopePeak');
 
 test('a refused editing measurement cannot become an exact peak through CPU fallback', () => {
-  const state = {scopeExactPeak:true, previewGeneration:{hdr:1}, acceptedPresentation:{
+  const state = {previewGeneration:{hdr:1}, acceptedPresentation:{
     lane:'hdr', generation:1, geometrySignature:'{}', exact:true, scopePeak:600, processedLongEdge:1600,
   }};
   const context = vm.createContext({state, geometrySignature:()=>'{}', projectReferenceWhiteNits:()=>203});

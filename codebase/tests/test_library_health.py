@@ -82,7 +82,9 @@ def test_failure_flood_is_one_group_with_three_examples(library, monkeypatch, ca
     def broken(path):
         raise ValueError("invalid settings") from OSError(errno.EACCES, "system says no")
     monkeypatch.setattr(store, "_document", broken)
-    store.read([photos[0].parent / f"{i}.png" for i in range(10000)])
+    # A folder that cannot be listed: every settings read is attempted (and
+    # fails), rather than skipped because the listing shows no settings file.
+    store.read([photos[0].parent / "unlisted" / f"{i}.png" for i in range(10000)])
     lines = [line for line in capsys.readouterr().err.splitlines() if "settings_read_failed" in line]
     assert len(lines) == 1
     fields = json.loads(lines[0].split("settings_read_failed ", 1)[1])
@@ -128,7 +130,7 @@ def test_cache_corruption_and_exif_fallback_leave_diagnostics(tmp_path, capsys, 
     Image.new("RGB", (20, 20)).save(path)
     cache = LibraryPictureCache(tmp_path)
     from hdr_finisher.library_pictures import picture_key
-    cache.root.mkdir()
+    cache.managed.prepare();cache.root.mkdir()
     cache.file(picture_key(path, 64, "quick")).write_bytes(b"broken")
     assert cache.cached(path, 64, "quick") is None
     import exifread
