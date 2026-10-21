@@ -1,5 +1,33 @@
 # Third-party notices
 
+The isolated CPU Retouch prototype (`codebase/backend/hdr_finisher/retouch.py`)
+adapts the PatchMatch nearest-neighbour propagation, shrinking random search
+and patch-voting approach in Krita's
+[`plugins/tools/tool_smart_patch/kis_inpaint.cpp`](https://github.com/KDE/krita/blob/72446d9edcc45d183ffb769353cef8913873cab5/plugins/tools/tool_smart_patch/kis_inpaint.cpp),
+revision `72446d9edcc45d183ffb769353cef8913873cab5`, inspected October 21, 2026.
+That file identifies Copyright 2017 Eugene Ingerman and SPDX
+`GPL-2.0-or-later`. Its provenance credits original author Xavier Philippeau,
+David Chatting's [PatchMatch](https://github.com/davidchatting/PatchMatch), and
+the PatchMatch paper by Connelly Barnes, Eli Shechtman, Adam Finkelstein and
+Dan B Goldman (SIGGRAPH 2009). These credits are retained; no files are copied
+from the earlier project. The adaptation is distributed under GPL version 3
+with HDR Finisher (see LICENSE), using the upstream later-version option.
+Changes include NumPy batched propagation, float64 matching/float32 RGB
+reconstruction, deterministic PCG64, strict whole-patch defect exclusion,
+bounded regions and single-scale equal voting. No Krita, Qt, Boost or KDE
+runtime dependency, image pyramid, colour conversion or application code is
+included.
+
+`tools/retouch_prototype.py` optionally calls OpenCV for comparison only.
+The local comparison used `opencv-python-headless` 5.0.0.93 / OpenCV 5.0.0;
+it is not a runtime requirement or bundled component. OpenCV's top-level
+[5.0.0 LICENSE](https://github.com/opencv/opencv/blob/5.0.0/LICENSE) is Apache-2.0;
+the exact [inpaint.cpp](https://github.com/opencv/opencv/blob/5.0.0/modules/photo/src/inpaint.cpp)
+also retains the Intel Open Source Computer Vision Library licence, Copyright
+2000 Intel Corporation (BSD-style three-clause terms). No OpenCV source is
+copied. Any future distribution of its binaries must retain the package's
+full licence/third-party notices, not just this summary.
+
 HDR Finisher's SDR gamut clipping adapts Bjorn Ottosson's analytic OKLab/sRGB
 gamut-intersection reference implementation, Copyright (c) 2021 Bjorn Ottosson,
 distributed under the MIT License. The source and license are available at

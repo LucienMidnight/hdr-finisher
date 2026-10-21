@@ -59,6 +59,14 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   the local adjustment module. CPU first; later GPU work is separate.
   Not built. Follow the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026);
   pipeline placement and HDR/SDR sharing still need decisions.
+  **Prototype implemented October 21:** isolated bounded CPU PatchMatch engine,
+  background jobs/cancellation/revision guard, completed-patch cache and a
+  synthetic comparison viewer. Float HDR/negative preservation and donor
+  exclusion are tested. The curved-highlight fixture still has a visible
+  dark depression; real-photo quality and Steve's acceptance remain open.
+  This does not implement the interactive brush, Heal/Clone, project records
+  or rendering integration. See the technical plan's CPU prototype outcome
+  for the reproduction command and proposed integration boundary.
 - **V1 hue-selection mask:** add hue selection as a local-adjustment mask,
   compatible with the existing combined-mask workflow. Not built; selection
   controls and hue evaluation remain to be specified.

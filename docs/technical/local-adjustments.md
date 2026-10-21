@@ -17,8 +17,9 @@ implementation status.
 
 ## Retouch brush development plan (October 21, 2026)
 
-**Status:** planned; no retouch engine or UI is implemented. This section
-records Steve's agreed direction and the proposed development sequence.
+**Status:** isolated CPU quality prototype implemented October 21, 2026;
+the Retouch brush, application integration and quality gate remain unbuilt.
+This section records Steve's agreed direction and the development sequence.
 The existing shipping contracts below do not yet include retouching.
 
 ### Problem and intended result
@@ -88,7 +89,8 @@ require an AI model.
 
 ### Development steps and completion gates
 
-All steps are open. Mark implementation built only after it is committed.
+The isolated part of step 1 is implemented; its visual acceptance and all
+integration steps remain open. Mark implementation built only after commit.
 
 1. **Quality prototype and algorithm choice.** Assemble representative dust
    on skies/gradients, textured foliage/ground, edge-crossing spots, image
@@ -157,6 +159,140 @@ HDRF declares GPL-3.0. Before importing code, check the exact revision,
 file-level licences, provenance and dependencies, and record attribution
 in THIRD_PARTY_NOTICES.md. The references above are research targets, not
 dependencies already integrated or benchmarked in HDRF.
+
+### CPU prototype outcome (October 21, 2026)
+
+`codebase/backend/hdr_finisher/retouch.py` owns the isolated `RepairEngine`
+interface, float32 RGB ROI input, explicit algorithm/settings/PCG64 seed,
+and completed replacement rectangle. `retouch_jobs.py` owns background work,
+revision checks and completed-result caching. Neither is called by the app.
+Heal, Clone, GPU repair, project records and interactive controls are unbuilt.
+
+The small adaptation follows Krita's alternating nearest-neighbour propagation,
+shrinking random search and overlapping patch reconstruction. It uses batched
+Jacobi updates, linear working-RGB SSD in float64, a known-context plane only
+for initialisation, and equal source-patch votes. It does not use Krita's
+multiscale EM, integer distances, similarity curve or application classes.
+NumPy executes the large gathers/reductions in compiled code. The Python
+control loop runs on a dedicated backend thread, outside the UI thread.
+This is a dust quality experiment, not parity with Krita Smart Patch.
+
+Prototype constraints and ownership:
+
+- Caller supplies one full-resolution search ROI, at most 256 pixels on each
+  axis, with at most 4096 defect pixels and 8192 affected patch centres.
+  Larger work is rejected; it is not silently split into independent solves.
+- Patch radius is 1..5; iterations 1..12. Defaults are radius 3, six iterations,
+  seed 20261021, algorithm `hdrf-patchmatch-cpu-v1`. Settings validate before
+  use. The ROI defines the search extent; fetching it from a whole source is
+  intentionally a later integration task.
+- All nonzero blend-mask coverage is excluded from donors. An additional
+  boolean mask excludes other known defects. A candidate's **entire patch**
+  must be inside the ROI and free of every excluded pixel. Other excluded
+  defects also carry no matching weight. Reconstruction uses original float
+  source samples, never 8-bit colour or clipped SDR values.
+- Results contain only the defect bounding rectangle, with exact copies in
+  any holes outside the mask. Feather alpha blends in float64 before float32
+  storage. No channel clamp is applied; non-finite inputs/results are rejected.
+- Worker submission owns bounded copies; one solve runs and one may wait.
+  Extra submissions are rejected. Cancellation/revision checks run before
+  work, each iteration/random-search stage, before caching and at acceptance.
+  Closing cancels work, drains the worker and releases completed cache owners.
+- A completion carries document identity, upstream-source identity and edit
+  revision. The future app integration must recheck these **under the session
+  lock while publishing**; worker acceptance alone cannot make an external
+  session mutation atomic. Cancelled/failed/stale jobs never publish an image.
+- The default completed cache is 8 MiB, configurable up to 64 MiB; eviction is
+  by bytes. Keys include the exact ROI pixels, masks, ROI origin/shape,
+  upstream identity, algorithm and settings/seed. Downstream revisions can
+  reuse a completed solve. Upstream changes cannot reuse it incorrectly.
+  Scratch is bounded by ROI/target/patch caps; peak RSS and cancellation
+  latency at the caps have not been qualified.
+- Future preview tiers and export tiles must sample/compose this one completed
+  source-space repair. They must not call the solver per tile or per zoom.
+  Cross-platform bit identity is not promised; same-version local reruns are
+  tested exactly. Future engine changes require a new algorithm version.
+
+**Inspect/reproduce:** from `codebase`, run
+`.venv/Scripts/python.exe tools/retouch_prototype.py`, then open
+`output/retouch-prototype/index.html`. The ignored output folder contains
+enlarged labelled PNGs, `results.json` with settings/versions and diagnostic
+errors, and per-case `.npz` files containing clean, dirty and repaired float
+arrays, mask and source/target patch centres. No test project is opened or
+modified. Optional `opencv-python-headless` is only a comparison dependency,
+not a shipped requirement; the inspected environment used OpenCV 5.0.0
+(wheel 5.0.0.93) and NumPy 2.5.3. Without cv2 the study explicitly skips it.
+
+Evaluation policy, proposed before measuring: untouched pixels and local
+same-settings/seed reruns must be exact. Repair error against synthetic clean
+pixels is diagnostic linear-RGB RMSE, **not** a perceptual acceptance threshold.
+Steve's inspection remains the quality gate. There is no accepted interaction
+latency or memory-performance target yet; these isolated timings do not
+establish one or change existing rendering tolerances.
+
+**Tested:** eight deterministic synthetic fixtures: flat sky, linear gradient,
+periodic and stochastic textures, straight edge, curved HDR highlight, negative-channel
+gradient and image border. Float range, full-patch donor exclusion, untouched
+pixels, reproducibility, feather blending, queue ownership, stale/cancelled
+completion rejection and byte-bounded caching have behavior tests.
+The comparison sheet was visually inspected: flat sky is clean; the gradient
+and border show small tonal errors; texture is better preserved than with the
+boundary-fill baselines; the straight edge stays substantially straighter.
+The stochastic texture loses fine random detail; no nearby patch can recover
+the original noise samples. The HDR highlight has a visible dark depression: **the quality gate fails
+on this example**, despite retaining values above one. No claim of halo-free
+repairs, natural-texture quality or real-photo readiness is made.
+
+OpenCV is compared per float32 channel, with no 8-bit RGB conversion.
+Navier-Stokes has lower diagnostic error on smooth gradients, borders and the
+curved highlight; PatchMatch has lower error on the periodic texture and
+straight edge. Direct scene-range Telea gives severe scale-dependent error,
+even on a flat field. A second Telea baseline reversibly maps the known RGB
+range to 0..255 **in float32**, then maps the result back; this is much better.
+It still loses texture and softens the edge. Both variants are retained in
+the viewer/arrays so the direct-float problem is not mistaken for evidence
+against a properly adapted baseline. These examples do not establish a
+universal algorithm winner. The next quality experiment should separate
+smooth tone reconstruction from patch texture before expanding the tool.
+
+### Integration audit and proposal (not wired or decided)
+
+UI placement and image-processing placement are separate choices:
+
+| Existing component | Reuse / proposed boundary |
+| --- | --- |
+| `frontend/mask-gestures.js`, `mask-controls.js`, `mask-overlay.js` | Reuse source-coordinate conversion, size/feather cursor, stroke sampling and overlays. Commit one repair per completed gesture; keep a draft out of history. Retouch gets a distinct operation, not a local grade or content-dependent mask. |
+| `models.py` BrushStroke / EditDocument / EditCommand; `sessions.py` | Reuse finite normalized uncropped-source coordinates, UUIDs, expected revision, inverse commands and history groups. Add ordered `repairs` records and explicit create/update/delete/retry commands only after integration decisions. |
+| `projects.py`, frontend project IO, Library sidecars | Save the operation recipe in EditDocument, not transient patch buffers. Invalidate/recompute from the original on reopen using pinned engine/settings/seed; resolved mapping storage remains an option if engine-version stability needs it. No schema change in this milestone. |
+| `adjustments.py`, `local_adjustments.py` | Existing local grades run after global colour/Detail and before Film Look/vignette/grain. Do not insert donor search inside the 512px local tile loop. Keep that order and compose precomputed repairs separately. |
+| `render_cache.py` | Reuse source epochs, bounded region readers and frame invalidation. Provide repaired native-source windows before deriving proxies; cache completed repairs independently of downstream grades. Never grade the whole photo on CPU just to upload a repaired patch. |
+| `mask_work.py`, `library_worker.py`, `import_jobs.py` | Reuse cooperative checkpoint/revision patterns. Keep repair work off the Library decode worker; coordinate priority/memory with the scheduler when integrating. Prototype has its own bounded worker and is not yet scheduled by the app. |
+| Denoise / authored SDR Match / delivery | Denoise is lane-specific source processing; Match can supply another source image. Their interaction must be explicit before wiring. No preview/Proof/export/Library output changes here and no existing GPU driver covers this disconnected engine. |
+
+Recommended processing position: repair interpreted native ACEScg source once,
+before geometry, lane denoise and grading; show its controls in Local
+Adjustments. That keeps crop/zoom/grading from changing donor search and lets
+denoise smooth repaired boundaries. It also means donors include original
+noise, and any interpretation/RAW changes invalidate the solve. Repair order
+should be stable document order, with each later repair sampling completed
+earlier repairs; overlap creates serial dependencies and cache invalidation
+of following dependent repairs. All known defect masks should exclude donors,
+unless a previously repaired region is explicitly treated as valid.
+
+The first question put to Steve is whether the repairs should be shared by HDR
+and SDR (recommended) or independently maintained. No answer is assumed.
+After that, confirm pre-geometry/pre-denoise placement, one decision at a time;
+the authored SDR Match base and whether luminance masks inspect repaired or
+original source must be settled before end-to-end implementation. Existing
+content-dependent masks must keep their fixed-source contract until that
+decision is recorded. The prototype depends on none of these choices.
+
+Proposed saved record: stable ID, enabled/opacity, mode, ordered source-space
+strokes or raster recipe, explicit search rectangle, algorithm version,
+settings/seed, and source offset for later Heal/Clone. Runtime metadata adds
+document/source/operation revisions and cache keys; no preview scale or output
+tile identity may influence the solved repair. Prototype settings/input types
+are not yet the public saved schema.
 
 ## State contract
 
