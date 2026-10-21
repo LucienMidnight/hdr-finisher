@@ -1,4 +1,4 @@
-// BW-01 Black & White: the WebGPU preview matches the CPU export.
+// BW-01 Black & White: the WebGPU preview matches the CPU fallback preview.
 //
 // A generated picture with every hue across it, brightness from deep shadow
 // to HDR highlights down it, and a noisy dark band, rendered through both
@@ -157,7 +157,11 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
     }, { lane, on, sliders, film, longEdge: LONG_EDGE });
 
     const failures = [];
-    const authored = await page.evaluate(() => Boolean(state.adjustments.sdr.use_authored_base));
+    const authored = await page.evaluate(async () => {
+      const response = await fetch(`/api/session/${state.session.session_id}/proxy/sdr?long_edge=256`);
+      if (!response.ok) throw Error(`SDR source metadata failed with HTTP ${response.status}`);
+      return response.headers.get("X-Working-Space") === "linear-srgb";
+    });
     console.log(`SDR path: ${authored ? "authored reference" : "scene-linear"}`);
     for (const lane of ["hdr", "sdr"]) {
       for (const film of [false, true]) {
@@ -184,8 +188,8 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       console.log(`Report only for --input: ${failures.length} case(s) above the synthetic-fixture tolerance.`);
       return;
     }
-    if (failures.length) throw new Error(`Black & White preview and export disagree: ${JSON.stringify(failures)}`);
-    console.log("Black & White matches between the WebGPU preview and the CPU export, and is grey.");
+    if (failures.length) throw new Error(`Black & White GPU and CPU fallback previews disagree: ${JSON.stringify(failures)}`);
+    console.log("Black & White matches between the WebGPU and CPU fallback previews, and is grey.");
   } finally {
     await browser.close();
     if (!inputPath) fs.rmSync(path.dirname(fixturePath), { recursive: true, force: true });

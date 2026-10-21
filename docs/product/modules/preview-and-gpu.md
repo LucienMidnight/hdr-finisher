@@ -46,6 +46,14 @@ scopes and navigation, GPU Match candidates, GPU memory budget, device-loss
 recovery, CPU fallback paths, preview-against-export comparison tools and
 parity checks per stage.
 
+SDR B&W anchor repair (October 21, 2026): hue-selective B&W now measures
+its automatic maximum anchor on the existing bounded 1600-edge real-image
+proxy. The packed peak-candidate atlas has unrelated neighbours and cannot
+supply B&W's colour guide. Images within that edge use their native pixels;
+larger images retain bounded editing measurement rather than a full-source
+scan. The B&W parity check identifies the actual source working space and
+compares GPU preview with CPU fallback preview. Its limits are unchanged.
+
 **Open**
 
 - PERF-04: background settle work at Full is cheap to feel but expensive to

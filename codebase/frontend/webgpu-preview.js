@@ -1321,12 +1321,23 @@
         const read = this.device.createBuffer({ size: side * side * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }); buffers.push(read);
         encoder.copyTextureToBuffer({ texture: current }, { buffer: read, bytesPerRow: side * 8 }, [side, side]);
         this.device.queue.submit([encoder.finish()]);
-        // SDR's automatic anchor is an early, mask-free signal. The pinned
-        // prefix reduction evaluates exactly that stage on these real pixels.
+        // The atlas is valid for pointwise peak measurement only. B&W reads a
+        // neighbourhood to select its hue response; adjacent atlas entries
+        // come from unrelated source locations. Use the same bounded real-image
+        // proxy as percentile measurement when that guide is active.
         let sdrAnchor = null;
         if (lane === "sdr" && anchor?.measurement === "maximum") {
-          params[GPU_PARAMS.HIGHLIGHT_MODE] = 1;
-          sdrAnchor = await this.measureToneAdjustedPeak({texture: source, width: side, height: side}, params, "maximum", anchor.key);
+          let peakSource = {texture: source, width: side, height: side};
+          let peakParams = new Float32Array(params);
+          if (graphScaleContract().blackAndWhiteGuideReach(params) > 0) {
+            peakSource = await this.loadProxy(sessionId, lane, 1600, signature, revision, "source", {isCurrent});
+            if (!peakSource || !isCurrent()) return null;
+            peakParams = buildParams(lane, adjustments, peakSource.workingSpace, false, white,
+              this.sourcePixelScaleFor(peakSource, sourceSize));
+          }
+          peakParams[GPU_PARAMS.HIGHLIGHT_MODE] = 1;
+          sdrAnchor = await this.measureToneAdjustedPeak(peakSource, peakParams, "maximum", anchor.key);
+          if (!isCurrent()) return null;
         }
         await read.mapAsync(GPUMapMode.READ);
         const values = new Uint16Array(read.getMappedRange());
