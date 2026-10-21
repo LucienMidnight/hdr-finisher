@@ -148,12 +148,22 @@ fails as recorded above; export, Proof and their limits were not changed.
 - Live HDR/SDR switch.
 - Thumbnail cache: gain-map thumbnails, managed folder and settings, batched
   requests, recent pool, read-ahead. One 640 px size per photo (October 18).
-- Scrolling back (October 18): finished cells within one screen of the edge
-  are kept, so they reappear at once. Further back, the 512 MB recent pool
-  answers without a backend request. A held 640 px thumbnail measured about
-  1.2 MB (4.6 bytes per pixel, mostly the encoded file); the pool counts
-  6 bytes per pixel, so it holds about 300 thumbnails. Cells still loading,
-  or showing the GPU-drawn first picture, are not kept.
+- Scrolling back (October 21): finished live cells within one screen of the
+  edge stay built. Beyond that, the restored fixed 512 MB recent pool retains
+  completed canvas surfaces, reattaching them without picture requests or GPU
+  redraws. The previous encoded-picture pool was lost during the switch to live
+  drawing; disk scene hits still worked but a 20-photo return took 2.77 s to
+  reload/redraw. The live pool budgets 16 bytes per pixel for surface/presentation
+  storage, evicts oldest retained cells and releases their canvas backing stores.
+  Source/grade identities and HDR state prevent stale reuse; cache changes,
+  hardware loss and leaving Library clear the pool. Overlay maps are detached
+  while pooled and refreshed on return. Loading cells remain cancellable.
+  A focused real-folder Electron check restored all 20 badminton RAW surfaces
+  with no backend picture requests and identical screenshot pixels (38 ms in
+  this run). This is a recent-scroll check, not a cold-folder/relaunch target. The JPEG
+  export subfolder also passed: 20 surfaces, no picture requests, unchanged
+  screenshot pixels (13 ms). Fast checks: 552 Node passed; Python had 2325
+  passes, three skips and four unrelated linear-DNG/memory-guard failures.
 - Camera previews first for camera RAWs, then GPU-finished thumbnails
   written to the cache (`6bda55c`, October 18). One real RAW showed its
   camera preview in 60 ms, and its cached thumbnail after a relaunch in

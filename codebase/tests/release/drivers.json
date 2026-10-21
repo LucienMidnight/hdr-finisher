@@ -3862,6 +3862,13 @@
     }
 ,
     {
+        "path": "tests/library-scroll-cache.js",
+        "areas": ["library"],
+        "tier": "area",
+        "protects": "Completed live thumbnail surfaces survive scrolling beyond one screen without backend work or lost pixels.",
+        "launch": {"method": "electron"}
+      },
+      {
       "path": "tests/library-live-grid.js",
       "areas": ["library"],
       "tier": "core",

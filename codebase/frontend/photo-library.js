@@ -146,9 +146,15 @@
   }
   // One stored scene size, scaled to fit any cell.
   const thumbnailEdge = () => 640;
+  const tilePool = HDRLibraryTilePool.create(undefined, cell => {
+    cell.controller.abort(); cell.element.remove();
+    // Explicitly release the detached canvas backing store on eviction.
+    if (cell.fallback) cell.fallback.width = cell.fallback.height = 0;
+  });
+  const tileKey = (map, identity) => `${map === state.cells ? "grid" : "film"}|${identity}|${state.hdr}|${thumbnailEdge()}`;
   const cacheChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('hdr-library-cache') : null;
-  cacheChannel?.addEventListener('message', () => { clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); });
-  window.addEventListener("message",event => { if(event.origin === location.origin && event.data?.type === "hdr-library-cache-changed") { clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); } });
+  cacheChannel?.addEventListener('message', () => { tilePool.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); });
+  window.addEventListener("message",event => { if(event.origin === location.origin && event.data?.type === "hdr-library-cache-changed") { tilePool.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); } });
   const recentPictures = new Map();
   const rawTypes = new Set(["ARW", "CR2", "CR3", "NEF", "NRW", "RAF", "RW2", "ORF", "ORI", "PEF", "DNG", "SRW"]);
   const rawCandidate = photo => photo && rawTypes.has(photo.type) && !photo.edited && !photo.copy_id
@@ -201,6 +207,7 @@
   function setActive(active) {
     state.active = active;
     if (!active) {
+      tilePool.clear();
       compare.cancel();
       clearCells(state.cells); clearCells(state.filmCells); clearPrefetch(); state.single?.abort();
       state.scan?.abort(); state.native?.abort(); state.nativeSource?.abort();
@@ -262,17 +269,21 @@
     }
   }
   function toggleHDR() {
+    tilePool.clear();
     state.hdr = !state.hdr; state.displayEpoch += 1;
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr));
     for (const cell of [...state.cells.values(), ...state.filmCells.values()]) {
       pictureMode(cell.canvas, state.hdr);
       if (cell.fallback && cell.scene) void drawPicture(cell.scene, cell.fallback, cell.controller,
-        () => cell.element.isConnected && !cell.controller.signal.aborted).catch(() => {});
+        () => cell.element.isConnected && !cell.controller.signal.aborted).then(() => {
+          if (!cell.controller.signal.aborted) cell.displayEpoch = state.displayEpoch;
+        }).catch(() => {});
     }
     if (state.view === "single") showSingle();
   }
   $("hdr-button").addEventListener("click", toggleHDR);
   window.addEventListener("hdrfinisher:webgpulost",()=>{
+    tilePool.clear();
     clearCells(state.cells); clearCells(state.filmCells);
     state.single?.abort(); state.singleIdentity="";
     setTimeout(()=>{paintGrid();paintFilm();if(state.view==="single")showSingle();},100);
@@ -334,8 +345,8 @@
             if (!current()) return;
             await drawPicture(meta, fallback, cell.controller, current);
             if (!current()) return;
-            cell.meta = cell.scene = meta; cell.elapsed = performance.now() - started;
-            fallback.hidden = false; canvas.hidden = true; element.classList.remove("loading");
+            cell.meta = cell.scene = meta; cell.displayEpoch = state.displayEpoch; cell.elapsed = performance.now() - started;
+            fallback.hidden = false; canvas.hidden = true; canvas.removeAttribute("src"); element.classList.remove("loading");
             fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
             HDRLibraryStopwatch("picture_shown",{path:photo.path,key:meta.key,duration_ms:cell.elapsed});
             overlays?.attach(photo,fallback,meta,cell.controller,current);
@@ -370,14 +381,28 @@
     map.shown = new Set(state.photos.slice(start, end).map(photo => photo.path));
     for (const [path, cell] of map) {
       if (wanted.has(path) && kept(cell, wanted.get(path))) continue;
-      cell.controller.abort(); cell.element.remove(); map.delete(path);
+      cell.element.remove(); map.delete(path);
+      if (cell.meta && cell.scene?.route === "library-live" && cell.displayEpoch === state.displayEpoch && !cell.controller.signal.aborted) {
+        // Budget 16 bytes per pixel for the live surface and presentation buffers.
+        overlays?.detach(cell.fallback);
+        tilePool.put(tileKey(map, cell.identity), cell, cell.fallback.width * cell.fallback.height * 16);
+      } else cell.controller.abort();
     }
     for (let index = keepStart; index < keepEnd; index += 1) {
       const photo = state.photos[index];
       let cell = map.get(photo.path);
       if (cell && (cell.edge !== thumbnailEdge() || cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.identity !== pictureIdentity(photo))) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
       if (!cell && (index < start || index >= end)) continue;
-      if (!cell) { cell = makeCell(photo, container, index); map.set(photo.path, cell); }
+      if (!cell) {
+        cell = tilePool.take(tileKey(map, pictureIdentity(photo)));
+        if (cell) {
+          container.append(cell.element); cell.photo = photo; cell.index = index;
+          overlays?.attach(photo, cell.fallback, cell.meta, cell.controller,
+            () => state.active && cell.element.isConnected && !cell.controller.signal.aborted);
+        }
+        else cell = makeCell(photo, container, index);
+        map.set(photo.path, cell);
+      }
       position(cell.element, index);
       const active = state.selection.has(photo.path);
       cell.element.classList.toggle("active", active); cell.element.setAttribute("aria-selected", String(active));
@@ -521,6 +546,7 @@
   const commandState = () => postParent("command-state", {selected: state.selection.size, copied: pasteGrades.available()});
   function invalidateGradePictures(paths) {
     const targets = new Set(paths);
+    tilePool.discard(cell => targets.has(cell.photo.path));
     for (const map of [state.cells, state.filmCells]) for (const [path, cell] of map) if (targets.has(path)) { cell.controller.abort(); cell.element.remove(); map.delete(path); }
     if (targets.has(selected()?.path)) { state.single?.abort(); state.fitMeta = null; state.nativeMeta = null; }
   }
@@ -1121,6 +1147,7 @@
         for (const photo of state.allPhotos) {
           const row = byPath.get(photo.path);
           if (row && (row.grade_identity || "") !== (photo.grade_identity || "")) {
+            tilePool.discard(cell => cell.photo.path === photo.path);
             Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity });
             for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }
             changed = true;
