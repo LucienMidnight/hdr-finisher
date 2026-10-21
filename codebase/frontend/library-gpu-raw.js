@@ -692,6 +692,7 @@
           const value = await lease(false);
           if (value.fallback) throw Error(value.fallback);
           if (!value.granted || value.preempt) {
+            root.HDRLibraryScenes?.stage(meta.path,"Waiting for GPU preparation",true);
             if (value.granted) await lease(true);
             await wait(50, signal); continue;
           }
@@ -758,7 +759,7 @@
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
-      timing_ms: { ...developed.timings, exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
+      timing_ms: { ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:meta.gain_map_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
       let text = new TextEncoder().encode(JSON.stringify(header));
       const padded = new Uint8Array(text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32); padded.set(text); text = padded;
       const out = new Uint8Array(4 + text.length + picture.height * picture.width * (meta.rgb && meta.colour.authored_sdr ? 24 : 12));

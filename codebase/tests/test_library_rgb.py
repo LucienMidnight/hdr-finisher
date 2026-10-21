@@ -346,3 +346,19 @@ def test_backend_preparation_reports_file_until_cancelled_execution_returns():
     with pytest.raises(ValueError, match="camera colour"):
         jobs.preparing("token", "bad.dng", fail)
     assert jobs.snapshot() == []
+
+
+def test_backend_preparation_reports_stage_and_invalidation_until_return(tmp_path):
+    from hdr_finisher.library_source_jobs import SourceJobs
+    jobs=SourceJobs()
+    path=tmp_path/"camera.dng";path.write_bytes(b"source")
+    token=jobs.claim(path,"quality",640,30,0)
+    def decode():
+        assert not jobs.cancelled(token)
+        jobs.stage(token,"dng_gain_map","Correcting DNG brightness")
+        assert jobs.snapshot()==[dict(path="camera.dng",stage="Correcting DNG brightness",state="running")]
+        jobs.invalidate()
+        assert jobs.cancelled(token)
+        assert jobs.snapshot()[0]["state"]=="stopping"
+    jobs.preparing(token,"camera.dng",decode)
+    assert jobs.snapshot()==[]

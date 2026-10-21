@@ -69,3 +69,18 @@ test("Activity retains running cancellations until work exits and records failur
   assert.ok(transitions.some(t=>t[0]==="one.dng"&&t[1]==="cancelled"));
   assert.ok(transitions.some(t=>t[0]==="two.jpg"&&t[1]==="failed"&&t[2]==="Unreadable source"));
 });
+
+
+test("Activity stages reflect real execution and resource waits, then clear on completion", async()=>{
+ const queue=create(1);let finish;
+ const result=queue.submit("photo",()=>new Promise(resolve=>finish=resolve),null,10,{path:"image.dng",stage:"Reading source"});
+ await Promise.resolve();
+ queue.stage("image.dng","Correcting DNG brightness");
+ assert.deepEqual(queue.snapshot().jobs,[{path:"image.dng",stage:"Correcting DNG brightness",state:"running"}]);
+ queue.stage("image.dng","Waiting for GPU preparation",true);
+ assert.equal(queue.snapshot().jobs[0].state,"waiting");
+ queue.stage("image.dng","Correcting DNG distortion on GPU");
+ assert.equal(queue.snapshot().jobs[0].state,"running");
+ finish(42);assert.equal(await result,42);await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(queue.snapshot().jobs,[]);
+});

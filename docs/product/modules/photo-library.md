@@ -1302,6 +1302,72 @@ selected-photo display and GPU recovery. This is Activity/route validation,
 not a matched DNG speed measurement. Native decoders remain cooperatively
 cancellable only at the existing checkpoints.
 
+**Library GPU WarpRectilinear (October 21, built).** A separate Library-only
+bridge now accepts mosaiced DNGs whose supported applied OpcodeList3 operations
+are CPU GainMaps followed by exactly one final WarpRectilinear (one or three
+coefficient planes, supported opcode version, validated crop and optical centre).
+Eligibility comes from the operations, never the camera name. Linear DNG,
+interpretation overrides, unsupported order/operations and incompatible decoder
+geometry retain the existing route. The blanket gate on other DNGs remains.
+
+The existing verified LibRaw/AHD CPU decode and CPU GainMap run once. Camera RGB
+is uploaded once; a fused GPU pass samples WarpRectilinear before the DNG colour
+matrix/baseline exposure, existing brightness calibration, gamut handling and
+full-source analysis. Existing reduction and live SDR/HDR drawing follow. There
+is no CPU warp on the eligible route and no full-resolution warped readback.
+The sampler retains integer pixel centres, optical-centre/radius calculation,
+radial/tangential coefficients, a=-0.75 bicubic weights and clamped edges. Crop,
+XMP crop and all current CPU orientation behaviours are retained. Mandatory
+correction audit order and the duplicate-Lensfun guard are preserved. Grade,
+export and Proof keep their existing pixels. Shared broker leases, Grade
+preemption, delivery fairness, source concurrency and GPU memory budgets are
+unchanged; allocation/device/eligibility failures use the existing CPU fallback.
+
+**Measured result and limits.** Serial Electron checks used a 2560 x 1440 window,
+disposable profiles/caches and copies of the 48 MP DJI_0071.DNG plus a small PNG.
+Three clean matched CPU/GPU folder pairs (alternating route order in the first
+two, then a fresh-profile confirmation) finished at 97.3–98.5 s CPU versus
+7.95–8.11 s GPU; medians 97.44 s and 8.05 s. First picture was the small PNG at
+0.10–0.18 s CPU / 0.096–0.123 s GPU, not the finished DNG. The finished-picture
+improvement is well outside the existing 5% timing noise allowance. One earlier
+pair overlapping fast checks is excluded from timing claims. OS disk caches
+were uncontrolled: these are cold application scenes, not disk-cold results,
+and no speedup is calculated against yesterday's cProfile result.
+
+In the final pair, whole-photo source preparation was 96.93 s CPU / 7.58 s GPU
+(before final cache publication/drawing). CPU WarpRectilinear alone was 88.82 s.
+The fused GPU warp + colour + analysis pass was 0.253 s (0.223–0.383 s across
+clean runs); this is explicitly not an isolated GPU warp-only timer. CPU
+GainMap remained 4.77 s and CPU decode/metadata about 1.22 s. No estimated
+percentages or synthetic progress timers are added. The real Activity modal
+identified warp.DNG while CPU/GPU work ran, with an independent UI heartbeat.
+The two-second finished-picture goal is still unmet; these results qualify
+this sample, not mixed-format p90 or an entire camera population.
+
+Finished live 640-pixel SDR/HDR pictures agreed with the correct CPU route:
+worst mean 0.00068 and p99.9 0.0661, including a separate eight-pixel border
+check, inside the unchanged mean <1.0 / p99.9 <=3.0 limits. Both 640 and 2560
+source tiers were prepared and reused. Sixteen native-resolution synthetic
+GPU probes cover one/three coefficient planes, off-centre and tangential warp,
+clamped edges, crop and all eight orientations: worst linear sample error
+0.0000045, below the proposed-before-measuring 0.0001 geometry allowance.
+These are behaviour/pixel checks, not shader-text checks. The focused
+`library-dng-warp.js` driver is registered for Library release selection.
+
+Validation: required fast checks: 549 Node passed; Python 2,323 passed,
+3 skipped, with the previously documented intermittent
+`test_source_ownership_merges_tiers_promotes_and_rejects_stale_publication`
+failure reproduced (rewritten source was not rejected). It is unchanged and
+was not investigated. New DNG/stage/invalidation checks passed separately
+(19 focused checks), including the preparation invalidation test added after
+the full-suite collection. Coverage includes eligibility, mandatory ordering,
+no CPU warp, coordinate/crop and preparation stage/cancellation behavior. The focused
+live-grid check and DNG check ran serially at 2560 x 1440, comfortably within
+the 30-minute slow-test allowance. GainMap GPU work, linear DNG, embedded
+previews, more source concurrency and separate decoder processes remain
+outside this change. Original photos/sidecars and the owner's cache were
+preserved; no installer or push.
+
 **Cold-folder/DNG investigation (October 20; initial diagnosis).** Existing
 owner-app logs confirm DJI_0071.JPG at 205.5 s, DJI_0072.DNG at 159.7 s,
 DJI_0072-2.DNG at 201.7 s and DJI_0071.DNG at 296.7 s until final grid display.
@@ -1374,9 +1440,9 @@ checks validate scheduling/integration, not a new DJI cold-folder benchmark.
 
 **Open follow-ups after loading order (Steve, October 20).**
 
-- Activity must include frontend probes, waiting/running source and draw jobs,
-  and backend preparation, with the current file and waiting counts. The
-  loading-order change alone does not fix the silent Activity button.
+- Activity reporting is built October 21 (above), including frontend probes,
+  waiting/running source and draw jobs and backend preparation. Continue using
+  the named transitions to diagnose unexpectedly slow files.
 - Refine extension-independent cost estimates with cheap dimensions/required
   operations where safe and useful; evaluate retained cost history and
   representative mixed-folder cold first/final display times. Stat size and
@@ -1388,11 +1454,10 @@ checks validate scheduling/integration, not a new DJI cold-folder benchmark.
 - Evaluate more/adaptive source concurrency against memory and responsiveness
   within existing broker budgets. Do not simply raise the two-slot limit;
   measure the expensive-only throughput trade-off of reserved capacity too.
-- Trial Library GPU GainMap/WarpRectilinear after current CPU demosaic,
-  preserving exact operation order and DNG colour, brightness, crop and
-  orientation. The common correction code is not DJI-specific; the severe
-  measured case is DJI, not proof that every DNG is equally slow. Cover other
-  applicable DNG variants before widening eligibility; keep mandatory ops.
+- The narrow Library WarpRectilinear route is built October 21 (above).
+  Broaden photographic qualification before widening operation eligibility.
+  CPU GainMap is now the largest measured remaining stage; evaluate GPU
+  GainMap separately, preserving mandatory order and colour/crop semantics.
 - Evaluate linear-DNG GPU colour/analysis/reduction separately through the RGB
   foundation. Keep ISO gain-map AVIF and the remaining format-batch work
   shelved as recorded above, with earlier sprint gains preserved.

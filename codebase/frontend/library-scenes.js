@@ -63,7 +63,7 @@ window.HDRLibraryScenes = (() => {
     for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",signal,
         headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance()})});
-      if (response.status === 202) { await wait(150, signal); continue; }
+      if (response.status === 202) { sources.stage(path,"Waiting for source reading",true); await wait(150, signal); continue; }
       const meta = await response.json();
       if (!response.ok) throw Error(meta.detail || "The stored scene could not be prepared.");
       return meta;

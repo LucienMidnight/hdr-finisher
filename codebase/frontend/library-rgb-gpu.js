@@ -49,6 +49,49 @@ window.HDRLibraryRGB = (() => {
     }
     workgroupBarrier(); if(li<3u){atomicMax(&peaks[li],atomicLoad(&wgPeak[li]));}
   }`;
+  // Same integer-centre mapping and a=-0.75 bicubic/clamped-border sampler as
+  // dng_opcodes.py. Warp samples camera RGB before the DNG colour matrix.
+  const DNG_INPUT = `
+  struct DNG { coeff:array<vec4<f32>,6>, center:vec4<f32>, ax:vec4<f32>, ay:vec4<f32>, size:vec4<u32> };
+  @group(0) @binding(1) var<storage,read> rgbInput:array<f32>;
+  @group(0) @binding(2) var<uniform> d:DNG;
+  fn cubic(value:f32)->f32 {
+    let x=abs(value);let a=-0.75;
+    if(x>=2.0){return 0.0;}
+    if(x>=1.0){return ((a*x-5.0*a)*x+8.0*a)*x-4.0*a;}
+    return ((a+2.0)*x-(a+3.0))*x*x+1.0;
+  }
+  fn sample_camera(pos:vec2<f32>,channel:u32)->f32 {
+    let safe=clamp(pos,vec2<f32>(0.0),vec2<f32>(d.size.xy)-1.0);
+    let base=vec2<i32>(floor(safe));let f=safe-vec2<f32>(base);
+    var value=0.0;var total=0.0;
+    for(var row=-1;row<=2;row++){
+      let y=u32(clamp(base.y+row,0,i32(d.size.y)-1));
+      let wy=cubic(f32(row)-f.y);
+      for(var col=-1;col<=2;col++){
+        let x=u32(clamp(base.x+col,0,i32(d.size.x)-1));
+        let weight=wy*cubic(f32(col)-f.x);
+        value+=rgbInput[(y*d.size.x+x)*3u+channel]*weight;total+=weight;
+      }
+    }
+    return value/total;
+  }
+  fn linear_rgb(index:u32)->vec3<f32> {
+    let i=index/3u;let out=vec3<f32>(f32(i%p.dims.x),f32(i/p.dims.x),1.0);
+    let pixel=vec2<f32>(dot(d.ax.xyz,out),dot(d.ay.xyz,out));
+    let xy=(pixel-d.center.xy)/d.center.z;
+    let x=xy.x;let y=xy.y;let r2=min(dot(xy,xy),1.0);
+    var result=vec3<f32>(0.0);
+    for(var c=0u;c<3u;c++){
+      let k=d.coeff[c*2u];let tang=d.coeff[c*2u+1u];
+      let radial=k.x+k.y*r2+k.z*r2*r2+k.w*r2*r2*r2;
+      let source=d.center.xy+d.center.z*vec2<f32>(x*radial+2.0*tang.x*x*y+tang.y*(r2+2.0*x*x),
+        y*radial+tang.x*(r2+2.0*y*y)+2.0*tang.y*x*y);
+      result[c]=sample_camera(source,c);
+    }
+    return result;
+  }`;
+  const DNG_RGB=RGB.replace(INPUT,DNG_INPUT);
   const RGB_SDR = COMMON + INPUT + /* wgsl */ `
   @group(0) @binding(4) var<storage,read_write> outR:array<f32>;
   @group(0) @binding(5) var<storage,read_write> outG:array<f32>;
@@ -69,7 +112,7 @@ window.HDRLibraryRGB = (() => {
     let pipelines=compiled.get(device);
     if(!pipelines){
       pipelines={REDUCE:shared.pipelines.REDUCE};
-      for(const [name,code] of Object.entries({RGB,RGB_SDR}))
+      for(const [name,code] of Object.entries({RGB,RGB_SDR,DNG_RGB}))
         pipelines[name]=await device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}});
       compiled.set(device,pipelines);
     }
@@ -115,6 +158,14 @@ window.HDRLibraryRGB = (() => {
       if (whole < mosaic.byteLength) { const tail = new Uint8Array(4); tail.set(mosaic.subarray(whole)); device.queue.writeBuffer(mosaicBuf, whole, tail); }
       await stage("upload");
 
+      let dngUniform=null;
+      if(meta.dng_warp){
+        const warp=meta.dng_warp, data=new ArrayBuffer(160),f=new Float32Array(data),u=new Uint32Array(data);
+        for(let c=0;c<3;c++){const k=warp.coefficients[warp.coefficients.length===1?0:c];f.set(k.slice(0,4),c*8);f.set(k.slice(4),c*8+4);}
+        f.set([...warp.center,warp.radius,0],24);f.set(warp.affine_x,28);f.set(warp.affine_y,32);u.set([warp.width,warp.height,0,0],36);
+        dngUniform=own(device.createBuffer({size:160,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}));
+        device.queue.writeBuffer(dngUniform,0,data);
+      }
       let planes, peaks, samples;
       const wgX = Math.ceil(w / 16), wgY = Math.ceil(h / 16);
       const run = async (name, entries, x, y) => {
@@ -136,12 +187,14 @@ window.HDRLibraryRGB = (() => {
         await staging.mapAsync(GPUMapMode.READ); const copy = staging.getMappedRange().slice(0); release(staging); return copy;
       };
 
-        planes = Array.from({length:meta.colour.authored_sdr ? 6 : 3},()=>make(n*4));
-        peaks = make(16); samples = make(sw*sh*3*4);
-        await run("RGB", [uniform,mosaicBuf,null,null,...planes.slice(0,3),peaks,samples],wgX,wgY);
-        if(meta.colour.authored_sdr) await run("RGB_SDR",[uniform,mosaicBuf,null,null,...planes.slice(3),peaks],wgX,wgY);
-        await device.queue.onSubmittedWorkDone(); release(mosaicBuf);
-        await stage("colour_measure");
+      planes = Array.from({length:meta.colour.authored_sdr ? 6 : 3},()=>make(n*4));
+      peaks = make(16); samples = make(sw*sh*3*4);
+      window.HDRLibraryScenes?.stage(meta.path,meta.dng_warp?"Correcting DNG distortion on GPU":"Converting colour and measuring source");
+      await run(meta.dng_warp?"DNG_RGB":"RGB", [uniform,mosaicBuf,dngUniform,null,...planes.slice(0,3),peaks,samples],wgX,wgY);
+      if(meta.colour.authored_sdr) await run("RGB_SDR",[uniform,mosaicBuf,null,null,...planes.slice(3),peaks],wgX,wgY);
+      await device.queue.onSubmittedWorkDone(); release(mosaicBuf);
+      await stage(meta.dng_warp?"warp_colour_measure":"colour_measure");
+      window.HDRLibraryScenes?.stage(meta.path,"Reducing Library pictures on GPU");
       const reduced = {};
       for (const edge of edges) {
         const [rh, rw] = reducedSize(meta, edge);

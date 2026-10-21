@@ -40,7 +40,7 @@
     if (health.file_commands?.jobs?.length) jobs.unshift(`File commands: ${health.file_commands.jobs[0].done} of ${health.file_commands.jobs[0].total}`);
     const work = sceneWork(health, typeof window !== "undefined" ? window.HDRLibraryScenes?.snapshot() : undefined);
     if (work.jobs.length || health.helper.manual_paused) jobs.unshift(work.jobs.length ? work.text : "Library reading paused");
-    const problems = (health.file_commands?.attention?.length || 0) + writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length + (index.checks?.folders || []).filter(folder => folder.failure || folder.warnings?.length).length;
+    const problems = work.failures.length + (health.file_commands?.attention?.length || 0) + writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length + (index.checks?.folders || []).filter(folder => folder.failure || folder.warnings?.length).length;
     const extra = problems ? ` · Needs attention: ${count(problems)}` : index.state === "failed" || index.state === "retrying" || health.helper.failure || health.helper.recovering ? " · Needs attention" : "";
     return (jobs[0] || "Activity") + (jobs.length > 1 ? ` +${jobs.length - 1}` : "") + extra;
   }
@@ -108,7 +108,7 @@
       }
       panel.append(indexing, node("h3", "Needs attention", "panel-title"));
       for(const item of health.file_commands?.attention || []) {const section=node("section","","library-activity-job");section.append(node("p",item.message),node("p",`Recorded photo and settings locations: ${(item.locations || [item.old,item.new]).join(" · ")}`),action("Try again",`file-retry:${item.id}`,"/api/library/file-jobs",{id:item.id,action:"resume"}));panel.append(section);}
-      if (!(health.file_commands?.attention?.length) && !writer.attention.length && !(health.conflicts || []).length && !health.helper.failure && !health.helper.recovering && index.state !== "failed" && index.state !== "retrying" && !(index.checks?.folders || []).some(folder => folder.failure || folder.warnings?.length)) panel.append(node("p", "Nothing needs attention."));
+      if (!work.failures.length && !(health.file_commands?.attention?.length) && !writer.attention.length && !(health.conflicts || []).length && !health.helper.failure && !health.helper.recovering && index.state !== "failed" && index.state !== "retrying" && !(index.checks?.folders || []).some(folder => folder.failure || folder.warnings?.length)) panel.append(node("p", "Nothing needs attention."));
       for (const group of writer.attention) {
         const item = node("section", "", "library-activity-job");
         if (group.reason === "grade_conflict") {

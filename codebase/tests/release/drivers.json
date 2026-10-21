@@ -3918,6 +3918,13 @@
       "launch": {"method": "electron"}
     },
     {
+      "path": "tests/library-dng-warp.js",
+      "areas": ["library"],
+      "tier": "core",
+      "protects": "Eligible DNG warp preserves finished SDR/HDR and borders, responsive Activity and mixed-folder routing.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/library-rgb-source.js",
       "areas": ["library"],
       "tier": "core",

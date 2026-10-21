@@ -234,6 +234,7 @@ def developed(cache, path, header, payload):
         interpretation_override=SourceInterpretationOverride.model_validate(colour.get("override",{})),
         source=SourceReference(filename=path.name, durable_path=str(path), byte_size=path.stat().st_size,
             fingerprint_sha256=fingerprint,
+            **({"raw_import_settings":header["raw_import_settings"]} if header.get("raw_import_settings") else {}),
             luminance=describe_source_luminance(source, {**colour.get("decoder_metadata",{}), "sdr_file_rendition": authored}, has_authored_sdr=authored)))
     if _identity(path) != header["identity"]:
         raise ValueError("Photo changed during RGB preparation.")

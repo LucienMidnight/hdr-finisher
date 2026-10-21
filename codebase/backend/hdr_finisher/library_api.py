@@ -328,6 +328,15 @@ def create_library_router(worker, browser, store=None):
                 try:
                     if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
                         header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs)
+                    elif Path(path).suffix.lower() == ".dng":
+                        from . import library_dng
+                        if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
+                            raise library_gpu_raw.NotEligible("DNG interpretation overrides retain the CPU route")
+                        def dng_source():
+                            return library_dng.decoded(Path(path), inputs,
+                                progress=lambda stage,text: source_jobs.stage(token,stage,text),
+                                cancelled=lambda: source_jobs.cancelled(token))
+                        header, parts = await run_in_threadpool(source_jobs.preparing, token, path, dng_source)
                     else:
                         if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
                             raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")

@@ -87,6 +87,7 @@ class LibraryWorker:
                         return
                     self._ready.clear()
                     self._recovering = True
+                    self._work.clear()
                     process = self._process
                     self._connection = None
                     log("helper_stopped", reason=repr(error), pending=len(self._pending), action="waiting requests retained; Grade unaffected")
@@ -318,6 +319,7 @@ class LibraryWorker:
             pending = list(self._pending.values())
             self._pending.clear()
             self._requests.clear()
+            self._work.clear()
         for future in pending:
             future.cancel()
         if process is not None:
@@ -480,10 +482,10 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 result = {"id": job["id"], "error": str(exc), "reason": exc.reason,
                           "profile_name": exc.profile_name}
             except Exception as exc:
-                if not isinstance(exc, CancelledError):
+                if not isinstance(exc, CancelledError) and not cancelled.is_set():
                     log("helper_job_failed", operation=job["command"], paths=job.get("path", job.get("paths")), reason=repr(exc), action="request failed; saved marks retained")
                 result = {"id": job["id"], "error": str(exc)}
-            log("helper_job_cancelled" if cancelled.is_set() or stopping.is_set() else "helper_job_finished", job=job["id"], request=job.get("trace_id"), operation=job["command"], path=job.get("path"), work_ms=round((time.perf_counter()-started-waited[0])*1000, 2), yield_ms=round(waited[0]*1000, 2))
+            log("helper_job_cancelled" if cancelled.is_set() or stopping.is_set() else "helper_job_finished", job=job["id"], request=job.get("trace_id"), operation=job["command"], path=job.get("path"), outcome="cancelled" if cancelled.is_set() or stopping.is_set() else "failed" if "error" in result else "completed", last_stage=last_stage[0], stage_ms=round((time.perf_counter()-last_stage[1])*1000,2), work_ms=round((time.perf_counter()-started-waited[0])*1000, 2), yield_ms=round(waited[0]*1000, 2))
             with condition:
                 jobs.pop(job["id"], None)
                 if kind == "check":
