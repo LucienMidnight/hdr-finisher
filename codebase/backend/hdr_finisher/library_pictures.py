@@ -364,7 +364,8 @@ def decode_picture(path, edge, quality):
             if inspection.route == DngRoute.LINEAR_DNG:
                 return linear_dng_picture(path, inspection, edge)
             if inspection.route != DngRoute.MOSAICED_RAW_DNG:
-                raise ValueError("This DNG cannot be read by Grade.")
+                detail = inspection.rejection.message if inspection.rejection else "This DNG cannot be read by Grade."
+                raise ValueError(detail)
         if quality in {"grade-thumbnail", "native"}:
             # Grade's own import, so the starting document paste needs is kept too.
             from .sessions import SessionStore

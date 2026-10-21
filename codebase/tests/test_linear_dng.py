@@ -181,6 +181,7 @@ def test_real_local_corpus_routes_when_present() -> None:
 def test_loader_routes_linear_dng_before_generic_raw_decoder(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setattr("hdr_finisher.linear_dng.detect_memory_resources", lambda: RESOURCES)
     path = tmp_path / "linear.dng"
     _write_linear(path, np.zeros((2, 3, 3), np.uint16))
     monkeypatch.setattr(
@@ -241,6 +242,7 @@ def test_failed_dng_candidate_does_not_replace_active_session(tmp_path: Path) ->
 def test_dng_memory_failure_is_clear_and_transactional(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setattr("hdr_finisher.linear_dng.detect_memory_resources", lambda: RESOURCES)
     source = tmp_path / "current.png"
     Image.new("RGB", (4, 3), (32, 64, 96)).save(source)
     candidate = tmp_path / "candidate.dng"
@@ -260,6 +262,7 @@ def test_dng_memory_failure_is_clear_and_transactional(
 def test_dng_cancellation_is_transactional(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setattr("hdr_finisher.linear_dng.detect_memory_resources", lambda: RESOURCES)
     source = tmp_path / "current.png"
     Image.new("RGB", (4, 3), (32, 64, 96)).save(source)
     candidate = tmp_path / "candidate.dng"

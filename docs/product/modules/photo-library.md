@@ -10,6 +10,13 @@
 - **How it works inside:** [photo-library.md](../../technical/photo-library.md),
   [library speed architecture](../../technical/library-speed-architecture.md).
 
+**DNG rejection detail (October 21, 2026).** Library quick and native picture
+requests preserve the DNG inspector's rejection reason, including insufficient
+safe memory, instead of replacing it with a generic unreadable-DNG message.
+Admission rules and memory reserves are unchanged. The four small DNG routing,
+cancellation and decoder-failure tests use a sufficient test memory snapshot;
+they do not depend on the machine's free RAM.
+
 ## 1. Purpose
 
 A place to browse, cull, rate, compare, organise, grade in bulk and

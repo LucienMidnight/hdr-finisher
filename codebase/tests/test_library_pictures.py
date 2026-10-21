@@ -160,6 +160,9 @@ def test_picture_and_scan_run_in_helper_and_cached_picture_survives_pause(tmp_pa
 
 
 def test_linear_dng_quick_route_uses_primary_pixels_without_grade_corrections(tmp_path, monkeypatch):
+    from hdr_finisher.resource_preflight import GIB, ResourceSnapshot
+    monkeypatch.setattr("hdr_finisher.linear_dng.detect_memory_resources",
+                        lambda: ResourceSnapshot(64 * GIB, 48 * GIB, "test"))
     import tifffile
     from hdr_finisher.library_pictures import decode_picture
     source = tmp_path / "linear.dng"
@@ -179,6 +182,18 @@ def test_linear_dng_quick_route_uses_primary_pixels_without_grade_corrections(tm
     assert np.all(np.isfinite(picture))
     assert np.ptp(picture[0, 0]) == 0  # Source saturation becomes neutral, without reconstruction.
     assert source.read_bytes() == before
+
+
+@pytest.mark.parametrize("quality", ["quick", "native"])
+def test_dng_picture_preserves_resource_rejection(tmp_path, monkeypatch, quality):
+    from types import SimpleNamespace
+    from hdr_finisher.linear_dng import DngRoute
+    from hdr_finisher.library_pictures import decode_picture
+    reason = "Opening this Experimental DNG requires more memory than is safely available."
+    inspection = SimpleNamespace(route=DngRoute.UNSUPPORTED_DNG, rejection=SimpleNamespace(message=reason))
+    monkeypatch.setattr("hdr_finisher.linear_dng.inspect_dng", lambda *args: inspection)
+    with pytest.raises(ValueError, match=reason):
+        decode_picture(tmp_path / "photo.dng", 128, quality)
 
 
 def test_large_browse_cache_avoids_compression_without_changing_pixels(tmp_path, monkeypatch):
