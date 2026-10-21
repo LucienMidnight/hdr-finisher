@@ -106,9 +106,10 @@ test('Electron load barrier remains blocked until main-frame completion and reje
   const { EventEmitter } = require('node:events');
   const { waitForInitialLoad } = require('./electron-initial-load');
   for (const failed of [false, true]) {
-    const contents = new EventEmitter(); contents.isLoadingMainFrame = () => true;
+    const contents = new EventEmitter();
+    let loading = true; contents.isLoadingMainFrame = () => loading;
     let finished = false;
-    const flight = waitForInitialLoad({ evaluate: fn => fn({ BrowserWindow: { getAllWindows: () => [{ webContents: contents }] } }) },
+    const flight = waitForInitialLoad({ evaluate: (fn, argument) => fn({ BrowserWindow: { getAllWindows: () => [{ webContents: contents }] } }, argument) },
       { waitForURL: async () => {} }).then(() => { finished = true; });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(finished, false);
@@ -117,7 +118,10 @@ test('Electron load barrier remains blocked until main-frame completion and reje
       contents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', '', true);
       await rejection;
     } else {
-      contents.emit('did-finish-load'); await flight;
+      contents.emit('did-finish-load');
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(finished, false);
+      loading = false; contents.emit('did-stop-loading'); await flight;
       assert.equal(finished, true);
     }
     assert.equal(contents.listenerCount('did-fail-load'), 0);

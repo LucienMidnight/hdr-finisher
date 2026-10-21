@@ -109,9 +109,11 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       const branch = state.adjustments[lane];
       branch.black_and_white_section_enabled = on;
       branch.black_and_white = { reds: 0, oranges: 0, yellows: 0, greens: 0, aquas: 0, blues: 0, purples: 0, magentas: 0, ...sliders };
+      // Retired artistic response sliders have no physical replacement.
+      // Exercise B&W with the supported halation controls instead.
       Object.assign(branch.film_look, film
-        ? { halation_amount: 60, halation_saturation: 100, red_response: 50, blue_response: -50 }
-        : { halation_amount: 0, red_response: 0, blue_response: 0 });
+        ? { halation_amount: 60, halation_saturation: 100 }
+        : { halation_amount: 0 });
       branch.film_look.grain_amount = 0;
       // Direct recipe mutations still need the ordinary save and automatic
       // anchor settlement; otherwise SDR is captured under the previous recipe.

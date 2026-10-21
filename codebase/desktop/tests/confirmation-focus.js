@@ -54,7 +54,7 @@ async function main() {
 
   try {
     const window = await electronApp.firstWindow();
-    await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 30000 });
     await window.waitForFunction(() => Boolean(window.HDRApplicationShell?.preferences()),
       null, { timeout: 30000 });
     checkpoint("window ready");
@@ -91,7 +91,7 @@ async function main() {
         const item = Menu.getApplicationMenu()?.items.find((entry) => entry.label === "Edit")
           ?.submenu?.items.find((entry) => entry.label === "Settings…");
         if (!item || !item.enabled) throw new Error("Settings is unavailable in the application menu");
-        item.click(undefined, BrowserWindow.getAllWindows()[0]);
+        item.click(undefined, BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")));
       });
     } else {
       await window.getByRole("button", { name: "File", exact: true }).click();

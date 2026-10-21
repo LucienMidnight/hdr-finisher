@@ -118,7 +118,10 @@ async function main() {
         format: testCase.format,
         status: response.status(),
         payload,
-        displayedPath: await page.locator("#batch-results").textContent(),
+        displayedName: await page.locator("#batch-results .batch-result").first().locator("span").first().textContent(),
+        expectedName: path.relative(destination, expectedOutput),
+        selectedDirectory: await page.locator("#batch-directory").inputValue(),
+        expectedDirectory: destination,
         chromaSubsampling: testCase.format === "sdr_jpeg" ? await page.locator("#jpeg-chroma-subsampling").inputValue() : null,
         outputExists: fs.existsSync(expectedOutput),
         outputBytes: fs.existsSync(expectedOutput) ? fs.statSync(expectedOutput).size : 0,
@@ -133,7 +136,8 @@ async function main() {
     };
     if (exports.some((entry) => entry.status !== 200 || entry.payload.state !== "finished" || entry.payload.completed !== 1
       || entry.payload.results.length !== 1 || entry.payload.results[0].outcome !== "exported"
-      || !entry.displayedPath.includes(entry.payload.results[0].output_path) || !entry.outputExists || entry.outputBytes === 0)
+      || entry.displayedName !== entry.expectedName || entry.selectedDirectory !== entry.expectedDirectory
+      || !entry.outputExists || entry.outputBytes === 0)
       || exports.find((entry) => entry.format === "sdr_jpeg")?.chromaSubsampling !== "422"
       || browserErrors.length) {
       throw new Error(`Export/file-browser regression failed: ${JSON.stringify(result)}`);

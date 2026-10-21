@@ -5,6 +5,7 @@
 // sticky is recorded until the attempt budget is genuinely exhausted.
 
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern");
 
 const urlIndex = process.argv.indexOf("--url");
 const baseUrl = urlIndex >= 0 ? process.argv[urlIndex + 1] : process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
@@ -14,7 +15,7 @@ function assert(condition, message) {
 }
 
 async function loadPattern(page) {
-  await page.getByRole("button", { name: "Load test pattern" }).click();
+  await importTestPattern(page);
   await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
   await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
 }

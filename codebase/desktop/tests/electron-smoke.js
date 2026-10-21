@@ -48,12 +48,18 @@ async function main() {
   const desktopDirectory = path.resolve(__dirname, "..");
   const codebase = path.resolve(desktopDirectory, "..");
   const packaged = process.argv.includes("--packaged");
-  const sourcePath = path.join(codebase, "tests", "fixtures", "sdr_gradient.png");
-  const pathlessDropPath = process.env.HDR_FINISHER_DROP_FIXTURE
+  const sourceFixturePath = path.join(codebase, "tests", "fixtures", "sdr_gradient.png");
+  const pathlessDropFixturePath = process.env.HDR_FINISHER_DROP_FIXTURE
     || path.join(codebase, "tests", "fixtures", "blender_linear_rec2020.exr");
-  const pathlessDropName = path.basename(pathlessDropPath);
+  const pathlessDropName = path.basename(pathlessDropFixturePath);
   const outputDirectory = path.join(codebase, "output", "electron-smoke");
   fs.mkdirSync(outputDirectory, { recursive: true });
+  // Native imports may write sidecars; keep the original fixtures read-only.
+  const fixtureDirectory = fs.mkdtempSync(path.join(outputDirectory, "sources-"));
+  const sourcePath = path.join(fixtureDirectory, path.basename(sourceFixturePath));
+  const pathlessDropPath = path.join(fixtureDirectory, pathlessDropName);
+  fs.copyFileSync(sourceFixturePath, sourcePath);
+  fs.copyFileSync(pathlessDropFixturePath, pathlessDropPath);
   const projectPath = path.join(outputDirectory, "electron-smoke.hdrfinisher");
   const exportPath = path.join(outputDirectory, "electron-smoke.png");
   const userDataPath = fs.mkdtempSync(path.join(outputDirectory, "user-data-"));
@@ -105,7 +111,7 @@ async function main() {
           const item = Menu.getApplicationMenu()?.items.find((item) => item.label === menuLabel)
             ?.submenu?.items.find((item) => item.label === itemLabel);
           if (!item || !item.enabled) throw new Error(`Native menu item unavailable: ${menuLabel} > ${itemLabel}`);
-          item.click(undefined, BrowserWindow.getAllWindows()[0]);
+          item.click(undefined, BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")));
         }, { menuLabel, itemLabel });
       } else {
         await window.getByRole("button", { name: customMenuLabel, exact: true }).click();
@@ -117,14 +123,14 @@ async function main() {
       assert.equal(await window.locator(".window-menu-bar").isVisible(), false);
       assert.equal(await window.locator(".window-controls").isVisible(), false);
       const nativeWindow = await electronApp.evaluate(({ BrowserWindow, Menu }) => ({
-        titleBarHeight: BrowserWindow.getAllWindows()[0].getBounds().height - BrowserWindow.getAllWindows()[0].getContentBounds().height,
+        titleBarHeight: BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).getBounds().height - BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).getContentBounds().height,
         menus: Menu.getApplicationMenu().items.map((item) => item.label),
       }));
       assert.ok(nativeWindow.titleBarHeight > 0, "macOS should have a native title bar outside the renderer");
       assert.ok(nativeWindow.menus.includes("File"));
       assert.ok(nativeWindow.menus.includes("Window"));
     }
-    await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
+    await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).setSize(1100, 720));
     await window.waitForFunction(() => document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
     const compactLayout = await window.evaluate(() => ({
       horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
@@ -167,7 +173,7 @@ async function main() {
       const deadline = Date.now() + 30000;
       let title = "";
       while (Date.now() < deadline) {
-        title = BrowserWindow.getAllWindows()[0]?.getTitle() || "";
+        title = BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html"))?.getTitle() || "";
         if (title === "HDR Finisher") break;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
@@ -209,7 +215,7 @@ async function main() {
     assert.equal(await window.locator(".top-actions #grade-autosave").count(), 1);
     assert.equal(await window.locator(".top-actions :is(#project-open, #project-save, #settings-open, #help-open)").count(), 0);
     for (const [width, height] of [[1280, 720], [1366, 768], [1440, 900], [1600, 900], [1920, 1080]]) {
-      await electronApp.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(...size), [width, height]);
+      await electronApp.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).setSize(...size), [width, height]);
       await window.waitForTimeout(80);
       const layout = await window.evaluate(() => {
         // Measure the instance on screen; each workflow panel has its own header.
@@ -264,7 +270,7 @@ async function main() {
       if (layout.leftHeaderHeight !== null) assert.equal(layout.leftHeaderHeight, 54, `Left header height changed at ${width}x${height}`);
       assert.ok(Math.abs(layout.gradeBottom - layout.viewport[1]) <= 1, `Right rail left a bottom shape/gap at ${width}x${height}: ${JSON.stringify(layout)}`);
     }
-    await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1800, 900));
+    await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).setSize(1800, 900));
     await window.waitForFunction(() => !document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
     await window.screenshot({ path: path.join(outputDirectory, "custom-shell-full.png") });
     await window.screenshot({ path: path.join(outputDirectory, "custom-shell-top.png"), clip: { x: 0, y: 0, width: 1800, height: 138 } });
@@ -273,7 +279,7 @@ async function main() {
       await window.screenshot({ path: path.join(outputDirectory, "custom-shell-file-menu.png"), clip: { x: 0, y: 0, width: 520, height: 360 } });
       await window.keyboard.press("Escape");
     }
-    await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
+    await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).setSize(1100, 720));
     await window.waitForFunction(() => document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
     assert.equal(await window.evaluate(() => typeof window.require), "undefined");
     const environment = await window.evaluate(() => window.hdrFinisherDesktop.environment());
@@ -706,7 +712,7 @@ async function main() {
       const deadline = Date.now() + 10000;
       let title = "";
       while (Date.now() < deadline) {
-        title = BrowserWindow.getAllWindows()[0]?.getTitle() || "";
+        title = BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html"))?.getTitle() || "";
         if (title === "HDR Finisher") break;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
@@ -755,7 +761,7 @@ async function main() {
     await window.evaluate(() => exportCurrentSession());
     assert.deepEqual(fs.readFileSync(exportPath), beforeCancel);
 
-    const nativeTitle = await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle());
+    const nativeTitle = await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).getTitle());
     process.stdout.write(JSON.stringify({ environment, projectPath, exportPath, title: nativeTitle, capabilities }) + "\n");
   } finally {
     if (process.platform === "darwin") {

@@ -39,6 +39,22 @@ with remembered bounds; Library pop-out window; update check; settings;
 release workflow and the focused release runner. `v0.9.0` (October 9) and
 `v0.9.1` (October 17) are tagged; the app version is 0.9.1.
 
+**Focused-check harness repairs (October 21, 2026).** Initial readiness waits
+for Electron to stop loading, with a bounded failure and listener cleanup;
+desktop checks select the editor rather than the hidden GPU delivery window.
+Pattern-based interaction checks use normal byte import because the Library
+owns startup. Native smoke uses disposable photo copies to protect sidecars.
+The export-browser check verifies the intended relative result filename and
+the chosen output directory separately. B&W recipes use supported halation
+controls instead of the retired artistic response fields. No output tolerance
+or memory budget changed.
+
+B&W now reaches its numerical checks and still fails on authored SDR: red
+filter and alternating extreme sliders exceed the existing added GPU/CPU
+difference limits, with and without halation. HDR cases pass. The cause of
+that newly exposed discrepancy and its visible effect need separate
+investigation; the test remains failing.
+
 **Open**
 
 - **Linux HDR warning** ("Non-authoritative SDR preview") shows on the

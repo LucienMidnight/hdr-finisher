@@ -1,4 +1,5 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
 
@@ -21,7 +22,7 @@ function curvePointPosition(box, x, y) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.click("#test-pattern-button");
+    await importTestPattern(page);
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
 
     const controlOrder = async (lane) => page.evaluate((activeLane) => (
