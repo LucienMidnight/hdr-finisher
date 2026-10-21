@@ -335,7 +335,7 @@ def create_library_router(worker, browser, store=None):
                         def dng_source():
                             return library_dng.decoded(Path(path), inputs,
                                 progress=lambda stage,text: source_jobs.stage(token,stage,text),
-                                cancelled=lambda: source_jobs.cancelled(token))
+                                cancelled=lambda: source_jobs.cancelled(token), edge=command.edge)
                         header, parts = await run_in_threadpool(source_jobs.preparing, token, path, dng_source)
                     else:
                         if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():

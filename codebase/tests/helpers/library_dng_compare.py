@@ -8,7 +8,7 @@ rows=json.loads(Path(sys.argv[1]).read_text(encoding="utf8"))["rows"]
 report=[]
 for row in rows:
  if row["mode"]!="gpu":continue
- cpu=next(r for r in rows if r["mode"]=="cpu" and r["repeat"]==row["repeat"])
+ cpu=next(r for r in rows if r["mode"]=="cpu" and r["repeat"]==row["repeat"] and r.get("sample")==row.get("sample"))
  checks=[]
  for lane in ("hdr","sdr"):
   shape=(row["meta"]["height"],row["meta"]["width"],3)
@@ -22,5 +22,5 @@ for row in rows:
    metric=compare_finished_pixels(b,a,lane)
    checks.append(dict(lane=lane,region=region,mean=metric.mean,p999=metric.p999,passed=metric.passed))
    assert metric.passed,checks[-1]
- report.append(dict(repeat=row["repeat"],checks=checks))
+ report.append(dict(sample=row.get("sample"),repeat=row["repeat"],checks=checks))
 print(json.dumps(report))

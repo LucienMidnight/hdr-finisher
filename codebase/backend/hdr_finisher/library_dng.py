@@ -1,4 +1,4 @@
-"""Narrow Library bridge: CPU AHD/GainMap, GPU WarpRectilinear, then colour.
+"""Narrow Library bridge: CPU AHD, ordered GPU GainMap/WarpRectilinear, then colour.
 
 No Grade/export/Proof entry point calls this module.
 """
@@ -59,7 +59,7 @@ def geometry(metadata, width, height):
     return output.shape[1],output.shape[0],list(map(int,ax)),list(map(int,ay))
 
 
-def decoded(path, inputs, progress=None, cancelled=None):
+def decoded(path, inputs, progress=None, cancelled=None, edge=640):
     from .linear_dng import inspect_dng, color_metadata_from_mapping
     from .dng_opcodes import apply_opcode_list3, _diagnostic
     from .dng_color import build_color_transform
@@ -67,6 +67,10 @@ def decoded(path, inputs, progress=None, cancelled=None):
     from .import_defaults import RAW_CALIBRATION_EV
     path=Path(path).resolve(strict=True);identity=_identity(path);start=perf_counter()
     inspection=inspect_dng(path)
+    from .linear_dng import DngRoute
+    if inspection.route is DngRoute.LINEAR_DNG:
+        from .library_dng_linear import decoded as linear
+        return linear(path, inputs, inspection, progress, cancelled, edge)
     ordered,warp_op,warp=plan(inspection)
     settings=RawImportSettings.model_validate(inputs["raw_import_settings"])
     raw_inspection=raw_import._inspect_raw(path,dng_inspection=inspection,progress=progress,cancelled=cancelled)
@@ -78,9 +82,24 @@ def decoded(path, inputs, progress=None, cancelled=None):
     if (w,h)!=(inspection.fingerprint.width,inspection.fingerprint.height):
         raise NotEligible("DNG decoder dimensions differ from opcode coordinates")
     decode_ms=(perf_counter()-start)*1000
-    gain_started=perf_counter()
-    image,audit=apply_opcode_list3(image,[op for op in ordered if op is not warp_op],cancelled=cancelled,progress=progress)
-    gain_ms=(perf_counter()-gain_started)*1000
+    # Validate each map before upload. The GPU runs these, in list order,
+    # on the camera samples before the warp reads them.
+    from .dng_opcodes import parse_gain_map
+    maps=[];audit=[]
+    for op in ordered:
+        if op.opcode_id == 9 and op.list_name == "OpcodeList3":
+            g=parse_gain_map(op.parameters);a=g.area
+            if a.bottom>h or a.right>w or a.plane+a.planes>3 or g.map_planes>3:
+                raise NotEligible("GainMap area or planes exceed the decoded image")
+            if sum(len(m["gains"]) for m in maps)+g.gains.size>262144:
+                raise NotEligible("GainMap grids exceed the bounded Library GPU metadata allowance")
+            maps.append(dict(area=[a.top,a.left,a.bottom,a.right,a.plane,a.planes,a.row_pitch,a.col_pitch],
+                points=[g.map_points_v,g.map_points_h,g.map_planes],spacing=[g.map_spacing_v,g.map_spacing_h],
+                origin=[g.map_origin_v,g.map_origin_h],gains=g.gains.reshape(-1).tolist()))
+            audit.append(_diagnostic(op,"applied_gpu"))
+        elif op is not warp_op:
+            _,skipped=apply_opcode_list3(image,[op],cancelled=cancelled)
+            audit.extend(skipped)
     outw,outh,ax,ay=geometry(inspection.metadata,w,h)
     colour=color_metadata_from_mapping(inspection.metadata);transform=build_color_transform(colour)
     correction=raw_import._RawCorrectionResult(image,settings.lens.model_copy(update={"mode":"off"}),
@@ -92,15 +111,15 @@ def decoded(path, inputs, progress=None, cancelled=None):
     descriptor=SourceImageDescriptor(filename=path.name,suffix=".dng",width=outw,height=outh,channels=3,dtype="float32",source_color_space="ACEScg",transfer_function="LINEAR")
     cx=warp.center_x*w;cy=warp.center_y*h
     if _identity(path)!=identity: raise ValueError("Photo changed during DNG preparation")
-    return {"rgb":True,"adapter_version":"library-dng-warp-v1","path":str(path),"identity":identity,
+    return {"rgb":True,"adapter_version":"library-dng-v2","path":str(path),"identity":identity,
         "width":outw,"height":outh,"flip":0,"mosaic_bytes":image.nbytes,"sample_stride":max(1,int(np.ceil(np.sqrt(outw*outh/2_000_000)))),
         "layout":{"dtype":"float32","order":"HWC","channels":["R","G","B"],"ownership":"request-owned"},
         "orientation":{"original":int(inspection.metadata["orientation"]),"applied":True},
-        "dng_warp":{"width":w,"height":h,"coefficients":warp.coefficients.tolist(),"center":[cx,cy],
+        "dng_gain_maps":maps,"dng_warp":{"width":w,"height":h,"coefficients":warp.coefficients.tolist(),"center":[cx,cy],
             "radius":float(np.hypot(max(cx,w-cx),max(cy,h-cy))),"affine_x":ax,"affine_y":ay},
         "colour":{"primaries":"camera","transfer":"LINEAR","reference_white_nits":inputs["hdr_reference_white_nits"],"authored_sdr":False,
             "scale":2.0**RAW_CALIBRATION_EV,"decoder_metadata":metadata,"descriptor":descriptor.model_dump(mode="json")},
         "raw_import_settings":settings.model_dump(mode="json"),
         "rgb_to_acescg":(transform.camera_to_acescg.astype(np.float32)*np.float32(2**colour.baseline_exposure)).tolist(),
         "acescg_to_srgb":_ACESCG_TO_LINEAR_SRGB.T.tolist(),"acescg_to_bt2020":_ACESCG_TO_LINEAR_BT2020.T.tolist(),
-        "decode_ms":decode_ms,"gain_map_ms":gain_ms},[memoryview(image).cast("B")]
+        "decode_ms":decode_ms},[memoryview(image).cast("B")]

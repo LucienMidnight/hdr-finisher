@@ -3921,7 +3921,7 @@
       "path": "tests/library-dng-warp.js",
       "areas": ["library"],
       "tier": "core",
-      "protects": "Eligible DNG warp preserves finished SDR/HDR and borders, responsive Activity and mixed-folder routing.",
+      "protects": "Eligible DNG GainMap/warp and linear preparation preserve finished SDR/HDR, borders, responsive Activity, mixed-folder routing and the H toggle.",
       "launch": {"method": "electron"}
     },
     {

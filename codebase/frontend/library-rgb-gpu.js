@@ -92,6 +92,56 @@ window.HDRLibraryRGB = (() => {
     return result;
   }`;
   const DNG_RGB=RGB.replace(INPUT,DNG_INPUT);
+  const DNG_GAIN=COMMON+`
+    struct DNG { coeff:array<vec4<f32>,6>, center:vec4<f32>, ax:vec4<f32>, ay:vec4<f32>, size:vec4<u32> };
+    @group(0) @binding(1) var<storage,read_write> camera:array<f32>;
+    @group(0) @binding(2) var<uniform> d:DNG;
+    @group(0) @binding(3) var<storage,read> maps:array<f32>;
+    fn gain(v:u32,h:u32,c:u32,base:u32,cols:u32,planes:u32)->f32{return maps[base+(v*cols+h)*planes+c];}
+    @compute @workgroup_size(16,16)
+    fn main(@builtin(global_invocation_id) g0:vec3<u32>){
+      let g=g0+vec3<u32>(0u,p.dispatch.y,0u);let w=d.size.x;let h=d.size.y;
+      if(g.x>=w||g.y>=h){return;}
+      var offset=1u;
+      for(var m=0u;m<u32(maps[0]);m++){
+        let top=u32(maps[offset]);let left=u32(maps[offset+1u]);let bottom=u32(maps[offset+2u]);let right=u32(maps[offset+3u]);
+        let plane=u32(maps[offset+4u]);let planes=u32(maps[offset+5u]);let rp=u32(maps[offset+6u]);let cp=u32(maps[offset+7u]);
+        let rows=u32(maps[offset+8u]);let cols=u32(maps[offset+9u]);let channels=u32(maps[offset+10u]);let base=offset+15u;
+        if(g.x>=left&&g.x<right&&g.y>=top&&g.y<bottom&&(g.x-left)%cp==0u&&(g.y-top)%rp==0u){
+          let pos=clamp((vec2<f32>((f32(g.y)+0.5)/f32(h),(f32(g.x)+0.5)/f32(w))-vec2<f32>(maps[offset+13u],maps[offset+14u]))/vec2<f32>(maps[offset+11u],maps[offset+12u]),vec2<f32>(0.0),vec2<f32>(f32(rows-1u),f32(cols-1u)));
+          let v=u32(floor(pos.x));let x=u32(floor(pos.y));let v1=min(v+1u,rows-1u);let x1=min(x+1u,cols-1u);let f=pos-vec2<f32>(f32(v),f32(x));
+          for(var c=plane;c<plane+planes;c++){
+            let mc=min(c,channels-1u);
+            let a=gain(v,x,mc,base,cols,channels)*(1.0-f.y)+gain(v,x1,mc,base,cols,channels)*f.y;
+            let b=gain(v1,x,mc,base,cols,channels)*(1.0-f.y)+gain(v1,x1,mc,base,cols,channels)*f.y;
+            camera[(g.y*w+g.x)*3u+c]*=a*(1.0-f.x)+b*f.x;
+          }
+        }
+        offset=base+rows*cols*channels;
+      }
+    }`;
+  const LINEAR_INPUT=`
+    struct Linear { ax:vec4<f32>, ay:vec4<f32>, size:vec4<u32>, neutral:vec4<f32>, recovery:vec4<f32> };
+    @group(0) @binding(1) var<storage,read> camera:array<f32>;
+    @group(0) @binding(2) var<uniform> d:Linear;
+    @group(0) @binding(3) var<storage,read> support:array<f32>;
+    fn linear_rgb(index:u32)->vec3<f32>{
+      let i=index/3u;let out=vec3<f32>(f32(i%p.dims.x),f32(i/p.dims.x),1.0);
+      let xy=vec2<u32>(u32(dot(d.ax.xyz,out)),u32(dot(d.ay.xyz,out)));let k=(xy.y*d.size.x+xy.x)*3u;
+      let value=vec3<f32>(camera[k],camera[k+1u],camera[k+2u]);
+      if(d.recovery.y<=0.0){return value;}
+      let pos=(vec2<f32>(xy)+0.5)/d.recovery.y-0.5;
+      let p0=clamp(floor(pos),vec2<f32>(0.0),d.recovery.zw-1.0);let p1=min(p0+1.0,d.recovery.zw-1.0);let f=clamp(pos-p0,vec2<f32>(0.0),vec2<f32>(1.0));
+      let sw=u32(d.recovery.z);
+      let a=support[u32(p0.y)*sw+u32(p0.x)]*(1.0-f.x)+support[u32(p0.y)*sw+u32(p1.x)]*f.x;
+      let b=support[u32(p1.y)*sw+u32(p0.x)]*(1.0-f.x)+support[u32(p1.y)*sw+u32(p1.x)]*f.x;
+      let confidence=a*(1.0-f.y)+b*f.y;let signal=max(value.x,max(value.y,value.z));let limit=d.recovery.x;let onset=limit*0.35;
+      var weight=clamp((signal-onset)/max(limit-onset,1e-6),0.0,1.0);weight=sqrt(weight*weight*(3.0-2.0*weight))*confidence;
+      if(signal>=limit-max(1.0/1024.0,limit*0.005)){weight=1.0;}
+      let ratios=value/d.neutral.xyz;let reconstructed=max(ratios.x,max(ratios.y,ratios.z))*d.neutral.xyz;
+      return value+(reconstructed-value)*weight;
+    }`;
+  const DNG_LINEAR=RGB.replace(INPUT,LINEAR_INPUT);
   const RGB_SDR = COMMON + INPUT + /* wgsl */ `
   @group(0) @binding(4) var<storage,read_write> outR:array<f32>;
   @group(0) @binding(5) var<storage,read_write> outG:array<f32>;
@@ -112,7 +162,7 @@ window.HDRLibraryRGB = (() => {
     let pipelines=compiled.get(device);
     if(!pipelines){
       pipelines={REDUCE:shared.pipelines.REDUCE};
-      for(const [name,code] of Object.entries({RGB,RGB_SDR,DNG_RGB}))
+      for(const [name,code] of Object.entries({RGB,RGB_SDR,DNG_RGB,DNG_GAIN,DNG_LINEAR}))
         pipelines[name]=await device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}});
       compiled.set(device,pipelines);
     }
@@ -166,6 +216,14 @@ window.HDRLibraryRGB = (() => {
         dngUniform=own(device.createBuffer({size:160,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}));
         device.queue.writeBuffer(dngUniform,0,data);
       }
+      let extra=null;
+      if(meta.dng_linear){
+        const lin=meta.dng_linear,data=new ArrayBuffer(80),f=new Float32Array(data),u=new Uint32Array(data);
+        f.set(lin.affine_x,0);f.set(lin.affine_y,4);u.set([lin.width,lin.height,0,0],8);f.set(lin.neutral,12);
+        f.set([lin.response_limit||1,lin.support?.block||0,lin.support?.width||0,lin.support?.height||0],16);
+        dngUniform=own(device.createBuffer({size:80,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}));device.queue.writeBuffer(dngUniform,0,data);
+        const mask=meta.dng_support||new Float32Array(1);extra=make(mask.byteLength);device.queue.writeBuffer(extra,0,mask);
+      }
       let planes, peaks, samples;
       const wgX = Math.ceil(w / 16), wgY = Math.ceil(h / 16);
       const run = async (name, entries, x, y) => {
@@ -187,10 +245,18 @@ window.HDRLibraryRGB = (() => {
         await staging.mapAsync(GPUMapMode.READ); const copy = staging.getMappedRange().slice(0); release(staging); return copy;
       };
 
+      if(meta.dng_gain_maps?.length){
+        const packed=[meta.dng_gain_maps.length];
+        for(const map of meta.dng_gain_maps){packed.push(...map.area,...map.points,...map.spacing,...map.origin);for(const value of map.gains)packed.push(value);}
+        const data=new Float32Array(packed),gainBuffer=make(data.byteLength);device.queue.writeBuffer(gainBuffer,0,data);
+        window.HDRLibraryScenes?.stage(meta.path,"Correcting DNG brightness on GPU");
+        await run("DNG_GAIN",[uniform,mosaicBuf,dngUniform,gainBuffer],Math.ceil(meta.dng_warp.width/16),Math.ceil(meta.dng_warp.height/16));
+        await stage("gain_map");release(gainBuffer);
+      }
       planes = Array.from({length:meta.colour.authored_sdr ? 6 : 3},()=>make(n*4));
       peaks = make(16); samples = make(sw*sh*3*4);
-      window.HDRLibraryScenes?.stage(meta.path,meta.dng_warp?"Correcting DNG distortion on GPU":"Converting colour and measuring source");
-      await run(meta.dng_warp?"DNG_RGB":"RGB", [uniform,mosaicBuf,dngUniform,null,...planes.slice(0,3),peaks,samples],wgX,wgY);
+      window.HDRLibraryScenes?.stage(meta.path,meta.dng_warp?"Correcting DNG distortion on GPU":meta.dng_linear?"Reconstructing highlights and converting DNG colour on GPU":"Converting colour and measuring source");
+      await run(meta.dng_warp?"DNG_RGB":meta.dng_linear?"DNG_LINEAR":"RGB", [uniform,mosaicBuf,dngUniform,extra,...planes.slice(0,3),peaks,samples],wgX,wgY);
       if(meta.colour.authored_sdr) await run("RGB_SDR",[uniform,mosaicBuf,null,null,...planes.slice(3),peaks],wgX,wgY);
       await device.queue.onSubmittedWorkDone(); release(mosaicBuf);
       await stage(meta.dng_warp?"warp_colour_measure":"colour_measure");

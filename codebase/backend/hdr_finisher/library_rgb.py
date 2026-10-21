@@ -198,14 +198,15 @@ def developed(cache, path, header, payload):
         raise ValueError("Photo changed during RGB preparation.")
     h, w = int(header["height"]), int(header["width"])
     authored = header["colour"].get("authored_sdr", True)
-    plane_count = 6 if authored else 3
+    reference_present = authored or header.get("has_sdr_reference", False)
+    plane_count = 6 if reference_present else 3
     if len(payload) != h * w * plane_count * 4:
         raise ValueError("Incomplete RGB scene/rendition payload.")
     planes = np.frombuffer(payload, dtype="<f4").reshape(plane_count, h, w)
     if not np.all(np.isfinite(planes)):
         raise ValueError("RGB GPU preparation produced invalid samples.")
     pixels = np.ascontiguousarray(planes[:3].transpose(1, 2, 0))
-    reference = np.ascontiguousarray(planes[3:].transpose(1, 2, 0)) if authored else None
+    reference = np.ascontiguousarray(planes[3:].transpose(1, 2, 0)) if reference_present else None
     peak, robust = header["peaks"], header["robust"]
     # SDR JPEG/PNG cannot gain HDR headroom through a colour matrix.
     analysis = HDRAnalysis(classification="SDR_ONLY", badge_message="Authored SDR file rendition.",
@@ -223,8 +224,8 @@ def developed(cache, path, header, payload):
         analysis = analysis.model_copy(update={"peak_luma_linear":peak["peak_luma"],
             "peak_bt2020_linear":peak["peak_bt2020"], "robust_peak_linear":robust["channel"],
             "robust_peak_luma_linear":robust["luma"], "robust_peak_bt2020_linear":robust["bt2020"]})
-    if not authored: reference = None
-    look = starting_adjustments(analysis, np.array([peak["sdr"]], dtype=np.float32) if authored else None, white)
+    if not reference_present: reference = None
+    look = starting_adjustments(analysis, np.array([peak["sdr"]], dtype=np.float32) if reference_present else None, white)
     source = SourceImageDescriptor(filename=path.name, suffix=path.suffix.lower(),
         width=header["source_width"], height=header["source_height"], channels=3, dtype="float32",
         source_color_space="sRGB", transfer_function="sRGB")
@@ -235,7 +236,7 @@ def developed(cache, path, header, payload):
         source=SourceReference(filename=path.name, durable_path=str(path), byte_size=path.stat().st_size,
             fingerprint_sha256=fingerprint,
             **({"raw_import_settings":header["raw_import_settings"]} if header.get("raw_import_settings") else {}),
-            luminance=describe_source_luminance(source, {**colour.get("decoder_metadata",{}), "sdr_file_rendition": authored}, has_authored_sdr=authored)))
+            luminance=describe_source_luminance(source, {**colour.get("decoder_metadata",{}), "sdr_file_rendition": authored}, has_authored_sdr=reference_present)))
     if _identity(path) != header["identity"]:
         raise ValueError("Photo changed during RGB preparation.")
     metadata = {"route": "library-live", "renderer": "gpu", "rgb_adapter": VERSION,

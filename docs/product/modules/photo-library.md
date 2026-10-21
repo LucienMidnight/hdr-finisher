@@ -1312,7 +1312,9 @@ selected-photo display and GPU recovery. This is Activity/route validation,
 not a matched DNG speed measurement. Native decoders remain cooperatively
 cancellable only at the existing checkpoints.
 
-**Library GPU WarpRectilinear (October 21, built).** A separate Library-only
+**Library GPU WarpRectilinear (October 21, initial delivery).** The combined
+GainMap/linear-DNG entry below supersedes this first delivery's CPU GainMap and
+linear-DNG exclusions. A separate Library-only
 bridge now accepts mosaiced DNGs whose supported applied OpcodeList3 operations
 are CPU GainMaps followed by exactly one final WarpRectilinear (one or three
 coefficient planes, supported opcode version, validated crop and optical centre).
@@ -1377,6 +1379,75 @@ the 30-minute slow-test allowance. GainMap GPU work, linear DNG, embedded
 previews, more source concurrency and separate decoder processes remain
 outside this change. Original photos/sidecars and the owner's cache were
 preserved; no installer or push.
+
+**Library GPU GainMap and linear DNG (October 21).** Steve grouped these
+follow-ups so they share one focused validation batch. The original DJI samples
+have mandatory GainMap then WarpRectilinear; the inspected DxO linear DNGs and
+merged DJI HDR DNG have no GainMap. Eligibility follows declared supported
+operations, not producer names.
+
+The mosaic bridge now uploads the CPU AHD camera samples without CPU GainMap.
+An in-place GPU pass applies the supported maps in opcode order before the
+existing warp pass. Pixel-centre normalization, bilinear grid interpolation,
+absolute channel selection, area/pitch masks and clamped map boundaries retain
+the CPU semantics. There is no second full-resolution image buffer for GainMap.
+Maps exceeding 262,144 grid values retain the CPU route; this bounds metadata.
+
+A separate Library bridge admits operation-free linear DNGs. CPU TIFF decoding
+and black/white normalization are retained. The existing compact clipped-light
+support mask is computed on the CPU; the GPU reconstructs supported highlights,
+applies the embedded camera/profile matrix and baseline exposure, preserves RAW
+brightness calibration, measures the full source and reduces it for live drawing.
+Crop, XMP crop and existing orientations are retained. Embedded SDR renditions
+use the existing CPU decoder and reducer and remain available to SDR drawing and
+its defaults. Native full-size requests with an embedded SDR rendition, linear
+DNGs with any opcodes, interpretation overrides and unavailable/failed GPU work
+retain the existing CPU route. Other DNG gates remain. Grade, export and Proof
+entry points and pixels are unchanged. Shared broker/budget/priority/fairness,
+source concurrency and decoder process policy are unchanged.
+
+The combined focused Electron driver ran serially at 2560 x 1440, with three
+matched CPU/GPU folder pairs per sample, alternating order and fresh copied
+paths/app scenes. Each folder included a small PNG. Median finished-folder times
+were 100.99 s CPU / 4.18 s GPU for DJI_0071.DNG, 9.35 / 7.80 s for the DxO
+neutral linear DNG, and 8.17 / 6.23 s for merged DJI HDR. First picture was the
+PNG: 0.15–0.51 s CPU and 0.14–0.36 s GPU across the batch. These are application
+cold scenes with uncontrolled OS caches, not disk-cold results or a comparison
+with the old cProfile run. No other tests overlapped these timing measurements.
+
+The 5% allowance is unchanged. DJI GPU finishes were stable at 4.16–4.21 s;
+linear-DNG CPU reading varied: DxO GPU finishes ranged 7.52–10.33 s and merged
+DJI 4.41–6.31 s. The median improvements exceed 5%, but DxO was slower in one
+pair, so there is no claim of a consistent per-file latency or two-second goal.
+Steve should judge these folders in the app before further timing investigation.
+The remaining CPU decoding, SDR rendition preparation and compact highlight
+support still matter, especially for DxO.
+
+For the final DJI pair, whole-photo source preparation (before final publication
+and drawing) was 104.98 s CPU / 3.77 s GPU. CPU GainMap was 4.49 s and warp
+95.69 s; GPU GainMap was 0.254 s and the fused warp/colour/analysis pass 0.354 s.
+The fused timing is not an isolated warp-only timer. Linear source preparation
+was 6.97–9.81 s DxO and 4.05–5.91 s merged DJI. Activity showed each actual
+filename with a live UI heartbeat throughout the slow comparisons.
+
+Finished 640-pixel SDR/HDR pictures and separate eight-pixel borders passed the
+unchanged perceptual mean <1.0 / p99.9 <=3.0 limits: worst mean 0.00069 and
+p99.9 0.067. DxO's embedded SDR rendition matched exactly. The second DxO
+profile sample also passed a separate finished SDR/HDR and border comparison.
+Both 640 and 2560
+source tiers were prepared. Forty native synthetic probes cover ordered maps,
+partial areas/pitches, one/three map planes, warp geometry/edges and all current
+orientations, plus linear highlight reconstruction/crop/orientation: worst
+linear error 0.0000064, within the existing 0.0001 geometry allowance. Explicit
+submission cancellation, reservation rejection and subsequent successful reuse
+also passed. The existing DNG driver now covers both routes; there is no broad
+GPU sweep. The combined slow checks stayed below the 30-minute allowance.
+
+Required fast checks: 549 Node passed; Python 2,328 passed, 3 skipped, with
+the unchanged intermittent
+`test_source_ownership_merges_tiers_promotes_and_rejects_stale_publication`
+failure (rewritten source was not rejected). It was not investigated or rerun. Original photos, sidecars and owner
+caches were preserved. No push or installer.
 
 **Cold-folder/DNG investigation (October 20; initial diagnosis).** Existing
 owner-app logs confirm DJI_0071.JPG at 205.5 s, DJI_0072.DNG at 159.7 s,
@@ -1466,11 +1537,12 @@ checks validate scheduling/integration, not a new DJI cold-folder benchmark.
   measure the expensive-only throughput trade-off of reserved capacity too.
 - The narrow Library WarpRectilinear route is built October 21 (above).
   Broaden photographic qualification before widening operation eligibility.
-  CPU GainMap is now the largest measured remaining stage; evaluate GPU
-  GainMap separately, preserving mandatory order and colour/crop semantics.
-- Evaluate linear-DNG GPU colour/analysis/reduction separately through the RGB
-  foundation. Keep ISO gain-map AVIF and the remaining format-batch work
-  shelved as recorded above, with earlier sprint gains preserved.
+  GPU GainMap and operation-free linear DNG are built in the combined October 21
+  follow-up above; broader DNG operation plans and consistent two-second latency
+  remain open.
+- Operation-free linear-DNG GPU colour/analysis/reduction is built above.
+  Keep ISO gain-map AVIF and the remaining format-batch work shelved as
+  recorded above, with earlier sprint gains preserved.
 
 **Batch 4 — gain-map AVIF.** Prioritise the measured AVIF bottleneck. Establish
 access to decoded base/map samples and all required ISO gain-map metadata;

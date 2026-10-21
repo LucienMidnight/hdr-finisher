@@ -4,14 +4,14 @@ const {execFileSync}=require('node:child_process'),{chromium}=require('playwrigh
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-dng-warp',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
 // Locate private fixture without depending on its containing subfolder.
 function locate(dir,name){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory()){const found=locate(file,name);if(found)return found;}else if(entry.name===name)return file;}}
-const source=locate(path.join(root,'local-test-media/inputs/linear-dng'),'DJI_0071.DNG');
 const runs=[];
-const geometryOnly=process.argv.includes("--geometry-only");
 const repeats=process.argv.includes('--measure')?3:1;
-for(let repeat=0;repeat<(geometryOnly?0:repeats);repeat++)for(const mode of (repeat%2?['gpu','cpu']:['cpu','gpu'])){
- const dir=path.join(folder,`${repeat}-${mode}`);fs.mkdirSync(dir);
- for(const [name,src] of [['warp.DNG',source],['small.png',path.join(root,'tests/fixtures/sdr_gradient.png')]])fs.copyFileSync(src,path.join(dir,name));
- runs.push({dir,mode,repeat});
+const selected=process.argv.find(arg=>arg.startsWith('--sample='))?.slice(9);
+const samples=process.argv.includes('--geometry-only')?[]:selected?[selected]:['DJI_0071.DNG','DSC06885_DxO-neutral.dng','DJI_0071-2-HDR.dng'];
+for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const mode of (repeat%2?['gpu','cpu']:['cpu','gpu'])){
+ const dir=path.join(folder,`${sample}-${repeat}-${mode}`);fs.mkdirSync(dir);
+ for(const [name,src] of [[sample,locate(path.join(root,'local-test-media/inputs/linear-dng'),sample)],['small.png',path.join(root,'tests/fixtures/sdr_gradient.png')]])fs.copyFileSync(src,path.join(dir,name));
+ runs.push({dir,mode,repeat,sample});
 }
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
@@ -25,13 +25,20 @@ for(let repeat=0;repeat<(geometryOnly?0:repeats);repeat++)for(const mode of (rep
  const probes=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_dng_geometry.py')],{cwd:root,encoding:'utf8',maxBuffer:1<<24}));
  const geometry=await page.locator('#library-frame').evaluate(async(element,probes)=>{
   const w=element.contentWindow;let worst=0;
-  for(const probe of probes){const data=Uint8Array.from(w.atob(probe.input),c=>c.charCodeAt(0));
+  for(const probe of probes){const data=Uint8Array.from(w.atob(probe.input),c=>c.charCodeAt(0));if(probe.meta.dng_support)probe.meta.dng_support=new Float32Array(probe.meta.dng_support);
    const result=await w.HDRLibraryRGB.develop({mosaic:data,meta:probe.meta,edges:[100000]});
    for(let c=0;c<3;c++){const actual=new Float32Array(result.reduced[100000].planes[c]);
     for(let i=0;i<actual.length;i++)worst=Math.max(worst,Math.abs(actual[i]-probe.expected[c][i]));}
   }
   if(worst>=.0001)throw Error('Synthetic warp/edge error exceeds 0.0001: '+worst);
-  return {cases:probes.length,worst};
+  const probe=probes.find(p=>p.meta.dng_gain_maps?.length),data=Uint8Array.from(w.atob(probe.input),c=>c.charCodeAt(0));
+  let submissions=0,cancelled=false;
+  try{await w.HDRLibraryRGB.develop({mosaic:data,meta:probe.meta,edges:[100000],beforeSubmit:async()=>{if(++submissions===4)throw Error('test cancellation');}});}catch(error){cancelled=error.message==='test cancellation';}
+  if(!cancelled)throw Error('DNG work did not respect a submission cancellation');
+  let bounded=false;try{await w.HDRLibraryRGB.develop({mosaic:data,meta:probe.meta,memoryBudget:64});}catch(error){bounded=error.message.includes('budget');}
+  if(!bounded)throw Error('DNG work exceeded its reservation');
+  await w.HDRLibraryRGB.develop({mosaic:data,meta:probe.meta,edges:[100000]});
+  return {cases:probes.length,worst,cancellation:cancelled,budget:bounded};
  },probes);console.log('Geometry',JSON.stringify(geometry));
  const rows=[];
  for(const run of runs){
@@ -42,7 +49,7 @@ for(let repeat=0;repeat<(geometryOnly?0:repeats);repeat++)for(const mode of (rep
    const begun=performance.now();await w.HDRLibrary.browse(run.dir);
    let first=null,finished=null,activity=false,ticks=0,panelNamed=false;
    const activityButton=w.document.querySelector("#index-status");if(w.document.querySelector("#library-activity").hidden)activityButton.click();
-   const interval=setInterval(()=>{ticks++;if(w.document.querySelector("#library-activity").textContent.includes("warp.DNG"))panelNamed=true;const jobs=w.HDRLibraryScenes.snapshot();if(Object.values(jobs).some(q=>q.jobs.some(j=>j.path.endsWith('warp.DNG'))))activity=true;},25);
+   const interval=setInterval(()=>{ticks++;if(w.document.querySelector("#library-activity").textContent.includes(run.sample))panelNamed=true;const jobs=w.HDRLibraryScenes.snapshot();if(Object.values(jobs).some(q=>q.jobs.some(j=>j.path.endsWith(run.sample))))activity=true;},25);
    try{
     while(performance.now()-begun<240000){
      const canvases=[...w.document.querySelectorAll('#grid-space .library-cell canvas[data-picture-key]')].filter(c=>!c.hidden);
@@ -53,7 +60,7 @@ for(let repeat=0;repeat<(geometryOnly?0:repeats);repeat++)for(const mode of (rep
     }
    }finally{clearInterval(interval);w.fetch=fetch;}
    if(finished===null)throw Error('Mixed folder did not finish: '+seen.join(';'));
-   const photo=run.dir+'/warp.DNG';const meta=await w.HDRLibraryScenes.load(photo,640);const large=await w.HDRLibraryScenes.load(photo,2560);
+   const photo=run.dir+'/'+run.sample;const meta=await w.HDRLibraryScenes.load(photo,640);const large=await w.HDRLibraryScenes.load(photo,2560);
    if(meta.renderer!==run.mode)throw Error('Wrong DNG route: '+JSON.stringify({renderer:meta.renderer,seen}));
    if(!activity||!panelNamed||ticks<3)throw Error('No responsive named Activity while source ran');
    const gpu=await w.HDRLibraryPictures.initialize(),render=gpu.renderTo,lanes={};let captured;
@@ -62,7 +69,7 @@ for(let repeat=0;repeat<(geometryOnly?0:repeats);repeat++)for(const mode of (rep
    finally{gpu.renderTo=render;}
    return {photo,meta,large,lanes,firstMs:first,finishedMs:finished,activity,panelNamed,ticks};
   },run);
-  rows.push({...run,...result});console.log(JSON.stringify({...run,firstMs:result.firstMs,finishedMs:result.finishedMs,stages:result.meta.source_timings_ms}));
+  rows.push({...run,...result});fs.writeFileSync(path.join(folder,'results.json'),JSON.stringify({rows}));console.log(JSON.stringify({...run,firstMs:result.firstMs,finishedMs:result.finishedMs,stages:result.meta.source_timings_ms}));
  }
  const file=path.join(folder,'results.json');fs.writeFileSync(file,JSON.stringify({rows}));
  console.log('Evidence:',file);

@@ -740,11 +740,24 @@
     const length = new DataView(body).getUint32(0, true);
     const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(body, 4, length)));
     const mosaic = new Uint8Array(body, 4 + length, meta.mosaic_bytes);
+    if(meta.dng_linear?.support){
+      const mask=meta.dng_linear.support;meta.dng_support=new Float32Array(body,4+length+mask.offset,mask.bytes/4);
+    }
+    if(meta.dng_references){
+      for(const ref of Object.values(meta.dng_references)){
+        const bytes=ref.width*ref.height*4;
+        ref.planes=Array.from({length:3},(_,c)=>body.slice(4+length+ref.offset+c*bytes,4+length+ref.offset+(c+1)*bytes));
+      }
+    }
     const lensData = meta.lens_grid ? new Float32Array(body, 4 + length + meta.lens_offset, meta.lens_grid.floats) : null;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
     root.HDRLibraryScenes?.stage(path,"Waiting for GPU preparation",true);
     const developed = await scheduledDevelopment({mosaic, meta, lensData, background:liveScene, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
+    if(Object.keys(meta.dng_references||{}).length){
+      developed.peaks.sdr=meta.dng_reference_peak;
+      for(const [edge,ref] of Object.entries(meta.dng_references))developed.reduced[edge].planes.push(...ref.planes);
+    }
     const gpuMs = performance.now() - started;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const measured = performance.now();
@@ -754,15 +767,15 @@
     let selectedResult;
     for (const storedEdge of nativeMode ? [100000] : [...new Set([2560,640,edge])]) {
       const picture = developed.reduced[storedEdge];
-      const header = { rgb:meta.rgb, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
+      const header = { rgb:meta.rgb, has_sdr_reference:!!Object.keys(meta.dng_references||{}).length, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
       edge:storedEdge, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
-      timing_ms: { ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:meta.gain_map_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
+      timing_ms: { ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
       let text = new TextEncoder().encode(JSON.stringify(header));
       const padded = new Uint8Array(text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32); padded.set(text); text = padded;
-      const out = new Uint8Array(4 + text.length + picture.height * picture.width * (meta.rgb && meta.colour.authored_sdr ? 24 : 12));
+      const out = new Uint8Array(4 + text.length + picture.height * picture.width * (meta.rgb && (meta.colour.authored_sdr || header.has_sdr_reference) ? 24 : 12));
       new DataView(out.buffer).setUint32(0, text.length, true); out.set(text, 4);
       picture.planes.forEach((plane, k) => out.set(new Uint8Array(plane), 4 + text.length + k * plane.byteLength));
       const stored = await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed", { method: "POST", signal, headers: { "Content-Type": "application/octet-stream" }, body: new Blob([out]) });
