@@ -5,8 +5,8 @@ Local adjustments are an ordered stage between global color grading and post-loc
 ## V1 additions planned (Steve, October 21, 2026)
 
 - **Healing brush:** required in the local adjustment module for v1. Not
-  implemented; interaction, saved edit representation and rendering design
-  remain to be specified.
+  implemented. See the Retouch brush development plan below for Inpaint,
+  Heal and Clone modes, CPU-first reasoning and implementation gates.
 - **Hue-selection mask:** required as a local-adjustment mask for v1,
   including use in the existing combined-mask workflow. Not implemented;
   selection controls and hue evaluation remain to be specified.
@@ -14,6 +14,149 @@ Local adjustments are an ordered stage between global color grading and post-loc
 These are planned requirements, not part of the shipping contracts below.
 The [Grade module PRD](../product/modules/grade.md) owns their scope and
 implementation status.
+
+## Retouch brush development plan (October 21, 2026)
+
+**Status:** planned; no retouch engine or UI is implemented. This section
+records Steve's agreed direction and the proposed development sequence.
+The existing shipping contracts below do not yet include retouching.
+
+### Problem and intended result
+
+Sensor dust can leave many visible spots in a photograph, with no repair
+tool in HDRF. Provide one Retouch brush within the local adjustment module:
+click over a spot or paint over an irregular defect, inspect the repair,
+and refine or undo it without leaving the app.
+
+| Mode | Behaviour | Initial technical target |
+| --- | --- | --- |
+| Inpaint (default) | Automatically reconstruct the painted region from suitable surroundings; no source click required. | CPU PatchMatch, using Krita Smart Patch as the principal reference. |
+| Heal | User chooses a source; transfer its texture and adapt it to the destination's surrounding tone and colour. | CPU darktable/GIMP-style boundary-matching healing. |
+| Clone | User chooses a source; copy it directly through a feathered mask. | CPU masked source copying. |
+
+Start with dust, small blemishes and modest unwanted details. Large object
+removal, neural generation and frequency-separated retouching are later
+possibilities, not first-version requirements. Inpainting here does not
+require an AI model.
+
+### Decisions and reasoning
+
+- **One tool, several engines:** share gestures, size, feather, strength,
+  selection, history and saved repair records. Show source alignment only
+  for Heal/Clone; show search and quality options only for Inpaint.
+- **CPU first, GPU later (Steve):** darktable felt slightly slower than
+  preferred but usable, especially given its flexibility. Establish useful
+  repair quality and a working CPU fallback before experimenting with a
+  GPU engine. This is a specific exception to the general GPU-first rule.
+- **PatchMatch is the inpainting target:** searching for existing image
+  patches offers a general basis for textured as well as smooth repairs.
+  Krita provides a concrete implementation with patch-size and accuracy
+  controls. This is a reason to prototype it, not a measured claim that it
+  is faster or better than every alternative in HDRF.
+- **OpenCV is a comparison baseline:** Telea and Navier-Stokes fill inward
+  from the defect boundary and may suffice for small spots on smooth
+  backgrounds. Compare them cheaply before committing to the adapted
+  engine. Float support is single-channel; HDR RGB needs adaptation and
+  numerical validation, not an 8-bit conversion.
+- **Borrow algorithms, avoid application dependencies:** isolate a small
+  processing component rather than embed Krita or darktable. CPU-intensive
+  loops should use compiled code where needed; keep them off the UI thread.
+- **Preserve HDR:** process floating-point working pixels, including values
+  above 1 and legitimate negative values. Do not clip repairs into SDR
+  range. The colour space used to score source matches may differ from
+  reconstruction space; establish it through the quality prototype.
+- **Compute repairs when their inputs change:** cache completed patches.
+  Repainting, changing repair settings or changing upstream pixels must
+  invalidate affected results. Downstream grading must not repeat a search.
+- **Deterministic results:** persist the algorithm version, settings and
+  random seed or resolved source mapping needed for reproducible repairs.
+  Zoom, tile boundaries, reopening and export must not choose new patches.
+
+### Interaction requirements
+
+- A click creates a spot repair; a drag creates one brushed repair and one
+  undo step. Size, feather and strength are shared controls.
+- Select, bypass, delete and refine an existing repair. Overlays show its
+  extent and, for Heal/Clone, its editable source.
+- Inpaint automatically searches a bounded neighbourhood, excluding the
+  defect. Provide Retry for another candidate and optional source-search
+  region control; expose patch size and quality under advanced settings.
+- A retry is an intentional edit recorded in history. A failed or cancelled
+  solve leaves the last valid image visible and does not overwrite it.
+- Run jobs in a background worker with cancellation and revision checks;
+  stale results cannot attach to a different image or newer edit.
+
+### Development steps and completion gates
+
+All steps are open. Mark implementation built only after it is committed.
+
+1. **Quality prototype and algorithm choice.** Assemble representative dust
+   on skies/gradients, textured foliage/ground, edge-crossing spots, image
+   borders and HDR highlights. Compare a bounded CPU PatchMatch prototype
+   with OpenCV where practical. Confirm no halos, obvious repeated texture,
+   lost gradients or clipped highlights on the selected examples. Steve
+   judges whether quality and responsiveness are useful before expansion.
+2. **Specify integration before wiring the engine.** Decide exact pipeline
+   placement, repair ordering, interaction with existing local grades,
+   geometry and denoise, and whether repairs are shared between HDR/SDR or
+   lane-specific. UI placement in Local Adjustments does not settle render
+   placement. Resolve these in the Grade PRD before implementation.
+   Define source-space coordinates, operation schema, algorithm/version/
+   seed handling, cancellation, cache keys and memory ownership.
+3. **Deliver Inpaint end to end.** Implement the isolated CPU engine,
+   bounded search, defect exclusion and masked reconstruction. Wire click/
+   stroke input, advanced controls, Retry, selection, bypass/delete, undo/
+   redo, project save/reopen and cache invalidation. Full-resolution repair
+   results must stay stable across preview tiers; scale cached results for
+   display rather than independently choosing replacements at each zoom.
+4. **Add Heal and Clone.** Reuse the brush and operation infrastructure;
+   add source picking, editable source offset and aligned/non-aligned
+   sampling. Define whether later repairs can sample earlier repairs.
+   Honour those dependencies when recomputing or parallelizing patches.
+5. **Complete rendering and delivery integration.** Feed CPU-generated
+   patches into the existing GPU preview without moving the whole grade
+   onto the CPU. Cover CPU fallback, scopes, Proof, export and Library
+   pictures. Fetch source regions outside the viewport/crop as needed.
+   Reconstruct across tile boundaries with sufficient context; never solve
+   each output tile independently. Bound worker buffers, queued work,
+   cached patches and GPU uploads within existing memory budgets.
+6. **Validate and tune the first release.** Steve tests real dusty photos,
+   many spots, long strokes, overlapping repairs and edits after cropping.
+   Check untouched areas, HDR range, reopen determinism, undo/redo, stale
+   job rejection and device-loss fallback. Measure only after documenting
+   proposed responsiveness/memory tolerances under AGENTS.md. Follow its
+   fast-check policy and focused GPU checks; delivery changes require all
+   relevant export/Proof checks. Existing perceptual and HDR ceiling
+   requirements remain in force.
+7. **Later GPU experiment.** Preserve the operation/engine boundary and
+   working CPU fallback. Prototype bounded GPU patch search and healing,
+   batch independent repairs and cache results. Compare quality and actual
+   interaction latency before replacing the CPU path. A successful CPU
+   release does not depend on completing this experiment.
+
+### References and reuse notes
+
+- [Krita Smart Patch controls](https://docs.krita.org/en/reference_manual/tools/smart_patch.html)
+  and [PatchMatch implementation](https://github.com/KDE/krita/blob/master/plugins/tools/tool_smart_patch/kis_inpaint.cpp):
+  primary inpainting reference; inspected file is GPL-2.0-or-later.
+- [darktable Retouch](https://github.com/darktable-org/darktable/blob/master/src/iop/retouch.c)
+  and [healing solver](https://github.com/darktable-org/darktable/blob/master/src/common/heal.c):
+  unified tool and float healing references; inspected files are
+  GPL-3.0-or-later. Its OpenCL healing wrapper currently copies patches to
+  the CPU solver and back; it is not an entirely GPU healing implementation.
+- [GIMP healing algorithm guide](https://developer.gimp.org/core/algorithm/healing/):
+  background for the healing approach adapted by darktable.
+- [OpenCV inpainting API](https://docs.opencv.org/4.x/d7/d8b/group__photo__inpaint.html):
+  lightweight comparison methods, with documented input-format constraints.
+- [Resynthesizer](https://github.com/bootchk/resynthesizer):
+  secondary texture-synthesis reference if PatchMatch results disappoint.
+  [LaMa](https://github.com/advimman/lama) remains a later neural option,
+  with separate HDR, runtime and model-distribution work.
+
+HDRF declares GPL-3.0. Before importing code, check the exact revision,
+file-level licences, provenance and dependencies, and record attribution
+in THIRD_PARTY_NOTICES.md. The references above are research targets, not
+dependencies already integrated or benchmarked in HDRF.
 
 ## State contract
 

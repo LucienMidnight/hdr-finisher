@@ -24,7 +24,8 @@ every edit must be undoable.
 - Crop, rotate, straighten, perspective, lens corrections.
 - Local adjustments and masks (brush, gradients, luminance, colour,
   combined masks). V1 must add a healing brush in the local adjustment
-  module and hue selection as a local-adjustment mask; neither is built.
+  module (one Retouch brush with Inpaint, Heal and Clone modes) and hue
+  selection as a local-adjustment mask; neither is built.
 - Match entire HDR grade (SDR Match).
 - Group presets, history and undo, saving (autosave and explicit save),
   projects.
@@ -42,6 +43,7 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | Match entire HDR grade captures the whole HDR recipe (global, locals, Detail, Film Look, vignette, grain) and builds an SDR base from it. SDR controls stay as trims. Rematch and Revert are single history steps. | 2026-09 |
 | HDR Lift/Gamma/Gain is deprecated now that Exposure Bands exists. Remove it after real-photo checks, unless a workflow needs it. The SDR trims stay. | 2026-08, pending |
 | A healing brush in the local adjustment module and hue selection as a local-adjustment mask are required for v1. Both are unbuilt; detailed interaction and rendering design remain to be specified. | Steve, 2026-10-21 |
+| Retouch starts on the CPU, preserving a fallback for later GPU work. Inpaint is the default, targeting PatchMatch with Krita as the main reference; Heal follows darktable/GIMP and Clone shares the brush infrastructure. See the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026). Quality/performance are not yet validated. | Steve, 2026-10-21 |
 | Slider drags make one undo step per gesture. | 2026-08 |
 | Only the current project schema is accepted; older projects are rejected with a message. No migration before 1.0. | 2026-10 |
 
@@ -53,8 +55,10 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
 
 **Not built or open**
 
-- **V1 healing brush:** add healing within the local adjustment module.
-  Not built; tool behaviour and rendering design remain to be specified.
+- **V1 Retouch brush (healing requirement):** Inpaint, Heal and Clone in
+  the local adjustment module. CPU first; later GPU work is separate.
+  Not built. Follow the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026);
+  pipeline placement and HDR/SDR sharing still need decisions.
 - **V1 hue-selection mask:** add hue selection as a local-adjustment mask,
   compatible with the existing combined-mask workflow. Not built; selection
   controls and hue evaluation remain to be specified.
@@ -96,7 +100,7 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
 
 ## 6. Out of scope
 
-Pixel painting and retouching beyond the required v1 healing brush,
+Pixel painting and retouching beyond the required v1 Retouch brush,
 layers and compositing, AI-based selection.
 
 ## 7. Detail and history

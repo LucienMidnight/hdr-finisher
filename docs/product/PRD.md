@@ -83,11 +83,12 @@ Denoise, Film Look, Black & White, preview and scopes, Proof, export and
 batch export, the photo Library, desktop packaging for three platforms.
 
 **V1 additions (Steve, October 21, 2026):** a healing brush in the local
-adjustment module, and hue selection as a local-adjustment mask. Both are
+adjustment module (Retouch: Inpaint, Heal and Clone; CPU first), and hue
+selection as a local-adjustment mask. Both are
 required for v1 and not built; details belong to the [Grade PRD](modules/grade.md).
 
 **Out of scope (decided):** compositing and layers, pixel painting and
-retouching beyond the v1 healing brush, AI-based selection or generation,
+retouching beyond the v1 Retouch brush, AI-based selection or generation,
 stacks for bursts, face
 recognition, maps, cloud sync, phone companion, tethering, printing, web
 galleries, slideshows and video. Details are in each module's
