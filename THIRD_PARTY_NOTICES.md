@@ -14,7 +14,9 @@ from the earlier project. The adaptation is distributed under GPL version 3
 with HDR Finisher (see LICENSE), using the upstream later-version option.
 Changes include NumPy batched propagation, float64 matching/float32 RGB
 reconstruction, deterministic PCG64, strict whole-patch defect exclusion,
-bounded regions and single-scale equal voting. No Krita, Qt, Boost or KDE
+bounded regions and single-scale equal voting. The October 22 v2 local
+quadratic tone continuation, edge/fit gating and donor-mean alignment are
+HDR Finisher additions, not copied from Krita. No Krita, Qt, Boost or KDE
 runtime dependency, image pyramid, colour conversion or application code is
 included.
 

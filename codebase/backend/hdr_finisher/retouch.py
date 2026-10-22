@@ -13,7 +13,7 @@ from typing import Callable, Protocol
 
 import numpy as np
 
-ALGORITHM = "hdrf-patchmatch-cpu-v1"
+ALGORITHM = "hdrf-patchmatch-cpu-v2"
 MAX_REGION_EDGE = 256
 MAX_DEFECT_PIXELS = 4096
 MAX_TARGET_PATCHES = 8192
@@ -80,6 +80,7 @@ class RepairPatch:
     # Final nearest source centres, ROI-relative (y,x), for inspection.
     source_centres: np.ndarray
     target_centres: np.ndarray
+    tone_aligned: bool = False
 
     @property
     def nbytes(self):
@@ -97,6 +98,58 @@ def _box_sum(mask, radius):
     integral = np.pad(padded, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
     k = 2 * radius + 1
     return integral[k:, k:] - integral[:-k, k:] - integral[k:, :-k] + integral[:-k, :-k]
+
+
+def _patch_mean(image, radius):
+    padded = np.pad(image, ((radius, radius), (radius, radius), (0, 0)), mode="edge")
+    integral = np.pad(padded, ((1, 0), (1, 0), (0, 0))).cumsum(0).cumsum(1)
+    k = 2 * radius + 1
+    return (integral[k:, k:] - integral[:-k, k:] - integral[k:, :-k] + integral[:-k, :-k]) / (k * k)
+
+
+def _tone_guide(image, defect, excluded, radius):
+    """Quadratic continuation from a local known ring, never dirty pixels.
+
+    A degree-two surface can continue local highlight curvature and gradients;
+    fitting it to the whole search region would flatten that curvature. This
+    guide carries tone only; patch search still supplies detail and edges.
+    """
+    h, w = excluded.shape
+    yy, xx = np.mgrid[:h, :w]
+    ring = (_box_sum(defect, 2 * radius + 2) > 0) & ~excluded
+    if np.count_nonzero(ring) < 6:
+        raise ValueError("Not enough clean context for tone continuation")
+    ys, xs = np.nonzero(defect)
+    u = (xx - xs.mean()) / max(float(np.ptp(xs)), 1)
+    v = (yy - ys.mean()) / max(float(np.ptp(ys)), 1)
+    design = np.stack((np.ones_like(u), u, v, u * u, u * v, v * v), axis=-1)
+    # Very narrow image borders may not constrain all quadratic terms. Least
+    # squares uses a minimum-norm solution; no inverse or random fallback.
+    fit = np.linalg.lstsq(design[ring], image[ring].astype(np.float64), rcond=None)[0]
+    # A large isolated known-pixel jump indicates a structural edge, where a
+    # smooth tone continuation would invent a ramp across it. Disable DC
+    # alignment for that solve. Compare RGB gradient norms, not luminance, so
+    # an isoluminant colour boundary is protected as well.
+    gradients = []
+    for axis in (0, 1):
+        adjacent = np.take(ring, range(ring.shape[axis] - 1), axis=axis) & np.take(
+            ring, range(1, ring.shape[axis]), axis=axis)
+        delta = np.diff(image.astype(np.float64), axis=axis)
+        gradients.extend(np.linalg.norm(delta[adjacent], axis=-1))
+    gradients = np.asarray(gradients)
+    median = float(np.median(gradients)) if len(gradients) else 0.0
+    peak = float(gradients.max()) if len(gradients) else 0.0
+    residual_rms = float(np.sqrt(np.mean((design[ring] @ fit - image[ring]) ** 2)))
+    signal_rms = float(np.sqrt(np.mean(image[ring].astype(np.float64) ** 2)))
+    align_tone = (peak <= max(12 * median, float(np.max(np.abs(image[ring]))) * 1e-6)
+                  and residual_rms <= max(.1 * signal_rms, 1e-30))
+    guide = image.astype(np.float64)
+    if align_tone:
+        guide[excluded] = (design[excluded] @ fit)
+    else:
+        fit = np.linalg.lstsq(design[~excluded, :3], image[~excluded].astype(np.float64), rcond=None)[0]
+        guide[excluded] = design[excluded, :3] @ fit
+    return guide, align_tone
 
 
 class CpuInpaint:
@@ -133,29 +186,31 @@ class CpuInpaint:
         lookup[targets[:, 0], targets[:, 1]] = np.arange(len(targets))
         rng = np.random.Generator(np.random.PCG64(settings.seed))
         field = sources[rng.integers(len(sources), size=len(targets))]
-        # Fit a plane to known context solely to initialise missing target data.
-        # Reconstruction still votes original, unmodified source pixels.
-        yy, xx = np.mgrid[:h, :w]
-        design = np.stack((np.ones_like(xx), xx / w, yy / h), axis=-1)
         known = ~excluded
-        fit = np.linalg.lstsq(design[known], image[known].astype(np.float64), rcond=None)[0]
-        work = image.astype(np.float64)
-        work[defect] = (design @ fit)[defect]
+        work, align_tone = _tone_guide(image, defect, excluded, r)
+        guide_mean = _patch_mean(work, r)[targets[:, 0], targets[:, 1]]
         # Common scalar avoids overflow without changing RGB SSD ordering.
         scale = max(float(np.max(np.abs(image[known]))), 1e-12)
-        source = image.astype(np.float64) / scale
+        # Zero excluded values before integral means: even an extreme dirty
+        # value must not cause cancellation error in a distant clean patch.
+        source = np.where(excluded[..., None], 0, image).astype(np.float64) / scale
+        source_mean = _patch_mean(source, r)
         confidence = np.where(excluded[ty, tx], 0.0, 1.0)
         confidence[defect[ty, tx]] = 0.25
 
         def score(candidate, target):
             sy = candidate[:, 0, None] + offsets[:, 0]
             sx = candidate[:, 1, None] + offsets[:, 1]
+            donor_mean = source_mean[candidate[:, 0], candidate[:, 1]]
             diff = source[sy, sx] - target
+            if align_tone:
+                diff -= donor_mean[:, None, :]
             return np.sum(diff * diff * confidence[..., None], axis=(1, 2))
 
         for iteration in range(settings.iterations):
             checkpoint()
-            target = work[ty, tx] / scale
+            target_samples = work[ty, tx] / scale
+            target = target_samples - target_samples.mean(axis=1, keepdims=True) if align_tone else target_samples
             distance = score(field, target)
 
             def consider(candidate):
@@ -194,8 +249,9 @@ class CpuInpaint:
                 vy, vx = targets[:, 0] + oy, targets[:, 1] + ox
                 inside = (vy >= 0) & (vy < h) & (vx >= 0) & (vx < w)
                 vy, vx = vy[inside], vx[inside]
-                values = image[field[inside, 0] + oy, field[inside, 1] + ox]
-                # Equal voting is stable at zero SSD and does not amplify HDR.
+                values = image[field[inside, 0] + oy, field[inside, 1] + ox].astype(np.float64)
+                if align_tone:
+                    values += (guide_mean[inside] - source_mean[field[inside, 0], field[inside, 1]] * scale)
                 np.add.at(votes, (vy, vx), values)
                 np.add.at(weights, (vy, vx), 1)
             work[defect] = votes[defect] / weights[defect, None]
@@ -211,4 +267,4 @@ class CpuInpaint:
         for array in (result, field, targets):
             array.flags.writeable = False
         return RepairPatch((request.origin[0] + int(x0), request.origin[1] + int(y0)),
-                           result, field, targets)
+                           result, field, targets, align_tone)

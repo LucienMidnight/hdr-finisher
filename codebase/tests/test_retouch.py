@@ -37,14 +37,15 @@ def test_reproducible_float_repair_preserves_hdr_and_untouched_pixels():
     assert not first.pixels.flags.writeable
 
 
-def test_dirty_values_never_influence_solution_or_source_patches():
+@pytest.mark.parametrize("dirty_value", [900, 1e30])
+def test_dirty_values_never_influence_solution_or_source_patches(dirty_value):
     request = example()
     excluded = np.zeros_like(request.mask, dtype=bool)
     excluded[6:11, 6:11] = True
     excluded[26:28, 20:24] = True  # Also inside some target matching windows.
     request = replace(request, excluded=excluded)
     alternative = request.pixels.copy()
-    alternative[(request.mask > 0) | excluded] = 900
+    alternative[(request.mask > 0) | excluded] = dirty_value
     first = CpuInpaint().solve(request)
     second = CpuInpaint().solve(replace(request, pixels=alternative))
     np.testing.assert_array_equal(first.pixels[request.mask[17:24, 17:24] > 0],
@@ -197,3 +198,47 @@ def test_oversized_and_scattered_work_is_rejected():
     mask[4:250:6, 4:250:6] = 1
     with pytest.raises(ValueError, match="target patches"):
         CpuInpaint().solve(RepairInput(image, mask))
+
+
+def test_smooth_gradient_continues_through_defect():
+    request = example()
+    y, x = np.mgrid[17:24, 17:24].astype(np.float32)
+    clean = np.stack((x / 100 - .5, y / 100 + 2, x / 100 + y / 100 + 5), -1)
+    repaired = CpuInpaint().solve(request)
+    selected = request.mask[17:24, 17:24] > 0
+    # Existing float blending precision; this is not a visual quality threshold.
+    np.testing.assert_allclose(repaired.pixels[selected], clean[selected], rtol=0, atol=5e-7)
+
+
+def test_curved_hdr_highlight_repair_improves_on_dirty_input():
+    y, x = np.mgrid[:96, :96].astype(np.float32)
+    highlight = .2 + 8 * np.exp(-((x - 48)**2 + (y - 48)**2) / 250)
+    clean = np.stack((highlight, highlight * .8, highlight * .6), -1)
+    mask = ((x - 48)**2 + (y - 48)**2 <= 49).astype(np.float32)
+    dirty = clean.copy()
+    dirty[mask > 0] *= .65
+    patch = CpuInpaint().solve(RepairInput(dirty, mask))
+    selected = mask[41:56, 41:56] > 0
+    expected = clean[41:56, 41:56][selected]
+    original = dirty[41:56, 41:56][selected]
+    assert np.mean((patch.pixels[selected] - expected)**2) < np.mean((original - expected)**2)
+    assert patch.pixels[..., 0].max() > 1
+
+
+@pytest.mark.parametrize("axis", [0, 1])
+def test_colour_edge_is_not_replaced_by_smooth_ramp(axis):
+    y, x = np.mgrid[:48, :48]
+    side = (x if axis else y) >= 24
+    # Colour boundary, including a negative channel: check RGB, not luma alone.
+    clean = np.where(side[..., None], np.array([2., -.1, .2]), np.array([.1, .8, 2.]))
+    clean = clean.astype(np.float32)
+    mask = ((x - 24)**2 + (y - 24)**2 <= 9).astype(np.float32)
+    dirty = clean.copy()
+    dirty[mask > 0] = 0
+    patch = CpuInpaint().solve(RepairInput(dirty, mask))
+    local_side = side[21:28, 21:28]
+    selected = mask[21:28, 21:28] > 0
+    # The two sides must retain their colour ordering after repair.
+    first = patch.pixels[selected & local_side].mean(axis=0)
+    second = patch.pixels[selected & ~local_side].mean(axis=0)
+    assert first[0] > second[0] and first[2] < second[2]

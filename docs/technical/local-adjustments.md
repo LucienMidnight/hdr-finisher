@@ -160,7 +160,7 @@ file-level licences, provenance and dependencies, and record attribution
 in THIRD_PARTY_NOTICES.md. The references above are research targets, not
 dependencies already integrated or benchmarked in HDRF.
 
-### CPU prototype outcome (October 21, 2026)
+### CPU prototype outcome (October 21; quality update October 22, 2026)
 
 `codebase/backend/hdr_finisher/retouch.py` owns the isolated `RepairEngine`
 interface, float32 RGB ROI input, explicit algorithm/settings/PCG64 seed,
@@ -170,8 +170,15 @@ Heal, Clone, GPU repair, project records and interactive controls are unbuilt.
 
 The small adaptation follows Krita's alternating nearest-neighbour propagation,
 shrinking random search and overlapping patch reconstruction. It uses batched
-Jacobi updates, linear working-RGB SSD in float64, a known-context plane only
-for initialisation, and equal source-patch votes. It does not use Krita's
+Jacobi updates, linear working-RGB SSD in float64 and equal source-patch
+votes. Version `hdrf-patchmatch-cpu-v2` separates smooth local tone from patch
+detail: a quadratic fitted to the clean ring around the defect guides tone;
+patch means are removed for matching and donor means are aligned to the guide
+for reconstruction. A strong RGB edge or poor quadratic fit disables that
+alignment and uses ordinary patch matching with plane initialisation. These
+heuristics are versioned prototype choices, not visual acceptance tolerances.
+All fitting and donor statistics exclude marked defects; dirty pixels cannot
+influence the fill. It does not use Krita's
 multiscale EM, integer distances, similarity curve or application classes.
 NumPy executes the large gathers/reductions in compiled code. The Python
 control loop runs on a dedicated backend thread, outside the UI thread.
@@ -223,6 +230,23 @@ modified. Optional `opencv-python-headless` is only a comparison dependency,
 not a shipped requirement; the inspected environment used OpenCV 5.0.0
 (wheel 5.0.0.93) and NumPy 2.5.3. Without cv2 the study explicitly skips it.
 
+For the October 22 real-background study, append these arguments (one command):
+
+```text
+--photo local-test-media/inputs/linear-dng/dxo-linear/DSC06885_DxO.jpg --crop sky:500:450 --crop sand:2800:1610 --crop foliage:3380:735 --crop horizon:700:980
+```
+
+These are native 96px JPEG crops with controlled injected dust, **not natural
+dust validation**. Embedded ICC profiles are converted to sRGB; untagged images
+are assumed sRGB, then linearised and converted to working ACEScg. The source
+hash and crop centres are recorded. The photo and projects are never written.
+Optional `--baseline output/retouch-prototype-v1` compares saved v1 arrays after
+checking fixture identity; that ignored snapshot exists locally, not in Git.
+There is no retained v1 engine or project compatibility code. `--output` can
+keep separate runs. PNGs now convert ACEScg to linear sRGB before their common
+per-row range mapping and sRGB encoding; they are SDR inspection proxies, not
+finished HDR renderings. Unclipped float arrays remain the numerical evidence.
+
 Evaluation policy, proposed before measuring: untouched pixels and local
 same-settings/seed reruns must be exact. Repair error against synthetic clean
 pixels is diagnostic linear-RGB RMSE, **not** a perceptual acceptance threshold.
@@ -234,26 +258,38 @@ establish one or change existing rendering tolerances.
 periodic and stochastic textures, straight edge, curved HDR highlight, negative-channel
 gradient and image border. Float range, full-patch donor exclusion, untouched
 pixels, reproducibility, feather blending, queue ownership, stale/cancelled
-completion rejection and byte-bounded caching have behavior tests.
-The comparison sheet was visually inspected: flat sky is clean; the gradient
-and border show small tonal errors; texture is better preserved than with the
-boundary-fill baselines; the straight edge stays substantially straighter.
-The stochastic texture loses fine random detail; no nearby patch can recover
-the original noise samples. The HDR highlight has a visible dark depression: **the quality gate fails
-on this example**, despite retaining values above one. No claim of halo-free
-repairs, natural-texture quality or real-photo readiness is made.
+completion rejection and byte-bounded caching have behavior tests. Added
+regressions cover gradient continuation, curved HDR improvement and horizontal/
+vertical colour boundaries without changing existing tolerances. Excluded
+values up to `1e30` cannot affect donor statistics. All twelve study cases
+reproduced repaired pixels and source/target mappings exactly on a second run.
+The October 22 comparison sheet was visually inspected. The v1 dark highlight
+depression is substantially reduced: diagnostic masked linear-RGB RMSE fell
+from 1.526 to 0.165 on this fixture. The gradient/negative gradient are restored
+to float precision; periodic texture improves and the straight edge remains
+intact. This is useful progress, **not a passed overall quality gate**.
+Four real-background crops were also inspected. Sky, sand and horizon appear
+promising; foliage loses/changes small detail and has higher diagnostic error
+than the mildly dusty input. Random texture still becomes too smooth. Neither
+source search nor overlapping averaging can recover the original random
+samples. Natural dust, general textured-photo quality, halo-free repairs and
+Steve's acceptance remain unvalidated. Do not expand to the full tool on the
+strength of the highlight improvement alone.
 
 OpenCV is compared per float32 channel, with no 8-bit RGB conversion.
-Navier-Stokes has lower diagnostic error on smooth gradients, borders and the
-curved highlight; PatchMatch has lower error on the periodic texture and
-straight edge. Direct scene-range Telea gives severe scale-dependent error,
+The initial v1 comparison favoured Navier-Stokes on smooth gradients, borders
+and the curved highlight, and PatchMatch on periodic texture and the straight
+edge. The viewer retains those baselines alongside the improved v2 results.
+Direct scene-range Telea gives severe scale-dependent error,
 even on a flat field. A second Telea baseline reversibly maps the known RGB
 range to 0..255 **in float32**, then maps the result back; this is much better.
 It still loses texture and softens the edge. Both variants are retained in
 the viewer/arrays so the direct-float problem is not mistaken for evidence
 against a properly adapted baseline. These examples do not establish a
-universal algorithm winner. The next quality experiment should separate
-smooth tone reconstruction from patch texture before expanding the tool.
+universal algorithm winner. The next quality step is to reduce texture loss
+on the foliage/sand crops, then have Steve judge real dusty photos before
+interactive integration. The existing isolated worker/recipe boundary is
+ready for a brush adapter once quality and pipeline decisions are settled.
 
 ### Integration audit and proposal (not wired or decided)
 

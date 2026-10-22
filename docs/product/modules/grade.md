@@ -62,8 +62,12 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   **Prototype implemented October 21:** isolated bounded CPU PatchMatch engine,
   background jobs/cancellation/revision guard, completed-patch cache and a
   synthetic comparison viewer. Float HDR/negative preservation and donor
-  exclusion are tested. The curved-highlight fixture still has a visible
-  dark depression; real-photo quality and Steve's acceptance remain open.
+  exclusion are tested. **Quality update October 22:** clean-context tone
+  continuation substantially reduces the curved-highlight depression and
+  restores smooth gradients. The viewer adds four real-photo backgrounds
+  with injected dust. Fine texture/foliage still loses detail; naturally dusty
+  photos and Steve's quality acceptance remain open. This is not a completed
+  quality gate.
   This does not implement the interactive brush, Heal/Clone, project records
   or rendering integration. See the technical plan's CPU prototype outcome
   for the reproduction command and proposed integration boundary.
