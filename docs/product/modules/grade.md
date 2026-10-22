@@ -164,6 +164,17 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
 9. HSL in the app, global and local (Codex brief of October 22, 2026), then
    Claude's design pass. See "HSL prototype direction" below.
 
+**HSL engine groundwork (October 23, 2026):** the Python port and bounded
+recipe/channel models are in `backend/hdr_finisher/hsl.py`. Behavioral tests
+cover selection, sampling, corrections, additive same-input composition and
+exact neutral passthrough, including executable comparison with the existing
+JavaScript prototype. These models are not yet attached to saved app grades;
+preview, panels, picker stage readback, presets, Match and export integration
+remain open under the active brief. Local placement proposed: after White
+Balance/Saturation, before Curves. Steve approved this Match rule on October 23:
+copy HSL unchanged into editable SDR grades, since it has no lane-specific
+wheel coordinates or highlight-only controls.
+
 ### HSL prototype direction (Steve, October 22, 2026)
 
 Steve approved building an isolated HSL/color-range prototype, leaving Claude
