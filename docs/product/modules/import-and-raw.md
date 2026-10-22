@@ -149,8 +149,8 @@ branch `gpu-raw-library`, not merged):** Grade's camera RAW development for
 Bayer sensors runs on the GPU with the same maths (opposed-colour highlight
 repair, LibRaw 0.22.1 AHD, camera RGB to ACEScg, automatic Lensfun
 correction, import gamut projection, calibration, measurements). Results and
-limits: Photo Library module, speed plan phase P. Grade's own import still
-develops on the CPU.
+limits: Photo Library module, speed plan phase P. Grade's decoding and demosaic
+still run on the CPU; Edge colour reconstruction now uses the shared GPU worker.
 
 **Edge colour prototype (October 22, built):** RAW Highlight Reconstruction
 has a second method, "Edge colour (prototype)" (`edge_colour_v1`,
@@ -162,12 +162,66 @@ brightness only in a band along the clip line, bright pixels with bright
 pixels, so dark objects in front of a light stay sharp. Tried on the sunset
 IMG_3129 and the clipped window bokeh in DSC00264: the pink/green blob blends
 in and the jagged clip edge goes. Limits: camera RAW on the camera-linear
-bridge only; takes the CPU route (the GPU raw route still accepts only
-Opposed color); not yet reviewed by Steve in the app.
+bridge only; not yet reviewed by Steve in the app.
+
+**Edge colour GPU (October 22, built):** the same spatial reconstruction runs
+on WebGPU in both Library RAW development and Grade RAW opening. The Grade
+path is import job → session preparation → loader → RAW corrections, so it
+sends the ACEScg picture and pre-white-balance camera clipping ratio to the
+existing delivery worker. Library runs it after its opposed-colour/AHD/camera
+conversion and before lens gain/geometry. Expand and the clipping mask keep
+their CPU meanings. Scalar median selection and temporary plane staging use
+host memory; all spatial and colour reconstruction uses GPU passes. Scratch
+stays inside the existing 44 bytes/pixel + 64 MiB RAW reservation. Row bands
+yield through the existing broker; cancellation, Grade priority and export
+queue ageing remain in force. Batch source preparation uses export priority;
+Library fallback uses Library priority. Source identity, measurements and
+saved recipes retain their existing contracts. GPU unavailability, force-CPU,
+allocation or execution failures keep the unchanged CPU implementation, with
+renderer and fallback reason in diagnostics.
+
+Project reopening, RAW setting changes/source reloads and batch export source
+opening all reach the same RAW correction hook. Export and Proof reuse that
+selected reconstructed source; no extra reconstruction is applied at delivery.
+
+**Edge colour GPU validation contract (October 22; recorded before measurement):**
+Use the existing finished-pixel limits, SDR ΔE 2000 and HDR ΔE ITP mean <1,
+p99.9 ≤3, for GPU/CPU and Library/Grade/export/Proof agreement. Include the
+clipped regions in separate measurements so the rest of a photo cannot hide
+a highlight regression. Preserve the exact HDR output ceiling. Allow 10%
+timing variation (decode, transfer and queue contention vary); target at least
+2× faster reconstruction than CPU and report Grade click-to-first-frame and
+Library completion, including queue/handoff time. Use DSC00264.ARW and
+IMG_3129.CR2 when available, reading originals only. Run the new focused
+Edge colour driver serially with any other GPU validation; no broad sweep.
+
+**October 22 validation outcome:** serial 2560 × 1440 Electron checks used
+disposable copies of both originals, fresh application scenes and uncontrolled
+OS disk caches. DSC00264 Grade request-to-first-frame improved from 36.5 s CPU
+to 18.1 s GPU; Library completed its GPU source and handoff in 9.0 s. IMG_3129
+improved from 15.1 s to 8.4 s; Library completed in 6.3 s. Sony reconstruction
+including queue/upload/readback was 10.4 s versus the approximately 28 s CPU
+baseline. Both Grade and Library diagnostics assert GPU execution rather than
+silently accepting a CPU fallback. Sony peak reconstruction scratch was
+1,865,149,440 bytes, within the unchanged reservation.
+
+Both photos pass finished SDR/HDR CPU/GPU comparisons for each route, whole
+picture and brightest 5%; worst mean 0.342 and p99.9 2.637. Library's CPU
+reference uses its existing bilinear reducer; Grade uses its existing Lanczos
+proxy. Direct cross-filter preview comparisons still exceed the limits on
+these photos, so the existing Library-to-Grade agreement item remains open.
+GPU export and full-size Proof produced identical encoded UHDR JPEGs at the
+focused 1024-pixel delivery size; decoded peaks were 996.76 and 948.31 nits
+with Highlights enabled and a 1000-nit target. The first ceiling check used
+Highlights disabled and was corrected to exercise the intended target.
+The initial Library check caught and fixed a post-white-balance clipping mask;
+the comparison fixture was then corrected to use the matching resize filter,
+without relaxing any tolerance. Synthetic clipped highlights at Expand 0,
+0.5 and 3% agree with CPU (scene p99.9 error 0.0000048). No broad GPU sweep.
 
 **Not built**
 
-- GPU development for Grade's import, X-Trans sensors and DNG.
+- GPU decode/demosaic for Grade's import, X-Trans sensors and DNG.
 - Complete Library-to-Grade RAW picture agreement and Steve's final
   brightness review (implementation and limitation above).
 - Linux: mounted drives (`/media`, `/run/media`, `/mnt`) are not listed

@@ -199,10 +199,12 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
     store = SessionStore(grade_import_parallel=True)
     results = []
     try:
-        if photo.get("grade"): session = open_document(store, validate_saved_document(photo["grade"]), Path(photo["source_path"]))
-        else:
-            payload = store.create_session(Path(photo["source_path"]), owns_source_path=False)
-            session = store.get(payload.session_id)
+        from .highlight_edge_gpu import source_work
+        with source_work(priority=20, cancelled=cancelled):
+            if photo.get("grade"): session = open_document(store, validate_saved_document(photo["grade"]), Path(photo["source_path"]))
+            else:
+                payload = store.create_session(Path(photo["source_path"]), owns_source_path=False)
+                session = store.get(payload.session_id)
         session.delivery_cancelled = cancelled
         backends = build_export_backends(probe_capabilities())
         original_white = session.hdr_reference_white_nits

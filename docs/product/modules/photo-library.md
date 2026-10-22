@@ -1639,6 +1639,23 @@ codec limits here, with no blanket claim that all decoding runs on the GPU.
   batch 4; batch 6 follows qualification of its chosen formats; batch 7 closes
   the integrated work. No push or installer is included.
 
+**October 22: Edge colour GPU reconstruction (built).** Ordinary eligible
+camera RAWs with `edge_colour_v1` now stay on the Library GPU route. The
+shared reconstruction runs on ACEScg after opposed colour and camera
+conversion, before lens correction, gamut handling, calibration and source
+measurements. Its clipping mask uses camera channels before white balance,
+matching Grade. Expand and saved source recipes are unchanged. The existing
+44 bytes/pixel + 64 MiB reservation covers the added stage; short row bands
+yield to Grade and delivery. Allocation/device failures retain CPU fallback.
+The source-job pause/Activity scroll fix in 53ef951 is preserved.
+Focused real-photo validation: DSC00264 source completion 9.0 s, IMG_3129
+6.3 s, including queue and handoff. Both explicitly reported GPU Edge colour.
+Finished SDR/HDR agreement with the same CPU Library source/reducer passed
+the existing mean <1 / p99.9 ≤3 limits, including the brightest 5% separately.
+Grade's Lanczos proxy and Library's bilinear tier remain different filters;
+direct comparison between those previews is still outside limits on these
+photos. This reconstruction change does not qualify that existing open item.
+
 ## 6. Decisions waiting on Steve
 
 - **V2, deferred:** linked photos: whole grade or chosen groups; where the link is stored.

@@ -67,6 +67,19 @@ Settings rules (from v1.2 section 5, still in force):
 
 **Built**
 
+- October 22: Edge colour RAW source preparation uses the shared GPU worker
+  before lens correction, including Grade import, project reopen/source reload
+  and batch export opening. Export and Proof consume the selected source and
+  retain their existing paired render, cache identity and encoding. Batch
+  reconstruction keeps export priority and cancellation; hardware failure or
+  unavailability uses the unchanged CPU reconstruction with an explicit reason.
+  This adds no new delivery colour transform or tolerance.
+  Focused DSC00264/IMG_3129 checks used saved Edge colour settings and GPU
+  delivery: export and full-size Proof encoded identical files at 1024 pixels.
+  With Highlights enabled at 1000 nits, decoded UHDR JPEG peaks were 996.76
+  and 948.31 nits. Whole-photo and brightest-5% reconstruction comparisons
+  passed the unchanged perceptual limits. Existing Library/Grade preview
+  resize-filter differences remain documented in the import module.
 - All output formats, settings, built-in and saved presets.
 - Batch export: the Export page and Quick export…, presets with versions,
   naming and sub-folders, a background queue with Pause and Cancel,

@@ -50,10 +50,12 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     if cached:
         return cached
     inputs = recipe(document)
-    source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
-        raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
-        interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]),
-        hdr_reference_white_nits=inputs["hdr_reference_white_nits"])
+    from .highlight_edge_gpu import source_work
+    with source_work(priority=15, cancelled=cancelled):
+        source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
+            raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
+            interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]),
+            hdr_reference_white_nits=inputs["hdr_reference_white_nits"])
     if document:
         saved = EditDocument.model_validate(document)
         wanted = saved.source.fingerprint_sha256

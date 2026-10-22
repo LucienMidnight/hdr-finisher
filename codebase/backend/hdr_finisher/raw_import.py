@@ -354,9 +354,21 @@ def _apply_raw_corrections(
             _raise_if_cancelled(cancelled)
             if progress:
                 progress("highlight_edge_colour", "Blending clipped highlights into their surroundings")
-            image, edge_diagnostics = reconstruct_edge_colour(
-                image, clip_ratio, highlights.edge_colour_expand_percent
+            from .highlight_edge_gpu import reconstruct as reconstruct_gpu
+
+            gpu_image, gpu_diagnostics = reconstruct_gpu(
+                image, clip_ratio, highlights.edge_colour_expand_percent, cancelled
             )
+            _raise_if_cancelled(cancelled)
+            if gpu_image is None:
+                image, edge_diagnostics = reconstruct_edge_colour(
+                    image, clip_ratio, highlights.edge_colour_expand_percent
+                )
+                edge_diagnostics.update(gpu_diagnostics)
+            else:
+                image, edge_diagnostics = gpu_image, gpu_diagnostics
+            from .library_diagnostics import log
+            log("highlight_edge_colour", **edge_diagnostics)
             del clip_ratio
             if decoded.highlight_reconstruction_diagnostics is not None:
                 decoded.highlight_reconstruction_diagnostics["edge_colour"] = edge_diagnostics

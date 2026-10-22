@@ -41,9 +41,54 @@
       await initialize();
       if(gpu.adapterInfo?.fallback)throw Error("No hardware GPU is available.");
       gpu.resetSession(job.id);
+      if(job.operation === "edge_colour") {
+        const required=job.width*job.height*44+64*1024*1024;
+        if(required>job.budget)throw Error(`GPU edge colour needs ${required} bytes; shared budget has ${job.budget}.`);
+        const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:required})});
+        if(!lease.ok)throw Error("Grade needs the shared GPU memory budget.");
+        await permit();
+        const {device}=await HDRLibraryGpuRaw.shared.gpu();
+        const owned=new Set();let live=0,peak=0;
+        const release=b=>{if(owned.delete(b)){live-=b.size;b.destroy();}};
+        const make=size=>{if(live+size>required)throw Error("GPU edge colour exceeded its reservation.");
+          const b=device.createBuffer({size,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC|GPUBufferUsage.COPY_DST});
+          owned.add(b);live+=size;peak=Math.max(peak,live);return b;};
+        const read=async(buffer,size)=>{
+          if(live+size>required)throw Error("GPU edge colour readback exceeded its reservation.");
+          const b=device.createBuffer({size,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST});
+          owned.add(b);live+=size;peak=Math.max(peak,live);
+          const enc=device.createCommandEncoder();enc.copyBufferToBuffer(buffer,0,b,0,size);device.queue.submit([enc.finish()]);
+          await b.mapAsync(GPUMapMode.READ);const copy=b.getMappedRange().slice(0);release(b);return copy;
+        };
+        device.pushErrorScope("out-of-memory");device.pushErrorScope("validation");
+        let diagnostics;
+        try {
+          const response=await fetch(`/api/delivery/gpu/${job.id}/edge-source`);
+          if(!response.ok)throw Error("GPU edge-colour input handoff failed.");
+          const body=await response.arrayBuffer(),bytes=job.width*job.height*4;
+          if(body.byteLength!==bytes*4)throw Error("Incomplete edge-colour input.");
+          const inputs=[];for(let k=0;k<4;k++){const b=make(bytes);device.queue.writeBuffer(b,0,body,k*bytes,bytes);inputs.push(b);}
+          diagnostics=await HDREdgeColour.reconstruct({device,planes:inputs.slice(0,3),ratio:inputs[3],
+            width:job.width,height:job.height,expand:job.expand,toBT:job.toBT,fromBT:job.fromBT,make,release,read,beforeSubmit:permit});
+          const output=[];for(const b of diagnostics.planes)output.push(await read(b,bytes));
+          delete diagnostics.planes;
+          const stored=await fetch(`/api/delivery/gpu/${job.id}/pixels/edge`,{method:"POST",body:new Blob(output)});
+          if(!stored.ok)throw Error("GPU edge-colour result handoff failed.");
+        } finally {
+          await device.queue.onSubmittedWorkDone().catch(()=>{});for(const b of owned)release(b);
+          const validation=await device.popErrorScope(),oom=await device.popErrorScope();
+          if(validation||oom)throw Error((validation||oom).message);
+        }
+        diagnostics={...diagnostics,algorithm_version:"hdr-finisher-edge-colour-v1",
+          stage:"acescg_after_camera_conversion_before_lens_correction",expand_percent:job.expand,memory_peak_bytes:peak};
+        await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({edge_diagnostics:diagnostics,total_ms:performance.now()-started})});
+        continue;
+      }
       if(job.raw){
         // RAW scratch is released before the creative graph starts.
-        const scratch=job.raw.width*job.raw.height*44+64*1024*1024;
+        const scratch=HDRLibraryGpuRaw.rawBudget(job.raw);
         if(scratch>job.budget)throw Error("GPU RAW development exceeds the available memory budget.");
         const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
           headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:job.budget})});

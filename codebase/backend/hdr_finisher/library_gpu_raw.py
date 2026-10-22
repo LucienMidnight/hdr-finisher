@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from . import raw_import
-from .color import _ACESCG_TO_LINEAR_BT2020
+from .color import _ACESCG_TO_LINEAR_BT2020, _LINEAR_BT2020_TO_ACESCG
 from .import_defaults import RAW_CALIBRATION_EV, fuji_dynamic_range, starting_adjustments
 from .models import EditDocument, HDRAnalysis, HDRClassification, RawImportSettings, SourceImageDescriptor, SourceReference
 from .source_luminance import describe_source_luminance
@@ -65,7 +65,7 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
         raise NotEligible("not an ordinary camera RAW")
     settings = settings or RawImportSettings()
     highlights = settings.highlight_reconstruction
-    if not highlights.enabled or highlights.method != raw_import.OPPOSED_COLOR_METHOD:
+    if not highlights.enabled or highlights.method not in (raw_import.OPPOSED_COLOR_METHOD, raw_import.EDGE_COLOUR_METHOD):
         raise NotEligible("highlight reconstruction differs from the GPU route")
     identity = _identity(path)
     exif, _warning = raw_import._read_raw_exif(path)
@@ -102,6 +102,7 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
         "xyz_cam": xyz_cam.tolist(),
         # Stored for row vectors in color.py; the shader multiplies columns.
         "acescg_to_bt2020": np.asarray(_ACESCG_TO_LINEAR_BT2020).T.tolist(),
+        "bt2020_to_acescg": np.asarray(_LINEAR_BT2020_TO_ACESCG).T.tolist(),
         "threshold": highlights.clipping_threshold * raw_import.OPPOSED_COLOR_THRESHOLD_SAFETY,
         "calibration_gain": 2.0 ** (RAW_CALIBRATION_EV + recorded),
         "raw_start_brightness": {"calibration_ev": RAW_CALIBRATION_EV, "recorded_brightness_ev": recorded,
@@ -260,6 +261,7 @@ def developed(cache, path: str, header: dict, payload) -> dict:
         "source_width": int(header["source_width"]), "source_height": int(header["source_height"]),
         "gpu_development_ms": header.get("gpu_ms"),
         "gpu_memory_peak_bytes": header.get("memory_peak_bytes"),
+        "edge_colour": header.get("edge_diagnostics"),
     }
     if header.get("native_mode"):
         if (pixels.shape[1], pixels.shape[0]) != (int(header["source_width"]), int(header["source_height"])):

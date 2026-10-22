@@ -357,14 +357,37 @@
       } else { cam = border(r, c); }
       let camf = vec3<f32>(cam) * p.inv_range.xyz * p.wb.xyz;
       var aces = vec3<f32>(dot(p.m0.xyz, camf), dot(p.m1.xyz, camf), dot(p.m2.xyz, camf));
-      if (hasGain()) { let t = turned(r, c); aces = aces * gain(f32(t.x), f32(t.y)); }
-      if (hasGeometry()) {
+      let edgeColour = p.lensc.w > 0.;
+      if (edgeColour) {
+        let cameraLinear = vec3<f32>(cam) * p.inv_range.xyz;
+        samples[u32(r*W()+c)] = max(cameraLinear.x,max(cameraLinear.y,cameraLinear.z)) / (p.thr.y/p.wb.y);
+      }
+      if (hasGain() && !edgeColour) { let t = turned(r, c); aces = aces * gain(f32(t.x), f32(t.y)); }
+      if (hasGeometry() || edgeColour) {
         // The lens remap reads neighbours: keep ACEScg for the next pass.
         let i = u32(r * W() + c); outR[i] = aces.x; outG[i] = aces.y; outB[i] = aces.z;
       } else { finish(aces, r, c); }
     }
     workgroupBarrier();
     if (li < 3u) { atomicMax(&peaks[li], atomicLoad(&wgPeak[li])); }
+  }`;
+
+  const EDGE_FINISH = COMMON + TURN + LENS + FINISHING + /* wgsl */ `
+  @group(0) @binding(1) var<storage, read> inR: array<f32>;
+  @group(0) @binding(2) var<storage, read> inG: array<f32>;
+  @group(0) @binding(3) var<storage, read> inB: array<f32>;
+  @compute @workgroup_size(16,16)
+  fn main(@builtin(global_invocation_id) g0:vec3<u32>,@builtin(local_invocation_index) li:u32){
+    let g=g0+vec3<u32>(0u,p.dispatch.y,0u);
+    if(li<3u){atomicStore(&wgPeak[li],0u);}workgroupBarrier();
+    let c=i32(g.x);let r=i32(g.y);
+    if(c<W() && r<H()){
+      let i=u32(r*W()+c);var value=vec3<f32>(inR[i],inG[i],inB[i]);
+      if(hasGain()){let t=turned(r,c);value*=gain(f32(t.x),f32(t.y));}
+      if(hasGeometry()){outR[i]=value.x;outG[i]=value.y;outB[i]=value.z;}
+      else {finish(value,r,c);}
+    }
+    workgroupBarrier();if(li<3u){atomicMax(&peaks[li],atomicLoad(&wgPeak[li]));}
   }`;
 
   // raw_import._remap_bilinear_strips on the turned picture: per-channel
@@ -452,7 +475,7 @@
       device.addEventListener("uncapturederror", event => errors.push(event.error.message));
       device.lost.then(() => { shared = null; });
       const pipelines = {};
-      for (const [name, code] of Object.entries({ NORMALIZE, DILATE, RESIDUAL, REPAIR, GREEN, HOMOGENEITY, COMBINE, REMAP, REDUCE })) {
+      for (const [name, code] of Object.entries({ NORMALIZE, DILATE, RESIDUAL, REPAIR, GREEN, HOMOGENEITY, COMBINE, EDGE_FINISH, REMAP, REDUCE })) {
         await beforeNext();
         pipelines[name] = await device.createComputePipelineAsync({ layout: "auto", compute: { module: device.createShaderModule({ code }), entryPoint: "main" } });
       }
@@ -537,9 +560,11 @@
       meta.xyz_cam.forEach((row, k) => setF(13 + k, row));
       meta.acescg_to_bt2020.forEach((row, k) => setF(16 + k, row));
       const lens = lensData && meta.lens_grid;
+      const edgeHighlight = meta.raw_import_settings?.highlight_reconstruction;
+      const edgeColour = edgeHighlight?.enabled && edgeHighlight.method === "edge_colour_v1";
       const lensFlags = lens ? (lens.gain_width ? 1 : 0) | (lens.coordinate_width ? 2 : 0) : 0;
       setF(19, [meta.calibration_gain, lensFlags, lens?.gain_width || 2, lens?.gain_height || 2]);
-      setF(20, [lens?.coordinate_width || 2, lens?.coordinate_height || 2, (lens?.gain_width || 0) * (lens?.gain_height || 0), 0]);
+      setF(20, [lens?.coordinate_width || 2, lens?.coordinate_height || 2, (lens?.gain_width || 0) * (lens?.gain_height || 0), edgeColour ? 1 : 0]);
       const uniform = device.createBuffer({ size: params.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       own(uniform);
       device.queue.writeBuffer(uniform, 0, params);
@@ -568,6 +593,7 @@
         }
       };
       const read = async (buffer, bytes) => {
+        if (liveBytes + bytes > memoryBudget) throw Error("GPU RAW readback exceeds the reserved memory budget.");
         const staging = own(device.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }));
         const encoder = device.createCommandEncoder(); encoder.copyBufferToBuffer(buffer, 0, staging, 0, bytes); device.queue.submit([encoder.finish()]);
         await staging.mapAsync(GPUMapMode.READ); const copy = staging.getMappedRange().slice(0); release(staging); return copy;
@@ -597,12 +623,30 @@
       await run("HOMOGENEITY", [uniform, ints, gpack, homo], wgX, wgY);
       await stage("demosaic");
       const planes = [make(n * 4), make(n * 4), make(n * 4)];
-      const peaks = make(16), samples = make(sw * sh * 3 * 4);
+      const peaks = make(16); let samples = make((edgeColour ? Math.max(n, sw * sh * 3) : sw * sh * 3) * 4);
       const grid = make(lens ? lensData.byteLength : 4);
       if (lens) device.queue.writeBuffer(grid, 0, lensData.buffer, lensData.byteOffset, lensData.byteLength);
       await run("COMBINE", [uniform, ints, gpack, homo, ...planes, peaks, samples, grid], wgX, wgY);
       await device.queue.onSubmittedWorkDone();
       for (const buffer of [ints, gpack, homo]) release(buffer);
+      let edgeDiagnostics = null;
+      if (edgeColour) {
+        await stage("camera_colour");
+        edgeDiagnostics = await root.HDREdgeColour.reconstruct({device, planes, ratio:samples,
+          width:w,height:h,expand:edgeHighlight.edge_colour_expand_percent,
+          toBT:meta.acescg_to_bt2020,fromBT:meta.bt2020_to_acescg,make,release,read,
+          beforeSubmit:beforeSubmit || (async()=>{})});
+        if(edgeDiagnostics.planes !== planes){for(const b of planes)release(b);planes.splice(0,3,...edgeDiagnostics.planes);}
+        delete edgeDiagnostics.planes;
+        Object.assign(edgeDiagnostics,{renderer:"gpu",algorithm_version:"hdr-finisher-edge-colour-v1",
+          stage:"acescg_after_camera_conversion_before_lens_correction",expand_percent:edgeHighlight.edge_colour_expand_percent});
+        release(samples); samples=make(sw*sh*3*4);
+        const finished=[make(n*4),make(n*4),make(n*4)];
+        await run("EDGE_FINISH",[uniform,...planes,...finished,peaks,samples,grid],wgX,wgY);
+        await device.queue.onSubmittedWorkDone();
+        for(const b of planes)release(b);planes.splice(0,3,...finished);
+        await stage("edge_colour");
+      }
       if (lensFlags & 2) {
         // Lens geometry reads neighbours, so it runs as its own pass.
         const corrected = [make(n * 4), make(n * 4), make(n * 4)];
@@ -642,7 +686,7 @@
       const sampleData = new Float32Array(await read(samples, sw * sh * 3 * 4));
       await stage("readback");
       if (errors.length) throw new Error(errors.join("\n"));
-      return { timings, memory_peak_bytes: peakBytes, errors: [...errors], clipped: [...clipped], chroma,
+      return { timings, memory_peak_bytes: peakBytes, edge_diagnostics:edgeDiagnostics, errors: [...errors], clipped: [...clipped], chroma,
         peaks: { peak: peakValues[0], peak_luma: peakValues[1], peak_bt2020: peakValues[2] },
         samples: sampleData, sampleShape: [sh, sw], reduced };
     } finally {
@@ -678,7 +722,7 @@
     return serial(async () => {
       const queueMs=performance.now()-queued;
       await gpu();
-      const id = crypto.randomUUID(), bytes = meta.width * meta.height * 44 + 64 * 1024 * 1024;
+      const id = crypto.randomUUID(), bytes = rawBudget(meta);
       const url = `/api/delivery/gpu/raw-budget/${id}`;
       const lease = async release => {
         if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
@@ -697,13 +741,20 @@
             await wait(50, signal); continue;
           }
           let touched = 0;
+          let edgePermitAt = 0;
           const beforeSubmit = async () => {
+            if(signal?.aborted)throw new DOMException("Cancelled", "AbortError");
+            // Edge colour has many short blur bands. Reuse the same permit
+            // window as delivery rather than making each band a network wait.
+            if(meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" &&
+              performance.now()-edgePermitAt<100)return;
             if(meta.source_job && performance.now()-touched>5000){
               const check=await fetch("/api/library/live-source/"+meta.source_job,{method:"POST",signal});
               if(!check.ok) throw Error("Library source preparation was invalidated."); touched=performance.now();
             }
             const status = await lease(false);
             if (!status.granted || status.preempt || status.fallback) { const error = Error("Yielding GPU RAW to shared work."); error.yieldRaw = true; throw error; }
+            edgePermitAt=performance.now();
           };
           root.HDRLibraryScenes?.stage(meta.path,"Preparing source on GPU");
           try { const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, memoryBudget:bytes});
@@ -772,6 +823,7 @@
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
+      edge_diagnostics: developed.edge_diagnostics,
       timing_ms: { ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
       let text = new TextEncoder().encode(JSON.stringify(header));
       const padded = new Uint8Array(text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32); padded.set(text); text = padded;
@@ -832,7 +884,8 @@
   }
 
   const warmup = async beforeNext => { if (enabled()) await gpu(() => beforeNext(() => inflight.size > 0)); };
-  const exported = Object.freeze({ shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance}) });
+  const rawBudget = meta => meta.width*meta.height*44+64*1024*1024;
+  const exported = Object.freeze({ rawBudget, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

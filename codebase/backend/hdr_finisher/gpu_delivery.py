@@ -384,6 +384,10 @@ def create_gpu_delivery_router():
                (_effective_priority(value, now), value["created"]) for v in raw_jobs.values()):
             return None
         (directory / "claimed").touch()
+        if value.get("operation") == "edge_colour":
+            active[value["id"]] = (directory, value)
+            value["budget"] = max(0, _activity["budget"] - _activity["bytes"])
+            return {key: item for key, item in value.items() if key != "memory"}
         memory = DeliveryMemory()
         image = memory.attach(value["memory"]["source"])
         reference = memory.attach(value["memory"]["reference"]) if value["memory"]["reference"] else None
@@ -400,6 +404,15 @@ def create_gpu_delivery_router():
         active[value["id"]] = (directory, value)
         value["budget"] = max(0, _activity["budget"] - _activity["bytes"])
         return {key: item for key, item in value.items() if key != "memory"}
+
+    @router.get("/{identity}/edge-source")
+    def edge_source(identity: str):
+        item = active.get(identity)
+        if item is None or item[1].get("operation") != "edge_colour":
+            raise HTTPException(404, "GPU edge-colour job expired.")
+        with DeliveryMemory() as memory:
+            body = memory.attach(item[1]["memory"]["edge_input"]).tobytes()
+        return Response(body, media_type="application/octet-stream")
 
     @router.get("/{identity}/raw-sensor")
     def raw_sensor(identity: str):
@@ -444,9 +457,11 @@ def create_gpu_delivery_router():
 
     @router.post("/{identity}/pixels/{lane}")
     async def pixels(identity: str, lane: str, request: Request):
-        if identity not in active or lane not in {"hdr", "sdr"}:
+        if identity not in active or lane not in {"hdr", "sdr", "edge"}:
             raise HTTPException(404, "GPU delivery job expired.")
         directory, value = active[identity]
+        if lane not in value["memory"]:
+            raise HTTPException(400, "Unexpected delivery lane.")
         with DeliveryMemory() as memory:
             pixels = memory.attach(value["memory"][lane]).view(np.uint8).reshape(-1)
             offset = 0
@@ -472,7 +487,8 @@ def create_gpu_delivery_router():
                     reply = {"error": "GPU RAW development was incomplete."}
                 else:
                     reply["raw_measurements"] = value["raw_measurements"]
-            if not reply.get("error") and set(value.get("received", [])) != {"hdr", "sdr"}:
+            expected = {"edge"} if value.get("operation") == "edge_colour" else {"hdr", "sdr"}
+            if not reply.get("error") and set(value.get("received", [])) != expected:
                 reply = {"error": "GPU delivery returned incomplete lanes."}
             # Batch workers are separate processes whose log lines don't reach
             # backend.log, so the GPU turn of every job is recorded here.
