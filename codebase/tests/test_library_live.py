@@ -201,3 +201,52 @@ def test_live_plan_checks_cache_and_size_without_starting_preparation(tmp_path):
         assert warm.json()['cached']['key']
         assert warm.json()['revision'] == cold.json()['revision']
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("route", ["live-scene", "fallback-picture"])
+def test_source_request_survives_grade_pause_without_restarting(tmp_path, route):
+    from concurrent.futures import Future
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.media_browser import MediaBrowserStore
+    path = photo(tmp_path)
+    profile = tmp_path / "profile"
+    # Prepare the worker result, then remove its disk entry so the request
+    # actually queues development instead of hitting the source cache.
+    result = develop_cpu(profile, path, None, 640)
+    from hdr_finisher.library_live import LivePictures
+    live = LivePictures(profile, LibraryMarks(profile))
+    live.cache.managed.clear()
+    if route == "fallback-picture":
+        result = {"url": "data:image/jpeg;base64,test", "width": 640, "height": 320}
+
+    class PausingHelper:
+        def __init__(self):
+            self.future = Future()
+            self.submitted = 0
+            self.polls = 0
+        def status(self):
+            if self.submitted:
+                self.polls += 1
+                if self.polls == 4:
+                    self.future.set_result(result)
+            return {"paused": bool(self.submitted)}
+        def submit_library(self, command, **arguments):
+            self.submitted += 1
+            return "source-job", self.future
+        def prioritize(self, *args):
+            pass
+        def cancel(self, job):
+            assert self.future.done(), "A Grade pause must not discard source work"
+
+    helper = PausingHelper()
+    app = FastAPI()
+    app.include_router(create_library_router(helper, MediaBrowserStore(profile)))
+    with TestClient(app) as client:
+        response = client.post('/api/library/' + route,
+            json={"path": str(path), "edge": 640, "gpu": False})
+    assert response.status_code == 200
+    assert helper.submitted == 1
+    assert helper.polls >= 4
+    assert response.json()["width"] == 640

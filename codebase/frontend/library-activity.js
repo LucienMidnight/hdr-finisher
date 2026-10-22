@@ -67,6 +67,7 @@
     }
     function render() {
       if (!health || panel.hidden) return;
+      const scrollTop = panel.scrollTop;
       const focused = panel.contains(document.activeElement) ? document.activeElement.dataset.action : null;
       const writer = health.writer, index = health.index;
       panel.replaceChildren(node("h2", "Activity", "panel-title"));
@@ -134,7 +135,8 @@
       if (health.helper.failure) panel.append(node("p", "The Library helper stopped after repeated problems. Saved marks are safe; restart the app to browse again."));
       if (index.state === "retrying") panel.append(node("p", "Indexing could not finish. Saved marks are safe; it will try again automatically, or choose Re-scan now."));
       if (index.state === "failed") panel.append(node("p", "Indexing stopped. Saved marks are safe; choose Re-scan to try again."));
-      if (focused) ([...panel.querySelectorAll("button")].find(item => item.dataset.action === focused) || button).focus();
+      if (focused) ([...panel.querySelectorAll("button")].find(item => item.dataset.action === focused) || button).focus({preventScroll:true});
+      panel.scrollTop = scrollTop;
     }
     function update(next) { health = next; button.hidden = false; button.textContent = (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next); onHealth?.(next); render(); }
     window.addEventListener("library-work-changed", () => { queueMicrotask(() => { if (health) update(health); }); });

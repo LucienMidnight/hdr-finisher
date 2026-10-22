@@ -1307,6 +1307,14 @@ at 2560 x 1440. Required fast checks: 549 Node passed; Python 2,328 passed,
 3 skipped, with the unchanged intermittent source-ownership failure described
 below. No installer or push.
 
+**Source pause and Activity scroll fix (October 22, built).** Once submitted,
+source development and CPU picture fallback retain their request while Grade
+pauses the helper. Queued work waits at the existing pause gate; work already
+executing can finish. Brief pauses no longer cancel the import and restart it
+from the beginning. Leaving the photo or invalidating the source still cancels
+its work. Activity refreshes preserve the scroll position and restore keyboard
+focus without scrolling a focused action into view.
+
 **Activity reporting (October 21, built).** Activity now lists filenames and
 actual waiting/running source, cache-check and drawing jobs, including backend
 RAW development and individual DNG brightness/distortion corrections. Resource

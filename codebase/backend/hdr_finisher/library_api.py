@@ -487,7 +487,10 @@ def create_library_router(worker, browser, store=None):
             while not future.done():
                 if source_token:
                     source_jobs.check(source_token, file_commands.epoch)
-                if worker.status()["paused"]:
+                # Source jobs keep their owner and wait behind the helper pause
+                # gate. Returning 202 here cancels them in finally and restarts
+                # the entire import on every brief Grade pause.
+                if worker.status()["paused"] and command not in {"live-scene", "live-fallback"}:
                     return JSONResponse({"detail": "library_pending"}, status_code=202,
                         headers={"Retry-After": "0.1", "Cache-Control": "no-store"})
                 if await request.is_disconnected():
