@@ -3977,6 +3977,8 @@
     {"path":"tests/library-codec-source.js","areas":["library"],"tier":"area",
       "protects":"JXL/AVIF/HEIF precision, transfer, scene tiers and cached/native reuse against Grade.","launch":{"method":"electron"}},
     {"path":"tests/library-codec-native.js","areas":["library"],"tier":"area",
-      "protects":"JXL/HEIF cells, selected native reuse, saved grades and automatic GPU recovery.","launch":{"method":"electron"}}
+      "protects":"JXL/HEIF cells, selected native reuse, saved grades and automatic GPU recovery.","launch":{"method":"electron"}},
+    {"path":"tests/hsl-prototype-gpu.js","areas":["masks","ui"],"tier":"diagnostic",
+      "protects":"Isolated HSL prototype float GPU/CPU agreement, multi-range selection and basic UI gestures; no app integration.","launch":{"method":"native"}}
   ]
 }

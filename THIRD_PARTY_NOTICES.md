@@ -147,3 +147,14 @@ Source: https://github.com/andreavolpato/spektrafilm . All 27 components are kep
 rounded amplitudes are normalized, and each Gaussian is cropped and normalized
 inside HDR Finisher's existing spatial cap. Explicit bounded kernels replace
 the upstream recursive large-sigma implementation; edge handling is clamped.
+
+### Oklab conversions in the isolated HSL prototype
+
+`codebase/tools/hsl-prototype/engine.mjs` and `gpu.mjs` adapt the linear-sRGB
+to/from Oklab conversions by Björn Ottosson, using the matrix revision dated
+January 25, 2021 in [A perceptual color space for image processing](https://bottosson.github.io/posts/oklab/),
+accessed October 22, 2026. The author explicitly dedicates the conversion
+code to the public domain (with MIT also offered). The prototype uses the
+public-domain grant. Adaptations are JavaScript/WGSL ports with signed cube
+roots for unbounded floating-point inputs. The multi-range selection,
+mask composition and prototype interface are HDR Finisher code.

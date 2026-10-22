@@ -162,6 +162,22 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
    local adjustment module, and hue selection as a local-adjustment mask.
    Specify and implement both; neither is built.
 
+### HSL prototype direction (Steve, October 22, 2026)
+
+Steve approved building an isolated HSL/color-range prototype, leaving Claude
+to refine the frontend. Share the eventual color operation between global
+and local grades and share selection controls with the required hue mask.
+The picker supports Pick, Add and Subtract: maintain disjoint included ranges
+and feathered exclusions rather than filling every hue between samples.
+
+The standalone prototype is in `codebase/tools/hsl-prototype/`; its README
+documents the engine API, launch command, validation and frontend handoff.
+It provides one multi-range correction, a GPU implementation with CPU
+fallback, a photo picker and a demonstration local ellipse. It is not wired
+into the app. Production integration, independent channel settings, pipeline
+placement, HDR visual acceptance, project persistence and the hue-mask leaf
+remain open. This does not mark the v1 hue-selection mask built.
+
 ## 6. Out of scope
 
 Pixel painting and retouching beyond the required v1 Retouch brush,
