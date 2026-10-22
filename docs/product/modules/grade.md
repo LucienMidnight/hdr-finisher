@@ -161,6 +161,8 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
 8. **Required for v1 (Steve, October 21, 2026):** healing brush in the
    local adjustment module, and hue selection as a local-adjustment mask.
    Specify and implement both; neither is built.
+9. HSL in the app, global and local (Codex brief of October 22, 2026), then
+   Claude's design pass. See "HSL prototype direction" below.
 
 ### HSL prototype direction (Steve, October 22, 2026)
 
@@ -178,12 +180,17 @@ into the app. Production integration, independent channel settings, pipeline
 placement, HDR visual acceptance, project persistence and the hue-mask leaf
 remain open. This does not mark the v1 hue-selection mask built.
 
-Claude's proposal (October 22, 2026), built in the prototype and awaiting
-Steve's review: the global module uses DxO-style channels (All plus eight
-bands, each with its own edit, refinable with the picker) plus Custom
-channels for any multi-colour pick. A local grade uses one multi-colour
-selection with one edit, and the bands are quick starts. Both share one
-engine and one wheel.
+Steve's decisions (October 22, 2026), after trying the prototype: the global
+module uses DxO-style channels (All plus eight bands, each with its own edit,
+refinable with the picker) plus up to four Custom channels for any
+multi-colour pick. A local grade uses one multi-colour selection with one
+edit, and the bands are quick starts. Both share one engine and one wheel.
+Wheel ranges are control points; right-click deletes, as with path nodes.
+Presets use the app's Adjustment Presets dialog. Global HSL runs after
+Primaries and before Curves in both HDR and SDR; local HSL sits in the same
+relative place inside each local grade. Codex builds the integration
+(`docs/technical/briefs/codex-brief-hsl-integration-2026-10-22.md`); Claude
+does a design pass afterwards.
 
 ## 6. Out of scope
 
