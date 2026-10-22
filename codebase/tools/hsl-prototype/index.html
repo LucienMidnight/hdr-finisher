@@ -1,29 +1,127 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HDR Finisher · HSL prototype</title>
 <style>
-:root{color-scheme:dark;font:14px system-ui;background:#17191c;color:#e8e9ed}*{box-sizing:border-box}body{margin:0}header{padding:18px 24px;border-bottom:1px solid #35383d;display:flex;gap:18px;align-items:center}h1{font-size:19px;margin:0}small,.muted{color:#a5abb5}main{display:grid;grid-template-columns:minmax(400px,1fr) 360px;min-height:calc(100vh - 70px)}article{padding:24px;display:flex;flex-direction:column;align-items:center;gap:14px}aside{padding:20px;background:#22252a;border-left:1px solid #35383d}button,.file{background:#343941;border:1px solid #525a66;color:inherit;border-radius:6px;padding:8px 11px;cursor:pointer;font:inherit}button:hover,.file:hover{background:#454d59}button[aria-pressed=true]{background:#145d73;border-color:#66cce4}button:disabled{opacity:.4;cursor:default}button:focus-visible,input:focus-visible{outline:2px solid #80ddf3;outline-offset:3px}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:12px}input[type=file]{max-width:235px}input[type=range]{width:100%;accent-color:#6acde4}label.control{display:grid;grid-template-columns:1fr 64px;gap:4px;margin:14px 0}label.control input{grid-column:1/3}output{text-align:right;font-variant-numeric:tabular-nums}#photo{max-width:100%;height:auto;max-height:70vh;object-fit:contain;cursor:crosshair;touch-action:none;background:repeating-conic-gradient(#333 0% 25%,#444 0% 50%) 0/16px 16px}#wheel{width:250px;height:250px;display:block;margin:10px auto;touch-action:none}#ranges{max-height:165px;overflow:auto}#ranges button{padding:6px;font-size:12px}.range-row{display:flex;align-items:center;gap:6px;margin:5px 0}.range-row .choose{flex:1;text-align:left}p{line-height:1.5}.hint{max-width:800px;margin:0;color:#b7bec8}details{margin-top:20px}summary{cursor:pointer}#status{min-height:20px}#notice{color:#ffd390;min-height:22px;margin:4px 0}#bands button{width:29px;height:29px;padding:0;border-radius:50%;border:2px solid #a8afb9}.rule{border-top:1px solid #41464e;margin:20px 0}.badge{font-size:12px;padding:3px 8px;background:#343941;border-radius:12px}#range-name{color:#7bdaee}@media(max-width:850px){main{display:flex;flex-direction:column}aside{border-top:1px solid #444}article{padding:12px}header{flex-wrap:wrap}}
+:root{color-scheme:dark;--app:#141618;--panel:#202326;--panel-2:#272b2f;--line:#33383d;--text:#e6e8ea;--muted:#9aa1a8;--faint:#6d747b;--accent:#9b7bff;--accent-low:#3a3060;--warn:#ffcf8a;--exclude:#ff8a8a;font:13px/1.4 system-ui,"Segoe UI",sans-serif;background:var(--app);color:var(--text)}
+*{box-sizing:border-box}body{margin:0;height:100vh;display:grid;grid-template-rows:auto 1fr;overflow:hidden}
+button,.file{background:var(--panel-2);border:1px solid var(--line);color:inherit;border-radius:6px;padding:6px 10px;cursor:pointer;font:inherit;line-height:1.2}
+button:hover,.file:hover{border-color:#4a5158;background:#30353a}button:disabled{opacity:.35;cursor:default}
+button[aria-pressed=true]{background:var(--accent-low);border-color:var(--accent);color:#fff}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header h1{font-size:14px;margin:0 8px 0 0;font-weight:600}.badge{font-size:11px;padding:2px 7px;border-radius:10px;background:var(--panel-2);color:var(--muted)}
+.sep{width:1px;height:22px;background:var(--line);margin:0 4px}.spacer{flex:1}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}.seg button{border:0;border-radius:0;background:transparent}.seg button[aria-pressed=true]{background:var(--accent-low)}
+label.check{display:inline-flex;align-items:center;gap:5px;color:var(--muted);cursor:pointer}label.check input{accent-color:var(--accent)}
+main{display:grid;grid-template-columns:1fr 340px;min-height:0}
+article{display:flex;flex-direction:column;min-height:0;padding:12px;gap:8px}
+.stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+#photo{max-width:100%;max-height:100%;object-fit:contain;cursor:crosshair;touch-action:none;background:repeating-conic-gradient(#2a2a2a 0% 25%,#333 0% 50%) 0/16px 16px}
+#photo.alt{cursor:move}
+.statusbar{display:flex;gap:12px;color:var(--faint);font-size:12px;min-height:18px}#notice{color:var(--warn)}
+aside{background:var(--panel);border-left:1px solid var(--line);overflow:auto;padding:0 0 16px}
+.palette-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.palette-head h2{font-size:13px;margin:0;flex:1;letter-spacing:.02em}
+.icon{width:28px;height:28px;padding:0;display:inline-grid;place-items:center}.icon svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+section{padding:12px 14px;border-bottom:1px solid var(--line)}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:0 0 8px}
+#channels{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.chan{position:relative;width:24px;height:24px;padding:0;border-radius:50%;border:2px solid transparent;background:var(--swatch);box-shadow:inset 0 0 0 1px #0006}
+.chan[aria-pressed=true]{background:var(--swatch);border-color:#fff;box-shadow:0 0 0 2px var(--accent)}
+.chan.all,.chan.all[aria-pressed=true]{background:conic-gradient(from 90deg,#f44,#fb3,#ee4,#4c5,#3cd,#36f,#94f,#f4c,#f44)}
+.edited::after{content:"";position:absolute;right:-3px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--accent);border:2px solid var(--panel)}
+#customs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.pill{position:relative;display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 5px;border-radius:12px;font-size:12px}
+.pill i{width:12px;height:12px;border-radius:50%;background:var(--swatch);box-shadow:inset 0 0 0 1px #0006}
+#add-custom{padding:3px 9px;border-radius:12px;border-style:dashed;color:var(--muted);font-size:12px}
+.chan-title{display:flex;align-items:center;gap:8px;margin-top:10px;min-height:28px}.chan-title strong{flex:1;font-size:14px}.chan-title small{color:var(--muted)}
+.wheel-wrap{position:relative;padding:4px 14px 0}
+#wheel{width:100%;max-width:300px;display:block;margin:0 auto;touch-action:none;user-select:none}
+#wheel .handle{cursor:grab}#wheel .handle:focus{outline:none}#wheel .handle:focus-visible circle.ring{stroke:var(--accent);stroke-width:3}
+#wheel .arc{cursor:grab}
+.pickbar{display:flex;align-items:center;gap:6px;justify-content:center;margin:6px 0 4px}
+.pickbar .seg button{padding:6px 9px}
+#ranges{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;min-height:24px;margin-top:6px}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 3px 2px 8px;border-radius:12px;font-size:12px;background:var(--panel-2);border:1px solid var(--line)}
+.chip[aria-current=true]{border-color:var(--accent)}.chip .dot{width:10px;height:10px;border-radius:50%}
+.chip.sub{color:var(--exclude)}.chip button{border:0;background:none;padding:0 4px;border-radius:8px}.chip button.x{color:var(--muted)}
+.ctl{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 8px;margin:10px 0}
+.ctl span{color:var(--muted)}.ctl output{font-variant-numeric:tabular-nums;text-align:right;min-width:56px;color:var(--text)}
+.ctl input{grid-column:1/3}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:18px;background:transparent;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--track,linear-gradient(90deg,#3a4046,#3a4046))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#e6e8ea;margin-top:-5px;border:2px solid var(--panel);box-shadow:0 0 0 1px #0008}
+input[type=range]:disabled{opacity:.35}
+.small{display:grid;grid-template-columns:1fr 1fr;gap:12px}.small .ctl{margin:4px 0}
+.foot{display:flex;gap:6px;flex-wrap:wrap;padding:12px 14px}
+details{padding:0 14px;color:var(--muted)}details p{margin:6px 0}summary{cursor:pointer;color:var(--muted)}
+.quick{display:flex;gap:6px;flex-wrap:wrap}.quick button{width:22px;height:22px;padding:0;border-radius:50%;background:var(--swatch);border:1px solid #0006}
+[hidden]{display:none!important}
+@media(max-width:860px){body{height:auto;overflow:auto}main{display:flex;flex-direction:column}aside{border-left:0;border-top:1px solid var(--line)}#photo{max-height:60vh}}
 </style></head><body>
-<header><h1>HSL / Color Range</h1><span class="badge">Prototype</span><small>HDR Finisher · Pick colors, refine the range, then adjust</small></header>
-<main><article>
-<div class="row"><label class="file">Open photo <input id="file" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="demo">Demo image</button><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button></div>
-<canvas id="photo" width="900" height="560" aria-label="Photo preview; click or drag to sample colors"></canvas>
-<p class="hint">Click a color or drag across its variations. Pick starts a selection; Add keeps separate ranges; Subtract excludes colors. The picker always samples the original photo.</p>
-<div class="row"><label><input id="overlay" type="checkbox"> Show selection</label><label><input id="before" type="checkbox"> Before</label><label><input id="local" type="checkbox"> Local ellipse</label><label><input id="cpu" type="checkbox"> Use CPU</label></div>
-<p class="hint">With Local ellipse enabled, Alt-click the photo to move its center. The ellipse demonstrates how HSL combines with an existing local mask.</p>
-<p id="status" role="status"></p><p id="notice" role="status"></p>
-</article><aside>
-<div id="modes" class="row" aria-label="Picker mode"><button data-mode="pick" aria-pressed="true">Pick</button><button data-mode="add" aria-pressed="false">Add +</button><button data-mode="subtract" aria-pressed="false">Subtract −</button></div>
-<div id="bands" class="row" aria-label="Color band shortcuts"></div>
-<svg id="wheel" viewBox="0 0 250 250" role="img" aria-label="Color selection wheel; drag a selected arc to change its center"><g id="wheel-colors"></g><g id="wheel-ranges"></g><circle cx="125" cy="125" r="68" fill="#22252a"/><text x="125" y="121" fill="#e8e9ed" text-anchor="middle" font-size="14">Color range</text><text x="125" y="143" fill="#a5abb5" text-anchor="middle" font-size="11">drag an arc to move</text></svg>
-<div id="ranges"></div><p id="range-name">Pick a color to begin</p>
-<label class="control">Range half-width <output id="width-out"></output><input id="width" aria-label="Range half-width" type="range" min="1" max="180" value="16"></label>
-<label class="control">Edge softness <output id="feather-out"></output><input id="feather" aria-label="Edge softness" type="range" min="1" max="90" value="12"></label>
-<div class="rule"></div>
-<label class="control">Hue shift <output id="hue-out"></output><input id="hue" aria-label="Hue shift" type="range" min="-180" max="180" value="0"></label>
-<label class="control">Saturation <output id="saturation-out"></output><input id="saturation" aria-label="Saturation" type="range" min="-100" max="100" value="0"></label>
-<label class="control">Luminance <output id="luminance-out"></output><input id="luminance" aria-label="Luminance" type="range" min="-2" max="2" step="0.01" value="0"></label>
-<label class="control">Uniformity <output id="uniformity-out"></output><input id="uniformity" aria-label="Uniformity" type="range" min="0" max="100" value="0"></label>
-<label class="control">Amount <output id="opacity-out"></output><input id="opacity" aria-label="Amount" type="range" min="0" max="1" step="0.01" value="1"></label>
-<div class="row"><button id="reset">Reset all</button><button id="save">Save recipe</button><label class="file">Load recipe<input id="load" type="file" accept="application/json,.json" hidden></label></div>
-<details><summary>About this prototype</summary><p>One correction can contain several included and excluded ranges. Uniformity pulls each included range toward its own center. Exclusions apply across all included ranges; remove an exclusion to restore that hue.</p><p>Photos are decoded by the browser into an sRGB preview, limited to 1000 pixels on the long edge. The processing engine accepts floating-point HDR values, but this preview is SDR. RAW/HDR file loading, independent channel corrections and app integration come later.</p><p>Range widths and wheel positions use perceptual Oklab hue. Saturation changes chroma; Luminance is an exposure change in stops. Colors outside the monitor gamut are clipped only for this preview.</p></details>
-</aside></main><script type="module" src="./ui.mjs"></script></body></html>
+<header>
+  <h1>HSL</h1><span class="badge">Prototype</span><span class="sep"></span>
+  <div class="seg" id="scope" aria-label="Where the HSL tool applies"><button data-scope="global" aria-pressed="true">Global</button><button data-scope="local" aria-pressed="false">Local grade</button></div>
+  <span class="sep"></span>
+  <label class="file">Open photo <input id="file" type="file" accept="image/png,image/jpeg,image/webp" hidden></label><button id="demo">Demo image</button>
+  <span class="sep"></span>
+  <button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button>
+  <span class="spacer"></span>
+  <label class="check"><input id="overlay" type="checkbox"> Show selection</label>
+  <label class="check"><input id="before" type="checkbox"> Before</label>
+  <label class="check"><input id="cpu" type="checkbox"> Use CPU</label>
+</header>
+<main>
+<article>
+  <div class="stage"><canvas id="photo" width="900" height="560" aria-label="Photo preview; click or drag to sample colors"></canvas></div>
+  <div class="statusbar"><span id="status" role="status"></span><span id="notice" role="status"></span></div>
+</article>
+<aside>
+  <div class="palette-head"><h2 id="palette-title">HSL · Global</h2>
+    <button class="icon" id="reset-channel" title="Reset this channel" aria-label="Reset channel"><svg viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v2.5h2.5"/></svg></button>
+  </div>
+  <section id="channel-section">
+    <p class="label" id="channel-label">Channel</p>
+    <div id="channels" aria-label="HSL channels"></div>
+    <div id="customs" aria-label="Custom channels"></div>
+    <div id="quick" class="quick" hidden aria-label="Quick-start colours"></div>
+    <div class="chan-title"><strong id="chan-name">Red</strong><small id="chan-hint"></small><button id="delete-custom" hidden>Delete</button></div>
+  </section>
+  <div class="wheel-wrap">
+    <svg id="wheel" viewBox="0 0 320 320" aria-label="Colour range wheel. Drag the arc to move the range, the bars to change its width, the outer dots to change the softness, and the inner dot to shift the hue.">
+      <g id="ring"></g><g id="result"></g><g id="arcs"></g>
+      <circle cx="160" cy="160" r="66" fill="var(--panel)"/>
+      <text id="wheel-name" x="160" y="150" fill="var(--text)" text-anchor="middle" font-size="15" font-weight="600"></text>
+      <text id="wheel-sub" x="160" y="170" fill="var(--muted)" text-anchor="middle" font-size="11"></text>
+      <text id="wheel-sub2" x="160" y="186" fill="var(--faint)" text-anchor="middle" font-size="10"></text>
+      <g id="handles"></g>
+    </svg>
+    <div class="pickbar">
+      <div class="seg" id="modes" aria-label="Picker mode">
+        <button data-mode="pick" aria-pressed="true" title="Pick: replace the range with the colour you click">Pick</button>
+        <button data-mode="add" aria-pressed="false" title="Add: include another colour">Add +</button>
+        <button data-mode="subtract" aria-pressed="false" title="Subtract: exclude a colour">Subtract −</button>
+      </div>
+    </div>
+    <div id="ranges" aria-label="Ranges in this channel"></div>
+  </div>
+  <section>
+    <div class="small">
+      <label class="ctl"><span>Range</span><output id="width-out"></output><input id="width" aria-label="Range half-width" type="range" min="1" max="180" value="16"></label>
+      <label class="ctl"><span>Softness</span><output id="feather-out"></output><input id="feather" aria-label="Edge softness" type="range" min="1" max="90" value="12"></label>
+    </div>
+  </section>
+  <section>
+    <label class="ctl"><span>Hue</span><output id="hue-out"></output><input id="hue" aria-label="Hue shift" type="range" min="-180" max="180" value="0"></label>
+    <label class="ctl"><span>Saturation</span><output id="saturation-out"></output><input id="saturation" aria-label="Saturation" type="range" min="-100" max="100" value="0"></label>
+    <label class="ctl"><span>Luminance</span><output id="luminance-out"></output><input id="luminance" aria-label="Luminance" type="range" min="-2" max="2" step="0.01" value="0"></label>
+    <label class="ctl"><span>Uniformity</span><output id="uniformity-out"></output><input id="uniformity" aria-label="Uniformity" type="range" min="0" max="100" value="0"></label>
+    <label class="ctl"><span>Amount</span><output id="opacity-out"></output><input id="opacity" aria-label="Amount" type="range" min="0" max="1" step="0.01" value="1"></label>
+  </section>
+  <div class="foot"><button id="reset">Reset all</button><button id="save">Save recipe</button><label class="file">Load recipe<input id="load" type="file" accept="application/json,.json" hidden></label></div>
+  <details><summary>How this works</summary>
+    <p><b>Global</b> works like DxO: All plus eight bands, each with its own edit. Use the picker to move or widen a band, or to add and exclude colours. Picking while All is selected (or pressing +) makes a Custom channel from any mix of colours.</p>
+    <p><b>Local grade</b> has one selection, which can hold several colours, and one edit, applied inside the demo ellipse. Alt-click the photo to move the ellipse. The dots are quick starts.</p>
+    <p>Double-click a slider to reset it. Wheel handles take arrow keys (Shift for bigger steps). The preview is an SDR browser decode, limited to 1000 pixels on the long edge.</p>
+  </details>
+</aside>
+</main><script type="module" src="./ui.mjs"></script></body></html>

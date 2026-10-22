@@ -178,6 +178,13 @@ into the app. Production integration, independent channel settings, pipeline
 placement, HDR visual acceptance, project persistence and the hue-mask leaf
 remain open. This does not mark the v1 hue-selection mask built.
 
+Claude's proposal (October 22, 2026), built in the prototype and awaiting
+Steve's review: the global module uses DxO-style channels (All plus eight
+bands, each with its own edit, refinable with the picker) plus Custom
+channels for any multi-colour pick. A local grade uses one multi-colour
+selection with one edit, and the bands are quick starts. Both share one
+engine and one wheel.
+
 ## 6. Out of scope
 
 Pixel painting and retouching beyond the required v1 Retouch brush,

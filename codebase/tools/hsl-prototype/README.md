@@ -60,13 +60,41 @@ or the demonstration local mask.
 
 Keep Pick/Add/Subtract, photo sampling, multiple feathered arcs, selection
 preview, editable range center/width/softness, removal, reset, one undo per
-gesture, save/reopen and keyboard access. Claude can redesign the controls;
-the current wheel is functional scaffolding. Arc movement has slider-based
-width/feather controls; direct boundary handles remain frontend work.
+gesture, save/reopen and keyboard access.
 
-The eight dots currently start/add/subtract ranges into **one correction**.
-They are not eight independently remembered channel grades. Decide the final
-channel/custom-selection organization with Steve before extending it.
+Claude redesigned the front end on October 22, 2026, using DxO PhotoLab's
+HSL palette as the reference. A Global / Local grade switch shows the two
+proposed layouts. Steve has not yet confirmed this split:
+
+- **Global**: DxO-style channels. All, plus eight bands (red, orange, yellow,
+  green, aqua, blue, purple, magenta), each a separate v1 recipe with its own
+  range and H/S/L/Uniformity/Amount. Band centres are measured in Oklab hue
+  from representative colours; the core width is 35% and the feather 50% of
+  the gap to the nearer neighbour. The picker refines the selected band (Pick
+  moves it; Add/Subtract add ranges). **Custom channels** (up to 4) hold any
+  multi-colour pick. Picking while All is selected creates one.
+- **Local grade**: one recipe (Codex's model) applied inside the demo
+  ellipse. The eight dots are quick starts. It samples and selects from its
+  own stage input, which is the global HSL output.
+- **Wheel**: outer ring = source hues, dimmed outside the current channel's
+  selection; inner ring = what each hue becomes after the whole module. Bars
+  drag one range edge (the opposite edge stays put, the centre follows);
+  outer dots drag the softness (symmetric); the centre dot or the arc moves
+  the range; the inner dot is the Hue shift target. Handles are focusable
+  sliders (arrows; Shift = 5°). Double-click a slider to reset it.
+
+**Channel composition (prototype only):** every channel with an effect is
+measured from the same input, and the effects add: `out = in + Σ(channel_k(in)
+− in)`. The UI runs one `gpu.process` per active channel. Production should
+evaluate all channels in one shader pass from the same input. Whether
+overlapping hue shifts should add, or blend by weight, needs Steve's visual
+check. The All channel is a 180° range, so the near-grey chroma protection
+still applies to it.
+
+Saved recipe files are now `{version: 2, kind: 'hsl-prototype', global:
+[channels], local: recipe}`. Loading a plain v1 recipe puts it into the
+current channel. `window.hslPrototype.recipe` is the current channel's
+recipe; `.state` holds both modules.
 
 Expose this same operation globally and in each local grade with independent
 HDR/SDR parameters. Reuse hue selection as a mask leaf in combined masks,
