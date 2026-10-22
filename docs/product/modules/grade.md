@@ -44,7 +44,7 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | HDR Lift/Gamma/Gain is deprecated now that Exposure Bands exists. Remove it after real-photo checks, unless a workflow needs it. The SDR trims stay. | 2026-08, pending |
 | A healing brush in the local adjustment module and hue selection as a local-adjustment mask are required for v1. Both are unbuilt; detailed interaction and rendering design remain to be specified. | Steve, 2026-10-21 |
 | Retouch starts on the CPU, preserving a fallback for later GPU work. Inpaint is the default, targeting PatchMatch with Krita as the main reference; Heal follows darktable/GIMP and Clone shares the brush infrastructure. See the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026). Quality/performance are not yet validated. | Steve, 2026-10-21 |
-| Retouch repairs are shared by HDR/SDR and run before crop/rotation and denoise. Content-dependent selections see the repaired source. Existing materialized SDR Match bases require an explicit Rematch after repair changes; show Rematch required and retain the base until then. These integration decisions are not yet wired. | Steve, 2026-10-22 |
+| Retouch repairs are shared by HDR/SDR and run before crop/rotation and denoise. Content-dependent selections see the repaired source. After repair changes, show Rematch required and retain existing SDR Match controls until an explicit Rematch. The current Match materializes editable controls, not a separate baked photo; imported authored SDR remains independent until explicitly replaced through Match. | Steve, 2026-10-22 |
 | The inspected v3 PatchMatch examples are accepted for proceeding with implementation. Skip further natural-dust study work; Steve will test natural dust manually when the tool and settings exist. This is not general photographic validation. | Steve, 2026-10-22 |
 | Slider drags make one undo step per gesture. | 2026-08 |
 | Only the current project schema is accepted; older projects are rejected with a message. No migration before 1.0. | 2026-10 |
@@ -61,7 +61,7 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   the local adjustment module. CPU first; later GPU work is separate.
   Not built. Follow the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026);
   shared source placement and explicit SDR Rematch behavior are decided above;
-  integration remains open.
+  complete feature remains unbuilt until Heal, Clone and release validation are finished.
   **Prototype implemented October 21:** isolated bounded CPU PatchMatch engine,
   background jobs/cancellation/revision guard, completed-patch cache and a
   synthetic comparison viewer. Float HDR/negative preservation and donor
@@ -80,9 +80,20 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   recipe, bounded native-window preparation and completed-patch composition
   are implemented separately from the app. JSON replay through the worker/cache
   and exact agreement across read-window boundaries are tested.
-  This does not implement the interactive brush, Heal/Clone, project records
-  or rendering integration. See the technical plan's CPU prototype outcome
-  for the reproduction command and proposed integration boundary.
+  **Interactive Inpaint prototype October 22:** Local Adjustments now offers
+  source-space click/stroke input, native size/hardness, bounded search, patch
+  radius, iterations, explicit seed, Retry, selection, enable/remove and Cancel.
+  Each completed gesture is a revisioned history edit; ordered recipes save in
+  projects and replay before all preview levels, masks, Match, Proof, export and
+  Library source reduction. Repairs share interpreted native source before crop,
+  rotation and lane Denoise; GPU finishing remains in use. Completed patches
+  are cached independently of grades and current/future defects exclude donors.
+  Cancellation and newer edits retain the last valid document/picture. Proof's
+  cache includes the source epoch. See the technical plan for checks and use.
+  Publication currently needs one additional full native image owner, admitted
+  against the existing host memory reserve; solves remain bounded. Large or
+  source-starved strokes can fail explicitly. Heal, Clone, source picking,
+  broader performance work and Steve's manual natural-dust testing remain open.
 - **V1 hue-selection mask:** add hue selection as a local-adjustment mask,
   compatible with the existing combined-mask workflow. Not built; selection
   controls and hue evaluation remain to be specified.

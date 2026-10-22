@@ -193,7 +193,8 @@ class ProofArtifactStore:
             raise ValueError(f"Unsupported proof format: {request.format}")
         context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
         denoise = getattr(session, "denoise", None)
-        signature = self._request_signature(getattr(session, "session_id"), request, context, denoise)
+        signature = self._request_signature(getattr(session, "session_id"), request, context, denoise,
+            source_epoch=getattr(getattr(session, "render_cache", None), "source_epoch", 0))
         if not request.force:
             with self._lock:
                 cached_id = self._request_cache.get(signature)
@@ -573,6 +574,7 @@ class ProofArtifactStore:
         request: ProofArtifactRequest,
         color_context: RenderColorContext,
         denoise: object | None = None,
+        source_epoch: int = 0,
     ) -> str:
         # ``force`` selects how the request is served, not what it produces, so
         # it stays out of the signature. Denoise is not part of the request, so
@@ -590,7 +592,7 @@ class ProofArtifactStore:
         try: policy = preferences()["effective_force_cpu"]
         except (OSError, ValueError, AttributeError): policy = renderer_record()["fallback_reason"]
         payload = (
-            f"{APP_VERSION}|{session_id}|{color_context.cache_key}|{denoise_payload}|{request_payload}|{policy}"
+            f"{APP_VERSION}|{session_id}|{color_context.cache_key}|{denoise_payload}|{request_payload}|{policy}|{source_epoch}"
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()[:24]
 

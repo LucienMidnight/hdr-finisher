@@ -621,6 +621,7 @@ async function renderGpuDraftInner(
   // A magnified pass fetches a region of the frame it will produce, so it has
   // to know that frame's exact size first.
   if (request.viewport && !gpuFrameSizeAt(longEdge)) await ensureGeometryCoordinateMap(longEdge);
+  const repairSourceGeneration = state.repairSourceGeneration || 0;
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
   const localSnapshot = localsBypassed()
     ? []
@@ -642,6 +643,7 @@ async function renderGpuDraftInner(
     isSourceCurrent: state.denoise?.[lane]?.enabled
       ? () => !geometryDraftActive() && state.session?.session_id === sessionId
         && requestedGeometrySignature === geometrySignature()
+        && repairSourceGeneration === (state.repairSourceGeneration || 0)
       : null,
     onSourceProgress: (progress) => {
       if (progress.state !== "building" || !sourceOptions.isCurrent() || !hideStatus) return;

@@ -379,21 +379,23 @@ Steve confirmed these decisions individually on October 22:
 - Repairs are shared by HDR and SDR, before the independent grades.
 - Apply repairs before crop/rotation and lane denoise.
 - Luminance/colour selections inspect the repaired fixed source. Grading still
-  cannot move selection boundaries. This is the intended new contract, not
-  yet a change to the shipping content-mask path.
-- When SDR uses a materialized Match base, changing repairs must show
-  **Rematch required**. Keep that base until Steve explicitly rematches; do
-  not automatically change its look. The shared repair reaches that saved
-  base through rematching, not by copying ACEScg patch pixels into SDR RGB.
+  cannot move selection boundaries. Interactive Inpaint now uses this contract.
+- Changing repairs shows **Rematch required** when Match has been used or
+  an imported authored SDR rendition exists. Retain the controls until explicit
+  Rematch. Code inspection corrected the earlier description: current Match
+  materializes ordinary editable controls, not a separate baked picture. Generated
+  SDR uses the repaired source immediately with those retained controls. An
+  imported authored SDR picture stays unchanged until explicitly replaced through
+  Match; ACEScg patches are never copied into its independent SDR RGB pixels.
 
-The existing app still has none of this Retouch wiring. A repair integration
-must carry its source identity through preview, masks, Match, Proof, export
-and Library paths before it is marked built.
+The interactive prototype below carries source identity through preview, masks,
+Match, Proof, export and Library. The complete three-mode tool remains unbuilt.
 
 ### Native brush adapter (October 22, 2026)
 
 `retouch_recipe.py` adds an isolated `InpaintRecipe` and preparation/composition
-helpers. It is not yet part of EditDocument, session commands or the UI.
+helpers. The following interactive milestone connects them to EditDocument,
+session commands and the UI.
 
 - The JSON recipe pins source dimensions, normalized uncropped-source points,
   native radius, hardness, a half-open native search rectangle, raster version,
@@ -486,3 +488,64 @@ Outer-boundary path feathering is full coverage inside the inner path, zero outs
 ## Project files
 
 `.hdrfinisher` files are atomically replaced ZIP containers with a manifest and compressed JSON edit document. They contain no source pixels. The first save of an uploaded temporary source requires the durable original path and verifies its SHA-256 fingerprint. Open validates the fingerprint and enters an explicit relink flow when the stored path is missing or changed. Projects never restore automatically at launch.
+
+### Interactive CPU Inpaint prototype (October 22, 2026)
+
+Local Adjustments is the authoring location. Repair processing is a source
+operation, before crop/rotation, content-dependent mask evaluation and lane
+Denoise/grades. It is not a local grade and the Local Adjustments grade bypass
+switch does not bypass repairs; each repair has its own enabled checkbox.
+
+`EditDocument.repairs` stores ordered `RepairRecord` objects: ID, name, enabled
+state and the complete versioned `InpaintRecipe`. `set_repairs` participates in
+existing expected-revision commands, inverse history, undo/redo, project storage
+and recovery. Unknown repair engines/raster versions fail opening rather than
+silently selecting a different algorithm. No source pixels enter the project.
+
+`retouch_source.py` prepares one native bounded window per enabled repair on a
+backend request thread and solves it using `RepairWorker`'s dedicated worker.
+Later repairs read completed earlier repairs. Current/future marked defects
+exclude donor patches, including marks in intersecting search windows. Input
+pixels/settings/seed/source interpretation determine the completed-patch cache
+key; grades, zoom and output tiles never select a different donor. Revision,
+source ownership and cancellation are rechecked before atomic publication.
+Failed, cancelled or superseded work retains the previous document and source.
+A request ID covers cancellation that reaches the server before queued work.
+
+The renderer presently consumes a contiguous native NumPy source, so publishing
+active repairs allocates one extra full native frame, copied in cancellable row
+bands. The original owner remains for recomputation/disable. Admission uses the
+existing 2 GiB/15% host reserve and allows bounded worker overhead. This is a
+memory limitation, not a full-frame solve or CPU grade. There is no timing or
+extra-memory acceptance claim yet. Follow-up: a source-window overlay provider
+could avoid the extra owner without changing solved patches.
+
+Publishing replaces `SessionRenderCache`'s source, invalidates mask/source/mip
+identities, and refreshes frontend source textures and Denoise models. Proxy,
+viewport, Match, scopes, Proof and delivery consume that same repaired native
+owner. Proof request caching includes its source epoch. Library scene identity
+includes repair recipes; repair-bearing scenes use native CPU preparation once
+before reducing stored scene sizes, with GPU finishing retained.
+
+To inspect in the development app: open a photo, choose **Grade → Local
+Adjustments → Inpaint brush**, set Size in original-photo pixels, and click or
+paint a small dust spot. Select its list entry to edit settings or Retry (next
+explicit seed); use its checkbox/Remove, Undo/Redo or Cancel. Save/reopen retains
+the recipe. Search is at most 256×256 native pixels; long/oversized strokes fail
+with a message rather than being independently divided. Heal/Clone are not
+available. Steve will perform natural-dust testing manually; none is claimed.
+
+Validation: backend behavior checks cover native publication, cached replay,
+float HDR/negative values, exact project reopen and undo/redo, cancellation both
+before and during work, newer-edit rejection, invalid batch rollback, repaired
+luminance selections, retained SDR controls/rematch state, Library native source,
+and an encoded full-size Proof matching export after source-cache invalidation.
+`tests/retouch-interaction.js` exercises an actual pointer gesture in Electron,
+checks that finished GPU preview pixels lose the synthetic dark spot, and covers
+history, Retry, enable/remove and cancellation arriving before the edit request.
+Inspectable screenshots: `codebase/output/retouch-interaction/before.png` and
+`after.png`. These are synthetic smoke checks, not photographic acceptance.
+The earlier v3 comparison viewer remains `codebase/output/retouch-prototype/index.html`.
+
+Next concrete work: Steve's manual use on natural dust, then address visible
+brush/quality issues before adding Heal/Clone or a separate GPU repair engine.

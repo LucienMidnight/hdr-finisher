@@ -19,7 +19,7 @@ from typing import Iterator, Literal
 
 import uvicorn
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -731,6 +731,15 @@ def post_edit_commands(session_id: str, batch: EditCommandBatch) -> EditStateRes
         raise _revision_conflict(exc) from exc
     except (EditCommandError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/session/{session_id}/retouch/cancel")
+def cancel_retouch(session_id: str, payload: dict = Body(default={})) -> dict:
+    try:
+        store.cancel_repair(session_id, str(payload.get("request_id", ""))[:128])
+        return {"cancelled": True}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/api/session/{session_id}/sdr-match/candidate")

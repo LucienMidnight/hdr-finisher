@@ -691,6 +691,26 @@
           <button id="local-adjustments-bypass" class="section-bypass text-button" type="button" data-section-path="shared.local_adjustments_enabled" aria-pressed="true" aria-label="Toggle Local Adjustments">&#9673;</button>
         </div>
         <div id="local-adjustments-panel" class="control-group-body local-adjustments-panel" aria-label="Local adjustments">
+        <section class="retouch-panel" aria-label="Retouch">
+          <div class="local-section-heading">Retouch · Inpaint prototype</div>
+          <button id="retouch-brush" type="button" aria-pressed="false">Inpaint brush</button>
+          <p class="helper">Shared by HDR and SDR. Paint a small dust spot at any zoom. Heal and Clone are not built.</p>
+          <div class="retouch-settings">
+            <label>Size · native px <input id="retouch-size" type="number" min="1" max="64" step="1" value="12"></label>
+            <label>Hardness · % <input id="retouch-hardness" type="number" min="0" max="100" value="75"></label>
+            <label>Search · native px <input id="retouch-search" type="number" min="32" max="256" step="16" value="96"></label>
+            <label>Patch radius <input id="retouch-patch" type="number" min="1" max="5" value="3"></label>
+            <label>Iterations <input id="retouch-iterations" type="number" min="1" max="12" value="6"></label>
+            <label>Seed <input id="retouch-seed" type="number" min="0" max="4294967295" value="20261021"></label>
+          </div>
+          <div class="local-action-row">
+            <button id="retouch-apply" type="button">Apply settings</button>
+            <button id="retouch-retry" type="button">Retry · next seed</button>
+            <button id="retouch-cancel" type="button" disabled>Cancel repair</button>
+          </div>
+          <p id="retouch-status" class="helper" role="status">Choose Inpaint brush, then paint a small spot.</p>
+          <ol id="retouch-list" aria-label="Shared repairs"></ol>
+        </section>
         <div class="local-section-heading">Mask Tools</div>
         <div class="local-tool-strip" role="toolbar" aria-label="Choose a local mask tool">
           <button class="local-tool-brush" type="button" data-local-tool="brush" aria-pressed="false" title="Select Brush for a new adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Brush</span></button>
@@ -1894,6 +1914,7 @@
   <script src="/static/group-presets.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/denoise-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/local-adjustments-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/retouch-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/mask-controls.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/mask-gestures.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/mask-overlay.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

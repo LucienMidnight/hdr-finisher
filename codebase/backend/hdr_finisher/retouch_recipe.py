@@ -1,4 +1,4 @@
-"""Source-space authoring adapter; not yet connected to sessions or rendering.
+"""Source-space authoring adapter shared by session repairs and prototype fixtures.
 
 The recipe stores native dimensions and a fixed search rectangle, never a
 viewport or proxy size. A caller must run preparation on a backend worker and
@@ -11,10 +11,15 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
-from .local_adjustments import _soft_disc, _soft_segment
-from .models import MaskPoint
 from .retouch import (MAX_DEFECT_PIXELS, MAX_REGION_EDGE, MAX_TARGET_PATCHES,
                       InpaintSettings, RepairInput, _box_sum)
+
+
+class RepairPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    x: float = Field(ge=0, le=1, allow_inf_nan=False)
+    y: float = Field(ge=0, le=1, allow_inf_nan=False)
+    pressure: float = Field(default=1, ge=0, le=1, allow_inf_nan=False)
 
 
 class InpaintRecipe(BaseModel):
@@ -32,7 +37,7 @@ class InpaintRecipe(BaseModel):
     raster_version: Literal["native-capsules-v1"] = "native-capsules-v1"
     source_size: tuple[StrictInt, StrictInt]
     search_rect: tuple[StrictInt, StrictInt, StrictInt, StrictInt]
-    points: tuple[MaskPoint, ...] = Field(min_length=1, max_length=512)
+    points: tuple[RepairPoint, ...] = Field(min_length=1, max_length=512)
     radius_px: float = Field(default=8, ge=0.5, le=32, allow_inf_nan=False)
     hardness: float = Field(default=0.75, ge=0, le=1, allow_inf_nan=False)
     settings: InpaintSettings = Field(default_factory=InpaintSettings)
@@ -60,6 +65,7 @@ class InpaintRecipe(BaseModel):
 
 def stroke_mask(recipe: InpaintRecipe, checkpoint=lambda: None) -> np.ndarray:
     """Rasterize only the fixed native ROI, checking between capsules."""
+    from .local_adjustments import _soft_disc, _soft_segment
     left, top, right, bottom = recipe.search_rect
     width, height = recipe.source_size
     yy, xx = np.mgrid[:bottom - top, :right - left].astype(np.float64)
@@ -95,7 +101,7 @@ def prepare_repair(recipe: InpaintRecipe, read_region, *, read_excluded=None,
     Optional read_excluded supplies other known defects as a boolean window.
     The caller owns the source epoch check; this adapter owns its snapshots.
     """
-    # Revalidate nested mutable MaskPoints, including recipes made with copy/
+    # Revalidate nested points, including recipes made with copy/
     # construct APIs, before any source read or allocation based on the record.
     recipe = InpaintRecipe.model_validate_json(recipe.model_dump_json())
     checkpoint()

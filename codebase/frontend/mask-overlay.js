@@ -102,6 +102,11 @@ function failPathMaskProgress(localId) {
 function renderLocalMaskOverlay() {
   const canvas = els.localMaskOverlay;
   if (!canvas) return;
+  if (typeof retouchUI !== "undefined" && retouchUI.active && state.gradeMode === "local"
+      && state.activeWorkflow === "grade") {
+    renderRetouchOverlay(canvas);
+    return;
+  }
   const local = selectedLocal();
   if (state.pathMaskProgressTarget && state.pathMaskProgressTarget.localId !== local?.id) {
     cancelPathMaskProgress();
@@ -852,6 +857,7 @@ async function loadAuthoritativeLocalMaskDraft(
   sessionId,
 ) {
   if (state.session?.session_id !== sessionId) return;
+  const repairSourceGeneration = state.repairSourceGeneration || 0;
   const controller = new AbortController();
   state.localMaskDraftController = controller;
   const requestedAt = performance.now();
@@ -876,7 +882,8 @@ async function loadAuthoritativeLocalMaskDraft(
       && signature === JSON.stringify(selected.mask)
       && requestedGeometrySignature === geometrySignature();
     if (
-      (!currentMaskMatch && (generation !== state.localMaskDraftGeneration || revision !== state.editRevision))
+      repairSourceGeneration !== (state.repairSourceGeneration || 0)
+      || (!currentMaskMatch && (generation !== state.localMaskDraftGeneration || revision !== state.editRevision))
       || requestedGeometrySignature !== geometrySignature()
       || localId !== state.selectedLocalId
       || signature !== JSON.stringify(selected?.mask)

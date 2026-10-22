@@ -260,7 +260,8 @@ function renderLaneChrome() {
   els.sdrMatchEntireActions?.classList.toggle("hidden", lane !== "sdr");
   if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = !state.session;
   if (els.sdrMatchEntireStatus) {
-    els.sdrMatchEntireStatus.textContent = match?.materialized_status === "needs_review"
+    els.sdrMatchEntireStatus.textContent = match?.rematch_required ? "Rematch required · repairs changed"
+      : match?.materialized_status === "needs_review"
       ? "Match needs review · editable SDR controls populated"
       : match?.materialized_status === "matched"
         ? "Matched into editable SDR controls"

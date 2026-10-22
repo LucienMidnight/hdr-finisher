@@ -9,6 +9,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_serializer, model_validator
 
 from .color_context import validate_reference_white
+from .retouch_recipe import InpaintRecipe
 
 
 class HDRClassification(str, Enum):
@@ -917,6 +918,7 @@ class SdrMatchState(BaseModel):
 
     materialized_status: Literal["matched", "needs_review"] | None = None
     materialized_metrics: SDRMatchQualityMetrics | None = None
+    rematch_required: bool = False
 
     @model_validator(mode="after")
     def validate_status_and_metrics(self) -> "SdrMatchState":
@@ -975,6 +977,15 @@ class SourceReference(BaseModel):
     luminance: SourceLuminanceDescriptor
 
 
+class RepairRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(default="Dust repair", max_length=128)
+    enabled: bool = True
+    recipe: InpaintRecipe
+
+
 class EditDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -984,6 +995,7 @@ class EditDocument(BaseModel):
     interpretation_override: "SourceInterpretationOverride" = Field(default_factory=lambda: SourceInterpretationOverride())
     global_adjustments: AdjustmentState = Field(default_factory=AdjustmentState)
     local_adjustments: list[LocalAdjustment] = Field(default_factory=list, max_length=256)
+    repairs: list[RepairRecord] = Field(default_factory=list, max_length=256)
     denoise: DenoiseDocumentSettings = Field(default_factory=DenoiseDocumentSettings)
     sdr_match: SdrMatchState = Field(default_factory=SdrMatchState)
 
@@ -1011,6 +1023,7 @@ class EditCommand(BaseModel):
         "set_hdr_reference_white",
         "set_global_adjustments",
         "set_denoise_settings",
+        "set_repairs",
         "create_local",
         "update_local",
         "delete_local",

@@ -104,7 +104,7 @@ def test_reader_shape_dtype_and_exclusion_contracts_are_checked():
 
 def test_mutated_nested_point_is_revalidated_before_any_read():
     record = recipe()
-    record.points[0].x = 10
+    record = record.model_copy(update={"points": (record.points[0].model_copy(update={"x": 10}),)})
     with pytest.raises(ValueError):
         prepare_repair(record, lambda *args: pytest.fail("Should not read"))
 

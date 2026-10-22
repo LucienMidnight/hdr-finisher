@@ -200,7 +200,7 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   const longEdge = options.longEdge || refinementProxyLongEdge();
   const key = JSON.stringify([
     state.session.session_id, lane, longEdge, geometrySignature(),
-    "source", settings.analysis,
+    "source", state.repairSourceGeneration || 0, settings.analysis,
   ]);
   // Pan, enable and the first edit can all ask for the same setup. Sharing it
   // keeps them from repeatedly replacing the selector and measuring again.

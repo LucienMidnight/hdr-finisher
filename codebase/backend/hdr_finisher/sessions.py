@@ -32,6 +32,7 @@ from .models import (
     PreviewKind,
     PreviewSettings,
     RawImportSettings,
+    RepairRecord,
     SdrMatchState,
     SessionPayload,
     SourceImageDescriptor,
@@ -71,6 +72,7 @@ def _source_mip_identity(session: "LoadedSession", lane: str = "hdr") -> SourceM
         {
             "override": session.interpretation_override.model_dump(mode="json"),
             "raw": session.raw_import_settings.model_dump(mode="json"),
+            "repairs": [r.model_dump(mode="json") for r in session.repairs],
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -111,6 +113,11 @@ class LoadedSession:
     durable_source_path: Path | None = None
     adjustments: AdjustmentState = field(default_factory=AdjustmentState)
     local_adjustments: list[LocalAdjustment] = field(default_factory=list)
+    repairs: list[RepairRecord] = field(default_factory=list)
+    retouch_original: np.ndarray = field(init=False, repr=False)
+    retouch_worker: Any = field(default=None, repr=False)
+    retouch_generation: int = field(default=0, repr=False)
+    retouch_cancelled_requests: list[str] = field(default_factory=list, repr=False)
     denoise: DenoiseDocumentSettings = field(default_factory=DenoiseDocumentSettings)
     sdr_match: SdrMatchState = field(default_factory=SdrMatchState)
     interpretation_override: SourceInterpretationOverride = field(default_factory=SourceInterpretationOverride)
@@ -129,6 +136,7 @@ class LoadedSession:
     render_cache: SessionRenderCache = field(init=False, repr=False)
 
     def __post_init__(self, prepared_fingerprint: str | None) -> None:
+        self.retouch_original = self.image
         self.color_context = RenderColorContext(self.hdr_reference_white_nits)
         self.hdr_reference_white_nits = self.color_context.hdr_reference_white_nits
         if self.source_luminance is None:
@@ -180,6 +188,7 @@ class LoadedSession:
             interpretation_override=self.interpretation_override,
             global_adjustments=self.adjustments,
             local_adjustments=self.local_adjustments,
+            repairs=self.repairs,
             denoise=self.denoise,
             sdr_match=self.sdr_match,
         )
@@ -335,6 +344,8 @@ class SessionStore:
             self._current = session
         if previous is not None and previous.owns_source_path:
             _remove_owned_source(previous.source_path)
+        if previous is not None and previous.retouch_worker is not None:
+            previous.retouch_worker.close()
         return payload
 
     def redevelop_session(self, session_id: str, developed: LoadedSession) -> SessionPayload:
@@ -350,6 +361,8 @@ class SessionStore:
             developed.durable_source_path = current.durable_source_path
             developed.adjustments = current.adjustments
             developed.local_adjustments = current.local_adjustments
+            developed.repairs = current.repairs
+            developed.sdr_match = current.sdr_match.model_copy(deep=True)
             developed.denoise = current.denoise
             developed.interpretation_override = current.interpretation_override
             developed.hdr_reference_white_nits = current.hdr_reference_white_nits
@@ -361,8 +374,12 @@ class SessionStore:
             developed.redo_history = current.redo_history
             developed.history_bytes = current.history_bytes
             developed.preview = current.preview
+            from .retouch_source import restore_repairs
+            restore_repairs(developed, _source_mip_identity(developed))
             payload = developed.to_payload()
             self._current = developed
+            if current.retouch_worker is not None:
+                current.retouch_worker.close()
             if getattr(self, "grade_recovery_observer", None):
                 self.grade_recovery_observer(developed)
             return payload
@@ -376,6 +393,8 @@ class SessionStore:
         if current is None:
             return 0
         total = int(current.image.nbytes)
+        if current.retouch_original is not current.image:
+            total += int(current.retouch_original.nbytes)
         if current.sdr_reference_image is not None:
             total += int(current.sdr_reference_image.nbytes)
         return total
@@ -386,6 +405,8 @@ class SessionStore:
             self._current = None
         if previous is not None and previous.owns_source_path:
             _remove_owned_source(previous.source_path)
+        if previous is not None and previous.retouch_worker is not None:
+            previous.retouch_worker.close()
 
     def get(self, session_id: str) -> LoadedSession:
         from .library_live import session as library_session
@@ -420,12 +441,68 @@ class SessionStore:
         )
         return self.apply_edit_commands(session_id, [command])
 
+    def cancel_repair(self, session_id: str, request_id: str | None = None) -> None:
+        with self._lock:
+            session = self.get(session_id)
+            session.retouch_generation += 1
+            if request_id:
+                session.retouch_cancelled_requests = (session.retouch_cancelled_requests + [request_id])[-32:]
+            if session.retouch_worker is not None:
+                session.retouch_worker.set_current(None)
+
     def apply_edit_commands(self, session_id: str, commands: list[EditCommand]) -> EditStateResponse:
+        """Prepare repair pixels before committing document/history atomically."""
+        if not any(c.command_type in {"set_repairs", "undo", "redo", "replace_document"} for c in commands):
+            return self._commit_edit_commands(session_id, commands)
+        from copy import copy
+        from types import SimpleNamespace
+        from concurrent.futures import CancelledError
+        from .retouch_source import build_repaired_source, repair_identity
+        with self._lock:
+            session = self.get(session_id)
+            if any(c.command_type == "set_repairs" and c.payload.get("repair_request_id") in session.retouch_cancelled_requests for c in commands):
+                raise EditCommandError("Repair cancelled before processing; the previous image was retained")
+            revision, generation, original = session.edit_revision, session.retouch_generation, session.retouch_original
+            draft = copy(session)
+            for name in ("adjustments", "denoise", "sdr_match", "interpretation_override"):
+                setattr(draft, name, getattr(session, name).model_copy(deep=True))
+            draft.local_adjustments = [r.model_copy(deep=True) for r in session.local_adjustments]
+            draft.repairs = [r.model_copy(deep=True) for r in session.repairs]
+            draft.undo_history, draft.redo_history = list(session.undo_history), list(session.redo_history)
+            draft.render_cache = SimpleNamespace(clear_adjusted=lambda **kw: None, set_color_context=lambda *a: None)
+            for command in commands:
+                if command.expected_revision != draft.edit_revision:
+                    raise RevisionConflictError(command.expected_revision, draft.edit_revision)
+                self._apply_edit_command(draft, command)
+            changed = repair_identity(draft.repairs) != repair_identity(session.repairs)
+            if changed and session.retouch_worker is None:
+                from .retouch_jobs import RepairWorker
+                session.retouch_worker = RepairWorker()
+        if not changed:
+            return self._commit_edit_commands(session_id, commands)
+
+        def check():
+            if (session.edit_revision != revision or session.retouch_generation != generation
+                    or session.retouch_original is not original or self.current() is not session):
+                raise CancelledError("Repair cancelled or superseded; the previous image was retained")
+        try:
+            pixels = build_repaired_source(session, draft.repairs, check)
+        except CancelledError as exc:
+            raise EditCommandError(str(exc)) from exc
+        try:
+            with self._lock:
+                check()
+                return self._commit_edit_commands(session_id, commands, repaired_pixels=pixels)
+        except CancelledError as exc:
+            raise EditCommandError(str(exc)) from exc
+
+    def _commit_edit_commands(self, session_id: str, commands: list[EditCommand], *, repaired_pixels=None) -> EditStateResponse:
         with self._lock:
             session = self.get(session_id)
             original = (
                 session.adjustments.model_copy(deep=True),
                 [item.model_copy(deep=True) for item in session.local_adjustments],
+                [item.model_copy(deep=True) for item in session.repairs],
                 session.denoise.model_copy(deep=True),
                 session.sdr_match.model_copy(deep=True),
                 session.interpretation_override.model_copy(deep=True),
@@ -436,16 +513,21 @@ class SessionStore:
                 list(session.undo_history),
                 list(session.redo_history),
                 session.history_bytes,
+                session.image,
             )
             try:
                 for command in commands:
                     if command.expected_revision != session.edit_revision:
                         raise RevisionConflictError(command.expected_revision, session.edit_revision)
                     self._apply_edit_command(session, command)
+                if repaired_pixels is not None:
+                    from .retouch_source import install_repaired_source
+                    install_repaired_source(session, repaired_pixels, _source_mip_identity(session))
             except Exception:
                 (
                     session.adjustments,
                     session.local_adjustments,
+                    session.repairs,
                     session.denoise,
                     session.sdr_match,
                     session.interpretation_override,
@@ -456,7 +538,11 @@ class SessionStore:
                     session.undo_history,
                     session.redo_history,
                     session.history_bytes,
+                    session.image,
                 ) = original
+                if session.render_cache.image is not session.image:
+                    session.render_cache.replace_source(session.image, session.sdr_reference_image,
+                        identity=_source_mip_identity(session), sdr_identity=session.render_cache.sdr_identity)
                 session.render_cache.set_color_context(session.color_context)
                 session.render_cache.clear_adjusted()
                 raise
@@ -607,6 +693,7 @@ class SessionStore:
                 )
             session.adjustments = document.global_adjustments
             session.local_adjustments = document.local_adjustments
+            session.repairs = document.repairs
             session.denoise = document.denoise
             session.sdr_match = document.sdr_match
             session.hdr_reference_white_nits = document.hdr_reference_white_nits
@@ -710,6 +797,21 @@ class SessionStore:
                 command_type="replace_document",
                 payload={"document": previous_document},
             )
+
+        if command_type == "set_repairs":
+            previous = [r.model_dump(mode="json") for r in session.repairs]
+            previous_rematch = session.sdr_match.rematch_required
+            raw = payload.get("repairs")
+            if not isinstance(raw, list) or len(raw) > 256:
+                raise EditCommandError("Repairs must be an array with at most 256 records")
+            records = [RepairRecord.model_validate(r) for r in raw]
+            if len({r.id for r in records}) != len(records):
+                raise EditCommandError("Repair IDs must be unique")
+            session.repairs = records
+            session.sdr_match = session.sdr_match.model_copy(update={"rematch_required": payload.get(
+                "rematch_required", previous_rematch or (previous != raw and (session.sdr_match.materialized_status is not None or session.sdr_reference_image is not None)))})
+            return EditCommand(expected_revision=current_revision, command_type="set_repairs",
+                payload={"repairs": previous, "rematch_required": previous_rematch})
 
         if command_type == "set_denoise_settings":
             previous = session.denoise
@@ -819,7 +921,20 @@ class SessionStore:
                 hdr_reference_white_nits=session.hdr_reference_white_nits,
             )
             source.filename = original_filename
-            session.image = image
+            from copy import copy
+            from .retouch_source import build_repaired_source
+            candidate = copy(session)
+            candidate.retouch_original = image
+            candidate.interpretation_override = override
+            candidate.retouch_worker = None
+            try:
+                repaired = build_repaired_source(candidate, session.repairs)
+            finally:
+                if candidate.retouch_worker is not None:
+                    candidate.retouch_worker.close()
+            session.image = repaired
+            session.retouch_original = image
+            session.retouch_generation += 1
             session.sdr_reference_image = sdr_reference_image
             session.source = source
             session.metadata = metadata
@@ -833,7 +948,7 @@ class SessionStore:
             session.preview_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
             session.scope_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
             session.render_cache.replace_source(
-                image,
+                repaired,
                 sdr_reference_image,
                 identity=_source_mip_identity(session),
                 sdr_identity=_source_mip_identity(session, lane="sdr") if sdr_reference_image is not None else None,

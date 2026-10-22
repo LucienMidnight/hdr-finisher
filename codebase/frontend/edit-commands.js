@@ -58,16 +58,16 @@ function stablePreviewJson(value) {
  * preview draws. The optimistic edit already rendered its own values, so an
  * acknowledgement that matches them has nothing new to show.
  */
-function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null, historyGroup = null } = {}) {
+function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null, historyGroup = null, isCurrent = () => true } = {}) {
   if (state.gradeOpen) return Promise.resolve(false);
   const sessionId = state.session?.session_id;
   if (commandType !== "set_global_adjustments" && state.globalEditDirty) {
     return syncGlobalEditState().then((applied) => state.session?.session_id === sessionId && applied && !state.globalEditDirty
-      ? queueEditCommand(commandType, payload, targetId, { refreshPreview, globalEditGeneration, historyGroup })
+      ? queueEditCommand(commandType, payload, targetId, { refreshPreview, globalEditGeneration, historyGroup, isCurrent })
       : false);
   }
   state.editCommandQueue = (state.editCommandQueue || Promise.resolve()).then(async () => {
-    if (!sessionId || state.session?.session_id !== sessionId) return false;
+    if (!sessionId || state.session?.session_id !== sessionId || !isCurrent()) return false;
     const response = await fetch(`/api/session/${state.session.session_id}/edit-commands`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -92,8 +92,10 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
     const shownInputs = refreshPreview === "if-changed"
       ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) : null;
+    const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
     state.editRevision = result.revision;
     state.editDocument = result.document;
+    resetRepairSource(previousRepairs, result.document);
     recordAcknowledgedLocals(result.document);
     if (commandType === "replace_document") loadDenoiseDocument(state.editDocument);
     if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
@@ -184,6 +186,29 @@ async function syncGlobalEditState() {
   return state.globalEditDirty || state.globalEditSyncPending ? syncGlobalEditState() : true;
 }
 
+function resetRepairSource(previousRepairs, documentState) {
+  if (previousRepairs === JSON.stringify(documentState.repairs || [])) return;
+  state.repairSourceGeneration = (state.repairSourceGeneration || 0) + 1;
+  state.gpuPreview?.resetSession(state.session.session_id);
+  state.gpuPreparedLane = { hdr: false, sdr: false };
+  state.localMaskDraftController?.abort();
+  state.localMaskDraftGeneration += 1;
+  for (const pending of localAuthoritativeMaskRequests.values()) pending.controller?.abort();
+  localAuthoritativeMaskRequests.clear();
+  for (const pending of localComparisonMaskRequests.values()) pending.controller?.abort();
+  localComparisonMaskRequests.clear();
+  localAuthoritativeMaskCache.clear();
+  localComparisonMaskCache.clear();
+  localComparisonCompositeCache.clear();
+  clearNavigationThumbnail();
+  for (const lane of ["hdr", "sdr"]) {
+    const runtime = state.denoiseRuntime?.[lane];
+    if (runtime) { runtime.dirty = true; runtime.generation += 1; runtime.analysisInFlight = null; }
+    invalidatePreview(lane, { local: true });
+  }
+  renderLaneChrome();
+}
+
 async function refreshEditState({ preserveLocalDraft = false } = {}) {
   if (!state.session) return;
   const sessionId = state.session.session_id;
@@ -194,8 +219,10 @@ async function refreshEditState({ preserveLocalDraft = false } = {}) {
   const result = await safeJson(response);
   if (!response.ok || state.session?.session_id !== sessionId) return;
   const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
+  const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
   state.editRevision = result.revision;
   state.editDocument = result.document;
+  resetRepairSource(previousRepairs, result.document);
   recordAcknowledgedLocals(result.document);
   loadDenoiseDocument(state.editDocument);
   if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;

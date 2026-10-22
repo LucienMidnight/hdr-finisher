@@ -326,6 +326,8 @@ def create_library_router(worker, browser, store=None):
                 from .models import RawImportSettings, SourceInterpretationOverride
                 inputs = live_recipe(document)
                 try:
+                    if inputs.get("repairs"):
+                        raise library_gpu_raw.NotEligible("CPU Inpaint repairs require the native repaired source")
                     if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
                         header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs)
                     elif Path(path).suffix.lower() == ".dng":

@@ -85,7 +85,8 @@ batch export, the photo Library, desktop packaging for three platforms.
 **V1 additions (Steve, October 21, 2026):** a healing brush in the local
 adjustment module (Retouch: Inpaint, Heal and Clone; CPU first), and hue
 selection as a local-adjustment mask. Both are
-required for v1 and not built; details belong to the [Grade PRD](modules/grade.md).
+required for v1 and the full features remain unbuilt. An interactive CPU Inpaint
+prototype is implemented; Heal and Clone remain open. Details belong to the [Grade PRD](modules/grade.md).
 
 **Out of scope (decided):** compositing and layers, pixel painting and
 retouching beyond the v1 Retouch brush, AI-based selection or generation,

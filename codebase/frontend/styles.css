@@ -9355,3 +9355,12 @@ body[data-workflow="export"] .batch-preview .batch-empty { background:var(--app)
 body.batch-export-ready :is(.export-destination-title,.export-filename-field,.export-directory-field,#export-status,#export-result,#export-confirm-button) { display:none; }
 
 img:not([src]), img[src=""] { visibility:hidden; }
+
+.retouch-panel { border-bottom:1px solid var(--border, #444); padding-bottom:12px; margin-bottom:12px; }
+.retouch-settings { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:10px 0; }
+.retouch-settings label { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.retouch-settings input { width:100%; min-width:0; box-sizing:border-box; }
+#retouch-list { padding-left:0; list-style:none; max-height:180px; overflow:auto; }
+#retouch-list li { display:flex; align-items:center; gap:6px; margin-top:5px; }
+#retouch-list li button:first-of-type { flex:1; text-align:left; }
+.retouch-panel button[aria-pressed="true"] { outline:1px solid currentColor; }

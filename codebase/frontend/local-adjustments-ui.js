@@ -202,6 +202,7 @@ async function assignToolToPending(type) {
 function bindLocalAdjustmentEvents() {
   els.gradeModeGlobal?.addEventListener("click", () => setGradeMode("global"));
   els.localToolButtons.forEach((button) => button.addEventListener("click", async () => {
+    if (typeof retouchUI !== "undefined") retouchUI.active = false;
     if (state.localPathDraft) await finishLocalPathDraft();
     if (!state.session) {
       status.post({ id: "edit", severity: "attention", message: "Load an image before creating a local adjustment." });
@@ -475,6 +476,7 @@ function bindLocalAdjustmentEvents() {
     queueLocalMaskOverlayRender();
   });
   bindLocalMaskCanvas();
+  bindRetouchEvents();
 }
 
 function setGradeMode(mode) {
@@ -631,6 +633,7 @@ function appendInlineLocalRenameEditor(item, local) {
 }
 
 function renderLocalAdjustments() {
+  renderRetouchControls();
   if (!els.localAdjustmentList) return;
   const locals = localAdjustments();
   if (!state.selectedLocalId && locals.length) state.selectedLocalId = locals[0].id;

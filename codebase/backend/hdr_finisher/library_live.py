@@ -29,6 +29,7 @@ def recipe(document):
         "raw_import_settings": document.get("source", {}).get("raw_import_settings") or RawImportSettings().model_dump(mode="json"),
         "interpretation_override": document.get("interpretation_override") or SourceInterpretationOverride().model_dump(mode="json"),
         "hdr_reference_white_nits": document.get("hdr_reference_white_nits", 203),
+        "repairs": document.get("repairs", []),
     }
 
 
@@ -54,9 +55,24 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
         interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]),
         hdr_reference_white_nits=inputs["hdr_reference_white_nits"])
     if document:
-        wanted = EditDocument.model_validate(document).source.fingerprint_sha256
+        saved = EditDocument.model_validate(document)
+        wanted = saved.source.fingerprint_sha256
         if wanted and wanted != source.source_fingerprint_sha256:
             raise ValueError("The source photo changed; its saved grade cannot be shown.")
+        if saved.repairs:
+            from .retouch_source import restore_repairs
+            from .sessions import _source_mip_identity
+            source.repairs = saved.repairs
+            from concurrent.futures import CancelledError
+            def checkpoint():
+                if cancelled is not None and cancelled():
+                    raise CancelledError("Library repair cancelled")
+            try:
+                restore_repairs(source, _source_mip_identity(source), checkpoint)
+            finally:
+                if source.retouch_worker is not None:
+                    source.retouch_worker.close()
+                    source.retouch_worker = None
     if progress: progress("reduction", "Reducing and storing Library pictures")
     result = None
     for size in sorted({640, 2560, edge}, reverse=True):

@@ -129,22 +129,28 @@ def _open_document(store, document, source_path, reuse_session_id):
     else:
         # Recovery/external grades may select another RAW recipe or source
         # interpretation. Preserve their existing re-open semantics.
-        payload = store.create_session(
+        session = store.prepare_session(
             resolved_source,
             original_filename=document.source.filename,
             owns_source_path=False,
             raw_import_settings=document.source.raw_import_settings,
+            interpretation_override=document.interpretation_override,
             hdr_reference_white_nits=document.hdr_reference_white_nits,
         )
-        session = store.get(payload.session_id)
-        if (
-            document.interpretation_override.color_space
-            or document.interpretation_override.transfer_function
-            or document.interpretation_override.linear_reference
-        ):
-            session = store.update_source_interpretation(payload.session_id, document.interpretation_override)
+    # Replay before replacing any live document or its last valid pixels.
+    from copy import copy
+    from .retouch_source import build_repaired_source, install_repaired_source
+    from .sessions import _source_mip_identity
+    candidate_session = copy(session)
+    candidate_session.retouch_worker = None
+    try:
+        repaired = build_repaired_source(candidate_session, document.repairs)
+    finally:
+        if candidate_session.retouch_worker is not None:
+            candidate_session.retouch_worker.close()
     session.adjustments = document.global_adjustments
     session.local_adjustments = document.local_adjustments
+    session.repairs = document.repairs
     session.denoise = document.denoise
     session.sdr_match = document.sdr_match
     session.interpretation_override = document.interpretation_override
@@ -159,6 +165,9 @@ def _open_document(store, document, source_path, reuse_session_id):
     session.redo_history.clear()
     session.history_bytes = 0
     session.render_cache.clear_adjusted()
+    install_repaired_source(session, repaired, _source_mip_identity(session))
+    if not same_decode:
+        store.activate_session(session)
     return session
 
 
@@ -188,6 +197,10 @@ def _validate_ignoring_unknown_fields(state_payload: object) -> EditDocument:
             document = EditDocument.model_validate(state_payload)
             break
         except ValidationError as error:
+            # Repair algorithms/raster versions must never silently default to
+            # a different fill when opening a saved photograph.
+            if any(item["loc"] and item["loc"][0] == "repairs" for item in error.errors()):
+                raise
             unknown = [item["loc"] for item in error.errors() if item["type"] in _FORGIVEN_ERRORS]
             removed = [location for location in unknown if _drop_field(state_payload, location)]
             if not removed:
