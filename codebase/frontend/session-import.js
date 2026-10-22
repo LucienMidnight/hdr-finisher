@@ -419,6 +419,7 @@ function renderRawImportControls(session) {
     if (els.rawHighlightGroup.dataset.sessionId !== String(session.session_id)) {
       els.rawHighlightMethod.value = highlight.method || "opposed_color_v1";
       els.rawHighlightThreshold.value = String(highlight.clipping_threshold ?? 1.0);
+      if (els.rawEdgeColourExpand) els.rawEdgeColourExpand.value = String(highlight.edge_colour_expand_percent ?? 0.5);
       els.rawHighlightGroup.dataset.sessionId = String(session.session_id);
     }
     renderRawHighlightState({ enabled: highlight.enabled !== false });
@@ -440,8 +441,25 @@ function setSourceModuleAvailability(module, available, unavailableReason) {
   module.querySelector(":scope > .disclosure-content")?.classList.add("hidden");
 }
 
+// Edge colour (prototype, October 2026). Re-developing the RAW is slow, so
+// Expand is presets plus a typed field rather than a slider.
+function rawEdgeColourExpand() {
+  const typed = Number(els.rawEdgeColourExpand?.value);
+  if (!Number.isFinite(typed) || String(els.rawEdgeColourExpand?.value ?? "").trim() === "") return 0.5;
+  return Math.min(3, Math.max(0, typed));
+}
+
 function renderRawHighlightState({ enabled }) {
   if (!els.rawHighlightGroup) return;
+  if (els.rawEdgeColourControls) {
+    els.rawEdgeColourControls.hidden = els.rawHighlightMethod.value !== "edge_colour_v1";
+    const expand = rawEdgeColourExpand();
+    els.rawEdgeColourControls.querySelectorAll("[data-edge-expand]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(Math.abs(Number(button.dataset.edgeExpand) - expand) < 1e-6));
+      button.disabled = !enabled;
+    });
+    els.rawEdgeColourExpand.disabled = !enabled;
+  }
   const modified = els.rawHighlightMethod.value !== "opposed_color_v1"
     || Math.abs(Number(els.rawHighlightThreshold.value) - 1) > 1e-8;
   els.rawHighlightBypass.classList.toggle("bypassed", !enabled);
@@ -490,6 +508,7 @@ function rawImportSettingsPayload() {
       enabled: els.rawHighlightBypass?.getAttribute("aria-pressed") === "true",
       method: els.rawHighlightMethod?.value || "opposed_color_v1",
       clipping_threshold: Number(els.rawHighlightThreshold?.value || 1.0),
+      edge_colour_expand_percent: rawEdgeColourExpand(),
     },
     lens: {
       mode: els.lensMode.value,

@@ -9257,6 +9257,10 @@ body[data-workflow="import"] #viewer-status-dock { display: none; }
 .film-stage-shortcuts { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .film-stage-shortcuts > span { font: 10px var(--mono); color: var(--muted); text-transform: uppercase; margin-right: 2px; }
 .film-stage-shortcuts > button { font-size: 11px; min-height: 24px; padding: 3px 8px; border-radius: 12px; }
+/* Edge colour prototype (RAW Highlight Reconstruction). */
+.raw-edge-colour-controls { display: grid; gap: 8px; margin-top: 8px; }
+.raw-edge-colour-controls[hidden] { display: none; }
+.raw-edge-colour-controls [data-edge-expand][aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .film-effect-tile { display: grid; gap: 8px; background: var(--raised); }
 .film-effect-tile .film-module-header { margin: 0; padding: 0; border: 0; font-family: var(--display); }
 .film-look-group .film-response-grid { padding: 0; background: transparent; border: 0; }

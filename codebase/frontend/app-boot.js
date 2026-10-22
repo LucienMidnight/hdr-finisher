@@ -608,7 +608,24 @@ function bindEvents() {
     renderRawHighlightState({ enabled });
     await applyRawImportSettings();
   });
-  els.rawHighlightMethod?.addEventListener("change", applyRawImportSettings);
+  const rawHighlightEnabled = () => els.rawHighlightBypass.getAttribute("aria-pressed") === "true";
+  els.rawHighlightMethod?.addEventListener("change", async () => {
+    renderRawHighlightState({ enabled: rawHighlightEnabled() });
+    await applyRawImportSettings();
+  });
+  // Edge colour prototype: a preset or a committed typed value re-develops once.
+  els.rawEdgeColourControls?.querySelectorAll("[data-edge-expand]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      els.rawEdgeColourExpand.value = button.dataset.edgeExpand;
+      renderRawHighlightState({ enabled: rawHighlightEnabled() });
+      await applyRawImportSettings();
+    });
+  });
+  els.rawEdgeColourExpand?.addEventListener("change", async () => {
+    els.rawEdgeColourExpand.value = String(rawEdgeColourExpand());
+    renderRawHighlightState({ enabled: rawHighlightEnabled() });
+    await applyRawImportSettings();
+  });
   els.rawHighlightThreshold?.addEventListener("input", () => {
     renderRawHighlightState({
       enabled: els.rawHighlightBypass.getAttribute("aria-pressed") === "true",
@@ -618,6 +635,7 @@ function bindEvents() {
   els.rawHighlightReset?.addEventListener("click", async () => {
     els.rawHighlightMethod.value = "opposed_color_v1";
     els.rawHighlightThreshold.value = "1";
+    if (els.rawEdgeColourExpand) els.rawEdgeColourExpand.value = "0.5";
     renderRawHighlightState({ enabled: true });
     await applyRawImportSettings();
   });

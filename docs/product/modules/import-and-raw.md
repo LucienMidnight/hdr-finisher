@@ -51,6 +51,7 @@ Rules in force:
 | Camera RAW uses a camera-linear bridge: LibRaw unpack and AHD demosaic, unity white balance through 16-bit, then float32 white balance and camera RGB to ACEScg. Opposed-colour highlight reconstruction removes magenta clipping. | 2026-09-03 |
 | **Exposure starts at zero.** RAW development is tuned so that the camera JPEG, the RAW as first shown, and Grade's starting point roughly agree. The Library's starting look must match Grade's. Every RAW grade saved before the change will look brighter or darker; no migration. The strict testing rule applies (RAW import). | Steve, 2026-10-11 |
 | Generic, not tuned to one camera. | 2026-10-09 |
+| **Edge colour reconstruction prototype** beside Opposed color (which stays): clipped areas keep their brightness but take their colour from nearby unclipped, similarly bright pixels; Expand feathers the blend past the clip line. Replaces the reverted Smooth rebuild attempt, which reshaped brightness and caused artifacts. Expand is presets plus a typed field, because each change re-develops the RAW. | Steve, 2026-10-22 |
 | **A plain SDR file starts as the file.** JPEG, PNG, BMP, TIFF and HEIC encoded for display (sRGB or BT.709 transfer, no gain map) keep the file as their SDR rendition, as gain-map files keep their base; HDR shows the same picture with its white at reference white (scene 0.18). No generated SDR and no Library lift. Matching HDR colours into SDR then asks before replacing that rendition, as for gain-map files. | Steve, 2026-10-19 |
 | A RAW's starting brightness follows how it was shot, like the camera JPEG. No per-photo automatic meter, visible or hidden. Brief: [codex-brief-raw-starting-exposure-zero](../../technical/briefs/codex-brief-raw-starting-exposure-zero-2026-10-18.md). | Steve, 2026-10-18 |
 | **Nothing that shapes the look is baked into import.** No starting tone curve, hidden or pre-set in Curves: Film Look applies its own curves, and renders and passes must start neutral too. RAW gets one fixed brightness calibration for all cameras plus brightness information the file records (such as DNG `BaselineExposure`). Contrast comes from visible tools; the start may look flatter than the camera JPEG. Brightness against the camera JPEG is judged by eye, replacing the ±1/3 EV target. A camera-like start may come later as a visible Look. | Steve, 2026-10-18 |
@@ -150,6 +151,19 @@ repair, LibRaw 0.22.1 AHD, camera RGB to ACEScg, automatic Lensfun
 correction, import gamut projection, calibration, measurements). Results and
 limits: Photo Library module, speed plan phase P. Grade's own import still
 develops on the CPU.
+
+**Edge colour prototype (October 22, built):** RAW Highlight Reconstruction
+has a second method, "Edge colour (prototype)" (`edge_colour_v1`,
+`highlight_edge_colour.py`). After opposed colour and camera-to-ACEScg
+conversion it recolours clipped areas from the nearest unclipped, similarly
+bright pixels, feathers that past the clip line by Expand (Small 0.25%,
+Medium 0.5%, Large 1.5% of the long edge, or typed 0–3%), and smooths
+brightness only in a band along the clip line, bright pixels with bright
+pixels, so dark objects in front of a light stay sharp. Tried on the sunset
+IMG_3129 and the clipped window bokeh in DSC00264: the pink/green blob blends
+in and the jagged clip edge goes. Limits: camera RAW on the camera-linear
+bridge only; takes the CPU route (the GPU raw route still accepts only
+Opposed color); not yet reviewed by Steve in the app.
 
 **Not built**
 

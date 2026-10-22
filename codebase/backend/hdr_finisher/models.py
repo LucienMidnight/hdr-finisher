@@ -956,8 +956,12 @@ class RawHighlightReconstructionSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    method: Literal["opposed_color_v1"] = "opposed_color_v1"
+    # "edge_colour_v1" (prototype, October 2026) runs opposed colour, then
+    # recolours clipped areas from their surroundings (highlight_edge_colour.py).
+    method: Literal["opposed_color_v1", "edge_colour_v1"] = "opposed_color_v1"
     clipping_threshold: float = Field(default=1.0, ge=0.5, le=1.5, allow_inf_nan=False)
+    # Edge colour only: how far the blend reaches past the clip line, as % of the long edge.
+    edge_colour_expand_percent: float = Field(default=0.5, ge=0.0, le=3.0, allow_inf_nan=False)
 
 
 class RawImportSettings(BaseModel):

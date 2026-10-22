@@ -40,6 +40,8 @@ LIBRAW_MATRIX_REFERENCE_WHITE_D65 = np.asarray(
 CAMERA_LINEAR_PIPELINE = "camera_linear_float_bridge_opposed_v2"
 LEGACY_RAW_PIPELINE = "legacy_libraw_aces_fallback_v1"
 OPPOSED_COLOR_METHOD = "opposed_color_v1"
+# Prototype: opposed colour, then edge-colour recolouring of clipped areas.
+EDGE_COLOUR_METHOD = "edge_colour_v1"
 OPPOSED_COLOR_ALGORITHM_VERSION = "hdr-finisher-opposed-color-v1"
 OPPOSED_COLOR_THRESHOLD_SAFETY = 0.987
 
@@ -331,11 +333,33 @@ def _apply_raw_corrections(
             decoded.developed, decoded.bridge_metadata, cancelled=cancelled
         )
         decoded.developed = np.empty((0,), dtype=np.uint16)
+        highlights = settings.highlight_reconstruction
+        edge_colour = highlights.enabled and highlights.method == EDGE_COLOUR_METHOD
+        # Measured before conversion, which happens in place: the brightest
+        # camera channel against the opposed-colour clipping level.
+        clip_ratio = (
+            np.max(camera_linear, axis=-1)
+            / np.float32(highlights.clipping_threshold * OPPOSED_COLOR_THRESHOLD_SAFETY)
+            if edge_colour
+            else None
+        )
         if progress:
             progress("color_conversion", "Applying RAW white balance and converting camera RGB to ACEScg")
         image = _camera_rgb_to_acescg_float32(
             camera_linear, decoded.bridge_metadata, cancelled=cancelled
         )
+        if edge_colour:
+            from .highlight_edge_colour import reconstruct_edge_colour
+
+            _raise_if_cancelled(cancelled)
+            if progress:
+                progress("highlight_edge_colour", "Blending clipped highlights into their surroundings")
+            image, edge_diagnostics = reconstruct_edge_colour(
+                image, clip_ratio, highlights.edge_colour_expand_percent
+            )
+            del clip_ratio
+            if decoded.highlight_reconstruction_diagnostics is not None:
+                decoded.highlight_reconstruction_diagnostics["edge_colour"] = edge_diagnostics
     else:
         aces2065 = np.asarray(decoded.developed).astype(np.float32)
         aces2065 *= np.float32(1.0 / 65535.0)
@@ -675,7 +699,7 @@ def _apply_raw_highlight_reconstruction(
     if not configuration.enabled:
         diagnostics["reason"] = "bypassed_in_raw_recipe"
         return diagnostics
-    if configuration.method != OPPOSED_COLOR_METHOD:
+    if configuration.method not in (OPPOSED_COLOR_METHOD, EDGE_COLOUR_METHOD):
         raise RawImportError(
             f"Unsupported RAW highlight reconstruction method {configuration.method!r}."
         )
