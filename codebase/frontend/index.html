@@ -945,13 +945,18 @@
             </div>
             <div class="control-row select-control" data-control-path="hdr.highlight_compression_color_handling">
               <div class="control-heading">
-                <label class="tooltip-trigger" for="hdr-compression-color" data-tooltip="Smooth color rolloff gently compresses each Rec.2020 channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white.">Highlight Color</label>
+                <label class="tooltip-trigger" for="hdr-compression-color" data-tooltip="Smooth color rolloff gently compresses each Rec.2020 channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white. Attenuate (prototype) fades bright colours gradually toward white, AgX-style.">Highlight Color</label>
               </div>
               <select id="hdr-compression-color" data-path="hdr.highlight_compression_color_handling">
                 <option value="smooth_rolloff">Smooth color rolloff</option>
                 <option value="preserve_color">Preserve color</option>
                 <option value="path_to_white">Neutralize peak</option>
+                <option value="agx_attenuate">Attenuate (AgX-style, prototype)</option>
               </select>
+            </div>
+            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_attenuation">
+              <div class="control-heading"><label class="tooltip-trigger" for="hdr-compression-attenuation" data-tooltip="How strongly bright colours fade toward white as they are compressed. 0% matches Smooth color rolloff.">Attenuation</label><output data-value-path="hdr.highlight_compression_attenuation">20%</output></div>
+              <input id="hdr-compression-attenuation" type="range" min="0" max="50" step="1" value="20" data-path="hdr.highlight_compression_attenuation">
             </div>
             <div class="control-row featured-control" data-control-path="hdr.highlight_compression_peak_detail">
               <div class="control-heading"><label for="hdr-compression-detail">Highlight Detail</label><output data-value-path="hdr.highlight_compression_peak_detail">35%</output></div>
@@ -1142,7 +1147,11 @@
             </div>
             <div class="control-row select-control" data-control-path="sdr.highlight_compression_color_handling">
               <div class="control-heading"><label class="tooltip-trigger" for="sdr-compression-color" data-tooltip="Smooth color rolloff gently compresses each sRGB channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white.">Highlight Color</label></div>
-              <select id="sdr-compression-color" data-path="sdr.highlight_compression_color_handling"><option value="smooth_rolloff">Smooth color rolloff</option><option value="preserve_color">Preserve color</option><option value="path_to_white">Neutralize peak</option></select>
+              <select id="sdr-compression-color" data-path="sdr.highlight_compression_color_handling"><option value="smooth_rolloff">Smooth color rolloff</option><option value="preserve_color">Preserve color</option><option value="path_to_white">Neutralize peak</option><option value="agx_attenuate">Attenuate (AgX-style, prototype)</option></select>
+            </div>
+            <div class="control-row featured-control" data-control-path="sdr.highlight_compression_attenuation">
+              <div class="control-heading"><label class="tooltip-trigger" for="sdr-compression-attenuation" data-tooltip="How strongly bright colours fade toward white as they are compressed. 0% matches per-channel rolloff.">Attenuation</label><output data-value-path="sdr.highlight_compression_attenuation">20%</output></div>
+              <input id="sdr-compression-attenuation" type="range" min="0" max="50" step="1" value="20" data-path="sdr.highlight_compression_attenuation">
             </div>
             <div class="control-row featured-control" data-control-path="sdr.highlight_compression_peak_detail">
               <div class="control-heading"><label for="sdr-compression-detail">Highlight Detail</label><output data-value-path="sdr.highlight_compression_peak_detail">35%</output></div>

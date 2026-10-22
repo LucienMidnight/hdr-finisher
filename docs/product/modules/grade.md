@@ -46,6 +46,7 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | Retouch starts on the CPU, preserving a fallback for later GPU work. Inpaint is the default, targeting PatchMatch with Krita as the main reference; Heal follows darktable/GIMP and Clone shares the brush infrastructure. See the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026). Quality/performance are not yet validated. | Steve, 2026-10-21 |
 | Retouch repairs are shared by HDR/SDR and run before crop/rotation and denoise. Content-dependent selections see the repaired source. After repair changes, show Rematch required and retain existing SDR Match controls until an explicit Rematch. The current Match materializes editable controls, not a separate baked photo; imported authored SDR remains independent until explicitly replaced through Match. | Steve, 2026-10-22 |
 | The inspected v3 PatchMatch examples are accepted for proceeding with implementation. Skip further natural-dust study work; Steve will test natural dust manually when the tool and settings exist. This is not general photographic validation. | Steve, 2026-10-22 |
+| Smoother sun and bright-sky gradients: prototype an AgX-style **Attenuate** Highlight Color mode beside the existing modes so Steve can switch between them, with an Attenuation control; the existing modes stay. Judged by eye on HDR crops (sunset IMG_3129), not by hue metrics. | Steve, 2026-10-22 |
 | Slider drags make one undo step per gesture. | 2026-08 |
 | Only the current project schema is accepted; older projects are rejected with a message. No migration before 1.0. | 2026-10 |
 
@@ -135,6 +136,13 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   are still read is unconfirmed.
 - Save state shows beside the photo name. The dot on the Grade tab when
   seen from the Library is missing.
+- **Attenuate (AgX-style) Highlight Color, prototype (October 22):** built
+  for HDR and SDR on CPU and WebGPU, with Attenuation 0–50% (default 20%;
+  0% equals per-channel rolloff). GPU matches the CPU within the existing
+  parity tolerance (`tests/highlight-attenuate-parity.js`). Open: Steve's
+  judgement on real photos, whether it becomes the default, and the SDR look
+  (not reviewed). See the
+  [technical reference](../../technical/highlight-compression.md#attenuate-agx-style-prototype).
 
 ## 5. Open work, in order
 

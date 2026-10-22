@@ -874,6 +874,44 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let mapped = w * (1.0 - w) * (1.0 - w) * m0 + w * w * (3.0 - 2.0 * w) + w * w * (w - 1.0) * m1;
       return exp2(effectiveStartStop + stopSpan * mapped);
     }
+    // AgX-style Attenuate (prototype): mirrors _agx_attenuate in adjustments.py.
+    // Mix toward luminance, re-gain so the brightest channel is unchanged,
+    // shoulder each channel, then restore the mix only where little was
+    // compressed. Uncompressed pixels return exactly as they came in.
+    fn agxAttenuate(
+      working: vec3f,
+      weights: vec3f,
+      inset: f32,
+      effectiveStart: f32,
+      effectiveStartStop: f32,
+      peakStop: f32,
+      curveBias: f32,
+      stopSpan: f32,
+      m0: f32,
+      m1: f32,
+      compressionSpanStops: f32
+    ) -> vec3f {
+      let s = clamp(inset, 0.0, 0.5);
+      let mixedRaw = working * (1.0 - s) + vec3f(s * dot(working, weights));
+      let workingPeak = max(max(working.r, working.g), working.b);
+      var gain = 1.0;
+      if (workingPeak > 0.0) { gain = workingPeak / max(max(max(mixedRaw.r, mixedRaw.g), mixedRaw.b), 1e-12); }
+      let mixed = mixedRaw * gain;
+      var mapped = vec3f(
+        peakFitChannel(mixed.r, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
+        peakFitChannel(mixed.g, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
+        peakFitChannel(mixed.b, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1)
+      );
+      let mixedPeak = max(max(max(mixed.r, mixed.g), mixed.b), 1e-12);
+      let mappedPeak = max(max(max(mapped.r, mapped.g), mapped.b), 1e-12);
+      let compression = log2(mixedPeak / mappedPeak);
+      let restore = 1.0 - smoothstep(0.0, max(compressionSpanStops, 1e-6), compression);
+      if (s > 0.0) {
+        let outset = (mapped - vec3f(s * dot(mapped, weights))) / ((1.0 - s) * gain);
+        mapped = mapped + restore * (outset - mapped);
+      }
+      return mapped;
+    }
     fn hdrPeakFitBlend(input: vec3f, mapped: vec3f, activation: f32) -> vec3f {
       if (max(max(abs(input.r),abs(input.g)),abs(input.b)) > 32752.0
           && p[${GPU_PARAMS.FILM_STOCK_SLOT}] > 0.5) {
@@ -928,6 +966,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let stopSpan = targetStop - effectiveStartStop;
       let m0 = (peakStop - effectiveStartStop) / max(stopSpan * (1.0 + curveBias), 0.000001);
       let m1 = p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}] * (peakStop - effectiveStartStop) / max(stopSpan * (1.0 - curveBias), 0.000001);
+      if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 2.5) {
+        let attenuated = agxAttenuate(
+          transport, vec3f(0.2627, 0.6780, 0.0593), p[${GPU_PARAMS.HIGHLIGHT_ATTENUATION}],
+          effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1, peakStop - targetStop
+        );
+        return mix(input, bt2020ToAcescg(attenuated), peakFitActivation);
+      }
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 1.5) {
         let mappedTransport = vec3f(
           peakFitChannel(transport.r, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
@@ -995,6 +1040,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let stopSpan = -effectiveStartStop;
       let m0 = sourceSpan / max(stopSpan * (1.0 + curveBias), 0.000001);
       let m1 = p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}] * sourceSpan / max(stopSpan * (1.0 - curveBias), 0.000001);
+      if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 2.5) {
+        return agxAttenuate(
+          input, vec3f(0.2126, 0.7152, 0.0722), p[${GPU_PARAMS.HIGHLIGHT_ATTENUATION}],
+          effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1, peakStop
+        );
+      }
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 1.5) {
         let perChannel = vec3f(
           peakFitChannel(input.r, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),

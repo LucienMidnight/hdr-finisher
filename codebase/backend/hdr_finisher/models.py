@@ -416,7 +416,12 @@ class _BranchAdjustments(BaseModel):
     highlight_compression_peak_measurement: Literal["maximum", "robust", "manual"] = "maximum"
     highlight_compression_peak_detail: float = Field(default=35.0, ge=0.0, le=100.0)
     highlight_compression_bias: float = Field(default=0.0, ge=-100.0, le=100.0)
-    highlight_compression_color_handling: Literal["smooth_rolloff", "preserve_color", "path_to_white"] = "smooth_rolloff"
+    highlight_compression_color_handling: Literal[
+        "smooth_rolloff", "preserve_color", "path_to_white", "agx_attenuate"
+    ] = "smooth_rolloff"
+    # Prototype (Oct 2026): AgX-style "Attenuate" colour handling. Percentage
+    # of each channel mixed toward neutral before the per-channel shoulder.
+    highlight_compression_attenuation: float = Field(default=20.0, ge=0.0, le=50.0)
     tone_equalizer_nodes: list[ToneEqualizerNode] = Field(
         default_factory=_default_tone_equalizer_nodes,
         min_length=2,
@@ -504,7 +509,8 @@ class HDRAdjustments(_BranchAdjustments):
         "highlight_compression_softness", "highlight_compression_mode",
         "highlight_compression_peak_measurement", "highlight_compression_source_peak_nits",
         "highlight_compression_manual_peak_nits", "highlight_compression_peak_detail",
-        "highlight_compression_bias", "highlight_compression_color_handling", "shadow_lift",
+        "highlight_compression_bias", "highlight_compression_color_handling",
+        "highlight_compression_attenuation", "shadow_lift",
         *_COMMON_TONE_FIELD_ORDER,
         *_CURVE_FIELD_ORDER,
     )
@@ -545,6 +551,7 @@ class SDRAdjustments(_BranchAdjustments):
         "highlight_compression_peak_measurement", "highlight_compression_source_peak_percent",
         "highlight_compression_manual_peak_percent", "highlight_compression_peak_detail",
         "highlight_compression_bias", "highlight_compression_color_handling",
+        "highlight_compression_attenuation",
         "shadow",
         *_COMMON_TONE_FIELD_ORDER,
         *_CURVE_FIELD_ORDER,

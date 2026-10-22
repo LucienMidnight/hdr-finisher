@@ -864,6 +864,17 @@
       }
     },
     {
+      "path": "tests/highlight-attenuate-parity.js",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "Attenuate (AgX-style) highlight colour handling: WebGPU preview matches the CPU export in HDR and SDR.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
       "path": "tests/gpu-param-layout-audit.js",
       "areas": [
         "preview"

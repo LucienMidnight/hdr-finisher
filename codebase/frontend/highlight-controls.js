@@ -25,7 +25,7 @@ function syncHighlightCompressionSourcePeak() {
   const analysis = state.session?.analysis;
   const colorHandling = hdr.highlight_compression_color_handling || "smooth_rolloff";
   let linear;
-  if (colorHandling === "smooth_rolloff") {
+  if (colorHandling === "smooth_rolloff" || colorHandling === "agx_attenuate") {
     linear = hdr.highlight_compression_peak_measurement === "robust"
       ? (analysis?.robust_peak_bt2020_linear ?? analysis?.peak_bt2020_linear ?? analysis?.robust_peak_linear ?? analysis?.peak_linear)
       : (analysis?.peak_bt2020_linear ?? analysis?.peak_linear);
@@ -118,6 +118,8 @@ function renderHighlightCompressionControls() {
   document.querySelector('[data-control-path="hdr.highlight_compression_softness"]')?.toggleAttribute("hidden", mode !== "soft_ceiling");
   document.querySelector('[data-control-path="hdr.highlight_compression_peak_detail"]')?.toggleAttribute("hidden", mode !== "peak_fit");
   document.querySelector('[data-control-path="hdr.highlight_compression_color_handling"]')?.toggleAttribute("hidden", mode !== "peak_fit");
+  document.querySelector('[data-control-path="hdr.highlight_compression_attenuation"]')?.toggleAttribute(
+    "hidden", mode !== "peak_fit" || hdr.highlight_compression_color_handling !== "agx_attenuate");
   document.querySelector('[data-control-path="hdr.highlight_compression_peak_measurement"]')?.toggleAttribute("hidden", mode === "clip");
   document.querySelector('[data-control-path="hdr.highlight_compression_bias"]')?.toggleAttribute("hidden", mode !== "peak_fit");
   document.querySelector('[data-control-path="hdr.highlight_compression_manual_peak_nits"]')?.toggleAttribute("hidden", hdr.highlight_compression_peak_measurement !== "manual");
@@ -173,7 +175,9 @@ function renderHighlightCompressionControls() {
     const info = peakFitCurveInfo(hdr);
     const effective = 2 ** info.effectiveStartStop;
     const adjusted = effective < Number(hdr.highlight_compression_start_nits) * 0.99;
-    const colorNote = hdr.highlight_compression_color_handling === "path_to_white"
+    const colorNote = hdr.highlight_compression_color_handling === "agx_attenuate"
+      ? `; bright colours fade gradually toward white (Attenuation ${Math.round(hdr.highlight_compression_attenuation ?? 20)}%)`
+      : hdr.highlight_compression_color_handling === "path_to_white"
       ? "; RGB channels are grouped and converge to neutral white"
       : hdr.highlight_compression_color_handling === "preserve_color"
         ? "; color ratios are preserved"
@@ -232,6 +236,8 @@ function renderSdrHighlightCompressionControls() {
   document.querySelector('[data-control-path="sdr.highlight_compression_softness"]')?.toggleAttribute("hidden", mode !== "soft_ceiling");
   document.querySelector('[data-control-path="sdr.highlight_compression_peak_detail"]')?.toggleAttribute("hidden", mode !== "peak_fit");
   document.querySelector('[data-control-path="sdr.highlight_compression_color_handling"]')?.toggleAttribute("hidden", mode !== "peak_fit");
+  document.querySelector('[data-control-path="sdr.highlight_compression_attenuation"]')?.toggleAttribute(
+    "hidden", mode !== "peak_fit" || sdr.highlight_compression_color_handling !== "agx_attenuate");
   document.querySelector('[data-control-path="sdr.highlight_compression_manual_peak_percent"]')?.toggleAttribute("hidden", sdr.highlight_compression_peak_measurement !== "manual");
 
   const curve = sdrHighlightCurveAdapter(sdr);
@@ -270,7 +276,9 @@ function renderSdrHighlightCompressionControls() {
   }
   context.stroke(); context.lineWidth = 1;
   if (els.sdrHighlightCompressionSummary) {
-    const colorNote = sdr.highlight_compression_color_handling === "path_to_white"
+    const colorNote = sdr.highlight_compression_color_handling === "agx_attenuate"
+      ? ` Bright colours fade gradually toward white (Attenuation ${Math.round(sdr.highlight_compression_attenuation ?? 20)}%).`
+      : sdr.highlight_compression_color_handling === "path_to_white"
       ? " Brightest highlights converge to neutral white."
       : sdr.highlight_compression_color_handling === "preserve_color"
         ? " Color ratios are preserved."

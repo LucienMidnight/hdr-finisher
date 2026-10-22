@@ -86,9 +86,9 @@ def starting_adjustments(analysis, reference=None, white=203):
 def sync_highlight_source_peaks(adjustments, analysis, reference, white):
     hdr = adjustments.hdr
     color_handling = hdr.highlight_compression_color_handling
-    grouped_channels = color_handling in {"smooth_rolloff", "path_to_white"}
+    grouped_channels = color_handling in {"smooth_rolloff", "path_to_white", "agx_attenuate"}
     robust = hdr.highlight_compression_peak_measurement == "robust"
-    if color_handling == "smooth_rolloff":
+    if color_handling in {"smooth_rolloff", "agx_attenuate"}:
         measured = analysis.robust_peak_bt2020_linear if robust else analysis.peak_bt2020_linear
     elif grouped_channels:
         measured = analysis.robust_peak_linear if robust else analysis.peak_linear

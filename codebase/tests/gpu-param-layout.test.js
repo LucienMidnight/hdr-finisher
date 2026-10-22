@@ -15,8 +15,9 @@ test('the global parameter list preserves all 198 names and original positions',
  assert.equal(layout.count,198);
  assert.equal(new Set(layout.fields.map(f=>f.name)).size,198);
  assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:198},(_,i)=>i));
- assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.map(({name,index})=>[name,index]))).digest('hex'),'1103db645a61d3df6876c5f599e753cf012375e84f2bfc48ef4c6cd2425762cc');
- assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,60,83,84,87,94,96,143,144,145,146,147]);
+ assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.map(({name,index})=>[name,index]))).digest('hex'),'042c6880017aaac098db5e98cede8422189d052677e4a81735b0d4d7ad4d4711');
+ // Position 60 became HIGHLIGHT_ATTENUATION (AgX-style Attenuate prototype, Oct 2026).
+ assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,83,84,87,94,96,143,144,145,146,147]);
  assert.deepEqual(layout.fields.filter(f=>f.hostOnly).map(f=>f.name),['DETAIL_ENABLED']);
  assert.ok(Object.isFrozen(layout)&&Object.isFrozen(layout.indices)&&Object.isFrozen(layout.fields));
  assert.ok(layout.fields.every(Object.isFrozen));
@@ -39,7 +40,7 @@ test('the use guard catches a JavaScript write without a shader read',()=>{
 
 test('the use guard rejects unknown names and reserved positions',()=>{
  assert.throws(()=>audit([...sources,'params[GPU_PARAMS.UNKNOWN_SETTING] = 0;']),/Unknown parameter UNKNOWN_SETTING/);
- assert.ok(audit([...sources,'params[GPU_PARAMS.RESERVED_60] = 0;']).errors.includes('RESERVED_60 is reserved but used'));
+ assert.ok(audit([...sources,'params[GPU_PARAMS.RESERVED_83] = 0;']).errors.includes('RESERVED_83 is reserved but used'));
 });
 
 test('the global position list loads before the consumers in the page',()=>{

@@ -87,6 +87,16 @@ SDR adds a hue-keeping form on top of the per-channel mapping. Mapping each line
 
 This mode intentionally handles saturated blue, red, or green highlights whose ACEScg luminance is below Start but whose individual channel exceeds the target. That case was the reason channel grouping could not remain a post-luminance correction.
 
+### Attenuate (AgX-style, prototype)
+
+Added October 22, 2026 after the sunset feedback (IMG_3129): Smooth color rolloff squeezes the dominant channel first, so an orange glow swings yellow near the sun and shows hue rings.
+
+- Signal and measurement: the same as Smooth color rolloff (brightest BT.2020 channel for HDR, brightest linear-sRGB channel for SDR). Peak analysis, sync and the GPU anchor treat the two modes alike.
+- Mapping (`_agx_attenuate`, WGSL `agxAttenuate`): mix each channel toward the pixel's luminance by Attenuation (0–50%, the "inset"), re-gain so the brightest channel is unchanged, apply the Peak Fit shoulder to each channel, then undo the mix ("outset") in proportion to how little the pixel was compressed (fully restored at no compression, not at all at the measured peak's compression).
+- Consequences: uncompressed pixels are returned exactly; the measured peak still lands on Target Peak; bright colours fade gradually toward white rather than stepping through hue bands. Attenuation 0% is per-channel rolloff (HDR equals Smooth color rolloff; SDR omits Smooth's hue-keeping blend).
+- GPU parameter: position 60, `HIGHLIGHT_ATTENUATION` (fraction 0–0.5); Highlight Color code `3`.
+- Coverage: `tests/test_highlight_attenuate.py` (identity, endpoint, monotonic, gradual whitening, SDR), `tests/highlight-attenuate-parity.js` (GPU against CPU, HDR and SDR).
+
 ## Source peak choices
 
 - **Measured maximum** uses the exact signal maximum appropriate to Highlight Color.

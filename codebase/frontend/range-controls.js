@@ -511,6 +511,7 @@ function formatControlValue(path, value) {
     return `${Number.isInteger(numeric) ? numeric.toFixed(0) : numeric.toFixed(1)}%`;
   }
   if (path.endsWith("highlight_compression_peak_detail")) return `${Math.round(numeric)}%`;
+  if (path.endsWith("highlight_compression_attenuation")) return `${Math.round(numeric)}%`;
   if (path.endsWith("highlight_compression_bias")) return `${numeric > 0 ? "+" : ""}${Math.round(numeric)}`;
   if (path.endsWith("_range") || (path.endsWith("_pivot") && !path.endsWith("contrast_pivot"))) return `${numeric.toFixed(2)} EV`;
   if (path === "shared.overlay_opacity") return `${Math.round(numeric * 100)}%`;

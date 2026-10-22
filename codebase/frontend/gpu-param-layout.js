@@ -65,7 +65,7 @@
     Object.freeze({ name: "GAMMA_RANGE", index: 57 }),
     Object.freeze({ name: "GAIN_PIVOT", index: 58 }),
     Object.freeze({ name: "GAIN_RANGE", index: 59 }),
-    Object.freeze({ name: "RESERVED_60", index: 60, reserved: true }),
+    Object.freeze({ name: "HIGHLIGHT_ATTENUATION", index: 60 }),
     Object.freeze({ name: "PRIMARIES_MATRIX_00", index: 61 }),
     Object.freeze({ name: "PRIMARIES_MATRIX_01", index: 62 }),
     Object.freeze({ name: "PRIMARIES_MATRIX_02", index: 63 }),

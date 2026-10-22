@@ -322,8 +322,11 @@
     params[GPU_PARAMS.FILM_FINISH_STRENGTH] = filmEnabled ? (film.look_strength ?? 100) / 100 : 0;
     // Viewer-only diagnostic.
     params[GPU_PARAMS.GRAIN_VIEW_MAP] = film.grain_view_map ? 1 : 0;
-    params[GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING] = branch.highlight_compression_color_handling === "smooth_rolloff" ? 2
+    params[GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING] = branch.highlight_compression_color_handling === "agx_attenuate" ? 3
+      : branch.highlight_compression_color_handling === "smooth_rolloff" ? 2
       : branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
+    // Attenuate's inset fraction, clamped like the CPU (0..0.5).
+    params[GPU_PARAMS.HIGHLIGHT_ATTENUATION] = Math.min(Math.max((branch.highlight_compression_attenuation ?? 20) / 100, 0), 0.5);
     const grading = branch.color_grading || {};
     params[GPU_PARAMS.COLOR_GRADING_ENABLED] = branch.color_grading_section_enabled !== false ? 1 : 0;
     params[GPU_PARAMS.COLOR_GRADING_BLENDING] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;

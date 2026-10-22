@@ -18,7 +18,8 @@ HDR_FIELD_ORDER = (
     "highlight_compression_mode", "highlight_compression_peak_measurement",
     "highlight_compression_source_peak_nits", "highlight_compression_manual_peak_nits",
     "highlight_compression_peak_detail", "highlight_compression_bias",
-    "highlight_compression_color_handling", "shadow_lift", "tone_equalizer_nodes",
+    "highlight_compression_color_handling", "highlight_compression_attenuation",
+    "shadow_lift", "tone_equalizer_nodes",
     "tone_equalizer_influence_radius", "tone_equalizer_smoothing", "lift", "gamma", "gain",
     "lift_pivot", "lift_range", "gamma_pivot", "gamma_range", "gain_pivot", "gain_range",
     "contrast", "contrast_pivot", "white_balance_kelvin", "tint", "saturation", "vibrance",
@@ -36,7 +37,7 @@ SDR_FIELD_ORDER = (
     "highlight_compression_mode", "highlight_compression_peak_measurement",
     "highlight_compression_source_peak_percent", "highlight_compression_manual_peak_percent",
     "highlight_compression_peak_detail", "highlight_compression_bias",
-    "highlight_compression_color_handling", "shadow",
+    "highlight_compression_color_handling", "highlight_compression_attenuation", "shadow",
     "tone_equalizer_nodes", "tone_equalizer_influence_radius", "tone_equalizer_smoothing",
     "lift", "gamma", "gain", "lift_pivot", "lift_range", "gamma_pivot", "gamma_range",
     "gain_pivot", "gain_range", "contrast", "contrast_pivot", "white_balance_kelvin", "tint",
@@ -52,9 +53,10 @@ def test_branch_serialization_order_and_adjustment_signature_are_stable() -> Non
     assert tuple(adjustments.hdr.model_dump()) == HDR_FIELD_ORDER
     assert tuple(adjustments.sdr.model_dump()) == SDR_FIELD_ORDER
     signature = adjustment_signature(adjustments)
-    # Changed October 16, 2026: each lane now serializes stock_overrides for Phase 4.
+    # Changed October 22, 2026: each lane now serializes
+    # highlight_compression_attenuation (AgX-style Attenuate prototype).
     assert hashlib.sha256(signature.encode()).hexdigest() == (
-        "88a593ef80a45bc8cbde848333a56ecf5fc3e47a0118d15f81f348e0db71daf8"
+        "c9a3c69cd1113e192424b57056cc75bd994e5d60aacfcdcdd89d955f3f43159b"
     )
     assert AdjustmentState.model_validate(adjustments.model_dump(mode="json")) == adjustments
 

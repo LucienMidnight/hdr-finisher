@@ -34,6 +34,10 @@ SDR_SCENE_TO_DISPLAY_SCALE = np.float32(SDR_DISPLAY_REFERENCE_WHITE / SDR_SCENE_
 # moves from per-channel mapping to its hue-keeping form. Shared with WGSL.
 SDR_ROLLOFF_HUE_KEEP_START_STOPS = 0.5
 SDR_ROLLOFF_HUE_KEEP_FULL_STOPS = 2.0
+# Luminance weights of each lane's delivery primaries, used by the AgX-style
+# Attenuate colour handling. Mirrored as literals in WGSL.
+BT2020_LUMA_WEIGHTS = np.array([0.2627, 0.6780, 0.0593], dtype=np.float32)
+REC709_LUMA_WEIGHTS = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 FILM_GRAIN_GATE_DIMENSIONS_MM: dict[str, tuple[float, float]] = {
     "65mm": (52.63, 23.01),
     "35mm": (36.0, 24.0),
@@ -344,6 +348,7 @@ def compress_hdr_output_highlights(
         color_handling=hdr.highlight_compression_color_handling,
         reference_white_nits=color_context.hdr_reference_white_nits,
         clip_transport_max=anchor.hdr_clip_transport_max if anchor is not None else None,
+        attenuation=hdr.highlight_compression_attenuation,
     )
 
 
@@ -660,7 +665,7 @@ def hdr_highlight_peak_signal(tone_adjusted_image: np.ndarray, hdr: object) -> n
     if measurement == "manual":
         return None
     color_handling = str(getattr(hdr, "highlight_compression_color_handling", "smooth_rolloff"))
-    if color_handling == "smooth_rolloff":
+    if color_handling in ("smooth_rolloff", "agx_attenuate"):
         transport = acescg_to_linear_bt2020(tone_adjusted_image)
         signal = np.max(transport, axis=-1)
         np.maximum(signal, np.float32(0.0), out=signal)
@@ -1181,7 +1186,7 @@ def sdr_highlight_peak_signal(display_linear: np.ndarray, sdr: object) -> np.nda
     if str(getattr(sdr, "highlight_compression_peak_measurement", "maximum")) == "manual":
         return None
     color_handling = str(getattr(sdr, "highlight_compression_color_handling", "smooth_rolloff"))
-    if color_handling in ("smooth_rolloff", "path_to_white"):
+    if color_handling in ("smooth_rolloff", "path_to_white", "agx_attenuate"):
         return np.max(np.clip(display_linear, 0.0, None), axis=-1)
     return np.clip(_linear_luma(display_linear), 0.0, None)
 
@@ -1247,6 +1252,64 @@ def _peak_fit_progress(signal: np.ndarray, params: _PeakFitParameters) -> tuple[
     u = np.clip((input_stop - params.effective_start_stop) / params.source_span, 0.0, 1.0)
     w = np.clip(u + params.curve_bias * u * (1.0 - u), 0.0, 1.0)
     return u, w
+
+
+def _peak_fit_map(signal: np.ndarray, params: _PeakFitParameters) -> np.ndarray:
+    """The Peak Fit shoulder for any signal; identity at or below the effective start."""
+    _, w = _peak_fit_progress(signal, params)
+    mapped_normalized = (
+        w * (1.0 - w) * (1.0 - w) * params.normalized_start_slope
+        + w * w * (3.0 - 2.0 * w)
+        + w * w * (w - 1.0) * params.normalized_end_slope
+    )
+    mapped = np.exp2(params.effective_start_stop + params.stop_span * mapped_normalized)
+    return np.where(signal > params.effective_start, mapped, signal).astype(np.float32, copy=False)
+
+
+def _agx_attenuate(
+    working: np.ndarray,
+    luminance_weights: np.ndarray,
+    attenuation_percent: float,
+    params: _PeakFitParameters,
+    compression_span_stops: float,
+) -> np.ndarray:
+    """AgX-style highlight attenuation (prototype, October 2026).
+
+    Mix each channel part of the way toward the pixel's luminance (the
+    "inset"), run the Peak Fit shoulder on each channel there, then undo the
+    mix ("outset") only where the pixel was barely compressed. Channels then
+    approach the shoulder together, so bright colours fade gradually toward
+    white instead of stepping through hue bands, while uncompressed pixels
+    come back exactly as they were.
+
+    ``working`` is linear RGB in the lane's delivery primaries and
+    ``compression_span_stops`` is the measured peak's distance above target.
+    """
+    inset = np.float32(min(max(float(attenuation_percent) / 100.0, 0.0), 0.5))
+    weights = luminance_weights.astype(np.float32)
+    luma = np.einsum("...c,c->...", working, weights)[..., None]
+    mixed = working * (np.float32(1.0) - inset) + inset * luma
+    # Keep the brightest channel where it was, so the measured peak still
+    # lands exactly on target; the restore below divides this gain back out.
+    working_peak = np.max(working, axis=-1, keepdims=True)
+    gain = np.where(
+        working_peak > 0.0,
+        working_peak / np.maximum(np.max(mixed, axis=-1, keepdims=True), np.float32(1e-12)),
+        np.float32(1.0),
+    ).astype(np.float32)
+    mixed *= gain
+    mapped = np.empty_like(mixed)
+    for channel in range(3):
+        mapped[..., channel] = _peak_fit_map(mixed[..., channel], params)
+    mixed_peak = np.maximum(np.max(mixed, axis=-1), np.float32(1e-12))
+    mapped_peak = np.maximum(np.max(mapped, axis=-1), np.float32(1e-12))
+    compression = np.log2(mixed_peak / mapped_peak)
+    restore = np.float32(1.0) - _smoothstep(0.0, max(float(compression_span_stops), 1e-6), compression)
+    if inset > 0.0:
+        mapped_luma = np.einsum("...c,c->...", mapped, weights)[..., None]
+        outset = (mapped - inset * mapped_luma) / ((np.float32(1.0) - inset) * gain)
+        mapped = mapped + restore[..., None] * (outset - mapped)
+    return mapped.astype(np.float32, copy=False)
 
 
 def _peak_fit_ratio_application(
@@ -1336,10 +1399,11 @@ def _compress_sdr_highlights(
         color_handling = str(getattr(sdr, "highlight_compression_color_handling", "smooth_rolloff"))
         smooth_rolloff = color_handling == "smooth_rolloff"
         grouped_channels = color_handling == "path_to_white"
+        attenuate = color_handling == "agx_attenuate"
         measured_signal = sdr_highlight_peak_signal(result, sdr)
         compression_signal = (
             np.max(np.clip(result, 0.0, None), axis=-1)
-            if smooth_rolloff or grouped_channels
+            if smooth_rolloff or grouped_channels or attenuate
             else positive_luma
         )
         measurement = str(getattr(sdr, "highlight_compression_peak_measurement", "maximum"))
@@ -1387,6 +1451,17 @@ def _compress_sdr_highlights(
                 params.effective_start_stop + params.stop_span * mapped_normalized
             ).astype(np.float32)
             return np.where(signal > params.effective_start, mapped, signal), u
+
+        if attenuate:
+            mapped = _agx_attenuate(
+                result,
+                REC709_LUMA_WEIGHTS,
+                float(getattr(sdr, "highlight_compression_attenuation", 20.0)),
+                params,
+                peak_stop - target_stop,
+            )
+            active = compression_signal[..., None] > params.effective_start
+            return np.where(active, mapped, result).astype(np.float32, copy=False)
 
         if smooth_rolloff:
             # Each channel takes the shoulder alone. That leaves a small
@@ -1445,6 +1520,7 @@ def _compress_scene_highlights(
     color_handling: str = "smooth_rolloff",
     reference_white_nits: int = 203,
     clip_transport_max: float | None = None,
+    attenuation: float = 20.0,
 ) -> np.ndarray:
     """Compress luminance above ``start_nits`` smoothly toward ``target_nits``."""
     if mode == "soft_ceiling" and softness <= 0.0:
@@ -1456,7 +1532,9 @@ def _compress_scene_highlights(
         return _clip_to_output_target(
             result, target_nits, reference_white_nits, transport_max=clip_transport_max
         )
-    smooth_rolloff = mode == "peak_fit" and color_handling == "smooth_rolloff"
+    attenuate = mode == "peak_fit" and color_handling == "agx_attenuate"
+    # Attenuate measures and qualifies on the same BT.2020 channel peak.
+    smooth_rolloff = mode == "peak_fit" and color_handling == "smooth_rolloff" or attenuate
     grouped_channels = mode == "peak_fit" and color_handling == "path_to_white"
     transport = acescg_to_linear_bt2020(result) if smooth_rolloff else None
     compression_signal = (
@@ -1479,6 +1557,13 @@ def _compress_scene_highlights(
         detail = min(max(float(peak_detail) / 100.0, 0.0), 1.0)
         curve_bias = min(max(float(bias) / 100.0, -1.0), 1.0) * 0.6
         params = _peak_fit_parameters(start_stop, target_stop, peak_stop, detail, curve_bias)
+        if attenuate:
+            active = compression_signal[..., None] > params.effective_start
+            mapped_transport = _agx_attenuate(
+                transport, BT2020_LUMA_WEIGHTS, attenuation, params, peak_stop - target_stop
+            )
+            mapped_result = np.where(active, linear_bt2020_to_acescg(mapped_transport), result)
+            return (result + peak_fit_activation * (mapped_result - result)).astype(np.float32, copy=False)
         if smooth_rolloff:
             # Work on one BT.2020 channel at a time to avoid several
             # full-resolution HxWx3 curve temporaries for large RAW exports.
