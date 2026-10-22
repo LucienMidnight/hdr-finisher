@@ -256,4 +256,4 @@ If you move a photo outside the app, move its `.hdrf` file with it. A photo with
 
 - [Quick start](../getting-started/quick-start.md)
 - [Export and Delivery](export.md)
-- [Photo Library: how it works](../technical/photo-library.md) (technical detail)
+- [Photo Library: how it works](https://github.com/LucienMidnight/hdr-finisher/blob/main/docs/technical/photo-library.md) (technical detail, on GitHub)
