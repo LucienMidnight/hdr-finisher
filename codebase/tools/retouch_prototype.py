@@ -64,6 +64,15 @@ def display(image, lo, hi):
     return Image.fromarray(np.round(value * 255).astype(np.uint8))
 
 
+def detail_rms(image, mask):
+    """Diagnostic 3x3 high-pass energy, not a perceptual quality threshold."""
+    value = image.astype(np.float64)
+    p = np.pad(value, ((1, 1), (1, 1), (0, 0)), mode="edge")
+    smooth = sum(p[y:y + value.shape[0], x:x + value.shape[1]]
+                 for y in range(3) for x in range(3)) / 9
+    return float(np.sqrt(np.mean((value - smooth)[mask > 0]**2)))
+
+
 def photo_fixtures(path, crops):
     """Native-resolution real backgrounds with controlled injected dust.
 
@@ -159,20 +168,24 @@ def main():
                 adapted[mask > 0] = baseline[mask > 0] * (span / 255) + offset
                 variants["telea-scaled-float"] = adapted
             np.savez_compressed(output / f"{name}.npz", mask=mask, source_centres=patch.source_centres,
-                                target_centres=patch.target_centres, **variants)
+                                target_centres=patch.target_centres,
+                                texture_offset=np.asarray(patch.texture_offset or (), dtype=np.int32), **variants)
             clean_srgb = acescg_to_linear_srgb(clean)
             lo, hi = min(0., float(clean_srgb.min())), max(1., float(clean_srgb.max()))
-            errors = {}
+            errors, details = {}, {}
             cards = []
             for label, image in variants.items():
                 filename = f"{name}-{label}.png"
                 display(image, lo, hi).resize((384, 384), Image.Resampling.NEAREST).save(output / filename)
                 errors[label] = float(np.sqrt(np.mean((image[mask > 0].astype(np.float64) - clean[mask > 0])**2)))
+                details[label] = detail_rms(image, mask)
                 cards.append(f'<figure><figcaption>{html.escape(label)}</figcaption><img src="{filename}" alt="{name} {label}"></figure>')
             record = {"case": name, "seconds": elapsed, "masked_linear_rgb_rmse": errors,
                       "repaired_range": [float(repaired.min()), float(repaired.max())],
                       "untouched_exact": bool(np.array_equal(repaired[mask == 0], dirty[mask == 0])),
                       "tone_aligned": patch.tone_aligned,
+                      "texture_offset": patch.texture_offset,
+                      "detail_rms": details,
                       "kind": "injected dust on a real photo" if name.startswith("photo-") else "synthetic",
                       "display_range": [lo, hi]}
             records.append(record)
@@ -199,15 +212,40 @@ def main():
             with Image.open(output / f'{record["case"]}-{label}.png') as picture:
                 sheet.paste(picture.resize((144, 144)), (110 + col * 180, 35 + row * 155))
     sheet.save(output / "contact-sheet.png")
+    # Close views of the texture cases keep the already successful cases in the
+    # full sheet while making the small repaired region easy to judge.
+    texture_rows = [r for r in records if r["texture_offset"] is not None]
+    texture_columns = [c for c in ("clean", "before", "previous-patchmatch", "patchmatch") if c in columns]
+    close = Image.new("RGB", (130 + len(texture_columns) * 270, 40 + len(texture_rows) * 270), "#202327")
+    draw = ImageDraw.Draw(close)
+    for col, label in enumerate(texture_columns):
+        draw.text((130 + col * 270, 8), label, fill="white")
+    for row, record in enumerate(texture_rows):
+        draw.text((2, 45 + row * 270), record["case"], fill="white")
+        with np.load(output / f'{record["case"]}.npz') as arrays:
+            ys, xs = np.nonzero(arrays["mask"])
+            y0 = max(0, min(arrays["mask"].shape[0] - 32, int((ys.min() + ys.max()) / 2) - 16))
+            x0 = max(0, min(arrays["mask"].shape[1] - 32, int((xs.min() + xs.max()) / 2) - 16))
+            for col, label in enumerate(texture_columns):
+                if label not in arrays:
+                    continue
+                pic = display(arrays[label], *record["display_range"]).crop((x0, y0, x0 + 32, y0 + 32))
+                close.paste(pic.resize((256, 256), Image.Resampling.NEAREST), (130 + col * 270, 40 + row * 270))
+    close.save(output / "texture-comparison.png")
     (output / "index.html").write_text('''<!doctype html><meta charset="utf-8"><title>HDRF dust prototype</title>
 <style>body{font:16px system-ui;background:#202327;color:#eee;margin:24px}h1{font-size:26px}.cards{display:flex;gap:12px;flex-wrap:wrap}figure{margin:0}img{width:288px;height:288px}figcaption{padding:8px 0}section{margin:32px 0}p{max-width:950px}</style>
 <h1>CPU Inpaint: controlled dust study</h1>
 <p>Each row contains the reference, dusty input, current PatchMatch, optional previous PatchMatch and OpenCV comparisons.
+The texture update keeps one donor's detail in affected small spots and matches its boundary to the surroundings.
 All dust is synthetically injected. Optional photo crops use real native-resolution backgrounds, not confirmed natural defects.
 These enlarged SDR illustrations convert working ACEScg to linear sRGB, use one common affine range per row, and encode sRGB.
 Float HDR highlights and negatives remain intact in the .npz arrays. This is an inspection proxy, not finished HDR output.</p>
 <p>All runs use the same explicit seed and settings. <a href="results.json">Settings and diagnostic errors</a>.
-Linear RGB errors are diagnostics, not perceptual pass/fail tolerances. Timing is a single observation, not a latency guarantee.</p>'''
+Linear RGB errors and high-pass detail strength are diagnostics, not perceptual pass/fail tolerances.
+Different plausible noise samples can have higher pixel error while looking more natural.
+Timing is a single observation, not a latency guarantee.</p>
+<p><a href="texture-comparison.png">Enlarged texture comparison</a> · <a href="contact-sheet.png">All cases</a>.
+The optional previous-patchmatch column contains the baseline supplied with --baseline.</p>'''
         + "".join(sections), encoding="utf-8")
     print(json.dumps(manifest, indent=2))
     print(f"Viewer: {output / 'index.html'}")

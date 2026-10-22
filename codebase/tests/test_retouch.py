@@ -242,3 +242,116 @@ def test_colour_edge_is_not_replaced_by_smooth_ramp(axis):
     first = patch.pixels[selected & local_side].mean(axis=0)
     second = patch.pixels[selected & ~local_side].mean(axis=0)
     assert first[0] > second[0] and first[2] < second[2]
+
+
+def noisy_example(seed, colour=False):
+    rng = np.random.Generator(np.random.PCG64(seed))
+    y, x = np.mgrid[:64, :64].astype(np.float32)
+    noise = rng.normal(0, .025, (64, 64, 3 if colour else 1)).astype(np.float32)
+    clean = np.array([2., -.2, .5], np.float32) + (x + y)[..., None] * .001 + noise
+    mask = ((x - 32)**2 + (y - 32)**2 <= 49).astype(np.float32)
+    dirty = clean.copy()
+    dirty[mask > 0] *= .5
+    return RepairInput(dirty, mask), clean
+
+
+def put_patch(request, patch):
+    result = request.pixels.copy()
+    x, y = patch.origin
+    result[y:y + patch.pixels.shape[0], x:x + patch.pixels.shape[1]] = patch.pixels
+    return result
+
+
+@pytest.mark.parametrize("seed,colour", [(3, False), (71, False), (19, True)])
+def test_noise_detail_is_not_averaged_away(seed, colour):
+    request, clean = noisy_example(seed, colour)
+    patch = CpuInpaint().solve(request)
+    repaired = put_patch(request, patch)
+    assert patch.texture_offset is not None
+    np.testing.assert_array_equal(repaired[request.mask == 0], request.pixels[request.mask == 0])
+    # Adjacent differences measure fine-detail strength without requiring the
+    # donor's random samples to equal the unknowable original samples.
+    selected = (request.mask[1:] > 0) & (request.mask[:-1] > 0)
+    reference = np.sqrt(np.mean(np.diff(clean.astype(np.float64), axis=0)[selected]**2))
+    actual = np.sqrt(np.mean(np.diff(repaired.astype(np.float64), axis=0)[selected]**2))
+    assert .5 * reference <= actual <= 1.5 * reference
+    assert repaired[..., 0].max() > 1 and repaired[..., 1].min() < 0
+    dx, dy = patch.texture_offset
+    excluded = request.mask > 0
+    # The complete 21px donor context, not only its centre, must be clean.
+    assert not excluded[22 + dy:43 + dy, 22 + dx:43 + dx].any()
+    assert 0 <= 22 + dx and 43 + dx <= 64 and 0 <= 22 + dy and 43 + dy <= 64
+    repeat = CpuInpaint().solve(request)
+    np.testing.assert_array_equal(patch.pixels, repeat.pixels)
+    assert patch.texture_offset == repeat.texture_offset
+
+
+def test_texture_donor_excludes_other_defects_and_extreme_dirty_values():
+    request, _ = noisy_example(41)
+    excluded = np.zeros_like(request.mask, dtype=bool)
+    excluded[30:34, 23:25] = True  # Touches matching context, outside this repair.
+    excluded[5:14, 4:17] = True
+    request = replace(request, excluded=excluded)
+    first = CpuInpaint().solve(request)
+    assert first.texture_offset is not None
+    dirty = request.pixels.copy()
+    dirty[(request.mask > 0) | excluded] = 1e30
+    second = CpuInpaint().solve(replace(request, pixels=dirty))
+    selected = request.mask[25:40, 25:40] > 0
+    np.testing.assert_array_equal(first.pixels[selected], second.pixels[selected])
+    assert first.texture_offset == second.texture_offset
+    dx, dy = first.texture_offset
+    all_excluded = (request.mask > 0) | excluded
+    assert not all_excluded[22 + dy:43 + dy, 22 + dx:43 + dx].any()
+
+
+def test_cancel_during_texture_search():
+    request, _ = noisy_example(3)
+    calls = 0
+    def checkpoint():
+        nonlocal calls
+        calls += 1
+        if calls == 20:
+            raise CancelledError()
+    with pytest.raises(CancelledError):
+        CpuInpaint().solve(request, InpaintSettings(iterations=1), checkpoint)
+
+
+@pytest.mark.parametrize("position", [(0, 0), (0, 32), (63, 63)])
+def test_noisy_border_repair_remains_bounded_and_reproducible(position):
+    _, clean = noisy_example(13)
+    y, x = np.mgrid[:64, :64]
+    mask = ((x - position[0])**2 + (y - position[1])**2 <= 49).astype(np.float32)
+    dirty = clean.copy()
+    dirty[mask > 0] = 0
+    request = RepairInput(dirty, mask)
+    first = CpuInpaint().solve(request)
+    second = CpuInpaint().solve(request)
+    assert np.isfinite(first.pixels).all()
+    np.testing.assert_array_equal(first.pixels, second.pixels)
+    result = put_patch(request, first)
+    np.testing.assert_array_equal(result[mask == 0], dirty[mask == 0])
+    if first.texture_offset is not None:
+        dx, dy = first.texture_offset
+        ys, xs = np.nonzero(mask)
+        y0, y1 = max(0, int(ys.min()) - 3), min(64, int(ys.max()) + 4)
+        x0, x1 = max(0, int(xs.min()) - 3), min(64, int(xs.max()) + 4)
+        assert 0 <= x0 + dx and x1 + dx <= 64 and 0 <= y0 + dy and y1 + dy <= 64
+        assert not mask[y0 + dy:y1 + dy, x0 + dx:x1 + dx].any()
+
+
+def test_larger_or_source_starved_repairs_keep_valid_patchmatch_result():
+    request, _ = noisy_example(13)
+    mask = np.zeros((64, 64), np.float32)
+    mask[30:32, 15:49] = 1  # Beyond the small coherent-donor footprint.
+    larger = replace(request, mask=mask)
+    patch = CpuInpaint().solve(larger, InpaintSettings(iterations=1))
+    assert patch.texture_offset is None and np.isfinite(patch.pixels).all()
+    result = put_patch(larger, patch)
+    np.testing.assert_array_equal(result[mask == 0], larger.pixels[mask == 0])
+    # Small donors exist, but no complete 21px donor context can be clean.
+    excluded = np.ones((64, 64), dtype=bool)
+    excluded[16:26, 16:26] = False
+    starved = replace(request, excluded=excluded)
+    patch = CpuInpaint().solve(starved, InpaintSettings(iterations=1))
+    assert patch.texture_offset is None and np.isfinite(patch.pixels).all()

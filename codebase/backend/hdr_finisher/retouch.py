@@ -13,10 +13,12 @@ from typing import Callable, Protocol
 
 import numpy as np
 
-ALGORITHM = "hdrf-patchmatch-cpu-v2"
+ALGORITHM = "hdrf-patchmatch-cpu-v3"
 MAX_REGION_EDGE = 256
 MAX_DEFECT_PIXELS = 4096
 MAX_TARGET_PATCHES = 8192
+MAX_TEXTURE_EDGE = 33
+MAX_TEXTURE_CANDIDATES = 2048
 
 
 @dataclass(frozen=True)
@@ -77,10 +79,12 @@ class RepairPatch:
     """Completed replacement rectangle, already blended; no full-frame owner."""
     origin: tuple[int, int]
     pixels: np.ndarray
-    # Final nearest source centres, ROI-relative (y,x), for inspection.
+    # PatchMatch proposal centres, ROI-relative (y,x), for inspection.
+    # A coherent texture donor, when used, supersedes their detail votes.
     source_centres: np.ndarray
     target_centres: np.ndarray
     tone_aligned: bool = False
+    texture_offset: tuple[int, int] | None = None  # Native-source (dx,dy).
 
     @property
     def nbytes(self):
@@ -152,13 +156,110 @@ def _tone_guide(image, defect, excluded, radius):
     return guide, align_tone
 
 
+def _restore_texture(image, defect, excluded, baseline, align_tone, radius, seed, checkpoint):
+    """Replace averaged detail with one context-selected, contiguous donor.
+
+    This small-spot pass is gated by lost local high-frequency energy. Smooth
+    and already textured repairs retain the original reconstruction. All donor
+    context, including the area corresponding to the hole, must be clean.
+    """
+    checkpoint()
+    ys, xs = np.nonzero(defect)
+    if max(np.ptp(ys), np.ptp(xs)) + 1 > MAX_TEXTURE_EDGE:
+        return None
+    ring = (_box_sum(defect, 2 * radius + 2) > 0) & (_box_sum(excluded, 1) == 0)
+    if not ring.any():
+        return None
+    high = baseline - _patch_mean(baseline, 1)
+    inside_power = float(np.mean(high[defect] ** 2))
+    ring_power = float(np.mean(high[ring] ** 2))
+    scale = max(float(np.max(np.abs(image[~excluded]))), 1e-12)
+    if ring_power <= (scale * 1e-7)**2 or inside_power >= .5 * ring_power:
+        return None
+
+    ih, iw = defect.shape
+    y0, y1 = max(0, int(ys.min()) - radius), min(ih, int(ys.max()) + radius + 1)
+    x0, x1 = max(0, int(xs.min()) - radius), min(iw, int(xs.max()) + radius + 1)
+    h, w = y1 - y0, x1 - x0
+    integral = np.pad(excluded.astype(np.int32), ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+    counts = integral[h:, w:] - integral[:-h, w:] - integral[h:, :-w] + integral[:-h, :-w]
+    candidates = np.argwhere(counts == 0)
+    if not len(candidates):
+        return None  # PatchMatch's smaller donors remain usable.
+    rng = np.random.Generator(np.random.PCG64(seed))
+    if len(candidates) > MAX_TEXTURE_CANDIDATES:
+        candidates = candidates[np.sort(rng.choice(len(candidates), MAX_TEXTURE_CANDIDATES, replace=False))]
+    target = image[y0:y1, x0:x1].astype(np.float64) / scale
+    hole = defect[y0:y1, x0:x1]
+    known = ~excluded[y0:y1, x0:x1]
+    if np.count_nonzero(known) < 6:
+        return None
+    yy, xx = np.mgrid[:h, :w].astype(np.float64)
+    u, v = (xx - w / 2) / w, (yy - h / 2) / h
+    basis = np.stack((np.ones_like(u), u, v, u * u, u * v, v * v), axis=-1)
+    projection = np.linalg.pinv(basis[known])
+    fit = projection @ target[known]
+    residual = (target[known] - basis[known] @ fit if align_tone
+                else target[known] - target[known].mean(axis=0))
+    variance = float(np.mean(residual**2))
+    if variance <= 1e-30:
+        return None
+    windows = np.lib.stride_tricks.sliding_window_view(image, (h, w), axis=(0, 1)).transpose(0, 1, 3, 4, 2)
+    best_error, donor, donor_fit, donor_start = float("inf"), None, None, None
+    # Chunked gathers bound scratch independently of candidate count. The view
+    # above owns no expanded image; only 64 actual donor windows are gathered.
+    for start in range(0, len(candidates), 64):
+        checkpoint()
+        positions = candidates[start:start + 64]
+        patches = windows[positions[:, 0], positions[:, 1]].astype(np.float64) / scale
+        fits = np.einsum("ij,njc->nic", projection, patches[:, known])
+        samples = patches[:, known]
+        detail = (samples - np.einsum("ij,njc->nic", basis[known], fits) if align_tone
+                  else samples - samples.mean(axis=1, keepdims=True))
+        power = np.mean(detail**2, axis=(1, 2))
+        if align_tone:
+            error = np.mean((detail / np.sqrt(power[:, None, None] + 1e-30)
+                             - residual / np.sqrt(variance))**2, axis=(1, 2))
+        else:
+            error = np.mean((samples - target[known])**2, axis=(1, 2)) / variance
+        # Plain SSD favours flat donors for uncorrelated noise. Match boundary
+        # contrast as well as pattern, without amplifying a flat patch later.
+        error += np.log((power + 1e-30) / variance)**2
+        winner = int(np.argmin(error))
+        if error[winner] < best_error:
+            best_error = float(error[winner])
+            donor, donor_fit = patches[winner].copy(), fits[winner].copy()
+            donor_start = positions[winner].copy()
+    if align_tone:
+        donor += basis @ (fit - donor_fit)
+    # Preserve donor gradients while smoothly matching the known boundary.
+    # For structural context, a screened term anchors broad tone to PatchMatch
+    # so an unrelated leaf/shadow cannot replace the whole destination shape.
+    anchor = baseline[y0:y1, x0:x1] / scale - donor
+    correction = anchor.copy()  # Other excluded defects use clean inferred tone.
+    correction[known] = target[known] - donor[known]
+    correction[hole] = correction[known].mean(axis=0)
+    strength = 0.0 if align_tone else .5
+    for step in range(256):
+        if step % 8 == 0:
+            checkpoint()
+        padded = np.pad(correction, ((1, 1), (1, 1), (0, 0)), mode="edge")
+        updated = (padded[:-2, 1:-1] + padded[2:, 1:-1] + padded[1:-1, :-2]
+                   + padded[1:-1, 2:] + strength * anchor) / (4 + strength)
+        correction[hole] = updated[hole]
+    baseline[y0:y1, x0:x1][hole] = (donor + correction)[hole] * scale
+    return int(donor_start[1]) - x0, int(donor_start[0]) - y0
+
+
 class CpuInpaint:
-    """Single-scale PatchMatch plus overlapping patch voting for small dust.
+    """Single-scale PatchMatch with bounded coherent detail for small dust.
 
     Alternating propagation and shrinking random search follow Krita's NNF;
     NumPy executes patch scoring/gathers in compiled loops. Jacobi propagation
     batches all target centres, unlike Krita's scanline updates. No SDR clamp,
     integer distance quantisation or independent per-tier pyramid is used.
+    Overlap votes supply tone/structure; a context-selected whole donor can
+    replace lost fine detail without mixing unrelated texture samples.
     """
     def solve(self, request, settings=InpaintSettings(), checkpoint=lambda: None):
         checkpoint()
@@ -255,6 +356,8 @@ class CpuInpaint:
                 np.add.at(votes, (vy, vx), values)
                 np.add.at(weights, (vy, vx), 1)
             work[defect] = votes[defect] / weights[defect, None]
+        texture_offset = _restore_texture(image, defect, excluded, work, align_tone,
+                                          r, settings.seed, checkpoint)
         checkpoint()
         ys, xs = np.nonzero(defect)
         x0, x1, y0, y1 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
@@ -267,4 +370,4 @@ class CpuInpaint:
         for array in (result, field, targets):
             array.flags.writeable = False
         return RepairPatch((request.origin[0] + int(x0), request.origin[1] + int(y0)),
-                           result, field, targets, align_tone)
+                           result, field, targets, align_tone, texture_offset)

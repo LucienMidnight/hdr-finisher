@@ -184,13 +184,47 @@ NumPy executes the large gathers/reductions in compiled code. The Python
 control loop runs on a dedicated backend thread, outside the UI thread.
 This is a dust quality experiment, not parity with Krita Smart Patch.
 
+**Texture follow-up, October 22 (after Steve's review):** version
+`hdrf-patchmatch-cpu-v3` keeps the first PatchMatch reconstruction for broad
+tone/structure, then detects substantial fine-detail loss relative to a clean
+surrounding ring. Only affected small repairs get a coherent-detail pass:
+
+- Select one contiguous donor context rather than average different donors.
+  Match the clean boundary's pattern and contrast. Contrast matching prevents
+  SSD from preferring a flat patch simply because random noise is uncorrelated.
+- With smooth tone continuation, remove the donor's fitted quadratic tone and
+  add the destination's. With structural context, match actual boundary RGB.
+- Smoothly correct the donor at the known boundary. A screened correction
+  anchors broad tone to the PatchMatch result for structural context; fine
+  donor gradients remain. This is automatic Inpaint reconstruction, not a
+  user-selected Heal mode or a finished healing implementation.
+- Gate this pass on the first result having less than half the clean ring's
+  3x3 high-pass power, above a float-precision floor. These are versioned
+  heuristics, not quality acceptance tolerances. The ring excludes pixels
+  whose 3x3 neighbourhood touches any known defect, so dirty boundaries cannot
+  trigger the gate or influence the donor selection.
+- The defect bounding box must fit 33px per axis. Its context adds the patch
+  radius on each available side; the **whole donor context** must be in-bounds
+  and defect-free. Search at most 2048 seeded candidates in 64-window chunks;
+  use 256 bounded correction iterations, checking cancellation every eight.
+  Candidate-chunk boundaries also check cancellation. Larger/source-starved
+  repairs retain the first PatchMatch result and may still smooth texture.
+
+These additions are HDRF code, not newly imported application code. The
+completed patch records an optional native `(dx,dy)` coherent-donor offset;
+the NNF centres remain the first PatchMatch proposals. Inspect the offset as
+well as those centres when tracing where final detail came from. The existing
+worker, revision checks, completed cache and native-source solve boundary apply
+to the entire pass. Its constants are pinned by the algorithm version; no v2
+engine is kept for compatibility and no saved project currently uses it.
+
 Prototype constraints and ownership:
 
 - Caller supplies one full-resolution search ROI, at most 256 pixels on each
   axis, with at most 4096 defect pixels and 8192 affected patch centres.
   Larger work is rejected; it is not silently split into independent solves.
 - Patch radius is 1..5; iterations 1..12. Defaults are radius 3, six iterations,
-  seed 20261021, algorithm `hdrf-patchmatch-cpu-v1`. Settings validate before
+  seed 20261021, algorithm `hdrf-patchmatch-cpu-v3`. Settings validate before
   use. The ROI defines the search extent; fetching it from a whole source is
   intentionally a later integration task.
 - All nonzero blend-mask coverage is excluded from donors. An additional
@@ -225,7 +259,9 @@ Prototype constraints and ownership:
 `output/retouch-prototype/index.html`. The ignored output folder contains
 enlarged labelled PNGs, `results.json` with settings/versions and diagnostic
 errors, and per-case `.npz` files containing clean, dirty and repaired float
-arrays, mask and source/target patch centres. No test project is opened or
+arrays, mask, source/target patch centres and optional coherent-donor offset.
+`texture-comparison.png` enlarges the affected 32px regions side by side with
+the prior result when supplied. No test project is opened or
 modified. Optional `opencv-python-headless` is only a comparison dependency,
 not a shipped requirement; the inspected environment used OpenCV 5.0.0
 (wheel 5.0.0.93) and NumPy 2.5.3. Without cv2 the study explicitly skips it.
@@ -240,9 +276,9 @@ These are native 96px JPEG crops with controlled injected dust, **not natural
 dust validation**. Embedded ICC profiles are converted to sRGB; untagged images
 are assumed sRGB, then linearised and converted to working ACEScg. The source
 hash and crop centres are recorded. The photo and projects are never written.
-Optional `--baseline output/retouch-prototype-v1` compares saved v1 arrays after
-checking fixture identity; that ignored snapshot exists locally, not in Git.
-There is no retained v1 engine or project compatibility code. `--output` can
+Optional `--baseline output/retouch-prototype-v2` compares the pre-texture-update
+arrays after checking fixture identity; that ignored snapshot exists locally,
+not in Git. There is no retained old engine or project compatibility code. `--output` can
 keep separate runs. PNGs now convert ACEScg to linear sRGB before their common
 per-row range mapping and sRGB encoding; they are SDR inspection proxies, not
 finished HDR renderings. Unclipped float arrays remain the numerical evidence.
@@ -253,6 +289,14 @@ pixels is diagnostic linear-RGB RMSE, **not** a perceptual acceptance threshold.
 Steve's inspection remains the quality gate. There is no accepted interaction
 latency or memory-performance target yet; these isolated timings do not
 establish one or change existing rendering tolerances.
+
+Texture follow-up regression policy, proposed before the independent noise
+checks: retain 50–150% of the clean fixture's adjacent-difference RMS. This
+coarse range detects blur or excessive amplification despite finite random
+sample variation. It is not a visual acceptance band or a replacement for
+finished-output perceptual tolerances. The viewer also records 3x3 high-pass
+RMS as a diagnostic. Different plausible random samples may increase clean-
+reference pixel RMSE while looking more natural; do not optimise RMSE alone.
 
 **Tested:** eight deterministic synthetic fixtures: flat sky, linear gradient,
 periodic and stochastic textures, straight edge, curved HDR highlight, negative-channel
@@ -268,13 +312,26 @@ depression is substantially reduced: diagnostic masked linear-RGB RMSE fell
 from 1.526 to 0.165 on this fixture. The gradient/negative gradient are restored
 to float precision; periodic texture improves and the straight edge remains
 intact. This is useful progress, **not a passed overall quality gate**.
-Four real-background crops were also inspected. Sky, sand and horizon appear
-promising; foliage loses/changes small detail and has higher diagnostic error
-than the mildly dusty input. Random texture still becomes too smooth. Neither
-source search nor overlapping averaging can recover the original random
-samples. Natural dust, general textured-photo quality, halo-free repairs and
-Steve's acceptance remain unvalidated. Do not expand to the full tool on the
-strength of the highlight improvement alone.
+In v2, the four real-background crops looked promising on sky, sand and horizon
+but foliage and random texture became too smooth. Steve confirmed that specific
+problem and asked for texture work. The v3 full sheet and texture close-ups were
+then inspected: fine detail is retained in stochastic texture, photo sky,
+sand and foliage. The other eight study repairs (flat sky, gradient, periodic
+texture, edge, highlight, negative gradient, border and photo horizon) remain
+pixel-for-pixel identical to v2. All untouched pixels remain exact.
+
+On stochastic texture, diagnostic high-pass RMS changes from 0.006 to 0.025
+against clean 0.024; the smooth patch is no longer obvious in the comparison.
+Foliage retains sharper detail, but the donor changes leaf shapes; this is not
+recovery of the original hidden pixels. Pixel RMSE rises on the four changed
+cases despite the improved texture strength. Local contrast may mismatch and
+larger/irregular repairs can still fall back to averaging. Natural dust,
+general photographic quality, halo-free repairs and Steve's acceptance of v3
+remain unvalidated. Added tests cover independent monochrome/colour noise,
+HDR/negative range, full context exclusion including extreme dirty values,
+noisy borders, bounded fallbacks and cancellation during texture work. All
+twelve v3 cases reproduced pixels, NNF proposals and coherent donor offsets
+exactly on a second local run.
 
 OpenCV is compared per float32 channel, with no 8-bit RGB conversion.
 The initial v1 comparison favoured Navier-Stokes on smooth gradients, borders
@@ -286,9 +343,9 @@ range to 0..255 **in float32**, then maps the result back; this is much better.
 It still loses texture and softens the edge. Both variants are retained in
 the viewer/arrays so the direct-float problem is not mistaken for evidence
 against a properly adapted baseline. These examples do not establish a
-universal algorithm winner. The next quality step is to reduce texture loss
-on the foliage/sand crops, then have Steve judge real dusty photos before
-interactive integration. The existing isolated worker/recipe boundary is
+universal algorithm winner. The next quality step is Steve's inspection of
+v3 on these cases and naturally dusty photos before interactive integration.
+The existing isolated worker/recipe boundary is
 ready for a brush adapter once quality and pipeline decisions are settled.
 
 ### Integration audit and proposal (not wired or decided)

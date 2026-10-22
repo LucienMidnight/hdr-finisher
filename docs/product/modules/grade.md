@@ -65,9 +65,13 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   exclusion are tested. **Quality update October 22:** clean-context tone
   continuation substantially reduces the curved-highlight depression and
   restores smooth gradients. The viewer adds four real-photo backgrounds
-  with injected dust. Fine texture/foliage still loses detail; naturally dusty
-  photos and Steve's quality acceptance remain open. This is not a completed
-  quality gate.
+  with injected dust. **Texture follow-up after Steve's review:** v3 restores
+  lost detail using one coherent, boundary-matched donor for affected small
+  spots. Stochastic texture, photo sky, sand and foliage retain fine detail;
+  the other eight study results are unchanged from v2. Foliage shapes can
+  still change, and larger/source-starved repairs can still smooth detail.
+  Naturally dusty photos and Steve's acceptance of this update remain open.
+  This is not a completed quality gate.
   This does not implement the interactive brush, Heal/Clone, project records
   or rendering integration. See the technical plan's CPU prototype outcome
   for the reproduction command and proposed integration boundary.

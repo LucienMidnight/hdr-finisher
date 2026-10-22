@@ -20,6 +20,11 @@ HDR Finisher additions, not copied from Krita. No Krita, Qt, Boost or KDE
 runtime dependency, image pyramid, colour conversion or application code is
 included.
 
+The v3 bounded coherent-donor search, contrast-aware context matching and
+harmonic/screened boundary correction are also HDR Finisher implementations.
+They preserve contiguous donor detail instead of averaging unrelated texture
+samples. No further third-party source or application dependencies were added.
+
 `tools/retouch_prototype.py` optionally calls OpenCV for comparison only.
 The local comparison used `opencv-python-headless` 5.0.0.93 / OpenCV 5.0.0;
 it is not a runtime requirement or bundled component. OpenCV's top-level
