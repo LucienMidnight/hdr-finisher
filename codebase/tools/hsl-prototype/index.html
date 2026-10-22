@@ -40,10 +40,6 @@ section{padding:12px 14px;border-bottom:1px solid var(--line)}
 #wheel .arc{cursor:grab}
 .pickbar{display:flex;align-items:center;gap:6px;justify-content:center;margin:6px 0 4px}
 .pickbar .seg button{padding:6px 9px}
-#ranges{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;min-height:24px;margin-top:6px}
-.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 3px 2px 8px;border-radius:12px;font-size:12px;background:var(--panel-2);border:1px solid var(--line)}
-.chip[aria-current=true]{border-color:var(--accent)}.chip .dot{width:10px;height:10px;border-radius:50%}
-.chip.sub{color:var(--exclude)}.chip button{border:0;background:none;padding:0 4px;border-radius:8px}.chip button.x{color:var(--muted)}
 .ctl{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 8px;margin:10px 0}
 .ctl span{color:var(--muted)}.ctl output{font-variant-numeric:tabular-nums;text-align:right;min-width:56px;color:var(--text)}
 .ctl input{grid-column:1/3}
@@ -52,7 +48,23 @@ input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;ba
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#e6e8ea;margin-top:-5px;border:2px solid var(--panel);box-shadow:0 0 0 1px #0008}
 input[type=range]:disabled{opacity:.35}
 .small{display:grid;grid-template-columns:1fr 1fr;gap:12px}.small .ctl{margin:4px 0}
-.foot{display:flex;gap:6px;flex-wrap:wrap;padding:12px 14px}
+.text-button{background:none;border-color:transparent;color:var(--muted);padding:4px 7px}.text-button:hover{color:var(--text);background:var(--panel-2)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.primary:hover{background:#ad93ff}
+.helper{color:var(--muted);font-size:12px;margin:0}
+dialog{width:min(620px,calc(100vw - 44px));height:min(620px,calc(100vh - 44px));padding:0;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text)}
+dialog::backdrop{background:#050607c7}dialog[open]{display:flex;flex-direction:column}
+.dialog-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-height:78px;padding:18px 22px 12px;border-bottom:1px solid var(--line)}.dialog-header h2{font-size:16px;margin:0 0 3px}
+.preset-content{display:grid;grid-template-rows:minmax(0,1fr) auto;flex:1;min-height:0}.preset-content>section{padding:18px 22px;border:0}.preset-content>section:first-child{overflow-y:auto;min-height:0}
+.preset-content h3{margin:0 0 10px;font-size:14px}
+.preset-list{display:grid;gap:6px}
+.preset-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;min-height:40px;padding:5px 6px 5px 11px;border:1px solid var(--line);align-items:center;gap:5px;background:var(--app)}
+.preset-row.built-in{grid-template-columns:minmax(0,1fr) auto}
+.preset-name{display:grid;min-width:0;gap:1px}.preset-name strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.preset-name small{color:var(--accent);font:9px ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase}.preset-name span{color:var(--muted);font-size:11px}
+.preset-subheading{margin:9px 0 1px;color:var(--faint);font:9px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}.preset-subheading:first-child{margin-top:0}
+.preset-save{border-top:1px solid var(--line)!important;background:var(--app)}.preset-save-row{display:grid;grid-template-columns:minmax(0,1fr) auto;margin-top:10px;gap:7px}
+.preset-save-row input{min-width:0;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;color:inherit;font:inherit;padding:6px 9px}
+#preset-status{min-height:17px;margin-top:7px}.preset-empty{padding:36px 12px;color:var(--muted);text-align:center}
 details{padding:0 14px;color:var(--muted)}details p{margin:6px 0}summary{cursor:pointer;color:var(--muted)}
 .quick{display:flex;gap:6px;flex-wrap:wrap}.quick button{width:22px;height:22px;padding:0;border-radius:50%;background:var(--swatch);border:1px solid #0006}
 [hidden]{display:none!important}
@@ -77,14 +89,14 @@ details{padding:0 14px;color:var(--muted)}details p{margin:6px 0}summary{cursor:
 </article>
 <aside>
   <div class="palette-head"><h2 id="palette-title">HSL · Global</h2>
-    <button class="icon" id="reset-channel" title="Reset this channel" aria-label="Reset channel"><svg viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v2.5h2.5"/></svg></button>
+    <button class="icon" id="reset" title="Reset HSL" aria-label="Reset all"><svg viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v2.5h2.5"/></svg></button>
   </div>
   <section id="channel-section">
     <p class="label" id="channel-label">Channel</p>
     <div id="channels" aria-label="HSL channels"></div>
     <div id="customs" aria-label="Custom channels"></div>
     <div id="quick" class="quick" hidden aria-label="Quick-start colours"></div>
-    <div class="chan-title"><strong id="chan-name">Red</strong><small id="chan-hint"></small><button id="delete-custom" hidden>Delete</button></div>
+    <div class="chan-title"><strong id="chan-name">Red</strong><small id="chan-hint"></small><button class="text-button" id="reset-channel" title="Reset this channel's range and sliders">Reset channel</button><button class="text-button" id="delete-custom" hidden>Delete</button></div>
   </section>
   <div class="wheel-wrap">
     <svg id="wheel" viewBox="0 0 320 320" aria-label="Colour range wheel. Drag the arc to move the range, the bars to change its width, the outer dots to change the softness, and the inner dot to shift the hue.">
@@ -102,7 +114,6 @@ details{padding:0 14px;color:var(--muted)}details p{margin:6px 0}summary{cursor:
         <button data-mode="subtract" aria-pressed="false" title="Subtract: exclude a colour">Subtract −</button>
       </div>
     </div>
-    <div id="ranges" aria-label="Ranges in this channel"></div>
   </div>
   <section>
     <div class="small">
@@ -117,11 +128,11 @@ details{padding:0 14px;color:var(--muted)}details p{margin:6px 0}summary{cursor:
     <label class="ctl"><span>Uniformity</span><output id="uniformity-out"></output><input id="uniformity" aria-label="Uniformity" type="range" min="0" max="100" value="0"></label>
     <label class="ctl"><span>Amount</span><output id="opacity-out"></output><input id="opacity" aria-label="Amount" type="range" min="0" max="1" step="0.01" value="1"></label>
   </section>
-  <div class="foot"><button id="reset">Reset all</button><button id="save">Save recipe</button><label class="file">Load recipe<input id="load" type="file" accept="application/json,.json" hidden></label></div>
   <details><summary>How this works</summary>
     <p><b>Global</b> works like DxO: All plus eight bands, each with its own edit. Use the picker to move or widen a band, or to add and exclude colours. Picking while All is selected (or pressing +) makes a Custom channel from any mix of colours.</p>
     <p><b>Local grade</b> has one selection, which can hold several colours, and one edit, applied inside the demo ellipse. Alt-click the photo to move the ellipse. The dots are quick starts.</p>
-    <p>Double-click a slider to reset it. Wheel handles take arrow keys (Shift for bigger steps). The preview is an SDR browser decode, limited to 1000 pixels on the long edge.</p>
+    <p>Each colour range has a point on the wheel: click it to edit, drag to move, right-click (or Delete) to remove. Excluded ranges sit inside the ring. Double-click a slider to reset it. Wheel handles take arrow keys (Shift for bigger steps). The preview is an SDR browser decode, limited to 1000 pixels on the long edge.</p>
   </details>
 </aside>
-</main><script type="module" src="./ui.mjs"></script></body></html>
+</main>
+<script type="module" src="./ui.mjs"></script></body></html>

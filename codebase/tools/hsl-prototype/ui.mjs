@@ -93,7 +93,7 @@ function sync() {
     fill($(id));
   }
   $('uniformity').disabled = c.kind === 'all';
-  ranges(); wheel(); buttons();
+  wheel(); buttons();
   document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
 }
 const format = (id, v) => id === 'luminance' ? `${v > 0 ? '+' : ''}${Number(v).toFixed(2)} EV` : id === 'opacity' ? `${Math.round(v*100)}%`
@@ -105,19 +105,16 @@ function fill(input) {
   const p = x => ((x-lo)/(hi-lo)*100).toFixed(2)+'%', a = Math.min(v, zero), b = Math.max(v, zero);
   input.style.setProperty('--track', `linear-gradient(90deg,#3a4046 ${p(a)},var(--accent) ${p(a)},var(--accent) ${p(b)},#3a4046 ${p(b)})`);
 }
-function ranges() {
-  const c = chan(), ai = activeIndex();
-  if (c.kind === 'all') { $('ranges').replaceChildren(); return; }
-  $('ranges').replaceChildren(...c.recipe.ranges.map((r, i) => {
-    const chip = document.createElement('span'); chip.className = 'chip' + (r.subtract ? ' sub' : ''); chip.setAttribute('aria-current', String(i === ai));
-    const choose = document.createElement('button'); choose.innerHTML = `<span class="dot" style="background:${hueHex(r.center)}"></span>`;
-    choose.append(`${r.subtract ? '−' : '+'} ${Math.round(r.center)}°`); choose.style.display = 'inline-flex'; choose.style.gap = '4px'; choose.style.alignItems = 'center';
-    choose.setAttribute('aria-label', `Edit ${r.subtract ? 'excluded' : 'included'} range at ${Math.round(r.center)} degrees`);
-    choose.onclick = () => { setActive(i); sync(); };
-    const x = document.createElement('button'); x.className = 'x'; x.textContent = '×'; x.setAttribute('aria-label', `Remove range ${i+1}`);
-    x.onclick = () => commit(() => { c.recipe.ranges.splice(i, 1); setActive(Math.max(0, Math.min(ai, c.recipe.ranges.length-1))); });
-    chip.append(choose, x); return chip;
-  }));
+// Right-click or Delete removes a range, like path nodes and curve points.
+// A band keeps at least one included range so it always selects something.
+function removeRange(i) {
+  const c = chan(), list = c.recipe.ranges;
+  if (c.kind === 'all' || !list[i]) return false;
+  if (c.kind === 'band' && !list[i].subtract && list.filter(r => !r.subtract).length <= 1) {
+    notice(`${c.name} needs at least one range. Drag it, or reset the channel.`); return false;
+  }
+  commit(() => { list.splice(i, 1); setActive(Math.max(0, Math.min(activeIndex(), list.length-1))); notice(); });
+  return true;
 }
 function newCustom(fromAll = false) {
   const m = state.global; customCount++;
@@ -184,9 +181,9 @@ function wheel() {
   });
   if (ai < 0) return;
   const g = r.ranges[ai], R = g.subtract ? 96 : 142;
-  const handle = (kind, h, label, draw) => {
-    const grp = el('g', { class: 'handle', tabindex: 0, role: 'slider', 'aria-label': label, 'aria-valuenow': Math.round(h), 'data-handle': kind, 'data-range': ai }, handles);
-    draw(grp, pt(h, kind === 'target' ? 88 : R)); return grp;
+  const handle = (kind, h, label, draw, idx = ai, radius = kind === 'target' ? 88 : R) => {
+    const grp = el('g', { class: 'handle', tabindex: 0, role: 'slider', 'aria-label': label, 'aria-valuenow': Math.round(wrap(h)), 'data-handle': kind, 'data-range': idx }, handles);
+    draw(grp, pt(h, radius)); return grp;
   };
   const dot = (fillc, rad) => (grp, [x, y]) => {
     el('circle', { cx: x, cy: y, r: rad+5, fill: 'transparent' }, grp);
@@ -198,11 +195,17 @@ function wheel() {
     el('line', { x1: x0, y1: y0, x2: x1, y2: y1, stroke: '#111', 'stroke-width': 5.5, 'stroke-linecap': 'round' }, grp);
     el('line', { x1: x0, y1: y0, x2: x1, y2: y1, stroke: '#fff', 'stroke-width': 3, 'stroke-linecap': 'round', class: 'ring' }, grp);
   };
+  // Every range has a centre point on the wheel; inactive ones are smaller.
+  r.ranges.forEach((o, i) => {
+    if (i === ai) return;
+    const name = `${o.subtract ? 'Excluded' : 'Included'} range at ${Math.round(o.center)}°`;
+    handle('move', o.center, name, dot(o.subtract ? '#3a2326' : hueHex(o.center), 5), i, o.subtract ? 96 : 142);
+  });
   handle('feather-', g.center-g.width-g.feather, 'Softness, start side', dot('#20232680', 4.5));
   handle('feather+', g.center+g.width+g.feather, 'Softness, end side', dot('#20232680', 4.5));
   handle('edge-', g.center-g.width, 'Range start', bar(g.center-g.width));
   handle('edge+', g.center+g.width, 'Range end', bar(g.center+g.width));
-  handle('move', g.center, 'Range centre', dot(hueHex(g.center), 7));
+  handle('move', g.center, 'Range centre', dot(g.subtract ? '#3a2326' : hueHex(g.center), 7));
   if (!g.subtract) {
     const t = g.center + r.hue;
     if (r.hue) el('path', { d: arcPath(g.center, t, 88), stroke: '#fff', 'stroke-width': 2, fill: 'none', opacity: .7 }, handles);
@@ -244,13 +247,24 @@ $('wheel').addEventListener('pointermove', e => {
 const endWheel = () => { if (wheelDrag) { const b = wheelDrag.before; wheelDrag = null; record(b); sync(); } };
 $('wheel').addEventListener('pointerup', endWheel); $('wheel').addEventListener('lostpointercapture', endWheel);
 $('wheel').addEventListener('pointercancel', () => { if (wheelDrag) { const b = wheelDrag.before; wheelDrag = null; restore(b); } });
+$('wheel').addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const t = e.target.closest('[data-handle]');
+  if (t && t.dataset.handle !== 'target') removeRange(Number(t.dataset.range));
+});
 $('wheel').addEventListener('keydown', e => {
   const t = e.target.closest?.('[data-handle]'); if (!t) return;
+  const kind = t.dataset.handle, i = Number(t.dataset.range);
+  if ((e.key === 'Delete' || e.key === 'Backspace') && kind !== 'target') {
+    e.preventDefault();
+    if (removeRange(i)) $('handles').querySelector('[data-handle="move"]')?.focus();
+    return;
+  }
   const step = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key]; if (!step) return;
   e.preventDefault();
-  const kind = t.dataset.handle, i = Number(t.dataset.range), r = chan().recipe, g = r.ranges[i];
-  commit(() => dragHandle(kind, i, handleHue(kind, g, r) + step*(e.shiftKey ? 5 : 1)));
-  $('handles').querySelector(`[data-handle="${kind}"]`)?.focus();
+  const r = chan().recipe, g = r.ranges[i];
+  commit(() => { setActive(i); dragHandle(kind, i, handleHue(kind, g, r) + step*(e.shiftKey ? 5 : 1)); });
+  $('handles').querySelector(`[data-handle="${kind}"][data-range="${i}"]`)?.focus();
 });
 
 // ---- Picker on the photo ----
@@ -382,29 +396,6 @@ $('delete-custom').onclick = () => commit(() => { const m = state.global; m.chan
 for (const id of ['overlay','before','cpu']) $(id).onchange = render;
 document.addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? $('redo') : $('undo')).click(); } });
-$('save').onclick = () => {
-  const file = { version: 2, kind: 'hsl-prototype', global: state.global.channels.map(({ id, name, kind, hex, recipe }) => ({ id, name, kind, hex, recipe })), local: state.local.channels[0].recipe };
-  const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }));
-  const a = document.createElement('a'); a.href = url; a.download = 'hsl-recipe.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
-$('load').onchange = async () => {
-  try {
-    const v = JSON.parse(await $('load').files[0].text());
-    if (v.kind === 'hsl-prototype') {
-      const g = globalModule();
-      g.channels = v.global.map(c => ({ id: String(c.id), name: String(c.name), kind: ['all','band','custom'].includes(c.kind) ? c.kind : 'custom', hex: /^#[0-9a-f]{6}$/i.test(c.hex) ? c.hex : '#777777', recipe: validateRecipe(c.recipe) }));
-      if (!g.channels.length) throw Error('Recipe has no channels');
-      g.current = g.channels[0].id;
-      const l = localModule(); l.channels[0].recipe = validateRecipe(v.local);
-      commit(() => { state.global = g; state.local = l; customCount = g.channels.filter(c => c.kind === 'custom').length; });
-    } else {
-      // A single correction (Codex's v1 recipe) loads into the current channel.
-      const r = validateRecipe(v);
-      commit(() => { chan().recipe = r; setActive(r.ranges.length-1); });
-    }
-    notice();
-  } catch (e) { notice(e.message); } finally { $('load').value = ''; }
-};
 function setSource(image) {
   canvas.width = image.width; canvas.height = image.height; original = new Float32Array(image.data.length);
   for (let i = 0; i < image.data.length; i += 4) { for (let c = 0; c < 3; c++) original[i+c] = decode(image.data[i+c]/255); original[i+3] = image.data[i+3]/255; }

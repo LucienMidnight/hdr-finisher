@@ -73,10 +73,10 @@ const {_electron}=require('playwright');
     await page.getByRole('button',{name:'Subtract −',exact:true}).click();
     await photo.click({position:{x:400,y:330}});
     assert.equal(await page.evaluate(()=>window.hslPrototype.recipe.ranges[2].subtract),true);
-    const saved=await page.evaluate(()=>window.hslPrototype.recipe);
-    await page.locator('#load').setInputFiles({name:'recipe.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({...saved,hue:35}))});
-    await page.waitForFunction(()=>window.hslPrototype.recipe.hue===35);
-    assert.deepEqual(await page.evaluate(()=>window.hslPrototype.recipe),{...saved,hue:35});
+    // Right-click an inactive range point on the wheel removes that range only.
+    const kept=await page.evaluate(()=>window.hslPrototype.recipe.ranges.slice(1));
+    await page.locator('#handles [data-handle="move"][data-range="0"]').click({button:'right'});
+    assert.deepEqual(await page.evaluate(()=>window.hslPrototype.recipe.ranges),kept);
     // Global: channels keep separate edits; picking from All starts a Custom channel.
     await page.getByRole('button',{name:'Global',exact:true}).click();
     await page.getByRole('button',{name:'Blue channel',exact:true}).click();
