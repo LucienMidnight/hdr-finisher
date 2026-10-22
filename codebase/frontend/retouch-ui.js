@@ -5,7 +5,21 @@ function retouchInput(name) { return document.getElementById(`retouch-${name}`);
 
 function retouchMessage(message) { retouchInput("status").textContent = message; }
 
+function constrainRetouchSize() {
+  const input = retouchInput("size");
+  const typed = Number(input.value);
+  const size = input.value.trim() && Number.isFinite(typed)
+    ? Math.min(64, Math.max(1, typed)) : 12;
+  if (input.value.trim() === "" || typed !== size) {
+    input.value = String(size);
+    retouchMessage(`Size set to ${size} native pixels. This prototype supports sizes from 1 to 64.`);
+  }
+}
+
 function retouchValues() {
+  // Number inputs allow manual values outside min/max. Keep the displayed
+  // brush usable instead of rejecting every stroke after such an entry.
+  constrainRetouchSize();
   const read = (name, min, max, integer = true) => {
     const value = Number(retouchInput(name).value);
     if (!Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) {
@@ -169,6 +183,10 @@ function renderRetouchOverlay(canvas) {
 
 function bindRetouchEvents() {
   const canvas = els.localMaskOverlay;
+  retouchInput("size").addEventListener("change", () => {
+    constrainRetouchSize();
+    queueLocalMaskOverlayRender();
+  });
   retouchInput("brush").addEventListener("click", async () => {
     if (state.localPathDraft) await finishLocalPathDraft();
     retouchUI.active = !retouchUI.active;

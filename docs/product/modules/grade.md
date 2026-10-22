@@ -105,6 +105,12 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   that focused case. Cold source/Denoise preparation, transformed views and
   Steve's assessment of brush responsiveness remain open. No broad speed or
   natural-dust acceptance is claimed; the complete three-mode tool is unbuilt.
+  **Size-entry fix October 22:** Steve's running brush had Size 100, beyond the
+  prototype's 1–64 native-pixel range, so strokes were rejected. Manual Size
+  entries now return to the supported range on commit and before processing;
+  blank entries restore 12. The range is printed beside Size. A corrected 100→64
+  entry is covered by an actual click, saved radius and repaired preview pixels.
+  The processing bounds are unchanged; larger dust spots remain outside this milestone.
 - **V1 hue-selection mask:** add hue selection as a local-adjustment mask,
   compatible with the existing combined-mask workflow. Not built; selection
   controls and hue evaluation remain to be specified.

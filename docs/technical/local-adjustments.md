@@ -562,9 +562,18 @@ The cursor now retains its canvas allocation and coalesces redraws to animation
 frames. Pointer samples remain complete. A translucent footprint shows the
 painted stroke; live messages explain when it exceeds Search. A valid dragged
 stroke and an oversized rejected stroke are covered by actual Electron input,
-including repaired preview pixels and unchanged history on rejection. This does
-not establish the cause of Steve's failed painting attempt; he still needs to
-retry the current build.
+including repaired preview pixels and unchanged history on rejection. The first
+checks did not explain Steve's failed painting attempt. Read-only inspection of
+his running app subsequently found Size 100 and the status "Choose a valid size
+between 1 and 64." The numeric field allowed an unsupported manually typed
+value, so every stroke was rejected with feedback he missed. Size entries now
+return to 1–64 on change and before processing (blank entries restore 12), and
+the range is printed beside the control. The Electron regression first failed
+on the retained value 100, then passed with correction to 64, saved radius 32
+and repaired preview pixels. It covers both blur and a direct click from the
+uncommitted input. Processing bounds have not been increased. Steve's open
+window's Size field was corrected to 64 without changing the photo; he still
+needs to assess the current brush on his own image.
 
 For untransformed native source textures (whole or region), source refresh
 retains the texture and uploads intersections with old/new repair search boxes

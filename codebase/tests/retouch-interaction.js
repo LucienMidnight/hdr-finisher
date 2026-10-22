@@ -33,16 +33,21 @@ async function centerPixel(page) {
     await page.waitForFunction(() => state.session && !state.importInProgress && document.body.dataset.workflow === "grade", null, { timeout: 120000 });
     await page.waitForFunction(() => state.gpuPreview?.available && state.gpuPreview?.lastPresentedFrame, null, { timeout: 60000 });
     await page.locator("#grade-mode-local").click();
-    await page.locator("#retouch-size").fill("14");
+    // A manually typed out-of-range size must not leave a visible but inert brush.
+    await page.locator("#retouch-size").fill("100");
     await page.locator("#retouch-iterations").fill("2");
     await page.locator("#retouch-brush").click();
+    assert.equal(await page.locator("#retouch-size").inputValue(), "64", "oversized brush did not return to the supported range");
     await page.screenshot({ path: path.join(output, "before.png") });
     const beforePixel = await centerPixel(page);
     const rect = await page.evaluate(() => { const r = activePreviewElement().getBoundingClientRect(); return { x:r.left+r.width/2, y:r.top+r.height/2 }; });
     const initialRevision = await page.evaluate(() => state.editRevision);
+    // Clicking the photo directly from the input must also work, before blur/change.
+    await page.locator("#retouch-size").fill("100");
     await page.mouse.click(rect.x, rect.y);
     await page.waitForFunction(() => state.editDocument?.repairs?.length === 1 && !retouchUI.busy, null, { timeout: 60000 });
     assert.equal(await page.evaluate(() => state.editRevision), initialRevision+1, "one gesture must be one history edit");
+    assert.equal(await page.evaluate(() => state.editDocument.repairs[0].recipe.radius_px), 32, "corrected brush size did not reach the repair engine");
     const original = await page.evaluate(() => JSON.stringify(state.editDocument.repairs));
     await page.waitForFunction(() => state.gpuPreview?.lastPresentedFrame, null, { timeout: 60000 });
     await page.evaluate(() => { retouchUI.active=false; renderLocalMaskOverlay(); });
@@ -72,6 +77,7 @@ async function centerPixel(page) {
     await page.locator("#retouch-list button").last().click();
     await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs.length === 0);
     // A dragged stroke must survive all samples and publish once on release.
+    await page.locator("#retouch-size").fill("14");
     const strokeRevision = await page.evaluate(() => state.editRevision);
     await page.mouse.move(rect.x-12, rect.y);
     await page.mouse.down();
