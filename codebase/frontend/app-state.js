@@ -983,7 +983,6 @@ const els = {
   rawHighlightMethod: document.getElementById("raw-highlight-method"),
   rawHighlightThreshold: document.getElementById("raw-highlight-threshold"),
   rawHighlightThresholdValue: document.getElementById("raw-highlight-threshold-value"),
-  rawRebuildControls: document.getElementById("raw-rebuild-controls"),
   metadataToggle: document.getElementById("metadata-toggle"),
   metadataPanel: document.getElementById("metadata-panel"),
   curveEditor: document.getElementById("curve-editor"),

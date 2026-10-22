@@ -419,7 +419,6 @@ function renderRawImportControls(session) {
     if (els.rawHighlightGroup.dataset.sessionId !== String(session.session_id)) {
       els.rawHighlightMethod.value = highlight.method || "opposed_color_v1";
       els.rawHighlightThreshold.value = String(highlight.clipping_threshold ?? 1.0);
-      setRawRebuildFields(highlight, highlight.rebuild_preset || "sharp");
       els.rawHighlightGroup.dataset.sessionId = String(session.session_id);
     }
     renderRawHighlightState({ enabled: highlight.enabled !== false });
@@ -441,62 +440,8 @@ function setSourceModuleAvailability(module, available, unavailableReason) {
   module.querySelector(":scope > .disclosure-content")?.classList.add("hidden");
 }
 
-// Smooth rebuild (prototype, October 2026). Re-developing the RAW is slow, so
-// these are presets plus typed fields rather than sliders.
-const RAW_REBUILD_PRESETS = Object.freeze({
-  sharp: Object.freeze({
-    rebuild_core_size_percent: 1, rebuild_centre_lift_stops: 0.75,
-    rebuild_bloom_radius_percent: 0, rebuild_bloom_amount_percent: 0, rebuild_spill_percent: 10,
-  }),
-  bloom: Object.freeze({
-    rebuild_core_size_percent: 1, rebuild_centre_lift_stops: 0.75,
-    rebuild_bloom_radius_percent: 1.5, rebuild_bloom_amount_percent: 60, rebuild_spill_percent: 10,
-  }),
-});
-
-function rawRebuildInputs() {
-  return [...(els.rawRebuildControls?.querySelectorAll("[data-rebuild-field]") || [])];
-}
-
-function setRawRebuildFields(values, preset) {
-  for (const input of rawRebuildInputs()) {
-    const field = input.dataset.rebuildField;
-    input.value = String(values?.[field] ?? RAW_REBUILD_PRESETS.sharp[field]);
-  }
-  if (els.rawRebuildControls) els.rawRebuildControls.dataset.preset = preset;
-}
-
-function rawRebuildValues() {
-  const values = {};
-  for (const input of rawRebuildInputs()) {
-    const field = input.dataset.rebuildField;
-    const min = Number(input.min), max = Number(input.max);
-    const typed = Number(input.value);
-    // A blank or out-of-range entry falls back to Sharp or the nearest limit.
-    values[field] = Number.isFinite(typed) && input.value.trim() !== ""
-      ? Math.min(max, Math.max(min, typed))
-      : RAW_REBUILD_PRESETS.sharp[field];
-  }
-  return values;
-}
-
-function matchingRawRebuildPreset(values) {
-  return Object.keys(RAW_REBUILD_PRESETS).find((name) =>
-    Object.entries(RAW_REBUILD_PRESETS[name]).every(([field, value]) => Math.abs(values[field] - value) < 1e-6)) || "custom";
-}
-
 function renderRawHighlightState({ enabled }) {
   if (!els.rawHighlightGroup) return;
-  const rebuild = els.rawHighlightMethod.value === "smooth_rebuild_v1";
-  if (els.rawRebuildControls) {
-    els.rawRebuildControls.hidden = !rebuild;
-    const preset = els.rawRebuildControls.dataset.preset || "sharp";
-    els.rawRebuildControls.querySelectorAll("[data-rebuild-preset]").forEach((button) => {
-      button.setAttribute("aria-pressed", String(button.dataset.rebuildPreset === preset));
-      button.disabled = !enabled;
-    });
-    rawRebuildInputs().forEach((input) => { input.disabled = !enabled; });
-  }
   const modified = els.rawHighlightMethod.value !== "opposed_color_v1"
     || Math.abs(Number(els.rawHighlightThreshold.value) - 1) > 1e-8;
   els.rawHighlightBypass.classList.toggle("bypassed", !enabled);
@@ -545,8 +490,6 @@ function rawImportSettingsPayload() {
       enabled: els.rawHighlightBypass?.getAttribute("aria-pressed") === "true",
       method: els.rawHighlightMethod?.value || "opposed_color_v1",
       clipping_threshold: Number(els.rawHighlightThreshold?.value || 1.0),
-      rebuild_preset: els.rawRebuildControls?.dataset.preset || "sharp",
-      ...rawRebuildValues(),
     },
     lens: {
       mode: els.lensMode.value,

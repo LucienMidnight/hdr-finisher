@@ -40,8 +40,6 @@ LIBRAW_MATRIX_REFERENCE_WHITE_D65 = np.asarray(
 CAMERA_LINEAR_PIPELINE = "camera_linear_float_bridge_opposed_v2"
 LEGACY_RAW_PIPELINE = "legacy_libraw_aces_fallback_v1"
 OPPOSED_COLOR_METHOD = "opposed_color_v1"
-# Prototype: opposed colour, then the float-domain smooth rebuild.
-SMOOTH_REBUILD_METHOD = "smooth_rebuild_v1"
 OPPOSED_COLOR_ALGORITHM_VERSION = "hdr-finisher-opposed-color-v1"
 OPPOSED_COLOR_THRESHOLD_SAFETY = 0.987
 
@@ -333,31 +331,11 @@ def _apply_raw_corrections(
             decoded.developed, decoded.bridge_metadata, cancelled=cancelled
         )
         decoded.developed = np.empty((0,), dtype=np.uint16)
-        highlights = settings.highlight_reconstruction
-        rebuild = highlights.enabled and highlights.method == SMOOTH_REBUILD_METHOD
-        # Measured before conversion, which happens in place: the brightest
-        # camera channel against the opposed-colour clipping level.
-        clip_ratio = (
-            np.max(camera_linear, axis=-1)
-            / np.float32(highlights.clipping_threshold * OPPOSED_COLOR_THRESHOLD_SAFETY)
-            if rebuild
-            else None
-        )
         if progress:
             progress("color_conversion", "Applying RAW white balance and converting camera RGB to ACEScg")
         image = _camera_rgb_to_acescg_float32(
             camera_linear, decoded.bridge_metadata, cancelled=cancelled
         )
-        if rebuild:
-            from .highlight_rebuild import rebuild_highlights
-
-            _raise_if_cancelled(cancelled)
-            if progress:
-                progress("highlight_rebuild", "Smoothing rebuilt highlights")
-            image, rebuild_diagnostics = rebuild_highlights(image, clip_ratio, highlights)
-            del clip_ratio
-            if decoded.highlight_reconstruction_diagnostics is not None:
-                decoded.highlight_reconstruction_diagnostics["smooth_rebuild"] = rebuild_diagnostics
     else:
         aces2065 = np.asarray(decoded.developed).astype(np.float32)
         aces2065 *= np.float32(1.0 / 65535.0)
@@ -697,7 +675,7 @@ def _apply_raw_highlight_reconstruction(
     if not configuration.enabled:
         diagnostics["reason"] = "bypassed_in_raw_recipe"
         return diagnostics
-    if configuration.method not in (OPPOSED_COLOR_METHOD, SMOOTH_REBUILD_METHOD):
+    if configuration.method != OPPOSED_COLOR_METHOD:
         raise RawImportError(
             f"Unsupported RAW highlight reconstruction method {configuration.method!r}."
         )

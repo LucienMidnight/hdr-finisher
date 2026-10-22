@@ -608,28 +608,7 @@ function bindEvents() {
     renderRawHighlightState({ enabled });
     await applyRawImportSettings();
   });
-  const rawHighlightEnabled = () => els.rawHighlightBypass.getAttribute("aria-pressed") === "true";
-  els.rawHighlightMethod?.addEventListener("change", async () => {
-    renderRawHighlightState({ enabled: rawHighlightEnabled() });
-    await applyRawImportSettings();
-  });
-  // Smooth rebuild prototype: a preset fills every field and re-develops
-  // once; a typed field re-develops when committed (Enter or leaving it).
-  els.rawRebuildControls?.querySelectorAll("[data-rebuild-preset]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      setRawRebuildFields(RAW_REBUILD_PRESETS[button.dataset.rebuildPreset], button.dataset.rebuildPreset);
-      renderRawHighlightState({ enabled: rawHighlightEnabled() });
-      await applyRawImportSettings();
-    });
-  });
-  els.rawRebuildControls?.querySelectorAll("[data-rebuild-field]").forEach((input) => {
-    input.addEventListener("change", async () => {
-      const values = rawRebuildValues();
-      setRawRebuildFields(values, matchingRawRebuildPreset(values));
-      renderRawHighlightState({ enabled: rawHighlightEnabled() });
-      await applyRawImportSettings();
-    });
-  });
+  els.rawHighlightMethod?.addEventListener("change", applyRawImportSettings);
   els.rawHighlightThreshold?.addEventListener("input", () => {
     renderRawHighlightState({
       enabled: els.rawHighlightBypass.getAttribute("aria-pressed") === "true",
@@ -639,7 +618,6 @@ function bindEvents() {
   els.rawHighlightReset?.addEventListener("click", async () => {
     els.rawHighlightMethod.value = "opposed_color_v1";
     els.rawHighlightThreshold.value = "1";
-    setRawRebuildFields(RAW_REBUILD_PRESETS.sharp, "sharp");
     renderRawHighlightState({ enabled: true });
     await applyRawImportSettings();
   });

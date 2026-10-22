@@ -956,17 +956,8 @@ class RawHighlightReconstructionSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    # "smooth_rebuild_v1" (prototype, October 2026) runs opposed colour first,
-    # then the smooth rebuild in highlight_rebuild.py. Its fields below are
-    # ignored by opposed_color_v1. Sizes are percentages of the long edge.
-    method: Literal["opposed_color_v1", "smooth_rebuild_v1"] = "opposed_color_v1"
+    method: Literal["opposed_color_v1"] = "opposed_color_v1"
     clipping_threshold: float = Field(default=1.0, ge=0.5, le=1.5, allow_inf_nan=False)
-    rebuild_preset: Literal["sharp", "bloom", "custom"] = "sharp"
-    rebuild_core_size_percent: float = Field(default=1.0, ge=0.05, le=10.0, allow_inf_nan=False)
-    rebuild_centre_lift_stops: float = Field(default=0.75, ge=0.0, le=3.0, allow_inf_nan=False)
-    rebuild_bloom_radius_percent: float = Field(default=0.0, ge=0.0, le=10.0, allow_inf_nan=False)
-    rebuild_bloom_amount_percent: float = Field(default=0.0, ge=0.0, le=300.0, allow_inf_nan=False)
-    rebuild_spill_percent: float = Field(default=10.0, ge=0.0, le=100.0, allow_inf_nan=False)
 
 
 class RawImportSettings(BaseModel):
