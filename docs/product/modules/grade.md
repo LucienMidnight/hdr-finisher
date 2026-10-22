@@ -44,6 +44,8 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | HDR Lift/Gamma/Gain is deprecated now that Exposure Bands exists. Remove it after real-photo checks, unless a workflow needs it. The SDR trims stay. | 2026-08, pending |
 | A healing brush in the local adjustment module and hue selection as a local-adjustment mask are required for v1. Both are unbuilt; detailed interaction and rendering design remain to be specified. | Steve, 2026-10-21 |
 | Retouch starts on the CPU, preserving a fallback for later GPU work. Inpaint is the default, targeting PatchMatch with Krita as the main reference; Heal follows darktable/GIMP and Clone shares the brush infrastructure. See the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026). Quality/performance are not yet validated. | Steve, 2026-10-21 |
+| Retouch repairs are shared by HDR/SDR and run before crop/rotation and denoise. Content-dependent selections see the repaired source. Existing materialized SDR Match bases require an explicit Rematch after repair changes; show Rematch required and retain the base until then. These integration decisions are not yet wired. | Steve, 2026-10-22 |
+| The inspected v3 PatchMatch examples are accepted for proceeding with implementation. Skip further natural-dust study work; Steve will test natural dust manually when the tool and settings exist. This is not general photographic validation. | Steve, 2026-10-22 |
 | Slider drags make one undo step per gesture. | 2026-08 |
 | Only the current project schema is accepted; older projects are rejected with a message. No migration before 1.0. | 2026-10 |
 
@@ -58,7 +60,8 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
 - **V1 Retouch brush (healing requirement):** Inpaint, Heal and Clone in
   the local adjustment module. CPU first; later GPU work is separate.
   Not built. Follow the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026);
-  pipeline placement and HDR/SDR sharing still need decisions.
+  shared source placement and explicit SDR Rematch behavior are decided above;
+  integration remains open.
   **Prototype implemented October 21:** isolated bounded CPU PatchMatch engine,
   background jobs/cancellation/revision guard, completed-patch cache and a
   synthetic comparison viewer. Float HDR/negative preservation and donor
@@ -70,8 +73,13 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   spots. Stochastic texture, photo sky, sand and foliage retain fine detail;
   the other eight study results are unchanged from v2. Foliage shapes can
   still change, and larger/source-starved repairs can still smooth detail.
-  Naturally dusty photos and Steve's acceptance of this update remain open.
-  This is not a completed quality gate.
+  Steve accepted these examples and approved interactive integration on October
+  22. Natural-dust testing is deferred to his manual use of the tool/settings;
+  no natural-dust validation is claimed.
+  **Integration groundwork October 22:** a serializable source-space stroke
+  recipe, bounded native-window preparation and completed-patch composition
+  are implemented separately from the app. JSON replay through the worker/cache
+  and exact agreement across read-window boundaries are tested.
   This does not implement the interactive brush, Heal/Clone, project records
   or rendering integration. See the technical plan's CPU prototype outcome
   for the reproduction command and proposed integration boundary.

@@ -325,9 +325,12 @@ against clean 0.024; the smooth patch is no longer obvious in the comparison.
 Foliage retains sharper detail, but the donor changes leaf shapes; this is not
 recovery of the original hidden pixels. Pixel RMSE rises on the four changed
 cases despite the improved texture strength. Local contrast may mismatch and
-larger/irregular repairs can still fall back to averaging. Natural dust,
-general photographic quality, halo-free repairs and Steve's acceptance of v3
-remain unvalidated. Added tests cover independent monochrome/colour noise,
+larger/irregular repairs can still fall back to averaging. Steve accepted the
+v3 examples on October 22 and approved proceeding to interactive integration.
+At his request, further natural-dust testing is deferred to his manual tests
+once the tool and settings exist; it is not a prerequisite for integration.
+Natural dust, general photographic quality and halo-free repairs remain
+unvalidated. Added tests cover independent monochrome/colour noise,
 HDR/negative range, full context exclusion including extreme dirty values,
 noisy borders, bounded fallbacks and cancellation during texture work. All
 twelve v3 cases reproduced pixels, NNF proposals and coherent donor offsets
@@ -343,12 +346,11 @@ range to 0..255 **in float32**, then maps the result back; this is much better.
 It still loses texture and softens the edge. Both variants are retained in
 the viewer/arrays so the direct-float problem is not mistaken for evidence
 against a properly adapted baseline. These examples do not establish a
-universal algorithm winner. The next quality step is Steve's inspection of
-v3 on these cases and naturally dusty photos before interactive integration.
-The existing isolated worker/recipe boundary is
-ready for a brush adapter once quality and pipeline decisions are settled.
+universal algorithm winner. Steve's acceptance applies to these inspected
+examples, not a claim of general photographic validation. Natural-dust tests
+will be manual after tool/settings implementation.
 
-### Integration audit and proposal (not wired or decided)
+### Integration audit and decisions (not wired)
 
 UI placement and image-processing placement are separate choices:
 
@@ -372,13 +374,55 @@ earlier repairs; overlap creates serial dependencies and cache invalidation
 of following dependent repairs. All known defect masks should exclude donors,
 unless a previously repaired region is explicitly treated as valid.
 
-The first question put to Steve is whether the repairs should be shared by HDR
-and SDR (recommended) or independently maintained. No answer is assumed.
-After that, confirm pre-geometry/pre-denoise placement, one decision at a time;
-the authored SDR Match base and whether luminance masks inspect repaired or
-original source must be settled before end-to-end implementation. Existing
-content-dependent masks must keep their fixed-source contract until that
-decision is recorded. The prototype depends on none of these choices.
+Steve confirmed these decisions individually on October 22:
+
+- Repairs are shared by HDR and SDR, before the independent grades.
+- Apply repairs before crop/rotation and lane denoise.
+- Luminance/colour selections inspect the repaired fixed source. Grading still
+  cannot move selection boundaries. This is the intended new contract, not
+  yet a change to the shipping content-mask path.
+- When SDR uses a materialized Match base, changing repairs must show
+  **Rematch required**. Keep that base until Steve explicitly rematches; do
+  not automatically change its look. The shared repair reaches that saved
+  base through rematching, not by copying ACEScg patch pixels into SDR RGB.
+
+The existing app still has none of this Retouch wiring. A repair integration
+must carry its source identity through preview, masks, Match, Proof, export
+and Library paths before it is marked built.
+
+### Native brush adapter (October 22, 2026)
+
+`retouch_recipe.py` adds an isolated `InpaintRecipe` and preparation/composition
+helpers. It is not yet part of EditDocument, session commands or the UI.
+
+- The JSON recipe pins source dimensions, normalized uncropped-source points,
+  native radius, hardness, a half-open native search rectangle, raster version,
+  engine settings and seed. Source radius is 0.5..32px and one gesture has at
+  most 512 samples; the existing ROI/defect/patch-work caps still apply. No
+  automatic subdivision or silent stroke truncation is allowed.
+- Rasterization reuses the existing local brush's disc/capsule feathering and
+  pressure rules in native square pixels. It has no flow accumulation/erase
+  controls. It checks cancellation between capsules and rejects excessive
+  work before reading source pixels. Only actual image borders may clip a
+  footprint; a search rectangle cannot cut off part of a stroke.
+- Preparation takes a `(top,left,bottom,right)` native window reader and an
+  optional boolean known-defect reader. The app must supply interpreted source
+  with preceding completed repairs and run preparation on a backend worker.
+  The adapter owns bounded input snapshots and checks shape/type/range. It
+  cannot verify the source epoch; the owning session must do that atomically.
+- Composition copies intersections of already blended, completed patches into
+  the requested native window, in dependency order. No solver or extra feather
+  blend is invoked per window. The session must ensure that the patches belong
+  to the same source and repair dependency revision.
+
+Behavior tests cover JSON replay through the existing worker/cache, native
+roundness on a non-square source, sparse/repeated samples, feathering, border
+clipping, invalid/oversized/empty strokes, input ownership, cancellation and
+exact agreement across different read-window boundaries. These are adapter
+tests, not interactive preview/export parity tests. No existing project schema
+or render path changes. Next: add ordered repair records and history commands,
+then connect session scheduling/publication and the Local Adjustments brush,
+with shared repaired-source consumption across rendering paths.
 
 Proposed saved record: stable ID, enabled/opacity, mode, ordered source-space
 strokes or raster recipe, explicit search rectangle, algorithm version,
