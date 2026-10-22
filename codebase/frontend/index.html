@@ -631,6 +631,7 @@
             <label for="raw-highlight-method">Method</label>
             <select id="raw-highlight-method">
               <option value="opposed_color_v1" selected>Opposed color</option>
+              <option value="smooth_rebuild_v1">Smooth rebuild (prototype)</option>
             </select>
           </div>
           <div class="control-row">
@@ -639,6 +640,23 @@
               <output id="raw-highlight-threshold-value">1.000</output>
             </div>
             <input id="raw-highlight-threshold" type="range" min="0.5" max="1.5" step="0.001" value="1">
+          </div>
+          <div id="raw-rebuild-controls" class="raw-rebuild-controls" hidden>
+            <div class="film-stage-shortcuts" role="group" aria-label="Smooth rebuild presets">
+              <span>Preset</span>
+              <button type="button" class="button-secondary" data-rebuild-preset="sharp" aria-pressed="false" title="Keeps clipped lights at their true size, with brightness rising smoothly to the centre.">Sharp</button>
+              <button type="button" class="button-secondary" data-rebuild-preset="bloom" aria-pressed="false" title="Spreads part of the clipped light outward so a hard-edged light melts into its glow.">Bloom</button>
+            </div>
+            <p class="helper">Each change re-develops the RAW. Type a value and press Enter.</p>
+            <div class="control-pair">
+              <label class="tooltip-trigger" data-tooltip="How far in from the clip edge brightness keeps rising, as % of the long edge.">Core size % <input id="raw-rebuild-core" type="number" min="0.05" max="10" step="0.1" data-rebuild-field="rebuild_core_size_percent"></label>
+              <label class="tooltip-trigger" data-tooltip="How much brighter the middle of a clipped area may become, in stops.">Centre lift (stops) <input id="raw-rebuild-lift" type="number" min="0" max="3" step="0.05" data-rebuild-field="rebuild_centre_lift_stops"></label>
+            </div>
+            <div class="control-pair">
+              <label class="tooltip-trigger" data-tooltip="How far bloom spreads clipped light, as % of the long edge. 0 turns bloom off.">Bloom radius % <input id="raw-rebuild-bloom-radius" type="number" min="0" max="10" step="0.1" data-rebuild-field="rebuild_bloom_radius_percent"></label>
+              <label class="tooltip-trigger" data-tooltip="How much spread light is added, as % of the clipped light.">Bloom amount % <input id="raw-rebuild-bloom-amount" type="number" min="0" max="300" step="5" data-rebuild-field="rebuild_bloom_amount_percent"></label>
+            </div>
+            <label class="tooltip-trigger" data-tooltip="Share of bloom allowed to land on darker objects in front of the light.">Spill onto dark % <input id="raw-rebuild-spill" type="number" min="0" max="100" step="5" data-rebuild-field="rebuild_spill_percent"></label>
           </div>
         </div>
       </section>

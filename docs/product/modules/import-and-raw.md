@@ -51,6 +51,7 @@ Rules in force:
 | Camera RAW uses a camera-linear bridge: LibRaw unpack and AHD demosaic, unity white balance through 16-bit, then float32 white balance and camera RGB to ACEScg. Opposed-colour highlight reconstruction removes magenta clipping. | 2026-09-03 |
 | **Exposure starts at zero.** RAW development is tuned so that the camera JPEG, the RAW as first shown, and Grade's starting point roughly agree. The Library's starting look must match Grade's. Every RAW grade saved before the change will look brighter or darker; no migration. The strict testing rule applies (RAW import). | Steve, 2026-10-11 |
 | Generic, not tuned to one camera. | 2026-10-09 |
+| **Smooth rebuild prototype for clipped highlights**, selectable beside Opposed color (which stays). Goal: smooth gradients that grade without banding; inventing some light is acceptable if subtle and gradual. Presets (Sharp, Bloom) plus typed fields, not sliders, because each change re-develops the RAW. A soft spill onto dark objects is fine; heavy spill would duplicate Film Look's lens filters. | Steve, 2026-10-22 |
 | **A plain SDR file starts as the file.** JPEG, PNG, BMP, TIFF and HEIC encoded for display (sRGB or BT.709 transfer, no gain map) keep the file as their SDR rendition, as gain-map files keep their base; HDR shows the same picture with its white at reference white (scene 0.18). No generated SDR and no Library lift. Matching HDR colours into SDR then asks before replacing that rendition, as for gain-map files. | Steve, 2026-10-19 |
 | A RAW's starting brightness follows how it was shot, like the camera JPEG. No per-photo automatic meter, visible or hidden. Brief: [codex-brief-raw-starting-exposure-zero](../../technical/briefs/codex-brief-raw-starting-exposure-zero-2026-10-18.md). | Steve, 2026-10-18 |
 | **Nothing that shapes the look is baked into import.** No starting tone curve, hidden or pre-set in Curves: Film Look applies its own curves, and renders and passes must start neutral too. RAW gets one fixed brightness calibration for all cameras plus brightness information the file records (such as DNG `BaselineExposure`). Contrast comes from visible tools; the start may look flatter than the camera JPEG. Brightness against the camera JPEG is judged by eye, replacing the ±1/3 EV target. A camera-like start may come later as a visible Look. | Steve, 2026-10-18 |
@@ -150,6 +151,21 @@ repair, LibRaw 0.22.1 AHD, camera RGB to ACEScg, automatic Lensfun
 correction, import gamut projection, calibration, measurements). Results and
 limits: Photo Library module, speed plan phase P. Grade's own import still
 develops on the CPU.
+
+**Smooth rebuild prototype (October 22, built):** RAW Highlight
+Reconstruction has a second method, "Smooth rebuild (prototype)"
+(`smooth_rebuild_v1`, `highlight_rebuild.py`). It runs opposed colour, then,
+on the developed float picture, raises the inside of each clipped area to an
+even floor, lifts it toward the centre, and can add Gaussian bloom. Presets:
+Sharp (core 1%, lift 0.75 stops, no bloom) and Bloom (adds radius 1.5%,
+amount 60%, spill 10%); five typed fields, sizes as % of the long edge.
+On the sunset IMG_3129 it removes the dim, flat sun core that caused rings
+(core now brightest, falling smoothly outward). Limits: camera RAW on the
+camera-linear bridge only; the new method takes the CPU route (the GPU raw
+route still accepts only Opposed color); about one extra second per develop
+at 18 MP. Bloom only adds light: moving light out of a clipped area left a
+dark ring where it sat inside a bright unclipped glow. Not yet reviewed by
+Steve on his display or on other photos.
 
 **Not built**
 
