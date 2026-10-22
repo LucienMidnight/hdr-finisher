@@ -1,6 +1,6 @@
 # Source Preparation Workflows
 
-HDR Finisher is the last global finishing and delivery step. Complete RAW development, compositing, retouching, and rendering upstream, but export before an SDR display transform clips or compresses the HDR range.
+HDR Finisher develops camera RAW files itself, so most photographers can open RAWs directly from the Library. Use this page when you develop, composite, retouch, or render in another application first and hand the result to HDR Finisher. Export from that application before an SDR display transform clips or compresses the HDR range.
 
 ## A good handoff has four properties
 

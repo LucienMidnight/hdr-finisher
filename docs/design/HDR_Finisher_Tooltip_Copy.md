@@ -1,6 +1,6 @@
 # HDR Finisher Tooltip Copy
 
-This file is the reviewable copy registry for explanatory tooltips. Copy strings from here into application markup or script without rewriting them in place. Interaction rules live in `../product/HDR_Finisher_PRD_v1.2.md`.
+This file is the reviewable copy registry for explanatory tooltips. Copy strings from here into application markup or script without rewriting them in place. Interaction rules live in `../product/archive/HDR_Finisher_PRD_v1.2.md` (archived; current requirements are in the module PRDs under `../product/modules/`).
 
 ## Scope title tooltips
 

@@ -2,7 +2,9 @@
 
 This manual is organized by what you are trying to do. You do not need to understand color science before using HDR Finisher, but the technical detail is available when a source, display, or delivery pipeline needs closer control.
 
-Pages carry their own verification dates where implementation freshness matters. The current image path was reviewed on **August 25, 2026** in the [image-processing pipeline technical contract](technical/image-processing-pipeline.md). Browser, operating-system, and display behavior can change; dated platform guidance links to first-party sources.
+HDR Finisher is a full HDR photo editor: a photo Library, camera RAW development, HDR and SDR grading, local adjustments, Denoise, Film Look, Proof, and batch export to gain-map formats. The [project README](../README.md) summarises its capabilities and supported formats.
+
+Pages carry their own verification dates where implementation freshness matters. The [image-processing pipeline technical contract](technical/image-processing-pipeline.md) was last reviewed on **August 25, 2026**; GPU-first rendering for export, Proof and Library pictures (October 18, 2026) is described in [Architecture](technical/architecture.md) and the [Export and Proof module PRD](product/modules/export-and-proof.md). Browser, operating-system, and display behavior can change; dated platform guidance links to first-party sources.
 
 ## Choose a path
 
@@ -15,11 +17,12 @@ Pages carry their own verification dates where implementation freshness matters.
 
 ### I am a photographer
 
-1. [Prepare a source from Affinity, Lightroom, Photoshop, darktable, DxO PhotoLab, or an iPhone](workflows/source-preparation.md)
-2. [Import and confirm source interpretation](user-guide/import.md)
+1. [Quick start: from the Library to export](getting-started/quick-start.md)
+2. [Photo Library: how it works](technical/photo-library.md)
 3. [Grade HDR](user-guide/grade-hdr.md)
 4. [Author the SDR fallback](user-guide/grade-sdr.md)
-5. [Proof and export](user-guide/proof.md)
+5. [Proof](user-guide/proof.md) and [export](user-guide/export.md)
+6. If you develop in another editor first: [prepare a source from Affinity, Lightroom, Photoshop, darktable, DxO PhotoLab, or an iPhone](workflows/source-preparation.md) and [confirm its interpretation on import](user-guide/import.md)
 
 ### I am a 3D artist
 

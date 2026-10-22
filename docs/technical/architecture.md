@@ -1,16 +1,18 @@
 # Architecture and Data Flow
 
-HDR Finisher is a local web application packaged as a desktop-like tool. Python owns file decoding, color processing, authoritative rendering, scopes, proofing, and export. A browser owns the interface and HDR-capable viewport.
+HDR Finisher is a local web application packaged as an Electron desktop app. Python owns file decoding, the reference colour maths, the CPU fallback renderer, file encoding, and the Library helper. The browser side owns the interface, the HDR-capable viewport, and the WebGPU renderer.
+
+**GPU first (October 18, 2026).** Preview, export, batch export, Proof, and Library pictures all render on the GPU. Export, Proof, and Library pictures use a hidden Electron renderer that reuses Grade's renderer and shaders; the CPU path in Python is the fallback when there is no usable GPU or the GPU fails. GPU and CPU results agree within a perceptual tolerance rather than pixel for pixel. Encoding to AVIF, Ultra HDR JPEG, and JPEG XL stays on the CPU. See the [Export and Proof module PRD](../product/modules/export-and-proof.md). Some older sections below still describe the CPU as the export reference; where they disagree, the module PRDs win.
 
 ## Why this architecture
 
 - Python and NumPy make floating-point image processing readable and testable.
 - colour-science provides well-defined color-space and transfer conversions.
 - A browser provides a portable UI, GPU canvas access, responsive layout, and a current HDR image presentation path.
-- FastAPI makes the processing functions available through explicit local endpoints without introducing a database.
+- FastAPI makes the processing functions available through explicit local endpoints. Grades live in sidecar files beside each photo; the Library's SQLite database is only an index that can be rebuilt from them.
 - Native command-line encoders can be pinned, capability-checked, and independently validated.
 
-The tradeoff is that OS, browser, GPU, and display behavior become part of preview and proofing. Export computation remains on the backend to keep the delivery result deterministic.
+The tradeoff is that OS, browser, GPU, and display behavior become part of preview, proofing, and GPU export. The HDR highlight ceiling is the one exact rule on every render path: no finished HDR pixel exceeds the target, allowing only encoder rounding.
 
 ## Data flow
 
@@ -83,13 +85,13 @@ An imported upload is copied into a temporary owned source, decoded, normalized,
 - Preview settings and capabilities
 - Render cache
 
-There is no database. Sessions live in memory, while `.hdrfinisher` project files persist the source reference, adjustment document, and project settings so work can be reopened. Ejecting or replacing a session discards adjustments that have not been saved to a project. Application preferences are stored separately as local desktop state. Exports and manually recorded proof evidence are additional durable artifacts.
+Grading sessions live in memory. Library photos keep their grade in a `.hdrf` sidecar beside the photo, indexed by `library.sqlite3`, which can be rebuilt (see [Photo Library: how it works](photo-library.md)). For single-file work, `.hdrfinisher` project files persist the source reference, adjustment document, and project settings so work can be reopened. Ejecting or replacing a session discards adjustments that have not been saved to a project. Application preferences are stored separately as local desktop state. Exports and manually recorded proof evidence are additional durable artifacts.
 
 ## Preview scheduling
 
 The interaction-aware scheduler coalesces control input to one WebGPU render per animation frame. Interactive scope work is throttled, normal settling follows after roughly 110 ms idle, and optional high-quality refinement follows only after longer idle. Image, scope, refinement, and inactive-lane work have separate generations; requests are abortable and stale results are rejected by both frontend and backend checks.
 
-The validated WebGPU surface remains the settled authoring preview for HDR and SDR. Source proxies prefer aligned RGBA16F and fall back to RGBA32F for non-finite or out-of-range values. The renderer writes the active branch through Curves into an RGBA16F intermediate, applies Film Response into a second intermediate, then extracts qualified highlight energy into a quarter-resolution RGBA16F surface. Separable Gaussian passes blur Bloom RGB and Halation luma at their independent radii before the full-resolution composite applies diffusion, Image Structure, and seeded Grain. The CPU renderer uses a dense three-pass Gaussian approximation with the same linear-light compositing semantics. Parameters, reference constants, and ordering mirror the CPU processor; the backend remains authoritative for proof and export.
+The validated WebGPU surface remains the settled authoring preview for HDR and SDR. Source proxies prefer aligned RGBA16F and fall back to RGBA32F for non-finite or out-of-range values. The renderer writes the active branch through Curves into an RGBA16F intermediate, applies Film Response into a second intermediate, then extracts qualified highlight energy into a quarter-resolution RGBA16F surface. Separable Gaussian passes blur Bloom RGB and Halation luma at their independent radii before the full-resolution composite applies diffusion, Image Structure, and seeded Grain. The CPU renderer uses a dense three-pass Gaussian approximation with the same linear-light compositing semantics. Parameters, reference constants, and ordering mirror the CPU processor, which is now the fallback for proof and export rather than the authority.
 
 ### Masks and magnified views
 

@@ -4,10 +4,10 @@ HDR Finisher is currently a technical alpha. Windows x64, Apple Silicon macOS, a
 
 ## Requirements
 
-- Python 3.12 or newer
-- A current Chromium-family browser for the validated HDR preview path
-- An HDR-capable GPU/display chain for visual HDR review
-- Optional native encoders for AVIF gain maps and JPEG Ultra HDR
+- A graphics card with WebGPU support. Preview, export, Proof and Library pictures render on the GPU; the app falls back to the CPU, more slowly, when no usable GPU is found.
+- An HDR-capable GPU/display chain for visual HDR review. Without one, you can still grade, export and check HDR with the scopes.
+- The desktop packages include everything else, including the encoders for AVIF gain maps and JPEG Ultra HDR.
+- To run from source: Python 3.12 or newer and Node.js (see [Run from source](#run-from-source)).
 
 The application works offline. The native desktop shell starts a private local FastAPI sidecar and displays the editor in its own window. Keep the application open while you work. Images remain on the local machine unless you separately upload an export elsewhere.
 
@@ -35,7 +35,7 @@ The package contains its Python processing backend and native encoder tools; Pyt
 For the first-class Kubuntu/Ubuntu package:
 
 ```bash
-sudo apt install ./HDR-Finisher-0.8.8-Linux-x86_64.deb
+sudo apt install ./HDR-Finisher-<version>-Linux-x86_64.deb
 ```
 
 For a locally built Flatpak:

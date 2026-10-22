@@ -1,6 +1,6 @@
 # Known Limitations and Support Status
 
-This page prevents implemented, validated, expected, and planned behavior from being conflated. Platform and distribution status reflects **September 4, 2026**; the Denoise and preview notes below were refreshed on **October 5, 2026** against the viewport-preview PRD and baseline.
+This page prevents implemented, validated, expected, and planned behavior from being conflated. Platform and distribution status reflects **September 4, 2026**; the Denoise and preview notes below were refreshed on **October 5, 2026** against the viewport-preview PRD and baseline. Editing scope, export rendering, packaging and planned work were refreshed on **October 22, 2026** against the master PRD.
 
 ## Platform matrix
 
@@ -101,15 +101,16 @@ stays under 256 MiB. Export and Proof paths were not changed.
 
 ## Editing limitations
 
-HDR Finisher is a finishing editor, not a full compositor or RAW editor:
+HDR Finisher is a photo editor with RAW development, but it has no layers or compositing:
 
-- RAW development is a constrained convenience beta. Ordinary supported Bayer and X-Trans RGB RAWs use a camera-linear float bridge with a versioned, bypassable NumPy opposed-color highlight reconstruction stage before AHD. The method repairs channel-clipped color from spatially supported opposing CFA channels but does not invent texture in fully clipped areas. Complicated colored lighting can retain pink/green boundaries, and heavily clipped X-Trans speculars can retain blue residuals that become visible only when HDR exposure is lowered; threshold changes require source re-development. Unsupported sensor/color metadata is identified in the Metadata panel as a legacy compatibility fallback. Experimental DNG Import adds metadata-driven LinearRaw decoding and audited OpcodeList3 GainMap/WarpRectilinear handling. These routes do not add segmentation/guided-laplacian reconstruction, hot-pixel repair, denoise, sharpening, creative camera profiles, or a general RAW-development UI.
-- Local finishing masks support brush, gradient, path, luminance-range, and Boolean combinations; there is no pixel cloning or object-aware selection.
-- No layers or compositing
-- Crop/transform, Lensfun correction and Denoise are available. There is no full retouching toolset. Denoise has one method, which measures the noise in the photo (the earlier wavelet method was removed on October 6, 2026; a project saved with it opens with the current method); cold enabling while panned on the saved 42 MP photo can show too few frames during a drag (PRD 15.3 / CF-SPEED-05).
-- No batch queue or automation UI
+- RAW development uses one generic method for every camera, with no per-camera profiles. Ordinary supported Bayer and X-Trans RGB RAWs use a camera-linear float bridge with a versioned, bypassable NumPy opposed-color highlight reconstruction stage before AHD. The method repairs channel-clipped color from spatially supported opposing CFA channels but does not invent texture in fully clipped areas. Complicated colored lighting can retain pink/green boundaries, and heavily clipped X-Trans speculars can retain blue residuals that become visible only when HDR exposure is lowered; threshold changes require source re-development. Unsupported sensor/color metadata is identified in the Metadata panel as a legacy compatibility fallback. Experimental DNG Import adds metadata-driven LinearRaw decoding and audited OpcodeList3 GainMap/WarpRectilinear handling. The RAW route does not add segmentation/guided-laplacian reconstruction, hot-pixel repair or creative camera profiles; Denoise and sharpening are applied in Grade.
+- Local adjustment masks support brush, gradient, path, luminance-range, and Boolean combinations. Hue selection is not available yet; it is planned for 1.0. AI or object-aware selection is out of scope.
+- No layers or compositing.
+- Crop/transform, Lensfun correction and Denoise are available. There is no retouching brush yet; a Retouch brush (Inpaint, Heal and Clone) is planned for 1.0. Denoise has one method, which measures the noise in the photo (the earlier wavelet method was removed on October 6, 2026; a project saved with it opens with the current method); cold enabling while panned on the saved 42 MP photo can show too few frames during a drag (PRD 15.3 / CF-SPEED-05).
+- Batch export is available from the Export page and the Library. There is no scripting or automation interface.
 - Undo/history and saved projects are available, but projects reference the original source rather than embedding its pixels.
-- No local presets/look library
+- Group presets and Film Looks can be saved and applied. The presets window cannot yet rename, edit, import or export presets, and a Library browser for Looks is deferred until after 1.0.
+- Saved projects and presets are not migrated between versions before 1.0; ones that use a removed setting must be recreated.
 
 Importing, opening a project, ejecting, and closing prompt to save or discard unsaved adjustment state.
 
@@ -128,7 +129,7 @@ The four targeted checks for Claude's logo, Film panel, Navigate and RAW-toggle 
 - Perspective uses a bounded GPU draft made by warping one uncropped graded image. Spatial grading and resampling can differ from the final result; Apply rebuilds the authoritative preview at the selected tier. CPU preview is the fallback. Reset saves immediately, and leaving Perspective cancels unapplied changes.
 - Editing preview is viewport-bounded, with selectable processing resolutions including Full. CPU preview remains available for an unavailable or lost GPU. The October 5 audits also record CPU picture, mask, scope and whole-source work that is still under investigation (PRD 15.7).
 - Native zoom uses source-resolution viewport processing; magnified views below 100% use stepped processing sizes. Preview/export and cross-scale agreement have the specific limitations recorded in PRD 15.1, 15.2 and 15.7.
-- WebGPU is the settled authoring preview where parity and device support are validated; explicit proof and export remain backend-authoritative.
+- Preview, export, Proof and Library pictures render on the GPU with the same shaders, and fall back to the CPU when no usable GPU is available. GPU and CPU results agree within a perceptual tolerance, not pixel for pixel. File encoding itself runs on the CPU.
 - Technical Processing and Execution describe the accepted viewer frame; auxiliary renders do not change those route labels (CF-ROUTE-08 fixed October 7).
 - Editor exposure overlays omit film grain so random grain excursions do not paint warning speckles. Overlay and CPU scope work share two render slots; superseded/disconnected requests stop at render boundaries. Visible pictures in a detached Library keep loading during a grading gesture. Library source-map jobs already cancel on disconnect and use a separate bounded helper lane.
 - Routine scopes analyze the current preview proxy, not every full-source pixel. Tiny source-resolution features can be reduced by proxy downsampling.
@@ -157,7 +158,7 @@ The four targeted checks for Claude's logo, Film panel, Navigate and RAW-toggle 
 - JPEG Ultra HDR depends on a compatible libultrahdr build; availability is capability-gated.
 - HDR renditions need not contain pixels above SDR white. JPEG export and saved-grade Library pictures retain their separate HDR and SDR views in that case; the encoder capacity metadata has a minimal positive transition instead of the rejected zero-width range. Existing successful JPEG encodes are unchanged. Failed Library pictures retry on Library use after a 30-second cooldown, without another edit/save; replaced jobs are logged separately (October 12, 2026).
 - AVIF gain maps depend on compatible libavif command-line tools.
-- JPEG XL HDR is experimental and capability-gated. It is direct 12-bit Rec.2020/PQ and has no SDR fallback; third-party files with ambiguous precision or color signaling are rejected or require manual interpretation.
+- JPEG XL HDR is experimental and capability-gated. It is direct Rec.2020/PQ (12-bit integer by default; 10- and 16-bit integer and 16- and 32-bit float are selectable) and has no SDR fallback; third-party files with ambiguous precision or color signaling are rejected or require manual interpretation.
 - Gain-map browser/app support changes outside the project.
 - The app validates structural markers and decoder behavior, not formal certification against every clause of ISO 21496-1.
 - No built-in publishing client uploads directly to hosting or social platforms.
@@ -173,18 +174,20 @@ The four targeted checks for Claude's logo, Film panel, Navigate and RAW-toggle 
 
 ## Packaging and operations
 
-- The Windows setup and portable packages are unsigned technical previews; Windows may show an unrecognized-app warning.
+- The Windows setup and portable packages are unsigned technical previews; Windows may show an unrecognized-app warning. macOS packages are not notarized.
 - Flatpak updates are store-managed; other desktop packages provide a GitHub release check rather than an in-place automatic updater.
-- Linux 0.8.8 is x86_64 only. AppImage and arm64 artifacts are not part of this milestone.
+- Linux packages are x86_64 only. There are no AppImage or arm64 builds.
+- On macOS and Linux, the Library cannot yet rename, move or delete photos and folders. It says so and leaves the files untouched.
 - Native encoder redistribution may vary by platform and license requirements.
 - The desktop sidecar uses authenticated loopback requests and path grants, but it is not designed or hardened for network exposure.
 - There is no stable versioned external API guarantee.
 
 ## Planned or explicitly deferred
 
+- Planned for 1.0: a Retouch brush (Inpaint, Heal and Clone) and hue selection as a local-adjustment mask
 - Wider JPEG XL interoperability and platform acceptance
 - Wider automatic source-space/OCIO integration
-- Batch automation
+- Deferred until after 1.0: a Library browser for Looks, linked photos, portable projects, and automation for AI assistants
 
 Planned does not mean promised. Use the product requirements and issue tracker for direction, but use this page and the active code for current capability.
 
