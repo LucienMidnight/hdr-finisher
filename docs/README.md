@@ -18,8 +18,8 @@ Pages carry their own verification dates where implementation freshness matters.
 ### I am a photographer
 
 1. [Quick start: from the Library to export](getting-started/quick-start.md)
-2. [Photo Library: how it works](technical/photo-library.md)
-3. [Grade HDR](user-guide/grade-hdr.md)
+2. [Photo Library](user-guide/library.md)
+3. [Grade HDR](user-guide/grade-hdr.md), then [local adjustments](user-guide/local-adjustments.md), [Denoise](user-guide/denoise.md) and [Film Look](user-guide/film-look.md)
 4. [Author the SDR fallback](user-guide/grade-sdr.md)
 5. [Proof](user-guide/proof.md) and [export](user-guide/export.md)
 6. If you develop in another editor first: [prepare a source from Affinity, Lightroom, Photoshop, darktable, DxO PhotoLab, or an iPhone](workflows/source-preparation.md) and [confirm its interpretation on import](user-guide/import.md)
@@ -58,6 +58,7 @@ Pages carry their own verification dates where implementation freshness matters.
 ## User manual
 
 - [Install and run](getting-started/install-and-run.md)
+- [Photo Library](user-guide/library.md)
 - [Application settings and shortcuts](user-guide/application-settings-and-shortcuts.md)
 - [Import and metadata](user-guide/import.md)
 - [Projects and schema](user-guide/projects.md)
@@ -65,6 +66,9 @@ Pages carry their own verification dates where implementation freshness matters.
 - [Viewer, scopes, and overlays](user-guide/viewer-and-analysis.md)
 - [HDR grading](user-guide/grade-hdr.md)
 - [SDR fallback grading](user-guide/grade-sdr.md)
+- [Local adjustments and masks](user-guide/local-adjustments.md)
+- [Denoise](user-guide/denoise.md)
+- [Film Look](user-guide/film-look.md)
 - [Grading controls and direct-entry limits](user-guide/grading-controls-reference.md)
 - [Typed values reference: every slider and typed range](user-guide/typed-values-reference.md)
 - [Chrome Proof](user-guide/proof.md)

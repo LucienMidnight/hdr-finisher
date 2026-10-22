@@ -10,7 +10,7 @@ On an SDR display, continue normally, but use the scopes for HDR placement and u
 
 ## 2. Open a photo
 
-The app opens on the **Library**. Choose **Pin folder** and pick a folder of photos. Browse the grid, then double-click a photo to open it in **Grade**. Its grade is saved automatically in a small `.hdrf` file beside the photo; the original is never changed.
+The app opens on the **Library**. Choose **Pin folder** and pick a folder of photos. Browse the grid, then double-click a photo to open it in **Grade**. See the [Photo Library guide](../user-guide/library.md) for rating, albums and copying grades. Its grade is saved automatically in a small `.hdrf` file beside the photo; the original is never changed.
 
 To work on a single file without the Library, choose **Choose image**.
 
