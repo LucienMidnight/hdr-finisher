@@ -421,7 +421,7 @@ class _BranchAdjustments(BaseModel):
     ] = "smooth_rolloff"
     # Prototype (Oct 2026): AgX-style "Attenuate" colour handling. Percentage
     # of each channel mixed toward neutral before the per-channel shoulder.
-    highlight_compression_attenuation: float = Field(default=20.0, ge=0.0, le=50.0)
+    highlight_compression_attenuation: float = Field(default=20.0, ge=0.0, le=90.0)
     tone_equalizer_nodes: list[ToneEqualizerNode] = Field(
         default_factory=_default_tone_equalizer_nodes,
         min_length=2,

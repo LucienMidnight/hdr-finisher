@@ -104,7 +104,13 @@ function mapHighlightNits(inputNits, hdr) {
   const w = clamp(u + info.bias * u * (1 - u), 0, 1);
   const span = info.targetStop - info.effectiveStartStop;
   const m0 = (info.peakStop - info.effectiveStartStop) / Math.max(span * (1 + info.bias), 0.000001);
-  const m1 = info.detail * (info.peakStop - info.effectiveStartStop) / Math.max(span * (1 - info.bias), 0.000001);
+  let m1 = info.detail * (info.peakStop - info.effectiveStartStop) / Math.max(span * (1 - info.bias), 0.000001);
+  if (hdr.highlight_compression_color_handling === "agx_attenuate") {
+    // Mirrors _concave_shoulder: per-channel Attenuate keeps the shoulder concave.
+    const low = Math.max(0, 3 - 2 * m0);
+    const high = Math.max(low, 0.9 * (3 - m0) / 2);
+    m1 = low + info.detail * (high - low);
+  }
   const mapped = w * (1 - w) * (1 - w) * m0 + w * w * (3 - 2 * w) + w * w * (w - 1) * m1;
   return 2 ** (info.effectiveStartStop + span * mapped);
 }
@@ -223,6 +229,7 @@ function sdrHighlightCurveAdapter(sdr) {
       * (sdr.tone_section_enabled === false ? 1 : 2 ** (Number(sdr.exposure) || 0)),
     highlight_compression_peak_detail: sdr.highlight_compression_peak_detail,
     highlight_compression_bias: sdr.highlight_compression_bias,
+    highlight_compression_color_handling: sdr.highlight_compression_color_handling,
   };
 }
 

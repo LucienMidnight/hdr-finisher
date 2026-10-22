@@ -137,8 +137,11 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
 - Save state shows beside the photo name. The dot on the Grade tab when
   seen from the Library is missing.
 - **Attenuate (AgX-style) Highlight Color, prototype (October 22):** built
-  for HDR and SDR on CPU and WebGPU, with Attenuation 0–50% (default 20%;
-  0% equals per-channel rolloff). GPU matches the CPU within the existing
+  for HDR and SDR on CPU and WebGPU, with Attenuation 0–90% (default 20%;
+  0% equals per-channel rolloff). Its shoulder stays concave so Highlight
+  Detail can no longer make orange–magenta bands (fixed October 22).
+  Smooth color rolloff still has that flaw at high Detail; whether to fix it
+  there (it changes existing grades) is Steve's call. GPU matches the CPU within the existing
   parity tolerance (`tests/highlight-attenuate-parity.js`). Open: Steve's
   judgement on real photos, whether it becomes the default, and the SDR look
   (not reviewed). See the

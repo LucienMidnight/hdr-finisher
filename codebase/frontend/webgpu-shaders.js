@@ -891,7 +891,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       m1: f32,
       compressionSpanStops: f32
     ) -> vec3f {
-      let s = clamp(inset, 0.0, 0.5);
+      let s = clamp(inset, 0.0, 0.9);
       let mixedRaw = working * (1.0 - s) + vec3f(s * dot(working, weights));
       let workingPeak = max(max(working.r, working.g), working.b);
       var gain = 1.0;
@@ -911,6 +911,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         mapped = mapped + restore * (outset - mapped);
       }
       return mapped;
+    }
+    // Mirrors _concave_shoulder: Detail picks an end slope that keeps the
+    // per-channel shoulder concave, so hue never turns back near the peak.
+    fn concaveEndSlope(m0: f32, detail: f32) -> f32 {
+      let low = max(0.0, 3.0 - 2.0 * m0);
+      let high = max(low, 0.9 * (3.0 - m0) / 2.0);
+      return low + clamp(detail, 0.0, 1.0) * (high - low);
     }
     fn hdrPeakFitBlend(input: vec3f, mapped: vec3f, activation: f32) -> vec3f {
       if (max(max(abs(input.r),abs(input.g)),abs(input.b)) > 32752.0
@@ -969,7 +976,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 2.5) {
         let attenuated = agxAttenuate(
           transport, vec3f(0.2627, 0.6780, 0.0593), p[${GPU_PARAMS.HIGHLIGHT_ATTENUATION}],
-          effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1, peakStop - targetStop
+          effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0,
+          concaveEndSlope(m0, p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}]), peakStop - targetStop
         );
         return mix(input, bt2020ToAcescg(attenuated), peakFitActivation);
       }
@@ -1043,7 +1051,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 2.5) {
         return agxAttenuate(
           input, vec3f(0.2126, 0.7152, 0.0722), p[${GPU_PARAMS.HIGHLIGHT_ATTENUATION}],
-          effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1, peakStop
+          effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0,
+          concaveEndSlope(m0, p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}]), peakStop
         );
       }
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 1.5) {

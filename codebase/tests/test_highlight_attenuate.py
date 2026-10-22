@@ -50,9 +50,43 @@ def test_attenuation_fades_colour_toward_white_gradually() -> None:
     assert np.max(np.diff(blue_share)) < 0.02  # no step between neighbouring levels
 
 
-def test_zero_attenuation_matches_smooth_color_rolloff() -> None:
+def hue_degrees(transport: np.ndarray) -> np.ndarray:
+    r, g, b = transport[..., 0], transport[..., 1], transport[..., 2]
+    return np.degrees(np.arctan2(np.sqrt(3.0) * (g - b), 2.0 * r - g - b))
+
+
+def test_hue_never_turns_back_even_at_full_highlight_detail() -> None:
+    # Steve, October 22: Detail 100% gave orange-magenta-orange bands around the sun.
+    for colour in ([1.0, 0.45, 0.12], [1.0, 0.8, 0.7], [1.0, 0.3, 0.05]):
+        levels = np.geomspace(nits_to_linear(100.0), nits_to_linear(2500.0), 400, dtype=np.float32)
+        ramp = linear_bt2020_to_acescg(levels[:, None] * np.array(colour, dtype=np.float32))[None]
+        for attenuation in (0.0, 20.0, 50.0, 90.0):
+            out = _compress_scene_highlights(
+                ramp, 400.0, 1000.0, 0.0, mode="peak_fit", source_peak_nits=2500.0, peak_detail=100.0,
+                color_handling="agx_attenuate", reference_white_nits=WHITE, attenuation=attenuation,
+            )
+            hue = hue_degrees(acescg_to_linear_bt2020(out)[0])
+            top = int(np.argmax(hue))
+            assert hue[top] - hue[top:].min() < 0.2, (colour, attenuation)
+
+
+def test_highest_attenuation_stays_finite_and_on_target() -> None:
+    out_peak = acescg_to_linear_bt2020(hdr(orange_ramp(), "agx_attenuate", attenuation=90.0)).max(axis=-1)[0]
+    assert np.all(np.isfinite(out_peak))
+    assert abs(out_peak[-1] - nits_to_linear(1000.0)) / nits_to_linear(1000.0) < 0.01
+
+
+def test_zero_attenuation_at_zero_detail_matches_smooth_color_rolloff() -> None:
+    # At Detail 0% both shoulders have the same flat top; above it Attenuate keeps
+    # its shoulder concave while Smooth color rolloff does not.
     ramp = orange_ramp()
-    np.testing.assert_allclose(hdr(ramp, "agx_attenuate", 0.0), hdr(ramp, "smooth_rolloff"), rtol=1e-5, atol=1e-7)
+    np.testing.assert_allclose(
+        _compress_scene_highlights(ramp.astype(np.float32), 400.0, 1000.0, 0.0, mode="peak_fit", source_peak_nits=4000.0,
+                                   peak_detail=0.0, color_handling="agx_attenuate", reference_white_nits=WHITE, attenuation=0.0),
+        _compress_scene_highlights(ramp.astype(np.float32), 400.0, 1000.0, 0.0, mode="peak_fit", source_peak_nits=4000.0,
+                                   peak_detail=0.0, color_handling="smooth_rolloff", reference_white_nits=WHITE),
+        rtol=1e-5, atol=1e-7,
+    )
 
 
 def test_sdr_lane_keeps_display_white_peak_and_untouched_shadows() -> None:

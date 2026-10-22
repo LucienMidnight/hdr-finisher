@@ -19,7 +19,8 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 const LONG_EDGE = 1520;
 const MAX_MEAN_DIFFERENCE = 0.1 / 255;
 const MAX_P999_DIFFERENCE = 2 / 255;
-const CASES = [0, 20, 40].map((attenuation) => ({ label: `attenuation ${attenuation}%`, attenuation }));
+const CASES = [[0, 35], [20, 35], [40, 35], [90, 35], [20, 100], [90, 100]]
+  .map(([attenuation, detail]) => ({ label: `attenuation ${attenuation}% detail ${detail}%`, attenuation, detail }));
 
 function writeFixture() {
   const python = path.resolve(__dirname, "..", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
@@ -69,7 +70,7 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
     const { session } = await sessionResponse.json();
     await page.evaluate((loadedSession) => activateDesktopSession(loadedSession, ""), session);
 
-    const compare = (lane, colorHandling, attenuation) => page.evaluate(async ({ lane, colorHandling, attenuation, longEdge }) => {
+    const compare = (lane, colorHandling, attenuation, detail = 35) => page.evaluate(async ({ lane, colorHandling, attenuation, detail, longEdge }) => {
       if (state.currentView !== lane) await switchLane(lane);
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
@@ -79,6 +80,7 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
         highlight_compression_peak_measurement: "maximum",
         highlight_compression_color_handling: colorHandling,
         highlight_compression_attenuation: attenuation,
+        highlight_compression_peak_detail: detail,
         film_look_section_enabled: false,
       });
       if (lane === "hdr") Object.assign(branch, { highlight_compression_start_nits: 400, highlight_compression_target_nits: 1000 });
@@ -130,18 +132,19 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
       let cumulative = 0, p999 = 0;
       for (let level = 0; level < 256; level++) { cumulative += histogram[level]; if (cumulative > Math.floor(count * 0.999)) { p999 = level; break; } }
       return { size, mean: sum / count, p999, maximum, raw };
-    }, { lane, colorHandling, attenuation, longEdge: LONG_EDGE });
+    }, { lane, colorHandling, attenuation, detail, longEdge: LONG_EDGE });
 
     const failures = [];
     for (const lane of ["hdr", "sdr"]) {
-      const off = await compare(lane, "smooth_rolloff", 20);
-      if (off.error) throw new Error(`${lane} baseline: ${off.error}`);
-      for (const { label, attenuation } of CASES) {
-        const on = await compare(lane, "agx_attenuate", attenuation);
+      for (const { label, attenuation, detail } of CASES) {
+        // Baseline at the same Detail, so the measure is what Attenuate adds.
+        const off = await compare(lane, "smooth_rolloff", 20, detail);
+        if (off.error) throw new Error(`${lane} baseline: ${off.error}`);
+        const on = await compare(lane, "agx_attenuate", attenuation, detail);
         if (on.error) throw new Error(`${lane} ${label}: ${on.error}`);
         const passed = on.mean / 255 <= MAX_MEAN_DIFFERENCE && on.p999 / 255 <= MAX_P999_DIFFERENCE;
         if (!passed) failures.push({ lane, label, mean: on.mean, p999: on.p999 });
-        console.log(`${lane} ${label.padEnd(18)} ${on.size[0]}x${on.size[1]}  added GPU/CPU difference: mean ${on.mean.toFixed(3)} levels, `
+        console.log(`${lane} ${label.padEnd(30)} ${on.size[0]}x${on.size[1]}  added GPU/CPU difference: mean ${on.mean.toFixed(3)} levels, `
           + `p99.9 ${on.p999}, max ${on.maximum}  (raw max ${on.raw}, smooth max ${off.raw})  ${passed ? "PASS" : "FAIL"}`);
       }
     }

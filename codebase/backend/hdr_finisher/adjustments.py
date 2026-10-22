@@ -1266,6 +1266,28 @@ def _peak_fit_map(signal: np.ndarray, params: _PeakFitParameters) -> np.ndarray:
     return np.where(signal > params.effective_start, mapped, signal).astype(np.float32, copy=False)
 
 
+CONCAVE_END_SLOPE_MARGIN = 0.9
+
+
+def _concave_shoulder(params: _PeakFitParameters, detail: float) -> _PeakFitParameters:
+    """Keep a per-channel shoulder concave in stops: its slope only ever falls.
+
+    Per-channel modes run each channel through the shoulder separately. If the
+    slope rises again near the peak (high Highlight Detail), a bright channel
+    on that steep end gains on a dimmer one still in the flat middle, so the
+    hue turns back on itself: orange, magenta, orange bands around the sun
+    (Steve, October 22, 2026). A cubic Hermite from 0 to 1 is concave when
+    3 - 2*m0 <= m1 <= (3 - m0) / 2; Detail picks a point in that range (with a
+    small margin off the top), so 0% is the flattest top and 100% the most
+    contrast that still keeps hue moving one way.
+    """
+    m0 = float(params.normalized_start_slope)
+    low = max(0.0, 3.0 - 2.0 * m0)
+    high = max(low, CONCAVE_END_SLOPE_MARGIN * (3.0 - m0) / 2.0)
+    detail = min(max(float(detail), 0.0), 1.0)
+    return replace(params, normalized_end_slope=low + detail * (high - low))
+
+
 def _agx_attenuate(
     working: np.ndarray,
     luminance_weights: np.ndarray,
@@ -1285,7 +1307,8 @@ def _agx_attenuate(
     ``working`` is linear RGB in the lane's delivery primaries and
     ``compression_span_stops`` is the measured peak's distance above target.
     """
-    inset = np.float32(min(max(float(attenuation_percent) / 100.0, 0.0), 0.5))
+    # Up to 90%: the restore divides by (1 - inset).
+    inset = np.float32(min(max(float(attenuation_percent) / 100.0, 0.0), 0.9))
     weights = luminance_weights.astype(np.float32)
     luma = np.einsum("...c,c->...", working, weights)[..., None]
     mixed = working * (np.float32(1.0) - inset) + inset * luma
@@ -1457,7 +1480,7 @@ def _compress_sdr_highlights(
                 result,
                 REC709_LUMA_WEIGHTS,
                 float(getattr(sdr, "highlight_compression_attenuation", 20.0)),
-                params,
+                _concave_shoulder(params, float(detail)),
                 peak_stop - target_stop,
             )
             active = compression_signal[..., None] > params.effective_start
@@ -1560,7 +1583,8 @@ def _compress_scene_highlights(
         if attenuate:
             active = compression_signal[..., None] > params.effective_start
             mapped_transport = _agx_attenuate(
-                transport, BT2020_LUMA_WEIGHTS, attenuation, params, peak_stop - target_stop
+                transport, BT2020_LUMA_WEIGHTS, attenuation, _concave_shoulder(params, detail),
+                peak_stop - target_stop,
             )
             mapped_result = np.where(active, linear_bt2020_to_acescg(mapped_transport), result)
             return (result + peak_fit_activation * (mapped_result - result)).astype(np.float32, copy=False)
