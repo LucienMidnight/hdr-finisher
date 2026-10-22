@@ -972,21 +972,29 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let w = clamp(u + curveBias * u * (1.0 - u), 0.0, 1.0);
       let stopSpan = targetStop - effectiveStartStop;
       let m0 = (peakStop - effectiveStartStop) / max(stopSpan * (1.0 + curveBias), 0.000001);
-      let m1 = p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}] * (peakStop - effectiveStartStop) / max(stopSpan * (1.0 - curveBias), 0.000001);
+      var m1 = p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}] * (peakStop - effectiveStartStop) / max(stopSpan * (1.0 - curveBias), 0.000001);
+      // Attenuate (3) keeps its whole shoulder concave; Smooth color rolloff (2)
+      // keeps brightness on m1 and takes channel ratios from the concave m1c.
+      let m1c = concaveEndSlope(m0, p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}]);
+      if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 2.5) { m1 = m1c; }
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 2.5) {
         let attenuated = agxAttenuate(
           transport, vec3f(0.2627, 0.6780, 0.0593), p[${GPU_PARAMS.HIGHLIGHT_ATTENUATION}],
-          effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0,
-          concaveEndSlope(m0, p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}]), peakStop - targetStop
+          effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1, peakStop - targetStop
         );
         return mix(input, bt2020ToAcescg(attenuated), peakFitActivation);
       }
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 1.5) {
-        let mappedTransport = vec3f(
-          peakFitChannel(transport.r, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
-          peakFitChannel(transport.g, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
-          peakFitChannel(transport.b, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1)
-        );
+        // Mirrors the CPU: brightest channel on the shoulder as set, the others
+        // at their concave-shoulder ratio to it, so hue never turns back.
+        let brightest = max(transportPeak, 1e-12);
+        let scale = peakFitChannel(brightest, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1)
+          / max(peakFitChannel(brightest, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1c), 1e-12);
+        let mappedTransport = select(transport, vec3f(
+          peakFitChannel(transport.r, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1c),
+          peakFitChannel(transport.g, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1c),
+          peakFitChannel(transport.b, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1c)
+        ) * scale, transport > vec3f(0.0));
         if (max(max(abs(input.r),abs(input.g)),abs(input.b)) > 32752.0) {
           return hdrPeakFitBlend(input, bt2020ToAcescg(mappedTransport), peakFitActivation);
         }
@@ -1047,20 +1055,25 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let sourceSpan = max(peakStop - effectiveStartStop, 0.000001);
       let stopSpan = -effectiveStartStop;
       let m0 = sourceSpan / max(stopSpan * (1.0 + curveBias), 0.000001);
-      let m1 = p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}] * sourceSpan / max(stopSpan * (1.0 - curveBias), 0.000001);
+      var m1 = p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}] * sourceSpan / max(stopSpan * (1.0 - curveBias), 0.000001);
+      // Attenuate (3) keeps its whole shoulder concave; Smooth color rolloff (2)
+      // keeps brightness on m1 and takes channel ratios from the concave m1c.
+      let m1c = concaveEndSlope(m0, p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}]);
+      if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 2.5) { m1 = m1c; }
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 2.5) {
         return agxAttenuate(
           input, vec3f(0.2126, 0.7152, 0.0722), p[${GPU_PARAMS.HIGHLIGHT_ATTENUATION}],
-          effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0,
-          concaveEndSlope(m0, p[${GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL}]), peakStop
+          effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1, peakStop
         );
       }
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 1.5) {
-        let perChannel = vec3f(
-          peakFitChannel(input.r, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
-          peakFitChannel(input.g, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
-          peakFitChannel(input.b, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1)
-        );
+        let sdrScale = peakFitChannel(channelPeak, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1)
+          / max(peakFitChannel(max(channelPeak, 0.00000001), effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1c), 1e-12);
+        let perChannel = select(input, vec3f(
+          peakFitChannel(input.r, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1c),
+          peakFitChannel(input.g, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1c),
+          peakFitChannel(input.b, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1c)
+        ) * sdrScale, input > vec3f(0.0));
         // Per-channel mapping leaves a small secondary channel behind while
         // its primary shrinks, turning hard-compressed saturated red magenta.
         // As the brightest channel's compression grows, move to a hue-keeping
@@ -1070,7 +1083,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let low = min(min(input.r, input.g), input.b);
         let safeHigh = max(channelPeak, 0.00000001);
         let mappedHigh = peakFitChannel(channelPeak, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1);
-        var mappedLow = peakFitChannel(low, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1);
+        var mappedLow = peakFitChannel(low, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1c) * sdrScale;
         if (low < 0.0) { mappedLow = low * mappedHigh / safeHigh; }
         let position = (input - vec3f(low)) / max(channelPeak - low, 0.00000001);
         let hueKept = clamp(vec3f(mappedLow) + position * (mappedHigh - mappedLow), vec3f(mappedLow), vec3f(mappedHigh));

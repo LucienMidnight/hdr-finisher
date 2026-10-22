@@ -105,8 +105,9 @@ function mapHighlightNits(inputNits, hdr) {
   const span = info.targetStop - info.effectiveStartStop;
   const m0 = (info.peakStop - info.effectiveStartStop) / Math.max(span * (1 + info.bias), 0.000001);
   let m1 = info.detail * (info.peakStop - info.effectiveStartStop) / Math.max(span * (1 - info.bias), 0.000001);
+  // Attenuate's brightness follows a concave shoulder (_concave_shoulder);
+  // Smooth color rolloff keeps its brightness on the shoulder as set.
   if (hdr.highlight_compression_color_handling === "agx_attenuate") {
-    // Mirrors _concave_shoulder: per-channel Attenuate keeps the shoulder concave.
     const low = Math.max(0, 3 - 2 * m0);
     const high = Math.max(low, 0.9 * (3 - m0) / 2);
     m1 = low + info.detail * (high - low);

@@ -70,6 +70,28 @@ def test_hue_never_turns_back_even_at_full_highlight_detail() -> None:
             assert hue[top] - hue[top:].min() < 0.2, (colour, attenuation)
 
 
+def test_smooth_color_rolloff_hue_never_turns_back_and_greys_keep_their_brightness() -> None:
+    # Smooth color rolloff takes channel ratios from a concave shoulder while the
+    # brightest channel stays on the shoulder as set, so greys are unchanged.
+    levels = np.geomspace(nits_to_linear(100.0), nits_to_linear(2500.0), 400, dtype=np.float32)
+    for colour in ([1.0, 0.45, 0.12], [1.0, 0.8, 0.7], [1.0, 0.3, 0.05]):
+        ramp = linear_bt2020_to_acescg(levels[:, None] * np.array(colour, dtype=np.float32))[None]
+        out = _compress_scene_highlights(
+            ramp, 400.0, 1000.0, 0.0, mode="peak_fit", source_peak_nits=2500.0, peak_detail=100.0,
+            color_handling="smooth_rolloff", reference_white_nits=WHITE,
+        )
+        hue = hue_degrees(acescg_to_linear_bt2020(out)[0])
+        top = int(np.argmax(hue))
+        assert hue[top] - hue[top:].min() < 0.2, colour
+    grey = linear_bt2020_to_acescg(np.repeat(levels[:, None], 3, axis=1))[None]
+    smooth = _compress_scene_highlights(grey, 400.0, 1000.0, 0.0, mode="peak_fit", source_peak_nits=2500.0,
+                                        peak_detail=35.0, color_handling="smooth_rolloff", reference_white_nits=WHITE)
+    preserve = _compress_scene_highlights(grey, 400.0, 1000.0, 0.0, mode="peak_fit", source_peak_nits=2500.0,
+                                          peak_detail=35.0, color_handling="path_to_white", reference_white_nits=WHITE)
+    # On greys every channel-peak mode applies the same shoulder to the same value.
+    np.testing.assert_allclose(acescg_to_linear_bt2020(smooth), acescg_to_linear_bt2020(preserve), rtol=2e-4, atol=1e-6)
+
+
 def test_highest_attenuation_stays_finite_and_on_target() -> None:
     out_peak = acescg_to_linear_bt2020(hdr(orange_ramp(), "agx_attenuate", attenuation=90.0)).max(axis=-1)[0]
     assert np.all(np.isfinite(out_peak))

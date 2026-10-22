@@ -140,8 +140,9 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   for HDR and SDR on CPU and WebGPU, with Attenuation 0–90% (default 20%;
   0% equals per-channel rolloff). Its shoulder stays concave so Highlight
   Detail can no longer make orange–magenta bands (fixed October 22).
-  Smooth color rolloff still has that flaw at high Detail; whether to fix it
-  there (it changes existing grades) is Steve's call. GPU matches the CPU within the existing
+  Smooth color rolloff got the same protection for hue (Steve approved,
+  October 22) while its brightness and greys stay as before, so existing
+  grades change only where colours used to band. GPU matches the CPU within the existing
   parity tolerance (`tests/highlight-attenuate-parity.js`). Open: Steve's
   judgement on real photos, whether it becomes the default, and the SDR look
   (not reviewed). See the

@@ -1,5 +1,5 @@
-// Highlight Compression "Attenuate (AgX-style)" prototype: the WebGPU preview
-// matches the CPU export.
+// Highlight Compression "Attenuate (AgX-style)" prototype and Smooth color
+// rolloff: the WebGPU preview matches the CPU export.
 //
 // A generated picture with every hue across it and brightness from deep
 // shadow to strong HDR highlights down it, rendered by both renderers in each
@@ -118,20 +118,23 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
       const count = cpu.length / 4 * 3;
       const baseline = isBaseline ? new Uint8Array(count) : window.__attenuateBaseline;
       if (!baseline || baseline.length !== count) throw Error("Missing matching baseline");
-      const histogram = new Uint32Array(256);
-      let sum = 0, raw = 0, maximum = 0, sample = 0;
+      const histogram = new Uint32Array(256), rawHistogram = new Uint32Array(256);
+      let sum = 0, raw = 0, maximum = 0, sample = 0, rawSum = 0;
       for (let pixel = 0; pixel < cpu.length; pixel += 4) {
         for (let channel = 0; channel < 3; channel++, sample++) {
           const difference = Math.abs(gpu[pixel + channel] - cpu[pixel + channel]);
           if (isBaseline) baseline[sample] = difference;
           const added = isBaseline ? 0 : Math.max(0, difference - baseline[sample]);
           histogram[added]++; sum += added; maximum = Math.max(maximum, added); raw = Math.max(raw, difference);
+          rawHistogram[difference]++; rawSum += difference;
         }
       }
       if (isBaseline) window.__attenuateBaseline = baseline;
       let cumulative = 0, p999 = 0;
       for (let level = 0; level < 256; level++) { cumulative += histogram[level]; if (cumulative > Math.floor(count * 0.999)) { p999 = level; break; } }
-      return { size, mean: sum / count, p999, maximum, raw };
+      let rawCumulative = 0, rawP999 = 0;
+      for (let level = 0; level < 256; level++) { rawCumulative += rawHistogram[level]; if (rawCumulative > Math.floor(count * 0.999)) { rawP999 = level; break; } }
+      return { size, mean: sum / count, p999, maximum, raw, rawMean: rawSum / count, rawP999 };
     }, { lane, colorHandling, attenuation, detail, longEdge: LONG_EDGE });
 
     const failures = [];
@@ -140,6 +143,10 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
         // Baseline at the same Detail, so the measure is what Attenuate adds.
         const off = await compare(lane, "smooth_rolloff", 20, detail);
         if (off.error) throw new Error(`${lane} baseline: ${off.error}`);
+        // Smooth color rolloff itself (October 22 concave-ratio change): GPU against CPU.
+        const smoothPassed = off.rawMean / 255 <= MAX_MEAN_DIFFERENCE && off.rawP999 / 255 <= MAX_P999_DIFFERENCE;
+        if (!smoothPassed) failures.push({ lane, label: `smooth detail ${detail}%`, mean: off.rawMean, p999: off.rawP999 });
+        console.log(`${lane} smooth color rolloff detail ${detail}%: GPU/CPU mean ${off.rawMean.toFixed(3)} levels, p99.9 ${off.rawP999}  ${smoothPassed ? "PASS" : "FAIL"}`);
         const on = await compare(lane, "agx_attenuate", attenuation, detail);
         if (on.error) throw new Error(`${lane} ${label}: ${on.error}`);
         const passed = on.mean / 255 <= MAX_MEAN_DIFFERENCE && on.p999 / 255 <= MAX_P999_DIFFERENCE;

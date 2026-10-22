@@ -508,10 +508,14 @@ def test_variable_point_curves_are_supported() -> None:
 
 
 def test_sdr_lift_gamma_gain_controls_target_luminance_sections() -> None:
-    image = np.array([[[0.01, 0.01, 0.01], [0.5, 0.5, 0.5], [0.9, 0.9, 0.9]]], dtype=np.float32)
-    lifted = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {"lift": 0.15}}), PreviewKind.SDR)
-    gained = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {"gain": 0.15}}), PreviewKind.SDR)
-    baseline = apply_adjustments(image, AdjustmentState(), PreviewKind.SDR)
+    # Highlight compression is off and the brightest grey stays below display
+    # white: otherwise that grey is the measured peak, Peak Fit pins it at white
+    # with or without Gain, and the comparison is left to float rounding.
+    image = np.array([[[0.01, 0.01, 0.01], [0.1, 0.1, 0.1], [0.3, 0.3, 0.3]]], dtype=np.float32)
+    off = {"highlight_section_enabled": False}
+    lifted = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {**off, "lift": 0.15}}), PreviewKind.SDR)
+    gained = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {**off, "gain": 0.15}}), PreviewKind.SDR)
+    baseline = apply_adjustments(image, AdjustmentState.model_validate({"sdr": off}), PreviewKind.SDR)
 
     assert lifted[0, 0].mean() - baseline[0, 0].mean() > lifted[0, 2].mean() - baseline[0, 2].mean()
     assert gained[0, 2].mean() - baseline[0, 2].mean() > gained[0, 0].mean() - baseline[0, 0].mean()

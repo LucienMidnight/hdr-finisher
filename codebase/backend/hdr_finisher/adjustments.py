@@ -1457,6 +1457,12 @@ def _compress_sdr_highlights(
         detail = np.clip(float(getattr(sdr, "highlight_compression_peak_detail", 35.0)) / 100.0, 0.0, 1.0)
         curve_bias = np.clip(float(getattr(sdr, "highlight_compression_bias", 0.0)) / 100.0, -1.0, 1.0) * 0.6
         params = _peak_fit_parameters(start_stop, target_stop, peak_stop, detail, curve_bias)
+        # Per-channel modes keep hue moving one way near the peak (Steve,
+        # October 22, 2026): Attenuate with a concave shoulder throughout,
+        # Smooth color rolloff with concave ratios under its own brightness.
+        concave = _concave_shoulder(params, float(detail))
+        if attenuate:
+            params = concave
 
         def map_signal(signal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
             u, w = _peak_fit_progress(signal, params)
@@ -1480,7 +1486,7 @@ def _compress_sdr_highlights(
                 result,
                 REC709_LUMA_WEIGHTS,
                 float(getattr(sdr, "highlight_compression_attenuation", 20.0)),
-                _concave_shoulder(params, float(detail)),
+                params,
                 peak_stop - target_stop,
             )
             active = compression_signal[..., None] > params.effective_start
@@ -1498,10 +1504,13 @@ def _compress_sdr_highlights(
             # shoulder are untouched there and both lanes develop one grain.
             high = np.max(result, axis=-1, keepdims=True)
             low = np.min(result, axis=-1, keepdims=True)
-            per_channel, _ = map_signal(result)
-            mapped_high, _ = map_signal(high)
-            mapped_low, _ = map_signal(low)
             safe_high = np.maximum(high, np.float32(1e-8))
+            # Brightest channel on the shoulder as set; the others keep their
+            # ratio to it as the concave shoulder sets it (no hue reversal).
+            mapped_high, _ = map_signal(high)
+            scale = mapped_high / _peak_fit_map(safe_high, concave)
+            per_channel = np.where(result > 0.0, _peak_fit_map(result, concave) * scale, result)
+            mapped_low = _peak_fit_map(low, concave) * scale
             mapped_low = np.where(low < 0.0, low * mapped_high / safe_high, mapped_low)
             position = (result - low) / np.maximum(high - low, np.float32(1e-8))
             hue_kept = np.clip(mapped_low + position * (mapped_high - mapped_low), mapped_low, mapped_high)
@@ -1581,39 +1590,30 @@ def _compress_scene_highlights(
         curve_bias = min(max(float(bias) / 100.0, -1.0), 1.0) * 0.6
         params = _peak_fit_parameters(start_stop, target_stop, peak_stop, detail, curve_bias)
         if attenuate:
+            # Attenuate keeps its whole shoulder concave so hue never turns back.
+            params = _concave_shoulder(params, detail)
             active = compression_signal[..., None] > params.effective_start
             mapped_transport = _agx_attenuate(
-                transport, BT2020_LUMA_WEIGHTS, attenuation, _concave_shoulder(params, detail),
-                peak_stop - target_stop,
+                transport, BT2020_LUMA_WEIGHTS, attenuation, params, peak_stop - target_stop
             )
             mapped_result = np.where(active, linear_bt2020_to_acescg(mapped_transport), result)
             return (result + peak_fit_activation * (mapped_result - result)).astype(np.float32, copy=False)
         if smooth_rolloff:
-            # Work on one BT.2020 channel at a time to avoid several
-            # full-resolution HxWx3 curve temporaries for large RAW exports.
+            # The brightest BT.2020 channel follows the Peak Fit shoulder as
+            # set, so brightness, Highlight Detail and every grey are as
+            # before. The other channels keep their ratio to it as a concave
+            # shoulder would set it, so hue never turns back near the peak
+            # (orange-magenta bands at high Detail, Steve, October 22, 2026).
+            concave = _concave_shoulder(params, detail)
+            brightest = np.maximum(compression_signal, np.float32(1e-12))
+            scale = (_peak_fit_map(brightest, params) / _peak_fit_map(brightest, concave)).astype(np.float32)
+            # One channel at a time keeps full-resolution temporaries few.
             for channel_index in range(3):
                 channel = transport[..., channel_index]
-                active = channel > params.effective_start
+                active = channel > 0.0
                 if not np.any(active):
                     continue
-                u = np.maximum(channel, params.effective_start)
-                np.log2(u, out=u)
-                u -= np.float32(params.effective_start_stop)
-                u /= np.float32(params.source_span)
-                np.clip(u, 0.0, 1.0, out=u)
-                w = u + np.float32(params.curve_bias) * u * (np.float32(1.0) - u)
-                np.clip(w, 0.0, 1.0, out=w)
-                mapped = w * (
-                    np.float32(params.normalized_start_slope)
-                    + w
-                    * (
-                        np.float32(-2.0 * params.normalized_start_slope + 3.0 - params.normalized_end_slope)
-                        + w * np.float32(params.normalized_start_slope - 2.0 + params.normalized_end_slope)
-                    )
-                )
-                mapped *= np.float32(params.stop_span)
-                mapped += np.float32(params.effective_start_stop)
-                np.exp2(mapped, out=mapped)
+                mapped = _peak_fit_map(channel, concave) * scale
                 channel[active] = mapped[active]
             mapped_acescg = linear_bt2020_to_acescg(transport)
             mapped_result = np.where(
