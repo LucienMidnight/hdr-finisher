@@ -1,75 +1,83 @@
 # HDR Finisher
 
-HDR Finisher is an offline finishing and export application for HDR photographs and rendered images. It accepts high-dynamic-range sources, lets you author separate HDR and SDR renditions, and exports adaptive gain-map images for the web.
+**A free, open-source desktop photo editor built for HDR photographs on the web.**
 
-The project is an early technical alpha. Native Windows x64, macOS Apple Silicon, and Linux x86_64 desktop packages are supported. Kubuntu 26.04 LTS with Plasma 6.6 on native Wayland is the tier-one Linux HDR target; X11/Xwayland remains usable with an explicit non-authoritative SDR preview. Physical Linux HDR qualification is tracked separately from export correctness. See [Known limitations](docs/known-limitations.md) before relying on it for delivery work.
+Develop a camera RAW or a finished HDR file, grade the HDR picture on a real HDR display, grade a separate SDR picture for everyone else, and deliver both in a single gain-map file. HDR screens show the full range; ordinary screens and older apps show the SDR picture you made for them.
 
-Here's a video walkthrough of the application and its core functions: https://youtu.be/hXmW3yf1eXs
-And another video of an editing session using v0.8.12: https://youtu.be/dUpW6_n3_fg
+Windows · macOS (Apple Silicon) · Linux &nbsp;|&nbsp; GPL-3.0, no subscription &nbsp;|&nbsp; Version 0.9.1, technical alpha
 
-## What it is for
+[Download](https://github.com/LucienMidnight/hdr-finisher/releases) · [Quick start](docs/getting-started/quick-start.md) · [Documentation](docs/README.md) · [Known limitations](docs/known-limitations.md)
 
-Use HDR Finisher after RAW development, compositing, or rendering. Basic RAW/DNG development is also
-available as a convenience path, but remains intentionally smaller than a dedicated RAW editor:
+---
 
-1. Import a scene-linear EXR/TIFF/HDR source or supported HDR HEIC.
-2. Confirm how the source color values should be interpreted.
-3. Grade the HDR rendition.
-4. Create and inspect the SDR fallback.
-5. Proof how the gain map adapts to different displays.
-6. Export JPEG Ultra HDR, AVIF with a gain map, or an SDR JPEG/PNG/JPEG XL.
+## What sets it apart
 
-HDR Finisher is not a RAW developer or layer compositor. Its local-adjustment mode is intended for finishing masks and selective grades, not pixel-cloning or full retouching.
+- **Two pictures, one file.** HDR and SDR are graded as two independent renditions of the same photo. Neither is an automatic by-product of the other. Gain-map export joins them, so each viewer gets the version made for their screen.
+- **Gain maps in and out.** Exports JPEG Ultra HDR and AVIF with ISO 21496-1 gain maps, plus direct JPEG XL HDR. Gain-map files from phones and other editors open with their SDR base kept as the SDR rendition.
+- **A peak you can rely on.** Set a highlight target in nits, and the rendered HDR picture never goes above it. Encoders can nudge a few highlights over; the optional **Guarantee HDR peak** check decodes the written file and corrects them.
+- **Proof before you publish.** Proof encodes the real export file, then shows how it adapts on displays with less headroom, from SDR up to full HDR, or at a chosen peak in nits.
+- **Scene-linear throughout.** Every source is converted to a 32-bit float ACEScg working image, with a 203-nit HDR reference white. Rendered EXR from Blender and other 3D tools is handled as carefully as camera RAW.
+- **GPU first.** Preview, export, batch export, Proof and Library pictures all render on the graphics card with the same shaders. The CPU takes over if no usable GPU is found.
+- **Offline and yours.** Everything runs locally. Originals are never changed; each photo's grade is saved in a sidecar file beside it.
 
-## Start here
+## Supported formats
 
-- **Windows users:** download `HDR-Finisher-Setup-<version>-x64.exe` from
-  [GitHub Releases](https://github.com/LucienMidnight/hdr-finisher/releases) and run the installer. A
-  `HDR-Finisher-Portable-<version>-x64.exe` build is also available when installation is not desired.
-- **Apple Silicon Mac users:** download the macOS arm64 DMG, drag **HDR Finisher** to Applications, and open it. Unsigned technical-preview builds require the one-time Finder **Open** confirmation described in [Install and run](docs/getting-started/install-and-run.md).
-- **Kubuntu/Ubuntu x86_64 users:** install the versioned `.deb`, or install the sandboxed Flatpak when available. Use a native Wayland session for HDR presentation; see [Linux setup](docs/setup/linux.md).
-- [Five-minute quick start](docs/getting-started/quick-start.md)
-- [Install and run](docs/getting-started/install-and-run.md)
-- [Prepare files from Affinity, darktable, Blender, or an iPhone](docs/workflows/source-preparation.md)
-- [Choose system and monitor settings](docs/setup/monitors.md)
-- [Browse the complete documentation](docs/README.md)
+### Open
 
-## Supported inputs and outputs
-
-| Direction | Formats | Important note |
+| Kind | Formats | Notes |
 |---|---|---|
-| Input | OpenEXR, TIFF, Radiance HDR, PFM, HEIC/HEIF, AVIF, JPEG XL, PNG, JPEG, DNG and selected camera RAW formats | An accepted file is not necessarily a valid HDR handoff. DNG import is experimental, broader RAW development is a convenience beta, and source primaries still matter. |
-| Output | JPEG Ultra HDR | Backward-compatible SDR JPEG with an 8-bit gain map and Ultra HDR v1 plus ISO 21496-1 metadata. Requires a compatible `ultrahdr_app`. |
-| Output | AVIF with gain map | SDR base plus BT.2020/PQ alternate and a 10-bit gain map. Requires the bundled or discoverable AVIF tools. |
-| Output | SDR JPEG | The authored SDR rendition as a compact 8-bit JPEG. The bundled encoder supports dimensions up to 65,500 pixels. |
-| Output | SDR PNG | The authored SDR rendition without HDR data. |
-| Output | JPEG XL SDR | The authored SDR rendition as 8-bit sRGB JPEG XL with no HDR or gain map. Viewer support varies. |
-| Output | JPEG XL HDR | Direct Rec.2020/PQ HDR with 10-, 12-, or 16-bit integer and 16- or 32-bit floating-point precision. The default is 12-bit integer; there is no SDR fallback. Viewer support varies. |
+| Camera RAW | `.arw` `.cr2` `.cr3` `.nef` `.nrw` `.raf` `.rw2` `.orf` `.ori` `.pef` `.srw` `.dng` | Developed with LibRaw, one generic method for every camera. Includes Fujifilm X-Trans, highlight reconstruction and automatic Lensfun lens correction. DNG import is experimental. |
+| Scene-linear HDR | OpenEXR, 32-bit float TIFF, Radiance HDR, PFM | The preferred handoff from other editors and 3D renderers. |
+| HDR with a gain map | JPEG Ultra HDR, AVIF (ISO 21496-1), iPhone HEIC | The file's SDR base becomes the SDR rendition. |
+| Encoded HDR | AVIF and 16-bit TIFF in PQ or HLG, JPEG XL | |
+| SDR | JPEG, PNG, TIFF, BMP, HEIC | Opens as the file, ready to be extended into HDR. |
 
-## Color pipeline in one paragraph
+### Export
 
-Sources are normalized to a float32, scene-linear ACEScg working image when their encoding is known. Project linear `0.18` maps to the selected HDR Reference White: 203 nits for new projects, or 100 nits for an intentional controlled workflow. The HDR rendition remains scene-linear through grading and is encoded as BT.2020/PQ for preview and export. The SDR rendition is independently tone-mapped and rendered to sRGB. Gain-map exports store the SDR result plus enough information to reconstruct an adaptive HDR result. Read the [color-pipeline specification](docs/concepts/color-pipeline.md) before integrating a new source or exporter.
+| Format | What you get | Best for |
+|---|---|---|
+| **AVIF + gain map** | SDR base (8, 10 or 12-bit) plus a 10-bit gain map, ISO 21496-1 | The best balance of quality and file size for HDR on the web |
+| **JPEG Ultra HDR** | 8-bit SDR JPEG plus a gain map, Ultra HDR v1 and ISO 21496-1 metadata | Widest compatibility: any JPEG viewer shows the SDR picture |
+| **JPEG XL HDR** | Direct Rec.2020 PQ at 10, 12 or 16-bit integer, or 16 or 32-bit float | Archival or very large HDR images. No SDR fallback; viewer support varies |
+| **JPEG / PNG / JPEG XL (SDR)** | The SDR rendition on its own (PNG up to 16-bit) | Plain SDR delivery |
+
+Export presets can resize, sharpen for output, choose what metadata to keep, and write several versions of each photo in one run, for example an HDR AVIF and an SDR JPEG.
+
+## What's in the app
+
+- **Library.** Browse folders as a grid, filmstrip or full screen, and compare two photos side by side. Rate, label, tag, and build manual and smart albums. Use focus and exposure overlays, virtual copies, and copy and paste of selected parts of a grade.
+- **RAW development.** Camera RAW opens straight into an HDR grade, with lens correction and white balance in floating point.
+- **HDR and SDR grading.** Tone, Highlight Compression, Exposure Bands (a tone equalizer), Color, Color Grading, Curves, Detail, Vignette, and crop, straighten and perspective correction. Match entire HDR grade builds a starting SDR from your finished HDR grade.
+- **Local adjustments.** Brush, gradient, luminance-range and freeform path masks, which can be combined, each with its own grade.
+- **Denoise** that measures the noise in each file, and **Black & White** with eight colour sliders.
+- **Film Look.** Negative and slide film stocks, print papers, push/pull, grain, halation and lens-filter glow, applied in the order light passes through film and rendered in real time on the GPU. The film and paper data comes from Andrea Volpato's [spektrafilm](https://github.com/andreavolpato/spektrafilm), whose physical film simulation also guided HDR Finisher's own engine.
+- **Scopes and full-resolution preview.** HDR waveform and histogram in nits, and true source pixels at 100% zoom, even on 40-megapixel files.
+- **Batch export.** Export a whole selection in the background with a preset, with pause, cancel and a result for each file.
+
+**Coming in 1.0:** a Retouch brush (Inpaint, Heal and Clone) and hue selection as a local-adjustment mask.
+
+## Who it is for
+
+Photographers and 3D artists who want to publish real HDR pictures on the web without a subscription editor. You need to know photo editing, not colour science. An HDR display is needed to see HDR; on an SDR screen you can still grade the SDR picture and place HDR with the scopes.
+
+## Install
+
+- **Windows x64:** run `HDR-Finisher-Setup-<version>-x64.exe` from [Releases](https://github.com/LucienMidnight/hdr-finisher/releases), or use the portable `.exe`.
+- **macOS, Apple Silicon:** open the DMG and drag HDR Finisher to Applications. The build is not notarized, so the first launch needs the one-time **Open** confirmation described in [Install and run](docs/getting-started/install-and-run.md).
+- **Linux x86_64:** install the `.deb` or the Flatpak. HDR preview needs a native Wayland session; see [Linux setup](docs/setup/linux.md).
+
+Then read the [quick start](docs/getting-started/quick-start.md) and [monitor setup](docs/setup/monitors.md).
+
+## Status
+
+HDR Finisher is a technical alpha, heading for 1.0. Windows is the best-tested platform. Windows builds are unsigned and macOS builds are not notarized. On macOS and Linux the Library cannot yet rename, move or delete files. Saved projects and presets may need to be recreated between versions until 1.0. See [Known limitations](docs/known-limitations.md) and the [release notes](RELEASE_NOTES.md).
 
 ## Development
 
-HDR Finisher uses Python 3.12+, FastAPI, NumPy, colour-science, Pillow, OpenEXR, tifffile, a plain HTML/CSS/JavaScript interface, Electron for the Windows, macOS, and Linux desktop shells, and optional native encoders. Processing and authoritative export rendering remain local.
+Python 3.12 with FastAPI and NumPy for decoding, colour maths and encoding; plain HTML, CSS and JavaScript with a WebGPU renderer for the interface; Electron for the desktop app. To run from source, run `npm install` and then `npm start` in `codebase/desktop`. See the [development guide](docs/technical/development.md), [architecture](docs/technical/architecture.md) and [code map](docs/technical/code-map.md).
 
-To run the desktop shell from source, install the dependencies in `codebase/desktop` with `npm install`, then run `npm start`. Build Windows x64 artifacts with `codebase/tools/build_desktop.ps1`, Apple Silicon artifacts with `codebase/tools/build_desktop_macos.sh`, and the Linux x86_64 `.deb` with `codebase/tools/build_desktop_linux.sh`. Flatpak sources and metadata live under `packaging/flatpak/`.
+## License
 
-See [Architecture](docs/technical/architecture.md) and the [Development guide](docs/technical/development.md).
+GPL-3.0. Bundled encoders keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-## Project status
-
-- Windows x64, macOS Apple Silicon, and Linux x86_64 technical-alpha packaging paths are available.
-- Linux HDR preview qualification requires native Wayland, browser-reported HDR, and an active extended WebGPU canvas; other modes are deliberately labeled as SDR simulation.
-- macOS native display telemetry, signing/notarization, and physical HDR acceptance remain open release-hardening work.
-- JPEG Ultra HDR and AVIF gain-map availability is capability-gated.
-- Batch processing, sampled content selectors, signed installers, and automatic updates are not implemented. JPEG XL HDR and Experimental DNG Import are capability-gated. Brush, gradient, luminance-range, and path local adjustments are available; sampled selectors remain build-gated pending IP review.
-
-## License and third-party software
-
-HDR Finisher is GPL-3.0. Optional encoders retain their upstream licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-Created by Steven Funcke ([@LucienMidnight](https://github.com/LucienMidnight)).
-
-[Donate via PayPal](https://www.paypal.com/ncp/payment/TMM9TRHJUUTJS)
+Created by Steven Funcke ([@LucienMidnight](https://github.com/LucienMidnight)). If HDR Finisher is useful to you, you can [donate via PayPal](https://www.paypal.com/ncp/payment/TMM9TRHJUUTJS).
