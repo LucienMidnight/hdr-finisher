@@ -421,17 +421,16 @@ Behavior tests cover JSON replay through the existing worker/cache, native
 roundness on a non-square source, sparse/repeated samples, feathering, border
 clipping, invalid/oversized/empty strokes, input ownership, cancellation and
 exact agreement across different read-window boundaries. These are adapter
-tests, not interactive preview/export parity tests. No existing project schema
-or render path changes. Next: add ordered repair records and history commands,
-then connect session scheduling/publication and the Local Adjustments brush,
-with shared repaired-source consumption across rendering paths.
+tests, not interactive preview/export parity tests. At that adapter-only
+milestone there were no project-schema or render-path changes. Ordered records,
+history, session publication and the brush are now connected as described in
+the interactive prototype section below.
 
-Proposed saved record: stable ID, enabled/opacity, mode, ordered source-space
-strokes or raster recipe, explicit search rectangle, algorithm version,
-settings/seed, and source offset for later Heal/Clone. Runtime metadata adds
-document/source/operation revisions and cache keys; no preview scale or output
-tile identity may influence the solved repair. Prototype settings/input types
-are not yet the public saved schema.
+The saved Inpaint record now contains a stable ID, name, enabled state and
+versioned recipe (stroke, native search rectangle, settings and seed). Opacity
+and donor offsets remain possible future Heal/Clone work, not implemented
+Inpaint fields. Runtime metadata adds document/source/operation revisions and
+cache keys; no preview scale or output tile identity may influence the solve.
 
 ## State contract
 
@@ -516,8 +515,9 @@ The renderer presently consumes a contiguous native NumPy source, so publishing
 active repairs allocates one extra full native frame, copied in cancellable row
 bands. The original owner remains for recomputation/disable. Admission uses the
 existing 2 GiB/15% host reserve and allows bounded worker overhead. This is a
-memory limitation, not a full-frame solve or CPU grade. There is no timing or
-extra-memory acceptance claim yet. Follow-up: a source-window overlay provider
+memory limitation, not a full-frame solve or CPU grade. There is no broad timing or
+extra-memory acceptance claim; the focused warm-view measurements below do not
+cover all source sizes, geometry, Denoise configurations or startup contention. Follow-up: a source-window overlay provider
 could avoid the extra owner without changing solved patches.
 
 Publishing replaces `SessionRenderCache`'s source, invalidates mask/source/mip
@@ -547,5 +547,50 @@ Inspectable screenshots: `codebase/output/retouch-interaction/before.png` and
 `after.png`. These are synthetic smoke checks, not photographic acceptance.
 The earlier v3 comparison viewer remains `codebase/output/retouch-prototype/index.html`.
 
-Next concrete work: Steve's manual use on natural dust, then address visible
-brush/quality issues before adding Heal/Clone or a separate GPU repair engine.
+Next concrete work: Steve retries the brush responsiveness and painted strokes
+on his photos/settings. Cold-source/Denoise preparation and transformed-source
+refresh remain performance follow-ups before Heal/Clone or a GPU repair engine.
+
+### Responsiveness follow-up (October 22, 2026)
+
+Steve reported slow waiting and painting that did not work. Initial proposed
+performance target, recorded before measurement: under one second for a small
+default dust click, so isolated spots feel responsive. Algorithm, settings and
+seeded repair pixels are preserved; no new solve runs at preview scale.
+
+The cursor now retains its canvas allocation and coalesces redraws to animation
+frames. Pointer samples remain complete. A translucent footprint shows the
+painted stroke; live messages explain when it exceeds Search. A valid dragged
+stroke and an oversized rejected stroke are covered by actual Electron input,
+including repaired preview pixels and unchanged history on rejection. This does
+not establish the cause of Steve's failed painting attempt; he still needs to
+retry the current build.
+
+For untransformed native source textures (whole or region), source refresh
+retains the texture and uploads intersections with old/new repair search boxes
+through the existing revision/epoch-checked source-tile route. All derived
+masks, grades, peak measurements and Denoise caches are still invalidated. A
+fresh ROI can use the retained source's working-space metadata without accepting
+an old graded frame. Reduced/resampled textures are discarded; geometry or any
+refresh refusal uses the normal reload. No reduced tier is patched approximately.
+Failed/superseded partial uploads discard retained textures. An obsolete GPU
+scope source request returning 409 stands down until the new presentation.
+
+`tests/performance/retouch-latency.js` alternates three full reloads with three
+bounded refreshes in one 6000×4000 synthetic photo at 100% zoom, after initial
+source/model preparation. Default diameter 12, Search 96, patch radius 3 and six
+iterations are unchanged. The completed run measured 0.67–0.82 seconds to a new
+presentation with bounded refresh versus 1.03–1.33 seconds for full reload;
+median improvement about 37%. Native texture updates transferred 72 KiB in the paired run (144 KiB when both
+whole and regional native textures were resident), rather than another complete
+183 MiB source upload.
+The isolated default 96×96 engine solve measured about 70 ms on a synthetic
+stochastic patch. These are focused measurements on this machine, not a general
+performance guarantee. Early clicks overlapping source/Denoise preparation
+were slower and remain open. Results: `codebase/output/retouch-latency/result.json`.
+
+Eight fast behavior tests check changed/untouched native pixels, region offsets,
+stale/refused/truncated updates, held-texture memory accounting and transformed-source
+fallback. The Inpaint
+Electron check also compares a refreshed preview sample with a full reload.
+The repair algorithm, project recipes and delivery processing are unchanged.

@@ -1887,7 +1887,12 @@
         // app states the size it will be, and any frame of this session and
         // lane gives the working space. The fetch clamps to the real frame.
         const size = sourceOptions?.frameSize;
-        const known = this.lastPresentedFrame;
+        // A repair resets finished frames but can retain an updated native
+        // source region. Its working-space metadata is enough to plan a fresh
+        // ROI; no previously graded pixels are accepted as a completed frame.
+        const known = this.lastPresentedFrame || [...this.proxies.values()].find(proxy =>
+          proxy.sessionId === sessionId && proxy.lane === lane && proxy.longEdge === longEdge
+          && proxy.geometrySignature === geometrySignature && proxy.sourceIdentity === (sourceOptions?.identity || "source"));
         if (!(size?.width > 0 && size?.height > 0) || !known?.workingSpace
           || known.sessionId !== sessionId || known.lane !== lane) return null;
         previousFrame = { width: size.width, height: size.height, longEdge, workingSpace: known.workingSpace };

@@ -852,7 +852,101 @@
     }
   }
 
+  /** Retain only unresampled native source textures; refresh solved pixels,
+   * never rerun repair at a display tier. All derived render caches are reset.
+   * Any refusal drops the retained textures and uses the normal full loader.
+   */
+  async function refreshRepairs(renderer, {sessionId, editRevision, sourceSize, geometry, records, isCurrent}) {
+    const [width, height] = sourceSize;
+    const crop = geometry.crop;
+    const untransformed = !geometry.rotation && !geometry.flip_horizontal && !geometry.flip_vertical
+      && !geometry.straighten_angle && !geometry.perspective_horizontal && !geometry.perspective_vertical
+      && !geometry.perspective_rotate && crop.x === 0 && crop.y === 0 && crop.width === 1 && crop.height === 1;
+    const retained = new Map();
+    if (untransformed) for (const [key, proxy] of renderer.proxies) {
+      if (proxy.sessionId === sessionId && (!proxy.region || proxy.regionTransport) && proxy.sourceIdentity === "source"
+          && proxy.width === width && proxy.height === height && proxy.longEdge >= Math.max(width, height)
+          && ["rgba16float", "rgba32float"].includes(proxy.pixelFormat)) {
+        retained.set(key, proxy);
+        renderer.proxies.delete(key);
+      }
+    }
+    renderer.resetSession(sessionId);
+    if (!retained.size) {
+      renderer.recordStage("repair-source-refresh", {textures:0, reason:"native-source-not-resident"});
+      return false;
+    }
+    // Detaching from the tracked cache unregisters its bytes. Keep those
+    // live textures charged while awaiting replacement pixels.
+    const held = new Map([...retained.values()].map(proxy => [proxy.texture, proxy.byteSize || 0]));
+    let reservation = renderer.gpuAllocator?.reserve({kind:"repair-source-refresh",
+      bytes:[...held.values()].reduce((sum, bytes) => sum+bytes, 0)});
+    const generation = renderer.resourceGeneration;
+    const current = () => isCurrent() && renderer.resourceGeneration === generation;
+    const signal = renderer.sourceAbortSignal();
+    const rectangles = [...new Map(records.filter(r => r.enabled).map(r =>
+      [r.recipe.search_rect.join(","), r.recipe.search_rect])).values()];
+    const refreshed = new Set();
+    let transferredBytes = 0;
+    try {
+      for (const proxy of retained.values()) {
+        if (refreshed.has(proxy.texture)) continue;
+        let epoch;
+        const region = proxy.region || {x:0, y:0, width, height};
+        for (const rectangle of rectangles) {
+          const left = Math.max(rectangle[0], region.x), top = Math.max(rectangle[1], region.y);
+          const right = Math.min(rectangle[2], region.x+region.width), bottom = Math.min(rectangle[3], region.y+region.height);
+          if (left >= right || top >= bottom) continue;
+          const query = new URLSearchParams({long_edge: proxy.longEdge, format: proxy.pixelFormat === "rgba16float" ? "rgba16f" : "rgba32f",
+            edit_revision: editRevision, geometry_signature: proxy.geometrySignature,
+            x: left, y: top, width: right-left, height: bottom-top, halo: 0});
+          if (epoch !== undefined) query.set("source_epoch", epoch);
+          const response = await fetch(`/api/session/${sessionId}/source-tile/${proxy.lane}?${query}`, {signal});
+          if (!response.ok) throw new Error("Repair texture refresh refused");
+          const data = await response.arrayBuffer();
+          const headers = response.headers;
+          if (!current() || headers.get("X-Geometry-Signature") !== proxy.geometrySignature
+              || Number(headers.get("X-Edit-Revision")) !== editRevision
+              || headers.get("X-Pixel-Format") !== proxy.pixelFormat
+              || Number(headers.get("X-Tile-X")) !== left || Number(headers.get("X-Tile-Y")) !== top
+              || Number(headers.get("X-Tile-Width")) !== right-left || Number(headers.get("X-Tile-Height")) !== bottom-top
+              || Number(headers.get("X-Output-Width")) !== width || Number(headers.get("X-Output-Height")) !== height) {
+            throw supersededError("Repair texture refresh superseded");
+          }
+          epoch = headers.get("X-Source-Epoch");
+          const bytesPerRow = Number(headers.get("X-Bytes-Per-Row"));
+          if (data.byteLength !== bytesPerRow * (bottom-top)) throw new Error("Incomplete repair texture data");
+          renderer.device.queue.writeTexture({texture: proxy.texture, origin: {x:left-region.x, y:top-region.y}}, data,
+            {bytesPerRow, rowsPerImage: bottom-top}, {width:right-left, height:bottom-top});
+          transferredBytes += data.byteLength;
+        }
+        refreshed.add(proxy.texture);
+      }
+      if (!current()) throw supersededError("Repair texture refresh superseded");
+      // Re-register synchronously, without double charging the reservation.
+      if (reservation) renderer.gpuAllocator.releaseReservation(reservation);
+      reservation = null;
+      for (const [key, proxy] of retained) {
+        // A foreground request may already have loaded the new source.
+        if (renderer.proxies.has(key)) continue;
+        renderer.proxies.set(key, proxy);
+      }
+      renderer.recordStage("repair-source-refresh", {bytes: transferredBytes, textures: refreshed.size});
+      return true;
+    } catch (error) {
+      renderer.recordStage("repair-source-refresh", {textures:0, reason:error.message});
+      return false;
+    } finally {
+      if (reservation) renderer.gpuAllocator.releaseReservation(reservation);
+      const live = new Set([...renderer.proxies.values()].map(p => p.texture));
+      for (const texture of new Set([...retained.values()].map(p => p.texture))) {
+        if (!live.has(texture)) renderer.destroyAfterActiveRenders(() => texture.destroy());
+      }
+    }
+  }
+
   const HDRSourceTransport = Object.freeze({
+    refreshRepairs,
     UPLOAD_RING_SIZE,
     supersededError,
     readChunk,

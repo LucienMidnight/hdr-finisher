@@ -49,6 +49,12 @@ async function centerPixel(page) {
     const afterPixel = await centerPixel(page);
     assert(afterPixel[0] > beforePixel[0], `GPU preview kept the dark dust: ${beforePixel} -> ${afterPixel}`);
     await page.screenshot({ path: path.join(output, "after.png") });
+    // Bounded cache refresh must show the same pixels as loading the source afresh.
+    await page.evaluate(async () => {
+      state.gpuPreview.resetSession(state.session.session_id);
+      await renderGpuDraft(state.currentView, {longEdge:settledProxyLongEdge(),tier:"settled"});
+    });
+    assert.deepEqual(await centerPixel(page), afterPixel, "bounded source refresh differs from a full reload");
     await page.evaluate(() => { retouchUI.active=true; renderLocalMaskOverlay(); });
     assert.equal(await page.evaluate(() => state.editDocument.local_adjustments.length), 0, "repair must not create a grade mask");
     assert.equal(await page.evaluate(() => state.repairSourceGeneration), 1);
@@ -65,6 +71,31 @@ async function centerPixel(page) {
     await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs[0].enabled);
     await page.locator("#retouch-list button").last().click();
     await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs.length === 0);
+    // A dragged stroke must survive all samples and publish once on release.
+    const strokeRevision = await page.evaluate(() => state.editRevision);
+    await page.mouse.move(rect.x-12, rect.y);
+    await page.mouse.down();
+    await page.mouse.move(rect.x+12, rect.y, {steps:12});
+    assert(await page.evaluate(() => retouchUI.points?.length > 2), "drag did not collect brush points");
+    await page.mouse.up();
+    await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs.length === 1);
+    assert.equal(await page.evaluate(() => state.editRevision), strokeRevision+1);
+    assert(await page.evaluate(() => state.editDocument.repairs[0].recipe.points.length > 2), "painted stroke was lost");
+    await page.waitForFunction(() => state.gpuPreview?.lastPresentedFrame);
+    await page.evaluate(() => {retouchUI.active=false;renderLocalMaskOverlay();});
+    assert((await centerPixel(page))[0] > beforePixel[0], "painted stroke did not repair preview pixels");
+    await page.evaluate(() => {retouchUI.active=true;renderLocalMaskOverlay();});
+    await page.locator("#retouch-list button").last().click();
+    await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs.length === 0);
+    // Oversized painting must explain the bounded search limit and retain history.
+    await page.locator("#retouch-search").fill("32");
+    const boundedRevision = await page.evaluate(() => state.editRevision);
+    await page.mouse.move(rect.x-30,rect.y);await page.mouse.down();
+    await page.mouse.move(rect.x+30,rect.y,{steps:12});await page.mouse.up();
+    assert.equal(await page.evaluate(() => state.editRevision),boundedRevision);
+    assert.equal(await page.evaluate(() => state.editDocument.repairs.length),0);
+    assert.match(await page.locator("#retouch-status").textContent(),/search area/);
+    await page.locator("#retouch-search").fill("96");
     // Delay the edit in transport until Cancel has reached the backend first.
     let release, entered;
     const hold = new Promise(resolve => { release=resolve; });
@@ -78,6 +109,6 @@ async function centerPixel(page) {
     await page.waitForFunction(() => !retouchUI.busy);
     assert.equal(await page.evaluate(() => state.editDocument.repairs.length), 0);
     assert.deepEqual(errors, []);
-    console.log("PASS: actual Inpaint gesture, source refresh, undo/redo, retry, enable/remove; synthetic screenshots saved.");
+    console.log("PASS: Inpaint click and painted stroke, bounded source/full reload agreement, undo/redo, retry, enable/remove and cancellation; synthetic screenshots saved.");
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode=1; });

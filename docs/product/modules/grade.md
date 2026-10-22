@@ -94,6 +94,17 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   against the existing host memory reserve; solves remain bounded. Large or
   source-starved strokes can fail explicitly. Heal, Clone, source picking,
   broader performance work and Steve's manual natural-dust testing remain open.
+  **Responsiveness follow-up October 22:** brush redraws reuse the overlay canvas
+  and coalesce to animation frames; painted coverage and live Search-limit
+  feedback are visible. Actual dragged-stroke repair/rejection is tested.
+  Untransformed native GPU sources refresh bounded solved pixels while derived
+  caches still reset; transformed/reduced sources use the existing reload path.
+  Three paired 24 MP warm-view measurements reached 0.67–0.82 seconds versus
+  1.03–1.33 seconds with full reload (about 37% median improvement), with the
+  same default algorithm/settings. This meets the initial one-second target in
+  that focused case. Cold source/Denoise preparation, transformed views and
+  Steve's assessment of brush responsiveness remain open. No broad speed or
+  natural-dust acceptance is claimed; the complete three-mode tool is unbuilt.
 - **V1 hue-selection mask:** add hue selection as a local-adjustment mask,
   compatible with the existing combined-mask workflow. Not built; selection
   controls and hue evaluation remain to be specified.

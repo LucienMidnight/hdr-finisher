@@ -140,6 +140,7 @@ async function runGpuScopeRequest(request) {
     // settlement. Live input keeps the last scope until its settled request;
     // it never starts an extra grading graph beside the gesture's tiles.
     if (tier === "interactive") return false;
+    let sourceSuperseded = false;
     const renderProxy = async () => {
       while (isCurrent() && (state.gpuDraftInFlight || state.gpuPreview.activeRenderCount > 0)) {
         await new Promise((resolve) => window.setTimeout(resolve, 16));
@@ -154,13 +155,17 @@ async function runGpuScopeRequest(request) {
       ).catch((error) => {
         // A newer generation stopping this one's source load is not a failure;
         // the scope that replaces it is already on its way.
+        // Source publication can reach the backend before its edit response
+        // reaches this browser. A 409 then belongs to the old source even
+        // while the browser still has that revision; its replacement follows.
+        if (error?.status === 409) { sourceSuperseded = true; return null; }
         if (error?.superseded || !isCurrent() || request.edit_revision !== state.editRevision) return null;
         throw error;
       });
     };
     const startedAt = performance.now();
     let rendered = await renderProxy();
-    if (!isCurrent()) return false;
+    if (!isCurrent() || sourceSuperseded) return false;
     // A pan or catch-up pass of the same generation can start meanwhile and
     // take this pass's masks. That is not the GPU refusing the scope, and no
     // later request replaces it: wait for that pass and ask once more.

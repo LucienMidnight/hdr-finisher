@@ -253,6 +253,8 @@
     }
   ],
   "drivers": [
+    {"path":"tests/performance/retouch-latency.js","areas":["preview","ui"],"tier":"area",
+      "protects":"Warm native Inpaint click-to-preview latency and bounded source transfers.","launch":{"method":"electron"}},
     {"path":"tests/retouch-interaction.js","areas":["masks","preview","ui"],"tier":"area",
       "protects":"Native Inpaint gesture, source refresh, history, retry and enabled repairs.","launch":{"method":"electron"}},
     {

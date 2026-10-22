@@ -126,12 +126,14 @@ function renderRetouchOverlay(canvas) {
   const rect = canvas.getBoundingClientRect(), image = activePreviewElement()?.getBoundingClientRect();
   if (!rect.width || !rect.height || !image) return;
   const ratio = window.devicePixelRatio || 1;
-  canvas.width = Math.max(1, Math.round(rect.width * ratio));
-  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+  const bitmapWidth = Math.max(1, Math.round(rect.width * ratio));
+  const bitmapHeight = Math.max(1, Math.round(rect.height * ratio));
+  if (canvas.width !== bitmapWidth) canvas.width = bitmapWidth;
+  if (canvas.height !== bitmapHeight) canvas.height = bitmapHeight;
   const context = canvas.getContext("2d");
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, rect.width, rect.height);
-  const draw = (points, color) => {
+  const draw = (points, color, lineWidth = 2) => {
     context.beginPath();
     points.forEach((point, index) => {
       const p = sourcePointToDisplay(point);
@@ -143,12 +145,17 @@ function renderRetouchOverlay(canvas) {
       if (p) context.arc(image.left-rect.left+p.x*image.width, image.top-rect.top+p.y*image.height, 4, 0, Math.PI*2);
     }
     context.strokeStyle = color;
-    context.lineWidth = 2;
+    context.lineWidth = lineWidth;
+    context.lineCap = "round";
+    context.lineJoin = "round";
     context.stroke();
   };
   const selected = (state.editDocument?.repairs || []).find(r => r.id === retouchUI.selected);
   if (selected) draw(selected.recipe.points, "#ffd166");
-  if (retouchUI.points) draw(retouchUI.points, "#ff405e");
+  if (retouchUI.points) {
+    const diameter = Number(retouchInput("size").value) * image.width / state.session.source.width;
+    draw(retouchUI.points, "#ff405e99", Math.max(2, diameter));
+  }
   const cursor = retouchUI.cursor;
   if (cursor && state.session) {
     const radius = Number(retouchInput("size").value) / 2;
@@ -192,10 +199,12 @@ function bindRetouchEvents() {
     const point = retouchPoint(event);
     if (!point) return;
     try { retouchValues(); } catch (error) { retouchMessage(error.message); return; }
+    event.preventDefault();
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(event.pointerId);
     retouchUI.points = [point];
     retouchUI.cursor = point;
+    retouchMessage("Paint a small spot, then release to repair. Escape discards this stroke.");
     renderLocalMaskOverlay();
   }, true);
   canvas.addEventListener("pointermove", event => {
@@ -209,10 +218,16 @@ function bindRetouchEvents() {
         if (retouchUI.points.length >= 512) {
           retouchUI.points = null;
           retouchMessage("Stroke is too long. Paint several smaller repairs.");
-        } else retouchUI.points.push(point);
+        } else {
+          retouchUI.points.push(point);
+          try {
+            retouchRecipe(retouchUI.points);
+            retouchMessage("Release to repair this stroke. Escape discards it.");
+          } catch (error) { retouchMessage(error.message); }
+        }
       }
     }
-    renderLocalMaskOverlay();
+    queueLocalMaskOverlayRender();
   }, true);
   canvas.addEventListener("pointerup", event => {
     if (!owns()) return;

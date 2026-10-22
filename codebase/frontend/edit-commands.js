@@ -95,7 +95,8 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
     state.editRevision = result.revision;
     state.editDocument = result.document;
-    resetRepairSource(previousRepairs, result.document);
+    await resetRepairSource(previousRepairs, result.document);
+    if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return false;
     recordAcknowledgedLocals(result.document);
     if (commandType === "replace_document") loadDenoiseDocument(state.editDocument);
     if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
@@ -186,10 +187,10 @@ async function syncGlobalEditState() {
   return state.globalEditDirty || state.globalEditSyncPending ? syncGlobalEditState() : true;
 }
 
-function resetRepairSource(previousRepairs, documentState) {
+async function resetRepairSource(previousRepairs, documentState) {
   if (previousRepairs === JSON.stringify(documentState.repairs || [])) return;
   state.repairSourceGeneration = (state.repairSourceGeneration || 0) + 1;
-  state.gpuPreview?.resetSession(state.session.session_id);
+  const sessionId = state.session.session_id, revision = state.editRevision;
   state.gpuPreparedLane = { hdr: false, sdr: false };
   state.localMaskDraftController?.abort();
   state.localMaskDraftGeneration += 1;
@@ -207,6 +208,14 @@ function resetRepairSource(previousRepairs, documentState) {
     invalidatePreview(lane, { local: true });
   }
   renderLaneChrome();
+  const renderer = state.gpuPreview;
+  if (renderer) await HDRSourceTransport.refreshRepairs(renderer, {
+    sessionId, editRevision: revision,
+    sourceSize: [state.session.source.width, state.session.source.height],
+    geometry: documentState.global_adjustments.shared.geometry,
+    records: [...JSON.parse(previousRepairs), ...(documentState.repairs || [])],
+    isCurrent: () => state.session?.session_id === sessionId && state.editRevision === revision,
+  });
 }
 
 async function refreshEditState({ preserveLocalDraft = false } = {}) {
@@ -222,7 +231,8 @@ async function refreshEditState({ preserveLocalDraft = false } = {}) {
   const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
   state.editRevision = result.revision;
   state.editDocument = result.document;
-  resetRepairSource(previousRepairs, result.document);
+  await resetRepairSource(previousRepairs, result.document);
+  if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return;
   recordAcknowledgedLocals(result.document);
   loadDenoiseDocument(state.editDocument);
   if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
