@@ -219,6 +219,17 @@ the comparison fixture was then corrected to use the matching resize filter,
 without relaxing any tolerance. Synthetic clipped highlights at Expand 0,
 0.5 and 3% agree with CPU (scene p99.9 error 0.0000048). No broad GPU sweep.
 
+Regression coverage: `gpu-edge-colour.js` executes the shared hardware stage
+at all three Expand values and checks scratch residency; `edge-colour-raw.js`
+opens both disposable RAWs through Grade import, checks the accepted first
+frame, develops saved settings through Library and verifies GPU export/Proof.
+The CPU photo reference is independently decoded with the saved recipe and
+the matching reducer. Both drivers are registered for focused release checks.
+Backend tests cover unavailable-GPU fallback without input mutation, shared
+plane handoff, lane validation and cancellation cleanup. Final fast checks:
+571 Node passed; 2,401 Python passed, 3 skipped. The corrected photograph
+comparison was rerun on the captured GPU artifacts without another GPU run.
+
 **Not built**
 
 - GPU decode/demosaic for Grade's import, X-Trans sensors and DNG.
