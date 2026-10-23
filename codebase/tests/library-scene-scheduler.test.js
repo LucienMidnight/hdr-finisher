@@ -45,14 +45,41 @@ test('cost ordering ages waiting work and preserves selected-photo priority',asy
  assert.deepEqual(started,['selected','old','cheap']);
 });
 
-test('cancelling a running expensive decoder does not release its slot before it stops',async()=>{
- const queue=create(2,undefined,{heavyLimit:1}),block=gate(),cancel=new AbortController(),started=[];
- const first=queue.submit('running',async()=>{started.push('running');await block.promise;},cancel.signal,10,{heavy:true});
+test('cancelling a running expensive decoder retains its borrowed slot until it stops',async()=>{
+ const queue=create(2,undefined,{heavyLimit:1}),a=gate(),b=gate(),cancel=new AbortController(),started=[];
+ const first=queue.submit('running',async()=>{started.push('running');await a.promise;},cancel.signal,10,{heavy:true});
+ const second=queue.submit('borrowed',async()=>{started.push('borrowed');await b.promise;},undefined,10,{heavy:true});
  await new Promise(resolve=>setImmediate(resolve));cancel.abort();await assert.rejects(first,{name:'AbortError'});
  const next=queue.submit('next',async()=>started.push('next'),undefined,10,{heavy:true});
- const quick=queue.submit('quick',async()=>started.push('quick'));
- await quick;assert.deepEqual(started,['running','quick']);
- block.resolve();await next;assert.deepEqual(started,['running','quick','next']);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(started,['running','borrowed']);assert.equal(queue.snapshot().active,2);
+ a.resolve();await next;assert.deepEqual(started,['running','borrowed','next']);
+ b.resolve();await second;
+});
+
+test('expensive-only demand uses both slots and drains without exceeding the limit',async()=>{
+ const queue=create(2,undefined,{heavyLimit:1}),blocks=[gate(),gate(),gate()],started=[];
+ let running=0,peak=0;
+ const jobs=blocks.map((block,i)=>queue.submit(String(i),async()=>{
+   started.push(i);peak=Math.max(peak,++running);await block.promise;running--;
+ },undefined,10,{heavy:true}));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(started,[0,1]);assert.equal(queue.snapshot().waiting,1);
+ blocks[0].resolve();await jobs[0];await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(started,[0,1,2]);assert.equal(peak,2);
+ blocks[1].resolve();blocks[2].resolve();await Promise.all(jobs);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(queue.snapshot().active,0);
+});
+
+test('light work arriving while both expensive slots are occupied gets the next free slot',async()=>{
+ const queue=create(2,undefined,{heavyLimit:1}),a=gate(),b=gate(),started=[];
+ const first=queue.submit('a',()=>a.promise,undefined,10,{heavy:true});
+ const second=queue.submit('b',()=>b.promise,undefined,10,{heavy:true});
+ await new Promise(resolve=>setImmediate(resolve));
+ const heavy=queue.submit('heavy',async()=>started.push('heavy'),undefined,10,{heavy:true,cost:5});
+ const light=queue.submit('light',async()=>started.push('light'),undefined,10,{cost:1});
+ a.resolve();await light;assert.equal(started[0],'light');
+ b.resolve();await Promise.all([first,second,heavy]);
 });
 
 test("Activity retains running cancellations until work exits and records failures", async()=>{

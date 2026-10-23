@@ -7,7 +7,7 @@ window.HDRLibraryScenes = (() => {
     signal?.addEventListener("abort", stop, {once:true});
   });
   // Lightweight cache discovery never queues behind full developments. Keep
-  // one of the two existing source slots available for likely lighter work.
+  // likely lighter work first; expensive work can borrow an otherwise idle slot.
   const changed = (job,state,error) => {
     window.dispatchEvent?.(new Event("library-work-changed"));
     window.HDRLibraryStopwatch?.("scene_"+state,{path:job.path,request:String(job.sequence),
@@ -63,7 +63,11 @@ window.HDRLibraryScenes = (() => {
       try {
         const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance);
         if (meta) return meta;
-      } catch (error) { if (error.name === "AbortError" || error.libraryError) throw error; console.warn("Library source CPU fallback:",error.message); }
+      } catch (error) {
+        if (error.name === "AbortError" || error.libraryError) throw error;
+        window.HDRLibraryStopwatch?.("source_gpu_fallback",{path,reason:error.message});
+        console.warn("Library source CPU fallback:",error.message);
+      }
     }
     for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",signal,

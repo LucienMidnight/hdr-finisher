@@ -1532,6 +1532,26 @@ failure reproduced (stale publication was not rejected after rewriting the
 source). It was not investigated or changed in this documentation-only work.
 No GPU check was needed because no app or shader code changed.
 
+**Loading-order follow-up (October 23; implemented with this commit).**
+Large-only queues now use both existing source slots. Lighter queued work is
+still preferred when the expensive allowance is occupied, but an otherwise
+idle slot is lent to another expensive source after one microtask. A light
+file arriving after both slots start waits for the next completion; running
+decoders are not interrupted. Cancelled work retains its slot until it exits.
+The total two-source limit and shared GPU admission/budgets are unchanged.
+GPU-to-CPU fallback events now include the reason in the page stopwatch log,
+including failures after source decoding/transfer. The large line-scan DNG's
+repeated preparation remains a separate diagnostic issue; this change does
+not claim to eliminate its CPU fallback or improve its own processing time.
+
+Validation: all 15 focused scheduler/scene checks and the isolated Electron
+`library-live-grid.js` check (2560 x 1440, including GPU recovery) passed.
+Fast checks: Node 583 passed with three unrelated `edit-sync-retry.test.js`
+failures (`discardUnusedLocal` missing from its test harness); Python 2,418
+passed, three skipped, seven unrelated failures in frontend workflow/wording
+contracts and the previously recorded stale-source publication check in
+`test_library_rgb.py`. No backend, shader or pixel-output behavior changed.
+
 **Loading-order adjustment (October 20; implemented with this commit).**
 Cache discovery now runs on a separate bounded two-request queue and never
 starts decoding. A cache hit bypasses occupied source slots. Cold preparations

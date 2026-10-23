@@ -4,15 +4,15 @@ const scheduler=require('../frontend/library-scene-scheduler');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {resolve,promise};};
 function setup(plans,develop){
- let time=0;const requests=[];
- const context={window:{},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,setTimeout,clearTimeout,
+ let time=0;const requests=[],events=[];
+ const context={window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,setTimeout,clearTimeout,
   performance:{now:()=>time},console,
   HDRLibraryGpuRaw:{enabled:()=>true,liveScene:develop},
   fetch:async(url,options)=>{requests.push(JSON.parse(options.body));if(url==="/api/library/live-scene")return {ok:false,json:async()=>({detail:"decoder failed"})};const plan=plans[JSON.parse(options.body).path];return {ok:!plan.library_error,json:async()=>plan};}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/library-scenes.js'),'utf8'),context);
- return {scenes:context.window.HDRLibraryScenes,requests,advance:ms=>time+=ms};
+ return {scenes:context.window.HDRLibraryScenes,requests,events,advance:ms=>time+=ms};
 }
-test('cached pictures bypass occupied sources and any large format leaves room for small pictures',async()=>{
+test('cached pictures bypass both occupied sources and light demand gets the next slot',async()=>{
  const block=gate(),started=[];
  const {scenes}=setup({a:{bytes:96e6,revision:'a'},b:{bytes:400e6,revision:'b'},
   quick:{bytes:1e6,revision:'q'},cached:{cached:{edge:640,key:'cached'}}},async(p,edge)=>{
@@ -20,9 +20,11 @@ test('cached pictures bypass occupied sources and any large format leaves room f
   });
  const a=scenes.load('a',640),b=scenes.load('b',640);await tick();
  assert.equal((await scenes.load('cached',640)).key,'cached');
- assert.equal((await scenes.load('quick',640)).key,'quick');
- assert.deepEqual(started,['a','quick']);
- block.resolve();await Promise.all([a,b]);assert.deepEqual(started,['a','quick','b']);
+ assert.deepEqual(started,['a','b']);assert.equal(scenes.snapshot().sources.active,2);
+ const quick=scenes.load('quick',640);await tick();
+ assert.equal(scenes.snapshot().sources.waiting,1);
+ block.resolve();assert.equal((await quick).key,'quick');
+ await Promise.all([a,b]);assert.deepEqual(started,['a','b','quick']);
 });
 test('merged grid and selected demand survives one cancellation and reads the other cached size',async()=>{
  const block=gate(),started=[];
@@ -34,26 +36,28 @@ test('merged grid and selected demand survives one cancellation and reads the ot
  cancel.abort();await assert.rejects(first,{name:'AbortError'});block.resolve();
  assert.equal((await selected).key,'large');assert.deepEqual(started,[640]);
 });
-test('observed slow small files become expensive, and changed sources discard old timings',async()=>{
+test('observed slow files still borrow idle capacity, and source revisions remain usable',async()=>{
  const started=[];let block=gate(),hold=false;
  const plans={odd:{bytes:1,revision:'1'},other:{bytes:96e6,revision:'1'}};
  const {scenes,advance}=setup(plans,async(p,edge)=>{started.push(p);advance(3000);
   if(hold)await block.promise;return {edge};});
  await scenes.load('odd',640);hold=true;
  const a=scenes.load('other',640),b=scenes.load('odd',640);await tick();
- assert.deepEqual(started,['odd','other']);block.resolve();await Promise.all([a,b]);
+ assert.deepEqual(started,['odd','other','odd']);assert.equal(scenes.snapshot().sources.active,2);
+ block.resolve();await Promise.all([a,b]);
  plans.odd.revision='2';block=gate();const c=scenes.load('other',640),d=scenes.load('odd',640);
  await tick();assert.deepEqual(started.slice(-2),['other','odd']);
  block.resolve();await Promise.all([c,d]);
 });
 test('cancelled pending expensive demand never starts and a failed preparation releases capacity',async()=>{
  const block=gate(),started=[];
- const {scenes}=setup({a:{bytes:96e6},b:{bytes:96e6},c:{bytes:96e6}},async(p,edge)=>{
-  started.push(p);if(p==='a'){await block.promise;throw Error('decoder failed');}return {edge};});
+ const {scenes}=setup({a:{bytes:96e6},occupied:{bytes:96e6},b:{bytes:96e6},c:{bytes:96e6}},async(p,edge)=>{
+  started.push(p);if(p==='a'){await block.promise;throw Error('decoder failed');}if(p==='occupied')await block.promise;return {edge};});
  const a=scenes.load('a',640);const aError=assert.rejects(a,/decoder failed/);
+ const occupied=scenes.load('occupied',640);await tick();
  const cancel=new AbortController(),b=scenes.load('b',640,cancel.signal);await tick();
  cancel.abort();await assert.rejects(b,{name:'AbortError'});
- const c=scenes.load('c',640);block.resolve();await aError;await c;assert.deepEqual(started,['a','c']);
+ const c=scenes.load('c',640);block.resolve();await aError;await occupied;await c;assert.deepEqual(started,['a','occupied','c']);
 });
 
 test('remembered errors skip both source slots while later pictures finish',async()=>{
@@ -69,4 +73,10 @@ test('remembered errors skip both source slots while later pictures finish',asyn
  await tick();
  assert.equal(scenes.snapshot().sources.active,0);
  assert.equal(scenes.snapshot().sources.waiting,0);
+});
+
+test('GPU failures retain their reason in the loading log before CPU fallback',async()=>{
+ const {scenes,events}=setup({photo:{bytes:96e6}},async()=>{throw Error('Source transfer exceeds available GPU memory');});
+ await assert.rejects(scenes.load('photo',640),/decoder failed/);
+ assert.deepEqual(events.filter(event=>event.stage==="source_gpu_fallback"),[{stage:'source_gpu_fallback',path:'photo',reason:'Source transfer exceeds available GPU memory'}]);
 });

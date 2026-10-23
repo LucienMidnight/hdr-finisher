@@ -781,7 +781,7 @@
     }
     root.HDRLibraryScenes?.stage(path,"Reading source samples");
     if (response.status === 204) {
-      root.HDRLibraryStopwatch?.("source_cpu_fallback", {path});
+      root.HDRLibraryStopwatch?.("source_cpu_fallback", {path,reason:response.headers.get("X-Library-Fallback")});
       console.info("Library CPU source:", response.headers.get("X-Library-Fallback")); return null;
     }
     if (!response.ok) { const result = await response.json().catch(() => ({})); const error = new Error(result.detail || "Library request failed."); error.status = response.status; error.libraryError = result.library_error; throw error; }

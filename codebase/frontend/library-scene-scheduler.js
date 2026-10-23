@@ -5,11 +5,20 @@
     const jobs=new Map(),waiting=[],failures=[],runningJobs=new Set();let active=0,heavyActive=0,sequence=0;
     const cancelled=()=>new DOMException("Cancelled","AbortError");
     const score=job=>job.priority+job.cost-(now()-job.created)/1000;
-    function pump(){
+    let borrowPending=false;
+    function pump(borrow=false){
       while(active<limit&&waiting.length){
         waiting.sort((a,b)=>score(a)-score(b)||a.sequence-b.sequence);
-        const index=waiting.findIndex(job=>!job.heavy||heavyActive<heavyLimit);
-        if(index<0)break;
+        let index=waiting.findIndex(job=>!job.heavy||heavyActive<heavyLimit);
+        if(index<0){
+          // Prefer light work already waiting, but never reserve an empty slot
+          // indefinitely. One microtask lets a burst of requests join the queue.
+          if(!borrow){
+            if(!borrowPending){borrowPending=true;queueMicrotask(()=>{borrowPending=false;pump(true);});}
+            break;
+          }
+          index=0;
+        }
         const [job]=waiting.splice(index,1);
         if(job.controller.signal.aborted){if(jobs.get(job.key)===job)jobs.delete(job.key);continue;}
         active++;if(job.heavy)heavyActive++;job.running=true;job.started=now();runningJobs.add(job);onChange(job,"running");
