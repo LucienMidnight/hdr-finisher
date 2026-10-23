@@ -24,7 +24,7 @@
   const applyTheme = theme => { document.documentElement.dataset.theme = ["default-dark", "default-light", "studio-gray"].includes(theme) ? theme : "default-dark"; };
   try { applyTheme(libraryDesktop?.startupTheme || JSON.parse(localStorage.getItem("hdr-finisher:application-preferences:v1") || "{}").theme); } catch {}
   if (!standalone) applyTheme(parent.document.documentElement.dataset.theme);
-  window.addEventListener("storage", event => { if (event.key === "hdr-finisher:application-preferences:v1") { try { applyTheme(JSON.parse(event.newValue || "{}").theme); } catch {} } });
+  window.addEventListener("storage", event => { if (event.key === "hdr-finisher:application-preferences:v1") { try { applyTheme(JSON.parse(event.newValue || "{}").theme); void window.HDRLibrary?.refreshPins?.(); } catch {} } });
   const postParent = (action, detail = {}) => {
     if (!standalone) parent.postMessage({ type: "hdr-library", action, ...detail }, location.origin);
     else if (libraryDesktop) {
@@ -1349,7 +1349,7 @@
   }
   // Read-only status for the focused interaction driver; no test-only behavior.
   HDRLibraryStopwatch("ready");
-  window.HDRLibrary = Object.freeze({ browse, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
+  window.HDRLibrary = Object.freeze({ browse, refreshPins, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
     overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: shownCells(state.cells).length,
     filmVisible: shownCells(state.filmCells).length, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomScale: state.zoomScale, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
   (async () => {

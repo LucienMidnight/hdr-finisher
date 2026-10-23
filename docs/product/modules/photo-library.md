@@ -21,6 +21,12 @@ they do not depend on the machine's free RAM.
 "Photos stay where they are." The status region remains available for activity
 and action messages.
 
+**Optional Test Patterns folder (October 23, 2026).** Settings can show or hide
+an app-managed, pinned Test Patterns folder. Enabling it generates HDR and
+delivery-proof ACEScg-linear EXR patterns under the writable HDR Finisher data folder;
+disabling it removes the Library pin and keeps the files on disk. The option
+defaults off and does not change any existing user pins.
+
 ## 1. Purpose
 
 **Remembered picture errors (October 23, 2026).** Failed photo developments

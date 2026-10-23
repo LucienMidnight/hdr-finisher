@@ -214,6 +214,10 @@ class PreferencesRequest(BaseModel):
         return {label: " ".join(name.split())[:60] for label, name in values.items()}
 
 
+class TestPatternsRequest(BaseModel):
+    enabled: bool
+
+
 def create_library_router(worker, browser, store=None):
     cache = LibraryPictureCache(browser.root)
     from .library_raw import RawBrowsing, camera_raw
@@ -693,6 +697,18 @@ def create_library_router(worker, browser, store=None):
     @router.post("/preferences")
     def set_preferences(request: PreferencesRequest):
         return command(lambda: index.set_preferences(label_names=request.label_names))
+
+    @router.post("/test-patterns")
+    def set_test_patterns(request: TestPatternsRequest):
+        from .library_test_patterns import set_test_patterns_enabled
+        try:
+            result = set_test_patterns_enabled(browser, request.enabled)
+            if result.pop("changed"):
+                index.membership.reconcile()
+                index.kick()
+            return result
+        except (OSError, ValueError, ImportError) as exc:
+            raise HTTPException(status_code=500, detail="The Library test-pattern folder could not be prepared. Your files are safe.") from exc
 
     @router.post("/pins")
     def add_pins(command: PinsRequest):

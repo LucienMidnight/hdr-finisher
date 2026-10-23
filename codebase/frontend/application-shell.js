@@ -17,6 +17,7 @@
     renderingMode: "auto",
     previewResolution: "auto",
     fasterDragging: false,
+    libraryTestPatterns: false,
     maximumGpuMemoryGiB: "auto",
     executionOverride: "auto",
     roiPreview: "fit",
@@ -168,6 +169,7 @@
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
     previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) ? String(value.previewResolution) : "auto",
     fasterDragging: value.fasterDragging === true,
+    libraryTestPatterns: value.libraryTestPatterns === true,
     gradeAutosave: value.gradeAutosave !== false,
     maximumGpuMemoryGiB: normalizeGpuMemoryGiB(value.maximumGpuMemoryGiB),
     executionOverride: EXECUTION_OVERRIDES.has(value.executionOverride) ? value.executionOverride : "auto",
@@ -632,6 +634,7 @@
   function renderSettings() {
     byId("settings-rendering-mode").value = shell.preferences.renderingMode;
     byId("settings-faster-dragging").checked = shell.preferences.fasterDragging === true;
+    byId("settings-library-test-patterns").checked = shell.preferences.libraryTestPatterns === true;
     byId("settings-preview-resolution").value = shell.preferences.previewResolution;
     const memoryBudget = shell.preferences.maximumGpuMemoryGiB;
     const presetBudget = typeof memoryBudget === "number" && GPU_MEMORY_PRESETS_GIB.includes(memoryBudget);
@@ -649,6 +652,19 @@
     renderFolderSettings();
     renderPresetOptions();
     renderShortcutList();
+  }
+
+  async function syncLibraryTestPatterns() {
+    try {
+      const response = await fetch("/api/library/test-patterns", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: shell.preferences.libraryTestPatterns === true }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await document.querySelector("#library-frame")?.contentWindow?.HDRLibrary?.refreshPins?.();
+    } catch (error) {
+      console.warn("Could not sync the Library test-pattern folder.", error);
+    }
   }
 
   function escapeHtml(value) {
@@ -898,6 +914,30 @@
       shell.preferences.fasterDragging = event.target.checked === true;
       persistPreferences();
     });
+    byId("settings-library-test-patterns").addEventListener("change", async (event) => {
+      const enabled = event.target.checked === true;
+      const status = byId("settings-library-test-patterns-status");
+      event.target.disabled = true;
+      status.textContent = "Preparing the Library folder…";
+      try {
+        await shell.libraryTestPatternsSync;
+        const response = await fetch("/api/library/test-patterns", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Could not update the Library test-pattern folder.");
+        shell.preferences.libraryTestPatterns = enabled;
+        persistPreferences();
+        await shell.persistChain;
+        await document.querySelector("#library-frame")?.contentWindow?.HDRLibrary?.refreshPins?.();
+        status.textContent = enabled ? "Test Patterns is pinned in the Library." : "Test Patterns is hidden from the Library. Its files remain on disk.";
+      } catch (error) {
+        event.target.checked = shell.preferences.libraryTestPatterns === true;
+        status.textContent = error.message || "Could not update the Library test-pattern folder.";
+      } finally {
+        event.target.disabled = false;
+      }
+    });
     byId("settings-gpu-memory-limit").addEventListener("change", (event) => {
       const custom = event.target.value === "custom";
       byId("settings-gpu-memory-custom-field").classList.toggle("hidden", !custom);
@@ -1022,6 +1062,7 @@
     shell.onPreferencesChanged = options.onPreferencesChanged || (() => {});
     shell.adjustControl = options.adjustControl || (() => false);
     shell.preferences = await loadPreferences();
+    shell.libraryTestPatternsSync = syncLibraryTestPatterns();
     applyTheme(shell.preferences.theme);
     applyFrameColor();
     renderFramePresets();

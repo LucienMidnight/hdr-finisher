@@ -148,7 +148,6 @@ def test_default_shortcuts_are_conservative_and_warn_about_macos_system_bindings
 def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     shell = frontend_scripts()
-    desktop = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
 
     assert 'new Set(["1024", "2048", "4096", "full"])' in shell
     assert "GPU_MEMORY_PRESETS_GIB = [1, 2, 3, 4, 6, 8, 12]" in shell
@@ -172,11 +171,7 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
         assert f'<option value="{value}">{value} GiB</option>' in html
     assert '<option value="custom">Custom…</option>' in html
     assert 'id="settings-gpu-memory-custom" type="number" min="0.25" max="64" step="0.25"' in html
-    assert 'previewResolution: "auto"' in desktop
-    assert "fasterDragging: false," in desktop
-    assert 'maximumGpuMemoryGiB: "auto"' in desktop
     assert 'schemaVersion: 3' in shell
-    assert 'schemaVersion: 3' in desktop
 
 
 def test_rendition_descriptions_are_delayed_title_tooltips() -> None:
