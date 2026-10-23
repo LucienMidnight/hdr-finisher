@@ -62,8 +62,10 @@ async function main() {
     await page.locator('[data-workflow-tab="export"]').click();
     const advanced = page.locator("#jpeg-advanced-settings");
     if (await advanced.getAttribute("open") !== null) throw new Error("Advanced settings must start collapsed.");
-    await advanced.locator("summary").press("Enter");
+    await advanced.locator(":scope > summary").press("Enter");
     if (await advanced.getAttribute("open") === null) throw new Error(`Advanced disclosure did not respond to keyboard activation. Page errors: ${errors.join(" | ")}`);
+
+    await advanced.locator(".batch-advanced-group > summary").filter({ hasText: /^Codec$/ }).click();
 
     for (const [format, presets] of Object.entries(expected)) {
       await page.locator("#export-format").selectOption(format);

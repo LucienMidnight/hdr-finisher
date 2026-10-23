@@ -7,11 +7,23 @@
   `export_presets.py`, `proofing.py`, `hdr_ceiling.py`, `delivery_colour.py`,
   `jpegxl.py`; frontend `export-ui.js`, `batch-export.js`.
 
-**Export presentation (October 23, 2026).** The batch selection outline is
-drawn above thumbnail images and GPU canvases. Preset name, filename pattern,
-version, subfolder and destination fields use shared recessed field surfaces.
-The preset name has a visible label. The bottom-left preset help paragraph is
-removed. These are presentation changes; output rendering is unchanged.
+**Export controls (October 24, 2026).** Presets live in the left rail;
+its heading menu creates presets, saves current settings as a preset, and
+provides save, rename, duplicate, revert and delete actions. The right panel
+orders Output version, Format & quality, Size & sharpening, File naming,
+then Advanced settings (Codec, Metadata, Reference white and Subfolder).
+Controls use the shared title, field and switch tokens. Indented rows align
+the enlargement switch with the fields; pixel units sit beside the number
+inside dimension fields. Destination and Export remain visible while
+settings scroll. Editing one output version leaves the others intact;
+Export includes all versions.
+
+The default destination and initial Browse location are the source photo's
+folder, using the first photo for a batch. Changing the photo selection
+resets this default; browsing chooses a destination for the current selection.
+Desktop grants still authorize writes. These changes leave output rendering
+and encoding unchanged. Validation: Node and Python fast checks, focused
+Electron batch controls and format/preset interaction checks.
 
 ## 1. Purpose
 

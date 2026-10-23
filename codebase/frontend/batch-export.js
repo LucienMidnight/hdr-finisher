@@ -8,7 +8,7 @@
   async function api(url, data, method="POST") { const r=await fetch(url,data === undefined?{}:{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(data)}); const p=await r.json(); if(!r.ok) throw Error(typeof p.detail==="string"?p.detail:"Export request failed."); return p; }
   async function presetURL() { const directory=state.appPreferences?.folders?.presetSave || await desktop?.getDefaultPresetDirectory?.(); return `/api/export-presets${directory?`?directory=${encodeURIComponent(directory)}`:""}`; }
   function settings() { const s=currentExportSettings(); delete s.output_path; delete s.path_grant; delete s.overwrite; delete s.overwrite_target; delete s.edit_revision; delete s.editing_measurements; return s; }
-  function capture() { if(!model.draft)return; const v=model.draft.versions[model.version]; v.settings=settings(); v.quality_preset=els.exportPreset.value; v.pattern=$("batch-pattern").value; v.subfolder=$("batch-subfolder").value; v.name=$("batch-version-name").value.trim()||`Version ${model.version+1}`; v.reference_white=Number($("batch-white").value)||null; model.draft.name=$("batch-preset-name").value.trim()||"Untitled preset"; $("batch-modified").textContent=JSON.stringify(model.draft)!==JSON.stringify(model.saved)?"Modified":""; example(); }
+  function capture() { if(!model.draft)return; const v=model.draft.versions[model.version]; v.settings=settings(); v.quality_preset=els.exportPreset.value; v.pattern=$("batch-pattern").value; v.subfolder=$("batch-subfolder").value; v.name=$("batch-version-name").value.trim()||`Version ${model.version+1}`; v.reference_white=Number($("batch-white").value)||null; model.draft.name=$("batch-preset-name").value.trim()||"Untitled preset"; $("batch-modified").textContent=JSON.stringify(model.draft)!==JSON.stringify(model.saved)?"Unsaved changes":""; example(); }
   function applyVersion() {
     const v=model.draft.versions[model.version], s=v.settings;
     const controls={format:"exportFormat",quality:"exportQuality",jpeg_gain_map_quality:"jpegGainMapQuality",jpeg_gain_map_scale:"jpegGainMapScale",avif_bit_depth:"avifBitDepth",avif_chroma_subsampling:"avifChromaSubsampling",avif_gain_map_quality:"avifGainMapQuality",avif_gain_map_scale:"avifGainMapScale",sdr_png_bit_depth:"sdrPngBitDepth",jpegxl_precision:"jpegxlPrecision",dithering:"exportDithering",metadata_policy:"exportMetadataPolicy"};
@@ -17,10 +17,48 @@
     const f=s.output_finishing||{}; for(const [key,id] of Object.entries({resize_mode:"exportResizeMode",long_edge:"exportLongEdge",width:"exportWidth",height:"exportHeight",sharpening:"exportSharpening"}))if(f[key]!=null)els[id].value=String(f[key]);
     els.exportPreventEnlargement.checked=f.prevent_enlargement!==false; if(els.exportGuaranteePeak)els.exportGuaranteePeak.checked=s.guarantee_hdr_peak===true; els.exportPreset.value=v.quality_preset||"custom";
     $("batch-pattern").value=v.pattern; $("batch-subfolder").value=v.subfolder; $("batch-version-name").value=v.name; $("batch-white").value=String(v.reference_white||"");
-    updateExportAvailability(); els.exportQualityValue.textContent=els.exportQuality.value; example();
+    syncDimensionUnits(); renderFormatCards(); renderOutputFinishingControls(); updateExportAvailability(); els.exportQualityValue.textContent=els.exportQuality.value; els.jpegGainMapQualityValue.textContent=els.jpegGainMapQuality.value; els.avifGainMapQualityValue.textContent=els.avifGainMapQuality.value; example();
   }
+  function syncDimensionUnits(){for(const id of ["export-long-edge","export-width","export-height"]){const input=$(id);input.style.width=`${Math.max(1,input.value.length)+0.5}ch`;}}
   function choose(preset) { model.draft=structuredClone(preset); model.saved=structuredClone(preset); model.version=0; $("batch-preset-name").value=preset.name; $("batch-modified").textContent=""; renderTabs(); applyVersion(); renderPresets(); renderGrid(); }
-  function renderTabs() { $("batch-versions").replaceChildren(...model.draft.versions.map((v,i)=>{ const b=button(v.name,()=>{capture();model.version=i;renderTabs();applyVersion();});b.setAttribute("aria-pressed",String(i===model.version));return b;}),button("+ Add version",()=>{capture();const v=structuredClone(model.draft.versions[model.version]);v.name=`Version ${model.draft.versions.length+1}`;model.draft.versions.push(v);model.version=model.draft.versions.length-1;renderTabs();applyVersion();capture();}),button("Remove version",()=>{if(model.draft.versions.length<2)return;model.draft.versions.splice(model.version,1);model.version=0;renderTabs();applyVersion();capture();})); }
+  function renderTabs() {
+    const select=$("batch-version-select");
+    select.replaceChildren(...model.draft.versions.map((v,i)=>new Option(v.name,String(i))));
+    select.value=String(model.version);
+  }
+  let closeMenu;
+  function menu(anchor, actions) {
+    closeMenu?.();
+    const popup=node("div","","window-menu-popover");popup.setAttribute("role","menu");
+    anchor.setAttribute("aria-expanded","true");
+    const dismiss=event=>{if(!popup.contains(event.target)&&!anchor.contains(event.target))close();};
+    const close=()=>{popup.remove();anchor.setAttribute("aria-expanded","false");document.removeEventListener("pointerdown",dismiss);document.removeEventListener("keydown",keys);window.removeEventListener("resize",close);closeMenu=null;};
+    const keys=event=>{
+      const items=[...popup.querySelectorAll("button:not(:disabled)")],i=items.indexOf(document.activeElement);
+      if(event.key==="Escape"){event.preventDefault();close();anchor.focus();}
+      else if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();items[event.key==="Home"?0:event.key==="End"?items.length-1:(i+(event.key==="ArrowDown"?1:-1)+items.length)%items.length]?.focus();}
+      else if(event.key==="Tab")close();
+    };
+    for(const [label,fn,disabled=false] of actions){const item=button(label,()=>{close();anchor.focus();return fn();});item.disabled=disabled;item.setAttribute("role","menuitem");popup.append(item);}
+    document.body.append(popup);
+    const rect=anchor.getBoundingClientRect();popup.style.position="fixed";popup.style.left=`${Math.max(8,Math.min(rect.right-popup.offsetWidth,window.innerWidth-popup.offsetWidth-8))}px`;popup.style.top=`${Math.min(rect.bottom+4,window.innerHeight-popup.offsetHeight-8)}px`;
+    document.addEventListener("pointerdown",dismiss);document.addEventListener("keydown",keys);window.addEventListener("resize",close);closeMenu=close;popup.querySelector("button:not(:disabled)")?.focus();
+  }
+  function menuButton(label, actions){const b=button("…",()=>menu(b,actions()));b.className="top-icon-button";b.setAttribute("aria-label",label);b.title=label;b.setAttribute("aria-haspopup","menu");b.setAttribute("aria-expanded","false");return b;}
+  async function namedSave(asNew=false){
+    capture();const name=await HDRDialogs.prompt("Preset name",model.draft.name,{title:asNew?"Save settings as preset":"Save export preset",confirmLabel:"Save"});
+    if(!name?.trim())return;$("batch-preset-name").value=name.trim();await save(asNew);
+  }
+  async function newPreset(){
+    const name=await HDRDialogs.prompt("Preset name","New export preset",{title:"New export preset",confirmLabel:"Create"});if(!name?.trim())return;
+    const version={name:"Version 1",pattern:"{filename}_{version}",subfolder:"",settings:settings(),quality_preset:els.exportPreset.value,reference_white:null};
+    choose({id:crypto.randomUUID().replaceAll("-",""),name:name.trim(),versions:[version]});
+    $("batch-modified").textContent="Unsaved changes";
+  }
+  function presetActions(){return [["New preset…",newPreset],["Save preset",()=>namedSave()],["Save current settings as preset…",()=>namedSave(true)],["Revert changes",()=>choose(model.saved)],["Rename preset…",()=>rename(model.draft)],["Duplicate preset",()=>duplicate(model.draft)],["Delete preset",()=>removePreset(model.draft),!model.presets.some(p=>p.id===model.draft?.id)]];}
+  function versionActions(){return [["Add version",()=>{capture();const v=structuredClone(model.draft.versions[model.version]);v.name=`Version ${model.draft.versions.length+1}`;model.draft.versions.push(v);model.version=model.draft.versions.length-1;renderTabs();applyVersion();capture();}],
+    ["Rename version…",async()=>{const name=await HDRDialogs.prompt("Version name",model.draft.versions[model.version].name,{title:"Rename output version",confirmLabel:"Rename"});if(name?.trim()){$("batch-version-name").value=name.trim();capture();renderTabs();}}],
+    ["Remove version",()=>{capture();model.draft.versions.splice(model.version,1);model.version=0;renderTabs();applyVersion();capture();},model.draft.versions.length<2]];}
   function formatName(version) { return [...els.exportFormat.options].find(o=>o.value===version.settings.format)?.textContent || version.settings.format; }
   const HDR_FORMATS=["avif_gain_map","jpeg_ultrahdr","jpegxl_hdr"];
   // An SDR-only photo only loses something when the preset has an HDR version.
@@ -29,10 +67,21 @@
   // The written file relative to the export folder, keeping its sub-folder.
   function writtenName(output,directory){if(!output)return "—";const unify=value=>String(value).replace(/\\/g,"/").replace(/\/+$/,"");const file=unify(output),folder=directory?unify(directory)+"/":"";const relative=folder&&file.toLowerCase().startsWith(folder.toLowerCase())?file.slice(folder.length):file.split("/").pop();return String(output).includes("\\")?relative.replace(/\//g,"\\"):relative;}
   function fileCount(photo) { return (model.draft?.versions||[]).filter(v=>!photo.sdr_only||!HDR_FORMATS.includes(v.settings.format)).length; }
-  function renderPresets() { $("batch-preset-list").replaceChildren(...model.presets.map(p=>{const b=button("",()=>choose(p)); b.className="batch-preset";b.setAttribute("aria-pressed",String(p.id===model.draft?.id));b.append(node("strong",p.name),node("span",p.versions.map(formatName).join(" + "))); b.oncontextmenu=event=>{event.preventDefault();const menu=node("div","","window-menu-popover");for(const [label,fn]of [["Rename",()=>rename(p)],["Duplicate",()=>duplicate(p)],["Delete",()=>removePreset(p)]])menu.append(button(label,()=>{menu.remove();return fn();}));menu.style.position="fixed";menu.style.left=`${event.clientX}px`;menu.style.top=`${event.clientY}px`;document.body.append(menu);const dismiss=ev=>{if(!menu.contains(ev.target)){menu.remove();document.removeEventListener("pointerdown",dismiss);}};document.addEventListener("pointerdown",dismiss);};return b;})); }
+  function renderPresets() {
+    const presets=model.draft&&!model.presets.some(p=>p.id===model.draft.id)?[...model.presets,model.draft]:model.presets;
+    $("batch-preset-list").replaceChildren(...presets.map(p=>{
+      const row=node("div","","batch-preset-row"),b=button("",()=>choose(p));b.className="batch-preset";b.setAttribute("aria-pressed",String(p.id===model.draft?.id));
+      b.append(node("strong",p.name),node("span",p.versions.map(formatName).join(" + ")));
+      const actions=()=>[["Rename…",()=>rename(p)],["Duplicate",()=>duplicate(p)],["Delete",()=>removePreset(p)]];
+      const more=menuButton(`Actions for ${p.name}`,actions);row.append(b,more);b.oncontextmenu=event=>{event.preventDefault();menu(more,actions());};return row;
+    }));
+  }
   async function loadPresets(){const p=await api(await presetURL());model.presets=p.presets;if(!model.draft)choose(model.presets.find(p=>p.id===localStorage.getItem("last-export-preset"))||{id:crypto.randomUUID().replaceAll("-",""),name:"My export",versions:[{name:"Version 1",pattern:"{filename}_{version}",subfolder:"",settings:settings(),quality_preset:els.exportPreset.value,reference_white:null}]});else renderPresets();}
   async function save(asNew=false){capture();if(asNew)model.draft.id=crypto.randomUUID().replaceAll("-","");const p=await api(await presetURL(),model.draft);choose(p);await loadPresets();}
-  async function rename(p){choose(p);$("batch-preset-name").focus();$("batch-preset-name").select();}
+  async function rename(p){
+    const name=await HDRDialogs.prompt("Preset name",p.name,{title:"Rename export preset",confirmLabel:"Rename"});if(!name?.trim())return;
+    if(p.id!==model.draft.id)choose(p);$("batch-preset-name").value=name.trim();await save();
+  }
   async function duplicate(p){choose(p);model.draft.name=p.name+" copy";$("batch-preset-name").value=model.draft.name;await save(true);}
   async function removePreset(p){if(!await window.HDRDialogs.confirm(p.name,{title:"Delete export preset?",confirmLabel:"Delete",destructive:true}))return;const url=await presetURL();await api(url.replace("?",`/${p.id}?`)+(url.includes("?")?"":`/${p.id}`),{},"DELETE");model.draft=null;await loadPresets();}
   function example(){
@@ -50,7 +99,8 @@
     $("batch-notice").hidden=!flagged;
     $("batch-notice").textContent=`${flagged} ${flagged===1?"photo needs":"photos need"} a look before exporting. Details are on each photo below.`;
     $("batch-empty").hidden=!!model.photos.length;
-    $("batch-run").textContent=`Export ${files} files`;
+    $("batch-run").textContent=`Export ${files} ${files===1?"file":"files"}`;
+    $("batch-footer-count").textContent=`${model.photos.length} ${model.photos.length===1?"photo":"photos"} · ${model.draft.versions.length} ${model.draft.versions.length===1?"version":"versions"} · ${files} ${files===1?"file":"files"}`;
     $("batch-run").disabled=!files||!!model.job&&!terminal(model.job);
   }
 
@@ -130,9 +180,21 @@
   window.addEventListener("hdrfinisher:webgpulost",()=>{
     for(const [row,job] of tileJobs){job.controller?.abort();job.controller=null;job.done=false;row.querySelector("canvas").hidden=true;startTile(row,job);}
   });
-  async function setPhotos(paths){model.paths=[...new Set(paths)];model.photos=(await api("/api/batch-export/photos",{paths:model.paths})).photos;model.selected.clear();model.anchor=0;renderGrid();}
+  async function setPhotos(paths){
+    const next=[...new Set(paths)],changed=JSON.stringify(next)!==JSON.stringify(model.paths);
+    model.paths=next;model.photos=(await api("/api/batch-export/photos",{paths:model.paths})).photos;
+    if(changed){model.directory=sourceDirectory();model.grant=null;$("batch-directory").value=model.directory;}
+    model.selected.clear();model.anchor=0;renderGrid();
+  }
+  function sourceDirectory(){const source=model.photos[0]?.source_path||"";return source.slice(0,Math.max(source.lastIndexOf("/"),source.lastIndexOf("\\"))+1);}
+  async function authorizeDirectory(){
+    if(!desktop||!model.directory)return;
+    if(model.directory.replace(/[\\/]+$/,"")===sourceDirectory().replace(/[\\/]+$/,"") ){
+      const selected=await desktop.defaultBatchExportDirectory(model.paths[0]);model.directory=selected.path;model.grant=selected.grant;$("batch-directory").value=model.directory;
+    }else if(!model.grant)await folder();
+  }
   async function folder(){const selected=await desktop?.chooseBatchExportDirectory?.(model.directory);if(selected){model.directory=selected.path;model.grant=selected.grant;}else if(!desktop)model.directory=$("batch-directory").value;$("batch-directory").value=model.directory;return selected;}
-  async function run(preset=model.draft,paths=model.paths){capture();if(!paths.length)throw Error("Add photos from the Library before exporting.");if(!model.directory)await folder();if(!model.directory)return;if(desktop&&!model.grant){if(!await folder())return;}if(model.photos.some(p=>p.unsaved)&&!await HDRDialogs.confirm("The photo open in Grade has unsaved changes. This batch exports its last saved grade.",{title:"Export saved grades",confirmLabel:"Export"}))return;const job=await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant});model.grant=null;model.job=job;localStorage.setItem("last-export-directory",model.directory);localStorage.setItem("last-export-preset",preset.id);poll();}
+  async function run(preset=model.draft,paths=model.paths){capture();if(!paths.length)throw Error("Add photos from the Library before exporting.");if(!model.directory)await folder();if(!model.directory)return;if(desktop){await authorizeDirectory();if(!model.grant)return;}if(model.photos.some(p=>p.unsaved)&&!await HDRDialogs.confirm("The photo open in Grade has unsaved changes. This batch exports its last saved grade.",{title:"Export saved grades",confirmLabel:"Export"}))return;const job=await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant});model.grant=null;model.job=job;localStorage.setItem("last-export-preset",preset.id);poll();}
   async function poll(){if(!model.job)return;model.job=await api(`/api/batch-export/${model.job.id}`);window.dispatchEvent(new CustomEvent("batch-export-activity",{detail:model.job}));renderJob();renderGrid();if(!terminal(model.job))setTimeout(()=>poll().catch(report),750);}
   async function control(action){if(model.job){model.job=await api(`/api/batch-export/${model.job.id}`,{action});renderJob();}}
   function view(grid){model.grid=grid;document.body.classList.toggle("batch-export-grid",grid);$("batch-grid").hidden=!grid;$("batch-empty").hidden=!!model.photos.length;$("batch-grid-panel").classList.toggle("batch-preview",!grid);for(const kind of ["grid","preview"]){const b=$("batch-view-"+kind);b.classList.toggle("active",grid===(kind==="grid"));b.setAttribute("aria-pressed",String(grid===(kind==="grid")));}}
@@ -140,11 +202,48 @@
   async function quick(paths){await init();await setPhotos(paths);const dialog=node("dialog","","application-dialog app-dialog");dialog.classList.add("batch-quick-dialog");const heading=node("h2","Quick export…"), select=node("select"), examples=node("p"), destination=node("input");for(const p of model.presets)select.append(new Option(p.name,p.id));select.value=model.presets.find(p=>p.id===localStorage.getItem("last-export-preset"))?.id||model.presets[0]?.id||"";destination.value=model.directory;destination.readOnly=!!desktop;const describe=()=>{const p=model.presets.find(p=>p.id===select.value);examples.textContent=p?p.versions.map(v=>`${v.name}: ${v.subfolder?`${v.subfolder}/`:""}${HDRExportPatterns.render(v.pattern,model.photos[0]||{source_path:"example.raw"},1,v.name,p.name)}${exportExtensionForFormat(v.settings.format)}`).join("\n"):"Create an export preset on the Export page first.";};select.onchange=describe;describe();const note=node("p",`${model.photos.length} photos. Each uses its last saved grade.${model.photos.some(p=>p.unsaved)?" Unsaved changes in Grade will not be exported.":""}${model.photos.some(p=>hdrSkipped(p,model.presets.find(x=>x.id===select.value)?.versions||[]))?" HDR versions are skipped for SDR-only photos.":""}${model.photos.some(p=>p.hdr_compatibility==="unknown")?" HDR compatibility will be checked during export.":""}`);dialog.append(heading,select,examples,destination,button("Choose folder…",async()=>{await folder();destination.value=model.directory;}),note,button("Open Export page",async()=>{await open(paths);dialog.close();dialog.remove();}),button("Cancel",()=>{dialog.close();dialog.remove();}),button("Export",async()=>{const preset=model.presets.find(p=>p.id===select.value);if(!preset)return;model.directory=destination.value;await run(preset,paths);dialog.close();dialog.remove();}));const content=node("div","","app-dialog-content"),header=node("div","","application-dialog-header"),actions=node("div","","app-dialog-actions");for(const child of [...dialog.children]){if(child===heading)header.append(child);else if(child.tagName==="BUTTON"&&!child.textContent.startsWith("Choose folder"))actions.append(child);else content.append(child);}const folderButton=[...content.children].find(e=>e.tagName==="BUTTON");const folderRow=node("div","","directory-picker-row");if(folderButton){destination.before(folderRow);folderRow.append(destination,folderButton);}dialog.replaceChildren(header,content,actions);heading.id="batch-quick-title";dialog.setAttribute("aria-labelledby",heading.id);document.body.append(dialog);dialog.showModal();}
   let initializing;
   function init(){return initializing ||= buildUI();}
-  async function buildUI(){model.initialized=true;document.body.classList.add("batch-export-ready");model.directory=localStorage.getItem("last-export-directory")||els.exportDirectory.value;const rail=node("aside","","batch-preset-rail panel");rail.id="batch-preset-rail";
-    const railHead=node("div","","workflow-rail-header");const add=button("+",()=>choose({id:crypto.randomUUID().replaceAll("-",""),name:"New export preset",versions:[{name:"Version 1",pattern:"{filename}_{version}",subfolder:"",settings:settings(),quality_preset:els.exportPreset.value}]}));add.className="top-icon-button";add.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';add.setAttribute("aria-label","New preset");add.title="New preset";
-    railHead.append(node("h2","Export presets","panel-title"),add);const list=node("div");list.id="batch-preset-list";rail.append(railHead,list);document.body.append(rail);
-    const editor=node("section","","export-choice-section");editor.id="batch-preset-editor";const name=node("input");name.id="batch-preset-name";name.setAttribute("aria-label","Export preset name");const modified=node("span");modified.id="batch-modified";const tabs=node("div");tabs.id="batch-versions";const presetActions=node("div","","batch-preset-actions");presetActions.append(button("Save",()=>save()),button("Save as new",()=>save(true)),button("Revert",()=>choose(model.saved)));const nameLabel=node("label","Preset name");nameLabel.append(name);editor.append(nameLabel,modified,presetActions,tabs);els.exportFormat.closest("section").before(editor);
-    const naming=node("section","","export-choice-section");for(const [id,label,value] of [["batch-version-name","Version name","Version 1"],["batch-pattern","File name pattern","{filename}_{version}"],["batch-subfolder","Sub-folder",""]]){const l=node("label",label),input=node("input");input.id=id;input.value=value;l.append(input);naming.append(l);}const tokenRow=node("div");for(const token of ["filename","copy","sequence:3","date:YYYYMMDD","rating","version","preset"])tokenRow.append(button(`{${token}}`,()=>{const input=$("batch-pattern");input.setRangeText(`{${token}}`,input.selectionStart,input.selectionEnd,"end");capture();}));naming.append(tokenRow);const whiteLabel=node("label","Reference white"),white=node("select");white.id="batch-white";white.append(new Option("Photo's saved reference white",""),new Option("100 nits","100"),new Option("203 nits","203"));whiteLabel.append(white);naming.append(whiteLabel);for(const id of ["batch-example","batch-summary"]){const p=node("p");p.id=id;naming.append(p);}const destLabel=node("label","Destination folder"),dest=node("input");dest.id="batch-directory";dest.value=model.directory;dest.readOnly=!!desktop;dest.onchange=()=>model.directory=dest.value;destLabel.append(dest);naming.append(destLabel,button("Choose folder…",folder));const runButton=button("Export files",()=>run());runButton.id="batch-run";runButton.className="button-primary";naming.append(runButton);els.exportConfirmButton.before(naming);
+  async function buildUI(){model.initialized=true;document.body.classList.add("batch-export-ready");const rail=node("aside","","batch-preset-rail panel");rail.id="batch-preset-rail";
+    const railHead=node("div","","workflow-rail-header");railHead.append(node("h2","Export presets","panel-title"),menuButton("Export preset actions",presetActions));
+    const list=node("div");list.id="batch-preset-list";const name=node("input");name.id="batch-preset-name";name.hidden=true;
+    const modified=node("p","","helper");modified.id="batch-modified";modified.setAttribute("aria-live","polite");rail.append(railHead,list,name,modified);document.body.append(rail);
+    const sheet=$("export-sheet"),scroll=node("div","","batch-settings-scroll");sheet.querySelector(".panel-title").textContent="Export settings";
+    sheet.append(scroll);
+    const section=(title,id)=>{const e=node("section","","batch-settings-section");if(id)e.id=id;e.append(node("h2",title,"export-section-title"));scroll.append(e);return e;};
+    const field=(label,control)=>{const l=node("label","","batch-setting-row");l.append(node("span",label),control);return l;};
+    const editor=section("Output version","batch-preset-editor"),tabs=node("div","","batch-version-row");tabs.id="batch-versions";
+    const select=node("select");select.id="batch-version-select";select.setAttribute("aria-label","Output version");select.onchange=()=>{capture();model.version=Number(select.value);applyVersion();};
+    const versionName=node("input");versionName.id="batch-version-name";versionName.hidden=true;
+    tabs.append(select,menuButton("Output version actions",versionActions));editor.append(tabs,versionName,node("p","Edits apply to this version only. Export includes all versions.","helper"));
+    const formatSection=els.exportFormat.closest("section"),profileSection=els.exportPreset.closest("section");
+    const format=section("Format & quality");format.append(field("Format",els.exportFormat),field("Quality profile",els.exportPreset),els.exportQualityRow,els.exportFormatNote);formatSection.remove();profileSection.remove();
+    els.exportFormat.setAttribute("aria-label","Format");els.exportFormat.removeAttribute("aria-labelledby");els.exportPreset.setAttribute("aria-label","Quality profile");els.exportPreset.removeAttribute("aria-labelledby");
+    const finishing=section("Size & sharpening");
+    finishing.append(field("Resize",els.exportResizeMode));
+    const dimensionInputs=new Map(["export-long-edge","export-width","export-height"].map(id=>[id,$(id)]));
+    for(const [id,label] of [["export-long-edge","Long edge"],["export-width","Width"],["export-height","Height"]]){
+      const input=dimensionInputs.get(id),unit=node("span","","batch-unit-field"),suffix=node("span","px");suffix.setAttribute("aria-hidden","true");unit.append(input,suffix);
+      const row=field(label,unit);input.setAttribute("aria-label",`${label} in pixels`);input.addEventListener("input",syncDimensionUnits);
+      if(id==="export-long-edge"){$("export-long-edge-row").replaceChildren(row);finishing.append($("export-long-edge-row"));}
+      else {if(id==="export-width")$("export-fit-row").replaceChildren();$("export-fit-row").append(row);}
+    }
+    finishing.append($("export-fit-row"));
+    const prevent=els.exportPreventEnlargement.closest("label");prevent.replaceChildren(node("span","Prevent enlargement"),els.exportPreventEnlargement);prevent.classList.add("batch-setting-row");finishing.append(prevent,field("Output sharpening",els.exportSharpening),$("export-sharpening-note"));
+    const naming=section("File naming"),pattern=node("input");pattern.id="batch-pattern";pattern.value="{filename}_{version}";pattern.setAttribute("aria-label","File name pattern");
+    const patternRow=node("div","","batch-pattern-row"),tokens=node("select");tokens.setAttribute("aria-label","Insert filename token");tokens.append(new Option("Insert token…",""));
+    for(const token of ["filename","copy","sequence:3","date:YYYYMMDD","rating","version","preset"])tokens.append(new Option(`{${token}}`,token));
+    tokens.onchange=()=>{if(!tokens.value)return;pattern.setRangeText(`{${tokens.value}}`,pattern.selectionStart,pattern.selectionEnd,"end");tokens.value="";pattern.focus();capture();};
+    patternRow.append(pattern,tokens);const patternLabel=node("label","File name pattern","batch-stacked-field");patternLabel.append(patternRow);const exampleText=node("p","","helper");exampleText.id="batch-example";naming.append(patternLabel,exampleText);
+    const advanced=els.jpegAdvancedSettings;advanced.classList.add("batch-settings-section");advanced.querySelector(":scope > summary").textContent="Advanced settings";scroll.append(advanced);
+    const body=advanced.querySelector(".advanced-settings-body"),codec=node("details","","batch-advanced-group");codec.append(node("summary","Codec"));
+    const codecBody=node("div","","batch-advanced-body");for(const child of [...body.children])if(child.id!=="export-metadata-policy-field"&&child.id!=="export-reference-white")codecBody.append(child);codec.append(codecBody);
+    const subgroup=(title,...children)=>{const d=node("details","","batch-advanced-group"),b=node("div","","batch-advanced-body");d.append(node("summary",title));b.append(...children);d.append(b);return d;};
+    const white=node("select");white.id="batch-white";white.append(new Option("Photo's saved reference white",""),new Option("100 nits","100"),new Option("203 nits","203"));
+    const subfolder=node("input");subfolder.id="batch-subfolder";subfolder.value="";
+    body.replaceChildren(codec,subgroup("Metadata",$("export-metadata-policy-field")),subgroup("Reference white",field("Reference white",white),$("export-reference-white")),subgroup("Subfolder",field("Subfolder",subfolder)));
+    const footer=node("section","","batch-export-footer");footer.append(node("h2","Destination","export-section-title"));const dest=node("input");dest.id="batch-directory";dest.readOnly=!!desktop;dest.setAttribute("aria-label","Destination folder");dest.onchange=()=>{model.directory=dest.value;model.grant=null;};
+    const destRow=node("div","","directory-picker-row");destRow.append(dest,button("Browse…",folder));const footerCount=node("p","","helper");footerCount.id="batch-footer-count";const summary=node("p","","helper");summary.id="batch-summary";
+    const runButton=button("Export files",()=>run());runButton.id="batch-run";runButton.className="button-primary";footer.append(destRow,footerCount,summary,runButton);sheet.append(footer);
+    sheet.querySelector(".export-settings").remove();sheet.querySelector(".sheet-actions").remove();
     const panel=node("section","","batch-grid-panel panel");panel.id="batch-grid-panel";
     const header=node("div","","batch-header"),title=node("div","","batch-heading"),count=node("span","","helper");count.id="batch-count";title.append(node("h2","Export batch","panel-title"),count);
     const tools=node("div","","batch-tools");

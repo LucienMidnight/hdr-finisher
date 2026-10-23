@@ -9314,3 +9314,63 @@ img:not([src]), img[src=""] { visibility:hidden; }
 #batch-preset-editor input:focus-visible, #batch-pattern:focus-visible, #batch-subfolder:focus-visible, #batch-version-name:focus-visible, #batch-directory:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 
 #batch-preset-editor > label { display: flex; flex-direction: column; gap: 6px; color: var(--body); font: 12px var(--sans); }
+
+/* Export uses the shared panel titles, fields, switches and disclosure tokens. */
+body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; flex-direction:column; padding:0; overflow:hidden; scrollbar-gutter:auto; }
+.batch-export-ready #export-sheet .sheet-header { position:static; flex:none; }
+.batch-settings-scroll { flex:1; min-height:0; overflow:auto; padding:0 14px; scrollbar-gutter:stable; }
+.batch-settings-section { margin:0; padding:16px 0; border-bottom:var(--group-divider-width) solid var(--group-divider); }
+.batch-settings-section > .export-section-title { margin-bottom:10px; }
+.batch-settings-section .helper { margin:6px 0 0; }
+.batch-settings-section :is(input,select) { min-width:0; max-width:100%; }
+.batch-settings-section .batch-setting-row { display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,1.25fr); align-items:center; gap:10px; margin:6px 0 6px 10px; color:var(--body); font:12px var(--sans); letter-spacing:0; text-transform:none; }
+.batch-setting-row > :is(input,select) { width:100%; }
+.batch-setting-row.checkbox-row { flex-direction:initial; }
+.batch-setting-row.checkbox-row > input { justify-self:start; width:46px; }
+.batch-stacked-field { display:grid; gap:6px; margin-left:10px; font:12px var(--sans); color:var(--body); letter-spacing:0; text-transform:none; }
+.batch-unit-field { display:flex; align-items:center; gap:4px; min-width:0; min-height:34px; padding:0 10px; border:1px solid var(--border); border-radius:var(--radius-1); background:var(--segment-channel-background); box-shadow:var(--depth-channel); color:var(--muted); }
+.batch-unit-field input[type="number"] { width:7ch; min-width:3ch; padding:0; border:0; background:transparent; box-shadow:none; appearance:textfield; color:var(--text); font:12px var(--sans); }
+.batch-unit-field input::-webkit-inner-spin-button, .batch-unit-field input::-webkit-outer-spin-button { appearance:none; margin:0; }
+.batch-unit-field:focus-within { outline:1px solid var(--accent); outline-offset:1px; }
+.batch-unit-field input:focus-visible { outline:none; }
+.batch-version-row, .batch-pattern-row { display:flex; gap:6px; align-items:center; min-width:0; }
+.batch-version-row > select { flex:1; width:0; }
+.batch-pattern-row > input { flex:1; width:0 !important; }
+.batch-pattern-row > select { width:96px; }
+#batch-preset-editor { display:block; }
+#batch-preset-editor input[hidden] { display:none; }
+#export-fit-row { display:block; }
+#export-fit-row.hidden, #export-long-edge-row.hidden { display:none; }
+.batch-settings-section .export-quality-row { margin:10px 0 0 10px; }
+.batch-settings-section #batch-example { margin-left:10px; }
+.batch-export-ready #jpeg-advanced-settings { grid-area:auto; background:transparent; border:0; border-radius:0; border-bottom:var(--group-divider-width) solid var(--group-divider); }
+.batch-export-ready #jpeg-advanced-settings > summary { justify-content:flex-start; gap:var(--group-chevron-gap); padding:0; min-height:var(--control-group-header-h); color:var(--group-title-color); font-family:var(--group-title-font-family); font-size:var(--group-title-font-size); font-weight:var(--group-title-font-weight); letter-spacing:var(--group-title-letter-spacing); }
+.batch-export-ready #jpeg-advanced-settings > summary::after { content:none; }
+.batch-export-ready #jpeg-advanced-settings > summary::before, .batch-advanced-group > summary::before { content:""; flex:none; width:var(--group-chevron-size); height:var(--group-chevron-size); background:var(--group-chevron-color); mask:var(--group-chevron-shape) center / contain no-repeat; transition:transform var(--group-chevron-transition); }
+.batch-export-ready #jpeg-advanced-settings[open] > summary::before, .batch-advanced-group[open] > summary::before { transform:rotate(90deg); }
+.batch-export-ready #jpeg-advanced-settings .advanced-settings-body { display:block; padding:0 0 4px 10px; }
+.batch-advanced-group > summary { display:flex; align-items:center; gap:var(--group-chevron-gap); min-height:30px; list-style:none; cursor:pointer; color:var(--body); font:12px var(--sans); }
+.batch-advanced-group > summary::-webkit-details-marker { display:none; }
+.batch-advanced-group > summary:focus-visible { outline:1px solid var(--accent); }
+.batch-advanced-body { display:grid; gap:8px; padding:8px 0 12px 12px; }
+.batch-advanced-body > label, .batch-advanced-body :is(.avif-settings,.jpeg-ultrahdr-settings) > label { display:grid; gap:6px; color:var(--body); font:12px var(--sans); letter-spacing:0; text-transform:none; }
+.batch-advanced-body .checkbox-row { flex-direction:row; }
+.batch-advanced-body .batch-setting-row { margin-left:0; grid-template-columns:minmax(0,1fr); }
+.batch-export-footer { flex:none; display:grid; gap:8px; padding:12px 14px 14px; border-top:var(--group-divider-width) solid var(--group-divider); background:var(--panel); }
+.batch-export-footer .directory-picker-row { display:flex; min-width:0; }
+.batch-export-footer .directory-picker-row input { flex:1; width:0 !important; }
+.batch-export-footer .helper { margin:0; }
+#batch-summary { font-size:11px; }
+#batch-run { width:100%; }
+.batch-preset-row { position:relative; display:flex; align-items:stretch; border-radius:var(--radius); }
+.batch-preset-row .batch-preset { padding-right:36px; border-color:transparent; background:transparent; }
+.batch-preset-row .batch-preset[aria-pressed="true"] { border-color:var(--accent); background:var(--accent-bed); }
+.batch-preset-row .top-icon-button { position:absolute; right:4px; top:8px; }
+#batch-modified { margin:0; padding:6px 16px; color:var(--muted); }
+#batch-modified:empty { display:none; }
+
+/* Export is the delivery action, using the existing attention colour. */
+#batch-run { border-color:var(--attention); background:var(--attention); color:var(--inverse); }
+
+/* Keep the preset rail above the preview toolbar in Export. */
+body.batch-export-ready[data-workflow="export"] .batch-preset-rail { z-index: 41; }

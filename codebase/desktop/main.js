@@ -749,6 +749,17 @@ function registerIpc() {
     else { forceClose = true; mainWindow.close(); }
     return true;
   });
+  handle("desktop:default-batch-export-directory", async (photo) => {
+    const response = await fetch(`${backend.url}/api/batch-export/photos`, {
+      method: "POST", headers: {"Content-Type":"application/json", "X-HDR-Finisher-Token":backend.authoringSecret},
+      body: JSON.stringify({paths:[photo]}),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.photos?.[0]?.source_path) throw new Error("The photo's source folder is unavailable.");
+    const selection = await grantPath(path.dirname(payload.photos[0].source_path), "export-directory");
+    grantedExportPaths.add(pathKey(selection.path));
+    return selection;
+  });
   handle("desktop:choose-batch-export-directory", async (initialPath) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "Choose export folder",

@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   forwardLibraryAction: (action, detail) => ipcRenderer.invoke("desktop:forward-library-action", action, detail),
   setLibraryCommandState: (state) => ipcRenderer.invoke("desktop:set-library-command-state", state),
   sendLibraryCommand: (command) => ipcRenderer.invoke("desktop:send-library-command", command),
+  defaultBatchExportDirectory: (photo) => ipcRenderer.invoke("desktop:default-batch-export-directory", photo),
   chooseBatchExportDirectory: (initialPath) => ipcRenderer.invoke("desktop:choose-batch-export-directory", initialPath),
   chooseSourceInMain: () => ipcRenderer.invoke("desktop:choose-source-in-main"),
   onLibraryWindowChanged: (callback) => subscribe("desktop:library-window", callback),
