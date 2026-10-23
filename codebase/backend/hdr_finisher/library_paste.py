@@ -43,16 +43,16 @@ def setting_group(field):
     if field.startswith('tone_equalizer'): return 'equalizer'
     if field.startswith(('lift', 'gamma', 'gain')) or field == 'primaries_section_enabled': return 'zones'
     if field.endswith('_curve') or field == 'curves_section_enabled': return 'curves'
-    for name in ('film_look','color_grading','vignette','detail','black_and_white'):
+    for name in ('hsl','film_look','color_grading','vignette','detail','black_and_white'):
         if field == name or field == name+'_section_enabled': return name.replace('_','-')
     if field in ('exposure','contrast','contrast_pivot','shadow','shadow_lift','tone_section_enabled'): return 'tone'
     return 'color'
 
 
 SECTIONS = {'tone':'Tone','highlights':'Tone','equalizer':'Tone','zones':'Tone','curves':'Tone',
-    'color':'Colour','color-grading':'Colour','black-and-white':'Colour',
+    'color':'Colour','hsl':'Colour','color-grading':'Colour','black-and-white':'Colour',
     'film-look':'Look','vignette':'Look','detail':'Detail','denoise':'Detail'}
-LABELS = {'color':'Colour','color-grading':'Colour grading','black-and-white':'Black and white',
+LABELS = {'hsl':'HSL','color':'Colour','color-grading':'Colour grading','black-and-white':'Black and white',
     'film-look':'Film look','equalizer':'Exposure bands','zones':'Lift, gamma, gain'}
 
 

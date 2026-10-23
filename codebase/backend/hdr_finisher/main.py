@@ -41,6 +41,7 @@ from .library_worker import LibraryWorker
 from .library_api import create_library_router
 from .import_jobs import ImportJobManager
 from .local_adjustments import spatial_mask_signature
+from .hsl_sampling import HSLSampleRequest, sample_stage
 from .mask_softness import SOFT_ESTIMATE_LIMIT, bitmap_frame_rect, gpu_bitmap_soft_verdict, soft_mask_verdict
 from .raw_import import list_lens_profiles
 from .models import (
@@ -2085,6 +2086,22 @@ def local_luminance_sample(
         center_ev=center,
         sample_count=count,
     )
+
+
+@app.post("/api/session/{session_id}/hsl-sample")
+def hsl_sample(session_id: str, request: HSLSampleRequest):
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, request.edit_revision)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    _guard_preview_resources(session, request.long_edge)
+    try:
+        return sample_stage(session.render_cache, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/session/{session_id}/diagnostics")

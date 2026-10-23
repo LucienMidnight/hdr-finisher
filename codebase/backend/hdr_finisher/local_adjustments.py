@@ -40,6 +40,9 @@ def apply_local_stack(
 
     result = image.astype(np.float32, copy=True)
     height, width = result.shape[:2]
+    from .hsl_sampling import _target, capturing
+    if _target.get() is not None:
+        tile_size = max(height, width)
     if any(not detail_is_neutral((item.hdr_grade if kind == PreviewKind.HDR else item.sdr_grade).detail) for item in active):
         # Detail needs neighboring pixels. Processing the full frame preserves
         # continuous halos across what would otherwise be local-stack tiles.
@@ -80,13 +83,14 @@ def apply_local_stack(
                 else:
                     mask = evaluate_mask(local.mask, reference_tile, source_x, source_y, width / max(height, 1))
                 influence = np.clip(mask * np.float32(local.opacity), 0.0, 1.0)
-                if not np.any(influence > 1e-6):
+                if not np.any(influence > 1e-6) and not capturing(local.id):
                     continue
                 candidate = _apply_local_grade(
                     tile,
                     grade,
                     kind,
                     source_pixel_scale=source_pixel_scale,
+                    hsl_stage_id=local.id,
                 )
                 tile[...] = tile + (candidate - tile) * influence[..., None]
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
@@ -1488,6 +1492,7 @@ def _apply_local_grade(
     kind: PreviewKind,
     *,
     source_pixel_scale: float = 1.0,
+    hsl_stage_id: str | None = None,
 ) -> np.ndarray:
     from .adjustments import (
         _apply_color_grading,
@@ -1520,6 +1525,12 @@ def _apply_local_grade(
     else:
         result = _apply_white_balance(result, grade.white_balance_kelvin, grade.tint)
         result = _apply_saturation_vibrance(result, grade.saturation, grade.vibrance)
+    from .hsl_sampling import tap
+    if hsl_stage_id is not None:
+        tap(result, kind, hsl_stage_id)
+    if grade.hsl_section_enabled:
+        from .hsl import apply_stage
+        result = apply_stage(result, [grade.hsl], kind)
     result = _apply_curve_set(result, grade, kind)
     result = _apply_color_grading(result, grade.color_grading, kind)
     result = apply_detail(result, grade.detail, kind, source_pixel_scale=source_pixel_scale)

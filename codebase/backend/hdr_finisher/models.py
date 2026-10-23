@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator,
 
 from .color_context import validate_reference_white
 from .retouch_recipe import InpaintRecipe
+from .hsl import HSLRecipe, HSLSettings
 
 
 class HDRClassification(str, Enum):
@@ -399,6 +400,8 @@ class _BranchAdjustments(BaseModel):
     tone_equalizer_section_enabled: bool = True
     color_section_enabled: bool = True
     primaries_section_enabled: bool = True
+    hsl_section_enabled: bool = True
+    hsl: HSLSettings = Field(default_factory=HSLSettings)
     curves_section_enabled: bool = True
     detail_section_enabled: bool = True
     black_and_white_section_enabled: bool = False
@@ -487,7 +490,7 @@ class _BranchAdjustments(BaseModel):
 
 _COMMON_BRANCH_FIELD_ORDER = (
     "tone_section_enabled", "highlight_section_enabled", "tone_equalizer_section_enabled",
-    "color_section_enabled", "primaries_section_enabled", "curves_section_enabled",
+    "color_section_enabled", "primaries_section_enabled", "hsl_section_enabled", "hsl", "curves_section_enabled",
     "detail_section_enabled", "black_and_white_section_enabled", "film_look_section_enabled",
     "color_grading_section_enabled", "vignette_section_enabled", "film_look", "color_grading",
     "vignette", "detail", "black_and_white", "exposure",
@@ -834,6 +837,9 @@ def _default_local_mask() -> MaskExpression:
 
 class LocalGrade(BaseModel):
     """Pixel-local controls supported by the first local-rendering phase."""
+
+    hsl_section_enabled: bool = True
+    hsl: HSLRecipe = Field(default_factory=HSLRecipe)
 
     model_config = ConfigDict(extra="forbid")
 

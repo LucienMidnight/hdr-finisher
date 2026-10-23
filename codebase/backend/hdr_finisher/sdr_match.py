@@ -585,6 +585,8 @@ def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndar
     sdr.detail = hdr.detail.model_copy(deep=True)
     sdr.vignette = hdr.vignette.model_copy(deep=True)
     sdr.film_look = hdr.film_look.model_copy(deep=True)
+    sdr.hsl_section_enabled = hdr.hsl_section_enabled
+    sdr.hsl = hdr.hsl.model_copy(deep=True)
     sdr.color_grading = hdr.color_grading.model_copy(deep=True)
     _translate_color_grading_wheels(sdr.color_grading, hdr.color_grading)
 
@@ -651,6 +653,8 @@ def _translate_local_grade(hdr_grade: LocalGrade, highlight_factor: float) -> Lo
     for name in ("white_balance_kelvin", "tint", "saturation", "vibrance"):
         setattr(sdr_grade, name, getattr(hdr_grade, name))
     sdr_grade.detail = hdr_grade.detail.model_copy(deep=True)
+    sdr_grade.hsl_section_enabled = hdr_grade.hsl_section_enabled
+    sdr_grade.hsl = hdr_grade.hsl.model_copy(deep=True)
     sdr_grade.color_grading = hdr_grade.color_grading.model_copy(deep=True)
     _attenuate_highlight_qualified_controls(sdr_grade.color_grading, highlight_factor)
 
@@ -659,6 +663,7 @@ def _translate_local_grade(hdr_grade: LocalGrade, highlight_factor: float) -> Lo
     )
     ramp = np.repeat(scene_values[None, :, None], 3, axis=2)
     tonal = hdr_grade.model_copy(deep=True)
+    tonal.hsl_section_enabled = False
     tonal.white_balance_kelvin = 6500
     tonal.tint = tonal.saturation = tonal.vibrance = 0.0
     tonal.detail = DetailAdjustments()

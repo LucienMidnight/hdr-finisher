@@ -257,6 +257,11 @@ def _apply_hdr_adjustments(
         result = _apply_luminance_section_controls(
             result, hdr, PreviewKind.HDR, apply_primaries=True, apply_contrast=False
         )
+    from .hsl_sampling import tap
+    tap(result, PreviewKind.HDR)
+    if hdr.hsl_section_enabled:
+        from .hsl import apply_stage
+        result = apply_stage(result, [c.recipe for c in hdr.hsl.channels], PreviewKind.HDR)
     if hdr.curves_section_enabled:
         result = _apply_curves(result, adjustments, PreviewKind.HDR)
     if hdr.color_grading_section_enabled:
@@ -785,6 +790,11 @@ def _apply_sdr_post_highlight_tail(
         result = _apply_luminance_section_controls(
             result, sdr, PreviewKind.SDR, apply_primaries=True, apply_contrast=False
         )
+    from .hsl_sampling import tap
+    tap(result, PreviewKind.SDR)
+    if sdr.hsl_section_enabled:
+        from .hsl import apply_stage
+        result = apply_stage(result, [c.recipe for c in sdr.hsl.channels], PreviewKind.SDR)
     if sdr.curves_section_enabled:
         result = _apply_curves(result, adjustments, PreviewKind.SDR)
     if sdr.color_grading_section_enabled:

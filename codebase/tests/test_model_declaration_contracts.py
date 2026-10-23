@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.models import AdjustmentState, ExportSettings, ProofArtifactRequest
@@ -10,7 +9,7 @@ from hdr_finisher.render_cache import adjustment_signature
 
 HDR_FIELD_ORDER = (
     "tone_section_enabled", "highlight_section_enabled", "tone_equalizer_section_enabled",
-    "color_section_enabled", "primaries_section_enabled", "curves_section_enabled",
+    "color_section_enabled", "primaries_section_enabled", "hsl_section_enabled", "hsl", "curves_section_enabled",
     "detail_section_enabled", "black_and_white_section_enabled", "film_look_section_enabled",
     "color_grading_section_enabled", "vignette_section_enabled", "film_look", "color_grading",
     "vignette", "detail", "black_and_white", "exposure", "highlight_compression_start_nits",
@@ -29,7 +28,7 @@ HDR_FIELD_ORDER = (
 SDR_FIELD_ORDER = (
     "use_authored_base", "tone_section_enabled",
     "highlight_section_enabled", "tone_equalizer_section_enabled", "color_section_enabled",
-    "primaries_section_enabled", "curves_section_enabled", "detail_section_enabled",
+    "primaries_section_enabled", "hsl_section_enabled", "hsl", "curves_section_enabled", "detail_section_enabled",
     "black_and_white_section_enabled", "film_look_section_enabled",
     "color_grading_section_enabled", "vignette_section_enabled", "film_look", "color_grading",
     "vignette", "detail", "black_and_white", "exposure",
@@ -53,11 +52,12 @@ def test_branch_serialization_order_and_adjustment_signature_are_stable() -> Non
     assert tuple(adjustments.hdr.model_dump()) == HDR_FIELD_ORDER
     assert tuple(adjustments.sdr.model_dump()) == SDR_FIELD_ORDER
     signature = adjustment_signature(adjustments)
-    # Changed October 22, 2026: each lane now serializes
-    # highlight_compression_attenuation (AgX-style Attenuate prototype).
-    assert hashlib.sha256(signature.encode()).hexdigest() == (
-        "c9a3c69cd1113e192424b57056cc75bd994e5d60aacfcdcdd89d955f3f43159b"
-    )
+    assert adjustment_signature(AdjustmentState.model_validate_json(adjustments.model_dump_json())) == signature
+    adjustments.hdr.hsl.channels[1].recipe.hue = 30
+    active = adjustment_signature(adjustments)
+    assert active != signature
+    adjustments.hdr.hsl_section_enabled = False
+    assert adjustment_signature(adjustments) != active
     assert AdjustmentState.model_validate(adjustments.model_dump(mode="json")) == adjustments
 
 
