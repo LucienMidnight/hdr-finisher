@@ -161,6 +161,7 @@ function renderFilmStockControls() {
 }
 
 function renderControlState() {
+  renderHslPanels();
   const defaults = defaultAdjustments();
   const filmLook = state.adjustments[state.currentView]?.film_look;
   document.querySelector("[data-film-grain-custom]")?.toggleAttribute("hidden", filmLook?.grain_film_format !== "custom");

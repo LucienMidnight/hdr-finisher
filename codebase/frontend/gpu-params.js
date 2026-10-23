@@ -1,3 +1,4 @@
+  const HSL = globalThis.HDRHSL || require("./hsl-engine.js");
   const PASS_LAYOUTS = ((typeof window !== "undefined" && window.HDRGpuPassLayouts)
     || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRGpuPassLayouts));
   const MASK_PARAMS = PASS_LAYOUTS.indices;
@@ -178,6 +179,7 @@
     const params = new Float32Array(PARAM_COUNT);
     const projectReferenceWhite = Number(referenceWhiteNits) === 100 ? 100 : 203;
     const branch = adjustments[lane];
+    params[GPU_PARAMS.HSL_CHANNEL_COUNT] = HSL.pack(params, branch.hsl, branch.hsl_section_enabled !== false);
     const colorSource = branch;
     params[GPU_PARAMS.HDR_LANE] = lane === "hdr" ? 1 : 0;
     params[GPU_PARAMS.SOURCE_LINEAR_SRGB] = workingSpace === "linear-srgb" ? 1 : 0;
@@ -429,6 +431,7 @@
     const grade = local[`${lane}_grade`];
     const detail = grade.detail || {};
     const values = new Float32Array(PARAM_COUNT);
+    HSL.pack(values, grade.hsl, grade.hsl_section_enabled !== false, true);
     values[MASK_PARAMS.LOCAL.HDR_LANE] = lane === "hdr" ? 1 : 0;
     values[MASK_PARAMS.LOCAL.OPACITY] = Number(local.opacity) || 0;
     values[MASK_PARAMS.LOCAL.EXPOSURE] = Number(grade.exposure) || 0;

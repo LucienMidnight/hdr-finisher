@@ -531,6 +531,8 @@ const state = {
       color_section_enabled: true,
       primaries_section_enabled: true,
       curves_section_enabled: true,
+      hsl_section_enabled: true,
+      hsl: HDRHSL.defaultSettings(),
       exposure: 0,
       highlight_compression_start_nits: 400,
       highlight_compression_target_nits: 1000,
@@ -583,6 +585,8 @@ const state = {
       color_section_enabled: true,
       primaries_section_enabled: true,
       curves_section_enabled: true,
+      hsl_section_enabled: true,
+      hsl: HDRHSL.defaultSettings(),
       exposure: 0,
       highlight_compression_start_percent: 50,
       highlight_compression_softness: 0,
@@ -766,6 +770,8 @@ const defaultAdjustments = () => ({
     color_section_enabled: true,
     primaries_section_enabled: true,
     curves_section_enabled: true,
+    hsl_section_enabled: true,
+    hsl: HDRHSL.defaultSettings(),
     detail_section_enabled: true,
     black_and_white_section_enabled: false,
     film_look_section_enabled: true,
@@ -828,6 +834,8 @@ const defaultAdjustments = () => ({
     color_section_enabled: true,
     primaries_section_enabled: true,
     curves_section_enabled: true,
+    hsl_section_enabled: true,
+    hsl: HDRHSL.defaultSettings(),
     detail_section_enabled: true,
     black_and_white_section_enabled: false,
     film_look_section_enabled: true,
@@ -1279,6 +1287,8 @@ const controlGroups = {
   "hdr-equalizer": ["hdr.tone_equalizer_nodes", "hdr.tone_equalizer_influence_radius", "hdr.tone_equalizer_smoothing"],
   "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint", "hdr.saturation", "hdr.vibrance", "hdr.red_hue", "hdr.red_purity", "hdr.green_hue", "hdr.green_purity", "hdr.blue_hue", "hdr.blue_purity", "hdr.tint_hue", "hdr.tint_purity"],
   "hdr-zones": ["hdr.lift", "hdr.lift_range", "hdr.lift_pivot", "hdr.gamma", "hdr.gamma_range", "hdr.gamma_pivot", "hdr.gain", "hdr.gain_range", "hdr.gain_pivot"],
+  "hdr-hsl": ["hdr.hsl"],
+  "sdr-hsl": ["sdr.hsl"],
   "hdr-detail": ["hdr.detail"],
   // Black & White: its Reset returns the sliders only. It is deliberately not
   // in sectionPathForGroup, so Reset leaves the module on or off as it was.
@@ -1304,6 +1314,8 @@ const falseColorPaletteTokens = [
 const COLOR_CONTROL_KEYS = controlGroups["hdr-color"].map((path) => path.slice("hdr.".length));
 
 const sectionPathForGroup = {
+  "hdr-hsl": "hdr.hsl_section_enabled",
+  "sdr-hsl": "sdr.hsl_section_enabled",
   "hdr-tone": "hdr.tone_section_enabled",
   "hdr-highlights": "hdr.highlight_section_enabled",
   "hdr-equalizer": "hdr.tone_equalizer_section_enabled",
@@ -1326,6 +1338,7 @@ const GROUP_PRESET_LABELS = {
   zones: "Lift, Gamma, Gain",
   base: "Base Rendition",
   curves: "Curves",
+  hsl: "HSL",
   "color-grading": "Color Grading",
   detail: "Detail",
   "black-and-white": "Black & White",

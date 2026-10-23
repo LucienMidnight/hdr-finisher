@@ -16,6 +16,8 @@ function defaultLocalGrade() {
     red_curve: defaultCurvePoints(),
     green_curve: defaultCurvePoints(),
     blue_curve: defaultCurvePoints(),
+    hsl_section_enabled: true,
+    hsl: HDRHSL.newRecipe(),
     color_grading: defaultColorGrading(),
     detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10 },
   };
@@ -633,6 +635,7 @@ function appendInlineLocalRenameEditor(item, local) {
 }
 
 function renderLocalAdjustments() {
+  renderHslPanels();
   renderRetouchControls();
   if (!els.localAdjustmentList) return;
   const locals = localAdjustments();

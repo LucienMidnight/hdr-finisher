@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HDR Finisher</title>
   <link rel="icon" type="image/svg+xml" href="/static/assets/brand/hdr-finisher-favicon-small.svg">
-  <script src="/static/theme-startup.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><link rel="stylesheet" href="/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__">
+  <script src="/static/theme-startup.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><link rel="stylesheet" href="/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__"><link rel="stylesheet" href="/static/hsl.css?v=__HDR_FINISHER_ASSET_VERSION__">
 </head>
 <body>
   <header class="window-chrome" aria-label="Application menu">
@@ -795,6 +795,10 @@
                 <div class="control-row instrument-slider-control"><div class="control-heading"><label>Saturation</label><output data-local-grade-output="saturation">0</output></div><input data-local-grade="saturation" type="range" min="-1" max="3" step="0.02" value="0"></div>
                 <div class="control-row instrument-slider-control"><div class="control-heading"><label>Vibrance</label><output data-local-grade-output="vibrance">0</output></div><input data-local-grade="vibrance" type="range" min="-1" max="3" step="0.02" value="0"></div>
               </section>
+              <section class="local-grade-section" data-local-grade-section="hsl">
+                <div class="control-heading"><h4>HSL</h4><button type="button" class="text-button" id="local-hsl-bypass" aria-label="Toggle local HSL" aria-pressed="true">On</button><button type="button" class="text-button" id="local-hsl-reset">Reset</button></div>
+                <div id="hsl-local-panel"></div>
+              </section>
               <section class="local-grade-section" data-local-grade-section="detail" aria-labelledby="local-detail-heading">
                 <div class="local-mask-subpanel-heading"><strong id="local-detail-heading">Detail · Local</strong><span>Runs last in this grade</span></div>
                 <div class="control-row instrument-slider-control"><div class="control-heading"><label>Texture</label><output data-local-grade-output="detail.texture_amount">0</output></div><input data-local-grade="detail.texture_amount" type="range" min="-100" max="100" step="1" value="0"></div>
@@ -1287,6 +1291,14 @@
         </section>
       </div>
 
+      <section class="control-group collapsed" data-group="hsl">
+        <div class="control-group-header">
+          <button class="group-toggle" type="button" aria-expanded="false">HSL</button>
+          <button class="section-bypass text-button" type="button" data-section-path="current.hsl_section_enabled" aria-pressed="true" aria-label="Toggle HSL preview">&#9673;</button>
+          <button id="hsl-reset" class="group-reset text-button" type="button">Reset</button>
+        </div>
+        <div class="control-group-body"><div id="hsl-global-panel"></div></div>
+      </section>
       <section class="control-group collapsed" data-group="curves">
         <div class="control-group-header">
           <button class="group-toggle" type="button" aria-expanded="false">Curves <span id="curve-group-state">Default</span></button>
@@ -1887,6 +1899,8 @@
   <script src="/static/render-failure.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/latest-work-queue.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/viewport-request.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/hsl-engine.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/hsl-shader.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/gpu-param-layout.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/lens-filters.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/graph-scale.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
@@ -1961,6 +1975,7 @@
   <script src="/static/preview-pipeline.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/film-character-data.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/film-character.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/hsl-panel.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app-state.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/media-browser-editor.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/library-editor.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

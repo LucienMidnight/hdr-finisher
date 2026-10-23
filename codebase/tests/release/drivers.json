@@ -17,6 +17,7 @@
     "D:/Photos/Play_Raw/Fantastic light over village - AdamFromCanada/DSC00950.hdrfinisher"
   ],
   "sourceAreas": [
+    {"pattern":"^codebase/(frontend|backend/hdr_finisher)/hsl", "areas":["preview","export-proof","masks","ui"]},
     {
       "pattern": "^(docs/|AGENTS\\.md$|README|\\.github/|packaging/|codebase/(tests/|desktop/tests/|package[^/]*\\.json$))",
       "areas": []
@@ -3982,6 +3983,8 @@
       "protects":"Clipped real RAWs use GPU in Grade and Library, preserve perceptual appearance, and agree in Proof/export.","launch":{"method":"electron"}},
     {"path":"tests/gpu-edge-colour.js","areas":["library","export-proof"],"tier":"area",
       "protects":"Shared Edge colour reconstruction executes on hardware GPU and agrees with CPU spatial reconstruction.","launch":{"method":"electron"}},
+    {"path":"tests/hsl-integration.js","areas":["preview","export-proof","masks","ui"],"tier":"area",
+      "protects":"HSL real-device preview, stage picker, wheel, channel/preset/local authoring and finished GPU/CPU Proof/export perceptual agreement and ceiling.","launch":{"method":"electron"}},
     {"path":"tests/hsl-prototype-gpu.js","areas":["masks","ui"],"tier":"diagnostic",
       "protects":"Isolated HSL prototype float GPU/CPU agreement, multi-range selection and basic UI gestures; no app integration.","launch":{"method":"native"}}
   ]

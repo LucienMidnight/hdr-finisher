@@ -12,6 +12,7 @@
     || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRFilmStockLayout));
   const STOCK = FILM_STOCK.offsets;
 
+  const HSL_WGSL = globalThis.HDRHslShader || require("./hsl-shader.js");
   const PEAK_HISTOGRAM_BINS = 4096;
 
   // BW-01 Black & White, in WGSL for both the render and the peak shaders
@@ -1220,6 +1221,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (p[${GPU_PARAMS.COLOR_ENABLED}] < 0.5) { return input; }
       return compressSrgbGamut(acescgToSrgb(sceneColor(srgbToAcescg(input))));
     }
+    ${HSL_WGSL}
     fn renderHdrBase(source: vec3f) -> vec3f {
       let scene = sceneColor(hdrContrast(hdrBase(source)));
       var guide = scene;
@@ -1229,7 +1231,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let primaries = hdrPrimaries(equalized);
       // Export retains signed HDR channels until Detail and locals have run.
       // Clipping here changes the neighbourhood's luminance and Sharpen fence.
-      return applyColorGrading(applyCurves(primaries, true), true);
+      return applyColorGrading(applyCurves(applyHsl(primaries, true), true), true);
     }
     fn displayHdr(rgb: vec3f) -> vec3f {
       if (p[${GPU_PARAMS.HDR_SURFACE}] > 0.5) {
@@ -1277,7 +1279,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         rgb = sdrContrast(rgb);
         rgb = sdrReferenceColor(rgb);
         rgb = sdrPrimaries(rgb);
-        rgb = applyColorGrading(applyCurves(rgb, false), false);
+        rgb = applyColorGrading(applyCurves(applyHsl(rgb, false), false), false);
       } else {
         let scene = sdrScenePrefix(source);
         var guide = scene;
@@ -1290,7 +1292,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         rgb = toneEqualizer(rgb);
         rgb = sdrContrast(rgb);
         rgb = sdrPrimaries(rgb);
-        rgb = applyColorGrading(applyCurves(rgb, false), false);
+        rgb = applyColorGrading(applyCurves(applyHsl(rgb, false), false), false);
       }
       // Export clips to display white only inside the stages that are active
       // (contrast, primaries, curves, grading), which the helpers above do. A
@@ -2123,6 +2125,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         aces *= vec3f(1.0 + offset * 0.15, 1.0 + p[${MASK_PARAMS.LOCAL.TINT}] * 0.08, 1.0 - offset * 0.15);
         rgb = acescgToSrgb(localSaturation(aces));
       }
+      rgb = applyHsl(rgb,hdr);
       // Local curves precede colour wheels and Detail, just as in export.
       rgb = applyCurvesOffset(rgb,hdr,u32(p[${MASK_PARAMS.LOCAL.CURVE_FLAGS}]),u32(p[${MASK_PARAMS.LOCAL.CURVE_OFFSET}]));
       rgb = applyColorGrading(rgb,hdr);

@@ -21,7 +21,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # the grain film type and 176 the grain seed's high half. 186-189 state
     # the frame rectangle a soft or whole-frame mask texture covers. 190-197
     # carry the Film stock slot and its seven settings.
-    assert "const PARAM_COUNT = 198" in shader
+    assert "const PARAM_COUNT = 1968" in shader
     assert "const MASK_RECT_INDEX = 186" in shader
     # BW-01: Black & White runs straight after Color in every lane and path,
     # and before the SDR highlight stage on both SDR paths.

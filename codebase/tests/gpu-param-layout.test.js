@@ -12,12 +12,12 @@ const shaderSource=shaders.SHADER_SOURCE+'\n'+shaders.PEAK_REDUCTION_SHADER_SOUR
 const audit=(js=sources,wgsl=shaderSource)=>auditGlobalParameterUses(js,wgsl,layout.fields);
 
 test('the global parameter list preserves all 198 names and original positions',()=>{
- assert.equal(layout.count,198);
- assert.equal(new Set(layout.fields.map(f=>f.name)).size,198);
- assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:198},(_,i)=>i));
- assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.map(({name,index})=>[name,index]))).digest('hex'),'042c6880017aaac098db5e98cede8422189d052677e4a81735b0d4d7ad4d4711');
+ assert.equal(layout.count,200+13*136);
+ assert.equal(new Set(layout.fields.map(f=>f.name)).size,200);
+ assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:200},(_,i)=>i));
+ assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.slice(0,198).map(({name,index})=>[name,index]))).digest('hex'),'042c6880017aaac098db5e98cede8422189d052677e4a81735b0d4d7ad4d4711');
  // Position 60 became HIGHLIGHT_ATTENUATION (AgX-style Attenuate prototype, Oct 2026).
- assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,83,84,87,94,96,143,144,145,146,147]);
+ assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,83,84,87,94,96,143,144,145,146,147,199]);
  assert.deepEqual(layout.fields.filter(f=>f.hostOnly).map(f=>f.name),['DETAIL_ENABLED']);
  assert.ok(Object.isFrozen(layout)&&Object.isFrozen(layout.indices)&&Object.isFrozen(layout.fields));
  assert.ok(layout.fields.every(Object.isFrozen));

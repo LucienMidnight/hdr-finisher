@@ -13,7 +13,7 @@ function groupPresetPaths(groupId) {
 function groupPresetContextForElement(groupElement) {
   const rawGroup = groupElement?.dataset.group || "";
   if (["geometry", "perspective", "local-adjustments"].includes(rawGroup)) return null;
-  const groupId = ["curves", "color-grading", "detail", "black-and-white", "film-look", "vignette", "denoise"].includes(rawGroup)
+  const groupId = ["hsl", "curves", "color-grading", "detail", "black-and-white", "film-look", "vignette", "denoise"].includes(rawGroup)
     ? `${state.currentView}-${rawGroup}`
     : rawGroup;
   const paths = groupPresetPaths(groupId);

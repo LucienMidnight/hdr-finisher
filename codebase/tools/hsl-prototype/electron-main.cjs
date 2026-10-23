@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 app.setPath('userData', process.env.HDR_FINISHER_USER_DATA_DIR || fs.mkdtempSync(path.join(os.tmpdir(),'hdr-hsl-prototype-')));
-const files = new Map([['/','index.html'],['/index.html','index.html'],['/ui.mjs','ui.mjs'],['/engine.mjs','engine.mjs'],['/gpu.mjs','gpu.mjs']]);
+const files = new Map([['/','index.html'],['/index.html','index.html'],['/ui.mjs','ui.mjs'],['/engine.mjs','engine.mjs'],['/gpu.mjs','gpu.mjs'],['/frontend/hsl-engine.js','../../frontend/hsl-engine.js']]);
 const server = http.createServer((req,res) => {
   const file = files.get(req.url);
   if (!file) { res.writeHead(404);res.end();return; }

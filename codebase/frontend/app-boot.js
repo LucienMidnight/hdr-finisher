@@ -1,4 +1,5 @@
 async function boot() {
+  initializeHslPanels();
   initializeLocalOverlayColor();
   initializePreviewPreferences();
   initializeInstrumentShell();

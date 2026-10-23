@@ -1,0 +1,13 @@
+.hsl-channels { display:flex; justify-content:space-between; gap:4px; margin:10px 0; }
+.hsl-channel { width:24px; height:24px; min-width:0; padding:0; border-radius:50%; position:relative; border:2px solid var(--border); }
+.hsl-channel[aria-pressed="true"] { outline:2px solid var(--text); outline-offset:2px; }
+.hsl-channel.modified::after { content:""; width:5px; height:5px; border-radius:50%; background:var(--text); position:absolute; bottom:-6px; left:8px; }
+.hsl-customs,.hsl-picker,.hsl-title { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:8px 0; }
+.hsl-title strong { flex:1; }
+.hsl-title span,.hsl-notice { font-size:11px; color:var(--muted); }
+.hsl-wheel { width:100%; max-width:320px; display:block; margin:0 auto; color:var(--text); touch-action:none; }
+.hsl-wheel [data-hsl-handle] { cursor:grab; }
+.hsl-wheel [data-hsl-handle]:focus { outline:none; filter:drop-shadow(0 0 3px var(--accent)); }
+.hsl-picker [aria-pressed="true"],.hsl-customs [aria-pressed="true"] { color:var(--accent); }
+.hsl-notice { min-height:2em; margin:8px 0; }
+#hsl-local-panel { padding:8px 0; }

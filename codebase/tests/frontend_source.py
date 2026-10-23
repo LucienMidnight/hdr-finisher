@@ -11,6 +11,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 import re
+import subprocess
 
 
 FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
@@ -25,7 +26,7 @@ def _parameter_positions() -> dict[str, int]:
     """The real named layout, used only to resolve existing numeric source pins."""
     text = (FRONTEND / "gpu-param-layout.js").read_text(encoding="utf-8")
     fields = re.findall(r'name: "([A-Z0-9_]+)", index: (\d+)', text.split('const indices =', 1)[0])
-    assert len(fields) == 198
+    assert len(fields) == 200
     return {name: int(index) for name, index in fields}
 
 
@@ -51,7 +52,8 @@ def _canonical_positions(text: str) -> str:
                   lambda m: m.group(1) + (f"+{integer(m.group(2))}u" if integer(m.group(2)) else ""), text)
     text = re.sub(r'\$\{([0-9+ ]+)\}', lambda m: str(integer(m.group(1))), text)
     text = re.sub(r'\$\{"xyzw"\[(\d)\]\}', lambda m: "xyzw"[int(m.group(1))], text)
-    return text.replace("window.HDRGpuParamLayout.count", str(len(positions)))
+    count = subprocess.check_output(["node", "-p", "require('./gpu-param-layout.js').HDRGpuParamLayout.count"], cwd=FRONTEND, text=True).strip()
+    return text.replace("window.HDRGpuParamLayout.count", count)
 
 @lru_cache(maxsize=None)
 def _scripts() -> tuple[tuple[str, str], ...]:

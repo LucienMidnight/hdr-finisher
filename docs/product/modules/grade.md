@@ -2,7 +2,7 @@
 
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
-- **Last status check:** October 18, 2026, against the code.
+- **Last status check:** October 23, 2026, HSL integration against the code.
 - **Code:** backend `adjustments.py`, `detail.py`, `finishing.py`,
   `local_adjustments.py`, `mask_softness.py`, `mask_work.py`,
   `denoise_adaptive.py`, `sdr_match*.py`, `sessions.py`, `projects.py`,
@@ -20,7 +20,7 @@ every edit must be undoable.
 
 - The HDR and SDR lanes and their panels: Tone, Highlight Compression,
   Exposure Bands (tone equalizer), Color, Lift/Gamma/Gain, Base Rendition
-  (SDR), Curves, Color Grading, Detail, Black & White, Vignette, Denoise.
+  (SDR), HSL, Curves, Color Grading, Detail, Black & White, Vignette, Denoise.
 - Crop, rotate, straighten, perspective, lens corrections.
 - Local adjustments and masks (brush, gradients, luminance, colour,
   combined masks). V1 must add a healing brush in the local adjustment
@@ -161,26 +161,82 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
 8. **Required for v1 (Steve, October 21, 2026):** healing brush in the
    local adjustment module, and hue selection as a local-adjustment mask.
    Specify and implement both; neither is built.
-9. HSL in the app, global and local (Codex brief of October 22, 2026), then
-   Claude's design pass. See "HSL prototype direction" below.
+9. Claude's design pass on the integrated global/local HSL panel, then
+   Steve's real-photo HDR review. The required hue-selection mask remains
+   separate open work in item 8.
 
-**HSL processing and settings (October 23, 2026):** the Python engine now
-runs between Primaries and Curves globally, and after White Balance/Saturation
-before Curves locally. Global HDR/SDR settings and local recipes serialize
-with grades; selective Library paste has independent HSL groups. Missing HSL
-defaults to neutral, without migrations. Request-scoped picker taps capture
-the actual stage input with bounded 5×5 linear-light sampling, including a
-disabled local. Steve approved copying HSL selections, corrections and bypass
-unchanged into editable SDR Match grades; colour-wheel translation and
-highlight-only attenuation do not apply.
+### HSL integration and handoff (October 23, 2026)
 
-Validation for this processing commit: focused engine/pipeline, settings,
-sampling and Match tests passed. The app GPU/interaction and active delivery
-check also passed against this working tree. Initial full suites exposed
-intentional layout/settings test expectations, now corrected; final suites
-and frontend integration are still being completed in the next commit.
-An unrelated Library source-file replacement check failed in the initial
-Python suite; no Library source ownership code was changed.
+Built in the app: independent HDR/SDR channels, one selection per local
+grade, wheel and keyboard handles, Pick/Add/Subtract photo sampling, selection
+overlay, per-channel reset, section bypass/reset, Adjustment Presets, undo,
+project/saved-grade serialization and selective Library paste. Global HSL runs
+after Primaries and before Curves; local HSL runs after White Balance/Saturation
+and before Curves/Color Grading. Steve approved these local placements and
+copying HSL selections, corrections and bypass unchanged into editable SDR
+Match grades; colour-wheel translation and highlight-only attenuation do not
+apply. Neutral HSL is exact passthrough, including the GPU early return.
+
+For Claude:
+
+- Global settings are `hdr.hsl_section_enabled` / `sdr.hsl_section_enabled`
+  and `hdr.hsl` / `sdr.hsl`, each `{channels: [...]}`. A channel has `id`,
+  `name`, `kind` (`all`, `band`, `custom`) and `recipe`. All plus eight ordered
+  bands are fixed; four Custom channels may be added (13 total).
+- Local `hdr_grade` / `sdr_grade` have `hsl_section_enabled` and `hsl`, one
+  recipe. A recipe has `version: 1`, `ranges`, `hue` (±180°), `saturation`
+  (±100%), `luminance` (±2 EV), `uniformity` (0–100) and `opacity` (0–1).
+  Each range has `center` (0–360°), `width` (1–180° core half-width),
+  `feather` (1–90°) and `subtract`. Maximum 32 ranges per channel, 416 per
+  global lane and 32 per local grade. Limits are enforced and shown in the
+  panel; a band keeps one included range. No migration code was added.
+- Panel and styles: `codebase/frontend/hsl-panel.js`, `hsl.css`; markup in
+  `index.html`. Existing slider, token, history and preset machinery is used.
+  Shared JS engine: `hsl-engine.js`; production shader: `hsl-shader.js`.
+  Python fallback and selection: `backend/hdr_finisher/hsl.py`; actual stage
+  taps and overlay: `hsl_sampling.py`. The prototype imports the shared JS
+  engine, so its engine is not a second maintained copy.
+- The prototype's Oklab/OKLCh operation, signed/HDR handling, grey protection,
+  max inclusion/exclusion, circular uniformity and default band centres and
+  widths are retained. Global channels add deltas measured from the same
+  input, in one GPU operation on the app device. Approved CAT02 conversions
+  connect ACEScg HDR to D65 linear sRGB. Original GPU slots 0–197 are unchanged;
+  slots 198/199 are count/reserved, then 13 blocks of 136 floats (1968 total).
+- Picking averages a 5×5 neighbourhood in linear light from the real HSL
+  stage input, including disabled local grades. Requests use a 1000-pixel
+  proxy (bounded 256–1600), up to 512 stroke samples and the existing
+  256-local limit. Local selection overlays include the grade's mask.
+  Section/lane/session changes reject stale selections.
+- The prototype remains runnable; only its engine import path changed.
+  The hue-selection mask leaf is not built by this integration.
+
+Validation for the frontend integration commit: 573 JavaScript tests passed;
+2,414 Python tests passed and 3 skipped. The registered HSL app driver passed
+picker/add/subtract, wheel mouse/keyboard/delete, channel switching, one-step
+undo/redo, preset save/apply, local grading, selection overlay, GPU preview,
+exact neutral GPU passthrough and active GPU/CPU export/Proof. A final wheel
+interaction exposed focus restoring to a non-focusable arc; focus now returns
+to the keyboard handle and the driver waits for the edit acknowledgement
+before measuring its mouse position. The final app check passed.
+The unchanged finished-file limits are mean <1 and p99.9 ≤3 (ΔE2000 for SDR,
+ΔITP for HDR). Neutral colour-stage checks and existing neutral GPU/CPU
+export/Proof checks passed; the real-photo 800-nit ceiling check passed on
+both renderers, with Proof byte-identical to export. No tolerances changed.
+The initial suites exposed old parameter-count, section-count and model
+serialization expectations; these were updated for the new HSL fields and
+buffer tail, retaining all original parameter positions. The model test now
+checks settings round trips and cache identity behaviour instead of a JSON
+text hash. An unrelated Library source-file replacement check failed in the
+initial Python run; no Library source ownership code was changed. It passed
+in the final complete suite, with no outstanding fast-suite failures.
+
+Known broader rendering limit: a highly saturated synthetic sweep (HSV
+saturation .8, exposure levels −5 through +5) already exceeds the existing
+GPU/CPU finished-file perceptual limits with HSL bypassed. The HSL arithmetic
+probe agrees within the prototype limits and the moderate all-hue delivery
+fixture passes the unchanged limits with HSL active. General photographic
+acceptance, especially HDR appearance, still needs Steve's review; this work
+does not claim that the unrelated saturated stress case is fixed.
 
 ### HSL prototype direction (Steve, October 22, 2026)
 
@@ -193,10 +249,10 @@ and feathered exclusions rather than filling every hue between samples.
 The standalone prototype is in `codebase/tools/hsl-prototype/`; its README
 documents the engine API, launch command, validation and frontend handoff.
 It provides one multi-range correction, a GPU implementation with CPU
-fallback, a photo picker and a demonstration local ellipse. It is not wired
-into the app. Production integration, independent channel settings, pipeline
-placement, HDR visual acceptance, project persistence and the hue-mask leaf
-remain open. This does not mark the v1 hue-selection mask built.
+fallback, a photo picker and a demonstration local ellipse. It now shares its JS engine with the integrated app. Independent channels,
+pipeline placement and persistence are built; Claude's design pass, Steve's
+HDR visual acceptance and the hue-mask leaf remain open. This does not mark
+the v1 hue-selection mask built.
 
 Steve's decisions (October 22, 2026), after trying the prototype: the global
 module uses DxO-style channels (All plus eight bands, each with its own edit,
@@ -207,7 +263,7 @@ Wheel ranges are control points; right-click deletes, as with path nodes.
 Presets use the app's Adjustment Presets dialog. Global HSL runs after
 Primaries and before Curves in both HDR and SDR; local HSL sits in the same
 relative place inside each local grade. Codex builds the integration
-(`docs/technical/briefs/codex-brief-hsl-integration-2026-10-22.md`); Claude
+(archived brief: `docs/technical/archive/briefs/codex-brief-hsl-integration-2026-10-22.md`); Claude
 does a design pass afterwards.
 
 ## 6. Out of scope
