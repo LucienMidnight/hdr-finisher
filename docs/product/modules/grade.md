@@ -413,3 +413,18 @@ fast suites passed 585 JavaScript and 2,444 Python checks (3 Python skips);
 only the known 3 edit-sync helper failures and 6 frontend wording-contract
 failures remain. No test limits were relaxed. Real-photo quality acceptance
 remains with Steve.
+
+### Real-photo inpaint direction — October 23, 2026
+
+Steve tested small dark spots on a textured real photo. Preserve original
+texture with 71% Edge feather and 100% Texture amount worked well; Edge feather
+alone still smoothed the center, and donor texture blended poorly. New brush
+repairs now start with the successful original-texture settings. The other
+methods remain available for comparison, and selecting a saved repair restores
+its own recorded method and settings. This is acceptance of the direction for
+small dark spots, not general acceptance for larger object removal.
+
+Validation: focused Electron interaction passed with the new 71%/100% painted
+recipe and saved-repair settings restoration. Required checks: 585 JavaScript
+and 2,444 Python passes, 3 Python skips; the same 3 edit-sync helper failures
+and 6 frontend wording failures remain. Processing and timing limits unchanged.

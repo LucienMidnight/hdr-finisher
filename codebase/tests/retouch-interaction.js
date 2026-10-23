@@ -33,6 +33,9 @@ async function centerPixel(page) {
     await page.waitForFunction(() => state.session && !state.importInProgress && document.body.dataset.workflow === "grade", null, { timeout: 120000 });
     await page.waitForFunction(() => state.gpuPreview?.available && state.gpuPreview?.lastPresentedFrame, null, { timeout: 60000 });
     await page.locator("#grade-mode-retouch").click();
+    assert.equal(await page.locator("#retouch-method").inputValue(), "original-detail");
+    assert.equal(await page.locator("#retouch-feather").inputValue(), "71");
+    assert.equal(await page.locator("#retouch-texture").inputValue(), "100");
     assert.equal(await page.locator("#retouch-hardness").inputValue(), "10");
     // Cursor changes size without another pointermove.
     await page.locator("#retouch-brush").click();
@@ -64,6 +67,10 @@ async function centerPixel(page) {
     await page.waitForFunction(() => state.editDocument?.repairs?.length === 1 && !retouchUI.busy, null, { timeout: 60000 });
     assert.equal(await page.evaluate(() => state.editRevision), initialRevision+1, "one gesture must be one history edit");
     assert.equal(await page.evaluate(() => state.editDocument.repairs[0].recipe.radius_px), 50, "larger brush size did not reach the repair engine");
+    const paintedRecipe = await page.evaluate(() => state.editDocument.repairs[0].recipe);
+    assert.equal(paintedRecipe.method, "original-detail");
+    assert.equal(paintedRecipe.edge_feather, .71);
+    assert.equal(paintedRecipe.texture_amount, 1);
     const original = await page.evaluate(() => JSON.stringify(state.editDocument.repairs));
     await page.waitForFunction(() => state.gpuPreview?.lastPresentedFrame, null, { timeout: 60000 });
     await page.evaluate(() => { retouchUI.active=false; renderLocalMaskOverlay(); });
@@ -121,6 +128,13 @@ async function centerPixel(page) {
     await page.locator("#retouch-size").fill("100");
     await page.mouse.click(rect.x,rect.y);
     await page.waitForFunction(()=>!retouchUI.busy&&state.editDocument.repairs.length===1);
+    // Selecting a saved repair restores its settings, independent of new choices.
+    await page.locator("#retouch-method").selectOption("edge-feather");
+    await page.locator("#retouch-feather").fill("20");
+    await page.locator("#retouch-list .local-adjustment-select").first().click();
+    assert.equal(await page.locator("#retouch-method").inputValue(),"original-detail");
+    assert.equal(await page.locator("#retouch-feather").inputValue(),"71");
+    assert.equal(await page.locator("#retouch-texture").inputValue(),"100");
     const comparisonSeed=await page.evaluate(()=>state.editDocument.repairs[0].recipe.settings.seed);
     const comparisonROI=await page.evaluate(()=>state.editDocument.repairs[0].recipe.search_rect);
     for(const method of ["edge-feather","original-detail","donor-detail"]){
