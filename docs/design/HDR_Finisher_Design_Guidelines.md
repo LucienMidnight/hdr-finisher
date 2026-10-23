@@ -2,7 +2,7 @@
 
 Status: living guideline for the shipped application
 
-Last updated: 2026-10-16
+Last updated: 2026-10-23
 
 This guideline is authoritative for current UI behavior and supersedes persistence language in older product and sprint documents.
 
@@ -46,8 +46,7 @@ Keep source facts separate from grade decisions, grade decisions separate from v
 
 ## Disclosure groups
 
-- Use a right-pointing caret for collapsed groups and rotate it 90 degrees when expanded.
-- Use the shared Fluent disclosure chevron at 18 px with semibold visual weight. Do not substitute a small text caret; the glyph should remain clearly visible without dominating its label inside the 38 px header target.
+- Use a small filled triangle pointing right when collapsed and down when expanded, including top-level groups and sub-sections. Keep the existing header target; section numbers are removed.
 - Expanded top-level bodies run full bleed across the Control Panel. Use the shared 1 px hairline/ultraviolet open-section cue and internal separators; do not wrap expanded bodies in rounded tiles or heavy neutral bands. Reserve the raised bordered tile for honest parent/sub-control groups.
 - The whole labeled header is the disclosure target; Reset and bypass remain separate targets.
 - New grade groups start collapsed unless a documented workflow requirement says otherwise.
@@ -140,7 +139,7 @@ must not use the application accent. Marks sit beneath a photo, never on it.
 | Green label | `--label-green` | `#3fb96b` |
 | Blue label | `--label-blue` | `#4d9cff` |
 
-Electric ultraviolet is the only ordinary active accent and stays spatially small: fills, focus, a selected tool, an index/hairline, or a tinted selected bed. It must not wash broad panels. Reserve saturated RGB colors for channel-specific scopes and curve channels. Do not reuse error red, ready green, HDR amber, or exposure-band colors as decorative accents.
+Electric ultraviolet is the only ordinary active accent and stays spatially small: fills, focus, a selected tool, a hairline, or a tinted selected bed. It must not wash broad panels. Reserve saturated RGB colors for channel-specific scopes and curve channels. Do not reuse error red, ready green, HDR amber, or exposure-band colors as decorative accents.
 
 ### Panel title component tokens
 
@@ -183,7 +182,7 @@ do not add an unowned top margin that makes the first row appear taller.
 - Bundle all application fonts locally; no interface may depend on a network font service.
 - Use Source Sans 3 through `--font-body` / `--sans` for sentence-case control names, body copy, buttons, menus, and explanations.
 - Use Gabarito through `--font-display` / `--display` for all-caps panel titles, top-level section titles, and short all-caps group headings only.
-- Use Space Mono through `--font-technical` / `--mono` for numbers, signed values, units, symbols, section indices, status chips, dimensions, and other compact technical labels.
+- Use Space Mono through `--font-technical` / `--mono` for numbers, signed values, units, symbols, status chips, dimensions, and other compact technical labels.
 - Use tabular numerals for aligned values where supported. Do not set explanatory sentences in Space Mono or ordinary body copy in Gabarito.
 - Keep control names short and concrete. Prefer `Target Peak` to a sentence-length label.
 - Use sentence case in source markup. CSS may uppercase compact instrument labels.
@@ -266,10 +265,15 @@ The HDR/SDR rendition switch and its content boundary form one tab component. Th
 
 ## Control Panel chassis and local hierarchy
 
-- One continuous chassis contains the fixed Control Panel header and numbered disclosure stack. Section indices use Space Mono at 11 px, sit close to the 18 px chevron, and remain outside accessibility naming when the title already names the group. The disclosure button extends beneath the painted index so clicking either the index or chevron activates the same accessible toggle.
-- Multiple top-level disclosures may remain open. An open section uses an ultraviolet index/hairline and one raised, full-bleed content surface with square open edges; it must not become an inset rounded card. Disclosure and keyboard semantics remain unchanged.
-- Local Adjustments orders its content as Masks, adjustment instances, selected context, then grading controls. Brush, Erase, Gradient, Luma, and Path retain the real bundled Tabler assets, visible labels, accessible names, and `aria-pressed` state.
-- Selected tools use the accent bed plus outline/hairline; selected adjustment rows use a tinted bed and thin structural marker instead of a broad solid accent block.
+- The Control Panel opens in Global and offers Global / Local / Retouch as a keyboard-operable tab list. Only the chosen mode is visible. Mode, rendition and fold-out state last for the session and are never saved in projects or presets.
+- Global shows shared Raw development, Highlight reconstruction, Crop & rotate and Perspective beneath **HDR + SDR**, followed by the rendition folder. Local holds masks and local grades; Retouch holds source repairs beneath **HDR + SDR · before crop**.
+- Global and Local share one HDR grade / SDR grade folder tab row, including the preview's rendition choice. Selected tab and folder share a 2 px neutral border and the tab has a small accent top line; recessed inactive tabs use 1 px borders. Match SDR / amber Rematch SDR sits at the right and never changes the selected rendition. The tab row stays pinned beneath the mode header while scrolling.
+- Multiple top-level disclosures may remain open. Sections have no numbers. An open section keeps the hairline and full-width raised content surface. Long names truncate before the independent Preset, Reset, bypass and Mod controls. Display names are Color sliders and Color wheels; internal keys are unchanged.
+- Local shows New adjustment and four mask tools, overlay and More; Masks · HDR + SDR and stack actions; the selected mask's folded settings; then the local rendition folder with Light open and Color, HSL and Detail folded. Paint / Erase belongs inside Brush settings. Invert, gizmo visibility, overlay colour and brush clearing/undo live in More. Mask and repair lists reserve scrollbar space and show about four rows.
+- Clicking a mask tool starts an adjustment immediately, including clicking the lit tool. Clicking a row selects it without creating one. The approved unused-row conversion/removal and undo lifecycle is still open implementation; the luma default-range edge case awaits Steve's decision (October 23).
+- Retouch has Inpaint, disabled Heal/Clone marked Soon, Size and Hardness instrument sliders, folded Advanced controls and newest-first repairs. New settings apply to the next stroke; the selected repair offers next-seed Retry and Remove. Solving and errors use the status row, with Cancel only while solving. Heal and Clone remain unbuilt.
+- Leaving a mode ends its viewer tools, including mask/retouch gestures, HSL picking and crop/perspective drafts. Hidden mode controls cannot receive keyboard focus.
+- Selected tools and adjustment rows keep the existing accent bed and restrained structural marker.
 
 ## Curves and graphical editors
 

@@ -1,6 +1,6 @@
 function renderMaskTreeEditor(local) {
   const leaf = selectedMaskLeaf(local);
-  els.localMaskFooterActions?.append(els.localInvert);
+  document.querySelector("#local-more-actions .local-brush-actions")?.remove();
   els.localMaskTreeSummary.textContent = "";
   if (els.localGradientControls) {
     els.localGradientControls.textContent = "";
@@ -9,7 +9,7 @@ function renderMaskTreeEditor(local) {
   if (state.selectedSubMaskId) appendLocalMaskComparisonLegend();
   if (!leaf) return;
   if (leaf.type === "luminance_range") {
-    const panel = createLocalMaskSubpanel("Luma Controls", "Scene luminance range");
+    const panel = createLocalMaskSubpanel("Luma settings", "Default");
     const helper = document.createElement("p");
     helper.className = "luma-sampling-hint";
     helper.textContent = "Choose a false-color band or sample the image. Presets and samples reset refinement; Alt-sampling removes tones.";
@@ -24,7 +24,18 @@ function renderMaskTreeEditor(local) {
   } else if (leaf.type === "brush") {
     const settings = brushSettings(leaf);
     const hasStrokes = Boolean((leaf.strokes || []).length);
-    const brushPanel = createLocalMaskSubpanel("Brush Controls", "New strokes");
+    const brushPanel = createLocalMaskSubpanel("Brush settings", `${state.localErase ? "Erase" : "Paint"} · ${(settings.radius * 200).toFixed(1)}% · feather ${Math.round((1 - settings.hardness) * 100)}%`);
+    const paintErase = document.createElement("div");
+    paintErase.className = "proof-preview-switch brush-paint-erase";
+    paintErase.setAttribute("role", "group");
+    paintErase.setAttribute("aria-label", "Brush operation");
+    const paint = document.createElement("button");
+    paint.id = "local-paint";
+    paint.type = "button";
+    paint.textContent = "Paint";
+    paint.addEventListener("click", () => { state.localErase = false; updateLocalToolState(); renderMaskTreeEditor(local); });
+    paintErase.append(paint, els.localEraser);
+    brushPanel.append(paintErase);
     [
       { name: "brush_radius", label: "Size", min: 0.002, max: 0.2, step: 0.001, value: settings.radius, defaultValue: 0.025, display: (value) => `${(value * 200).toFixed(1)}%` },
       { name: "brush_hardness", label: "Feather", min: 0, max: 100, step: 1, value: (1 - settings.hardness) * 100, defaultValue: 25, display: (value) => `${Math.round(value)}%`, store: (value) => 1 - value / 100 },
@@ -35,7 +46,7 @@ function renderMaskTreeEditor(local) {
       previewBrush: true,
     }));
 
-    const maskPanel = createLocalMaskSubpanel("Mask Controls", hasStrokes ? "All strokes" : "Paint to enable");
+    const maskPanel = createLocalMaskSubpanel("Mask settings", "Default");
     [
       { name: "mask_opacity", label: "Opacity", min: 0, max: 100, step: 1, value: Number(leaf.mask_opacity ?? 1) * 100, defaultValue: 100, display: (value) => `${Math.round(value)}%`, store: (value) => value / 100 },
       { name: "mask_shift_edge", label: "Shift Edge", min: -100, max: 100, step: 1, value: Number(leaf.mask_shift_edge || 0) * 2000, defaultValue: 0, display: (value) => `${value > 0 ? "+" : ""}${Math.round(value)}%`, store: (value) => value / 2000 },
@@ -65,7 +76,7 @@ function renderMaskTreeEditor(local) {
     actions.append(clearStrokes, undoStroke);
     els.localInvert.textContent = selectedMaskExpression(local)?.inverted ? "Restore Mask" : "Invert Mask";
     els.localInvert.disabled = !hasStrokes;
-    maskPanel.append(actions);
+    document.getElementById("local-more-actions").append(actions);
     els.localMaskTreeSummary.append(brushPanel, maskPanel);
   } else if (leaf.type === "path") {
     renderPathControls(local, leaf);
@@ -73,7 +84,7 @@ function renderMaskTreeEditor(local) {
 }
 
 function renderPathControls(local, leaf) {
-  const panel = createLocalMaskSubpanel("Path Controls", state.localPathDraft ? "Click for corners · drag for curves" : "Edit one boundary at a time");
+  const panel = createLocalMaskSubpanel("Path settings", state.localPathDraft ? "Place points" : "Default");
   const modeSwitch = document.createElement("div");
   modeSwitch.className = "path-edit-mode";
   modeSwitch.setAttribute("role", "group");
@@ -461,7 +472,7 @@ function setLuminanceRefinedRange(leaf, startEv, endEv) {
 function renderGradientControls(local, leaf) {
   if (!els.localGradientControls) return;
   els.localGradientControls.classList.remove("hidden");
-  const panel = createLocalMaskSubpanel("Gradient Controls", "Spatial and content range");
+  const panel = createLocalMaskSubpanel("Gradient settings", `Fan ${Math.round(Number(leaf.gradient_fan || 0) * 100)}% · luma ${leaf.gradient_luma_enabled ? "on" : "off"}`);
   [
     { name: "mask_opacity", label: "Opacity", min: 0, max: 100, step: 1, value: Number(leaf.mask_opacity ?? 1) * 100, defaultValue: 100, display: (value) => `${Math.round(value)}%`, store: (value) => value / 100 },
     { name: "gradient_fan", label: "Fan", min: -100, max: 100, step: 1, value: Number(leaf.gradient_fan || 0) * 100, defaultValue: 0, display: (value) => `${value > 0 ? "+" : ""}${Math.round(value)}%`, store: (value) => value / 100 },
@@ -568,16 +579,8 @@ function createGradientLuminanceRange(local, leaf) {
 }
 
 function createLocalMaskSubpanel(title, note) {
-  const panel = document.createElement("section");
-  panel.className = "local-mask-subpanel";
-  const heading = document.createElement("div");
-  heading.className = "local-mask-subpanel-heading";
-  const label = document.createElement("strong");
-  label.textContent = title;
-  const hint = document.createElement("span");
-  hint.textContent = note;
-  heading.append(label, hint);
-  panel.append(heading);
+  const panel = createControlFoldout(`mask-${title}`, title, note);
+  panel.classList.add("local-mask-subpanel");
   return panel;
 }
 

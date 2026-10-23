@@ -57,7 +57,7 @@ async function commitRetouch(records) {
   retouchUI.cancelled = false;
   retouchUI.requestId = crypto.randomUUID();
   const sessionId = state.session.session_id;
-  retouchMessage("Repairing… the previous picture stays available. Escape cancels.");
+  retouchMessage("Repairing spot… the previous picture stays available. Escape cancels.");
   renderRetouchControls();
   try {
     const applied = await queueEditCommand("set_repairs", { repairs: records, repair_request_id: retouchUI.requestId }, null, { isCurrent: () => !retouchUI.cancelled });
@@ -75,49 +75,72 @@ function renderRetouchControls() {
   if (!retouchInput("brush")) return;
   const sessionId = state.session?.session_id;
   if (retouchUI.session !== sessionId) {
-    Object.assign(retouchUI, { session: sessionId, active: false, selected: null, points: null, cursor: null });
+    Object.assign(retouchUI, { session: sessionId, active: state.gradeMode === "retouch", selected: null, points: null, cursor: null });
   }
+  retouchInput("brush").classList.toggle("active", retouchUI.active);
   retouchInput("brush").setAttribute("aria-pressed", String(retouchUI.active));
   retouchInput("brush").disabled = !sessionId || retouchUI.busy;
   retouchInput("cancel").disabled = !retouchUI.busy;
   for (const name of ["size", "hardness", "search", "patch", "iterations", "seed"]) retouchInput(name).disabled = retouchUI.busy;
   const records = state.editDocument?.repairs || [];
   const selected = records.find(r => r.id === retouchUI.selected);
-  retouchInput("apply").disabled = !selected || retouchUI.busy;
-  retouchInput("retry").disabled = !selected || retouchUI.busy;
+  retouchInput("cancel").hidden = !retouchUI.busy;
+  retouchInput("repair-count").textContent = `Repairs · ${records.length}`;
+  syncRetouchReadouts();
   const list = retouchInput("list");
   list.replaceChildren();
-  for (const record of records) {
+  for (const record of [...records].reverse()) {
     const item = document.createElement("li");
-    const toggle = document.createElement("input");
-    toggle.type = "checkbox";
-    toggle.checked = record.enabled;
-    toggle.disabled = retouchUI.busy;
-    toggle.setAttribute("aria-label", `Enable ${record.name}`);
-    toggle.addEventListener("change", () => commitRetouch(records.map(r => r.id === record.id ? { ...r, enabled: toggle.checked } : r)));
+    item.className = "local-adjustment-item";
     const choose = document.createElement("button");
     choose.type = "button";
-    choose.textContent = record.name;
+    choose.className = "local-adjustment-select";
+    choose.classList.toggle("active", record.id === retouchUI.selected);
+    choose.append(createLocalAdjustmentCopy({ title: record.name, subtitle: `${record.recipe.radius_px * 2} px` }));
     choose.disabled = retouchUI.busy;
     choose.setAttribute("aria-pressed", String(record.id === retouchUI.selected));
     choose.addEventListener("click", () => {
       retouchUI.selected = record.id;
       const recipe = record.recipe;
       for (const [name, value] of Object.entries({ size: recipe.radius_px * 2, hardness: recipe.hardness * 100,
-        search: Math.max(...[recipe.search_rect[2]-recipe.search_rect[0], recipe.search_rect[3]-recipe.search_rect[1]]),
+        search: Math.max(recipe.search_rect[2]-recipe.search_rect[0], recipe.search_rect[3]-recipe.search_rect[1]),
         patch: recipe.settings.patch_radius, iterations: recipe.settings.iterations, seed: recipe.settings.seed })) {
         retouchInput(name).value = String(value);
       }
-      retouchMessage("Selected repair. Change settings and Apply, or Retry with the next seed.");
+      retouchMessage("Selected repair. Change settings and press Retry to redo it.");
       renderRetouchControls();
       renderLocalMaskOverlay();
     });
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.textContent = "Remove";
-    remove.disabled = retouchUI.busy;
-    remove.addEventListener("click", () => commitRetouch(records.filter(r => r.id !== record.id)));
-    item.append(toggle, choose, remove);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "local-adjustment-bypass";
+    toggle.classList.toggle("bypassed", !record.enabled);
+    toggle.disabled = retouchUI.busy;
+    toggle.setAttribute("aria-label", `${record.enabled ? "Hide" : "Show"} ${record.name}`);
+    toggle.setAttribute("aria-pressed", String(!record.enabled));
+    toggle.addEventListener("click", () => commitRetouch(records.map(r => r.id === record.id ? { ...r, enabled: !r.enabled } : r)));
+    item.append(choose);
+    if (record.id === retouchUI.selected) {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "↻";
+      retry.title = "Retry with next seed";
+      retry.setAttribute("aria-label", `Retry ${record.name}`);
+      retry.disabled = retouchUI.busy;
+      retry.addEventListener("click", retrySelectedRetouch);
+      item.append(retry);
+    }
+    item.append(toggle);
+    if (record.id === retouchUI.selected) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.title = "Remove repair";
+      remove.setAttribute("aria-label", `Remove ${record.name}`);
+      remove.disabled = retouchUI.busy;
+      remove.addEventListener("click", () => commitRetouch(records.filter(r => r.id !== record.id)));
+      item.append(remove);
+    }
     list.append(item);
   }
 }
@@ -187,11 +210,16 @@ function bindRetouchEvents() {
     constrainRetouchSize();
     queueLocalMaskOverlayRender();
   });
+  for (const name of ["size", "hardness", "search", "patch", "iterations", "seed"]) {
+    retouchInput(name).addEventListener("input", syncRetouchReadouts);
+    retouchInput(name).addEventListener("change", syncRetouchReadouts);
+  }
+  bindSliderReadouts(document.querySelector(".retouch-panel"));
   retouchInput("brush").addEventListener("click", async () => {
     if (state.localPathDraft) await finishLocalPathDraft();
-    retouchUI.active = !retouchUI.active;
+    retouchUI.active = true;
     retouchUI.points = null;
-    setGradeMode("local");
+    setGradeMode("retouch");
     await ensureGeometryCoordinateMap();
     renderRetouchControls();
     renderLocalMaskOverlay();
@@ -200,16 +228,7 @@ function bindRetouchEvents() {
     retouchUI.cancelled = true;
     if (state.session) void fetch(`/api/session/${state.session.session_id}/retouch/cancel`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id: retouchUI.requestId }) });
   });
-  for (const name of ["apply", "retry"]) retouchInput(name).addEventListener("click", () => {
-    const records = state.editDocument?.repairs || [], selected = records.find(r => r.id === retouchUI.selected);
-    if (!selected) return;
-    try {
-      if (name === "retry") retouchInput("seed").value = String((Number(retouchInput("seed").value) + 1) >>> 0);
-      const recipe = retouchRecipe(selected.recipe.points);
-      void commitRetouch(records.map(r => r.id === selected.id ? { ...r, recipe } : r));
-    } catch (error) { retouchMessage(error.message); }
-  });
-  const owns = () => retouchUI.active && state.gradeMode === "local" && state.activeWorkflow === "grade";
+  const owns = () => retouchUI.active && state.gradeMode === "retouch" && state.activeWorkflow === "grade";
   canvas.addEventListener("pointerdown", event => {
     if (!owns() || event.button !== 0) return;
     event.stopImmediatePropagation();
@@ -258,7 +277,7 @@ function bindRetouchEvents() {
     if (!points) return;
     try {
       const records = state.editDocument?.repairs || [], id = crypto.randomUUID();
-      const record = { id, name: `Dust repair ${records.length+1}`, enabled: true, recipe: retouchRecipe(points) };
+      const record = { id, name: `Spot ${records.length+1}`, enabled: true, recipe: retouchRecipe(points) };
       retouchUI.selected = id;
       void commitRetouch([...records, record]);
     } catch (error) { retouchMessage(error.message); }
@@ -276,4 +295,28 @@ function bindRetouchEvents() {
     if (retouchUI.busy) retouchInput("cancel").click();
     renderLocalMaskOverlay();
   });
+}
+
+function syncRetouchReadouts() {
+  const units = { size: " px", hardness: "%", search: " px", patch: " px", iterations: "" };
+  for (const [name, unit] of Object.entries(units)) {
+    const input = retouchInput(name);
+    // Search, patch and iterations are integer solver settings even during fine drags.
+    if (["search", "patch", "iterations"].includes(name)) input.value = String(Math.round(Number(input.value)));
+    retouchInput(`${name}-value`).textContent = `${Number(input.value)}${unit}`;
+  }
+  const defaults = { search: 96, patch: 3, iterations: 6, seed: 20261021 };
+  const modified = Object.entries(defaults).filter(([name, value]) => Number(retouchInput(name).value) !== value).length;
+  retouchInput("advanced-summary").textContent = modified ? `${modified} Mod` : "Default";
+  syncRangeVisuals(document.querySelector(".retouch-panel"));
+}
+
+function retrySelectedRetouch() {
+  const records = state.editDocument?.repairs || [], selected = records.find(r => r.id === retouchUI.selected);
+  if (!selected || retouchUI.busy) return;
+  try {
+    retouchInput("seed").value = String((Number(retouchInput("seed").value) + 1) >>> 0);
+    const recipe = retouchRecipe(selected.recipe.points);
+    void commitRetouch(records.map(r => r.id === selected.id ? { ...r, recipe } : r));
+  } catch (error) { retouchMessage(error.message); }
 }

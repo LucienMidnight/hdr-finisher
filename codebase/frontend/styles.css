@@ -192,9 +192,6 @@
   --group-chevron-size: 18px;
   --group-chevron-width: 18px;
   --group-chevron-gap: 6px;
-  --group-index-left: 14px;
-  --group-index-width: 18px;
-  --group-index-font-size: 11px;
   --group-disclosure-leading: 38px;
   --group-chevron-color: var(--body);
   --group-chevron-transition: 120ms ease;
@@ -7827,7 +7824,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* Shared instrument components and panel hierarchy. */
 
-/* Continuous Control Panel chassis and numbered, independently open sections. */
+/* Continuous Control Panel chassis and independently open sections. */
 #grade-workflow-panel {
   min-height: 100%;
   background: var(--hf-panel);
@@ -7846,58 +7843,6 @@ input[type="range"]::-webkit-slider-thumb {
   padding-left: var(--group-disclosure-leading);
 }
 
-.control-group-header::before {
-  content: "--";
-  position: absolute;
-  top: 50%;
-  left: var(--group-index-left);
-  width: var(--group-index-width);
-  color: var(--quiet);
-  font: 700 var(--group-index-font-size)/1 var(--font-technical);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .05em;
-  text-align: left;
-  pointer-events: none;
-  z-index: 1;
-  transform: translateY(-50%);
-}
-
-/* Extend the existing disclosure button beneath the painted index so the
-   number and chevron share one accessible toggle target. */
-.control-group-header > .group-toggle {
-  margin-left: calc(var(--group-index-left) - var(--group-disclosure-leading));
-  padding-left: calc(var(--group-disclosure-leading) - var(--group-index-left));
-}
-
-.control-group[data-group="raw-highlights"] > .control-group-header::before { content: "02"; }
-.control-group[data-group="geometry"] > .control-group-header::before { content: "03"; }
-.control-group[data-group="perspective"] > .control-group-header::before { content: "04"; }
-.control-group[data-group="denoise"] > .control-group-header::before { content: "05"; }
-.control-group[data-group="hdr-tone"] > .control-group-header::before,
-.control-group[data-group="sdr-tone"] > .control-group-header::before { content: "06"; }
-.control-group[data-group="hdr-equalizer"] > .control-group-header::before,
-.control-group[data-group="sdr-highlights"] > .control-group-header::before { content: "07"; }
-.control-group[data-group="hdr-zones"] > .control-group-header::before,
-.control-group[data-group="sdr-equalizer"] > .control-group-header::before { content: "08"; }
-.control-group[data-group="sdr-zones"] > .control-group-header::before { content: "09"; }
-.control-group[data-group="curves"] > .control-group-header::before { content: "10"; }
-/* Curves moves one slot earlier in HDR, where Highlight Compression follows it
-   as the output limiter instead of preceding it as a tone stage. */
-body[data-active-lane="hdr"] .control-group[data-group="curves"] > .control-group-header::before { content: "09"; }
-.control-group[data-group="hdr-highlights"] > .control-group-header::before { content: "10"; }
-.control-group[data-group="hdr-color"] > .control-group-header::before,
-.control-group[data-group="sdr-color"] > .control-group-header::before { content: "11"; }
-.control-group[data-group="color-grading"] > .control-group-header::before { content: "12"; }
-.control-group[data-group="black-and-white"] > .control-group-header::before { content: "13"; }
-.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "14"; }
-.control-group[data-group="detail"] > .control-group-header::before { content: "15"; }
-.control-group[data-group="film-look"] > .control-group-header::before { content: "16"; }
-.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }
-
-.control-group:not(.collapsed) > .control-group-header::before {
-  color: var(--accent-strong);
-  text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 42%, transparent);
-}
 
 .control-group,
 .control-group.collapsed,
@@ -7947,20 +7892,6 @@ body[data-active-lane="hdr"] .control-group[data-group="curves"] > .control-grou
   padding-left: var(--group-disclosure-leading);
 }
 
-.raw-development-group .disclosure-trigger::after {
-  content: "01";
-  position: absolute;
-  top: 50%;
-  left: var(--group-index-left);
-  color: var(--quiet);
-  font: 700 var(--group-index-font-size)/1 var(--font-technical);
-  font-variant-numeric: tabular-nums;
-  transform: translateY(-50%);
-}
-
-.raw-development-group .disclosure-trigger[aria-expanded="true"]::after {
-  color: var(--accent-strong);
-}
 
 /* Source-dependent modules keep their permanent stack positions. An
    unavailable row is visible for numbering/orientation but cannot open or
@@ -7979,10 +7910,6 @@ body[data-active-lane="hdr"] .control-group[data-group="curves"] > .control-grou
 }
 
 .module-unavailable .control-group-header::before,
-.raw-development-group.module-unavailable .disclosure-trigger::after {
-  color: var(--quiet);
-  text-shadow: none;
-}
 
 /* Standard machined instrument slider. Interaction metadata owns positions. */
 .control-row > .range-shell,

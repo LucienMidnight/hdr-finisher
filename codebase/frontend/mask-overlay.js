@@ -102,7 +102,7 @@ function failPathMaskProgress(localId) {
 function renderLocalMaskOverlay() {
   const canvas = els.localMaskOverlay;
   if (!canvas) return;
-  if (typeof retouchUI !== "undefined" && retouchUI.active && state.gradeMode === "local"
+  if (typeof retouchUI !== "undefined" && retouchUI.active && state.gradeMode === "retouch"
       && state.activeWorkflow === "grade") {
     renderRetouchOverlay(canvas);
     return;

@@ -202,7 +202,6 @@ async function assignToolToPending(type) {
 }
 
 function bindLocalAdjustmentEvents() {
-  els.gradeModeGlobal?.addEventListener("click", () => setGradeMode("global"));
   els.localToolButtons.forEach((button) => button.addEventListener("click", async () => {
     if (typeof retouchUI !== "undefined") retouchUI.active = false;
     if (state.localPathDraft) await finishLocalPathDraft();
@@ -217,13 +216,12 @@ function bindLocalAdjustmentEvents() {
       await assignToolToPending(type);
       return;
     }
-    state.localCreationTool = type;
-    state.localErase = false;
-    updateLocalToolState();
+    await assignToolToPending(type);
   }));
   els.localEraser?.addEventListener("click", () => {
     if (els.localEraser.disabled) return;
-    state.localErase = !state.localErase;
+    state.localErase = true;
+    renderMaskTreeEditor(selectedLocal());
     updateLocalToolState();
   });
   els.localGizmoToggle?.addEventListener("click", () => {
@@ -350,9 +348,6 @@ function bindLocalAdjustmentEvents() {
     state.localAdjustmentMenuId = null;
     renderLocalAdjustments();
   });
-  els.localLaneButtons.forEach((button) => button.addEventListener("click", () => {
-    void switchLane(button.dataset.localLane);
-  }));
   els.localOpacity?.addEventListener("input", () => {
     const local = selectedLocal();
     if (!local) return;
@@ -385,23 +380,6 @@ function bindLocalAdjustmentEvents() {
     const index = localAdjustments().findIndex((item) => item.id === local.id) + 1;
     state.selectedLocalId = copy.id;
     await queueEditCommand("create_local", { local: copy, index });
-  });
-  els.localAddAdjustment?.addEventListener("click", async () => {
-    if (!state.session) return;
-    const gradeRail = els.localPanel?.closest(".grade-rail");
-    const scrollTop = gradeRail?.scrollTop ?? 0;
-    beginPendingLocalAdjustment();
-    const type = state.localCreationTool;
-    if (type) await assignToolToPending(type);
-    renderLocalAdjustments();
-    const restoreScroll = () => {
-      if (gradeRail) gradeRail.scrollTop = scrollTop;
-    };
-    restoreScroll();
-    requestAnimationFrame(() => {
-      restoreScroll();
-      requestAnimationFrame(restoreScroll);
-    });
   });
   els.localInvert?.addEventListener("click", () => {
     const local = selectedLocal();
@@ -482,17 +460,44 @@ function bindLocalAdjustmentEvents() {
 }
 
 function setGradeMode(mode) {
-  state.gradeMode = mode === "local" ? "local" : "global";
-  document.body.dataset.gradeMode = state.gradeMode;
-  els.gradeModeGlobal?.classList.toggle("active", state.gradeMode === "global");
-  els.gradeModeLocal?.classList.toggle("active", state.gradeMode === "local");
-  els.gradeModeGlobal?.setAttribute("aria-pressed", String(state.gradeMode === "global"));
-  if (els.localAdjustmentGroup) {
-    const localActive = state.gradeMode === "local";
-    els.localAdjustmentGroup.classList.toggle("collapsed", !localActive);
-    els.gradeModeLocal?.setAttribute("aria-expanded", String(localActive));
+  const next = ["global", "local", "retouch"].includes(mode) ? mode : "global";
+  if (state.gradeMode !== next) {
+    if (state.localPathDraft) void finishLocalPathDraft();
+    state.localPointerGesture = null;
+    state.localBrushCursor = null;
+    state.localPathCursor = null;
+    state.localCreationTool = null;
+    state.localTool = null;
+    hideBrushSettingsPreview();
+    hslUI.picker = null;
+    hslUI.stroke = null;
+    hslClearSelection();
+    retouchUI.active = false;
+    retouchUI.points = null;
+    retouchUI.cursor = null;
+    if (next !== "global") {
+      if (state.cropMode) closeCropMode(false);
+      if (state.rotateDraftGeometry) closeRotateMode(false);
+      abandonPerspectiveDraft();
+    }
   }
-  if (state.gradeMode === "local") void ensureGeometryCoordinateMap();
+  placeGradeFolderTabs(next);
+  state.gradeMode = next;
+  document.body.dataset.gradeMode = next;
+  document.querySelectorAll("[data-control-mode]").forEach(button => {
+    const active = button.dataset.controlMode === next;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll("[data-control-panel]").forEach(panel => {
+    panel.hidden = panel.dataset.controlPanel !== next;
+  });
+  if (next === "local") state.localTool = selectedMaskLeaf()?.type || null;
+  if (next === "retouch") retouchUI.active = Boolean(state.session);
+  if (next !== "global") void ensureGeometryCoordinateMap();
+  renderHslPanels();
+  renderRetouchControls();
   renderLocalMaskOverlay();
 }
 
@@ -501,20 +506,18 @@ function updateLocalToolState() {
   const assignedType = selectedMaskLeaf(local)?.type || null;
   const displayedType = state.localCreationTool || assignedType;
   const brushSelected = assignedType === "brush";
-  const toolLocked = Boolean(assignedType && !state.pendingLocalAdjustment && !state.pendingSubMask);
   els.localToolButtons.forEach((button) => {
     const active = button.dataset.localTool === displayedType;
     button.classList.toggle("active", active);
     button.classList.toggle("queued", Boolean(state.localCreationTool && active));
     button.setAttribute("aria-pressed", String(active));
-    button.disabled = toolLocked;
+    button.disabled = !state.session;
     if (!button.dataset.creationTitle) button.dataset.creationTitle = button.title;
-    button.title = toolLocked
-      ? (active
-        ? `${localMaskTypeLabel(assignedType)} is locked to this mask`
-        : `Create a new adjustment or sub-mask to use ${localMaskTypeLabel(button.dataset.localTool)}`)
-      : button.dataset.creationTitle;
+    button.title = button.dataset.creationTitle;
   });
+  const paint = document.getElementById("local-paint");
+  paint?.classList.toggle("active", !state.localErase);
+  paint?.setAttribute("aria-pressed", String(!state.localErase));
   if (els.localEraser) {
     els.localEraser.disabled = !brushSelected;
     if (!brushSelected) state.localErase = false;
@@ -750,7 +753,7 @@ function renderLocalAdjustments() {
   els.localEmpty?.classList.toggle("hidden", hasRows);
   if (!hasRows && els.localEmpty) {
     els.localEmpty.textContent = state.session
-      ? "Choose a mask tool, then press + — or press + first and pick a tool."
+      ? "Choose a mask tool to start an adjustment."
       : "Load an image to create the first local adjustment.";
   }
   const pendingSelected = state.pendingLocalAdjustment?.id === state.selectedLocalId
@@ -758,7 +761,6 @@ function renderLocalAdjustments() {
   els.localEditor?.classList.toggle("hidden", !local || pendingSelected);
   els.localMaskFooterActions?.classList.toggle("hidden", !local || pendingSelected);
   const selectedIndex = local ? locals.findIndex((item) => item.id === local.id) : -1;
-  if (els.localAddAdjustment) els.localAddAdjustment.disabled = !state.session;
   if (els.localDuplicate) els.localDuplicate.disabled = !local || Boolean(state.selectedSubMaskId);
   if (els.localDelete) els.localDelete.disabled = !local && !pendingSelected;
   if (els.localMoveUp) els.localMoveUp.disabled = !local || Boolean(state.selectedSubMaskId) || selectedIndex <= 0;
@@ -783,12 +785,6 @@ function renderLocalAdjustments() {
     els.localInvert.textContent = expression?.inverted ? "Restore mask" : "Invert mask";
     els.localInvert.disabled = Boolean(brushLeaf && !(brushLeaf.strokes || []).length);
     syncLocalMaskOverlayControl();
-    els.localLaneButtons.forEach((button) => {
-      const active = button.dataset.localLane === state.currentView;
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-selected", String(active));
-      button.tabIndex = active ? 0 : -1;
-    });
     const grade = local[`${state.currentView}_grade`];
     els.localGradeControls.forEach((control) => {
       control.value = String(getValueByPath(grade, control.dataset.localGrade));
@@ -805,6 +801,7 @@ function renderLocalAdjustments() {
   // Selection and HDR/SDR lane changes assign range values programmatically.
   // Keep the shared track/fill component attached to the native thumb instead
   // of retaining the previous local adjustment's visual position.
+  updateLocalGradeFoldoutSummaries();
   syncRangeVisuals(els.localEditor);
   bindSliderReadouts(els.localAdjustmentGroup);
   updateLocalToolState();
@@ -855,6 +852,7 @@ function updateLocalGradeOutput(name, value) {
   else if (name.endsWith("clarity_radius_percent")) output.textContent = `${value.toFixed(2)}%`;
   else if (name.endsWith("sharpen_radius_px")) output.textContent = `${value.toFixed(2)} px`;
   else output.textContent = Math.abs(value) < 0.005 ? "0" : value.toFixed(2);
+  updateLocalGradeFoldoutSummaries();
   const defaultValue = Number(control?.dataset.defaultValue ?? control?.defaultValue);
   control?.closest(".control-row")?.classList.toggle(
     "modified",
@@ -1029,3 +1027,16 @@ function beginLocalDetailInteraction(control) {
   };
 }
 
+
+function updateLocalGradeFoldoutSummaries() {
+  const grade = selectedLocal()?.[`${state.currentView}_grade`];
+  if (!grade) return;
+  const baseline = defaultLocalGrade();
+  for (const section of document.querySelectorAll(".local-grade-section")) {
+    const fields = [...section.querySelectorAll("[data-local-grade]")].map(control => control.dataset.localGrade);
+    let count = fields.filter(path => Math.abs(Number(getValueByPath(grade, path)) - Number(getValueByPath(baseline, path))) > 1e-8).length;
+    if (section.dataset.localGradeSection === "hsl") count = Number(JSON.stringify(grade.hsl) !== JSON.stringify(baseline.hsl) || grade.hsl_section_enabled === false);
+    const summary = section.querySelector(".foldout-summary");
+    if (summary) { summary.textContent = count ? `${count} Mod` : "Default"; summary.title = summary.textContent; }
+  }
+}

@@ -199,25 +199,13 @@ async function switchLane(lane) {
 function arrangeLaneControlGroups(lane) {
   const panel = els.lanePanels.find((candidate) => candidate.dataset.lanePanel === lane);
   if (!panel) return;
-  // HDR runs Highlight Compression as the output limiter, so it reads after the
-  // tone and curve work it compresses and before Color. SDR keeps its shoulder
-  // early, where it is the scene-to-display placement rather than a limiter.
-  const groupOrder = lane === "hdr"
-    ? ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "curves", "hdr-highlights", "hdr-color"]
-    : ["denoise", "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"];
+  const groupOrder = ["denoise", `${lane}-tone`, `${lane}-equalizer`, `${lane}-zones`,
+    "hsl", "curves", `${lane}-highlights`, `${lane}-color`, "color-grading",
+    "black-and-white", "detail", "film-look", "vignette"];
   for (const groupName of groupOrder) {
     const group = document.querySelector(`.control-group[data-group="${groupName}"]`);
     if (group) panel.append(group);
   }
-  const colorGrading = document.querySelector('.control-group[data-group="color-grading"]');
-  const blackAndWhiteGroup = document.querySelector('.control-group[data-group="black-and-white"]');
-  const localAdjustmentsGroup = document.querySelector('.control-group[data-group="local-adjustments"]');
-  // Panel order after Color: 12 Color Grading, 13 Black & White, 14 Local
-  // Adjustments. Only the panel order: Black & White still processes straight
-  // after Color, so the Color Grading wheels can tone the grey picture.
-  if (colorGrading && blackAndWhiteGroup) colorGrading.after(blackAndWhiteGroup);
-  const beforeLocals = blackAndWhiteGroup || colorGrading;
-  if (beforeLocals && localAdjustmentsGroup) beforeLocals.after(localAdjustmentsGroup);
 }
 
 function renderLaneChrome() {
@@ -257,7 +245,11 @@ function renderLaneChrome() {
   els.detailSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.blackAndWhiteSdrActions?.classList.toggle("hidden", lane !== "sdr");
   const match = state.editDocument?.sdr_match;
-  els.sdrMatchEntireActions?.classList.toggle("hidden", lane !== "sdr");
+  els.sdrMatchEntireActions?.classList.remove("hidden");
+  if (els.sdrMatchEntire) {
+    els.sdrMatchEntire.textContent = match?.rematch_required ? "↻ Rematch SDR" : "Match SDR";
+    els.sdrMatchEntire.classList.toggle("rematch-required", Boolean(match?.rematch_required));
+  }
   if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = !state.session;
   if (els.sdrMatchEntireStatus) {
     els.sdrMatchEntireStatus.textContent = match?.rematch_required ? "Rematch required · repairs changed"

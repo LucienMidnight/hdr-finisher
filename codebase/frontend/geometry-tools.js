@@ -237,7 +237,7 @@ function openPerspectiveMode() {
     state.perspectiveTool = failed.tool;
     state.perspectiveFailedDraft = null;
   }
-  if (state.gradeMode === "local") setGradeMode("global");
+  if (state.gradeMode !== "global") setGradeMode("global");
   setPerspectiveStatus("Unapplied perspective draft. Apply to keep it; leaving this module cancels it.", "unapplied");
   renderPerspectiveControls();
 }

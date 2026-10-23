@@ -47,6 +47,7 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | Retouch repairs are shared by HDR/SDR and run before crop/rotation and denoise. Content-dependent selections see the repaired source. After repair changes, show Rematch required and retain existing SDR Match controls until an explicit Rematch. The current Match materializes editable controls, not a separate baked photo; imported authored SDR remains independent until explicitly replaced through Match. | Steve, 2026-10-22 |
 | The inspected v3 PatchMatch examples are accepted for proceeding with implementation. Skip further natural-dust study work; Steve will test natural dust manually when the tool and settings exist. This is not general photographic validation. | Steve, 2026-10-22 |
 | Smoother sun and bright-sky gradients: prototype an AgX-style **Attenuate** Highlight Color mode beside the existing modes so Steve can switch between them, with an Attenuation control; the existing modes stay. Judged by eye on HDR crops (sunset IMG_3129), not by hue metrics. | Steve, 2026-10-22 |
+| Control Panel uses Global / Local / Retouch modes, a shared HDR grade / SDR grade folder choice and separate Match action. Section numbers are removed; disclosures use triangles. Local tools create adjustments directly and Erase moves into Brush settings. Retouch gets its own panel. | Steve, 2026-10-23 |
 | Slider drags make one undo step per gesture. | 2026-08 |
 | Only the current project schema is accepted; older projects are rejected with a message. No migration before 1.0. | 2026-10 |
 
@@ -147,6 +148,28 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   judgement on real photos, whether it becomes the default, and the SDR look
   (not reviewed). See the
   [technical reference](../../technical/highlight-compression.md#attenuate-agx-style-prototype).
+
+### Control Panel modes — first implementation (October 23, 2026)
+
+HSL was fast-forwarded into local main at af4403f on Steve's instruction.
+The Control Panel now has Global, Local and Retouch modes, shared folder tabs
+and Match action, unnumbered triangle disclosures, and Color sliders / Color
+wheels display names. Viewer tools end on mode changes. Local settings have
+fold-outs, a four-tool strip and More menu. Retouch uses instrument sliders,
+folded Advanced settings, newest-first repairs and selected-row Retry/Remove.
+Existing processing, saved fields, bounds and Match actions are retained.
+
+Still open: the unused-adjustment conversion/removal and undo lifecycle.
+Luma currently creates a valid default-range mask immediately; Steve has been
+asked whether it stays unused until a range edit/sample or counts as used on
+creation. Do not claim the control-panel brief complete or archive it yet.
+Interaction-driver updates, new lifecycle checks and real-app screenshots are
+also pending. Tests are deferred until after Steve tunes HSL, explicitly
+requested October 23; only JavaScript syntax and diff whitespace were checked.
+All eight reference PNGs were reviewed. The reference server responds on
+127.0.0.1:8139; Codex queued its browser tab, but this chat has no controllable
+browser surface for rendered inspection or app screenshots. HSL design and
+real-photo review remain after the control-panel work. Heal/Clone remain open.
 
 ## 5. Open work, in order
 

@@ -20,8 +20,8 @@ These strings predate the title-tooltip policy. They are recorded here for centr
 
 | ID | Trigger | Copy-ready tooltip text |
 |---|---|---|
-| `controls.hdr_rendition` | HDR Controls | Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it. |
-| `controls.sdr_rendition` | SDR Controls | Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see. Double-click any value to type it. |
+| `controls.hdr_rendition` | HDR grade | Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it. |
+| `controls.sdr_rendition` | SDR grade | Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see. Double-click any value to type it. |
 | `preview.high_resolution` | High-res Preview | Uses more GPU memory for a larger preview. Export quality is unchanged. |
 | `sdr.highlight_compression.mode` | Mode help | Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient. |
 | `sdr.highlight_compression.color` | Highlight Color help | Smooth color rolloff gently compresses each sRGB channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white. |
@@ -49,3 +49,15 @@ Trigger delay: 2 seconds on the PREVIEW WINDOW title hover. The same tooltip app
 | ID | Title / state | Copy-ready tooltip text |
 |---|---|---|
 | `preview.window.shared` | Preview Window · HDR or SDR | Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side. |
+
+## Control Panel modes (October 23, 2026)
+
+| ID | Trigger | Copy-ready tooltip text |
+|---|---|---|
+| `local.new_brush` | Brush tool | New brush adjustment |
+| `local.new_gradient` | Linear gradient tool | New linear gradient adjustment |
+| `local.new_luma` | Luma range tool | New luma range adjustment |
+| `local.new_path` | Path tool | New path adjustment |
+| `retouch.heal_soon` | Heal · Soon | Not built yet |
+| `retouch.clone_soon` | Clone · Soon | Not built yet |
+| `retouch.retry` | Selected repair Retry | Retry with next seed |

@@ -6,6 +6,7 @@
   <title>HDR Finisher</title>
   <link rel="icon" type="image/svg+xml" href="/static/assets/brand/hdr-finisher-favicon-small.svg">
   <script src="/static/theme-startup.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><link rel="stylesheet" href="/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__"><link rel="stylesheet" href="/static/hsl.css?v=__HDR_FINISHER_ASSET_VERSION__">
+  <link rel="stylesheet" href="/static/control-panel.css?v=__HDR_FINISHER_ASSET_VERSION__">
 </head>
 <body>
   <header class="window-chrome" aria-label="Application menu">
@@ -588,6 +589,11 @@
           <h1 class="panel-title">Control Panel</h1>
         </div>
         <span id="grade-modified-summary" class="status-text muted">Default</span>
+        <div class="control-mode-switch proof-preview-switch" role="tablist" aria-label="Control Panel mode">
+          <button id="grade-mode-global" data-control-mode="global" type="button" role="tab" aria-selected="true" aria-controls="control-mode-global" class="active">Global</button>
+          <button id="grade-mode-local" data-control-mode="local" type="button" role="tab" aria-selected="false" aria-controls="control-mode-local" tabindex="-1">Local</button>
+          <button id="grade-mode-retouch" data-control-mode="retouch" type="button" role="tab" aria-selected="false" aria-controls="control-mode-retouch" tabindex="-1">Retouch</button>
+        </div>
       </div>
 
       <section id="raw-settings-section" class="disclosure-panel raw-development-group module-unavailable" aria-disabled="true">
@@ -693,64 +699,52 @@
         </div>
       </section>
 
-      <section class="control-group collapsed local-adjustments-group" id="local-adjustments-group" data-group="local-adjustments">
-        <div class="control-group-header">
-          <button class="group-toggle" id="grade-mode-local" type="button" aria-expanded="false">
-            Local Adjustments
-          </button>
-          <button id="local-adjustments-bypass" class="section-bypass text-button" type="button" data-section-path="shared.local_adjustments_enabled" aria-pressed="true" aria-label="Toggle Local Adjustments">&#9673;</button>
-        </div>
+      <section class="local-adjustments-group" id="local-adjustments-group" data-group="local-adjustments">
         <div id="local-adjustments-panel" class="control-group-body local-adjustments-panel" aria-label="Local adjustments">
         <section class="retouch-panel" aria-label="Retouch">
-          <div class="local-section-heading">Retouch · Inpaint prototype</div>
-          <button id="retouch-brush" type="button" aria-pressed="false">Inpaint brush</button>
-          <p class="helper">Shared by HDR and SDR. Paint a small dust spot at any zoom. Heal and Clone are not built.</p>
-          <div class="retouch-settings">
-            <label>Size · native px (1–64) <input id="retouch-size" type="number" min="1" max="64" step="1" value="12"></label>
-            <label>Hardness · % <input id="retouch-hardness" type="number" min="0" max="100" value="75"></label>
-            <label>Search · native px <input id="retouch-search" type="number" min="32" max="256" step="16" value="96"></label>
-            <label>Patch radius <input id="retouch-patch" type="number" min="1" max="5" value="3"></label>
-            <label>Iterations <input id="retouch-iterations" type="number" min="1" max="12" value="6"></label>
-            <label>Seed <input id="retouch-seed" type="number" min="0" max="4294967295" value="20261021"></label>
+          <div class="control-shared-label">HDR + SDR · before crop</div>
+          <div class="retouch-content">
+          <div class="proof-preview-switch retouch-mode-switch" role="group" aria-label="Retouch tool">
+            <button id="retouch-brush" type="button" aria-pressed="false">Inpaint</button>
+            <button type="button" disabled title="Not built yet">Heal <small>Soon</small></button>
+            <button type="button" disabled title="Not built yet">Clone <small>Soon</small></button>
+          </div><div class="control-row instrument-slider-control"><div class="control-heading"><label for="retouch-size">Size · native px</label><output id="retouch-size-value">12 px</output></div><input id="retouch-size" type="range" min="1" max="64" step="1" value="12"></div><div class="control-row instrument-slider-control"><div class="control-heading"><label for="retouch-hardness">Hardness</label><output id="retouch-hardness-value">75%</output></div><input id="retouch-hardness" type="range" min="0" max="100" step="1" value="75"></div><details class="control-foldout" id="retouch-advanced"><summary><span>Advanced</span><span id="retouch-advanced-summary" class="foldout-summary">Default</span></summary><div class="control-foldout-body"><div class="control-row instrument-slider-control"><div class="control-heading"><label for="retouch-search">Search · native px</label><output id="retouch-search-value">96 px</output></div><input id="retouch-search" type="range" min="32" max="256" step="16" value="96"></div><div class="control-row instrument-slider-control"><div class="control-heading"><label for="retouch-patch">Patch radius</label><output id="retouch-patch-value">3 px</output></div><input id="retouch-patch" type="range" min="1" max="5" step="1" value="3"></div><div class="control-row instrument-slider-control"><div class="control-heading"><label for="retouch-iterations">Iterations</label><output id="retouch-iterations-value">6</output></div><input id="retouch-iterations" type="range" min="1" max="12" step="1" value="6"></div><label class="retouch-seed">Seed <input id="retouch-seed" type="number" min="0" max="4294967295" value="20261021"></label>
+          <p class="helper">New settings apply to your next stroke. Select a repair and press Retry to redo it.</p></div></details>
+          <div class="local-section-heading" id="retouch-repair-count">Repairs · 0</div>
+          <ol id="retouch-list" class="local-adjustment-list local-stack-surface" aria-label="Shared repairs"></ol>
+          <div class="retouch-status-row"><p id="retouch-status" class="helper" role="status">Paint a small spot to repair it.</p><button id="retouch-cancel" type="button" hidden>Cancel</button></div>
           </div>
-          <div class="local-action-row">
-            <button id="retouch-apply" type="button">Apply settings</button>
-            <button id="retouch-retry" type="button">Retry · next seed</button>
-            <button id="retouch-cancel" type="button" disabled>Cancel repair</button>
-          </div>
-          <p id="retouch-status" class="helper" role="status">Choose Inpaint brush, then paint a small spot.</p>
-          <ol id="retouch-list" aria-label="Shared repairs"></ol>
         </section>
-        <div class="local-section-heading">Mask Tools</div>
+        <div class="control-shared-label">New adjustment</div>
         <div class="local-tool-strip" role="toolbar" aria-label="Choose a local mask tool">
-          <button class="local-tool-brush" type="button" data-local-tool="brush" aria-pressed="false" title="Select Brush for a new adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Brush</span></button>
-          <button class="local-tool-erase" id="local-eraser" type="button" aria-pressed="false" title="Paint subtraction strokes on the selected brush mask"><span class="local-tool-icon" aria-hidden="true"></span><span>Erase</span></button>
-          <button class="local-tool-gradient" type="button" data-local-tool="linear_gradient" aria-pressed="false" title="Select Gradient for a new adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Gradient</span></button>
-          <button class="local-tool-luma" type="button" data-local-tool="luminance_range" aria-pressed="false" title="Select Luma for a new adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Luma</span></button>
-          <button class="local-tool-path" type="button" data-local-tool="path" aria-pressed="false" title="Select Path for a new adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Path</span></button>
+          <button class="local-tool-brush" type="button" data-local-tool="brush" aria-pressed="false" title="New brush adjustment" aria-label="New brush adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Brush</span></button>
+          <button id="local-eraser" type="button" aria-pressed="false">Erase</button>
+          <button class="local-tool-gradient" type="button" data-local-tool="linear_gradient" aria-pressed="false" title="New linear gradient adjustment" aria-label="New linear gradient adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Gradient</span></button>
+          <button class="local-tool-luma" type="button" data-local-tool="luminance_range" aria-pressed="false" title="New luma range adjustment" aria-label="New luma range adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Luma</span></button>
+          <button class="local-tool-path" type="button" data-local-tool="path" aria-pressed="false" title="New path adjustment" aria-label="New path adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Path</span></button>
         </div>
         <div class="local-overlay-actions">
-          <button id="local-show-mask" class="local-overlay-toggle" type="button" aria-pressed="false"><span class="local-overlay-icon" aria-hidden="true"></span><span>Show overlay</span></button>
+          <button id="local-show-mask" aria-label="Show mask overlay" class="local-overlay-toggle" type="button" aria-pressed="false"><span class="local-overlay-icon" aria-hidden="true"></span><span>Show overlay</span></button>
           <span class="local-overlay-color-control">
             <button id="local-overlay-color-button" class="local-overlay-color-button" type="button" aria-label="Choose overlay color"><span id="local-overlay-color-swatch" class="local-overlay-color-swatch" aria-hidden="true"></span><span>Overlay color</span></button>
             <input id="local-overlay-color" type="color" value="#ff263d" tabindex="-1" aria-hidden="true">
           </span>
         </div>
         <div class="local-stack-heading">
-          <span>Adjustments</span>
+          <span>Masks · HDR + SDR</span><button id="local-adjustments-bypass" class="section-bypass text-button" type="button" data-section-path="shared.local_adjustments_enabled" aria-pressed="true" aria-label="Toggle Local Adjustments">&#9673;</button>
         </div>
         <div class="local-stack-surface">
           <ol id="local-adjustment-list" class="local-adjustment-list" aria-label="Local adjustment stack"></ol>
-          <div id="local-empty" class="local-empty">Choose a mask tool, then press + — or press + first and pick a tool.</div>
+          <div id="local-empty" class="local-empty">Choose a mask tool to start an adjustment.</div>
         </div>
         <div id="local-mask-footer-actions" class="local-mask-footer-actions local-mask-top-actions hidden">
           <button id="local-gizmo-toggle" type="button" aria-pressed="false">Hide gizmo</button>
           <button id="local-invert" type="button" aria-pressed="false">Invert mask</button>
         </div>
         <div class="local-action-row local-stack-primary-actions">
-          <button id="local-duplicate" type="button"><span class="local-duplicate-icon" aria-hidden="true"></span><span class="local-action-label">Duplicate</span></button>
+          <button id="local-duplicate" type="button" aria-label="Duplicate selected local adjustment" title="Duplicate selected local adjustment"><span class="local-duplicate-icon" aria-hidden="true"></span><span class="local-action-label">Duplicate</span></button>
           <button id="local-delete" class="local-stack-icon-button" type="button" aria-label="Remove selected local adjustment" title="Remove selected local adjustment">−</button>
-          <button id="local-add-adjustment" class="local-stack-icon-button" type="button" aria-label="Add local adjustment" title="Add local adjustment">+</button>
+
           <button id="local-move-up" type="button" aria-label="Move local adjustment up" title="Move local adjustment up"><span class="local-move-up-icon" aria-hidden="true"></span></button>
           <button id="local-move-down" type="button" aria-label="Move local adjustment down" title="Move local adjustment down"><span class="local-move-down-icon" aria-hidden="true"></span></button>
         </div>
@@ -760,11 +754,7 @@
           </div>
           <div id="local-gradient-controls" class="local-gradient-controls hidden" aria-live="polite"></div>
           <div class="local-lane-folder">
-            <div class="local-section-heading local-controls-heading">Local Adjustment Controls</div>
-            <div class="local-lane-switch" role="tablist" aria-label="Local grade rendition">
-              <button type="button" role="tab" data-local-lane="hdr" class="active" aria-selected="true"><strong>HDR</strong><span>Local grade</span></button>
-              <button type="button" role="tab" data-local-lane="sdr" aria-selected="false"><strong>SDR</strong><span>Local grade</span></button>
-            </div>
+            <div class="local-grade-folder-body">
             <div class="local-grade-controls">
               <section class="local-grade-section" data-local-grade-section="light" aria-labelledby="local-light-heading">
                 <div class="local-mask-subpanel-heading">
@@ -812,6 +802,7 @@
               <div class="control-heading"><label for="local-opacity">Adjustment opacity</label><output id="local-opacity-value">100%</output></div>
               <input id="local-opacity" type="range" min="0" max="1" step="0.01" value="1">
             </div>
+          </div>
           </div>
         </div>
         </div>
@@ -882,11 +873,11 @@
       <div class="lane-folder-shell">
       <div class="lane-switch" role="tablist" aria-label="Active rendition">
         <button id="view-hdr" class="active" data-kind="hdr" type="button" role="tab" aria-selected="true" aria-labelledby="hdr-controls-label" aria-describedby="hdr-controls-tooltip">
-          <span id="hdr-controls-label">HDR Controls</span><span class="modified-indicator" aria-hidden="true"></span>
+          <span id="hdr-controls-label">HDR grade</span><span class="modified-indicator" aria-hidden="true"></span>
           <span id="hdr-controls-tooltip" class="title-tooltip lane-title-tooltip" role="tooltip">Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it.</span>
         </button>
         <button id="view-sdr" data-kind="sdr" type="button" role="tab" aria-selected="false" aria-labelledby="sdr-controls-label" aria-describedby="sdr-controls-tooltip">
-          <span id="sdr-controls-label">SDR Controls</span><span class="modified-indicator" aria-hidden="true"></span>
+          <span id="sdr-controls-label">SDR grade</span><span class="modified-indicator" aria-hidden="true"></span>
           <span id="sdr-controls-tooltip" class="title-tooltip lane-title-tooltip" role="tooltip">Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see. Double-click any value to type it.</span>
         </button>
       </div>
@@ -1032,7 +1023,7 @@
 
         <section class="control-group collapsed" data-group="hdr-color">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="false">Color <span data-modified-count="hdr-color">Default</span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Color sliders <span data-modified-count="hdr-color">Default</span></button>
             <button class="section-bypass text-button" type="button" data-section-path="hdr.color_section_enabled" aria-pressed="true" aria-label="Toggle Color preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-color">Reset</button>
           </div>
@@ -1218,7 +1209,7 @@
 
         <section class="control-group collapsed" data-group="sdr-color">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="false">Color <span data-modified-count="sdr-color"></span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Color sliders <span data-modified-count="sdr-color"></span></button>
             <button class="section-bypass text-button" type="button" data-section-path="sdr.color_section_enabled" aria-pressed="true" aria-label="Toggle SDR Color preview">&#9673;</button>
             <button id="sdr-reset-colors" class="group-reset text-button" type="button" data-reset-group="sdr-color">Reset</button>
           </div>
@@ -1324,7 +1315,7 @@
 
       <section class="control-group collapsed color-grading-group" data-group="color-grading">
         <div class="control-group-header">
-          <button class="group-toggle" type="button" aria-expanded="false">Color Grading <span id="color-grading-state">Default</span></button>
+          <button class="group-toggle" type="button" aria-expanded="false">Color wheels <span id="color-grading-state">Default</span></button>
           <button class="section-bypass text-button" type="button" data-section-path="current.color_grading_section_enabled" aria-pressed="true" aria-label="Toggle Color Grading preview">&#9673;</button>
           <button id="color-grading-reset" class="group-reset text-button" type="button">Reset</button>
         </div>
@@ -1946,6 +1937,7 @@
   <script src="/static/highlight-controls.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/group-presets.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/denoise-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/control-panel.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/local-adjustments-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/retouch-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/mask-controls.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

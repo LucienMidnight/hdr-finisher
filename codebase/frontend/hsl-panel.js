@@ -98,7 +98,7 @@ function hslAddCustom(ui){
 }
 function renderHslPanels(){
   if(!hslUI.panels.length)return;
-  const identity=`${state.session?.session_id}:${state.currentView}:${selectedLocal()?.id}`;
+  const identity=`${state.session?.session_id}:${state.currentView}:${state.gradeMode}:${selectedLocal()?.id}`;
   if(hslUI.identity!==identity){hslUI.identity=identity;hslUI.picker=null;hslUI.stroke=null;hslClearSelection();}
   for(const ui of hslUI.panels){
     const signature=JSON.stringify([hslOwner(ui)?.hsl,hslOwner(ui)?.hsl_section_enabled,ui.channel,ui.range,Boolean(state.session)]);

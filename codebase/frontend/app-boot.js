@@ -1,4 +1,5 @@
 async function boot() {
+  initializeControlPanel();
   initializeHslPanels();
   initializeLocalOverlayColor();
   initializePreviewPreferences();
@@ -878,7 +879,7 @@ function bindEvents() {
         schedulePerspectiveDraftPreview();
       }
       else if (group.dataset.group !== "perspective" && !collapsed) abandonPerspectiveDraft();
-      if (group === els.localAdjustmentGroup) setGradeMode(collapsed ? "global" : "local");
+
       renderVignetteCenter();
     });
   });
