@@ -304,29 +304,38 @@ def _apply_raw_corrections(
         decoded.developed = np.empty((0,), dtype=np.uint16)
         if progress:
             progress("dng_opcodes", "Experimental DNG Import: applying mandatory DNG operations")
-        camera_linear, opcode_diagnostics = apply_opcode_list3(
-            camera_linear,
-            sorted(
-                (*dng_inspection.required_opcodes, *dng_inspection.optional_opcodes),
-                key=lambda opcode: opcode.index,
-            ),
-            cancelled=cancelled, progress=progress,
-        )
-        if progress: progress("dng_colour", "Converting DNG colour")
-        color_metadata = color_metadata_from_mapping(dng_inspection.metadata)
-        transform = build_color_transform(color_metadata)
-        transform_normalized_to_acescg_in_place(
-            camera_linear, transform, color_metadata.baseline_exposure, cancelled=cancelled
-        )
-        image = np.ascontiguousarray(
-            crop_and_orient(camera_linear, dng_inspection.metadata), dtype=np.float32
-        )
+        from .dng_gpu import correct as correct_gpu
+        image, gpu_diagnostics = correct_gpu(camera_linear, dng_inspection, cancelled)
+        _raise_if_cancelled(cancelled)
+        if image is None:
+            camera_linear, opcode_diagnostics = apply_opcode_list3(
+                camera_linear,
+                sorted(
+                    (*dng_inspection.required_opcodes, *dng_inspection.optional_opcodes),
+                    key=lambda opcode: opcode.index,
+                ),
+                cancelled=cancelled, progress=progress,
+            )
+            if progress: progress("dng_colour", "Converting DNG colour")
+            color_metadata = color_metadata_from_mapping(dng_inspection.metadata)
+            transform = build_color_transform(color_metadata)
+            transform_normalized_to_acescg_in_place(
+                camera_linear, transform, color_metadata.baseline_exposure, cancelled=cancelled
+            )
+            image = np.ascontiguousarray(
+                crop_and_orient(camera_linear, dng_inspection.metadata), dtype=np.float32
+            )
+        else:
+            opcode_diagnostics = gpu_diagnostics["operations"]
+        from .library_diagnostics import log
+        log("dng_correction", **gpu_diagnostics)
         opcode_audit = {
             "rawpy_version": str(getattr(rawpy, "__version__", "unknown")),
             "libraw_version": ".".join(map(str, rawpy.libraw_version)),
             "decoder_behavior": "verified_ignores_opcode_list3",
             "application_stage": "camera_linear_after_demosaic_before_dng_color_transform",
             "operations": list(opcode_diagnostics),
+            "gpu_correction": gpu_diagnostics,
         }
     elif decoded.bridge_metadata is not None:
         camera_linear = _normalize_camera_rgb_float32(

@@ -255,12 +255,80 @@ measurements are from version 5, not an assertion of identical fractional
 interpolation in the older OpenCV 4.13 documentation linked in the brief.
 
 Library GPU DNG preparation is now bounded and much faster (see Photo Library).
-Grade's DNG import continues through this correct CPU fallback; reusable GPU
-Grade integration was not attempted here because it needs its own source-job
-and delivery handoff. Unsupported mandatory operations, GainMap-before-warp,
+This CPU optimization preceded the Grade GPU integration below.
+Unsupported mandatory operations, GainMap-before-warp,
 colour conversion, crop/orientation and the duplicate-Lensfun guard are unchanged.
 Validation: 590 Node passed; 2,468 Python passed, 3 skipped. No export/Proof shader or output
 contract changed; the CPU optimization preserves the existing numerical result.
+
+**October 24, 2026: Grade GPU DNG correction (built)**
+
+Grade's actual source import now submits supported mosaiced DNG corrections to
+the existing delivery worker. The shared Library planner routes by operations,
+including the Leica X2 three-plane WarpRectilinear; it never checks camera brand.
+Mandatory unsupported instructions still reach the strict CPU route and cannot
+be silently skipped. Ordered GainMaps precede warp, DNG colour conversion and
+BaselineExposure. Crop/orientation and the duplicate-Lensfun guard are retained.
+A signed-colour kernel variant leaves gamut projection and RAW calibration to
+the existing Grade loader, so calibration is applied once.
+
+Delivery uses the existing source-job cancellation, priority context (Grade 0,
+Library 15, batch 20), preemption/retry, shared reservation and tile permits.
+The native output returns through request-owned shared memory; cancellation,
+missing renderer, insufficient memory and renderer failure release owned data.
+Cancellation exits the job; failures preserve original samples for CPU fallback. GPU allocations are bounded;
+full decoded input, transfer copies and corrected output still use host memory.
+Decode/demosaic remain on the CPU. The decoder cache version invalidates prior
+source mip levels. No perspective controls or DNG export were added.
+
+Three-run medians (seconds; tracked GPU buffers, not whole-process memory):
+
+| Photo | CPU first/exact frame | GPU first/exact frame | GPU correction total | GPU peak / reservation |
+| --- | --- | --- | --- | --- |
+| Leica X2, 16 MP | 19.99 / 20.01 | 3.75 / 3.76 | 1.99 | 14.78 / 32 MiB |
+| DJI_0071-2, 48 MP | 61.24 / 61.26 | 8.79 / 8.80 | 5.65 | 20.35 / 32 MiB |
+
+CPU decode medians were 0.593 / 1.203 s (Leica / DJI); GainMap 0 / 4.782 s,
+warp 18.234 / 53.235 s and colour 0.125 / 0.296 s. GPU-route CPU decode was
+0.640 / 1.171 s. GPU preparation/handoff before queueing was 0.056 / 0.154 s;
+upload 0.123 / 0.494 s, GainMap 0 / 0.494 s, warp/colour 0.183 / 0.324 s,
+and readback 0.704 / 1.889 s. Input handoff/initialization was 0.229 / 0.656 s,
+output handoff 0.315 / 0.863 s, host result copy 0.124 / 0.407 s and queue
+estimate 0.098 / 0.040 s. Stage medians need not sum to the median total.
+The first Leica GPU run waited 2.287 s in the queue/initialization boundary;
+its 6.39 s first frame remains included in the median rather than discarded.
+
+Validation uses `tests/grade-dng.js --measure`: hidden Playwright hardware
+WebGPU at 2560 x 1440, disposable photo copies, isolated application data, and
+persistent source mip caching disabled so each route supplies its own pixels.
+The initial comparison reused cached CPU proxies and was discarded; the final
+run also provides fresh, comparable first-frame timings. Timing tolerance is
+10%, with three paired runs and alternating CPU/GPU order on the shared machine.
+Library timing is not a Grade baseline. The external CC0 Leica acquisition,
+source URL, SHA256 and dimensions are recorded in
+`codebase/tests/fixtures/dng-real-samples.json`; the large photo is not committed.
+
+Finished comparisons use independently generated 2560-long-edge float32
+Grade source proxies and each import's actual starting adjustments, through
+the existing CPU finishing and perceptual comparator. Whole picture and outer
+eight-pixel borders pass in all three pairs for each photo. Worst mean / p99.9
+across repeats and regions: Leica SDR Delta E 2000 0.000318 / 0.002141,
+HDR Delta E ITP 0.001481 / 0.011505; DJI SDR 0.000640 / 0.003357,
+HDR 0.000829 / 0.004944. Limits stay mean <1 and p99.9 <=3; no hard real-image
+pixel maximum was introduced. The shared native synthetic geometry check stays
+<0.0001 (57 cases, worst 0.00000859). This tests import geometry/colour and
+finished proxy pictures, not a new DNG export or full-native encoded delivery.
+
+Fast checks: 590 Node passed; 2,480 Python passed, 3 skipped.
+Focused checks: headless `grade-dng.js --measure` and `library-dng-warp.js`
+(real Leica plus final geometry), run serially. Twelve bridge tests cover
+priority, cleanup, cancellation before/after reply, preemption, signed samples,
+CPU selection, renderer failure and invalid/incomplete output. Independent
+source-contract review found the early gamut-projection issue; the signed
+Grade variant and geometry probes cover its correction. Ignored evidence:
+`codebase/output/grade-dng/1792774906653/{results,summary,comparison}.json`,
+`codebase/output/library-dng-warp/1792774852959/results.json` and
+`codebase/output/dng-grade/`. No visible window, broad sweep, push or installer.
 
 **Not built**
 

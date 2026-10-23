@@ -1,0 +1,18 @@
+{
+  "leica_x2": {
+    "filename": "Leica-X2-L1021324.DNG",
+    "local_path": "D:/Photos/HDR Test Images/Leica-X2-L1021324.DNG",
+    "source": "https://raw.pixls.us/getfile.php/882/nice/Leica%20-%20X2%20-%2012bit%20%283%3A2%29.DNG",
+    "sample_id": 882,
+    "license": "CC0 / public domain (raw.pixls.us sample; user-verified acquisition)",
+    "sha256": "a67eca6271afb10510ffc9cf998b641d0e8a0ebfa4c779a7bc0bfed5d28b62dd",
+    "bytes": 24453726,
+    "sensor_dimensions": [
+      4944,
+      3272
+    ],
+    "mandatory": "OpcodeList3 WarpRectilinear, three coefficient sets",
+    "checked": "2026-10-23",
+    "storage": "External fixture; never commit the photo. Tests use disposable output copies."
+  }
+}

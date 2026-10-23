@@ -3950,6 +3950,13 @@
       "launch": {"method": "electron"}
     },
     {
+      "path": "tests/grade-dng.js",
+      "areas": ["library","preview"],
+      "tier": "area",
+      "protects": "Real Leica/DJI Grade DNG import preserves finished SDR/HDR and borders through bounded GPU correction and CPU fallback.",
+      "launch": {"method": "node"}
+    },
+    {
       "path": "tests/library-dng-warp.js",
       "areas": ["library"],
       "tier": "core",

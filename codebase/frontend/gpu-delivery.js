@@ -41,6 +41,31 @@
       await initialize();
       if(gpu.adapterInfo?.fallback)throw Error("No hardware GPU is available.");
       gpu.resetSession(job.id);
+      if(job.operation === "dng_correction") {
+        const required=HDRLibraryGpuRaw.rawBudget(job.dng,[100000]);
+        if(required>job.budget)throw Error("GPU DNG correction exceeds the available shared memory budget.");
+        const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:required})});
+        if(!lease.ok)throw Error("Grade needs the shared GPU memory budget.");
+        await permit();
+        const response=await fetch(`/api/delivery/gpu/${job.id}/dng-source`);
+        if(!response.ok)throw Error("GPU DNG input handoff failed.");
+        const body=await response.arrayBuffer();
+        const inputHandoffMs=performance.now()-started;
+        if(body.byteLength!==job.dng.mosaic_bytes)throw Error("Incomplete DNG input.");
+        const result=await HDRLibraryRGB.develop({meta:job.dng,mosaic:new Uint8Array(body),
+          edges:[100000],beforeSubmit:permit,memoryBudget:required});
+        await permit();
+        const handingOff=performance.now();
+        const stored=await fetch(`/api/delivery/gpu/${job.id}/pixels/dng`,{method:"POST",body:new Blob(result.reduced[100000].planes)});
+        if(!stored.ok)throw Error("GPU DNG result handoff failed.");
+        const diagnostics={timings_ms:result.timings,memory_peak_bytes:result.memory_peak_bytes,
+          reserved_bytes:required,tiles:result.dng_tiles,max_source_bytes:result.dng_max_source_bytes,
+          input_handoff_and_initialization_ms:inputHandoffMs,output_handoff_ms:performance.now()-handingOff};
+        await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({dng_diagnostics:diagnostics,timings_ms:result.timings,total_ms:performance.now()-started})});
+        continue;
+      }
       if(job.operation === "edge_colour") {
         const required=job.width*job.height*44+64*1024*1024;
         if(required>job.budget)throw Error(`GPU edge colour needs ${required} bytes; shared budget has ${job.budget}.`);

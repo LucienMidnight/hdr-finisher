@@ -97,6 +97,9 @@ window.HDRLibraryRGB = (() => {
     .replace('if (t.x % st == 0 && t.y % st == 0)', 'if ((t.x+i32(p.dispatch.y)) % st == 0 && (t.y+i32(p.dispatch.x)) % st == 0)')
     .replace('f32(i%p.dims.x),f32(i/p.dims.x)', 'f32(i%p.dims.x)+d.ax.w,f32(i/p.dims.x)+d.ay.w')
     .replace('rgbInput[(y*d.size.x+x)*3u+channel]', 'rgbInput[((y-d.size.w)*u32(p.lensc.x)+(x-d.size.z))*3u+channel]');
+  // Grade owns its import gamut mapping and calibration after this handoff.
+  const DNG_TILE_GRADE=DNG_TILE_RGB.replace(
+    'if (lo < 0.0)', 'if (false && lo < 0.0)');
   const DNG_GAIN=COMMON+`
     struct DNG { coeff:array<vec4<f32>,6>, center:vec4<f32>, ax:vec4<f32>, ay:vec4<f32>, size:vec4<u32> };
     @group(0) @binding(1) var<storage,read_write> camera:array<f32>;
@@ -172,7 +175,7 @@ window.HDRLibraryRGB = (() => {
     let pipelines=compiled.get(device);
     if(!pipelines){
       pipelines={REDUCE:shared.pipelines.REDUCE};
-      for(const [name,code] of Object.entries({RGB,RGB_SDR,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GAIN,DNG_LINEAR}))
+      for(const [name,code] of Object.entries({RGB,RGB_SDR,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GRADE,DNG_TILE_GAIN,DNG_LINEAR}))
         pipelines[name]=await device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}});
       compiled.set(device,pipelines);
     }
@@ -381,7 +384,7 @@ window.HDRLibraryRGB = (() => {
         await permit();
         if(gains)await timed("gain_map",async()=>dispatch("DNG_TILE_GAIN",[uniform,input,dng,gains],box.width,box.height));
         await permit();
-        await timed("warp_colour_measure",async()=>dispatch("DNG_TILE_RGB",[uniform,input,dng,null,...out,pk,sample],tw,th));
+        await timed("warp_colour_measure",async()=>dispatch(meta.preserve_signed?"DNG_TILE_GRADE":"DNG_TILE_RGB",[uniform,input,dng,null,...out,pk,sample],tw,th));
         await permit();
         await timed("readback",async()=>{
           for(let c=0;c<3;c++){const a=await read(out[c]);for(let r=0;r<th;r++)planes[c].set(a.subarray(r*tw,(r+1)*tw),(y+r)*w+x);}

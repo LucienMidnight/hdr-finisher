@@ -41,7 +41,7 @@ EXR_COLOR_INTEROP_SPACES = {
 # Provenance for the persistent source mip cache (PRD 5.3). Bump either
 # constant when a change alters the decoded scene-linear pixels for the same
 # file; stale levels are then ignored and removed by version.
-SOURCE_DECODER_VERSION = "hdr-finisher-loader-fuji-dr-mode-v3"
+SOURCE_DECODER_VERSION = "hdr-finisher-loader-dng-gpu-v4"
 SOURCE_COLOR_TRANSFORM_VERSION = "acescg-negative-neutral-v2"
 
 # Display-P3 and sRGB share D65, so the hot-path linear conversion is a fixed
