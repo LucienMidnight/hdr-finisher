@@ -224,3 +224,33 @@ def test_cancel_arriving_before_queued_request_prevents_the_solve(photo):
     # A new attempt at the same document revision remains possible.
     edit(store, session, records=[record()], repair_request_id="retry-dust")
     assert len(session.repairs) == 1
+
+
+def test_new_and_removed_spots_cannot_change_completed_donors(photo, tmp_path):
+    store, session = photo
+    class CountingEngine:
+        count = 0
+        def solve(self, *args):
+            self.count += 1
+            return CpuInpaint().solve(*args)
+    engine = CountingEngine()
+    session.retouch_worker = RepairWorker(engine=engine, cache_bytes=0)
+    first = record()
+    second = first.model_copy(update={"id": "second", "recipe": first.recipe.model_copy(update={
+        "points": (first.recipe.points[0].model_copy(update={"x": .7}),)})})
+    edit(store, session, records=[first])
+    first_pixels = session.image[26:38, 34:46].copy()
+    edit(store, session, records=[first, second])
+    np.testing.assert_array_equal(session.image[26:38, 34:46], first_pixels)
+    assert engine.count == 2, "adding a defect must not re-solve completed repairs"
+    multi = tmp_path / "multi.hdrfinisher"
+    save_project(session, multi)
+    multi_pixels = session.image.copy()
+    edit(store, session, records=[first])
+    np.testing.assert_array_equal(session.image[26:38, 34:46], first_pixels)
+    assert engine.count == 2, "removing a defect must not re-solve completed repairs"
+    project = tmp_path / "stable.hdrfinisher"
+    save_project(session, project)
+    restored = open_project(store, project)
+    np.testing.assert_array_equal(restored.image, session.image)
+    np.testing.assert_array_equal(open_project(store, multi).image, multi_pixels)

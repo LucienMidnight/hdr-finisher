@@ -210,11 +210,18 @@ async function resetRepairSource(previousRepairs, documentState) {
   }
   renderLaneChrome();
   const renderer = state.gpuPreview;
+  const oldRepairs = JSON.parse(previousRepairs), newRepairs = documentState.repairs || [];
+  const changedRepairs = (from, to) => from.filter(record => !to.some(r =>
+    r.id === record.id && r.enabled === record.enabled && JSON.stringify(r.recipe) === JSON.stringify(record.recipe)));
+  const oldIds = new Set(oldRepairs.filter(r => r.enabled).map(r => r.id));
+  const newIds = new Set(newRepairs.filter(r => r.enabled).map(r => r.id));
+  const reordered = JSON.stringify(oldRepairs.filter(r => r.enabled && newIds.has(r.id)).map(r => r.id)) !==
+    JSON.stringify(newRepairs.filter(r => r.enabled && oldIds.has(r.id)).map(r => r.id));
   if (renderer) await HDRSourceTransport.refreshRepairs(renderer, {
     sessionId, editRevision: revision,
     sourceSize: [state.session.source.width, state.session.source.height],
     geometry: documentState.global_adjustments.shared.geometry,
-    records: [...JSON.parse(previousRepairs), ...(documentState.repairs || [])],
+    records: reordered ? [...oldRepairs, ...newRepairs] : [...changedRepairs(oldRepairs, newRepairs), ...changedRepairs(newRepairs, oldRepairs)],
     isCurrent: () => state.session?.session_id === sessionId && state.editRevision === revision,
   });
 }

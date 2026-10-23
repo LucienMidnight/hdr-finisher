@@ -9,14 +9,14 @@ import json
 import numpy as np
 
 from .retouch_jobs import RepairRevision, RepairWorker
-from .retouch_recipe import compose_repairs, prepare_repair, stroke_mask
+from .retouch_recipe import prepare_repair, stroke_mask
 
 
 def repair_identity(records):
     return json.dumps([r.model_dump(mode="json") for r in records], sort_keys=True, separators=(",", ":"))
 
 
-def build_repaired_source(session, records, checkpoint=lambda: None):
+def build_repaired_source(session, records, checkpoint=lambda: None, *, previous_records=None):
     base = session.retouch_original
     active = [record for record in records if record.enabled]
     if not active:
@@ -33,7 +33,43 @@ def build_repaired_source(session, records, checkpoint=lambda: None):
         safe = max(0, resources.available_ram_bytes - max(2 * GIB, int(resources.total_ram_bytes * .15)))
         if base.nbytes + 64 * 1024**2 > safe:
             raise ValueError("Not enough memory to publish this repair; free memory and try again")
-    masks = [(r.recipe.search_rect, stroke_mask(r.recipe, checkpoint) > 0) for r in active]
+    def signature(record):
+        return (record.enabled, record.recipe.model_dump_json())
+
+    def footprint(record):
+        recipe = record.recipe
+        width, height = recipe.source_size
+        radius = recipe.radius_px
+        xs = [p.x * width for p in recipe.points]
+        ys = [p.y * height for p in recipe.points]
+        return (max(0, int(np.floor(min(xs)-radius))), max(0, int(np.floor(min(ys)-radius))),
+                min(width, int(np.ceil(max(xs)+radius))), min(height, int(np.ceil(max(ys)+radius))))
+
+    incremental = previous_records is not None
+    if incremental:
+        old = {r.id: r for r in previous_records}
+        new = {r.id: r for r in records}
+        dirty = [footprint(r) for r in previous_records
+                 if r.enabled and (r.id not in new or signature(r) != signature(new[r.id]))]
+        dirty += [footprint(r) for r in records
+                  if r.enabled and (r.id not in old or signature(r) != signature(old[r.id]))]
+        # Reordering changes precedence in overlapping painted areas.
+        old_ids = {r.id for r in previous_records if r.enabled}
+        new_ids = {r.id for r in active}
+        if ([r.id for r in previous_records if r.enabled and r.id in new_ids] !=
+                [r.id for r in active if r.id in old_ids]):
+            dirty = [footprint(r) for r in (*previous_records, *records) if r.enabled]
+    else:
+        dirty = [(0, 0, base.shape[1], base.shape[0])]
+    dirty = list(dict.fromkeys(dirty))
+    if not dirty:
+        checkpoint()
+        return session.image
+
+    def intersects(a, b):
+        return a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
+
+    needed = [r for r in active if any(intersects(footprint(r), rect) for rect in dirty)]
     worker = session.retouch_worker
     if worker is None:
         worker = session.retouch_worker = RepairWorker()
@@ -43,23 +79,11 @@ def build_repaired_source(session, records, checkpoint=lambda: None):
         session.edit_revision)
     worker.set_current(token)
     patches = []
-    for index, record in enumerate(active):
+    for record in needed:
         checkpoint()
-
-        def read(t, l, b, r):
-            return compose_repairs(base[t:b, l:r], (l, t), patches)
-
-        def excluded(t, l, b, r):
-            result = np.zeros((b - t, r - l), dtype=bool)
-            # Completed earlier repairs are valid donors. Current and future
-            # known defects are excluded, including across search rectangles.
-            for (ml, mt, mr, mb), mask in masks[index:]:
-                x0, y0, x1, y1 = max(l, ml), max(t, mt), min(r, mr), min(b, mb)
-                if x0 < x1 and y0 < y1:
-                    result[y0-t:y1-t, x0-l:x1-l] |= mask[y0-mt:y1-mt, x0-ml:x1-ml]
-            return result
-
-        request = prepare_repair(record.recipe, read, read_excluded=excluded, checkpoint=checkpoint)
+        # Immutable original pixels and frozen donor footprints keep every
+        # completed correction independent of later additions/removals.
+        request = prepare_repair(record.recipe, lambda t, l, b, r: base[t:b, l:r], checkpoint=checkpoint)
         future, cancel = worker.submit(request, record.recipe.settings, token=token)
         # Waiting outside the session lock lets edits/cancel supersede work.
         from concurrent.futures import TimeoutError
@@ -71,15 +95,33 @@ def build_repaired_source(session, records, checkpoint=lambda: None):
                     break
                 except TimeoutError:
                     pass
-            patches.append(worker.accept(completion))
+            patch = worker.accept(completion)
+            mask = stroke_mask(record.recipe, checkpoint) > 0
+            ox = patch.origin[0] - record.recipe.search_rect[0]
+            oy = patch.origin[1] - record.recipe.search_rect[1]
+            ph, pw = patch.pixels.shape[:2]
+            patches.append((patch, mask[oy:oy+ph, ox:ox+pw]))
         except BaseException:
             cancel.set()
             raise
     result = np.empty_like(base)
+    source = session.image if incremental else base
     for top in range(0, base.shape[0], 128):
         checkpoint()
-        bottom = min(top + 128, base.shape[0])
-        result[top:bottom] = compose_repairs(base[top:bottom], (0, top), patches)
+        result[top:top+128] = source[top:top+128]
+    for left, top, right, bottom in dirty:
+        checkpoint()
+        window = result[top:bottom, left:right]
+        window[:] = base[top:bottom, left:right]
+        for patch, mask in patches:
+            px, py = patch.origin
+            ph, pw = mask.shape
+            x0, y0 = max(left, px), max(top, py)
+            x1, y1 = min(right, px+pw), min(bottom, py+ph)
+            if x0 < x1 and y0 < y1:
+                target = window[y0-top:y1-top, x0-left:x1-left]
+                patch_region = np.s_[y0-py:y1-py, x0-px:x1-px]
+                np.copyto(target, patch.pixels[patch_region], where=mask[patch_region][..., None])
     checkpoint()
     result.setflags(write=False)
     return result

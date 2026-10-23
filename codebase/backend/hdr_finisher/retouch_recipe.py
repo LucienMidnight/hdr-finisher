@@ -22,6 +22,14 @@ class RepairPoint(BaseModel):
     pressure: float = Field(default=1, ge=0, le=1, allow_inf_nan=False)
 
 
+class DonorExclusion(BaseModel):
+    """Frozen prior defect footprint; later gestures cannot alter this input."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    points: tuple[RepairPoint, ...] = Field(min_length=1, max_length=512)
+    radius_px: float = Field(ge=0.5, le=512, allow_inf_nan=False)
+    hardness: float = Field(ge=0, le=1, allow_inf_nan=False)
+
+
 class InpaintRecipe(BaseModel):
     """Serializable input for one gesture, independent of the project schema.
 
@@ -39,7 +47,8 @@ class InpaintRecipe(BaseModel):
     search_rect: tuple[StrictInt, StrictInt, StrictInt, StrictInt]
     points: tuple[RepairPoint, ...] = Field(min_length=1, max_length=512)
     radius_px: float = Field(default=8, ge=0.5, le=512, allow_inf_nan=False)
-    hardness: float = Field(default=0.75, ge=0, le=1, allow_inf_nan=False)
+    hardness: float = Field(default=0.1, ge=0, le=1, allow_inf_nan=False)
+    donor_exclusions: tuple[DonorExclusion, ...] = Field(default=(), max_length=256)
     settings: InpaintSettings = Field(default_factory=InpaintSettings)
 
     @model_validator(mode="after")
@@ -63,7 +72,7 @@ class InpaintRecipe(BaseModel):
         return self
 
 
-def stroke_mask(recipe: InpaintRecipe, checkpoint=lambda: None) -> np.ndarray:
+def stroke_mask(recipe: InpaintRecipe, checkpoint=lambda: None, *, footprint=None) -> np.ndarray:
     """Rasterize only the fixed native ROI, checking between capsules."""
     from .local_adjustments import _soft_disc, _soft_segment
     left, top, right, bottom = recipe.search_rect
@@ -71,27 +80,30 @@ def stroke_mask(recipe: InpaintRecipe, checkpoint=lambda: None) -> np.ndarray:
     yy, xx = np.mgrid[:bottom - top, :right - left].astype(np.float64)
     xx += 0.5
     yy += 0.5
-    points = [(p.x * width - left, p.y * height - top, p.pressure) for p in recipe.points]
+    brush = footprint or recipe
+    points = [(p.x * width - left, p.y * height - top, p.pressure) for p in brush.points]
     result = np.zeros(xx.shape, dtype=np.float32)
     if len(points) == 1:
         checkpoint()
         x, y, pressure = points[0]
         if pressure > 0:
-            result[:] = _soft_disc(xx, yy, x, y, recipe.radius_px * pressure, recipe.hardness)
+            result[:] = _soft_disc(xx, yy, x, y, brush.radius_px * pressure, brush.hardness)
     else:
         for first, second in zip(points, points[1:]):
             checkpoint()
-            radius = recipe.radius_px * max(0.05, (first[2] + second[2]) * 0.5)
+            radius = brush.radius_px * max(0.05, (first[2] + second[2]) * 0.5)
             # Only rasterize the capsule's bounds, especially for large brushes.
             x0 = max(0, int(np.floor(min(first[0], second[0]) - radius)))
             x1 = min(result.shape[1], int(np.ceil(max(first[0], second[0]) + radius)))
             y0 = max(0, int(np.floor(min(first[1], second[1]) - radius)))
             y1 = min(result.shape[0], int(np.ceil(max(first[1], second[1]) + radius)))
+            if x0 >= x1 or y0 >= y1:
+                continue
             region = np.s_[y0:y1, x0:x1]
-            segment = _soft_segment(xx[region], yy[region], *first[:2], *second[:2], radius, recipe.hardness)
+            segment = _soft_segment(xx[region], yy[region], *first[:2], *second[:2], radius, brush.hardness)
             np.maximum(result[region], segment, out=result[region])
     checkpoint()
-    if not 1 <= np.count_nonzero(result) <= NativeRepairInput.defect_pixels:
+    if footprint is None and not 1 <= np.count_nonzero(result) <= NativeRepairInput.defect_pixels:
         raise ValueError("Stroke must cover at least one native pixel")
     return result
 
@@ -101,7 +113,7 @@ def prepare_repair(recipe: InpaintRecipe, read_region, *, read_excluded=None,
     """Fetch exactly one bounded native window, never a resized preview.
 
     Readers take (top, left, bottom, right). read_region supplies interpreted
-    float32 working RGB, with preceding completed repairs already composed.
+    float32 working RGB from the immutable interpreted original source.
     Optional read_excluded supplies other known defects as a boolean window.
     The caller owns the source epoch check; this adapter owns its snapshots.
     """
@@ -116,6 +128,10 @@ def prepare_repair(recipe: InpaintRecipe, read_region, *, read_excluded=None,
     if pixels.shape != (*mask.shape, 3):
         raise ValueError("Source reader returned the wrong native window shape")
     excluded = read_excluded(top, left, bottom, right) if read_excluded else None
+    if recipe.donor_exclusions:
+        excluded = np.zeros(mask.shape, dtype=bool) if excluded is None else excluded.copy()
+        for footprint in recipe.donor_exclusions:
+            excluded |= stroke_mask(recipe, checkpoint, footprint=footprint) > 0
     checkpoint()
     large = (max(mask.shape) > MAX_REGION_EDGE or np.count_nonzero(mask) > MAX_DEFECT_PIXELS
              or np.count_nonzero(_box_sum(mask > 0, recipe.settings.patch_radius)) > MAX_TARGET_PATCHES)

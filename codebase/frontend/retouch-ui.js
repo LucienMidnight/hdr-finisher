@@ -47,6 +47,11 @@ function retouchRecipe(points) {
   return { schema_version: 1, mode: "inpaint", raster_version: "native-capsules-v1",
     source_size: [width, height], search_rect: [left, top, right, bottom], points,
     radius_px: v.radius, hardness: v.hardness,
+    donor_exclusions: (state.editDocument?.repairs || []).filter(r => r.enabled &&
+      r.recipe.search_rect[0] < right && r.recipe.search_rect[2] > left &&
+      r.recipe.search_rect[1] < bottom && r.recipe.search_rect[3] > top).map(r => ({
+        points: r.recipe.points, radius_px: r.recipe.radius_px, hardness: r.recipe.hardness,
+      })),
     settings: { patch_radius: v.patch, iterations: v.iterations, seed: v.seed, algorithm: "hdrf-patchmatch-cpu-v3" } };
 }
 
@@ -209,7 +214,10 @@ function bindRetouchEvents() {
     queueLocalMaskOverlayRender();
   });
   for (const name of ["size", "hardness"]) {
-    retouchInput(name).addEventListener("input", syncRetouchReadouts);
+    retouchInput(name).addEventListener("input", () => {
+      syncRetouchReadouts();
+      queueLocalMaskOverlayRender();
+    });
     retouchInput(name).addEventListener("change", syncRetouchReadouts);
   }
   bindSliderReadouts(document.querySelector(".retouch-panel"));
@@ -311,6 +319,7 @@ function retrySelectedRetouch() {
   if (!selected || retouchUI.busy) return;
   try {
     const recipe = retouchRecipe(selected.recipe.points);
+    recipe.donor_exclusions = selected.recipe.donor_exclusions || [];
     recipe.settings.seed = (selected.recipe.settings.seed + 1) >>> 0;
     void commitRetouch(records.map(r => r.id === selected.id ? { ...r, recipe } : r));
   } catch (error) { retouchMessage(error.message); }

@@ -33,6 +33,23 @@ async function centerPixel(page) {
     await page.waitForFunction(() => state.session && !state.importInProgress && document.body.dataset.workflow === "grade", null, { timeout: 120000 });
     await page.waitForFunction(() => state.gpuPreview?.available && state.gpuPreview?.lastPresentedFrame, null, { timeout: 60000 });
     await page.locator("#grade-mode-retouch").click();
+    assert.equal(await page.locator("#retouch-hardness").inputValue(), "10");
+    // Cursor changes size without another pointermove.
+    await page.locator("#retouch-brush").click();
+    const cursorPoint = await page.evaluate(() => { const r=activePreviewElement().getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}; });
+    await page.mouse.move(cursorPoint.x,cursorPoint.y);
+    const cursorWidth = () => page.evaluate(() => {
+      const c=els.localMaskOverlay,ctx=c.getContext("2d"),p=ctx.getImageData(0,0,c.width,c.height).data;
+      let lo=c.width,hi=-1;
+      for(let y=0;y<c.height;y++)for(let x=0;x<c.width;x++)if(p[(y*c.width+x)*4+3]){lo=Math.min(lo,x);hi=Math.max(hi,x);}
+      return hi-lo;
+    });
+    await page.locator("#retouch-size").fill("20");
+    await page.waitForTimeout(80);
+    const smallCursor = await cursorWidth();
+    await page.locator("#retouch-size").fill("100");
+    await page.waitForTimeout(80);
+    assert(await cursorWidth()>smallCursor*3,"brush cursor did not resize on input");
     // A brush larger than the old cap must remain usable.
     await page.locator("#retouch-size").fill("100");
     await page.locator("#retouch-brush").click();

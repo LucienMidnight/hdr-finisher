@@ -486,7 +486,7 @@ class SessionStore:
                     or session.retouch_original is not original or self.current() is not session):
                 raise CancelledError("Repair cancelled or superseded; the previous image was retained")
         try:
-            pixels = build_repaired_source(session, draft.repairs, check)
+            pixels = build_repaired_source(session, draft.repairs, check, previous_records=session.repairs)
         except CancelledError as exc:
             raise EditCommandError(str(exc)) from exc
         try:

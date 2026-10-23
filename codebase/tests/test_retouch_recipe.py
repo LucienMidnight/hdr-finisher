@@ -184,3 +184,16 @@ def test_large_native_brush_is_bounded_repeatable_and_does_not_sample_dirt(diame
     solid = mask[y:y+patch.pixels.shape[0], x:x+patch.pixels.shape[1]] == 1
     np.testing.assert_array_equal(patch.pixels[solid], repeat.pixels[solid])
     assert len(patch.target_centres) <= 8192
+
+
+def test_frozen_donor_footprints_are_excluded_and_can_cross_roi_edges():
+    recipe = InpaintRecipe(source_size=(100,100), search_rect=(20,20,80,80),
+        points=[dict(x=.5,y=.5)], radius_px=4,
+        donor_exclusions=[dict(points=[dict(x=.19,y=.5),dict(x=.25,y=.5)],radius_px=8,hardness=.1),
+                          dict(points=[dict(x=.95,y=.95),dict(x=.99,y=.99)],radius_px=2,hardness=1)])
+    image = np.ones((60,60,3),np.float32)
+    request = prepare_repair(recipe,lambda *args:image)
+    assert request.excluded[30,5]
+    assert not request.excluded[10,10]
+    assert request.mask[30,30]>0
+    assert recipe.hardness == .1

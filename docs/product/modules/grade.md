@@ -109,7 +109,8 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   projects and replay before all preview levels, masks, Match, Proof, export and
   Library source reduction. Repairs share interpreted native source before crop,
   rotation and lane Denoise; GPU finishing remains in use. Completed patches
-  are cached independently of grades and current/future defects exclude donors.
+  are cached independently of grades; the October 23 follow-up below fixes
+  the original changing current/future donor exclusions.
   Cancellation and newer edits retain the last valid document/picture. Proof's
   cache includes the source epoch. See the technical plan for checks and use.
   Publication currently needs one additional full native image owner, admitted
@@ -144,6 +145,35 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   on every pointer move. Warm small-spot performance keeps the existing
   one-second target (focused follow-up: 0.70–1.04 seconds while the Python
   suite was running); no general latency guarantee is claimed.
+  **Stable corrections and brush follow-up October 23:** hardness defaults to
+  10%; changing Size redraws the brush cursor without pointer movement. Each
+  repair uses the immutable original and prior-defect footprints frozen in its
+  recipe. Adding/removing unrelated repairs cannot change its donor selection;
+  Retry explicitly changes the seed. Publication rebuilds only changed painted
+  footprints and their overlapping repairs; GPU refresh uploads only changed
+  regions. Exact stability and full project replay pass, including a disabled
+  repair cache. Old repair projects may replay differently under this corrected
+  donor policy. The acceptance target is Steve's maximum one second through the
+  presented frame: the focused warm 24 MP check with twelve spots (new spots
+  100 native pixels) measured 0.34–0.68 seconds for native-view deletion and
+  0.80–0.94 seconds at fit. Startup, active Denoise preparation, transformed
+  views and very large overlapping strokes are not a general latency guarantee.
+  `tools/retouch_detail_study.py` reproduces a labeled synthetic comparison and
+  standalone viewer in `output/retouch-detail-study/`. Stronger interiors with
+  outer feathering remove broad defects better than the 10% soft brush, but
+  soften texture. A two-band original-detail prototype retains grain/pattern
+  alignment on luminance blotches, but also retains opaque-object outlines.
+  A clean-strip donor-detail prototype replaces grain without recovering its
+  original pixel alignment and can mismatch structured patterns. Descriptive
+  tone error, texture correlation and strength are reported against known
+  clean references; they do not establish natural-photo quality acceptance.
+  Basis: [darktable frequency separation](https://docs.darktable.org/usermanual/development/en/darkroom/processing-modules/wavelets/).
+  Optional Preserve texture and independent edge-feather controls remain open;
+  these research methods are not new production controls. Validation: focused
+  recipe/integration checks and both Retouch Electron drivers passed; required
+  fast suites: 585 JavaScript checks and 2,424 Python checks passed (3 Python
+  skips); their existing unrelated failures remain (3 edit-sync helper failures
+  and 6 frontend wording contracts).
 - **V1 hue-selection mask:** add hue selection as a local-adjustment mask,
   compatible with the existing combined-mask workflow. Not built; selection
   controls and hue evaluation remain to be specified.
