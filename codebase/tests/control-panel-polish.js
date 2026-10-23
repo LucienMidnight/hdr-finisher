@@ -15,6 +15,13 @@ const fs = require("node:fs"), path = require("node:path");
   await page.locator("#file-input").setInputFiles({name:"panel-check.png",mimeType:"image/png",buffer:Buffer.from(data,"base64")});
   await page.waitForFunction(()=>state.session&&!state.importInProgress&&document.body.dataset.workflow==="grade",null,{timeout:120000});
   await page.waitForFunction(()=>activePreviewElement()?.getBoundingClientRect().width>0,null,{timeout:10000});
+  const chrome = await page.evaluate(() => {
+   const rail = document.querySelector('.grade-rail');
+   const header = document.querySelector('#grade-workflow-panel > .grade-header');
+   const title = header.querySelector('.panel-title');
+   return { gap: title.getBoundingClientRect().top - header.getBoundingClientRect().top };
+  });
+  assert(chrome.gap >= 12, 'Control Panel title touches the top edge');
   const initial=await page.evaluate(()=>{
    const group=document.querySelector('[data-group="film-look"]');
    const title=group.querySelector('.control-group-name'),raw=document.querySelector('#raw-settings-toggle > span');
@@ -41,6 +48,24 @@ const fs = require("node:fs"), path = require("node:path");
   assert(local.tools>=local.list&&local.actions>=local.toolBottom);assert.equal(local.icon[0],local.icon[1]);assert.equal(local.more,false);assert.notEqual(local.visible,'none');
   await page.screenshot({path:path.join(output,'local.png')});
   await page.locator('#grade-mode-retouch').click();
+  // Retouch fits without scrolling. The rail still reserves and paints its track.
+  const railChrome = await page.evaluate(() => {
+   const rail = document.querySelector('.grade-rail');
+   rail.scrollTop = 0;
+   const measure = () => ({gutter: rail.offsetWidth - rail.clientWidth,
+    overflow: getComputedStyle(rail).overflowY, track: getComputedStyle(rail, '::-webkit-scrollbar-track').backgroundColor,
+    overflowing: rail.scrollHeight > rail.clientHeight});
+   const short = measure();
+   const spacer = document.createElement('div'); spacer.style.height = `${rail.clientHeight * 2}px`;
+   rail.append(spacer); const long = measure(); spacer.remove();
+   return {short, long};
+  });
+  assert.equal(railChrome.short.overflowing, false, 'Retouch should fit for the no-scroll check');
+  assert.equal(railChrome.short.overflow, 'scroll');
+  assert(railChrome.short.gutter > 1, 'Scrollbar rail has no reserved width');
+  assert.notEqual(railChrome.short.track, 'rgba(0, 0, 0, 0)', 'Scrollbar track is invisible');
+  assert(railChrome.long.overflowing);
+  assert.equal(railChrome.short.gutter, railChrome.long.gutter, 'Scrollbar rail changes width on overflow');
   await page.locator('#retouch-brush-stop').click();assert.equal(await page.evaluate(()=>retouchUI.active),false);
   await page.locator('#retouch-brush').click();assert.equal(await page.evaluate(()=>retouchUI.active),true);
   const point=await page.evaluate(()=>{const r=activePreviewElement().getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};});
@@ -57,7 +82,7 @@ const fs = require("node:fs"), path = require("node:path");
   await page.screenshot({path:path.join(output,'export.png')});
   assert.equal(await page.locator('.batch-preset-help').count(),0);
   const field=await page.locator('#batch-preset-name').evaluate(e=>({height:e.getBoundingClientRect().height,box:getComputedStyle(e).boxSizing}));assert(field.height>=34);assert.equal(field.box,'border-box');
-  assert.deepEqual(errors,[]);console.log('PASS: default state, title tokens, EV readout, stable SDR scroll, local actions, round icons, retouch brush stroke and export fields');
+  assert.deepEqual(errors,[]);console.log('PASS: default state, title spacing, persistent scrollbar rail, title tokens, EV readout, stable SDR scroll, local actions, round icons, retouch brush stroke and export fields');
  } catch(error) {
   console.error('Panel diagnostics',await page.evaluate(()=>({errors:typeof state==='undefined'?null:state.gpuPreview?.detail,workflow:document.body.dataset.workflow,retouch:typeof retouchUI==='undefined'?null:{active:retouchUI.active,busy:retouchUI.busy},status:document.querySelector('#retouch-status')?.textContent})).catch(()=>null),errors);
   await page.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});throw error;
