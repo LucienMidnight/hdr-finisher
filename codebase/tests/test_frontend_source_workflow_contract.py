@@ -47,10 +47,9 @@ def test_raw_highlight_reconstruction_is_a_versioned_module_stack_control() -> N
     assert 'id="raw-highlight-threshold"' in markup
     assert 'class="control-group raw-highlight-group collapsed module-unavailable"' in markup
     assert '>Highlight Reconstruction <span class="module-modified-marker" aria-hidden="true"></span></button>' in markup
-    assert '.control-group[data-group="raw-highlights"] > .control-group-header::before { content: "02"; }' in css
-    assert '.control-group[data-group="geometry"] > .control-group-header::before { content: "03"; }' in css
-    assert '.control-group[data-group="denoise"] > .control-group-header::before { content: "05"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }' in css
+    assert 'data-group="raw-highlights"' in markup
+    assert all(f'data-group="{group}"' in markup for group in ("geometry", "denoise", "vignette"))
+    assert "content: \"02\"" not in css and "content: \"03\"" not in css
 
 
 def test_presentation_gate_owns_every_presentation_resize() -> None:

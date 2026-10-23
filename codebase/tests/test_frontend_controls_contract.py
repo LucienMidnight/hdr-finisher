@@ -51,11 +51,11 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "Highlight Compression" in html
     assert 'data-group="hdr-highlights"' in html
     assert 'data-section-path="hdr.highlight_section_enabled"' in html
-    # The painted module index has to ascend in display order in both lanes, so
-    # Curves and Highlight Compression swap numbers when HDR is active.
-    assert 'body[data-active-lane="hdr"] .control-group[data-group="curves"] > .control-group-header::before { content: "09"; }' in css
-    assert '.control-group[data-group="hdr-highlights"] > .control-group-header::before { content: "10"; }' in css
-    assert '.control-group[data-group="curves"] > .control-group-header::before { content: "10"; }' in css
+    # Controls remain grouped by their semantic module; the panel no longer
+    # adds a second, numbered index beside each title.
+    assert 'data-group="curves"' in html
+    assert 'data-group="hdr-highlights"' in html
+    assert "content: \"09\"" not in css and "content: \"10\"" not in css
     assert "Output target" in html
     assert "Sets the final peak after grading" in html
     assert '<option value="clip">Clip</option>' in html

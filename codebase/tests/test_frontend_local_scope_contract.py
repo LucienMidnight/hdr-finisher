@@ -51,19 +51,22 @@ def test_startup_is_ephemeral_and_all_grade_groups_begin_collapsed() -> None:
     assert set(group_toggles) == {"false"}
 
 
-def test_local_adjustments_use_group_and_folder_hierarchy_with_locked_tool_assignment() -> None:
+def test_local_adjustments_use_mode_folder_and_new_tool_toolbar() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = frontend_scripts()
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
-    assert 'class="control-group collapsed local-adjustments-group"' in html
-    assert 'id="grade-mode-global"' not in html
+    assert 'id="local-adjustments-group"' in html
+    assert 'data-group="local-adjustments"' in html
+    assert 'id="grade-mode-global"' in html
     assert 'class="lane-folder-shell"' in html
     assert html.count('role="tablist"') >= 2
     assert 'class="local-lane-folder"' in html
     assert 'class="local-stack-surface"' in html
-    assert 'aria-pressed="false" title="Select Gradient for a new adjustment"' in html
-    assert '.local-tool-strip button.active:disabled' in css
+    assert 'role="toolbar" aria-label="Choose a local mask tool"' in html
+    assert 'data-local-tool="linear_gradient"' in html
+    assert 'title="New linear gradient adjustment"' in html
+    assert 'data-local-tool="brush"' in html and 'data-local-tool="path"' in html
     assert 'body[data-grade-mode="local"] #grade-workflow-panel > :not(.grade-header):not(.local-adjustments-group)' not in css
     assert 'if (response.status === 409)' in javascript
     assert ".lane-folder-shell > .lane-switch button.active" in css
@@ -98,7 +101,7 @@ def test_path_mask_exposes_draft_bezier_and_independent_feather_contract() -> No
     assert '.path-node-mode' in css
 
 
-def test_perspective_module_is_numbered_fourth_and_exposes_draft_guided_tools() -> None:
+def test_perspective_module_exposes_draft_guided_tools() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
@@ -106,8 +109,9 @@ def test_perspective_module_is_numbered_fourth_and_exposes_draft_guided_tools() 
     assert 'id="perspective-vertical-tool"' in html
     assert 'id="perspective-horizontal-tool"' in html
     assert 'id="perspective-apply"' in html and 'id="perspective-cancel"' in html
-    assert '.control-group[data-group="perspective"] > .control-group-header::before { content: "04"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }' in css
+    assert 'data-group="perspective"' in html
+    assert 'data-group="vignette"' in html
+    assert not re.search(r"\.control-group[^\n{]*::before\s*\{[^}]*content:\s*['\"]\d+", css)
 
 
 def test_frontend_assets_use_the_application_version_for_cache_busting() -> None:
@@ -239,15 +243,14 @@ def test_waveform_detail_profiles_raise_default_quality_with_performance_fallbac
     assert "1 - Math.exp(-densityGain * Math.pow(density, 0.72))" in javascript
 
 
-def test_detail_uses_numbered_module_header_and_sharpen_targeting_hierarchy() -> None:
+def test_detail_uses_module_header_and_sharpen_targeting_hierarchy() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert '>Detail <span class="module-modified-marker" aria-hidden="true"></span></button>' in html
-    assert '.control-group[data-group="black-and-white"] > .control-group-header::before { content: "13"; }' in css
-    assert '.control-group[data-group="detail"] > .control-group-header::before { content: "15"; }' in css
-    assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "16"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }' in css
+    for group in ("black-and-white", "detail", "film-look", "vignette"):
+        assert f'data-group="{group}"' in html
+    assert not re.search(r"\.control-group[^\n{]*::before\s*\{[^}]*content:\s*['\"]\d+", css)
     assert 'data-control-path="current.detail.sharpen_amount"' in html
     assert '<div class="slider-group-relationship">Targeting</div>' in html
     assert 'class="control-row compact-subrail" data-control-path="current.detail.sharpen_radius_px"' in html

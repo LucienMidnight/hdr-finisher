@@ -1,4 +1,5 @@
 import hashlib
+import os
 from pathlib import Path
 
 from concurrent.futures import ThreadPoolExecutor, CancelledError
@@ -62,7 +63,7 @@ def test_cpu_simultaneous_tiers_prepare_once_and_survive_one_cancel(tmp_path, mo
 
 
 def test_source_ownership_merges_tiers_promotes_and_rejects_stale_publication(tmp_path):
-    path=tmp_path/'photo.png';Image.new('RGB',(8,4)).save(path)
+    path=tmp_path/'photo.png';path.write_bytes(b'source-A')
     jobs=SourceJobs(); q=quality(None)
     token=jobs.claim(path,q,640,80,0)
     assert jobs.claim(path,q,2560,0,0) is None
@@ -73,7 +74,11 @@ def test_source_ownership_merges_tiers_promotes_and_rejects_stale_publication(tm
     assert jobs.claim(path,quality(finishing),2560,10,0) is None
     assert jobs.claim(path,quality({'hdr_reference_white_nits':100}),640,10,0)
     with pytest.raises(ValueError):jobs.check(token,1)
-    Image.new('RGB',(9,4)).save(path)
+    original_stat = path.stat()
+    # SourceJobs fingerprints metadata only; equal-length bytes isolate the mtime invalidation path.
+    path.write_bytes(b'source-B')
+    assert path.stat().st_size == original_stat.st_size
+    os.utime(path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns + 2_000_000_000))
     with pytest.raises(ValueError):jobs.check(token,0)
     jobs.release(token)
     with pytest.raises(ValueError):jobs.check(token,0)

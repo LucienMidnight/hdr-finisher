@@ -9,6 +9,7 @@ for (const operation of ["refreshScopes()", 'queueEditCommand("undo")']) {
     test(`${operation} stops retrying with ${scenario}`, async () => {
       let syncCalls = 0;
       const context = vm.createContext({ localsBypassed: () => false,
+        discardUnusedLocal: () => false,
         state: { session: {}, currentView: "hdr", globalEditDirty: true,
           perspectiveMode: scenario === "perspective draft" },
         // Bound a regression before it can starve the test process or OOM.

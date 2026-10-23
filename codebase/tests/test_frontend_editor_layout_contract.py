@@ -307,8 +307,12 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert '<aside class="source-rail panel" aria-label="Metadata">' in html
     assert html.count('<h1 class="panel-title">Control Panel</h1>') == 4
-    assert "HDR Controls" in html
-    assert "SDR Controls" in html
+    assert 'data-control-mode="global"' in html
+    assert 'data-control-mode="local"' in html
+    assert 'data-control-mode="retouch"' in html
+    assert 'id="grade-mode-global"' in html
+    assert 'id="grade-mode-local"' in html
+    assert 'id="grade-mode-retouch"' in html
     assert 'id="preview-window-title" class="panel-title"' in html
     assert 'class="preview-metadata-panel"' not in html
     assert 'id="viewer-lane-label"' not in html
@@ -329,11 +333,8 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert 'id="probe-readout"' not in html
     assert "Move over the image" not in html
     assert '--group-chevron-shape: url("assets/icons/tabler/chevron-right.svg")' in css
-    assert "--group-index-font-size: 11px" in css
-    assert "--group-disclosure-leading: 38px" in css
-    assert ".control-group-header > .group-toggle" in css
-    assert "margin-left: calc(var(--group-index-left) - var(--group-disclosure-leading))" in css
-    assert "pointer-events: none" in css.split(".control-group-header::before", 1)[1].split("}", 1)[0]
+    assert 'class="group-toggle"' in html
+    assert not re.search(r"\.control-group[^\n{]*::before\s*\{[^}]*content:\s*['\"]\d+", css)
     assert "Segoe Fluent Icons" not in css
     for icon in (
         "arrow-down.svg",
