@@ -116,6 +116,53 @@ def test_warp_uses_independent_coefficient_planes() -> None:
     assert not np.allclose(result[..., 2], result[..., 1])
 
 
+def test_warp_bicubic_weight_reuse_preserves_clipped_reference() -> None:
+    image = np.arange(6 * 8 * 3, dtype=np.float32).reshape(6, 8, 3) / 17.0
+    coefficients = np.asarray(
+        [[1.0, 0.08, -0.02, 0.01, 0.015, -0.01]], dtype=np.float64
+    )
+    warp = WarpRectilinearParameters(coefficients, 0.42, 0.57)
+    result = apply_warp_rectilinear(image, warp, rows=2)
+
+    def weight(distance: float) -> float:
+        x = abs(distance)
+        a = -0.75
+        if x >= 2.0:
+            return 0.0
+        if x >= 1.0:
+            return ((a * x - 5.0 * a) * x + 8.0 * a) * x - 4.0 * a
+        return ((a + 2.0) * x - (a + 3.0)) * x * x + 1.0
+
+    height, width, _ = image.shape
+    center_x, center_y = warp.center_x * width, warp.center_y * height
+    scale = float(np.hypot(max(center_x, width - center_x), max(center_y, height - center_y)))
+    expected = np.empty_like(image)
+    k0, k1, k2, k3, k4, k5 = coefficients[0]
+    for row in range(height):
+        for col in range(width):
+            x, y = (col - center_x) / scale, (row - center_y) / scale
+            r2 = min(x * x + y * y, 1.0)
+            radial = k0 + k1 * r2 + k2 * r2**2 + k3 * r2**3
+            sx = center_x + scale * (x * radial + 2.0 * k4 * x * y + k5 * (r2 + 2.0 * x * x))
+            sy = center_y + scale * (y * radial + k4 * (r2 + 2.0 * y * y) + 2.0 * k5 * x * y)
+            sx, sy = np.clip(sx, 0.0, width - 1.0), np.clip(sy, 0.0, height - 1.0)
+            x0, y0 = int(np.floor(sx)), int(np.floor(sy))
+            fx, fy = sx - x0, sy - y0
+            for channel in range(image.shape[2]):
+                value, total = 0.0, 0.0
+                for dy in (-1, 0, 1, 2):
+                    wy = weight(dy - fy)
+                    py = int(np.clip(y0 + dy, 0, height - 1))
+                    for dx in (-1, 0, 1, 2):
+                        w = wy * weight(dx - fx)
+                        px = int(np.clip(x0 + dx, 0, width - 1))
+                        value += float(image[py, px, channel]) * w
+                        total += w
+                expected[row, col, channel] = value / total
+
+    assert np.allclose(result, expected, rtol=0.0, atol=2e-7)
+
+
 def test_warp_cancellation_is_checked_between_bounded_row_chunks() -> None:
     calls = 0
 

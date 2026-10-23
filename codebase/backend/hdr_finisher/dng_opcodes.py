@@ -316,12 +316,15 @@ def _sample_bicubic_clipped(
     fy = safe_y - y0
     result = np.zeros_like(safe_x, dtype=np.float64)
     total_weight = np.zeros_like(safe_x, dtype=np.float64)
+    # x coordinates are shared by all four source rows. Cache these arrays
+    # outside the outer tap loop to avoid evaluating the cubic polynomial 4x.
+    x_weights = tuple(_bicubic_weight(offset - fx) for offset in (-1, 0, 1, 2))
     for row_offset in (-1, 0, 1, 2):
         source_y = np.clip(y0 + row_offset, 0, height - 1)
         wy = _bicubic_weight(row_offset - fy)
-        for col_offset in (-1, 0, 1, 2):
+        for col_offset, wx in zip((-1, 0, 1, 2), x_weights):
             source_x = np.clip(x0 + col_offset, 0, width - 1)
-            weight = wy * _bicubic_weight(col_offset - fx)
+            weight = wy * wx
             result += plane[source_y, source_x] * weight
             total_weight += weight
     return np.asarray(result / total_weight, dtype=np.float32)

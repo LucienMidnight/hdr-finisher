@@ -230,6 +230,38 @@ plane handoff, lane validation and cancellation cleanup. Final fast checks:
 571 Node passed; 2,401 Python passed, 3 skipped. The corrected photograph
 comparison was rerun on the captured GPU artifacts without another GPU run.
 
+**October 23: DNG CPU fallback interpolation (built).** The bicubic sampler
+caches its four horizontal weight arrays once per row strip rather than
+recalculating each for every vertical tap. Coordinates, float64 intermediate
+precision, cubic coefficient, clamped-border normalization and accumulation
+order are unchanged. A scalar reference checks nontrivial per-channel geometry
+and borders; existing cancellation and opcode-order checks remain.
+
+On real 8000 x 6000 DJI camera-linear pixels with GainMap already applied,
+three-run median WarpRectilinear time improved from 85.66 s to 53.53 s. The
+optimized run's median sampler time was 47.93 s, with 5.60 s in coordinates and
+allocation: interpolation remains the main CPU cost. Timing tolerance is 10%;
+shared-machine CPU runs varied (51.73-68.61 s), so these are descriptive medians.
+
+A benchmark-only OpenCV 5.0.0 comparison used the same full DNG coordinates,
+a=-0.75 cubic sampling, continuous coordinate clipping and replicated tap
+borders, with source planes packed once. Its three-run median was 17.07 s
+(including packing/maps); sampler median 2.80 s. Real normalized camera-sample
+absolute difference from the precise sampler was mean 0.000000854, p99.9
+0.00001064, maximum 0.000174. The independent fractional high-frequency probe
+also agreed within 0.0000021. The locally installed OpenCV 5 is not a packaged
+application dependency and was not added for this focused GPU change. These
+measurements are from version 5, not an assertion of identical fractional
+interpolation in the older OpenCV 4.13 documentation linked in the brief.
+
+Library GPU DNG preparation is now bounded and much faster (see Photo Library).
+Grade's DNG import continues through this correct CPU fallback; reusable GPU
+Grade integration was not attempted here because it needs its own source-job
+and delivery handoff. Unsupported mandatory operations, GainMap-before-warp,
+colour conversion, crop/orientation and the duplicate-Lensfun guard are unchanged.
+Validation: 590 Node passed; 2,468 Python passed, 3 skipped. No export/Proof shader or output
+contract changed; the CPU optimization preserves the existing numerical result.
+
 **Not built**
 
 - GPU decode/demosaic for Grade's import, X-Trans sensors and DNG.
