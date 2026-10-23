@@ -25,6 +25,7 @@
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
+const { createLocalAdjustment } = require("../helpers/local-adjustments");
 const { ensureLargeNoisySource } = require("../large-noisy-tiff.js");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
@@ -113,10 +114,7 @@ async function strokeToSettled(page, selector, deltaX, maskRequests) {
     await idle(page);
     await page.evaluate(() => window.HDRFinisherPerformance.enableGpuInstrumentation(true));
     await page.locator("#grade-mode-local").click();
-    const created = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="luminance_range"]').click();
-    await created;
+    await createLocalAdjustment(page, "luminance_range");
     // The response can arrive before the edit queue publishes the new document.
     await page.waitForFunction(() => Boolean(selectedLocal()
       && firstMaskLeaf(selectedLocal().mask, "luminance_range")), null, { timeout: 30000 });

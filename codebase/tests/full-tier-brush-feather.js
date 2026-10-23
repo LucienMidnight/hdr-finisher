@@ -1,4 +1,5 @@
 const { chromium } = require("playwright");
+const { selectLocalDraft } = require("./helpers/local-adjustments.js");
 const { ensureLargeNoisySource } = require("./large-noisy-tiff.js");
 
 const WIDTH = 7968;
@@ -46,11 +47,7 @@ function assert(condition, message) {
       && state.acceptedPresentation?.requestedTier === "full", null, { timeout: 600000 });
 
     await page.locator("#grade-mode-local").click();
-    const createResponse = page.waitForResponse((response) =>
-      response.url().includes("/edit-commands") && response.request().method() === "POST");
-    await page.locator('[data-local-tool="brush"]').click();
-    await page.locator("#local-add-adjustment").click();
-    assert((await createResponse).ok(), "Creating the brush adjustment failed.");
+    await selectLocalDraft(page, "brush");
 
     const overlay = page.locator("#local-mask-overlay");
     const box = await overlay.boundingBox();
@@ -89,8 +86,9 @@ function assert(condition, message) {
       };
     });
 
-    const feather = page.locator(".local-mask-subpanel").nth(1)
-      .locator(".local-brush-control", { hasText: "Feather" }).locator('input[type="range"]');
+    const maskSettings = page.locator("#local-mask-tree-summary details.local-mask-subpanel").nth(1);
+    if (!await maskSettings.evaluate((details) => details.open)) await maskSettings.locator("summary").click();
+    const feather = maskSettings.locator(".local-brush-control", { hasText: "Feather" }).locator('input[type="range"]');
     await feather.evaluate((input) => {
       input.value = "60";
       input.dispatchEvent(new Event("input", { bubbles: true }));

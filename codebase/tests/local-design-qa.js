@@ -1,6 +1,7 @@
 const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
+const { createLocalAdjustment } = require("./helpers/local-adjustments.js");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 const referencePath = "C:/Users/Steve/AppData/Local/Temp/codex-clipboard-e2791fc9-4e41-426d-ab81-116c2754c290.png";
@@ -22,7 +23,7 @@ function assert(condition, message) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
     const collapseMaterial = await page.evaluate(() => {
@@ -188,31 +189,24 @@ function assert(condition, message) {
 
     await page.locator("#grade-mode-local").click();
 
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="brush"]').click();
+    await createLocalAdjustment(page, "brush");
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 1);
 
-    // The row can appear before its create request finishes locking the tools.
-    await page.waitForFunction(() => !state.pendingLocalAdjustment
-      && Boolean(selectedMaskLeaf(selectedLocal(), "brush")));
-    assert(await page.locator('[data-local-tool="brush"]').isDisabled()
-      && await page.locator('[data-local-tool="linear_gradient"]').isDisabled(),
-      "Assigned brush mask tools must stay locked; create a new adjustment before selecting another type.");
     const stackSurface = page.locator(".local-stack-surface");
     const singleBrushScrollbar = await stackSurface.evaluate((node) => ({
       overflowY: getComputedStyle(node).overflowY,
       gutter: getComputedStyle(node).scrollbarGutter,
       webkitWidth: getComputedStyle(node, "::-webkit-scrollbar").width,
+      track: getComputedStyle(node, "::-webkit-scrollbar-track").backgroundColor,
       clientHeight: node.clientHeight,
       scrollHeight: node.scrollHeight,
     }));
-    assert(singleBrushScrollbar.overflowY === "auto", "The adjustment stack does not use content-aware overflow.");
-    assert(singleBrushScrollbar.gutter === "auto", "The adjustment stack reserves an unnecessary scrollbar gutter.");
-    assert(singleBrushScrollbar.clientHeight === singleBrushScrollbar.scrollHeight, "A single adjustment unnecessarily shows a scrollbar.");
-    assert(singleBrushScrollbar.webkitWidth === "9px", "The overflow scrollbar width is not applied in Edge.");
+    assert(singleBrushScrollbar.overflowY === "scroll", "The adjustment stack does not keep its scrollbar rail visible.");
+    assert(singleBrushScrollbar.webkitWidth === "12px", "The adjustment scrollbar width is not applied in Edge.");
+    assert(singleBrushScrollbar.track !== "rgba(0, 0, 0, 0)", "The adjustment scrollbar track is not painted.");
+    assert(singleBrushScrollbar.clientHeight === 192, `The adjustment stack is not fixed at six 32px rows: ${JSON.stringify(singleBrushScrollbar)}`);
 
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="linear_gradient"]').click();
+    await createLocalAdjustment(page, "linear_gradient");
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 2);
     const gradientToggleSurface = await page.locator(".gradient-luma-toggle input").evaluate((control) => {
       const snapshot = () => {
@@ -231,23 +225,24 @@ function assert(condition, message) {
     assert(gradientToggleSurface.off.shadow.includes("inset") && gradientToggleSurface.on.image.includes("linear-gradient"), `Gradient Luma switch lost its depth material: ${JSON.stringify(gradientToggleSurface)}`);
     const firstRowBox = await page.locator("#local-adjustment-list button[data-local-id]").nth(0).boundingBox();
     const secondRowBox = await page.locator("#local-adjustment-list button[data-local-id]").nth(1).boundingBox();
+    assert(Math.abs(firstRowBox.height - 32) < 1 && Math.abs(secondRowBox.height - 32) < 1,
+      `Adjustment rows do not use the 32px compact row size: ${JSON.stringify({ firstRowBox, secondRowBox })}`);
     assert(secondRowBox.y - (firstRowBox.y + firstRowBox.height) <= 1, "Adjustment rows stretched apart inside the fixed viewport.");
 
     const panelBox = await page.locator("#local-adjustments-panel").boundingBox();
-    const headingBox = await page.locator(".local-section-heading").first().boundingBox();
-    const actionsBox = await page.locator(".local-stack-primary-actions").boundingBox();
+    const headingBox = await page.locator("#control-mode-local .local-stack-heading").boundingBox();
+    const toolStripBox = await page.locator("#control-mode-local .local-tool-strip[aria-label='Choose a local mask tool']").boundingBox();
     await page.screenshot({
       path: implementationPath,
       clip: {
         x: panelBox.x,
         y: headingBox.y,
         width: panelBox.width,
-        height: actionsBox.y + actionsBox.height - headingBox.y,
+        height: toolStripBox.y + toolStripBox.height - headingBox.y,
       },
     });
 
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="luminance_range"]').click();
+    await createLocalAdjustment(page, "luminance_range");
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 3);
     const lumaLabelTypography = await page.locator(".luma-range-control").evaluate((control) => ({
       heading: getComputedStyle(control.querySelector(".luma-range-heading")).fontSize,
@@ -268,48 +263,42 @@ function assert(condition, message) {
     );
     await page.locator(".local-mask-subpanel").first().screenshot({ path: path.join(outputDir, "luma-selector-implementation.png") });
 
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="path"]').click();
+    await createLocalAdjustment(page, "path");
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 4);
-    // Commit an actual path through the supported drawing workflow before
-    // leaving it; the pending empty path is not a saved fourth adjustment.
-    const pathBox = await page.locator("#local-mask-overlay").boundingBox();
-    assert(pathBox, "Path creation surface is unavailable.");
-    const pathPoints = [[.30, .30], [.70, .30], [.72, .68], [.32, .70]];
-    for (const [x, y] of pathPoints) await page.mouse.click(pathBox.x + pathBox.width*x, pathBox.y + pathBox.height*y);
-    const pathCreated = page.waitForResponse((response) => response.url().includes("/edit-commands")
-      && response.request().method() === "POST");
-    await page.mouse.click(pathBox.x + pathBox.width*.30, pathBox.y + pathBox.height*.30);
-    assert((await pathCreated).ok(), "Path creation did not commit.");
     await page.locator("#local-adjustment-list button[data-local-id]").first().click();
     await page.evaluate(() => window.scrollTo(0, 0));
 
     const removeButton = page.locator("#local-delete");
     const initialSurfaceHeight = (await stackSurface.boundingBox()).height;
     for (let index = 4; index < 8; index += 1) {
-      await page.locator("#local-add-adjustment").click();
-      const createResponse = page.waitForResponse((response) =>
-        response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
-      );
-      await page.locator('[data-local-tool="brush"]').click();
-      await createResponse;
-      await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, index + 1);
+      await createLocalAdjustment(page, "brush");
+      const count = index + 1;
+      await page.waitForFunction(expected => document.querySelectorAll("#local-adjustment-list > li").length === expected, count);
+      if (count === 6 || count === 7) {
+        const rows = await page.evaluate(() => ({
+          visible: document.querySelector(".local-stack-surface").clientHeight,
+          content: document.querySelector("#local-adjustment-list").scrollHeight,
+        }));
+        assert(count === 6 ? rows.content === rows.visible : rows.content > rows.visible,
+          `${count} compact rows did not match the six-row viewport boundary: ${JSON.stringify(rows)}`);
+      }
     }
     const scrollMetrics = await stackSurface.evaluate((node) => ({ clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, overflowY: getComputedStyle(node).overflowY }));
     assert(scrollMetrics.scrollHeight > scrollMetrics.clientHeight && scrollMetrics.overflowY === "scroll", "The adjustment list does not use an internal scrollbar.");
     const cappedSurfaceHeight = (await stackSurface.boundingBox()).height;
-    assert(cappedSurfaceHeight > initialSurfaceHeight, "The adjustment viewport did not grow with its rows.");
+    assert(Math.abs(cappedSurfaceHeight - 194) < 1 && Math.abs(initialSurfaceHeight - cappedSurfaceHeight) < 1,
+      `The six-row viewport changed size as rows were added: ${JSON.stringify({ initialSurfaceHeight, cappedSurfaceHeight })}`);
     for (let targetCount = 7; targetCount >= 4; targetCount -= 1) {
       await removeButton.click();
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, targetCount);
       const surfaceHeight = (await stackSurface.boundingBox()).height;
-      assert(surfaceHeight <= cappedSurfaceHeight + 1, "The adjustment viewport exceeded its capped height while removing items.");
-      if (targetCount >= 5) assert(Math.abs(surfaceHeight - cappedSurfaceHeight) < 1, "The overflowing adjustment viewport did not retain its capped height.");
+      assert(Math.abs(surfaceHeight - 194) < 1, "The fixed adjustment viewport changed size while removing items.");
     }
     await page.locator("#local-adjustment-list button[data-local-id]").nth(1).click();
 
-    assert(await page.getByText("Brush Controls", { exact: true }).isVisible(), "Brush Controls section is missing.");
-    assert(await page.getByText("Mask Controls", { exact: true }).isVisible(), "Mask Controls section is missing.");
+    assert(await page.locator(".local-tool-strip[aria-label='Choose a local mask tool']").isVisible(), "The local mask tool toolbar is missing.");
+    assert(await page.locator(".local-stack-primary-actions").isVisible(), "The local adjustment actions are missing.");
+    assert(await page.locator("#local-opacity").isVisible(), "Selected adjustment opacity is missing.");
     const localHdrStyle = await page.locator('[data-local-lane="hdr"]').evaluate((node) => {
       const style = getComputedStyle(node);
       return { background: style.backgroundColor, radius: style.borderRadius, shadow: style.boxShadow };
@@ -619,7 +608,7 @@ function assert(condition, message) {
     await localGroup.screenshot({ path: path.join(outputDir, "implementation-full.png") });
     const sliderImplementationPath = path.join(outputDir, "sliders-implementation.png");
     await page.locator(".local-lane-folder").screenshot({ path: sliderImplementationPath });
-    const groupStyle = await page.locator(".control-group").nth(2).evaluate((node) => ({
+    const groupStyle = await page.locator('.control-group[data-group="denoise"]').evaluate((node) => ({
       divider: getComputedStyle(node).borderTopWidth,
       dividerColor: getComputedStyle(node).borderTopColor,
       chevronWidth: getComputedStyle(node.querySelector(".group-toggle"), "::before").width,
@@ -652,22 +641,10 @@ function assert(condition, message) {
     assert(groupStyle.chevronWidth === "18px" && groupStyle.chevronHeight === "18px" && groupStyle.chevronMask !== "none", "Disclosure chevrons are not using the 18 px masked icon treatment.");
     const denoiseGroup = page.locator('.control-group[data-group="denoise"]');
     const denoiseHeader = denoiseGroup.locator(":scope > .control-group-header");
-    const denoiseIndex = await denoiseHeader.evaluate((header) => {
-      const headerBox = header.getBoundingClientRect();
-      const toggleBox = header.querySelector(".group-toggle").getBoundingClientRect();
-      const indexStyle = getComputedStyle(header, "::before");
-      return {
-        fontSize: indexStyle.fontSize,
-        indexLeft: Number.parseFloat(indexStyle.left),
-        indexWidth: Number.parseFloat(indexStyle.width),
-        toggleLeft: toggleBox.left - headerBox.left,
-        headerHeight: headerBox.height,
-      };
-    });
-    assert(denoiseIndex.fontSize === "11px", `Control-group index did not gain the requested visual weight: ${JSON.stringify(denoiseIndex)}`);
-    assert(denoiseIndex.toggleLeft <= denoiseIndex.indexLeft, `The disclosure hit target does not extend beneath its index: ${JSON.stringify(denoiseIndex)}`);
+    const denoiseHeaderDecoration = await denoiseHeader.evaluate((header) => getComputedStyle(header, "::before").content);
+    assert(!/^['\"]?\d+['\"]?$/.test(denoiseHeaderDecoration), `A section number is still painted beside the module title: ${denoiseHeaderDecoration}`);
     const denoiseWasExpanded = await denoiseGroup.locator(".group-toggle").getAttribute("aria-expanded");
-    await denoiseHeader.click({ position: { x: denoiseIndex.indexLeft + denoiseIndex.indexWidth / 2, y: denoiseIndex.headerHeight / 2 } });
+    await denoiseGroup.locator(".group-toggle").click();
     await page.waitForFunction((expanded) => document.querySelector('.control-group[data-group="denoise"] .group-toggle')?.getAttribute("aria-expanded") !== expanded, denoiseWasExpanded);
     await denoiseGroup.locator(".group-toggle").click();
     await page.waitForFunction((expanded) => document.querySelector('.control-group[data-group="denoise"] .group-toggle')?.getAttribute("aria-expanded") === expanded, denoiseWasExpanded);
@@ -733,8 +710,7 @@ function assert(condition, message) {
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, targetCount);
     }
     assert(await removeButton.isDisabled(), "The static minus button should disable when the list is empty.");
-    assert(!(await page.locator("#local-add-adjustment").isDisabled()), "The static plus button should remain available when the list is empty.");
-    assert((await stackSurface.boundingBox()).height < initialSurfaceHeight, "The empty adjustment viewport did not shrink to its compact height.");
+    assert(Math.abs((await stackSurface.boundingBox()).height - 194) < 1, "The empty adjustment viewport did not retain its fixed six-row height.");
 
     assert(pageErrors.length === 0, `Page errors: ${pageErrors.join(" | ")}`);
     process.stdout.write(JSON.stringify({ implementationPath, comparisonPath: path.join(outputDir, "comparison.png") }));

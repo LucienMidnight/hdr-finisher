@@ -18,6 +18,7 @@
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
+const { createLocalAdjustment } = require("../helpers/local-adjustments");
 const { ensureLargeNoisySource } = require("../large-noisy-tiff.js");
 
 const WIDTH = 7968;
@@ -58,12 +59,7 @@ function assert(condition, message) {
     // measured pass is the small-batch encoder.
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#grade-mode-local").click();
-    const created = page.waitForResponse(
-      (response) => response.url().includes("/edit-commands") && response.request().method() === "POST",
-    );
-    await page.locator('[data-local-tool="brush"]').click();
-    await page.locator("#local-add-adjustment").click();
-    await created;
+    await createLocalAdjustment(page, "brush");
     await page.waitForFunction(() => state.localMaskCommitDepth === 0, null, { timeout: 30000 });
     // Denoise gives the encoder per-tile await points, which is where a
     // supersession can actually interrupt a pass in flight.

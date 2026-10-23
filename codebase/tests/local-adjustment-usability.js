@@ -1,4 +1,6 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern");
+const { selectLocalDraft } = require("./helpers/local-adjustments");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
@@ -10,7 +12,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
   page.on("pageerror", (error) => pageErrors.push(error.message));
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#grade-mode-local").click();
 
@@ -96,32 +98,34 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     assert(await page.locator("#local-rename").count() === 0, "The obsolete Rename button is still present.");
 
     const layout = await page.evaluate(() => {
-      const stack = document.querySelector(".local-stack-surface").getBoundingClientRect();
-      const maskActions = document.querySelector(".local-mask-top-actions").getBoundingClientRect();
-      const toolbar = document.querySelector(".local-stack-primary-actions").getBoundingClientRect();
-      const ids = ["local-add-adjustment", "local-delete", "local-duplicate", "local-move-up", "local-move-down"];
+      const rect = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) throw new Error(`Missing layout element: ${selector}`);
+        const bounds = element.getBoundingClientRect();
+        return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, visible: bounds.width > 0 && bounds.height > 0 };
+      };
+      const ids = ["local-delete", "local-duplicate", "local-move-up", "local-move-down"];
       return {
-        stackBottom: stack.bottom,
-        actionsTop: maskActions.top,
-        actionsBottom: maskActions.bottom,
-        toolbarTop: toolbar.top,
-        buttons: ids.map((id) => {
-          const button = document.getElementById(id);
-          const rect = button.getBoundingClientRect();
-          const style = getComputedStyle(button);
-          return { id, x: rect.x, borderTop: style.borderTopWidth, borderLeft: style.borderLeftWidth };
-        }),
+        heading: rect("#local-adjustments-panel .local-stack-heading"),
+        title: rect("#local-adjustments-panel .local-stack-heading > span"),
+        actions: rect("#local-adjustments-panel .local-stack-primary-actions"),
+        stack: rect("#local-adjustments-panel .local-stack-surface"),
+        toolStrip: rect("#local-adjustments-panel .local-tool-strip"),
+        buttons: ids.map((id) => ({ id, ...rect(`#${id}`) })),
       };
     });
-    assert(layout.stackBottom <= layout.actionsTop && layout.actionsBottom <= layout.toolbarTop, `Mask actions are not directly below the stack: ${JSON.stringify(layout)}`);
-    assert(layout.buttons.every((button, index, buttons) => !index || button.x > buttons[index - 1].x), `Position buttons are not to the right of Copy: ${JSON.stringify(layout.buttons)}`);
-    assert(layout.buttons.every((button) => button.borderTop === "0px"), `Toolbar buttons retained box borders: ${JSON.stringify(layout.buttons)}`);
-    assert(layout.buttons.slice(1).every((button) => button.borderLeft === "1px"), `Toolbar dividers are missing: ${JSON.stringify(layout.buttons)}`);
+    assert(layout.heading.visible && layout.title.visible && layout.actions.visible, `Adjustment heading actions are not visible: ${JSON.stringify(layout)}`);
+    assert(layout.heading.top <= layout.stack.top, `Adjustment heading is not above the stack: ${JSON.stringify(layout)}`);
+    assert(layout.title.right <= layout.actions.left || layout.actions.right <= layout.title.left, `Adjustment title overlaps its actions: ${JSON.stringify(layout)}`);
+    assert(layout.buttons.every((button) => button.visible), `A primary adjustment action is not visible: ${JSON.stringify(layout.buttons)}`);
+    assert(layout.toolStrip.visible && layout.stack.bottom <= layout.toolStrip.top, `Mask tools are not below the adjustment stack: ${JSON.stringify(layout)}`);
 
-    const addButton = page.locator("#local-add-adjustment");
+    const addButton = page.locator('[data-local-tool="brush"]');
     await addButton.scrollIntoViewIfNeeded();
     const before = await page.locator(".grade-rail").evaluate((node) => node.scrollTop);
-    await addButton.click();
+    const revisionBeforeDraft = await page.evaluate(() => state.editRevision);
+    await selectLocalDraft(page, "brush");
+    assert(await page.evaluate(() => state.editRevision) === revisionBeforeDraft, "An unused row entered history.");
     const after = await page.locator(".grade-rail").evaluate((node) => node.scrollTop);
     assert(after === before, `Adding a row moved the surrounding control panel (${before} to ${after}).`);
 

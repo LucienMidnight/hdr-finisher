@@ -1,4 +1,6 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern.js");
+const { createLocalAdjustment } = require("./helpers/local-adjustments.js");
 
 const urlIndex = process.argv.indexOf("--url");
 const baseUrl = urlIndex >= 0 ? process.argv[urlIndex + 1] : process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
@@ -21,26 +23,16 @@ function assert(condition, message) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
     await page.locator("#grade-mode-local").click();
 
-    const created = page.waitForResponse((response) =>
-      response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
-    );
-    await page.locator('[data-local-tool="linear_gradient"]').click();
-    await page.locator("#local-add-adjustment").click();
-    await created;
+    await createLocalAdjustment(page, "linear_gradient");
     await page.waitForFunction(() => selectedLocal()?.mask?.leaf?.type === "linear_gradient");
-    assert(
-      await page.locator('[data-local-tool="linear_gradient"]').isDisabled(),
-      "The assigned parent tool was not locked after creation.",
-    );
-    assert(
-      await page.locator('[data-local-tool="brush"]').isDisabled(),
-      "Another tool remained clickable on a locked parent mask.",
-    );
+    assert(await page.locator('[data-local-tool="linear_gradient"]').isEnabled()
+      && await page.locator('[data-local-tool="brush"]').isEnabled(),
+    "Mask tools were disabled after creating a persisted adjustment.");
 
     const parentMenu = page.getByRole("button", { name: "More actions for Local Adjustment 1" });
     await parentMenu.click();
@@ -53,10 +45,8 @@ function assert(condition, message) {
     await page.locator('[data-local-tool="luminance_range"]').click();
     await subMaskCreated;
     await page.waitForFunction(() => selectedLocal()?.mask?.children?.[1]?.leaf?.type === "luminance_range");
-    assert(
-      await page.locator('[data-local-tool="linear_gradient"]').isDisabled(),
-      "The parent tool remained clickable on a locked sub-mask.",
-    );
+    assert(await page.locator('[data-local-tool="linear_gradient"]').isEnabled(),
+      "The parent tool was disabled while a sub-mask is selected.");
     assert(
       await page.evaluate(() => selectedMaskExpression(selectedLocal())?.leaf?.type === "luminance_range"),
       "The selected sub-mask did not exclusively own the active editor tool.",

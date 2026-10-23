@@ -91,7 +91,7 @@ async function measureLane(page, lane) {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.click("#test-pattern-button");
+    await importTestPattern(page);
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
 
     const hdr = await measureLane(page, "hdr");

@@ -17,6 +17,7 @@
 //      "Preparing" until the next input; the driver therefore requires it to
 //      converge on its own, with at least one re-arm, within the timeout.
 
+const { selectLocalDraft } = require("./helpers/local-adjustments.js");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
@@ -82,8 +83,10 @@ async function waitForConvergence(page, timeoutMs) {
     const rearmsBeforeBurst = (await readViewer(page)).rearms;
     await page.evaluate(() => activateWorkflowTab("grade"));
     await page.locator("#grade-mode-local").click();
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="luminance_range"]').click();
+    await selectLocalDraft(page, "luminance_range");
+    const lumaSettings = page.locator("#local-mask-tree-summary details.local-mask-subpanel");
+    if (!await lumaSettings.evaluate((details) => details.open)) await lumaSettings.locator("summary").click();
+    await page.locator(".luma-preset-button").nth(0).click();
     await page.waitForTimeout(250);
     await page.evaluate(() => setCustomZoom(200));
     await page.waitForTimeout(250);

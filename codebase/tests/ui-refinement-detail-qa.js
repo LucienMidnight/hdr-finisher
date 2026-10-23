@@ -29,7 +29,7 @@ function assert(condition, message) {
       return { borderWidth: style.borderTopWidth, loaded: logo.complete && logo.naturalWidth > 0 };
     });
     assert(logoSurface.borderWidth === "0px" && logoSurface.loaded, `Product mark surface is incorrect: ${JSON.stringify(logoSurface)}`);
-    await page.evaluate(() => document.getElementById("test-pattern-button").click());
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator('[data-workflow-tab="proof"]').click();
     const buttonPath = path.join(outputDir, "button-implementation.png");

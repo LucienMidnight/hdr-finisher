@@ -13,7 +13,7 @@ function assert(condition, message) {
     for (const width of widths) {
       const page = await browser.newPage({ viewport: { width, height: 1000 } });
       await page.goto(baseUrl, { waitUntil: "networkidle" });
-      await page.getByRole("button", { name: "Load test pattern" }).click();
+      await importTestPattern(page);
       await page.waitForFunction(() => state.session?.session_id, null, { timeout: 30000 });
       const rail = page.locator(".source-rail");
       if (width < 1500) {

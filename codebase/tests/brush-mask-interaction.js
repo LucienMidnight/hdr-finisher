@@ -1,5 +1,6 @@
 const { chromium } = require("playwright");
 const { importTestPattern } = require("./helpers/import-test-pattern");
+const { selectLocalDraft, createLocalAdjustment } = require("./helpers/local-adjustments");
 const path = require("path");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
@@ -122,12 +123,9 @@ async function overlayMaskAlphaAt(page, x, y) {
     await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
     await page.locator("#grade-mode-local").click();
 
-    const createResponse = page.waitForResponse((response) =>
-      response.url().includes("/edit-commands") && response.request().method() === "POST",
-    );
-    await page.locator('[data-local-tool="brush"]').click();
-    await page.locator("#local-add-adjustment").click();
-    assert((await createResponse).ok(), "Creating the brush mask failed.");
+    const draftId = await selectLocalDraft(page, "brush");
+    assert(await page.evaluate(() => localAdjustments().length) === 0,
+      "Choosing Brush must not save an empty adjustment.");
 
     const panels = page.locator(".local-mask-subpanel");
     assert(await panels.count() === 2, "Brush tip and painted mask controls were not split into two panels.");
@@ -291,23 +289,6 @@ async function overlayMaskAlphaAt(page, x, y) {
       Math.abs(transformedFallback.handleExtent[0] / transformedFallback.handleExtent[1] - 1) < 0.08,
       `The rotated fixed-size gizmo handle was squeezed (${JSON.stringify(transformedFallback)}).`,
     );
-    const adjustmentMenuButton = page.getByRole("button", { name: "More actions for Local Adjustment 1" });
-    assert(await adjustmentMenuButton.getAttribute("aria-haspopup") === "menu", "The adjustment ellipsis is not an accessible menu button.");
-    await adjustmentMenuButton.click();
-    const addSubMaskMenuItem = page.getByRole("menuitem", { name: "Create sub-mask" });
-    assert(await addSubMaskMenuItem.isVisible(), "Create sub-mask was not moved into the adjustment menu.");
-    await page.screenshot({
-      path: path.resolve(__dirname, "../output/brush-qa/adjustment-menu.png"),
-      fullPage: true,
-    });
-    await page.keyboard.press("Escape");
-    assert(!(await addSubMaskMenuItem.isVisible()), "Escape did not close the adjustment menu.");
-    await adjustmentMenuButton.click();
-    await page.getByRole("menuitem", { name: "Create sub-mask" }).click();
-    assert(await page.getByText("Pick a tool", { exact: true }).isVisible(), "Create sub-mask did not add a pending child row.");
-    await page.locator("#local-delete").click();
-    assert(await page.locator("#local-adjustment-list > li.is-sub-mask").count() === 0, "Canceling the pending sub-mask left a child row behind.");
-
     const lowDensityFeather = await page.evaluate(() => {
       const size = 257;
       const source = document.createElement("canvas");
@@ -381,6 +362,28 @@ async function overlayMaskAlphaAt(page, x, y) {
       const local = selectedLocal();
       return local && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask);
     });
+
+    await page.waitForFunction(id => !state.localMaskCommitDepth && !state.localUnusedAdjustment
+      && localAdjustments().some(local => local.id === id), draftId);
+    assert((await editResponse).request().postDataJSON().commands[0].command_type === "create_local",
+      "The first brush stroke must create the saved adjustment.");
+
+    const adjustmentMenuButton = page.getByRole("button", { name: "More actions for Local Adjustment 1" });
+    assert(await adjustmentMenuButton.getAttribute("aria-haspopup") === "menu", "The adjustment ellipsis is not an accessible menu button.");
+    await adjustmentMenuButton.click();
+    const addSubMaskMenuItem = page.getByRole("menuitem", { name: "Create sub-mask" });
+    assert(await addSubMaskMenuItem.isVisible(), "Create sub-mask was not moved into the adjustment menu.");
+    await page.screenshot({
+      path: path.resolve(__dirname, "../output/brush-qa/adjustment-menu.png"),
+      fullPage: true,
+    });
+    await page.keyboard.press("Escape");
+    assert(!(await addSubMaskMenuItem.isVisible()), "Escape did not close the adjustment menu.");
+    await adjustmentMenuButton.click();
+    await page.getByRole("menuitem", { name: "Create sub-mask" }).click();
+    assert(await page.getByText("Pick a tool", { exact: true }).isVisible(), "Create sub-mask did not add a pending child row.");
+    await page.locator("#local-delete").click();
+    assert(await page.locator("#local-adjustment-list > li.is-sub-mask").count() === 0, "Canceling the pending sub-mask left a child row behind.");
 
     const painted = await overlayColors(overlay);
     await page.screenshot({
@@ -622,6 +625,8 @@ async function overlayMaskAlphaAt(page, x, y) {
       return local && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask);
     });
 
+    const brushSettings = page.locator("details.local-mask-subpanel").filter({ has: page.locator("#local-eraser") });
+    if (!await brushSettings.evaluate(panel => panel.open)) await brushSettings.locator("summary").click();
     await page.locator("#local-eraser").click();
     const beforeErase = await authoritativeMaskAlphaQuality(page);
     const beforeEraseCenter = await authoritativeMaskAlphaAt(page, 0.85, 0.30);
@@ -845,17 +850,10 @@ async function overlayMaskAlphaAt(page, x, y) {
     const hidden = await overlayColors(overlay);
     assert(hidden.red === 0, "Show overlay did not hide the red mask.");
 
-    assert(await page.locator("#local-add-adjustment").textContent() === "+", "The stack add control is not a plus button.");
     assert(await page.locator("#local-delete").textContent() === "−", "The stack remove control is not a minus button.");
-    await page.locator("#local-add-adjustment").click();
-    assert(await page.getByText("Pick a tool", { exact: true }).isVisible(), "The plus-first flow did not add a Pick a tool row.");
-    const addResponse = page.waitForResponse((response) =>
-      response.url().includes("/edit-commands") && response.request().method() === "POST",
-    );
-    await page.locator('[data-local-tool="linear_gradient"]').click();
-    assert((await addResponse).ok(), "Adding a local adjustment with the plus button failed.");
-    await page.locator("#local-adjustment-list li").nth(1).waitFor({ state: "attached" });
-    assert(await page.locator("#local-adjustment-list li").count() === 2, "The plus button did not add an adjustment.");
+    await createLocalAdjustment(page, "linear_gradient");
+    assert(await page.locator("#local-adjustment-list li").count() === 2,
+      "Authoring the new gradient did not add a saved adjustment.");
     const removeResponse = page.waitForResponse((response) =>
       response.url().includes("/edit-commands") && response.request().method() === "POST",
     );

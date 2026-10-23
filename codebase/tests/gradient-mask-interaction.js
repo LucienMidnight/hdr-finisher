@@ -1,4 +1,6 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern.js");
+const { selectLocalDraft } = require("./helpers/local-adjustments.js");
 const fs = require("fs");
 const path = require("path");
 
@@ -76,22 +78,29 @@ async function gradientZoomAlignment(page) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#grade-mode-local").click();
 
+    await selectLocalDraft(page, "linear_gradient");
+    const initialPreviewBox = await page.locator("#preview-canvas").boundingBox();
+    assert(initialPreviewBox, "Preview geometry is unavailable for the initial gradient placement.");
     let editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
-    await page.locator('[data-local-tool="linear_gradient"]').click();
-    await page.locator("#local-add-adjustment").click();
-    assert((await editResponse).ok(), "Creating the gradient failed.");
+    await page.mouse.move(initialPreviewBox.x + initialPreviewBox.width * 0.2, initialPreviewBox.y + initialPreviewBox.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(initialPreviewBox.x + initialPreviewBox.width * 0.8, initialPreviewBox.y + initialPreviewBox.height * 0.5, { steps: 8 });
+    await page.mouse.up();
+    assert((await editResponse).ok(), "Placing the initial gradient failed.");
     await page.waitForFunction(() => {
       const local = selectedLocal();
-      return local && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask);
+      return local && !state.localMaskDraftDirty
+        && localAuthoritativeMaskCache.get(local.id)?.signature === localMaskSpatialSignature(local.mask);
     });
 
     const panel = page.locator("#local-gradient-controls .local-mask-subpanel");
-    assert(await panel.isVisible(), "Gradient Controls are not visible.");
-    assert(await panel.getByText("Gradient Controls", { exact: true }).isVisible(), "Gradient Controls heading is missing.");
+    if (!await panel.evaluate((details) => details.open)) await panel.locator("summary").click();
+    assert(await panel.isVisible(), "Gradient settings are not visible.");
+    assert(await panel.locator("summary > span").first().textContent() === "Gradient settings", "Gradient settings heading is missing.");
     const labels = await panel.locator(".local-brush-control > .instrument-control-label").allTextContents();
     assert(labels.join("|").replace(/[+\-]?\d+(?:\.\d+)?%/g, "") === "Opacity|Fan", `Unexpected gradient controls: ${labels.join(", ")}`);
     assert(await panel.locator(".gradient-luma-ramp input").count() === 4, "Luminance range is not a four-handle ramp.");

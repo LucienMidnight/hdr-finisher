@@ -12,7 +12,7 @@ const url = urlIndex >= 0 ? process.argv[urlIndex + 1] : "http://127.0.0.1:8799"
   page.on("pageerror", (error) => pageErrors.push(error.message));
   try {
     await page.goto(url, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.waitForFunction(() => state.gpuPreview?.available && viewerState().status === "ready", null,
       { timeout: 120000 });
     const result = await page.evaluate(async () => {

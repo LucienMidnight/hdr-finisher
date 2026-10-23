@@ -1,4 +1,6 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern");
+const { createLocalAdjustment } = require("./helpers/local-adjustments");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 
@@ -11,7 +13,7 @@ function assert(condition, message) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#grade-mode-local").click();
 
@@ -28,19 +30,7 @@ function assert(condition, message) {
 
     const heights = [];
     for (let count = 1; count <= 5; count += 1) {
-      const response = page.waitForResponse((candidate) =>
-        candidate.url().includes("/edit-commands")
-        && candidate.request().method() === "POST"
-        && candidate.status() === 200,
-      );
-      if (count === 1) {
-        await page.locator('[data-local-tool="brush"]').click();
-        await page.locator("#local-add-adjustment").click();
-      } else {
-        await page.locator("#local-add-adjustment").click();
-        await page.locator('[data-local-tool="brush"]').click();
-      }
-      await response;
+      await createLocalAdjustment(page, "brush");
       await page.waitForFunction((expected) => document.querySelectorAll("#local-adjustment-list > li").length === expected, count);
       heights.push(await metrics());
       if (count === 1) {

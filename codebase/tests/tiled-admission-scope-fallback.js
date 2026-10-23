@@ -18,7 +18,7 @@ function assert(condition, message) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.waitForFunction(() => state.session?.session_id && state.gpuPreview?.available, null, { timeout: 120000 });
     await page.waitForFunction(() => viewerState().status === "ready"
       && state.acceptedPresentation?.exact === true

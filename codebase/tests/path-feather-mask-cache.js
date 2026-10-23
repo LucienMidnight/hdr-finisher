@@ -11,6 +11,8 @@
 //
 //   node tests/path-feather-mask-cache.js   (HDR_FINISHER_URL, default :8765)
 
+const { importTestPattern } = require("./helpers/import-test-pattern.js");
+const { selectLocalDraft } = require("./helpers/local-adjustments.js");
 const { chromium } = require("playwright");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
@@ -26,7 +28,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
   page.on("pageerror", (error) => pageErrors.push(error.message));
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     const gpu = await page.evaluate(() => Boolean(state.gpuPreview?.available));
     if (!gpu) {
@@ -34,8 +36,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
       return;
     }
     await page.locator("#grade-mode-local").click();
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="path"]').click();
+    await selectLocalDraft(page, "path");
     const box = await page.evaluate(() => activePreviewElement().getBoundingClientRect().toJSON());
     const at = (x, y) => [box.x + box.width * x, box.y + box.height * y];
     for (const [x, y] of [[.3, .3], [.7, .3], [.65, .7], [.35, .7]]) {
@@ -44,6 +45,8 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     let response = page.waitForResponse((r) => r.url().includes("/edit-commands") && r.request().method() === "POST");
     await page.mouse.click(...at(.3, .3));
     assert((await response).ok(), "Closing the Path did not commit.");
+    const pathSettings = page.locator("#local-mask-tree-summary details.local-mask-subpanel");
+    if (!await pathSettings.evaluate((details) => details.open)) await pathSettings.locator("summary").click();
     response = page.waitForResponse((r) => r.url().includes("/edit-commands") && r.request().method() === "POST");
     await page.evaluate(() => {
       const local = selectedLocal();

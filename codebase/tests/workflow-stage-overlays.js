@@ -1,4 +1,6 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern.js");
+const { createLocalAdjustment } = require("./helpers/local-adjustments.js");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 
@@ -25,15 +27,11 @@ async function overlayState(page) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#grade-mode-local").click();
 
-    const editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands")
-      && response.request().method() === "POST");
-    await page.locator('[data-local-tool="linear_gradient"]').click();
-    await page.locator("#local-add-adjustment").click();
-    assert((await editResponse).ok(), "Creating the gradient failed.");
+    await createLocalAdjustment(page, "linear_gradient");
     await page.waitForFunction(() => {
       const local = selectedLocal();
       return local && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask);

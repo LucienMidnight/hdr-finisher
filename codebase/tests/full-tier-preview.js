@@ -38,7 +38,7 @@ function assert(condition, message) {
     assert(fullOptions.preview === undefined && fullOptions.settings === "Full",
       `Full diagnostic override was not offered as expected: ${JSON.stringify(fullOptions)}`);
 
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.waitForFunction(() => state.session?.session_id && viewerState().status === "ready", null, { timeout: 120000 });
     await page.locator("#settings-preview-resolution").evaluate((select) => {
       select.value = "full";

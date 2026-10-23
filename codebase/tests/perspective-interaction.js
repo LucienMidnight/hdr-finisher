@@ -10,7 +10,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
   page.on("console", (message) => { if (["error", "warning"].includes(message.type())) console.error("Renderer:", message.text()); });
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.waitForFunction(() => state.acceptedPresentation?.exact, null, { timeout: 60000 });
     assert.equal(await page.evaluate(() => Boolean(state.gpuPreview?.available)), true, "This driver must exercise WebGPU");
     const group = page.locator('[data-group="perspective"]');

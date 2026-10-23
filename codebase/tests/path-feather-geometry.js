@@ -18,7 +18,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
 
     const result = await page.evaluate(() => {

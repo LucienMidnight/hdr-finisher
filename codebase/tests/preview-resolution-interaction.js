@@ -15,7 +15,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     if (await page.locator("#preview-latency").count() !== 0) throw new Error("The old Preview response menu is still present.");
     if (await selector.isChecked()) throw new Error("Faster dragging should be off by default.");
 
-    await page.click("#test-pattern-button");
+    await importTestPattern(page);
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
     await page.click("#zoom-actual");
     await page.waitForFunction(() => {

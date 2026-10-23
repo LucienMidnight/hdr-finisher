@@ -59,7 +59,7 @@ async function dragRange(page, slider, distance, { ctrl = false, shift = false, 
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.click("#test-pattern-button");
+    await importTestPattern(page);
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
 
     await page.locator('[data-group="hdr-tone"] .group-toggle').click();

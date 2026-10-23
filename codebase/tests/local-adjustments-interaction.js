@@ -1,4 +1,6 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern");
+const { selectLocalDraft, commitLocalDraft } = require("./helpers/local-adjustments");
 const path = require("path");
 const fs = require("fs");
 
@@ -48,10 +50,26 @@ async function canvasVariationCount(locator) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const pageErrors = [];
   const requestFailures = [];
+  const supersededProxyCancellations = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("requestfailed", (request) => {
     const failure = request.failure()?.errorText || "unknown failure";
     if (failure === "net::ERR_ABORTED" && /\/(preview|scopes)(\/|\?)/.test(request.url())) return;
+    // A source proxy is keyed by session, edit revision, and geometry. Keep
+    // aborted GETs pending until the final state lets us verify they went stale.
+    if (failure === "net::ERR_ABORTED" && request.method() === "GET") {
+      const url = new URL(request.url());
+      const match = url.pathname.match(/^\/api\/session\/([^/]+)\/proxy\/(hdr|sdr)$/);
+      if (match && url.searchParams.has("edit_revision") && url.searchParams.has("geometry_signature")) {
+        supersededProxyCancellations.push({
+          sessionId: match[1],
+          editRevision: Number(url.searchParams.get("edit_revision")),
+          geometrySignature: url.searchParams.get("geometry_signature"),
+          url: request.url(),
+        });
+        return;
+      }
+    }
     if (failure === "net::ERR_ABORTED" && /\/local-mask\/[^/]+\/preview$/.test(new URL(request.url()).pathname)) return;
     if (failure === "net::ERR_ABORTED" && request.method() === "GET" && /\/local-mask\/[^/]+$/.test(new URL(request.url()).pathname)) return;
     requestFailures.push(`${request.method()} ${request.url()}: ${failure}`);
@@ -60,39 +78,29 @@ async function canvasVariationCount(locator) {
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     assert(await page.locator(".local-stack-surface").count() === 1, "The persistent local-adjustment list surface is missing.");
-    assert(await page.locator("[data-local-tool]:disabled").count() === 0, "Local creation tools should remain clickable before a source is loaded.");
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    assert(await page.locator("[data-local-tool]:disabled").count() === 4, "Local creation tools should require a loaded source.");
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
 
     const localToggle = page.locator("#grade-mode-local");
     await localToggle.click();
-    assert(await localToggle.getAttribute("aria-expanded") === "true", "Local Adjustments did not expand.");
+    assert(await localToggle.getAttribute("aria-selected") === "true", "Local mode was not selected.");
     assert(await page.locator("#local-adjustments-group").evaluate((node) => !node.classList.contains("collapsed")), "Local group remained collapsed.");
-    assert(await page.locator('[data-group="hdr-tone"]').isVisible(), "Tone disappeared when Local Adjustments expanded.");
+    assert(await page.locator('[data-control-panel="global"]').isHidden(), "Global controls remained visible in Local mode.");
 
     const expectedTools = ["brush", "linear_gradient", "luminance_range", "path"];
     for (let index = 0; index < expectedTools.length; index += 1) {
       const tool = expectedTools[index];
       const button = page.locator(`[data-local-tool="${tool}"]`);
-      await page.locator("#local-add-adjustment").click();
-      await button.click();
+      const draftId = await selectLocalDraft(page, tool);
       await page.waitForFunction((assignedTool) => selectedMaskLeaf(selectedLocal())?.type === assignedTool, tool);
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, index + 1);
       assert(await button.getAttribute("aria-pressed") === "true", `${tool} did not expose immediate active state.`);
       if (tool !== "path") {
-        assert(await button.isDisabled(), `${tool} was not locked after assignment to its mask.`);
+        assert(!await button.isDisabled(), `${tool} must remain available to create another adjustment.`);
       }
-      if (tool === "path") {
-        const overlay = page.locator("#local-mask-overlay");
-        const box = await overlay.boundingBox();
-        assert(box, "The Path canvas is unavailable.");
-        const points = [[.30, .30], [.70, .30], [.72, .68], [.32, .70]];
-        for (const [x, y] of points) await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
-        const createResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
-        await page.mouse.click(box.x + box.width * points[0][0], box.y + box.height * points[0][1]);
-        assert((await createResponse).ok(), "Closing the Path did not create its local adjustment.");
-      }
+      if (tool !== "brush") await commitLocalDraft(page, tool, draftId);
       let gpuLuma = false;
       if (tool === "luminance_range") {
         gpuLuma = await page.evaluate(() => Boolean(state.gpuPreview?.available));
@@ -152,6 +160,8 @@ async function canvasVariationCount(locator) {
       await page.locator("#preview-primary-pane").screenshot({
         path: path.join(outputDirectory, `local-adjustments-${tool.replaceAll("_", "-")}-overlay-qa.png`),
       });
+      // Preserve the empty-brush check, then save content before switching tools.
+      if (tool === "brush") await commitLocalDraft(page, tool, draftId);
     }
     const localRows = page.locator("#local-adjustment-list .local-adjustment-select[data-local-id]");
     await localRows.first().click();
@@ -203,6 +213,8 @@ async function canvasVariationCount(locator) {
     const brushRow = localRows.first();
     await brushRow.click();
     const brushSize = page.locator(".local-mask-subpanel").first().locator('input[type="range"]').first();
+    const brushPanel = page.locator("details.local-mask-subpanel").first();
+    if (!await brushPanel.evaluate(panel => panel.open)) await brushPanel.locator("summary").click();
     await brushSize.fill("0.1");
     await brushSize.dblclick();
     assert(await brushSize.inputValue() === "0.025", "Double-click did not reset the dynamic Brush Size slider to its declared default.");
@@ -229,8 +241,8 @@ async function canvasVariationCount(locator) {
     assert((await editResponse).ok(), "Brush/Erase stroke edit command failed.");
 
     await localRows.nth(1).click();
-    assert(await eraser.isDisabled(), "Erase should be disabled for a non-brush mask.");
-    assert(await eraser.getAttribute("aria-pressed") === "false", "Erase remained active after selecting a non-brush mask.");
+    assert(await eraser.count() === 0, "Erase should be absent from non-brush settings.");
+    assert(await page.evaluate(() => !state.localErase), "Erase remained active after selecting a non-brush mask.");
     editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
     await page.mouse.move(overlayBox.x + overlayBox.width * 0.25, overlayBox.y + overlayBox.height * 0.35);
     await page.mouse.down();
@@ -279,9 +291,9 @@ async function canvasVariationCount(locator) {
     const localRailShot = path.join(outputDirectory, "local-adjustments-local-qa.png");
     await page.locator(".grade-rail").screenshot({ path: localRailShot });
 
-    await localToggle.click();
-    assert(await localToggle.getAttribute("aria-expanded") === "false", "Local Adjustments did not collapse back to global grading.");
-    const tabs = page.locator(".lane-folder-shell > .lane-switch [role='tab']");
+    await page.locator("#grade-mode-global").click();
+    assert(await localToggle.getAttribute("aria-selected") === "false", "Local mode remained selected after returning to Global.");
+    const tabs = page.locator("#control-mode-global .lane-switch [role='tab']");
     assert(await tabs.count() === 2, "HDR and SDR folder tabs were not rendered.");
     assert(await tabs.first().getAttribute("aria-selected") === "true", "HDR folder tab was not selected.");
     await tabs.nth(1).click();
@@ -510,6 +522,19 @@ async function canvasVariationCount(locator) {
     await page.locator(".grade-rail").screenshot({ path: globalRailShot });
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
+    if (supersededProxyCancellations.length) {
+      const activeSource = await page.evaluate(() => ({
+        sessionId: state.session?.session_id || null,
+        editRevision: state.editRevision,
+        geometrySignature: geometrySignature(),
+      }));
+      for (const cancelled of supersededProxyCancellations) {
+        const isSuperseded = cancelled.sessionId !== activeSource.sessionId
+          || cancelled.editRevision !== activeSource.editRevision
+          || cancelled.geometrySignature !== activeSource.geometrySignature;
+        if (!isSuperseded) requestFailures.push(`GET ${cancelled.url}: net::ERR_ABORTED for current source`);
+      }
+    }
     if (requestFailures.length) throw new Error(`Request failures: ${requestFailures.join(" | ")}`);
     console.log(JSON.stringify({ locals: expectedTools.length, localRailShot, globalRailShot }));
   } finally {

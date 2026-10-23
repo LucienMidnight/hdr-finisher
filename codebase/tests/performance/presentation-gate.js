@@ -104,7 +104,7 @@ function refusalsOf(outcome) {
 
   try {
     await page.goto(url, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 120000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 120000 });

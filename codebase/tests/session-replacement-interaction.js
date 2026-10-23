@@ -17,7 +17,7 @@ function assert(condition, message) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 30000 });
 
     const cacheSize = await page.evaluate(() => {
@@ -80,7 +80,7 @@ function assert(condition, message) {
     assert(!retired.localMaskDraftDirty && retired.caches.every((size) => size === 0), `Old mask state survived retirement: ${JSON.stringify(retired)}`);
 
     await page.reload({ waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 30000 });
     const sessionBeforeDrop = await page.evaluate(() => state.session.session_id);
     await page.evaluate(async () => {

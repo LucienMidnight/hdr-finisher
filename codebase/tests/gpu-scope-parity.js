@@ -19,7 +19,7 @@ function assert(condition, message) {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.waitForFunction(() => state.session?.session_id && state.gpuPreview?.available && els.previewCanvas.style.display !== "none", null, { timeout: 30000 });
     const result = await page.evaluate(async (scopeModes) => {
       const comparisons = {};

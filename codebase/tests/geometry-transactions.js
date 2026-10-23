@@ -7,7 +7,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.waitForFunction(() => state.acceptedPresentation, null, { timeout: 60000 });
     await page.waitForLoadState("networkidle");
     const initial = await page.evaluate(() => state.editRevision);

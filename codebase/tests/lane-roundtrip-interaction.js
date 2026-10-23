@@ -19,7 +19,7 @@ function stableScope(scope) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.click("#test-pattern-button");
+    await importTestPattern(page);
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
 
     await page.evaluate(() => {

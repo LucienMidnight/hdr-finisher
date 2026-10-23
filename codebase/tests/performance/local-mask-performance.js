@@ -1,4 +1,6 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("../helpers/import-test-pattern");
+const { createLocalAdjustment } = require("../helpers/local-adjustments");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
 
@@ -25,13 +27,10 @@ function summarize(values) {
       }).observe({ type: "longtask", buffered: true });
     });
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#grade-mode-local").click();
-    const created = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
-    await page.locator('[data-local-tool="brush"]').click();
-    await page.locator("#local-add-adjustment").click();
-    await created;
+    await createLocalAdjustment(page, "brush");
 
     await page.evaluate(async () => {
       const leaf = selectedLocal().mask.leaf;

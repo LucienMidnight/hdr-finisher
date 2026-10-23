@@ -25,34 +25,15 @@ function curvePointPosition(box, x, y) {
     await importTestPattern(page);
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
 
-    const controlOrder = async (lane) => page.evaluate((activeLane) => (
-      [...document.querySelector(`[data-lane-panel="${activeLane}"]`).children]
-        .map((element) => element.dataset.group)
-        .filter(Boolean)
-    ), lane);
-    const expectedHdrOrder = ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "curves", "hdr-highlights", "hdr-color"];
-    const hdrOrder = await controlOrder("hdr");
-    if (JSON.stringify(hdrOrder) !== JSON.stringify(expectedHdrOrder)) {
-      throw new Error(`Unexpected HDR control order: ${JSON.stringify(hdrOrder)}`);
+    // Curves must be available in each grade lane. Local adjustments now have
+    // their own mode; unrelated Global modules must not pin this editor test.
+    for (const lane of ["sdr", "hdr"]) {
+      await page.locator(`#view-${lane}`).click();
+      await page.waitForFunction(active => document.body.dataset.activeLane === active, lane);
+      if (!await page.locator(`[data-lane-panel="${lane}"] [data-group="curves"]`).isVisible()) {
+        throw new Error(`Curves are unavailable in the ${lane.toUpperCase()} grade folder`);
+      }
     }
-    const localPlacement = await page.evaluate(() => {
-      const grading = document.querySelector('[data-group="color-grading"]');
-      const blackAndWhite = grading?.nextElementSibling;
-      return [blackAndWhite?.dataset.group, blackAndWhite?.nextElementSibling?.dataset.group];
-    });
-    if (JSON.stringify(localPlacement) !== JSON.stringify(["black-and-white", "local-adjustments"])) {
-      throw new Error(`Expected Black & White then Local Adjustments after Color Grading: ${JSON.stringify(localPlacement)}`);
-    }
-
-    await page.click("#view-sdr");
-    await page.waitForFunction(() => document.body.dataset.activeLane === "sdr");
-    const expectedSdrOrder = ["denoise", "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"];
-    const sdrOrder = await controlOrder("sdr");
-    if (JSON.stringify(sdrOrder) !== JSON.stringify(expectedSdrOrder)) {
-      throw new Error(`Unexpected SDR control order: ${JSON.stringify(sdrOrder)}`);
-    }
-    await page.click("#view-hdr");
-    await page.waitForFunction(() => document.body.dataset.activeLane === "hdr");
 
     const gpuAvailable = await page.evaluate(() => Boolean(window.HDRFinisherPerformance.gpuSnapshot()?.available));
     if (gpuAvailable) await page.evaluate(() => window.HDRFinisherPerformance.enableGpuInstrumentation(true));

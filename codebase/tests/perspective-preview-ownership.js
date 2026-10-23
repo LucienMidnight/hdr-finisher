@@ -76,7 +76,7 @@ if (require.main === module) {
     try {
       const page = await browser.newPage();
       await page.goto(process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765", { waitUntil: "networkidle" });
-      await page.getByRole("button", { name: "Load test pattern" }).click();
+      await importTestPattern(page);
       await page.waitForFunction(() => state.acceptedPresentation?.exact, null, { timeout: 60000 });
       await page.locator('[data-group="perspective"] .group-toggle').click();
       await checkPerspectiveOwnership(page);

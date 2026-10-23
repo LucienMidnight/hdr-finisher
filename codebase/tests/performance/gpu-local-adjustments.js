@@ -1,4 +1,6 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("../helpers/import-test-pattern");
+const { createLocalAdjustment } = require("../helpers/local-adjustments");
 const fs = require("fs");
 const path = require("path");
 
@@ -173,14 +175,11 @@ async function rapidDrag(page, selector, values, intervalMs = 16) {
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     const browserVersion = await browser.version();
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
     await page.locator("#grade-mode-local").click();
-    const created = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
-    await page.locator('[data-local-tool="luminance_range"]').click();
-    await page.locator("#local-add-adjustment").click();
-    await created;
+    await createLocalAdjustment(page, "luminance_range");
     await page.waitForFunction(() => selectedLocal()?.mask?.leaf?.type === "luminance_range");
     await page.evaluate(async () => {
       const local = selectedLocal();

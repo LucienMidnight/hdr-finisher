@@ -1,4 +1,6 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern.js");
+const { createLocalAdjustment } = require("./helpers/local-adjustments.js");
 const path = require("path");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
@@ -26,40 +28,32 @@ async function redOverlayPixels(locator) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
     await page.locator("#grade-mode-local").click();
 
-    const brushCreateResponse = page.waitForResponse((response) =>
-      response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
-    );
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="brush"]').click();
-    await brushCreateResponse;
+    await createLocalAdjustment(page, "brush");
     assert(await page.locator(".local-adjustment-item").count() === 1, "Brush setup adjustment was not created.");
 
-    const createResponse = page.waitForResponse((response) =>
-      response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
-    );
     const gpuResident = await page.evaluate(() => Boolean(state.gpuPreview?.available));
     const exactMaskResponse = gpuResident ? null : page.waitForResponse((response) =>
       /\/local-mask\/[^/]+\?/.test(response.url()) && response.request().method() === "GET" && response.status() === 200,
     );
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="luminance_range"]').click();
-    const lumaCreated = await createResponse;
-    const createdLeaf = lumaCreated.request().postDataJSON().commands[0].payload.local.mask.leaf;
+    const lumaCreatedResponse = await createLocalAdjustment(page, "luminance_range");
+    const createdLeaf = lumaCreatedResponse.request().postDataJSON().commands[0].payload.local.mask.leaf;
     assert(!("luma_sampling_initialized" in createdLeaf), "Luma creation leaked client-only sampling state into the API payload.");
     await page.waitForFunction(() => document.querySelectorAll(".local-adjustment-item").length === 2);
-    assert(await page.locator(".local-adjustment-item").count() === 2, "Clicking Luma after another mask did not create a new adjustment.");
+    assert(await page.locator(".local-adjustment-item").count() === 2, "Choosing Luma after another mask did not create a new adjustment.");
+    const lumaPanel = page.locator("#local-mask-tree-summary details.local-mask-subpanel");
+    if (!await lumaPanel.evaluate((details) => details.open)) await lumaPanel.locator("summary").click();
     if (process.env.HDR_FINISHER_CREATION_ONLY === "1") {
       console.log(JSON.stringify({ adjustmentCount: 2, lumaType: createdLeaf.type, backwardCompatiblePayload: true }));
       return;
     }
     await page.waitForFunction(() => document.querySelectorAll(".luma-nit-range").length === 2);
 
-    assert(await page.locator(".local-mask-subpanel-heading strong").first().textContent() === "Luma Controls", "The standalone section is not titled Luma Controls.");
+    assert(await lumaPanel.locator("summary > span").first().textContent() === "Luma settings", "The Luma settings foldout has the wrong title.");
     assert(await page.locator(".luma-preset-button").count() === 7, "The false-color quick ranges are incomplete.");
     assert(await page.locator(".luma-reference-range input").count() === 2, "The reference-nit range does not expose two edge handles.");
     assert(await page.locator(".luma-refine-range input").count() === 2, "The refined range does not expose two inward handles.");
@@ -187,7 +181,7 @@ async function redOverlayPixels(locator) {
     );
     await page.waitForFunction(() => Number(document.querySelector('.local-brush-control:has(.instrument-control-label) input[type="range"]')?.value) === 50).catch(() => null);
     await page.locator(".grade-rail").screenshot({ path: path.resolve(__dirname, "../output/playwright/luma-mask-ui.png") });
-    await page.locator(".local-mask-subpanel", { hasText: "Luma Controls" }).screenshot({ path: path.resolve(__dirname, "../output/playwright/luma-controls-ui.png") });
+    await lumaPanel.screenshot({ path: path.resolve(__dirname, "../output/playwright/luma-controls-ui.png") });
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
     console.log(JSON.stringify({ sampled, innerAfterAdd, innerAfterRemove, gpuResident, overlayPixels: await redOverlayPixels(overlay) }));

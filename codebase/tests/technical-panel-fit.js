@@ -61,7 +61,7 @@ async function readPanel(page) {
   const failures = [];
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.click("#test-pattern-button");
+    await importTestPattern(page);
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 60000 }).catch(() => null);
     // The scopes panel at its minimum height, set the way the splitter does.

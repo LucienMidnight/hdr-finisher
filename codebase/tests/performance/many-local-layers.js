@@ -41,7 +41,7 @@ function assert(condition, message) {
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     const browserVersion = await browser.version();
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
 

@@ -21,6 +21,7 @@
  *     not depend on which way the strip runs or on the image's aspect ratio);
  *   - preview matches export: the two masks agree within 0.06 on the profiles.
  */
+const { createLocalAdjustment } = require("./helpers/local-adjustments.js");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -244,10 +245,7 @@ function dumpMask(name, mask, width, height) {
     await page.waitForFunction(() => state.session?.session_id && state.gpuPreview?.available === true
       && viewerState().status === "ready", null, { timeout: 300000 });
     await page.locator("#grade-mode-local").click();
-    const created = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="luminance_range"]').click();
-    await created;
+    await createLocalAdjustment(page, "luminance_range");
     for (const feather of FEATHERS) {
       await setFeather(page, feather);
       const gpu = await readGpuMask(page);

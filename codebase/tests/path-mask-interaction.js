@@ -1,4 +1,6 @@
 const fs = require("fs");
+const { importTestPattern } = require("./helpers/import-test-pattern.js");
+const { selectLocalDraft } = require("./helpers/local-adjustments.js");
 const path = require("path");
 const { chromium } = require("playwright");
 
@@ -71,11 +73,10 @@ async function activePreviewBox(page) {
   fs.mkdirSync(outputDirectory, { recursive: true });
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#grade-mode-local").click();
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="path"]').click();
+    await selectLocalDraft(page, "path");
     const overlay = page.locator("#local-mask-overlay");
     const box = await activePreviewBox(page);
     assert(box, "Path overlay is unavailable.");
@@ -149,8 +150,7 @@ async function activePreviewBox(page) {
       state.adjustments.shared.geometry = defaultGeometry();
       renderLocalMaskOverlay();
     });
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="path"]').click();
+    await selectLocalDraft(page, "path");
 
     await clickNormalized(page, box, .25, .25);
     Object.assign(box, await activePreviewBox(page));
@@ -171,6 +171,8 @@ async function activePreviewBox(page) {
     assert((await response).ok(), "Clicking the first node did not close and create the mask.");
     current = await pathState(page);
     assert(!current.draft && current.leaf.feather_mode === "outer_boundary", "Closed path did not enter outer-boundary editing.");
+    const pathSettings = page.locator("#local-mask-tree-summary details.local-mask-subpanel");
+    if (!await pathSettings.evaluate((details) => details.open)) await pathSettings.locator("summary").click();
 
     const feather = page.locator('input[type="range"][data-default-value="4"]');
     assert(await feather.count() === 1, "Path Feather did not expose its dedicated range input.");
@@ -472,23 +474,20 @@ async function activePreviewBox(page) {
     await page.locator("#preview-primary-pane").screenshot({ path: path.join(outputDirectory, "path-and-feather-overlay.png") });
 
     const completedLocals = (await pathState(page)).locals;
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="path"]').click();
+    await selectLocalDraft(page, "path");
     await clickNormalized(page, box, .2, .2);
     await clickNormalized(page, box, .6, .2);
     await overlay.focus();
     await page.keyboard.press("Escape");
     assert((await pathState(page)).locals === completedLocals && !(await pathState(page)).draft, "Esc did not cancel an unfinished Path draft.");
 
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="path"]').click();
+    await selectLocalDraft(page, "path");
     await clickNormalized(page, box, .25, .25);
     await clickNormalized(page, box, .65, .25);
     await page.locator("#local-show-mask").click();
     assert((await pathState(page)).locals === completedLocals && !(await pathState(page)).draft, "External interaction did not cancel an invalid two-node draft.");
 
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="path"]').click();
+    await selectLocalDraft(page, "path");
     await clickNormalized(page, box, .2, .2);
     await clickNormalized(page, box, .65, .2);
     await clickNormalized(page, box, .45, .65);
@@ -498,8 +497,7 @@ async function activePreviewBox(page) {
     assert((await response).ok(), "Enter did not close a valid Path draft.");
     assert((await pathState(page)).locals === completedLocals + 1, "Enter-closed Path was not retained.");
 
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="path"]').click();
+    await selectLocalDraft(page, "path");
     await clickNormalized(page, box, .3, .25);
     await clickNormalized(page, box, .7, .3);
     await clickNormalized(page, box, .5, .7);
@@ -511,8 +509,7 @@ async function activePreviewBox(page) {
     // A Path handle may extend beyond the image while remaining inside the
     // overlay pane. It must still be hit-testable and draggable from there.
     const beforeEdgePathLocals = (await pathState(page)).locals;
-    await page.locator("#local-add-adjustment").click();
-    await page.locator('[data-local-tool="path"]').click();
+    await selectLocalDraft(page, "path");
     Object.assign(box, await activePreviewBox(page));
     await page.mouse.move(box.x + box.width * .03, box.y + box.height * .38);
     await page.mouse.down();

@@ -60,7 +60,7 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
       const {session}=await response.json();
       await page.evaluate(loaded=>activateDesktopSession(loaded,""),session);
     } else {
-      await page.evaluate(() => document.getElementById("test-pattern-button").click());
+      await importTestPattern(page);
     }
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 600000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });

@@ -18,7 +18,7 @@ async function waitForScope(page) {
   fs.mkdirSync(outputDirectory, { recursive: true });
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await waitForScope(page);
 

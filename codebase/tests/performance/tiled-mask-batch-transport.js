@@ -21,6 +21,8 @@
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
+const { importTestPattern } = require("../helpers/import-test-pattern");
+const { createLocalAdjustment } = require("../helpers/local-adjustments");
 
 const TILE_BATCH_CAP = 64;
 
@@ -96,19 +98,14 @@ async function clipBrightness(page, clip) {
     });
 
     await page.goto(url, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Load test pattern" }).click();
+    await importTestPattern(page);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 120000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 120000 });
 
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#grade-mode-local").click();
-    const created = page.waitForResponse(
-      (response) => response.url().includes("/edit-commands") && response.request().method() === "POST",
-    );
-    await page.locator('[data-local-tool="brush"]').click();
-    await page.locator("#local-add-adjustment").click();
-    await created;
+    await createLocalAdjustment(page, "brush");
     await page.waitForFunction(() => state.localMaskCommitDepth === 0, null, { timeout: 30000 });
 
     // Force the route under test and let the automatic re-render settle first.

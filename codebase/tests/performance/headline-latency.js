@@ -33,6 +33,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { chromium } = require("playwright");
+const { createLocalAdjustment } = require("../helpers/local-adjustments");
 const { ensureLargeNoisySource } = require("../large-noisy-tiff.js");
 
 const args = process.argv.slice(2);
@@ -571,7 +572,13 @@ async function measureLocalGrade(page) {
   // A full-frame local, added once; the measured edit is its grade only, so
   // the mask geometry is unchanged and warm.
   await page.locator("#grade-mode-local").click();
-  await page.locator("#local-add-adjustment").click();
+  await createLocalAdjustment(page, "luminance_range");
+  await waitForIdle(page);
+  await page.evaluate(async () => {
+    const leaf = selectedLocal().mask.leaf;
+    Object.assign(leaf, { fade_in_start_ev: -24, reference_start_ev: -24, full_start_ev: -24, full_end_ev: 24, reference_end_ev: 24, fade_out_end_ev: 24 });
+    if (!(await commitSelectedLocal({ refreshPreview: true }))) throw new Error("The full-frame luma mask update was rejected.");
+  });
   await waitForIdle(page);
   const control = page.locator('[data-local-grade="exposure"]').first();
   const visible = await control.waitFor({ state: "visible", timeout: 20000 })

@@ -251,7 +251,7 @@ async function measureTier(page, tier, repetitions) {
       if (!fs.existsSync(resolved)) throw new Error(`Input does not exist: ${resolved}`);
       await page.setInputFiles("#file-input", resolved);
     } else {
-      await page.getByRole("button", { name: "Load test pattern" }).click();
+      await importTestPattern(page);
     }
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 600000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });

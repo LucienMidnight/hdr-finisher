@@ -27,7 +27,7 @@ async function editValue(locator, value, { keyboardOnly = false } = {}) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.click("#test-pattern-button");
+    await importTestPattern(page);
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
     for (const groupName of ["hdr-tone", "hdr-highlights", "hdr-equalizer", "hdr-color"]) {
       const group = page.locator(`[data-group="${groupName}"]`);
