@@ -702,7 +702,7 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
 }
 
 async function queueAuthoritativeLocalMask(local) {
-  if (!state.session || !local || !local.mask) return;
+  if (!state.session || !local || !local.mask || unusedLocal(local)) return;
   if (state.localPathDraft?.localId === local.id) return;
   if (state.localPathCreatePendingId === local.id) return;
   if (state.localMaskCommitDepth > 0) return;
@@ -762,7 +762,7 @@ async function queueAuthoritativeLocalMask(local) {
 }
 
 function scheduleAuthoritativeLocalMaskDraft(local) {
-  if (!state.session || !local || !local.mask) return;
+  if (!state.session || !local || !local.mask || unusedLocal(local)) return;
   if (state.localPathDraft?.localId === local.id) return;
   if (state.localPathCreatePendingId === local.id) return;
   const leaf = selectedMaskLeaf(local);

@@ -311,6 +311,7 @@ const state = {
   localTool: null,
   localCreationTool: null,
   pendingLocalAdjustment: null,
+  localUnusedAdjustment: null,
   pendingSubMask: null,
   localShowMask: false,
   // Per-adjustment editor visibility is session-only UI state. It never enters

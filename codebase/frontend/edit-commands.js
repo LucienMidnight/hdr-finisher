@@ -60,6 +60,7 @@ function stablePreviewJson(value) {
  */
 function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null, historyGroup = null, isCurrent = () => true } = {}) {
   if (state.gradeOpen) return Promise.resolve(false);
+  if (["undo", "redo", "replace_document", "revert_rendition"].includes(commandType)) discardUnusedLocal();
   const sessionId = state.session?.session_id;
   if (commandType !== "set_global_adjustments" && state.globalEditDirty) {
     return syncGlobalEditState().then((applied) => state.session?.session_id === sessionId && applied && !state.globalEditDirty

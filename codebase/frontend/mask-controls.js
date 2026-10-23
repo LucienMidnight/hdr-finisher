@@ -307,7 +307,7 @@ function createLuminanceRangeControl(local, leaf) {
       scheduleSpatialMaskPreview(local);
       queueLocalMaskOverlayRender();
     });
-    input.addEventListener("change", () => commitSelectedLocal());
+    input.addEventListener("change", () => commitSelectedLocal({ maskContent: true }));
     bindLocalPreviewInteraction(input);
     slider.append(input);
     return input;
@@ -361,7 +361,7 @@ function createLuminanceRangeControl(local, leaf) {
       scheduleSpatialMaskPreview(local);
       queueLocalMaskOverlayRender();
     });
-    input.addEventListener("change", () => commitSelectedLocal());
+    input.addEventListener("change", () => commitSelectedLocal({ maskContent: true }));
     bindLocalPreviewInteraction(input);
     refineSlider.append(input);
     return input;
@@ -394,7 +394,7 @@ function createLuminanceRangeControl(local, leaf) {
       updateLuminanceRangeControl();
       scheduleSpatialMaskPreview(local);
       queueLocalMaskOverlayRender();
-      await commitSelectedLocal();
+      await commitSelectedLocal({ maskContent: true });
     });
     presetGrid.append(button);
     return button;

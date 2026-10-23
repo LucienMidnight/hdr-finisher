@@ -179,7 +179,7 @@ function bindLocalMaskCanvas() {
       queueLocalMaskOverlayRender();
       return;
     }
-    await commitSelectedLocal();
+    await commitSelectedLocal({ maskContent: gesture.type === "brush" || gesture.type === "linear_gradient" });
   };
   canvas.addEventListener("pointerup", end);
   canvas.addEventListener("pointercancel", end);
@@ -265,8 +265,9 @@ async function finishLuminanceSampleGesture(gesture) {
   // serialized, rather than the pointerdown snapshot retained by the gesture.
   const leaf = firstMaskLeaf(local.mask, "luminance_range");
   if (!leaf) return;
+  const sessionId = state.session.session_id;
   try {
-    const response = await fetch(`/api/session/${state.session.session_id}/local-luminance-sample`, {
+    const response = await fetch(`/api/session/${sessionId}/local-luminance-sample`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -277,12 +278,14 @@ async function finishLuminanceSampleGesture(gesture) {
     });
     const sample = await safeJson(response);
     if (!response.ok) throw new Error(sample.detail || "Luminance sampling failed.");
+    if (state.session?.session_id !== sessionId || selectedLocal() !== local || selectedMaskLeaf(local) !== leaf || state.gradeMode !== "local") return;
     if (!applyLuminanceSample(leaf, sample, gesture.remove)) return;
     scheduleSpatialMaskPreview(local);
     renderMaskTreeEditor(local);
     syncRangeVisuals(els.localEditor);
     queueLocalMaskOverlayRender();
-    await commitSelectedLocal();
+    if (state.session?.session_id !== sessionId || selectedLocal() !== local || selectedMaskLeaf(local) !== leaf || state.gradeMode !== "local") return;
+    await commitSelectedLocal({ maskContent: true });
   } catch (error) {
     console.error(error);
     status.post({ id: "edit", severity: "error", message: error.message });

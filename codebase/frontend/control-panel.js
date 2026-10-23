@@ -35,7 +35,8 @@ function initializeControlPanel() {
   trigger.setAttribute("aria-label", "More mask actions");
   const actions = document.createElement("div");
   actions.id = "local-more-actions";
-  actions.setAttribute("role", "menu");
+  actions.setAttribute("role", "group");
+  actions.setAttribute("aria-label", "Mask actions");
   more.append(trigger, actions);
   strip.append(more);
   actions.append(els.localMaskFooterActions, local.querySelector(".local-overlay-color-control"));

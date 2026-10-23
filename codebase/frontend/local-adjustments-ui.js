@@ -55,7 +55,7 @@ function showLocalGizmo(local = selectedLocal()) {
 async function finishLocalPathDraft() {
   const draft = state.localPathDraft;
   if (!draft || draft.finishing) return false;
-  const local = localAdjustments().find((item) => item.id === draft.localId);
+  const local = localAdjustmentRows().find((item) => item.id === draft.localId);
   const leaf = selectedMaskLeaf(local, "path");
   if (!local || !leaf || leaf.nodes.length < 3) {
     cancelLocalPathDraft();
@@ -68,16 +68,15 @@ async function finishLocalPathDraft() {
   renderLocalAdjustments();
   const created = draft.command === "update"
     ? await commitSelectedLocal()
-    : await queueEditCommand("create_local", { local: JSON.parse(JSON.stringify(local)) });
+    : await commitSelectedLocal({ maskContent: true });
   state.localPathCreatePendingId = null;
   if (!created) {
     if (draft.command === "update" && draft.previousMask) {
       local.mask = draft.previousMask;
       state.selectedSubMaskId = null;
     } else {
-      const index = localAdjustments().findIndex((item) => item.id === local.id);
-      if (index >= 0) localAdjustments().splice(index, 1);
-      state.selectedLocalId = localAdjustments().at(-1)?.id || null;
+      if (state.localUnusedAdjustment?.id === local.id) discardUnusedLocal();
+      if (state.selectedLocalId === local.id) state.selectedLocalId = localAdjustmentRows().at(-1)?.id || null;
     }
     renderLocalAdjustments();
   }
@@ -87,14 +86,13 @@ async function finishLocalPathDraft() {
 function cancelLocalPathDraft() {
   const draft = state.localPathDraft;
   if (!draft) return;
-  const local = localAdjustments().find((item) => item.id === draft.localId);
+  const local = localAdjustmentRows().find((item) => item.id === draft.localId);
   if (draft.command === "update" && local && draft.previousMask) {
     local.mask = draft.previousMask;
     state.selectedSubMaskId = null;
   } else {
-    const index = localAdjustments().findIndex((item) => item.id === draft.localId);
-    if (index >= 0) localAdjustments().splice(index, 1);
-    state.selectedLocalId = localAdjustments().at(-1)?.id || null;
+    discardUnusedLocal();
+    state.selectedLocalId = localAdjustmentRows().at(-1)?.id || null;
   }
   state.localPathDraft = null;
   state.localPointerGesture = null;
@@ -105,7 +103,7 @@ function cancelLocalPathDraft() {
 function beginPendingLocalAdjustment() {
   if (state.pendingLocalAdjustment) return state.pendingLocalAdjustment;
   const currentLocal = selectedLocal();
-  const number = localAdjustments().length + 1;
+  const number = localAdjustmentRows().length + 1;
   state.pendingLocalAdjustment = {
     id: crypto.randomUUID(),
     name: `Local Adjustment ${number}`,
@@ -147,7 +145,7 @@ async function assignToolToPending(type) {
 
   if (state.pendingSubMask) {
     const pending = state.pendingSubMask;
-    const local = localAdjustments().find((item) => item.id === pending.parentLocalId);
+    const local = localAdjustmentRows().find((item) => item.id === pending.parentLocalId);
     if (!local) return false;
     const previousMask = JSON.parse(JSON.stringify(local.mask));
     const expression = newMaskExpression(type);
@@ -178,33 +176,30 @@ async function assignToolToPending(type) {
     return true;
   }
 
-  const pending = state.pendingLocalAdjustment || beginPendingLocalAdjustment();
-  const local = newLocalAdjustment(type, pending);
+  const previous = state.localUnusedAdjustment;
+  const convert = previous && firstMaskLeaf(previous.mask)?.type !== type;
+  if (previous && !convert) discardUnusedLocal();
+  const local = convert ? previous : newLocalAdjustment(type);
+  local.mask = newMaskExpression(type);
+  state.localUnusedAdjustment = local;
   state.pendingLocalAdjustment = null;
+  state.pendingSubMask = null;
   state.selectedLocalId = local.id;
   showLocalGizmo(local);
   state.selectedSubMaskId = null;
+  state.localPathDraft = type === "path" ? { localId: local.id, command: "create", finishing: false } : null;
+  state.localPathEditMode = "path";
+  state.selectedPathNode = null;
   setGradeMode("local");
-  if (type === "path") {
-    state.editDocument.local_adjustments.push(local);
-    state.localPathDraft = { localId: local.id, command: "create", finishing: false };
-    state.localPathEditMode = "path";
-    state.selectedPathNode = null;
-    state.localShowMask = true;
-    renderLocalAdjustments();
-    els.localMaskOverlay?.focus({ preventScroll: true });
-    return true;
-  }
-  const created = await queueEditCommand("create_local", { local });
-  if (!created) state.selectedLocalId = localAdjustments()[0]?.id || null;
   renderLocalAdjustments();
-  return created;
+  els.localMaskOverlay?.focus({ preventScroll: true });
+  return true;
 }
 
 function bindLocalAdjustmentEvents() {
   els.localToolButtons.forEach((button) => button.addEventListener("click", async () => {
     if (typeof retouchUI !== "undefined") retouchUI.active = false;
-    if (state.localPathDraft) await finishLocalPathDraft();
+    if (state.localPathDraft && (!unusedLocal() || (selectedMaskLeaf()?.nodes?.length || 0) >= 3)) await finishLocalPathDraft();
     if (!state.session) {
       status.post({ id: "edit", severity: "attention", message: "Load an image before creating a local adjustment." });
       if (els.localEmpty) els.localEmpty.textContent = "Load an image, then choose a mask tool to create the first local adjustment.";
@@ -239,11 +234,15 @@ function bindLocalAdjustmentEvents() {
     renderLocalAdjustments();
   });
   els.localAdjustmentList?.addEventListener("click", async (event) => {
+    const rowId = event.target.closest("button[data-local-id], button[data-local-menu-id], button[data-local-bypass-id]")?.dataset;
+    const targetId = rowId?.localId || rowId?.localMenuId || rowId?.localBypassId;
+    if (targetId && state.localUnusedAdjustment && targetId !== state.localUnusedAdjustment.id) discardUnusedLocal();
     const bypassButton = event.target.closest("button[data-local-bypass-id]");
     if (bypassButton) {
-      const local = localAdjustments().find((item) => item.id === bypassButton.dataset.localBypassId);
+      const local = localAdjustmentRows().find((item) => item.id === bypassButton.dataset.localBypassId);
       if (!local) return;
       local.enabled = !local.enabled;
+      if (unusedLocal(local)) { renderLocalAdjustments(); return; }
       renderLocalAdjustments();
       queueLocalMaskOverlayRender();
       // Bypass changes graph participation, not mask pixels. Present the GPU
@@ -261,7 +260,7 @@ function bindLocalAdjustmentEvents() {
     }
     const subMaskBypassButton = event.target.closest("button[data-sub-mask-bypass-id]");
     if (subMaskBypassButton) {
-      const local = localAdjustments().find((item) => item.id === subMaskBypassButton.dataset.localId);
+      const local = localAdjustmentRows().find((item) => item.id === subMaskBypassButton.dataset.localId);
       const entry = subMaskEntry(local, subMaskBypassButton.dataset.subMaskBypassId);
       if (!local || !entry) return;
       entry.container.enabled = entry.container.enabled === false;
@@ -305,12 +304,9 @@ function bindLocalAdjustmentEvents() {
     const localId = button.dataset.localId;
     const subMaskId = button.dataset.subMaskId || null;
     const selectionChanged = state.selectedLocalId !== localId || state.selectedSubMaskId !== subMaskId;
-    state.selectedLocalId = localId;
-    state.selectedSubMaskId = subMaskId;
-    state.localCreationTool = null;
-    state.localTool = selectedMaskLeaf()?.type || null;
+    selectLocalAdjustment(localId, subMaskId);
     state.localAdjustmentMenuId = null;
-    if (!subMaskId && event.detail >= 2 && localAdjustments().some((item) => item.id === localId)) {
+    if (!subMaskId && event.detail >= 2 && localAdjustmentRows().some((item) => item.id === localId)) {
       state.localRenameId = localId;
       renderLocalAdjustments();
       return;
@@ -321,14 +317,14 @@ function bindLocalAdjustmentEvents() {
   els.localAdjustmentList?.addEventListener("dblclick", (event) => {
     if (event.target.closest("input, .local-adjustment-bypass, .local-adjustment-menu-button")) return;
     const button = event.target.closest("button[data-local-id]:not([data-sub-mask-id])");
-    if (!button || !localAdjustments().some((item) => item.id === button.dataset.localId)) return;
+    if (!button || !localAdjustmentRows().some((item) => item.id === button.dataset.localId)) return;
     state.selectedLocalId = button.dataset.localId;
     state.selectedSubMaskId = null;
     state.localRenameId = button.dataset.localId;
     renderLocalAdjustments();
   });
   document.addEventListener("pointerdown", (event) => {
-    if (state.localPathDraft && !event.target.closest("#local-mask-overlay")) void finishLocalPathDraft();
+    if (state.localPathDraft && (selectedMaskLeaf()?.nodes?.length || 0) >= 3 && !event.target.closest("#local-mask-overlay, .local-tool-strip, #local-editor")) void finishLocalPathDraft();
     if (!state.localAdjustmentMenuId || event.target.closest(".local-adjustment-menu, .local-adjustment-menu-button")) return;
     state.localAdjustmentMenuId = null;
     renderLocalAdjustments();
@@ -378,6 +374,7 @@ function bindLocalAdjustmentEvents() {
     regenerateMaskExpressionIds(copy.mask);
     copy.name = `${local.name} copy`;
     const index = localAdjustments().findIndex((item) => item.id === local.id) + 1;
+    if (unusedLocal(local)) discardUnusedLocal();
     state.selectedLocalId = copy.id;
     await queueEditCommand("create_local", { local: copy, index });
   });
@@ -391,9 +388,10 @@ function bindLocalAdjustmentEvents() {
     commitSelectedLocal();
   });
   els.localDelete?.addEventListener("click", async () => {
+    if (unusedLocal()) { discardUnusedLocal(); renderLocalAdjustments(); return; }
     if (state.pendingLocalAdjustment) {
       state.pendingLocalAdjustment = null;
-      if (!selectedLocal()) state.selectedLocalId = localAdjustments()[0]?.id || null;
+      if (!selectedLocal()) state.selectedLocalId = localAdjustmentRows()[0]?.id || null;
       renderLocalAdjustments();
       return;
     }
@@ -434,7 +432,7 @@ function bindLocalAdjustmentEvents() {
     }
     localComparisonCompositeCache.clear();
     await queueEditCommand("delete_local", {}, local.id);
-    state.selectedLocalId = localAdjustments()[0]?.id || null;
+    state.selectedLocalId = localAdjustmentRows()[0]?.id || null;
     state.selectedSubMaskId = null;
     renderLocalAdjustments();
   });
@@ -462,7 +460,9 @@ function bindLocalAdjustmentEvents() {
 function setGradeMode(mode) {
   const next = ["global", "local", "retouch"].includes(mode) ? mode : "global";
   if (state.gradeMode !== next) {
-    if (state.localPathDraft) void finishLocalPathDraft();
+    if (state.localPathDraft && (selectedMaskLeaf()?.nodes?.length || 0) >= 3) void finishLocalPathDraft();
+    else if (unusedLocal()) discardUnusedLocal();
+    else if (state.localPathDraft) void finishLocalPathDraft();
     state.localPointerGesture = null;
     state.localBrushCursor = null;
     state.localPathCursor = null;
@@ -496,8 +496,7 @@ function setGradeMode(mode) {
   if (next === "local") state.localTool = selectedMaskLeaf()?.type || null;
   if (next === "retouch") retouchUI.active = Boolean(state.session);
   if (next !== "global") void ensureGeometryCoordinateMap();
-  renderHslPanels();
-  renderRetouchControls();
+  renderLocalAdjustments();
   renderLocalMaskOverlay();
 }
 
@@ -530,8 +529,37 @@ function localAdjustments() {
   return state.editDocument?.local_adjustments || [];
 }
 
+function localAdjustmentRows() {
+  const locals = localAdjustments();
+  return state.localUnusedAdjustment ? [...locals, state.localUnusedAdjustment] : locals;
+}
+
+function unusedLocal(local = selectedLocal()) {
+  return Boolean(local && state.localUnusedAdjustment?.id === local.id);
+}
+
+function discardUnusedLocal() {
+  const local = state.localUnusedAdjustment;
+  if (!local) return;
+  state.localUnusedAdjustment = null;
+  state.localMaskDraftDirty = false;
+  if (state.localPathDraft?.localId === local.id) state.localPathDraft = null;
+  state.localPointerGesture = null;
+  state.selectedSubMaskId = null;
+  state.localHiddenGizmoIds.delete(local.id);
+  if (state.selectedLocalId === local.id) state.selectedLocalId = localAdjustments().at(-1)?.id || null;
+}
+
+function selectLocalAdjustment(localId, subMaskId = null) {
+  if (state.localUnusedAdjustment && localId !== state.localUnusedAdjustment.id) discardUnusedLocal();
+  state.selectedLocalId = localId;
+  state.selectedSubMaskId = subMaskId;
+  state.localCreationTool = null;
+  state.localTool = selectedMaskLeaf()?.type || null;
+}
+
 function selectedLocal() {
-  return localAdjustments().find((item) => item.id === state.selectedLocalId) || null;
+  return localAdjustmentRows().find((item) => item.id === state.selectedLocalId) || null;
 }
 
 function subMaskRows(expression, rows = []) {
@@ -641,7 +669,7 @@ function renderLocalAdjustments() {
   renderHslPanels();
   renderRetouchControls();
   if (!els.localAdjustmentList) return;
-  const locals = localAdjustments();
+  const locals = localAdjustmentRows();
   if (!state.selectedLocalId && locals.length) state.selectedLocalId = locals[0].id;
   const validMenuIds = new Set(locals.flatMap((local) => [local.id, ...subMaskRows(local.mask).map((entry) => entry.id)]));
   if (state.localAdjustmentMenuId && !validMenuIds.has(state.localAdjustmentMenuId)) {
@@ -657,6 +685,7 @@ function renderLocalAdjustments() {
     item.className = "local-adjustment-item";
     item.classList.toggle("is-sub-mask", Boolean(subMask || pending?.parentLocalId));
     item.classList.toggle("is-pending", Boolean(pending));
+    item.classList.toggle("is-unused", unusedLocal(local));
     const button = document.createElement("button");
     button.type = "button";
     button.className = "local-adjustment-select";
@@ -674,7 +703,7 @@ function renderLocalAdjustments() {
     button.classList.toggle("active", active);
     const leaf = subMask ? firstMaskLeaf(subMask.expression) : firstMaskLeaf(local?.mask);
     const title = pending?.name || (subMask ? `Sub-mask ${subMaskRows(local.mask).findIndex((entry) => entry.id === subMask.id) + 1}` : local.name);
-    const subtitle = pending ? "Pick a tool" : localMaskTypeLabel(leaf?.type || "mask");
+    const subtitle = pending ? "Pick a tool" : `${localMaskTypeLabel(leaf?.type || "mask")}${unusedLocal(local) ? " · unused" : ""}`;
     button.append(createLocalAdjustmentCopy({ title, subtitle }));
     if (pending) {
       els.localAdjustmentList.append(item);
@@ -763,8 +792,8 @@ function renderLocalAdjustments() {
   const selectedIndex = local ? locals.findIndex((item) => item.id === local.id) : -1;
   if (els.localDuplicate) els.localDuplicate.disabled = !local || Boolean(state.selectedSubMaskId);
   if (els.localDelete) els.localDelete.disabled = !local && !pendingSelected;
-  if (els.localMoveUp) els.localMoveUp.disabled = !local || Boolean(state.selectedSubMaskId) || selectedIndex <= 0;
-  if (els.localMoveDown) els.localMoveDown.disabled = !local || Boolean(state.selectedSubMaskId) || selectedIndex >= locals.length - 1;
+  if (els.localMoveUp) els.localMoveUp.disabled = !local || Boolean(state.selectedSubMaskId) || unusedLocal(local) || selectedIndex <= 0;
+  if (els.localMoveDown) els.localMoveDown.disabled = !local || Boolean(state.selectedSubMaskId) || unusedLocal(local) || selectedIndex >= locals.length - 1;
   if (els.projectSave) {
     els.projectSave.disabled = !state.session;
     els.projectSave.textContent = window.HDRGradeSaving?.active() ? "Save" : state.documentDirty ? "Save project *" : "Save project";
@@ -908,6 +937,7 @@ function scheduleLocalPreview({ spatialMaskChanged = false } = {}) {
 }
 
 function gpuLumaMaskPreviewActive(local = selectedLocal()) {
+  if (unusedLocal(local)) return false;
   return Boolean(
     state.gpuPreview?.available
     && local?.mask?.operator === "leaf"
@@ -918,6 +948,7 @@ function gpuLumaMaskPreviewActive(local = selectedLocal()) {
 }
 
 function scheduleSpatialMaskPreview(local) {
+  if (unusedLocal(local)) return;
   if (gpuLumaMaskPreviewActive(local)) {
     scheduleLocalPreview();
     return;
@@ -973,9 +1004,16 @@ async function moveSelectedLocal(direction) {
   await queueEditCommand("reorder_locals", { order });
 }
 
-async function commitSelectedLocal({ refreshPreview = true } = {}) {
+async function commitSelectedLocal({ refreshPreview = true, maskContent = false } = {}) {
   const local = selectedLocal();
   if (!local) return false;
+  const creating = unusedLocal(local);
+  if (creating && !maskContent) return false;
+  const sessionId = state.session?.session_id;
+  if (creating) {
+    state.localUnusedAdjustment = null;
+    state.editDocument.local_adjustments.push(local);
+  }
   let committed = false;
   state.localMaskCommitDepth += 1;
   state.localMaskCommitRefreshPending ||= refreshPreview;
@@ -983,7 +1021,11 @@ async function commitSelectedLocal({ refreshPreview = true } = {}) {
     // Local strokes are optimistic and may overlap a previous commit. Hold the
     // adjusted preview until the last queued commit so it cannot render an
     // intermediate mask between strokes.
-    committed = await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id, { refreshPreview: false });
+    committed = await queueEditCommand(creating ? "create_local" : "update_local", { local: JSON.parse(JSON.stringify(local)) }, creating ? null : local.id, { refreshPreview: false });
+    if (creating && !committed && state.session?.session_id === sessionId) {
+      state.editDocument.local_adjustments = localAdjustments().filter(item => item.id !== local.id);
+      if (!state.localUnusedAdjustment && state.selectedLocalId === local.id && state.gradeMode === "local") state.localUnusedAdjustment = local;
+    }
     if (committed) {
       window.clearTimeout(state.localMaskDraftTimer);
       state.localMaskDraftTimer = 0;

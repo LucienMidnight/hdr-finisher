@@ -680,6 +680,7 @@ function retireActiveSession() {
   state.selectedLocalId = null;
   state.selectedSubMaskId = null;
   state.pendingLocalAdjustment = null;
+  state.localUnusedAdjustment = null;
   state.pendingSubMask = null;
   state.localTool = null;
   state.localCreationTool = null;
