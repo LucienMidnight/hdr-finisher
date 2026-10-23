@@ -1762,10 +1762,9 @@ low memory, injected allocation failure and successful reuse after failure pass.
 
 All four real DJI mosaiced DNGs still pass the operation-based plan; the Sony
 DxO linear DNG and DJI merged HDR DNG have no mandatory warp and retain their
-existing route. This is not a camera-brand switch. A real non-DJI embedded-warp
-fixture remains missing; independent synthetic coefficients cover the generic
-mapping. Grade GPU DNG correction remains separate open work; Grade benefits
-only from the precise CPU sampler improvement recorded in Import and RAW.
+existing route. This is not a camera-brand switch. The subsequent real Leica validation below closes the
+non-DJI fixture gap. Grade now shares this bounded correction engine through
+its own source-job/delivery lifecycle (see Import and RAW).
 
 Validation: the existing focused DNG driver ran serially through headless
 Playwright; no visible Electron/browser, broad sweep, push or installer.
@@ -1773,6 +1772,42 @@ Fast checks: 590 Node passed; 2,468 Python passed, 3 skipped.
 Evidence remains in ignored `codebase/output/dng-performance/` and
 `codebase/output/library-dng-warp/` (baseline `1792772080024`, final timed GPU
 `1792772515693`, final adaptive geometry `1792772824911`).
+
+**October 24, 2026: real non-DJI GPU DNG validation (built)**
+
+The externally stored Leica X2 sample 882 from raw.pixls.us is CC0/public domain.
+`codebase/tests/fixtures/dng-real-samples.json` retains its acquisition URL,
+SHA256, byte size and local fixture reference. The 4944 x 3272 mosaiced sensor
+has mandatory OpcodeList3 WarpRectilinear with three coefficient sets and produces
+4928 x 3264 corrected pixels. Tests use output copies and preserve the original.
+
+Three-run Library CPU/GPU medians on the same shared machine: completion
+25.15 -> 7.61 seconds, with 10% timing tolerance. GPU preparation median was
+5.01 seconds (decode 0.981 s, tiled GPU work 1.549 s); measured GPU stages were
+upload 0.231 s, warp/colour 0.139 s, readback 0.838 s and reduction 0.073 s.
+Tracked GPU peak was 109.80 MiB against a 130.36 MiB shared reservation.
+CPU preparation median was 21.86 seconds, including 21.07 seconds decode/correction.
+These warm/uncontrolled-cache timings are descriptive; they do not establish a
+Grade baseline or a standalone-GPU performance guarantee.
+
+All three independently rendered 640-pixel finished SDR/HDR pairs pass the
+unchanged mean <1, p99.9 <=3 limits, including outer eight-pixel borders.
+Worst SDR Delta E 2000 mean / p99.9: 0.0000960 / 0.02066; worst HDR Delta E ITP:
+0.0004341 / 0.05688. The 57 native synthetic geometry cases include signed
+Grade colour, all orientations, channel-specific/off-centre/tangential warp,
+ordered GainMaps and adaptive tile seams: worst absolute error 0.00000859
+against the unchanged 0.0001 limit. Cancellation, budget denial and injected
+allocation failure/reuse also pass. This does not claim full-native finished
+export comparison or general Library-to-Grade RAW brightness agreement.
+
+Fast checks: 590 Node passed; 2,480 Python passed, 3 skipped.
+The focused headless Playwright driver ran serially; no visible browser or
+Electron window, broad sweep, push or installer. Ignored evidence:
+`codebase/output/library-dng-warp/1792774197270/results.json` (three real Leica
+pairs), `1792774852959/results.json` (final geometry), and
+`codebase/output/dng-grade/library-final3.log`. The forced CPU reference now
+also explicitly selects CPU delivery so the shared Grade hook cannot silently
+turn a CPU reference into GPU work.
 
 ## 6. Decisions waiting on Steve
 

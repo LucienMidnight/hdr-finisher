@@ -36,6 +36,12 @@ for case in original:
  ax,ay=d["affine_x"],d["affine_y"];yy,xx=np.mgrid[:meta["height"],:meta["width"]]
  expected=apply_warp_rectilinear(corrected,warp)[ay[0]*xx+ay[1]*yy+ay[2],ax[0]*xx+ax[1]*yy+ax[2]]
  cases.append(dict(meta=meta,input=case["input"],expected=[expected[...,c].reshape(-1).tolist() for c in range(3)]))
+# Grade correction retains signed ACEScg until the loader's gamut boundary.
+signed_matrix=np.array([[1.2,-.8,0],[0,1,0],[0,0,1]],np.float32)
+for case in original:
+ meta=dict(case["meta"],preserve_signed=True,rgb_to_acescg=signed_matrix.tolist())
+ expected=np.stack(case["expected"],axis=-1).reshape(meta["height"],meta["width"],3) @ signed_matrix.T
+ cases.append(dict(meta=meta,input=case["input"],expected=[expected[...,c].reshape(-1).tolist() for c in range(3)]))
 # Highlight reconstruction, crop and all existing orientations.
 from types import SimpleNamespace
 from hdr_finisher.dng_color import transform_normalized_to_acescg_in_place,_build_clipped_highlight_support

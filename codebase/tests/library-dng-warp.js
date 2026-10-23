@@ -15,8 +15,8 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
  for(const [name,src] of [[sample,source||locate(path.join(root,'local-test-media/inputs/linear-dng'),sample)],['small.png',path.join(root,'tests/fixtures/sdr_gradient.png')]])fs.copyFileSync(src,path.join(dir,name));
  runs.push({dir,mode,repeat,sample});
 }
-(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-unsafe-webgpu']});try{
- const page=await browser.newPage({viewport:{width:2560,height:1440}});await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-unsafe-webgpu']});let page;try{
+ page=await browser.newPage({viewport:{width:2560,height:1440}});await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
  const frame=page.frameLocator('#library-frame'),button=frame.locator('#hdr-button');
  await button.click();const clicked=await button.getAttribute('aria-pressed');await page.keyboard.press('h');
  assert.notEqual(await button.getAttribute('aria-pressed'),clicked);
@@ -60,6 +60,7 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
  const rows=[];
  for(const run of runs){
   console.log('Starting',run.mode,run.repeat);
+  await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:run.mode==='cpu'}});
   const result=await page.locator('#library-frame').evaluate(async(element,run)=>{
    const w=element.contentWindow;if(run.mode==='cpu')w.localStorage.setItem('library-gpu-raw','off');else w.localStorage.removeItem('library-gpu-raw');
    const fetch=w.fetch.bind(w),seen=[],leases=[];w.fetch=async(...args)=>{const response=await fetch(...args);if(String(args[0]).includes('/raw-budget/')&&args[1]?.method==='POST'){const value=await response.clone().json();if(!leases.some(lease=>lease.requested===JSON.parse(args[1].body).bytes))leases.push({requested:JSON.parse(args[1].body).bytes,...value});}if(String(args[0]).includes('/live-scene')&&response.status===204)seen.push(response.headers.get('X-Library-Fallback'));return response;};
@@ -92,4 +93,4 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
  console.log('Evidence:',file);
  if(!rows.length||modes)return;
  const report=execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_dng_compare.py'),file],{cwd:root,encoding:'utf8',timeout:300000,maxBuffer:1<<26});console.log(report);
-}finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});
+}finally{if(page)await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:false}}).catch(()=>{});await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

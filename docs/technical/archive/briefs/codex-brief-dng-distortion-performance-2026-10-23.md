@@ -1,7 +1,7 @@
 # Brief: DNG distortion correction performance
 
 Date: October 23, 2026
-Status: Implemented and locally committed; Grade GPU DNG integration remains open.
+Status: Implemented and locally committed. October 24 follow-up closes Grade GPU DNG integration and validates the real Leica fixture; current results are in Import and RAW and Photo Library module PRDs.
 
 ## Task for the clean thread
 
