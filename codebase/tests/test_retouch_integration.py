@@ -175,7 +175,8 @@ def test_library_native_source_uses_same_repair_before_reduction(photo, tmp_path
     assert _develop_cpu(tmp_path, session.source_path, saved, 32, cache=CaptureCache()) == 32
 
 
-def test_repair_invalidates_proof_cache_and_full_proof_matches_export(photo, tmp_path):
+@pytest.mark.parametrize("method", ["standard","edge-feather","original-detail","donor-detail"])
+def test_repair_invalidates_proof_cache_and_full_proof_matches_export(photo, tmp_path, method):
     from hashlib import sha256
     from pathlib import Path
     from hdr_finisher.capabilities import probe_capabilities
@@ -191,7 +192,9 @@ def test_repair_invalidates_proof_cache_and_full_proof_matches_export(photo, tmp
     request = ProofArtifactRequest(format="jpegxl_hdr", full_size=True, quality=85, adjustments=session.adjustments)
     try:
         before = proofs.create(session, request, backend)
-        edit(store, session, records=[record()])
+        repair = record()
+        repair = repair.model_copy(update={"recipe":repair.recipe.model_copy(update={"method":method})})
+        edit(store, session, records=[repair])
         for lane in (PreviewKind.HDR, PreviewKind.SDR):
             assert _denoised_export_source(session, lane) is session.image
         after = proofs.create(session, request, backend)
@@ -226,7 +229,8 @@ def test_cancel_arriving_before_queued_request_prevents_the_solve(photo):
     assert len(session.repairs) == 1
 
 
-def test_new_and_removed_spots_cannot_change_completed_donors(photo, tmp_path):
+@pytest.mark.parametrize("method", ["standard","edge-feather","original-detail","donor-detail"])
+def test_new_and_removed_spots_cannot_change_completed_donors(photo, tmp_path, method):
     store, session = photo
     class CountingEngine:
         count = 0
@@ -236,6 +240,7 @@ def test_new_and_removed_spots_cannot_change_completed_donors(photo, tmp_path):
     engine = CountingEngine()
     session.retouch_worker = RepairWorker(engine=engine, cache_bytes=0)
     first = record()
+    first = first.model_copy(update={"recipe":first.recipe.model_copy(update={"method":method})})
     second = first.model_copy(update={"id": "second", "recipe": first.recipe.model_copy(update={
         "points": (first.recipe.points[0].model_copy(update={"x": .7}),)})})
     edit(store, session, records=[first])
@@ -254,3 +259,27 @@ def test_new_and_removed_spots_cannot_change_completed_donors(photo, tmp_path):
     restored = open_project(store, project)
     np.testing.assert_array_equal(restored.image, session.image)
     np.testing.assert_array_equal(open_project(store, multi).image, multi_pixels)
+
+
+@pytest.mark.parametrize("method", ["edge-feather","original-detail","donor-detail"])
+def test_prototype_project_replay_and_history_keep_method_and_settings(photo,tmp_path,method):
+    store,session=photo
+    repair=record()
+    repair=repair.model_copy(update={"recipe":repair.recipe.model_copy(update={
+        "method":method,"edge_feather":.45,"texture_amount":.65})})
+    original=session.image.copy()
+    edit(store,session,records=[repair])
+    result=session.image.copy()
+    from hdr_finisher.retouch_recipe import stroke_mask
+    outside=np.ones(original.shape[:2],dtype=bool)
+    left,top,right,bottom=repair.recipe.search_rect
+    outside[top:bottom,left:right]=stroke_mask(repair.recipe) == 0
+    np.testing.assert_array_equal(result[outside],original[outside])
+    edit(store,session,"undo")
+    edit(store,session,"redo")
+    np.testing.assert_array_equal(session.image,result)
+    project=tmp_path/"prototype.hdrfinisher"
+    save_project(session,project)
+    restored=open_project(store,project)
+    assert restored.repairs[0].recipe == repair.recipe
+    np.testing.assert_array_equal(restored.image,result)

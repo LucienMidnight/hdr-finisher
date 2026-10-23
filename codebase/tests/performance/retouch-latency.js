@@ -72,6 +72,7 @@ const baseUrl=process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765';
     }
     await page.evaluate(()=>{window.HDRSourceTransport=window.originalRetouchTransport;});
     await page.locator("#retouch-size").fill("100");
+    await page.locator("#retouch-method").selectOption("donor-detail");
     for(let i=1;i<12;i++){
       await page.evaluate(async i=>{
         const points=[{x:(2700+(i%4)*200)/6000,y:(1700+Math.floor(i/4)*200)/4000,pressure:1}];
@@ -109,7 +110,7 @@ const baseUrl=process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765';
     const stages=await page.evaluate(()=>{window.HDRSourceTransport=window.originalRetouchTransport;return window.retouchTimingStages;});
     assert(stages.some(s=>s.textures>0&&s.bytes>0),'bounded refresh never executed');
     fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({source:[6000,4000],zoom:100,
-      settings:{retryDiameter:12,multiSpotDiameter:100,patchRadius:3,iterations:6},targetMs:1000,
+      settings:{retryDiameter:12,multiSpotDiameter:100,multiSpotMethod:"donor-detail",patchRadius:3,iterations:6},targetMs:1000,
       scope:'Warm native and fit views; startup/active denoise recomputation excluded.',before,after,samples,removalSamples,stages},null,2));
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -117,6 +117,41 @@ async function centerPixel(page) {
     assert.equal(await page.evaluate(() => state.editDocument.repairs[0].recipe.radius_px), 128);
     await page.getByRole("button", { name: "Remove Spot 1", exact: true }).click();
     await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs.length === 0);
+    // Compare all prototypes on one repair; Apply preserves the seed and ROI.
+    await page.locator("#retouch-size").fill("100");
+    await page.mouse.click(rect.x,rect.y);
+    await page.waitForFunction(()=>!retouchUI.busy&&state.editDocument.repairs.length===1);
+    const comparisonSeed=await page.evaluate(()=>state.editDocument.repairs[0].recipe.settings.seed);
+    const comparisonROI=await page.evaluate(()=>state.editDocument.repairs[0].recipe.search_rect);
+    for(const method of ["edge-feather","original-detail","donor-detail"]){
+      await page.locator("#retouch-method").selectOption(method);
+      assert(await page.locator("#retouch-feather").isVisible());
+      assert(!(await page.locator("#retouch-hardness").isVisible()));
+      await page.locator("#retouch-feather").fill("40");
+      if(method!=="edge-feather")await page.locator("#retouch-texture").fill("65");
+      await page.locator("#retouch-apply").click();
+      await page.waitForFunction(m=>!retouchUI.busy&&state.editDocument.repairs[0].recipe.method===m,method);
+      const recipe=await page.evaluate(()=>state.editDocument.repairs[0].recipe);
+      assert.equal(recipe.settings.seed,comparisonSeed,"Apply changed the donor seed");
+      assert.deepEqual(recipe.search_rect,comparisonROI,"Apply changed search region");
+      assert.equal(recipe.edge_feather,.4);
+      if(method!=="edge-feather")assert.equal(recipe.texture_amount,.65);
+      await page.waitForFunction(()=>state.gpuPreview.lastPresentedFrame?.applicationGeneration===state.previewGeneration[state.currentView]);
+      await page.evaluate(()=>{retouchUI.active=false;renderLocalMaskOverlay();});
+      const shown=await centerPixel(page);
+      await page.evaluate(async()=>{state.gpuPreview.resetSession(state.session.session_id);await renderGpuDraft(state.currentView,{longEdge:settledProxyLongEdge(),tier:"settled"});});
+      assert.deepEqual(await centerPixel(page),shown,`${method} bounded refresh differs from full reload`);
+      await page.screenshot({path:path.join(output,`${method}.png`)});
+      await page.evaluate(()=>{retouchUI.active=true;renderLocalMaskOverlay();});
+    }
+    await page.evaluate(()=>queueEditCommand("undo"));
+    assert.equal(await page.evaluate(()=>state.editDocument.repairs[0].recipe.method),"original-detail");
+    await page.evaluate(()=>queueEditCommand("redo"));
+    assert.equal(await page.evaluate(()=>state.editDocument.repairs[0].recipe.method),"donor-detail");
+    await page.getByRole("button",{name:"Remove Spot 1",exact:true}).click();
+    await page.waitForFunction(()=>!retouchUI.busy&&state.editDocument.repairs.length===0);
+    await page.locator("#retouch-method").selectOption("standard");
+    assert(await page.locator("#retouch-hardness").isVisible());
     // Delay the edit in transport until Cancel has reached the backend first.
     let release, entered;
     const hold = new Promise(resolve => { release=resolve; });

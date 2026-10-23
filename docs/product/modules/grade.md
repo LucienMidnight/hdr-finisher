@@ -168,8 +168,8 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   tone error, texture correlation and strength are reported against known
   clean references; they do not establish natural-photo quality acceptance.
   Basis: [darktable frequency separation](https://docs.darktable.org/usermanual/development/en/darkroom/processing-modules/wavelets/).
-  Optional Preserve texture and independent edge-feather controls remain open;
-  these research methods are not new production controls. Validation: focused
+  Steve subsequently requested selectable in-app prototypes for real-photo
+  testing; see the October 23 prototype controls note below. Validation: focused
   recipe/integration checks and both Retouch Electron drivers passed; required
   fast suites: 585 JavaScript checks and 2,424 Python checks passed (3 Python
   skips); their existing unrelated failures remain (3 edit-sync helper failures
@@ -376,3 +376,40 @@ layers and compositing, AI-based selection.
 - User guide: [grade HDR](../../user-guide/grade-hdr.md),
   [grade SDR](../../user-guide/grade-sdr.md),
   [controls reference](../../user-guide/grading-controls-reference.md)
+
+### Inpaint prototype controls — October 23, 2026
+
+Steve requested the comparison methods inside the app for real-photo testing.
+Standard inpaint remains the default with 10% hardness. The method menu adds
+Edge feather, Preserve original texture and Replace texture from donors, each
+marked prototype. All three reconstruct a full interior before applying an
+independent edge feather (default 25% of radius); texture methods add a 0–100%
+amount (default 100%). Original detail retains the native 5×5 high-pass residual
+for tone/blotch correction. Donor detail uses clean PatchMatch correspondences
+at native pixel phase, replacing rather than doubling the filled high-frequency
+residual. Unlike the study's manual clean-strip donor, this selects donors
+automatically. Pattern alignment and unwanted original-object outlines still
+need Steve's real-photo assessment. Filtering runs in cancellable 64-row bands.
+
+Apply settings updates a selected repair with its existing seed, frozen donor
+exclusions and search rectangle when Size is unchanged. Retry explicitly changes
+the seed. Methods, feather and amount save/replay with the repair and support
+undo/redo across all shared-source consumers. Inner and outer cursor rings show
+the full correction core and feather extent.
+
+Validation criteria: Standard output unchanged; zero Texture amount equals Edge
+feather exactly; deterministic saved replay, unchanged pixels outside the stroke,
+finite unclamped HDR/negative values, and identical finished source for preview,
+Proof and export. Known analytic texture fixtures check actual original-versus-
+donor residual selection; natural-photo quality is deliberately left to Steve.
+The existing one-second warm 24 MP deletion target also applies to donor-detail
+repairs in the focused benchmark.
+
+Validation outcome: both focused Electron drivers passed, including all three
+prototype controls, same-seed Apply, undo/redo and bounded/full GPU refresh
+agreement. Warm 24 MP multi-spot deletion measured 0.35–0.49 seconds at native
+view and 0.81–0.96 seconds at fit, within the one-second target. The required
+fast suites passed 585 JavaScript and 2,444 Python checks (3 Python skips);
+only the known 3 edit-sync helper failures and 6 frontend wording-contract
+failures remain. No test limits were relaxed. Real-photo quality acceptance
+remains with Steve.

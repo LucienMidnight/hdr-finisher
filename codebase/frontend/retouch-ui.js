@@ -1,6 +1,13 @@
 /* Native-source Inpaint authoring. One completed gesture is one history edit. */
 const retouchUI = { active: false, busy: false, cancelled: false, points: null, cursor: null, selected: null, session: null };
 
+const retouchMethods = {
+  standard: { label: "Standard", help: "The current soft brush repair." },
+  "edge-feather": { label: "Edge feather", help: "Prototype · full correction inside the brush, with a soft outer edge. Feather is the percentage of the radius used for that transition." },
+  "original-detail": { label: "Original texture", help: "Prototype · corrects broad tone while preserving original fine texture. Best for luminance blotches; it can retain unwanted object outlines." },
+  "donor-detail": { label: "Donor texture", help: "Prototype · replaces fine texture from nearby clean patches. Use for covered surfaces; repeating patterns may not align." },
+};
+
 function retouchInput(name) { return document.getElementById(`retouch-${name}`); }
 
 function retouchMessage(message) { retouchInput("status").textContent = message; }
@@ -28,7 +35,8 @@ function retouchValues() {
     return value;
   };
   return { radius: read("size", 1, 1024, false) / 2, hardness: read("hardness", 0, 100, false) / 100,
-    patch: 3, iterations: 6, seed: 20261021 };
+    method: retouchInput("method").value, feather: read("feather", 0, 100, false) / 100,
+    texture: read("texture", 0, 100, false) / 100, patch: 3, iterations: 6, seed: 20261021 };
 }
 
 function retouchRecipe(points) {
@@ -46,11 +54,12 @@ function retouchRecipe(points) {
   const [left, right] = axis(xs, width), [top, bottom] = axis(ys, height);
   return { schema_version: 1, mode: "inpaint", raster_version: "native-capsules-v1",
     source_size: [width, height], search_rect: [left, top, right, bottom], points,
-    radius_px: v.radius, hardness: v.hardness,
+    radius_px: v.radius, hardness: v.hardness, method: v.method, edge_feather: v.feather, texture_amount: v.texture,
     donor_exclusions: (state.editDocument?.repairs || []).filter(r => r.enabled &&
       r.recipe.search_rect[0] < right && r.recipe.search_rect[2] > left &&
       r.recipe.search_rect[1] < bottom && r.recipe.search_rect[3] > top).map(r => ({
-        points: r.recipe.points, radius_px: r.recipe.radius_px, hardness: r.recipe.hardness,
+        points: r.recipe.points, radius_px: r.recipe.radius_px,
+        hardness: r.recipe.method === "standard" ? r.recipe.hardness : 1-r.recipe.edge_feather,
       })),
     settings: { patch_radius: v.patch, iterations: v.iterations, seed: v.seed, algorithm: "hdrf-patchmatch-cpu-v3" } };
 }
@@ -86,9 +95,10 @@ function renderRetouchControls() {
   retouchInput("brush").disabled = !sessionId || retouchUI.busy;
   retouchInput("brush-stop").disabled = !retouchUI.active || retouchUI.busy;
   retouchInput("cancel").disabled = !retouchUI.busy;
-  for (const name of ["size", "hardness"]) retouchInput(name).disabled = retouchUI.busy;
+  for (const name of ["size", "hardness", "method", "feather", "texture"]) retouchInput(name).disabled = retouchUI.busy;
   const records = state.editDocument?.repairs || [];
   const selected = records.find(r => r.id === retouchUI.selected);
+  retouchInput("apply").disabled = retouchUI.busy || !selected;
   retouchInput("cancel").hidden = !retouchUI.busy;
   retouchInput("repair-count").textContent = `Repairs · ${records.length}`;
   syncRetouchReadouts();
@@ -101,16 +111,16 @@ function renderRetouchControls() {
     choose.type = "button";
     choose.className = "local-adjustment-select";
     choose.classList.toggle("active", record.id === retouchUI.selected);
-    choose.append(createLocalAdjustmentCopy({ title: record.name, subtitle: `${record.recipe.radius_px * 2} px` }));
+    choose.append(createLocalAdjustmentCopy({ title: record.name, subtitle: `${record.recipe.radius_px * 2} px · ${retouchMethods[record.recipe.method].label}` }));
     choose.disabled = retouchUI.busy;
     choose.setAttribute("aria-pressed", String(record.id === retouchUI.selected));
     choose.addEventListener("click", () => {
       retouchUI.selected = record.id;
       const recipe = record.recipe;
-      for (const [name, value] of Object.entries({ size: recipe.radius_px * 2, hardness: recipe.hardness * 100 })) {
+      for (const [name, value] of Object.entries({ size: recipe.radius_px * 2, hardness: recipe.hardness * 100, method: recipe.method, feather: recipe.edge_feather * 100, texture: recipe.texture_amount * 100 })) {
         retouchInput(name).value = String(value);
       }
-      retouchMessage("Selected repair. Change settings and press Retry to redo it.");
+      retouchMessage("Selected repair. Change settings and apply them to compare methods; Retry tries another donor.");
       renderRetouchControls();
       renderLocalMaskOverlay();
     });
@@ -204,6 +214,13 @@ function renderRetouchOverlay(canvas) {
       x: cursor.x + Math.cos(i*Math.PI/16)*radius/width,
       y: cursor.y + Math.sin(i*Math.PI/16)*radius/height,
     })), "#ffffff");
+    if (retouchInput("method").value !== "standard") {
+      const core = radius * (1-Number(retouchInput("feather").value)/100);
+      if (core > 0 && core < radius) draw(Array.from({ length: 33 }, (_, i) => ({
+        x: cursor.x + Math.cos(i*Math.PI/16)*core/width,
+        y: cursor.y + Math.sin(i*Math.PI/16)*core/height,
+      })), "#ffffff88", 1);
+    }
   }
 }
 
@@ -213,7 +230,12 @@ function bindRetouchEvents() {
     constrainRetouchSize();
     queueLocalMaskOverlayRender();
   });
-  for (const name of ["size", "hardness"]) {
+  retouchInput("method").addEventListener("change", () => {
+    syncRetouchReadouts();
+    queueLocalMaskOverlayRender();
+  });
+  retouchInput("apply").addEventListener("click", () => applySelectedRetouch(false));
+  for (const name of ["size", "hardness", "feather", "texture"]) {
     retouchInput(name).addEventListener("input", () => {
       syncRetouchReadouts();
       queueLocalMaskOverlayRender();
@@ -308,19 +330,28 @@ function bindRetouchEvents() {
 }
 
 function syncRetouchReadouts() {
-  for (const [name, unit] of Object.entries({ size: " px", hardness: "%" })) {
+  for (const [name, unit] of Object.entries({ size: " px", hardness: "%", feather: "%", texture: "%" })) {
     retouchInput(`${name}-value`).textContent = `${Number(retouchInput(name).value)}${unit}`;
   }
+  const method = retouchInput("method").value;
+  retouchInput("hardness-row").hidden = method !== "standard";
+  retouchInput("prototype-controls").hidden = method === "standard";
+  retouchInput("texture-row").hidden = !["original-detail", "donor-detail"].includes(method);
+  retouchInput("method-help").textContent = retouchMethods[method].help;
   syncRangeVisuals(document.querySelector(".retouch-panel"));
 }
 
-function retrySelectedRetouch() {
+function retrySelectedRetouch() { return applySelectedRetouch(true); }
+
+function applySelectedRetouch(retry) {
   const records = state.editDocument?.repairs || [], selected = records.find(r => r.id === retouchUI.selected);
   if (!selected || retouchUI.busy) return;
   try {
     const recipe = retouchRecipe(selected.recipe.points);
     recipe.donor_exclusions = selected.recipe.donor_exclusions || [];
-    recipe.settings.seed = (selected.recipe.settings.seed + 1) >>> 0;
+    if (recipe.radius_px === selected.recipe.radius_px) recipe.search_rect = selected.recipe.search_rect;
+    recipe.settings = { ...selected.recipe.settings,
+      seed: retry ? (selected.recipe.settings.seed + 1) >>> 0 : selected.recipe.settings.seed };
     void commitRetouch(records.map(r => r.id === selected.id ? { ...r, recipe } : r));
   } catch (error) { retouchMessage(error.message); }
 }

@@ -10,6 +10,7 @@ import numpy as np
 
 from .retouch_jobs import RepairRevision, RepairWorker
 from .retouch_recipe import prepare_repair, stroke_mask
+from .retouch_methods import finish_repair
 
 
 def repair_identity(records):
@@ -96,7 +97,9 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
                 except TimeoutError:
                     pass
             patch = worker.accept(completion)
-            mask = stroke_mask(record.recipe, checkpoint) > 0
+            alpha = stroke_mask(record.recipe, checkpoint)
+            patch = finish_repair(record.recipe, request, patch, alpha, checkpoint)
+            mask = alpha > 0
             ox = patch.origin[0] - record.recipe.search_rect[0]
             oy = patch.origin[1] - record.recipe.search_rect[1]
             ph, pw = patch.pixels.shape[:2]

@@ -165,3 +165,7 @@ body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: au
   padding: 5px 8px; font: 12px var(--sans);
 }
 #retouch-list .local-adjustment-bypass { position: static; align-self: center; }
+
+.retouch-content [hidden] { display: none !important; }
+#retouch-method { width: 100%; min-width: 0; }
+#retouch-apply { width: 100%; margin-top: 8px; }

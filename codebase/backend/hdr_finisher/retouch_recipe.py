@@ -48,6 +48,9 @@ class InpaintRecipe(BaseModel):
     points: tuple[RepairPoint, ...] = Field(min_length=1, max_length=512)
     radius_px: float = Field(default=8, ge=0.5, le=512, allow_inf_nan=False)
     hardness: float = Field(default=0.1, ge=0, le=1, allow_inf_nan=False)
+    method: Literal["standard", "edge-feather", "original-detail", "donor-detail"] = "standard"
+    edge_feather: float = Field(default=.25, ge=0, le=1, allow_inf_nan=False)
+    texture_amount: float = Field(default=1, ge=0, le=1, allow_inf_nan=False)
     donor_exclusions: tuple[DonorExclusion, ...] = Field(default=(), max_length=256)
     settings: InpaintSettings = Field(default_factory=InpaintSettings)
 
@@ -82,12 +85,14 @@ def stroke_mask(recipe: InpaintRecipe, checkpoint=lambda: None, *, footprint=Non
     yy += 0.5
     brush = footprint or recipe
     points = [(p.x * width - left, p.y * height - top, p.pressure) for p in brush.points]
+    hardness = (1 - recipe.edge_feather if footprint is None and recipe.method != "standard"
+                else brush.hardness)
     result = np.zeros(xx.shape, dtype=np.float32)
     if len(points) == 1:
         checkpoint()
         x, y, pressure = points[0]
         if pressure > 0:
-            result[:] = _soft_disc(xx, yy, x, y, brush.radius_px * pressure, brush.hardness)
+            result[:] = _soft_disc(xx, yy, x, y, brush.radius_px * pressure, hardness)
     else:
         for first, second in zip(points, points[1:]):
             checkpoint()
@@ -100,7 +105,7 @@ def stroke_mask(recipe: InpaintRecipe, checkpoint=lambda: None, *, footprint=Non
             if x0 >= x1 or y0 >= y1:
                 continue
             region = np.s_[y0:y1, x0:x1]
-            segment = _soft_segment(xx[region], yy[region], *first[:2], *second[:2], radius, brush.hardness)
+            segment = _soft_segment(xx[region], yy[region], *first[:2], *second[:2], radius, hardness)
             np.maximum(result[region], segment, out=result[region])
     checkpoint()
     if footprint is None and not 1 <= np.count_nonzero(result) <= NativeRepairInput.defect_pixels:
@@ -136,7 +141,10 @@ def prepare_repair(recipe: InpaintRecipe, read_region, *, read_excluded=None,
     large = (max(mask.shape) > MAX_REGION_EDGE or np.count_nonzero(mask) > MAX_DEFECT_PIXELS
              or np.count_nonzero(_box_sum(mask > 0, recipe.settings.patch_radius)) > MAX_TARGET_PATCHES)
     kind = NativeRepairInput if large else RepairInput
-    return kind(pixels, mask, (left, top), excluded).owned()
+    # Prototypes reconstruct the whole interior first. Edge blending and
+    # texture finishing are separate, allowing a fair same-seed comparison.
+    solve_mask = mask if recipe.method == "standard" else (mask > 0).astype(np.float32)
+    return kind(pixels, solve_mask, (left, top), excluded).owned()
 
 
 def compose_repairs(pixels: np.ndarray, origin: tuple[int, int], patches) -> np.ndarray:
