@@ -92,6 +92,11 @@ window.HDRLibraryRGB = (() => {
     return result;
   }`;
   const DNG_RGB=RGB.replace(INPUT,DNG_INPUT);
+  const DNG_TILE_RGB=DNG_RGB
+    .replace('let g=g0+vec3<u32>(0u,p.dispatch.y,0u);','let g=g0;')
+    .replace('if (t.x % st == 0 && t.y % st == 0)', 'if ((t.x+i32(p.dispatch.y)) % st == 0 && (t.y+i32(p.dispatch.x)) % st == 0)')
+    .replace('f32(i%p.dims.x),f32(i/p.dims.x)', 'f32(i%p.dims.x)+d.ax.w,f32(i/p.dims.x)+d.ay.w')
+    .replace('rgbInput[(y*d.size.x+x)*3u+channel]', 'rgbInput[((y-d.size.w)*u32(p.lensc.x)+(x-d.size.z))*3u+channel]');
   const DNG_GAIN=COMMON+`
     struct DNG { coeff:array<vec4<f32>,6>, center:vec4<f32>, ax:vec4<f32>, ay:vec4<f32>, size:vec4<u32> };
     @group(0) @binding(1) var<storage,read_write> camera:array<f32>;
@@ -120,6 +125,11 @@ window.HDRLibraryRGB = (() => {
         offset=base+rows*cols*channels;
       }
     }`;
+  const DNG_TILE_GAIN=DNG_GAIN
+    .replace('let g=g0+vec3<u32>(0u,p.dispatch.y,0u);let w=d.size.x;let h=d.size.y;',
+      'let local=g0;let g=local+vec3<u32>(d.size.zw,0u);let w=d.size.x;let h=d.size.y;')
+    .replace('if(g.x>=w||g.y>=h)', 'if(local.x>=u32(p.lensc.x)||local.y>=u32(p.lensc.y))')
+    .replace('camera[(g.y*w+g.x)*3u+c]', 'camera[(local.y*u32(p.lensc.x)+local.x)*3u+c]');
   const LINEAR_INPUT=`
     struct Linear { ax:vec4<f32>, ay:vec4<f32>, size:vec4<u32>, neutral:vec4<f32>, recovery:vec4<f32> };
     @group(0) @binding(1) var<storage,read> camera:array<f32>;
@@ -162,10 +172,11 @@ window.HDRLibraryRGB = (() => {
     let pipelines=compiled.get(device);
     if(!pipelines){
       pipelines={REDUCE:shared.pipelines.REDUCE};
-      for(const [name,code] of Object.entries({RGB,RGB_SDR,DNG_RGB,DNG_GAIN,DNG_LINEAR}))
+      for(const [name,code] of Object.entries({RGB,RGB_SDR,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GAIN,DNG_LINEAR}))
         pipelines[name]=await device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}});
       compiled.set(device,pipelines);
     }
+    if(meta.dng_warp)return developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines});
     errors.length = 0;
     const w = meta.width, h = meta.height, n = w * h;
     const outW = w, outH = h;
@@ -304,6 +315,110 @@ window.HDRLibraryRGB = (() => {
       await device.queue.onSubmittedWorkDone().catch(() => {});
       for (const buffer of [...owned]) release(buffer);
     }
+  }
+
+  async function developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines}) {
+    errors.length=0;
+    const {dngFootprint}=HDRLibraryGpuRaw.shared;
+    const w=meta.width,h=meta.height,st=meta.sample_stride,sw=Math.ceil(w/st),sh=Math.ceil(h/st);
+    const warp=meta.dng_warp,owned=new Set(),timings={};let live=0,peak=0;
+    const make=(bytes,usage=GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC|GPUBufferUsage.COPY_DST)=>{
+      const size=Math.max(4,Math.ceil(bytes/4)*4);
+      if(size>device.limits.maxBufferSize || ((usage&GPUBufferUsage.STORAGE)&&size>device.limits.maxStorageBufferBindingSize))throw Error("DNG tile exceeds the GPU binding limit.");
+      if(live+size>memoryBudget)throw Error("DNG preparation exceeds the reserved memory budget.");
+      const buffer=device.createBuffer({size,usage});owned.add(buffer);live+=size;peak=Math.max(peak,live);return buffer;
+    };
+    const free=b=>{if(owned.delete(b)){live-=b.size;b.destroy();}};
+    const timed=async(name,fn)=>{const start=performance.now();const value=await fn();await device.queue.onSubmittedWorkDone();timings[name]=(timings[name]||0)+performance.now()-start;return value;};
+    const read=async b=>{
+      const staging=make(b.size,GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST);
+      const enc=device.createCommandEncoder();enc.copyBufferToBuffer(b,0,staging,0,b.size);device.queue.submit([enc.finish()]);
+      await staging.mapAsync(GPUMapMode.READ);const data=new Float32Array(staging.getMappedRange().slice(0));free(staging);return data;
+    };
+    const dispatch=(name,buffers,width,height)=>{
+      const pipe=pipelines[name],group=device.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:buffers.flatMap((b,binding)=>b?[{binding,resource:{buffer:b}}]:[])});
+      const enc=device.createCommandEncoder(),pass=enc.beginComputePass();pass.setPipeline(pipe);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(width/16),Math.ceil(height/16));pass.end();device.queue.submit([enc.finish()]);
+    };
+    const permit=async()=>{if(beforeSubmit)await timed("permits",beforeSubmit);};
+    // Full developed planes are held in host RAM. GPU memory contains only
+    // one distortion footprint and one output tile, then one reduction plane.
+    const planes=Array.from({length:3},()=>new Float32Array(w*h));
+    const samples=new Float32Array(sw*sh*3),peaks=new Float32Array(4),source=new Float32Array(mosaic.buffer,mosaic.byteOffset,mosaic.byteLength/4);
+    let tiles=0,maxSourceBytes=0;
+    try {
+      const uniform=make(352,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST),dng=make(160,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);
+      let gains=null;
+      if(meta.dng_gain_maps?.length){
+        const packed=[meta.dng_gain_maps.length];for(const m of meta.dng_gain_maps){packed.push(...m.area,...m.points,...m.spacing,...m.origin);for(const v of m.gains)packed.push(v);}
+        const data=new Float32Array(packed);gains=make(data.byteLength);device.queue.writeBuffer(gains,0,data);
+      }
+      const render=async(x,y,tw,th)=>{
+        const box=dngFootprint(warp,x,y,tw,th),bytes=box.width*box.height*12;
+        const cap=Math.min(16*1024*1024,device.limits.maxStorageBufferBindingSize);
+        if(bytes>cap){
+          if(tw===1&&th===1)throw Error("DNG footprint exceeds the bounded GPU tile allowance.");
+          if(tw>=th&&tw>1){const a=Math.floor(tw/2);await render(x,y,a,th);await render(x+a,y,tw-a,th);}
+          else{const a=Math.floor(th/2);await render(x,y,tw,a);await render(x,y+a,tw,th-a);}return;
+        }
+        await permit();tiles++;maxSourceBytes=Math.max(maxSourceBytes,bytes);
+        const input=make(bytes),out=Array.from({length:3},()=>make(tw*th*4)),pk=make(16);
+        // Samples use global output coordinates, including after adaptive splits.
+        const tsw=Math.ceil(tw/st),tsh=Math.ceil(th/st),sample=make(tsw*tsh*12);
+        const params=new ArrayBuffer(352),u=new Uint32Array(params),f=new Float32Array(params);
+        u.set([tw,th,0,st],0);u.set([0,1,1,tsw],4);
+        meta.rgb_to_acescg.forEach((row,k)=>f.set(row,40+k*4));meta.acescg_to_bt2020.forEach((row,k)=>f.set(row,64+k*4));
+        f[76]=meta.colour.scale||1;f.set([box.width,box.height,0,0],80);
+        // Offset the local sample lattice to the full output lattice.
+        u.set([x%st,y%st,0,0],84);
+        device.queue.writeBuffer(uniform,0,params);
+        const data=new ArrayBuffer(160),df=new Float32Array(data),du=new Uint32Array(data);
+        for(let c=0;c<3;c++){const k=warp.coefficients[warp.coefficients.length===1?0:c];df.set(k.slice(0,4),c*8);df.set(k.slice(4),c*8+4);}
+        df.set([...warp.center,warp.radius,0],24);df.set([...warp.affine_x,x],28);df.set([...warp.affine_y,y],32);du.set([warp.width,warp.height,box.left,box.top],36);device.queue.writeBuffer(dng,0,data);
+        await timed("upload",async()=>{
+          const packed=new Float32Array(bytes/4);for(let r=0;r<box.height;r++)packed.set(source.subarray(((box.top+r)*warp.width+box.left)*3,((box.top+r)*warp.width+box.left+box.width)*3),r*box.width*3);
+          device.queue.writeBuffer(input,0,packed);
+        });
+        await permit();
+        if(gains)await timed("gain_map",async()=>dispatch("DNG_TILE_GAIN",[uniform,input,dng,gains],box.width,box.height));
+        await permit();
+        await timed("warp_colour_measure",async()=>dispatch("DNG_TILE_RGB",[uniform,input,dng,null,...out,pk,sample],tw,th));
+        await permit();
+        await timed("readback",async()=>{
+          for(let c=0;c<3;c++){const a=await read(out[c]);for(let r=0;r<th;r++)planes[c].set(a.subarray(r*tw,(r+1)*tw),(y+r)*w+x);}
+          const p=await read(pk);for(let c=0;c<3;c++)peaks[c]=Math.max(peaks[c],p[c]);
+          const a=await read(sample);
+          for(let r=(st-y%st)%st;r<th;r+=st)for(let c=(st-x%st)%st;c<tw;c+=st){
+            const local=(Math.floor(r/st)*tsw+Math.floor(c/st))*3,global=((y+r)/st*sw+(x+c)/st)*3;samples.set(a.subarray(local,local+3),global);
+          }
+        });
+        for(const b of [input,...out,pk,sample])free(b);
+      };
+      // Align usual tile origins with the measurement lattice; adaptive splits
+      // still use global coordinates for sampling and interpolation.
+      const tileW=Math.max(st,Math.floor(1024/st)*st),tileH=Math.max(st,Math.floor((st===1?256:512)/st)*st);
+      window.HDRLibraryScenes?.stage(meta.path,"Correcting DNG tiles on GPU");
+      for(let y=0;y<h;y+=tileH)for(let x=0;x<w;x+=tileW)await render(x,y,Math.min(tileW,w-x),Math.min(tileH,h-y));
+      free(gains);free(dng);free(uniform);
+      const reduced={};for(const edge of edges){const [rh,rw]=reducedSize(meta,edge);reduced[edge]={height:rh,width:rw,planes:[]};}
+      window.HDRLibraryScenes?.stage(meta.path,"Reducing Library pictures on GPU");
+      for(let c=0;c<3;c++){
+        let input=null;
+        for(const edge of edges){
+          const target=reduced[edge],rh=target.height,rw=target.width;
+          if(rh===h&&rw===w){target.planes.push(planes[c].buffer);continue;}
+          await permit();
+          if(!input){input=make(w*h*4);await timed("upload",async()=>device.queue.writeBuffer(input,0,planes[c]));}
+          const mid=make(h*rw*4),out=make(rh*rw*4),settings=make(16,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);
+          for(const [src,dst,inLen,outLen,across,axis] of [[input,mid,w,rw,h,0],[mid,out,h,rh,rw,1]]){
+            await permit();
+            await timed("reduce",async()=>{device.queue.writeBuffer(settings,0,new Uint32Array([inLen,outLen,across,axis]));dispatch("REDUCE",[settings,src,dst],outLen,across);});
+          }
+          free(mid);free(settings);target.planes.push((await timed("readback",()=>read(out))).buffer);free(out);
+        }free(input);
+      }
+      if(errors.length)throw Error(errors.join("\n"));
+      return {timings,memory_peak_bytes:peak,dng_tiles:tiles,dng_max_source_bytes:maxSourceBytes,errors:[...errors],peaks:{peak:peaks[0],peak_luma:peaks[1],peak_bt2020:peaks[2],sdr:0},samples,sampleShape:[sh,sw],reduced};
+    }finally{await device.queue.onSubmittedWorkDone().catch(()=>{});for(const b of [...owned])free(b);}
   }
 
   return Object.freeze({develop:developRGB});

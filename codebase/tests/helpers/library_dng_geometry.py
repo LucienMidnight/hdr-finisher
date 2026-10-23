@@ -49,4 +49,20 @@ for orientation in range(1,9):
  meta.pop("dng_warp");meta.update(width=ow,height=oh,rgb_to_acescg=matrix.tolist(),dng_linear=dict(width=w,height=h,affine_x=ax,affine_y=ay,neutral=neutral.tolist(),response_limit=1,support=dict(block=block,width=support.shape[1],height=support.shape[0])),dng_support=support.reshape(-1).tolist())
  expected=crop_and_orient(converted,metadata)
  cases.append(dict(meta=meta,input=base64.b64encode(highlight.tobytes()).decode(),expected=[expected[...,c].reshape(-1).tolist() for c in range(3)]))
+# Cross tile seams and force an adaptive source-footprint split. Rotation
+# makes a 1023x510 output tile span both source axes; the three channels
+# together exceed the 16 MiB upload cap until it splits off the stride lattice.
+hh,ww=1000,1500;yy,xx=np.mgrid[:hh,:ww]
+large=np.stack([.45+.3*np.sin(xx*.07),.45+.3*np.sin(yy*.08),.45+.3*np.cos((xx+yy)*.06)],axis=-1).astype("<f4")
+coeff=np.array([[3.0,0,0,0,.012,-.009],[2.8,.03,-.01,0,-.01,.008],[3.2,-.02,.01,0,.009,.01]])
+warp=WarpRectilinearParameters(coeff,.38,.61)
+metadata=dict(active_area=[0,0,hh,ww],default_crop_origin=[350,0],default_crop_size=[1150,1000],orientation=6)
+ow,oh,ax,ay=geometry(metadata,ww,hh)
+expected=crop_and_orient(apply_warp_rectilinear(large,warp),metadata)
+meta=dict(original[0]["meta"])
+meta.update(width=ow,height=oh,mosaic_bytes=large.nbytes,sample_stride=3,
+ dng_warp=dict(width=ww,height=hh,coefficients=coeff.tolist(),center=[.38*ww,.61*hh],
+ radius=float(np.hypot(.62*ww,.61*hh)),affine_x=ax,affine_y=ay))
+cases.append(dict(meta=meta,input=base64.b64encode(large.tobytes()).decode(),adaptive=True,
+ expected_binary=[base64.b64encode(np.ascontiguousarray(expected[...,c],dtype="<f4").tobytes()).decode() for c in range(3)]))
 print(json.dumps(cases))

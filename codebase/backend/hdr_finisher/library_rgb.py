@@ -244,5 +244,6 @@ def developed(cache, path, header, payload):
         "source_width": source.width, "source_height": source.height,
         "source_fingerprint_sha256": fingerprint, "gpu_memory_peak_bytes": header["memory_peak_bytes"],
         "source_analysis": analysis.model_dump(mode="json"), "rgb_contract": {"colour": header["colour"], "layout": header.get("layout"), "orientation": header.get("orientation")},
+        **({"dng_tiles": header["dng_diagnostics"]} if header.get("dng_diagnostics") else {}),
         "source_timings_ms": header.get("timing_ms")}
     return cache.build(path, header["edge"], header["source_quality"], decoded=(pixels, reference, metadata))

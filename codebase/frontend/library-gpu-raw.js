@@ -722,7 +722,7 @@
     return serial(async () => {
       const queueMs=performance.now()-queued;
       await gpu();
-      const id = crypto.randomUUID(), bytes = rawBudget(meta);
+      const id = crypto.randomUUID(), bytes = rawBudget(meta, edges);
       const url = `/api/delivery/gpu/raw-budget/${id}`;
       const lease = async release => {
         if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
@@ -746,8 +746,10 @@
             if(signal?.aborted)throw new DOMException("Cancelled", "AbortError");
             // Edge colour has many short blur bands. Reuse the same permit
             // window as delivery rather than making each band a network wait.
-            if(meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" &&
-              performance.now()-edgePermitAt<100)return;
+            const permitWindow=meta.dng_warp ? 20 : meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" ? 100 : 0;
+            // A bounded DNG tile has several short stages. Reuse a permit for
+            // at most 20 ms; cancellation still checks on every boundary.
+            if(performance.now()-edgePermitAt<permitWindow)return;
             if(meta.source_job && performance.now()-touched>5000){
               const check=await fetch("/api/library/live-source/"+meta.source_job,{method:"POST",signal});
               if(!check.ok) throw Error("Library source preparation was invalidated."); touched=performance.now();
@@ -824,6 +826,7 @@
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
       edge_diagnostics: developed.edge_diagnostics,
+      dng_diagnostics: developed.dng_tiles ? {tiles:developed.dng_tiles,max_source_bytes:developed.dng_max_source_bytes,reserved_bytes:rawBudget(meta,nativeMode?[100000]:[640,2560,edge])} : undefined,
       timing_ms: { ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
       let text = new TextEncoder().encode(JSON.stringify(header));
       const padded = new Uint8Array(text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32); padded.set(text); text = padded;
@@ -884,8 +887,49 @@
   }
 
   const warmup = async beforeNext => { if (enabled()) await gpu(() => beforeNext(() => inflight.size > 0)); };
-  const rawBudget = meta => meta.width*meta.height*44+64*1024*1024;
-  const exported = Object.freeze({ rawBudget, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance}) });
+  // Interval arithmetic encloses every channel's distorted source footprint,
+  // including non-monotone radial/tangential terms; corner sampling cannot.
+  function dngFootprint(warp, x, y, width, height) {
+    const add=(a,b)=>[a[0]+b[0],a[1]+b[1]];
+    const mul=(a,b)=>{const v=[a[0]*b[0],a[0]*b[1],a[1]*b[0],a[1]*b[1]];return [Math.min(...v),Math.max(...v)];};
+    const scale=(a,k)=>mul(a,[k,k]);
+    const square=a=>[a[0]<=0&&a[1]>=0?0:Math.min(a[0]*a[0],a[1]*a[1]),Math.max(a[0]*a[0],a[1]*a[1])];
+    const affine=a=>add(add(scale([x,x+width-1],a[0]),scale([y,y+height-1],a[1])),[a[2],a[2]]);
+    const X=scale(add(affine(warp.affine_x),[-warp.center[0],-warp.center[0]]),1/warp.radius);
+    const Y=scale(add(affine(warp.affine_y),[-warp.center[1],-warp.center[1]]),1/warp.radius);
+    const xx=square(X), yy=square(Y), xy=mul(X,Y), r=add(xx,yy).map(v=>Math.min(v,1));
+    let xmin=Infinity,ymin=Infinity,xmax=-Infinity,ymax=-Infinity;
+    for(const k of warp.coefficients){
+      const radial=add([k[0],k[0]],mul(r,add([k[1],k[1]],mul(r,add([k[2],k[2]],scale(r,k[3]))))));
+      const sx=add(mul(X,radial),add(scale(xy,2*k[4]),scale(add(r,scale(xx,2)),k[5])));
+      const sy=add(mul(Y,radial),add(scale(add(r,scale(yy,2)),k[4]),scale(xy,2*k[5])));
+      const px=add(scale(sx,warp.radius),[warp.center[0],warp.center[0]]),py=add(scale(sy,warp.radius),[warp.center[1],warp.center[1]]);
+      xmin=Math.min(xmin,px[0]);xmax=Math.max(xmax,px[1]);ymin=Math.min(ymin,py[0]);ymax=Math.max(ymax,py[1]);
+    }
+    // Two cubic neighbours plus float32 arithmetic guard. Expand rather than
+    // clipping the sampling coordinates to a tile: only image borders clamp.
+    const guard=4+Math.max(warp.width,warp.height)*1e-5;
+    const left=Math.max(0,Math.min(warp.width-1,Math.floor(xmin-guard)));
+    const top=Math.max(0,Math.min(warp.height-1,Math.floor(ymin-guard)));
+    const right=Math.max(left+1,Math.min(warp.width,Math.ceil(xmax+guard)+1));
+    const bottom=Math.max(top+1,Math.min(warp.height,Math.ceil(ymax+guard)+1));
+    if(![left,top,right,bottom].every(Number.isFinite))throw Error("Invalid DNG source footprint.");
+    return {left,top,width:right-left,height:bottom-top};
+  }
+  function dngBudget(meta, edges) {
+    // Tiled correction retains <=16 MiB camera samples, <=6 MiB output,
+    // readbacks and metadata. Reduction retains one full plane, a horizontal
+    // intermediate, output and staging. No full camera source lives on GPU.
+    let peak=32*1024*1024;
+    for(const edge of edges){
+      const [h,w]=reducedSize(meta,edge);
+      if(h!==meta.height||w!==meta.width)
+        peak=Math.max(peak,meta.width*meta.height*4+meta.height*w*4+h*w*8+4*1024*1024);
+    }
+    return peak;
+  }
+  const rawBudget = (meta,edges=[640,2560]) => meta.dng_warp ? dngBudget(meta,edges) : meta.width*meta.height*44+64*1024*1024;
+  const exported = Object.freeze({ rawBudget, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

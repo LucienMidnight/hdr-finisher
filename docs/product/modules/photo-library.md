@@ -1701,6 +1701,79 @@ Grade's Lanczos proxy and Library's bilinear tier remain different filters;
 direct comparison between those previews is still outside limits on these
 photos. This reconstruction change does not qualify that existing open item.
 
+**October 23: Bounded DNG distortion preparation (built).** Supported mosaiced
+DNGs with mandatory GainMaps followed by one WarpRectilinear now use bounded
+GPU source footprints. Each channel's radial and tangential mapping is bounded
+with interval arithmetic, including cubic support; large footprints split
+adaptively. Source coordinates, crop/orientation and sample positions stay in
+full-image space across seams. GainMaps run in order on each uploaded source
+footprint before warping, colour conversion, calibration and measurements.
+There is no full-camera GPU buffer. Output tiles accumulate in host RAM, then
+one plane at a time uses the existing GPU reduction filter.
+
+The shared scheduler and all existing memory limits remain unchanged. A DNG
+reservation covers the maximum concurrent tile/reduction allocations rather
+than the generic RAW estimate. Allocation failure, unsupported mandatory
+operations, unavailable memory and cancellation retain the existing failure or
+CPU fallback paths. Grade keeps priority; DNG stages reuse a scheduler permit
+for at most 20 ms while checking cancellation at every boundary.
+
+Focused results: three-run medians on one real `DJI_0071-2.DNG`, 8000 x 6000,
+Ryzen 5 7600 / RTX 4070 Ti, headless Playwright Edge at 2560 x 1440. Each run
+used a fresh photo/output copy in isolated application data; OS caches were
+warm/uncontrolled and household GPU activity continued. The baseline loaded
+the committed pre-change frontend and CPU opcode implementation. An early run
+contending with a separate CPU profiler was discarded before these runs.
+Timing tolerance: 10%, agreed in the brief before measurement.
+
+| Stage / measurement | Before: rejected GPU, CPU fallback | After: tiled GPU |
+|---|---:|---:|
+| AHD decode (opcode-free boundary) | 1.55 s | 1.31 s |
+| GainMap | 4.87 s | 0.38 s |
+| Distortion | 85.66 s | 0.33 s, fused with colour/measurements |
+| Additional CPU DNG colour | 0.30 s | included in fused stage |
+| Additional CPU normalization / analysis | 0.78 / 0.86 s | included in fused stage |
+| GPU queue / scheduler permits | not applicable | 0.001 / 0.50 s |
+| GPU upload / readback | not applicable | 0.70 / 2.05 s |
+| GPU reduction | not separately timed on CPU | 0.12 s |
+| All GPU preparation, including transfers and permits | rejected | 4.10 s |
+| Finished mixed-folder picture, including storage/display | 101.25 s | 10.47 s |
+| DNG reservation / available shared memory | 2078.16 / 2048 MiB | 283.20 / 2048 MiB |
+| Peak tracked DNG GPU buffers | no DNG allocation after rejection | 260.45 MiB |
+
+Stage medians are independent and should not be added to the end-to-end
+median. The under-five-second preparation goal is met. Final user waits
+ranged 8.89-10.63 s; their spread exceeds the 10% noise guidance, so the
+end-to-end number is descriptive, not a tight latency guarantee. No extra
+runs chased that variation. Reduction still needs one full output plane (192 MB for this photo); smaller
+binding limits or an insufficient reservation fall back to the CPU.
+Host RSS was not sampled: the decoder, source
+transfer and accumulated output still retain full images in host memory.
+
+Quality: finished 640-pixel SDR and HDR pictures matched the original CPU
+baseline for all three pairs, both whole picture and eight-pixel borders.
+Worst SDR Delta E 2000 mean / p99.9: 0.000688 / 0.0580. Worst HDR Delta E ITP
+mean / p99.9: 0.000366 / 0.0662. Existing limits remain mean <1, p99.9 <=3.
+All 41 synthetic native-pixel cases pass the existing 0.0001 absolute check
+(worst 0.00000719), covering all eight orientations, per-channel and
+off-centre/tangential warps, ordered GainMaps, clamped borders, seam crossing,
+an adaptive off-lattice split and full-image measurement samples. Cancellation,
+low memory, injected allocation failure and successful reuse after failure pass.
+
+All four real DJI mosaiced DNGs still pass the operation-based plan; the Sony
+DxO linear DNG and DJI merged HDR DNG have no mandatory warp and retain their
+existing route. This is not a camera-brand switch. A real non-DJI embedded-warp
+fixture remains missing; independent synthetic coefficients cover the generic
+mapping. Grade GPU DNG correction remains separate open work; Grade benefits
+only from the precise CPU sampler improvement recorded in Import and RAW.
+
+Validation: the existing focused DNG driver ran serially through headless
+Playwright; no visible Electron/browser, broad sweep, push or installer.
+Fast checks: 590 Node passed; 2,468 Python passed, 3 skipped.
+Evidence remains in ignored `codebase/output/dng-performance/` and
+`codebase/output/library-dng-warp/` (baseline `1792772080024`, final timed GPU
+`1792772515693`, final adaptive geometry `1792772824911`).
+
 ## 6. Decisions waiting on Steve
 
 - **V2, deferred:** linked photos: whole grade or chosen groups; where the link is stored.

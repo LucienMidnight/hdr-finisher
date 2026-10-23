@@ -1,7 +1,7 @@
 # Brief: DNG distortion correction performance
 
 Date: October 23, 2026
-Status: Ready for implementation; no performance fix implemented yet.
+Status: Implemented and locally committed; Grade GPU DNG integration remains open.
 
 ## Task for the clean thread
 
@@ -138,3 +138,22 @@ DNG types benefit, measured quality results and remaining limitations. Update
 the affected module PRDs (`photo-library`, `import-and-raw`, and others actually
 changed), commit only task files locally, and archive this brief when completed.
 Preserve unrelated edits and original photos/read-only projects.
+
+
+## Outcome, October 23, 2026
+
+Library now uses distortion-derived, adaptively split source footprints with
+ordered GPU GainMaps, warp/colour/measurement and one-plane GPU reduction.
+Shared memory limits are unchanged. Three-run 48 MP medians: finished Library
+wait 101.25 -> 10.47 s; all GPU preparation 4.10 s; fused warp/colour/measurement
+0.33 s. Reservation is 283.20 MiB and peak tracked allocation 260.45 MiB,
+compared with the rejected 2078.16 MiB request against 2048 MiB available.
+CPU weight reuse improves the fallback warp median 85.66 -> 53.53 s; a
+benchmark-only OpenCV 5 comparison measured 17.07 s without adding a dependency.
+
+Existing finished-pixel and numerical limits pass, including borders, eight
+orientations, ordered GainMaps, adaptive seams, samples, cancellation and
+allocation failure. Full measurement method, quality numbers, fast-check counts
+and limitations are recorded in the Photo Library and Import and RAW module
+PRDs. The real non-DJI warp fixture gap and Grade GPU DNG integration remain
+open. Host full-image buffers remain; the quoted peak is GPU allocation, not RSS.
