@@ -28,7 +28,7 @@
     const jobs = [...new Map(all.map(job=>[job.path,job])).values()];
     const waiting=jobs.filter(j=>j.state==="waiting").length;
     const running=jobs.length-waiting;
-    const failures=Object.values(snapshot).flatMap(queue=>queue.failures || []);
+    const failures=[...new Map([...Object.values(snapshot).flatMap(queue=>queue.failures || []), ...(health.picture_errors || [])].map(item=>[item.path,item])).values()];
     return {jobs, failures, text:`Library pictures · ${running} active · ${waiting} waiting`,
       lines:jobs.map(j=>`${j.path.split(/[\\/]/).at(-1)} · ${j.state==="waiting" ? "Waiting: " : j.state==="stopping" ? "Stopping after current step: " : ""}${j.stage}${health.helper.paused && j.state!=="waiting" ? " · current work still finishing" : ""}`)};
   }
@@ -40,11 +40,11 @@
     if (health.file_commands?.jobs?.length) jobs.unshift(`File commands: ${health.file_commands.jobs[0].done} of ${health.file_commands.jobs[0].total}`);
     const work = sceneWork(health, typeof window !== "undefined" ? window.HDRLibraryScenes?.snapshot() : undefined);
     if (work.jobs.length || health.helper.manual_paused) jobs.unshift(work.jobs.length ? work.text : "Library reading paused");
-    const problems = work.failures.length + (health.file_commands?.attention?.length || 0) + writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length + (index.checks?.folders || []).filter(folder => folder.failure || folder.warnings?.length).length;
+    const problems = work.failures.filter(item => !item.ignored).length + (health.file_commands?.attention?.length || 0) + writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length + (index.checks?.folders || []).filter(folder => folder.failure || folder.warnings?.length).length;
     const extra = problems ? ` · Needs attention: ${count(problems)}` : index.state === "failed" || index.state === "retrying" || health.helper.failure || health.helper.recovering ? " · Needs attention" : "";
     return (jobs[0] || "Activity") + (jobs.length > 1 ? ` +${jobs.length - 1}` : "") + extra;
   }
-  function create({ button, panel, api, status, onHealth }) {
+  function create({ button, panel, api, status, onHealth, onPictureError }) {
     let health = null, exports = null;
     const pending = new Set();
     const node = (tag, text, className) => { const item = document.createElement(tag); item.textContent = text; if (className) item.className = className; return item; };
@@ -72,7 +72,11 @@
       const writer = health.writer, index = health.index;
       panel.replaceChildren(node("h2", "Activity", "panel-title"));
       const work = sceneWork(health, window.HDRLibraryScenes?.snapshot());
-      for(const failure of work.failures) panel.append(node("p",`${failure.path.split(/[\\/]/).at(-1)} · ${failure.reason}`));
+      for(const failure of work.failures) {
+        const item = node(failure.revision ? "button" : "p", `${failure.path.split(/[\\/]/).at(-1)} · ${failure.reason}${failure.ignored ? " · Ignored" : ""}`, failure.revision ? "text-button library-picture-error-link" : "");
+        if (failure.revision) { item.type = "button"; item.dataset.action = "picture-error:" + failure.path; item.addEventListener("click", () => onPictureError?.(failure)); }
+        panel.append(item);
+      }
       if (work.jobs.length || health.helper.pending || health.helper.manual_paused) {
         const section = node("section", "", "library-activity-job");
         section.append(node("p", work.text + (health.helper.paused ? " · Reading paused" : "")));
@@ -138,8 +142,8 @@
       if (focused) ([...panel.querySelectorAll("button")].find(item => item.dataset.action === focused) || button).focus({preventScroll:true});
       panel.scrollTop = scrollTop;
     }
-    function update(next) { health = next; button.hidden = false; button.textContent = (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next); onHealth?.(next); render(); }
-    window.addEventListener("library-work-changed", () => { queueMicrotask(() => { if (health) update(health); }); });
+    function update(next, fetched = true) { health = next; button.hidden = false; button.textContent = (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next); if (fetched) onHealth?.(next); render(); }
+    window.addEventListener("library-work-changed", () => { queueMicrotask(() => { if (health) update(health, false); }); });
     function close() { panel.hidden = true; button.setAttribute("aria-expanded", "false"); }
     button.addEventListener("click", () => { panel.hidden = !panel.hidden; button.setAttribute("aria-expanded", String(!panel.hidden)); render(); if (!panel.hidden) panel.querySelector("button")?.focus(); });
     document.addEventListener("pointerdown", event => { if (!panel.contains(event.target) && !button.contains(event.target)) close(); });

@@ -1,4 +1,11 @@
 html, body { height: 100%; overflow: hidden; }
+.library-cell .picture-frame { position: relative; }
+.library-picture-error { position: absolute; z-index: 2; left: 6px; bottom: 6px; padding: 3px 6px; border: 1px solid var(--attention); border-radius: var(--radius-1); background: var(--panel); color: var(--attention); font-size: 11px; line-height: 1.3; cursor: pointer; }
+.library-picture-error:focus-visible { outline: 2px solid var(--attention); outline-offset: 2px; }
+.library-activity .library-picture-error-link { display: block; width: 100%; color: var(--attention); text-align: left; white-space: normal; }
+.application-dialog.library-picture-error-dialog { width: min(560px, calc(100vw - 32px)); height: fit-content; max-height: calc(100vh - 44px); overflow: auto; }
+.library-picture-error-dialog pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
+.library-picture-error-dialog .app-dialog-actions { flex-wrap: wrap; }
 body { margin: 0; color: var(--body); background: var(--app); }
 [hidden] { display: none !important; }
 .library { display: grid; grid-template-columns: 250px minmax(0, 1fr) 250px; height: 100vh; gap: 1px; }

@@ -81,7 +81,7 @@
       if (response.status === 202) { await sleep(150, signal); continue; }
       if (!response.ok) {
         const error = new Error(typeof result.detail === "string" ? result.detail : "Library request failed.");
-        error.status = response.status; throw error;
+        error.status = response.status; error.libraryError = result.library_error; throw error;
       }
       if (measured) HDRLibraryStopwatch("picture_answered", { path: body.path, request: trace, key: result.key, duration_ms: performance.now() - queued, kept: !!result.kept });
       return result;
@@ -146,6 +146,26 @@
   }
   // One stored scene size, scaled to fit any cell.
   const thumbnailEdge = () => 640;
+  const pictureErrors = HDRLibraryPictureErrors.create({api, status, changed: async (paths, result = {}, requeue = false) => {
+    invalidateGradePictures(paths);
+    for (const [key] of recentPictures) if (paths.some(path => key.startsWith(path + "|"))) recentPictures.delete(key);
+    if (result.session) postParent("grade-replaced", {session:result.session});
+    if (result.undo_available != null) culling.setUndo(result.undo_available);
+    for (const row of result.photos || []) { const photo = state.allPhotos.find(item => item.path === row.path); if (photo) Object.assign(photo, row); }
+    paintGrid(); paintFilm();
+    if (requeue) for (const path of paths) {
+      void HDRLibraryScenes.load(path, 640, undefined, 80).catch(error => {
+        if (error.libraryError) pictureErrors.remember(error.libraryError);
+        else if (!aborted(error)) status(error.message);
+        void activity.refresh();
+      });
+    }
+    if (state.view === "single" && paths.includes(selected()?.path)) { state.singleIdentity = ""; void showSingle(); }
+    void activity.refresh();
+  }});
+  window.addEventListener("library-picture-errors-changed", () => {
+    for (const cell of [...state.cells.values(), ...state.filmCells.values()]) pictureErrors.paint(cell);
+  });
   const tilePool = HDRLibraryTilePool.create(undefined, cell => {
     cell.controller.abort(); cell.element.remove();
     // Explicitly release the detached canvas backing store on eviction.
@@ -245,7 +265,7 @@
           prepared = null;
           if (aborted(error) || !isCurrent()) return;
           if (error.libraryYield) { await sleep(50,controller.signal); continue; }
-          if (HDRLibraryPictures.usable()) throw error;
+          if (error.libraryError || HDRLibraryPictures.usable()) throw error;
           if (!fallback) {
             const meta = await api("/api/library/fallback-picture",{path:photo.path,edge},controller.signal);
             if (!isCurrent()) return;
@@ -289,6 +309,11 @@
     setTimeout(()=>{paintGrid();paintFilm();if(state.view==="single")showSingle();},100);
   });
   function removeUnreadable(photo, error) {
+    if (error.libraryError) {
+      pictureErrors.remember(error.libraryError);
+      void activity.refresh();
+      return;
+    }
     if (error.status !== 400) { status(error.message); return; }
     const currentPath = selected()?.path, anchorPath = state.photos[state.anchor]?.path;
     const wasSelected = state.selection.has(photo.path);
@@ -311,7 +336,7 @@
     const name = document.createElement("span"); name.className = "name"; name.textContent = photo.name;
     element.append(frame, name); container.append(element);
     const cell = { element, canvas, controller: new AbortController(), photo, index, edge:thumbnailEdge(), identity:pictureIdentity(photo) };
-    element.addEventListener("click", (event) => select(state.photos.findIndex((item) => item.path === photo.path), false, event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "single"));
+    element.addEventListener("click", (event) => { if (!event.target.closest(".library-picture-error")) select(state.photos.findIndex((item) => item.path === photo.path), false, event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "single"); });
     element.addEventListener("dblclick", () => { select(state.photos.findIndex((item) => item.path === photo.path)); openGrade(); });
     element.addEventListener("pointerenter", () => { if (state.timing && cell.meta) diagnostics(photo, cell.meta, cell.elapsed); });
     element.addEventListener("contextmenu", event => photoMenu(event, photo));
@@ -323,6 +348,7 @@
     });
     const started = performance.now();
     const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
+    pictureErrors.paint(cell);
     {
       void (async () => {
         const fallback = document.createElement("canvas"); cell.fallback = fallback;
@@ -354,7 +380,7 @@
           } catch(error) {
             if (aborted(error) || !current()) return;
             if (error.libraryYield) { await sleep(50,cell.controller.signal); continue; }
-            if (HDRLibraryPictures.usable()) throw error;
+            if (error.libraryError || HDRLibraryPictures.usable()) throw error;
             if (!cpuShown) {
               const meta = await api("/api/library/fallback-picture",{path:photo.path,edge:cell.edge},cell.controller.signal);
               if (!current()) return;
@@ -368,7 +394,7 @@
             await sleep(2000,cell.controller.signal);
           }
         }
-      })().catch(error=>{if(current()&&!aborted(error))removeUnreadable(photo,error);});
+      })().catch(error=>{if(current()&&!aborted(error)){removeUnreadable(photo,error);pictureErrors.paint(cell);cell.controller.abort();}});
       return cell;
     }
   }
@@ -1083,7 +1109,8 @@
   }
   let fileRevision = 0;
   const activity = HDRLibraryActivity.create({ button: $("index-status"), panel: $("library-activity"), api, status,
-    onHealth: next => { if(next.file_commands && next.file_commands.revision !== fileRevision) {fileRevision=next.file_commands.revision;if(next.file_commands.changes.length)void filesChanged({...next.file_commands,undo_available:culling.undoAvailable()});} showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
+    onPictureError: record => pictureErrors.show(record),
+    onHealth: next => { pictureErrors.update(next.picture_errors || [], next.picture_errors_checked_at); if(next.file_commands && next.file_commands.revision !== fileRevision) {fileRevision=next.file_commands.revision;if(next.file_commands.changes.length)void filesChanged({...next.file_commands,undo_available:culling.undoAvailable()});} showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
   $("library-undo").addEventListener("click", () => { void culling.undo(); });
   let checkEvent = 0, refreshingCheck = false;
   const checkClient = crypto.randomUUID();

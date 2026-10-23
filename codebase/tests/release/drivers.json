@@ -3885,6 +3885,13 @@
         "launch": {"method": "electron"}
       },
       {
+      "path": "tests/library-picture-errors.js",
+      "areas": ["library", "ui"],
+      "tier": "area",
+      "protects": "Failed grades release both source slots, retain clickable errors across reloads and regenerate pictures after a safe reset.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/library-live-grid.js",
       "areas": ["library"],
       "tier": "core",

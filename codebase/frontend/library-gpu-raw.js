@@ -784,7 +784,7 @@
       root.HDRLibraryStopwatch?.("source_cpu_fallback", {path});
       console.info("Library CPU source:", response.headers.get("X-Library-Fallback")); return null;
     }
-    if (!response.ok) { const error = new Error((await response.json().catch(() => ({}))).detail || "Library request failed."); error.status = response.status; throw error; }
+    if (!response.ok) { const result = await response.json().catch(() => ({})); const error = new Error(result.detail || "Library request failed."); error.status = response.status; error.libraryError = result.library_error; throw error; }
     if ((response.headers.get("Content-Type") || "").includes("application/json")) return response.json();
     const body = await response.arrayBuffer();
     const sensorMs = performance.now() - begun;

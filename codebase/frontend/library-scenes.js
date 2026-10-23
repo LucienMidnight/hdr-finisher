@@ -18,12 +18,17 @@ window.HDRLibraryScenes = (() => {
   const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed});
   const history = new Map();
   const largeBytes = 32 * 1024 * 1024;
+  function failure(result) {
+    const error = Error(result.detail || "The photo could not be prepared.");
+    error.libraryError = result.library_error;
+    return error;
+  }
   async function prepared(path, edge, signal, priority, identity) {
     const plan = await probes.submit(path+"|"+edge, async shared => {
       const response = await fetch("/api/library/live-plan", {method:"POST",signal:shared,
         headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge})});
       const result = await response.json();
-      if (!response.ok) throw Error(result.detail || "The photo could not be checked.");
+      if (!response.ok) throw failure(result);
       return result;
     }, signal, priority, {path,stage:"Checking stored picture"});
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
@@ -58,14 +63,14 @@ window.HDRLibraryScenes = (() => {
       try {
         const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance);
         if (meta) return meta;
-      } catch (error) { if (error.name === "AbortError") throw error; console.warn("Library source CPU fallback:",error.message); }
+      } catch (error) { if (error.name === "AbortError" || error.libraryError) throw error; console.warn("Library source CPU fallback:",error.message); }
     }
     for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",signal,
         headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance()})});
       if (response.status === 202) { sources.stage(path,"Waiting for source reading",true); await wait(150, signal); continue; }
       const meta = await response.json();
-      if (!response.ok) throw Error(meta.detail || "The stored scene could not be prepared.");
+      if (!response.ok) throw failure(meta);
       return meta;
     }
   }

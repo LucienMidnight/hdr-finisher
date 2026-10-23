@@ -1,6 +1,16 @@
 const assert = require("node:assert/strict"), { test } = require("node:test");
 const { summary, writerText, indexText } = require("../frontend/library-activity.js");
 const rest = () => ({ writer: { waiting: 0, done: 0, total: 0, attention: [] }, index: { state: "idle" }, helper: {} });
+
+test("remembered errors stay in Activity after workers finish; ignored errors stay quiet", () => {
+  const {sceneWork}=require("../frontend/library-activity.js"), health=rest();
+  health.picture_errors=[{path:"photo.png",revision:"1",reason:"Saved edits cannot be read",ignored:false}];
+  const work=sceneWork(health,{sources:{failures:[{path:"photo.png",reason:"older message"}]}});
+  assert.equal(work.failures.length,1); assert.equal(work.failures[0].revision,"1");
+  assert.match(summary(health),/Needs attention: 1/);
+  health.picture_errors[0].ignored=true;
+  assert.equal(summary(health),"Activity"); assert.equal(sceneWork(health).failures.length,1);
+});
 test("Activity is quiet at rest; writer takes priority and counts other jobs", () => {
   const health = rest(); assert.equal(summary(health), "Activity");
   Object.assign(health.writer, { waiting: 688, done: 312, total: 1000 });

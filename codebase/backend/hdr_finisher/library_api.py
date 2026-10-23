@@ -110,6 +110,12 @@ class LiveSceneRequest(BaseModel):
     priority: int = Field(default=30, ge=0, le=100)
 
 
+class PictureErrorCommand(BaseModel):
+    path: str
+    revision: str
+    action: Literal["ignore", "retry", "original"]
+
+
 class SensorRequest(BaseModel):
     path: str
     edge: int = Field(default=320, ge=64, le=2560)
@@ -248,10 +254,39 @@ def create_library_router(worker, browser, store=None):
 
     from .library_live import LivePictures, quality as live_quality, recipe as live_recipe
     live = LivePictures(browser.root, marks, documents if store is not None else None)
+    from .library_picture_errors import PictureErrors
+    picture_errors = PictureErrors(marks)
+
+    def picture_document(path):
+        document = live.document(path)
+        if document:
+            from .models import EditDocument
+            EditDocument.model_validate(document)
+        return document
+
+    @router.post("/picture-error")
+    def picture_error(command: PictureErrorCommand):
+        record = picture_errors.get(command.path)
+        if not record or record["revision"] != command.revision:
+            raise HTTPException(409, "The photo or settings changed. Refresh its picture before making this choice.")
+        if command.action == "ignore":
+            return {"error": picture_errors.save({**record, "ignored": True})}
+        result = {}
+        if command.action == "original":
+            if not getattr(marks, "grades", None):
+                raise HTTPException(409, "Reverting is unavailable in this Library session.")
+            try:
+                result = marks.grades.history.rewrite([command.path], kind="original", save_open=True)
+            except (ValueError, OSError) as error:
+                raise HTTPException(400, user_error(error)) from error
+        picture_errors.clear(command.path)
+        log("picture_error_resolved", path=command.path, action=command.action)
+        return result
 
     @router.post("/fallback-picture")
+    @picture_errors.guard
     async def fallback_picture(command: LiveSceneRequest, request: Request):
-        document = await run_in_threadpool(live.document, command.path)
+        document = await run_in_threadpool(picture_document, command.path)
         path = str(marks.source_path(command.path))
         return await helper_result(request, "live-fallback", path=path, document=document,
             edge=command.edge, priority=command.priority)
@@ -294,9 +329,10 @@ def create_library_router(worker, browser, store=None):
         return {"released": True}
 
     @router.post("/live-plan")
+    @picture_errors.guard
     def live_plan(command: LiveSceneRequest):
         # Cache discovery and stat only: never decode or claim a source slot.
-        document = live.document(command.path)
+        document = picture_document(command.path)
         path = marks.source_path(command.path)
         stat = path.stat()
         cached = live.cache.cached(str(path), command.edge, live_quality(document))
@@ -306,8 +342,9 @@ def create_library_router(worker, browser, store=None):
                 "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}"}
 
     @router.post("/live-scene")
+    @picture_errors.guard
     async def live_scene(command: LiveSceneRequest, request: Request):
-        document = await run_in_threadpool(live.document, command.path)
+        document = await run_in_threadpool(picture_document, command.path)
         path = str(marks.source_path(command.path))
         source_quality = live_quality(document)
         cached = await run_in_threadpool(live.cache.cached, path, command.edge, source_quality)
@@ -430,7 +467,10 @@ def create_library_router(worker, browser, store=None):
 
     @router.get("/health")
     def health():
-        return {"preparation": source_jobs.snapshot(), "writer": marks.writer.status(), "helper": {"restarts": 0, **worker.status()},
+        import time
+        with marks._lock:
+            errors, checked_at = picture_errors.all(), time.time()
+        return {"picture_errors": errors, "picture_errors_checked_at": checked_at, "preparation": source_jobs.snapshot(), "writer": marks.writer.status(), "helper": {"restarts": 0, **worker.status()},
             "index": index.status(), "file_commands": file_commands.status(), "conflicts": marks.conflicts.status(), "problems": recent()}
 
     @router.post("/scene-work")
@@ -506,7 +546,9 @@ def create_library_router(worker, browser, store=None):
         except RuntimeError as exc:
             log("helper_request_failed", operation=command, paths=arguments, reason=str(exc), action="request stopped; restart app")
             raise HTTPException(status_code=503, detail=helper_error(exc)) from exc
-        except (ValueError, OSError, CancelledError) as exc:
+        except CancelledError as exc:
+            raise HTTPException(status_code=499, detail="Library request cancelled.") from exc
+        except (ValueError, OSError) as exc:
             log("helper_request_failed", operation=command, paths=arguments, reason=str(exc), action="request stopped; saved marks retained")
             raise HTTPException(status_code=400, detail=f"The Library could not read {arguments.get('path', 'the selected photos')}. Saved marks are safe; check the photo or folder and try again.") from exc
         finally:

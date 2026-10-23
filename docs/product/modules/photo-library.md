@@ -19,6 +19,21 @@ they do not depend on the machine's free RAM.
 
 ## 1. Purpose
 
+**Remembered picture errors (October 23, 2026).** Failed photo developments
+leave a small amber `--attention` error button on grid and filmstrip cells.
+Both source slots continue with other photos; saved edits are validated before
+decoding. Failures are stored in the Library database against the source,
+settings-file revision and pending grade, so reopening or scrolling does not
+repeat the failed development. Changing the photo or settings expires the error.
+Cancellations, pauses and resource/admission failures are not remembered as
+broken photos. Activity retains the reason and ignored state after workers
+finish and across restarts. Tile and Activity error buttons open the same
+dialog: Ignore remembers and skips the error, Try again clears it and queues
+the photo, and Revert to original removes its grade and queues a fresh picture,
+including when the command comes from Activity after browsing to another folder.
+Reverting preserves original pixels, marks, tags, albums and the previous grade
+through the existing settings writer. A stale dialog cannot reset newer edits.
+
 A place to browse, cull, rate, compare, organise, grade in bulk and
 batch-export photos without leaving the app. The reference is DxO
 PhotoLab's PhotoLibrary (folder-first browsing and quick compare), with

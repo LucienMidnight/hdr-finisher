@@ -8,7 +8,7 @@ function setup(plans,develop){
  const context={window:{},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,setTimeout,clearTimeout,
   performance:{now:()=>time},console,
   HDRLibraryGpuRaw:{enabled:()=>true,liveScene:develop},
-  fetch:async(url,options)=>{requests.push(JSON.parse(options.body));if(url==="/api/library/live-scene")return {ok:false,json:async()=>({detail:"decoder failed"})};return {ok:true,json:async()=>plans[JSON.parse(options.body).path]};}};
+  fetch:async(url,options)=>{requests.push(JSON.parse(options.body));if(url==="/api/library/live-scene")return {ok:false,json:async()=>({detail:"decoder failed"})};const plan=plans[JSON.parse(options.body).path];return {ok:!plan.library_error,json:async()=>plan};}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/library-scenes.js'),'utf8'),context);
  return {scenes:context.window.HDRLibraryScenes,requests,advance:ms=>time+=ms};
 }
@@ -54,4 +54,19 @@ test('cancelled pending expensive demand never starts and a failed preparation r
  const cancel=new AbortController(),b=scenes.load('b',640,cancel.signal);await tick();
  cancel.abort();await assert.rejects(b,{name:'AbortError'});
  const c=scenes.load('c',640);block.resolve();await aError;await c;assert.deepEqual(started,['a','c']);
+});
+
+test('remembered errors skip both source slots while later pictures finish',async()=>{
+ const started=[];
+ const record={path:'broken',revision:'1',reason:'Saved edits cannot be read'};
+ const {scenes}=setup({broken:{detail:record.reason,library_error:record},broken2:{detail:'unreadable',library_error:{...record,path:'broken2'}},
+  large:{bytes:96e6},small:{bytes:1e6}},async(path,edge)=>{started.push(path);return {edge};});
+ const results=await Promise.allSettled(['broken','broken2','large','small'].map(path=>scenes.load(path,640)));
+ assert.equal(results[0].reason.libraryError.revision,'1');
+ assert.equal(results[1].reason.libraryError.path,'broken2');
+ assert.ok(results.slice(2).every(result=>result.status==='fulfilled'));
+ assert.deepEqual(started.sort(),['large','small']);
+ await tick();
+ assert.equal(scenes.snapshot().sources.active,0);
+ assert.equal(scenes.snapshot().sources.waiting,0);
 });
