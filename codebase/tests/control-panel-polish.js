@@ -46,6 +46,19 @@ const fs = require("node:fs"), path = require("node:path");
    return {list:list.bottom,tools:tools.top,toolBottom:tools.bottom,actions:actions.top,icon:[icon.width,icon.height],more:!!document.querySelector('.local-more-menu'),visible:getComputedStyle(document.querySelector('#local-mask-actions')).display};
   });
   assert(local.tools>=local.list&&local.actions>=local.toolBottom);assert.equal(local.icon[0],local.icon[1]);assert.equal(local.more,false);assert.notEqual(local.visible,'none');
+  const compact=await page.evaluate(()=>{
+   const surface=document.querySelector('#local-adjustments-panel > .local-stack-surface');
+   const list=document.getElementById('local-adjustment-list'),style=getComputedStyle(surface);
+   const short={gutter:surface.offsetWidth-surface.clientWidth,overflow:style.overflowY,track:getComputedStyle(surface,'::-webkit-scrollbar-track').backgroundColor};
+   while(list.children.length<7){const row=list.firstElementChild.cloneNode(true);row.dataset.layoutFixture='true';list.append(row);}
+   const rows=[...list.children].map(row=>row.getBoundingClientRect());
+   return {short,height:surface.clientHeight,sixFit:rows[5].bottom<=surface.getBoundingClientRect().bottom,seventhBelow:rows[6].bottom>surface.getBoundingClientRect().bottom,heights:rows.map(r=>r.height),nested:getComputedStyle(list).overflowY,gutter:surface.offsetWidth-surface.clientWidth};
+  });
+  assert.equal(compact.height,192);assert(compact.sixFit&&compact.seventhBelow);assert(compact.heights.every(h=>h===32));
+  assert.equal(compact.short.overflow,'scroll');assert(compact.short.gutter>1);assert.equal(compact.gutter,compact.short.gutter);
+  assert.notEqual(compact.short.track,'rgba(0, 0, 0, 0)');assert.equal(compact.nested,'visible');
+  await page.screenshot({path:path.join(output,'compact-local.png')});
+  await page.evaluate(()=>document.querySelectorAll('[data-layout-fixture]').forEach(row=>row.remove()));
   await page.screenshot({path:path.join(output,'local.png')});
   await page.locator('#grade-mode-retouch').click();
   // Retouch fits without scrolling. The rail still reserves and paints its track.

@@ -22,14 +22,28 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
   });
   await page.locator("#file-input").setInputFiles({name:"transfer-texture.png",mimeType:"image/png",buffer:Buffer.from(data,"base64")});
   await page.waitForFunction(()=>state.session&&!state.importInProgress&&state.gpuPreview?.lastPresentedFrame,null,{timeout:120000});
-  await page.locator("#grade-mode-retouch").click();await page.locator("#retouch-brush").click();
+  // The same six compact rows and permanent rail are used by both panels.
+  await page.locator("#grade-mode-local").click();
+  const localLayout = await page.evaluate(() => {
+    const surface=document.querySelector("#local-adjustments-panel > .local-stack-surface");
+    const list=document.getElementById("local-adjustment-list"), style=getComputedStyle(surface);
+    return {height:surface.clientHeight, overflow:style.overflowY, rail:style.getPropertyValue("scrollbar-gutter"), nested:getComputedStyle(list).overflowY};
+  });
+  assert.equal(localLayout.height,192);assert.equal(localLayout.overflow,"scroll");assert.equal(localLayout.nested,"visible");
+  await page.locator("#grade-mode-retouch").click();
+  const repairLayout = await page.evaluate(() => {
+    const surface=document.querySelector(".repair-stack-surface"), tools=document.querySelector(".retouch-mode-switch");
+    return {height:surface.clientHeight,overflow:getComputedStyle(surface).overflowY,above:surface.getBoundingClientRect().bottom<=tools.getBoundingClientRect().top};
+  });
+  assert.equal(repairLayout.height,localLayout.height);assert.equal(repairLayout.overflow,"scroll");assert(repairLayout.above);
+  await page.locator("#retouch-brush").click();
   const screen=point=>page.evaluate(p=>{const r=activePreviewElement().getBoundingClientRect(),q=sourcePointToDisplay(p);return{x:r.left+q.x*r.width,y:r.top+q.y*r.height};},point);
   const altClick=async p=>{await page.keyboard.down("Alt");try{await page.mouse.click(p.x,p.y);}finally{await page.keyboard.up("Alt");}};
-  const paint=async(point,drag=false)=>{
+  const paint=async(point,drag=false,count=1)=>{
    const p=await screen(point);await page.mouse.move(p.x,p.y);await page.mouse.down();
    if(drag)await page.mouse.move(p.x+8,p.y,{steps:4});
    await page.mouse.up();
-   await page.waitForFunction(()=>!retouchUI.busy&&state.editDocument.repairs.length===1,null,{timeout:60000});
+   await page.waitForFunction(n=>!retouchUI.busy&&state.editDocument.repairs.length===n,count,{timeout:60000});
   };
   const settled=async()=>{
    await page.waitForFunction(()=>!state.gpuDraftInFlight&&state.gpuPreview?.lastPresentedFrame?.applicationGeneration===state.previewGeneration[state.currentView],null,{timeout:60000});
@@ -79,6 +93,34 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
   const changed=await screen({x:.3,y:.5});await altClick(changed);
   await page.locator("#retouch-apply").click();await page.waitForFunction(()=>!retouchUI.busy);
   assert(Math.abs(await page.evaluate(()=>state.editDocument.repairs[0].recipe.source_point.x)-.3)<.002);
+  // Switching tools starts a new stroke, retaining each brush's source/settings.
+  const savedHeal=await page.evaluate(()=>JSON.stringify(state.editDocument.repairs[0]));
+  await page.locator("#retouch-mode-clone").click();
+  assert.equal(await page.evaluate(()=>retouchUI.selected),null);
+  assert.equal(await page.locator("#retouch-size").inputValue(),"40");
+  assert.equal(await page.evaluate(()=>retouchUI.active),true);
+  await paint({x:.7,y:.6},false,2);
+  assert.equal(await page.evaluate(()=>JSON.stringify(state.editDocument.repairs[0])),savedHeal,"new Clone altered saved Heal");
+  await page.locator("#retouch-mode-inpaint").click();
+  await page.locator("#retouch-size").fill("12");await paint({x:.75,y:.7},false,3);
+  assert.deepEqual(await page.evaluate(()=>state.editDocument.repairs.map(r=>r.recipe.mode)),["heal","clone","inpaint"]);
+  assert.equal(await page.locator("#retouch-list > li").count(),3);
+  await page.locator("#retouch-mode-heal").click();
+  assert.equal(await page.evaluate(()=>retouchUI.selected),null);
+  assert(Math.abs(await page.evaluate(()=>retouchUI.source.x)-.3)<.002,"Heal lost its own source");
+  assert.equal(await page.locator("#retouch-apply").isDisabled(),true);
+  // Check six-row fit and seventh-row scrolling with presentation-only rows.
+  await page.evaluate(()=>{
+    const list=document.getElementById("retouch-list");
+    while(list.children.length<7){const row=list.firstElementChild.cloneNode(true);row.dataset.layoutFixture="true";list.append(row);}
+  });
+  const rows=await page.evaluate(()=>{
+    const surface=document.querySelector(".repair-stack-surface"),r=[...document.querySelectorAll("#retouch-list > li")].map(el=>el.getBoundingClientRect());
+    return {sixFit:r[5].bottom<=surface.getBoundingClientRect().bottom,seventhBelow:r[6].bottom>surface.getBoundingClientRect().bottom,heights:r.map(x=>x.height)};
+  });
+  assert(rows.sixFit&&rows.seventhBelow);assert(rows.heights.every(h=>h===32));
+  await page.screenshot({path:path.join(output,"compact-repairs-ui.png")});
+  await page.evaluate(()=>document.querySelectorAll("[data-layout-fixture]").forEach(row=>row.remove()));
   await page.screenshot({path:path.join(output,"synthetic-heal-ui.png")});
   console.log("PASS: Clone/Heal source picking, drag, source editing, opacity, history and GPU refresh",{baseline,cloned,healed});
   if(source){

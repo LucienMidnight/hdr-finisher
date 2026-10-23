@@ -480,3 +480,29 @@ Labeled crops and an HTML viewer are generated in output/retouch-transfer/.
 Required checks: 585 JavaScript and 2,458 Python passes, 3 Python skips. The
 same unrelated 3 edit-sync helper and 6 frontend wording failures remain. No
 existing test tolerance or performance budget was relaxed.
+
+### Compact Local and Retouch stacks — October 23, 2026
+
+Steve requested six visible compact rows and a permanent scrollbar rail in
+Local, with the same presentation in Retouch. Both stacks now use a fixed
+six-row viewport with 32-pixel rows; the outer surface owns scrolling, so
+there is no nested list scrollbar. The track remains painted and reserved
+when the stack is empty or short. Retouch puts all Inpaint, Heal and Clone
+repairs together at the top, with tool icons directly below and explicit
+method labels in each row. Resume and Stop painting are compact icon actions.
+
+Choosing any repair-tool icon clears the selected saved repair and activates
+that tool for a new repair on the next stroke. Each tool has an independent
+brush draft (size, feather, opacity and source); selecting an existing row
+still restores that repair for Apply. Sources and drafts reset between photos.
+Repair pixels, saved recipes and processing limits are unchanged.
+
+Validation: the focused Electron panel and Clone/Heal checks passed, covering
+six-row fit, seventh-row overflow, nontransparent short-list rails, shared
+list ordering, independent sources/settings, and creating mixed repair jobs
+without changing earlier jobs. Existing pixel, source editing, history and
+preview checks passed. Required JavaScript: 585 passes and the same 3 unrelated
+edit-sync helper failures. Python: 2,457 passes, 3 skips, the same 6 frontend
+wording failures plus an unrelated Library source-ownership test failure
+(`test_source_ownership_merges_tiers_promotes_and_rejects_stale_publication`,
+expected ValueError not raised). No Library or pixel-processing code changed.

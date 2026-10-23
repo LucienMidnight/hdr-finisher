@@ -169,3 +169,40 @@ body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: au
 .retouch-content [hidden] { display: none !important; }
 #retouch-method { width: 100%; min-width: 0; }
 #retouch-apply { width: 100%; margin-top: 8px; }
+
+/* Six compact rows, one scroll owner, and a visible rail even for empty lists. */
+#control-mode-local #local-adjustments-panel > .local-stack-surface,
+#control-mode-retouch .repair-stack-surface {
+  box-sizing: border-box; height: 194px; min-height: 194px; max-height: 194px;
+  overflow-x: hidden; overflow-y: scroll; scrollbar-gutter: stable;
+  scrollbar-width: auto; scrollbar-color: auto;
+  border: 1px solid var(--local-stack-border); border-radius: 5px;
+  background: var(--local-stack-background);
+}
+#control-mode-local #local-adjustment-list,
+#control-mode-retouch #retouch-list {
+  display: grid; align-content: start; grid-auto-rows: 32px; gap: 0;
+  padding: 0; margin: 0; min-height: 0; max-height: none; overflow: visible; list-style: none;
+}
+#control-mode-local .local-stack-surface::-webkit-scrollbar,
+#control-mode-retouch .repair-stack-surface::-webkit-scrollbar { width: 12px; background: var(--local-stack-scrollbar-track); }
+#control-mode-local .local-stack-surface::-webkit-scrollbar-track,
+#control-mode-retouch .repair-stack-surface::-webkit-scrollbar-track { background: var(--local-stack-scrollbar-track); box-shadow: inset 1px 0 var(--border); }
+#control-mode-local .local-stack-surface::-webkit-scrollbar-thumb,
+#control-mode-retouch .repair-stack-surface::-webkit-scrollbar-thumb { background: var(--local-stack-scrollbar-thumb); border: 3px solid var(--local-stack-scrollbar-track); border-radius: 8px; }
+#control-mode-local .local-adjustment-item,
+#control-mode-retouch #retouch-list .local-adjustment-item { box-sizing: border-box; height: 32px; min-height: 0; margin-top: 0; }
+#control-mode-local .local-adjustment-select,
+#control-mode-retouch #retouch-list .local-adjustment-select { box-sizing: border-box; height: 31px; min-height: 0; padding-block: 3px; font-size: 11px; }
+#control-mode-local .local-adjustment-menu-button,
+#control-mode-local .local-adjustment-bypass { top: 2px; height: 27px; min-height: 0; }
+#control-mode-retouch #retouch-list .local-adjustment-select { padding-inline: 8px; }
+#control-mode-retouch #retouch-list .local-adjustment-item > button:not(.local-adjustment-select) { height: 27px; min-height: 0; border: 0; background: transparent; }
+#control-mode-retouch .retouch-content > .local-stack-heading { padding-inline: 0; }
+#control-mode-retouch .retouch-mode-switch { padding: 10px 0; margin: 0; }
+#control-mode-retouch .retouch-mode-switch > button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 34px; min-height: 34px; padding: 5px; }
+.retouch-mode-switch svg { width: 22px; height: 22px; }
+#control-mode-retouch .local-adjustment-copy > small { max-width: 65%; overflow: hidden; text-overflow: ellipsis; }
+#control-mode-retouch .local-empty { padding: 11px 12px; font-size: 11px; color: var(--muted); }
+
+#control-mode-retouch #retouch-brush { margin-left: auto; }

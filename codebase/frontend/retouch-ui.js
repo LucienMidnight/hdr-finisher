@@ -1,5 +1,5 @@
 /* Native-source repair authoring. One completed gesture is one history edit. */
-const retouchUI = { active: false, busy: false, cancelled: false, points: null, cursor: null, selected: null, session: null, mode: "inpaint", source: null, pickingSource: false };
+const retouchUI = { active: false, busy: false, cancelled: false, points: null, cursor: null, selected: null, session: null, mode: "inpaint", source: null, pickingSource: false, brushes: {} };
 
 const retouchMethods = {
   standard: { label: "Standard", help: "The current soft brush repair." },
@@ -89,7 +89,7 @@ function renderRetouchControls() {
   if (!retouchInput("brush")) return;
   const sessionId = state.session?.session_id;
   if (retouchUI.session !== sessionId) {
-    Object.assign(retouchUI, { session: sessionId, active: state.gradeMode === "retouch", selected: null, points: null, cursor: null, source: null, pickingSource: false });
+    Object.assign(retouchUI, { session: sessionId, active: state.gradeMode === "retouch", selected: null, points: null, cursor: null, source: null, pickingSource: false, brushes: {} });
   }
   retouchInput("brush").classList.toggle("active", retouchUI.active);
   retouchInput("brush").setAttribute("aria-pressed", String(retouchUI.active));
@@ -115,6 +115,7 @@ function renderRetouchControls() {
   retouchInput("repair-count").textContent = `Repairs · ${records.length}`;
   syncRetouchReadouts();
   const list = retouchInput("list");
+  retouchInput("empty").hidden = records.length > 0;
   list.replaceChildren();
   for (const record of [...records].reverse()) {
     const item = document.createElement("li");
@@ -123,7 +124,7 @@ function renderRetouchControls() {
     choose.type = "button";
     choose.className = "local-adjustment-select";
     choose.classList.toggle("active", record.id === retouchUI.selected);
-    choose.append(createLocalAdjustmentCopy({ title: record.name, subtitle: `${record.recipe.radius_px * 2} px · ${record.recipe.mode === "inpaint" ? retouchMethods[record.recipe.method].label : record.recipe.mode === "heal" ? "Heal" : "Clone"}` }));
+    choose.append(createLocalAdjustmentCopy({ title: record.name, subtitle: `${record.recipe.radius_px * 2} px · ${record.recipe.mode === "inpaint" ? `Inpaint · ${retouchMethods[record.recipe.method].label}` : record.recipe.mode === "heal" ? "Heal" : "Clone"}` }));
     choose.disabled = retouchUI.busy;
     choose.setAttribute("aria-pressed", String(record.id === retouchUI.selected));
     choose.addEventListener("click", () => {
@@ -254,10 +255,25 @@ function renderRetouchOverlay(canvas) {
 
 function bindRetouchEvents() {
   const canvas = els.localMaskOverlay;
-  for (const mode of ["inpaint", "heal", "clone"]) retouchInput(`mode-${mode}`).addEventListener("click", () => {
-    retouchUI.mode = mode; retouchUI.points = null; retouchUI.pickingSource = false;
+  // Creation tools own independent brush drafts. A saved row is edited only
+  // after selecting it; choosing any tool always begins a fresh repair.
+  const brushFields = ["size", "hardness", "method", "feather", "texture", "opacity"];
+  const defaults = Object.fromEntries(brushFields.map(name => [name, retouchInput(name).value]));
+  for (const mode of ["inpaint", "heal", "clone"]) retouchInput(`mode-${mode}`).addEventListener("click", async () => {
+    retouchUI.brushes[retouchUI.mode] = {
+      values: Object.fromEntries(brushFields.map(name => [name, retouchInput(name).value])),
+      source: retouchUI.source ? {...retouchUI.source} : null,
+    };
+    const brush = retouchUI.brushes[mode] || {values: defaults, source: null};
+    for (const name of brushFields) retouchInput(name).value = brush.values[name];
+    retouchUI.mode = mode; retouchUI.source = brush.source ? {...brush.source} : null;
+    retouchUI.selected = null; retouchUI.loadedRecipe = null;
+    retouchUI.points = null; retouchUI.pickingSource = false;
+    retouchUI.active = Boolean(state.session);
+    if (state.localPathDraft) await finishLocalPathDraft();
+    await ensureGeometryCoordinateMap();
     renderRetouchControls(); renderLocalMaskOverlay();
-    retouchMessage(mode === "inpaint" ? "Paint an area to repair it." : "Alt-click the photo or use Set source, then paint. Each stroke starts at the source.");
+    retouchMessage(mode === "inpaint" ? "Paint a new Inpaint repair." : `New ${mode === "heal" ? "Heal" : "Clone"} repair. Alt-click the photo or use Set source, then paint.`);
   });
   retouchInput("source-pick").addEventListener("click", async () => {
     retouchUI.active = true; retouchUI.pickingSource = true; retouchUI.points = null;
