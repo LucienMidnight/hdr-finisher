@@ -223,7 +223,13 @@ function isPathModified(path, defaults = defaultAdjustments()) {
 }
 
 function valuesEqual(left, right) {
-  if ((left && typeof left === "object") || (right && typeof right === "object")) return JSON.stringify(left) === JSON.stringify(right);
+  // Backend/JS default calculations can differ by floating-point roundoff.
+  if (typeof left === "number" && typeof right === "number") return left === right || Math.abs(left - right) <= 1e-12;
+  if (left && right && typeof left === "object" && typeof right === "object") {
+    if (Array.isArray(left) !== Array.isArray(right)) return false;
+    const keys = Object.keys(left);
+    return keys.length === Object.keys(right).length && keys.every(key => Object.hasOwn(right, key) && valuesEqual(left[key], right[key]));
+  }
   return left === right;
 }
 

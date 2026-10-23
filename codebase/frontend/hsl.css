@@ -11,3 +11,9 @@
 .hsl-picker [aria-pressed="true"],.hsl-customs [aria-pressed="true"] { color:var(--accent); }
 .hsl-notice { min-height:2em; margin:8px 0; }
 #hsl-local-panel { padding:8px 0; }
+
+.hsl-channels .hsl-channel { flex: 0 0 24px; width: 24px; height: 24px; min-height: 24px; max-height: 24px; aspect-ratio: 1; box-sizing: border-box; padding: 0; }
+.hsl-picker { gap: 4px; }
+.hsl-picker button, .hsl-selection-toggle { min-height: 30px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-1); }
+.hsl-picker [aria-pressed="true"], .hsl-selection-toggle[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: var(--accent-bed); box-shadow: inset 0 0 0 1px var(--accent); }
+.hsl-wheel { aspect-ratio: 1; height: auto; }

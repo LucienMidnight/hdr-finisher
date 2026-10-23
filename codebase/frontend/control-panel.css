@@ -55,13 +55,6 @@
 .local-tool-strip > button[data-local-tool] > span:last-child { display: none; }
 .local-tool-strip > #local-show-mask { margin-left: auto; width: 32px; padding: 5px; }
 .local-tool-strip > #local-show-mask > span:last-child { display: none; }
-.local-more-menu { position: relative; }
-.local-more-menu > summary { cursor: pointer; list-style: none; padding: 7px 3px; font: 12px var(--sans); color: var(--body); }
-.local-more-menu > summary::-webkit-details-marker { display: none; }
-#local-more-actions { position: absolute; right: 0; z-index: 8; min-width: 180px; padding: 6px; background: var(--raised); border: 1px solid var(--border); border-radius: 5px; box-shadow: 0 8px 24px var(--shadow); }
-#local-more-actions button { width: 100%; text-align: left; }
-#local-more-actions .local-mask-footer-actions, #local-more-actions .local-brush-actions { display: flex; flex-direction: column; gap: 4px; padding: 0; margin: 0; }
-#local-more-actions .local-mask-footer-actions.hidden { display: none; }
 .local-stack-heading { display: flex; align-items: center; gap: 4px; padding: 8px 12px; }
 .local-stack-heading > span { flex: 1; }
 .local-stack-heading .local-stack-primary-actions { display: flex; gap: 2px; padding: 0; margin: 0; }
@@ -82,3 +75,88 @@
 #retouch-list .local-adjustment-item > button:not(.local-adjustment-select) { flex: 0 0 26px; width: 26px; padding: 4px; }
 #control-mode-local #local-duplicate { font-size: 0; }
 #control-mode-local #local-duplicate .local-duplicate-icon { font-size: initial; }
+
+/* Shared module headings: the title is not a metadata badge. */
+.control-group .control-group-header .group-toggle > .control-group-name,
+.control-foldout > summary > span:first-child {
+  color: var(--group-title-color);
+  font-family: var(--group-title-font-family);
+  font-size: var(--group-title-font-size);
+  font-weight: var(--group-title-font-weight);
+  letter-spacing: var(--group-title-letter-spacing);
+  text-transform: var(--group-title-text-transform);
+}
+.control-group.modified .control-group-header .group-toggle > span::after { content: none; }
+.control-group.modified > .control-group-header > .group-toggle::after {
+  content: ""; flex: 0 0 5px; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--accent); margin-left: auto;
+}
+#grade-workflow-panel > .grade-header { margin-bottom: 0; }
+.control-mode-switch.proof-preview-switch {
+  display: flex; flex: 0 0 calc(100% + 32px); width: calc(100% + 32px);
+  align-self: stretch; margin: 8px -16px 0; padding: 0;
+  border-radius: 0; background: var(--app); box-shadow: none; gap: 0;
+}
+.control-mode-switch.proof-preview-switch button {
+  min-height: 38px; margin: 0; border: 0; border-radius: 0;
+  border-bottom: 2px solid var(--hairline); text-transform: uppercase;
+  font: 600 11px var(--display); letter-spacing: .06em;
+}
+.control-mode-switch.proof-preview-switch button.active {
+  background: var(--panel); color: var(--text); border-bottom-color: var(--accent); box-shadow: none;
+}
+.retouch-mode-switch.proof-preview-switch {
+  display: flex; width: 100%; min-height: 0; padding: 3px; margin-top: 12px;
+}
+.retouch-mode-switch.proof-preview-switch button { min-height: 30px; padding: 5px 8px; }
+.retouch-brush-tools.local-tool-strip { padding: 0 0 12px; }
+.retouch-brush-tools button { display: inline-flex; align-items: center; gap: 6px; }
+.local-tool-strip > button[data-local-tool] {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 34px; min-height: 34px; padding: 5px; box-sizing: border-box;
+}
+.local-tool-strip .local-tool-icon {
+  display: inline-flex; flex: 0 0 22px; width: 22px; height: 22px; aspect-ratio: 1;
+}
+.local-tool-strip .local-tool-icon::before { flex: 0 0 20px; width: 20px; height: 20px; }
+#local-mask-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 12px 12px; }
+#local-mask-actions .local-mask-footer-actions,
+#local-mask-actions .local-brush-actions { display: contents; }
+#local-mask-actions .local-mask-footer-actions.hidden { display: none; }
+#local-mask-actions button { min-height: 28px; padding: 4px 7px; font-size: 11px; }
+#local-mask-actions .local-overlay-color-control { margin: 0; }
+#local-mask-actions .local-overlay-toggle { display: inline-flex; align-items: center; gap: 4px; }
+#local-mask-actions .local-overlay-icon { flex: 0 0 16px; width: 16px; height: 16px; }
+#local-mask-actions .local-overlay-icon::before { width: 16px; height: 16px; }
+/* Reuse the instrument value entry surface for wheel numeric controls. */
+.wheel-fields { gap: 8px; margin-bottom: 10px; }
+.wheel-fields label { display: flex; flex-direction: column; gap: 5px; min-width: 0; font: 11px var(--sans); color: var(--muted); }
+.wheel-fields input {
+  box-sizing: border-box; width: 100%; min-width: 0; padding: 5px 7px;
+  border: 1px solid var(--border); border-radius: var(--radius-1);
+  background: var(--segment-channel-background); color: var(--text);
+  box-shadow: var(--depth-channel); font: 12px var(--mono); text-align: right;
+}
+/* Saturated hue band, with eight radial divisions in the grading surface. */
+.color-wheel-pad {
+  background: conic-gradient(from 300deg, #ff2929, #ffe600, #30ed40, #19e6ff, #3545ff, #eb26ff, #ff2929);
+  touch-action: none;
+}
+.color-wheel-pad::before {
+  inset: 13%;
+  background:
+    repeating-conic-gradient(from 300deg, #15171b99 0deg 1deg, transparent 1deg 45deg),
+    radial-gradient(circle, #95999f 0%, #95999faa 24%, #95999f00 100%),
+    conic-gradient(from 300deg, #ff2929 0deg 45deg, #ffb923 45deg 90deg, #a5f02b 90deg 135deg, #28ed88 135deg 180deg, #19e6ff 180deg 225deg, #3545ff 225deg 270deg, #932bff 270deg 315deg, #eb26aa 315deg 360deg);
+  box-shadow: 0 0 0 3px var(--panel), inset 0 0 0 1px #ffffff28;
+}
+
+body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: auto; cursor: crosshair; }
+#local-mask-actions button { width: auto; flex: 0 0 auto; }
+.retouch-brush-tools.local-tool-strip button { min-height: 34px; }
+
+.retouch-brush-tools.local-tool-strip button {
+  flex-direction: row; width: auto; min-width: 0; height: 34px;
+  padding: 5px 8px; font: 12px var(--sans);
+}
+#retouch-list .local-adjustment-bypass { position: static; align-self: center; }

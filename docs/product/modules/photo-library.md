@@ -17,6 +17,10 @@ Admission rules and memory reserves are unchanged. The four small DNG routing,
 cancellation and decoder-failure tests use a sufficient test memory snapshot;
 they do not depend on the machine's free RAM.
 
+**Library footer (October 23, 2026).** The idle footer no longer displays
+"Photos stay where they are." The status region remains available for activity
+and action messages.
+
 ## 1. Purpose
 
 **Remembered picture errors (October 23, 2026).** Failed photo developments

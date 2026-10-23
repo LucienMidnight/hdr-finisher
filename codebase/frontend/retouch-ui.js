@@ -80,6 +80,7 @@ function renderRetouchControls() {
   retouchInput("brush").classList.toggle("active", retouchUI.active);
   retouchInput("brush").setAttribute("aria-pressed", String(retouchUI.active));
   retouchInput("brush").disabled = !sessionId || retouchUI.busy;
+  retouchInput("brush-stop").disabled = !retouchUI.active || retouchUI.busy;
   retouchInput("cancel").disabled = !retouchUI.busy;
   for (const name of ["size", "hardness", "search", "patch", "iterations", "seed"]) retouchInput(name).disabled = retouchUI.busy;
   const records = state.editDocument?.repairs || [];
@@ -221,6 +222,13 @@ function bindRetouchEvents() {
     retouchUI.points = null;
     setGradeMode("retouch");
     await ensureGeometryCoordinateMap();
+    renderRetouchControls();
+    renderLocalMaskOverlay();
+  });
+  retouchInput("brush-stop").addEventListener("click", () => {
+    retouchUI.active = false;
+    retouchUI.points = null;
+    retouchUI.cursor = null;
     renderRetouchControls();
     renderLocalMaskOverlay();
   });

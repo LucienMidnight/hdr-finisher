@@ -10,6 +10,23 @@
   [code map](../../technical/code-map.md)), `group-presets.js`,
   `grade-saving.js`, `sdr-match-ui.js`.
 
+**Control Panel presentation (October 23, 2026).** Global / Local / Retouch
+are full-width tabs. Module titles use the neutral uppercase RAW Development
+title token; one changed-state dot sits to the right of the title. Object key
+order and numeric roundoff below 1e-12 are not edits (UI comparison only). HDR/SDR switching avoids redundant control moves to
+preserve scrolling. Local tools sit below the adjustment list, followed by
+visible mask actions, then Brush settings and Mask settings; there is no More
+menu for these actions. Retouch has an explicit Inpaint Brush and Stop painting
+control, and its preview overlay accepts painting in Retouch mode. Shared
+HDR/SDR metadata captions above these controls are removed.
+
+**Wheel presentation (October 23, 2026).** HSL and Color Wheels share primary
+colour directions (red upper left, yellow top, blue lower right), with more
+saturated hue bands. Grading wheels have eight radial sections. HSL channel
+buttons remain round. Pick / Add / Subtract are persistent modes; Show selection
+is a separate pressed-state button that displays the mask overlay. Wheel
+numeric fields use the existing recessed instrument surfaces.
+
 ## 1. Purpose
 
 Grade one photo into two excellent renditions, HDR and SDR, while seeing

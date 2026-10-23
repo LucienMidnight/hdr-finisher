@@ -50,6 +50,10 @@ film-by-paper tables for Kodak 2383 and Fujifilm Crystal Archive.
    data for stocks other than Portra 800, bleach bypass, halo warmth, separate
    core/halo/bloom lens controls, black-and-white film stocks.
 
+**Print Exposure readout (October 23, 2026).** Display signed EV with two
+decimal places. The control operates in stops; rounding its value to a whole
+percentage hid small adjustments even while the picture changed.
+
 ## 1. Purpose
 
 Film Look makes a finished digital picture look as if it was shot and printed

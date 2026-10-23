@@ -7,6 +7,12 @@
   `export_presets.py`, `proofing.py`, `hdr_ceiling.py`, `delivery_colour.py`,
   `jpegxl.py`; frontend `export-ui.js`, `batch-export.js`.
 
+**Export presentation (October 23, 2026).** The batch selection outline is
+drawn above thumbnail images and GPU canvases. Preset name, filename pattern,
+version, subfolder and destination fields use shared recessed field surfaces.
+The preset name has a visible label. The bottom-left preset help paragraph is
+removed. These are presentation changes; output rendering is unchanged.
+
 ## 1. Purpose
 
 Turn a graded photo into delivery files that look the way it looked while

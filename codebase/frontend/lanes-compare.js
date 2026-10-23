@@ -202,9 +202,12 @@ function arrangeLaneControlGroups(lane) {
   const groupOrder = ["denoise", `${lane}-tone`, `${lane}-equalizer`, `${lane}-zones`,
     "hsl", "curves", `${lane}-highlights`, `${lane}-color`, "color-grading",
     "black-and-white", "detail", "film-look", "vignette"];
+  let index = 0;
   for (const groupName of groupOrder) {
     const group = document.querySelector(`.control-group[data-group="${groupName}"]`);
-    if (group) panel.append(group);
+    if (!group) continue;
+    if (panel.children[index] !== group) panel.insertBefore(group, panel.children[index] || null);
+    index++;
   }
 }
 

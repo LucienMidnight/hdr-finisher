@@ -501,6 +501,7 @@ function formatControlValue(path, value) {
     const grades = {0.125:"1/8",0.25:"1/4",0.5:"1/2",1:"1",2:"2"};
     return grades[numeric] || Number(numeric.toFixed(3)).toString();
   }
+  if (path.endsWith("film_look.print_exposure")) return `${numeric > 0 ? "+" : ""}${numeric.toFixed(2)} EV`;
   if (path.endsWith("film_look.stock_exposure")) return `${numeric > 0 ? "+" : ""}${numeric.toFixed(2)} EV`;
   if (path.includes("film_look")) {
     const signed = /(contrast|toe|shoulder|density|hue_offset|separation|warmth|tint)$/.test(path);

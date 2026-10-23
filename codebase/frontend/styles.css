@@ -9295,3 +9295,22 @@ img:not([src]), img[src=""] { visibility:hidden; }
 #retouch-list li { display:flex; align-items:center; gap:6px; margin-top:5px; }
 #retouch-list li button:first-of-type { flex:1; text-align:left; }
 .retouch-panel button[aria-pressed="true"] { outline:1px solid currentColor; }
+
+/* Selection outline sits above both GPU canvases and thumbnail images. */
+.batch-photo { position: relative; isolation: isolate; }
+.batch-photo[aria-selected="true"]::after {
+  content: ""; position: absolute; inset: 0; z-index: 5;
+  border: 2px solid var(--accent); border-radius: inherit; pointer-events: none;
+}
+#batch-preset-editor, #batch-preset-editor ~ .export-choice-section { display: grid; gap: 12px; }
+#batch-preset-editor ~ .export-choice-section label { display: flex; flex-direction: column; gap: 6px; min-width: 0; color: var(--body); font: 12px var(--sans); }
+#batch-preset-editor input, #batch-pattern, #batch-subfolder, #batch-version-name, #batch-directory {
+  box-sizing: border-box; min-width: 0; width: 100%; min-height: 34px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-1); background: var(--segment-channel-background);
+  color: var(--text); box-shadow: var(--depth-channel); font: 12px var(--sans);
+}
+#batch-preset-editor #batch-preset-name { font-weight: 600; }
+#batch-pattern, #batch-directory { font-family: var(--mono); }
+#batch-preset-editor input:focus-visible, #batch-pattern:focus-visible, #batch-subfolder:focus-visible, #batch-version-name:focus-visible, #batch-directory:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+#batch-preset-editor > label { display: flex; flex-direction: column; gap: 6px; color: var(--body); font: 12px var(--sans); }

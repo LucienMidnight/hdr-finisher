@@ -5,7 +5,7 @@ function bindColorWheels() {
       const dx = event.clientX - rect.left - rect.width / 2;
       const dy = event.clientY - rect.top - rect.height / 2;
       const radius = Math.min(1, Math.hypot(dx, dy) / Math.max(1, rect.width / 2));
-      const hue = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+      const hue = (Math.atan2(dy, dx) * 180 / Math.PI - 210 + 720) % 360;
       const wheel = pad.closest("[data-wheel]").dataset.wheel;
       setValueByPath(state.adjustments, `current.color_grading.${wheel}.hue`, hue);
       setValueByPath(state.adjustments, `current.color_grading.${wheel}.saturation`, radius * 100);
@@ -51,7 +51,7 @@ function renderColorWheels() {
     const puck = container.querySelector(".color-wheel-puck");
     if (!wheel || !puck) return;
     const radius = Math.min(100, Math.max(0, wheel.saturation)) * 0.45;
-    const angle = wheel.hue * Math.PI / 180;
+    const angle = (wheel.hue + 210) * Math.PI / 180;
     puck.style.left = `${50 + Math.cos(angle) * radius}%`;
     puck.style.top = `${50 + Math.sin(angle) * radius}%`;
   });

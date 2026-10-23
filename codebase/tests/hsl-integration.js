@@ -66,9 +66,9 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
   await panel.getByRole('button',{name:'Subtract',exact:true}).click();await pick(.12,.6);
   assert.equal(await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe.ranges[2].subtract),true);
   await panel.getByRole('button',{name:'Stop picking',exact:true}).click();
-  await panel.getByRole('checkbox',{name:'Show selection',exact:true}).check();
+  await panel.getByRole('button',{name:'Show selection',exact:true}).click();
   await page.waitForFunction(()=>document.getElementById('hsl-selection-overlay')?.complete&&document.getElementById('hsl-selection-overlay')?.naturalWidth>0);
-  await panel.getByRole('checkbox',{name:'Show selection',exact:true}).uncheck();
+  await panel.getByRole('button',{name:'Show selection',exact:true}).click();
   assert.equal(await page.locator('#hsl-selection-overlay').count(),0);
   const handle=panel.locator('[data-hsl-handle="move"][data-range="1"][tabindex]');
   const before=await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe.ranges[1].center);
@@ -92,8 +92,9 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
   assert.equal(await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe.hue),0);
   await page.locator('[data-group="hsl"] .group-preset').click();await page.locator('.group-preset-row').filter({hasText:'HSL test'}).getByRole('button',{name:'Apply',exact:true}).click();
   assert.equal(await page.evaluate(()=>state.adjustments.hdr.hsl.channels.find(c=>c.kind==='custom').recipe.hue),1);
-  await page.evaluate(async()=>{await syncGlobalEditState();await assignToolToPending('linear_gradient');});
-  await page.locator('[data-local-grade-section="hsl"] .local-grade-section-toggle').click().catch(()=>{});
+  await page.screenshot({path:'output/hsl-ui-polish.png'});
+  await page.evaluate(async()=>{await syncGlobalEditState();setGradeMode('local');await assignToolToPending('brush');});
+  await page.locator('[data-local-grade-section="hsl"] summary').click();
   const local=page.locator('#hsl-local-panel');
   await local.getByRole('button',{name:'Orange quick start',exact:true}).click();
   await local.getByRole('button',{name:'Add',exact:true}).click();await local.getByRole('button',{name:'Green quick start',exact:true}).click();

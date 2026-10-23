@@ -1,6 +1,6 @@
 function renderMaskTreeEditor(local) {
   const leaf = selectedMaskLeaf(local);
-  document.querySelector("#local-more-actions .local-brush-actions")?.remove();
+  document.querySelector("#local-mask-actions .local-brush-actions")?.remove();
   els.localMaskTreeSummary.textContent = "";
   if (els.localGradientControls) {
     els.localGradientControls.textContent = "";
@@ -76,7 +76,7 @@ function renderMaskTreeEditor(local) {
     actions.append(clearStrokes, undoStroke);
     els.localInvert.textContent = selectedMaskExpression(local)?.inverted ? "Restore Mask" : "Invert Mask";
     els.localInvert.disabled = !hasStrokes;
-    document.getElementById("local-more-actions").append(actions);
+    document.getElementById("local-mask-actions").append(actions);
     els.localMaskTreeSummary.append(brushPanel, maskPanel);
   } else if (leaf.type === "path") {
     renderPathControls(local, leaf);

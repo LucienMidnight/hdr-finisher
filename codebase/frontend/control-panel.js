@@ -15,10 +15,6 @@ function initializeControlPanel() {
     return panel;
   };
   const global = makePanel("global"), local = makePanel("local"), retouch = makePanel("retouch");
-  const label = document.createElement("div");
-  label.className = "control-shared-label";
-  label.textContent = "HDR + SDR";
-  global.append(label);
   for (const selector of ["#raw-settings-section", '[data-group="raw-highlights"]', '[data-group="geometry"]', '[data-group="perspective"]', ".lane-folder-shell"]) {
     global.append(document.querySelector(selector));
   }
@@ -27,20 +23,16 @@ function initializeControlPanel() {
   els.localPanel.classList.remove("control-group-body");
   els.localEraser.remove();
   const strip = local.querySelector(".local-tool-strip");
-  strip.append(els.localShowMask);
-  const more = document.createElement("details");
-  more.className = "local-more-menu";
-  const trigger = document.createElement("summary");
-  trigger.textContent = "More";
-  trigger.setAttribute("aria-label", "More mask actions");
   const actions = document.createElement("div");
-  actions.id = "local-more-actions";
+  actions.id = "local-mask-actions";
   actions.setAttribute("role", "group");
   actions.setAttribute("aria-label", "Mask actions");
-  more.append(trigger, actions);
-  strip.append(more);
-  actions.append(els.localMaskFooterActions, local.querySelector(".local-overlay-color-control"));
+  actions.append(els.localMaskFooterActions, els.localShowMask, local.querySelector(".local-overlay-color-control"));
   local.querySelector(".local-overlay-actions").remove();
+  const stack = local.querySelector(".local-stack-surface");
+  stack.after(strip, actions);
+  const newLabel = local.querySelector(".control-shared-label");
+  newLabel?.remove();
   const heading = local.querySelector(".local-stack-heading");
   heading.append(local.querySelector(".local-stack-primary-actions"), document.getElementById("local-adjustments-bypass"));
   for (const section of local.querySelectorAll(".local-grade-section")) {
@@ -94,7 +86,7 @@ function initializeControlPanel() {
 function placeGradeFolderTabs(mode) {
   const row = document.querySelector(".grade-folder-tabs");
   const folder = document.querySelector(mode === "local" ? ".local-lane-folder" : ".lane-folder-shell");
-  folder.prepend(row);
+  if (row.parentElement !== folder) folder.prepend(row);
 }
 
 function createControlFoldout(key, title, hint, open = false) {

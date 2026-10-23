@@ -13,7 +13,7 @@ function initializeHslPanels() {
       <svg class="hsl-wheel" viewBox="0 0 320 320" aria-label="HSL colour selection wheel"></svg>
       <div class="hsl-picker">${['pick','add','subtract'].map(m=>`<button type="button" class="text-button" data-hsl-mode="${m}">${m[0].toUpperCase()+m.slice(1)}</button>`).join('')}
       <button type="button" class="text-button" data-hsl-action="stop">Stop picking</button></div>
-      <label><input type="checkbox" data-hsl-selection> Show selection</label>
+      <button type="button" class="text-button hsl-selection-toggle" data-hsl-selection aria-pressed="false">Show selection</button>
       <div class="hsl-sliders"></div><p class="hsl-notice" role="status" aria-live="polite"></p>`;
     const specs = [['width','Range',1,180,1,16],['feather','Softness',1,90,1,12],['hue','Hue',-180,180,1,0],['saturation','Saturation',-100,100,1,0],['luminance','Luminance',-2,2,.01,0],['uniformity','Uniformity',0,100,1,0],['opacity','Amount',0,1,.01,1]];
     for (const [key,label,min,max,step,value] of specs) {
@@ -48,7 +48,11 @@ function initializeHslPanels() {
     host.querySelector('[data-hsl-action="delete"]').onclick=()=>hslEdit(ui,()=>{
       const owner=hslOwner(ui);owner.hsl.channels=owner.hsl.channels.filter(c=>c.id!==ui.channel);ui.channel='red';ui.range=0;
     });
-    host.querySelector('[data-hsl-selection]').onchange=()=>void hslSelection(ui);
+    host.querySelector('[data-hsl-selection]').onclick=()=>{
+      const button=host.querySelector('[data-hsl-selection]');
+      button.setAttribute('aria-pressed',String(button.getAttribute('aria-pressed')!=='true'));
+      void hslSelection(ui);
+    };
     hslBindWheel(ui);
   }
   document.addEventListener('pointerdown',hslPickStart,true);
@@ -87,7 +91,7 @@ function hslEnd(ui){
   if(!ui.gesture)return;ui.gesture=false;state.previewScheduler?.endInteraction();
   if(ui.scope==='global')endGlobalEditGesture(ui.host);
   else if(ui.gestureLocal===selectedLocal()?.id && ui.gestureLane===state.currentView && ui.before!==JSON.stringify([hslOwner(ui)?.hsl,hslOwner(ui)?.hsl_section_enabled]))void commitSelectedLocal({refreshPreview:false});
-  if(ui.host.querySelector('[data-hsl-selection]').checked)void hslSelection(ui);
+  if(ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(ui);
 }
 function hslEdit(ui,fn){hslBegin(ui);try{fn();hslPreview(ui);}catch(error){hslNotice(ui,error.message);}finally{hslSync(ui);hslEnd(ui);}}
 function hslAddCustom(ui){
@@ -104,17 +108,17 @@ function renderHslPanels(){
     const signature=JSON.stringify([hslOwner(ui)?.hsl,hslOwner(ui)?.hsl_section_enabled,ui.channel,ui.range,Boolean(state.session)]);
     if(signature!==ui.signature){ui.signature=signature;hslSync(ui);}
   }
-  const overlayOwner=hslUI.panels.find(ui=>ui.host.querySelector('[data-hsl-selection]').checked);
+  const overlayOwner=hslUI.panels.find(ui=>ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true');
   const selectionKey=`${state.editRevision}:${state.globalEditGeneration}`;
   if(overlayOwner&&!overlayOwner.gesture&&selectionKey!==hslUI.selectionKey){
     hslUI.selectionKey=selectionKey;clearTimeout(hslUI.selectionTimer);
-    hslUI.selectionTimer=setTimeout(()=>{if(overlayOwner.host.querySelector('[data-hsl-selection]').checked)void hslSelection(overlayOwner);},250);
+    hslUI.selectionTimer=setTimeout(()=>{if(overlayOwner.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(overlayOwner);},250);
   }
 }
 function hslSync(ui){
   const owner=hslOwner(ui),c=hslChannel(ui);ui.host.hidden=!owner;if(!c)return;
   const e=HDRHSL,global=ui.scope==='global';
-  if(global)ui.host.closest('.control-group').classList.toggle('modified',JSON.stringify(owner.hsl)!==JSON.stringify(e.defaultSettings())||owner.hsl_section_enabled===false);
+  if(global)ui.host.closest('.control-group').classList.toggle('modified',!valuesEqual(owner.hsl,e.defaultSettings())||owner.hsl_section_enabled===false);
   if(!global){const toggle=document.getElementById('local-hsl-bypass');toggle.textContent=owner.hsl_section_enabled===false?'Off':'On';toggle.setAttribute('aria-pressed',String(owner.hsl_section_enabled!==false));}
   ui.range=Math.min(Math.max(0,ui.range),Math.max(0,c.recipe.ranges.length-1));
   const strip=ui.host.querySelector('.hsl-channels');strip.replaceChildren();
@@ -125,17 +129,17 @@ function hslSync(ui){
     button.setAttribute('aria-label',global?`${ch.name} channel`:`${ch.name} quick start`);
     const band=e.BANDS.find(b=>b.id===ch.id);button.style.background=band?.hex||'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)';
     button.setAttribute('aria-pressed',String(global&&c.id===ch.id));
-    if(global&&JSON.stringify(ch.recipe)!==JSON.stringify(defaults.find(d=>d.id===ch.id)?.recipe))button.classList.add('modified');
+    if(global&&!valuesEqual(ch.recipe,defaults.find(d=>d.id===ch.id)?.recipe))button.classList.add('modified');
     button.title=ch.name;
     button.onclick=()=>{
-      if(global){ui.channel=ch.id;ui.range=0;hslSync(ui);if(ui.host.querySelector('[data-hsl-selection]').checked)void hslSelection(ui);}
+      if(global){ui.channel=ch.id;ui.range=0;hslSync(ui);if(ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(ui);}
       else hslEdit(ui,()=>{const r=hslChannel(ui).recipe;if(ui.mode==='pick')r.ranges=[e.bandRange(ch)];else{if(r.ranges.length>=32)throw Error('Selection is limited to 32 ranges; remove or widen a range.');r.ranges.push({...e.bandRange(ch),subtract:ui.mode==='subtract'});}ui.range=r.ranges.length-1;});
     };strip.append(button);
   }
   const customs=ui.host.querySelector('.hsl-customs');customs.replaceChildren();customs.hidden=!global;
   if(global){
     for(const ch of owner.hsl.channels.filter(v=>v.kind==='custom')){
-      const b=document.createElement('button');b.className='text-button';b.type='button';b.textContent=ch.name+(JSON.stringify(ch.recipe)!==JSON.stringify(e.newRecipe())?' •':'');b.setAttribute('aria-pressed',String(c.id===ch.id));b.onclick=()=>{ui.channel=ch.id;ui.range=0;hslSync(ui);if(ui.host.querySelector('[data-hsl-selection]').checked)void hslSelection(ui);};customs.append(b);
+      const b=document.createElement('button');b.className='text-button';b.type='button';b.textContent=ch.name+(!valuesEqual(ch.recipe,e.newRecipe())?' •':'');b.setAttribute('aria-pressed',String(c.id===ch.id));b.onclick=()=>{ui.channel=ch.id;ui.range=0;hslSync(ui);if(ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(ui);};customs.append(b);
     }
     const add=document.createElement('button');add.type='button';add.className='text-button';add.textContent='+ Custom';add.disabled=owner.hsl.channels.length>=13;add.title=add.disabled?'All four Custom channels are in use':'';add.onclick=()=>hslEdit(ui,()=>hslAddCustom(ui));customs.append(add);
   }
@@ -159,12 +163,12 @@ function hslSync(ui){
 function hslWheel(ui){
   const svg=ui.host.querySelector('svg'),e=HDRHSL,c=hslChannel(ui);svg.replaceChildren();if(!c)return;
   const node=(tag,attrs,parent=svg)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);parent.append(n);return n;};
-  const pt=(h,r)=>[160+r*Math.cos(h*Math.PI/180),160-r*Math.sin(h*Math.PI/180)];
+  const pt=(h,r)=>{const a=hslWheelAngle(h)*Math.PI/180;return [160+r*Math.cos(a),160+r*Math.sin(a)];};
   const arc=(a,b,r)=>{const steps=Math.max(2,Math.ceil(Math.abs(b-a)/2));return Array.from({length:steps+1},(_,i)=>`${i?'L':'M'}${pt(a+(b-a)*i/steps,r).join(' ')}`).join(' ');};
-  const rgb=h=>e.fromLab([.72,.12*Math.cos(h*Math.PI/180),.12*Math.sin(h*Math.PI/180)]);
+  const rgb=h=>e.fromLab([.72,.22*Math.cos(h*Math.PI/180),.22*Math.sin(h*Math.PI/180)]);
   const css=v=>`rgb(${v.map(x=>Math.round(e.clamp(e.encode(x))*255)).join(' ')})`;
   for(let h=0;h<360;h+=3){const v=rgb(h+1.5),weight=c.kind==='all'?1:e.selection(v,c.recipe.ranges).weight;
-    node('path',{d:arc(h,h+3.6,118),stroke:css(v),'stroke-width':26,fill:'none',opacity:.25+.75*weight});
+    node('path',{d:arc(h,h+3.6,118),stroke:css(v),'stroke-width':26,fill:'none',opacity:.65+.35*weight});
     const result=ui.scope==='global'?e.applyChannels(v,hslOwner(ui).hsl.channels):e.applyPixel(v,c.recipe);
     node('path',{d:arc(h,h+3.6,88),stroke:css(result),'stroke-width':16,fill:'none'});
   }
@@ -198,7 +202,7 @@ function hslMoveHandle(ui,kind,i,h){
 }
 function hslBindWheel(ui){
   const svg=ui.host.querySelector('svg');let drag=null;
-  const hue=event=>{const box=svg.getBoundingClientRect();return HDRHSL.wrap(Math.atan2(-(event.clientY-box.top-box.height/2),event.clientX-box.left-box.width/2)*180/Math.PI);};
+  const hue=event=>{const box=svg.getBoundingClientRect();return hslWheelHue(Math.atan2(event.clientY-box.top-box.height/2,event.clientX-box.left-box.width/2)*180/Math.PI);};
   svg.addEventListener('pointerdown',event=>{const target=event.target.closest('[data-hsl-handle]');if(!target||event.button!==0)return;event.preventDefault();const i=Number(target.dataset.range);ui.range=i;hslBegin(ui);drag={kind:target.dataset.hslHandle,i,offset:target.dataset.hslHandle==='move'?HDRHSL.delta(hslChannel(ui).recipe.ranges[i].center,hue(event)):0};svg.setPointerCapture(event.pointerId);hslSync(ui);});
   svg.addEventListener('pointermove',event=>{if(!drag)return;hslMoveHandle(ui,drag.kind,drag.i,hue(event)+drag.offset);hslPreview(ui);hslSync(ui);});
   const end=()=>{if(!drag)return;drag=null;hslEnd(ui);};svg.addEventListener('pointerup',end);svg.addEventListener('lostpointercapture',end);svg.addEventListener('pointercancel',end);
@@ -244,10 +248,29 @@ async function hslPickSamples(stroke){
     });
   }catch(error){hslNotice(ui,error.message);}finally{ui.sampling=false;}
 }
-function hslClearSelection(){clearTimeout(hslUI.selectionTimer);hslUI.overlayRevision++;document.getElementById('hsl-selection-overlay')?.remove();for(const ui of hslUI.panels)ui.host.querySelector('[data-hsl-selection]').checked=false;}
+function hslClearSelection(){clearTimeout(hslUI.selectionTimer);hslUI.overlayRevision++;document.getElementById('hsl-selection-overlay')?.remove();for(const ui of hslUI.panels)ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','false');}
 function hslPlaceOverlay(){const image=document.getElementById('hsl-selection-overlay'),preview=activePreviewElement();if(!image||!preview)return;const r=preview.getBoundingClientRect();Object.assign(image.style,{left:`${r.left}px`,top:`${r.top}px`,width:`${r.width}px`,height:`${r.height}px`});}
 async function hslSelection(ui){
-  const checked=ui.host.querySelector('[data-hsl-selection]').checked;hslClearSelection();if(!checked||!state.session)return;ui.host.querySelector('[data-hsl-selection]').checked=true;
+  const checked=ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true';hslClearSelection();if(!checked||!state.session)return;ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','true');
   const revision=hslUI.overlayRevision;
   try{const data=await hslFetchStage(ui,[{x:.5,y:.5}],{selection_recipe:hslChannel(ui).recipe});if(revision!==hslUI.overlayRevision)return;const image=document.createElement('img');image.id='hsl-selection-overlay';image.alt='';image.src=data.selection_overlay;image.style.cssText='position:fixed;pointer-events:none;z-index:20;';document.body.append(image);hslPlaceOverlay();}catch(error){hslNotice(ui,error.message);}
+}
+
+function hslWheelAnchors() {
+  return [[1,0,0],[1,1,0],[0,1,0],[0,1,1],[0,0,1],[1,0,1]].map((rgb,i)=>{
+    const lab=HDRHSL.toLab(rgb);
+    return [HDRHSL.wrap(Math.atan2(lab[2],lab[1])*180/Math.PI),210+i*60];
+  });
+}
+function hslWheelAngle(hue) {
+  const anchors=hslWheelAnchors();anchors.push([anchors[0][0]+360,570]);
+  let h=HDRHSL.wrap(hue);if(h<anchors[0][0])h+=360;
+  const i=anchors.findIndex((v,i)=>i<6&&h>=v[0]&&h<=anchors[i+1][0]);
+  const [a,b]=[anchors[i],anchors[i+1]];
+  return a[1]+(h-a[0])/(b[0]-a[0])*(b[1]-a[1]);
+}
+function hslWheelHue(angle) {
+  const anchors=hslWheelAnchors();anchors.push([anchors[0][0]+360,570]);
+  const a=HDRHSL.wrap(angle-210)+210,i=Math.min(5,Math.floor((a-210)/60));
+  return HDRHSL.wrap(anchors[i][0]+(a-anchors[i][1])/60*(anchors[i+1][0]-anchors[i][0]));
 }
