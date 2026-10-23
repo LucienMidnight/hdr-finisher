@@ -1,5 +1,5 @@
-/* Native-source Inpaint authoring. One completed gesture is one history edit. */
-const retouchUI = { active: false, busy: false, cancelled: false, points: null, cursor: null, selected: null, session: null };
+/* Native-source repair authoring. One completed gesture is one history edit. */
+const retouchUI = { active: false, busy: false, cancelled: false, points: null, cursor: null, selected: null, session: null, mode: "inpaint", source: null, pickingSource: false };
 
 const retouchMethods = {
   standard: { label: "Standard", help: "The current soft brush repair." },
@@ -34,13 +34,14 @@ function retouchValues() {
     }
     return value;
   };
-  return { radius: read("size", 1, 1024, false) / 2, hardness: read("hardness", 0, 100, false) / 100,
+  return { strength: read("opacity", 0, 100, false) / 100, radius: read("size", 1, 1024, false) / 2, hardness: read("hardness", 0, 100, false) / 100,
     method: retouchInput("method").value, feather: read("feather", 0, 100, false) / 100,
     texture: read("texture", 0, 100, false) / 100, patch: 3, iterations: 6, seed: 20261021 };
 }
 
 function retouchRecipe(points) {
   const v = retouchValues();
+  if (retouchUI.mode !== "inpaint" && !retouchUI.source) throw new Error("Alt-click the photo or use Set source before painting.");
   const width = state.session.source.width, height = state.session.source.height;
   const xs = points.map(p => p.x * width), ys = points.map(p => p.y * height);
   const axis = (values, length) => {
@@ -52,14 +53,14 @@ function retouchRecipe(points) {
     return [start, start + edge];
   };
   const [left, right] = axis(xs, width), [top, bottom] = axis(ys, height);
-  return { schema_version: 1, mode: "inpaint", raster_version: "native-capsules-v1",
+  return { schema_version: 1, mode: retouchUI.mode, source_point: retouchUI.mode === "inpaint" ? null : retouchUI.source, strength: v.strength, raster_version: "native-capsules-v1",
     source_size: [width, height], search_rect: [left, top, right, bottom], points,
     radius_px: v.radius, hardness: v.hardness, method: v.method, edge_feather: v.feather, texture_amount: v.texture,
     donor_exclusions: (state.editDocument?.repairs || []).filter(r => r.enabled &&
       r.recipe.search_rect[0] < right && r.recipe.search_rect[2] > left &&
       r.recipe.search_rect[1] < bottom && r.recipe.search_rect[3] > top).map(r => ({
         points: r.recipe.points, radius_px: r.recipe.radius_px,
-        hardness: r.recipe.method === "standard" ? r.recipe.hardness : 1-r.recipe.edge_feather,
+        hardness: r.recipe.mode === "inpaint" && r.recipe.method === "standard" ? r.recipe.hardness : 1-r.recipe.edge_feather,
       })),
     settings: { patch_radius: v.patch, iterations: v.iterations, seed: v.seed, algorithm: "hdrf-patchmatch-cpu-v3" } };
 }
@@ -88,16 +89,27 @@ function renderRetouchControls() {
   if (!retouchInput("brush")) return;
   const sessionId = state.session?.session_id;
   if (retouchUI.session !== sessionId) {
-    Object.assign(retouchUI, { session: sessionId, active: state.gradeMode === "retouch", selected: null, points: null, cursor: null });
+    Object.assign(retouchUI, { session: sessionId, active: state.gradeMode === "retouch", selected: null, points: null, cursor: null, source: null, pickingSource: false });
   }
   retouchInput("brush").classList.toggle("active", retouchUI.active);
   retouchInput("brush").setAttribute("aria-pressed", String(retouchUI.active));
   retouchInput("brush").disabled = !sessionId || retouchUI.busy;
   retouchInput("brush-stop").disabled = !retouchUI.active || retouchUI.busy;
   retouchInput("cancel").disabled = !retouchUI.busy;
-  for (const name of ["size", "hardness", "method", "feather", "texture"]) retouchInput(name).disabled = retouchUI.busy;
+  for (const name of ["size", "hardness", "method", "feather", "texture", "opacity", "source-pick", "mode-inpaint", "mode-heal", "mode-clone"]) retouchInput(name).disabled = retouchUI.busy;
+  retouchInput("source-pick").disabled = !sessionId || retouchUI.busy;
   const records = state.editDocument?.repairs || [];
   const selected = records.find(r => r.id === retouchUI.selected);
+  // Restore accepted/history edits while preserving unapplied control changes.
+  const accepted = selected ? `${selected.id}:${JSON.stringify(selected.recipe)}` : null;
+  if (selected && accepted !== retouchUI.loadedRecipe) {
+    const recipe = selected.recipe;
+    retouchUI.mode = recipe.mode; retouchUI.source = recipe.source_point;
+    retouchUI.pickingSource = false;
+    for (const [name,value] of Object.entries({size:recipe.radius_px*2,hardness:recipe.hardness*100,
+      method:recipe.method,feather:recipe.edge_feather*100,texture:recipe.texture_amount*100,opacity:recipe.strength*100})) retouchInput(name).value = String(value);
+  }
+  retouchUI.loadedRecipe = accepted;
   retouchInput("apply").disabled = retouchUI.busy || !selected;
   retouchInput("cancel").hidden = !retouchUI.busy;
   retouchInput("repair-count").textContent = `Repairs · ${records.length}`;
@@ -111,16 +123,19 @@ function renderRetouchControls() {
     choose.type = "button";
     choose.className = "local-adjustment-select";
     choose.classList.toggle("active", record.id === retouchUI.selected);
-    choose.append(createLocalAdjustmentCopy({ title: record.name, subtitle: `${record.recipe.radius_px * 2} px · ${retouchMethods[record.recipe.method].label}` }));
+    choose.append(createLocalAdjustmentCopy({ title: record.name, subtitle: `${record.recipe.radius_px * 2} px · ${record.recipe.mode === "inpaint" ? retouchMethods[record.recipe.method].label : record.recipe.mode === "heal" ? "Heal" : "Clone"}` }));
     choose.disabled = retouchUI.busy;
     choose.setAttribute("aria-pressed", String(record.id === retouchUI.selected));
     choose.addEventListener("click", () => {
       retouchUI.selected = record.id;
       const recipe = record.recipe;
-      for (const [name, value] of Object.entries({ size: recipe.radius_px * 2, hardness: recipe.hardness * 100, method: recipe.method, feather: recipe.edge_feather * 100, texture: recipe.texture_amount * 100 })) {
+      retouchUI.mode = recipe.mode;
+      retouchUI.source = recipe.source_point;
+      retouchUI.pickingSource = false;
+      for (const [name, value] of Object.entries({ opacity: recipe.strength * 100, size: recipe.radius_px * 2, hardness: recipe.hardness * 100, method: recipe.method, feather: recipe.edge_feather * 100, texture: recipe.texture_amount * 100 })) {
         retouchInput(name).value = String(value);
       }
-      retouchMessage("Selected repair. Change settings and apply them to compare methods; Retry tries another donor.");
+      retouchMessage(recipe.mode === "inpaint" ? "Selected repair. Change settings and apply them to compare methods; Retry tries another donor." : "Selected repair. Alt-click to change its source, then Apply settings.");
       renderRetouchControls();
       renderLocalMaskOverlay();
     });
@@ -133,7 +148,7 @@ function renderRetouchControls() {
     toggle.setAttribute("aria-pressed", String(!record.enabled));
     toggle.addEventListener("click", () => commitRetouch(records.map(r => r.id === record.id ? { ...r, enabled: !r.enabled } : r)));
     item.append(choose);
-    if (record.id === retouchUI.selected) {
+    if (record.id === retouchUI.selected && record.recipe.mode === "inpaint") {
       const retry = document.createElement("button");
       retry.type = "button";
       retry.textContent = "↻";
@@ -201,7 +216,13 @@ function renderRetouchOverlay(canvas) {
     context.stroke();
   };
   const selected = (state.editDocument?.repairs || []).find(r => r.id === retouchUI.selected);
-  if (selected) draw(selected.recipe.points, "#ffd166");
+  if (selected) {
+    draw(selected.recipe.points, "#ffd166");
+    if (selected.recipe.mode !== "inpaint") {
+      draw([selected.recipe.points[0], selected.recipe.source_point], "#ffd166", 1);
+      draw([selected.recipe.source_point], "#ffd166");
+    }
+  }
   if (retouchUI.points) {
     const diameter = Number(retouchInput("size").value) * image.width / state.session.source.width;
     draw(retouchUI.points, "#ff405e99", Math.max(2, diameter));
@@ -214,18 +235,35 @@ function renderRetouchOverlay(canvas) {
       x: cursor.x + Math.cos(i*Math.PI/16)*radius/width,
       y: cursor.y + Math.sin(i*Math.PI/16)*radius/height,
     })), "#ffffff");
-    if (retouchInput("method").value !== "standard") {
+    if (retouchUI.mode !== "inpaint" || retouchInput("method").value !== "standard") {
       const core = radius * (1-Number(retouchInput("feather").value)/100);
       if (core > 0 && core < radius) draw(Array.from({ length: 33 }, (_, i) => ({
         x: cursor.x + Math.cos(i*Math.PI/16)*core/width,
         y: cursor.y + Math.sin(i*Math.PI/16)*core/height,
       })), "#ffffff88", 1);
     }
+    if (retouchUI.mode !== "inpaint" && retouchUI.source) {
+      const start = retouchUI.points?.[0] || cursor;
+      const source = { x: retouchUI.source.x + cursor.x-start.x, y: retouchUI.source.y + cursor.y-start.y };
+      draw([cursor,source], "#66e0ff", 1);
+      draw(Array.from({length:33},(_,i)=>({x:source.x+Math.cos(i*Math.PI/16)*radius/width,y:source.y+Math.sin(i*Math.PI/16)*radius/height})),"#66e0ff",1);
+      draw([source],"#66e0ff");
+    }
   }
 }
 
 function bindRetouchEvents() {
   const canvas = els.localMaskOverlay;
+  for (const mode of ["inpaint", "heal", "clone"]) retouchInput(`mode-${mode}`).addEventListener("click", () => {
+    retouchUI.mode = mode; retouchUI.points = null; retouchUI.pickingSource = false;
+    renderRetouchControls(); renderLocalMaskOverlay();
+    retouchMessage(mode === "inpaint" ? "Paint an area to repair it." : "Alt-click the photo or use Set source, then paint. Each stroke starts at the source.");
+  });
+  retouchInput("source-pick").addEventListener("click", async () => {
+    retouchUI.active = true; retouchUI.pickingSource = true; retouchUI.points = null;
+    await ensureGeometryCoordinateMap(); renderRetouchControls(); renderLocalMaskOverlay();
+    retouchMessage("Click the source in the photo. Escape cancels source selection.");
+  });
   retouchInput("size").addEventListener("change", () => {
     constrainRetouchSize();
     queueLocalMaskOverlayRender();
@@ -235,7 +273,7 @@ function bindRetouchEvents() {
     queueLocalMaskOverlayRender();
   });
   retouchInput("apply").addEventListener("click", () => applySelectedRetouch(false));
-  for (const name of ["size", "hardness", "feather", "texture"]) {
+  for (const name of ["size", "hardness", "feather", "texture", "opacity"]) {
     retouchInput(name).addEventListener("input", () => {
       syncRetouchReadouts();
       queueLocalMaskOverlayRender();
@@ -254,6 +292,7 @@ function bindRetouchEvents() {
   });
   retouchInput("brush-stop").addEventListener("click", () => {
     retouchUI.active = false;
+    retouchUI.pickingSource = false;
     retouchUI.points = null;
     retouchUI.cursor = null;
     renderRetouchControls();
@@ -270,6 +309,14 @@ function bindRetouchEvents() {
     if (retouchUI.busy) return;
     const point = retouchPoint(event);
     if (!point) return;
+    if (retouchUI.mode !== "inpaint" && (event.altKey || retouchUI.pickingSource)) {
+      event.preventDefault();
+      retouchUI.source = {x:point.x,y:point.y,pressure:1};
+      retouchUI.pickingSource = false; retouchUI.points = null; retouchUI.cursor = point;
+      retouchMessage("Source set. Paint a new repair, or Apply settings to change the selected repair.");
+      renderRetouchControls(); renderLocalMaskOverlay(); return;
+    }
+    if (retouchUI.mode !== "inpaint" && !retouchUI.source) { retouchMessage("Choose a source first: Alt-click the photo or use Set source."); return; }
     try { retouchValues(); } catch (error) { retouchMessage(error.message); return; }
     event.preventDefault();
     canvas.focus({ preventScroll: true });
@@ -324,19 +371,30 @@ function bindRetouchEvents() {
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape" || !retouchUI.active) return;
     retouchUI.points = null;
+    retouchUI.pickingSource = false;
     if (retouchUI.busy) retouchInput("cancel").click();
+    renderRetouchControls();
     renderLocalMaskOverlay();
   });
 }
 
 function syncRetouchReadouts() {
-  for (const [name, unit] of Object.entries({ size: " px", hardness: "%", feather: "%", texture: "%" })) {
+  for (const [name, unit] of Object.entries({ size: " px", hardness: "%", feather: "%", texture: "%", opacity: "%" })) {
     retouchInput(`${name}-value`).textContent = `${Number(retouchInput(name).value)}${unit}`;
   }
   const method = retouchInput("method").value;
-  retouchInput("hardness-row").hidden = method !== "standard";
-  retouchInput("prototype-controls").hidden = method === "standard";
-  retouchInput("texture-row").hidden = !["original-detail", "donor-detail"].includes(method);
+  const inpaint = retouchUI.mode === "inpaint";
+  for (const mode of ["inpaint","heal","clone"]) {
+    retouchInput(`mode-${mode}`).classList.toggle("active",retouchUI.mode===mode);
+    retouchInput(`mode-${mode}`).setAttribute("aria-pressed",String(retouchUI.mode===mode));
+  }
+  retouchInput("source-controls").hidden = inpaint;
+  retouchInput("inpaint-options").hidden = !inpaint;
+  retouchInput("source-pick").textContent = retouchUI.pickingSource ? "Click source in photo…" : retouchUI.source ? "Change source" : "Set source";
+  retouchInput("source-help").textContent = retouchUI.mode === "heal" ? "Prototype · copies source texture and matches the surrounding tone and colour. Alt-click to set source; each stroke starts there. Samples original pixels before grading." : "Copies original source pixels through the feathered brush. Alt-click to set source; each stroke starts there. Grading applies after copying.";
+  retouchInput("hardness-row").hidden = !inpaint || method !== "standard";
+  retouchInput("prototype-controls").hidden = inpaint && method === "standard";
+  retouchInput("texture-row").hidden = !inpaint || !["original-detail", "donor-detail"].includes(method);
   retouchInput("method-help").textContent = retouchMethods[method].help;
   syncRangeVisuals(document.querySelector(".retouch-panel"));
 }

@@ -83,7 +83,8 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   the local adjustment module. CPU first; later GPU work is separate.
   Not built. Follow the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026);
   shared source placement and explicit SDR Rematch behavior are decided above;
-  complete feature remains unbuilt until Heal, Clone and release validation are finished.
+  complete feature remains unbuilt until release validation is finished; Heal/Clone
+  prototypes were added October 23 (see the later note).
   **Prototype implemented October 21:** isolated bounded CPU PatchMatch engine,
   background jobs/cancellation/revision guard, completed-patch cache and a
   synthetic comparison viewer. Float HDR/negative preservation and donor
@@ -233,7 +234,8 @@ requested October 23; only JavaScript syntax and diff whitespace were checked.
 All eight reference PNGs were reviewed. The reference server responds on
 127.0.0.1:8139; Codex queued its browser tab, but this chat has no controllable
 browser surface for rendered inspection or app screenshots. HSL design and
-real-photo review remain after the control-panel work. Heal/Clone remain open.
+real-photo review remain after the control-panel work. Heal/Clone prototypes
+are now available; their quality review remains open (October 23 note below).
 
 ## 5. Open work, in order
 
@@ -428,3 +430,53 @@ Validation: focused Electron interaction passed with the new 71%/100% painted
 recipe and saved-repair settings restoration. Required checks: 585 JavaScript
 and 2,444 Python passes, 3 Python skips; the same 3 edit-sync helper failures
 and 6 frontend wording failures remain. Processing and timing limits unchanged.
+
+### Clone and Heal prototypes — October 23, 2026
+
+Steve requested both brushes and supplied DSC00264.ARW for graded-photo
+testing. Clone transfers user-selected original working pixels directly; Heal
+transfers native source texture plus a harmonic boundary-difference correction
+(smooth RGB correction on a maximum 128-by-128 grid; donor texture is never
+resized). This follows the boundary-matching principle described in the
+[GIMP healing reference](https://developer.gimp.org/core/algorithm/healing/),
+with an independently implemented matrix-free conjugate-gradient solve. The existing Retouch CPU-first
+exception applies; preview still uses the GPU after native source publication.
+
+Both tools share Size, Edge feather, Opacity, source-space strokes, Apply
+settings, selection, bypass, removal, history and saved replay. Alt-click or
+Set source picks an anchor; each stroke starts at that anchor, maintaining a
+fixed source offset while dragging. Cyan source circle and connector show
+where pixels come from; selecting a saved repair restores its source. Choose
+a new source and Apply to refine it. Retry remains Inpaint-only. Source pixels
+come from the immutable interpreted original, before grading and prior repairs;
+source strokes crossing the photo edge fail without replacing the last result.
+Clone is direct copying; Heal is explicitly prototype pending Steve’s quality
+review, especially across high-contrast edges, image borders and large strokes.
+
+Validation criteria: exact integer-offset core copying and zero-opacity identity;
+correct feather math; constant-tone healing preserves known donor checker detail
+within 2e-7 on the small fixture and 5e-6 on the large bounded-grid fixture;
+finite HDR/negative values without clipping; cancellation, stable saved/history
+replay and shared Proof/export pixels. App tests cover both source-picking paths,
+dragging, opacity and source editing. The supplied-photo comparison uses a
+disposable copy with the saved global grade and RAW import settings, omitting
+existing repairs; owner RAW/sidecar hashes must stay unchanged. Photo quality
+is a labeled visual comparison, not an invented numerical acceptance gate.
+
+The first graded-photo pass exposed a 2.2-second Heal update versus about
+0.8 seconds for Clone. The harmonic solver now uses conjugate gradients rather
+than repeated relaxation, with the same boundary constraints and maximum grid
+size. The photo update target for this follow-up is one second through the
+updated frame, leaving the established numerical fixture limits unchanged.
+
+Validation outcome: both focused Electron drivers passed, including Inpaint
+regression and manual-source controls, source edits, opacity and history. The
+supplied-photo check used Steve’s saved grade on a disposable RAW copy, omitted
+15 existing repairs for comparison, and verified unchanged owner RAW/sidecar
+hashes. The final measured paint-to-frame times were 0.80 seconds for Clone and
+1.24 seconds for Heal (down from 2.22); Heal remains above the one-second aim
+and needs Steve’s responsiveness/quality assessment before more timing work.
+Labeled crops and an HTML viewer are generated in output/retouch-transfer/.
+Required checks: 585 JavaScript and 2,458 Python passes, 3 Python skips. The
+same unrelated 3 edit-sync helper and 6 frontend wording failures remain. No
+existing test tolerance or performance budget was relaxed.

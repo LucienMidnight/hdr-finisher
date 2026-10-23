@@ -11,6 +11,7 @@ import numpy as np
 from .retouch_jobs import RepairRevision, RepairWorker
 from .retouch_recipe import prepare_repair, stroke_mask
 from .retouch_methods import finish_repair
+from .retouch_transfer import transfer_repair
 
 
 def repair_identity(records):
@@ -84,6 +85,9 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
         checkpoint()
         # Immutable original pixels and frozen donor footprints keep every
         # completed correction independent of later additions/removals.
+        if record.recipe.mode != "inpaint":
+            patches.append(transfer_repair(record.recipe, base, checkpoint))
+            continue
         request = prepare_repair(record.recipe, lambda t, l, b, r: base[t:b, l:r], checkpoint=checkpoint)
         future, cancel = worker.submit(request, record.recipe.settings, token=token)
         # Waiting outside the session lock lets edits/cancel supersede work.

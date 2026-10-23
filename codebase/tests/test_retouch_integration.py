@@ -10,7 +10,7 @@ from hdr_finisher.models import EditCommand, PreviewKind, RepairRecord
 from hdr_finisher.projects import save_project, open_project, open_document, _validate_ignoring_unknown_fields
 from hdr_finisher.retouch import CpuInpaint
 from hdr_finisher.retouch_jobs import RepairWorker
-from hdr_finisher.retouch_recipe import InpaintRecipe
+from hdr_finisher.retouch_recipe import InpaintRecipe, RepairPoint
 from hdr_finisher.sessions import SessionStore, EditCommandError, RevisionConflictError
 
 
@@ -175,7 +175,7 @@ def test_library_native_source_uses_same_repair_before_reduction(photo, tmp_path
     assert _develop_cpu(tmp_path, session.source_path, saved, 32, cache=CaptureCache()) == 32
 
 
-@pytest.mark.parametrize("method", ["standard","edge-feather","original-detail","donor-detail"])
+@pytest.mark.parametrize("method", ["standard","edge-feather","original-detail","donor-detail","clone","heal"])
 def test_repair_invalidates_proof_cache_and_full_proof_matches_export(photo, tmp_path, method):
     from hashlib import sha256
     from pathlib import Path
@@ -193,7 +193,7 @@ def test_repair_invalidates_proof_cache_and_full_proof_matches_export(photo, tmp
     try:
         before = proofs.create(session, request, backend)
         repair = record()
-        repair = repair.model_copy(update={"recipe":repair.recipe.model_copy(update={"method":method})})
+        repair = repair.model_copy(update={"recipe":repair.recipe.model_copy(update=({"mode":method,"source_point":RepairPoint(x=.25,y=.5)} if method in ("clone","heal") else {"method":method}))})
         edit(store, session, records=[repair])
         for lane in (PreviewKind.HDR, PreviewKind.SDR):
             assert _denoised_export_source(session, lane) is session.image
@@ -229,7 +229,7 @@ def test_cancel_arriving_before_queued_request_prevents_the_solve(photo):
     assert len(session.repairs) == 1
 
 
-@pytest.mark.parametrize("method", ["standard","edge-feather","original-detail","donor-detail"])
+@pytest.mark.parametrize("method", ["standard","edge-feather","original-detail","donor-detail","clone","heal"])
 def test_new_and_removed_spots_cannot_change_completed_donors(photo, tmp_path, method):
     store, session = photo
     class CountingEngine:
@@ -240,20 +240,20 @@ def test_new_and_removed_spots_cannot_change_completed_donors(photo, tmp_path, m
     engine = CountingEngine()
     session.retouch_worker = RepairWorker(engine=engine, cache_bytes=0)
     first = record()
-    first = first.model_copy(update={"recipe":first.recipe.model_copy(update={"method":method})})
+    first = first.model_copy(update={"recipe":first.recipe.model_copy(update=({"mode":method,"source_point":RepairPoint(x=.25,y=.5)} if method in ("clone","heal") else {"method":method}))})
     second = first.model_copy(update={"id": "second", "recipe": first.recipe.model_copy(update={
         "points": (first.recipe.points[0].model_copy(update={"x": .7}),)})})
     edit(store, session, records=[first])
     first_pixels = session.image[26:38, 34:46].copy()
     edit(store, session, records=[first, second])
     np.testing.assert_array_equal(session.image[26:38, 34:46], first_pixels)
-    assert engine.count == 2, "adding a defect must not re-solve completed repairs"
+    assert engine.count == (0 if method in ("clone","heal") else 2), "adding a defect must not re-solve completed repairs"
     multi = tmp_path / "multi.hdrfinisher"
     save_project(session, multi)
     multi_pixels = session.image.copy()
     edit(store, session, records=[first])
     np.testing.assert_array_equal(session.image[26:38, 34:46], first_pixels)
-    assert engine.count == 2, "removing a defect must not re-solve completed repairs"
+    assert engine.count == (0 if method in ("clone","heal") else 2), "removing a defect must not re-solve completed repairs"
     project = tmp_path / "stable.hdrfinisher"
     save_project(session, project)
     restored = open_project(store, project)
@@ -261,12 +261,12 @@ def test_new_and_removed_spots_cannot_change_completed_donors(photo, tmp_path, m
     np.testing.assert_array_equal(open_project(store, multi).image, multi_pixels)
 
 
-@pytest.mark.parametrize("method", ["edge-feather","original-detail","donor-detail"])
+@pytest.mark.parametrize("method", ["edge-feather","original-detail","donor-detail","clone","heal"])
 def test_prototype_project_replay_and_history_keep_method_and_settings(photo,tmp_path,method):
     store,session=photo
     repair=record()
     repair=repair.model_copy(update={"recipe":repair.recipe.model_copy(update={
-        "method":method,"edge_feather":.45,"texture_amount":.65})})
+        **({"mode":method,"source_point":RepairPoint(x=.25,y=.5)} if method in ("clone","heal") else {"method":method}),"edge_feather":.45,"texture_amount":.65})})
     original=session.image.copy()
     edit(store,session,records=[repair])
     result=session.image.copy()

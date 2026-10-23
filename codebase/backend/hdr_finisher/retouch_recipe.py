@@ -41,7 +41,9 @@ class InpaintRecipe(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[1] = 1
-    mode: Literal["inpaint"] = "inpaint"
+    mode: Literal["inpaint", "heal", "clone"] = "inpaint"
+    source_point: RepairPoint | None = None
+    strength: float = Field(default=1, ge=0, le=1, allow_inf_nan=False)
     raster_version: Literal["native-capsules-v1"] = "native-capsules-v1"
     source_size: tuple[StrictInt, StrictInt]
     search_rect: tuple[StrictInt, StrictInt, StrictInt, StrictInt]
@@ -56,6 +58,8 @@ class InpaintRecipe(BaseModel):
 
     @model_validator(mode="after")
     def validate_region(self):
+        if self.mode != "inpaint" and self.source_point is None:
+            raise ValueError("Choose a source point for Heal or Clone")
         width, height = self.source_size
         left, top, right, bottom = self.search_rect
         if not (3 <= width and 3 <= height and 0 <= left < right <= width
@@ -85,7 +89,7 @@ def stroke_mask(recipe: InpaintRecipe, checkpoint=lambda: None, *, footprint=Non
     yy += 0.5
     brush = footprint or recipe
     points = [(p.x * width - left, p.y * height - top, p.pressure) for p in brush.points]
-    hardness = (1 - recipe.edge_feather if footprint is None and recipe.method != "standard"
+    hardness = (1 - recipe.edge_feather if footprint is None and (recipe.mode != "inpaint" or recipe.method != "standard")
                 else brush.hardness)
     result = np.zeros(xx.shape, dtype=np.float32)
     if len(points) == 1:
