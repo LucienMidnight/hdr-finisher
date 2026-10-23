@@ -9,10 +9,10 @@ function constrainRetouchSize() {
   const input = retouchInput("size");
   const typed = Number(input.value);
   const size = input.value.trim() && Number.isFinite(typed)
-    ? Math.min(64, Math.max(1, typed)) : 12;
+    ? Math.min(1024, Math.max(1, typed)) : 12;
   if (input.value.trim() === "" || typed !== size) {
     input.value = String(size);
-    retouchMessage(`Size set to ${size} native pixels. This prototype supports sizes from 1 to 64.`);
+    retouchMessage(`Size set to ${size} native pixels. This prototype supports sizes from 1 to 1024.`);
   }
 }
 
@@ -27,9 +27,8 @@ function retouchValues() {
     }
     return value;
   };
-  return { radius: read("size", 1, 64, false) / 2, hardness: read("hardness", 0, 100, false) / 100,
-    search: read("search", 32, 256), patch: read("patch", 1, 5), iterations: read("iterations", 1, 12),
-    seed: read("seed", 0, 4294967295) };
+  return { radius: read("size", 1, 1024, false) / 2, hardness: read("hardness", 0, 100, false) / 100,
+    patch: 3, iterations: 6, seed: 20261021 };
 }
 
 function retouchRecipe(points) {
@@ -39,8 +38,8 @@ function retouchRecipe(points) {
   const axis = (values, length) => {
     const lower = Math.max(0, Math.floor(Math.min(...values) - v.radius));
     const upper = Math.min(length, Math.ceil(Math.max(...values) + v.radius));
-    const edge = Math.min(v.search, length);
-    if (upper - lower > edge) throw new Error("Stroke is wider than the search area. Use a smaller stroke or larger search.");
+    const edge = Math.min(length, Math.max(96, upper - lower + Math.max(32, Math.ceil(v.radius * 2))));
+    if (edge > 2048) throw new Error("Paint this area in several shorter strokes.");
     const start = Math.max(0, Math.min(length - edge, Math.floor((lower + upper - edge) / 2)));
     return [start, start + edge];
   };
@@ -57,7 +56,7 @@ async function commitRetouch(records) {
   retouchUI.cancelled = false;
   retouchUI.requestId = crypto.randomUUID();
   const sessionId = state.session.session_id;
-  retouchMessage("Repairing spot… the previous picture stays available. Escape cancels.");
+  retouchMessage("Repairing area… the previous picture stays available. Escape cancels.");
   renderRetouchControls();
   try {
     const applied = await queueEditCommand("set_repairs", { repairs: records, repair_request_id: retouchUI.requestId }, null, { isCurrent: () => !retouchUI.cancelled });
@@ -82,7 +81,7 @@ function renderRetouchControls() {
   retouchInput("brush").disabled = !sessionId || retouchUI.busy;
   retouchInput("brush-stop").disabled = !retouchUI.active || retouchUI.busy;
   retouchInput("cancel").disabled = !retouchUI.busy;
-  for (const name of ["size", "hardness", "search", "patch", "iterations", "seed"]) retouchInput(name).disabled = retouchUI.busy;
+  for (const name of ["size", "hardness"]) retouchInput(name).disabled = retouchUI.busy;
   const records = state.editDocument?.repairs || [];
   const selected = records.find(r => r.id === retouchUI.selected);
   retouchInput("cancel").hidden = !retouchUI.busy;
@@ -103,9 +102,7 @@ function renderRetouchControls() {
     choose.addEventListener("click", () => {
       retouchUI.selected = record.id;
       const recipe = record.recipe;
-      for (const [name, value] of Object.entries({ size: recipe.radius_px * 2, hardness: recipe.hardness * 100,
-        search: Math.max(recipe.search_rect[2]-recipe.search_rect[0], recipe.search_rect[3]-recipe.search_rect[1]),
-        patch: recipe.settings.patch_radius, iterations: recipe.settings.iterations, seed: recipe.settings.seed })) {
+      for (const [name, value] of Object.entries({ size: recipe.radius_px * 2, hardness: recipe.hardness * 100 })) {
         retouchInput(name).value = String(value);
       }
       retouchMessage("Selected repair. Change settings and press Retry to redo it.");
@@ -125,7 +122,7 @@ function renderRetouchControls() {
       const retry = document.createElement("button");
       retry.type = "button";
       retry.textContent = "↻";
-      retry.title = "Retry with next seed";
+      retry.title = "Try another repair";
       retry.setAttribute("aria-label", `Retry ${record.name}`);
       retry.disabled = retouchUI.busy;
       retry.addEventListener("click", retrySelectedRetouch);
@@ -211,7 +208,7 @@ function bindRetouchEvents() {
     constrainRetouchSize();
     queueLocalMaskOverlayRender();
   });
-  for (const name of ["size", "hardness", "search", "patch", "iterations", "seed"]) {
+  for (const name of ["size", "hardness"]) {
     retouchInput(name).addEventListener("input", syncRetouchReadouts);
     retouchInput(name).addEventListener("change", syncRetouchReadouts);
   }
@@ -249,7 +246,7 @@ function bindRetouchEvents() {
     canvas.setPointerCapture(event.pointerId);
     retouchUI.points = [point];
     retouchUI.cursor = point;
-    retouchMessage("Paint a small spot, then release to repair. Escape discards this stroke.");
+    retouchMessage("Paint an area, then release to repair. Escape discards this stroke.");
     renderLocalMaskOverlay();
   }, true);
   canvas.addEventListener("pointermove", event => {
@@ -259,16 +256,13 @@ function bindRetouchEvents() {
     retouchUI.cursor = point;
     if (point && retouchUI.points) {
       const last = retouchUI.points.at(-1), source = state.session.source;
-      if (Math.hypot((point.x-last.x)*source.width, (point.y-last.y)*source.height) >= .5) {
+      if (Math.hypot((point.x-last.x)*source.width, (point.y-last.y)*source.height) >= Math.max(.5, Number(retouchInput("size").value) * .025)) {
         if (retouchUI.points.length >= 512) {
           retouchUI.points = null;
           retouchMessage("Stroke is too long. Paint several smaller repairs.");
         } else {
           retouchUI.points.push(point);
-          try {
-            retouchRecipe(retouchUI.points);
-            retouchMessage("Release to repair this stroke. Escape discards it.");
-          } catch (error) { retouchMessage(error.message); }
+          retouchMessage("Release to repair this stroke. Escape discards it.");
         }
       }
     }
@@ -306,16 +300,9 @@ function bindRetouchEvents() {
 }
 
 function syncRetouchReadouts() {
-  const units = { size: " px", hardness: "%", search: " px", patch: " px", iterations: "" };
-  for (const [name, unit] of Object.entries(units)) {
-    const input = retouchInput(name);
-    // Search, patch and iterations are integer solver settings even during fine drags.
-    if (["search", "patch", "iterations"].includes(name)) input.value = String(Math.round(Number(input.value)));
-    retouchInput(`${name}-value`).textContent = `${Number(input.value)}${unit}`;
+  for (const [name, unit] of Object.entries({ size: " px", hardness: "%" })) {
+    retouchInput(`${name}-value`).textContent = `${Number(retouchInput(name).value)}${unit}`;
   }
-  const defaults = { search: 96, patch: 3, iterations: 6, seed: 20261021 };
-  const modified = Object.entries(defaults).filter(([name, value]) => Number(retouchInput(name).value) !== value).length;
-  retouchInput("advanced-summary").textContent = modified ? `${modified} Mod` : "Default";
   syncRangeVisuals(document.querySelector(".retouch-panel"));
 }
 
@@ -323,8 +310,8 @@ function retrySelectedRetouch() {
   const records = state.editDocument?.repairs || [], selected = records.find(r => r.id === retouchUI.selected);
   if (!selected || retouchUI.busy) return;
   try {
-    retouchInput("seed").value = String((Number(retouchInput("seed").value) + 1) >>> 0);
     const recipe = retouchRecipe(selected.recipe.points);
+    recipe.settings.seed = (selected.recipe.settings.seed + 1) >>> 0;
     void commitRetouch(records.map(r => r.id === selected.id ? { ...r, recipe } : r));
   } catch (error) { retouchMessage(error.message); }
 }

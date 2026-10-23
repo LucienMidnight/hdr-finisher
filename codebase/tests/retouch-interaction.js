@@ -32,12 +32,11 @@ async function centerPixel(page) {
     await page.locator("#file-input").setInputFiles({ name: "synthetic-dust.png", mimeType: "image/png", buffer: Buffer.from(data, "base64") });
     await page.waitForFunction(() => state.session && !state.importInProgress && document.body.dataset.workflow === "grade", null, { timeout: 120000 });
     await page.waitForFunction(() => state.gpuPreview?.available && state.gpuPreview?.lastPresentedFrame, null, { timeout: 60000 });
-    await page.locator("#grade-mode-local").click();
-    // A manually typed out-of-range size must not leave a visible but inert brush.
+    await page.locator("#grade-mode-retouch").click();
+    // A brush larger than the old cap must remain usable.
     await page.locator("#retouch-size").fill("100");
-    await page.locator("#retouch-iterations").fill("2");
     await page.locator("#retouch-brush").click();
-    assert.equal(await page.locator("#retouch-size").inputValue(), "64", "oversized brush did not return to the supported range");
+    assert.equal(await page.locator("#retouch-size").inputValue(), "100", "larger brush size was not retained");
     await page.screenshot({ path: path.join(output, "before.png") });
     const beforePixel = await centerPixel(page);
     const rect = await page.evaluate(() => { const r = activePreviewElement().getBoundingClientRect(); return { x:r.left+r.width/2, y:r.top+r.height/2 }; });
@@ -47,7 +46,7 @@ async function centerPixel(page) {
     await page.mouse.click(rect.x, rect.y);
     await page.waitForFunction(() => state.editDocument?.repairs?.length === 1 && !retouchUI.busy, null, { timeout: 60000 });
     assert.equal(await page.evaluate(() => state.editRevision), initialRevision+1, "one gesture must be one history edit");
-    assert.equal(await page.evaluate(() => state.editDocument.repairs[0].recipe.radius_px), 32, "corrected brush size did not reach the repair engine");
+    assert.equal(await page.evaluate(() => state.editDocument.repairs[0].recipe.radius_px), 50, "larger brush size did not reach the repair engine");
     const original = await page.evaluate(() => JSON.stringify(state.editDocument.repairs));
     await page.waitForFunction(() => state.gpuPreview?.lastPresentedFrame, null, { timeout: 60000 });
     await page.evaluate(() => { retouchUI.active=false; renderLocalMaskOverlay(); });
@@ -67,12 +66,12 @@ async function centerPixel(page) {
     assert.equal(await page.evaluate(() => state.editDocument.repairs.length), 0);
     assert.equal(await page.evaluate(() => queueEditCommand("redo")), true);
     assert.equal(await page.evaluate(() => JSON.stringify(state.editDocument.repairs)), original);
-    await page.locator("#retouch-retry").click();
+    await page.getByRole("button", { name: "Retry Spot 1", exact: true }).click();
     await page.waitForFunction(() => !retouchUI.busy);
     assert.equal(await page.evaluate(() => state.editDocument.repairs[0].recipe.settings.seed), 20261022);
-    await page.locator('#retouch-list input[type="checkbox"]').uncheck();
+    await page.getByRole("button", { name: "Hide Spot 1", exact: true }).click();
     await page.waitForFunction(() => !retouchUI.busy && !state.editDocument.repairs[0].enabled);
-    await page.locator('#retouch-list input[type="checkbox"]').check();
+    await page.getByRole("button", { name: "Show Spot 1", exact: true }).click();
     await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs[0].enabled);
     await page.locator("#retouch-list button").last().click();
     await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs.length === 0);
@@ -93,15 +92,14 @@ async function centerPixel(page) {
     await page.evaluate(() => {retouchUI.active=true;renderLocalMaskOverlay();});
     await page.locator("#retouch-list button").last().click();
     await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs.length === 0);
-    // Oversized painting must explain the bounded search limit and retain history.
-    await page.locator("#retouch-search").fill("32");
-    const boundedRevision = await page.evaluate(() => state.editRevision);
-    await page.mouse.move(rect.x-30,rect.y);await page.mouse.down();
-    await page.mouse.move(rect.x+30,rect.y,{steps:12});await page.mouse.up();
-    assert.equal(await page.evaluate(() => state.editRevision),boundedRevision);
-    assert.equal(await page.evaluate(() => state.editDocument.repairs.length),0);
-    assert.match(await page.locator("#retouch-status").textContent(),/search area/);
-    await page.locator("#retouch-search").fill("96");
+    // Search/seed/solver controls are automatic, while a larger brush is usable.
+    assert.equal(await page.locator("#retouch-search, #retouch-seed, #retouch-patch, #retouch-iterations").count(), 0);
+    await page.locator("#retouch-size").fill("256");
+    await page.mouse.click(rect.x, rect.y);
+    await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs.length === 1, null, { timeout: 60000 });
+    assert.equal(await page.evaluate(() => state.editDocument.repairs[0].recipe.radius_px), 128);
+    await page.getByRole("button", { name: "Remove Spot 1", exact: true }).click();
+    await page.waitForFunction(() => !retouchUI.busy && state.editDocument.repairs.length === 0);
     // Delay the edit in transport until Cancel has reached the backend first.
     let release, entered;
     const hold = new Promise(resolve => { release=resolve; });

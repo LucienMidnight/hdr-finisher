@@ -21,7 +21,7 @@ const baseUrl=process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765';
     });
     await page.locator('#file-input').setInputFiles({name:'retouch-latency.png',mimeType:'image/png',buffer:Buffer.from(data,'base64')});
     await page.waitForFunction(()=>state.session&&!state.importInProgress&&state.gpuPreview?.lastPresentedFrame,null,{timeout:120000});
-    await page.locator('#grade-mode-local').click();await page.locator('#retouch-brush').click();
+    await page.locator('#grade-mode-retouch').click();await page.locator('#retouch-brush').click();
     await page.evaluate(()=>setCustomZoom(100));
     async function idle(){
       await page.waitForFunction(()=>[...state.gpuPreview.proxies.values()].some(p=>p.longEdge>=6000&&!p.region),null,{timeout:60000});
@@ -62,7 +62,7 @@ const baseUrl=process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765';
           async refreshRepairs(renderer,{sessionId}){renderer.resetSession(sessionId);return false;}};
       },mode);
       const started=Date.now();
-      await page.locator('#retouch-retry').click();
+      await page.getByRole('button', {name:'Retry Spot 1',exact:true}).click();
       await page.waitForFunction(()=>!retouchUI.busy);
       const acknowledgedMs=Date.now()-started;
       await page.waitForFunction(()=>state.gpuPreview.lastPresentedFrame?.applicationGeneration===state.previewGeneration[state.currentView],null,{timeout:60000});

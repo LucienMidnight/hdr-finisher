@@ -12,7 +12,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from .retouch import (MAX_DEFECT_PIXELS, MAX_REGION_EDGE, MAX_TARGET_PATCHES,
-                      InpaintSettings, RepairInput, _box_sum)
+                      InpaintSettings, RepairInput, NativeRepairInput, _box_sum)
 
 
 class RepairPoint(BaseModel):
@@ -38,7 +38,7 @@ class InpaintRecipe(BaseModel):
     source_size: tuple[StrictInt, StrictInt]
     search_rect: tuple[StrictInt, StrictInt, StrictInt, StrictInt]
     points: tuple[RepairPoint, ...] = Field(min_length=1, max_length=512)
-    radius_px: float = Field(default=8, ge=0.5, le=32, allow_inf_nan=False)
+    radius_px: float = Field(default=8, ge=0.5, le=512, allow_inf_nan=False)
     hardness: float = Field(default=0.75, ge=0, le=1, allow_inf_nan=False)
     settings: InpaintSettings = Field(default_factory=InpaintSettings)
 
@@ -50,8 +50,8 @@ class InpaintRecipe(BaseModel):
                 and 0 <= top < bottom <= height):
             raise ValueError("Search rectangle must be inside the native source")
         if not (3 <= min(right - left, bottom - top)
-                and max(right - left, bottom - top) <= MAX_REGION_EDGE):
-            raise ValueError("Search rectangle must be 3..256 pixels per axis")
+                and max(right - left, bottom - top) <= NativeRepairInput.region_edge):
+            raise ValueError("Search rectangle must be 3..2048 pixels per axis")
         # Require the full footprint, not merely its intersection with the
         # search area. Clipping is permitted only at an actual image edge.
         for point in self.points:
@@ -82,13 +82,17 @@ def stroke_mask(recipe: InpaintRecipe, checkpoint=lambda: None) -> np.ndarray:
         for first, second in zip(points, points[1:]):
             checkpoint()
             radius = recipe.radius_px * max(0.05, (first[2] + second[2]) * 0.5)
-            segment = _soft_segment(xx, yy, *first[:2], *second[:2], radius, recipe.hardness)
-            np.maximum(result, segment, out=result)
+            # Only rasterize the capsule's bounds, especially for large brushes.
+            x0 = max(0, int(np.floor(min(first[0], second[0]) - radius)))
+            x1 = min(result.shape[1], int(np.ceil(max(first[0], second[0]) + radius)))
+            y0 = max(0, int(np.floor(min(first[1], second[1]) - radius)))
+            y1 = min(result.shape[0], int(np.ceil(max(first[1], second[1]) + radius)))
+            region = np.s_[y0:y1, x0:x1]
+            segment = _soft_segment(xx[region], yy[region], *first[:2], *second[:2], radius, recipe.hardness)
+            np.maximum(result[region], segment, out=result[region])
     checkpoint()
-    if not 1 <= np.count_nonzero(result) <= MAX_DEFECT_PIXELS:
-        raise ValueError("Stroke must cover 1..4096 native pixels; use a smaller stroke")
-    if np.count_nonzero(_box_sum(result > 0, recipe.settings.patch_radius)) > MAX_TARGET_PATCHES:
-        raise ValueError("Stroke affects too many patches; use a smaller stroke")
+    if not 1 <= np.count_nonzero(result) <= NativeRepairInput.defect_pixels:
+        raise ValueError("Stroke must cover at least one native pixel")
     return result
 
 
@@ -113,7 +117,10 @@ def prepare_repair(recipe: InpaintRecipe, read_region, *, read_excluded=None,
         raise ValueError("Source reader returned the wrong native window shape")
     excluded = read_excluded(top, left, bottom, right) if read_excluded else None
     checkpoint()
-    return RepairInput(pixels, mask, (left, top), excluded).owned()
+    large = (max(mask.shape) > MAX_REGION_EDGE or np.count_nonzero(mask) > MAX_DEFECT_PIXELS
+             or np.count_nonzero(_box_sum(mask > 0, recipe.settings.patch_radius)) > MAX_TARGET_PATCHES)
+    kind = NativeRepairInput if large else RepairInput
+    return kind(pixels, mask, (left, top), excluded).owned()
 
 
 def compose_repairs(pixels: np.ndarray, origin: tuple[int, int], patches) -> np.ndarray:

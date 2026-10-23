@@ -46,9 +46,6 @@ function initializeControlPanel() {
     details.append(...section.childNodes);
     section.append(details);
   }
-  const advanced = document.getElementById("retouch-advanced");
-  advanced.querySelector("summary").setAttribute("aria-expanded", "false");
-  advanced.addEventListener("toggle", () => advanced.querySelector("summary").setAttribute("aria-expanded", String(advanced.open)));
   const tabs = document.querySelector(".lane-switch");
   const row = document.createElement("div");
   row.className = "grade-folder-tabs";

@@ -68,7 +68,7 @@ def test_clipping_is_only_at_actual_image_border():
 
 
 @pytest.mark.parametrize("changes", [
-    dict(search_rect=(0, 0, 257, 80), source_size=(300, 100)),
+    dict(search_rect=(0, 0, 2049, 80), source_size=(2100, 100)),
     dict(search_rect=(-1, 0, 80, 80)), dict(source_size=(0, 100)),
     dict(search_rect=(60.5, 10, 140, 90)), dict(radius_px=float("nan")),
     dict(points=[dict(x=float("inf"), y=.5)]),
@@ -80,16 +80,13 @@ def test_invalid_recipes_rejected(changes):
         recipe(**changes)
 
 
-def test_oversized_or_empty_stroke_rejected_before_reading_source():
+def test_empty_stroke_rejected_before_reading_source():
     def unexpected_read(*args):
         pytest.fail("Invalid stroke must not read the source")
 
-    with pytest.raises(ValueError, match="4096"):
-        prepare_repair(recipe(source_size=(256, 256), search_rect=(0, 0, 256, 256),
-                              points=[dict(x=.25, y=.5), dict(x=.75, y=.5)], radius_px=32),
-                       unexpected_read)
-    with pytest.raises(ValueError, match="1..4096"):
+    with pytest.raises(ValueError, match="at least one"):
         prepare_repair(recipe(points=[dict(x=.5, y=.5, pressure=0)]), unexpected_read)
+
 
 
 def test_reader_shape_dtype_and_exclusion_contracts_are_checked():
@@ -162,3 +159,28 @@ def test_completed_patches_compose_in_dependency_order_without_feathering_again(
     assert (result[0, 0] == 2).all()
     assert (result[1:5, 1:5] == -.5).all()
     assert not window.any()
+
+
+@pytest.mark.parametrize("diameter", [100, 512, 1024])
+def test_large_native_brush_is_bounded_repeatable_and_does_not_sample_dirt(diameter):
+    from hdr_finisher.retouch import CpuInpaint, NativeRepairInput
+    edge = min(2048, diameter * 2)
+    record = recipe(source_size=(edge, edge), search_rect=(0, 0, edge, edge),
+                    points=[dict(x=.5, y=.5)], radius_px=diameter / 2, hardness=.75)
+    mask = stroke_mask(record)
+    source = np.full((edge, edge, 3), [-.25, 2., 9.], np.float32)
+    dirty = source.copy()
+    dirty[mask > 0] = -50
+    request = prepare_repair(record, lambda t, l, b, r: dirty[t:b, l:r])
+    assert isinstance(request, NativeRepairInput)
+    patch = CpuInpaint().solve(request)
+    repaired = compose_repairs(dirty, (0, 0), [patch])
+    np.testing.assert_allclose(repaired[edge//2, edge//2], source[0, 0], atol=1e-5)
+    np.testing.assert_array_equal(repaired[mask == 0], dirty[mask == 0])
+    dirty[mask > 0] = 10000
+    repeat = CpuInpaint().solve(prepare_repair(record, lambda t, l, b, r: dirty[t:b, l:r]))
+    # Native feathering deliberately retains the original at soft boundaries.
+    x, y = patch.origin
+    solid = mask[y:y+patch.pixels.shape[0], x:x+patch.pixels.shape[1]] == 1
+    np.testing.assert_array_equal(patch.pixels[solid], repeat.pixels[solid])
+    assert len(patch.target_centres) <= 8192

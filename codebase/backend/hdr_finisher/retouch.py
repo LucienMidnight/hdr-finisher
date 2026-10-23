@@ -51,19 +51,22 @@ class RepairInput:
     origin: tuple[int, int] = (0, 0)
     excluded: np.ndarray | None = None
 
+    region_edge = MAX_REGION_EDGE
+    defect_pixels = MAX_DEFECT_PIXELS
+
     def owned(self) -> "RepairInput":
         p, m = self.pixels, self.mask
         if p.dtype != np.float32 or p.ndim != 3 or p.shape[2] != 3:
             raise ValueError("Repair requires float32 working RGB")
         h, w = p.shape[:2]
-        if not 3 <= min(h, w) or max(h, w) > MAX_REGION_EDGE:
-            raise ValueError("Repair ROI must be 3..256 pixels on each axis")
+        if not 3 <= min(h, w) or max(h, w) > self.region_edge:
+            raise ValueError(f"Repair ROI must be 3..{self.region_edge} pixels on each axis")
         if m.shape != (h, w) or not np.isfinite(m).all() or np.any((m < 0) | (m > 1)):
             raise ValueError("Repair mask must be finite alpha in [0,1]")
         if not np.isfinite(p).all():
             raise ValueError("Repair pixels must be finite")
-        if not 1 <= np.count_nonzero(m) <= MAX_DEFECT_PIXELS:
-            raise ValueError("Repair must cover 1..4096 pixels")
+        if not 1 <= np.count_nonzero(m) <= self.defect_pixels:
+            raise ValueError(f"Repair must cover 1..{self.defect_pixels} pixels")
         if len(self.origin) != 2 or any(type(v) is not int or v < 0 for v in self.origin):
             raise ValueError("Invalid source origin")
         e = m > 0
@@ -71,7 +74,13 @@ class RepairInput:
             if self.excluded.shape != m.shape or self.excluded.dtype != np.bool_:
                 raise ValueError("Additional exclusion must be a boolean ROI mask")
             e = e | self.excluded
-        return RepairInput(p.copy(), m.astype(np.float32, copy=True), self.origin, e.copy())
+        return type(self)(p.copy(), m.astype(np.float32, copy=True), self.origin, e.copy())
+
+
+class NativeRepairInput(RepairInput):
+    """Bounded native authoring window; solved at an automatic working scale."""
+    region_edge = 2048
+    defect_pixels = 2048 * 2048
 
 
 @dataclass(frozen=True)
@@ -264,6 +273,8 @@ class CpuInpaint:
     def solve(self, request, settings=InpaintSettings(), checkpoint=lambda: None):
         checkpoint()
         request = request.owned()
+        if isinstance(request, NativeRepairInput):
+            return self._solve_native(request, settings, checkpoint)
         image, alpha, excluded = request.pixels, request.mask, request.excluded
         h, w = alpha.shape
         r = settings.patch_radius
@@ -371,3 +382,51 @@ class CpuInpaint:
             array.flags.writeable = False
         return RepairPatch((request.origin[0] + int(x0), request.origin[1] + int(y0)),
                            result, field, targets, align_tone, texture_offset)
+
+
+    def _solve_native(self, request, settings, checkpoint):
+        """Keep patch search bounded as native brush size grows.
+
+        Exclusion uses conservative block coverage, so dirty pixels never enter
+        coarse donors. Only the final native alpha feathers the replacement.
+        """
+        from PIL import Image
+        image, alpha, excluded = request.pixels, request.mask, request.excluded
+        h, w = alpha.shape
+        scale = 2
+        while True:
+            checkpoint()
+            ph, pw = (-h) % scale, (-w) % scale
+            def blocks(a):
+                return a.reshape((h + ph) // scale, scale, (w + pw) // scale, scale)
+            defect = blocks(np.pad(alpha > 0, ((0, ph), (0, pw)))).any(axis=(1, 3))
+            if (max(defect.shape) <= 128 and np.count_nonzero(defect) <= 1024
+                    and np.count_nonzero(_box_sum(defect, settings.patch_radius)) <= MAX_TARGET_PATCHES):
+                break
+            scale *= 2
+        clean = ~excluded
+        count = blocks(np.pad(clean, ((0, ph), (0, pw)))).sum(axis=(1, 3))
+        coarse = np.stack([
+            blocks(np.pad(np.where(clean, image[..., c], 0), ((0, ph), (0, pw)))).sum(axis=(1, 3), dtype=np.float64)
+            / np.maximum(count, 1) for c in range(3)], axis=-1).astype(np.float32)
+        other = blocks(np.pad(excluded, ((0, ph), (0, pw)))).any(axis=(1, 3))
+        low = self.solve(RepairInput(coarse, defect.astype(np.float32), excluded=other), settings, checkpoint)
+        x, y = low.origin
+        lh, lw = low.pixels.shape[:2]
+        coarse[y:y+lh, x:x+lw] = low.pixels
+        checkpoint()
+        ys, xs = np.nonzero(alpha)
+        x0, x1, y0, y1 = int(xs.min()), int(xs.max())+1, int(ys.min()), int(ys.max())+1
+        filled = np.stack([np.asarray(Image.fromarray(coarse[..., c]).resize(
+            (w + pw, h + ph), Image.Resampling.BILINEAR))[y0:y1, x0:x1] for c in range(3)], axis=-1)
+        result = image[y0:y1, x0:x1].copy()
+        a = alpha[y0:y1, x0:x1, None]
+        result = (filled * a + result * (1 - a)).astype(np.float32)
+        if not np.isfinite(result).all():
+            raise ValueError("Repair produced non-finite pixels")
+        result.flags.writeable = False
+        checkpoint()
+        sources, targets = low.source_centres * scale, low.target_centres * scale
+        sources.flags.writeable = targets.flags.writeable = False
+        return RepairPatch((request.origin[0] + x0, request.origin[1] + y0), result,
+                           sources, targets, low.tone_aligned)

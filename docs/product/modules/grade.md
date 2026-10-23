@@ -131,6 +131,17 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   blank entries restore 12. The range is printed beside Size. A corrected 100→64
   entry is covered by an actual click, saved radius and repaired preview pixels.
   The processing bounds are unchanged; larger dust spots remain outside this milestone.
+  **Larger automatic Inpaint October 23:** brush diameter reaches 1,024 native
+  pixels. Search bounds follow stroke size; patch radius, iterations and seed
+  are internal, with Retry choosing another seed. Size and Hardness remain
+  visible. Large strokes use conservative donor exclusion and a bounded working
+  scale before native feathering; the existing small-spot solver budgets stay
+  unchanged. Large repairs can soften fine texture and still need Steve's
+  assessment. Very long or source-starved strokes can fail with an explanation.
+  Pointer sampling follows brush size and painting no longer rebuilds the recipe
+  on every pointer move. Warm small-spot performance keeps the existing
+  one-second target (focused follow-up: 0.70–1.04 seconds while the Python
+  suite was running); no general latency guarantee is claimed.
 - **V1 hue-selection mask:** add hue selection as a local-adjustment mask,
   compatible with the existing combined-mask workflow. Not built; selection
   controls and hue evaluation remain to be specified.
