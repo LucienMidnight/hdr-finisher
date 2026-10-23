@@ -61,6 +61,18 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
   };
   await pick(.12,.6);
   assert.equal(await page.evaluate(()=>hslChannel(hslUI.panels[0]).kind),'custom');
+  const dragBox=await page.evaluate(()=>{const r=activePreviewElement().getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};});
+  const dragStart={x:dragBox.x+dragBox.width*.12,y:dragBox.y+dragBox.height*.6};
+  const initialWidth=await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe.ranges[0].width);
+  await page.mouse.move(dragStart.x,dragStart.y);await page.mouse.down();
+  await page.mouse.move(dragBox.x+dragBox.width*.3,dragStart.y,{steps:60});await page.mouse.up();
+  await page.waitForFunction(()=>!hslUI.panels[0].sampling);
+  const dragged=await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe.ranges);
+  assert.equal(dragged.length,1,'Dragging nearby colours widens one selection');
+  assert.ok(dragged[0].width>initialWidth,'The drag expands the selected hue range');
+  assert.equal(await panel.locator('[data-hsl-handle="move"][tabindex]').count(),1);
+  await pick(.12,.6);
+
   await panel.getByRole('button',{name:'Add',exact:true}).click();await pick(.5,.6);
   assert.equal(await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe.ranges.length),2);
   await panel.getByRole('button',{name:'Subtract',exact:true}).click();await pick(.12,.6);

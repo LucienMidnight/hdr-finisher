@@ -53,3 +53,35 @@ test('recipes roundtrip, reject invalid numbers/capacity and do not silently tru
   r.ranges=Array.from({length:32},(_,i)=>({center:i,width:1,feather:1,subtract:false}));
   assert.throws(()=>e.addSample(r,e.fromLab([.7,-.1,0]),'add'),/limited/);
 });
+
+
+test('picker drag widens one range across red and keeps every sampled hue selected',async()=>{
+  const e=await engine,r=e.newRecipe();
+  const color=h=>e.fromLab([.7,.15*Math.cos(h*Math.PI/180),.15*Math.sin(h*Math.PI/180)]);
+  for(let h=330;h<=430;h++)e.addSample(r,color(h),h===330?'pick':'add');
+  assert.equal(r.ranges.length,1);
+  assert.ok(r.ranges[0].width>60);
+  for(let h=330;h<=430;h++)assert.ok(e.selection(color(h),r.ranges).weight>.999);
+  assert.equal(e.selection(color(180),r.ranges).weight,0);
+  e.addSample(r,color(180),'add');
+  assert.equal(r.ranges.length,2,'Separated colours retain their own range');
+  for(let h=350;h<=390;h++)e.addSample(r,color(h),'subtract');
+  assert.equal(r.ranges.length,3,'Subtraction widens independently of inclusion');
+  assert.equal(r.ranges.filter(v=>v.subtract).length,1);
+  assert.equal(e.selection(color(10),r.ranges).weight,0);
+  assert.ok(e.selection(color(180),r.ranges).weight>.999);
+});
+
+test('picker bridges existing ranges before checking capacity and can cover the full wheel',async()=>{
+  const e=await engine,r=e.newRecipe();
+  const color=h=>e.fromLab([.7,.15*Math.cos(h*Math.PI/180),.15*Math.sin(h*Math.PI/180)]);
+  r.ranges=[{center:0,width:16,feather:12,subtract:false},{center:60,width:16,feather:12,subtract:false}];
+  e.addSample(r,color(30),'add');assert.equal(r.ranges.length,1);
+  assert.ok(r.ranges[0].width>45);
+  r.ranges=Array.from({length:32},(_,i)=>({center:i*10,width:1,feather:1,subtract:false}));
+  e.addSample(r,color(0),'add');assert.ok(r.ranges.length<32);
+  e.addSample(r,color(0),'pick');
+  for(let h=1;h<=360;h++)e.addSample(r,color(h),'add');
+  assert.equal(r.ranges.length,1);assert.equal(r.ranges[0].width,180);
+  for(let h=0;h<360;h++)assert.ok(e.selection(color(h),r.ranges).weight>.999);
+});

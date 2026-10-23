@@ -47,10 +47,22 @@ function addSample(recipe, rgb, mode = 'pick', width = 16, feather = 12) {
   const range = { center: color.hue, width, feather, subtract: mode === 'subtract' };
   if (mode === 'pick') recipe.ranges = [range];
   else {
-    // A drag collects distinct samples without exhausting the fixed GPU capacity.
-    if (recipe.ranges.some(r => r.subtract === range.subtract && Math.abs(delta(r.center, range.center)) < 3)) return false;
-    if (recipe.ranges.length >= MAX_RANGES) throw Error(`Selection is limited to ${MAX_RANGES} ranges; remove or widen a range`);
-    recipe.ranges.push(range);
+    // Union overlapping solid arcs so a picker stroke widens a selection
+    // instead of leaving a wheel handle for each sampled hue.
+    const remaining = [...recipe.ranges];
+    for (let i = 0; i < remaining.length;) {
+      const old = remaining[i], offset = delta(old.center, range.center);
+      if (old.subtract !== range.subtract || Math.abs(offset) > old.width + range.width) { i++; continue; }
+      const lo = Math.min(-range.width, offset - old.width);
+      const hi = Math.max(range.width, offset + old.width);
+      range.center = wrap(range.center + (lo + hi) / 2);
+      range.width = Math.min(180, (hi - lo) / 2);
+      range.feather = Math.max(range.feather, old.feather);
+      remaining.splice(i, 1);
+      i = 0; // The wider arc may now connect another existing range.
+    }
+    if (remaining.length >= MAX_RANGES) throw Error(`Selection is limited to ${MAX_RANGES} ranges; remove or widen a range`);
+    recipe.ranges = [...remaining, range];
   }
   return true;
 }

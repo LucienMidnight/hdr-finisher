@@ -251,6 +251,10 @@ For Claude:
   proxy (bounded 256–1600), up to 512 stroke samples and the existing
   256-local limit. Local selection overlays include the grade's mask.
   Section/lane/session changes reject stale selections.
+- Picker refinement (October 23, 2026): overlapping sampled hue ranges
+  merge into a wider arc, including across red. Disjoint colours keep separate
+  arcs; included and subtracted ranges merge independently. Dragging through
+  nearby colours expands the selection without accumulating wheel handles.
 - The prototype remains runnable; only its engine import path changed.
   The hue-selection mask leaf is not built by this integration.
 
