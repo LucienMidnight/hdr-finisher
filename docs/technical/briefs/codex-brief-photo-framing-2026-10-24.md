@@ -35,6 +35,9 @@ Proof must inspect the actual chosen output.
 ## Decisions Steve has made
 
 - Independent Frame color/thickness and Border color/thickness.
+- Offer both percentage (%) and pixel (px) thickness units for each layer
+  (Steve confirmed October 24). Switching units should convert the displayed
+  value without changing the current visible width, apart from pixel rounding.
 - Layer order is photo → Frame → Border (explicit reply, October 24).
 - Rename existing Frame to Background; the new Frame control lives in Grade.
 - Framing is attached to the photo and follows pan/zoom.
@@ -51,12 +54,15 @@ Proof must inspect the actual chosen output.
 These are proposals, not approved requirements. Settle them one at a time with
 Steve; do not silently adopt BorderMuse's controls as product decisions.
 
-1. **Thickness units:** suggest percentage of the cropped photo's shorter side,
-   with the same reference for both layers. This keeps widths consistent around
-   every edge and across image sizes. Each control should allow zero to omit
-   that layer. A pixel-based alternative is more literal but scales poorly
-   between full-size and small exports. BorderMuse's 0–50 scale expands a target
-   canvas; it is not an ordinary per-side border percentage.
+1. **Thickness reference and scaling:** both % and px are required, not
+   alternatives. Suggest percentage of the cropped photo's shorter side, with
+   the same reference for both layers. Define whether pixel values refer to
+   the cropped source or final export before implementation; the chosen rule
+   must be explicit in Grade and Export, including conversion when output size
+   changes. Switching units alone should preserve width; choosing a different
+   export size may change it according to the approved scaling rule. Allow
+   zero to omit a layer. BorderMuse's 0–50 scale expands a target canvas; it is
+   not an ordinary per-side border percentage.
 2. **Per-photo storage:** suggest one shared framing record in the edit document,
    saved in projects/sidecars and included in undo/redo, rather than app-wide
    preferences. The HDR/SDR switch should not produce different frame layouts.
@@ -153,7 +159,10 @@ only composition changed. No legacy migrations before 1.0, per AGENTS.md.
 ### 2. Grade controls and attached display
 
 Add Frame popover controls using existing UI tokens and keyboard/focus behavior.
-Keep each picker and thickness field explicitly labeled; support validation,
+Each layer offers % and px thickness entry. Convert values on unit changes
+rather than reinterpreting the same number; persist the authored unit/value
+without cumulative rounding drift. Keep each picker and thickness field
+explicitly labeled; support validation,
 slider/numeric entry and grouped undo. Turning a layer off must not destroy its
 chosen color/width. Do not leak framing settings when switching photos.
 
@@ -225,7 +234,8 @@ Steve before running it. No broad sweep, installer or release check for drafting
 Tests should exercise behavior:
 
 - Preserve all upstream measured conformance cases and exact-margin tests.
-- Host geometry: zero/one/two layers, colors independent, odd/tiny/extreme sizes,
+- Host geometry: %/px conversion and repeated unit switches without width drift,
+  zero/one/two layers, colors independent, odd/tiny/extreme sizes,
   portrait/landscape, round trip and final-size limits. Integer geometry can be
   exact; perceptual tolerances apply to color/image output.
 - Real controls: Background still works; Frame color/width changes persist;

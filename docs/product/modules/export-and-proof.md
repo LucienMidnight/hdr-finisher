@@ -386,6 +386,9 @@ This section owns framing requirements across Grade, Library, Export and Proof.
   controls with separate color pickers and thickness controls for both layers.
 - Layer order is **photo → Frame → Border** (Steve confirmed October 24).
   Each layer is outside the previous one; neither covers photo pixels.
+- Offer both **percentage (%) and pixels (px)** for each layer's thickness
+  (Steve confirmed October 24). Convert on unit changes so the current visible
+  width stays the same, apart from pixel rounding.
 - The photo frame is attached to the image and follows pan/zoom. It is distinct
   from the stationary viewer background. SVG is a candidate for efficient live
   display; export must compose actual pixels.
@@ -408,7 +411,8 @@ where color handling permits; use the existing GPU delivery graph plus CPU
 fallback for encoded outputs. Display both photo and final canvas dimensions.
 Keep framing out of photo analysis, crop and creative grading calculations.
 
-Open choices before implementation: thickness units and size scaling;
+Open choices before implementation: percentage reference, pixel reference and
+size scaling (both units are required);
 default colors/widths and export inclusion; whether a target outer aspect ratio
 is wanted. No ratio UI, Lightroom thickness scale or white-only restriction
 is adopted merely because BorderMuse implements it.
