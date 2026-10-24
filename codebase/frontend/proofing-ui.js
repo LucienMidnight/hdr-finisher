@@ -205,6 +205,8 @@
             jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value) || 100,
             jpeg_gain_map_scale: els.jpegGainMapScale.value || "full",
             guarantee_hdr_peak: els.exportGuaranteePeak?.checked === true,
+            export_with_frame: els.exportWithFrame?.checked !== false,
+            output_finishing: currentExportSettings().output_finishing,
             jpeg_chroma_subsampling: els.jpegUltrahdrChromaSubsampling.value || "420",
             avif_bit_depth: Number(els.avifBitDepth.value) || 10,
             avif_chroma_subsampling: els.avifChromaSubsampling.value || "420",
@@ -514,20 +516,14 @@
     }[state.proofFormat] || "HDR delivery";
   }
 
-  // A reduced proof is the export pipeline on a downscaled source, so it has
-  // to say so wherever it is described. A full-size proof is the export's own
-  // pixels only while the export adds no resize or output sharpening, which
-  // the proof request does not carry.
+  // Full Proof uses the selected export finishing and framing. Reduced Proof
+  // runs that delivery graph on a smaller source and is labelled accordingly.
   function proofSizeLabel() {
     const artifact = state.proofArtifact;
     if (!artifact) return state.proofSize === "full" ? "Full size" : "Reduced";
     const size = `${Number(artifact.width).toLocaleString()} × ${Number(artifact.height).toLocaleString()} px`;
     if (!artifact.full_size) return `REDUCED PROOF ${size} · not the export's pixels`;
-    const finishingNeutral = (els.exportResizeMode?.value || "original") === "original"
-      && (els.exportSharpening?.value || "off") === "off";
-    return finishingNeutral
-      ? `Full size ${size} · same pixels as export`
-      : `Full size ${size} · export resize and output sharpening are not included`;
+    return `Full size ${size} · same pixels as export`;
   }
 
   function proofPreviewLabel() {

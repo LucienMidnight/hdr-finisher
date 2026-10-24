@@ -1369,6 +1369,7 @@ class _EncodingSettings(BaseModel):
     avif_gain_map_scale: Literal["full", "half"] = "half"
     jpegxl_precision: Literal["uint10", "uint12", "uint16", "float16", "float32"] = "uint12"
     dithering: Literal["auto", "off", "subtle"] = "auto"
+    export_with_frame: bool = True
     output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
 
     @model_serializer(mode="wrap")
@@ -1387,7 +1388,7 @@ class ExportSettings(_EncodingSettings):
         "sdr_png_bit_depth",
         *_ENCODING_FIELD_ORDER[10:],
         "metadata_policy", "guarantee_hdr_peak", "output_path", "path_grant", "overwrite", "overwrite_target",
-        "edit_revision", "output_finishing", "editing_measurements",
+        "edit_revision", "output_finishing", "export_with_frame", "editing_measurements",
     )
 
     sdr_png_bit_depth: Literal[8, 16] = 8
@@ -1464,7 +1465,7 @@ class DesktopProjectSaveRequest(BaseModel):
 class ProofArtifactRequest(_EncodingSettings):
     _serialized_field_order: ClassVar[tuple[str, ...]] = (
         "adjustments", "edit_revision", *_ENCODING_FIELD_ORDER,
-        "long_edge", "full_size", "output_finishing", "guarantee_hdr_peak", "force", "editing_measurements",
+        "long_edge", "full_size", "output_finishing", "export_with_frame", "guarantee_hdr_peak", "force", "editing_measurements",
     )
 
     adjustments: AdjustmentState | None = None
@@ -1493,6 +1494,7 @@ class ProofArtifactRequest(_EncodingSettings):
             overwrite=True,
             output_finishing=self.output_finishing,
             guarantee_hdr_peak=self.guarantee_hdr_peak,
+            export_with_frame=self.export_with_frame,
         )
 
 

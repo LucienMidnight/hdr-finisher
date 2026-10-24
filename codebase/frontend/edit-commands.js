@@ -93,6 +93,8 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
     const shownInputs = refreshPreview === "if-changed"
       ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) : null;
+    const creativeBefore=stablePreviewJson([state.adjustments,state.editDocument?.local_adjustments,
+      state.editDocument?.repairs,state.editDocument?.denoise,state.editDocument?.hdr_reference_white_nits]);
     const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
     state.editRevision = result.revision;
     state.editDocument = result.document;
@@ -136,7 +138,13 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     const previewInputsChanged = refreshPreview === "if-changed"
       ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) !== shownInputs
       : refreshPreview;
-    if (previewInputsChanged) {
+    const framingOnlyHistory=["undo","redo"].includes(commandType) && creativeBefore===stablePreviewJson([
+      state.adjustments,state.editDocument?.local_adjustments,state.editDocument?.repairs,
+      state.editDocument?.denoise,state.editDocument?.hdr_reference_white_nits]);
+    if (typeof window.HDRPhotoFramingUI!=="undefined") {
+      window.HDRPhotoFramingUI.render();applyZoomGeometry();window.HDRProofing?.invalidate();
+    }
+    if (previewInputsChanged && !framingOnlyHistory) {
       invalidatePreview("hdr", { local: true });
       invalidatePreview("sdr", { local: true });
       debouncePreview(state.currentView);

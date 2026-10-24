@@ -816,10 +816,11 @@ def resolve_output_dimensions(
 
 
 def apply_output_finishing(
-    image: np.ndarray, settings: OutputFinishingSettings, kind: PreviewKind
+    image: np.ndarray, settings: OutputFinishingSettings, kind: PreviewKind,
+    *, target_size: tuple[int, int] | None = None,
 ) -> np.ndarray:
     height, width = image.shape[:2]
-    target_width, target_height = resolve_output_dimensions(width, height, settings)
+    target_width, target_height = target_size or resolve_output_dimensions(width, height, settings)
     result = image
     if (target_width, target_height) != (width, height):
         result = _resize_lanczos(result, target_width, target_height)

@@ -4002,6 +4002,8 @@
       "protects":"Shared Edge colour reconstruction executes on hardware GPU and agrees with CPU spatial reconstruction.","launch":{"method":"electron"}},
     {"path":"tests/hsl-integration.js","areas":["preview","export-proof","masks","ui"],"tier":"area",
       "protects":"HSL real-device preview, stage picker, wheel, channel/preset/local authoring and finished GPU/CPU Proof/export perceptual agreement and ceiling.","launch":{"method":"electron"}},
+    {"path":"tests/photo-framing-delivery.js","areas":["export-proof","ui","library"],"tier":"area",
+      "protects":"Attached per-photo framing controls and actual GPU/CPU delivery geometry in all six formats, with full Proof inclusion and cache isolation.","launch":{"method":"electron"}},
     {"path":"tests/hsl-prototype-gpu.js","areas":["masks","ui"],"tier":"diagnostic",
       "protects":"Isolated HSL prototype float GPU/CPU agreement, multi-range selection and basic UI gestures; no app integration.","launch":{"method":"native"}}
   ]

@@ -38,6 +38,7 @@ from .models import (
 )
 from .jpegxl import inspect_jpegxl
 from .preview import _encode_hdr_avif
+from .finishing import geometry_output_dimensions
 
 
 PROOF_FORMAT_INFO = {
@@ -194,7 +195,8 @@ class ProofArtifactStore:
         context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
         denoise = getattr(session, "denoise", None)
         signature = self._request_signature(getattr(session, "session_id"), request, context, denoise,
-            source_epoch=getattr(getattr(session, "render_cache", None), "source_epoch", 0))
+            source_epoch=getattr(getattr(session, "render_cache", None), "source_epoch", 0),
+            framing=getattr(session, "framing", None))
         if not request.force:
             with self._lock:
                 cached_id = self._request_cache.get(signature)
@@ -228,7 +230,15 @@ class ProofArtifactStore:
             # must carry it too, or a denoised edit would be reviewed through a
             # file the export endpoint would never produce.
             denoise=denoise,
+            framing=getattr(session, "framing", None),
+            framing_source_size=geometry_output_dimensions(
+                render_cache.image.shape[1], render_cache.image.shape[0], request.adjustments.shared.geometry),
+            framing_output_limit=None if request.full_size else request.long_edge,
         )
+        if full_size and not request.full_size and request.export_with_frame and getattr(session, "framing", None):
+            from .photo_framing import output_layout
+            native = output_layout(*proxy_session.framing_source_size, session.framing, request.output_finishing)
+            full_size = max(native.width, native.height) <= request.long_edge
         suffix, media_type = PROOF_FORMAT_INFO[request.format]
         # Proofs are internal cache artifacts, not user exports. Use a unique
         # staging target so concurrent/retried builds cannot collide, and allow
@@ -575,12 +585,15 @@ class ProofArtifactStore:
         color_context: RenderColorContext,
         denoise: object | None = None,
         source_epoch: int = 0,
+        framing: object | None = None,
     ) -> str:
         # ``force`` selects how the request is served, not what it produces, so
         # it stays out of the signature. Denoise is not part of the request, so
         # its state has to be folded in explicitly: otherwise a proof built
         # before a denoise change would be served for it unchanged.
         request_payload = request.model_dump_json(exclude={"force", "editing_measurements"})
+        if request.export_with_frame and framing is not None:
+            request_payload += framing.model_dump_json()
         denoise_payload = ""
         if denoise is not None:
             denoise_payload = (

@@ -158,6 +158,7 @@ class LivePictures:
         result = dict(metadata, route="library-live", source_key=metadata["key"], key=identity,
             path=str(path), adjustments=document.get("global_adjustments") or metadata["adjustments"],
             locals=document.get("local_adjustments", []), denoise=document.get("denoise", {}),
+            framing=document.get("framing"),
             white=document.get("hdr_reference_white_nits", 203), grade_identity=grade_id)
         from .finishing import geometry_output_dimensions
         adjustments = AdjustmentState.model_validate(result["adjustments"])

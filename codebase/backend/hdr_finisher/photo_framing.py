@@ -30,7 +30,7 @@ def convert_thickness(value, unit, target_unit, width, height):
         raise ValueError("Photo dimensions must be positive")
     if unit == target_unit:
         return value
-    return value * min(width, height) / 100 if unit == "percent" else value * 100 / min(width, height)
+    return float(Fraction(str(value)) * min(width, height) / 100 if unit == "percent" else Fraction(str(value)) * 100 / min(width, height))
 
 
 @dataclass(frozen=True)
@@ -65,7 +65,10 @@ def source_layout(width, height, framing):
 def output_layout(width, height, framing, finishing, include=True):
     from .finishing import resolve_output_dimensions
     source = source_layout(width, height, framing if include else None)
-    target_width, target_height = resolve_output_dimensions(source.width, source.height, finishing)
+    try:
+        target_width, target_height = resolve_output_dimensions(source.width, source.height, finishing)
+    except (OverflowError, ZeroDivisionError) as error:
+        raise ValueError("The frame thickness is too large to resolve. Use a smaller value.") from error
     scale = min(Fraction(target_width, source.width), Fraction(target_height, source.height))
     # Tiny outputs may have no room for one or both layers. Never consume the
     # last photo pixel or grow the requested canvas to retain a mat.
@@ -78,3 +81,60 @@ def output_layout(width, height, framing, finishing, include=True):
         target_width = min(target_width, width + 2 * total)
         target_height = min(target_height, height + 2 * total)
     return FramingLayout(target_width, target_height, total - border, border)
+
+def delivery_layout(session, settings, adjustments):
+    """Resolve from native cropped photo pixels, including reduced Proof."""
+    from .finishing import geometry_output_dimensions
+    framing = getattr(session, "framing", None)
+    if not settings.export_with_frame or framing is None or not framing.enabled:
+        return None
+    height, width = session.image.shape[:2]
+    width, height = getattr(session, "framing_source_size", None) or geometry_output_dimensions(
+        width, height, adjustments.shared.geometry)
+    layout = output_layout(width, height, framing, settings.output_finishing)
+    limit = getattr(session, "framing_output_limit", None)
+    if limit and max(layout.width, layout.height) > limit:
+        from .models import OutputFinishingSettings
+        layout = output_layout(width, height, framing, OutputFinishingSettings(
+            resize_mode="long_edge", long_edge=limit, prevent_enlargement=True))
+    from .resource_preflight import detect_memory_resources, estimate_resources
+    estimate = estimate_resources(width=layout.width, height=layout.height,
+        samples=4, bytes_per_sample=4, resources=detect_memory_resources(),
+        retained_session_bytes=session.image.nbytes)
+    if estimate.export_decision == "reject":
+        raise ValueError("The framed canvas is too large for available memory. Choose a smaller export size or thinner frame.")
+    return layout
+
+
+def layer_colors(framing, lane, white, ceiling=10000):
+    import numpy as np
+    from .color import linear_srgb_to_acescg, acescg_to_linear_bt2020
+    def convert(hex_color):
+        srgb = np.array([int(hex_color[i:i+2], 16) / 255 for i in (1, 3, 5)], dtype=np.float32)
+        linear = np.where(srgb <= .04045, srgb / 12.92, ((srgb + .055) / 1.055) ** 2.4)
+        if lane == "sdr":
+            return linear.astype(np.float32)
+        # HDR uses scene-linear ACEScg: 0.18 is reference white. The picker
+        # describes display sRGB, never scene-linear primaries or HDR peak.
+        aces = linear_srgb_to_acescg(linear) * np.float32(.18)
+        peak = float(np.max(acescg_to_linear_bt2020(aces))) * white / .18
+        if peak > ceiling:
+            aces *= np.float32(ceiling / peak)
+        return aces.astype(np.float32)
+    return convert(framing.frame.color), convert(framing.border.color)
+
+
+def compose(image, layout, colors):
+    import numpy as np
+    if layout is None:
+        return image
+    if image.shape[:2] != (layout.photo[3], layout.photo[2]):
+        raise ValueError("Photo pixels do not match the framing content rectangle")
+    frame, border = colors
+    result = np.empty((layout.height, layout.width, 3), dtype=np.float32)
+    result[:] = border
+    b = layout.border
+    result[b:layout.height-b or None, b:layout.width-b or None] = frame
+    x, y, width, height = layout.photo
+    result[y:y+height, x:x+width] = image
+    return result

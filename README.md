@@ -80,8 +80,9 @@ Python 3.12 with FastAPI and NumPy for decoding, colour maths and encoding; plai
 
 Photo-framing geometry reference code and measured test cases are from
 Pedro C. Silva's [BorderMuse](https://github.com/pedrocsilva/bordermuse)
-(MIT License, Copyright (c) 2026 Pedro C. Silva). The core is imported for the
-planned framing feature; the controls are not yet available. See the
+(MIT License, Copyright (c) 2026 Pedro C. Silva). HDR Finisher extends this
+reference with independent two-layer geometry, attached viewer controls and
+GPU-first HDR/SDR composition. See the
 [retained MIT license](codebase/bin/licenses/bordermuse-MIT.txt) and
 [third-party notices](THIRD_PARTY_NOTICES.md).
 

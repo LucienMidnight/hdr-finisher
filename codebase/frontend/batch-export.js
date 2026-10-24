@@ -15,8 +15,10 @@
     for(const [key,id] of Object.entries(controls)) if(s[key]!=null&&els[id]) els[id].value=String(s[key]);
     els.jpegChromaSubsampling.value=s.jpeg_chroma_subsampling||"420"; els.jpegUltrahdrChromaSubsampling.value=s.jpeg_chroma_subsampling||"420";
     const f=s.output_finishing||{}; for(const [key,id] of Object.entries({resize_mode:"exportResizeMode",long_edge:"exportLongEdge",width:"exportWidth",height:"exportHeight",sharpening:"exportSharpening"}))if(f[key]!=null)els[id].value=String(f[key]);
+    if(els.exportWithFrame)els.exportWithFrame.checked=s.export_with_frame!==false;
     els.exportPreventEnlargement.checked=f.prevent_enlargement!==false; if(els.exportGuaranteePeak)els.exportGuaranteePeak.checked=s.guarantee_hdr_peak===true; els.exportPreset.value=v.quality_preset||"custom";
     $("batch-pattern").value=v.pattern; $("batch-subfolder").value=v.subfolder; $("batch-version-name").value=v.name; $("batch-white").value=String(v.reference_white||"");
+    if(typeof applyZoomGeometry==="function")applyZoomGeometry();window.HDRProofing?.invalidate();
     syncDimensionUnits(); renderFormatCards(); renderOutputFinishingControls(); updateExportAvailability(); els.exportQualityValue.textContent=els.exportQuality.value; els.jpegGainMapQualityValue.textContent=els.jpegGainMapQuality.value; els.avifGainMapQualityValue.textContent=els.avifGainMapQuality.value; example();
   }
   function syncDimensionUnits(){for(const id of ["export-long-edge","export-width","export-height"]){const input=$(id);input.style.width=`${Math.max(1,input.value.length)+0.5}ch`;}}
@@ -227,6 +229,7 @@
       else {if(id==="export-width")$("export-fit-row").replaceChildren();$("export-fit-row").append(row);}
     }
     finishing.append($("export-fit-row"));
+    const framed=els.exportWithFrame.closest("label");framed.classList.add("batch-setting-row");finishing.append(framed,$("export-framing-note"));
     const prevent=els.exportPreventEnlargement.closest("label");prevent.replaceChildren(node("span","Prevent enlargement"),els.exportPreventEnlargement);prevent.classList.add("batch-setting-row");finishing.append(prevent,field("Output sharpening",els.exportSharpening),$("export-sharpening-note"));
     const naming=section("File naming"),pattern=node("input");pattern.id="batch-pattern";pattern.value="{filename}_{version}";pattern.setAttribute("aria-label","File name pattern");
     const patternRow=node("div","","batch-pattern-row"),tokens=node("select");tokens.setAttribute("aria-label","Insert filename token");tokens.append(new Option("Insert token…",""));

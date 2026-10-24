@@ -12,8 +12,9 @@ retained in the vendored `LICENSE` and
 [`codebase/bin/licenses/bordermuse-MIT.txt`](codebase/bin/licenses/bordermuse-MIT.txt),
 which the existing backend packaging specifications include. No BorderMuse
 Apple renderer, Swift UI, artwork or CLI dependency is copied. HDR Finisher's
-planned two-layer framing, viewer integration and HDR composition are its own
-extensions; the imported reference is not yet connected to the app.
+two-layer framing, viewer integration and GPU-first HDR/SDR composition are
+host-owned extensions. The upstream source and measured cases remain unchanged
+as the geometry reference and conformance evidence.
 
 The isolated CPU Retouch prototype (`codebase/backend/hdr_finisher/retouch.py`)
 adapts the PatchMatch nearest-neighbour propagation, shrinking random search

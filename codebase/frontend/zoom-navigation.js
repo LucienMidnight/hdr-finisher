@@ -359,8 +359,13 @@ function applyZoomGeometry() {
   const frameHeight = Math.max(1, els.dropzone.clientHeight);
   const paneWidth = state.compareLayout === "side-horizontal" ? frameWidth / 2 : frameWidth;
   const paneHeight = state.compareLayout === "side-vertical" ? frameHeight / 2 : frameHeight;
-  const fitSourceWidth = interactiveRotationSwapsAxes ? sourceHeight : sourceWidth;
-  const fitSourceHeight = interactiveRotationSwapsAxes ? sourceWidth : sourceHeight;
+  const photoFraming = window.HDRPhotoFramingUI?.settings();
+  const showFraming = !state.cropMode && !geometryDraftActive()
+    && (!["export","proof"].includes(state.activeWorkflow) || els.exportWithFrame?.checked !== false);
+  const framed = window.HDRPhotoFraming?.layout(sourceWidth, sourceHeight, showFraming ? photoFraming : null)
+    || {width:sourceWidth,height:sourceHeight};
+  const fitSourceWidth = interactiveRotationSwapsAxes ? framed.height : framed.width;
+  const fitSourceHeight = interactiveRotationSwapsAxes ? framed.width : framed.height;
   const deviceRatio = Math.max(1, Number(window.devicePixelRatio) || 1);
   const fitPercent = Math.min(paneWidth * deviceRatio / fitSourceWidth,
     paneHeight * deviceRatio / fitSourceHeight) * 100;
@@ -368,8 +373,14 @@ function applyZoomGeometry() {
   const percent = state.zoomMode === "fit" ? fitPercent : state.zoomPercent;
   const displayWidth = Math.max(1, sourceWidth * percent / (100 * deviceRatio));
   const displayHeight = Math.max(1, sourceHeight * percent / (100 * deviceRatio));
-  const visualDisplayWidth = interactiveRotationSwapsAxes ? displayHeight : displayWidth;
-  const visualDisplayHeight = interactiveRotationSwapsAxes ? displayWidth : displayHeight;
+  const framedWidth=framed.width*percent/(100*deviceRatio),framedHeight=framed.height*percent/(100*deviceRatio);
+  const visualDisplayWidth = interactiveRotationSwapsAxes ? framedHeight : framedWidth;
+  const visualDisplayHeight = interactiveRotationSwapsAxes ? framedWidth : framedHeight;
+  if(window.HDRPhotoFraming){
+    for(const pane of [els.previewPrimaryPane,els.previewSecondaryPane])if(pane)
+      window.HDRPhotoFraming.draw(pane,framed,photoFraming,{scale:percent/(100*deviceRatio),visible:showFraming && els.chromeProofImage?.style.display!=="block"});
+    window.HDRPhotoFramingUI?.render();
+  }
 
   const stageContentWidth = state.compareLayout === "side-horizontal" ? visualDisplayWidth * 2 : visualDisplayWidth;
   const stageContentHeight = state.compareLayout === "side-vertical" ? visualDisplayHeight * 2 : visualDisplayHeight;
@@ -384,12 +395,12 @@ function applyZoomGeometry() {
   els.comparisonCanvas.style.width = `${displayWidth}px`;
   els.comparisonCanvas.style.height = `${displayHeight}px`;
   if (els.chromeProofImage) {
-    els.chromeProofImage.style.width = `${displayWidth}px`;
-    els.chromeProofImage.style.height = `${displayHeight}px`;
+    els.chromeProofImage.style.width = `${framedWidth}px`;
+    els.chromeProofImage.style.height = `${framedHeight}px`;
   }
   if (els.chromeProofWatermark) {
-    els.chromeProofWatermark.style.width = `${displayWidth}px`;
-    els.chromeProofWatermark.style.height = `${displayHeight}px`;
+    els.chromeProofWatermark.style.width = `${framedWidth}px`;
+    els.chromeProofWatermark.style.height = `${framedHeight}px`;
   }
   // Past 100% one source pixel covers more than one device pixel. Show it as
   // a flat square, the way an inspection zoom should; at and below 100% the

@@ -1,10 +1,10 @@
 # Codex brief: photo framing
 
 **Date:** October 24, 2026
-**Status:** DRAFT. Requested behavior is recorded; remaining product choices
-below need discussion with Steve before the UI and output behavior are finalized.
-The imported reference is unchanged. Host geometry and persisted framing settings
-are implemented; controls, attached display and encoded output remain open.
+**Status:** implementation connected; validation in progress. All product choices
+are settled. Host geometry, persistence/history, controls, attached viewer layers,
+export inclusion, GPU/CPU composition and Proof integration are implemented.
+Keep this brief active until the decoded JPEG comparison and validation close.
 **Owner PRD:** [Export and Proof, photo framing](../../product/modules/export-and-proof.md#8-photo-framing--requirements-recorded-october-24-2026).
 **Other affected surfaces:** Grade and Library. Keep their module PRDs linked
 to the owner, rather than creating another framing PRD.
@@ -63,14 +63,11 @@ Proof must inspect the actual chosen output.
 - Credit Pedro C. Silva publicly and retain BorderMuse's proper license notice.
 - SVG may be used for inexpensive viewer composition if it behaves correctly.
 
-## Draft recommendations to discuss
+## Initial outer shape
 
-These are proposals, not approved requirements. Settle them one at a time with
-Steve; do not silently adopt BorderMuse's controls as product decisions.
-
-1. **Outer ratio:** no ratio selector was requested. Suggest initially following
-   the photo plus the two equal-width layers. Add target canvas ratios only if
-   Steve wants that; they introduce unequal mat widths and a sizing policy.
+Steve approved October 24: one thickness for each layer, applied equally on all
+four sides. The outer shape follows the photo plus those margins. No independent
+aspect-ratio selector or per-side widths in this first version.
 
 No ornamental artwork, rounded corners, shadow baked into export, watermark,
 caption, physical print units, grid/thumbnail decoration, per-side widths or

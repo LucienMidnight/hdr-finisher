@@ -9394,3 +9394,18 @@ body.batch-export-ready[data-workflow="export"] .batch-preset-rail { z-index: 41
 .batch-grid-panel { left: calc(var(--rail-w) + var(--splitter-size)); right: calc(var(--grade-w) + var(--splitter-size)); }
 body[data-workflow="export"] .app-shell { grid-template-columns: var(--rail-w) var(--splitter-size) minmax(0, 1fr) var(--splitter-size) var(--grade-w); }
 body[data-workflow="export"] .app-shell .source-splitter { display: block; }
+
+/* Photo framing shares the image coordinates; viewer Background remains separate. */
+#photo-frame-toggle { anchor-name: --photo-frame-button; }
+#photo-frame-popover { position-anchor: --photo-frame-button; max-height: min(720px, 85vh); overflow: auto; }
+.photo-frame-layer { margin: 12px 0; padding: 10px; border: 1px solid var(--border); }
+.photo-frame-layer legend { padding: 0 5px; }
+.photo-frame-layer input[type="range"] { width: 100%; }
+.photo-frame-thickness { display: flex; gap: 12px; margin: 8px 0; }
+.photo-frame-thickness label { display: grid; gap: 4px; min-width: 0; }
+.photo-frame-thickness input { width: 100px; }
+#preview-image, #preview-canvas, #comparison-image, #comparison-canvas { z-index: 1; }
+
+@supports (position-anchor: --photo-frame-button) {
+  #photo-frame-popover { right: auto; top: calc(anchor(bottom) + 6px); left: anchor(right); transform: translateX(-100%); }
+}

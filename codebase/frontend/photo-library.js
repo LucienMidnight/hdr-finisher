@@ -731,16 +731,21 @@
   function positionZoom() {
     const canvas = $("single-picture"), native = $("native-picture"), stage = $("single-stage"), meta = state.nativeMeta || state.fitMeta;
     stage.classList.toggle("zoomed", state.zoom);
-    if (!state.zoom || !meta) { canvas.style.cssText = ""; native.hidden = true; return; }
-    const dpr = window.devicePixelRatio || 1, scale = state.zoomScale;
+    const framing=state.fitMeta?.framing,box=meta?HDRPhotoFraming.layout(meta.source_width||meta.width*2,meta.source_height||meta.height*2,framing):null;
+    const previousFrame=stage.querySelector("svg[data-photo-framing]");if(previousFrame)previousFrame.style.display="none";
+    if ((!state.zoom && !framing?.enabled) || !meta) { canvas.style.cssText = ""; native.hidden = true; return; }
+    const dpr = window.devicePixelRatio || 1;
+    const scale=state.zoom?state.zoomScale:Math.min(stage.clientWidth*dpr/box.width,stage.clientHeight*dpr/box.height);
     const width = (meta.source_width || meta.width * 2) * scale, height = (meta.source_height || meta.height * 2) * scale;
-    const center = HDRLibraryZoom.center(state.zoomX, state.zoomY, width, height, stage.clientWidth * dpr, stage.clientHeight * dpr);
+    const center = state.zoom?HDRLibraryZoom.center(state.zoomX, state.zoomY, width, height, stage.clientWidth * dpr, stage.clientHeight * dpr,(box.frame+box.border)*scale):{x:.5,y:.5};
     state.zoomX = center.x; state.zoomY = center.y;
     const left = stage.clientWidth / 2 - center.x * width / dpr, top = stage.clientHeight / 2 - center.y * height / dpr;
-    canvas.style.cssText = `position:absolute;width:${width / dpr}px;height:${height / dpr}px;left:${left}px;top:${top}px;object-fit:fill`;
-    if (state.nativeMeta) {
+    HDRPhotoFraming.draw(stage,box,framing,{scale:scale/dpr,left:`${left+width/dpr/2}px`,top:`${top+height/dpr/2}px`});
+    canvas.style.cssText = `position:absolute;z-index:1;width:${width / dpr}px;height:${height / dpr}px;left:${left}px;top:${top}px;object-fit:fill`;
+    native.hidden=!state.zoom;
+    if (state.zoom && state.nativeMeta) {
       const crop = state.nativeMeta;
-      native.style.cssText = `width:${crop.width * scale / dpr}px;height:${crop.height * scale / dpr}px;left:${left + crop.crop_x * scale / dpr}px;top:${top + crop.crop_y * scale / dpr}px`;
+      native.style.cssText = `z-index:2;width:${crop.width * scale / dpr}px;height:${crop.height * scale / dpr}px;left:${left + crop.crop_x * scale / dpr}px;top:${top + crop.crop_y * scale / dpr}px`;
       native.hidden = false;
     }
   }
@@ -799,13 +804,14 @@
     }
     finally { if (state.native === controller) state.nativeLoading = false; }
   }
+  function singleFrameInset(meta){const s=state.fitMeta?.framing,b=HDRPhotoFraming.layout(meta.source_width||meta.width*2,meta.source_height||meta.height*2,s);return b.frame+b.border;}
   function toggleZoom(point) {
     if (state.view !== "single" || !selected()) return;
     if (compare.enabled()) { compare.zoom(); return; }
     state.zoom = !state.zoom; state.zoomScale = 1; state.native?.abort(); state.nativeLoading = false; state.nativeMeta = null;
     if (state.zoom && point && state.fitMeta) {
       const stage = $("single-stage"), meta = state.fitMeta;
-      const center = HDRLibraryZoom.click(point.x, point.y, stage.clientWidth, stage.clientHeight, meta.source_width || meta.width, meta.source_height || meta.height);
+      const center = HDRLibraryZoom.click(point.x, point.y, stage.clientWidth, stage.clientHeight, meta.source_width || meta.width, meta.source_height || meta.height,singleFrameInset(meta));
       state.zoomX = center.x; state.zoomY = center.y;
     }
     $("zoom-button").setAttribute("aria-pressed", String(state.zoom));
@@ -844,7 +850,7 @@
     const meta = state.nativeMeta || state.fitMeta, dpr = window.devicePixelRatio || 1, rect = singleStage.getBoundingClientRect();
     const sourceWidth = meta.source_width || meta.width * 2, sourceHeight = meta.source_height || meta.height * 2;
     const width = singleStage.clientWidth * dpr, height = singleStage.clientHeight * dpr;
-    const fit = HDRLibraryZoom.fitScale(sourceWidth, sourceHeight, width, height);
+    const fit = HDRLibraryZoom.fitScale(sourceWidth, sourceHeight, width, height,singleFrameInset(meta));
     const from = state.zoom ? state.zoomScale : fit;
     const to = HDRLibraryZoom.wheel(from, event.deltaY * (event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? 400 : 1), fit);
     if (to === from) return;
@@ -855,7 +861,7 @@
       status(`${state.index + 1} of ${state.photos.length.toLocaleString()} · ${selected().name}`); return;
     }
     const start = state.zoom ? { x: state.zoomX, y: state.zoomY } : { x: .5, y: .5 };
-    const center = HDRLibraryZoom.anchor(start.x, start.y, (event.clientX - rect.left) * dpr, (event.clientY - rect.top) * dpr, width, height, sourceWidth, sourceHeight, from, to);
+    const center = HDRLibraryZoom.anchor(start.x, start.y, (event.clientX - rect.left) * dpr, (event.clientY - rect.top) * dpr, width, height, sourceWidth, sourceHeight, from, to,singleFrameInset(meta));
     state.zoom = true; state.zoomScale = to; state.zoomX = center.x; state.zoomY = center.y;
     $("zoom-button").setAttribute("aria-pressed", "true");
     positionZoom(); nativeTimer = setTimeout(showNative, 150);

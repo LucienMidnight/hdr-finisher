@@ -114,7 +114,9 @@ def _render_pair(frame, owner, settings, adjustments):
     signature = (id(frame.image), id(getattr(frame, "sdr_reference_image", None)),
         adjustments.model_dump_json(), repr(getattr(frame, "local_adjustments", None)),
         repr(getattr(frame, "denoise", None)), getattr(frame, "hdr_reference_white_nits", 203),
-        settings.output_finishing.model_dump_json(), policy["effective_force_cpu"])
+        settings.output_finishing.model_dump_json(), policy["effective_force_cpu"],
+        settings.export_with_frame, repr(getattr(frame, "framing", None)),
+        getattr(frame, "framing_source_size", None), getattr(frame, "framing_output_limit", None))
     cached = getattr(owner, "_delivery_cache", None)
     if cached and cached[0] == signature:
         frame._delivery_record = cached[2]
@@ -144,6 +146,16 @@ def _render_pair(frame, owner, settings, adjustments):
         from .finishing import geometry_output_dimensions, resolve_output_dimensions
         height, width = frame.image.shape[:2]
         output = resolve_output_dimensions(*geometry_output_dimensions(width, height, adjustments.shared.geometry), settings.output_finishing)
+        from .photo_framing import delivery_layout, layer_colors
+        from .hdr_ceiling import delivery_ceiling_nits
+        layout = delivery_layout(frame, settings, adjustments)
+        photo_output = list(layout.photo[2:]) if layout else list(output)
+        if layout:
+            output = (layout.width, layout.height)
+        framing = None if layout is None else dict(layout.as_dict(), colors={
+            lane: [color.tolist() for color in layer_colors(frame.framing, lane,
+                getattr(frame, "hdr_reference_white_nits", 203), delivery_ceiling_nits(adjustments))]
+            for lane in ("hdr", "sdr")})
         lane_memory = {lane: memory.allocate((output[1], output[0], 4))[0] for lane in ("hdr", "sdr")}
         denoise = getattr(frame, "denoise", None) or DenoiseDocumentSettings()
         models = {} if raw else _native_denoise_models(frame, adjustments, denoise)
@@ -151,6 +163,7 @@ def _render_pair(frame, owner, settings, adjustments):
             "memory": {"source": source_memory, "reference": reference_memory, "raw": raw_memory, **lane_memory},
             "raw": {key: value for key, value in raw.items() if key != "body"} if raw else None,
             "id": identity, "width": width, "height": height, "output": output,
+            "photo_output": photo_output, "framing": framing,
             # With an authored SDR base the SDR lane has its own source pixels.
             "authored_sdr": reference is not None,
             "white": getattr(frame, "hdr_reference_white_nits", 203), "adjustments": adjustments.model_dump(mode="json"),

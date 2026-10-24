@@ -277,7 +277,8 @@
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
             <button id="overlay-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="overlay-popover" aria-haspopup="dialog" aria-pressed="false">Overlays</button>
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
-            <button id="frame-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="frame-popover" aria-haspopup="dialog" title="Set the neutral surround behind the image, kept separate from the application theme.">Frame</button>
+            <button id="photo-frame-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="photo-frame-popover" aria-haspopup="dialog" disabled>Frame</button>
+            <button id="frame-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="frame-popover" aria-haspopup="dialog" title="Set the neutral surround behind the image, kept separate from the application theme.">Background</button>
           </div>
           <div id="overlay-popover" class="overlay-popover hidden">
             <div class="popover-heading">
@@ -323,17 +324,37 @@
               <p class="helper overlay-control-note">Highlights pixels at or above this reference-nit level.</p>
             </div>
           </div>
+          <div id="photo-frame-popover" class="overlay-popover frame-popover hidden" role="dialog" aria-labelledby="photo-frame-heading">
+            <div class="popover-heading"><span id="photo-frame-heading">Photo Frame</span><button id="photo-frame-close" class="text-button" type="button">Close</button></div>
+            <label class="checkbox-row"><input id="photo-framing-enabled" type="checkbox"> Enable photo framing</label>
+            <p class="helper">Both layers sit outside the photo. % uses its cropped shorter side; px means cropped source pixels. Thickness scales with export size.</p>
+            <fieldset class="photo-frame-layer"><legend>Frame</legend>
+              <label class="checkbox-row"><input id="photo-frame-enabled" type="checkbox" checked> Show Frame</label>
+              <label class="frame-custom-row">Frame color <input id="photo-frame-color" type="color" value="#ffffff" aria-label="Frame color"></label>
+              <div class="photo-frame-thickness"><label>Frame thickness <input id="photo-frame-value" type="number" min="0" step="0.01" value="5"></label>
+              <label>Units <select id="photo-frame-unit" aria-label="Frame thickness units"><option value="percent">%</option><option value="px">px (source)</option></select></label></div>
+              <input id="photo-frame-slider" type="range" min="0" max="50" step="0.01" value="5" aria-label="Frame thickness slider">
+            </fieldset>
+            <fieldset class="photo-frame-layer"><legend>Border</legend>
+              <label class="checkbox-row"><input id="photo-border-enabled" type="checkbox" checked> Show Border</label>
+              <label class="frame-custom-row">Border color <input id="photo-border-color" type="color" value="#202020" aria-label="Border color"></label>
+              <div class="photo-frame-thickness"><label>Border thickness <input id="photo-border-value" type="number" min="0" step="0.01" value="0.25"></label>
+              <label>Units <select id="photo-border-unit" aria-label="Border thickness units"><option value="percent">%</option><option value="px">px (source)</option></select></label></div>
+              <input id="photo-border-slider" type="range" min="0" max="50" step="0.01" value="0.25" aria-label="Border thickness slider">
+            </fieldset>
+            <p id="photo-frame-dimensions" class="helper"></p>
+          </div>
           <div id="frame-popover" class="overlay-popover frame-popover hidden">
             <div class="popover-heading">
-              <span>Viewer Frame</span>
+              <span>Viewer Background</span>
               <button id="frame-close" class="text-button" type="button">Close</button>
             </div>
             <p class="helper">Sets the neutral surround behind the image only. Theme matches the current app theme; the other options stay fixed even if you switch themes.</p>
-            <div id="frame-preset-list" class="frame-preset-list" role="radiogroup" aria-label="Frame color"></div>
+            <div id="frame-preset-list" class="frame-preset-list" role="radiogroup" aria-label="Background color"></div>
             <label class="frame-custom-row">Custom
               <span class="frame-custom-inputs">
-                <input id="frame-custom-swatch" type="color" value="#000000" aria-label="Pick a custom frame color">
-                <input id="frame-custom-hex" type="text" value="#000000" maxlength="7" spellcheck="false" autocapitalize="off" aria-label="Custom frame color hex value" placeholder="#000000">
+                <input id="frame-custom-swatch" type="color" value="#000000" aria-label="Pick a custom background color">
+                <input id="frame-custom-hex" type="text" value="#000000" maxlength="7" spellcheck="false" autocapitalize="off" aria-label="Custom background color hex value" placeholder="#000000">
               </span>
             </label>
           </div>
@@ -1600,6 +1621,8 @@
         </label>
         <div id="export-long-edge-row" class="hidden"><label>Long edge <input id="export-long-edge" type="number" min="1" max="100000" step="1" value="2048"></label></div>
         <div id="export-fit-row" class="control-pair hidden"><label>Width <input id="export-width" type="number" min="1" max="100000" step="1" value="2048"></label><label>Height <input id="export-height" type="number" min="1" max="100000" step="1" value="2048"></label></div>
+        <label class="checkbox-row"><input id="export-with-frame" type="checkbox" checked aria-describedby="export-framing-note"> Export with frame</label>
+        <p id="export-framing-note" class="helper">Export size includes the photo, Frame and Border. Pixel thickness scales from cropped source pixels.</p>
         <label class="checkbox-row"><input id="export-prevent-enlargement" type="checkbox" checked> Prevent enlargement</label>
         <label>Output Sharpening
           <select id="export-sharpening" aria-describedby="export-sharpening-note"><option value="off">Off</option><option value="subtle">Subtle</option><option value="standard">Standard</option><option value="strong">Strong</option></select>
@@ -1967,6 +1990,7 @@
   <script src="/static/info-panels.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/desktop-commands.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/lanes-compare.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/photo-framing.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/zoom-navigation.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/overlay-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/workspace-layout.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
@@ -1984,6 +2008,7 @@
   <script src="/static/app-state.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/media-browser-editor.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/library-editor.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/photo-framing-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app-boot.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/proofing-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

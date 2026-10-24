@@ -180,11 +180,17 @@ def _render_export_branch(
     # Output finishing resamples and sharpens for the delivered size, neither of
     # which the preview models. Running it before the limiter keeps its ringing
     # underneath the ceiling instead of on top of it.
-    image = apply_output_finishing(image, settings.output_finishing, kind)
+    from .photo_framing import delivery_layout, compose, layer_colors
+    layout = delivery_layout(session, settings, adjustments)
+    image = apply_output_finishing(image, settings.output_finishing, kind,
+        **({"target_size": layout.photo[2:]} if layout else {}))
     if kind == PreviewKind.HDR:
         result = apply_hdr_output_highlight_compression(image, adjustments, color_context=color_context)
     else:
         result = apply_sdr_output_highlight_compression(image, adjustments)
+    if layout:
+        result = compose(result, layout, layer_colors(session.framing, kind.value,
+            color_context.hdr_reference_white_nits, delivery_ceiling_nits(adjustments)))
     lane = kind.value
     if lane in settings.editing_measurements:
         from .adjustments import hdr_highlight_peak_signal, sdr_highlight_peak_signal, sdr_highlight_stage_input

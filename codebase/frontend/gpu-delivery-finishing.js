@@ -104,7 +104,7 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
     this.device.queue.writeBuffer(this.ranges,0,new Uint32Array([0xffffffff,0xffffffff,0xffffffff,0,0,0]));
     const hdr=lane==="hdr";let image=this.texture(capture.width,capture.height);
     await this.run(0,capture,image);this.release(capture);
-    const [width,height]=job.output;
+    const [width,height]=job.photo_output || job.output;
     if(width!==image.width || height!==image.height){
       const horizontal=this.texture(width,image.height), resized=this.texture(width,height);
       await this.run(1,image,horizontal,{axis:0});this.release(image);
@@ -145,7 +145,40 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
         pass.setScissorRect(0,row,width,Math.min(rows,height-row));pass.setPipeline(pipeline);pass.setBindGroup(0,bind);pass.draw(3);pass.end();
         this.device.queue.submit([encoder.finish()]);await gpu.waitForSubmittedWork();}
     }finally{buffer.destroy();this.release(image);this.release(dummy);}
-    return finished;
+    return job.framing ? await this.compose(finished,job.framing,lane) : finished;
+  }
+  async compose(photo,layout,lane){
+    const code=`
+@group(0) @binding(0) var photo:texture_2d<f32>;
+@group(0) @binding(1) var canvas:texture_storage_2d<rgba32float,write>;
+@group(0) @binding(2) var<storage,read> p:array<f32>;
+@compute @workgroup_size(8,8) fn main(@builtin(global_invocation_id) id:vec3u){
+ let q=vec2i(i32(id.x),i32(id.y)+i32(p[2])); let size=vec2i(textureDimensions(canvas));
+ if(any(q>=size)){return;}
+ let inset=i32(p[0]);let border=i32(p[1]);let content=q-vec2i(inset);
+ var color=vec4f(p[8],p[9],p[10],1.);
+ if(all(q>=vec2i(border))&&all(q<size-vec2i(border))){color=vec4f(p[4],p[5],p[6],1.);}
+ if(all(content>=vec2i(0))&&all(content<vec2i(textureDimensions(photo)))){color=textureLoad(photo,content,0);}
+ textureStore(canvas,q,color);
+}`;
+    const module=this.device.createShaderModule({code});
+    const pipeline=await this.device.createComputePipelineAsync({layout:"auto",compute:{module,entryPoint:"main"}});
+    const colors=layout.colors[lane],values=new Float32Array([layout.frame+layout.border,layout.border,0,0,...colors[0],0,...colors[1],0]);
+    const buffer=this.device.createBuffer({size:values.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
+    const canvas=this.texture(layout.width,layout.height);
+    this.device.queue.writeBuffer(buffer,0,values);
+    const bind=this.device.createBindGroup({layout:pipeline.getBindGroupLayout(0),entries:[
+      {binding:0,resource:photo.createView()},{binding:1,resource:canvas.createView()},{binding:2,resource:{buffer}}]});
+    try{
+      const rows=this.strip(layout.width);
+      for(let row=0;row<layout.height;row+=rows){
+        await this.permit();values[2]=row;this.device.queue.writeBuffer(buffer,0,values);
+        const encoder=this.device.createCommandEncoder(),pass=encoder.beginComputePass();
+        pass.setPipeline(pipeline);pass.setBindGroup(0,bind);pass.dispatchWorkgroups(Math.ceil(layout.width/8),Math.ceil(Math.min(rows,layout.height-row)/8));pass.end();
+        this.device.queue.submit([encoder.finish()]);await this.gpu.waitForSubmittedWork();
+      }
+    }finally{buffer.destroy();this.release(photo);}
+    return canvas;
   }
   async read(texture){
     const width=texture.width,height=texture.height,stride=Math.ceil(width*16/256)*256;

@@ -373,10 +373,9 @@ overlap, multiscale passes and matching boundaries before that can change.
 
 ## 8. Photo framing — requirements recorded October 24, 2026
 
-**Status:** geometry reference and conformance tests imported; host-owned nested
-geometry and per-photo persistence/history implemented. UI/render/export
-integration not built. Implementation brief is a draft pending the remaining
-product choices:
+**Status:** controls, attached viewer layers, GPU/CPU export composition and Proof
+integration implemented; validation in progress. All product choices are settled.
+Decoded Ultra HDR GPU/CPU boundary comparison remains open. Active brief:
 [Photo framing brief](../../technical/briefs/codex-brief-photo-framing-2026-10-24.md).
 This section owns framing requirements across Grade, Library, Export and Proof.
 
@@ -424,9 +423,9 @@ where color handling permits; use the existing GPU delivery graph plus CPU
 fallback for encoded outputs. Display both photo and final canvas dimensions.
 Keep framing out of photo analysis, crop and creative grading calculations.
 
-Remaining product choice: whether a target outer aspect ratio is wanted. No ratio
-UI, Lightroom thickness scale or white-only restriction
-is adopted merely because BorderMuse implements it.
+Outer shape (Steve approved October 24): each layer has one thickness, equal on
+all four sides. No independent outer aspect ratio, per-side widths, Lightroom
+thickness scale or white-only restriction in this first version.
 
 **Imported foundation**
 
@@ -457,3 +456,44 @@ passed, 3 skipped. All 30 focused framing checks passed after adding the tiny-
 photo enlargement regression. No failures; no GPU check applies before renderer
 integration. Controls, Library/Export display, export inclusion and pixel
 composition, Proof and output-cache plumbing remain open. No push.
+
+
+October 24 integration: the old viewer Frame control is now Background. Photo
+Frame controls author independent colors, visibility, %/source-pixel widths and
+unit conversion. SVG rectangles follow Grade and Library single-photo pan/zoom;
+Fit includes the assembly and 100% retains photo-pixel mapping. Crop/draft
+geometry hides the mats. Scopes, picking, masks and creative caches retain photo
+coordinates. Grid and filmstrip pixels remain unframed.
+
+Each export version persists Export with frame. Complete-canvas sizing resolves
+the content rectangle; photo resize/sharpening and the existing limiter run
+before flat mat composition. GPU composition uses interruptible strips, accounts
+for canvas memory and texture bounds, and falls back to CPU. Picker colors enter
+SDR as linear sRGB and HDR as ACEScg at reference white, with the existing ceiling.
+Full Proof carries the same finishing/inclusion and encodes the selected output;
+framing enters delivery and Proof cache identities. Reduced Proof scales from
+native authored widths and labels a reduced canvas honestly. Existing encoder
+math and gain-map filtering have not changed.
+
+Open validation findings and scope boundary:
+- A tiny 90 × 66 Ultra HDR JPEG (95 quality, 4:4:4, half-resolution gain map)
+  exceeds the existing GPU/CPU HDR high-percentile perceptual limit near the
+  photo/mat boundaries: mean 0.608, p99.9 4.529 against <1 / <=3. The matching
+  unframed 72 × 48 half-map case passes. No tolerance or encoder behavior was
+  changed. Retain the failing decoded check until resolved or reviewed by Steve.
+- Export single-image mode still uses the live Grade preview, including its
+  current framing; the selected version controls inclusion. Batch delivery uses
+  the last saved complete grade and retains its unsaved-change notice. Showing
+  a separate saved-grade preview requires a separate preview owner/cache and
+  lifecycle for all creative edits, rather than swapping only frame metadata.
+  That broader viewer change is outside this brief's shared-path allowance.
+
+Validation in progress: 603 Node checks pass; initial Python integration run
+had 2,527 passes, 3 skips and two expected contract failures for the new toolbar
+button/serialized inclusion field. Those expectations now reflect the requested
+behavior; the focused 58 checks pass. Real Electron framing controls, Fit/100%,
+all six GPU/CPU delivery formats, exact full HDR Proof/export bytes, inclusion
+cache separation and saved Library Fit/100% passed. Grade and Library screenshots
+reviewed. The unchanged unframed GPU-delivery smoke passes perceptual and ceiling
+checks. Full fast-suite rerun and the applicable export/Proof checks follow.
+BorderMuse license copies and both packaging specifications remain intact. No push.

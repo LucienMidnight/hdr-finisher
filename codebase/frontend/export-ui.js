@@ -101,9 +101,9 @@ const exportOptionTooltips = {
     all_including_location: "Preserves all supported source metadata, including possible GPS coordinates.",
   },
   exportResizeMode: {
-    original: "Exports the original cropped dimensions.",
-    long_edge: "Resizes by the image's longest edge.",
-    fit: "Fits the image within specified width and height limits.",
+    original: "Keeps cropped photo pixels; adds the Frame and Border when included.",
+    long_edge: "Resizes the complete canvas, including any Frame and Border, by its longest edge.",
+    fit: "Fits the complete canvas, including any Frame and Border, within the width and height limits.",
   },
   exportSharpening: {
     off: "No output sharpening.",
@@ -307,6 +307,7 @@ function currentExportSettings(outputPath = null, overwrite = false, pathGrant =
       dithering: els.exportDithering.value,
       metadata_policy: els.exportMetadataPolicy.disabled ? "none" : els.exportMetadataPolicy.value,
       guarantee_hdr_peak: els.exportGuaranteePeak?.checked === true,
+      export_with_frame: els.exportWithFrame?.checked !== false,
       output_path: outputPath,
       path_grant: pathGrant,
       overwrite,

@@ -27,7 +27,7 @@ def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> Non
     # Frame -- they open separate tools, not one grouped control.
     assert html.count('class="viewer-tool-divider"') == 5
     divider = '<span class="viewer-tool-divider" aria-hidden="true">|</span>'
-    for toggle in ("frame-toggle",):
+    for toggle in ("photo-frame-toggle",):
         assert html.split(f'<button id="{toggle}"')[0].rstrip().endswith(divider)
     assert 'class="zoom-presets" role="group" aria-label="Zoom presets"' in html
     assert '.preview-stage[data-compare-layout="split-vertical"]' in css

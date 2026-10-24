@@ -1164,6 +1164,7 @@ const els = {
   exportMetadataPolicyField: document.getElementById("export-metadata-policy-field"),
   exportGuaranteePeakField: document.getElementById("export-guarantee-peak-field"),
   exportGuaranteePeak: document.getElementById("export-guarantee-peak"),
+  exportWithFrame: document.getElementById("export-with-frame"),
   exportMetadataPolicy: document.getElementById("export-metadata-policy"),
   exportMetadataPolicyNote: document.getElementById("export-metadata-policy-note"),
   exportResolvedEncoding: document.getElementById("export-resolved-encoding"),
