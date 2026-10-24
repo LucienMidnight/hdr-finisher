@@ -53,9 +53,11 @@ def unframe(body: bytes) -> tuple[dict, memoryview]:
     return json.loads(body[4:4 + length].decode("utf-8")), memoryview(body)[4 + length:]
 
 
-def _identity(path: Path) -> list[int]:
+def _identity(path: Path) -> list[str]:
+    # The renderer echoes this opaque token through JSON. Decimal strings
+    # preserve nanosecond timestamps beyond JavaScript's exact integer range.
     stat = path.stat()
-    return [stat.st_size, stat.st_mtime_ns]
+    return [str(stat.st_size), str(stat.st_mtime_ns)]
 
 
 def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict, list]:

@@ -1,5 +1,6 @@
 """Camera RAW Library thumbnails developed on the GPU: the backend half."""
 import json
+import os
 
 import numpy as np
 import pytest
@@ -36,8 +37,7 @@ def _payload(height, width, value):
 
 
 def _header(photo, flip=0, height=8, width=12):
-    stat = photo.stat()
-    return {"path": str(photo), "identity": [stat.st_size, stat.st_mtime_ns], "edge": 640, "flip": flip,
+    return {"path": str(photo), "identity": gpu_raw._identity(photo), "edge": 640, "flip": flip,
             "height": height, "width": width, "source_width": 4000, "source_height": 3000,
             "peaks": {"peak": 2.5, "peak_luma": 2.0, "peak_bt2020": 2.6},
             "robust": {"luma": 1.5, "channel": 1.8, "bt2020": 1.9},
@@ -117,3 +117,28 @@ def test_native_gpu_source_is_retained_once_and_cropped_without_cpu_decode(tmp_p
     header.update(native_mode=True,source_width=12,source_height=8)
     gpu_raw.developed(cache,str(other),header,_payload(8,12,(.2,.3,.4)))
     assert cache.gpu_native_ready(other) and not cache.gpu_native_ready(photo)
+
+
+def test_gpu_handoff_preserves_nanosecond_identity_and_rejects_same_size_changes(tmp_path):
+    photo = tmp_path / "photo.ARW"
+    photo.write_bytes(b"read-only fixture")
+    stamp = 1792815693440161676
+    os.utime(photo, ns=(stamp, stamp))
+    stat = photo.stat()
+    assert int(float(stat.st_mtime_ns)) != stat.st_mtime_ns
+    header = _header(photo)
+    # Model JSON.parse / JSON.stringify in the renderer: numeric identity
+    # fields pass through IEEE-754 doubles, while strings remain exact.
+    header["identity"] = json.loads(json.dumps(header["identity"]), parse_int=lambda value: int(float(value)))
+    cache = LibraryPictureCache(tmp_path / "cache")
+    payload = _payload(8, 12, (0.1, 0.2, 0.3))
+    result = gpu_raw.developed(cache, str(photo), header, payload)
+    assert result["renderer"] == "gpu"
+    assert photo.read_bytes() == b"read-only fixture"
+    # Still reject a same-size source whose timestamp changed by less than
+    # the precision lost in the browser handoff.
+    changed_stamp = stat.st_mtime_ns + 100
+    os.utime(photo, ns=(stat.st_atime_ns, changed_stamp))
+    assert photo.stat().st_mtime_ns != stat.st_mtime_ns
+    with pytest.raises(ValueError, match="changed"):
+        gpu_raw.developed(cache, str(photo), header, payload)
