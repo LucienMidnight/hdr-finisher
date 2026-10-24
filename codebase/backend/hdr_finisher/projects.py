@@ -153,6 +153,7 @@ def _open_document(store, document, source_path, reuse_session_id):
     session.repairs = document.repairs
     session.denoise = document.denoise
     session.sdr_match = document.sdr_match
+    session.framing = document.framing
     session.interpretation_override = document.interpretation_override
     session.hdr_reference_white_nits = document.hdr_reference_white_nits
     session.color_context = session.color_context.__class__(document.hdr_reference_white_nits)

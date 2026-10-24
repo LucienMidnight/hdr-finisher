@@ -24,6 +24,7 @@ from .models import (
     DenoiseDocumentSettings,
     DenoiseLaneSettings,
     EditCommand,
+    PhotoFraming,
     EditDocument,
     EditStateResponse,
     HDRAnalysis,
@@ -120,6 +121,7 @@ class LoadedSession:
     retouch_cancelled_requests: list[str] = field(default_factory=list, repr=False)
     denoise: DenoiseDocumentSettings = field(default_factory=DenoiseDocumentSettings)
     sdr_match: SdrMatchState = field(default_factory=SdrMatchState)
+    framing: PhotoFraming = field(default_factory=PhotoFraming)
     interpretation_override: SourceInterpretationOverride = field(default_factory=SourceInterpretationOverride)
     raw_import_settings: RawImportSettings = field(default_factory=RawImportSettings)
     edit_revision: int = 0
@@ -191,6 +193,7 @@ class LoadedSession:
             repairs=self.repairs,
             denoise=self.denoise,
             sdr_match=self.sdr_match,
+            framing=self.framing,
         )
 
     def edit_state(self) -> EditStateResponse:
@@ -364,6 +367,7 @@ class SessionStore:
             developed.repairs = current.repairs
             developed.sdr_match = current.sdr_match.model_copy(deep=True)
             developed.denoise = current.denoise
+            developed.framing = current.framing
             developed.interpretation_override = current.interpretation_override
             developed.hdr_reference_white_nits = current.hdr_reference_white_nits
             developed.color_context = current.color_context
@@ -505,6 +509,7 @@ class SessionStore:
                 [item.model_copy(deep=True) for item in session.repairs],
                 session.denoise.model_copy(deep=True),
                 session.sdr_match.model_copy(deep=True),
+                session.framing.model_copy(deep=True),
                 session.interpretation_override.model_copy(deep=True),
                 session.hdr_reference_white_nits,
                 session.color_context,
@@ -530,6 +535,7 @@ class SessionStore:
                     session.repairs,
                     session.denoise,
                     session.sdr_match,
+                    session.framing,
                     session.interpretation_override,
                     session.hdr_reference_white_nits,
                     session.color_context,
@@ -696,6 +702,7 @@ class SessionStore:
             session.repairs = document.repairs
             session.denoise = document.denoise
             session.sdr_match = document.sdr_match
+            session.framing = document.framing
             session.hdr_reference_white_nits = document.hdr_reference_white_nits
             session.color_context = RenderColorContext(document.hdr_reference_white_nits)
             session.render_cache.set_color_context(session.color_context)
@@ -719,6 +726,13 @@ class SessionStore:
                 command_type="set_hdr_reference_white",
                 payload={"hdr_reference_white_nits": previous},
             )
+
+        if command_type == "set_photo_framing":
+            previous = session.framing
+            session.framing = PhotoFraming.model_validate(payload.get("framing"))
+            # Composition is independent of RAW development and creative pixels.
+            return EditCommand(expected_revision=current_revision, command_type=command_type,
+                payload={"framing": previous.model_dump(mode="json")})
 
         if command_type == "set_global_adjustments":
             previous = session.adjustments

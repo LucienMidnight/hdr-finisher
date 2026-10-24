@@ -3,8 +3,8 @@
 **Date:** October 24, 2026
 **Status:** DRAFT. Requested behavior is recorded; remaining product choices
 below need discussion with Steve before the UI and output behavior are finalized.
-This turn imports the reusable geometry and tests only; it does not implement
-the controls or alter current photo pixels.
+The imported reference is unchanged. Host geometry and persisted framing settings
+are implemented; controls, attached display and encoded output remain open.
 **Owner PRD:** [Export and Proof, photo framing](../../product/modules/export-and-proof.md#8-photo-framing--requirements-recorded-october-24-2026).
 **Other affected surfaces:** Grade and Library. Keep their module PRDs linked
 to the owner, rather than creating another framing PRD.
@@ -51,6 +51,9 @@ Proof must inspect the actual chosen output.
   the photo's frame affects every output version that includes it.
 - Layer order is photo → Frame → Border (explicit reply, October 24).
 - Rename existing Frame to Background; the new Frame control lives in Grade.
+- Starting defaults (Steve approved October 24): framing off for new/default
+  photos; when enabled, white Frame at 5% and dark Border at 0.25%. Export with
+  frame defaults on, so authored framing exports as shown. All remain editable.
 - Framing is attached to the photo and follows pan/zoom.
 - Export with frame is a simple inclusion toggle.
 - Export size includes the Frame and Border (explicit reply, October 24).
@@ -65,10 +68,7 @@ Proof must inspect the actual chosen output.
 These are proposals, not approved requirements. Settle them one at a time with
 Steve; do not silently adopt BorderMuse's controls as product decisions.
 
-1. **Defaults:** framing initially off for existing/default photos; propose a
-   white Frame with a narrow dark Border when first enabled. Exact widths and
-   the default state of Export with frame still need choosing.
-2. **Outer ratio:** no ratio selector was requested. Suggest initially following
+1. **Outer ratio:** no ratio selector was requested. Suggest initially following
    the photo plus the two equal-width layers. Add target canvas ratios only if
    Steve wants that; they introduce unequal mat widths and a sizing policy.
 

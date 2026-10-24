@@ -373,7 +373,8 @@ overlap, multiscale passes and matching boundaries before that can change.
 
 ## 8. Photo framing — requirements recorded October 24, 2026
 
-**Status:** geometry reference and conformance tests imported; UI/render/export
+**Status:** geometry reference and conformance tests imported; host-owned nested
+geometry and per-photo persistence/history implemented. UI/render/export
 integration not built. Implementation brief is a draft pending the remaining
 product choices:
 [Photo framing brief](../../technical/briefs/codex-brief-photo-framing-2026-10-24.md).
@@ -400,6 +401,9 @@ This section owns framing requirements across Grade, Library, Export and Proof.
   and undo/redo. Each preset output version independently stores whether to
   include that photo's frame; it does not copy the colors or widths. Changing
   the photo's frame affects every output version that includes it.
+- Starting defaults (Steve approved October 24): framing off for new/default
+  photos; when enabled, white Frame at 5% and dark Border at 0.25%. Export with
+  frame defaults on, so authored framing exports as shown. All remain editable.
 - The photo frame is attached to the image and follows pan/zoom. It is distinct
   from the stationary viewer background. SVG is a candidate for efficient live
   display; export must compose actual pixels.
@@ -420,8 +424,7 @@ where color handling permits; use the existing GPU delivery graph plus CPU
 fallback for encoded outputs. Display both photo and final canvas dimensions.
 Keep framing out of photo analysis, crop and creative grading calculations.
 
-Open choices before implementation: default colors/widths and the default
-export inclusion state; whether a target outer aspect ratio is wanted. No ratio
+Remaining product choice: whether a target outer aspect ratio is wanted. No ratio
 UI, Lightroom thickness scale or white-only restriction
 is adopted merely because BorderMuse implements it.
 
@@ -439,3 +442,18 @@ Python fast suite 2,495 passed, 3 skipped (including the five adapted upstream
 geometry tests). Source, measured fixture and license copies match the pinned
 checkout byte for byte. No GPU check applies because the core is not yet used
 by a render path. The implementation brief remains a draft.
+
+October 24 implementation foundation: framing now belongs to the shared edit
+document, round-trips through project save/open, and supports grouped undo/redo
+and atomic command rollback. Composition edits retain creative/RAW caches.
+Host-owned source/output rectangles use source-pixel or shorter-side percentage
+widths, explicit half-up rounding and complete-canvas export sizing; tiny
+outputs retain at least one photo pixel. This helper is not yet connected to
+viewers or delivery. Existing photos are visually unchanged. BorderMuse source
+and notices remain untouched.
+
+Foundation validation: Node fast suite 599 passed; Python fast suite 2,524
+passed, 3 skipped. All 30 focused framing checks passed after adding the tiny-
+photo enlargement regression. No failures; no GPU check applies before renderer
+integration. Controls, Library/Export display, export inclusion and pixel
+composition, Proof and output-cache plumbing remain open. No push.

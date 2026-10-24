@@ -1003,6 +1003,23 @@ class RepairRecord(BaseModel):
     recipe: InpaintRecipe
 
 
+class FramingLayer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    color: str = Field(default="#ffffff", pattern=r"^#[0-9a-fA-F]{6}$")
+    unit: Literal["percent", "px"] = "percent"
+    value: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
+
+
+class PhotoFraming(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    frame: FramingLayer = Field(default_factory=FramingLayer)
+    border: FramingLayer = Field(default_factory=lambda: FramingLayer(color="#202020", value=0.25))
+
+
 class EditDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1015,6 +1032,7 @@ class EditDocument(BaseModel):
     repairs: list[RepairRecord] = Field(default_factory=list, max_length=256)
     denoise: DenoiseDocumentSettings = Field(default_factory=DenoiseDocumentSettings)
     sdr_match: SdrMatchState = Field(default_factory=SdrMatchState)
+    framing: PhotoFraming = Field(default_factory=PhotoFraming)
 
     @model_validator(mode="before")
     @classmethod
@@ -1040,6 +1058,7 @@ class EditCommand(BaseModel):
         "set_hdr_reference_white",
         "set_global_adjustments",
         "set_denoise_settings",
+        "set_photo_framing",
         "set_repairs",
         "create_local",
         "update_local",
