@@ -107,6 +107,7 @@ class LiveSceneRequest(BaseModel):
     source_job: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     edge: Literal[640, 2560, 100000] = 640
     gpu: bool = True
+    max_storage_bytes: int | None = Field(default=None, gt=0)
     priority: int = Field(default=30, ge=0, le=100)
 
 
@@ -378,7 +379,7 @@ def create_library_router(worker, browser, store=None):
                         def dng_source():
                             return library_dng.decoded(Path(path), inputs,
                                 progress=lambda stage,text: source_jobs.stage(token,stage,text),
-                                cancelled=lambda: source_jobs.cancelled(token), edge=command.edge)
+                                cancelled=lambda: source_jobs.cancelled(token), edge=command.edge, max_storage_bytes=command.max_storage_bytes)
                         header, parts = await run_in_threadpool(source_jobs.preparing, token, path, dng_source)
                     else:
                         if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():

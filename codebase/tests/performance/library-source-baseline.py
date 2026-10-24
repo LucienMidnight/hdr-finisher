@@ -345,7 +345,7 @@ def parse_iso_metadata_probe(text):
 
 
 def profile_iso_gainmap(path, repeats):
-    """Inspect the unqualified map boundary; NEVER publish it as a scene.
+    """Inspect the unqualified extracted-map boundary; never publish that map as a scene.
 
     Matched protocol: supplied files, three repeats by default, alternating
     existing CPU decode and candidate extraction order. No GPU speedup claim.
@@ -370,12 +370,19 @@ def profile_iso_gainmap(path, repeats):
         utility = resolve_binary("avifgainmaputil")
         text = gain._run([str(utility), "printmetadata", str(source)]).stdout
         fields = parse_iso_metadata_probe(text)
+        reconstructed_renditions = False
         try:
-            library_rgb.decoded(source, recipe(None))
+            header, parts = library_rgb.decoded(source, recipe(None))
         except library_rgb.NotEligible as error:
             rejection = str(error)
         else:
-            raise AssertionError("Unqualified ISO input published as ordinary RGB")
+            # Library accepts complete reconstructed HDR/SDR renditions. This
+            # does not qualify the map-only extraction below as a GPU decoder.
+            assert header["colour"]["transfer"] == "PQ" and header.get("sdr_reference")
+            assert len(parts) == 2
+            rejection = None
+            reconstructed_renditions = True
+            del parts
         try:
             imagecodecs.avif_decode(source.read_bytes(), index=1)
         except Exception as error:
@@ -413,7 +420,8 @@ def profile_iso_gainmap(path, repeats):
             "repeats": repeats, "timing_noise_percent": 5, "info": gain._without_raw(info),
             "iso_metadata": fields, "imagecodecs_version": imagecodecs.avif_version(),
             "binding_signature": str(inspect.signature(imagecodecs.avif_decode)),
-            "index_1_probe": index_probe, "library_rejection": rejection, "runs": rows,
+            "index_1_probe": index_probe, "library_rejection": rejection,
+            "library_reconstructed_renditions": reconstructed_renditions, "runs": rows,
             "medians_ms": {mode: statistics.median(row["total_ms"] for row in rows if row["mode"] == mode)
                            for mode in ("cpu", "extract_png")},
             "qualified_gpu_interface": False,

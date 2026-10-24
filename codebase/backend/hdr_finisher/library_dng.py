@@ -59,7 +59,7 @@ def geometry(metadata, width, height):
     return output.shape[1],output.shape[0],list(map(int,ax)),list(map(int,ay))
 
 
-def decoded(path, inputs, progress=None, cancelled=None, edge=640):
+def decoded(path, inputs, progress=None, cancelled=None, edge=640, max_storage_bytes=None):
     from .linear_dng import inspect_dng
     from .import_defaults import RAW_CALIBRATION_EV
     path=Path(path).resolve(strict=True);identity=_identity(path);start=perf_counter()
@@ -67,7 +67,7 @@ def decoded(path, inputs, progress=None, cancelled=None, edge=640):
     from .linear_dng import DngRoute
     if inspection.route is DngRoute.LINEAR_DNG:
         from .library_dng_linear import decoded as linear
-        return linear(path, inputs, inspection, progress, cancelled, edge)
+        return linear(path, inputs, inspection, progress, cancelled, edge, max_storage_bytes=max_storage_bytes)
     plan(inspection)
     settings=RawImportSettings.model_validate(inputs["raw_import_settings"])
     raw_inspection=raw_import._inspect_raw(path,dng_inspection=inspection,progress=progress,cancelled=cancelled)

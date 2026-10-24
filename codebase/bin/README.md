@@ -3,7 +3,7 @@
 HDR Finisher resolves executables from this directory first, then from a packaged runtime
 `bin/` directory, and finally from `PATH`.
 
-Native encoder executables are intentionally not checked into source. Build the pinned Windows `ultrahdr_app.exe` with:
+Build the pinned Windows `ultrahdr_app.exe` with:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_libultrahdr_windows.ps1
@@ -33,3 +33,8 @@ The Linux build uses static codec dependencies where possible, runs the upstream
 rejects missing or unexpected build-host ELF dependencies, exercises each command-line tool,
 and installs the required notices into `bin/licenses/`. Run it on Ubuntu 22.04 when producing
 release binaries so the packaged tools retain the project's conservative glibc baseline.
+
+The Windows `hdrf-avif-decode.exe` and matching `avif.dll` provide the raw
+AVIF gain-map rendition transport. Build instructions and the pinned libavif
+configuration are in [tools/avif-rendition-decode](../tools/avif-rendition-decode/README.md).
+Other platforms retain the ordinary rendition decoder until this helper is built.

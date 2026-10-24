@@ -27,7 +27,7 @@ datas = [
 
 # Native tools are built per target. Keep licenses and documentation on every
 # platform, while including only the executable form for the current OS.
-native_tool_names = {"avifenc", "avifdec", "avifgainmaputil", "ultrahdr_app"}
+native_tool_names = {"avifenc", "avifdec", "avifgainmaputil", "hdrf-avif-decode", "ultrahdr_app"}
 datas += [
     (str(source), str(source.parent))
     for source in Path("bin").rglob("*")

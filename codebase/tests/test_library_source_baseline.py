@@ -67,4 +67,5 @@ def test_iso_interface_probe_preserves_real_source_and_does_not_claim_gpu(monkey
     assert cpu["decoder_reference_white_nits"] == 203
     assert extracted["shape"] == cpu["shape"]
     assert extracted["dtype"] == "uint16"
-    assert result["library_rejection"]
+    assert result["library_rejection"] is None
+    assert result["library_reconstructed_renditions"] is True

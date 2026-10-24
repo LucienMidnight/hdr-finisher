@@ -341,6 +341,19 @@ Grade variant and geometry probes cover its correction. Ignored evidence:
   can mislead.
 - The DNG information note still says "experimental".
 
+**AVIF preparation (October 24, 2026).** Built: the bundled libavif helper
+returns reconstructed PQ samples directly instead of compressing an intermediate
+PNG. The ordinary rendition decoder remains the fallback for unsupported
+layouts. CPU import preserves the existing samples; Library converts PQ and
+the SDR reference on the GPU. Native/ordinary decoder sample agreement passes.
+
+**Highlight performance remains open (October 24, 2026).** Any reconstruction
+speedup must apply to both Grade and Library. Steve confirmed that the test
+machine still has faulty VRAM. Invalid full-size GPU results and expensive CPU
+retries cannot establish a software defect on this hardware. The faster prototype
+awaits validation on healthy GPU memory; the approximately one-second target
+has not been established.
+
 ## 6. Open work, in order
 
 1. **Finish validation of the zero RAW start:** obtain Steve's visual review

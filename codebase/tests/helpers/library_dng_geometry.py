@@ -71,4 +71,16 @@ meta.update(width=ow,height=oh,mosaic_bytes=large.nbytes,sample_stride=3,
  radius=float(np.hypot(.62*ww,.61*hh)),affine_x=ax,affine_y=ay))
 cases.append(dict(meta=meta,input=base64.b64encode(large.tobytes()).decode(),adaptive=True,
  expected_binary=[base64.b64encode(np.ascontiguousarray(expected[...,c],dtype="<f4").tobytes()).decode() for c in range(3)]))
+# Authored SDR references keep their transfer/float16 boundary on the GPU.
+from hdr_finisher.linear_dng import _decode_srgb_reference
+for floating in (False,True):
+ encoded=np.mod(np.arange(h*w*3).reshape(h,w,3)*37,256).astype(np.uint8)
+ reference=_decode_srgb_reference(encoded).astype(np.float32)
+ samples=encoded.astype('<f4')/255 if floating else encoded
+ meta=dict(original[0]['meta']);meta.pop('dng_warp');meta.update(width=w,height=h)
+ meta['sdr_reference']=dict(width=w,height=h,bytes=samples.nbytes,dtype='float32' if floating else 'uint8',
+  transfer='sRGB',rgb_to_acescg=np.eye(3).tolist(),direct_srgb=True,quantize_half=True)
+ cases.append(dict(meta=meta,input=base64.b64encode(image.tobytes()).decode(),
+  reference_samples=base64.b64encode(samples.tobytes()).decode(),
+  expected=[image[...,c].reshape(-1).tolist() for c in range(3)]+[reference[...,c].reshape(-1).tolist() for c in range(3)]))
 print(json.dumps(cases))

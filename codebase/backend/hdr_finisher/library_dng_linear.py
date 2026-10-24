@@ -6,13 +6,12 @@ from .library_gpu_raw import NotEligible, _identity
 from .models import SourceImageDescriptor
 
 
-def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640):
+def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640, max_storage_bytes=None):
     import tifffile
     from . import linear_dng as dng
     from .dng_color import normalize_camera_samples, build_color_transform, _build_clipped_highlight_support, _validated_response_limit
     from .color import _ACESCG_TO_LINEAR_SRGB, _ACESCG_TO_LINEAR_BT2020
     from .import_defaults import RAW_CALIBRATION_EV
-    from .library_pictures import reduce_picture
     from .library_dng import geometry
     # A declared operation-free subset. Other linear cases retain the correct
     # decoder; no required correction or rendered SDR rendition is skipped.
@@ -20,6 +19,10 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640):
         raise NotEligible("Linear DNG operations retain the existing CPU route")
     if edge == 100000 and inspection.metadata.get("sdr_preview_series_index") is not None:
         raise NotEligible("Native linear DNG with an embedded SDR rendition retains the CPU route")
+    # Reject an impossible native binding before decoding/normalizing gigabytes
+    # that the browser would discard and then decode again on the CPU.
+    if max_storage_bytes is not None and inspection.fingerprint.width * inspection.fingerprint.height * 12 > max_storage_bytes:
+        raise NotEligible("Linear DNG samples exceed this GPU's storage binding limit")
     path=Path(path);identity=_identity(path);started=perf_counter()
     report=lambda stage,text: progress(stage,text) if progress else None
     metadata=inspection.metadata;reference=None
@@ -31,7 +34,14 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640):
             report("dng_sdr_preview","Reading the embedded SDR picture")
             series=tif.series[int(preview_index)]
             preview=dng.crop_and_orient(dng._normalize_layout(series.asarray(),getattr(series,"axes",None)),metadata)
-            reference=dng._decode_srgb_reference(preview,cancelled=cancelled)
+            # Transfer decoding and linear reduction belong to the GPU. Preserve
+            # the ordinary loader's float16 reference boundary there.
+            if preview.dtype.kind not in {"u", "f"} or preview.ndim != 3 or preview.shape[2] < 3:
+                raise NotEligible("Unsupported embedded DNG SDR sample layout")
+            reference=np.ascontiguousarray(preview[..., :3])
+            if reference.dtype != np.uint8:
+                scale=float(np.iinfo(reference.dtype).max) if reference.dtype.kind == "u" else 1.0
+                reference=np.ascontiguousarray(reference,dtype="<f4")/np.float32(scale)
             del preview
         report("dng_decode","Reading linear DNG samples")
         source=tifffile.memmap(path,series=inspection.primary_series_index,mode="r") if page.is_memmappable else page.asarray()
@@ -55,21 +65,18 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640):
         mask,block=support;mask=np.ascontiguousarray(mask,dtype="<f4")
         linear["support"]=dict(offset=offset,bytes=mask.nbytes,width=mask.shape[1],height=mask.shape[0],block=block)
         parts.append(memoryview(mask).cast("B"));offset+=mask.nbytes
-    references={};reference_peak=0.0
+    reference_header=None
     if reference is not None:
-        report("dng_sdr_reduce","Preparing the embedded SDR picture")
-        reference_peak=float(np.max(reference))
-        for size in sorted({640,2560,edge},reverse=True):
-            dng._raise_if_cancelled(cancelled)
-            reduced=np.ascontiguousarray(reduce_picture(reference,size).transpose(2,0,1),dtype="<f4")
-            references[str(size)]=dict(offset=offset,bytes=reduced.nbytes,width=reduced.shape[2],height=reduced.shape[1])
-            parts.append(memoryview(reduced).cast("B"));offset+=reduced.nbytes
-        del reference
+        dng._raise_if_cancelled(cancelled)
+        reference_header=dict(offset=offset,bytes=reference.nbytes,width=outw,height=outh,
+            dtype=str(reference.dtype),transfer="sRGB",rgb_to_acescg=np.eye(3).tolist(),
+            direct_srgb=True,quantize_half=True)
+        parts.append(memoryview(reference).cast("B"))
     facts=dict(bit_depth=inspection.dtype,color_space="ACEScg",source_color_space_label="Camera native (embedded DNG profile)",
         transfer_function="LINEAR",decoder_normalized_to_acescg=True,dng_input=True,raw_input=True,raw_mosaiced=False,
         experimental_dng_import=True,experimental_dng_label="Experimental DNG Import",dng_route=inspection.route.value,
         dng_color_path=transform.color_path,dng_highlight_color_recovery="spatial_camera_neutral_reconstruction_near_linear_response_limit",
-        dng_sdr_rendition="embedded_full_resolution" if references else "generated",dng_operations="none",
+        dng_sdr_rendition="embedded_full_resolution" if reference_header else "generated",dng_operations="none",
         dng_warnings=" | ".join(inspection.warnings) or "none",
         dng_diagnostics=dict(route=inspection.route.value,producer=metadata.get("producer"),make=metadata.get("make"),model=metadata.get("model"),
             dng_version=metadata.get("dng_version"),source_dimensions=[w,h],compression=inspection.compression,source_dtype=inspection.dtype,
@@ -86,8 +93,8 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640):
     return dict(rgb=True,adapter_version="library-dng-linear-v1",path=str(path),identity=identity,width=outw,height=outh,flip=0,
         mosaic_bytes=image.nbytes,sample_stride=max(1,int(np.ceil(np.sqrt(outw*outh/2_000_000)))),
         layout=dict(dtype="float32",order="HWC",channels=["R","G","B"],ownership="request-owned"),
-        orientation=dict(original=int(metadata["orientation"]),applied=True),dng_linear=linear,dng_references=references,
-        dng_reference_peak=reference_peak,raw_import_settings=inputs["raw_import_settings"],
+        orientation=dict(original=int(metadata["orientation"]),applied=True),dng_linear=linear,sdr_reference=reference_header,
+        raw_import_settings=inputs["raw_import_settings"],
         colour=dict(primaries="camera",transfer="LINEAR",reference_white_nits=inputs["hdr_reference_white_nits"],authored_sdr=False,
             scale=2.0**RAW_CALIBRATION_EV,decoder_metadata=facts,descriptor=descriptor.model_dump(mode="json")),
         rgb_to_acescg=(transform.camera_to_acescg.astype(np.float32)*np.float32(2**colour.baseline_exposure)).tolist(),

@@ -76,7 +76,7 @@ def test_linear_bridge_preserves_samples_and_defers_colour(monkeypatch,tmp_path)
     np.testing.assert_allclose(np.frombuffer(parts[0],dtype="<f4").reshape(image.shape),image.astype(np.float32)/65535,rtol=1e-6)
     assert header["dng_linear"]["width"]==32
     assert header["dng_linear"]["support"]["bytes"]>0
-    assert header["dng_references"]=={}
+    assert header["sdr_reference"] is None
     assert header["colour"]["decoder_metadata"]["raw_input"]
 
 
@@ -109,10 +109,13 @@ def test_linear_embedded_reference_survives_publication(tmp_path):
         tif.write(np.full((24,32,3),128,np.uint8),photometric="rgb",subfiletype=1,metadata={"axes":"YXS"})
     expected=SessionStore().prepare_session(path,owns_source_path=False)
     header,parts=decoded(path,recipe(None))
-    assert set(header["dng_references"])=={"640","2560"}
-    data=b"".join(bytes(p) for p in parts);ref=header["dng_references"]["640"]
-    reference=np.frombuffer(data,dtype="<f4",offset=ref["offset"],count=ref["bytes"]//4).reshape(3,24,32).transpose(1,2,0)
-    np.testing.assert_array_equal(reference,expected.sdr_reference_image)
+    data=b"".join(bytes(p) for p in parts);ref=header["sdr_reference"]
+    encoded=np.frombuffer(data,dtype=np.uint8,offset=ref["offset"],count=ref["bytes"]).reshape(24,32,3)
+    np.testing.assert_array_equal(encoded,np.full((24,32,3),128,np.uint8))
+    assert ref["quantize_half"] and ref["direct_srgb"]
+    # Publication still owns a linear reference; the GPU check covers the
+    # encoded-to-linear transition and the real finished image agreement.
+    reference=expected.sdr_reference_image
     a=expected.analysis
     header.update(has_sdr_reference=True,height=24,width=32,source_height=24,source_width=32,edge=640,source_quality=quality(None),memory_peak_bytes=1,
         peaks=dict(peak=a.peak_linear,peak_luma=a.peak_luma_linear,peak_bt2020=a.peak_bt2020_linear,sdr=float(np.max(reference))),
@@ -122,3 +125,17 @@ def test_linear_embedded_reference_survives_publication(tmp_path):
     result=library_rgb.developed(cache,path,header,planes.tobytes())
     assert result["has_reference"]
     assert cache.default_document(path)==expected.edit_document().model_dump(mode="json")
+
+
+def test_oversized_linear_source_is_rejected_before_reading_pixels(monkeypatch,tmp_path):
+    from hdr_finisher.library_dng_linear import decoded as linear
+    from hdr_finisher.library_live import recipe
+    from test_linear_dng import _write_linear
+    path=tmp_path/"large.dng"
+    _write_linear(path,np.full((24,32,3),32768,np.uint16))
+    from hdr_finisher.linear_dng import inspect_dng
+    source=inspect_dng(path)
+    import tifffile
+    monkeypatch.setattr(tifffile,"TiffFile",lambda *a,**k:pytest.fail("Decoded an impossible GPU source"))
+    with pytest.raises(NotEligible,match="storage binding limit"):
+        linear(path,recipe(None),source,max_storage_bytes=24*32*12-1)

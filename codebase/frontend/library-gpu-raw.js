@@ -457,7 +457,14 @@
 
   // One device and one set of pipelines for the Library window; developments
   // run one at a time so a scrolled grid never holds several sources at once.
-  let shared = null, queue = Promise.resolve();
+  let shared = null, queue = Promise.resolve(), storageLimit = 0;
+  async function sourceStorageLimit() {
+    if(!storageLimit){
+      const adapter=await navigator.gpu?.requestAdapter({powerPreference:"high-performance"});
+      storageLimit=adapter?.limits.maxStorageBufferBindingSize || 0;
+    }
+    return storageLimit || null;
+  }
   async function gpu(beforeNext = async () => {}) {
     if (shared) return shared;
     shared = (async () => {
@@ -773,10 +780,12 @@
     const begun = performance.now();
     const sourceJob=liveScene ? crypto.randomUUID().replaceAll("-", "") : null;
     try {
+    // Inspect only the adapter limit; do not wait for pipeline compilation.
+    const sourceLimit=liveScene ? await sourceStorageLimit() : null;
     let response;
     for (;;) {
       response = await fetch(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", signal,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, gpu:true,source_job:sourceJob,priority:importance()} : { path, edge, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
       if (response.status !== 202) break;
       root.HDRLibraryScenes?.stage(path,"Waiting for source reading",true);
       await wait(150, signal);
@@ -796,21 +805,15 @@
     if(meta.dng_linear?.support){
       const mask=meta.dng_linear.support;meta.dng_support=new Float32Array(body,4+length+mask.offset,mask.bytes/4);
     }
-    if(meta.dng_references){
-      for(const ref of Object.values(meta.dng_references)){
-        const bytes=ref.width*ref.height*4;
-        ref.planes=Array.from({length:3},(_,c)=>body.slice(4+length+ref.offset+c*bytes,4+length+ref.offset+(c+1)*bytes));
-      }
+    if(meta.sdr_reference){
+      const ref=meta.sdr_reference;
+      ref.samples=new Uint8Array(body,4+length+ref.offset,ref.bytes);
     }
     const lensData = meta.lens_grid ? new Float32Array(body, 4 + length + meta.lens_offset, meta.lens_grid.floats) : null;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
     root.HDRLibraryScenes?.stage(path,"Waiting for GPU preparation",true);
     const developed = await scheduledDevelopment({mosaic, meta, lensData, background:liveScene, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
-    if(Object.keys(meta.dng_references||{}).length){
-      developed.peaks.sdr=meta.dng_reference_peak;
-      for(const [edge,ref] of Object.entries(meta.dng_references))developed.reduced[edge].planes.push(...ref.planes);
-    }
     const gpuMs = performance.now() - started;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const measured = performance.now();
@@ -820,7 +823,7 @@
     let selectedResult;
     for (const storedEdge of nativeMode ? [100000] : [...new Set([2560,640,edge])]) {
       const picture = developed.reduced[storedEdge];
-      const header = { rgb:meta.rgb, has_sdr_reference:!!Object.keys(meta.dng_references||{}).length, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
+      const header = { rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
       edge:storedEdge, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),

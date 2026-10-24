@@ -68,12 +68,13 @@ def decoded_precision(path, inputs):
     start = perf_counter()
     suffix = path.suffix.lower()
     facts = {}
+    reference = None
     if suffix == ".jxl":
         pixels, metadata = loader.decode_jpegxl(path, encoded_samples=True)
         facts.update(orientation=None, effective_bits=int(metadata["bit_depth"]), sample_type=metadata["sample_type"], jpegxl_info=metadata["jpegxl_info"])
     elif suffix == ".avif":
         try:
-            pixels, _, metadata = loader.decode_avif(path, encoded_samples=True)
+            pixels, reference, metadata = loader.decode_avif(path, encoded_samples=True)
         except loader.GainMapDecodeError as error:
             raise NotEligible(str(error)) from error
         facts.update(effective_bits=int(metadata["bit_depth"]), intermediate_bits=16, orientation=metadata["orientation"])
@@ -116,6 +117,8 @@ def decoded_precision(path, inputs):
     decode_ms = (perf_counter() - start) * 1000
     original_interpretation = {key:metadata.get(key) for key in ("color_space","transfer_function","needs_color_override")}
     override = {k: v for k, v in inputs["interpretation_override"].items() if v is not None}
+    if reference is not None and override:
+        raise NotEligible("Gain-map AVIF interpretation overrides retain the CPU loader")
     decoder_normalized = bool(metadata.get("decoder_normalized_to_acescg"))
     sample_space = metadata.get("sample_color_space")
     sample_transfer = metadata.get("sample_transfer_function")
@@ -168,7 +171,7 @@ def decoded_precision(path, inputs):
         transfer_function=metadata["transfer_function"], linear_reference=linear_reference,
         interpretation_mode="manual" if override else "auto", color_space_confident=True)
     if _identity(path) != identity: raise ValueError("Photo changed during RGB decode.")
-    return {"rgb": True, "adapter_version": VERSION, "path": str(path), "identity": identity,
+    header = {"rgb": True, "adapter_version": VERSION, "path": str(path), "identity": identity,
         "width": w, "height": h, "flip": 0, "mosaic_bytes": pixels.nbytes,
         "sample_stride": max(1,int(np.ceil(np.sqrt(w*h/2_000_000)))),
         "layout": {"order":"HWC", "channels":metadata.get("selected_rgb_channels",["R","G","B"]),
@@ -188,7 +191,19 @@ def decoded_precision(path, inputs):
         "rgb_to_acescg":matrix.tolist(), "acescg_to_srgb":_ACESCG_TO_LINEAR_SRGB.T.tolist(),
         "acescg_to_bt2020":_ACESCG_TO_LINEAR_BT2020.T.tolist(), "decode_ms":decode_ms,
         "decoder_version":loader.SOURCE_DECODER_VERSION, "colour_version":loader.SOURCE_COLOR_TRANSFORM_VERSION,
-    }, [memoryview(pixels).cast("B")]
+    }
+    parts = [memoryview(pixels).cast("B")]
+    if reference is not None:
+        reference = np.ascontiguousarray(reference, dtype="<f4")
+        if reference.shape != pixels.shape:
+            raise NotEligible("Gain-map AVIF renditions disagree on dimensions")
+        reference_matrix = color.normalize_to_acescg(np.eye(3,dtype=np.float32),
+            metadata["sdr_sample_color_space"], "LINEAR").T
+        header["sdr_reference"] = dict(offset=pixels.nbytes, bytes=reference.nbytes,
+            width=w,height=h,dtype="float32",transfer=metadata["sdr_sample_transfer_function"],
+            rgb_to_acescg=reference_matrix.tolist())
+        parts.append(memoryview(reference).cast("B"))
+    return header, parts
 
 
 def developed(cache, path, header, payload):

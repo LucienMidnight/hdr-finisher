@@ -342,3 +342,18 @@ def test_apple_gainmap_aux_selection_ignores_other_auxiliary_images() -> None:
     assert _select_apple_gainmap_aux_type(aux) == "urn:com:apple:photo:2020:aux:hdrgainmap"
     assert _select_apple_gainmap_aux_type({"urn:com:apple:photo:2018:aux:depth": [10]}) is None
     assert _select_apple_gainmap_aux_type({}) is None
+
+
+def test_native_avif_transport_preserves_reconstructed_samples_and_cpu_fallback(monkeypatch):
+    from hdr_finisher import gainmap_decoders as gain
+    source=Path(__file__).resolve().parents[1]/"samples/hdr_reference.avif"
+    resolve=gain.resolve_binary
+    if resolve("hdrf-avif-decode") is None:
+        import pytest
+        pytest.skip("Native AVIF handoff is not built on this platform")
+    hdr, sdr, metadata=gain.decode_avif(source,encoded_samples=True)
+    monkeypatch.setattr(gain,"resolve_binary",lambda name: None if name=="hdrf-avif-decode" else resolve(name))
+    fallback_hdr, fallback_sdr, fallback_metadata=gain.decode_avif(source,encoded_samples=True)
+    np.testing.assert_array_equal(hdr,fallback_hdr)
+    np.testing.assert_array_equal(sdr,fallback_sdr)
+    assert metadata["gain_map_applied"] and fallback_metadata["gain_map_applied"]

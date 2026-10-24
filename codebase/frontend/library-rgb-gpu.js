@@ -170,12 +170,36 @@ window.HDRLibraryRGB = (() => {
     atomicMax(&peaks[3],bitcast<u32>(max(rendition.x,max(rendition.y,rendition.z))));
   }`;
 
-  async function developRGB({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity }) {
+  // Reference preparation runs after scene buffers are released, inside the
+  // same reservation and cancellation gate. Never hold two native GPU frames.
+  const REFERENCE=RGB_SDR.replace(
+    "let rendition=max(vec3<f32>(dot(p.x0.xyz,aces),dot(p.x1.xyz,aces),dot(p.x2.xyz,aces)),vec3<f32>(0.0));",
+    `var rendition=clamp(select(vec3<f32>(dot(p.x0.xyz,aces),dot(p.x1.xyz,aces),dot(p.x2.xyz,aces)),lin,p.dims2.x>0u),vec3<f32>(0.0),vec3<f32>(1.0));
+    if(p.dims2.x==2u){
+      let bits=bitcast<vec3<u32>>(rendition);
+      let rounded=bitcast<vec3<f32>>((bits+vec3<u32>(4095u)+((bits>>vec3<u32>(13u))&vec3<u32>(1u)))&vec3<u32>(4294959104u));
+      rendition=select(floor(rendition*16777216.0+0.5)/16777216.0,rounded,rendition>=vec3<f32>(0.00006103515625));
+    }`);
+  async function developRGB(options) {
+    const result=await developFrame(options),ref=options.meta.sdr_reference;
+    if(!ref)return result;
+    const meta={...options.meta,width:ref.width,height:ref.height,mosaic_bytes:ref.bytes,
+      layout:{dtype:ref.dtype},colour:{...options.meta.colour,transfer:ref.transfer,authored_sdr:false},
+      rgb_to_acescg:ref.rgb_to_acescg,dng_linear:null,dng_warp:null,sdr_reference:null,
+      reference_only:true,direct_srgb:ref.direct_srgb,quantize_half:ref.quantize_half};
+    const reference=await developFrame({...options,meta,mosaic:ref.samples});
+    for(const [edge,picture] of Object.entries(reference.reduced))result.reduced[edge].planes.push(...picture.planes);
+    result.peaks.sdr=reference.peaks.sdr;
+    result.memory_peak_bytes=Math.max(result.memory_peak_bytes,reference.memory_peak_bytes);
+    for(const [stage,ms] of Object.entries(reference.timings))result.timings['reference_'+stage]=ms;
+    return result;
+  }
+  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity }) {
     const shared = await gpu(), {device,errors} = shared;
     let pipelines=compiled.get(device);
     if(!pipelines){
       pipelines={REDUCE:shared.pipelines.REDUCE};
-      for(const [name,code] of Object.entries({RGB,RGB_SDR,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GRADE,DNG_TILE_GAIN,DNG_LINEAR}))
+      for(const [name,code] of Object.entries({RGB,RGB_SDR,REFERENCE,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GRADE,DNG_TILE_GAIN,DNG_LINEAR}))
         pipelines[name]=await device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}});
       compiled.set(device,pipelines);
     }
@@ -201,7 +225,7 @@ window.HDRLibraryRGB = (() => {
       const u32 = new Uint32Array(params), f32 = new Float32Array(params);
       const setU = (slot, values) => values.forEach((v, k) => { u32[slot * 4 + k] = v; });
       const setF = (slot, values) => values.forEach((v, k) => { f32[slot * 4 + k] = v; });
-      setU(0, [w, h, 0, st]); setU(1, [0, meta.layout?.dtype === "float32" ? 1 : 0, meta.colour.transfer === "LINEAR" || meta.colour.transfer === "ACEScg" ? 1 : meta.colour.transfer === "BT.709" ? 2 : meta.colour.transfer === "PQ" ? 3 : meta.colour.transfer === "HLG" ? 4 : meta.colour.transfer === "BT.2020" ? 5 : 0, sw]);
+      setU(0, [w, h, 0, st]); setU(1, [meta.quantize_half ? 2 : meta.direct_srgb ? 1 : 0, meta.layout?.dtype === "float32" ? 1 : 0, meta.colour.transfer === "LINEAR" || meta.colour.transfer === "ACEScg" ? 1 : meta.colour.transfer === "BT.709" ? 2 : meta.colour.transfer === "PQ" ? 3 : meta.colour.transfer === "HLG" ? 4 : meta.colour.transfer === "BT.2020" ? 5 : 0, sw]);
       meta.rgb_to_acescg.forEach((row, k) => setF(10 + k, row));
       meta.acescg_to_srgb.forEach((row, k) => setF(13 + k, row));
       meta.acescg_to_bt2020.forEach((row, k) => setF(16 + k, row));
@@ -270,7 +294,8 @@ window.HDRLibraryRGB = (() => {
       planes = Array.from({length:meta.colour.authored_sdr ? 6 : 3},()=>make(n*4));
       peaks = make(16); samples = make(sw*sh*3*4);
       window.HDRLibraryScenes?.stage(meta.path,meta.dng_warp?"Correcting DNG distortion on GPU":meta.dng_linear?"Reconstructing highlights and converting DNG colour on GPU":"Converting colour and measuring source");
-      await run(meta.dng_warp?"DNG_RGB":meta.dng_linear?"DNG_LINEAR":"RGB", [uniform,mosaicBuf,dngUniform,extra,...planes.slice(0,3),peaks,samples],wgX,wgY);
+      if(meta.reference_only)await run("REFERENCE",[uniform,mosaicBuf,null,null,...planes,peaks],wgX,wgY);
+      else await run(meta.dng_warp?"DNG_RGB":meta.dng_linear?"DNG_LINEAR":"RGB", [uniform,mosaicBuf,dngUniform,extra,...planes.slice(0,3),peaks,samples],wgX,wgY);
       if(meta.colour.authored_sdr) await run("RGB_SDR",[uniform,mosaicBuf,null,null,...planes.slice(3),peaks],wgX,wgY);
       await device.queue.onSubmittedWorkDone(); release(mosaicBuf);
       await stage(meta.dng_warp?"warp_colour_measure":"colour_measure");

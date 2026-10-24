@@ -273,7 +273,7 @@ def test_plain_avif_rejects_gainmap_before_primary_decode(tmp_path,monkeypatch):
     monkeypatch.setattr(gain,'inspect_avif',lambda path:{'gain_map_present':True})
     def forbidden(*a,**k):pytest.fail('gain-map primary decoded as a final scene')
     monkeypatch.setattr(gain,'_decode_avif_pixels',forbidden)
-    with pytest.raises(library_rgb.NotEligible,match='Gain-map AVIF'):library_rgb.decoded(path,recipe(None))
+    with pytest.raises(library_rgb.NotEligible,match='missing base or alternate HDR headroom'):library_rgb.decoded(path,recipe(None))
 
 
 def test_plain_heif_selects_primary_and_rejects_auxiliary(tmp_path,monkeypatch):
@@ -325,15 +325,22 @@ def test_codec_publication_preserves_grade_start_document(tmp_path,suffix,transf
     assert cache.default_document(path)==expected.edit_document().model_dump(mode='json')
 
 
-def test_real_gainmap_files_keep_existing_route():
+def test_real_gainmap_avif_preserves_reconstructed_and_encoded_reference_samples():
     from pathlib import Path
     root=Path(__file__).resolve().parents[1]
-    for path in [root/'samples/hdr_reference.avif',root/'local-test-media/inputs/iphone-12-pro-HDR.heic']:
-        if not path.exists():continue
-        before=hashlib.sha256(path.read_bytes()).hexdigest()
+    path=root/'samples/hdr_reference.avif'
+    before=hashlib.sha256(path.read_bytes()).hexdigest()
+    header,parts=library_rgb.decoded(path,recipe(None))
+    assert header['colour']['decoder_metadata']['gain_map_applied']
+    assert header['colour']['transfer']=='PQ'
+    reference=header['sdr_reference']
+    assert reference['bytes']==header['mosaic_bytes']
+    assert sum(len(p) for p in parts)==header['mosaic_bytes']+reference['bytes']
+    assert hashlib.sha256(path.read_bytes()).hexdigest()==before
+    heif=root/'local-test-media/inputs/iphone-12-pro-HDR.heic'
+    if heif.exists():
         with pytest.raises(library_rgb.NotEligible,match='reconstruction route'):
-            library_rgb.decoded(path,recipe(None))
-        assert hashlib.sha256(path.read_bytes()).hexdigest()==before
+            library_rgb.decoded(heif,recipe(None))
 
 
 def test_backend_preparation_reports_file_until_cancelled_execution_returns():

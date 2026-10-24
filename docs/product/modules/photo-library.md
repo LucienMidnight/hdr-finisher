@@ -27,6 +27,27 @@ delivery-proof ACEScg-linear EXR patterns under the writable HDR Finisher data f
 disabling it removes the Library pin and keeps the files on disk. The option
 defaults off and does not change any existing user pins.
 
+**Cold-start performance work (October 24, 2026).** Prioritize multi-second
+source preparation before sub-second CPU/GPU differences. Measure matched
+inputs with a 10% timing tolerance for shared-machine noise; preserve existing
+finished-pixel tolerances and GPU memory reservations. Built: linear-DNG
+embedded SDR transfer/reduction and gain-map AVIF working-colour preparation
+run on the GPU. Oversized DNG sources reject the GPU bridge before reading
+pixels, avoiding duplicate preparation. AVIF uses a native raw-pixel handoff
+instead of an intermediate compressed PNG, with the ordinary decoder as fallback.
+Library measurements suggest DxO optical-correction DNG 13.6 to 5.4 seconds
+and HDR Finisher exported AVIF 11.5 to 7.8 seconds. Geometry/reference probes and
+finished-picture comparisons passed their existing tolerances, but these GPU
+results remain provisional: Steve confirmed the machine still has faulty VRAM
+(October 24). Revalidate GPU correctness and timing on healthy hardware.
+
+Open: AVIF still spends about 5.6 seconds in CPU decoding/gain-map reconstruction.
+A repaired RAW cold load took 57 seconds after invalid GPU highlight pixels
+triggered CPU reconstruction. Known faulty VRAM prevents attributing that failure
+to software. Shared highlight improvements must cover Grade and Library, with
+about one second as the target; prototype validation awaits healthy GPU memory.
+CPU remains the correct fallback on GPU failure/unavailability.
+
 ## 1. Purpose
 
 **Remembered picture errors (October 23, 2026).** Failed photo developments

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import json
 import mmap
 from pathlib import Path
 import re
@@ -213,10 +214,8 @@ def decode_avif(
 
     inspect_ms = (perf_counter() - inspect_started) * 1000.0
     if info.get("gain_map_present"):
-        if encoded_samples:
-            raise GainMapDecodeError("Gain-map AVIF retains its existing reconstruction route.")
         image, sdr, metadata = _decode_avif_gain_map(
-            path, info, progress=progress, cancelled=cancelled
+            path, info, progress=progress, cancelled=cancelled, encoded_samples=encoded_samples
         )
         metadata.setdefault("decode_timings_ms", {})["inspect"] = round(inspect_ms, 3)
         return image, sdr, metadata
@@ -292,6 +291,7 @@ def _decode_avif_gain_map(
     *,
     progress: Callable[[str, str], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    encoded_samples: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     utility = resolve_binary("avifgainmaputil")
     avifdec = resolve_binary("avifdec")
@@ -316,25 +316,40 @@ def _decode_avif_gain_map(
         if progress:
             progress("hdr_reconstruction", "Reconstructing full-resolution HDR gain map")
         phase_started = perf_counter()
-        _run(
-            [
-                str(utility),
-                "tonemap",
-                str(path),
-                str(hdr_png),
-                "--headroom",
-                _format_float(hdr_headroom),
-                "--cicp-output",
-                "9/16/9",
-                "-d",
-                "10",
-            ],
-            cancelled=cancelled,
-        )
-        # avifgainmaputil can write the reconstructed 16-bit PNG directly.
-        # Avoiding an intermediate AVIF encode and subsequent decode is both
-        # lossless and materially faster for full-resolution camera images.
-        encoded_hdr = _decode_png_pixels(hdr_png)
+        # The native handoff preserves the same libavif gain-map math and
+        # 10-bit YUV/16-bit RGB boundary, avoiding a compressed PNG round trip.
+        encoded_hdr = None
+        native = resolve_binary("hdrf-avif-decode")
+        if native is not None:
+            raw_path = temp_dir / "hdr.rgb16"
+            try:
+                decoded = _run([str(native), str(path), str(raw_path), _format_float(hdr_headroom)], cancelled=cancelled)
+                dimensions = json.loads(decoded.stdout)
+                width, height = int(dimensions["width"]), int(dimensions["height"])
+                if width <= 0 or height <= 0 or raw_path.stat().st_size != width * height * 6:
+                    raise ValueError("Incomplete native AVIF rendition")
+                encoded_hdr = np.fromfile(raw_path, dtype="<u2").reshape(height, width, 3).astype(np.float32)
+                encoded_hdr *= np.float32(1.0) / np.float32(65535)
+            except (GainMapDecodeError, OSError, ValueError, KeyError):
+                if cancelled is not None and cancelled():
+                    raise GainMapDecodeError("Import cancelled")
+        if encoded_hdr is None:
+            _run(
+                [
+                    str(utility),
+                    "tonemap",
+                    str(path),
+                    str(hdr_png),
+                    "--headroom",
+                    _format_float(hdr_headroom),
+                    "--cicp-output",
+                    "9/16/9",
+                    "-d",
+                    "10",
+                ],
+                cancelled=cancelled,
+            )
+            encoded_hdr = _decode_png_pixels(hdr_png)
         timings["hdr_reconstruction"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
         if progress:
@@ -382,12 +397,12 @@ def _decode_avif_gain_map(
     if progress:
         progress("color_conversion", "Converting AVIF renditions to the working space")
     phase_started = perf_counter()
-    hdr = _normalize_to_acescg_in_strips(
+    hdr = encoded_hdr if encoded_samples else _normalize_to_acescg_in_strips(
         encoded_hdr, "BT.2020", "PQ", cancelled=cancelled
     )
     if sdr_transfer is None:
         raise GainMapDecodeError("The AVIF SDR rendition has no supported transfer characteristic.")
-    linear_sdr = _normalize_sdr_reference_in_strips(
+    linear_sdr = encoded_sdr if encoded_samples else _normalize_sdr_reference_in_strips(
         encoded_sdr, sdr_color, sdr_transfer, cancelled=cancelled
     )
     timings["color_conversion"] = round((perf_counter() - phase_started) * 1000.0, 3)
@@ -416,7 +431,10 @@ def _decode_avif_gain_map(
         "decode_timings_ms": timings,
         "decoder_normalized_to_acescg": True,
     }
-    return hdr.astype(np.float32), linear_sdr.astype(np.float32), metadata
+    if encoded_samples:
+        metadata.update(sample_color_space="BT.2020", sample_transfer_function="PQ",
+            sdr_sample_color_space=sdr_color, sdr_sample_transfer_function=sdr_transfer)
+    return hdr.astype(np.float32, copy=False), linear_sdr.astype(np.float32, copy=False), metadata
 
 
 def _decode_avif_pixels(

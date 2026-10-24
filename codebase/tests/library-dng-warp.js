@@ -30,13 +30,14 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
   for(const probe of probes){
    if(probe.expected_binary)probe.expected=probe.expected_binary.map(value=>new Float32Array(Uint8Array.from(w.atob(value),c=>c.charCodeAt(0)).buffer));
    const data=Uint8Array.from(w.atob(probe.input),c=>c.charCodeAt(0));if(probe.meta.dng_support)probe.meta.dng_support=new Float32Array(probe.meta.dng_support);
+   if(probe.reference_samples)probe.meta.sdr_reference.samples=Uint8Array.from(w.atob(probe.reference_samples),c=>c.charCodeAt(0));
    const result=await w.HDRLibraryRGB.develop({mosaic:data,meta:probe.meta,edges:[100000]});
    if(probe.adaptive&&result.dng_tiles<=3)throw Error('Synthetic fixture did not exercise adaptive splits');
-   for(let c=0;c<3;c++){const actual=new Float32Array(result.reduced[100000].planes[c]);
+   for(let c=0;c<probe.expected.length;c++){const actual=new Float32Array(result.reduced[100000].planes[c]);
     for(let i=0;i<actual.length;i++)worst=Math.max(worst,Math.abs(actual[i]-probe.expected[c][i]));}
    const st=probe.meta.sample_stride,sw=Math.ceil(probe.meta.width/st);
    for(let y=0;y<probe.meta.height;y+=st)for(let x=0;x<probe.meta.width;x+=st){
-    const i=y*probe.meta.width+x,v=probe.expected.map(p=>p[i]);
+    const i=y*probe.meta.width+x,v=probe.expected.slice(0,3).map(p=>p[i]);
     const luma=v[0]*.2722287+v[1]*.6740818+v[2]*.0536895;
     const bt=probe.meta.acescg_to_bt2020.map(row=>row.reduce((s,k,c)=>s+k*v[c],0));
     const wanted=[Math.max(0,luma),Math.max(0,...v),Math.max(0,...bt)];
