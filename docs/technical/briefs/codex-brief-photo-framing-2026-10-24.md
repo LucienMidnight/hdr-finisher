@@ -38,6 +38,17 @@ Proof must inspect the actual chosen output.
 - Offer both percentage (%) and pixel (px) thickness units for each layer
   (Steve confirmed October 24). Switching units should convert the displayed
   value without changing the current visible width, apart from pixel rounding.
+- Thickness reference and scaling (Steve approved October 24, initially to try):
+  both layers use the cropped photo as their reference. Percentage is measured
+  against its shorter side; px means cropped source pixels. Both scale with
+  the photo at export, preserving proportions across output sizes. Switching
+  units preserves visible width, apart from pixel rounding. Make the source-pixel
+  meaning explicit in Grade and Export. This rule can be revised after use.
+- Storage (Steve approved October 24): save one framing record per photo in
+  the edit document, shared by HDR and SDR, with project/sidecar persistence
+  and undo/redo. Each preset output version independently stores whether to
+  include that photo's frame; it does not copy the colors or widths. Changing
+  the photo's frame affects every output version that includes it.
 - Layer order is photo → Frame → Border (explicit reply, October 24).
 - Rename existing Frame to Background; the new Frame control lives in Grade.
 - Framing is attached to the photo and follows pan/zoom.
@@ -54,24 +65,10 @@ Proof must inspect the actual chosen output.
 These are proposals, not approved requirements. Settle them one at a time with
 Steve; do not silently adopt BorderMuse's controls as product decisions.
 
-1. **Thickness reference and scaling:** both % and px are required, not
-   alternatives. Suggest percentage of the cropped photo's shorter side, with
-   the same reference for both layers. Define whether pixel values refer to
-   the cropped source or final export before implementation; the chosen rule
-   must be explicit in Grade and Export, including conversion when output size
-   changes. Switching units alone should preserve width; choosing a different
-   export size may change it according to the approved scaling rule. Allow
-   zero to omit a layer. BorderMuse's 0–50 scale expands a target canvas; it is
-   not an ordinary per-side border percentage.
-2. **Per-photo storage:** suggest one shared framing record in the edit document,
-   saved in projects/sidecars and included in undo/redo, rather than app-wide
-   preferences. The HDR/SDR switch should not produce different frame layouts.
-   Export presets store inclusion per output version and use each photo's saved
-   framing. Avoid a second independent copy of colors/widths in export presets.
-3. **Defaults:** framing initially off for existing/default photos; propose a
+1. **Defaults:** framing initially off for existing/default photos; propose a
    white Frame with a narrow dark Border when first enabled. Exact widths and
    the default state of Export with frame still need choosing.
-4. **Outer ratio:** no ratio selector was requested. Suggest initially following
+2. **Outer ratio:** no ratio selector was requested. Suggest initially following
    the photo plus the two equal-width layers. Add target canvas ratios only if
    Steve wants that; they introduce unequal mat widths and a sizing policy.
 

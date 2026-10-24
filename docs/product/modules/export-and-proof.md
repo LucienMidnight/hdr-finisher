@@ -389,6 +389,17 @@ This section owns framing requirements across Grade, Library, Export and Proof.
 - Offer both **percentage (%) and pixels (px)** for each layer's thickness
   (Steve confirmed October 24). Convert on unit changes so the current visible
   width stays the same, apart from pixel rounding.
+- Thickness reference and scaling (Steve approved October 24, initially to try):
+  both layers use the cropped photo as their reference. Percentage is measured
+  against its shorter side; px means cropped source pixels. Both scale with
+  the photo at export, preserving proportions across output sizes. Switching
+  units preserves visible width, apart from pixel rounding. Make the source-pixel
+  meaning explicit in Grade and Export. This rule can be revised after use.
+- Storage (Steve approved October 24): save one framing record per photo in
+  the edit document, shared by HDR and SDR, with project/sidecar persistence
+  and undo/redo. Each preset output version independently stores whether to
+  include that photo's frame; it does not copy the colors or widths. Changing
+  the photo's frame affects every output version that includes it.
 - The photo frame is attached to the image and follows pan/zoom. It is distinct
   from the stationary viewer background. SVG is a candidate for efficient live
   display; export must compose actual pixels.
@@ -404,17 +415,14 @@ This section owns framing requirements across Grade, Library, Export and Proof.
 
 **Draft proposals, not yet decisions**
 
-Save framing per photo (shared by HDR/SDR), with undo/redo and project/sidecar
-persistence. Keep inclusion in exports per preset output version, so one run
-can deliver framed and unframed versions. Use vector rectangles in viewers
+Use vector rectangles in viewers
 where color handling permits; use the existing GPU delivery graph plus CPU
 fallback for encoded outputs. Display both photo and final canvas dimensions.
 Keep framing out of photo analysis, crop and creative grading calculations.
 
-Open choices before implementation: percentage reference, pixel reference and
-size scaling (both units are required);
-default colors/widths and export inclusion; whether a target outer aspect ratio
-is wanted. No ratio UI, Lightroom thickness scale or white-only restriction
+Open choices before implementation: default colors/widths and the default
+export inclusion state; whether a target outer aspect ratio is wanted. No ratio
+UI, Lightroom thickness scale or white-only restriction
 is adopted merely because BorderMuse implements it.
 
 **Imported foundation**
