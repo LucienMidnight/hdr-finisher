@@ -354,6 +354,20 @@ retries cannot establish a software defect on this hardware. The faster prototyp
 awaits validation on healthy GPU memory; the approximately one-second target
 has not been established.
 
+**Faster shared edge colour with a range guard (October 24, 2026).** The shared
+GPU edge-colour reconstruction (`frontend/highlight-edge-colour.js`, used by
+Grade import and Library) now keeps reduced blur grids on the GPU, reuses the
+source weights across channels and combines all scales in one full-size pass.
+On the test machine a 42 MP DSC00264.ARW took about 3.2 s instead of about
+7.8 s; the test fixture matches the CPU within the existing tolerances and
+stays inside the RAW memory reservation. A replay of identical inputs on the
+faulty-VRAM machine gave different results on each run (the previous code also
+produced NaNs), so the earlier invalid pixels were hardware. A GPU range check
+now rejects any result that is non-finite or above 32 times the largest input
+magnitude (a correct result is at most about 18 times), sending Grade and
+Library to their existing CPU fallback. It cannot catch small plausible-looking
+corruption. Appearance and timing still need confirming on healthy hardware.
+
 ## 6. Open work, in order
 
 1. **Finish validation of the zero RAW start:** obtain Steve's visual review
