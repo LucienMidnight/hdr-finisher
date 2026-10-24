@@ -37,16 +37,22 @@ pixels, avoiding duplicate preparation. AVIF uses a native raw-pixel handoff
 instead of an intermediate compressed PNG, with the ordinary decoder as fallback.
 Library measurements suggest DxO optical-correction DNG 13.6 to 5.4 seconds
 and HDR Finisher exported AVIF 11.5 to 7.8 seconds. Geometry/reference probes and
-finished-picture comparisons passed their existing tolerances, but these GPU
-results remain provisional: Steve confirmed the machine still has faulty VRAM
-(October 24). Revalidate GPU correctness and timing on healthy hardware.
+finished-picture comparisons passed their existing tolerances.
+
+**GPU path accepted (Steve, October 24, 2026).** Steve reports that the GPU
+fixture passed on the Mac without triggering the range guard. Together with
+the non-repeatable corruption on this machine, this supports faulty VRAM as
+the cause of the earlier highlight-reconstruction failures. The GPU path is
+no longer provisional. Grade import and Library both use the optimized shared
+edge-colour method: reduced blur grids stay on the GPU, source weights are
+reused across channels, and all scales combine in one full-size pass. Keep
+the range guard and CPU fallback for GPU failure/unavailability.
 
 Open: AVIF still spends about 5.6 seconds in CPU decoding/gain-map reconstruction.
-A repaired RAW cold load took 57 seconds after invalid GPU highlight pixels
-triggered CPU reconstruction. Known faulty VRAM prevents attributing that failure
-to software. Shared highlight improvements must cover Grade and Library, with
-about one second as the target; prototype validation awaits healthy GPU memory.
-CPU remains the correct fallback on GPU failure/unavailability.
+The earlier 57-second repaired RAW cold load included a CPU retry after GPU
+corruption on the faulty-VRAM machine; it is not a healthy-GPU timing baseline.
+About one second remains the shared highlight-reconstruction target; the recorded
+42 MP GPU result is about 3.2 seconds, and Mac timing has not been recorded.
 
 ## 1. Purpose
 

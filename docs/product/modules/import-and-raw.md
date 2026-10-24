@@ -347,12 +347,15 @@ PNG. The ordinary rendition decoder remains the fallback for unsupported
 layouts. CPU import preserves the existing samples; Library converts PQ and
 the SDR reference on the GPU. Native/ordinary decoder sample agreement passes.
 
-**Highlight performance remains open (October 24, 2026).** Any reconstruction
-speedup must apply to both Grade and Library. Steve confirmed that the test
-machine still has faulty VRAM. Invalid full-size GPU results and expensive CPU
-retries cannot establish a software defect on this hardware. The faster prototype
-awaits validation on healthy GPU memory; the approximately one-second target
-has not been established.
+**GPU highlight path accepted (Steve, October 24, 2026).** Steve reports that
+the GPU fixture passed on the Mac without triggering the range guard. Together
+with the non-repeatable corruption on the faulty-VRAM machine, this supports
+hardware as the cause of the earlier highlight-reconstruction failures. The
+GPU path is no longer provisional. Grade import and Library already use the
+optimized shared edge-colour method described below; no opt-in is required.
+Keep the range guard and CPU fallback for GPU failure/unavailability. The
+approximately one-second target remains open; the recorded 42 MP result is
+about 3.2 seconds, and Mac timing has not been recorded.
 
 **Faster shared edge colour with a range guard (October 24, 2026).** The shared
 GPU edge-colour reconstruction (`frontend/highlight-edge-colour.js`, used by
@@ -366,7 +369,8 @@ produced NaNs), so the earlier invalid pixels were hardware. A GPU range check
 now rejects any result that is non-finite or above 32 times the largest input
 magnitude (a correct result is at most about 18 times), sending Grade and
 Library to their existing CPU fallback. It cannot catch small plausible-looking
-corruption. Appearance and timing still need confirming on healthy hardware.
+corruption. The subsequent Mac fixture pass is reported by Steve above;
+Mac timing and a separate visual review have not been recorded.
 
 ## 6. Open work, in order
 
