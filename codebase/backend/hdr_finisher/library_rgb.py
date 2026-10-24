@@ -24,7 +24,7 @@ def decoded(path, inputs):
     if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
         raise NotEligible("RGB interpretation overrides retain Grade's CPU loader")
     if path.suffix.lower() != ".png" and loader.is_ultrahdr_jpeg(path):
-        raise NotEligible("gain-map JPEG retains its existing decoder")
+        return decoded_precision(path, inputs)
     identity = _identity(path)
     start = perf_counter()
     with Image.open(path) as image:
@@ -69,7 +69,13 @@ def decoded_precision(path, inputs):
     suffix = path.suffix.lower()
     facts = {}
     reference = None
-    if suffix == ".jxl":
+    if suffix in {".jpg", ".jpeg"}:
+        try:
+            pixels, reference, metadata = loader.decode_ultrahdr_jpeg(path, encoded_samples=True)
+        except loader.GainMapDecodeError as error:
+            raise NotEligible(str(error)) from error
+        facts.update(effective_bits=16, orientation=metadata["orientation"])
+    elif suffix == ".jxl":
         pixels, metadata = loader.decode_jpegxl(path, encoded_samples=True)
         facts.update(orientation=None, effective_bits=int(metadata["bit_depth"]), sample_type=metadata["sample_type"], jpegxl_info=metadata["jpegxl_info"])
     elif suffix == ".avif":
@@ -118,7 +124,7 @@ def decoded_precision(path, inputs):
     original_interpretation = {key:metadata.get(key) for key in ("color_space","transfer_function","needs_color_override")}
     override = {k: v for k, v in inputs["interpretation_override"].items() if v is not None}
     if reference is not None and override:
-        raise NotEligible("Gain-map AVIF interpretation overrides retain the CPU loader")
+        raise NotEligible("Gain-map interpretation overrides retain the CPU loader")
     decoder_normalized = bool(metadata.get("decoder_normalized_to_acescg"))
     sample_space = metadata.get("sample_color_space")
     sample_transfer = metadata.get("sample_transfer_function")
@@ -166,6 +172,8 @@ def decoded_precision(path, inputs):
     if transfer == "sRGB" and space == color.BT2020_COLOURSPACE:
         transfer = "BT.2020"
     scale = .18 if linear_reference == "diffuse_white_1_0" else 1.
+    if metadata.get("sample_reference_white_nits"):
+        scale *= metadata["sample_reference_white_nits"] / inputs["hdr_reference_white_nits"]
     descriptor = SourceImageDescriptor(filename=path.name, suffix=suffix, width=w, height=h, channels=3,
         dtype="float32", source_color_space=metadata.get("source_color_space_label",metadata["color_space"]),
         transfer_function=metadata["transfer_function"], linear_reference=linear_reference,
@@ -181,12 +189,13 @@ def decoded_precision(path, inputs):
             "code_range":None, "ownership":"request-owned", "alpha":"discarded by Grade decoder",
             "data_window":facts.get("dataWindow",[0,0,w,h]), "display_window":facts.get("displayWindow",[0,0,w,h]),
             "origin":facts.get("dataWindow",[0,0])[:2], "decoder_facts":facts},
-        "orientation":{"original":facts.get("orientation",1), "applied":suffix in {".jxl", ".avif", ".heic", ".heif"}},
+        "orientation":{"original":facts.get("orientation",1), "applied":suffix in {".jpg", ".jpeg", ".jxl", ".avif", ".heic", ".heif"}},
         "colour":{"primaries":operation_space, "transfer":transfer, "decoder_normalized":bool(decoder_normalized and override),
             "grade_decoder_normalized":decoder_normalized,
             "eotf_applied":bool(decoder_normalized and override), "matrix_applied":bool(decoder_normalized and override), "reference_scale_applied":False,
             "original_interpretation":original_interpretation, "reference_white_nits":inputs["hdr_reference_white_nits"],
             "linear_reference":linear_reference, "authored_sdr":authored, "scale":scale,
+            "clip_working_negative":bool(metadata.get("clip_working_negative")),
             "decoder_metadata":metadata, "descriptor":descriptor.model_dump(mode="json"), "override":override},
         "rgb_to_acescg":matrix.tolist(), "acescg_to_srgb":_ACESCG_TO_LINEAR_SRGB.T.tolist(),
         "acescg_to_bt2020":_ACESCG_TO_LINEAR_BT2020.T.tolist(), "decode_ms":decode_ms,
@@ -201,7 +210,7 @@ def decoded_precision(path, inputs):
             metadata["sdr_sample_color_space"], "LINEAR").T
         header["sdr_reference"] = dict(offset=pixels.nbytes, bytes=reference.nbytes,
             width=w,height=h,dtype="float32",transfer=metadata["sdr_sample_transfer_function"],
-            rgb_to_acescg=reference_matrix.tolist())
+            rgb_to_acescg=reference_matrix.tolist(), direct_srgb=bool(metadata.get("jpeg_ultrahdr")))
         parts.append(memoryview(reference).cast("B"))
     return header, parts
 

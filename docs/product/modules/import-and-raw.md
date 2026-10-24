@@ -372,6 +372,16 @@ Library to their existing CPU fallback. It cannot catch small plausible-looking
 corruption. The subsequent Mac fixture pass is reported by Steve above;
 Mac timing and a separate visual review have not been recorded.
 
+**Library Ultra HDR JPEG preparation (October 24, 2026).** Library can take
+libultrahdr's decoded linear HDR samples and encoded SDR base before CPU colour
+conversion, then use the existing RGB GPU preparation route. The boundary
+preserves EXIF orientation, ICC conversion of the base, the working-space
+negative clamp and absolute luminance at the chosen reference white. Ordinary
+Grade, export and Proof decoding retain their existing canonical output.
+Interpretation overrides and unavailable/failed GPU preparation retain the CPU
+route. Matched photographic HDR/SDR comparisons passed the existing limits;
+Library loading results and remaining AVIF/queue costs are in the Photo Library PRD.
+
 ## 6. Open work, in order
 
 1. **Finish validation of the zero RAW start:** obtain Steve's visual review

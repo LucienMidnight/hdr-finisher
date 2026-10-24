@@ -40,7 +40,8 @@ class LibraryCache:
     def prepare(self):
         root = Path(self.preferences()['location'])
         with _LOCK:
-            root.mkdir(parents=True, exist_ok=True)
+            if not root.is_dir():
+                root.mkdir(parents=True, exist_ok=True)
             marker = root / MARKER
             if not marker.exists():
                 if any((root / name).exists() for name in DIRECTORIES):
@@ -85,6 +86,10 @@ class LibraryCache:
         if key not in _LEDGERS:
             db = sqlite3.connect(root / '.library-cache-size.sqlite3', timeout=30, check_same_thread=False)
             db.execute('PRAGMA journal_mode=WAL')
+            # Disposable size bookkeeping is rebuilt from published files. WAL
+            # stays consistent; a power loss may lose a count, never a photo.
+            # Avoid flushing the drive for every thumbnail publication.
+            db.execute('PRAGMA synchronous=NORMAL')
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, category TEXT, size INTEGER);
                 CREATE TABLE IF NOT EXISTS totals(category TEXT PRIMARY KEY, size INTEGER);

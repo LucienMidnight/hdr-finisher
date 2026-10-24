@@ -54,6 +54,24 @@ corruption on the faulty-VRAM machine; it is not a healthy-GPU timing baseline.
 About one second remains the shared highlight-reconstruction target; the recorded
 42 MP GPU result is about 3.2 seconds, and Mac timing has not been recorded.
 
+**Mixed-format folder loading (October 24, 2026).** Recent Play_Raw logs
+show the TIFF waiting about 37 seconds for a source slot, then decoding in
+0.75 seconds. AVIF preparation takes about 1.4 to 7.1 seconds before GPU work;
+large files and picture storage keep both source slots occupied. Ordinary
+JPEG/PNG, TIFF and AVIF already use GPU colour preparation. Ultra HDR JPEG
+now joins that route: libultrahdr still reconstructs the gain map, while the
+GPU converts working colour, prepares the SDR reference, measures the source
+and reduces Library pictures. ICC/orientation, the decoder's negative clamp,
+reference-white scaling and the CPU fallback are preserved. Three matched
+cold loads of the fire-dancers JPEG measured a 3.46-second GPU median against
+4.21 seconds on the CPU (about 18% faster, judged with the existing 10% timing
+tolerance); finished HDR/SDR comparisons passed the existing perceptual limits.
+The disposable cache-size ledger uses WAL NORMAL synchronization, since its
+counts are rebuilt from published files on restart, and publications avoid
+recreating directories that already exist. Photo files and grades are not
+stored in this ledger. Remaining: AVIF decoding/gain-map reconstruction and
+folder-wide source queue time; no new whole-folder timing claim is established.
+
 ## 1. Purpose
 
 **Remembered picture errors (October 23, 2026).** Failed photo developments

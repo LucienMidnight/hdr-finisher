@@ -374,3 +374,35 @@ def test_backend_preparation_reports_stage_and_invalidation_until_return(tmp_pat
         assert jobs.snapshot()[0]["state"]=="stopping"
     jobs.preparing(token,"camera.dng",decode)
     assert jobs.snapshot()==[]
+
+
+@pytest.mark.parametrize("base_space", [True, False])
+@pytest.mark.parametrize("orientation,white", [(1,203),(6,100)])
+def test_ultrahdr_gpu_boundary_preserves_decoder_pixels(tmp_path, monkeypatch, base_space, orientation, white):
+    from hdr_finisher import gainmap_decoders as gain, loader, color
+    path=tmp_path/'photo.jpg'
+    exif=Image.Exif();exif[274]=orientation
+    Image.new('RGB',(8,4),(180,60,15)).save(path,exif=exif)
+    monkeypatch.setattr(loader,'is_ultrahdr_jpeg',lambda p: True)
+    monkeypatch.setattr(gain,'inspect_jpeg_gain_map',lambda p: gain.parse_jpeg_gain_map_probe("", strict=False).model_copy(update={"use_base_color_space":base_space}))
+    monkeypatch.setattr(gain,'resolve_binary',lambda name: Path('mock-decoder'))
+    values=np.resize(np.array([2.,-.1,.3,1.],dtype='<f2'),(4,8,4))
+    def run(args,**kwargs):
+        values.tofile(args[args.index('-z')+1])
+    monkeypatch.setattr(gain,'_run',run)
+    expected,reference,_=gain.decode_ultrahdr_jpeg(path)
+    header,parts=library_rgb.decoded(path,recipe({'hdr_reference_white_nits':white}))
+    h,w=header['height'],header['width']
+    samples=np.frombuffer(parts[0],dtype='<f4').reshape(h,w,3)
+    matrix=np.asarray(header['rgb_to_acescg'],dtype=np.float32)
+    actual=np.maximum(samples @ matrix.T,0)*header['colour']['scale']
+    np.testing.assert_allclose(actual,expected*(203/white),atol=1e-6,rtol=1e-6)
+    sdr=np.frombuffer(parts[1],dtype='<f4').reshape(h,w,3)
+    np.testing.assert_allclose(gain._srgb_eotf(sdr),reference,atol=1e-7)
+    assert header['colour']['clip_working_negative']
+    assert header['sdr_reference']['direct_srgb']
+    assert header['orientation']=={'original':orientation,'applied':True}
+    assert not header['colour']['authored_sdr']
+    override=recipe(None);override['interpretation_override']['color_space']='BT.2020'
+    with pytest.raises(library_rgb.NotEligible,match='overrides'):
+        library_rgb.decoded(path,override)

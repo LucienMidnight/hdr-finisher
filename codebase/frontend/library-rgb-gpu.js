@@ -44,7 +44,9 @@ window.HDRLibraryRGB = (() => {
     if(g.x<p.dims.x && g.y<p.dims.y){
       let i=(g.y*p.dims.x+g.x)*3u;
       let lin=linear_rgb(i);
-      let aces=vec3<f32>(dot(p.m0.xyz,lin),dot(p.m1.xyz,lin),dot(p.m2.xyz,lin));
+      var aces=vec3<f32>(dot(p.m0.xyz,lin),dot(p.m1.xyz,lin),dot(p.m2.xyz,lin));
+      // Match the Ultra HDR decoder's working-space clamp before finishing.
+      if(p.lensc.x>0.0){aces=max(aces,vec3<f32>(0.0));}
       finish(aces,i32(g.y),i32(g.x));
     }
     workgroupBarrier(); if(li<3u){atomicMax(&peaks[li],atomicLoad(&wgPeak[li]));}
@@ -229,7 +231,7 @@ window.HDRLibraryRGB = (() => {
       meta.rgb_to_acescg.forEach((row, k) => setF(10 + k, row));
       meta.acescg_to_srgb.forEach((row, k) => setF(13 + k, row));
       meta.acescg_to_bt2020.forEach((row, k) => setF(16 + k, row));
-      setF(20, [0, 0, 0, .18 / meta.colour.reference_white_nits]);
+      setF(20, [meta.colour.clip_working_negative ? 1 : 0, 0, 0, .18 / meta.colour.reference_white_nits]);
       setF(19, [(meta.colour.authored_sdr ? .18 : 1) * (meta.colour.scale || 1), 0, 0, 0]);
       const uniform = device.createBuffer({ size: params.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       own(uniform);

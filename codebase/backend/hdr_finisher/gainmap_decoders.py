@@ -93,8 +93,9 @@ def decode_ultrahdr_jpeg(
     *,
     progress: Callable[[str, str], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    encoded_samples: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    """Return canonical HDR ACEScg plus the exact decoded SDR base in linear sRGB."""
+    """Return canonical renditions, or pre-colour samples for Library GPU preparation."""
     try:
         from PIL import Image, ImageCms, ImageOps
     except ImportError as exc:
@@ -129,7 +130,7 @@ def decode_ultrahdr_jpeg(
             base = base.convert("RGB")
         encoded_sdr = np.asarray(base).astype(np.float32)
         encoded_sdr *= np.float32(1.0 / 255.0)
-    linear_sdr = transform_float32_bounded(
+    linear_sdr = encoded_sdr if encoded_samples else transform_float32_bounded(
         encoded_sdr, _srgb_eotf, cancelled=cancelled
     )
 
@@ -168,7 +169,7 @@ def decode_ultrahdr_jpeg(
     if progress:
         progress("color_conversion", "Converting JPEG Ultra HDR to the working space")
     transform = linear_srgb_to_acescg if gain.use_base_color_space else linear_bt2020_to_acescg
-    hdr = transform_float32_bounded(decoded, transform, cancelled=cancelled)
+    hdr = decoded if encoded_samples else transform_float32_bounded(decoded, transform, cancelled=cancelled)
     hdr = _apply_exif_orientation(hdr, orientation)
     if hdr.shape[:2] != linear_sdr.shape[:2]:
         raise GainMapDecodeError(
@@ -190,6 +191,12 @@ def decode_ultrahdr_jpeg(
         "icc_profile_name": profile_name,
         "decoder_normalized_to_acescg": True,
     }
+    if encoded_samples:
+        metadata.update(sample_color_space="sRGB" if gain.use_base_color_space else "BT.2020",
+            sample_transfer_function="LINEAR", sample_reference_white_nits=203.0,
+            sdr_sample_color_space="sRGB", sdr_sample_transfer_function="sRGB",
+            clip_working_negative=True)
+        return hdr, linear_sdr, metadata
     return np.clip(hdr, 0.0, None).astype(np.float32), linear_sdr.astype(np.float32), metadata
 
 

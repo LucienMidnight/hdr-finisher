@@ -116,7 +116,8 @@ class LibraryPictureCache:
             return
         self.managed.prepare()
         destination = self.root / (default_document_key(path) + ".json")
-        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.parent.is_dir():
+            destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = None
         try:
             with NamedTemporaryFile("w", encoding="utf-8", dir=destination.parent, suffix=".tmp", delete=False) as handle:
@@ -204,7 +205,8 @@ class LibraryPictureCache:
             if not self.managed.preferences()['enabled']:
                 return self.transient_result(key, arrays, metadata)
             self.managed.prepare()
-            destination.parent.mkdir(parents=True, exist_ok=True)
+            if not destination.parent.is_dir():
+                destination.parent.mkdir(parents=True, exist_ok=True)
             temporary = None
             try:
                 with NamedTemporaryFile(dir=destination.parent, suffix=".tmp", delete=False) as handle:

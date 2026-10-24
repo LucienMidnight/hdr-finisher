@@ -8,6 +8,11 @@ const jpeg=path.join(folder,'photo.jpg'),png=path.join(folder,'photo.png');
 fs.copyFileSync(photographic,jpeg);
 execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',"from PIL import Image;import sys;Image.open(sys.argv[1]).save(sys.argv[2])",jpeg,png]);
 let sources=[jpeg,png];const photos=[...sources];
+if(process.argv.includes('--ultrahdr')){
+ const hdr=path.join(folder,'ultrahdr.jpg');
+ fs.copyFileSync("D:/Photos/Play_Raw/Hawai'ian Fire Dancers - Challenge the Darkside - LaurentFromSF/IMG_0790_finished.jpg",hdr);
+ sources=process.argv.includes('--measure')?[hdr]:[];photos.splice(0,photos.length,hdr);
+}
 if(process.argv.includes('--codecs')){
  const cases=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_codec_samples.py'),folder],{cwd:root,encoding:'utf8'}));
  sources=cases.sources;photos.push(...cases.photos);
@@ -93,7 +98,7 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
   for(const photo of photos){
    const begun=performance.now();
    const [meta,large]=await Promise.all([w.HDRLibraryScenes.load(photo,640),w.HDRLibraryScenes.load(photo,2560)]),lanes={};
-   if(cpuScene||isoRoute ? meta.renderer!=='cpu' : (meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference!==meta.rgb_contract.colour.authored_sdr)) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
+   if(cpuScene||isoRoute ? meta.renderer!=='cpu' : (meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference!==meta.has_reference)) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
    const prepareMs=performance.now()-begun;
    const native=await w.HDRLibraryScenes.load(photo,100000);
    const again=await w.HDRLibraryScenes.load(photo,100000);
