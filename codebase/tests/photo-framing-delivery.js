@@ -37,7 +37,7 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
       const target=path.join(root,`${format}-${forced?"cpu":"gpu"}.${extension}`);
       await global.HDRFinisherElectronTestHarness.selectExportPath(target);
       const grant=await page.evaluate(extension=>window.hdrFinisherDesktop.chooseExportPath({extension,suggestedName:"framed."+extension}),extension);
-      const settings={format,quality:95,dithering:"off",jpeg_chroma_subsampling:"444",jpeg_gain_map_scale:"half",avif_gain_map_scale:"half",output_finishing:{resize_mode:"long_edge",long_edge:90,sharpening:"standard"},export_with_frame:true};
+      const settings={format,quality:95,dithering:"off",jpeg_chroma_subsampling:"444",jpeg_gain_map_scale:"half",jpeg_gain_map_quality:95,avif_gain_map_scale:"half",output_finishing:{resize_mode:"long_edge",long_edge:90,sharpening:"standard"},export_with_frame:true};
       const result=await post(`/api/session/${before.id}/export`,{...settings,output_path:target,path_grant:grant.grant});
       assert(result.accepted,JSON.stringify(result));assert.equal(result.renderer,forced?"cpu":"gpu");
       if(!format.startsWith("sdr_")){

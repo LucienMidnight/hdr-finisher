@@ -1,5 +1,10 @@
 # Module PRD: Photo Library
 
+**Photo framing (October 24, 2026).** Single-photo view draws saved frame metadata
+as an attached layer with Fit/100% and pan/zoom. Cached photo pixels, grids and
+filmstrips remain unframed. Requirements and validation belong to
+[Export and Proof](export-and-proof.md#8-photo-framing--requirements-recorded-october-24-2026).
+
 **Panel alignment (October 24, 2026).** Both Library side panels resize by dragging their inner edge, with arrow keys, Home/End and double-click reset. Collapsing and reopening a panel keeps its chosen width. Panel headers share the preview-toolbar height; section and folder chevrons and text use consistent left columns.
 
 - **Owner:** Steve

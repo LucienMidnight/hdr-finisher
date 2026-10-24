@@ -1,11 +1,11 @@
 # Codex brief: photo framing
 
 **Date:** October 24, 2026
-**Status:** implementation connected; validation in progress. All product choices
-are settled. Host geometry, persistence/history, controls, attached viewer layers,
-export inclusion, GPU/CPU composition and Proof integration are implemented.
-Keep this brief active until the decoded JPEG comparison and validation close.
-**Owner PRD:** [Export and Proof, photo framing](../../product/modules/export-and-proof.md#8-photo-framing--requirements-recorded-october-24-2026).
+**Status:** completed October 24, 2026. Per-photo framing, controls, attached
+viewers, export-version inclusion, GPU/CPU composition and encoded Proof are
+implemented and validated. The owner PRD records the JPEG protection policy,
+viewer scope boundary and unrelated existing check failures.
+**Owner PRD:** [Export and Proof, photo framing](../../../product/modules/export-and-proof.md#8-photo-framing--requirements-recorded-october-24-2026).
 **Other affected surfaces:** Grade and Library. Keep their module PRDs linked
 to the owner, rather than creating another framing PRD.
 **Working rules:** Read `AGENTS.md` first. Inspect the current branch and dirty
@@ -257,3 +257,20 @@ continue at the first unbuilt stage. Do not spawn chats or push automatically.
 Record what actually shipped, tests run, failures/limits and attribution in the
 module PRD. Mark built only once committed. When the whole feature is complete,
 move this brief to `docs/technical/archive/briefs/` and update its links.
+
+
+## Completion outcome — October 24, 2026
+
+The owner PRD records the implemented behavior and validation. Framed Ultra HDR
+JPEG uses a full-resolution, maximum-quality gain map with decoded-base and
+boundary protection; Steve authorized the encoding investigation in this chat.
+The photograph JPEG quality remains selected by the user. Export help and notes
+disclose the map rule and the larger-file trade-off.
+
+Final fast suites: 603 Node passes; 2,539 Python passes, three skips. Framing
+GPU/CPU tests pass for all six formats, including exact full HDR Proof/export
+bytes, decoded ceilings and unchanged perceptual limits. Combined applicable
+checks: 11 pass and three unrelated failures documented in the owner PRD. The
+CPU ceiling case passed on retry. Protected project hashes and BorderMuse
+source/notices are intact. Export's separate saved-grade preview remains outside
+the allowed shared-viewer scope. Local commits only; no installer build.

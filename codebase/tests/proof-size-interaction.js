@@ -1,5 +1,5 @@
 // Proof size: a reduced proof says it is reduced, and a full-size proof is
-// built at the source's own size (Viewport-Bounded GPU Preview PRD, section 3).
+// built at the selected export size with output finishing included.
 //
 //   node tests/run-in-electron.js tests/proof-size-interaction.js
 //
@@ -78,19 +78,30 @@ function assert(condition, message) {
       `The status must say what a full-size proof is: ${full.status}`);
     assert(full.watermark === "PROOF", `A full-size proof carries the plain watermark: ${full.watermark}`);
 
-    // Export resize and output sharpening are not part of a proof, and the
-    // full-size label must stop claiming the export's pixels when either is on.
+    // Full Proof must encode the same finishing selection as export. Changing
+    // sharpening/resize makes it stale, then refreshing produces a new artifact.
+    const oldArtifact = await page.evaluate(() => state.proofArtifact.artifact_id);
     await page.evaluate(() => {
       els.exportSharpening.value = "standard";
       els.exportSharpening.dispatchEvent(new Event("change", { bubbles: true }));
+      els.exportResizeMode.value = "long_edge";
+      els.exportResizeMode.dispatchEvent(new Event("change", { bubbles: true }));
+      els.exportLongEdge.value = "600";
+      els.exportLongEdge.dispatchEvent(new Event("change", { bubbles: true }));
     });
+    assert((await read()).dirty, "Finishing changes must mark the existing Proof stale");
+    const finishedRequest = page.waitForRequest(request => request.method() === "POST"
+      && /\/proof\/artifact$/.test(new URL(request.url()).pathname));
+    await page.click("#chrome-proof-refresh");
+    const finishing = (await finishedRequest).postDataJSON().output_finishing;
+    assert(finishing.resize_mode === "long_edge" && finishing.long_edge === 600
+      && finishing.sharpening === "standard", `Proof must carry selected finishing: ${JSON.stringify(finishing)}`);
+    await proofReady();
     const sharpened = await read();
-    assert(/output sharpening are not included/.test(sharpened.status),
-      `The label must disclose finishing the proof does not carry: ${sharpened.status}`);
-    await page.evaluate(() => {
-      els.exportSharpening.value = "off";
-      els.exportSharpening.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    assert(sharpened.width === 600 && sharpened.height === 400 && sharpened.fullSize,
+      `Full Proof must use the export canvas: ${JSON.stringify(sharpened)}`);
+    assert(await page.evaluate(id => state.proofArtifact.artifact_id !== id, oldArtifact),
+      "Finishing must not reuse the old artifact");
 
     const output = path.resolve("output", "proof-size-interaction");
     fs.mkdirSync(output, { recursive: true });

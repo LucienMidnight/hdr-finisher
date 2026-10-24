@@ -206,7 +206,7 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
     # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
     monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None: encode(image))
-    def fake_denoise(source: Path, output: Path, _binary: Path, *, gain_map_quality: int) -> None:
+    def fake_denoise(source: Path, output: Path, _binary: Path, *, gain_map_quality: int, photo_rect=None) -> None:
         observed["final_gain_map_quality"] = gain_map_quality
         output.write_bytes(source.read_bytes())
 
@@ -243,7 +243,7 @@ def test_ultrahdr_export_honors_explicit_half_resolution_gain_map(monkeypatch, t
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
     # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
     monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None: encode(image))
-    def fake_denoise(source: Path, output: Path, _binary: Path, *, gain_map_quality: int) -> None:
+    def fake_denoise(source: Path, output: Path, _binary: Path, *, gain_map_quality: int, photo_rect=None) -> None:
         observed["final_gain_map_quality"] = [str(gain_map_quality)]
         output.write_bytes(source.read_bytes())
 
@@ -647,3 +647,48 @@ def test_parallel_gain_map_stripes_keep_identical_jpeg_bytes(monkeypatch, stripe
     monkeypatch.setattr(exporter_module, "ThreadPoolExecutor", serial_executor)
     expected = _denoised_ultrahdr_gain_map_jpeg(*images, quality=95, stripe_rows=stripe_rows)
     assert actual == expected
+
+
+@pytest.mark.parametrize("stripe_rows", [1, 17, 256])
+def test_frame_boundary_protection_uses_global_photo_coordinates(monkeypatch, stripe_rows):
+    rng = np.random.default_rng(407)
+    primary = io.BytesIO()
+    gain = io.BytesIO()
+    Image.fromarray(rng.integers(0, 256, (77, 65, 3), dtype=np.uint8)).save(primary, format="JPEG")
+    Image.fromarray(rng.integers(0, 256, (77, 65, 3), dtype=np.uint8)).save(gain, format="JPEG")
+    monkeypatch.setattr(exporter_module, "_guided_filter_gain_map_region",
+        lambda _guide, pixels, **_kwargs: np.full_like(pixels, .25))
+    actual = _denoised_ultrahdr_gain_map_jpeg(primary.getvalue(), gain.getvalue(),
+        quality=95, stripe_rows=stripe_rows, photo_rect=(7, 9, 43, 51))
+    expected_pixels = np.array(Image.open(io.BytesIO(gain.getvalue())).convert("RGB"))
+    # The filter's two radius-2 stages reach four pixels into the photo.
+    expected_pixels[13:56, 11:46] = 64
+    expected = io.BytesIO()
+    Image.fromarray(expected_pixels).save(expected, format="JPEG", quality=95, subsampling=0)
+    assert actual == expected.getvalue()
+
+
+def test_frame_boundary_protection_rejects_downsampled_map():
+    primary, gain = io.BytesIO(), io.BytesIO()
+    Image.new("RGB", (64, 48)).save(primary, format="JPEG")
+    Image.new("RGB", (32, 24)).save(gain, format="JPEG")
+    with pytest.raises(ValueError, match="full-resolution"):
+        _denoised_ultrahdr_gain_map_jpeg(primary.getvalue(), gain.getvalue(),
+            quality=95, photo_rect=(4, 4, 56, 40))
+
+
+def test_framed_jpeg_resolves_full_gain_map_without_mutating_version(monkeypatch, tmp_path):
+    calls = []
+    def encode(path, hdr, sdr, settings, *args, **kwargs):
+        calls.append((settings.jpeg_gain_map_scale, settings.jpeg_gain_map_quality, kwargs["photo_rect"]))
+        Path(path).write_bytes(b"encoded")
+    monkeypatch.setattr(exporter_module, "_write_jpeg_gainmap_once", encode)
+    settings = ExportSettings(jpeg_gain_map_scale="half", jpeg_gain_map_quality=95)
+    pixels = np.full((16, 24, 3), .18, dtype=np.float32)
+    notes = []
+    exporter_module.write_jpeg_gainmap_renditions(tmp_path/"frame.jpg", pixels, pixels,
+        settings, photo_rect=(2, 2, 20, 12), notes=notes)
+    exporter_module.write_jpeg_gainmap_renditions(tmp_path/"plain.jpg", pixels, pixels, settings)
+    assert calls == [("full", 100, (2, 2, 20, 12)), ("half", 95, None)]
+    assert settings.jpeg_gain_map_scale == "half"
+    assert any("full-resolution" in note for note in notes)

@@ -81,6 +81,7 @@ Settings rules (from v1.2 section 5, still in force):
 | The Export page stays and grows. Two routes: the Export page and Quick export… with a preset. It must leave room for print settings and watermarks. | Steve, 2026-10-11 |
 | Export presets carry every Export setting, typed sizes, a naming pattern and a sub-folder; one run can make several versions (for example HDR AVIF and SDR JPEG). Presets are JSON files in the `Export` sub-folder of the preset library. | 2026-10-17 |
 | Proof does not need to carry export resize, output sharpening or metadata policy for now. | Steve, 2026-10-01 |
+| Full encoded Proof carries selected export resize, output sharpening and frame inclusion, superseding the older finishing omission. | Photo framing brief, 2026-10-24 |
 | Do not change encoders or gain-map maths without asking. A whole-image dimming correction for the ceiling was rejected (it failed the perceptual limits). | 2026-10-18 |
 
 ## 5. Current state (October 18, 2026)
@@ -373,10 +374,10 @@ overlap, multiscale passes and matching boundaries before that can change.
 
 ## 8. Photo framing — requirements recorded October 24, 2026
 
-**Status:** controls, attached viewer layers, GPU/CPU export composition and Proof
-integration implemented; validation in progress. All product choices are settled.
-Decoded Ultra HDR GPU/CPU boundary comparison remains open. Active brief:
-[Photo framing brief](../../technical/briefs/codex-brief-photo-framing-2026-10-24.md).
+**Status:** built and validated October 24, 2026. Controls, attached viewers,
+per-photo persistence/history, GPU/CPU export composition and encoded Proof are
+connected. The JPEG boundary comparison is resolved without relaxing tolerances.
+[Completed photo framing brief](../../technical/archive/briefs/codex-brief-photo-framing-2026-10-24.md).
 This section owns framing requirements across Grade, Library, Export and Proof.
 
 **Steve's requested behavior**
@@ -416,11 +417,10 @@ This section owns framing requirements across Grade, Library, Export and Proof.
 - Credit **Pedro C. Silva / BorderMuse**, retain the full MIT notice, and keep
   public README and third-party documentation accurate about what is built.
 
-**Draft proposals, not yet decisions**
+**Rendering behavior**
 
-Use vector rectangles in viewers
-where color handling permits; use the existing GPU delivery graph plus CPU
-fallback for encoded outputs. Display both photo and final canvas dimensions.
+SVG rectangles draw the attached viewer layers; the existing GPU delivery graph
+composes export pixels, with CPU fallback. Display both photo and final canvas dimensions.
 Keep framing out of photo analysis, crop and creative grading calculations.
 
 Outer shape (Steve approved October 24): each layer has one thickness, equal on
@@ -429,71 +429,68 @@ thickness scale or white-only restriction in this first version.
 
 **Imported foundation**
 
-The unchanged dependency-free Python reference and 20 measured cases are from
-BorderMuse revision `83abc8e6594529867c044dabd350ddbe26b6fa59`, MIT,
-Copyright (c) 2026 Pedro C. Silva. All five adapted upstream tests pass. This
-is a one-layer canvas calculator, not a ready-made two-layer or HDR renderer.
-See the vendored README and public third-party notices. The Grade/Library and
-export feature remains open until the brief is implemented and validated.
+The unchanged Python reference and 20 measured cases are from BorderMuse
+revision `83abc8e6594529867c044dabd350ddbe26b6fa59`, MIT, Copyright (c) 2026
+Pedro C. Silva. HDRF owns its two-layer extension. Public attribution, vendored
+source/fixtures and license copies remain intact; both packaging specifications
+include the license files.
 
-Validation for the isolated import/documentation: Node fast suite 599 passed;
-Python fast suite 2,495 passed, 3 skipped (including the five adapted upstream
-geometry tests). Source, measured fixture and license copies match the pinned
-checkout byte for byte. No GPU check applies because the core is not yet used
-by a render path. The implementation brief remains a draft.
+**Built October 24**
 
-October 24 implementation foundation: framing now belongs to the shared edit
-document, round-trips through project save/open, and supports grouped undo/redo
-and atomic command rollback. Composition edits retain creative/RAW caches.
-Host-owned source/output rectangles use source-pixel or shorter-side percentage
-widths, explicit half-up rounding and complete-canvas export sizing; tiny
-outputs retain at least one photo pixel. This helper is not yet connected to
-viewers or delivery. Existing photos are visually unchanged. BorderMuse source
-and notices remain untouched.
+Framing belongs to the shared edit document and round-trips through projects,
+sidecars, virtual copies and grouped undo/redo. Composition edits retain creative
+and RAW caches. Source/output rectangles use exact decimal half-up rounding and
+complete-canvas sizing, retaining at least one photo pixel at tiny sizes.
 
-Foundation validation: Node fast suite 599 passed; Python fast suite 2,524
-passed, 3 skipped. All 30 focused framing checks passed after adding the tiny-
-photo enlargement regression. No failures; no GPU check applies before renderer
-integration. Controls, Library/Export display, export inclusion and pixel
-composition, Proof and output-cache plumbing remain open. No push.
+Grade's former Frame control is Background. The new Frame controls author both
+layers' colors, visibility and %/source-pixel widths with unit conversion. SVG
+rectangles follow Grade and saved Library single-photo pan/zoom. Fit includes the
+assembly; 100% retains photo-pixel mapping. Crop/draft geometry hides the mats.
+Analysis and editing remain in photo coordinates; grids/filmstrips are unframed.
 
+Each export version persists Export with frame. Photo resize/sharpening and the
+existing limiter precede flat mat composition. GPU strips account for canvas
+memory and texture bounds and retain CPU fallback. SDR colors are linear sRGB;
+HDR colors are ACEScg at reference white with the existing ceiling. Full encoded
+Proof includes selected output size, sharpening and framing, superseding the
+older finishing omission. Reduced Proof scales native authored widths; delivery
+and Proof cache identities include framing and inclusion.
 
-October 24 integration: the old viewer Frame control is now Background. Photo
-Frame controls author independent colors, visibility, %/source-pixel widths and
-unit conversion. SVG rectangles follow Grade and Library single-photo pan/zoom;
-Fit includes the assembly and 100% retains photo-pixel mapping. Crop/draft
-geometry hides the mats. Scopes, picking, masks and creative caches retain photo
-coordinates. Grid and filmstrip pixels remain unframed.
+Steve authorized investigation and changes to JPEG encoding/gain-map handling on
+October 24. Framed Ultra HDR JPEG uses a full-resolution, maximum-quality gain
+map, calculates against the decoded JPEG base, and protects mats plus the filter
+halo from gain-map denoising. Photo interiors retain denoising. This prevents
+JPEG edge compensation being blurred away. Export help and delivery notes disclose
+the map policy; the photograph's JPEG quality remains selected by the user, and
+the saved version settings are retained. Framed JPEG files can be larger. The
+unframed encoder path retains its prior bytes for both captured render pairs.
 
-Each export version persists Export with frame. Complete-canvas sizing resolves
-the content rectangle; photo resize/sharpening and the existing limiter run
-before flat mat composition. GPU composition uses interruptible strips, accounts
-for canvas memory and texture bounds, and falls back to CPU. Picker colors enter
-SDR as linear sRGB and HDR as ACEScg at reference white, with the existing ceiling.
-Full Proof carries the same finishing/inclusion and encodes the selected output;
-framing enters delivery and Proof cache identities. Reduced Proof scales from
-native authored widths and labels a reduced canvas honestly. Existing encoder
-math and gain-map filtering have not changed.
+**Scope boundary**
 
-Open validation findings and scope boundary:
-- A tiny 90 × 66 Ultra HDR JPEG (95 quality, 4:4:4, half-resolution gain map)
-  exceeds the existing GPU/CPU HDR high-percentile perceptual limit near the
-  photo/mat boundaries: mean 0.608, p99.9 4.529 against <1 / <=3. The matching
-  unframed 72 × 48 half-map case passes. No tolerance or encoder behavior was
-  changed. Retain the failing decoded check until resolved or reviewed by Steve.
-- Export single-image mode still uses the live Grade preview, including its
-  current framing; the selected version controls inclusion. Batch delivery uses
-  the last saved complete grade and retains its unsaved-change notice. Showing
-  a separate saved-grade preview requires a separate preview owner/cache and
-  lifecycle for all creative edits, rather than swapping only frame metadata.
-  That broader viewer change is outside this brief's shared-path allowance.
+Export single-image mode uses the live Grade preview and current framing; the
+selected version controls inclusion. Batch uses the last saved complete grade
+and retains its unsaved-change notice. A separate saved-grade preview needs its
+own preview owner/cache and lifecycle for every creative edit. That broader
+viewer redesign remains outside this brief's shared-path allowance.
 
-Validation in progress: 603 Node checks pass; initial Python integration run
-had 2,527 passes, 3 skips and two expected contract failures for the new toolbar
-button/serialized inclusion field. Those expectations now reflect the requested
-behavior; the focused 58 checks pass. Real Electron framing controls, Fit/100%,
-all six GPU/CPU delivery formats, exact full HDR Proof/export bytes, inclusion
-cache separation and saved Library Fit/100% passed. Grade and Library screenshots
-reviewed. The unchanged unframed GPU-delivery smoke passes perceptual and ceiling
-checks. Full fast-suite rerun and the applicable export/Proof checks follow.
-BorderMuse license copies and both packaging specifications remain intact. No push.
+**Validation**
+
+603 Node checks and 2,539 Python checks pass, with three Python skips. Real
+framing controls, Escape, undo/redo, Fit/100%, saved Library display, all six
+GPU/CPU delivery formats, per-version inclusion and batch persistence passed.
+Full HDR Proof/export bytes match; decoded dimensions, flat SDR colors, HDR
+ceilings and perceptual limits pass. The formerly failing 90 × 66 framed JPEG
+now has HDR mean 0.549 and p99.9 2.440 against the unchanged <1 / <=3 limits,
+including an explicit half-size/95-quality map request resolved by the disclosed
+protection policy. Boundary protection is covered across one-row and larger
+stripes. Grade/Library screenshots were reviewed.
+
+All 14 applicable export/Proof checks were attempted across the capped area run
+and focused completions: 11 passed, including the revised Proof finishing check.
+The ceiling check passed on retry after a CPU request timeout. Three unrelated
+failures remain: export-file-browser-interaction (hidden chroma control, also
+recorded before framing), library-export-menu (existing selection failure and a
+file-lock retry), and edge-colour-raw (invalid GPU source diagnostic, currently
+an Infinity literal in generated WGSL). GPU edge-colour and HSL checks pass.
+All three protected project hashes are unchanged. No tolerance was relaxed;
+no push or installer build.

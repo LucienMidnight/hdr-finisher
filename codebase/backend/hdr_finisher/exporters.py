@@ -457,20 +457,24 @@ def _write_avif_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
         )
         timings_ms["encode"] = round((perf_counter() - started) * 1000.0, 3)
 
-def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, ceiling_nits=None, notes=None):
+def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, ceiling_nits=None, notes=None, photo_rect=None):
     """Encode finished renditions with the same writer as JPEG export.
 
     The decoded file never exceeds ``ceiling_nits`` (hdr_ceiling).
     """
+    if photo_rect is not None and (settings.jpeg_gain_map_scale != "full" or settings.jpeg_gain_map_quality != 100):
+        settings = settings.model_copy(update={"jpeg_gain_map_scale": "full", "jpeg_gain_map_quality": 100})
+        if notes is not None:
+            notes.append("Framed Ultra HDR JPEG uses a full-resolution, maximum-quality gain map to preserve frame edges.")
     def encode(hdr):
         _write_jpeg_gainmap_once(staged_output, hdr, sdr_image, settings, reference_white_nits,
-            ultrahdr_app=ultrahdr_app, exif_payload=exif_payload)
+            ultrahdr_app=ultrahdr_app, exif_payload=exif_payload, photo_rect=photo_rect)
         return Path(staged_output)
     encode_within_ceiling(hdr_image, reference_white_nits, encode,
         lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits, notes)
 
 
-def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None):
+def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, photo_rect=None):
     ultrahdr_app = ultrahdr_app or resolve_binary("ultrahdr_app")
     with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
@@ -485,7 +489,6 @@ def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
         hdr_raw_path.write_bytes(hdr_rgba.tobytes(order="C"))
         sdr_rgb = _linear_to_srgb8(sdr_image[..., :3], dither=settings.dithering)
         sdr_rgb = _floor_ultrahdr_base(sdr_rgb, hdr_image)
-        _write_sdr_rgba8888_pixels(sdr_raw_path, sdr_rgb)
         _write_sdr_jpeg_pixels(
             sdr_jpeg_path,
             sdr_rgb,
@@ -493,6 +496,13 @@ def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
             chroma_subsampling=settings.jpeg_chroma_subsampling,
             exif_payload=exif_payload,
         )
+        if photo_rect is not None:
+            # Compensate the pixels a decoder actually sees, including JPEG's
+            # ringing at the photo/mat boundary, rather than the pre-JPEG base.
+            from PIL import Image
+            with Image.open(sdr_jpeg_path) as primary:
+                sdr_rgb = np.asarray(primary.convert("RGB"))
+        _write_sdr_rgba8888_pixels(sdr_raw_path, sdr_rgb)
         command = _build_ultrahdr_encode_command(
             ultrahdr_app,
             hdr_raw_path,
@@ -513,6 +523,7 @@ def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
             staged_output,
             ultrahdr_app,
             gain_map_quality=int(settings.jpeg_gain_map_quality),
+            photo_rect=photo_rect,
         )
 
 class AVIFGainMapExportBackend(ExportBackend):
@@ -602,11 +613,15 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                     "The independently authored HDR and SDR renditions must have matching RGB dimensions."
                 )
 
+            from .photo_framing import delivery_layout
+            layout = delivery_layout(session, settings, finishing_adjustments)
+            photo_rect = layout.photo if layout is not None and layout.inset else None
+
             def write(staged_output: Path) -> None:
                 write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
                     exif_payload=_source_exif_payload(session, settings.metadata_policy),
-                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments), notes=notes)
+                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments), notes=notes, photo_rect=photo_rect)
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",
@@ -1055,6 +1070,7 @@ def _denoised_ultrahdr_gain_map_jpeg(
     epsilon: float = ULTRAHDR_GAIN_MAP_DENOISE_EPSILON,
     amount: float = ULTRAHDR_GAIN_MAP_DENOISE_AMOUNT,
     stripe_rows: int = ULTRAHDR_GAIN_MAP_DENOISE_STRIPE_ROWS,
+    photo_rect: tuple[int, int, int, int] | None = None,
 ) -> bytes:
     """Denoise log-gain samples, guided by the unchanged SDR primary."""
     try:
@@ -1070,12 +1086,17 @@ def _denoised_ultrahdr_gain_map_jpeg(
         with Image.open(BytesIO(gain_map_jpeg)) as encoded_gain:
             gain = encoded_gain.convert("RGB")
         with Image.open(BytesIO(primary_jpeg)) as encoded_primary:
+            primary_size = encoded_primary.size
             guide = encoded_primary.convert("L").resize(gain.size, Image.Resampling.LANCZOS)
     except OSError as exc:
         raise ExportProcessError(f"Could not decode the intermediate Ultra HDR gain map: {exc}") from exc
 
     result = Image.new("RGB", gain.size)
     width, height = gain.size
+    if photo_rect is not None:
+        x, y, w, h = photo_rect
+        if primary_size != gain.size or min(x, y) < 0 or min(w, h) < 1 or x+w > width or y+h > height:
+            raise ValueError("Frame boundary protection requires a full-resolution gain map and a valid photo rectangle.")
     # A guided filter contains two radius-wide box-filter stages. Keeping that
     # much overlap makes stripe boundaries numerically equivalent to a single
     # full-frame pass while bounding scratch memory on large RAW exports.
@@ -1094,6 +1115,15 @@ def _denoised_ultrahdr_gain_map_jpeg(
             epsilon=epsilon,
             amount=amount,
         )
+        if photo_rect is not None:
+            # Two box-filter stages reach 2r pixels. Retain the generated gain
+            # throughout the mats and that halo, so denoising cannot erase the
+            # compensation for JPEG ringing at the authored sharp boundary.
+            x, y, w, h = photo_rect
+            columns = np.arange(width)
+            rows = np.arange(crop_start, crop_end)
+            interior = ((columns >= x+halo) & (columns < x+w-halo))[None, :] & ((rows >= y+halo) & (rows < y+h-halo))[:, None]
+            filtered = np.where(interior[..., None], filtered, gain_region)
         core_start = row_start - crop_start
         core_end = core_start + (row_end - row_start)
         encoded = np.clip(
@@ -1152,11 +1182,12 @@ def _denoise_ultrahdr_gain_map(
     ultrahdr_app: Path,
     *,
     gain_map_quality: int,
+    photo_rect: tuple[int, int, int, int] | None = None,
 ) -> None:
     """Filter only the generated map, then repackage the untouched SDR JPEG."""
     primary_jpeg, gain_map_jpeg = _split_ultrahdr_jpegs(source_path.read_bytes())
     denoised_gain_map = _denoised_ultrahdr_gain_map_jpeg(
-        primary_jpeg, gain_map_jpeg, quality=gain_map_quality
+        primary_jpeg, gain_map_jpeg, quality=gain_map_quality, photo_rect=photo_rect
     )
     probe = _run_command([str(ultrahdr_app), "-m", "1", "-j", str(source_path), "-P"])
     metadata_config = _ultrahdr_metadata_config(f"{probe.stdout}\n{probe.stderr}")
