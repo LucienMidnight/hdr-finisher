@@ -254,6 +254,7 @@
     }
   ],
   "drivers": [
+    {"path":"tests/workspace-panel-alignment.js","areas":["ui","library"],"tier":"area","protects":"Aligned workflow panel headers and pointer/keyboard panel resizing.","launch":{"method":"electron"}},
     {"path":"tests/retouch-transfer-interaction.js","areas":["masks","preview","ui"],"tier":"area","protects":"Clone and Heal source picking, source editing, opacity, history, native preview and optional saved-grade RAW comparison.","launch":{"method":"electron"}},
     {"path":"tests/control-panel-polish.js","areas":["ui","masks"],"tier":"area","protects":"Control Panel title tokens, stable rendition tabs, brush actions and export field presentation.","launch":{"method":"electron"}},
     {"path":"tests/performance/retouch-latency.js","areas":["preview","ui"],"tier":"area",

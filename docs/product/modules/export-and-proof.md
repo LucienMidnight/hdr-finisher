@@ -1,5 +1,7 @@
 # Module PRD: Export and Proof
 
+**Panel alignment (October 24, 2026).** Proof and Export rails share the preview-header top and divider height. Both sides remain adjustable; the Export center overlay leaves the two resize handles uncovered, including after Metadata was collapsed in Grade.
+
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
 - **Last status check:** October 19, 2026, against the code.

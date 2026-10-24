@@ -1063,6 +1063,48 @@
   $("add-folder").addEventListener("click", openPicker); $("empty-add").addEventListener("click", openPicker);
   $("open-image").addEventListener("click", () => postParent("choose-source"));
   $("grid-view").addEventListener("click", () => setView("grid")); $("single-view").addEventListener("click", () => setView("single")); $("review-view").addEventListener("click", () => setReview(true));
+  // Match the workspace splitters: drag, arrow keys, Home/End and reset.
+  for (const [side, maximum, direction] of [["left", 380, 1], ["right", 420, -1]]) {
+    const splitter = $(`library-${side}-splitter`);
+    let width = 250;
+    const setWidth = value => {
+      width = Math.max(200, Math.min(maximum, value));
+      library.style.setProperty(`--library-${side}-w`, `${width}px`);
+      splitter.setAttribute("aria-valuenow", String(Math.round(width)));
+    };
+    splitter.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const start = event.clientX, initial = width, pointer = event.pointerId;
+      splitter.setPointerCapture(pointer);
+      splitter.classList.add("dragging");
+      document.documentElement.dataset.resizing = "true";
+      const move = next => { if (next.pointerId === pointer) setWidth(initial + (next.clientX - start) * direction); };
+      const stop = next => {
+        if (next.pointerId !== pointer) return;
+        splitter.removeEventListener("pointermove", move);
+        splitter.removeEventListener("pointerup", stop);
+        splitter.removeEventListener("pointercancel", stop);
+        splitter.removeEventListener("lostpointercapture", stop);
+        splitter.classList.remove("dragging");
+        document.documentElement.removeAttribute("data-resizing");
+        if (splitter.hasPointerCapture(pointer)) splitter.releasePointerCapture(pointer);
+      };
+      splitter.addEventListener("pointermove", move);
+      splitter.addEventListener("pointerup", stop);
+      splitter.addEventListener("pointercancel", stop);
+      splitter.addEventListener("lostpointercapture", stop);
+    });
+    splitter.addEventListener("dblclick", () => setWidth(250));
+    splitter.addEventListener("keydown", event => {
+      const value = event.key === "Home" ? 200 : event.key === "End" ? maximum
+        : event.key === "ArrowLeft" ? width - 8 * direction
+        : event.key === "ArrowRight" ? width + 8 * direction : null;
+      if (value === null) return;
+      event.preventDefault();
+      setWidth(value);
+    });
+  }
   function collapse(side, closed) {
     library.classList.toggle(`library-${side}-closed`, closed);
     $(`collapse-${side}`).setAttribute("aria-expanded", String(!closed));

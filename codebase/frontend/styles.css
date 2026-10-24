@@ -453,7 +453,7 @@ h2 {
   align-items: center;
   gap: 16px;
   min-height: var(--top-h);
-  padding: 0 16px;
+  padding: 0 16px 0 var(--workspace-leading);
   min-width: 0;
   background: var(--panel);
   border-bottom: 1px solid var(--hairline);
@@ -706,7 +706,7 @@ output {
   flex-direction: column;
   width: auto;
   gap: 0;
-  padding: 0 16px 18px;
+  padding: 0 var(--workspace-leading) 18px;
   overflow-x: hidden;
   overflow-y: auto;
   border-right: 1px solid var(--border);
@@ -9374,3 +9374,19 @@ body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; fl
 
 /* Keep the preset rail above the preview toolbar in Export. */
 body.batch-export-ready[data-workflow="export"] .batch-preset-rail { z-index: 41; }
+
+/* Shared left edge and panel alignment across workflow pages. */
+:root { --workspace-leading: 12px; }
+.product-logo { object-position: left center; }
+.window-menu-bar { padding-left: 2px; }
+.window-menu-trigger { text-align: left; }
+.source-rail .rail-title-row { margin-inline: calc(-1 * var(--workspace-leading)); padding-left: var(--workspace-leading); }
+.source-rail .disclosure-trigger { justify-content: flex-start; padding-left: 0; }
+.batch-preset-rail .workflow-rail-header { padding-left: var(--workspace-leading); }
+/* Fixed workflow rails leave their adjacent grid splitter exposed. */
+.workflow-side-panel { min-width: 0; max-width: none; }
+
+/* Export's center overlay must stop before both resize handles. */
+.batch-grid-panel { left: calc(var(--rail-w) + var(--splitter-size)); right: calc(var(--grade-w) + var(--splitter-size)); }
+body[data-workflow="export"] .app-shell { grid-template-columns: var(--rail-w) var(--splitter-size) minmax(0, 1fr) var(--splitter-size) var(--grade-w); }
+body[data-workflow="export"] .app-shell .source-splitter { display: block; }

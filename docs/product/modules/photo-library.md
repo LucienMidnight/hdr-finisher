@@ -1,5 +1,7 @@
 # Module PRD: Photo Library
 
+**Panel alignment (October 24, 2026).** Both Library side panels resize by dragging their inner edge, with arrow keys, Home/End and double-click reset. Collapsing and reopening a panel keeps its chosen width. Panel headers share the preview-toolbar height; section and folder chevrons and text use consistent left columns.
+
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
 - **Last status check:** October 19, 2026, against the code.

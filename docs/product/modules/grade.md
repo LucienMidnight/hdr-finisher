@@ -1,5 +1,7 @@
 # Module PRD: Grade
 
+**Panel alignment (October 24, 2026).** Left and right rails remain adjustable on Grade, Proof and Export. The logo, File menu and left-panel content share a consistent leading edge. The Control Panel title occupies the shared preview-header height with a divider immediately beneath it; Global / Local / Retouch remain full-width tabs.
+
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
 - **Last status check:** October 23, 2026, HSL integration against the code.
@@ -18,8 +20,7 @@ preserve scrolling. Local tools sit below the adjustment list, followed by
 visible mask actions, then Brush settings and Mask settings; there is no More
 menu for these actions. Retouch has an explicit Inpaint Brush and Stop painting
 control, and its preview overlay accepts painting in Retouch mode. Shared
-HDR/SDR metadata captions above these controls are removed. The panel title has
-14 pixels of top padding; the scrollbar track stays visible at a fixed width
+HDR/SDR metadata captions above these controls are removed. The panel title is centered in the shared preview-header height; the scrollbar track stays visible at a fixed width
 with or without overflow in all three modes.
 
 **Wheel presentation (October 23, 2026).** HSL and Color Wheels share primary

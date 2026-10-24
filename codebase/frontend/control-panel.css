@@ -1,6 +1,9 @@
 /* Control Panel modes and shared rendition folder. */
 [hidden] { display: none !important; }
-#grade-workflow-panel > .grade-header { flex-wrap: wrap; padding-top: 14px; }
+#grade-workflow-panel > .grade-header { display: block; padding: 0; }
+.control-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: var(--panel-header-h); padding: 0 16px; border-bottom: 1px solid var(--hairline); }
+.control-title-row .panel-title { margin: 0; }
+#grade-workflow-panel .control-mode-switch { width: 100%; margin: 8px 0 0; }
 /* Keep a visible, fixed-width rail in every Control Panel mode. */
 .grade-rail { overflow-y: scroll; scrollbar-color: auto; }
 .grade-rail::-webkit-scrollbar { width: 12px; background: var(--deep); }
