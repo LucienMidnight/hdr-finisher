@@ -8380,9 +8380,9 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   position: absolute;
   z-index: 2;
   top: 50%;
-  left: 0;
-  width: 16px;
-  height: 16px;
+  left: -3px;
+  width: 24px;
+  height: 24px;
   border: 0;
   border-radius: 50%;
   /* Blender render includes a small transparent margin around the knob. */
@@ -8418,7 +8418,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 .film-module-toggle > input[type="checkbox"]:checked::before,
 .proof-enable-row > input[type="checkbox"]:checked::before,
 .gradient-luma-toggle > input[type="checkbox"]:checked::before {
-  transform: translate(28px, -50%);
+  transform: translate(24px, -50%);
 }
 
 .checkbox-row > input[type="checkbox"]:focus-visible,
