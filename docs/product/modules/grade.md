@@ -1,6 +1,6 @@
 # Module PRD: Grade
 
-**Toggle knob (October 24, 2026).** Shared on/off switches use Steve’s transparent Blender knob render over the existing recessed track. The track remains 46 by 20 px; the 24 px knob extends slightly above and below its rails. Checked state, focus and keyboard behaviour remain unchanged; knob motion respects reduced-motion preferences.
+**Toggle knob (October 24, 2026).** Shared on/off switches use Steve’s darker v002 transparent Blender knob render over the existing recessed track, chosen to make its shading easier to see on Steve’s HDR screen. The track remains 46 by 20 px; the 24 px knob extends slightly above and below its rails. Checked state, focus and keyboard behaviour remain unchanged; knob motion respects reduced-motion preferences.
 
 **Panel alignment (October 24, 2026).** Left and right rails remain adjustable on Grade, Proof and Export. The logo, File menu and left-panel content share a consistent leading edge. The Control Panel title occupies the shared preview-header height with a divider immediately beneath it; Global / Local / Retouch remain full-width tabs.
 
