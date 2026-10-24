@@ -9337,10 +9337,11 @@ body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; fl
 .batch-unit-field input::-webkit-inner-spin-button, .batch-unit-field input::-webkit-outer-spin-button { appearance:none; margin:0; }
 .batch-unit-field:focus-within { outline:1px solid var(--accent); outline-offset:1px; }
 .batch-unit-field input:focus-visible { outline:none; }
-.batch-version-row, .batch-pattern-row { display:flex; gap:6px; align-items:center; min-width:0; }
+.batch-version-row { display:flex; gap:6px; align-items:center; min-width:0; }
+.batch-pattern-row { display:grid; gap:6px; min-width:0; margin-left:10px; }
+.batch-pattern-row > label { font:12px var(--sans); color:var(--body); letter-spacing:0; text-transform:none; }
 .batch-version-row > select { flex:1; width:0; }
-.batch-pattern-row > input { flex:1; width:0 !important; }
-.batch-pattern-row > select { width:96px; }
+.batch-pattern-row > input, .batch-pattern-row > select { width:100%; }
 #batch-preset-editor { display:block; }
 #batch-preset-editor input[hidden] { display:none; }
 #export-fit-row { display:block; }
@@ -9394,6 +9395,16 @@ body.batch-export-ready[data-workflow="export"] .batch-preset-rail { z-index: 41
 .batch-grid-panel { left: calc(var(--rail-w) + var(--splitter-size)); right: calc(var(--grade-w) + var(--splitter-size)); }
 body[data-workflow="export"] .app-shell { grid-template-columns: var(--rail-w) var(--splitter-size) minmax(0, 1fr) var(--splitter-size) var(--grade-w); }
 body[data-workflow="export"] .app-shell .source-splitter { display: block; }
+
+/* Export presets collapse to the same narrow rail as source metadata. */
+.batch-preset-rail .workflow-rail-header .panel-title { flex:1; min-width:0; }
+body[data-workflow="export"].batch-presets-collapsed .batch-preset-rail { width:44px; }
+body[data-workflow="export"].batch-presets-collapsed .batch-preset-rail > :not(.workflow-rail-header),
+body[data-workflow="export"].batch-presets-collapsed .batch-preset-rail .workflow-rail-header > :not(#batch-presets-collapse) { display:none !important; }
+body[data-workflow="export"].batch-presets-collapsed .batch-preset-rail .workflow-rail-header { justify-content:center; padding-inline:4px; }
+body[data-workflow="export"].batch-presets-collapsed .app-shell { grid-template-columns:44px 0 minmax(0,1fr) var(--splitter-size) var(--grade-w); }
+body[data-workflow="export"].batch-presets-collapsed .app-shell .source-splitter { display:none; }
+body[data-workflow="export"].batch-presets-collapsed .batch-grid-panel { left:44px; }
 
 /* Photo framing shares the image coordinates; viewer Background remains separate. */
 #photo-frame-toggle { anchor-name: --photo-frame-button; }

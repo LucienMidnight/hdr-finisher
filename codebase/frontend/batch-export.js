@@ -4,6 +4,7 @@
   const $ = id => document.getElementById(id);
   const node = (tag, text = "", cls = "") => { const e = document.createElement(tag); e.textContent=text; e.className=cls; return e; };
   const button = (text, fn) => { const b=node("button",text,"button-secondary"); b.type="button"; b.onclick=()=>Promise.resolve(fn()).catch(report); return b; };
+  const help = (element, text) => { element.classList.add("tooltip-trigger"); element.dataset.tooltip=text; element.tabIndex=0; element.setAttribute("aria-description",text); return element; };
   const report = error => status.post({id:"batch-export",severity:"error",message:error.message||String(error)});
   async function api(url, data, method="POST") { const r=await fetch(url,data === undefined?{}:{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(data)}); const p=await r.json(); if(!r.ok) throw Error(typeof p.detail==="string"?p.detail:"Export request failed."); return p; }
   async function presetURL() { const directory=state.appPreferences?.folders?.presetSave || await desktop?.getDefaultPresetDirectory?.(); return `/api/export-presets${directory?`?directory=${encodeURIComponent(directory)}`:""}`; }
@@ -94,6 +95,7 @@
       const name=HDRExportPatterns.render(version.pattern,photo,1,version.name,model.draft.name);
       $("batch-example").textContent=`Example: ${version.subfolder?`${version.subfolder}/`:""}${name}${exportExtensionForFormat(version.settings.format)} · Invalid filename characters become _.`;
     }catch(error){$("batch-example").textContent=error.message;}
+    const patternHelp=$("batch-pattern-help");patternHelp.dataset.tooltip=$("batch-example").textContent;patternHelp.setAttribute("aria-description",patternHelp.dataset.tooltip);
     $("batch-summary").textContent=`${model.photos.length} photos · up to ${model.photos.length*model.draft.versions.length} files. Each uses its last saved grade.${model.photos.some(p=>p.unsaved)?" Unsaved changes in Grade are not exported.":""}${model.photos.some(p=>hdrSkipped(p))?" HDR versions are skipped for SDR-only photos.":""}${model.photos.some(p=>p.hdr_compatibility==="unknown")?" HDR compatibility will be checked during export.":""}`;
     const files=model.photos.reduce((n,p)=>n+fileCount(p),0);
     $("batch-count").textContent=`${model.photos.length} photos · ${model.draft.versions.length} versions · ${files} files`;
@@ -205,7 +207,16 @@
   let initializing;
   function init(){return initializing ||= buildUI();}
   async function buildUI(){model.initialized=true;document.body.classList.add("batch-export-ready");const rail=node("aside","","batch-preset-rail panel");rail.id="batch-preset-rail";
-    const railHead=node("div","","workflow-rail-header");railHead.append(node("h2","Export presets","panel-title"),menuButton("Export preset actions",presetActions));
+    const railHead=node("div","","workflow-rail-header");const collapse=button("",()=>{
+      const collapsed=document.body.classList.toggle("batch-presets-collapsed");
+      collapse.setAttribute("aria-expanded",String(!collapsed));
+      collapse.setAttribute("aria-label",collapsed?"Expand export presets":"Collapse export presets");
+      collapse.title=collapsed?"Expand export presets":"Collapse export presets";
+      scheduleLayoutSettled();
+    });
+    collapse.id="batch-presets-collapse";collapse.className="source-rail-expand panel-collapse-button";
+    collapse.setAttribute("aria-expanded","true");collapse.setAttribute("aria-label","Collapse export presets");collapse.setAttribute("aria-controls","batch-preset-list");collapse.title="Collapse export presets";
+    railHead.append(node("h2","Export presets","panel-title"),menuButton("Export preset actions",presetActions),collapse);
     const list=node("div");list.id="batch-preset-list";const name=node("input");name.id="batch-preset-name";name.hidden=true;
     const modified=node("p","","helper");modified.id="batch-modified";modified.setAttribute("aria-live","polite");rail.append(railHead,list,name,modified);document.body.append(rail);
     const sheet=$("export-sheet"),scroll=node("div","","batch-settings-scroll");sheet.querySelector(".panel-title").textContent="Export settings";
@@ -215,7 +226,8 @@
     const editor=section("Output version","batch-preset-editor"),tabs=node("div","","batch-version-row");tabs.id="batch-versions";
     const select=node("select");select.id="batch-version-select";select.setAttribute("aria-label","Output version");select.onchange=()=>{capture();model.version=Number(select.value);applyVersion();};
     const versionName=node("input");versionName.id="batch-version-name";versionName.hidden=true;
-    tabs.append(select,menuButton("Output version actions",versionActions));editor.append(tabs,versionName,node("p","Edits apply to this version only. Export includes all versions.","helper"));
+    help(editor.querySelector("h2"),"Each output version creates a separate file from the same saved photo edits, with its own export settings (format, size and naming). Changes here affect only the selected version. Export creates all versions.");
+    tabs.append(select,menuButton("Output version actions",versionActions));editor.append(tabs,versionName);
     const formatSection=els.exportFormat.closest("section"),profileSection=els.exportPreset.closest("section");
     const format=section("Format & quality");format.append(field("Format",els.exportFormat),field("Quality profile",els.exportPreset),els.exportQualityRow,els.exportFormatNote);formatSection.remove();profileSection.remove();
     els.exportFormat.setAttribute("aria-label","Format");els.exportFormat.removeAttribute("aria-labelledby");els.exportPreset.setAttribute("aria-label","Quality profile");els.exportPreset.removeAttribute("aria-labelledby");
@@ -229,13 +241,15 @@
       else {if(id==="export-width")$("export-fit-row").replaceChildren();$("export-fit-row").append(row);}
     }
     finishing.append($("export-fit-row"));
-    const framed=els.exportWithFrame.closest("label");framed.classList.add("batch-setting-row");finishing.append(framed,$("export-framing-note"));
+    const framed=els.exportWithFrame.closest("label"),framingNote=$("export-framing-note");framingNote.hidden=true;
+    framed.replaceChildren(help(node("span","Export with frame"),framingNote.textContent),els.exportWithFrame);framed.classList.add("batch-setting-row");finishing.append(framed,framingNote);
     const prevent=els.exportPreventEnlargement.closest("label");prevent.replaceChildren(node("span","Prevent enlargement"),els.exportPreventEnlargement);prevent.classList.add("batch-setting-row");finishing.append(prevent,field("Output sharpening",els.exportSharpening),$("export-sharpening-note"));
     const naming=section("File naming"),pattern=node("input");pattern.id="batch-pattern";pattern.value="{filename}_{version}";pattern.setAttribute("aria-label","File name pattern");
     const patternRow=node("div","","batch-pattern-row"),tokens=node("select");tokens.setAttribute("aria-label","Insert filename token");tokens.append(new Option("Insert token…",""));
     for(const token of ["filename","copy","sequence:3","date:YYYYMMDD","rating","version","preset"])tokens.append(new Option(`{${token}}`,token));
     tokens.onchange=()=>{if(!tokens.value)return;pattern.setRangeText(`{${tokens.value}}`,pattern.selectionStart,pattern.selectionEnd,"end");tokens.value="";pattern.focus();capture();};
-    patternRow.append(pattern,tokens);const patternLabel=node("label","File name pattern","batch-stacked-field");patternLabel.append(patternRow);const exampleText=node("p","","helper");exampleText.id="batch-example";naming.append(patternLabel,exampleText);
+    const patternLabel=help(node("label","File name pattern"),"Filename preview");patternLabel.id="batch-pattern-help";patternLabel.htmlFor=pattern.id;
+    patternRow.append(patternLabel,pattern,tokens);const exampleText=node("p","","helper");exampleText.id="batch-example";exampleText.hidden=true;pattern.setAttribute("aria-describedby",exampleText.id);naming.append(patternRow,exampleText);
     const advanced=els.jpegAdvancedSettings;advanced.classList.add("batch-settings-section");advanced.querySelector(":scope > summary").textContent="Advanced settings";scroll.append(advanced);
     const body=advanced.querySelector(".advanced-settings-body"),codec=node("details","","batch-advanced-group");codec.append(node("summary","Codec"));
     const codecBody=node("div","","batch-advanced-body");for(const child of [...body.children])if(child.id!=="export-metadata-policy-field"&&child.id!=="export-reference-white")codecBody.append(child);codec.append(codecBody);

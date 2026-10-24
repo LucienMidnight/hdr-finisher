@@ -106,7 +106,6 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert 'id="viewer-branch-note" class="title-tooltip preview-title-tooltip" role="tooltip"' in html
     assert "Switch renditions in the Control Panel or use the layout buttons to view them side-by-side." in html
     assert 'class="preview-metadata-panel"' not in html
-    assert html.count('<h1 class="panel-title">Control Panel</h1>') == 4
     assert '<h1 class="panel-title dock-panel-title">Scopes</h1>' in html
     assert 'id="scope-title" class="visually-hidden"' in html
     assert 'class="scope-header-controls field-inline"' in html

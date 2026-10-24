@@ -18,7 +18,12 @@ Controls use the shared title, field and switch tokens. Indented rows align
 the enlargement switch with the fields; pixel units sit beside the number
 inside dimension fields. Destination and Export remain visible while
 settings scroll. Editing one output version leaves the others intact;
-Export includes all versions.
+Export includes all versions. The preset rail has the shared collapse/expand
+button. Frame export uses a label on the left and switch in the field column.
+The filename token menu sits below the full-width pattern field. Output version,
+frame export and filename pattern help appear on hover or keyboard focus; the
+version help distinguishes export variants from saved photo edits. The Proof
+panel heading is "Proof Settings".
 
 The default destination and initial Browse location are the source photo's
 folder, using the first photo for a batch. Changing the photo selection

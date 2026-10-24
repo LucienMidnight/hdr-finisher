@@ -311,7 +311,6 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     javascript = frontend_scripts()
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert '<aside class="source-rail panel" aria-label="Metadata">' in html
-    assert html.count('<h1 class="panel-title">Control Panel</h1>') == 4
     assert 'data-control-mode="global"' in html
     assert 'data-control-mode="local"' in html
     assert 'data-control-mode="retouch"' in html

@@ -71,6 +71,38 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','sdr
     });
     assert.ok(Math.abs(geometry.fieldLeft-geometry.toggleLeft)<2,'toggle starts at field column');
     assert(geometry.suffixInside,'pixel suffix stays inside dimension field');
+    const exportLayout=await page.evaluate(()=>{
+      const rect=el=>el.getBoundingClientRect();
+      const frame=document.getElementById('export-with-frame'),label=frame.previousElementSibling;
+      const pattern=document.getElementById('batch-pattern'),tokens=document.querySelector('[aria-label="Insert filename token"]');
+      return {labelLeft:rect(label).left,labelRight:rect(label).right,frameLeft:rect(frame).left,pattern:rect(pattern).toJSON(),tokens:rect(tokens).toJSON()};
+    });
+    assert(exportLayout.labelRight<=exportLayout.frameLeft,'frame label precedes the switch');
+    assert.ok(Math.abs(exportLayout.frameLeft-geometry.toggleLeft)<2,'frame and enlargement switches share a column');
+    assert(exportLayout.tokens.top>=exportLayout.pattern.bottom,'token menu sits below the pattern');
+    assert.ok(Math.abs(exportLayout.tokens.width-exportLayout.pattern.width)<2,'naming controls use the full field width');
+    assert.equal(await page.locator('#export-framing-note').isVisible(),false);
+    assert.equal(await page.locator('#batch-example').isVisible(),false);
+    for(const trigger of ['#batch-preset-editor h2','#export-with-frame','#batch-pattern-help']){
+      const target=trigger==='#export-with-frame'?page.locator('#export-with-frame').locator('..').locator('span'):page.locator(trigger);
+      await target.hover();
+      await page.locator('#bounded-help-tooltip').waitFor({state:'visible'});
+      assert((await page.locator('#bounded-help-tooltip').innerText()).length>20,'help appears on label hover');
+      await page.locator('#batch-pattern').click();
+      await page.locator('#bounded-help-tooltip').waitFor({state:'hidden'});
+    }
+    const originalPattern=await page.locator('#batch-pattern').inputValue();
+    await page.locator('[aria-label="Insert filename token"]').selectOption('rating');
+    assert.match(await page.locator('#batch-pattern').inputValue(),/\{rating\}/,'token insertion still updates the pattern');
+    await page.locator('#batch-pattern').fill(originalPattern);
+    const expandedLeft=await page.locator('#batch-grid-panel').evaluate(el=>el.getBoundingClientRect().left);
+    await page.getByRole('button',{name:'Collapse export presets',exact:true}).click();
+    assert.equal(await page.locator('#batch-preset-list').isVisible(),false);
+    assert(await page.locator('#batch-grid-panel').evaluate((el,left)=>el.getBoundingClientRect().left<left,expandedLeft),'collapse gives space to the center');
+    await page.getByRole('button',{name:'Expand export presets',exact:true}).click();
+    assert.equal(await page.locator('#batch-preset-list').isVisible(),true);
+    assert.equal(await page.locator('#batch-grid-panel').evaluate(el=>el.getBoundingClientRect().left),expandedLeft);
+    assert.equal(await page.locator('#proof-workflow-panel .panel-title').textContent(),'Proof Settings');
     await page.locator('#export-prevent-enlargement').uncheck();assert.equal(await page.locator('#export-prevent-enlargement').isChecked(),false);
     const footerTop=await page.locator('.batch-export-footer').evaluate(el=>el.getBoundingClientRect().top);
     await page.locator('.batch-settings-scroll').evaluate(el=>el.scrollTop=el.scrollHeight);
