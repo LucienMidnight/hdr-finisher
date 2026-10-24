@@ -140,6 +140,21 @@
   // Cells on screen now, without the finished cells kept just beyond it.
   const shownCells = map => [...map.values()].filter(cell => map.shown?.has(cell.photo.path));
   const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}`;
+  const idlePictures = HDRLibrarySceneScheduler.createWarmer({
+    load:(path,signal)=>HDRLibraryScenes.load(path,640,signal,80,true),
+    idle:()=>state.active&&!document.hidden&&!state.reading&&state.view==="grid"&&
+      !HDRLibraryScenes.snapshot().sources.active&&!HDRLibraryScenes.snapshot().sources.waiting,
+  });
+  for(const event of ["pointerdown","keydown","wheel"]) document.addEventListener(event,()=>idlePictures.touch(),{passive:true});
+  async function warmPictures(){
+    const shown=state.view==="grid" ? state.cells.shown : state.filmCells.shown;
+    const center=state.allPhotos.findIndex(photo=>shown?.has(photo.path));
+    const rows=state.allPhotos.map((photo,index)=>({path:photo.path,identity:pictureIdentity(photo),distance:Math.abs(index-Math.max(0,center))}));
+    rows.sort((a,b)=>a.distance-b.distance);
+    idlePictures.update(state.path || JSON.stringify(state.collection),rows);
+    await idlePictures.tick();setTimeout(warmPictures,1000);
+  }
+  setTimeout(warmPictures,1000);
   function pictureMode(img, hdr) {
     img.style.dynamicRangeLimit = hdr ? 'no-limit' : 'standard';
     img.dataset.rendition = hdr ? 'hdr' : 'sdr'; img.dataset.peakNits = hdr ? '1000' : '203';
@@ -225,7 +240,7 @@
   });
   function clearPrefetch() { readAhead.clear(); stopRawAhead(); }
   function setActive(active) {
-    state.active = active;
+    state.active = active; idlePictures.touch();
     if (!active) {
       tilePool.clear();
       compare.cancel();
@@ -399,12 +414,13 @@
     }
   }
   // Finished cached-picture cells stay built for one screen beyond each edge, so
-  // scrolling back shows them at once. Cells still loading are dropped as before.
+  // scrolling back shows them at once. Loading cells detach from shared preparation.
   function reconcile(map, start, end, container, position) {
     const span = end - start, keepStart = Math.max(0, start - span), keepEnd = Math.min(state.photos.length, end + span);
     const kept = (cell, index) => index >= start && index < end || index >= keepStart && index < keepEnd && cell.meta && (!cell.fallback || cell.scene?.route === "library-live");
     const wanted = new Map(state.photos.slice(keepStart, keepEnd).map((photo, offset) => [photo.path, keepStart + offset]));
     map.shown = new Set(state.photos.slice(start, end).map(photo => photo.path));
+    HDRLibraryScenes.viewport([...map.shown],state.photos.slice(keepStart,keepEnd).map(photo=>photo.path));
     for (const [path, cell] of map) {
       if (wanted.has(path) && kept(cell, wanted.get(path))) continue;
       cell.element.remove(); map.delete(path);
@@ -572,6 +588,7 @@
   const commandState = () => postParent("command-state", {selected: state.selection.size, copied: pasteGrades.available()});
   function invalidateGradePictures(paths) {
     const targets = new Set(paths);
+    HDRLibraryScenes.invalidate(paths);
     tilePool.discard(cell => targets.has(cell.photo.path));
     for (const map of [state.cells, state.filmCells]) for (const [path, cell] of map) if (targets.has(path)) { cell.controller.abort(); cell.element.remove(); map.delete(path); }
     if (targets.has(selected()?.path)) { state.single?.abort(); state.fitMeta = null; state.nativeMeta = null; }
@@ -1203,8 +1220,8 @@
   }
   $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintSize(); paintGrid(); paintFilm(); });
   let gridFrame = 0, filmFrame = 0;
-  grid.addEventListener("scroll", () => { if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); }); });
-  film.addEventListener("scroll", () => { if (!filmFrame) filmFrame = requestAnimationFrame(() => { filmFrame = 0; paintFilm(); }); });
+  grid.addEventListener("scroll", () => { idlePictures.touch(); if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); }); });
+  film.addEventListener("scroll", () => { idlePictures.touch(); if (!filmFrame) filmFrame = requestAnimationFrame(() => { filmFrame = 0; paintFilm(); }); });
   // An ordinary mouse wheel scrolls up and down; the filmstrip only scrolls sideways.
   film.addEventListener("wheel", event => {
     if (event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;

@@ -10,6 +10,26 @@
 - **How it works inside:** [photo-library.md](../../technical/photo-library.md),
   [library speed architecture](../../technical/library-speed-architecture.md).
 
+**Viewport scheduling (October 24, 2026).** Tile removal cancels pending demand,
+but the existing maximum of two active scene preparations finish and publish
+both the 2560- and 640-pixel caches. Returning tiles share that preparation.
+Explicit viewing requests lead the pending queue, then visible tiles, then
+nearby photos; aging only breaks ties within a priority. Embedded camera
+previews still display immediately. Source identity changes and explicit grade
+invalidation cancel obsolete shared work; publication rechecks ownership before
+renaming the cache file.
+
+When the grid is idle, one candidate at a time progressively checks and caches
+photos in the current folder, starting near the viewport. Activity detaches
+pending idle demand and foreground work takes the next available slot. Each
+identity is attempted once per folder pass. Idle work stops when either existing
+cache allowance lacks conservative headroom for both scene sizes (including a
+possible SDR reference); it does not deliberately evict entries to warm more.
+Large folders may therefore remain partly uncached. Foreground requests retain
+the ordinary cache eviction policy. Active preparation is bounded and is not
+preempted just to open another image, so an explicit request can wait for the
+next preparation slot. The next folder pass can reconsider cache headroom.
+
 **DNG rejection detail (October 21, 2026).** Library quick and native picture
 requests preserve the DNG inspector's rejection reason, including insufficient
 safe memory, instead of replacing it with a generic unreadable-DNG message.
@@ -1866,6 +1886,8 @@ turn a CPU reference into GPU work.
   folders are checked.
 
 ## 7. V2 work and other deferred ideas
+
+- **Post-v1: consider Library cache compression (Steve, October 24, 2026).** Evaluate idle/background lossless compression of large half-float previews, measuring disk savings against compression cost and cached reopen speed; a manual compact-cache action is optional. Deferred beyond v1: preserve the current cache plans, formats and large-image preparation behavior.
 
 **Deferred to v2 (Steve, October 21, 2026); not built:**
 

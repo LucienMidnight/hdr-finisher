@@ -3897,7 +3897,7 @@
       "path": "tests/library-live-grid.js",
       "areas": ["library"],
       "tier": "core",
-      "protects": "Visible live cells reuse stored scenes without finished JPEGs and recover after GPU device loss.",
+      "protects": "Detached active GPU preparation survives tile cancellation, is reused by explicit viewing, publishes both cache sizes; visible cells reuse scenes and recover after GPU device loss.",
       "launch": {"method": "electron"}
     }
 ,

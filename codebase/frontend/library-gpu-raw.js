@@ -860,10 +860,11 @@
   }
   // The grid and the filmstrip can ask for the same photo: they share one job,
   // which stops only when every asker has scrolled past it.
-  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30 } = {}) {
+  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "" } = {}) {
     root.HDRIdleWarmup?.touch();
-    const key = `${path}|${savedGradeOnly}|${nativeMode}|${liveScene}`;
+    const key = `${path}|${savedGradeOnly}|${nativeMode}|${liveScene}|${sceneIdentity}`;
     let job = inflight.get(key);
+    if (job?.controller.signal.aborted) job = null;
     if (!job) {
       const controller = new AbortController();
       job = { controller, users: 0 };
@@ -932,7 +933,7 @@
     return peak;
   }
   const rawBudget = (meta,edges=[640,2560]) => meta.dng_warp ? dngBudget(meta,edges) : meta.width*meta.height*44+64*1024*1024;
-  const exported = Object.freeze({ rawBudget, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance}) });
+  const exported = Object.freeze({ rawBudget, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

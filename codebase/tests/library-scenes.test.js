@@ -80,3 +80,29 @@ test('GPU failures retain their reason in the loading log before CPU fallback',a
  await assert.rejects(scenes.load('photo',640),/decoder failed/);
  assert.deepEqual(events.filter(event=>event.stage==="source_gpu_fallback"),[{stage:'source_gpu_fallback',path:'photo',reason:'Source transfer exceeds available GPU memory'}]);
 });
+
+test('source job survives an entirely absent tile and explicit invalidation rejects its old result',async()=>{
+ const block=gate(),started=[];let shared;
+ const {scenes}=setup({photo:{bytes:10,revision:'1'}},async(path,edge,signal)=>{
+  shared=signal;started.push(path);await block.promise;return {edge,key:'stored'};
+ });
+ const cancel=new AbortController(),first=scenes.load('photo',640,cancel.signal);
+ await tick();cancel.abort();await assert.rejects(first,{name:'AbortError'});assert.equal(shared.aborted,false);
+ const returned=scenes.load('photo',640);await tick();assert.deepEqual(started,['photo']);
+ scenes.invalidate(['photo']);await assert.rejects(returned,{name:'AbortError'});assert.equal(shared.aborted,true);
+ block.resolve();await tick();assert.equal(scenes.snapshot().sources.active,0);
+});
+
+test('new source identity never joins a preparation for older pixels',async()=>{
+ const block=gate(),plans={photo:{bytes:1,source_identity:'old'}},started=[];
+ const {scenes}=setup(plans,async(path,edge)=>{started.push(plans.photo.source_identity);await block.promise;return {edge};});
+ const old=scenes.load('photo',640);const rejected=assert.rejects(old,{name:'AbortError'});await tick();plans.photo.source_identity='new';
+ const fresh=scenes.load('photo',640);await tick();assert.deepEqual(started,['old','new']);
+ block.resolve();await Promise.all([rejected,fresh]);
+});
+
+test('idle cache refusal skips development but foreground can still request the photo',async()=>{
+ let calls=0;const {scenes}=setup({photo:{bytes:1,warm_allowed:false}},async(path,edge)=>{calls++;return {edge};});
+ assert.equal(await scenes.load('photo',640,null,80,true),null);assert.equal(calls,0);
+ await scenes.load('photo',640,null,0);assert.equal(calls,1);
+});

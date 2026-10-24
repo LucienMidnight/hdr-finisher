@@ -17,6 +17,25 @@ for(const source of [...sources,path.join(root,'tests/fixtures/sdr_gradient.png'
    const w=element.contentWindow,fetch=w.fetch.bind(w);w.__liveRequests=[];
    w.fetch=(url,options)=>{w.__liveRequests.push({url:String(url),body:typeof options?.body==='string'?options.body:null});return fetch(url,options);};
   });
+  const detached=await library.evaluate(async(element,source)=>{
+   const w=element.contentWindow,original=w.HDRLibraryGpuRaw;let starts=0,entered;
+   const begun=new Promise(resolve=>entered=resolve);
+   w.HDRLibraryGpuRaw={...original,liveScene:(...args)=>{starts++;entered();return original.liveScene(...args);}};
+   try{
+    const controller=new w.AbortController();
+    const first=w.HDRLibraryScenes.load(source,640,controller.signal).catch(error=>error.name);
+    await begun;controller.abort();
+    const detachedResult=await first;
+    const active=w.HDRLibraryScenes.snapshot().sources.active;
+    const returned=await w.HDRLibraryScenes.load(source,2560,undefined,0);
+    const small=await w.HDRLibraryScenes.load(source,640);
+    const large=await w.HDRLibraryScenes.load(source,2560);
+    return {starts,detachedResult,active,returnedEdge:returned.edge,smallCached:small.cache_hit,largeCached:large.cache_hit};
+   }finally{w.HDRLibraryGpuRaw=original;}
+  },path.join(folder,'DSC07060.ARW'));
+  assert.equal(detached.detachedResult,'AbortError');assert.equal(detached.active,1);
+  assert.equal(detached.starts,1,'Returning explicit demand reuses detached GPU preparation');
+  assert.equal(detached.returnedEdge,2560);assert.ok(detached.smallCached&&detached.largeCached,'Detached preparation publishes both cache sizes');
   const start=Date.now();
   await library.evaluate((element,folder)=>element.contentWindow.HDRLibrary.browse(folder),folder);
   const settled=()=>page.waitForFunction(()=>{
@@ -31,6 +50,7 @@ for(const source of [...sources,path.join(root,'tests/fixtures/sdr_gradient.png'
    const requests=w.__liveRequests;
    return {rows,requests,memory:(await w.HDRLibraryPictures.initialize()).resourceMemorySnapshot()};
   });
+  report.detached=detached;
   assert.ok(report.rows.every(r=>r.cacheHit),'Every source is stored and reused');
   assert.equal(report.requests.filter(r=>r.url.startsWith('/api/library/thumbnail/')).length,0,'Live cells never publish or read a finished thumbnail');
   assert.equal(report.requests.filter(r=>r.url==='/api/library/fallback-picture').length,0,'Usable GPU never makes CPU-finished pictures');

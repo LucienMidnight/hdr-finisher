@@ -318,6 +318,7 @@ def create_library_router(worker, browser, store=None):
             "X-Bytes-Per-Row": str(stride), "X-Working-Space": space,
             "Cache-Control": "private, no-store"})
 
+    from .library_pictures import picture_key
     from .library_source_jobs import SourceJobs
     source_jobs = SourceJobs()
 
@@ -344,7 +345,9 @@ def create_library_router(worker, browser, store=None):
         if cached:
             live.cache.accept_transient(cached)
         return {"cached": live.describe(command.path, cached) if cached else None,
-                "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}"}
+                "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}",
+                "source_identity": picture_key(path, 0, live_quality(document)),
+                "warm_allowed": live.cache.managed.can_warm()}
 
     @router.post("/live-scene")
     @picture_errors.guard
@@ -436,8 +439,16 @@ def create_library_router(worker, browser, store=None):
                         source_jobs.check(header["source_job"], file_commands.epoch)
                     if header["source_quality"] != live_quality(live.document(item)):
                         raise ValueError("Source settings changed during development.")
+                    def validate_owner():
+                        # Cache.build checks again after encoding, before rename.
+                        # A changed file must not acquire a newer key for old pixels.
+                        if header.get("source_job"):
+                            source_jobs.check(header["source_job"], file_commands.epoch)
+                        if header["source_quality"] != live_quality(live.document(item)):
+                            raise ValueError("Source settings changed during development.")
+                        return False
                     result = live.cache.build(source, edge, header["source_quality"],
-                        decoded=(pixels, reference, metadata))
+                        cancelled=validate_owner, decoded=(pixels, reference, metadata))
                     live.cache.accept_transient(result)
                     return result
             from . import library_rgb

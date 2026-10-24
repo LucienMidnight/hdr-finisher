@@ -180,6 +180,21 @@ class LibraryCache:
     def _used(self, db):
         return {**{name: 0 for name in ALLOWANCES}, **dict(db.execute('SELECT category, size FROM totals'))}
 
+    def can_warm(self):
+        """Leave room for both existing scene sizes, even with an SDR reference.
+
+        Conservative square bounds avoid idle eviction; foreground keeps normal LRU.
+        Use the running ledger, rather than enumerating the folder for each photo.
+        """
+        with _LOCK:
+            preferences = self.preferences()
+            if not preferences['enabled']:
+                return False
+            used = self._used(self._ledger())
+            return all(
+                used[name] + edge * edge * 12 + 1024 ** 2 <= preferences[name + '_limit_gb'] * 1024 ** 3
+                for name, edge in [('thumbnail', 640), ('full_size', 2560)])
+
     def usage(self):
         with _LOCK:
             db = self._ledger(reconcile=False)

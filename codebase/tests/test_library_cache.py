@@ -160,3 +160,17 @@ def test_normal_cleanup_removes_retired_pictures_in_current_and_old_cache(tmp_pa
     file=folder/'photo.jpg'; file.write_bytes(b'untouched')
     cache._discard_finished_pictures(unmarked)
     assert file.read_bytes()==b'untouched'
+
+@pytest.mark.parametrize('category', ['thumbnail', 'full_size'])
+def test_idle_headroom_stops_before_evicting_existing_scenes(tmp_path, monkeypatch, category):
+    cache = LibraryCache(tmp_path / 'profile')
+    assert cache.can_warm()
+    used = cache._used(cache._ledger())
+    used[category] = cache.preferences()[category + '_limit_gb'] * 1024 ** 3 - 1
+    monkeypatch.setattr(cache, '_used', lambda db: used)
+    assert not cache.can_warm()
+    used[category] = 0
+    assert cache.can_warm()
+    preferences = cache.preferences() | {'enabled': False}
+    monkeypatch.setattr(cache, 'preferences', lambda: preferences)
+    assert not cache.can_warm()

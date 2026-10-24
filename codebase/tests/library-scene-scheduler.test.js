@@ -111,3 +111,79 @@ test("Activity stages reflect real execution and resource waits, then clear on c
  finish(42);assert.equal(await result,42);await new Promise(resolve=>setImmediate(resolve));
  assert.deepEqual(queue.snapshot().jobs,[]);
 });
+
+test('detached active preparation finishes its cache and returning demand reuses it',async()=>{
+ const queue=create(2,undefined,{keepRunning:true}),block=gate(),cancel=new AbortController();
+ let calls=0,published=false,shared;
+ const first=queue.submit('photo',async signal=>{calls++;shared=signal;await block.promise;published=true;return 42;},cancel.signal);
+ await Promise.resolve();cancel.abort();await assert.rejects(first,{name:'AbortError'});
+ assert.equal(shared.aborted,false);assert.equal(queue.snapshot().active,1);
+ const returned=queue.submit('photo',()=>assert.fail('Duplicate preparation'));
+ block.resolve();assert.equal(await returned,42);assert.equal(calls,1);assert.equal(published,true);
+ const offscreen=gate(),gone=new AbortController();
+ const orphan=queue.submit('other',async()=>{await offscreen.promise;published='offscreen';},gone.signal);
+ await Promise.resolve();gone.abort();await assert.rejects(orphan,{name:'AbortError'});
+ offscreen.resolve();await new Promise(resolve=>setImmediate(resolve));assert.equal(published,'offscreen');
+});
+
+test('viewport demotes old pending demand and keeps explicit requests ahead of aged thumbnails',async()=>{
+ let time=0;const queue=create(1,()=>time),block=gate(),started=[];
+ const first=queue.submit('block',()=>block.promise);
+ const old=queue.submit('old',async()=>started.push('old'));
+ time=600000;
+ const visible=queue.submit('visible',async()=>started.push('visible'));
+ const near=queue.submit('near',async()=>started.push('near'));
+ const selected=queue.submit('selected',async()=>started.push('selected'),null,0,{heavy:true});
+ queue.reprioritize(path=>path==='visible'?10:path==='near'?50:80);
+ block.resolve();await Promise.all([first,old,visible,near,selected]);
+ assert.deepEqual(started,['selected','visible','near','old']);
+});
+
+test('explicit invalidation aborts detached work while retaining its occupied slot',async()=>{
+ const queue=create(1,undefined,{keepRunning:true}),block=gate();let shared,secondStarted=false;
+ const first=queue.submit('old',async signal=>{shared=signal;await block.promise;},null,10,{path:'photo'});
+ await Promise.resolve();queue.invalidate(path=>path==='photo');
+ await assert.rejects(first,{name:'AbortError'});assert.equal(shared.aborted,true);
+ const second=queue.submit('new',async()=>{secondStarted=true;});
+ await Promise.resolve();assert.equal(secondStarted,false);
+ block.resolve();await second;assert.equal(secondStarted,true);
+});
+
+test('idle pass is sequential, yields to activity, and stops at cache headroom without cycling',async()=>{
+ const {createWarmer}=require('../frontend/library-scene-scheduler');
+ let time=0,foreground=false;const calls=[],block=gate();let active=0,peak=0;
+ const warmer=createWarmer({now:()=>time,idle:()=>!foreground,load:async(path,signal)=>{
+  calls.push(path);peak=Math.max(peak,++active);
+  try{if(path==='a')await block.promise;return path==='full'?null:{cached:true};}finally{active--;}
+ }});
+ const rows=['a','b','full','never'].map(path=>({path,identity:path}));
+ warmer.update('folder',rows);await warmer.tick();assert.deepEqual(calls,[]);
+ time=1001;foreground=true;await warmer.tick();assert.deepEqual(calls,[]);
+ foreground=false;const first=warmer.tick();await warmer.tick();assert.deepEqual(calls,['a']);
+ block.resolve();await first;await warmer.tick();await warmer.tick();
+ for(let i=0;i<10;i++){warmer.update('folder',rows);await warmer.tick();}
+ assert.deepEqual(calls,['a','b','full']);assert.equal(peak,1);
+ warmer.update('other',[{path:'b',identity:'b'}]);time+=1001;await warmer.tick();assert.equal(calls.length,4);
+});
+
+test('idle activity detaches queued demand and retries it after the next idle period',async()=>{
+ const {createWarmer}=require('../frontend/library-scene-scheduler');let time=0,calls=0;
+ const warmer=createWarmer({now:()=>time,idle:()=>true,load:async(path,signal)=>{
+  calls++;if(calls===1)await new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Cancelled','AbortError'))));return {};
+ }});
+ warmer.update('folder',[{path:'a',identity:'a'}]);time=1001;
+ const pending=warmer.tick();warmer.touch();await pending;await warmer.tick();assert.equal(calls,1);
+ time+=1001;await warmer.tick();assert.equal(calls,2);
+});
+
+test('visible heavy demand keeps the next slot ahead of nearby light work',async()=>{
+ const queue=create(2,undefined,{heavyLimit:1}),a=gate(),b=gate(),started=[];
+ const first=queue.submit('first',()=>a.promise,null,10,{heavy:true});
+ const second=queue.submit('second',()=>b.promise,null,10,{heavy:true});
+ await new Promise(resolve=>setImmediate(resolve));
+ const visible=queue.submit('visible',async()=>started.push('visible'),null,10,{heavy:true});
+ const near=queue.submit('near',async()=>started.push('near'),null,50);
+ queue.reprioritize(path=>path==='visible'?10:50);
+ a.resolve();await visible;await near;assert.deepEqual(started,['visible','near']);
+ b.resolve();await Promise.all([first,second]);
+});

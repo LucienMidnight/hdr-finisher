@@ -406,3 +406,38 @@ def test_ultrahdr_gpu_boundary_preserves_decoder_pixels(tmp_path, monkeypatch, b
     override=recipe(None);override['interpretation_override']['color_space']='BT.2020'
     with pytest.raises(library_rgb.NotEligible,match='overrides'):
         library_rgb.decoded(path,override)
+
+def test_source_changed_during_encoding_cannot_publish_old_pixels(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.library_gpu_raw import unframe, frame
+    from hdr_finisher.models import AdjustmentState
+    class Helper:
+        def status(self): return {'running': True, 'paused': False, 'pending': 0, 'failure': None}
+    path = tmp_path / 'photo.png'
+    Image.new('RGB', (8, 4)).save(path)
+    profile = tmp_path / 'profile'
+    app = FastAPI()
+    app.include_router(create_library_router(Helper(), MediaBrowserStore(profile)))
+    def developed(cache, source, header, body):
+        return cache.build(source, 640, quality(None), (np.zeros((4, 8, 3), np.float32), None,
+            {'route': 'library-live', 'starting_look': AdjustmentState().model_dump(mode='json')}))
+    monkeypatch.setattr(library_rgb, 'developed', developed)
+    save = np.savez_compressed
+    def changed(*args, **kwargs):
+        result = save(*args, **kwargs)
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 2_000_000_000))
+        return result
+    monkeypatch.setattr(np, 'savez_compressed', changed)
+    with TestClient(app) as client:
+        response = client.post('/api/library/live-scene', json={'path': str(path), 'edge': 640, 'gpu': True})
+        assert response.status_code == 200
+        header, _ = unframe(response.content)
+        result = client.post('/api/library/live-developed', content=frame(header))
+        assert result.status_code == 409
+        assert 'invalidated' in result.json()['detail']
+        assert not list(profile.rglob('*.npz'))
+        assert not list(profile.rglob('*.tmp'))
