@@ -69,7 +69,12 @@ def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> Non
     assert "width: 16px;" in toggle_knob_block
     assert "height: 16px;" in toggle_knob_block
     assert "border: 0;" in toggle_knob_block
-    assert "background: linear-gradient(180deg" in toggle_knob_block
+    # The shared knob now uses Steve's rendered asset instead of a CSS gradient.
+    from PIL import Image
+    with Image.open(FRONTEND / "assets" / "toggle-knob.png") as knob:
+        assert knob.width == knob.height
+        assert knob.getchannel("A").getextrema() == (0, 255)
+        assert knob.getchannel("A").getbbox() is not None
     assert 'content: "ON";' not in checked_toggle_block
     assert "transform: translate(28px, -50%);" in checked_toggle_block
     film_module_header_block = css[css.index(".film-module-header {"):css.index(".film-module-header > span")]

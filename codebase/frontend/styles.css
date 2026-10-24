@@ -8385,9 +8385,9 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   height: 16px;
   border: 0;
   border-radius: 50%;
-  background: linear-gradient(180deg, #f8faf9 0%, #e4e7e6 38%, #c7cdcc 100%);
+  /* Blender render includes a small transparent margin around the knob. */
+  background: url("/static/assets/toggle-knob.png") center / 111% 111% no-repeat;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
     0 1px 2px rgba(0, 0, 0, 0.46);
   pointer-events: none;
   transform: translateY(-50%);
@@ -8521,7 +8521,11 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   .checkbox-row > input[type="checkbox"],
   .film-module-toggle > input[type="checkbox"],
   .proof-enable-row > input[type="checkbox"],
-  .gradient-luma-toggle > input[type="checkbox"] {
+  .gradient-luma-toggle > input[type="checkbox"],
+  .checkbox-row > input[type="checkbox"]::before,
+  .film-module-toggle > input[type="checkbox"]::before,
+  .proof-enable-row > input[type="checkbox"]::before,
+  .gradient-luma-toggle > input[type="checkbox"]::before {
     transition: none;
   }
 }
