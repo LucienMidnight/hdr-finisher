@@ -1,0 +1,538 @@
+{
+  "spec_id": "bordermuse-geometry-v1",
+  "reference_platform": "iOS",
+  "reference_lightroom_version": "11.6.10",
+  "reference_date": "2026-10-16",
+  "evidence": "Measured canvas/content bounds from Lightroom Mobile JPEG exports. Source filenames and hashes are preserved; one confirmed target ratio is recorded in its case setting_correction.",
+  "cases": [
+    {
+      "source_file": "16by9_2by1export_thic10.JPG",
+      "sha256": "dbaba8f19138e975090341953314e2c8d5702cd415fbe2d8a90194b26e960d9c",
+      "filename_ratio": [
+        2,
+        1
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 1152,
+        "thickness": 10,
+        "ratio": [
+          2,
+          1
+        ]
+      },
+      "expected": {
+        "width": 2534,
+        "height": 1266,
+        "left": 243,
+        "right": 243,
+        "top": 57,
+        "bottom": 57
+      }
+    },
+    {
+      "source_file": "16by9_3by2export_thic10.JPG",
+      "sha256": "754301628eac66519755bdee27a3fa64550f2ffe95b717924c6397d321a943d7",
+      "filename_ratio": [
+        3,
+        2
+      ],
+      "setting_correction": {
+        "sha256": "754301628eac66519755bdee27a3fa64550f2ffe95b717924c6397d321a943d7",
+        "ratio": [
+          1,
+          1
+        ],
+        "reason": "User confirmed this is a 1:1 export; the filename has a typo.",
+        "confirmed_by": "user",
+        "confirmed_on": "2026-10-16"
+      },
+      "input": {
+        "width": 2048,
+        "height": 1152,
+        "thickness": 10,
+        "ratio": [
+          1,
+          1
+        ]
+      },
+      "expected": {
+        "width": 2252,
+        "height": 2252,
+        "left": 102,
+        "right": 102,
+        "top": 550,
+        "bottom": 550
+      }
+    },
+    {
+      "source_file": "16by9_5by4export_thic0.JPG",
+      "sha256": "cc4a11acd30639ef77e883de8bf1dd62f4bbbc77ff80d8e108bbcaca8d0aefce",
+      "filename_ratio": [
+        5,
+        4
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 1152,
+        "thickness": 0,
+        "ratio": [
+          5,
+          4
+        ]
+      },
+      "expected": {
+        "width": 2048,
+        "height": 1638,
+        "left": 0,
+        "right": 0,
+        "top": 243,
+        "bottom": 243
+      }
+    },
+    {
+      "source_file": "16by9_5by4export_thic10.JPG",
+      "sha256": "e07200480a3dc8675e1975bac4b0cdd1a8f1633b40457939dd6e323f3c54e2d9",
+      "filename_ratio": [
+        5,
+        4
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 1152,
+        "thickness": 10,
+        "ratio": [
+          5,
+          4
+        ]
+      },
+      "expected": {
+        "width": 2252,
+        "height": 1802,
+        "left": 102,
+        "right": 102,
+        "top": 325,
+        "bottom": 325
+      }
+    },
+    {
+      "source_file": "16by9_5by4export_thic20.JPG",
+      "sha256": "72026d6d92a9abc17f78934cc2ca588090845e5ef6fffcdbb95c746cc533a946",
+      "filename_ratio": [
+        5,
+        4
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 1152,
+        "thickness": 20,
+        "ratio": [
+          5,
+          4
+        ]
+      },
+      "expected": {
+        "width": 2456,
+        "height": 1966,
+        "left": 204,
+        "right": 204,
+        "top": 407,
+        "bottom": 407
+      }
+    },
+    {
+      "source_file": "16by9_9by16export_thic10.JPG",
+      "sha256": "a71bf80cbb0d15d34db5e22448f52f304f83af60ce64b7fd341f9498150efb73",
+      "filename_ratio": [
+        9,
+        16
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 1152,
+        "thickness": 10,
+        "ratio": [
+          9,
+          16
+        ]
+      },
+      "expected": {
+        "width": 2252,
+        "height": 4004,
+        "left": 102,
+        "right": 102,
+        "top": 1426,
+        "bottom": 1426
+      }
+    },
+    {
+      "source_file": "1by1_1by1export_thic10.JPG",
+      "sha256": "5d2431198edf12c877de80d9ea1fb7dfc2b559c2420859a5ba2f282b5a96c19d",
+      "filename_ratio": [
+        1,
+        1
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 2048,
+        "thickness": 10,
+        "ratio": [
+          1,
+          1
+        ]
+      },
+      "expected": {
+        "width": 2252,
+        "height": 2252,
+        "left": 102,
+        "right": 102,
+        "top": 102,
+        "bottom": 102
+      }
+    },
+    {
+      "source_file": "1by1_2by1export_thic10.JPG",
+      "sha256": "15ad824c73b7bda1ca1dfece0198d289e69fe8edce3a7accc937fe963305337f",
+      "filename_ratio": [
+        2,
+        1
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 2048,
+        "thickness": 10,
+        "ratio": [
+          2,
+          1
+        ]
+      },
+      "expected": {
+        "width": 4504,
+        "height": 2252,
+        "left": 1228,
+        "right": 1228,
+        "top": 102,
+        "bottom": 102
+      }
+    },
+    {
+      "source_file": "1by1_3by2export_thic10.JPG",
+      "sha256": "de9ff2d1228a0676d4e171e10b2dc1ce5ac3b580836afca9ac1a4ccd6b3ce97f",
+      "filename_ratio": [
+        3,
+        2
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 2048,
+        "thickness": 10,
+        "ratio": [
+          3,
+          2
+        ]
+      },
+      "expected": {
+        "width": 3378,
+        "height": 2252,
+        "left": 665,
+        "right": 665,
+        "top": 102,
+        "bottom": 102
+      }
+    },
+    {
+      "source_file": "1by1_5by4export_thic0.JPG",
+      "sha256": "c292d800d999859c43d5096033de8283df63433b5fa475184a7f3bdf71cae09b",
+      "filename_ratio": [
+        5,
+        4
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 2048,
+        "thickness": 0,
+        "ratio": [
+          5,
+          4
+        ]
+      },
+      "expected": {
+        "width": 2560,
+        "height": 2048,
+        "left": 256,
+        "right": 256,
+        "top": 0,
+        "bottom": 0
+      }
+    },
+    {
+      "source_file": "1by1_5by4export_thic10.JPG",
+      "sha256": "27fcb0b5cec2d5d4febb464a21086c47a78150db259bd0d65b08d180a5139a43",
+      "filename_ratio": [
+        5,
+        4
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 2048,
+        "thickness": 10,
+        "ratio": [
+          5,
+          4
+        ]
+      },
+      "expected": {
+        "width": 2816,
+        "height": 2252,
+        "left": 384,
+        "right": 384,
+        "top": 102,
+        "bottom": 102
+      }
+    },
+    {
+      "source_file": "1by1_5by4export_thic20.JPG",
+      "sha256": "93be662329a964e4ffe06ec31ce11f469ac52b0f05fda8b4e73214a7608467f7",
+      "filename_ratio": [
+        5,
+        4
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 2048,
+        "thickness": 20,
+        "ratio": [
+          5,
+          4
+        ]
+      },
+      "expected": {
+        "width": 3072,
+        "height": 2456,
+        "left": 512,
+        "right": 512,
+        "top": 204,
+        "bottom": 204
+      }
+    },
+    {
+      "source_file": "1by1_9by16export_thic10.JPG",
+      "sha256": "9f39addb5f420e4973741edabc1c4569a6a359d12bcce7487799ca68cf9158b7",
+      "filename_ratio": [
+        9,
+        16
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 2048,
+        "height": 2048,
+        "thickness": 10,
+        "ratio": [
+          9,
+          16
+        ]
+      },
+      "expected": {
+        "width": 2252,
+        "height": 4004,
+        "left": 102,
+        "right": 102,
+        "top": 978,
+        "bottom": 978
+      }
+    },
+    {
+      "source_file": "2by3_1by1export_thic10.JPG",
+      "sha256": "8e91358f5ad1222e24fd5a0646de6e6a96596b744ebac24ba940b97a0c49a40d",
+      "filename_ratio": [
+        1,
+        1
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 1365,
+        "height": 2048,
+        "thickness": 10,
+        "ratio": [
+          1,
+          1
+        ]
+      },
+      "expected": {
+        "width": 2251,
+        "height": 2252,
+        "left": 443,
+        "right": 443,
+        "top": 102,
+        "bottom": 102
+      }
+    },
+    {
+      "source_file": "2by3_2by1export_thic10.JPG",
+      "sha256": "110adde28fef6dae5d0506d65c9b3a42eb4f6f4159050868dc2f4af8d6e182ff",
+      "filename_ratio": [
+        2,
+        1
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 1365,
+        "height": 2048,
+        "thickness": 10,
+        "ratio": [
+          2,
+          1
+        ]
+      },
+      "expected": {
+        "width": 4505,
+        "height": 2252,
+        "left": 1570,
+        "right": 1570,
+        "top": 102,
+        "bottom": 102
+      }
+    },
+    {
+      "source_file": "2by3_3by2export_thic10.JPG",
+      "sha256": "0886a9e3bdd23626e3016db69544c837058f1c864bea29373a9f52d0449d89ca",
+      "filename_ratio": [
+        3,
+        2
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 1365,
+        "height": 2048,
+        "thickness": 10,
+        "ratio": [
+          3,
+          2
+        ]
+      },
+      "expected": {
+        "width": 3379,
+        "height": 2252,
+        "left": 1007,
+        "right": 1007,
+        "top": 102,
+        "bottom": 102
+      }
+    },
+    {
+      "source_file": "2by3_5by4export_thic0.JPG",
+      "sha256": "3066d3e316b2e636a3e98e93a598fe2044580ac6cf0b3ea60ba7514bb668c505",
+      "filename_ratio": [
+        5,
+        4
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 1365,
+        "height": 2048,
+        "thickness": 0,
+        "ratio": [
+          5,
+          4
+        ]
+      },
+      "expected": {
+        "width": 2559,
+        "height": 2048,
+        "left": 597,
+        "right": 597,
+        "top": 0,
+        "bottom": 0
+      }
+    },
+    {
+      "source_file": "2by3_5by4export_thic10.jpg",
+      "sha256": "a24da289c2d8b86d6d80de322da865f3c2e84f0de42e23f6e82df487557e4943",
+      "filename_ratio": [
+        5,
+        4
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 1365,
+        "height": 2048,
+        "thickness": 10,
+        "ratio": [
+          5,
+          4
+        ]
+      },
+      "expected": {
+        "width": 2815,
+        "height": 2252,
+        "left": 725,
+        "right": 725,
+        "top": 102,
+        "bottom": 102
+      }
+    },
+    {
+      "source_file": "2by3_5by4export_thic20.JPG",
+      "sha256": "4da04baa88ba82e556dfbd3924b5761f9ab8af4ed10b18572a0bdf5184c3f99a",
+      "filename_ratio": [
+        5,
+        4
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 1365,
+        "height": 2048,
+        "thickness": 20,
+        "ratio": [
+          5,
+          4
+        ]
+      },
+      "expected": {
+        "width": 3071,
+        "height": 2456,
+        "left": 853,
+        "right": 853,
+        "top": 204,
+        "bottom": 204
+      }
+    },
+    {
+      "source_file": "2by3_9by16export_thic10.JPG",
+      "sha256": "1263ab5d5e9e28e1101710861287b8305585751c0ef63ea546da8d130bbdfe13",
+      "filename_ratio": [
+        9,
+        16
+      ],
+      "setting_correction": null,
+      "input": {
+        "width": 1365,
+        "height": 2048,
+        "thickness": 10,
+        "ratio": [
+          9,
+          16
+        ]
+      },
+      "expected": {
+        "width": 1501,
+        "height": 2668,
+        "left": 68,
+        "right": 68,
+        "top": 310,
+        "bottom": 310
+      }
+    }
+  ]
+}

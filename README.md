@@ -76,6 +76,15 @@ HDR Finisher is a technical alpha, heading for 1.0. Windows is the best-tested p
 
 Python 3.12 with FastAPI and NumPy for decoding, colour maths and encoding; plain HTML, CSS and JavaScript with a WebGPU renderer for the interface; Electron for the desktop app. To run from source, run `npm install` and then `npm start` in `codebase/desktop`. See the [development guide](docs/technical/development.md), [architecture](docs/technical/architecture.md) and [code map](docs/technical/code-map.md).
 
+## Acknowledgments
+
+Photo-framing geometry reference code and measured test cases are from
+Pedro C. Silva's [BorderMuse](https://github.com/pedrocsilva/bordermuse)
+(MIT License, Copyright (c) 2026 Pedro C. Silva). The core is imported for the
+planned framing feature; the controls are not yet available. See the
+[retained MIT license](codebase/bin/licenses/bordermuse-MIT.txt) and
+[third-party notices](THIRD_PARTY_NOTICES.md).
+
 ## License
 
 GPL-3.0. Bundled encoders keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

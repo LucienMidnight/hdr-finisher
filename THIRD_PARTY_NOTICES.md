@@ -1,5 +1,20 @@
 # Third-party notices
 
+The photo-framing geometry reference and measured conformance cases are from
+Pedro C. Silva's [BorderMuse](https://github.com/pedrocsilva/bordermuse),
+Copyright (c) 2026 Pedro C. Silva, under the MIT License. The dependency-free
+Python reference is retained unchanged in
+[`codebase/backend/hdr_finisher/vendor/bordermuse/`](codebase/backend/hdr_finisher/vendor/bordermuse/),
+pinned to revision `83abc8e6594529867c044dabd350ddbe26b6fa59`.
+The fixture corpus is unchanged; test imports and fixture paths are adapted
+for HDR Finisher. The complete copyright, permission and warranty notice is
+retained in the vendored `LICENSE` and
+[`codebase/bin/licenses/bordermuse-MIT.txt`](codebase/bin/licenses/bordermuse-MIT.txt),
+which the existing backend packaging specifications include. No BorderMuse
+Apple renderer, Swift UI, artwork or CLI dependency is copied. HDR Finisher's
+planned two-layer framing, viewer integration and HDR composition are its own
+extensions; the imported reference is not yet connected to the app.
+
 The isolated CPU Retouch prototype (`codebase/backend/hdr_finisher/retouch.py`)
 adapts the PatchMatch nearest-neighbour propagation, shrinking random search
 and patch-voting approach in Krita's

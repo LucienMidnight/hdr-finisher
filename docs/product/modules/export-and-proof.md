@@ -370,3 +370,60 @@ and delivery in the same scheduler, including Grade preemption and delivery
 queue ageing. Large sharpened originals still exceed the budget: the six
 full-frame float scratch images need tiled resize and sharpening with filter
 overlap, multiscale passes and matching boundaries before that can change.
+
+## 8. Photo framing — requirements recorded October 24, 2026
+
+**Status:** geometry reference and conformance tests imported; UI/render/export
+integration not built. Implementation brief is a draft pending the remaining
+product choices:
+[Photo framing brief](../../technical/briefs/codex-brief-photo-framing-2026-10-24.md).
+This section owns framing requirements across Grade, Library, Export and Proof.
+
+**Steve's requested behavior**
+
+- Grade's current **Frame** button becomes **Background**, retaining its
+  existing viewer-surround controls. A new **Frame** button opens photo-framing
+  controls with separate color pickers and thickness controls for both layers.
+- Layer order is **photo → Frame → Border** (Steve confirmed October 24).
+  Each layer is outside the previous one; neither covers photo pixels.
+- The photo frame is attached to the image and follows pan/zoom. It is distinct
+  from the stationary viewer background. SVG is a candidate for efficient live
+  display; export must compose actual pixels.
+- Export gets an **Export with frame** toggle. Export size includes the
+  photo, Frame and Border (Steve confirmed October 24). Framing must be
+  consistent in the authored HDR and SDR renditions and in encoded Proof.
+- Show framing in Library and Export single-image modes if it can use existing
+  shared viewer paths without a substantial redesign. Export single-image
+  mode reuses the Grade preview stage; its grid uses Library tile drawing. Grid/thumbnail framing is not
+  required by this request.
+- Credit **Pedro C. Silva / BorderMuse**, retain the full MIT notice, and keep
+  public README and third-party documentation accurate about what is built.
+
+**Draft proposals, not yet decisions**
+
+Save framing per photo (shared by HDR/SDR), with undo/redo and project/sidecar
+persistence. Keep inclusion in exports per preset output version, so one run
+can deliver framed and unframed versions. Use vector rectangles in viewers
+where color handling permits; use the existing GPU delivery graph plus CPU
+fallback for encoded outputs. Display both photo and final canvas dimensions.
+Keep framing out of photo analysis, crop and creative grading calculations.
+
+Open choices before implementation: thickness units and size scaling;
+default colors/widths and export inclusion; whether a target outer aspect ratio
+is wanted. No ratio UI, Lightroom thickness scale or white-only restriction
+is adopted merely because BorderMuse implements it.
+
+**Imported foundation**
+
+The unchanged dependency-free Python reference and 20 measured cases are from
+BorderMuse revision `83abc8e6594529867c044dabd350ddbe26b6fa59`, MIT,
+Copyright (c) 2026 Pedro C. Silva. All five adapted upstream tests pass. This
+is a one-layer canvas calculator, not a ready-made two-layer or HDR renderer.
+See the vendored README and public third-party notices. The Grade/Library and
+export feature remains open until the brief is implemented and validated.
+
+Validation for the isolated import/documentation: Node fast suite 599 passed;
+Python fast suite 2,495 passed, 3 skipped (including the five adapted upstream
+geometry tests). Source, measured fixture and license copies match the pinned
+checkout byte for byte. No GPU check applies because the core is not yet used
+by a render path. The implementation brief remains a draft.
