@@ -1,5 +1,10 @@
 # Module PRD: Photo Library
 
+**Fullscreen selection (October 24, 2026).** Entering Single/fullscreen with F
+hides the previous photo until the selected photo has finished drawing. The
+caption follows the selection immediately; waiting for source or GPU work must
+never display a different photo. This also applies to Single-view navigation.
+
 **Photo framing (October 24, 2026).** Single-photo view draws saved frame metadata
 as an attached layer with Fit/100% and pan/zoom. Cached photo pixels, grids and
 filmstrips remain unframed. Requirements and validation belong to

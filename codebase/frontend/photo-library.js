@@ -268,7 +268,7 @@
           if (!isCurrent()) return;
           await drawPicture(meta,canvas,controller,isCurrent);
           if (!isCurrent()) return;
-          fallback?.remove(); fallback = null; canvas.style.visibility = "";
+          fallback?.remove(); fallback = null; canvas.style.visibility = ""; canvas.hidden = false;
           canvas.dataset.picturePath = photo.path; canvas.dataset.pictureEdge = meta.edge; canvas.dataset.pictureKey = meta.key;
           recentPictures.set(pictureIdentity(photo),meta);
           if (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
@@ -711,6 +711,15 @@
     compare.hide();
     const controller = new AbortController(); state.single = controller;
     const current = () => state.active && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
+    // The fitted canvas survives Grid/Single switches. Never reveal its old
+    // pixels while a different selection is waiting for source or GPU work.
+    const canvas = $("single-picture");
+    if (canvas.dataset.picturePath !== photo.path) {
+      canvas.hidden = true;
+      delete canvas.dataset.picturePath; delete canvas.dataset.pictureEdge; delete canvas.dataset.pictureKey;
+      positionZoom();
+    }
+    updateSingleCaption();
     status(`Loading ${photo.name}…`);
     try {
       startRawAhead();

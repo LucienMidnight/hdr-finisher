@@ -12,7 +12,7 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
 (async()=>{
  const browser=await chromium.launch({headless:true});
  try {
-  const page=await browser.newPage(), errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const page=await browser.newPage(), errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error(e.stack);});
   await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
   const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>!!window.HDRLibrary);
   await lib.evaluate(folder=>HDRLibrary.browse(folder),folder);
@@ -26,12 +26,38 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
    gpu.loadProxy=async(...args)=>{
     const canvas=document.querySelector('#single-picture'), before=[canvas.width,canvas.height];
     const pending=load(...args);
+    // Observe cancellation immediately while the artificial delay is pending.
+    pending.catch(()=>{});
     await new Promise(resolve=>setTimeout(resolve,100));
     if(canvas.width!==before[0]||canvas.height!==before[1])throw Error('Visible photo resized while pixels were loading');
     window.libraryShapeChecks++;
     return pending;
    };
   });
+  // Hold the actual draw so the previous fullscreen image cannot hide a flash.
+  await page.keyboard.press('Escape');
+  await lib.locator('.library-cell').filter({hasText:'photo-0.ARW'}).click();
+  await lib.evaluate(()=>{
+   const pictures=HDRLibraryPictures;
+   window.fullscreenDrawStarted=false;
+   const gate=new Promise(resolve=>{window.releaseFullscreenDraw=resolve;});
+   window.HDRLibraryPictures={...pictures,show:async(...args)=>{
+    if(args[1].id==='single-picture') {window.fullscreenDrawStarted=true;await gate;}
+    return pictures.show(...args);
+   }};
+   window.restoreFullscreenPictures=()=>{window.HDRLibraryPictures=pictures;};
+  });
+  await page.keyboard.press('f');
+  await lib.waitForFunction(()=>window.fullscreenDrawStarted);
+  assert.equal(await lib.locator('#single-picture').isVisible(),false,'Previous photo stays hidden while selected photo drawing waits');
+  assert.ok((await lib.locator('#single-caption').textContent()).includes('photo-0.ARW'),'Caption immediately follows selection');
+  await lib.evaluate(()=>window.releaseFullscreenDraw());
+  await lib.waitForFunction(()=>document.querySelector('#single-picture').dataset.picturePath?.endsWith('photo-0.ARW'));
+  assert.equal(await lib.locator('#single-picture').isVisible(),true,'Selected photo becomes visible after drawing');
+  await lib.evaluate(()=>window.restoreFullscreenPictures());
+  await page.keyboard.press('ArrowRight');
+  await lib.waitForFunction(()=>document.querySelector('#single-picture').dataset.picturePath?.endsWith('photo-1.ARW'));
+  console.log('PASS: Grid selection then F hides previous fullscreen pixels during delayed drawing.');
   const shapes=new Set();
   for(const [key,name] of [['ArrowRight','photo-2.dng'],['ArrowLeft','photo-1.ARW'],['ArrowLeft','photo-0.ARW'],['ArrowRight','photo-1.ARW']]) {
    const start=Date.now();await page.keyboard.press(key);
