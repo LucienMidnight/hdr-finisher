@@ -10,8 +10,8 @@ window.HDRLibraryScenes = (() => {
   // likely lighter work first; expensive work can borrow an otherwise idle slot.
   const changed = (job,state,error) => {
     window.dispatchEvent?.(new Event("library-work-changed"));
-    window.HDRLibraryStopwatch?.("scene_"+state,{path:job.path,request:String(job.sequence),
-      key:job.stage,duration_ms:performance.now()-(job.loggedAt || performance.now()),reason:error?.message});
+    window.HDRLibraryStopwatch?.("picture_work_"+state,{path:job.path,request:String(job.sequence),
+      ...window.HDRLibraryPictureLog?.(job),work_stage:job.stage,duration_ms:performance.now()-(job.loggedAt || performance.now()),reason:error?.message});
     job.loggedAt=performance.now();
   };
   // In-window jobs (priority 0/5) finish; only ordinary grid/idle work is preemptible.
@@ -37,8 +37,8 @@ window.HDRLibraryScenes = (() => {
       const result = await response.json();
       if (!response.ok) throw failure(result);
       return result;
-    }, signal, priority, {path,stage:"Checking stored picture"});
-    window.HDRLibraryTrace?.mark(trace,"cache_check",checked,{cache_hit:!!plan.cached});
+    }, signal, priority, {path,edge,log_view:trace?.view,stage:edge <= 640 ? "Checking thumbnail cache" : edge === 100000 ? "Checking detail preview cache" : "Checking screen preview cache"});
+    window.HDRLibraryTrace?.mark(trace,"picture_cache_check",checked,{cache_hit:!!plan.cached});
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     if (generation!==(generations.get(path)||0)) throw new DOMException("Invalidated", "AbortError");
     const version=plan.source_identity || plan.revision;
@@ -64,10 +64,10 @@ window.HDRLibraryScenes = (() => {
           if (history.size > 256) history.delete(history.keys().next().value);
         }
       }
-    }, signal, priority, {heavy,cost,path,stage:"Reading and developing source"});
+    }, signal, priority, {heavy,cost,path,edge,log_view:trace?.view,stage:"Developing photo"});
   }
   // Selected work follows at most the single sharp draw already in flight.
-  // Quick pictures own a separate renderer and priority queue.
+  // Quick draws use thumbnails and their own renderer and priority queue.
   const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed,preemptLower});
   const quickDraws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed,preemptLower});
   async function load(path, edge, signal, priority = 10, idle = false, trace = null, options = {}) {
@@ -79,7 +79,7 @@ window.HDRLibraryScenes = (() => {
     // reads it after the shared development; it never starts another import.
     if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, false, trace, options);
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
-    return {...meta, draw_priority:priority, trace};
+    return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};
   }
   async function develop(path, edge, signal, importance, version) {
     if (HDRLibraryGpuRaw.enabled()) {
@@ -88,14 +88,14 @@ window.HDRLibraryScenes = (() => {
         if (meta) return meta;
       } catch (error) {
         if (error.name === "AbortError" || error.libraryError) throw error;
-        window.HDRLibraryStopwatch?.("source_gpu_fallback",{path,reason:error.message});
-        console.warn("Library source CPU fallback:",error.message);
+        window.HDRLibraryStopwatch?.("picture_source_gpu_fallback",{path,reason:error.message});
+        // The structured fallback event above carries the picture labels.
       }
     }
     for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",signal,
         headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance()})});
-      if (response.status === 202) { sources.stage(path,"Waiting for source reading",true); await wait(150, signal); continue; }
+      if (response.status === 202) { sources.stage(path,"Waiting to develop photo",true); await wait(150, signal); continue; }
       const meta = await response.json();
       if (!response.ok) throw failure(meta);
       return meta;
@@ -128,7 +128,7 @@ window.HDRLibraryScenes = (() => {
       return value.granted && !value.preempt;
     };
     const release = () => fetch(url,{method:"DELETE"}).catch(()=>{});
-    try { while (!await check(true)) { draws.stage(meta.path,"Waiting for GPU drawing",true); await wait(50,signal); } draws.stage(meta.path,"Drawing picture on GPU"); }
+    try { while (!await check(true)) { draws.stage(meta.path,"Waiting to draw preview",true); await wait(50,signal); } draws.stage(meta.path,`Drawing ${meta.edge === 100000 ? "detail preview" : meta.edge <= 640 ? "thumbnail" : "screen preview"}`); }
     catch(error) { await release(); throw error; }
     return {bytes,check:async()=>{ if (!await check()) {const error=Error("Library draw yielded to Grade or delivery.");error.libraryYield=true;throw error;} },release};
   }
@@ -140,7 +140,7 @@ window.HDRLibraryScenes = (() => {
     viewport:(shown,around)=>{visible=new Set(shown);nearby=new Set(around);sources.reprioritize(rank);probes.reprioritize(rank);},
     invalidate:paths=>{const targets=new Set(paths);for(const path of targets)generations.set(path,(generations.get(path)||0)+1);sources.invalidate(path=>targets.has(path));probes.invalidate(path=>targets.has(path));},
     stage:(path,stage,waiting=false)=>sources.stage(path,stage,waiting),
-    draw:(task,signal,priority=10,path="Photo")=>draws.submit(crypto.randomUUID(),task,signal,priority,{path,stage:"Drawing picture on GPU"}),
-    quickDraw:(task,signal,priority=10,path="Photo")=>quickDraws.submit(crypto.randomUUID(),task,signal,priority,{path,stage:"Drawing quick picture on GPU"}),
+    draw:(task,signal,priority=10,path="Photo",labels={})=>draws.submit(crypto.randomUUID(),task,signal,priority,{path,...labels,stage:`Drawing ${labels.edge === 100000 ? "detail preview" : labels.edge <= 640 ? "thumbnail" : "screen preview"}`}),
+    quickDraw:(task,signal,priority=10,path="Photo",labels={})=>quickDraws.submit(crypto.randomUUID(),task,signal,priority,{path,...labels,stage:"Drawing thumbnail for quick draw"}),
     snapshot:()=>({probes:probes.snapshot(),sources:sources.snapshot(),draws:draws.snapshot(),quickDraws:quickDraws.snapshot()})});
 })();

@@ -98,7 +98,7 @@ test('remembered errors skip both source slots while later pictures finish',asyn
 test('GPU failures retain their reason in the loading log before CPU fallback',async()=>{
  const {scenes,events}=setup({photo:{bytes:96e6}},async()=>{throw Error('Source transfer exceeds available GPU memory');});
  await assert.rejects(scenes.load('photo',640),/decoder failed/);
- assert.deepEqual(events.filter(event=>event.stage==="source_gpu_fallback"),[{stage:'source_gpu_fallback',path:'photo',reason:'Source transfer exceeds available GPU memory'}]);
+ assert.deepEqual(events.filter(event=>event.stage==="picture_source_gpu_fallback"),[{stage:'picture_source_gpu_fallback',path:'photo',reason:'Source transfer exceeds available GPU memory'}]);
 });
 
 test('source job survives an entirely absent tile and explicit invalidation rejects its old result',async()=>{

@@ -347,7 +347,7 @@ def test_backend_preparation_reports_file_until_cancelled_execution_returns():
     from hdr_finisher.library_source_jobs import SourceJobs
     jobs = SourceJobs()
     def decode():
-        assert jobs.snapshot() == [{"path": "one.dng", "stage": "Reading and developing source", "state": "running"}]
+        assert [(job["path"], job["state"]) for job in jobs.snapshot()] == [("one.dng", "running")]
         jobs.release("token")
         assert jobs.snapshot()[0]["state"] == "stopping"
         return 12

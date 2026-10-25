@@ -101,7 +101,7 @@ const hashes = new Map(names.map(name => [name, require('node:crypto').createHas
     for (const name of names) assert.equal(require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(folder, name))).digest('hex'), hashes.get(name));
     const saveTrace = await page.evaluate(() => window.saveTrace);
     const report = { mode, profile, folder, timeline, saveAckMs, saveToPictureMs, saveResult, saveTrace,
-      timing: events.filter(e => /renderer_setup|picture_drawn|pipeline|gpu_wait|peak_analysis|highlight_analysis|picture_decoded|picture_look_prepared|picture_decoder_import|picture_raw_processed|picture_source_reduced|helper_pause|helper_resume|grade_save|kept_/.test(e.event)), errors };
+      timing: events.filter(e => /picture_renderer_setup|picture_drawn|picture_pipeline|picture_gpu_wait|picture_peak_analysis|picture_highlight_analysis|picture_decoded|picture_look_prepared|picture_decoder_import|picture_raw_processed|picture_source_reduced|helper_pause|helper_resume|grade_save|kept_/.test(e.event)), errors };
     fs.writeFileSync(path.join(output, mode + '.json'), JSON.stringify(report, null, 2));
     await page.screenshot({ path: path.join(output, mode + '.png') });
     console.log(JSON.stringify({ mode, timeline, saveAckMs, pageSaveMs: saveResult.end-saveResult.start, saveToPictureMs, maps: 6 }));

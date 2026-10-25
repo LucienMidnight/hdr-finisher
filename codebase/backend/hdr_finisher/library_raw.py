@@ -278,7 +278,7 @@ class RawBrowsing:
         self.jobs.pop(job["key"], None)
         if not job["future"].done():
             job["future"].set_exception(error)
-        log("raw_browse_failed", path=job["path"], reason=str(error), action="Library request fails; Grade unaffected")
+        log("picture_raw_browse_failed", path=job["path"], reason=str(error), action="Library request fails; Grade unaffected")
         self.cv.notify_all()
 
     def _lane(self, index):
@@ -341,7 +341,7 @@ class RawBrowsing:
                                 key = next(iter(self.outputs))
                                 old, _ = self.outputs.pop(key)
                                 self._dispose(old)
-                            log("raw_browse_ready", path=job["path"], decode_ms=meta["decode_ms"], read_ms=meta["read_ms"])
+                            log("picture_raw_browse_ready", path=job["path"], decode_ms=meta["decode_ms"], read_ms=meta["read_ms"])
                     job = None
                     self.cv.notify_all()
         except Exception as error:

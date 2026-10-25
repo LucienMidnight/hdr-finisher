@@ -754,7 +754,7 @@
             throw Error(value.fallback);
           }
           if (!value.granted || value.preempt) {
-            root.HDRLibraryScenes?.stage(meta.path,"Waiting for GPU preparation",true);
+            root.HDRLibraryScenes?.stage(meta.path,"Waiting to develop photo",true);
             if (value.granted) await lease(true);
             await wait(50, signal); continue;
           }
@@ -776,7 +776,7 @@
             if (!status.granted || status.preempt || status.fallback) { const error = Error("Yielding GPU RAW to shared work."); error.yieldRaw = true; throw error; }
             edgePermitAt=performance.now();
           };
-          root.HDRLibraryScenes?.stage(meta.path,"Preparing source on GPU");
+          root.HDRLibraryScenes?.stage(meta.path,"Developing photo");
           try { const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, memoryBudget:bytes});
             result.timings.queue=queueMs; return result; }
           catch (error) { if (!error.yieldRaw) throw error; }
@@ -798,13 +798,13 @@
       response = await fetch(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", signal,
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
       if (response.status !== 202) break;
-      root.HDRLibraryScenes?.stage(path,"Waiting for source reading",true);
+      root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
       await wait(150, signal);
     }
-    root.HDRLibraryScenes?.stage(path,"Reading source samples");
+    root.HDRLibraryScenes?.stage(path,"Reading photo samples");
     if (response.status === 204) {
-      root.HDRLibraryStopwatch?.("source_cpu_fallback", {path,reason:response.headers.get("X-Library-Fallback")});
-      console.info("Library CPU source:", response.headers.get("X-Library-Fallback")); return null;
+      root.HDRLibraryStopwatch?.("picture_source_cpu_fallback", {path,reason:response.headers.get("X-Library-Fallback")});
+      return null;
     }
     if (!response.ok) { const result = await response.json().catch(() => ({})); const error = new Error(result.detail || "Library request failed."); error.status = response.status; error.libraryError = result.library_error; throw error; }
     if ((response.headers.get("Content-Type") || "").includes("application/json")) return response.json();
@@ -823,14 +823,14 @@
     const lensData = meta.lens_grid ? new Float32Array(body, 4 + length + meta.lens_offset, meta.lens_grid.floats) : null;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
-    root.HDRLibraryScenes?.stage(path,"Waiting for GPU preparation",true);
+    root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
     const developed = await scheduledDevelopment({mosaic, meta, lensData, background:liveScene, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
     const gpuMs = performance.now() - started;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const measured = performance.now();
     const robust = { luma: quantile(developed.samples, 0, 0.9999), channel: quantile(developed.samples, 1, 0.9999), bt2020: quantile(developed.samples, 2, 0.9999) };
     const quantileMs = performance.now() - measured;
-    root.HDRLibraryScenes?.stage(path,"Storing prepared picture");
+    root.HDRLibraryScenes?.stage(path,"Saving preview data");
     let selectedResult;
     for (const storedEdge of nativeMode ? [100000] : [...new Set([2560,640,edge])]) {
       const picture = developed.reduced[storedEdge];

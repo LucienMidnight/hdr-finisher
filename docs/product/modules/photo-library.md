@@ -1,5 +1,114 @@
 # Module PRD: Photo Library
 
+**October 25, 2026: Library picture terminology (built in this commit)**
+
+Follows Part 0c and precedes Part A. The master PRD's "Glossary: Library
+pictures" is authoritative. This changes words and diagnostic labels only;
+source development, pixels, priorities, timing, cache formats and allowances
+are unchanged. "Scene" remains an internal name for ungraded working data.
+"Stored screen preview" and "Build previews" remain planned, not new commands.
+The saved-grade cache allowance still covers existing finished files; its new
+label does not claim the planned persistent screen-preview workflow is built.
+
+User-facing string review (placeholders retain their existing values):
+
+| Old | New |
+| --- | --- |
+| Checking stored picture | Checking thumbnail cache / Checking screen preview cache / Checking detail preview cache (according to requested size) |
+| Reading and developing source | Developing photo |
+| Waiting for source reading / Waiting to read source | Waiting to develop photo |
+| Waiting for GPU preparation | Waiting to develop photo |
+| Waiting for GPU drawing | Waiting to draw preview |
+| Drawing picture on GPU | Drawing thumbnail / Drawing screen preview / Drawing detail preview (according to requested size) |
+| Drawing quick picture on GPU | Drawing thumbnail for quick draw |
+| Preparing source on GPU | Developing photo |
+| Reading source samples | Reading photo samples |
+| Reading source | Reading photo |
+| Storing prepared picture | Saving preview data |
+| Reducing and storing Library pictures | Preparing thumbnail and screen preview |
+| Reading the embedded SDR picture | Reading camera preview (SDR) |
+| Loading {photo name}… | Preparing screen preview · {photo name}… |
+| Loading {percent} · {photo name}… | Preparing detail preview · {percent} · {photo name}… |
+| Loading {percent}… | Preparing detail preview · {percent}… |
+| {percent} unavailable · {error} | Detail preview unavailable · {percent} · {error} |
+| Saved Library picture enlarged. Check detail in Grade. | Screen preview enlarged. Check detail in Grade. |
+| Native-resolution crop | Detail preview |
+| Library picture error | Library preview error |
+| This photo has been skipped so other pictures can finish loading. The error is remembered for future visits. | This photo was skipped so other previews can finish. The error is remembered for future visits. |
+| Photo queued for a new Library picture. | Photo queued for a new preview. |
+| The photo or settings changed. Request its picture again. | The photo or settings changed. Request its preview again. |
+| The source settings changed while its scene was prepared. | The source settings changed while the preview was prepared. |
+| Stored scene unavailable; request it again. | Preview data unavailable; request it again. |
+| Scene belongs to another Library. | Preview data belongs to another Library. |
+| Incomplete RGB scene/rendition payload. | Incomplete RGB preview data. |
+| The cached picture is unavailable; revisit this photo. | The cached preview is unavailable; revisit this photo. |
+| Library live drawing requires a hardware GPU. | Drawing Library previews requires a hardware GPU. |
+| The library picture could not be drawn: {reason} | The Library preview could not be drawn: {reason} |
+| {photo name}: {ms} ms to picture · {cache or route} · {KiB} KiB | {photo name}: {ms} ms to preview · {cache or route} · {KiB} KiB |
+| Library thumbnail cache (accessibility label) | Library preview cache |
+| Thumbnails (cache allowance) | Thumbnail data |
+| Full-size pictures | Screen preview and detail preview data |
+| Saved-grade pictures | Stored thumbnails and screen previews |
+| Full-size pictures never displace thumbnails or saved-grade pictures. | Screen preview and detail preview data never displaces thumbnail data or stored thumbnails and screen previews. |
+| Force CPU for export, Proof and saved-grade Library pictures | Force CPU for export, Proof and stored Library previews |
+| The GPU-developed scene is unavailable; revisit this photo. | The developed preview data is unavailable; revisit this photo. |
+| The RAW picture was released; select the photo again. | The RAW preview data was released; select the photo again. |
+| This RAW exceeds the graphics card’s Library picture limit. | This RAW exceeds the graphics card’s Library preview limit. |
+
+Log reader mapping (no old-event compatibility layer):
+
+| Old event / field | New event / field |
+| --- | --- |
+| Frontend GPU/trace stages without a picture prefix (`gpu_wait`, `pipeline`, `render`, `upload`, `cache_check`, `denoise_*`, etc.) | `page_picture_<operation>` in the backend log; `picture_<operation>` in the page batch |
+| `page_scene_<state>` | `page_picture_work_<state>`; the Activity text moves from `key` to `work_stage` |
+| `page_stand_in_lookup` | `page_picture_quick_draw_lookup` |
+| `page_embedded_preview_decoded` | `page_picture_camera_preview_decoded`, `picture_size="camera preview"` |
+| `page_fullscreen_outcome` | `page_picture_review_outcome` |
+| `page_present` / `page_key_to_picture` | `page_picture_present` / `page_picture_navigation_to_present` |
+| `source_preparation_<operation>` / `preparation_stage` | `picture_source_preparation_<operation>` / `picture_preparation_stage` |
+| `gpu_raw_sensor` / `gpu_raw_not_eligible` / `gpu_raw_developed` | `picture_raw_sensor_read` / `picture_raw_not_eligible` / `picture_raw_developed` |
+| `camera_preview_ready` / `raw_browse_<outcome>` / `cache_pixels_failed` | `picture_camera_preview_ready` / `picture_raw_browse_<outcome>` / `picture_cache_pixels_failed` |
+| `cache_<operation>_failed` (picture-cache audit) | `picture_cache_<operation>_failed` |
+| `source_cpu_fallback` and page fallback stages | `picture_source_cpu_fallback` and `page_picture_<fallback operation>` |
+| `helper_job_*`, interpretation/reply errors for the picture lane | `picture_helper_job_*`, `picture_helper_interpretation_required`, `picture_helper_reply_failed`; other lanes keep their existing names |
+| `stand_in` / `sharp` | `quick_draw` / `sharp_draw`; `step="quick draw"` / `"sharp draw"` on the corresponding draw/presentation records |
+| `edge=640` / display-size edge / `edge=100000` in picture logs | `picture_size="thumbnail"` / `"screen preview"` / `"detail preview"` |
+| `key="live-<hash>"` / other picture `key` | `scene_key="<hash>"` / `picture_key`; transport and stored keys unchanged |
+| Unlabelled shared preparation / renderer warmup | Explicit comma-separated `picture_size` and `view` lists, `scope="shared"`; per-view draw records name their actual view |
+| Console `[library-picture]` timing / duplicate CPU-fallback prose | Structured `page_picture_diagnostic` / existing labelled fallback event |
+
+The naming pattern is `[page_]picture_<operation>`; `page_` records browser
+origin. Lifecycle, navigation, indexing, writer, lock and Grade events keep
+their names because they do not name a picture size. Shared source work can
+produce both sizes and serve several views; its lists describe that scope,
+not an invented single-view attribution. Steps apply to fullscreen draws,
+not decoding. No global "current photo" is used to label renderer work.
+
+Kept unchanged: endpoint paths, scene/cache keys on disk and on the wire,
+cache allowance setting names (`thumbnail`, `full_size`, `saved_grade`), DOM
+selectors, scheduling internals and historical documents. Renaming them would
+change formats/consumers or add avoidable risk. Existing generic "photo" and
+"preview" wording remains where the action spans sizes. No live Library,
+photo, sidecar or cache directory is used for this pass.
+
+Validation: fast checks once. Node: 619 cases; initial 15 failures from isolated
+modules missing the optional label helper were fixed, then all 19 directly
+affected cases passed. Python: 2,549 passed, 3 skipped, 2 old-expectation
+failures; both were corrected, and those two plus the stopwatch schema case
+passed (3/3). The source-preparation cancellation test now checks path/state
+without pinning its prose. No new wording-only tests. Edited JavaScript parses
+and `git diff --check` passes.
+
+The sole log-reading Electron driver, `library-round1.js`, ran once at
+2560 x 1440 in its own copied-photo/profile directories. It timed out waiting
+for `window.HDRLibrary`, before reading log assertions: a duplicate helper
+insertion caused a syntax error, subsequently fixed and syntax-checked. It
+was not rerun, preserving Steve's one-run limit. The renamed log reader is
+updated, but its end-to-end assertions are not qualified by this pass.
+No push, installer, live Library/database, original photo, sidecar or cache
+folder was touched.
+
+
 **October 25, 2026: Part 0c graded fullscreen scheduling (built; Steve's retry pending)**
 
 The 18:45–18:47 badminton logs contain 216 Single/fullscreen requests. DSC07224's

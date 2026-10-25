@@ -26,11 +26,11 @@ window.HDRLibraryPictureErrors = Object.freeze({
       opened = true;
       const origin = document.activeElement;
       const dialog = make("dialog", "", "application-dialog library-ask library-picture-error-dialog");
-      dialog.setAttribute("aria-label", "Library picture error");
+      dialog.setAttribute("aria-label", "Library preview error");
       const header = make("div", "", "application-dialog-header"), words = make("div", "");
       words.append(make("h2", record.path.split(/[\\/]/).at(-1)), make("p", record.reason)); header.append(words);
       const body = make("div", "", "library-ask-body");
-      body.append(make("p", "This photo has been skipped so other pictures can finish loading. The error is remembered for future visits."),
+      body.append(make("p", "This photo was skipped so other previews can finish. The error is remembered for future visits."),
         make("p", "Revert to original removes this photo’s grade, including source settings and repairs. The original photo, ratings, tags and album membership are kept. Its previous grade is retained."));
       const details = make("details", ""); details.append(make("summary", "Error details"), make("pre", record.details || record.reason));
       const feedback = make("p", ""); feedback.setAttribute("role", "status"); body.append(details, feedback);
@@ -47,7 +47,7 @@ window.HDRLibraryPictureErrors = Object.freeze({
             const result = await api("/api/library/picture-error", {path:record.path, revision:record.revision, action});
             if (action === "ignore") remember(result.error);
             else { records.delete(record.path); notify(); await changed([record.path], result, true); }
-            status(action === "ignore" ? "Error remembered. This photo stays skipped." : "Photo queued for a new Library picture.");
+            status(action === "ignore" ? "Error remembered. This photo stays skipped." : "Photo queued for a new preview.");
             dialog.close();
           } catch (error) { feedback.textContent = error.message; }
           finally { busy = false; buttons.forEach(item => item.disabled = false); }

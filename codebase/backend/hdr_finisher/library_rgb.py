@@ -225,7 +225,7 @@ def developed(cache, path, header, payload):
     reference_present = authored or header.get("has_sdr_reference", False)
     plane_count = 6 if reference_present else 3
     if len(payload) != h * w * plane_count * 4:
-        raise ValueError("Incomplete RGB scene/rendition payload.")
+        raise ValueError("Incomplete RGB preview data.")
     planes = np.frombuffer(payload, dtype="<f4").reshape(plane_count, h, w)
     if not np.all(np.isfinite(planes)):
         raise ValueError("RGB GPU preparation produced invalid samples.")

@@ -60,7 +60,7 @@ window.HDRLibraryRawGPU = (() => {
         let texture;
         try {
           const response = await fetch('/api/library/pixels/' + meta.key + '?lane=hdr', {signal});
-          if (!response.ok) throw Error('The GPU-developed scene is unavailable; revisit this photo.');
+          if (!response.ok) throw Error('The developed preview data is unavailable; revisit this photo.');
           const body = await response.arrayBuffer();
           const width = Number(response.headers.get('X-Image-Width')), height = Number(response.headers.get('X-Image-Height'));
           texture = device.createTexture({size:[width,height],format:'rgba16float',
@@ -76,13 +76,13 @@ window.HDRLibraryRawGPU = (() => {
       const [hp, vp] = await initialize();
       const started = performance.now();
       const response = await fetch('/api/library/raw-transport/' + meta.transport_key, {signal});
-      if (!response.ok) throw Error('The RAW picture was released; select the photo again.');
+      if (!response.ok) throw Error('The RAW preview data was released; select the photo again.');
       const body = await response.arrayBuffer();
       const rawSize = Math.ceil(body.byteLength / 4) * 4;
-      if (rawSize > device.limits.maxStorageBufferBindingSize) throw Error('This RAW exceeds the graphics card’s Library picture limit.');
+      if (rawSize > device.limits.maxStorageBufferBindingSize) throw Error('This RAW exceeds the graphics card’s Library preview limit.');
       const raw = device.createBuffer({size:rawSize,usage:GPUBufferUsage.STORAGE,mappedAtCreation:true});
       new Uint8Array(raw.getMappedRange()).set(new Uint8Array(body)); raw.unmap();
-      HDRLibraryStopwatch('raw_uploaded', {key:meta.key,duration_ms:performance.now()-started});
+      HDRLibraryStopwatch('picture_raw_uploaded', {...window.HDRLibraryPictureLog?.(meta),key:meta.key,duration_ms:performance.now()-started});
       const resources = [raw], made = [], encoder = device.createCommandEncoder();
       const sizes = [meta];
       if (meta.edge < 1280 && meta.prepare_full) {
@@ -115,7 +115,7 @@ window.HDRLibraryRawGPU = (() => {
         // Only a tiny thumbnail is read back, after the full-size scene is ready.
         const thumb=sizes.find(size=>size.edge<=512), entry=thumb && cache.get(thumb.key);
         if (entry && thumb.edge <= 512) void saveThumbnail(entry,meta.transport_key).catch(error=>console.debug('Library thumbnail:',error.message));
-        HDRLibraryStopwatch('raw_converted', {key:meta.key,duration_ms:performance.now()-started});
+        HDRLibraryStopwatch('picture_raw_converted', {...window.HDRLibraryPictureLog?.(meta),key:meta.key,duration_ms:performance.now()-started});
         return get(meta.key);
       } catch(error) { for(const entry of made) { cache.delete(entry.meta.key); entry.texture.destroy(); } throw error;
       } finally { resources.forEach(resource=>resource.destroy()); }

@@ -31,7 +31,7 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640, m
         dng._verify_fingerprint(path,page,inspection.fingerprint)
         preview_index=metadata.get("sdr_preview_series_index")
         if preview_index is not None:
-            report("dng_sdr_preview","Reading the embedded SDR picture")
+            report("dng_sdr_preview","Reading camera preview (SDR)")
             series=tif.series[int(preview_index)]
             preview=dng.crop_and_orient(dng._normalize_layout(series.asarray(),getattr(series,"axes",None)),metadata)
             # Transfer decoding and linear reduction belong to the GPU. Preserve

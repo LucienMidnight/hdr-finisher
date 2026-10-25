@@ -56,18 +56,18 @@
     async function native(s){
       s.nativeController?.abort();s.nativeMeta=null;s.native.hidden=true;
       if(!o.zoom().enabled||!s.meta)return;
-      if(s.photo.edited){s.note.textContent='Saved Library picture enlarged. Check detail in Grade.';return;}
+      if(s.photo.edited){s.note.textContent='Screen preview enlarged. Check detail in Grade.';return;}
       const z=o.zoom(),dpr=devicePixelRatio||1,percent=`${Math.round(z.scale*100)}%`;
       if(s.meta.source_width&&s.meta.width>=s.meta.source_width*z.scale){s.note.textContent='';return;}
       const c=new AbortController();s.nativeController=c;
       const current=()=>enabled&&o.active()&&!c.signal.aborted&&s.photo?.path===s.fit.dataset.picturePath;
-      s.note.textContent=`Loading ${percent}…`;
+      s.note.textContent=`Preparing detail preview · ${percent}…`;
       try{
         await o.prepareNative?.(s.photo,c.signal);
         const m=await o.api('/api/library/native',{path:s.photo.path,center_x:z.x,center_y:z.y,width:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientWidth*dpr/z.scale))),height:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientHeight*dpr/z.scale)))},c.signal);
         if(!current())return;m.adjustments=s.meta.adjustments;await o.draw(m,s.native,c,current);if(!current())return;
         s.nativeMeta=m;s.native.dataset.picturePath=s.photo.path;s.note.textContent='';position();o.drawOverlay?.(s.photo,s.fit,s.meta,s.controller,current);
-      }catch(e){if(e.name!=='AbortError'&&current())s.note.textContent=`${percent} unavailable · ${e.message}`;}
+      }catch(e){if(e.name!=='AbortError'&&current())s.note.textContent=`Detail preview unavailable · ${percent} · ${e.message}`;}
     }
     async function show(){
       if(!enabled)return;cancel();root.hidden=false;$('single-stage').hidden=true;$('single-caption').hidden=true;layout();

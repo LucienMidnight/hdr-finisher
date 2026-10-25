@@ -16,6 +16,15 @@ _sink = None
 
 
 def log(event, **fields):
+    if event.startswith(("picture_", "page_picture_")):
+        fields = dict(fields)
+        edge = fields.pop("edge", None)
+        fields.setdefault("picture_size", "detail preview" if edge == 100000 else "thumbnail" if edge and edge <= 640 else "screen preview" if edge else "camera preview" if "camera_preview" in event else "thumbnail,screen preview,detail preview")
+        fields.setdefault("view", "grid,filmstrip" if "camera_preview" in event or "raw_browse" in event else "grid,filmstrip,single,fullscreen,compare")
+        fields.setdefault("scope", "shared" if "," in fields["view"] else "view")
+        key = fields.pop("key", None)
+        if key:
+            fields["scene_key" if str(key).startswith("live-") else "picture_key"] = str(key)[5:] if str(key).startswith("live-") else key
     record = {"event": event, "time": time.time(), **fields}
     with _lock:
         if "reason" in fields and event not in {"writer_pause", "writer_resume", "helper_pause", "helper_resume", "kept_picture_replaced", "kept_picture_cancelled"}:

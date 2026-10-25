@@ -178,7 +178,7 @@ def test_helper_problems_are_forwarded_into_backend_health(tmp_path, capsys):
         _, future = helper.submit_library("picture", path=str(path), edge=64, quality="quick")
         with pytest.raises(Exception):
             future.result(timeout=15)
-        assert any(row["event"] == "helper_job_failed" and row["paths"] == str(path) for row in recent())
+        assert any(row["event"] == "picture_helper_job_failed" and row["paths"] == str(path) for row in recent())
         assert helper.status()["restarts"] == 0
         logs = capsys.readouterr().err
         assert "helper_start" in logs and "helper_job_failed" in logs

@@ -75,7 +75,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
                 if source.retouch_worker is not None:
                     source.retouch_worker.close()
                     source.retouch_worker = None
-    if progress: progress("reduction", "Reducing and storing Library pictures")
+    if progress: progress("reduction", "Preparing thumbnail and screen preview")
     result = None
     for size in sorted({640, 2560, edge}, reverse=True):
         metadata = {"route": "library-live", "renderer": "cpu", "raw_input": True,
@@ -152,7 +152,7 @@ class LivePictures:
     def describe(self, path, metadata):
         document = self.document(path) or {}
         if metadata["quality"] != quality(document):
-            raise ValueError("The source settings changed while its scene was prepared.")
+            raise ValueError("The source settings changed while the preview was prepared.")
         grade_id = sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
         identity = "live-" + sha256((metadata["key"] + grade_id).encode()).hexdigest()[:59]
         result = dict(metadata, route="library-live", source_key=metadata["key"], key=identity,
@@ -176,7 +176,7 @@ class LivePictures:
         with _registry_lock:
             owner, metadata = _registry[identity]
         if owner is not self:
-            raise ValueError("Scene belongs to another Library.")
+            raise ValueError("Preview data belongs to another Library.")
         from .models import GeometryAdjustments
         adjustments = AdjustmentState.model_validate(metadata["adjustments"])
         if adjustments.shared.geometry == GeometryAdjustments():

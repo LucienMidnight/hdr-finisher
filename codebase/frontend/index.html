@@ -1745,26 +1745,26 @@
         </section>
         <section data-settings-panel="performance" hidden>
           <h3>Performance</h3>
-          <h4>Library thumbnail cache</h4>
-          <label class="checkbox-row"><input id="library-cache-enabled" type="checkbox" aria-label="Library thumbnail cache"><span id="library-cache-state">Enabled</span></label>
-          <label class="settings-field">Thumbnails
+          <h4>Library preview cache</h4>
+          <label class="checkbox-row"><input id="library-cache-enabled" type="checkbox" aria-label="Library preview cache"><span id="library-cache-state">Enabled</span></label>
+          <label class="settings-field">Thumbnail data
             <select id="library-cache-thumbnail-limit"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option></select>
           </label>
           <p id="library-cache-thumbnail-usage" class="helper"></p>
-          <label class="settings-field">Full-size pictures
+          <label class="settings-field">Screen preview and detail preview data
             <select id="library-cache-full_size-limit"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option></select>
           </label>
           <p id="library-cache-full_size-usage" class="helper"></p>
-          <label class="settings-field">Saved-grade pictures
+          <label class="settings-field">Stored thumbnails and screen previews
             <select id="library-cache-saved_grade-limit"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option></select>
           </label>
           <p id="library-cache-saved_grade-usage" class="helper"></p>
           <p id="library-cache-usage" class="helper" aria-live="polite"></p>
           <p id="library-cache-location" class="helper" style="overflow-wrap:anywhere"></p>
           <div class="button-row"><button id="library-cache-change" type="button" class="button-secondary">Change folder…</button><button id="library-cache-reveal" type="button" class="button-secondary">Show in Explorer</button><button id="library-cache-portable" type="button" class="button-secondary" hidden>Use portable cache</button><button id="library-cache-clear" type="button" class="button-secondary">Clear cache…</button></div>
-          <p class="helper">Each allowance removes its own least recently used files. Full-size pictures never displace thumbnails or saved-grade pictures. Disabled reads existing cache files and saves no new cache files. Your photos and grades are never cleared.</p>
+          <p class="helper">Each allowance removes its own least recently used files. Screen preview and detail preview data never displaces thumbnail data or stored thumbnails and screen previews. Disabled reads existing cache files and saves no new cache files. Your photos and grades are never cleared.</p>
 
-          <label class="checkbox-row"><input id="settings-force-cpu-delivery" type="checkbox" disabled> Force CPU for export, Proof and saved-grade Library pictures</label>
+          <label class="checkbox-row"><input id="settings-force-cpu-delivery" type="checkbox" disabled> Force CPU for export, Proof and stored Library previews</label>
           <p id="settings-delivery-status" class="helper" aria-live="polite">Loading delivery settings…</p>
           <label class="settings-field">Rendering mode
             <select id="settings-rendering-mode">

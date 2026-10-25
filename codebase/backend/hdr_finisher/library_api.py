@@ -27,8 +27,13 @@ class StopwatchEvent(BaseModel):
     time: float
     path: str | None = Field(default=None, max_length=4096)
     request: str | None = Field(default=None, max_length=80)
-    key: str | None = Field(default=None, max_length=64)
-    view: str | None = Field(default=None, max_length=32)
+    picture_key: str | None = Field(default=None, max_length=96)
+    scene_key: str | None = Field(default=None, max_length=96)
+    picture_size: str | None = Field(default=None, max_length=128)
+    step: str | None = Field(default=None, max_length=32)
+    work_stage: str | None = Field(default=None, max_length=128)
+    scope: str | None = Field(default=None, max_length=32)
+    view: str | None = Field(default=None, max_length=64)
     route: str | None = Field(default=None, max_length=64)
     cache_hit: bool | None = None
     duration_ms: float | None = None
@@ -36,8 +41,8 @@ class StopwatchEvent(BaseModel):
     reason: str | None = Field(default=None, max_length=2048)
     first: bool | None = None
     kept: bool | None = None
-    stand_in: bool | None = None
-    sharp: bool | None = None
+    quick_draw: bool | None = None
+    sharp_draw: bool | None = None
     blank: bool | None = None
 
 class OverlayRequest(BaseModel):
@@ -317,7 +322,7 @@ def create_library_router(worker, browser, store=None):
         try:
             body, width, height, stride, space = live.pixels(key, lane)
         except (KeyError, ValueError, OSError, EOFError) as error:
-            raise HTTPException(404, "Stored scene unavailable; request it again.") from error
+            raise HTTPException(404, "Preview data unavailable; request it again.") from error
         return Response(body, media_type="application/octet-stream", headers={
             "X-Image-Width": str(width), "X-Image-Height": str(height),
             "X-Bytes-Per-Row": str(stride), "X-Working-Space": space,
@@ -395,7 +400,7 @@ def create_library_router(worker, browser, store=None):
                         header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_gpu_raw.sensor, Path(path),
                             RawImportSettings.model_validate(inputs["raw_import_settings"]))
                 except library_gpu_raw.NotEligible as error:
-                    log("source_cpu_fallback", path=path, reason=str(error))
+                    log("picture_source_cpu_fallback", path=path, reason=str(error))
                     return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
                 source_jobs.check(token, file_commands.epoch)
                 if await request.is_disconnected():
@@ -962,10 +967,10 @@ def create_library_router(worker, browser, store=None):
             if cached: return cached
             started = time.perf_counter()
             header, payload = await run_in_threadpool(library_gpu_raw.sensor, Path(command.path))
-            log("gpu_raw_sensor", path=command.path, duration_ms=(time.perf_counter() - started) * 1000,
+            log("picture_raw_sensor_read", path=command.path, duration_ms=(time.perf_counter() - started) * 1000,
                 bytes=sum(len(part) for part in payload), lens=bool(header.get("lens_grid")))
         except library_gpu_raw.NotEligible as reason:
-            log("gpu_raw_not_eligible", path=command.path, reason=str(reason))
+            log("picture_raw_not_eligible", path=command.path, reason=str(reason))
             return Response(status_code=204)
         except (ValueError, OSError) as error:
             raise HTTPException(status_code=400, detail=user_error(error)) from error
@@ -982,7 +987,7 @@ def create_library_router(worker, browser, store=None):
             store_ms = (time.perf_counter() - started) * 1000
         except (ValueError, OSError, KeyError) as error:
             raise HTTPException(status_code=409, detail=user_error(error)) from error
-        log("gpu_raw_developed", path=path, key=result.get("key"), store_ms=store_ms, **(header.get("timing_ms") or {}))
+        log("picture_raw_developed", path=path, key=result.get("key"), store_ms=store_ms, **(header.get("timing_ms") or {}))
         return result
 
     from .library_overlays import OverlayMaps
@@ -1029,7 +1034,7 @@ def create_library_router(worker, browser, store=None):
                 "X-Bytes-Per-Row": str(stride), "X-Working-Space": space,
                 "Cache-Control": "private, no-store"})
         except (ValueError, OSError, EOFError) as exc:
-            log("cache_pixels_failed", key=key, reason=str(exc), action="picture requested again")
+            log("picture_cache_pixels_failed", key=key, reason=str(exc), action="picture requested again")
             raise HTTPException(status_code=404, detail="Library cache entry is unavailable; request it again.") from exc
 
     return router

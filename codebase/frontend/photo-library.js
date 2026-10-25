@@ -63,15 +63,16 @@
     signal?.addEventListener("abort", stop, { once: true });
   });
   let overlays = null;
+  const logView = () => compare?.enabled() ? "compare" : state.review ? "fullscreen" : state.view;
   const pictureRequests = HDRLibraryRequestQueue.create();
   async function api(route, body, signal) {
     const measured = ["/api/library/picture", "/api/library/native", "/api/library/overlay-map"].includes(route);
     const trace = measured ? crypto.randomUUID() : null;
     for (;;) {
       const queued = performance.now();
-      if (measured) HDRLibraryStopwatch("picture_requested", { path: body.path, request: trace });
+      if (measured) HDRLibraryStopwatch("picture_requested", { picture_size:route === "/api/library/native" ? "detail preview" : body.edge <= 640 ? "thumbnail" : "screen preview",view:logView(),path: body.path, request: trace });
       const request = async () => {
-        if (measured) HDRLibraryStopwatch("picture_dispatched", { path: body.path, request: trace, queue_ms: performance.now() - queued });
+        if (measured) HDRLibraryStopwatch("picture_dispatched", { picture_size:route === "/api/library/native" ? "detail preview" : body.edge <= 640 ? "thumbnail" : "screen preview",view:logView(),path: body.path, request: trace, queue_ms: performance.now() - queued });
         const response = await fetch(route, { signal, ...(body === undefined ? {} : {
           method: "POST", headers: { "Content-Type": "application/json", ...(trace ? { "X-Library-Request": trace } : {}) }, body: JSON.stringify(body) }) });
         return { response, result: await response.json() };
@@ -83,7 +84,7 @@
         const error = new Error(typeof result.detail === "string" ? result.detail : "Library request failed.");
         error.status = response.status; error.libraryError = result.library_error; throw error;
       }
-      if (measured) HDRLibraryStopwatch("picture_answered", { path: body.path, request: trace, key: result.key, duration_ms: performance.now() - queued, kept: !!result.kept });
+      if (measured) HDRLibraryStopwatch("picture_answered", { picture_size:route === "/api/library/native" ? "detail preview" : body.edge <= 640 ? "thumbnail" : "screen preview",view:logView(),path: body.path, request: trace, key: result.key, duration_ms: performance.now() - queued, kept: !!result.kept });
       return result;
     }
   }
@@ -160,7 +161,7 @@
     img.style.dynamicRangeLimit = hdr ? 'no-limit' : 'standard';
     img.dataset.rendition = hdr ? 'hdr' : 'sdr'; img.dataset.peakNits = hdr ? '1000' : '203';
   }
-  // One stored scene size, scaled to fit any cell.
+  // One thumbnail scene size, scaled to fit any grid or filmstrip cell.
   const thumbnailEdge = () => 640;
   const pictureErrors = HDRLibraryPictureErrors.create({api, status, changed: async (paths, result = {}, requeue = false) => {
     invalidateGradePictures(paths);
@@ -245,7 +246,7 @@
     restoreStandIn();
     const cell = HDRLibraryReadyWindow.standIn([...state.cells.values(), ...state.filmCells.values(), ...tilePool.values()],
       pictureIdentity(photo), state.displayEpoch, state.hdr);
-    HDRLibraryTrace.mark(trace,"stand_in_lookup",performance.now(),{cache_hit:!!cell});
+    HDRLibraryTrace.mark(trace,"picture_quick_draw_lookup",performance.now(),{quick_draw:true,cache_hit:!!cell});
     if (!cell) return false;
     // Borrow the actual finished HDR/SDR surface: no readback, JPEG or gamut conversion.
     const canvas = cell.fallback, home = canvas.parentNode, style = canvas.style.cssText;
@@ -263,7 +264,7 @@
     restoreStandIn = restore;
     controller.signal.addEventListener("abort",restore,{once:true});
     cell.controller.signal.addEventListener("abort",restore,{once:true});
-    HDRLibraryTrace.present(trace,()=>current() && canvas.dataset.standIn === "true",{route:cell.meta.route,stand_in:true,sharp:false});
+    HDRLibraryTrace.present(trace,()=>current() && canvas.dataset.standIn === "true",{route:cell.meta.route,quick_draw:true,sharp_draw:false});
     return true;
   }
   const readySurfaces = new Map();
@@ -296,6 +297,7 @@
         Object.defineProperty(meta,"trace",{get:getTrace,configurable:true});
         meta.draw_priority = importance;
         meta.fullscreen = true;
+        meta.log_view = "fullscreen"; meta.log_step = edge === 640 ? "quick draw" : "sharp draw";
         // Model measurement is CPU preparation, outside either GPU draw queue.
         await HDRLibraryPictures.prepareDenoise(meta,hdr,getTrace);
         if (!current()) throw new DOMException("Invalidated","AbortError");
@@ -342,7 +344,7 @@
     };
     restoreStandIn = restore;
     controller.signal.addEventListener("abort",restore,{once:true});
-    HDRLibraryTrace.present(trace,()=>current() && canvas.dataset.standIn === "true",{key:value.meta.key,stand_in:true,sharp:false});
+    HDRLibraryTrace.present(trace,()=>current() && canvas.dataset.standIn === "true",{key:value.meta.key,quick_draw:true,sharp_draw:false});
   }
   HDRLibraryScenes.onReclaim(async (bytes,required=false) => {
     let held = readyBytes + tilePool.snapshot().bytes;
@@ -408,10 +410,10 @@
   }
   function diagnostics(photo, meta, elapsed) {
     if (!state.timing) return;
-    const message = `${photo.name}: ${Math.round(elapsed)} ms to picture · ${meta.cache_hit ? "cached" : meta.route} · ${Math.round(meta.stored_bytes / 1024)} KiB`;
+    const message = `${photo.name}: ${Math.round(elapsed)} ms to preview · ${meta.cache_hit ? "cached" : meta.route} · ${Math.round(meta.stored_bytes / 1024)} KiB`;
     $("library-diagnostic").hidden = false;
     $("library-diagnostic").textContent = message;
-    console.info("[library-picture]", message);
+    HDRLibraryStopwatch("picture_diagnostic",{...window.HDRLibraryPictureLog?.(meta),path:photo.path,duration_ms:elapsed});
   }
   async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null, trace = null) {
     const started = performance.now();
@@ -423,13 +425,14 @@
           const meta = await (prepared || HDRLibraryScenes.load(photo.path,edge,controller.signal,priority,false,trace));
           prepared = null;
           if (!isCurrent()) return;
+          meta.log_view = trace?.view || (edge <= 640 ? "grid" : logView());
           await drawPicture(meta,canvas,controller,isCurrent);
           if (!isCurrent()) return;
           fallback?.remove(); fallback = null; canvas.style.visibility = ""; canvas.hidden = false;
           canvas.dataset.picturePath = photo.path; canvas.dataset.pictureEdge = meta.edge; canvas.dataset.pictureKey = meta.key;
           recentPictures.set(pictureIdentity(photo),meta);
           if (recentPictures.size > 80) recentPictures.delete(recentPictures.keys().next().value);
-          HDRLibraryStopwatch("picture_shown", {path:photo.path,key:meta.key,duration_ms:performance.now()-started});
+          HDRLibraryStopwatch("picture_shown", {...window.HDRLibraryPictureLog?.(meta),path:photo.path,key:meta.key,duration_ms:performance.now()-started});
           diagnostics(photo,meta,performance.now()-started);
           overlays?.attach(photo,canvas,meta,controller,isCurrent);
           return meta;
@@ -537,8 +540,8 @@
           if (current() && !cell.meta) {
             canvas.style.visibility=""; element.classList.remove("loading");
             const baseline = HDRLibraryTrace.begin(container === space ? "grid" : "filmstrip",photo.path,started);
-            HDRLibraryTrace.mark(baseline,"embedded_preview_decoded",started,{route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : meta.route});
-            HDRLibraryTrace.present(baseline,()=>current() && !cell.meta,{route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : meta.route});
+            HDRLibraryTrace.mark(baseline,"picture_camera_preview_decoded",started,{picture_size:"camera preview",route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : meta.route});
+            HDRLibraryTrace.present(baseline,()=>current() && !cell.meta,{picture_size:"camera preview",route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : meta.route});
           }
         }).catch(()=>{});
         let cpuShown = false;
@@ -559,7 +562,7 @@
             cell.meta = cell.scene = meta; cell.displayEpoch = state.displayEpoch; cell.elapsed = performance.now() - started;
             fallback.hidden = false; canvas.hidden = true; canvas.removeAttribute("src"); element.classList.remove("loading");
             fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
-            HDRLibraryStopwatch("picture_shown",{path:photo.path,key:meta.key,duration_ms:cell.elapsed});
+            HDRLibraryStopwatch("picture_shown",{...window.HDRLibraryPictureLog?.(meta),view:container === space ? "grid" : "filmstrip",path:photo.path,key:meta.key,duration_ms:cell.elapsed});
             overlays?.attach(photo,fallback,meta,cell.controller,current);
             return;
           } catch(error) {
@@ -877,7 +880,7 @@
     if (identity && identity === state.singleIdentity && !state.single?.signal.aborted) {
       positionZoom();
       if (requestedTrace && state.fitMeta && $("single-picture").dataset.picturePath === photo.path)
-        HDRLibraryTrace.present(requestedTrace,()=>selected()?.path === photo.path && state.singleIdentity === identity,{kept:true,stand_in:false,sharp:true});
+        HDRLibraryTrace.present(requestedTrace,()=>selected()?.path === photo.path && state.singleIdentity === identity,{kept:true,quick_draw:false,sharp_draw:true});
       return;
     }
     restoreStandIn();
@@ -894,7 +897,7 @@
     const trace = requestedTrace || HDRLibraryTrace.begin(state.review ? "fullscreen" : "single",photo.path);
     const controller = new AbortController(); state.single = controller;
     controller.signal.addEventListener("abort",()=>{
-      if (!trace.sharpPresented) HDRLibraryTrace.mark(trace,"navigation_cancelled",trace.started);
+      if (!trace.sharpPresented) HDRLibraryTrace.mark(trace,"picture_navigation_cancelled",trace.started);
       HDRLibraryTrace.end(trace,"navigation moved");
     },{once:true});
     const current = () => state.active && state.view === "single" && selected()?.path === photo.path && state.singleIdentity === identity && !controller.signal.aborted;
@@ -908,7 +911,7 @@
     }
     const borrowed = showStandIn(photo,controller,current,trace);
     updateSingleCaption();
-    status(`Loading ${photo.name}…`);
+    status(`Preparing screen preview · ${photo.name}…`);
     try {
       startRawAhead();
       const neighbours = readyNeighbours();
@@ -938,7 +941,7 @@
         }
         const waiting = performance.now();
         const value = await sharp;
-        HDRLibraryTrace.mark(trace,"window_wait",waiting,{kept});
+        HDRLibraryTrace.mark(trace,"picture_window_wait",waiting,{kept});
         if (!value) return;
         if (!current()) return;
         const previous = $("single-picture");
@@ -966,7 +969,7 @@
       }
       state.fullSceneQuality = meta.quality;
       state.fitMeta = meta; positionZoom(); if (state.zoom) void showNative();
-      HDRLibraryTrace.present(trace,current,{key:meta.key,route:meta.route,cache_hit:!!meta.cache_hit,kept,stand_in:false,sharp:true});
+      HDRLibraryTrace.present(trace,current,{key:meta.key,route:meta.route,cache_hit:!!meta.cache_hit,kept,quick_draw:false,sharp_draw:true});
       updateSingleCaption();
       status(`${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
     } catch (error) { HDRLibraryTrace.end(trace,error.message); if (state.single === controller) state.singleIdentity = ""; if (!aborted(error) && !controller.signal.aborted) removeUnreadable(photo, error); }
@@ -995,10 +998,10 @@
   async function prepareRawNative(photo, signal) {
     if (!rawCandidate(photo)) return;
     if (!HDRLibraryGpuRaw.enabled()) {
-      HDRLibraryStopwatch("gpu_raw_fallback",{path:photo.path,reason:"WebGPU is unavailable or disabled."}); return;
+      HDRLibraryStopwatch("picture_gpu_raw_fallback",{picture_size:"detail preview",view:logView(),path:photo.path,reason:"WebGPU is unavailable or disabled."}); return;
     }
     try { await HDRLibraryGpuRaw.thumbnail(photo.path,2560,signal,{nativeMode:true}); }
-    catch(error) { if (aborted(error)) throw error; HDRLibraryStopwatch("gpu_raw_fallback",{path:photo.path,reason:error.message}); }
+    catch(error) { if (aborted(error)) throw error; HDRLibraryStopwatch("picture_gpu_raw_fallback",{picture_size:"detail preview",view:logView(),path:photo.path,reason:error.message}); }
   }
   async function showNative() {
     const photo = selected(); if (!photo || !state.fitMeta || !state.zoom || !state.active || state.view !== "single") return;
@@ -1010,7 +1013,7 @@
     }
     state.native?.abort(); const controller = new AbortController(); state.native = controller; state.nativeLoading = true;
     const current = () => state.active && state.zoom && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
-    status(`Loading ${percent} · ${photo.name}…`);
+    status(`Preparing detail preview · ${percent} · ${photo.name}…`);
     try {
       // Development belongs to the selected photo, not the zoom gesture. A
       // zoom-out or pan cancels presentation while this one source completes.
@@ -1038,7 +1041,7 @@
       if (!current()) return;
       const shown = $("native-picture");
       shown.id = "native-picture-next"; shown.hidden = true; shown.removeAttribute("aria-label"); shown.setAttribute("aria-hidden", "true");
-      next.id = "native-picture"; next.removeAttribute("aria-hidden"); next.setAttribute("aria-label", "Native-resolution crop");
+      next.id = "native-picture"; next.removeAttribute("aria-hidden"); next.setAttribute("aria-label", "Detail preview");
       state.nativeMeta = {...meta,width,height,crop_x:x,crop_y:y}; next.dataset.picturePath = photo.path; positionZoom();
       status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
     } catch (error) {
@@ -1116,7 +1119,7 @@
     $("zoom-button").disabled = view !== "single";
     $("grid-view").setAttribute("aria-pressed", String(view === "grid")); $("single-view").setAttribute("aria-pressed", String(view === "single"));
     if (view === "single") {
-      // Preserve finished grid surfaces in the existing bounded pool for Fit stand-ins.
+      // Preserve finished grid surfaces in the existing bounded pool for quick draws.
       for (const cell of state.cells.values()) {
         cell.element.remove();
         if (cell.meta?.route === "library-live" && cell.displayEpoch === state.displayEpoch && !cell.controller.signal.aborted) {

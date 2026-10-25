@@ -129,7 +129,7 @@ class LibraryPictureCache:
             if temporary:
                 temporary.unlink(missing_ok=True)
 
-    @audited("cache_cached")
+    @audited("picture_cache_cached")
     def cached(self, path, edge, quality):
         # "fast" asks for a stand-in only until the real picture exists. Once it
         # is cached, the stand-in would just show first and then be swapped.
@@ -159,7 +159,7 @@ class LibraryPictureCache:
             self.managed.record(destination)
             return None
 
-    @audited("cache_build")
+    @audited("picture_cache_build")
     def build(self, path, edge, quality="quick", cancelled=None, decoded=None):
         path = Path(path).resolve(strict=True)
         if path.suffix.lower() not in SOURCE_EXTENSIONS:
@@ -179,7 +179,7 @@ class LibraryPictureCache:
                 cancelled = None
             decode_started = perf_counter()
             pixels, reference, metadata = decoded if decoded is not None else decode_picture(path, edge, quality)
-            log("picture_decoded", path=str(path), key=key, duration_ms=(perf_counter()-decode_started)*1000)
+            log("picture_decoded", path=str(path), key=key, edge=edge, duration_ms=(perf_counter()-decode_started)*1000)
             check_cancelled(cancelled)
             # A file changed during decoding must never publish under the old identity.
             if picture_key(path, edge, quality) != key:
@@ -195,7 +195,7 @@ class LibraryPictureCache:
                 edge=edge, quality=quality, adjustments=grade.model_dump(mode="json"),
                 white=203, has_reference=reference is not None,
                 decode_ms=(perf_counter() - started) * 1000)
-            log("picture_look_prepared", path=str(path), key=key, duration_ms=(perf_counter()-look_started)*1000)
+            log("picture_look_prepared", path=str(path), key=key, edge=edge, duration_ms=(perf_counter()-look_started)*1000)
             store_started = perf_counter()
             arrays = {"pixels": np.clip(pixels, 0, 65504).astype(np.float16),
                 "metadata": np.asarray(json.dumps(metadata))}
@@ -223,10 +223,10 @@ class LibraryPictureCache:
             result = metadata | {"key": key, "cache_hit": False, "stored_bytes": destination.stat().st_size}
             with _TRIM_LOCK:
                 self.trim()
-            log("picture_stored", path=str(path), key=key, duration_ms=(perf_counter()-store_started)*1000)
+            log("picture_stored", path=str(path), key=key, edge=edge, duration_ms=(perf_counter()-store_started)*1000)
             return result
 
-    @audited("cache_build_native")
+    @audited("picture_cache_build_native")
     def build_native(self, path, center_x, center_y, width, height, cancelled=None):
         """One retained native source in the helper; only viewport crops reach the GPU."""
         path = Path(path).resolve(strict=True)
@@ -278,7 +278,7 @@ class LibraryPictureCache:
         if paused:
             self._native_source = None
 
-    @audited("cache_pixels")
+    @audited("picture_cache_pixels")
     def pixels(self, key, lane="hdr"):
         path = self.file(key)
         with np.load(self.open(key, path), allow_pickle=False) as stored:
@@ -288,7 +288,7 @@ class LibraryPictureCache:
         body, stride = encode_rgba_proxy_rows(pixels, 0, pixels.shape[0], prefer_half=True, pixel_format="rgba16float")
         return body, pixels.shape[1], pixels.shape[0], stride, "linear-srgb" if reference else "acescg"
 
-    @audited("cache_trim")
+    @audited("picture_cache_trim")
     def trim(self):
         self.managed.trim_soon()
 
@@ -322,7 +322,7 @@ def camera_preview(path, edge):
         image.thumbnail((edge, edge))
         output = BytesIO()
         image.save(output, format="JPEG", quality=90)
-    log("camera_preview_ready", path=str(path), duration_ms=(perf_counter()-started)*1000)
+    log("picture_camera_preview_ready", path=str(path), duration_ms=(perf_counter()-started)*1000)
     return {"route": "camera-preview-placeholder", "url": "data:image/jpeg;base64," + base64.b64encode(output.getvalue()).decode(),
         "width": image.width, "height": image.height, "edge": edge, "kept": False}
 

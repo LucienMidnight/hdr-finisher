@@ -16,16 +16,16 @@ class SourceJobs:
         from .library_diagnostics import log
         started = monotonic()
         with self.lock:
-            self.preparations[token] = dict(path=str(path), stage="Reading and developing source", state="running", stage_started=started)
-        log("source_preparation_started", path=str(path), job=token)
+            self.preparations[token] = dict(path=str(path), stage="Developing photo", state="running", stage_started=started)
+        log("picture_source_preparation_started", path=str(path), job=token)
         try:
             result = function(*args)
             with self.lock: job=dict(self.preparations.get(token,{})); stopping=job.get("state")=="stopping"
-            log("source_preparation_cancelled" if stopping else "source_preparation_completed", path=str(path), job=token, duration_ms=(monotonic()-started)*1000, last_stage=job.get("stage"), stage_ms=(monotonic()-job.get("stage_started",started))*1000)
+            log("picture_source_preparation_cancelled" if stopping else "picture_source_preparation_completed", path=str(path), job=token, duration_ms=(monotonic()-started)*1000, last_stage=job.get("stage"), stage_ms=(monotonic()-job.get("stage_started",started))*1000)
             return result
         except Exception as error:
             with self.lock: job=dict(self.preparations.get(token,{})); stopping=job.get("state")=="stopping"
-            log("source_preparation_cancelled" if stopping else "source_preparation_failed", path=str(path), job=token, reason=str(error), duration_ms=(monotonic()-started)*1000, last_stage=job.get("stage"), stage_ms=(monotonic()-job.get("stage_started",started))*1000)
+            log("picture_source_preparation_cancelled" if stopping else "picture_source_preparation_failed", path=str(path), job=token, reason=str(error), duration_ms=(monotonic()-started)*1000, last_stage=job.get("stage"), stage_ms=(monotonic()-job.get("stage_started",started))*1000)
             raise
         finally:
             with self.lock: self.preparations.pop(token, None)
@@ -40,7 +40,7 @@ class SourceJobs:
         with self.lock:
             job=self.preparations.get(token)
             if not job or job["stage"]==text:return
-            log("source_preparation_stage", job=token, path=job["path"], stage=stage,
+            log("picture_source_preparation_stage", job=token, path=job["path"], stage=stage,
                 previous_stage=job["stage"], duration_ms=(now-job.get("stage_started",now))*1000)
             job.update(stage=text,stage_started=now)
 

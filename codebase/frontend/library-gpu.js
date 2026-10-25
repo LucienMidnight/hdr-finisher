@@ -56,35 +56,35 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
   async ensureDenoiseResolved(...args) {
     const started = performance.now();
     try { return await super.ensureDenoiseResolved(...args); }
-    finally { window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"denoise_resolve",started); }
+    finally { window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"picture_denoise_resolve",started,window.HDRLibraryPictureLog?.(this.libraryMeta)); }
   }
   async loadDirectMasks(...args) {
     const started = performance.now();
     try { return await super.loadDirectMasks(...args); }
-    finally { window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"local_masks",started); }
+    finally { window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"picture_local_masks",started,window.HDRLibraryPictureLog?.(this.libraryMeta)); }
   }
   async waitForSubmittedWork(...args) {
     const started = performance.now();
     const result = await super.waitForSubmittedWork(...args);
-    HDRLibraryStopwatch("gpu_wait", { duration_ms: performance.now() - started });
+    HDRLibraryStopwatch("picture_gpu_wait", { ...window.HDRLibraryPictureLog?.(this.libraryMeta), duration_ms: performance.now() - started });
     return result;
   }
   async measureToneAdjustedPeak(...args) {
     const started = performance.now();
     const result = await super.measureToneAdjustedPeak(...args);
-    HDRLibraryStopwatch("peak_analysis", { duration_ms: performance.now() - started });
+    HDRLibraryStopwatch("picture_peak_analysis", { ...window.HDRLibraryPictureLog?.(this.libraryMeta), duration_ms: performance.now() - started });
     return result;
   }
   async resolveHighlightAnchor(...args) {
     const started = performance.now();
     const result = await super.resolveHighlightAnchor(...args);
-    HDRLibraryStopwatch("highlight_analysis", { duration_ms: performance.now() - started });
+    HDRLibraryStopwatch("picture_highlight_analysis", { ...window.HDRLibraryPictureLog?.(this.libraryMeta), duration_ms: performance.now() - started });
     return result;
   }
   pipelineFor(format, factory = null) {
     const started = performance.now();
     const result = super.pipelineFor(format, factory);
-    HDRLibraryStopwatch("pipeline", { duration_ms: performance.now() - started });
+    HDRLibraryStopwatch("picture_pipeline", { ...window.HDRLibraryPictureLog?.(this.libraryMeta), duration_ms: performance.now() - started });
     return result;
   }
   async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", revision = 0, sourceIdentity = "source", options = {}) {
@@ -103,21 +103,21 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     const started = performance.now();
     const url = this.libraryMeta?.route === "library-live" ? `/api/library/live-pixels/${sessionId}?lane=${lane}` : this.libraryMeta?.route === "camera-raw-scene" ? `/api/library/raw-thumbnail/${sessionId}` : `/api/library/pixels/${sessionId}?lane=${lane}`;
     const response = await fetch(url, { signal: this.librarySignal });
-    if (!response.ok) throw new Error("The cached picture is unavailable; revisit this photo.");
+    if (!response.ok) throw new Error("The cached preview is unavailable; revisit this photo.");
     const width = Number(response.headers.get("X-Image-Width"));
     const height = Number(response.headers.get("X-Image-Height"));
     const stride = Number(response.headers.get("X-Bytes-Per-Row"));
     const body = await response.arrayBuffer();
-    HDRLibraryStopwatch("pixels_fetched", { key: sessionId, duration_ms: performance.now() - started });
+    HDRLibraryStopwatch("picture_pixels_fetched", { ...window.HDRLibraryPictureLog?.(this.libraryMeta), key: sessionId, duration_ms: performance.now() - started });
     this.libraryFetchMs = (this.libraryFetchMs || 0) + performance.now() - started;
-    window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"pixel_fetch",started,{key:sessionId});
+    window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"picture_pixel_fetch",started,{...window.HDRLibraryPictureLog?.(this.libraryMeta),key:sessionId});
     if (options.isCurrent?.() === false) return null;
     const uploaded = performance.now();
     const texture = this.device.createTexture({ size: [width, height], format: "rgba16float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC });
     this.device.queue.writeTexture({ texture }, body, { bytesPerRow: stride, rowsPerImage: height }, [width, height]);
     this.libraryUploadMs = (this.libraryUploadMs || 0) + performance.now() - uploaded;
-    window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"upload",uploaded,{key:sessionId});
+    window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"picture_upload",uploaded,{...window.HDRLibraryPictureLog?.(this.libraryMeta),key:sessionId});
     const proxy = { texture, width, height, sessionId, lane, longEdge,
       workingSpace: response.headers.get("X-Working-Space"), pixelFormat: "rgba16float",
       geometrySignature, sourceIdentity, identity: key, byteSize: body.byteLength, bindGroups: new Map() };
@@ -143,9 +143,9 @@ const HDRLibraryPictureFactory = (quick = false) => {
       if (renderer.adapterInfo?.fallback) {
         clearInterval(renderer.deliveryActivityTimer);
         const device = renderer.device; renderer.device = null; device?.destroy();
-        throw Error("Library live drawing requires a hardware GPU.");
+        throw Error("Drawing Library previews requires a hardware GPU.");
       }
-      HDRLibraryStopwatch("renderer_setup", { duration_ms: performance.now() - started });
+      HDRLibraryStopwatch("picture_renderer_setup", { duration_ms: performance.now() - started });
       return renderer;
     })();
     try { return await ready; } catch (error) { ready = null; throw error; }
@@ -158,14 +158,14 @@ const HDRLibraryPictureFactory = (quick = false) => {
       signal = shared === originalSignal ? originalSignal : AbortSignal.any([originalSignal,shared]);
       isCurrent = () => !signal.aborted && originalCurrent();
       if (signal.aborted || !isCurrent()) return;
-      HDRLibraryStopwatch("draw_dispatched", { key: meta.key, queue_ms: performance.now() - queued });
-      window.HDRLibraryTrace?.mark(meta.trace,"queue_wait",Math.max(queued,meta.trace?.started || queued),{key:meta.key});
+      HDRLibraryStopwatch("picture_draw_dispatched", { ...window.HDRLibraryPictureLog?.(meta), key: meta.key, queue_ms: performance.now() - queued });
+      window.HDRLibraryTrace?.mark(meta.trace,"picture_queue_wait",Math.max(queued,meta.trace?.started || queued),{...window.HDRLibraryPictureLog?.(meta),key:meta.key});
       const gpu = await initialize();
       if (signal.aborted || !isCurrent()) return;
       // Keep the accepted frame at its own shape while conversion and pixels load.
       // renderTo resizes through its presentation gate when the new frame is ready.
       gpu.liveMode = meta.route === "library-live";
-      if (gpu.liveMode && gpu.adapterInfo?.fallback) throw Error("Library live drawing requires a hardware GPU.");
+      if (gpu.liveMode && gpu.adapterInfo?.fallback) throw Error("Drawing Library previews requires a hardware GPU.");
       if (!gpu.liveMode && !gpu.deliveryActivityTimer) {
         gpu.deliveryActivityTimer = setInterval(()=>gpu.reportDeliveryActivity().catch(()=>{}),100);
       }
@@ -183,7 +183,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
       const native = meta.edge === 100000 && gpu.liveMode;
       const leasing = performance.now();
       const lease = meta.route === "library-live" ? await HDRLibraryScenes.lease(meta, signal, native) : null;
-      window.HDRLibraryTrace?.mark(meta.trace,"lease_wait",leasing,{key:meta.key});
+      window.HDRLibraryTrace?.mark(meta.trace,"picture_lease_wait",leasing,{...window.HDRLibraryPictureLog?.(meta),key:meta.key});
       if (lease) { clearInterval(gpu.deliveryActivityTimer); gpu.deliveryActivityTimer = null; }
       let result, refusal;
       const rendering = performance.now();
@@ -204,7 +204,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
       if (denoise?.enabled) {
         const analysis = performance.now();
         if (!await gpu.analyzeDenoiseProxy(meta.key,lane,adjustments,edge,0,"source",denoise.controls)) throw Error("Library Denoise analysis failed.");
-        window.HDRLibraryTrace?.mark(meta.trace,"denoise_analysis",analysis,{key:meta.key});
+        window.HDRLibraryTrace?.mark(meta.trace,"picture_denoise_analysis",analysis,{...window.HDRLibraryPictureLog?.(meta),key:meta.key});
       } else if (gpu.denoiseSourceSelector) gpu.denoiseSourceSelector.selected = "original";
       result = await gpu.renderTo(canvas, meta.key, lane, adjustments,
         sampleCurvePoints, edge, meta.locals || [], 0, null, meta.white,
@@ -224,7 +224,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
         gpu.device.queue.submit([encoder.finish()]);
       }
       await gpu.waitForSubmittedWork();
-      window.HDRLibraryTrace?.mark(meta.trace,"render",rendering,{key:meta.key,
+      window.HDRLibraryTrace?.mark(meta.trace,"picture_render",rendering,{...window.HDRLibraryPictureLog?.(meta),key:meta.key,
         duration_ms:performance.now()-rendering-gpu.libraryFetchMs-gpu.libraryUploadMs});
       refusal = gpu.lastRenderRefusal?.reason;
       } finally {
@@ -232,16 +232,17 @@ const HDRLibraryPictureFactory = (quick = false) => {
         if (lease) { gpu.resetSession(null); await lease.release(); }
       }
       if (signal.aborted || !isCurrent()) return;
-      if (!result?.rendered && result?.execution !== "direct") throw new Error("The library picture could not be drawn: " + (result?.reason || refusal || "render refused"));
-      window.HDRLibraryTrace?.mark(meta.trace,"draw_complete",started,{key:meta.key,route:meta.route,cache_hit:!!meta.cache_hit});
-      HDRLibraryStopwatch("picture_drawn", { key: meta.key, duration_ms: performance.now() - started, first: draws++ === 0, kept: false });
+      if (!result?.rendered && result?.execution !== "direct") throw new Error("The Library preview could not be drawn: " + (result?.reason || refusal || "render refused"));
+      window.HDRLibraryTrace?.mark(meta.trace,"picture_draw_complete",started,{...window.HDRLibraryPictureLog?.(meta),key:meta.key,route:meta.route,cache_hit:!!meta.cache_hit});
+      HDRLibraryStopwatch("picture_drawn", { ...window.HDRLibraryPictureLog?.(meta), key: meta.key, duration_ms: performance.now() - started, first: draws++ === 0, kept: false });
       canvas.dataset.rendition = hdr ? "hdr" : "sdr";
       canvas.dataset.surface = gpu.surfaceKeys.get(canvas);
       canvas.dataset.peakNits = hdr ? "1000" : "203";
       return result;
     };
     const priority = typeof meta.draw_priority === "function" ? meta.draw_priority() : meta.draw_priority ?? 10;
-    const pending = (quick ? HDRLibraryScenes.quickDraw(render,signal,priority,meta.path) : meta.route === "library-live" ? HDRLibraryScenes.draw(render,signal,priority,meta.path)
+    const logLabels = {edge:meta.edge,log_view:meta.trace?.view || meta.log_view,log_step:meta.log_step};
+    const pending = (quick ? HDRLibraryScenes.quickDraw(render,signal,priority,meta.path,logLabels) : meta.route === "library-live" ? HDRLibraryScenes.draw(render,signal,priority,meta.path,logLabels)
       : queue.catch(()=>{}).then(()=>render())).finally(() => { foreground--; });
     queue = pending;
     return pending.then(value => {
@@ -301,7 +302,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
     const url = `/api/session/${meta.key}/denoise-model/${lane}?long_edge=${Math.max(256,meta.edge)}&edit_revision=0&geometry_signature=${encodeURIComponent(geometry)}`;
     const cached = libraryDenoiseModels.has(url);
     await libraryDenoiseModel(url);
-    window.HDRLibraryTrace?.mark(typeof trace === "function" ? trace() : trace,"denoise_prepare",started,{key:meta.key,cache_hit:cached});
+    window.HDRLibraryTrace?.mark(typeof trace === "function" ? trace() : trace,"picture_denoise_prepare",started,{...window.HDRLibraryPictureLog?.(meta),key:meta.key,cache_hit:cached});
   }
   return Object.freeze({ show, initialize, prepare, prepareDenoise, readyMemory,
     configure: async limits => { configuredLimits = limits; if (renderer) renderer.libraryLimits = limits; },

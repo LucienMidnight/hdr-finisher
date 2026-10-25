@@ -302,7 +302,7 @@ class LibraryWorker:
     def status(self) -> dict:
         with self._lock:
             return {**self.info, "running": bool(self._process and self._process.is_alive()),
-                    "jobs": list(self._work.values()) + [dict(path=r.get("path"),stage="Waiting to read source",state="waiting") for k,r in self._requests.items() if k not in self._work and r.get("command") in {"live-scene","live-fallback"}],
+                    "jobs": list(self._work.values()) + [dict(path=r.get("path"),stage="Waiting to develop photo",state="waiting") for k,r in self._requests.items() if k not in self._work and r.get("command") in {"live-scene","live-fallback"}],
                     "pending": len(self._pending), "paused": bool(self._paused), "manual_paused": "manual" in self._paused,
                     "failure": self._failure, "restarts": self._restarts, "recovering": self._recovering}
 
@@ -406,7 +406,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 if stopping.is_set():
                     return
                 started = time.perf_counter()
-                log("helper_job_started", job=job["id"], request=job.get("trace_id"), operation=job["command"], path=job.get("path"), queue_ms=round((time.time()-job["queued_at"])*1000, 2))
+                log("picture_helper_job_started" if kind == "picture" else "helper_job_started", job=job["id"], request=job.get("trace_id"), operation=job["command"], edge=job.get("edge"), path=job.get("path"), queue_ms=round((time.time()-job["queued_at"])*1000, 2))
                 cancelled = jobs.get(job["id"])
                 if cancelled is None or cancelled.is_set():
                     continue
@@ -440,11 +440,11 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             def progress(stage, text):
                 if stage == last_stage[0]: return
                 now = time.perf_counter()
-                log("preparation_stage", job=job["id"], path=job.get("path"), stage=stage,
+                log("picture_preparation_stage", edge=job.get("edge"), job=job["id"], path=job.get("path"), stage=stage,
                     previous_stage=last_stage[0], duration_ms=(now-last_stage[1])*1000)
                 last_stage[:] = [stage, now]
                 reply({"event":"work", "id":job["id"], "path":job.get("path"), "stage":text})
-            if job["command"] in {"live-scene", "live-fallback"}: progress("reading", "Reading source")
+            if job["command"] in {"live-scene", "live-fallback"}: progress("reading", "Reading photo")
             check = yielding if kind in {"index", "check", "kept"} else cancelled.is_set
             try:
                 if job["command"] == "overlay":
@@ -478,14 +478,14 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     output = browser.thumbnail(job["path"], job["size"], fast_only=job["fast_only"], embedded_only=job.get("embedded_only", False), cancel_event=cancelled)
                     result = {"id": job["id"], "path": str(output)}
             except MediaBrowserInterpretationRequired as exc:
-                log("helper_interpretation_required", path=job.get("path"), reason=str(exc), action="interpretation requested; photo untouched")
+                log("picture_helper_interpretation_required" if kind == "picture" else "helper_interpretation_required", path=job.get("path"), reason=str(exc), action="interpretation requested; photo untouched")
                 result = {"id": job["id"], "error": str(exc), "reason": exc.reason,
                           "profile_name": exc.profile_name}
             except Exception as exc:
                 if not isinstance(exc, CancelledError) and not cancelled.is_set():
-                    log("helper_job_failed", operation=job["command"], paths=job.get("path", job.get("paths")), reason=repr(exc), action="request failed; saved marks retained")
+                    log("picture_helper_job_failed" if kind == "picture" else "helper_job_failed", operation=job["command"], paths=job.get("path", job.get("paths")), reason=repr(exc), action="request failed; saved marks retained")
                 result = {"id": job["id"], "error": str(exc)}
-            log("helper_job_cancelled" if cancelled.is_set() or stopping.is_set() else "helper_job_finished", job=job["id"], request=job.get("trace_id"), operation=job["command"], path=job.get("path"), outcome="cancelled" if cancelled.is_set() or stopping.is_set() else "failed" if "error" in result else "completed", last_stage=last_stage[0], stage_ms=round((time.perf_counter()-last_stage[1])*1000,2), work_ms=round((time.perf_counter()-started-waited[0])*1000, 2), yield_ms=round(waited[0]*1000, 2))
+            log(("picture_" if kind == "picture" else "") + ("helper_job_cancelled" if cancelled.is_set() or stopping.is_set() else "helper_job_finished"), job=job["id"], request=job.get("trace_id"), operation=job["command"], edge=job.get("edge"), path=job.get("path"), outcome="cancelled" if cancelled.is_set() or stopping.is_set() else "failed" if "error" in result else "completed", last_stage=last_stage[0], stage_ms=round((time.perf_counter()-last_stage[1])*1000,2), work_ms=round((time.perf_counter()-started-waited[0])*1000, 2), yield_ms=round(waited[0]*1000, 2))
             with condition:
                 jobs.pop(job["id"], None)
                 if kind == "check":
@@ -498,7 +498,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     reply(result)
                 except (EOFError, OSError) as error:
                     library_diagnostics._sink = None
-                    log("helper_reply_failed", operation=job["command"], path=job.get("path"), reason=str(error), action="lane exits; parent detects closed helper")
+                    log("picture_helper_reply_failed" if kind == "picture" else "helper_reply_failed", operation=job["command"], edge=job.get("edge"), path=job.get("path"), reason=str(error), action="lane exits; parent detects closed helper")
                     return
 
     Thread(target=decode, name="hdr-library-decode", daemon=True).start()

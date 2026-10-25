@@ -38,11 +38,11 @@
       for(const user of job.users){user.signal?.removeEventListener("abort",user.stop);error?user.reject(error):user.resolve(value);}
       job.users.clear();
     }
-    function submit(key,task,signal,priority=10,{heavy=false,cost=0,path=key,stage="Preparing photo"}={}){
+    function submit(key,task,signal,priority=10,{heavy=false,cost=0,path=key,stage="Preparing photo",edge,log_view,log_step}={}){
       if(signal?.aborted)return Promise.reject(cancelled());
       let job=jobs.get(key);
       if (job?.controller.signal.aborted) { jobs.delete(key); job = null; }
-      if(!job){for(let i=failures.length-1;i>=0;i--)if(failures[i].path===path)failures.splice(i,1);job={key,path,stage,task,priority,heavy,cost:Math.max(0,Math.min(5,cost)),created:now(),sequence:sequence++,controller:new AbortController(),users:new Set()};jobs.set(key,job);waiting.push(job);onChange(job,"waiting");}
+      if(!job){for(let i=failures.length-1;i>=0;i--)if(failures[i].path===path)failures.splice(i,1);job={key,path,stage,edge,log_view,log_step,task,priority,heavy,cost:Math.max(0,Math.min(5,cost)),created:now(),sequence:sequence++,controller:new AbortController(),users:new Set()};jobs.set(key,job);waiting.push(job);onChange(job,"waiting");}
       const result=new Promise((resolve,reject)=>{
         const user={signal,resolve,reject,priority};
         user.stop=()=>{const retained=typeof keepRunning==="function"?keepRunning(job):keepRunning;job.users.delete(user);reject(cancelled());demand(job);if(!job.users.size&&!(retained&&job.running)){job.controller.abort();if(!job.running){const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);}onChange(job,job.running?"stopping":"cancelled");if(jobs.get(key)===job)jobs.delete(key);}};

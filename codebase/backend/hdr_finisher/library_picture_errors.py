@@ -70,7 +70,7 @@ class PictureErrors:
 
     def remember(self, path, error, revision):
         if revision != self.revision(path):
-            raise HTTPException(409, "The photo or settings changed. Request its picture again.")
+            raise HTTPException(409, "The photo or settings changed. Request its preview again.")
         details = str(error)
         if "validation error" in details:
             reason = "Saved edits contain settings this version cannot read."
