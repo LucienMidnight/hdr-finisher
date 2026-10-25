@@ -287,3 +287,28 @@ def test_removed_subfolder_clears_saved_collection_counts_but_keeps_pending_mark
     assert not index.marks.tag_paths("Saved")
     assert not index.marks.album_paths("Saved album")
     assert index.marks._rows([str(pending)])[str(pending)]["marks"]["rating"] == 5
+
+def test_periodic_pin_signal_skips_unchanged_and_detects_nested_edits(tmp_path):
+    import os
+    from hdr_finisher.library_change_signal import FolderChangeSignal
+    if os.name != "nt": pytest.skip("Windows change notification")
+    child = tmp_path / "nested"
+    child.mkdir()
+    photo = child / "photo.png"
+    photo.write_bytes(b"first")
+    signal = FolderChangeSignal(tmp_path)
+    try:
+        assert signal.handle is not None
+        assert signal.changed()
+        assert not signal.changed()
+        photo.write_bytes(b"replacement")
+        deadline = time.monotonic() + 2
+        while not signal.changed() and time.monotonic() < deadline:
+            time.sleep(.01)
+        # Notifications need not carry names; a dirty pin gets a real scan.
+        assert time.monotonic() < deadline
+        # Windows may deliver several notifications for one replacement.
+        # Each is conservatively dirty; do not require exactly one event.
+    finally:
+        signal.close()
+    assert signal.changed()  # Unavailable/failure always falls back to a scan.

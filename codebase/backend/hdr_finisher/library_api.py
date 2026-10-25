@@ -754,7 +754,7 @@ def create_library_router(worker, browser, store=None):
             with marks._lock:
                 impact = index.membership.impact(folder=command.path)
                 pinned = browser.remove_pin(command.path)
-                index.membership.reconcile()
+            index.membership.reconcile()
             index.kick()
             return {"pinned": pinned, **impact}
         except (OSError, ValueError) as exc:

@@ -101,35 +101,72 @@ class LibraryIndex:
                 if generation != self._generation: raise _Restart()
 
     @audited("index_remember_scan")
-    def remember_scan(self, root, photos, *, epoch=None, generation=None, reconcile=True):
+    def remember_scan(self, root, photos, *, epoch=None, generation=None, reconcile=True, removed=None):
         """Record a folder listing and attach facts already known for unchanged files."""
         prefix = self._prefix(root)
-        with timed_lock(self.marks._lock, "index_scan"):
-            self.accept_read(epoch, generation)
-            db = self.marks._connect()
-            try:
-                known = {path: (size, modified, facts) for path, size, modified, facts in
-                    db.execute("SELECT path, bytes, mtime_ns, facts FROM files WHERE path>=? AND path<?", (prefix, prefix[:-1] + chr(ord(prefix[-1])+1)))}
-                changed = []
-                files = getattr(self.marks, "file_commands", None)
-                if files:
-                    photos[:] = [p for p in photos if not files.blocked(p["path"]) and not (p["path"] in files.retired and not Path(p["path"]).exists())]
-                    known = {p:v for p,v in known.items() if not files.blocked(p)}
-                for photo in photos:
-                    old = known.pop(photo["path"], None)
-                    same = old is not None and old[:2] == (photo["bytes"], photo["mtime_ns"])
-                    if same and old[2]:
-                        photo.update(json.loads(old[2]), indexed=True)
-                    elif not same:
-                        changed.append((photo["path"], photo["bytes"], photo["mtime_ns"]))
-                if changed or known:
+        present = {p["path"] for p in photos}
+        commands = getattr(self.marks, "file_commands", None)
+        # Work one short page at a time, including a whole-library pin scan.
+        for start in range(0, len(photos), 32):
+            batch = photos[start:start+32]
+            with timed_lock(self.marks._lock, "index_scan"):
+                self.accept_read(epoch, generation)
+                db = self.marks._connect()
+                try:
+                    keys = [p["path"] for p in batch]
+                    known = {r[0]:r[1:] for r in db.execute(
+                        "SELECT path,bytes,mtime_ns,facts FROM files WHERE path IN (" + ",".join("?" for _ in keys) + ")", keys)}
+                    changed = []
+                    for photo in batch:
+                        if commands and (commands.blocked(photo["path"]) or photo["path"] in commands.retired and not Path(photo["path"]).exists()):
+                            present.discard(photo["path"])
+                            continue
+                        old = known.get(photo["path"])
+                        same = old is not None and old[:2] == (photo["bytes"], photo["mtime_ns"])
+                        if same and old[2]:
+                            photo.update(json.loads(old[2]), indexed=True)
+                        elif not same:
+                            changed.append((photo["path"], photo["bytes"], photo["mtime_ns"]))
                     with db:
-                        db.executemany("INSERT OR REPLACE INTO files VALUES (?, ?, ?, NULL)", changed)
-                        db.executemany("DELETE FROM files WHERE path = ?", [(path,) for path in known])
-            finally:
-                db.close()
-            if reconcile:
-                self.membership.reconcile()
+                        db.executemany("INSERT OR REPLACE INTO files VALUES (?,?,?,NULL)", changed)
+                finally:
+                    db.close()
+            if reconcile: self.membership.maintain([r[0] for r in changed])
+            if generation is not None or epoch is not None: time.sleep(.001)
+        photos[:] = [p for p in photos if p["path"] in present]
+        if removed is not None:
+            for start in range(0, len(removed), 32):
+                batch = removed[start:start+32]
+                with timed_lock(self.marks._lock, "index_scan"):
+                    self.accept_read(epoch, generation)
+                    db = self.marks._connect()
+                    try:
+                        with db:
+                            db.executemany("DELETE FROM files WHERE path=?", [(p,) for p in batch if not (commands and commands.blocked(p))])
+                    finally:
+                        db.close()
+                if reconcile: self.membership.maintain(batch)
+                if generation is not None or epoch is not None: time.sleep(.001)
+            return
+        after = prefix
+        inclusive = True
+        while True:
+            with timed_lock(self.marks._lock, "index_scan"):
+                self.accept_read(epoch, generation)
+                db = self.marks._connect()
+                try:
+                    keys = [r[0] for r in db.execute(
+                        "SELECT path FROM files WHERE path" + (">=" if inclusive else ">") + "? AND path<? ORDER BY path LIMIT 200",
+                        (after, prefix[:-1] + chr(ord(prefix[-1])+1)))]
+                    removed = [p for p in keys if p not in present and not (commands and commands.blocked(p))]
+                    with db:
+                        db.executemany("DELETE FROM files WHERE path=?", [(p,) for p in removed])
+                finally:
+                    db.close()
+            if reconcile: self.membership.maintain(removed)
+            if not keys: break
+            after, inclusive = keys[-1], False
+            if generation is not None or epoch is not None: time.sleep(.001)
 
     @audited("index_remember_facts")
     def remember_facts(self, records, *, epoch=None, generation=None):
@@ -147,7 +184,7 @@ class LibraryIndex:
                     db.executemany("INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?)", rows)
             finally:
                 db.close()
-            self.membership.reconcile()
+        self.membership.maintain([r[0] for r in rows])
 
     @audited("index_photos")
     def photos(self, paths):
@@ -201,6 +238,9 @@ class LibraryIndex:
     def close(self):
         self._stop.set()
         self.checks.wake.set()
+        with self.checks.lock:
+            for signal in self.checks.signals.values(): signal.close()
+            self.checks.signals.clear()
         self._wake.set()
 
     def pause(self, paused):
@@ -286,11 +326,12 @@ class LibraryIndex:
             # Settings files rebuild marks, tags and albums for unvisited folders.
             prefix = self._prefix(pin["path"])
             with self.marks._lock:
-                recorded = [row[0] for row in self.marks._query("SELECT path FROM photos WHERE substr(path, 1, ?) = ?", (len(prefix), prefix))]
+                recorded = [row[0] for row in self.marks._query("SELECT path FROM photos WHERE path>=? AND path<?", (prefix, prefix[:-1] + chr(ord(prefix[-1])+1)))]
             settings = list(dict.fromkeys([*[photo["path"] for photo in photos if photo.get("sidecar")], *recorded]))
-            for start in range(0, len(settings), 200):
+            for path in settings:
                 self._check(generation)
-                self.marks.read(settings[start:start + 200])
+                self.marks.read([path])
+                time.sleep(.001)
             self.checks.seed(result)
             waiting = [photo["path"] for photo in photos if not photo.get("indexed")]
             done = len(photos) - len(waiting)

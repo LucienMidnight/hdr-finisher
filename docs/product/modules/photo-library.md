@@ -881,6 +881,45 @@ checks then passed, including the export/grade deadlock regression. No full
 rerun, GPU drivers, sweeps or additional timing runs.
 
 
+**October 25, 2026: responsiveness core, Step 2 (incremental maintenance).**
+Index batches, changed-folder deltas and kept-album checks reconcile only affected
+families. Full membership and scan imports use bounded pages, releasing the
+Library lock between pages; removing a pin no longer retains it across the pass.
+Recovery manifests retain unaffected families. Session-before-Library order,
+sidecar/grade formats and durability guarantees are unchanged.
+
+Windows periodic non-visible pin checks use recursive change notifications;
+after the baseline scan an unchanged whole-library pin skips its walk, snapshot
+copy and import. Visible/manual checks, dirty pins and notification failures still
+scan; disconnects retain entries and reconnects trigger checks. Initial/dirty
+walks, full-pass total pages, kept-member counts and recovery manifests still
+scale with their scope; explicit pin impact still reads library paths.
+
+One Step 1-style short run on disposable warm copies (155,883 files on the large
+copy), one scratch PNG on D: and simulated one-photo index writes every 20 ms:
+large idle rating 108/335 ms, lookup 1/1 ms, post-scan listing 6/6 ms (p50/p95);
+indexing rating 143/222 ms, lookup 6/8 ms, listing 66/73 ms. Rating p95 improves
+from 947 ms but misses the proposed 100 ms; scratch listing meets 0.5 s.
+Lookup alone meets 30 ms, not a measured complete live-plan result. Actual USB
+badminton was not measured. Small/large ratings and indexing listings stay within
+10%; idle listing p50 differs by 12% (0.63 ms), p95 by 2%. Targets remain proposals.
+One idle-rating profile attributes 58 of 107 ms to SQLite commits and 32 ms to
+recovery fsync, versus 6 ms in scoped queries. Removing those flushes needs a
+separate durability design, not a library-size optimisation; historical ~15 ms
+is not reproduced. The brief records all four conditions and sample sizes.
+
+The single timing run preceded final finer per-family yielding; no timing
+rerun. Windows may emit several events per edit, so a conservatively dirty pin
+can receive an extra scan before its signal becomes quiet.
+
+Validation: 603 Node checks passed. The one Python fast run had 2,546 passed,
+3 skipped and one new notification-test failure (incorrectly assumed one event
+per edit). Corrected it; 161 affected Library checks and four final regressions
+passed, including export/grade snapshot locking. No full rerun, GPU drivers,
+sweeps or repeated timing runs. Live database opened read-only only for backup;
+all writes used scratch copies/photos/sidecars. Step 3 remains open.
+
+
 1. **Library speed plan** (Claude, October 18, from the speed exploration:
    [findings](../../technical/archive/library-speed-exploration-findings-2026-10-18.md)).
    Targets unchanged: every visible cell shows a picture within 1 s p90;

@@ -205,3 +205,84 @@ three new foreground results and the existing export/grade deadlock regression).
 The recovery-manifest publication-order correction was also covered by these
 focused checks. No full-suite rerun, GPU drivers, sweeps or further timing run.
 Stop here; Steps 2–3 remain open.
+
+
+## Step 2 outcome — October 25, 2026
+
+Index metadata batches reconcile only their changed original/copy families.
+Folder checks apply only added/changed/removed entries; kept-album checks read
+facts for their current paths and reconcile only observed changes, including
+missing members. Copy-family membership lookups use indexed ranges. A full
+scan imports facts in 32-photo pages and checks removals in bounded key pages.
+Explicit full membership maintenance uses key-only pages and reconciles small
+batches, releasing the Library lock and yielding between them. Unchanged facts
+in pinned families do not need recovery reconciliation. Removing a pin no
+longer owns the Library lock for the full maintenance pass. Session-before-
+Library ordering and the export/grade snapshot path are unchanged.
+
+On Windows, periodic non-visible pin checks use recursive filesystem change
+notifications covering names, directories, attributes, size and last-write.
+After establishing a scan baseline, an unchanged D:\Photos pin is neither
+walked, deep-copied nor re-imported every 300 seconds. Visible-folder and explicit
+checks still scan. A dirty pin still needs a walk; unsupported/failed watchers,
+interrupted checks and disconnect/reconnect fall back to a scan. This avoids
+trusting directory timestamps, which miss edits inside existing files. Recovery
+record contents and publication order are retained through chunked passes.
+
+One short run repeated Step 1's workload: read-only SQLite backup, disposable
+small/large copies with personal-state rows cleared only in those copies, one
+scratch PNG on D:, 12 ratings/lookups and four post-scan listings per condition,
+repeated one-photo metadata batches with 20 ms pauses for simulated indexing.
+The new large copy held 155,883 files including the scratch PNG. Pages were warm
+after setup, no scene/render cache was involved, and drive medium was unverified.
+These are backend calls, not HTTP/page or actual USB badminton-folder timings.
+
+All figures below are p50/p95 in milliseconds:
+
+| Copy / condition | Rating | Document lookup | Post-scan listing |
+| --- | --- | --- | --- |
+| Small / idle | 115.40 / 343.14 | 1.11 / 1.24 | 5.28 / 5.86 |
+| Large / idle | 108.49 / 334.85 | 1.20 / 1.46 | 5.91 / 5.96 |
+| Small / indexing | 152.14 / 221.97 | 6.09 / 6.68 | 72.57 / 73.50 |
+| Large / indexing | 143.43 / 222.38 | 6.45 / 7.76 | 66.03 / 72.54 |
+
+Large-copy indexing rating p95 improved from Step 1's 947 ms to 222 ms, but
+still misses the proposed 100 ms target. Listing improved from 735/737 ms to
+66/73 ms, below 0.5 s for this scratch folder; actual badminton remains unmeasured.
+Document lookup is below 30 ms; this does not establish the complete live-plan
+HTTP timing. Large/small ratings (both conditions) and indexing listings stayed
+within the proposed 10%. Idle listing p50 differed by 12% (0.63 ms), missing that
+proposal; idle listing p95 differed by 2%. No repeat timing run was made.
+
+The idle rating cost is durable I/O, not a remaining whole-library query. One
+rating profiled inside the same run took 107 ms: 58 ms in SQLite transaction
+commits and 32 ms in fsync for the pending recovery record; all scoped membership
+queries together took about 6 ms. Large idle rating was 108/335 ms versus Step
+1's 179/391 ms. The historical ~15 ms is not reproduced by this durable-write
+path on this storage. Eliminating these flushes would change durability or need
+a separate write/acknowledgement design; it is not a cheap Step 2 removal. The
+synthetic indexing loop also commits repeated metadata writes and competes with
+the sidecar writer. No durability setting or recovery guarantee was weakened.
+
+Costs that still scale: initial/explicit/dirty-pin filesystem walks and cached
+scan assembly; total key pages in a full membership pass; album-member checks
+with the number of kept paths; recovery manifest work with the number of
+protected families when membership changes. Explicit pin impact calculation
+still reads library paths. Full walks and totals are not constant-time, but
+background database maintenance no longer holds one lock across those totals.
+
+The timing run preceded the final finer yielding for multi-photo recovery and
+sidecar/removal reads; no timing rerun was made. Windows can conservatively
+signal several notifications for one edit, so a dirty pin can receive an extra
+scan; quiet checks with no pending signal skip the walk.
+
+Validation: Node fast checks 603 passed. The single Python fast run had 2,546
+passed, 3 skipped and one failure in the new test's assumption of exactly one
+Windows event per edit. Corrected that assumption; 161 affected Library result
+checks then passed. Four final checks passed for export/grade snapshot locking,
+removed-folder pending marks, nested-edit notifications and index retry. No
+full-suite rerun. Background recovery/sidecar reads now yield per photo family,
+since one protected record may itself need a durable flush.
+No GPU drivers, release runner, sweeps, or extra timing runs. Live database was
+opened read-only only for backup; no live database, photos or sidecars changed.
+Step 3 remains open; stop after this step.

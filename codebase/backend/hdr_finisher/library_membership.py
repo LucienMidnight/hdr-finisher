@@ -4,6 +4,7 @@ from copy import deepcopy
 import json
 from hashlib import sha256
 import os
+import time
 from pathlib import Path
 from .library_documents import atomic_json
 from .library_copies import source
@@ -23,6 +24,19 @@ class LibraryMembership:
         self.transient = OrderedDict()
         self.marks.membership = self
         self.restore()
+        if self.path.exists():
+            try:
+                saved = json.loads(self.path.read_text(encoding="utf-8"))
+                records = {}
+                for name in saved["records"]:
+                    if len(name) != 64 or any(c not in "0123456789abcdef" for c in name):
+                        raise ValueError("Invalid kept record name")
+                    records[name] = json.loads((self.records / (name+".json")).read_text(encoding="utf-8"))
+                self._saved, self._saved_records = saved, records
+            except (OSError, ValueError, KeyError, TypeError):
+                # With a database present, it remains the source for rebuilding
+                # recovery. Missing-database restore above still fails safely.
+                pass
         self.reconcile()
 
     def pins(self):
@@ -97,6 +111,8 @@ class LibraryMembership:
         return sorted(rows, key=lambda row: row[1] if table == "album_photos" else row[0]) if ordered else rows
 
     def reconcile(self, paths=None):
+        if paths is None:
+            return self._reconcile_all()
         with timed_lock(self.marks._lock, "reconcile"):
             if self._busy or not self.marks.database.exists():
                 return
@@ -188,6 +204,53 @@ class LibraryMembership:
             finally:
                 self._busy = False
 
+    def maintain(self, paths):
+        """Background recovery work yields after each physical photo family."""
+        paths = sorted({source(p) for p in paths})
+        for at, path in enumerate(paths):
+            self.reconcile([path])
+            if at + 1 < len(paths): time.sleep(.001)
+
+    def _reconcile_all(self):
+        # Key-only, indexed pages. No facts snapshot or lock spans the pass.
+        # Include durable grades/copies and album paths, even without a file row.
+        if not self.marks.database.exists():
+            return
+        with self.marks._lock:
+            db = self.marks._connect()
+            try:
+                tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            finally:
+                db.close()
+        recovery_paths = sorted({source(row[1] if table == "album_photos" else row[0])
+            for record in list(self._saved_records.values()) for table, rows in record.items() for row in rows})
+        for start in range(0, len(recovery_paths), 32):
+            self.maintain(recovery_paths[start:start+32])
+            time.sleep(.001)
+        for table in ("files", "photos", "album_photos", "photo_grades", "library_copies"):
+            if table not in tables: continue
+            column = "source" if table == "library_copies" else "path"
+            after = ""
+            while True:
+                with self.marks._lock:
+                    db = self.marks._connect()
+                    try:
+                        batch = [r[0] for r in db.execute(
+                            f"SELECT DISTINCT {column} FROM {table} WHERE {column}>? ORDER BY {column} LIMIT 200", (after,))]
+                    finally:
+                        db.close()
+                if not batch: break
+                pins = self.pins()
+                paths = batch if table != "files" else [p for p in batch if not self.pinned(p, pins)]
+                for start in range(0, len(paths), 32):
+                    self.maintain(paths[start:start+32])
+                    time.sleep(.001)
+                after = batch[-1]
+                # A waiting foreground request can acquire the lock before the
+                # next page. Never wait while owning Library or session locks.
+                time.sleep(.001)
+        self.reconcile([])  # Empty libraries still publish albums/tags.
+
     def remember(self, photos):
         # Bounded session cache for temporary-folder Details, outside every
         # database query. Writer acknowledgments and sidecar reads refresh it.
@@ -224,7 +287,13 @@ class LibraryMembership:
             self.index.wait_for_grade()
             result = checks._job("kept-check", paths=paths[start:start+200])
             refresh, read = [], []
-            known = {p:(size,mtime) for p,size,mtime in self.marks._query("SELECT path,bytes,mtime_ns FROM files")}
+            batch = paths[start:start+200]
+            db = self.marks._connect()
+            try:
+                known = {p:(size,mtime) for p,size,mtime,_ in self._scoped(db, "files", batch)}
+            finally:
+                db.close()
+            touched = []
             for item in result["photos"]:
                 path = item["path"]
                 if item.get("offline") or item.get("unreadable"):
@@ -234,15 +303,16 @@ class LibraryMembership:
                     continue
                 self._observed[path] = stamp
                 changed = True
+                touched.append(path)
                 with self.marks._lock:
-                    if not self.marks._query("SELECT 1 FROM album_photos WHERE path=? OR substr(path,1,?)=?", (path,len(path)+6,path+"|copy|")):
+                    if not self.marks._query("SELECT 1 FROM album_photos WHERE path=? OR (path>=? AND path<?)", (path,path+"|copy|",path+"|copy}")):
                         continue
                     if item.get("missing"):
                         # A move/delete on a connected volume retires membership.
                         # Pending writes and all grade recovery remain protected.
                         db = self.marks._connect()
                         with db:
-                            db.execute("DELETE FROM album_photos WHERE path=? OR substr(path,1,?)=?", (path,len(path)+6,path+"|copy|"))
+                            db.execute("DELETE FROM album_photos WHERE path=? OR (path>=? AND path<?)", (path,path+"|copy|",path+"|copy}"))
                         db.close()
                     else:
                         read.append(path)
@@ -250,10 +320,14 @@ class LibraryMembership:
                     refresh.append(path)
             if read:
                 self.index.wait_for_grade()
-                self.marks.read(read)
+                for path in read:
+                    self.index.wait_for_grade()
+                    self.marks.read([path])
+                    time.sleep(.001)
             for at in range(0,len(refresh),32):
                 self.index.wait_for_grade()
                 self.index.remember_facts(checks._job("metadata", paths=refresh[at:at+32])["photos"])
-            self.reconcile()
-        self._observed = {p:v for p,v in self._observed.items() if p in paths}
+            self.maintain(touched)
+        active = set(paths)
+        self._observed = {p:v for p,v in self._observed.items() if p in active}
         return changed

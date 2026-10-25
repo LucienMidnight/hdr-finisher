@@ -23,6 +23,7 @@ class FolderChecks:
         self.requested, self.events = deque(), deque(maxlen=50)
         self.revision = 0
         self.pins = []
+        self.signals = {}
         self.availability = None
         self.next_availability = 0
         self.kept_last = self.kept_duration = 0
@@ -75,6 +76,8 @@ class FolderChecks:
                 return self.requested.popleft(), True
             if self.index._paused:
                 return None
+            for path in set(self.signals) - {p["path"] for p in pins}:
+                self.signals.pop(path).close()
             visible = {path for path, expires in self.views.values() if expires > now}
             enabled = self.index.preferences()["background_indexing"]
             available = {p["path"]: p.get("available", True) for p in pins}
@@ -84,6 +87,14 @@ class FolderChecks:
                     return path, False
                 base = 15 if row.get("failure") and not row.get("offline") else self.visible_seconds if path in visible else self.pinned_seconds
                 if now - row.get("last", 0) >= max(base, 10 * row.get("duration", 0)):
+                    if path not in visible and available.get(path, True) and not row.get("failure") and not row.get("offline"):
+                        from .library_change_signal import FolderChangeSignal
+                        signal = self.signals.get(path)
+                        if signal is None:
+                            signal = self.signals[path] = FolderChangeSignal(path)
+                        if not signal.changed():
+                            row["last"] = now
+                            continue
                     return path, False
         return None
 
@@ -106,7 +117,7 @@ class FolderChecks:
         epoch = files.epoch if files else 0
         started = self.clock()
         with self.lock:
-            previous = deepcopy(self.folders.get(path, {}))
+            previous = self.folders.get(path, {})
             self.running = {"path": path, "requested": requested, "state": "checking"}
         try:
             result = self._job("scan", path=path)
@@ -129,19 +140,21 @@ class FolderChecks:
             settings_changed = {p for p in set(settings) | set(old_settings) if settings.get(p) != old_settings.get(p)}
             read = ((added | changed | {p[:-5] for p in settings_changed if p.endswith(".hdrf")}) & set(new)) - held
             found = bool(added or removed or changed or settings_changed or result.get("folders", []) != old.get("folders", []))
-            warnings = previous.get("warnings", {})
+            warnings = dict(previous.get("warnings", {}))
             if found:
                 self.running["changed"] = True
                 self.index.wait_for_grade()
-                self.index.remember_scan(path, result["photos"], epoch=epoch)
+                self.index.remember_scan(path, [new[p] for p in sorted(added | changed)], epoch=epoch, removed=sorted(removed))
                 # Reuse existing reconciliation; pending marks still win.
                 missing = sorted(removed)
-                if missing:
-                    self.index.marks.read(missing, documents=[None] * len(missing), canonical=True, connected=True)
-                paths = sorted(read)
-                for start in range(0, len(paths), 200):
+                for value in missing:
                     self.index.wait_for_grade()
-                    batch = paths[start:start + 200]
+                    self.index.marks.read([value], documents=[None], canonical=True, connected=True)
+                    time.sleep(.001)
+                paths = sorted(read)
+                for start in range(0, len(paths)):
+                    self.index.wait_for_grade()
+                    batch = paths[start:start + 1]
                     record = self.index.marks.read(batch)
                     for value in batch:
                         messages = [message for message in record["warnings"] if Path(value).name in message]
@@ -149,6 +162,7 @@ class FolderChecks:
                             warnings[value] = messages
                         else:
                             warnings.pop(value, None)
+                    time.sleep(.001)
                 if settings_changed:
                     self.index.marks.conflicts.scan(list(new))
                 waiting = [p["path"] for p in result["photos"] if p["path"] in added | changed and not p.get("indexed")]
@@ -187,10 +201,16 @@ class FolderChecks:
                         held=len(held), duration=round(self.clock() - started, 3))
             return {"added": len(added), "removed": len(removed), "changed": len(changed), "held": len(held)}
         except CheckAhead:
+            signal = self.signals.pop(path, None)
+            if signal: signal.close()
             return {"interrupted": True}
         except CancelledError:
+            signal = self.signals.pop(path, None)
+            if signal: signal.close()
             raise
         except Exception as error:
+            signal = self.signals.pop(path, None)
+            if signal: signal.close()
             offline = not Path(path).is_dir()
             with self.lock:
                 row = self.folders.setdefault(path, previous)

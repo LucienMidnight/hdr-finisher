@@ -74,3 +74,60 @@ def test_scoped_ratings_listing_and_recovery_equal_full_reconcile(tmp_path):
     assert scoped == {p.name: p.read_bytes() for p in index.membership.records.glob("*.json")}
     assert manifest == index.membership.path.read_bytes()
     assert marks.read(photos)["photos"] == rows
+
+def test_maintenance_batches_leave_unrelated_families_alone(tmp_path):
+    folder, photos, browser, marks, index = library(tmp_path)
+    # An unrelated detached entry awaits its own maintenance. A metadata batch
+    # and a changed-folder delta must not retire it as a whole pass would.
+    detached = str(tmp_path / "elsewhere" / "offline.png")
+    db = marks._connect()
+    with db:
+        db.execute("INSERT INTO files VALUES (?,1,1,NULL)", (detached,))
+    db.close()
+    index.remember_facts([{"path": str(photos[0]), "bytes": 1, "mtime_ns": 2}])
+    index.remember_scan(str(folder), [], removed=[str(photos[1])])
+    assert marks._query("SELECT path FROM files WHERE path=?", (detached,))
+    assert not marks._query("SELECT path FROM files WHERE path=?", (str(photos[1]),))
+    assert marks._query("SELECT path FROM files WHERE path=?", (str(photos[2]),))
+
+
+def test_kept_check_retires_only_the_missing_member(tmp_path):
+    from hdr_finisher.library_folders import check_kept
+    folder, photos, browser, marks, index = library(tmp_path)
+    marks.album_create("Keep", photos[:2]); marks.writer.drain()
+    browser.remove_pin(str(folder)); index.membership.reconcile()
+    records = {p.name: p.read_bytes() for p in index.membership.records.glob("*.json")}
+    class Checks:
+        def _job(self, command, **args):
+            assert command == "kept-check"
+            return check_kept(args["paths"])
+    index.wait_for_grade = lambda: None
+    index.membership.check(Checks())
+    photos[0].unlink()
+    assert index.membership.check(Checks())
+    assert marks.album_paths("Keep") == [str(photos[1])]
+    remaining = {p.name: p.read_bytes() for p in index.membership.records.glob("*.json")}
+    assert len(remaining) == 1
+    assert all(records[name] == value for name, value in remaining.items())
+
+
+def test_full_maintenance_yields_to_foreground_between_pages(tmp_path, monkeypatch):
+    from threading import Event
+    folder, photos, browser, marks, index = library(tmp_path)
+    browser.remove_pin(str(folder))
+    entered, foreground = Event(), Event()
+    original = index.membership.reconcile
+    def reconcile(paths=None):
+        if paths is None: return original()
+        original(paths)
+        if paths and not entered.is_set():
+            entered.set()
+            assert foreground.wait(2)
+    monkeypatch.setattr(index.membership, "reconcile", reconcile)
+    with ThreadPoolExecutor() as pool:
+        maintenance = pool.submit(index.membership.reconcile)
+        assert entered.wait(2)
+        with marks._lock:
+            foreground.set()
+        maintenance.result(timeout=3)
+    assert not marks._query("SELECT path FROM files")
