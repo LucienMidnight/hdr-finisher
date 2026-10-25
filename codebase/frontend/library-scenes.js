@@ -19,7 +19,7 @@ window.HDRLibraryScenes = (() => {
   const preemptLower = job => job.priority >= 10;
   const cpuLanes = Math.max(1, Math.floor(Math.sqrt(globalThis.navigator?.hardwareConcurrency || 1)));
   const probes = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {onChange:changed,preemptLower});
-  const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {heavyLimit:cpuLanes,onChange:changed,keepRunning:job=>job.priority>=10,preemptLower:job=>job.priority>0});
+  const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {heavyLimit:cpuLanes,onChange:changed,keepRunning:job=>job.priority>=5,preemptLower:job=>job.priority>0,preemptForCapacity:true});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set(), reviewPath = null;
@@ -47,7 +47,7 @@ window.HDRLibraryScenes = (() => {
     if(versions.has(path)&&versions.get(path)!==version)sources.invalidate(candidate=>candidate===path);
     versions.delete(path);versions.set(path,version);
     if(versions.size>1024)versions.delete(versions.keys().next().value);
-    if (plan.cached) return plan.cached;
+    if (plan.cached) { options.onSourceDemand?.(); return plan.cached; }
     if (options.cachedOnly) return null;
     await options.beforeSource?.();
     if (signal?.aborted) throw new DOMException("Cancelled","AbortError");
@@ -56,9 +56,9 @@ window.HDRLibraryScenes = (() => {
     const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
     const heavy = plan.bytes >= largeBytes || elapsed >= 2000;
     const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
-    return sources.submit(identity+"|"+(plan.source_identity || plan.revision)+"|"+generation, async (shared, importance) => {
+    const pending = sources.submit(identity+"|"+(plan.source_identity || plan.revision)+"|"+generation, async (shared, importance) => {
       const started = performance.now();
-      try { const result = await develop(path, edge, shared, importance, version); if (idle) save(result); return result; }
+      try { const result = await develop(path, edge, shared, importance, version, options.gpuOnly); if (result && idle) save(result); return result; }
       finally {
         if (!shared.aborted) {
           history.delete(path);
@@ -67,6 +67,8 @@ window.HDRLibraryScenes = (() => {
         }
       }
     }, signal, priority, {heavy,cost,path,edge,log_view:trace?.view,stage:"Developing photo"});
+    options.onSourceDemand?.();
+    return pending;
   }
   // Selected work follows at most the single sharp draw already in flight.
   // Quick draws use thumbnails and their own renderer and priority queue.
@@ -83,7 +85,7 @@ window.HDRLibraryScenes = (() => {
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
     return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};
   }
-  async function develop(path, edge, signal, importance, version) {
+  async function develop(path, edge, signal, importance, version, gpuOnly = false) {
     if (HDRLibraryGpuRaw.enabled()) {
       try {
         const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance, version);
@@ -94,6 +96,7 @@ window.HDRLibraryScenes = (() => {
         // The structured fallback event above carries the picture labels.
       }
     }
+    if (gpuOnly && importance() > 0) return null;
     for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",signal,
         headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance()})});
@@ -119,7 +122,7 @@ window.HDRLibraryScenes = (() => {
     }
     const check = async (acquiring = false) => {
       const response = await fetch(url,{method:"POST",signal,headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({bytes,background:true})});
+        body:JSON.stringify({bytes,background:true,priority:typeof meta.draw_priority==='function'?meta.draw_priority():meta.draw_priority??10})});
       if (!response.ok) throw Error("Library GPU scheduling unavailable.");
       const value = await response.json();
       if (value.fallback) throw Error(value.fallback);

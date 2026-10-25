@@ -74,7 +74,9 @@ def test_windowed_model_equals_the_whole_frame_model(name: str, small_windows) -
     windowed = da.estimate_adaptive_model_from_windows(height, width, counted)
 
     assert (height, width) == proxy.shape[:2]
-    assert reads == da._sample_tiles(height, width) and len(reads) == da.ESTIMATION_MAX_TILES
+    # Parallel measurements may request windows out of order, but must read
+    # every original sample exactly once and keep the same resulting model.
+    assert sorted(reads) == sorted(da._sample_tiles(height, width)) and len(reads) == da.ESTIMATION_MAX_TILES
     np.testing.assert_allclose(_model_values(windowed), _model_values(whole), rtol=MODEL_RTOL, atol=0)
 
 

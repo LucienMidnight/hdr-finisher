@@ -5,9 +5,10 @@
     const jobs = new Map();
     function clear() { for (const job of jobs.values()) job.controller.abort(); jobs.clear(); }
     function take(photo, edge) { return jobs.get(key(photo, edge))?.promise; }
-    function update(selected, neighbours, edge) {
+    function update(selected, neighbours, edge, start = true) {
       const wanted = new Set([selected, ...neighbours].map(photo => key(photo, edge)));
       for (const [id, job] of jobs) if (!wanted.has(id)) { job.controller.abort(); jobs.delete(id); }
+      if (!start) return;
       for (const photo of neighbours) {
         const id = key(photo, edge); if (jobs.has(id)) continue;
         const controller = new AbortController(), job = {controller};

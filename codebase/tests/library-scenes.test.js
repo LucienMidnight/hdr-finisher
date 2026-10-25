@@ -137,3 +137,26 @@ test('source admission scales with logical CPUs including heavy photos',async()=
  assert.equal(scenes.snapshot().sources.active,6);
  block.resolve();await Promise.all(jobs);
 });
+
+test('selected source is admitted before development-ahead demand and both run in parallel',async()=>{
+ const block=gate(),started=[],plans={selected:{bytes:96e6},ahead:{bytes:96e6}};
+ const {scenes}=setup(plans,async(p,edge)=>{started.push(p);await block.promise;return {edge};});let ahead;
+ const selected=scenes.load('selected',2560,null,0,false,null,{onSourceDemand:()=>{ahead=scenes.load('ahead',2560,null,5);}});
+ await tick();assert.deepEqual(started,['selected','ahead']);assert.equal(scenes.snapshot().sources.active,2);
+ block.resolve();await Promise.all([selected,ahead]);
+});
+
+test('development-ahead GPU refusal never starts a background CPU fallback',async()=>{
+ const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{throw Error('GPU memory unavailable');});
+ assert.equal(await scenes.load('photo',2560,null,5,false,null,{gpuOnly:true}),null);
+ assert.equal(requests.length,1,'Cache discovery only; no CPU development request');
+});
+
+test('selected photo joining development-ahead keeps its CPU fallback if GPU fails',async()=>{
+ const block=gate();
+ const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{await block.promise;throw Error('GPU failed');});
+ const ahead=scenes.load('photo',2560,null,5,false,null,{gpuOnly:true});await tick();
+ const selected=scenes.load('photo',2560,null,0);await tick();block.resolve();
+ const [a,b]=await Promise.all([ahead,selected]);assert.ok(a&&b);
+ assert.ok(requests.some(request=>request.body?.gpu===false&&request.body.priority===0));
+});

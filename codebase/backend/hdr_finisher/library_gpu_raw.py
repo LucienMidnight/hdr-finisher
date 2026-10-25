@@ -264,13 +264,17 @@ def developed(cache, path: str, header: dict, payload) -> dict:
         peak_bt2020_linear=peaks["peak_bt2020"], robust_peak_bt2020_linear=robust["bt2020"],
         badge_message="")
     from .sessions import _sha256_file
+    from .library_source_jobs import shared_fingerprint
     look = starting_adjustments(analysis)
     source_info = SourceImageDescriptor(filename=source.name, suffix=source.suffix,
         width=int(header["source_width"]), height=int(header["source_height"]),
         channels=3, dtype="float32", transfer_function="linear")
+    # Every size of one source preparation shares the one read of the RAW.
+    fingerprint = shared_fingerprint(header.get("source_job"), source, header["identity"],
+        lambda: _sha256_file(source))
     document = EditDocument(hdr_reference_white_nits=203, global_adjustments=look,
         source=SourceReference(filename=source.name, durable_path=str(source),
-            byte_size=source.stat().st_size, fingerprint_sha256=_sha256_file(source),
+            byte_size=source.stat().st_size, fingerprint_sha256=fingerprint,
             raw_import_settings=RawImportSettings.model_validate(header.get("raw_import_settings", {})),
             luminance=describe_source_luminance(source_info, {}, has_authored_sdr=False)))
     if _identity(source) != list(header["identity"]):

@@ -6,7 +6,7 @@ test('Library session change keeps owned scenes while releasing ordinary proxies
     resetSession(id){for(const entry of this.proxies.values())entry.texture.destroy();this.proxies.clear();this.sessionId=id;}
     evictGpuCacheEntry(_kind,key){this.proxies.get(key).texture.destroy();this.proxies.delete(key);}
   }
-  const context=vm.createContext({window:{},document:{createElement:()=>({})},HDRWebGPUPreview:Base});
+  const context=vm.createContext({window:{},document:{createElement:()=>({})},HDRWebGPUPreview:Base,HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler')});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-gpu.js'),'utf8')+'\nwindow.TestGPU=HDRLibraryGPU;',context);
   const gpu=new context.window.TestGPU(), held={destroy:()=>{released++;}}, other={destroy:()=>{ordinary++;}};
   gpu.rawPictures={owns:texture=>texture===held,release:texture=>{texture.destroy();gpu.proxies.delete('held');}};
@@ -20,7 +20,7 @@ test('Shared accounting includes retained Library scenes outside the current pro
     resourceMemorySnapshot(){return {resident:{totalBytes:40,categories:{}},cached:{totalBytes:40,categories:{}},
       peakLogicalBytes:40,totals:{residentBytes:40,cachedBytes:40,peakLogicalBytes:40}};}
   }
-  const context=vm.createContext({window:{},document:{createElement:()=>({})},HDRWebGPUPreview:Base});
+  const context=vm.createContext({window:{},document:{createElement:()=>({})},HDRWebGPUPreview:Base,HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler')});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-gpu.js'),'utf8')+'\nwindow.TestGPU=HDRLibraryGPU;',context);
   const gpu=new context.window.TestGPU(), texture={};
   gpu.rawPictures={owns:t=>t===texture,snapshot:()=>({bytes:100})};
@@ -39,7 +39,7 @@ test('ready surfaces report the configured budget without feeding back shared de
   async initialize(){return true;}
   memoryBudgetBytes(){return this.deliveryBudgetBytes ?? 1024;}
  }
- const context=vm.createContext({window:{},document:{createElement:()=>({})},performance,
+  const context=vm.createContext({window:{},document:{createElement:()=>({})},performance,HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler'),
   HDRWebGPUPreview:Base,HDRLibraryStopwatch:()=>{},crypto:{randomUUID:()=> 'test'},
   fetch:async(url,options)=>{const value=JSON.parse(options.body);reports.push(value);return {ok:true,json:async()=>({budget:value.budget-value.bytes})};}});
  vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-gpu.js'),'utf8'),context);

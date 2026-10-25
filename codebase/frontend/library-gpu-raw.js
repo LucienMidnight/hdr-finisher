@@ -455,9 +455,9 @@
     dst[outIdx] = select(0.0, acc / ww, ww != 0.0);
   }`;
 
-  // One device and one set of pipelines for the Library window; developments
-  // run one at a time so a scrolled grid never holds several sources at once.
-  let shared = null, queue = Promise.resolve(), storageLimit = 0;
+  // One device and one set of pipelines; the shared broker admits parallel
+  // Library RAW developments only when their combined reservations fit.
+  let shared = null, storageLimit = 0;
   async function sourceStorageLimit() {
     if(!storageLimit){
       const adapter=await navigator.gpu?.requestAdapter({powerPreference:"high-performance"});
@@ -534,9 +534,20 @@
     return low + (high - low) * (position - lo);
   }
 
+  // The developed picture as library_gpu_raw.unframe reads it: a 4-byte header
+  // length, the JSON header padded to 4 bytes, then the planes. The parts go
+  // straight into the Blob, so the picture bytes are copied once, not twice.
+  function handoffBody(header, planes) {
+    const text = new TextEncoder().encode(JSON.stringify(header));
+    const prefix = new Uint8Array(4 + text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32);
+    new DataView(prefix.buffer).setUint32(0, prefix.length - 4, true);
+    prefix.set(text, 4);
+    return new Blob([prefix, ...planes]);
+  }
+
   async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity }) {
     const { device, pipelines, errors } = await gpu();
-    errors.length = 0;
+    const errorStart = errors.length;
     const w = meta.width, h = meta.height, n = w * h;
     const cw = Math.ceil(w / 3), chh = Math.ceil(h / 3);
     const turned = meta.flip === 5 || meta.flip === 6;
@@ -692,20 +703,14 @@
       const peakValues = new Float32Array(await read(peaks, 16));
       const sampleData = new Float32Array(await read(samples, sw * sh * 3 * 4));
       await stage("readback");
-      if (errors.length) throw new Error(errors.join("\n"));
-      return { timings, memory_peak_bytes: peakBytes, edge_diagnostics:edgeDiagnostics, errors: [...errors], clipped: [...clipped], chroma,
+      if (errors.length > errorStart) throw new Error(errors.slice(errorStart).join("\n"));
+      return { timings, memory_peak_bytes: peakBytes, edge_diagnostics:edgeDiagnostics, errors: errors.slice(errorStart), clipped: [...clipped], chroma,
         peaks: { peak: peakValues[0], peak_luma: peakValues[1], peak_bt2020: peakValues[2] },
         samples: sampleData, sampleShape: [sh, sw], reduced };
     } finally {
       await device.queue.onSubmittedWorkDone().catch(() => {});
       for (const buffer of [...owned]) release(buffer);
     }
-  }
-
-  function serial(task) {
-    const result = queue.then(task, task);
-    queue = result.catch(() => {});
-    return result;
   }
 
   function enabled() {
@@ -724,67 +729,62 @@
   // develops it on the GPU, the backend stores it where Grade's CPU development
   // would. Resolves null when the photo keeps the CPU route. An edited photo
   // (savedGradeOnly) answers with its saved-grade picture or a wait.
-  async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false, syncStages = false}, signal) {
-    const queued=performance.now();
-    return serial(async () => {
-      const queueMs=performance.now()-queued;
-      await gpu();
-      const id = crypto.randomUUID(), bytes = rawBudget(meta, edges);
-      const url = `/api/delivery/gpu/raw-budget/${id}`;
-      const lease = async release => {
-        if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-        const response = await fetch(url, { method: "POST", signal,
-          headers: {"Content-Type": "application/json"}, body: JSON.stringify({bytes, release, background}) });
-        if (!response.ok) throw Error("GPU memory scheduler unavailable.");
-        return response.json();
-      };
-      try {
-        // Finished Library surfaces are disposable, not a reason to abandon GPU development.
-        if (background) await root.HDRLibraryScenes?.reclaim(bytes,true);
-        let reclaimed = false;
-        for (;;) {
-          const value = await lease(false);
-          if (value.fallback) {
-            if (background && !reclaimed) { reclaimed = true; await root.HDRLibraryScenes?.reclaim(bytes,true); continue; }
-            const work = root.HDRLibraryScenes?.snapshot();
-            if (background && (work?.draws.active || work?.quickDraws?.active)) {
-              // Drop this waiting reservation so the already-started window draw can finish.
-              await fetch(url,{method:"DELETE"}); await wait(50,signal); reclaimed = false; continue;
-            }
-            throw Error(value.fallback);
+  async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false, syncStages = false, importance = () => 30}, signal) {
+    await gpu();
+    const id = crypto.randomUUID(), bytes = rawBudget(meta, edges);
+    const url = `/api/delivery/gpu/raw-budget/${id}`;
+    const lease = async release => {
+      if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+      const response = await fetch(url, { method: "POST", signal,
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify({bytes, release, background, priority:importance(),concurrent:background && !meta.rgb && !edges.includes(100000)}) });
+      if (!response.ok) throw Error("GPU memory scheduler unavailable.");
+      return response.json();
+    };
+    try {
+      // Finished Library surfaces are disposable, not a reason to abandon GPU development.
+      if (background) await root.HDRLibraryScenes?.reclaim(bytes,true);
+      let reclaimed = false;
+      for (;;) {
+        const value = await lease(false);
+        if (value.fallback) {
+          if (background && !reclaimed) { reclaimed = true; await root.HDRLibraryScenes?.reclaim(bytes,true); continue; }
+          const work = root.HDRLibraryScenes?.snapshot();
+          if (background && (work?.draws.active || work?.quickDraws?.active)) {
+            // Drop this waiting reservation so the already-started window draw can finish.
+            await fetch(url,{method:"DELETE"}); await wait(50,signal); reclaimed = false; continue;
           }
-          if (!value.granted || value.preempt) {
-            root.HDRLibraryScenes?.stage(meta.path,"Waiting to develop photo",true);
-            if (value.granted) await lease(true);
-            await wait(50, signal); continue;
-          }
-          let touched = 0;
-          let edgePermitAt = 0;
-          const beforeSubmit = async () => {
-            if(signal?.aborted)throw new DOMException("Cancelled", "AbortError");
-            // Edge colour has many short blur bands. Reuse the same permit
-            // window as delivery rather than making each band a network wait.
-            const permitWindow=meta.dng_warp ? 20 : meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" ? 100 : 0;
-            // A bounded DNG tile has several short stages. Reuse a permit for
-            // at most 20 ms; cancellation still checks on every boundary.
-            if(performance.now()-edgePermitAt<permitWindow)return;
-            if(meta.source_job && performance.now()-touched>5000){
-              const check=await fetch("/api/library/live-source/"+meta.source_job,{method:"POST",signal});
-              if(!check.ok) throw Error("Library source preparation was invalidated."); touched=performance.now();
-            }
-            const status = await lease(false);
-            if (!status.granted || status.preempt || status.fallback) { const error = Error("Yielding GPU RAW to shared work."); error.yieldRaw = true; throw error; }
-            edgePermitAt=performance.now();
-          };
-          root.HDRLibraryScenes?.stage(meta.path,"Developing photo");
-          try { const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, memoryBudget:bytes});
-            result.timings.queue=queueMs; return result; }
-          catch (error) { if (!error.yieldRaw) throw error; }
-          // developRaw's finally has freed every buffer before Grade sees zero.
-          await lease(true); await wait(50, signal);
+          throw Error(value.fallback);
         }
-      } finally { await fetch(url, {method:"DELETE"}).catch(() => {}); }
-    });
+        if (!value.granted || value.preempt) {
+          root.HDRLibraryScenes?.stage(meta.path,"Waiting to develop photo",true);
+          if (value.granted) await lease(true);
+          await wait(50, signal); continue;
+        }
+        let touched = 0;
+        let edgePermitAt = 0;
+        const beforeSubmit = async () => {
+          if(signal?.aborted)throw new DOMException("Cancelled", "AbortError");
+          // Edge colour has many short blur bands. Reuse the same permit
+          // window as delivery rather than making each band a network wait.
+          const permitWindow=meta.dng_warp ? 20 : meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" ? 100 : 0;
+          // A bounded DNG tile has several short stages. Reuse a permit for
+          // at most 20 ms; cancellation still checks on every boundary.
+          if(performance.now()-edgePermitAt<permitWindow)return;
+          if(meta.source_job && performance.now()-touched>5000){
+            const check=await fetch("/api/library/live-source/"+meta.source_job,{method:"POST",signal});
+            if(!check.ok) throw Error("Library source preparation was invalidated."); touched=performance.now();
+          }
+          const status = await lease(false);
+          if (!status.granted || status.preempt || status.fallback) { const error = Error("Yielding GPU RAW to shared work."); error.yieldRaw = true; throw error; }
+          edgePermitAt=performance.now();
+        };
+        root.HDRLibraryScenes?.stage(meta.path,"Developing photo");
+        try { return await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, memoryBudget:bytes}); }
+        catch (error) { if (!error.yieldRaw) throw error; }
+        // developRaw's finally has freed every buffer before Grade sees zero.
+        await lease(true); await wait(50, signal);
+      }
+    } finally { await fetch(url, {method:"DELETE"}).catch(() => {}); }
   }
 
   async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30) {
@@ -824,7 +824,7 @@
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
     root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
-    const developed = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
+    const developed = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
     const gpuMs = performance.now() - started;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const measured = performance.now();
@@ -843,12 +843,7 @@
       edge_diagnostics: developed.edge_diagnostics,
       dng_diagnostics: developed.dng_tiles ? {tiles:developed.dng_tiles,max_source_bytes:developed.dng_max_source_bytes,reserved_bytes:rawBudget(meta,nativeMode?[100000]:[640,2560,edge])} : undefined,
       timing_ms: { ...meta.source_timings_ms, ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
-      let text = new TextEncoder().encode(JSON.stringify(header));
-      const padded = new Uint8Array(text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32); padded.set(text); text = padded;
-      const out = new Uint8Array(4 + text.length + picture.height * picture.width * (meta.rgb && (meta.colour.authored_sdr || header.has_sdr_reference) ? 24 : 12));
-      new DataView(out.buffer).setUint32(0, text.length, true); out.set(text, 4);
-      picture.planes.forEach((plane, k) => out.set(new Uint8Array(plane), 4 + text.length + k * plane.byteLength));
-      const stored = await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed", { method: "POST", signal, headers: { "Content-Type": "application/octet-stream" }, body: new Blob([out]) });
+      const stored = await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed", { method: "POST", signal, headers: { "Content-Type": "application/octet-stream" }, body: handoffBody(header, picture.planes) });
       const result = await stored.json();
       if (!stored.ok) { const error = new Error(result.detail || "Library request failed."); error.status = stored.status; throw error; }
       if (storedEdge === edge || nativeMode) selectedResult = result;
@@ -865,6 +860,7 @@
   const cancelled = () => new DOMException("Cancelled", "AbortError");
   function pump() {
     while (running < LIMIT && waiting.length) {
+      waiting.sort((a,b)=>a.importance()-b.importance());
       const job = waiting.shift();
       if (job.signal.aborted) { job.reject(cancelled()); continue; }
       running++;
@@ -882,7 +878,7 @@
       const controller = new AbortController();
       job = { controller, users: 0 };
       job.promise = new Promise((resolve, reject) => {
-        waiting.push({ signal: controller.signal, resolve, reject, task: () => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene, importance) });
+        waiting.push({ signal: controller.signal, resolve, reject, importance, task: () => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene, importance) });
         pump();
       }).finally(() => { if (inflight.get(key) === job) inflight.delete(key); });
       job.promise.catch(() => {});
@@ -946,7 +942,7 @@
     return peak;
   }
   const rawBudget = (meta,edges=[640,2560]) => meta.dng_warp ? dngBudget(meta,edges) : meta.width*meta.height*44+64*1024*1024;
-  const exported = Object.freeze({ rawBudget, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity}) });
+  const exported = Object.freeze({ rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

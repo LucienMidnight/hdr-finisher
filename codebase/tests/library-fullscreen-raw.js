@@ -3,17 +3,18 @@ const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'), output=path.join(root,'output/library-fullscreen-raw');
 fs.mkdirSync(output,{recursive:true});
 const graded=process.env.HDR_FINISHER_GRADED_TRIAL==='1', cold=process.env.HDR_FINISHER_COLD_TRIAL==='1';
+const part0f=process.env.HDR_FINISHER_PART0F_TRIAL==='1';
 const corpus=JSON.parse(fs.readFileSync(path.join(root,'output/library-measurements/corpus.json'),'utf8'));
 const source=corpus.rows.find(row=>!row.error&&!row.excluded&&row.path.endsWith('DSC04761.ARW')&&fs.existsSync(row.path))?.path;
 if(!source)throw Error('RAW test corpus is unavailable');
 const folder=fs.mkdtempSync(path.join(output,'photos-'));
 const portrait=corpus.rows.find(row=>!row.error&&!row.excluded&&row.path.endsWith('DSC06615_DxO-optical-corr-only.dng')&&fs.existsSync(row.path))?.path;
 if(!portrait)throw Error('Portrait RAW test corpus is unavailable');
-const trialSources=cold ? ['DSC07165','DSC07166','DSC07168'].map(name=>path.join('D:/Photos/2026/20261017 badminton',name+'.ARW')) : graded ? ['DSC07178','DSC07253','DSC07254'].map(name=>path.join('D:/Photos/2026/20261017 badminton',name+'.ARW')) : [source,source,portrait];
+const trialSources=part0f ? ['DSC07313','DSC07216','DSC07318'].map(name=>path.join('D:/Photos/2026/20261017 badminton',name+'.ARW')) : cold ? ['DSC07165','DSC07166','DSC07168'].map(name=>path.join('D:/Photos/2026/20261017 badminton',name+'.ARW')) : graded ? ['DSC07178','DSC07253','DSC07254'].map(name=>path.join('D:/Photos/2026/20261017 badminton',name+'.ARW')) : [source,source,portrait];
 for(let i=0;i<3;i++) {
- const target=path.join(folder,`photo-${i}.${i===2&&!graded&&!cold?'dng':'ARW'}`);
+ const target=path.join(folder,`photo-${i}.${i===2&&!graded&&!cold&&!part0f?'dng':'ARW'}`);
  fs.copyFileSync(trialSources[i],target);
- if(graded||(cold&&fs.existsSync(trialSources[i]+'.hdrf')))fs.copyFileSync(trialSources[i]+'.hdrf',target+'.hdrf');
+ if(graded||(part0f&&i===1)||(cold&&fs.existsSync(trialSources[i]+'.hdrf')))fs.copyFileSync(trialSources[i]+'.hdrf',target+'.hdrf');
 }
 const initialFiles=fs.readdirSync(folder).sort();
 const beforeFiles=Object.fromEntries(initialFiles.map(name=>[name,require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(folder,name))).digest('hex')]));
@@ -28,11 +29,18 @@ const beforeFiles=Object.fromEntries(initialFiles.map(name=>[name,require('node:
    window.part0bEvents=[];
    window.HDRLibraryStopwatch=(stage,fields)=>{window.part0bEvents.push({stage,...fields});record(stage,fields);};
   });
-  if(process.env.HDR_FINISHER_PART0E_TRIAL==='1') {
+   if(process.env.HDR_FINISHER_PART0E_TRIAL==='1') {
     await require('./helpers/library-part0e')({page,lib,folder,output});
     assert.deepEqual(errors,[]);
     return;
-  }
+   }
+   if(part0f) {
+     await require('./helpers/library-part0f')({page,lib,folder,output});
+     assert.deepEqual(errors,[]);
+     assert.deepEqual(fs.readdirSync(folder).sort(),initialFiles);
+     for(const name of initialFiles)assert.equal(require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(folder,name))).digest('hex'),beforeFiles[name],name+' unchanged');
+     return;
+   }
   if(cold) {
     await require('./helpers/library-cold-fullscreen')({page,lib,folder,output});
     assert.deepEqual(errors,[]);

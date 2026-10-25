@@ -6,6 +6,35 @@ from uuid import uuid4
 from .library_pictures import picture_key
 
 
+# One content fingerprint per source preparation. A development hands off the
+# same photo at two sizes; both share the read the first one made, so the RAW
+# is hashed once per development. The key is the preparation owner (live
+# scenes) or the photo's stat identity (grid thumbnails); a caller reuses a
+# value only for the identity it has just checked against the live file, and
+# every publication check still runs.
+FINGERPRINT_SHARE_SECONDS = 120
+FINGERPRINT_SHARE_LIMIT = 32
+_fingerprints = {}
+_fingerprint_lock = RLock()
+
+
+def shared_fingerprint(owner, path, identity, compute):
+    key = (owner or "", str(path), tuple(identity))
+    now = monotonic()
+    with _fingerprint_lock:
+        entry = _fingerprints.get(key)
+        if entry is not None and now - entry[1] < FINGERPRINT_SHARE_SECONDS:
+            return entry[0]
+    value = compute()
+    with _fingerprint_lock:
+        _fingerprints[key] = (value, now)
+        for stale in [k for k, v in _fingerprints.items() if now - v[1] >= FINGERPRINT_SHARE_SECONDS]:
+            del _fingerprints[stale]
+        while len(_fingerprints) > FINGERPRINT_SHARE_LIMIT:
+            del _fingerprints[next(iter(_fingerprints))]
+    return value
+
+
 class SourceJobs:
     def __init__(self, released=lambda token: None):
         self.released = released

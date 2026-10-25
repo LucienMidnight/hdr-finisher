@@ -1,7 +1,7 @@
 /* Shared bounded work with merged demand and priority promotion. */
 (function(root){
   "use strict";
-  function create(limit=2,now=()=>Date.now(),{heavyLimit=limit,onChange=()=>{},keepRunning=false,preemptLower=false}={}){
+  function create(limit=2,now=()=>Date.now(),{heavyLimit=limit,onChange=()=>{},keepRunning=false,preemptLower=false,preemptForCapacity=false}={}){
     const jobs=new Map(),waiting=[],failures=[],runningJobs=new Set();let active=0,heavyActive=0,sequence=0;
     const cancelled=()=>new DOMException("Cancelled","AbortError");
     const score=job=>job.cost-Math.min(5,(now()-job.created)/1000);
@@ -48,15 +48,18 @@
         user.stop=()=>{const retained=typeof keepRunning==="function"?keepRunning(job):keepRunning;job.users.delete(user);reject(cancelled());demand(job);if(!job.users.size&&!(retained&&job.running)){job.controller.abort();if(!job.running){const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);}onChange(job,job.running?"stopping":"cancelled");if(jobs.get(key)===job)jobs.delete(key);}};
         job.users.add(user);demand(job);signal?.addEventListener("abort",user.stop,{once:true});
       });
-      if (preemptLower) for (const running of runningJobs)
-        if (running.priority > priority && (typeof preemptLower !== "function" || preemptLower(running,priority))) running.controller.abort();
+      if (preemptLower && (!preemptForCapacity || active>=limit)) for (const running of [...runningJobs].sort((a,b)=>b.priority-a.priority))
+        if (!running.controller.signal.aborted && running.priority > priority && (typeof preemptLower !== "function" || preemptLower(running,priority))) {
+          running.controller.abort();
+          if (preemptForCapacity) break;
+        }
       pump();return result;
     }
     return Object.freeze({submit,
       promote:(path,priority)=>{for(const job of jobs.values())if(job.path===path){for(const user of job.users)user.priority=Math.min(user.priority,priority);demand(job);}pump();},
       reprioritize:rank=>{ranking=rank;for(const job of jobs.values())demand(job);},
       invalidate:predicate=>{for(const job of [...jobs.values()])if(predicate(job.path)){job.controller.abort();const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);settle(job,cancelled());}},
-      stage:(path,stage,waiting=false)=>{for(const job of jobs.values())if(job.path===path&&job.running&&(job.stage!==stage||job.resourceWaiting!==waiting)){job.stage=stage;job.resourceWaiting=waiting;onChange(job,"running");}},snapshot:()=>({failures:[...failures],active,waiting:waiting.filter(j=>!j.controller.signal.aborted).length,jobs:[...new Set([...jobs.values(),...runningJobs])].map(j=>({path:j.path,stage:j.stage,state:j.controller.signal.aborted?"stopping":j.running&&!j.resourceWaiting?"running":"waiting"}))})});
+      stage:(path,stage,waiting=false)=>{for(const job of jobs.values())if(job.path===path&&job.running&&(job.stage!==stage||job.resourceWaiting!==waiting)){job.stage=stage;job.resourceWaiting=waiting;onChange(job,"running");}},snapshot:()=>({failures:[...failures],active,waiting:waiting.filter(j=>!j.controller.signal.aborted).length,jobs:[...new Set([...jobs.values(),...runningJobs])].map(j=>({path:j.path,priority:j.priority,stage:j.stage,state:j.controller.signal.aborted?"stopping":j.running&&!j.resourceWaiting?"running":"waiting"}))})});
   }
   // One idle candidate at a time, once per identity in the current folder.
   // Foreground activity detaches pending demand; active source work may finish.

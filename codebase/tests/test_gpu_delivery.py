@@ -149,6 +149,34 @@ def test_raw_reservation_yields_without_releasing_live_memory(tmp_path, monkeypa
         assert client.post('/api/delivery/gpu/activity', json={"bytes":100,"budget":1000}).json()["reserved"] == 0
 
 
+def test_library_developments_share_memory_and_selected_draw_stays_first(tmp_path, monkeypatch):
+    app = _broker(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        def post(name, size=400, priority=5, **extra):
+            return client.post('/api/delivery/gpu/raw-budget/' + name,
+                json={'bytes': size, 'background': True, 'concurrent': True, 'priority': priority, **extra}).json()
+        client.post('/api/delivery/gpu/activity', json={'bytes':100,'budget':1000})
+        assert post('ahead1')['granted']
+        assert post('selected', priority=0)['granted']
+        assert not post('ahead2')['granted']
+        assert not post('ahead1')['preempt'], 'Spare capacity does not restart useful development'
+        assert client.post('/api/delivery/gpu/activity', json={'bytes':100,'budget':1000}).json()['reserved'] == 800
+        assert not post('draw', size=100, priority=0, concurrent=False)['granted']
+        assert post('ahead1')['preempt'], 'Selected draw gets the next exclusive turn'
+        client.delete('/api/delivery/gpu/raw-budget/ahead1')
+        client.delete('/api/delivery/gpu/raw-budget/selected')
+        assert post('draw', size=100, priority=0, concurrent=False)['granted']
+        assert not post('ahead2')['granted'], 'A draw never overlaps development'
+        client.delete('/api/delivery/gpu/raw-budget/draw')
+        assert post('ahead2')['granted']
+        assert not post('new-selected', size=600, priority=0)['granted']
+        assert post('ahead2')['preempt'], 'Full memory yields to selected development'
+        client.delete('/api/delivery/gpu/raw-budget/ahead2')
+        assert post('new-selected', size=600, priority=0)['granted']
+        client.post('/api/delivery/gpu/activity', json={'bytes':100,'budget':1000,'active':True})
+        assert post('new-selected', size=600, priority=0)['preempt'], 'Grade still preempts Library'
+
+
 def test_old_export_is_not_starved_by_new_raw_thumbnails(tmp_path, monkeypatch):
     app = _broker(tmp_path, monkeypatch)
     with TestClient(app) as client, gpu_delivery.DeliveryMemory() as memory:

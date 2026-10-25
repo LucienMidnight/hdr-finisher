@@ -1,5 +1,62 @@
 # Module PRD: Photo Library
 
+**October 25, 2026: Part 0f cold quick draws and development ahead (built in this commit; Steve's try pending)**
+
+- Single and fullscreen can show the selected unedited RAW's camera preview
+  as its quick draw when no thumbnail is available. The backend checks that
+  no grade or thumbnail exists before and after extraction, and that the
+  source has not changed. Presentation checks selection/source/grade again;
+  a late camera preview cannot replace HDRF's thumbnail or screen preview.
+  Edited photos never use this route. Part B decoding remains unstarted.
+- Denoise did not acquire a new preparation regression at Part A or Part 0e.
+  The earlier 250-530 ms observations mostly measured thumbnails; an 18:45
+  screen-preview measurement already cost 1,630 ms. The unchanged 2560
+  estimator and overlapping neighbour measurements explain the later slow
+  preparation. Independent measurement windows now use the existing shared
+  CPU pool and machine-derived native thread partition, with results joined
+  in their original order. Exact model equality is required, not a new look.
+  Large Library model requests are ordered one at a time, with the selected
+  photo before queued neighbours; quick draws remain independent. Idle
+  renderer warm-up also prepares the unchanged one-time noise calibration.
+- The RAM handoff included two full RAW fingerprint reads, one per scene
+  size. Both handoffs now share a fingerprint for the same checked source
+  preparation; the owner/settings/source checks remain. Building the HTTP
+  body directly from its planes removes an extra full-picture copy. Scene
+  reduction, half-float storage and finishing arithmetic are unchanged.
+- Development ahead is separate from the finished ready window. Once the
+  selected screen-preview scene is cached or its source demand is admitted,
+  uncached photos ahead in the direction of travel begin development, using
+  the existing 12-photo read-ahead plan. Navigation preserves useful work and
+  promotes the selected photo. Source/sensor admission prioritizes it; only
+  one lower-priority source is interrupted when every source slot is full.
+  Bayer RAW developments can overlap when their combined GPU reservations
+  fit. Drawing and delivery remain exclusive and Grade/export/Proof retain
+  precedence. No CPU development-ahead fallback or allowance increase.
+- Idle folder warming stops when either scene allowance lacks conservative
+  headroom. At the existing 10 GiB 2560 allowance it reserves another
+  `2560 * 2560 * 12 + 1 MiB` (76 MiB); a full screen-preview scene allowance
+  therefore stops warming even if thumbnail space remains. It does not
+  evict existing scenes just to finish warming a folder.
+
+Validation: the fast suites ran once: JavaScript 622 passed / 8 fixture
+errors; Python 2,557 passed / 3 skipped / 11 failures. The new exact-model,
+handoff and memory/priority broker checks passed. Eight JavaScript errors
+were missing scheduler imports in isolated test fixtures; ten Python
+failures were a wrong preview mock target and the now-parallel window read
+order assertion. Those fixtures were corrected without rerunning the suites.
+The remaining retouch failure is the existing CaptureCache mock rejecting
+`defer_store`; it was left alone. Final review also preserved CPU fallback
+when selected work joins GPU-only development ahead.
+
+The one disposable 2560x1440 fullscreen/Single driver confirmed the cold
+selected camera preview appeared with the old HDRF canvas hidden, then
+stopped at its trace assertion: it selected a grid camera-preview event
+instead of waiting for the fullscreen quick-draw presentation callback.
+That driver fixture was corrected, but not rerun. Replacement, edited
+Denoise and steady forward browsing therefore still need Steve's try;
+there is no completed live-GPU performance result for this commit. No live
+library database, photos, sidecars or cache folders were written.
+
 **October 25, 2026: Part 0e seamless swaps and development priority (built in this commit; Steve's try pending)**
 
 Supersedes Part 0d's unconditional quiet gate. Part B remains open.
@@ -704,7 +761,9 @@ Library PRD, section 4. These later decisions replace older ones:
 | **No usable GPU: visible-only CPU fallback.** Keep the existing CPU-made pictures only when the GPU is missing, software-only or lost. Make them only for photos on screen (visible cells, Single and full-screen), with no background picture queue and no pre-making pictures for pasted photos that are not visible. After device loss or driver reset, automatically return to live GPU drawing when a usable GPU becomes available; fallback must not latch for the session. As with CPU export, keep this route working without speed work or new features. | Steve, 2026-10-19 |
 | **Batch Export tiles share live Library drawing.** Visible photo tiles use the same live GPU renderer and visible-only CPU fallback. While export or Proof is running they are background work: draw each tile once and retain it, never redraw for progress updates, and yield GPU memory and turns to delivery. Verify export time per photo with the page open versus closed on the same three photos; the agreed timing noise allowance is 5%. | Steve, 2026-10-19 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
-| **Fullscreen stand-in: the photo's own finished grid picture.** While the sharp fullscreen picture loads, show that photo's finished grid/filmstrip picture scaled to Fit (same grade and HDR/SDR mode), then swap. Never a camera embedded JPEG, another photo or an obsolete grade. Adjusts the October 24 hide-until-ready behaviour. | Steve, 2026-10-25 |
+| **Fullscreen stand-in: the photo's own finished grid picture.** While the sharp fullscreen picture loads, show that photo's finished grid/filmstrip picture scaled to Fit (same grade and HDR/SDR mode), then swap. Never another photo or an obsolete grade. Adjusts the October 24 hide-until-ready behaviour. | Steve, 2026-10-25 |
+| **Camera preview as a quick draw, unedited photos only.** When a photo has no thumbnail yet and has no grade, fullscreen and Single may show its camera preview immediately, then replace it with HDRF's picture. Edited photos never show a camera preview. Amends the October 14 rule. | Steve, 2026-10-25 |
+| **Cold-folder culling is a core workflow.** Users often cull folders the app has never prepared, so stored previews cannot be the only route to speed. Every supported format needs a fast first picture on cold visits: camera previews for RAWs, and fast in-process decoding for JPEG, HEIF, AVIF, TIFF, PNG, EXR, DNG and similar (the file itself as the quick draw when unedited). Edited photos need fast development and finishing. Stored screen previews speed up returning to a folder; they do not replace cold speed. | Steve, 2026-10-25 |
 | **Manual built previews work per photo** (any selection, also offered on folders), protected until discarded. Native 100% previews wait until everything else is fast. Design open; see Prepared-folder fullscreen culling. | Steve, 2026-10-25 |
 
 **V2 scope decision (Steve, October 21, 2026):** Library Looks (slice 7),
@@ -1216,7 +1275,9 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
-| **Denoise in Library drawing.** Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: Denoise analysis 250–530 ms per draw even after reuse (1.4–1.6 s on a first draw). Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Measured. Reuse fix in Part 0c; speed-up not started. |
+| **Cold first picture for non-RAW formats** (core workflow, see decisions) | AVIF and Ultra HDR sources decode through per-photo command-line tools (seconds). JPEG, HEIF, TIFF, PNG, EXR and DNG cold timings have not been measured as a set. | Open; needs a fast in-process decoding plan per format. |
+| **Cold RAW development** (badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |
+| **Denoise in Library drawing.** Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: thumbnail analysis 250–530 ms per draw even after reuse; screen-preview measurements already cost 1.6 s in the 18:45 test. Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Reuse fix in Part 0c; exact estimator threading and selected-first measurement scheduling in Part 0f. Reconstruction dispatch optimization remains open; Steve's timing try pending. |
 | Film grain and halation in Library drawing | Present in all slow graded photos (Portra 400, grain 24, halation). Not timed apart from Denoise. | Suspected; measure. |
 | Sharpening | Present on one slow photo (DSC07178). No timing. | Unmeasured; check only. |
 | Stored-scene pixel fetch | 65–150 ms per 2560 scene after Part 0, down from 140–800 ms. | Measured; improved. |

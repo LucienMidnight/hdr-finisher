@@ -1,7 +1,7 @@
 const {test}=require("node:test"), assert=require("node:assert/strict"), vm=require("node:vm");
 const {frontendSource}=require("./frontend-source.js");
 function setup() {
-  const context=vm.createContext({window:{},document:{createElement:()=>({})},performance:{now:()=>1},HDRLibraryStopwatch:()=>{}});
+  const context=vm.createContext({window:{},document:{createElement:()=>({})},performance:{now:()=>1},HDRLibraryStopwatch:()=>{},HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler')});
   for(const file of ["graph-scale.js","webgpu-shaders.js","webgpu-preview.js"]) vm.runInContext(frontendSource(file),context);
   context.HDRWebGPUPreview=context.window.HDRWebGPUPreview;
   vm.runInContext(frontendSource("library-gpu.js")+"\nwindow.TestGPU=HDRLibraryGPU;",context);

@@ -18,6 +18,56 @@ test('Library releases finished cache memory before accepting a RAW budget refus
   assert.equal(drawn,1);assert.deepEqual(order,['reclaim','lease','GPU']);
 });
 
+test('a second development waits at the GPU broker, not behind the first in this window', async () => {
+  const fs=require('node:fs'),vm=require('node:vm');
+  const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+  const fn=source.slice(source.indexOf('  async function scheduledDevelopment('),source.indexOf('  async function develop(path,'));
+  const started=[];let release;
+  const held=new Promise(resolve=>{release=resolve;});
+  const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
+    gpu:async()=>{},rawBudget:()=>60,
+    root:{HDRLibraryScenes:{stage(){}}},
+    fetch:async(_url,options)=>{if(options.method==='DELETE')return {};return {ok:true,json:async()=>({granted:true})};},
+    developRaw:async({meta})=>{started.push(meta.path);await held;return {timings:{}};}};
+  vm.runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+  const signal=new AbortController().signal;
+  const first=context.run({meta:{path:'a'},edges:[640]},signal);
+  const second=context.run({meta:{path:'b'},edges:[640]},signal);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(started,['a','b'],'Both developments reached the GPU while the first was held');
+  release();
+  await Promise.all([first,second]);
+});
+
+test('the developed handoff frames the header and planes the backend unframes', async () => {
+  const { handoffBody } = globalThis.HDRLibraryGpuRaw;
+  const planes = [new Float32Array([0.1, 0.2, 0.3]).buffer, new Float32Array([0.4, 0.5]).buffer];
+  const header = { path: 'C:/photos/photo.ARW', identity: ['12', '34'], edge: 640 };
+  const bytes = new Uint8Array(await handoffBody(header, planes).arrayBuffer());
+  const length = new DataView(bytes.buffer).getUint32(0, true);
+  assert.equal((4 + length) % 4, 0, 'Payload stays 4-byte aligned');
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + length))), header);
+  let offset = 4 + length;
+  for (const plane of planes) {
+    assert.deepEqual(bytes.subarray(offset, offset + plane.byteLength), new Uint8Array(plane));
+    offset += plane.byteLength;
+  }
+  assert.equal(offset, bytes.length, 'Every plane byte is present once, in order');
+});
+
+test('sensor transfer slots give selected development the next slot ahead of read-ahead',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ const fn=source.slice(source.indexOf('  const LIMIT = 2'),source.indexOf('  // The grid and the filmstrip'));
+ const context={DOMException};vm.runInNewContext(fn+';this.add=(job)=>{waiting.push(job);pump();};',context);
+ const order=[];let finish;
+ const blocked=new Promise(r=>finish=r),jobs=[];
+ const add=(name,priority,hold=false)=>jobs.push(new Promise((resolve,reject)=>context.add({signal:new AbortController().signal,importance:()=>priority,resolve,reject,
+  task:async()=>{order.push(name);if(hold)await blocked;}})));
+ add('active-a',5,true);add('active-b',5,true);add('ahead',5);add('selected',0);
+ await new Promise(r=>setImmediate(r));assert.deepEqual(order,['active-a','active-b']);
+ finish();await Promise.all(jobs);assert.deepEqual(order,['active-a','active-b','selected','ahead']);
+});
+
 // numpy.quantile(values, q) with the default linear method, for comparison.
 function numpyQuantile(values, q) {
   const sorted = [...values].sort((a, b) => a - b);

@@ -15,6 +15,40 @@ from hdr_finisher.library_source_jobs import SourceJobs
 from hdr_finisher.sessions import SessionStore
 
 
+@pytest.mark.parametrize('state', ['cold', 'edited', 'thumbnail', 'changed_source', 'edited_during_read', 'thumbnail_during_read'])
+def test_camera_quick_draw_requires_current_unedited_photo_without_thumbnail(tmp_path, monkeypatch, state):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.library_live import LivePictures
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    from hdr_finisher import library_pictures
+    class Helper:
+        def status(self): return {'running': True, 'paused': False, 'pending': 0}
+    path = tmp_path / 'photo.ARW'; path.write_bytes(b'camera-source')
+    stat = path.stat(); calls = []
+    grade = [{} if state == 'edited' else None]
+    cached = [{'key': 'thumbnail'} if state == 'thumbnail' else None]
+    monkeypatch.setattr(LivePictures, 'document', lambda self, item: grade[0])
+    monkeypatch.setattr(LibraryPictureCache, 'cached', lambda *args: cached[0])
+    monkeypatch.setattr('hdr_finisher.library_raw.camera_raw', lambda *args: True)
+    def preview(*args):
+        calls.append(True)
+        if state == 'edited_during_read': grade[0] = {}
+        if state == 'thumbnail_during_read': cached[0] = {'key': 'thumbnail'}
+        return {'url': 'data:image/jpeg;base64,camera', 'route': 'camera-preview'}
+    monkeypatch.setattr(library_pictures, 'camera_preview', preview)
+    app = FastAPI(); app.include_router(create_library_router(Helper(), MediaBrowserStore(tmp_path / 'profile')))
+    with TestClient(app) as client:
+        response = client.post('/api/library/preview', json={'path': str(path), 'quick_draw': True,
+            'bytes': stat.st_size, 'mtime_ns': int(float(stat.st_mtime_ns)) + (2_000_000_000 if state == 'changed_source' else 0)})
+    assert response.status_code == (200 if state == 'cold' else 204)
+    assert len(calls) == (0 if state in {'edited', 'thumbnail', 'changed_source'} else 1)
+    assert path.read_bytes() == b'camera-source'
+    assert not Path(str(path) + '.hdrf').exists()
+
+
 def test_rgb_boundary_keeps_cpu_icc_and_orientation(tmp_path):
     path = tmp_path / 'oriented.jpg'
     exif = Image.Exif(); exif[274] = 6

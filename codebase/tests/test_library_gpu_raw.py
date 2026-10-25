@@ -142,3 +142,71 @@ def test_gpu_handoff_preserves_nanosecond_identity_and_rejects_same_size_changes
     assert photo.stat().st_mtime_ns != stat.st_mtime_ns
     with pytest.raises(ValueError, match="changed"):
         gpu_raw.developed(cache, str(photo), header, payload)
+
+
+def _counted_hash(monkeypatch):
+    from hdr_finisher import sessions
+    calls = []
+    real = sessions._sha256_file
+    monkeypatch.setattr(sessions, "_sha256_file", lambda path: (calls.append(path), real(path))[1])
+    return calls
+
+
+def test_one_development_hashes_the_source_once_for_both_sizes(tmp_path, monkeypatch):
+    photo = tmp_path / "photo.ARW"
+    photo.write_bytes(b"read-only fixture")
+    cache = LibraryPictureCache(tmp_path / "cache")
+    calls = _counted_hash(monkeypatch)
+    small = gpu_raw.developed(cache, str(photo), _header(photo), _payload(8, 12, (0.1, 0.2, 0.3)))
+    large = gpu_raw.developed(cache, str(photo), {**_header(photo), "edge": 2560}, _payload(8, 12, (0.1, 0.2, 0.3)))
+    assert small["key"] != large["key"]
+    assert len(calls) == 1
+    from hashlib import sha256
+    from hdr_finisher.models import EditDocument
+    document = EditDocument.model_validate(cache.default_document(photo))
+    assert document.source.fingerprint_sha256 == sha256(photo.read_bytes()).hexdigest()
+
+
+def test_a_changed_photo_never_reuses_the_shared_fingerprint(tmp_path, monkeypatch):
+    photo = tmp_path / "photo.ARW"
+    photo.write_bytes(b"first fixture")
+    cache = LibraryPictureCache(tmp_path / "cache")
+    calls = _counted_hash(monkeypatch)
+    gpu_raw.developed(cache, str(photo), _header(photo), _payload(8, 12, (0.1, 0.2, 0.3)))
+    photo.write_bytes(b"second fixture with other bytes")
+    gpu_raw.developed(cache, str(photo), _header(photo), _payload(8, 12, (0.1, 0.2, 0.3)))
+    assert len(calls) == 2
+    from hashlib import sha256
+    from hdr_finisher.models import EditDocument
+    document = EditDocument.model_validate(cache.default_document(photo))
+    assert document.source.fingerprint_sha256 == sha256(b"second fixture with other bytes").hexdigest()
+
+
+def test_fingerprint_sharing_is_scoped_to_one_source_preparation(tmp_path, monkeypatch):
+    photo = tmp_path / "photo.ARW"
+    photo.write_bytes(b"read-only fixture")
+    cache = LibraryPictureCache(tmp_path / "cache")
+    calls = _counted_hash(monkeypatch)
+    owner = "a" * 32
+    gpu_raw.developed(cache, str(photo), {**_header(photo), "source_job": owner}, _payload(8, 12, (0.1, 0.2, 0.3)))
+    gpu_raw.developed(cache, str(photo), {**_header(photo), "edge": 2560, "source_job": owner}, _payload(8, 12, (0.1, 0.2, 0.3)))
+    assert len(calls) == 1
+    gpu_raw.developed(cache, str(photo), {**_header(photo), "edge": 1280, "source_job": "b" * 32}, _payload(8, 12, (0.1, 0.2, 0.3)))
+    assert len(calls) == 2
+
+
+def test_shared_fingerprint_expires_and_separates_identities(tmp_path, monkeypatch):
+    from hdr_finisher import library_source_jobs
+    now = [0.0]
+    monkeypatch.setattr(library_source_jobs, "monotonic", lambda: now[0])
+    calls = []
+    compute = lambda: (calls.append(1), "fingerprint")[1]
+    photo = tmp_path / "photo.ARW"
+    assert library_source_jobs.shared_fingerprint(None, photo, ["1", "2"], compute) == "fingerprint"
+    assert library_source_jobs.shared_fingerprint(None, photo, ["1", "2"], compute) == "fingerprint"
+    assert len(calls) == 1
+    now[0] = library_source_jobs.FINGERPRINT_SHARE_SECONDS
+    library_source_jobs.shared_fingerprint(None, photo, ["1", "2"], compute)
+    assert len(calls) == 2
+    library_source_jobs.shared_fingerprint(None, photo, ["1", "3"], compute)
+    assert len(calls) == 3

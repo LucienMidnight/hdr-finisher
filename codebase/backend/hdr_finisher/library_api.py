@@ -163,6 +163,12 @@ class FolderRequest(BaseModel):
     path: str
 
 
+class CameraPreviewRequest(FolderRequest):
+    quick_draw: bool = False
+    bytes: int | None = None
+    mtime_ns: int | None = None
+
+
 class PinsRequest(BaseModel):
     paths: list[str] = Field(max_length=100)
 
@@ -313,13 +319,28 @@ def create_library_router(worker, browser, store=None):
             edge=command.edge, priority=command.priority)
 
     @router.post("/preview")
-    async def live_preview(command: FolderRequest):
+    async def live_preview(command: CameraPreviewRequest):
         from .library_pictures import camera_preview
         path = str(marks.source_path(command.path))
         if not await run_in_threadpool(camera_raw, path):
             return Response(status_code=204)
         try:
-            return await run_in_threadpool(camera_preview, path, 640)
+            identity = Path(path).stat()
+            def eligible():
+                stat = Path(path).stat()
+                return ((stat.st_size, stat.st_mtime_ns) == (identity.st_size, identity.st_mtime_ns)
+                    and (command.bytes is None or stat.st_size == command.bytes)
+                    # Folder JSON timestamps pass through JavaScript numbers;
+                    # the before/after file identity above remains exact.
+                    and (command.mtime_ns is None or float(stat.st_mtime_ns) == float(command.mtime_ns))
+                    and picture_document(command.path) is None
+                    and live.cache.cached(path, 640, live_quality(None)) is None)
+            if command.quick_draw and not await run_in_threadpool(eligible):
+                return Response(status_code=204)
+            preview = await run_in_threadpool(camera_preview, path, 640)
+            if command.quick_draw and not await run_in_threadpool(eligible):
+                return Response(status_code=204)
+            return preview
         except (ValueError, OSError):
             return Response(status_code=204)
 
@@ -512,6 +533,13 @@ def create_library_router(worker, browser, store=None):
     def warmup_idle():
         status = worker.status()
         return {"idle": not status["paused"] and not status["pending"]}
+
+    @router.post('/denoise-warmup')
+    def denoise_warmup():
+        from .denoise_adaptive import _tail_reference, _quantile_calibration
+        _tail_reference()
+        _quantile_calibration(0.1)
+        return {'ready': True}
 
     @router.get("/cache-settings")
     def cache_settings():

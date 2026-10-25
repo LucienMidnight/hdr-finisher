@@ -103,7 +103,7 @@ test("Activity stages reflect real execution and resource waits, then clear on c
  const result=queue.submit("photo",()=>new Promise(resolve=>finish=resolve),null,10,{path:"image.dng",stage:"Reading source"});
  await Promise.resolve();
  queue.stage("image.dng","Correcting DNG brightness");
- assert.deepEqual(queue.snapshot().jobs,[{path:"image.dng",stage:"Correcting DNG brightness",state:"running"}]);
+  assert.deepEqual(queue.snapshot().jobs,[{path:"image.dng",priority:10,stage:"Correcting DNG brightness",state:"running"}]);
  queue.stage("image.dng","Waiting for GPU preparation",true);
  assert.equal(queue.snapshot().jobs[0].state,"waiting");
  queue.stage("image.dng","Correcting DNG distortion on GPU");
@@ -201,4 +201,13 @@ test('superseded fullscreen source work stops when its last neighbour leaves',as
  const controller=new AbortController(),stopped=gate();
  const work=queue.submit('neighbour',signal=>new Promise(resolve=>signal.addEventListener('abort',()=>{stopped.resolve();resolve();})),controller.signal,5);
  const cancelled=assert.rejects(work,{name:'AbortError'});await Promise.resolve();controller.abort();await stopped.promise;await cancelled;
+});
+
+test('selected source borrows idle capacity and preempts only one neighbour when full',async()=>{
+ const queue=create(3,undefined,{preemptLower:true,preemptForCapacity:true}),blocks=[gate(),gate(),gate()],signals=[];
+ const task=i=>async signal=>{signals[i]=signal;await blocks[i].promise;};
+ const a=queue.submit('a',task(0),null,5),b=queue.submit('b',task(1),null,5);await Promise.resolve();
+ const c=queue.submit('selected',task(2),null,0);await Promise.resolve();assert.ok(signals.every(s=>!s.aborted));
+ const next=queue.submit('next',async()=>42,null,0);assert.equal(signals.filter(s=>s.aborted).length,1);assert.equal(signals[2].aborted,false);
+ blocks[0].resolve();blocks[1].resolve();blocks[2].resolve();await Promise.all([a,b,c]);assert.equal(await next,42);
 });

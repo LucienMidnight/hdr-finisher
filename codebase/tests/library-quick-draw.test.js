@@ -21,7 +21,7 @@ test('quick work runs independently and selected sharp follows only the in-fligh
 test('repeat Library model preparations reuse exact photo, grade, lane, size and geometry within 16 entries',async()=>{
  let requests=0;
  const window={};
- const context=vm.createContext({window,document:{createElement:()=>({})},performance,fetch:async url=>({ok:true,json:async()=>({url,measurement:++requests})}),HDRWebGPUPreview:class {}});
+  const context=vm.createContext({window,document:{createElement:()=>({})},performance,fetch:async url=>({ok:true,json:async()=>({url,measurement:++requests})}),HDRWebGPUPreview:class {},HDRLibrarySceneScheduler:{create}});
  vm.runInContext(fs.readFileSync(require.resolve('../frontend/library-gpu'),'utf8'),context);
  const prepare=window.HDRLibraryPictures.prepareDenoise;
  const meta=(key='live-photo-grade1',edge=2560,geometry={})=>({key,edge,denoise:{hdr:{enabled:true},sdr:{enabled:true}},adjustments:{shared:{geometry}}});

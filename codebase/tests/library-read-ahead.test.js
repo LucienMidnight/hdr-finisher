@@ -11,6 +11,17 @@ test('selecting a neighbour preserves its unfinished decode and promise', async 
  assert.equal(calls.filter(c=>c.p.id==='b').length,1); ahead.clear();
  assert.ok(calls.every(c=>c.signal.aborted));
 });
+test('rolling development plan preserves useful neighbours before admitting new work',async()=>{
+ const photos=Array.from({length:5},(_,id)=>({id})),calls=[];
+ const ahead=create({key:p=>p.id,load:async(p,e,signal)=>{calls.push({id:p.id,signal});return new Promise(()=>{});}});
+ ahead.update(photos[0],photos.slice(1,4),2560);await turn();
+ const pending=ahead.take(photos[1],2560);
+ ahead.update(photos[1],photos.slice(2),2560,false);await turn();
+ assert.equal(ahead.take(photos[1],2560),pending);assert.equal(calls.length,3);assert.ok(calls.every(c=>!c.signal.aborted));
+ ahead.update(photos[1],photos.slice(2),2560);await turn();assert.deepEqual(calls.map(c=>c.id),[1,2,3,4]);
+ ahead.update(photos[1],[photos[0]],2560,false);assert.ok(calls.filter(c=>c.id>1).every(c=>c.signal.aborted));
+ assert.equal(calls[0].signal.aborted,false);ahead.clear();
+});
 test('leaving the neighbourhood, resizing or changing a grade discards obsolete work', async () => {
  const calls=[]; const ahead=create({key:(p,e)=>`${p.id}:${p.grade}:${e}`,load:(p,e,signal)=>{calls.push(signal);return new Promise(()=>{});}});
  const a={id:'a',grade:1},b={id:'b',grade:1},c={id:'c',grade:1};

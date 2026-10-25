@@ -30,7 +30,7 @@ preview implements the same arithmetic and the same edge rule.
 from __future__ import annotations
 
 import os
-from .cpu_budget import CpuExecutor
+from .cpu_budget import CpuExecutor, native_threads
 from dataclasses import dataclass
 from statistics import NormalDist
 from threading import Lock
@@ -298,6 +298,21 @@ def _sample_tiles(height: int, width: int) -> list[tuple[int, int, int, int]]:
     return [(int(y), int(x), int(y) + ESTIMATION_TILE, int(x) + ESTIMATION_TILE) for y in ys for x in xs]
 
 
+def _map_estimation_windows(function, windows):
+    # Windows are independent; join in the original order so all quantiles and
+    # fitting arithmetic see exactly the same samples as serial measurement.
+    workers = min(len(windows), max(1, int(os.environ.get('HDR_CPU_THREADS', native_threads()))))
+    if workers <= 1:
+        return [function(window) for window in windows]
+    results = [None] * len(windows)
+    def run(worker):
+        for index in range(worker, len(windows), workers):
+            results[index] = function(windows[index])
+    with CpuExecutor() as pool:
+        list(pool.map(run, range(workers)))
+    return results
+
+
 def _fit_variance(xs: np.ndarray, vs: np.ndarray, ws: np.ndarray) -> tuple[float, float, float]:
     """Non-negative least squares for (c, a, b) by trying every subset of terms.
 
@@ -325,13 +340,13 @@ def _estimate_variance_model(image: np.ndarray, windows) -> tuple[float, float, 
     """Immerkaer's mask cancels constant and linear structure; edges are dropped
     by the gradient of a smoothed copy; each brightness bin keeps the low end of
     the remaining spread. Only the *shape* of the model matters downstream."""
-    ms, rs, gs = [], [], []
-    for y0, x0, y1, x1 in windows:
+    def measure(window):
+        y0, x0, y1, x1 = window
         y = image[y0:y1, x0:x1, :3] @ ACESCG_LUMINANCE
         smooth = _conv3(y, np.full((3, 3), 1.0 / 9.0, dtype=np.float32))
-        ms.append(smooth.ravel())
-        rs.append(_conv3(y, _IMMERKAER).ravel())
-        gs.append(np.hypot(_conv3(smooth, _SOBEL_X), _conv3(smooth, _SOBEL_X.T)).ravel())
+        return (smooth.ravel(), _conv3(y, _IMMERKAER).ravel(),
+            np.hypot(_conv3(smooth, _SOBEL_X), _conv3(smooth, _SOBEL_X.T)).ravel())
+    ms, rs, gs = zip(*_map_estimation_windows(measure, windows))
     m, r, g = np.concatenate(ms), np.concatenate(rs), np.concatenate(gs)
     keep = m > 0
     m, r, g = m[keep], r[keep], g[keep]
@@ -416,16 +431,19 @@ def _energy_tails(source: np.ndarray, windows, model: AdaptiveNoiseModel, quiet_
     like noise keeps it out. Selecting on bands 0-1 themselves would keep only
     the places where clumps happen not to be.
     """
-    kept: list[list[list[np.ndarray]]] = [[[], []] for _ in range(3)]
-    count = total = 0
-    for coarse, fine in _window_energies(source, windows, model):
+    def measure(window):
+        coarse, fine = next(_window_energies(source, [window], model))
         with np.errstate(invalid="ignore"):
             quiet = np.logical_and.reduce([energy <= limit for energy, limit in zip(coarse, quiet_limits)])
-        count += int(quiet.sum())
-        total += quiet.size
+        return int(quiet.sum()), quiet.size, [[fine[level][component][quiet] for level in (0, 1)] for component in range(3)]
+    kept: list[list[list[np.ndarray]]] = [[[], []] for _ in range(3)]
+    count = total = 0
+    for window_count, window_total, values in _map_estimation_windows(measure, windows):
+        count += window_count
+        total += window_total
         for level in (0, 1):
             for component in range(3):
-                kept[component][level].append(fine[level][component][quiet])
+                kept[component][level].append(values[component][level])
     tails = []
     for component in range(3):
         row = []
@@ -524,8 +542,8 @@ def _measure_model(source: np.ndarray) -> tuple[AdaptiveNoiseModel, list[tuple[i
     windows = _sample_tiles(height, width)
     a, b, c = _estimate_variance_model(source, windows)
     partial = AdaptiveNoiseModel(a=a, b=b, c=c, band_sigmas=((0.0,) * LEVELS,) * 3)
-    luma0, fine, coarse = [], [[], [], []], [[], [], []]
-    for y0, x0, y1, x1 in windows:
+    def measure(window):
+        y0, x0, y1, x1 = window
         rgb = source[y0:y1, x0:x1, :3]
         edges = _Edges(y0 == 0, y1 == height, x0 == 0, x1 == width, height, width)
         sigma = np.sqrt(_noise_variance(rgb @ ACESCG_LUMINANCE, partial, edges))[..., None]
@@ -534,10 +552,13 @@ def _measure_model(source: np.ndarray) -> tuple[AdaptiveNoiseModel, list[tuple[i
         smooth1 = _atrous(smooth0, 1, edges)
         band0 = (current - smooth0) / sigma
         band1 = (smooth0 - smooth1) / sigma
-        luma0.append(_block_stds(band0[..., 0]))
+        return _block_stds(band0[..., 0]), [_block_stds(band0[..., component]) for component in range(3)], [_block_stds(band1[..., component]) for component in range(3)]
+    luma0, fine, coarse = [], [[], [], []], [[], [], []]
+    for luminance, window_fine, window_coarse in _map_estimation_windows(measure, windows):
+        luma0.append(luminance)
         for component in range(3):
-            fine[component].append(_block_stds(band0[..., component]))
-            coarse[component].append(_block_stds(band1[..., component]))
+            fine[component].append(window_fine[component])
+            coarse[component].append(window_coarse[component])
     luma0_all = np.concatenate(luma0)
     flat = luma0_all <= np.quantile(luma0_all, FLAT_BLOCK_QUANTILE)
     quantile = 0.10

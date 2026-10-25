@@ -238,9 +238,16 @@
     key: (photo, edge) => `${pictureIdentity(photo)}|${edge}`,
     load: (photo, edge, signal) => {
       const cached = recentPictures.get(pictureIdentity(photo));
-      return cached?.edge >= edge ? Promise.resolve(cached) : HDRLibraryScenes.load(photo.path,edge,signal,50);
+      return cached?.edge >= edge ? Promise.resolve(cached) : HDRLibraryScenes.load(photo.path,edge,signal,5,false,null,{gpuOnly:true});
     },
   });
+  function developmentNeighbours() {
+    return Array.from({length:browsingLimits.ahead},(_,i)=>state.photos[state.index+(i+1)*rawDirection]).filter(Boolean);
+  }
+  function developAhead(photo) {
+    if (!state.active || state.view !== "single" || compare.enabled() || selected()?.path !== photo.path || !HDRLibraryGpuRaw.enabled()) return;
+    readAhead.update(photo,developmentNeighbours(),2560);
+  }
   let restoreStandIn = () => {};
   function showStandIn(photo, controller, current, trace) {
     restoreStandIn();
@@ -295,7 +302,8 @@
         const epoch = state.displayEpoch, hdr = state.hdr;
         // Probe stored developments immediately; only a source miss waits for navigation.
         const meta = await HDRLibraryScenes.load(photo.path,edge,signal,importance(),false,trace,
-          {cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance)});
+          {cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance),
+            onSourceDemand:()=>{if(edge===2560 && importance()===0 && current())developAhead(photo);}});
         if (!meta) return null;
         if (!current()) throw new DOMException("Invalidated","AbortError");
         Object.defineProperty(meta,"trace",{get:getTrace,configurable:true});
@@ -349,6 +357,30 @@
     restoreStandIn = restore;
     controller.signal.addEventListener("abort",restore,{once:true});
     HDRLibraryTrace.present(trace,()=>current() && canvas.dataset.standIn === "true",{key:value.meta.key,quick_draw:true,sharp_draw:false});
+  }
+  async function showCameraPreview(photo,controller,current,trace) {
+    if (photo.edited || !rawTypes.has(photo.type)) return;
+    const sourceIdentity = pictureIdentity(photo), started = performance.now();
+    const eligible = () => current() && pictureIdentity(selected() || {}) === sourceIdentity && !photo.edited &&
+      !readyWindow.has(photo) && !quickWindow.has(photo) && !$('single-stage').querySelector('[data-stand-in="true"]');
+    try {
+      const response = await fetch('/api/library/preview',{method:'POST',signal:controller.signal,
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({path:photo.path,quick_draw:true,bytes:photo.bytes,mtime_ns:photo.mtime_ns})});
+      if (response.status !== 200 || !eligible()) return;
+      const meta = await response.json();
+      if (!meta.url || !eligible()) return;
+      const image = document.createElement('img'); image.alt = ''; image.src = meta.url;
+      await image.decode();
+      if (!eligible()) return;
+      restoreStandIn();
+      image.dataset.standIn = 'true'; image.dataset.cameraPreview = 'true'; image.dataset.picturePath = photo.path;
+      image.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none';
+      pictureMode(image,false); $('single-stage').append(image);
+      const restore = () => { image.remove(); image.removeAttribute('src'); controller.signal.removeEventListener('abort',restore); if(restoreStandIn===restore)restoreStandIn=()=>{}; };
+      restoreStandIn = restore; controller.signal.addEventListener('abort',restore,{once:true});
+      HDRLibraryTrace.mark(trace,'picture_camera_preview_decoded',started,{picture_size:'camera preview',route:meta.route,quick_draw:true});
+      HDRLibraryTrace.present(trace,()=>current() && image.isConnected,{picture_size:'camera preview',route:meta.route,quick_draw:true,sharp_draw:false});
+    } catch(error) { if(!aborted(error))console.debug('Library camera preview:',error.message); }
   }
   HDRLibraryScenes.onReclaim(async (bytes,required=false) => {
     let held = readyBytes + tilePool.snapshot().bytes;
@@ -921,10 +953,11 @@
       startRawAhead();
       const neighbours = readyNeighbours();
       readyWindow.update(photo,neighbours); quickWindow.update(photo,neighbours);
-      // Neighbour developments start only after this selection finishes sharp.
+      readAhead.update(photo,developmentNeighbours(),2560,false);
       let meta, kept = false;
       try {
         kept = readyWindow.has(photo);
+        if (kept) developAhead(photo);
         let sharp = readyWindow.contains(photo) ? readyWindow.get(photo,0,trace) : null;
         sharp?.catch(()=>{});
         let quick = null;
@@ -932,6 +965,7 @@
           quick = await quickWindow.get(photo,0,trace);
           if (!current()) return;
           showQuick(quick,controller,current,trace);
+          if (!quick) void showCameraPreview(photo,controller,current,trace);
         }
         if (!sharp) {
           // A stored sharp development must not sit behind the quiet gate.

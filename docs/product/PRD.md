@@ -229,7 +229,7 @@ the user sees happen. A step uses a size; the two are never interchangeable.
 
 | Term | Meaning |
 | --- | --- |
-| Camera preview | The JPEG embedded in a camera RAW file. Shown first in the grid and filmstrip only, never in Single or fullscreen (Steve, October 14). Not HDRF's grade. |
+| Camera preview | The JPEG embedded in a camera RAW file. Not HDRF's grade. Shown first in the grid and filmstrip. In Single and fullscreen it may be the quick draw only for an **unedited** photo with no thumbnail yet (Steve, October 25; amends the October 14 "never" rule). |
 | Thumbnail | 640 px picture with the current grade and HDR/SDR mode. Used in the grid and filmstrip. |
 | Screen preview | Picture sized to the display (2560 px long edge today), with the current grade and HDR/SDR mode. Used in Single, fullscreen and Compare at Fit. A *stored screen preview* is one saved to disk (planned). |
 | Detail preview | Full-resolution picture for 100% focus checking. Today it is developed for the selected photo only; stored detail previews are later work. |
@@ -238,7 +238,7 @@ the user sees happen. A step uses a size; the two are never interchangeable.
 
 | Term | Meaning |
 | --- | --- |
-| Quick draw | The photo's own thumbnail, enlarged to Fit as an instant stand-in. |
+| Quick draw | The photo's own thumbnail, enlarged to Fit as an instant stand-in. For an unedited photo with no thumbnail yet, its camera preview may provide the quick draw until HDRF's picture is ready. Never another photo or an obsolete grade. |
 | Sharp draw | The screen preview replacing the quick draw. |
 
 **Related terms**

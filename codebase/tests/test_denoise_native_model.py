@@ -30,6 +30,17 @@ GEOMETRIES = [
 ]
 
 
+def test_threaded_estimation_keeps_exact_serial_model_and_window_samples(monkeypatch):
+    da._tail_reference()
+    image = _noisy_source(600, 900)
+    monkeypatch.setattr(da, 'ESTIMATION_MAX_TILES', 4)
+    monkeypatch.setenv('HDR_CPU_THREADS', '1')
+    serial = da.estimate_adaptive_model(image).as_dict()
+    monkeypatch.setenv('HDR_CPU_THREADS', '4')
+    assert da.estimate_adaptive_model(image).as_dict() == serial
+    assert da.estimate_adaptive_model_from_windows(600, 900, lambda y0,x0,y1,x1: image[y0:y1,x0:x1]).as_dict() == serial
+
+
 @pytest.mark.parametrize("geometry", GEOMETRIES)
 def test_full_size_model_source_ignores_geometry(geometry: GeometryAdjustments) -> None:
     image = _noisy_source(600, 900)

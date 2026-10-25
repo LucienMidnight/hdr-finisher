@@ -325,7 +325,9 @@ def create_gpu_delivery_router():
             value = raw_jobs.setdefault(identity, {"priority": 15, "created": now,
                 "granted": False, "bytes": 0})
             value.update(expires=time.monotonic() + 30, bytes=max(0, int(payload["bytes"])),
-                background=bool(payload.get("background")))
+                background=bool(payload.get("background")),
+                library_priority=max(0, min(100, int(payload.get('priority', 15)))),
+                concurrent=bool(payload.get('concurrent') and payload.get('background')))
             if payload.get("release"): value["granted"] = False
             available = max(0, _activity["budget"] - _activity["bytes"])
             if value["bytes"] > available:
@@ -333,11 +335,18 @@ def create_gpu_delivery_router():
                 return {"fallback": "GPU RAW development exceeds the available shared memory budget."}
             priority = _effective_priority(value, now)
             higher = any(_effective_priority(v, now) < priority for v in waiting_deliveries())
-            higher = higher or any(v is not value and
-                (_effective_priority(v, now), v["created"]) < (priority, value["created"])
-                for v in raw_jobs.values())
+            order = lambda job: (_effective_priority(job, now), job['library_priority'], job['created'])
+            reserved = raw_reserved()
+            # Only Library developments share spare memory. Selected work gets
+            # the next reservation when sharing cannot fit; draws stay exclusive.
+            for other in raw_jobs.values():
+                if other is value or order(other) >= order(value): continue
+                can_share = value['concurrent'] and other['concurrent']
+                if not can_share or (not other['granted'] and (not value['granted'] or reserved + other['bytes'] > available)):
+                    higher = True
             preempt = time.monotonic() < _activity["until"] or higher
-            if not value["granted"] and not payload.get("release") and not preempt and not active and not raw_reserved():
+            sharing = value['concurrent'] and all(v['concurrent'] for v in raw_jobs.values() if v['granted'])
+            if not value["granted"] and not payload.get("release") and not preempt and not active and value['bytes'] + reserved <= available and (not reserved or sharing):
                 value["granted"] = True
             return {"granted": value["granted"], "preempt": preempt, "budget": available}
 
