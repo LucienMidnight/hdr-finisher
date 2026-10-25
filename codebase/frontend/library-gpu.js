@@ -123,7 +123,10 @@ window.HDRLibraryPictures = (() => {
   function show(meta, canvas, signal, isCurrent, hdr = false) {
     const queued = performance.now();
     foreground++;
-    const render = async () => {
+    const originalCurrent = isCurrent, originalSignal = signal;
+    const render = async (shared = originalSignal) => {
+      signal = shared === originalSignal ? originalSignal : AbortSignal.any([originalSignal,shared]);
+      isCurrent = () => !signal.aborted && originalCurrent();
       if (signal.aborted || !isCurrent()) return;
       HDRLibraryStopwatch("draw_dispatched", { key: meta.key, queue_ms: performance.now() - queued });
       window.HDRLibraryTrace?.mark(meta.trace,"queue_wait",queued,{key:meta.key});
@@ -206,9 +209,17 @@ window.HDRLibraryPictures = (() => {
       return result;
     };
     const pending = (meta.route === "library-live" ? HDRLibraryScenes.draw(render,signal,meta.draw_priority ?? 10,meta.path)
-      : queue.catch(()=>{}).then(render)).finally(() => { foreground--; });
+      : queue.catch(()=>{}).then(()=>render())).finally(() => { foreground--; });
     queue = pending;
-    return pending;
+    return pending.then(value => {
+      if (!originalSignal.aborted && signal.aborted) { const error = Error("Library draw yielded to fullscreen."); error.libraryYield = true; throw error; }
+      return value;
+    }).catch(error => {
+      if (!originalSignal.aborted && signal.aborted) {
+        const yielded = Error("Library draw yielded to fullscreen."); yielded.libraryYield = true; throw yielded;
+      }
+      throw error;
+    });
   }
   function prepare(meta, signal, isCurrent = () => true) {
     window.HDRIdleWarmup?.touch();
@@ -232,7 +243,23 @@ window.HDRLibraryPictures = (() => {
     await beforeNext();
     await HDRLibraryGpuRaw.warmup(beforeNext);
   }, () => foreground > 0);
-  return Object.freeze({ show, initialize, prepare,
+  let readyClient;
+  let readyReports = Promise.resolve();
+  function readyMemory(bytes) {
+    const report = readyReports.catch(()=>{}).then(async () => {
+      const gpu = await initialize();
+      // Publish the configured budget before shared deductions, as Grade does.
+      const previous = gpu.deliveryBudgetBytes; gpu.deliveryBudgetBytes = null;
+      const budget = gpu.memoryBudgetBytes(); gpu.deliveryBudgetBytes = previous;
+      const response = await fetch("/api/delivery/gpu/activity", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:readyClient ||= "library-ready-" + crypto.randomUUID(),active:false,bytes,budget})});
+      if (!response.ok) throw Error("Ready window accounting unavailable.");
+      return (await response.json()).budget;
+    });
+    readyReports = report; return report;
+  }
+  return Object.freeze({ show, initialize, prepare, readyMemory,
     configure: async limits => { configuredLimits = limits; if (renderer) renderer.libraryLimits = limits; },
     usable: () => !!renderer?.available && !renderer.deviceLost && !renderer.adapterInfo?.fallback,
     resident: key => !!renderer?.rawPictures?.get(key),

@@ -7,13 +7,31 @@
     let commands = Promise.resolve(), draft = "", tagRequest = null, tagTimer = null, undoAvailable = false;
     const targets = () => options.photos().filter(photo => options.selection().has(photo.path));
     const marks = photo => photo.marks || empty();
-    function enqueue(route, body, strict = false) {
+    const pendingMarks = [], savedMarks = new Map();
+    function overlay(path, base) {
+      const value = structuredClone(base);
+      for (const item of pendingMarks) if (item.paths.includes(path)) Object.assign(value,item.patch);
+      return value;
+    }
+    function finishOptimistic(item, result) {
+      if (!item) return;
+      pendingMarks.splice(pendingMarks.indexOf(item),1);
+      for (const row of result?.photos || []) savedMarks.set(row.path,structuredClone(row.marks || empty()));
+      for (const photo of options.photos()) if (item.paths.includes(photo.path))
+        photo.marks = overlay(photo.path,savedMarks.get(photo.path) || empty());
+      for (const path of item.paths) if (!pendingMarks.some(next=>next.paths.includes(path))) savedMarks.delete(path);
+    }
+    function enqueue(route, body, strict = false, optimistic = null) {
       // One command at a time. A strict caller (tags, albums) gets the result or the error.
       const task = commands.then(async () => {
         options.status("Saving marks…");
-        const result = await options.api(route, body);
+        let result;
+        try { result = await options.api(route, body); }
+        catch (error) { finishOptimistic(optimistic); options.optimistic?.(); throw error; }
+        for (const row of result.photos) if (savedMarks.has(row.path)) savedMarks.set(row.path,structuredClone(row.marks || empty()));
+        finishOptimistic(optimistic,result);
         const byPath = new Map(result.photos.map(row => [row.path, row]));
-        for (const photo of options.photos()) { const row = byPath.get(photo.path); if (row) Object.assign(photo, row); }
+        for (const photo of options.photos()) { const row = byPath.get(photo.path); if (row) { Object.assign(photo, row); photo.marks = overlay(photo.path,photo.marks || empty()); } }
         undoAvailable = result.undo_available;
         if (result.session) parent.postMessage({type:"hdr-library",action:"grade-replaced",session:result.session},location.origin);
         options.updated(result);
@@ -29,7 +47,17 @@
     const named = label => { const name = options.labelName?.(label); return name ? `${name} · ${label} label` : `${label} label`; };
     function change(patch) {
       const paths = targets().map(photo => photo.path);
-      if (paths.length) return enqueue("/api/library/marks", { paths, change: patch });
+      if (paths.length) {
+        let optimistic = null;
+        if (patch.rating !== undefined || patch.pick !== undefined) {
+          optimistic = {paths:[...paths],patch:{...patch}};
+          for (const photo of targets()) if (!savedMarks.has(photo.path)) savedMarks.set(photo.path,structuredClone(marks(photo)));
+          pendingMarks.push(optimistic);
+          for (const photo of targets()) photo.marks = overlay(photo.path,savedMarks.get(photo.path));
+          options.optimistic?.();
+        }
+        return enqueue("/api/library/marks", { paths, change: patch },false,optimistic);
+      }
       return commands;
     }
     const COPY_ICON = "M8 8h10a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-8a2 2 0 0 1 2 -2z M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2";

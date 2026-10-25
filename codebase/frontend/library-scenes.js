@@ -15,7 +15,7 @@ window.HDRLibraryScenes = (() => {
     job.loggedAt=performance.now();
   };
   const probes = HDRLibrarySceneScheduler.create(2, undefined, {onChange:changed});
-  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed,keepRunning:true});
+  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed,keepRunning:job=>job.priority>=10});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set();
@@ -61,7 +61,7 @@ window.HDRLibraryScenes = (() => {
       }
     }, signal, priority, {heavy,cost,path,stage:"Reading and developing source"});
   }
-  const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed});
+  const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed,preemptLower:true});
   async function load(path, edge, signal, priority = 10, idle = false, trace = null) {
     const generation=generations.get(path)||0;
     const identity = path + (edge === 100000 ? "|native" : "");

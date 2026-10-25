@@ -920,6 +920,45 @@ sweeps or repeated timing runs. Live database opened read-only only for backup;
 all writes used scratch copies/photos/sidecars. Step 3 remains open.
 
 
+
+**October 25, 2026: responsiveness core, Step 3 (implementation built;
+hardware acceptance open).**
+Single/fullscreen keeps finished live canvases for the current photo and up to
+two neighbours each way, drawing ahead in the travel direction first. Ready
+hits present that existing canvas. Selected and neighbour draws preempt lower
+priority filmstrip/grid work; superseded neighbour demand is cancelled. Photo,
+grade, source, HDR/SDR and display identities gate reuse, with explicit invalidation
+and the October 24 rule that obsolete pixels stay hidden. GPU loss clears it.
+The separate twelve-photo source-only Single read-ahead is replaced by this window.
+
+Conservative surface bytes are reported to the existing broker and share the
+existing detached-surface pool ceiling. Grade/export/Proof keep their priority;
+100 ms permit checks discard kept work on contention. No budget, rendering maths,
+shader, file format or backend durability changes. Ready-budget reports use the
+configured budget before shared deductions, avoiding a shrinking-budget loop.
+
+Rating/pick marks appear immediately with path-bound queued saves. Navigation
+does not await saves, older replies cannot overwrite newer pending marks, and
+failures restore acknowledged marks and report the error. SQLite and recovery
+flushes retain their guarantees. No small safe commit consolidation was found;
+relaxed sync/delayed recovery remains an unapplied option with power-loss risk.
+
+Normal-use logs since 002519f: 17 completed fullscreen flips, key-to-picture
+p50/p95 2847/3645 ms; finishing render 2111/2843 ms dominated. Fourteen rating/
+marks lock scopes waited 0/78 ms and held 32/203 ms; no whole-save HTTP samples.
+The brief retains every stage, sample sizes and uncontrolled-condition limits.
+No post-change timing or sustainable-pace claim; the 100 ms proposal remains open.
+
+Validation: one Node fast run had 601 passes/six initialization failures, corrected
+with 26 affected passes; 24 final focused result checks passed. One Python fast
+run: 2,547 passed, three skipped. One existing fullscreen driver at 2560x1440,
+isolated profile/copied photos, timed out at first fullscreen presentation with
+a budget refusal. The new budget-report calculation was corrected and result-
+tested afterwards; no second GPU run. Hardware verification of the corrected
+fullscreen window remains open, along with Steve's normal-use acceptance.
+No live library, photo or sidecar writes, sweeps or timing runs. Persistent
+previews, codecs and Prepare/Build previews remain separate work. Stop at Step 3.
+
 1. **Library speed plan** (Claude, October 18, from the speed exploration:
    [findings](../../technical/archive/library-speed-exploration-findings-2026-10-18.md)).
    Targets unchanged: every visible cell shows a picture within 1 s p90;

@@ -1,7 +1,7 @@
 /* Shared bounded work with merged demand and priority promotion. */
 (function(root){
   "use strict";
-  function create(limit=2,now=()=>Date.now(),{heavyLimit=limit,onChange=()=>{},keepRunning=false}={}){
+  function create(limit=2,now=()=>Date.now(),{heavyLimit=limit,onChange=()=>{},keepRunning=false,preemptLower=false}={}){
     const jobs=new Map(),waiting=[],failures=[],runningJobs=new Set();let active=0,heavyActive=0,sequence=0;
     const cancelled=()=>new DOMException("Cancelled","AbortError");
     const score=job=>job.cost-Math.min(5,(now()-job.created)/1000);
@@ -44,9 +44,10 @@
       if(!job){for(let i=failures.length-1;i>=0;i--)if(failures[i].path===path)failures.splice(i,1);job={key,path,stage,task,priority,heavy,cost:Math.max(0,Math.min(5,cost)),created:now(),sequence:sequence++,controller:new AbortController(),users:new Set()};jobs.set(key,job);waiting.push(job);onChange(job,"waiting");}
       const result=new Promise((resolve,reject)=>{
         const user={signal,resolve,reject,priority};
-        user.stop=()=>{job.users.delete(user);reject(cancelled());demand(job);if(!job.users.size&&!(keepRunning&&job.running)){job.controller.abort();if(!job.running){const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);}onChange(job,job.running?"stopping":"cancelled");if(jobs.get(key)===job)jobs.delete(key);}};
+        user.stop=()=>{const retained=typeof keepRunning==="function"?keepRunning(job):keepRunning;job.users.delete(user);reject(cancelled());demand(job);if(!job.users.size&&!(retained&&job.running)){job.controller.abort();if(!job.running){const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);}onChange(job,job.running?"stopping":"cancelled");if(jobs.get(key)===job)jobs.delete(key);}};
         job.users.add(user);demand(job);signal?.addEventListener("abort",user.stop,{once:true});
       });
+      if (preemptLower) for (const running of runningJobs) if (running.priority > priority) running.controller.abort();
       pump();return result;
     }
     return Object.freeze({submit,

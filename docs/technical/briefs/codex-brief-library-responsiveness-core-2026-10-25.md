@@ -286,3 +286,77 @@ since one protected record may itself need a durable flush.
 No GPU drivers, release runner, sweeps, or extra timing runs. Live database was
 opened read-only only for backup; no live database, photos or sidecars changed.
 Step 3 remains open; stop after this step.
+
+## Step 3 outcome — October 25, 2026
+
+Single/fullscreen now keeps the current finished live canvas and up to two
+neighbours on each side. It draws the first two in the direction of travel
+before the two behind. Arrival at a finished entry swaps that canvas into view;
+there is no cache-check, pixel fetch, upload or finishing render on that hit.
+This uses the existing renderer and in-memory finished surfaces, with no new
+persistent preview files, codecs or shader changes. Single no longer starts
+the separate twelve-photo source-only read-ahead alongside this small window.
+
+Selected draws have priority over neighbour draws; both preempt lower-priority
+filmstrip/grid draws through their cancellation gates. Already submitted GPU
+commands must finish. Navigating cancels unfinished non-selected neighbour
+work, including its source demand when its last user leaves. Photo path,
+grade identity, source size/mtime, HDR/SDR and display epoch gate reuse. Grade
+and file changes, mode/display changes, GPU loss and leaving Single discard
+affected surfaces. The previous photo or grade stays hidden until the selected
+finished surface is accepted. Small result tests exercise late cancelled
+completion, identity changes, back/forward canvas swaps and grade replacement.
+
+Kept surfaces report conservative triple-buffer HDR bytes to the existing GPU
+broker as inactive resident memory. They share the existing 512 MiB finished-
+surface pool ceiling with detached tiles, and admission leaves room for the
+existing graph lease. No allowance or priority relative to Grade, export or
+Proof changed. The existing broker permit is checked every 100 ms; competing
+work or reduced room discards the window. Budget reporting is serialized and
+uses the configured/calibrated budget before shared deductions, like Grade's
+existing activity report. No backend broker or output code changed.
+
+Rating and pick feedback now appears immediately. Commands capture photo paths
+at the key press and save in order; navigation never awaits that command queue.
+Pending per-photo overlays keep an older reply from replacing a newer visible
+rating. Failed saves restore the last acknowledged marks and show the error.
+The backend SQLite commits, recovery fsync, sidecar publication and durable
+acknowledgement are unchanged. Review found no small safe transaction merger
+without reworking recovery/sidecar ordering. An optional future choice is relaxed
+SQLite sync or delayed recovery flush: fewer blocking flushes, but recent ratings
+could be lost after power failure. Neither option was applied.
+
+Read-only normal-use logs since 002519f (15:00:28 Bangkok), not a timing run:
+17 completed fullscreen flips, one cancellation, 18 cache/queue samples.
+Independent p50/p95 stage milliseconds: cache check 23.2/690.8; queue wait
+0.3/0.5; lease wait 3.5/1227.6; pixel fetch 195.2/408.8; upload 15.6/18.7;
+render 2110.6/2842.7; present 3.9/9.1; key-to-picture 2847.0/3645.4.
+Fourteen marks-change lock scopes waited 0/78 ms and held the lock 32/203 ms.
+Whole-save/HTTP rating timings were not logged. These mixed normal-use records
+do not distinguish idle from indexing or verify drive medium/cache residency;
+they are not controlled USB/SSD measurements. Stage percentiles are not additive.
+The earlier 107 ms rating profile (58 ms commits, 32 ms recovery flush) remains
+historical evidence; no new save-time or sustainable-flip-pace claim is made.
+
+Validation: the Node fast checks ran once: 601 passed, six failed because eager
+client-ID initialization required crypto in renderer test harnesses. Made that
+initialization lazy; all 26 affected checks passed. After the final cancellation
+and accounting corrections, 24 focused result checks passed, including an actual
+Single presentation-function check. Python fast checks ran once: 2,547 passed,
+three skipped. The one existing library-fullscreen-raw driver ran once through
+Electron at 2560x1440 with a disposable profile and copied photos. It timed out
+waiting for the first fullscreen picture; its scratch log showed a shared-budget
+refusal. The new report could feed an already reduced budget back as the total;
+that calculation is corrected and result-tested. There was no GPU rerun, so the
+corrected fullscreen GPU path and retained pixels remain unconfirmed on hardware.
+No sweeps, timing runs, release runner, push, installer or live-data writes.
+
+Try steady forward/back arrows in Single/fullscreen, then rapid reversals; rate
+or pick and immediately arrow onward; return to check the original photo's mark.
+Change a grade or HDR/SDR mode and revisit neighbouring pictures; try an export
+while culling to check yielding. Misses still need source/cache discovery, source
+preparation when absent, lease admission, float-pixel transfer/upload and the live
+finishing graph. In-flight submitted GPU work can finish before cancellation.
+The proposed 100 ms target and sustainable pace remain unverified; Steve judges
+by normal use. Implementation stops at Step 3. Keep this brief active until the
+fullscreen hardware result and normal-use acceptance are resolved.

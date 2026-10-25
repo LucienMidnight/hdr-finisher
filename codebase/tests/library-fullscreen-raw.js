@@ -42,7 +42,7 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
    window.fullscreenDrawStarted=false;
    const gate=new Promise(resolve=>{window.releaseFullscreenDraw=resolve;});
    window.HDRLibraryPictures={...pictures,show:async(...args)=>{
-    if(args[1].id==='single-picture') {window.fullscreenDrawStarted=true;await gate;}
+    if(args[0].edge>=1280) {window.fullscreenDrawStarted=true;await gate;}
     return pictures.show(...args);
    }};
    window.restoreFullscreenPictures=()=>{window.HDRLibraryPictures=pictures;};

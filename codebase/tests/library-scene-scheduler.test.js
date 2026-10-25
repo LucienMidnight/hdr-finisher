@@ -187,3 +187,18 @@ test('visible heavy demand keeps the next slot ahead of nearby light work',async
  a.resolve();await visible;await near;assert.deepEqual(started,['visible','near']);
  b.resolve();await Promise.all([first,second]);
 });
+
+test('fullscreen cancels a lower priority draw before the next draw starts',async()=>{
+ const queue=create(1,undefined,{preemptLower:true}),order=[];
+ const lower=queue.submit('film',signal=>new Promise(resolve=>{order.push('film');signal.addEventListener('abort',()=>{order.push('cancel');resolve();});}),undefined,10);
+ await Promise.resolve();
+ const fullscreen=queue.submit('single',()=>order.push('single'),undefined,0);
+ await Promise.all([lower,fullscreen]);assert.deepEqual(order,['film','cancel','single']);
+});
+
+test('superseded fullscreen source work stops when its last neighbour leaves',async()=>{
+ const queue=create(1,undefined,{keepRunning:job=>job.priority>=10});
+ const controller=new AbortController(),stopped=gate();
+ const work=queue.submit('neighbour',signal=>new Promise(resolve=>signal.addEventListener('abort',()=>{stopped.resolve();resolve();})),controller.signal,5);
+ const cancelled=assert.rejects(work,{name:'AbortError'});await Promise.resolve();controller.abort();await stopped.promise;await cancelled;
+});
