@@ -110,6 +110,7 @@ class LibraryIndex:
         # Work one short page at a time, including a whole-library pin scan.
         for start in range(0, len(photos), 32):
             batch = photos[start:start+32]
+            if generation is not None: self._check(generation)
             with timed_lock(self.marks._lock, "index_scan"):
                 self.accept_read(epoch, generation)
                 db = self.marks._connect()
@@ -274,7 +275,8 @@ class LibraryIndex:
                 if generation != self._generation:
                     raise _Restart()
                 paused = self._paused
-            if not paused and self.checks.running is None:
+            busy = self.worker is not None and self.worker.status().get("source_busy", False)
+            if not paused and not busy and self.checks.running is None:
                 return
             time.sleep(0.25)
 
@@ -323,6 +325,9 @@ class LibraryIndex:
                 problem("index_scan_failed", pin["path"], error, "entries kept; retry automatically")
                 continue  # Unreadable or just unplugged; the next pass tries again.
             self.remember_scan(pin["path"], photos, generation=generation)
+            log("index_facts_reused", folder=pin["path"], total=len(photos),
+                reused=sum(bool(photo.get("indexed")) for photo in photos),
+                pending=sum(not photo.get("indexed") for photo in photos))
             self.marks.conflicts.scan([photo["path"] for photo in photos])
             # Settings files rebuild marks, tags and albums for unvisited folders.
             prefix = self._prefix(pin["path"])

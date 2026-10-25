@@ -271,6 +271,10 @@
   let readyBytes = 0, readyPolling = false;
   const readyKey = photo => `${pictureIdentity(photo)}|${state.hdr}|${state.displayEpoch}`;
   function releaseReady(value) {
+    // Keep the previous selection until a replacement can be published in the
+    // same turn. It retains its own identity and is never reported as the new photo.
+    if (state.active && state.view === "single" && value.canvas.id === "single-picture" &&
+        value.canvas.dataset.picturePath !== selected()?.path && readyWindow.has(selected() || {})) { value.retired = true; return; }
     if (!readySurfaces.delete(value.canvas)) return;
     readyBytes -= value.bytes;
     if (value.canvas.id === "single-picture") { value.canvas.hidden = true; if (value.canvas.dataset.singleIdentity === state.singleIdentity) { state.singleIdentity = ""; state.single?.abort(); } }
@@ -289,7 +293,7 @@
       promote:(photo,priority)=>HDRLibraryScenes.promote(photo.path,priority),
       load:async (photo, signal, current, priority, trace, importance, options, getTrace = () => trace) => {
         const epoch = state.displayEpoch, hdr = state.hdr;
-        if (edge > 640) await beforeSource(photo,signal,importance);
+        // Probe stored developments immediately; only a source miss waits for navigation.
         const meta = await HDRLibraryScenes.load(photo.path,edge,signal,importance(),false,trace,
           {cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance)});
         if (!meta) return null;
@@ -357,10 +361,10 @@
     held = readyBytes + tilePool.snapshot().bytes;
     budget = await HDRLibraryPictures.readyMemory(held);
     if (required && bytes + held > budget) {
-      readyWindow.evictFinished();
+      readyWindow.evictFinished(other);
       held = readyBytes + tilePool.snapshot().bytes;
       budget = await HDRLibraryPictures.readyMemory(held);
-      if (bytes + held > budget) { restoreStandIn(); tilePool.clear(); quickWindow.evictFinished(); }
+      if (bytes + held > budget) { tilePool.discard(cell => cell.fallback?.dataset.standIn !== "true"); quickWindow.evictFinished(other); }
     }
     await HDRLibraryPictures.readyMemory(readyBytes + tilePool.snapshot().bytes);
   });
@@ -884,7 +888,6 @@
       return;
     }
     restoreStandIn();
-    navigationGate.touch();
     HDRLibraryScenes.review?.(photo?.path || null);
     state.singleIdentity = identity;
     const fullIdentity = photo ? `${photo.path}|${photo.bytes}|${photo.mtime_ns}` : "";
@@ -905,7 +908,8 @@
     // The fitted canvas survives Grid/Single switches. Never reveal its old
     // pixels while a different selection is waiting for source or GPU work.
     const canvas = $("single-picture");
-    if (canvas.dataset.picturePath !== photo.path || canvas.dataset.readyIdentity !== readyKey(photo)) {
+    if (!readyWindow.has(photo) && (canvas.dataset.picturePath !== photo.path || canvas.dataset.readyIdentity !== readyKey(photo))) {
+      HDRLibraryTrace.mark(trace,"picture_surface_hidden",performance.now(),{reason:"Waiting for selected photo or current grade"});
       canvas.hidden = true;
       delete canvas.dataset.picturePath; delete canvas.dataset.pictureEdge; delete canvas.dataset.pictureKey;
       positionZoom();
@@ -930,17 +934,20 @@
           showQuick(quick,controller,current,trace);
         }
         if (!sharp) {
-          await beforeSource(photo,controller.signal,()=>0);
-          if (!current()) return;
-          if (!borrowed && !quick) {
-            quick = await quickWindow.get(photo,0,trace,{allowSource:true});
-            if (!current()) return;
-            showQuick(quick,controller,current,trace);
-          }
+          // A stored sharp development must not sit behind the quiet gate.
           sharp = readyWindow.get(photo,0,trace);
+          sharp.catch(()=>{});
         }
         const waiting = performance.now();
-        const value = await sharp;
+        let value;
+        if (!borrowed && !quick && !kept) {
+          const small = quickWindow.get(photo,0,trace,{allowSource:true});
+          small.catch(()=>{});
+          const first = await Promise.race([sharp.then(value=>({value})),small.then(quick=>({quick}))]);
+          if (!current()) return;
+          if (first.value) value = first.value;
+          else { showQuick(first.quick,controller,current,trace); value = await sharp; }
+        } else value = await sharp;
         HDRLibraryTrace.mark(trace,"picture_window_wait",waiting,{kept});
         if (!value) return;
         if (!current()) return;
@@ -948,12 +955,14 @@
         if (previous !== value.canvas) {
           previous.removeAttribute("id"); value.canvas.id = "single-picture";
           previous.replaceWith(value.canvas);
+          if (readySurfaces.get(previous)?.retired) releaseReady(readySurfaces.get(previous));
           if (!readySurfaces.has(previous)) { previous.width = previous.height = 0; previous.getContext("webgpu")?.unconfigure(); }
         }
         value.canvas.dataset.readyIdentity = readyKey(photo);
         value.canvas.dataset.singleIdentity = identity;
         value.canvas.dataset.picturePath = photo.path; value.canvas.dataset.pictureEdge = value.meta.edge; value.canvas.dataset.pictureKey = value.meta.key;
         value.canvas.hidden = false; value.canvas.style.visibility = "";
+        HDRLibraryTrace.mark(trace,"picture_surface_swap",performance.now(),{kept,reason:"Finished sharp draw published"});
         meta = value.meta;
         overlays?.attach(photo,value.canvas,meta,controller,current);
       } catch (error) {
@@ -1546,6 +1555,8 @@
     if (event.data.action === "add-folder") openPicker();
     if (event.data.action === "restore") void restoreState(event.data.state).catch(error => status(error.message));
   });
+  window.addEventListener("keyup", event => { if (event.key.startsWith("Arrow")) navigationGate.release(); });
+  window.addEventListener("blur", () => navigationGate.release());
   window.addEventListener("keydown", (event) => {
     if (event.defaultPrevented || ((!event.ctrlKey && !event.metaKey) && (event.target.closest(".library-activity") || event.target.matches("#index-status,#library-undo")))) return;
     if (document.querySelector("dialog[open]") || event.target.matches("input,textarea,select,[contenteditable]") || event.target.closest(".library-filter-panel,.library-folder-menu")) return;
@@ -1567,6 +1578,7 @@
     if (key === "t") { event.preventDefault(); collapse("right", false); $("library-tag-input")?.focus(); return; }
     const steps = { arrowright: 1, arrowleft: -1, arrowdown: state.view === "grid" ? state.layout?.columns || 1 : 1, arrowup: state.view === "grid" ? -(state.layout?.columns || 1) : -1 };
     if (key in steps) {
+      navigationGate.touch();
       const target = state.photos[Math.max(0,Math.min(state.photos.length-1,state.index+steps[key]))];
       if (state.view === "single" && target)
         navigationTrace = HDRLibraryTrace.begin(state.review ? "fullscreen" : "single",target.path);

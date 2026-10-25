@@ -28,6 +28,11 @@ const beforeFiles=Object.fromEntries(initialFiles.map(name=>[name,require('node:
    window.part0bEvents=[];
    window.HDRLibraryStopwatch=(stage,fields)=>{window.part0bEvents.push({stage,...fields});record(stage,fields);};
   });
+  if(process.env.HDR_FINISHER_PART0E_TRIAL==='1') {
+    await require('./helpers/library-part0e')({page,lib,folder,output});
+    assert.deepEqual(errors,[]);
+    return;
+  }
   if(cold) {
     await require('./helpers/library-cold-fullscreen')({page,lib,folder,output});
     assert.deepEqual(errors,[]);

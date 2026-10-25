@@ -45,9 +45,11 @@
       cell.fallback.dataset.picturePath === cell.photo.path && !cell.fallback.hidden);
   }
   function navigationGate({wait, now=()=>performance.now(), delay=350}) {
-    let touched = -Infinity;
+    let touched = -Infinity, wake;
+    let released = new Promise(resolve => { wake = resolve; });
     return Object.freeze({touch:()=>{touched=now();},
-      async settled(signal) { while(now()-touched<delay) await wait(delay-(now()-touched),signal); }
+      release:()=>{touched=-Infinity;wake();released=new Promise(resolve=>{wake=resolve;});},
+      async settled(signal) { while(now()-touched<delay) await Promise.race([wait(delay-(now()-touched),signal),released]); }
     });
   }
   const api = Object.freeze({create, standIn, navigationGate});

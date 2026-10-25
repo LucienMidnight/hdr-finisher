@@ -133,8 +133,10 @@ def test_http_source_coalesces_before_decode_and_clear_blocks_publication(tmp_pa
     from hdr_finisher.library_api import create_library_router
     from hdr_finisher.media_browser import MediaBrowserStore
     from hdr_finisher.library_gpu_raw import unframe, frame
+    foreground=[]
     class Helper:
         def status(self):return {'running':True,'paused':False,'pending':0,'failure':None}
+        def foreground_source(self, token, active): foreground.append((token,active))
     path=tmp_path/('photo.'+suffix)
     if suffix=='jxl':
         from hdr_finisher.jpegxl import encode_sdr_jpegxl
@@ -148,10 +150,12 @@ def test_http_source_coalesces_before_decode_and_clear_blocks_publication(tmp_pa
         a=client.post('/api/library/live-scene',json={'path':str(path),'edge':640,'gpu':True,'priority':80})
         assert a.status_code==200,a.text
         header,_=unframe(a.content);token=header['source_job']
+        assert foreground[-1] == (token,True)
         b=client.post('/api/library/live-scene',json={'path':str(path),'edge':2560,'gpu':True,'priority':0})
         assert b.status_code==202 and len(calls)==1
         assert client.post('/api/library/live-source/'+token).json()['priority']==0
         assert client.post('/api/library/cache-clear',json={}).status_code==200
+        assert foreground[-1] == (token,False)
         assert client.post('/api/library/live-source/'+token).status_code==409
         assert client.post('/api/library/live-developed',content=frame(header)).status_code==409
         assert not list((tmp_path/'profile').rglob('*.npz'))

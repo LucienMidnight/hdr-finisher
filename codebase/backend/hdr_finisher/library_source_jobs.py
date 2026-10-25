@@ -7,7 +7,8 @@ from .library_pictures import picture_key
 
 
 class SourceJobs:
-    def __init__(self):
+    def __init__(self, released=lambda token: None):
+        self.released = released
         self.lock = RLock()
         self.jobs = {}
         self.preparations = {}
@@ -51,6 +52,8 @@ class SourceJobs:
         key = picture_key(path, 100000 if edge == 100000 else 0, quality)
         with self.lock:
             now = monotonic()
+            for job in self.jobs.values():
+                if now - job['touched'] >= 60: self.released(job['token'])
             self.jobs = {k: v for k, v in self.jobs.items() if now - v['touched'] < 60}
             if key in self.jobs:
                 job = self.jobs[key]
@@ -71,6 +74,7 @@ class SourceJobs:
             return {k:v for k,v in job.items() if k not in {'cancel','promote'}}
 
     def release(self, token):
+        self.released(token)
         with self.lock:
             if token in self.preparations: self.preparations[token]["state"] = "stopping"
             self.jobs = {k: v for k, v in self.jobs.items() if v['token'] != token}
@@ -89,4 +93,5 @@ class SourceJobs:
             for job in self.jobs.values():
                 if job.get('cancel'): job['cancel']()
             for preparation in self.preparations.values(): preparation["state"] = "stopping"
+            for job in self.jobs.values(): self.released(job["token"])
             self.jobs.clear()

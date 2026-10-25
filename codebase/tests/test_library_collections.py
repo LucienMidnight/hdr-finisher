@@ -222,6 +222,7 @@ def test_index_keeps_facts_for_unchanged_files_only(tmp_path):
     index.remember_scan(folder, photos)
     assert not any(item.get("indexed") for item in photos)
     index.remember_facts([record(first, camera="ILCE-7RM3", iso=400), record(second, camera="X-E2S")])
+    index = LibraryIndex(LibraryMarks(tmp_path / "app"), Pins(tmp_path / "app", [folder]), None)
     photos = listing()
     index.remember_scan(folder, photos)
     assert [(item["camera"], item["indexed"]) for item in photos] == [("ILCE-7RM3", True), ("X-E2S", True)]

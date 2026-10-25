@@ -38,6 +38,12 @@ class StopwatchEvent(BaseModel):
     cache_hit: bool | None = None
     duration_ms: float | None = None
     queue_ms: float | None = None
+    gpu_ms: float | None = None
+    sensor_ms: float | None = None
+    quantiles_ms: float | None = None
+    handoff_ms: float | None = None
+    source_ms: dict[str, float | None] | None = Field(default=None, max_length=32)
+    gpu_stages_ms: dict[str, float] | None = Field(default=None, max_length=32)
     reason: str | None = Field(default=None, max_length=2048)
     first: bool | None = None
     kept: bool | None = None
@@ -330,7 +336,8 @@ def create_library_router(worker, browser, store=None):
 
     from .library_pictures import picture_key
     from .library_source_jobs import SourceJobs
-    source_jobs = SourceJobs()
+    source_foreground = getattr(worker, "foreground_source", lambda token, active: None)
+    source_jobs = SourceJobs(released=lambda token: source_foreground(token, False))
 
     @router.post("/live-source/{token}")
     def touch_live_source(token: str):
@@ -377,6 +384,7 @@ def create_library_router(worker, browser, store=None):
         transfer = False
         try:
             if command.gpu:
+                source_foreground(token, True)
                 from . import library_gpu_raw, library_rgb
                 from .models import RawImportSettings, SourceInterpretationOverride
                 inputs = live_recipe(document)
@@ -478,6 +486,7 @@ def create_library_router(worker, browser, store=None):
             from . import library_rgb
             adapter = library_rgb if header.get("rgb") else library_gpu_raw
             result = await run_in_threadpool(adapter.developed, SceneCache(), path, header, body)
+            log("picture_live_developed", path=str(path), edge=header["edge"], **(header.get("timing_ms") or {}))
             return await run_in_threadpool(live.describe, item, result)
         except (ValueError, OSError, KeyError) as error:
             raise HTTPException(409, str(error)) from error

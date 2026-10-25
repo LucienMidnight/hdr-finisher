@@ -314,7 +314,7 @@ class LibraryWorker:
         with self._lock:
             return {**self.info, "running": bool(self._process and self._process.is_alive()),
                     "jobs": list(self._work.values()) + [dict(path=r.get("path"),stage="Waiting to develop photo",state="waiting") for k,r in self._requests.items() if k not in self._work and r.get("command") in {"live-scene","live-fallback"}],
-                    "pending": len(self._pending), "paused": bool(self._paused), "manual_paused": "manual" in self._paused,
+                    "pending": len(self._pending), "source_busy": bool(self._source_foreground), "paused": bool(self._paused), "manual_paused": "manual" in self._paused,
                     "failure": self._failure, "restarts": self._restarts, "recovering": self._recovering}
 
     def close(self) -> None:
@@ -387,7 +387,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     jobs: dict[str, Event] = {}
     stopping = Event()
     sequence = 0
-    state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False}
+    state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False, "developing": 0}
 
     def lane(job):
         if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
@@ -427,7 +427,10 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     state["checking"] += 1
                 elif kind not in {"index", "kept"}:
                     state["foreground"] += 1
+                if kind == "picture": state["developing"] += 1
 
+                from .library_metadata import pause_readers
+                pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]))
             waited = [0.]
             def yielding():
                 wait_started = time.perf_counter()
@@ -505,6 +508,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     state["checking"] -= 1
                 elif kind not in {"index", "kept"}:
                     state["foreground"] -= 1
+                if kind == "picture": state["developing"] -= 1
+                pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]))
                 condition.notify_all()
             reply({"event":"work", "id":job["id"], "done":True})
             if not cancelled.is_set() and not stopping.is_set():
@@ -556,6 +561,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     sequence += 1
                     jobs[message["id"]] = Event()
                     heapq.heappush(queue, (message["priority"], sequence, message))
+                from .library_metadata import pause_readers
+                pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]))
                 condition.notify_all()
     except (EOFError, OSError) as error:
         library_diagnostics._sink = None

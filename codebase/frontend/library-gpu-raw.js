@@ -724,7 +724,7 @@
   // develops it on the GPU, the backend stores it where Grade's CPU development
   // would. Resolves null when the photo keeps the CPU route. An edited photo
   // (savedGradeOnly) answers with its saved-grade picture or a wait.
-  async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false}, signal) {
+  async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false, syncStages = false}, signal) {
     const queued=performance.now();
     return serial(async () => {
       const queueMs=performance.now()-queued;
@@ -777,7 +777,7 @@
             edgePermitAt=performance.now();
           };
           root.HDRLibraryScenes?.stage(meta.path,"Developing photo");
-          try { const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, memoryBudget:bytes});
+          try { const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, memoryBudget:bytes});
             result.timings.queue=queueMs; return result; }
           catch (error) { if (!error.yieldRaw) throw error; }
           // developRaw's finally has freed every buffer before Grade sees zero.
@@ -824,7 +824,7 @@
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
     root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
-    const developed = await scheduledDevelopment({mosaic, meta, lensData, background:liveScene, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
+    const developed = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
     const gpuMs = performance.now() - started;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const measured = performance.now();
@@ -832,6 +832,7 @@
     const quantileMs = performance.now() - measured;
     root.HDRLibraryScenes?.stage(path,"Saving preview data");
     let selectedResult;
+    const handoffStarted = performance.now();
     for (const storedEdge of nativeMode ? [100000] : [...new Set([640,2560,edge])]) {
       const picture = developed.reduced[storedEdge];
       const header = { draw_first:liveScene && !nativeMode, rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
@@ -841,7 +842,7 @@
       memory_peak_bytes: developed.memory_peak_bytes,
       edge_diagnostics: developed.edge_diagnostics,
       dng_diagnostics: developed.dng_tiles ? {tiles:developed.dng_tiles,max_source_bytes:developed.dng_max_source_bytes,reserved_bytes:rawBudget(meta,nativeMode?[100000]:[640,2560,edge])} : undefined,
-      timing_ms: { ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
+      timing_ms: { ...meta.source_timings_ms, ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
       let text = new TextEncoder().encode(JSON.stringify(header));
       const padded = new Uint8Array(text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32); padded.set(text); text = padded;
       const out = new Uint8Array(4 + text.length + picture.height * picture.width * (meta.rgb && (meta.colour.authored_sdr || header.has_sdr_reference) ? 24 : 12));
@@ -852,7 +853,7 @@
       if (!stored.ok) { const error = new Error(result.detail || "Library request failed."); error.status = stored.status; throw error; }
       if (storedEdge === edge || nativeMode) selectedResult = result;
     }
-    root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs});
+    root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs, source_ms:meta.source_timings_ms, gpu_stages_ms:developed.timings, quantiles_ms:quantileMs, handoff_ms:performance.now()-handoffStarted});
     return selectedResult;
     } finally { if(sourceJob) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{}); }
   }

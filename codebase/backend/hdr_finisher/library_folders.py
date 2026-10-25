@@ -69,6 +69,7 @@ def scan_folder(value, cancelled=lambda: False, fingerprints=False):
         names = set(files)
         if fingerprints:
             for name in files:
+                if cancelled(): raise CancelledError()
                 if ".hdrf" in name.casefold() and not name.endswith(".tmp"):
                     candidate = Path(parent, name)
                     try:

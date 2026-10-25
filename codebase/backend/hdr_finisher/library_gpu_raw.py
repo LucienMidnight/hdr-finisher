@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import json
 import struct
+import time
+import os
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -69,10 +72,25 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
     highlights = settings.highlight_reconstruction
     if not highlights.enabled or highlights.method not in (raw_import.OPPOSED_COLOR_METHOD, raw_import.EDGE_COLOUR_METHOD):
         raise NotEligible("highlight reconstruction differs from the GPU route")
+    began = time.perf_counter()
+    timings = {}
     identity = _identity(path)
     exif, _warning = raw_import._read_raw_exif(path)
+    timings["exif"] = (time.perf_counter()-began)*1000
     import rawpy
-    with rawpy.imread(str(path)) as raw:
+    profile = os.environ.get("HDR_FINISHER_LIBRARY_PROFILE") == "1"
+    mark = time.perf_counter()
+    source = BytesIO(path.read_bytes()) if profile else None
+    timings["file_read"] = (time.perf_counter()-mark)*1000 if profile else None
+    with rawpy.RawPy() as raw:
+        mark = time.perf_counter()
+        if source is not None: raw.open_buffer(source)
+        else: raw.open_file(str(path))
+        timings["libraw_open"] = (time.perf_counter()-mark)*1000
+        mark = time.perf_counter()
+        raw.unpack()
+        timings["libraw_unpack"] = (time.perf_counter()-mark)*1000
+        mark = time.perf_counter()
         exif = raw_import._merge_missing_metadata(exif, raw_import._read_libraw_metadata(raw))
         try:
             metadata = raw_import._camera_linear_metadata_from_libraw(raw)
@@ -85,6 +103,7 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
         colors = np.asarray(raw.raw_colors_visible[:2, :2], dtype=np.int64)
         cam_rgb = np.asarray(raw.rgb_xyz_matrix, dtype=np.float64)[:3] @ XYZ_RGB
         flip = int(raw.sizes.flip)
+    timings["mosaic_copy_metadata"] = (time.perf_counter()-mark)*1000
     # LibRaw cam_xyz_coeff: rows normalized to sum 1, then inverted (3 colours).
     cam_rgb /= cam_rgb.sum(axis=1, keepdims=True)
     xyz_cam = (XYZ_RGB @ np.linalg.inv(cam_rgb)) / D65_WHITE[:, None]
@@ -121,6 +140,8 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
     header["lens_grid"], header["lens_offset"] = (lens[0], mosaic.nbytes + padding) if lens else (None, None)
     if lens:
         parts.append(memoryview(lens[1]).cast("B"))
+    timings["sensor_total"] = (time.perf_counter()-began)*1000
+    header["source_timings_ms"] = timings
     return header, parts
 
 

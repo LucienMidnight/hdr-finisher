@@ -56,3 +56,12 @@ test('rapid navigation delays source preparation until the last selection settle
   now=350;ticks.splice(0).forEach(resolve=>resolve());await Promise.resolve();assert.deepEqual(started,[]);
   now=550;ticks.splice(0).forEach(resolve=>resolve());await Promise.all([first,final]);assert.deepEqual(started,['stopped']);
 });
+
+test('key release wakes a stopped selection without the remaining quiet timeout',async()=>{
+  const {navigationGate}=require('../frontend/library-ready-window');
+  const navigation=navigationGate({wait:()=>new Promise(()=>{})});
+  navigation.touch();let started=false;
+  const pending=navigation.settled(new AbortController().signal).then(()=>{started=true;});
+  await Promise.resolve();assert.equal(started,false);
+  navigation.release();await pending;assert.equal(started,true);
+});

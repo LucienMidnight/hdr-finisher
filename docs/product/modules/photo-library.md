@@ -1,5 +1,86 @@
 # Module PRD: Photo Library
 
+**October 25, 2026: Part 0e seamless swaps and development priority (built in this commit; Steve's try pending)**
+
+Supersedes Part 0d's unconditional quiet gate. Part B remains open.
+
+- A ready-window hit replaces the previous Single/fullscreen surface in the
+  same task, without first hiding it, clearing it or changing its dimensions.
+  A miss still hides a different photo or obsolete grade; only the selected
+  photo's correctly graded thumbnail can provide its quick draw. Background
+  reclamation preserves the selected quick draw and sharp draw within the
+  existing memory allowance; work that cannot fit must yield.
+- Stored scenes are probed immediately, outside the quiet gate. A sharp draw
+  no longer waits for a separate quick-draw development to complete. New
+  development alone waits while arrow navigation is active; key release wakes
+  the stopped selection immediately. The 350 ms quiet fallback still covers
+  a held navigation key. Pointer selection has no fixed quiet delay.
+- Live GPU developments notify the helper from source preparation through
+  transfer and validation. Index pages, scans and metadata dispatch yield;
+  already-dispatched EXIF children wait before their next file read/seek.
+  Grade/delivery pause and cancellation still take priority. No thread count,
+  cache allowance, GPU reservation or image-processing setting changed.
+- Unchanged indexed facts were already retained by byte size and exact
+  nanosecond timestamp. The restart regression now creates a fresh index
+  object before checking reuse. Inspection used a disposable database copy:
+  155,879 files, 21,223 with facts, 134,656 still without facts. All 453 badminton
+  entries had facts and sampled timestamps matched disk. This supports an
+  unfinished backfill, not a demonstrated reread of unchanged facts; the old
+  207 job records do not identify their individual paths. A new per-folder
+  reuse/pending count makes that distinction visible on Steve's next launch.
+  Folder contents are still validated after launch, including changes made
+  while the app was closed; these scans now yield to browsing developments.
+- Development logging now retains source and GPU stage timings on the live
+  route. Normal LibRaw open/unpack timings include file I/O. The explicit
+  diagnostic mode reads the RAW into RAM first, separating bulk file read,
+  LibRaw open and unpack; EXIF reading remains separately timed. GPU stage
+  fences run only in the diagnostic driver. Stage times include scheduling
+  and submission costs, not just hardware execution.
+
+One isolated Library Single/live GPU driver passed, using copied RAWs and a
+separate profile: four ready-window swaps showed no blank animation frame.
+With indexing active, the scan recorded 3,068.68 ms yielded and 184.80 ms work;
+metadata batches began after the measured development. This exercises scan
+priority; it is not a separate measurement of already-running EXIF children.
+
+Development breakdown (ms; one identical uncached RAW copy per condition):
+
+| Stage | Index idle | Index active, yielding |
+| --- | ---: | ---: |
+| Bulk file read | 656.5 | 647.7 |
+| EXIF | 38.4 | 12.9 |
+| LibRaw open | 0.4 | 0.2 |
+| LibRaw unpack | 56.6 | 52.6 |
+| Mosaic copy and metadata | 55.9 | 56.9 |
+| Other sensor preparation, including first-use setup | 99.9 | 0.4 |
+| Sensor endpoint and transfer overhead | 165.0 | 132.9 |
+| GPU upload | 131.7 | 80.9 |
+| GPU highlight reconstruction | 263.4 | 284.7 |
+| GPU demosaic | 458.5 | 517.9 |
+| GPU colour and measurement | 266.3 | 310.2 |
+| GPU reduction | 129.0 | 151.6 |
+| GPU readback | 57.5 | 37.7 |
+| Other GPU scheduling/submission | 14.3 | 13.9 |
+| Quantiles | 41.2 | 38.9 |
+| Thumbnail and screen preview RAM handoff | 792.9 | 713.9 |
+| Whole development | **3,227.7** | **3,053.7** |
+
+These are diagnostic samples, not medians or a causal speed comparison. OS
+file caches were uncontrolled; explicit file reading adds a RAM copy and GPU
+fences change scheduling. The old 2.8 s median cannot be split retrospectively:
+its stage fields were discarded by the stopwatch request schema. Bulk reading,
+GPU development and RAM handoff remain substantial after indexing yields;
+Part A/Part B still need Steve's separate go-ahead. Normal logging now retains
+sensor, GPU, quantile and handoff totals without diagnostic fences.
+
+Fast checks ran once: Node 620 passed initially with one test-double failure;
+the corrected Single tests passed (2), and navigation tests passed (6). Python
+2,551 passed, 3 skipped, 5 failed initially; the five affected helper cases
+passed after the focused correction. The remaining unrelated failure is
+`test_library_native_source_uses_same_repair_before_reduction`: its cache mock
+does not accept the prior Part 0d `defer_store` argument. It remains untouched.
+No live library database, photos, sidecars or cache folders were written.
+
 **October 25, 2026: Part 0d cold fullscreen development (built; Steve's try pending)**
 
 This supersedes Part 0c's 120 ms gate and neighbour-development policy below.

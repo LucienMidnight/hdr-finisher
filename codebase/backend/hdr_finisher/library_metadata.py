@@ -65,7 +65,15 @@ def _facts(path, size, modified):
     facts = dict.fromkeys(FACT_FIELDS)
     try:
         with Path(path).open("rb") as handle:
-            tags = exifread.process_file(handle, details=False, extract_thumbnail=False)
+            class YieldingReader:
+                def read(self, *args):
+                    if _reader_gate is not None: _reader_gate.wait()
+                    return handle.read(*args)
+                def seek(self, *args):
+                    if _reader_gate is not None: _reader_gate.wait()
+                    return handle.seek(*args)
+                def __getattr__(self, name): return getattr(handle, name)
+            tags = exifread.process_file(YieldingReader(), details=False, extract_thumbnail=False)
     except Exception as error:
         problem("metadata_read_failed", path, error, "facts unavailable; photo stays visible")
         # Malformed/missing EXIF never makes an otherwise readable picture disappear.
@@ -91,18 +99,29 @@ def _read_one(value):
     return read_metadata([value])["photos"][0]
 
 
-def _reader_init():
+_reader_gate = None
+
+def _reader_init(gate=None):
+    global _reader_gate
+    _reader_gate = gate
     from .library_worker import _lower_priority
     _lower_priority()
 
 
 _pool = None
 _pool_lock = Lock()
+_pool_gate = multiprocessing.get_context("spawn").Event()
+_pool_gate.set()
+
+def pause_readers(paused):
+    # Also stop already-dispatched EXIF children before their next file read.
+    _pool_gate.clear() if paused else _pool_gate.set()
 
 
 def close_readers():
     global _pool
     if _pool is not None:
+        _pool_gate.set()
         _pool.shutdown(wait=True, cancel_futures=True)
         _pool = None
 
@@ -118,7 +137,7 @@ def read_metadata(paths, cancelled=lambda: False, *, parallel=False):
             if _pool is None:
                 # Windows multiprocessing is limited to 61 child wait handles; native work can use the remaining CPUs.
                 _pool = ProcessPoolExecutor(max_workers=min(logical_cpus(), 61) if os.name == "nt" else logical_cpus(),
-                    mp_context=multiprocessing.get_context("spawn"), initializer=_reader_init)
+                    mp_context=multiprocessing.get_context("spawn"), initializer=_reader_init, initargs=(_pool_gate,))
         # Only one wave in flight: pause/foreground checks precede every refill.
         photos = []
         try:
