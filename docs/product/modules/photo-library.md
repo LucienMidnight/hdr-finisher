@@ -585,6 +585,218 @@ crop route; its move to live native scenes remains open with that cleanup.
 
 ## 5. V1 open work, in order
 
+### Prepared-folder fullscreen culling (October 25, 2026)
+
+**User requirement; implementation open.** Steve should be able to leave a
+folder of roughly 200-300 supported photos to prepare, then browse forwards,
+backwards and jump between fullscreen pictures in real time while culling and
+rating. Preparing a folder is useful work completed ahead of browsing, not
+merely moving development ahead while making each navigation render again.
+The photo count describes an everyday acceptance workload, not a library cap.
+The same requirement covers unedited photos, saved grades and virtual copies,
+and HDR and authored SDR viewing. A smaller first picture helps cold browsing
+but does not satisfy this prepared-folder requirement.
+
+**Existing experience to match (Steve's observation).** Opening a folder of
+pure Sony RAW files currently loads their embedded JPEGs extremely quickly and
+feels good. Use that workflow as the experiential and measured comparison for
+finished-preview browsing: measure time to the correct visible picture,
+forward/reverse navigation and cold/warm behaviour on matched hardware and
+preview sizes. This is Steve's qualitative observation, not an instrumented
+result or proof of the responsible internal path. The prepared-preview route
+should approach that responsiveness while showing the current authored grade
+and HDR/SDR intent rather than the camera's embedded look. Investigate reuse of
+its successful loading/presentation mechanisms where applicable.
+
+**Proposed acceptance targets; not yet agreed or measured.** For a prepared
+300-photo folder at the declared Fit preview size and rendition on the reference
+machine, propose sustained five photo changes per second, p95 key-to-correct-
+finished-picture at or below 100 ms and p99 at or below 200 ms, including
+reversal and rating during navigation. These targets make "real time" testable
+and expose stalls hidden by averages. Measure arbitrary jumps separately,
+including misses in the decoded-memory window; initially propose p95 <=250 ms
+from a local SSD. Report the first presentation after relaunch separately from
+steady browsing. Reuse the existing 5% noise allowance for matched comparisons;
+these proposed latency goals do not replace agreed tolerances or claim a pass.
+Record display resolution, cache drive, rendition, concurrency and cache state.
+
+**Current architecture and gaps (code checked October 25).**
+
+- `library_pictures` persists source/developed scenes at 640 and 2560 pixels.
+  Finishing-only edits reuse those scenes. `library_live.describe` attaches the
+  current grade; its pixels endpoint loads scene arrays and prepares transport.
+  These stored scenes are not finished Library pictures.
+- `library-gpu.js` fetches/uploads pixels and runs Grade's finishing graph for
+  a live draw. Draws share one scheduler and background GPU leases. A disk
+  scene hit avoids source development but not this rendering work. Live draws
+  reset their working session and release their lease afterwards.
+- `showSingle` requests the 2560 scene and waits for its draw. Entering Single
+  clears grid cells instead of carrying the selected completed preview into
+  fullscreen. The October 24 stale-photo fix hides old pixels during this wait;
+  it does not make the selected picture arrive faster.
+- Idle warming calls scene loading, not final-picture rendering/publication.
+  It runs one candidate at a time while the active grid is idle, and stops
+  when either scene allowance lacks conservative headroom. Waiting longer
+  therefore cannot guarantee every photo is ready for immediate fullscreen.
+  There is no explicit folder-completion contract or retained finished-disk
+  preview serving this workflow. Recent app logs contain multi-second Library
+  draw-queue waits; their events do not identify an F-key interval, so they
+  cannot assign those waits to Steve's particular fullscreen transition.
+
+**External comparison (official documentation, consulted October 25).**
+
+- [Lightroom Classic performance guidance](https://helpx.adobe.com/lightroom-classic/desktop/technical-support/performance-guidelines/optimize-performance-lightroom.html)
+  distinguishes minimal/embedded, standard and 1:1 previews, recommends
+  preparing previews before working, and sizes standard previews for the
+  display. Its [colour FAQ](https://helpx.adobe.com/lightroom-classic/desktop/technical-support/technical-issues/miscellaneous-issues/color-faq.html)
+  explicitly describes pre-rendered, compressed 8-bit Adobe RGB JPEGs for
+  Library curation. The transferable lesson is pre-rendering, not adopting
+  that SDR representation for HDRF's two authored renditions.
+- [darktable 5.6 lighttable preferences](https://docs.darktable.org/usermanual/5.6/en/preferences-settings/lighttable/)
+  documents rendered thumbnail/full-preview disk caches and configurable idle
+  generation. Its [cache generator documentation](https://docs.darktable.org/usermanual/4.8/en/special-topics/program-invocation/darktable-generate-cache/)
+  describes advance generation at selected sizes. This supports retaining
+  completed browsing products alongside an editing pipeline; it is not a
+  measured performance comparison with HDRF.
+- [Capture One culling](https://support.captureone.com/hc/en-us/articles/7185822431645-Culling-images)
+  uses embedded previews to accelerate culling and warns that their appearance
+  can differ. Its [preview cache settings](https://support.captureone.com/hc/en-us/articles/360002484457-Capture-One-Preferences-Settings-Image-tab)
+  size generated Viewer previews for the display and offer generation-speed
+  versus compression choices.
+- [Photo Mechanic](https://camerabits.freshdesk.com/support/solutions/articles/48000361354-supported-file-formats-in-photo-mechanic-6)
+  uses embedded JPEGs for fast RAW browsing, with optional RAW rendering. Its
+  [render cache](https://camerabits.freshdesk.com/support/solutions/articles/48001146201-render-cache-preferences)
+  avoids re-rendering when returning to photos. Embedded camera appearance
+  alone would not represent HDRF's saved grades or authored HDR/SDR output.
+
+**Recommended design to evaluate; not built or approved.** Make finished,
+versioned previews the persistent product used for prepared-folder browsing;
+retain developed scenes as independently evictable working data where useful.
+This revisits the October 19 "draw every Library picture live" decision for
+unchanged prepared pictures. It retains GPU generation, shared colour/finishing
+maths, non-destructive grades and existing memory/quality rules. No old
+finished-file queue or retired encoder implementation is being reinstated.
+
+1. A single bounded preparation job develops a source once, finishes the
+   required renditions on the GPU, then publishes fullscreen previews and
+   suitable grid previews. Qualify grid downsampling for grain, Denoise and
+   other scale-dependent effects; use a separately rendered small product if
+   deriving it fails the existing quality guide. Avoid a duplicate source
+   decode or a second finishing pass solely to write a picture already drawn.
+2. Persist the completed folder on disk. Keep only a small decoded/presentable
+   window around the current selection in RAM/GPU memory, prefetching ahead
+   and behind within existing budgets. A navigation hit needs presentation
+   and colour/display conversion, not source development, Denoise, masks or
+   the finishing graph. Disk misses need preview loading/decoding, not RAW
+   reading or grading. Rapid navigation discards superseded presentation work.
+3. Represent completed HDR pixels with explicit colour space, transfer and
+   reference-white information, before monitor-specific presentation. Preserve
+   the authored SDR rendition separately or in a representation that faithfully
+   carries both; do not derive it by generic HDR tone mapping. Keep the agreed
+   HDR ceiling and perceptual limits. Monitor transforms and UI/marks remain
+   presentation work. Codec and representation remain an experiment, not a
+   decision to use ordinary JPEG or a screenshot of the monitor output.
+4. Key previews by source identity/interpretation, pixel-affecting grade,
+   rendition, size and renderer version. Ratings, picks, labels, tags and
+   album membership must not invalidate image pixels. Grade changes invalidate
+   affected finished products; retained scenes make finishing-only updates
+   cheap. Check identity again at atomic publication. Never show another
+   photo's pixels, silently present an obsolete grade as current, or apply a
+   rapid rating to a photo other than the one it is intended for.
+5. Offer a deliberate Prepare folder/selection action with progress and
+   rendition/size coverage, alongside automatic idle preparation. "Ready"
+   means valid finished previews exist for all requested photos and sufficient
+   cache capacity is reserved. Keep the active prepared set from evicting
+   itself while it is being built or culled. Report failures, insufficient
+   capacity, missing/changed entries and partial completion explicitly. Resume
+   after interruption, avoid redoing valid products, and recheck after relaunch.
+   Entry to fullscreen should also reuse the correct existing preview while
+   any missing final picture is prepared.
+6. Treat true native 100% focus inspection as a separate cache level. Keep the
+   existing selected-only full-source/viewport lifecycle. A 2560 Fit preview
+   cannot establish native sharpness, and preparing Fit must not silently
+   develop all neighbours at full native size. Choose Fit resolution from the
+   intended physical display; a 2560 long edge is not native 4K coverage.
+
+**What to store.** Replacing every 2560 scene outright with a finished picture
+would speed browsing, but could force source preparation again after a small
+finishing edit. Keeping both for every photo gives fast browsing and redraws
+at the greatest disk cost. Prefer finished previews for the prepared set, with
+working scenes retained opportunistically/recently under a separately managed
+share of existing space. This is a policy proposal; no allowance is increased
+and no existing cache data is deleted by this investigation. Folder preparation
+must be able to stream through temporary working scenes; requiring enough
+space to retain every intermediate would defeat the proposal.
+
+For scale, calculated, uncompressed 2560 x 1707 RGB half-float is about 25 MiB
+per rendition: 300 photos need 7.33 GiB for one or 14.65 GiB for two, before
+thumbnails/intermediates. RGBA half-float is 33.34 MiB each, or 19.54 GiB for
+both renditions of 300 photos. These are arithmetic estimates, not measured
+cache/codec results. Current full-size default is 10 GiB; thumbnails 2 GiB,
+saved-grade allowance 2 GiB, and recent thumbnail memory pool 512 MiB. Simply
+adding finished half-float pictures to all existing scenes will not ensure
+this workload fits. Compare load-optimized packed/compressed finished HDR/SDR
+representations against half-float, including encode cost, decode/upload,
+colour and highlight correctness, disk use and restart behaviour. The existing
+post-v1 proposal to compress old scene caches remains deferred; this is an
+explicit new review of the representation needed for the culling requirement.
+
+**Persistent compression direction (Steve, October 25).** Steve questions the
+need for uncompressed half-float fullscreen previews and favours considering
+compressed storage for previews retained across sessions. Evaluate compressed
+finished previews as the preferred persistent tier, with half-float as a working
+format and quality/performance reference, not a requirement for on-disk storage.
+Decode a small bidirectional window ahead of use; do not transcode the whole
+folder on every launch or put decoding back on every sequential key press.
+Compression itself does not require dropping half-float precision: lossless
+compression and a different pixel representation are separate choices.
+
+Steve also notes that AVIF and JPEG Ultra HDR decoding have received little
+optimization so far. Treat existing timings as implementation baselines, not
+format limits. Prioritize those two formats before introducing another codec.
+Compare a small shortlist, not a broad sweep:
+
+- AVIF: inspect the actual bundled decoder, build, thread policy, colour
+  conversion and pixel transport. Evaluate an optimized decoder path such as
+  libavif/dav1d where practical; avoid unnecessary intermediate files, repeated
+  conversions or process startup on each picture. Do not assume AV1 video
+  hardware acceleration implies a usable still-image path for this app.
+- JPEG Ultra HDR: profile JPEG/base and gain-map decoding, reconstruction,
+  colour conversion and upload separately. Its SDR base plus gain map could
+  carry both authored views together, but qualify the SDR base and reconstructed
+  HDR against HDRF's independently authored outputs. Preserve both intents;
+  do not substitute a default tone map when generating the preview.
+- A losslessly compressed finished half-float baseline, such as OpenEXR ZIP/PIZ,
+  to establish exact reference pixels and compare space/read/decode costs.
+  JPEG XL and lossy EXR remain secondary options if the first candidates fail
+  the measured speed, quality or capacity requirements.
+
+[libavif](https://github.com/AOMediaCodec/libavif) supports multiple decoder
+backends, including dav1d; [libultrahdr](https://github.com/google/libultrahdr)
+documents encoding from HDR and SDR inputs and decoding SDR/HDR intent.
+[OpenEXR's documentation](https://openexr.com/en/latest/TechnicalIntroduction.html)
+distinguishes lossless and lossy compression. None establishes a performance
+winner for this app. Measure preparation time, persistent bytes, cold/random
+read+decode+upload+present latency, warm navigation, peak memory and perceptual
+error on the same pictures. Decode and prefetch outside the navigation critical
+path while respecting resource priorities. The smallest file alone is not the
+winner. Retained previews remain regenerable cache products keyed to
+source/grade/version, not archival replacements for originals and non-destructive
+edit metadata.
+
+**Next implementation boundary.** First qualify one finished-preview vertical
+slice from GPU capture to disk to colour-correct fullscreen presentation. Use
+existing source scenes to isolate browsing gains from decoder cost. Then add
+folder readiness/space policy and shared grid/Single/Compare consumers. Exercise
+a prepared 200-300-photo workload, sequential/reverse/random navigation, rating,
+relaunch, edits, both renditions, cache clear/off, capacity exhaustion and GPU
+recovery. Measure total preparation separately from browsing and do not hide
+misses behind a smaller-placeholder first-paint number. Preserve current export,
+Proof and Grade output; preparation yields to their existing priority. Assess
+prepared browsing during those jobs separately. No broad sweep, new budgets,
+codec choice or implementation is authorised by this research alone.
+
+
 1. **Library speed plan** (Claude, October 18, from the speed exploration:
    [findings](../../technical/archive/library-speed-exploration-findings-2026-10-18.md)).
    Targets unchanged: every visible cell shows a picture within 1 s p90;

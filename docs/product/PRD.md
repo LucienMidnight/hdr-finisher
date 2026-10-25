@@ -139,10 +139,14 @@ Working rules for coding agents, including how much to test:
    pictures on the GPU. Brief:
    [codex-brief-gpu-delivery-build-2026-10-18](../technical/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
    Details: [export-and-proof](modules/export-and-proof.md).
-2. **Library speed plan** (October 18): develop each photo once, draw
-   Library pictures live on the GPU, move RAW development to the GPU, one
-   scheduler. Phase 0 quick wins first. See
-   [photo-library](modules/photo-library.md), open work item 1.
+2. **Library responsiveness** (goal clarified by Steve, October 25): prepare
+   a folder of roughly 200-300 photos, then browse and rate fullscreen in real
+   time. Preparation completion must mean ready-to-display pictures; stored
+   development alone does not establish this. The existing October 18-19
+   develop-once/live-GPU architecture is under review for unchanged browsing.
+   Finished-preview caching, retention policy and measurable acceptance targets
+   are proposed, not implemented or approved. See
+   [Photo Library: prepared-folder culling](modules/photo-library.md#prepared-folder-fullscreen-culling-october-25-2026).
 3. **Starting exposure at zero and RAW tuning.** This was meant to come
    before paste, but paste shipped first. See
    [import-and-raw](modules/import-and-raw.md).
