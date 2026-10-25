@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from .cpu_budget import CpuExecutor
 from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
@@ -1396,7 +1396,6 @@ def _resolve_lens_profile(
         return None
 
 
-REMAP_MAX_WORKERS = 6
 
 
 def _remap_bilinear_strips(
@@ -1434,7 +1433,7 @@ def _remap_bilinear_strips(
     # this work, so a 42 MP frame remaps about three times faster on a pool.
     # More workers than this gain nothing: the gathers are memory-bound.
     starts = range(0, height, rows)
-    with ThreadPoolExecutor(max_workers=max(1, min(REMAP_MAX_WORKERS, len(starts))), thread_name_prefix="lens-remap") as pool:
+    with CpuExecutor() as pool:
         for _ in pool.map(remap_strip, starts):
             pass
     return output

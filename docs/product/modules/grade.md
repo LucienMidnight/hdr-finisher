@@ -514,3 +514,9 @@ edit-sync helper failures. Python: 2,457 passes, 3 skips, the same 6 frontend
 wording failures plus an unrelated Library source-ownership test failure
 (`test_source_ownership_merges_tiers_promotes_and_rejects_stale_publication`,
 expected ValueError not raised). No Library or pixel-processing code changed.
+
+
+### Use the whole machine — October 25, 2026
+
+Gamut, brush, grain and Denoise CPU work now share a machine-sized pool instead of half-CPU/eight-worker limits. Nested work runs inline to avoid pool deadlock. Retouch keeps the existing two-ROI memory allowance while allowing independent solves to overlap. Full limits, scratch timings and validation are recorded in
+[Photo Library Part A](photo-library.md#part-a--use-the-whole-machine-october-25-2026).

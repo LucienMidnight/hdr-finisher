@@ -234,3 +234,29 @@ The quiet gate is now 350 ms. Capacity inspection and the one isolated GPU
 run's per-request breakdown are in the module PRD's Part 0d entry.
 Allowances are unchanged. Commit and stop for Steve's try; Parts A/B remain
 unstarted. This brief remains active for those unfinished parts.
+
+
+## Part A measurement convention — October 25, 2026
+
+One rough run on scratch photo copies, with a 10% timing noise allowance for
+a single run and OS file-cache effects. This is diagnostic, not an acceptance
+benchmark; normal-use fullscreen timings require Steve's next app session.
+
+
+## Part A handoff — October 25, 2026
+
+Part A implemented and committed; stop here. Machine-derived CPU partitions,
+a shared CPU executor, selected RAW OpenMP teams, low-priority parallel EXIF
+readers, explicit AVIF jobs and cross-process foreground yielding are built.
+Existing memory/cache/GPU allowances and image algorithms are unchanged.
+Limits retained for memory, ordered hashing, colour-channel count and the
+Ultra HDR CLI are explained in code and in the Photo Library module's Part A
+table. The selected RAW request always has admission ahead of new neighbours;
+non-interruptible neighbour teams may briefly overlap one foreground thread.
+
+The module records the short scratch-copy timing, exact result checks, fast
+checks and the unrelated existing Retouch integration mock failure. Its slow
+items table distinguishes measured CPU work from pending USB/fullscreen work,
+with exact next-session app steps. Part B remains unstarted. No live Library
+database, photos, sidecars or cache folders were written. Keep this brief here
+until Part B is complete.

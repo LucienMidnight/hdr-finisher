@@ -1,5 +1,5 @@
 """Bounded, Grade-import-only bands; other consumers retain serial execution."""
-from concurrent.futures import ThreadPoolExecutor
+from .cpu_budget import CpuExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
 import os
@@ -7,18 +7,18 @@ from threading import Semaphore
 from typing import Callable, TypeVar
 
 _T = TypeVar("_T")
-_pool: ContextVar[ThreadPoolExecutor | None] = ContextVar("grade_import_pool", default=None)
+_pool: ContextVar[CpuExecutor | None] = ContextVar("grade_import_pool", default=None)
 _open_slot = Semaphore(1)
 
 
 @contextmanager
 def grade_import_bands(*, enabled: bool = True):
-    # Leave at least half the logical CPUs free; one multicore open at a time.
-    workers = min(2, max(1, (os.cpu_count() or 2) // 2))
+    # One multicore open at a time; divide scratch across all logical CPUs.
+    workers = max(1, os.cpu_count() or 1)
     if not enabled or workers == 1 or not _open_slot.acquire(blocking=False):
         yield
         return
-    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="grade-import-band")
+    pool = CpuExecutor()
     token = _pool.set(pool)
     try:
         yield
@@ -50,13 +50,19 @@ def map_import_negative(image, transform, *, cancelled=None):
     result = image.astype("float32", copy=False)
     if not result.flags.writeable:
         result = result.copy()
-    # Bound even an all-negative band's float64 working arrays. Two 100k
-    # pixel bands stay below 100 MB using a conservative 320 bytes/pixel.
-    rows = min(128, max(1, 100_000 // max(1, result.shape[1])))
+    # Keep the original 200k-pixel concurrent scratch allowance as CPUs grow.
+    # A row is the smallest band; arrays keep their original operation order.
+    workers = max(1, os.cpu_count() or 1)
+    rows = min(128, max(1, 200_000 // workers // max(1, result.shape[1])))
     def band(start):
         if cancelled is not None and cancelled():
             raise RuntimeError("Import cancelled")
         result[start:start + rows] = transform(result[start:start + rows])
-    for _ in run_bands(band, range(0, result.shape[0], rows)):
-        pass
+    # Memory bound: at most the original 200k concurrent scratch pixels;
+    # a machine with more CPUs than rows can afford waits for the next wave.
+    concurrent = min(workers, max(1, 200_000 // max(1, rows * result.shape[1])))
+    starts = range(0, result.shape[0], rows)
+    for offset in range(0, len(starts), concurrent):
+        for _ in run_bands(band, starts[offset:offset + concurrent]):
+            pass
     return result

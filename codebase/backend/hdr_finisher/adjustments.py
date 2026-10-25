@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor
+from .cpu_budget import CpuExecutor
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -57,7 +57,6 @@ GRAIN_DEVELOP_HDR_SCALE = np.float32((100.0 / 203.0) / 0.18)
 # on a 0.003-3.0 scene gradient: 0.45 leaves 0.0005 stops RMS of grain
 # difference between HDR and SDR (the first grain left 0.0004); 1.0 left 0.011.
 GRAIN_DEVELOP_FULL = 0.45
-GRAIN_WORKERS = max(1, min(8, (os.cpu_count() or 2) - 1))
 
 
 @dataclass(frozen=True)
@@ -1970,7 +1969,7 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
         for span in spans:
             render(*span)
     else:
-        with ThreadPoolExecutor(max_workers=GRAIN_WORKERS, thread_name_prefix="film-stock") as pool:
+        with CpuExecutor() as pool:
             list(pool.map(lambda span: render(*span), spans))
     return image
 
@@ -2366,7 +2365,7 @@ def _apply_density_grain(
     if len(spans) <= 1:
         result = render(0, region_height)
     else:
-        with ThreadPoolExecutor(max_workers=GRAIN_WORKERS, thread_name_prefix="film-grain") as pool:
+        with CpuExecutor() as pool:
             result = np.concatenate(list(pool.map(lambda span: render(*span), spans)), axis=0)
     if density_delta or not clip_output:
         return result.astype(np.float32)

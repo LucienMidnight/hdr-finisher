@@ -355,3 +355,24 @@ def test_larger_or_source_starved_repairs_keep_valid_patchmatch_result():
     starved = replace(request, excluded=excluded)
     patch = CpuInpaint().solve(starved, InpaintSettings(iterations=1))
     assert patch.texture_offset is None and np.isfinite(patch.pixels).all()
+
+
+def test_concurrent_same_repair_accounts_for_one_cached_patch():
+    from threading import Barrier
+    from hdr_finisher.cpu_budget import logical_cpus
+    if logical_cpus() < 2:
+        pytest.skip("needs two logical CPUs")
+    ready = Barrier(2)
+    class ConcurrentEngine:
+        def solve(self, request, settings, checkpoint):
+            ready.wait(timeout=5)
+            return CpuInpaint().solve(request, settings, checkpoint)
+    token = RepairRevision("photo", "source", 1)
+    with RepairWorker(ConcurrentEngine()) as worker:
+        worker.set_current(token)
+        first = worker.submit(example(), token=token)[0]
+        second = worker.submit(example(), token=token)[0]
+        a, b = first.result(timeout=10), second.result(timeout=10)
+        assert a.patch.pixels.tobytes() == b.patch.pixels.tobytes()
+        assert worker._bytes == a.patch.nbytes
+        assert worker.submit(example(), token=token)[0].result(timeout=5).cached

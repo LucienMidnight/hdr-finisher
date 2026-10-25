@@ -233,7 +233,7 @@ def create_library_router(worker, browser, store=None):
     cache = LibraryPictureCache(browser.root)
     from .library_raw import RawBrowsing, camera_raw
     from .library_raw_thumbnails import RawThumbnails
-    raw_browsing = RawBrowsing(browser.root, paused=lambda: worker.status()["paused"])
+    raw_browsing = RawBrowsing(browser.root, paused=lambda: worker.status()["paused"], foreground_changed=getattr(worker, "foreground_source", lambda key, active: None))
     raw_thumbnails = RawThumbnails(browser.root)
     marks = LibraryMarks(browser.root)
     if store is not None:

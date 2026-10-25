@@ -62,6 +62,8 @@ class ImportJobManager:
     def __init__(self, sessions: SessionStore, browser: MediaBrowserStore, workers: int = 1) -> None:
         self.sessions = sessions
         self.browser = browser
+        # One Grade import owns the retained-image memory allowance; overlapping
+        # full imports multiply that memory. Its image bands use all CPU workers.
         self._executor = ThreadPoolExecutor(max_workers=max(1, int(workers)), thread_name_prefix="hdr-import")
         self._lock = RLock()
         self._jobs: dict[str, ImportJob] = {}

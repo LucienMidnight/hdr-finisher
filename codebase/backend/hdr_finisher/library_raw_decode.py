@@ -60,11 +60,14 @@ def decode(path, raw_name, size):
 def worker_main(connection, foreground):
     # Environment changes are confined to these processes, never Grade's process.
     for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
-        os.environ[name] = "1"
+        # Only OpenMP (LibRaw) needs a team here; matrix operations use einsum
+        # without BLAS. Avoid nested BLAS teams inside each decoder process.
+        os.environ[name] = str(max(1, os.cpu_count() or 1)) if name == "OMP_NUM_THREADS" else "1"
     from .library_worker import _lower_priority
     _lower_priority()
     # Warm imports before reporting ready, not inside the first viewed decode.
     import rawpy
+    from .cpu_budget import raw_threads
     from .library_pictures import default_look
     connection.send({"ready": True, "pid": os.getpid()})
     try:
@@ -74,7 +77,9 @@ def worker_main(connection, foreground):
                 return
             output = None
             try:
+                raw_threads(job["threads"])
                 output, meta = decode(job["path"], job["raw_name"], job["size"])
+                meta["native_threads"] = job["threads"]
                 connection.send({"meta": meta, "name": output.name})
                 # Parent opens the output before we release the Windows mapping.
                 connection.recv()

@@ -506,3 +506,9 @@ Export photo snapshots acquire the session lock before the Library lock, matchin
 grade saving and status. This prevents an export-folder lookup from deadlocking
 with grade status and blocking other session work. Rendering and framing output
 are unchanged. A disposable-data concurrency regression covers the overlap.
+
+
+### Use the whole machine — October 25, 2026
+
+Ultra HDR retains its two-stripe scratch allowance and three independent gain-map channels, bounded by available logical CPUs. No arithmetic, writer order, encoder settings, Proof processing or output pixels changed. Full limits, scratch timings and validation are recorded in
+[Photo Library Part A](photo-library.md#part-a--use-the-whole-machine-october-25-2026).

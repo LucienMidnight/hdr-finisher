@@ -1,4 +1,4 @@
-"""Bounded Library RAW reader and three independent decoder processes."""
+"""Bounded Library RAW reader and machine-derived decoder processes."""
 from __future__ import annotations
 
 from collections import OrderedDict
@@ -13,6 +13,7 @@ from threading import Condition, Thread
 import time
 
 from .library_raw_decode import worker_main
+from .cpu_budget import logical_cpus, photo_lanes, lower_thread_priority
 from .library_raw_reader import open_raw
 from .library_diagnostics import log
 
@@ -62,12 +63,14 @@ def camera_raw(path):
 
 
 class RawBrowsing:
-    def __init__(self, root, paused=lambda: False, ram=None):
+    def __init__(self, root, paused=lambda: False, ram=None, foreground_changed=lambda key, active: None):
         self.limits = allowances(ram or machine_memory())
+        self._decoder_lanes = min(photo_lanes(), max(1, self.limits["transport_bytes"] // (64 * MIB)))
         from .library_cache import LibraryCache
         self.managed = LibraryCache(root)
         self.cv = Condition()
         self.paused = paused
+        self.foreground_changed = foreground_changed
         self.raw = OrderedDict()
         self.outputs = OrderedDict()
         self.jobs = {}
@@ -93,7 +96,9 @@ class RawBrowsing:
             reader = Thread(target=self._read, name="library-raw-reader", daemon=True)
             self.threads.append(reader)
             reader.start()
-            for index in range(3):
+            # Memory bound: each in-flight 42 MP half-size uint16 transport is
+            # about 64 MiB; retain the existing transport allowance.
+            for index in range(self._decoder_lanes):
                 thread = Thread(target=self._lane, args=(index,), name=f"library-raw-process-{index}", daemon=True)
                 self.threads.append(thread)
                 thread.start()
@@ -123,6 +128,10 @@ class RawBrowsing:
                 job = {"key": key, "path": path, "size": size, "priority": priority,
                     "order": self.sequence, "future": Future(), "active": False}
                 self.jobs[key] = job
+            if priority == 0 and not job.get("foreground_notified"):
+                job["foreground_notified"] = True
+                self.foreground_changed(key, True)
+                job["future"].add_done_callback(lambda future: self.foreground_changed(key, False))
             self.start()
             self.cv.notify_all()
             return job["future"]
@@ -214,6 +223,8 @@ class RawBrowsing:
         return sum(value[1] for value in self.raw.values()) + needed <= self.limits["raw_bytes"]
 
     def _read(self):
+        # One reader is I/O bound; parallel seeks hurt USB-drive foreground reads.
+        lower_thread_priority()
         while True:
             with self.cv:
                 if self.stopped:
@@ -300,18 +311,26 @@ class RawBrowsing:
                     if self.stopped:
                         return
                     candidates = sorted((j for j in self.jobs.values() if not j["active"] and j["key"] in self.raw
-                        and (j["priority"] == 0 if index == 0 else j["priority"] > 0)),
+                        and (self._decoder_lanes == 1 or (j["priority"] == 0 if index == 0 else j["priority"] > 0))),
                         key=lambda j: (j["priority"], j["order"]))
-                    if self.paused() or not candidates:
+                    selected_pending = any(j["priority"] == 0 for j in self.jobs.values())
+                    used = sum(j.get("cpu_threads", 0) for j in self.jobs.values() if j["active"])
+                    if self.paused() or not candidates or (selected_pending and candidates[0]["priority"] > 0) or (used >= logical_cpus() and index != 0):
                         self.cv.wait(.025)
                         continue
                     job = candidates[0]
+                    # Selected development takes every free CPU. Neighbours share
+                    # the machine and yield admission until that photo finishes.
+                    # An already-running LibRaw call cannot resize its team. A
+                    # selected photo still starts on one foreground thread if
+                    # neighbours temporarily occupy all CPUs (at most CPUs+1).
+                    job["cpu_threads"] = max(1, logical_cpus()-used) if index == 0 else min(max(1, logical_cpus() // max(1, self._decoder_lanes-1)), logical_cpus()-used)
                     job["active"] = True
                     job["process"] = process
                     raw, size = self.raw[job["key"]]
                     self.raw.move_to_end(job["key"])
                     self._promote(process, job["priority"] == 0)
-                    connection.send({"path": job["path"], "raw_name": raw.name, "size": size})
+                    connection.send({"path": job["path"], "raw_name": raw.name, "size": size, "threads": job["cpu_threads"]})
                 while not connection.poll(.1):
                     if self.stopped:
                         return
@@ -341,7 +360,7 @@ class RawBrowsing:
                                 key = next(iter(self.outputs))
                                 old, _ = self.outputs.pop(key)
                                 self._dispose(old)
-                            log("picture_raw_browse_ready", path=job["path"], decode_ms=meta["decode_ms"], read_ms=meta["read_ms"])
+                            log("picture_raw_browse_ready", path=job["path"], decode_ms=meta["decode_ms"], unpack_ms=meta["unpack_ms"], native_threads=meta["native_threads"], read_ms=meta["read_ms"])
                     job = None
                     self.cv.notify_all()
         except Exception as error:

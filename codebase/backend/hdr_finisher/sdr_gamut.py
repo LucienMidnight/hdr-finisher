@@ -8,7 +8,7 @@ https://bottosson.github.io/posts/gamutclipping/
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor
+from .cpu_budget import CpuExecutor
 
 import numpy as np
 
@@ -37,8 +37,8 @@ SDR_GAMUT_HIGHLIGHT_ALPHA = np.float32(0.05)
 SDR_GAMUT_LOW_SAT_HIGHLIGHT_START = np.float32(0.70)
 SDR_GAMUT_SATURATION_LOW = np.float32(0.08)
 SDR_GAMUT_SATURATION_HIGH = np.float32(0.20)
-_GAMUT_WORKERS = min(8, max(1, (os.cpu_count() or 1) // 2))
-_GAMUT_EXECUTOR = ThreadPoolExecutor(max_workers=_GAMUT_WORKERS, thread_name_prefix="sdr-gamut")
+_GAMUT_WORKERS = int(os.environ.get("HDR_CPU_THREADS", max(1, os.cpu_count() or 1)))
+_GAMUT_EXECUTOR = CpuExecutor()
 
 
 def linear_srgb_to_oklab(rgb: np.ndarray) -> np.ndarray:

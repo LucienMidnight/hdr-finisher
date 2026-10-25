@@ -1,5 +1,10 @@
 """Lightweight capture facts using the app's existing EXIF reader; no pixel decode."""
-from concurrent.futures import CancelledError
+from concurrent.futures import CancelledError, ProcessPoolExecutor, TimeoutError
+from threading import Lock
+import os
+import multiprocessing
+import atexit
+from .cpu_budget import logical_cpus
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -82,8 +87,58 @@ def _facts(path, size, modified):
     return facts
 
 
+def _read_one(value):
+    return read_metadata([value])["photos"][0]
+
+
+def _reader_init():
+    from .library_worker import _lower_priority
+    _lower_priority()
+
+
+_pool = None
+_pool_lock = Lock()
+
+
+def close_readers():
+    global _pool
+    if _pool is not None:
+        _pool.shutdown(wait=True, cancel_futures=True)
+        _pool = None
+
+
+atexit.register(close_readers)
+
+
 @audited("read_metadata")
-def read_metadata(paths, cancelled=lambda: False):
+def read_metadata(paths, cancelled=lambda: False, *, parallel=False):
+    if parallel and len(paths) > 1:
+        global _pool
+        with _pool_lock:
+            if _pool is None:
+                # Windows multiprocessing is limited to 61 child wait handles; native work can use the remaining CPUs.
+                _pool = ProcessPoolExecutor(max_workers=min(logical_cpus(), 61) if os.name == "nt" else logical_cpus(),
+                    mp_context=multiprocessing.get_context("spawn"), initializer=_reader_init)
+        # Only one wave in flight: pause/foreground checks precede every refill.
+        photos = []
+        try:
+            for start in range(0, len(paths), logical_cpus()):
+                if cancelled():
+                    raise CancelledError()
+                pending = [_pool.submit(_read_one, p) for p in paths[start:start+logical_cpus()]]
+                for future in pending:
+                    while True:
+                        if cancelled():
+                            raise CancelledError()
+                        try:
+                            photos.append(future.result(timeout=.05))
+                            break
+                        except TimeoutError:
+                            pass
+            return {"photos": photos}
+        finally:
+            for future in locals().get("pending", []):
+                future.cancel()
     photos = []
     for value in paths:
         if cancelled():

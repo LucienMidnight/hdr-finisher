@@ -1056,7 +1056,8 @@ def _guided_filter_gain_map_region(
     # The channels are mathematically independent. NumPy releases the GIL for
     # the cumulative sums, so processing them together shortens this CPU-bound
     # post-pass without changing a single per-channel operation or coefficient.
-    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="ultrahdr-gain-map") as pool:
+    # Three independent colour channels; more workers have no work.
+    with ThreadPoolExecutor(max_workers=min(3, max(1, os.cpu_count() or 1)), thread_name_prefix="ultrahdr-gain-map") as pool:
         filtered = np.stack(list(pool.map(filter_channel, range(3))), axis=-1)
     return gain + np.float32(amount) * (filtered - gain)
 
@@ -1136,7 +1137,8 @@ def _denoised_ultrahdr_gain_map_jpeg(
     # most two results in flight even for very tall originals.
     from collections import deque
     rows = iter(range(0, height, stripe_rows))
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="ultrahdr-stripe") as pool:
+    # Memory bound: preserve the existing two-stripe scratch allowance.
+    with ThreadPoolExecutor(max_workers=min(2, max(1, os.cpu_count() or 1)), thread_name_prefix="ultrahdr-stripe") as pool:
         pending = deque(pool.submit(filter_stripe, row) for row in [next(rows, None), next(rows, None)] if row is not None)
         while pending:
             row_start, encoded = pending.popleft().result()

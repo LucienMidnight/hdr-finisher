@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import wait
+from .cpu_budget import CpuExecutor
 import json
 import math
 import os
@@ -552,16 +553,16 @@ def sample_luminance_evs(
 # Below this size the bands are too small for threads to pay for themselves:
 # a 6 MP raster measured about twice as slow threaded as on one thread.
 _BRUSH_THREADED_PIXELS = 16_000_000
-_BRUSH_WORKERS = max(1, min(8, (os.cpu_count() or 2) // 2))
-_brush_pool: ThreadPoolExecutor | None = None
+_BRUSH_WORKERS = int(os.environ.get("HDR_CPU_THREADS", max(1, os.cpu_count() or 1)))
+_brush_pool: CpuExecutor | None = None
 _brush_pool_lock = Lock()
 
 
-def _brush_executor() -> ThreadPoolExecutor:
+def _brush_executor() -> CpuExecutor:
     global _brush_pool
     with _brush_pool_lock:
         if _brush_pool is None:
-            _brush_pool = ThreadPoolExecutor(max_workers=_BRUSH_WORKERS, thread_name_prefix="brush-raster")
+            _brush_pool = CpuExecutor()
         return _brush_pool
 
 

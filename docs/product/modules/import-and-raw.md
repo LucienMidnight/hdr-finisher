@@ -402,3 +402,9 @@ Library loading results and remaining AVIF/queue costs are in the Photo Library 
 - Starting exposure decision: [Photo_Library_PRD section 4, October 11](../archive/Photo_Library_PRD_2026-10-09.md)
 - User guide: [import](../../user-guide/import.md); workflows:
   [source preparation](../../workflows/source-preparation.md)
+
+
+### Use the whole machine — October 25, 2026
+
+Grade import bands and lens remap now use the shared machine-sized CPU pool. Source AVIF receives an explicit per-photo jobs budget. Library LibRaw gets a per-job OpenMP budget; selected development uses free CPUs first. Source hash keeps ordered SHA-256. Source decoder libraries and accuracy are unchanged. Full limits, scratch timings and validation are recorded in
+[Photo Library Part A](photo-library.md#part-a--use-the-whole-machine-october-25-2026).

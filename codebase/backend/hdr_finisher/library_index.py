@@ -13,6 +13,7 @@ from threading import Event, RLock, Thread
 import time
 
 from .library_metadata import FACT_FIELDS
+from .cpu_budget import logical_cpus
 from .library_diagnostics import audited, log, problem, timed_lock
 
 LABELS = ("red", "orange", "green", "blue")
@@ -336,15 +337,19 @@ class LibraryIndex:
             waiting = [photo["path"] for photo in photos if not photo.get("indexed")]
             done = len(photos) - len(waiting)
             self._set(done=done, total=len(photos))
-            for start in range(0, len(waiting), 32):
+            batch_size = max(32, logical_cpus() * 4)
+            for start in range(0, len(waiting), batch_size):
                 try:
-                    records = self._job(generation, "metadata", paths=waiting[start:start + 32])["photos"]
+                    records = self._job(generation, "metadata", paths=waiting[start:start + batch_size])["photos"]
                 except (ValueError, OSError) as error:
-                    log("index_metadata_failed", folder=pin["path"], paths=waiting[start:start + 32], reason=str(error), action="facts unavailable; next pass retries")
+                    log("index_metadata_failed", folder=pin["path"], paths=waiting[start:start + batch_size], reason=str(error), action="facts unavailable; next pass retries")
                     records = []
                     incomplete = True
-                self.remember_facts(records, generation=generation)
-                done += len(waiting[start:start + 32])
+                # I/O-bound SQLite writes retain short 32-row lock holds;
+                # parallel readers never acquire the shared database lock.
+                for offset in range(0, len(records), 32):
+                    self.remember_facts(records[offset:offset+32], generation=generation)
+                done += len(waiting[start:start + batch_size])
                 self._set(done=done)
         if incomplete:
             raise _Retry("some pinned folders or photo details could not be read")

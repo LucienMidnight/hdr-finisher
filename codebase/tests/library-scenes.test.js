@@ -3,9 +3,9 @@ const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
 const scheduler=require('../frontend/library-scene-scheduler');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {resolve,promise};};
-function setup(plans,develop){
+function setup(plans,develop,cores=4){
  let time=0;const requests=[],events=[];
- const context={window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,setTimeout,clearTimeout,
+ const context={navigator:{hardwareConcurrency:cores},window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,setTimeout,clearTimeout,
   performance:{now:()=>time},console,crypto:require('node:crypto').webcrypto,
   HDRLibraryGpuRaw:{enabled:()=>true,liveScene:develop},
   fetch:async(url,options)=>{requests.push(JSON.parse(options.body));if(url==="/api/library/live-scene")return {ok:false,json:async()=>({detail:"decoder failed"})};const plan=plans[JSON.parse(options.body).path];return {ok:!plan.library_error,json:async()=>plan};}};
@@ -125,4 +125,15 @@ test('idle cache refusal skips development but foreground can still request the 
  let calls=0;const {scenes}=setup({photo:{bytes:1,warm_allowed:false}},async(path,edge)=>{calls++;return {edge};});
  assert.equal(await scenes.load('photo',640,null,80,true),null);assert.equal(calls,0);
  await scenes.load('photo',640,null,0);assert.equal(calls,1);
+});
+
+
+test('source admission scales with logical CPUs including heavy photos',async()=>{
+ const block=gate(),started=[],plans={};
+ for(let i=0;i<6;i++)plans['heavy'+i]={bytes:96e6,revision:'1'};
+ const {scenes}=setup(plans,async(p,edge)=>{started.push(p);await block.promise;return {edge,key:p};},36);
+ const jobs=Object.keys(plans).map(p=>scenes.load(p,640));await tick();
+ assert.equal(started.length,6);
+ assert.equal(scenes.snapshot().sources.active,6);
+ block.resolve();await Promise.all(jobs);
 });

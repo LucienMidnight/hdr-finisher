@@ -28,6 +28,7 @@ class ResizeCancelled(RuntimeError):
 # this resize, so the three channels run concurrently on large sources. Small
 # sources stay sequential: the pool would cost more than it saves.
 PARALLEL_CHANNEL_MIN_PIXELS = 2_000_000
+# Three independent RGB channels; further workers have no resize work.
 PARALLEL_CHANNEL_MAX_WORKERS = 3
 
 

@@ -4,7 +4,8 @@ The app must publish a completion under its session lock after checking the
 same token. This service never mutates sessions, history or the last image.
 """
 from collections import OrderedDict
-from concurrent.futures import CancelledError, ThreadPoolExecutor
+from concurrent.futures import CancelledError
+from .cpu_budget import CpuExecutor
 from dataclasses import asdict, dataclass
 import hashlib
 import json
@@ -39,7 +40,7 @@ def repair_key(request, settings, source):
 
 
 class RepairWorker:
-    """One active solve + one waiting ROI; reject extra work instead of queuing.
+    """Machine-sized CPU execution within the existing two-owned-ROI allowance.
 
     Thread worker keeps work outside Electron/UI; heavy gathers/reductions run
     in NumPy. Service is intentionally separate from the Library decoder so a
@@ -50,7 +51,8 @@ class RepairWorker:
             raise ValueError("Prototype repair cache must be 0..64 MiB")
         self.engine = engine or CpuInpaint()
         self.cache_bytes = cache_bytes
-        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="retouch")
+        self._pool = CpuExecutor()
+        # Memory bound: retain the existing two owned ROI snapshots, not CPU lanes.
         self._slots = BoundedSemaphore(2)
         self._lock = RLock()
         self._current = None
@@ -96,6 +98,9 @@ class RepairWorker:
                     with self._lock:
                         check()
                         if patch.nbytes <= self.cache_bytes:
+                            previous = self._cache.pop(key, None)
+                            if previous is not None:
+                                self._bytes -= previous.nbytes
                             self._cache[key] = patch
                             self._bytes += patch.nbytes
                             while self._bytes > self.cache_bytes:

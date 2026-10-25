@@ -12,6 +12,8 @@ from time import perf_counter
 
 import numpy as np
 
+import os
+from .cpu_budget import logical_cpus
 from .avif_info import AVIFInfoError, inspect_avif
 from .binaries import resolve_binary
 from .subprocess_utils import hidden_window_options
@@ -134,6 +136,7 @@ def decode_ultrahdr_jpeg(
         encoded_sdr, _srgb_eotf, cancelled=cancelled
     )
 
+    # Bundled libultrahdr 1.4.0 CLI has no jobs option; retain its native scheduler.
     with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_decode_") as temp_name:
         raw_path = Path(temp_name) / "hdr-linear-rgba-f16.raw"
         if progress:
@@ -456,7 +459,7 @@ def _decode_avif_pixels(
         png_path = output
         png_path.parent.mkdir(parents=True, exist_ok=True)
         _run(
-            [str(avifdec), "-d", "16", *(["--png-compress", "0"] if uncompressed_png else []), str(path), str(png_path)],
+            [str(avifdec), "--jobs", str(os.environ.get("HDR_CPU_THREADS", logical_cpus())), "-d", "16", *(["--png-compress", "0"] if uncompressed_png else []), str(path), str(png_path)],
             cancelled=cancelled,
         )
         return _decode_png_pixels(png_path)
@@ -464,7 +467,7 @@ def _decode_avif_pixels(
     with TemporaryDirectory(prefix="hdr_finisher_avif_decode_") as temp_name:
         png_path = Path(temp_name) / "decoded.png"
         _run(
-            [str(avifdec), "-d", "16", *(["--png-compress", "0"] if uncompressed_png else []), str(path), str(png_path)],
+            [str(avifdec), "--jobs", str(os.environ.get("HDR_CPU_THREADS", logical_cpus())), "-d", "16", *(["--png-compress", "0"] if uncompressed_png else []), str(path), str(png_path)],
             cancelled=cancelled,
         )
         return _decode_png_pixels(png_path)

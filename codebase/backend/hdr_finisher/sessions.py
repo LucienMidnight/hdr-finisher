@@ -262,7 +262,8 @@ class SessionStore:
         try:
             resolved_raw_settings = raw_import_settings or RawImportSettings()
             resolved_override = interpretation_override or SourceInterpretationOverride()
-            # Hashing reads file bytes, not decoded pixels or metadata. Join
+            # One hash lane: SHA-256 is an ordered byte stream (I/O bound); splitting
+            # it into independent hashes would change the source identity. Join
             # before constructing the identity; the worker retains no image.
             with grade_import_bands(enabled=self._grade_import_parallel), ThreadPoolExecutor(max_workers=1, thread_name_prefix="source-hash") as pool:
                 initial_stat = source_path.stat()

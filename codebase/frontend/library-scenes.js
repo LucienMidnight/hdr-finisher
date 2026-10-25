@@ -17,8 +17,9 @@ window.HDRLibraryScenes = (() => {
   // Draws finish in flight. Developments yield to the selected photo,
   // including unfinished neighbours (priority 5).
   const preemptLower = job => job.priority >= 10;
-  const probes = HDRLibrarySceneScheduler.create(2, undefined, {onChange:changed,preemptLower});
-  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed,keepRunning:job=>job.priority>=10,preemptLower:job=>job.priority>0});
+  const cpuLanes = Math.max(1, Math.floor(Math.sqrt(globalThis.navigator?.hardwareConcurrency || 1)));
+  const probes = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {onChange:changed,preemptLower});
+  const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {heavyLimit:cpuLanes,onChange:changed,keepRunning:job=>job.priority>=10,preemptLower:job=>job.priority>0});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set(), reviewPath = null;

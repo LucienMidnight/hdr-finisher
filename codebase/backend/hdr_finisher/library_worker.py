@@ -1,4 +1,4 @@
-"""Low-priority, single-decoder library process; grading never decodes its jobs."""
+"""Low-priority Library CPU lanes; Grade never decodes their jobs."""
 from __future__ import annotations
 
 from concurrent.futures import CancelledError, Future, TimeoutError
@@ -29,6 +29,7 @@ class LibraryWorker:
         self._recovering = False
         self._restart_limit = 3
         self._paused: set[str] = set()
+        self._source_foreground = set()
         self._closed = False
         self._failure: str | None = None
         self.info: dict = {}
@@ -57,7 +58,7 @@ class LibraryWorker:
             parent, child = context.Pipe()
             process = context.Process(target=_worker_main,
                     args=(child, str(self.root), os.getpid(), bool(self._paused)),
-                    name="hdr-library", daemon=True)
+                    name="hdr-library", daemon=False)
             self._connection = parent
             self._process = process
             try:
@@ -224,6 +225,15 @@ class LibraryWorker:
                 log("helper_pause" if self._paused else "helper_resume", reason="Grade/import/export" if reason != "manual" else "manual", action="background lanes wait" if self._paused else "background lanes resume")
             self._send({"command": "pause", "paused": bool(self._paused)})
 
+    def foreground_source(self, key, active):
+        # Source reads/LibRaw run outside this helper; indexing must see them too.
+        with self._lock:
+            if active:
+                self._source_foreground.add(key)
+            else:
+                self._source_foreground.discard(key)
+            self._send({"command": "source-busy", "active": bool(self._source_foreground)})
+
     @contextmanager
     def busy(self):
         reason = uuid4().hex
@@ -273,6 +283,7 @@ class LibraryWorker:
                         self.info = message
                         ready = True
                         self._recovering = False
+                        connection.send({"command": "source-busy", "active": bool(self._source_foreground)})
                         for job in self._requests.values():
                             connection.send(job)
                         self._ready.set()
@@ -355,12 +366,14 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
 
 
 def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> None:
-    # Scale native decode/render work within one photo, leaving half the logical
-    # processors for Grade and foreground work. The process remains below normal
-    # priority and the existing Grade/export pause gate still takes precedence.
-    native_threads = max(1, (os.cpu_count() or 2) // 2)
+    # Partition CPU capacity between simultaneous photos and native libraries.
+    # OS priority and pause/yield gates, rather than reserved cores, protect Grade.
+    from .cpu_budget import native_threads as thread_budget, photo_lanes, logical_cpus
+    native_threads = thread_budget()
+    lanes = photo_lanes()
     for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
         os.environ[name] = str(native_threads)
+    os.environ["HDR_CPU_THREADS"] = str(native_threads)
     priority = _lower_priority()
     from .media_browser import MediaBrowserStore, MediaBrowserInterpretationRequired
     from .launcher import _parent_is_alive
@@ -374,7 +387,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     jobs: dict[str, Event] = {}
     stopping = Event()
     sequence = 0
-    state = {"paused": paused, "foreground": 0, "checking": 0}
+    state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False}
 
     def lane(job):
         if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
@@ -397,7 +410,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             with condition:
                 while not stopping.is_set():
                     candidates = [(item, index) for index, item in enumerate(queue) if lane(item[2]) == kind]
-                    if candidates and not state["paused"]:
+                    if candidates and not state["paused"] and not state["source_busy"] and (kind not in {"main", "picture"} or (state["foreground"] < lanes and not any(item[0] < min(candidates)[0][0] and lane(item[2]) in {"main", "picture"} for item in queue))):
                         _, index = min(candidates)
                         _priority, _sequence, job = queue.pop(index)
                         heapq.heapify(queue)
@@ -427,7 +440,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         allowed = {"index", "check"} if kind == "check" else {"index", "kept"}
                         if kind == "kept":
                             allowed.add("check")
-                        if (not state["paused"] and (
+                        if (not state["paused"] and not state["source_busy"] and (
                                 not state["foreground"]
                                 and (kind in {"check", "kept"} or not state["checking"])
                                 and all(lane(item[2]) in allowed for item in queue))):
@@ -470,7 +483,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     result = {"id": job["id"], "result": check_kept(job["paths"], check)}
                 elif job["command"] == "metadata":
                     from .library_metadata import read_metadata
-                    result = {"id": job["id"], "result": read_metadata(job["paths"], check)}
+                    result = {"id": job["id"], "result": read_metadata(job["paths"], check, parallel=True)}
                 elif job["command"] in {"scan", "tree"}:
                     output = scan_folder(job["path"], check, fingerprints=True) if job["command"] == "scan" else folder_tree(job["path"], check)
                     result = {"id": job["id"], "result": output}
@@ -492,6 +505,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     state["checking"] -= 1
                 elif kind not in {"index", "kept"}:
                     state["foreground"] -= 1
+                condition.notify_all()
             reply({"event":"work", "id":job["id"], "done":True})
             if not cancelled.is_set() and not stopping.is_set():
                 try:
@@ -501,19 +515,20 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     log("picture_helper_reply_failed" if kind == "picture" else "helper_reply_failed", operation=job["command"], edge=job.get("edge"), path=job.get("path"), reason=str(error), action="lane exits; parent detects closed helper")
                     return
 
-    Thread(target=decode, name="hdr-library-decode", daemon=True).start()
-    # Keep the existing import decoder single-threaded. Library pictures use the
-    # bounded six-lane route proven by the quick-open trial, on the same pause gate.
-    for index in range(6):
+    for index in range(lanes):
+        Thread(target=decode, name=f"hdr-library-decode-{index}", daemon=True).start()
+    # Main and picture lanes share the foreground admission count, so their
+    # native teams together stay within the machine partition.
+    for index in range(lanes):
         Thread(target=decode, args=("picture",), name=f"hdr-library-picture-{index}", daemon=True).start()
     # Unvisited pinned folders are indexed on their own lane, so a long
     # background scan never queues ahead of the folder the user just clicked.
     Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()
     Thread(target=decode, args=("check",), name="hdr-library-check", daemon=True).start()
-    # Retain the two map workers; saved-picture production has been removed.
-    for index in range(2):
+    # Map work yields at checkpoints to foreground work and all pause gates.
+    for index in range(lanes):
         Thread(target=decode, args=("kept",), name=f"hdr-library-kept-{index}", daemon=True).start()
-    reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": 1, "picture_workers": 6, "index_workers": 1})
+    reply({"event": "ready", "pid": os.getpid(), "priority": priority, "decode_workers": lanes, "picture_workers": lanes, "index_workers": min(logical_cpus(), 61) if os.name == "nt" else logical_cpus(), "native_threads": native_threads})
     try:
         while _parent_is_alive(parent_pid):
             if not connection.poll(0.25):
@@ -525,6 +540,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 if message["command"] == "pause":
                     state["paused"] = message["paused"]
                     pictures.pause_native(message["paused"])
+                elif message["command"] == "source-busy":
+                    state["source_busy"] = message["active"]
                 elif message["command"] == "prioritize":
                     queue[:] = [(message["priority"] if item[2]["id"] == message["id"] else item[0], item[1], item[2]) for item in queue]
                     heapq.heapify(queue)
@@ -545,6 +562,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
         log("helper_pipe_closed", reason=str(error), action="helper exits")
     finally:
         stopping.set()
+        from .library_metadata import close_readers
+        close_readers()
         with condition:
             condition.notify_all()
         connection.close()

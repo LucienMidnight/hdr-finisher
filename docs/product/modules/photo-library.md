@@ -1041,11 +1041,96 @@ crop route; its move to live native scenes remains open with that cleanup.
 
 ## 5. V1 open work, in order
 
+
+
+## Part A — Use the whole machine (October 25, 2026)
+
+Part A built in this commit; Part B remains open. Counts derive from logical
+CPUs, with one shared Python CPU pool per process, inline nested work, and a
+photo/native partition to avoid a team per core per photo. On this 12-CPU
+machine the helper/source partition is three photo lanes with four native
+threads per photo. Selected RAW development takes all free CPUs; neighbours
+wait while selected RAW work exists. Idle neighbours divide all CPUs between
+the available background processes (six threads each here). If an already
+running LibRaw call occupies the last CPU, the selection may start with one
+foreground thread: a temporary maximum of CPUs + 1 native threads avoids
+queuing the selection behind non-interruptible neighbour unpack. One-process
+machines let that lane serve both foreground and background work. Helper preparation and metadata yield to
+selected RAW work too. Existing Grade/export/Proof pauses remain authoritative.
+Helpers, metadata processes and the RAW reader run below normal priority;
+selected RAW decoding retains its foreground promotion. Budgets and cache
+allowances are unchanged. No decoder-library replacement or Part B work.
+
+| Limit | Before | After (12 logical CPUs here) |
+| --- | --- | --- |
+| Helper native team | CPUs / 2 | CPUs / floor(sqrt(CPUs)): 4 per photo, 3 shared admissions |
+| Helper decode / picture / map lanes | 1 / 6 / 2 | Machine-derived photo lanes: 3 each; main and picture share admission |
+| Index reader lanes | 1 | 12 low-priority processes; single helper coordinator and DB writer |
+| RAW decode | 3 processes, OMP/BLAS 1 | Machine-derived processes (3 here), limited by existing transport allowance; selected OMP up to 12, neighbours divide CPUs; unused BLAS teams stay 1 to avoid nesting |
+| Grade import bands | At most 2 | 12 shared CPU workers; negative-mapping bands divide the original concurrent scratch allowance |
+| Gamut / brush | Half CPUs, at most 8 | Up to 12 shared CPU workers; helper uses its photo partition; brush's measured small-image threshold retained |
+| Grain / Denoise CPU | CPUs minus 1, at most 8 | Up to 12 shared CPU workers, bounded by available bands/tiles |
+| Retouch | 1 solve | Shared CPU pool; existing two owned ROI snapshots retained as memory bound (up to two independent solves) |
+| Source hash | 1 | 1: SHA-256 byte-stream order defines source identity; file I/O overlaps import |
+| Ultra HDR export stripes / gain-map channels | 2 / 3 | min(CPUs, 2) / min(CPUs, 3): existing stripe scratch allowance and only three independent colour channels; per-channel arithmetic and serial writer unchanged |
+| Source slots / heavy slots | 2 / 1 | Machine-derived photo lanes: 3 / 3; existing preemption and GPU broker admission retained |
+| Metadata read batches | 32, serial | max(32, 4 × CPUs): 48, parallel waves; DB/maintenance pages remain 32 for short lock holds |
+| Source AVIF | Implicit CLI default | Explicit machine-share `--jobs`; bundled avifdec already defaulted to all CPUs, so no claimed decoder speed-up |
+| Source Ultra HDR | Per-photo CLI | Same decoder: bundled 1.4.0 tool exposes no thread option; keeps its native scheduler. Propose an independently qualified in-process binding later, since source-import accuracy must be preserved |
+| Lens remap | At most 6 | Machine-sized shared CPU pool |
+| Grade import job / RGB resize lanes | 1 / 3 | Retained-image memory ownership / three independent channels; image bands scale within the import |
+
+On Windows, Python's metadata process pool has a 61-child wait-handle limit;
+this is an OS/library limit, not a chosen background CPU reserve. Native work
+can use further CPUs. The Library helper is non-daemonic so it can own those
+readers, and closes them on shutdown. Metadata workers only return facts; they
+never open the Library database. Maintenance remains scoped to changed paths.
+
+**One short scratch trial, 10% timing noise allowance.** A copied 85.5 MB,
+42 MP Sony RAW: one-thread unpack/decode 77.6/230.4 ms; twelve-thread
+77.8/193.4 ms. Decoded uint16 transport bytes matched exactly. Unpack did not
+improve; the complete CPU decode fell about 16%. This is a warm local-drive
+copy, not Steve's USB drive, and excludes GPU development and cache writes.
+Twelve copied RAW metadata reads: serial 75.8 ms; parallel including process
+startup 477.4 ms; one different set of twelve copies with warm processes
+9.7 ms (about 7.8× throughput). Metadata records matched exactly. No 155k-photo
+throughput claim: directory walks, transactions and storage still matter.
+Scratch script/results: `codebase/output/part-a-cpu/` (ignored).
+
+**Validation.** Fast Node checks ran once: 607 passed, 12 failed because the
+VM browser harness lacked hardware concurrency. The two affected files then
+passed all 14 checks, including scaled heavy-source admission. Python fast
+checks ran once: 2529 passed, 3 skipped, 19 failed and 7 errored. Twenty-five
+failures/errors were the new optional helper hook being accessed eagerly in
+test routes with no helper or a lightweight helper; fixed. Focused rerun: 85
+passed, including shared/nested CPU work, exact import-band results, concurrent
+Retouch cache accounting and helper lifecycle/pause behavior. One unrelated
+pre-existing failure remains: `test_retouch_integration.py::test_library_native_source_uses_same_repair_before_reduction`
+has a cache mock without Part 0d's `defer_store` argument. It was not changed
+or rerun. A final actual-RAW-worker check on two scratch copies simulated a
+one-CPU machine: background and selected work both completed, transport bytes
+matched, and the foreground yield hook released correctly. No GPU code,
+drivers, sweeps, installer build or live-data writes.
+
+**Next app session to finish the slow-items remeasurement.** Open badminton
+fullscreen and arrow through 30 uncached photos, pausing on each until the
+sharp draw appears. Then revisit the same 30. Include DSC07178, DSC07253 and
+DSC07254 so existing logs split Denoise, other drawing, source read/unpack,
+development, cache writes and scene fetch. Leave a not-yet-indexed pin running
+idle for 60 seconds, then browse fullscreen for 30 seconds: compare metadata
+work and yield time. If indexing is already complete, do not reset the live
+index just for this trial. For the unchanged export row, export one copied
+full-size photo with the usual Ultra HDR preset into a scratch output folder.
+Highlight reconstruction needs the existing 42 MP difficult RAW at Fit; leave
+it selected until sharp, then inspect its stage logs. Rate one copied photo
+to check save timing. These observations will update the table from the next
+session's logs; no live data/cache was modified by this task.
+
 ### Known slow items to target (Steve, October 25, 2026)
 
 A running list of measured or suspected slow work, kept so each can become its
-own task. **Re-measure after the multi-threading work (threads brief, Part A)**
-to separate what is truly slow from what was only starved of CPU. Figures are
+own task. **Part A scratch remeasurement is recorded below; fullscreen/USB
+figures await the exact next-session app trial above.** Figures are
 from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
@@ -1054,11 +1139,11 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 | Film grain and halation in Library drawing | Present in all slow graded photos (Portra 400, grain 24, halation). Not timed apart from Denoise. | Suspected; measure. |
 | Sharpening | Present on one slow photo (DSC07178). No timing. | Unmeasured; check only. |
 | Stored-scene pixel fetch | 65–150 ms per 2560 scene after Part 0, down from 140–800 ms. | Measured; improved. |
-| AVIF and Ultra HDR source decoding | Run as separate command-line programs per photo. AVIF about 5.6 s of CPU decoding and gain-map work; one uncached AVIF took 8.1 s in fullscreen. | Measured. |
-| Cold RAW development | GPU two-size preparation 1.9–2.3 s per 42 MP RAW. CPU fallback 8–10 s. A full GPU memory budget caused CPU fallback before Part 0b. | Measured. |
+| AVIF and Ultra HDR source decoding | Previous AVIF about 5.6 s of CPU decode/gain-map work; one uncached AVIF 8.1 s fullscreen. AVIF already defaulted to all CPUs; explicit job sharing added. Ultra HDR CLI has no job option. | Not remeasured: open one uncached AVIF and one Ultra HDR source in fullscreen, wait for sharp draw, then revisit. No new decoder or accuracy change. |
+| Cold RAW development | Previous GPU two-size preparation 1.9–2.3 s per 42 MP RAW; CPU fallback 8–10 s. Part A local-copy LibRaw decode: 230 → 193 ms; unpack 78 → 78 ms; exact transport bytes. | CPU decode remeasured; USB read, GPU development and cache-write timings await the 30-photo app trial. |
 | Highlight reconstruction | 42 MP GPU about 3.2 s against a 1 s target. | Measured (October 24). |
 | Rating save | About 110 ms in the background: 58 ms SQLite commits, 32 ms recovery flush. Screen no longer waits. Cutting it further trades durability, which is Steve's decision. | Measured; option pending. |
-| Indexing throughput | About 0.35 s of helper work per 32-photo batch, one lane. | Measured; Part A to scale. |
+| Indexing throughput | Previous 0.35 s per 32-photo batch, one lane. Part A 12-copy metadata read: 75.8 ms serial → 9.7 ms warm parallel; 477.4 ms including process startup. | Metadata remeasured only; 155k-library end-to-end throughput awaits a normal indexing session. |
 | Whole-pin folder walks | Initial and changed pins still walk their whole scope (D:\Photos holds about 155k photos). | Known; scoped since Step 2. |
 | Full-size Ultra HDR export | About 33 s per photo (CPU export, maximum fidelity). | Measured (October 19); GPU delivery brief exists. |
 

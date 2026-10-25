@@ -30,7 +30,7 @@ preview implements the same arithmetic and the same edge rule.
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor
+from .cpu_budget import CpuExecutor
 from dataclasses import dataclass
 from statistics import NormalDist
 from threading import Lock
@@ -259,12 +259,12 @@ def resolve_adaptive(image: np.ndarray, model: AdaptiveNoiseModel, controls: Ada
     origins = [(y0, x0) for y0 in range(0, height, TILE_SIZE) for x0 in range(0, width, TILE_SIZE)]
     # Tiles read only the source and write disjoint rectangles, and numpy
     # releases the GIL for array arithmetic, so threads divide the work.
-    workers = max(1, min(len(origins), (os.cpu_count() or 2) - 1, 8))
+    workers = max(1, min(len(origins), int(os.environ.get("HDR_CPU_THREADS", max(1, os.cpu_count() or 1)))))
     if workers == 1:
         for origin in origins:
             run(origin)
     else:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        with CpuExecutor() as pool:
             list(pool.map(run, origins))
     if not np.isfinite(result).all():
         raise FloatingPointError("Adaptive denoise produced a non-finite value.")
