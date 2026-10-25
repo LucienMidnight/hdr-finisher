@@ -746,7 +746,8 @@
           const value = await lease(false);
           if (value.fallback) {
             if (background && !reclaimed) { reclaimed = true; await root.HDRLibraryScenes?.reclaim(bytes,true); continue; }
-            if (background && root.HDRLibraryScenes?.snapshot().draws.active) {
+            const work = root.HDRLibraryScenes?.snapshot();
+            if (background && (work?.draws.active || work?.quickDraws?.active)) {
               // Drop this waiting reservation so the already-started window draw can finish.
               await fetch(url,{method:"DELETE"}); await wait(50,signal); reclaimed = false; continue;
             }

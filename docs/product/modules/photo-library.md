@@ -1,5 +1,107 @@
 # Module PRD: Photo Library
 
+**October 25, 2026: Part 0c graded fullscreen scheduling (built; Steve's retry pending)**
+
+The 18:45–18:47 badminton logs contain 216 Single/fullscreen requests. DSC07224's
+640 draw queued for 2,937 ms and its stand-in arrived at 3,047 ms. DSC07178's
+640 draw queued for 3,161 ms; the already-prefetched sharp picture won the
+presentation race, so no stand-in reached a compositor opportunity. This is a
+queue/presentation race, not evidence of a grade identity mismatch. Finished
+borrowed grid surfaces could also be removed by sharp-source reclamation.
+
+- Quick 640 pictures now have an independent renderer and priority queue.
+  They use the same finishing graph, grade, HDR/SDR selection and shared GPU
+  leases. They never join the sharp draw queue. Selected sharp work takes
+  precedence over all queued neighbours; only one sharp draw can be active.
+- Model measurement happens before the draw queue. Sixteen exact Library
+  model requests are retained across navigation, independently of grid cache
+  churn; quick and sharp renderers share these small JSON results. Keys include
+  source/grade, lane, edge and geometry. No source arrays or additional Denoise
+  image textures are retained. GPU and finished-picture budgets are unchanged.
+  Reconstruction, scratch allocation and the film/grain/halation graph remain
+  real costs on a redraw; speeding up those algorithms is outside this part.
+- After the existing 120 ms quiet gate, all four in-window neighbours begin
+  quick and sharp preparation while the selection loads, rather than waiting
+  for its sharp picture and then preparing neighbours serially. Source jobs
+  still share the existing slots and both renderers obey the existing broker.
+  This improves readiness at about two photos/s; it cannot guarantee cold sharp
+  draws at that pace when the unchanged finishing graph exceeds 500 ms/photo.
+- A borrowed visible grid stand-in survives ordinary Library reclamation. Its
+  bytes stay counted; mandatory reclamation can still release it to honour the
+  existing budget. Exact photo/source/grade/display/rendition checks remain.
+  In-progress prefetch stages now follow the request that selects the photo.
+
+A cheaper look-preserving future route is to retain/store the *finished* Fit
+picture after its first complete draw, then reuse/decode that result. Part B
+qualifies the codec first. Changing Denoise quality, grain, halation, sharpening
+or Fit resolution is not part of this work. No appearance setting or shader changed.
+
+Validation: one fast run, **619 Node passed; 2,551 Python passed, three skipped**.
+Final focused results: **14 passed**, including exact stand-in identity, cancellation,
+independent quick work, selected queue order, model separation/reuse and RAW budget
+handling. A factory closure typo was caught and corrected by the first focused
+result run. The first GPU launch command stopped before Electron started because
+the disposable profile directory was missing; creating it allowed the one actual
+GPU driver run below. No sweeps or additional GPU runs.
+
+**One graded Single/live GPU try at 2560x1440: PASS.** The existing fullscreen
+RAW driver used disposable RAW + sidecar copies of DSC07178, DSC07253 and DSC07254,
+with source names mapped below. It checked a forced missing eligible grid surface,
+a held sharp draw, back/forward navigation and ten 30 ms reversals. It verified
+that no wrong photo appeared, the stopped selection finished sharp, and all six
+copied photo/sidecar hashes stayed unchanged. The backend profile/database/cache
+were isolated under ignored output.
+
+Per-request milliseconds (rows 8–17 are rapid reversals). Sharp-ready is the
+logged window completion, before presentation; it is not physical scanout.
+A dash means work was already prefetched, or that no stage was recorded under
+this selection, **not a zero cost**. Denoise columns separate CPU model preparation,
+selector/pipeline installation, and GPU resolve. Nested render time is not added.
+
+| Request | Photo | Stand-in | Sharp ready | Draw queue | Model prepare | Denoise install / resolve |
+| ---: | --- | ---: | ---: | --- | --- | --- |
+| 1 | DSC07253 | 6.7 | 3863.5 | 309.7 | 3150.6 cold | 0.1 / 44.2 |
+| 2 | DSC07178 | 123.4 | 461.3 | 0.2 / 0.1 | 0 / 0 hits | 0 / 16.8; 0.2 / 43.3 |
+| 3 | DSC07253 | 9.2 | 265.4 | — | — | 0.1 / 34.2 |
+| 4 | DSC07254 | 13.5 | 151.8 | — | — | — / 35.6 |
+| 5 | DSC07253 | — | 1.0 | — | — | — |
+| 6 | DSC07178 | — | 0.5 | — | — | — |
+| 7 | DSC07253 | — | 0.6 | — | — | — |
+| 8 | DSC07254 | — | 0.7 | — | — | — |
+| 9 | DSC07253 | — | 0.9 | — | — | — |
+| 10 | DSC07254 | — | 0.6 | — | — | — |
+| 11 | DSC07253 | — | 0.8 | — | — | — |
+| 12 | DSC07254 | — | 0.8 | — | — | — |
+| 13 | DSC07253 | — | 0.8 | — | — | — |
+| 14 | DSC07254 | — | 0.9 | — | — | — |
+| 15 | DSC07253 | — | 0.8 | — | — | — |
+| 16 | DSC07254 | — | 0.8 | — | — | — |
+| 17 | DSC07253 | — | 0.8 | — | — | — |
+
+There were four stand-in and 11 sharp compositor-opportunity records. Two requests
+(rows 5–6) advanced after the visible-canvas check before the two-frame callback,
+so their presentation is unlogged although their correct sharp surfaces were ready.
+Rows 1–4 also advanced before sharp presentation callbacks. The 11 confirmed sharp
+presentations arrived in 2.0–11.8 ms. Driver-observed normal navigation sharp arrivals
+were 162, 6, 4 and 8 ms. Artificial held draws/transport delay and a three-photo
+window mean this is **not** a sustained two-photos/s benchmark.
+
+Full request IDs, separate stage arrays and confirmed sharp-presentation times:
+ignored `codebase/output/part0c-after-requests.csv` and `.json`; raw records in
+`codebase/output/library-fullscreen-raw/part0c-events.json`.
+
+**Remaining:** first-use model measurement was 3.15 s with concurrent preparation
+in this try; cold/evicted models still require measurement. Repeat preparation was
+below 0.1 ms and selector installation 0–0.2 ms. GPU reconstruction (16.8–44.2 ms
+here), film/grain/halation, fetch/upload and one already-active sharp draw remain.
+The 309.7 ms selected queue wait followed one in-flight draw; the forced 640 request
+queued only 0.2 ms. No claim that cold first draws or a long graded sequence are now
+instant. Steve's normal-use retry remains the feel check.
+Parts A and B remain unstarted. Part A (threads) is next; after it, remeasure
+"Known slow items to target" during a short normal-use run and update that table
+before starting Part B. The previously uncommitted slow-items table is included
+in this commit. No live library database, photo, sidecar or cache-folder writes.
+
 **October 25, 2026: Part 0b rapid fullscreen navigation (built; Steve's retry pending)**
 
 Steve's badminton try at 16:29–16:32 exposed missing grid stand-ins, repeated
@@ -751,6 +853,27 @@ effects remain open. Compare's detail view still uses the legacy native
 crop route; its move to live native scenes remains open with that cleanup.
 
 ## 5. V1 open work, in order
+
+### Known slow items to target (Steve, October 25, 2026)
+
+A running list of measured or suspected slow work, kept so each can become its
+own task. **Re-measure after the multi-threading work (threads brief, Part A)**
+to separate what is truly slow from what was only starved of CPU. Figures are
+from Steve's machine and logs on October 25, unless stated otherwise.
+
+| Item | Evidence | Status |
+| --- | --- | --- |
+| **Denoise in Library drawing.** Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: Denoise analysis 250–530 ms per draw even after reuse (1.4–1.6 s on a first draw). Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Measured. Reuse fix in Part 0c; speed-up not started. |
+| Film grain and halation in Library drawing | Present in all slow graded photos (Portra 400, grain 24, halation). Not timed apart from Denoise. | Suspected; measure. |
+| Sharpening | Present on one slow photo (DSC07178). No timing. | Unmeasured; check only. |
+| Stored-scene pixel fetch | 65–150 ms per 2560 scene after Part 0, down from 140–800 ms. | Measured; improved. |
+| AVIF and Ultra HDR source decoding | Run as separate command-line programs per photo. AVIF about 5.6 s of CPU decoding and gain-map work; one uncached AVIF took 8.1 s in fullscreen. | Measured. |
+| Cold RAW development | GPU two-size preparation 1.9–2.3 s per 42 MP RAW. CPU fallback 8–10 s. A full GPU memory budget caused CPU fallback before Part 0b. | Measured. |
+| Highlight reconstruction | 42 MP GPU about 3.2 s against a 1 s target. | Measured (October 24). |
+| Rating save | About 110 ms in the background: 58 ms SQLite commits, 32 ms recovery flush. Screen no longer waits. Cutting it further trades durability, which is Steve's decision. | Measured; option pending. |
+| Indexing throughput | About 0.35 s of helper work per 32-photo batch, one lane. | Measured; Part A to scale. |
+| Whole-pin folder walks | Initial and changed pins still walk their whole scope (D:\Photos holds about 155k photos). | Known; scoped since Step 2. |
+| Full-size Ultra HDR export | About 33 s per photo (CPU export, maximum fidelity). | Measured (October 19); GPU delivery brief exists. |
 
 ### Prepared-folder fullscreen culling (October 25, 2026)
 

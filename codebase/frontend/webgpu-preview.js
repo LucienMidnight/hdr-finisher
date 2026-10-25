@@ -5481,13 +5481,17 @@
      * hands it, which is what keeps a 42 MP frame's denoise from holding
      * evidence, or the frame, at all.
      */
+    async fetchDenoiseModel(url) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Denoise noise model request failed (${response.status}).`);
+      return response.json();
+    }
+
     async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls) {
       const startedAt = performance.now();
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
-      const response = await fetch(`/api/session/${sessionId}/denoise-model/${lane}?long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`);
-      if (!response.ok) throw new Error(`Denoise noise model request failed (${response.status}).`);
-      const model = await response.json();
+      const model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`);
       // The full-size model is one measurement per source, about a second on a
       // 42 MP frame. Asking for it now, from a smaller view, means the first
       // zoom to 100% finds it already made.

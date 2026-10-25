@@ -66,7 +66,10 @@ window.HDRLibraryScenes = (() => {
       }
     }, signal, priority, {heavy,cost,path,stage:"Reading and developing source"});
   }
+  // Selected work follows at most the single sharp draw already in flight.
+  // Quick pictures own a separate renderer and priority queue.
   const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed,preemptLower});
+  const quickDraws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed,preemptLower});
   async function load(path, edge, signal, priority = 10, idle = false, trace = null, options = {}) {
     const generation=generations.get(path)||0;
     const identity = path + (edge === 100000 ? "|native" : "");
@@ -133,10 +136,11 @@ window.HDRLibraryScenes = (() => {
   return Object.freeze({load,lease,
     onReclaim:handler=>{reclaim=handler;},
     reclaim:(bytes,required=false)=>reclaim(bytes,required),
-    promote:(path,priority)=>{probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);},
+    promote:(path,priority)=>{probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);quickDraws.promote(path,priority);},
     viewport:(shown,around)=>{visible=new Set(shown);nearby=new Set(around);sources.reprioritize(rank);probes.reprioritize(rank);},
     invalidate:paths=>{const targets=new Set(paths);for(const path of targets)generations.set(path,(generations.get(path)||0)+1);sources.invalidate(path=>targets.has(path));probes.invalidate(path=>targets.has(path));},
     stage:(path,stage,waiting=false)=>sources.stage(path,stage,waiting),
     draw:(task,signal,priority=10,path="Photo")=>draws.submit(crypto.randomUUID(),task,signal,priority,{path,stage:"Drawing picture on GPU"}),
-    snapshot:()=>({probes:probes.snapshot(),sources:sources.snapshot(),draws:draws.snapshot()})});
+    quickDraw:(task,signal,priority=10,path="Photo")=>quickDraws.submit(crypto.randomUUID(),task,signal,priority,{path,stage:"Drawing quick picture on GPU"}),
+    snapshot:()=>({probes:probes.snapshot(),sources:sources.snapshot(),draws:draws.snapshot(),quickDraws:quickDraws.snapshot()})});
 })();

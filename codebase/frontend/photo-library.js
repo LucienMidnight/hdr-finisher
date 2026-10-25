@@ -245,6 +245,7 @@
     restoreStandIn();
     const cell = HDRLibraryReadyWindow.standIn([...state.cells.values(), ...state.filmCells.values(), ...tilePool.values()],
       pictureIdentity(photo), state.displayEpoch, state.hdr);
+    HDRLibraryTrace.mark(trace,"stand_in_lookup",performance.now(),{cache_hit:!!cell});
     if (!cell) return false;
     // Borrow the actual finished HDR/SDR surface: no readback, JPEG or gamut conversion.
     const canvas = cell.fallback, home = canvas.parentNode, style = canvas.style.cssText;
@@ -285,14 +286,20 @@
   function pictureWindow(edge) {
     return HDRLibraryReadyWindow.create({key:readyKey, dispose:releaseReady,
       promote:(photo,priority)=>HDRLibraryScenes.promote(photo.path,priority),
-      load:async (photo, signal, current, priority, trace, importance, options) => {
+      load:async (photo, signal, current, priority, trace, importance, options, getTrace = () => trace) => {
         const epoch = state.displayEpoch, hdr = state.hdr;
         if (edge > 640) await beforeSource(photo,signal,importance);
         const meta = await HDRLibraryScenes.load(photo.path,edge,signal,importance(),false,trace,
           {cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance)});
         if (!meta) return null;
         if (!current()) throw new DOMException("Invalidated","AbortError");
+        Object.defineProperty(meta,"trace",{get:getTrace,configurable:true});
         meta.draw_priority = importance;
+        meta.fullscreen = true;
+        // Model measurement is CPU preparation, outside either GPU draw queue.
+        await HDRLibraryPictures.prepareDenoise(meta,hdr,getTrace);
+        if (!current()) throw new DOMException("Invalidated","AbortError");
+        const pictures = edge === 640 ? HDRLibraryQuickPictures : HDRLibraryPictures;
         const canvas = document.createElement("canvas"); canvas.className = $("single-picture").className;
         const value = {canvas,meta,bytes:meta.width * meta.height * 8 * 3};
         readySurfaces.set(canvas,value); readyBytes += value.bytes;
@@ -306,7 +313,7 @@
           }
           for (;;) {
             try {
-              await HDRLibraryPictures.show(meta,canvas,signal,()=>current() && epoch === state.displayEpoch,hdr);
+              await pictures.show(meta,canvas,signal,()=>current() && epoch === state.displayEpoch,hdr);
               break;
             } catch (error) {
               if (!error.libraryYield || !current()) throw error;
@@ -343,15 +350,17 @@
     if (bytes + held <= budget) return;
     // Evict finished surfaces only. In-progress window draws finish at their normal boundary.
     const other = photo => readyKey(photo) !== readyKey(selected() || {});
-    readyWindow.evictFinished(other); quickWindow.evictFinished(other); tilePool.clear();
-    held = readyBytes;
+    readyWindow.evictFinished(other); quickWindow.evictFinished(other);
+    tilePool.discard(cell => cell.fallback?.dataset.standIn !== "true");
+    held = readyBytes + tilePool.snapshot().bytes;
     budget = await HDRLibraryPictures.readyMemory(held);
     if (required && bytes + held > budget) {
       readyWindow.evictFinished();
-      budget = await HDRLibraryPictures.readyMemory(readyBytes);
-      if (bytes + readyBytes > budget) { restoreStandIn(); quickWindow.evictFinished(); }
+      held = readyBytes + tilePool.snapshot().bytes;
+      budget = await HDRLibraryPictures.readyMemory(held);
+      if (bytes + held > budget) { restoreStandIn(); tilePool.clear(); quickWindow.evictFinished(); }
     }
-    await HDRLibraryPictures.readyMemory(readyBytes);
+    await HDRLibraryPictures.readyMemory(readyBytes + tilePool.snapshot().bytes);
   });
   async function pollReadyMemory() {
     if (readyPolling || !readyBytes) return;
@@ -362,7 +371,7 @@
       const work = HDRLibraryScenes.snapshot();
       // Our own neighbour preparation also makes the shared broker non-idle.
       // Do not discard the selected picture while that source or draw finishes.
-      const ownWork = work.draws.active || work.sources.active || work.probes.active;
+      const ownWork = work.draws.active || work.quickDraws?.active || work.sources.active || work.probes.active;
       if (!permit.ready || (!permit.idle && !ownWork && readyWindow.has(selected() || {})) || (!ownWork && readyBytes > budget))
         { readyWindow.invalidate(); quickWindow.invalidate(); }
     } catch (_) { readyWindow.invalidate(); quickWindow.invalidate(); }
@@ -378,11 +387,12 @@
   function warmReady(photo, neighbours) {
     void (async () => {
       await navigationGate.settled(state.single?.signal);
-      for (const neighbour of neighbours) {
-        await navigationGate.settled(state.single?.signal);
-        if (selected()?.path !== photo.path || state.view !== "single" || !state.active || compare.enabled()) return;
-        try { await readyWindow.get(neighbour); } catch (_) {}
-      }
+      if (selected()?.path !== photo.path || state.view !== "single" || !state.active || compare.enabled()) return;
+      await Promise.allSettled(neighbours.map(async neighbour => {
+        // A finished 640 surface is useful even when the expensive sharp draw
+        // cannot keep up with two selections per second.
+        await Promise.allSettled([quickWindow.get(neighbour,5,null,{allowSource:true}), readyWindow.get(neighbour)]);
+      }));
     })().catch(error=>{if(!aborted(error))console.debug("Library window:",error.message);});
   }
   function clearPrefetch() { restoreStandIn(); readAhead.clear(); stopRawAhead(); readyWindow.invalidate(); quickWindow.invalidate(); }
@@ -903,6 +913,8 @@
       startRawAhead();
       const neighbours = readyNeighbours();
       readyWindow.update(photo,neighbours); quickWindow.update(photo,neighbours);
+      // Start preparation while this selection loads, not after it is sharp.
+      warmReady(photo,neighbours);
       let meta, kept = false;
       try {
         kept = readyWindow.has(photo);
@@ -949,7 +961,6 @@
       }
       if (!meta || !current()) return;
       restoreStandIn();
-      warmReady(photo,neighbours);
       if (state.fullSceneQuality && state.fullSceneQuality !== meta.quality) {
         state.nativeSource?.abort(); state.nativeSource = new AbortController(); state.fullDetail = null;
       }

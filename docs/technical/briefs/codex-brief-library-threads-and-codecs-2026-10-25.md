@@ -67,6 +67,16 @@ outruns it.
 **Report** the same key-to-picture breakdown from the log after a short try,
 including how often a stand-in versus a sharp picture appeared.
 
+**Part 0c follow-up, October 25 (built; stop for Steve's try).** Graded quick
+pictures now use their own renderer/priority queue, model measurement happens
+outside draw queues with bounded exact-identity reuse, and both sizes of all
+in-window neighbours start preparation before the selection finishes sharp.
+The module PRD records the one graded-copy trial and each fullscreen request's
+stand-in, sharp-ready, queue and Denoise times. The cold model cost remains;
+no Denoise algorithm or appearance change was made. After Part A, remeasure the
+module PRD's "Known slow items to target" from a short normal-use run and update
+that table before Part B. Parts A and B remain open.
+
 ## Part A: thread audit and fixes
 
 **Part 0b follow-up, October 25 (before A/B).** Steve's badminton try requires

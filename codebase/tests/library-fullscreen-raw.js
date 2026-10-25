@@ -2,19 +2,27 @@ const assert=require('node:assert/strict'), fs=require('node:fs'), path=require(
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'), output=path.join(root,'output/library-fullscreen-raw');
 fs.mkdirSync(output,{recursive:true});
+const graded=process.env.HDR_FINISHER_GRADED_TRIAL==='1';
 const corpus=JSON.parse(fs.readFileSync(path.join(root,'output/library-measurements/corpus.json'),'utf8'));
 const source=corpus.rows.find(row=>!row.error&&!row.excluded&&row.path.endsWith('DSC04761.ARW')&&fs.existsSync(row.path))?.path;
 if(!source)throw Error('RAW test corpus is unavailable');
 const folder=fs.mkdtempSync(path.join(output,'photos-'));
 const portrait=corpus.rows.find(row=>!row.error&&!row.excluded&&row.path.endsWith('DSC06615_DxO-optical-corr-only.dng')&&fs.existsSync(row.path))?.path;
 if(!portrait)throw Error('Portrait RAW test corpus is unavailable');
-for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`photo-${i}.${i===2?'dng':'ARW'}`));
+const trialSources=graded ? ['DSC07178','DSC07253','DSC07254'].map(name=>path.join('D:/Photos/2026/20261017 badminton',name+'.ARW')) : [source,source,portrait];
+for(let i=0;i<3;i++) {
+ const target=path.join(folder,`photo-${i}.${i===2&&!graded?'dng':'ARW'}`);
+ fs.copyFileSync(trialSources[i],target);
+ if(graded)fs.copyFileSync(trialSources[i]+'.hdrf',target+'.hdrf');
+}
+const initialFiles=fs.readdirSync(folder).sort();
+const beforeFiles=Object.fromEntries(initialFiles.map(name=>[name,require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(folder,name))).digest('hex')]));
 (async()=>{
- const browser=await chromium.launch({headless:true});
+ const browser=await chromium.launch({headless:true});let lib;
  try {
   const page=await browser.newPage(), errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error(e.stack);});
   await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
-  const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>!!window.HDRLibrary);
+  lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>!!window.HDRLibrary);
   await lib.evaluate(()=>{
    const record=window.HDRLibraryStopwatch;
    window.part0bEvents=[];
@@ -67,7 +75,7 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
   await lib.waitForFunction(()=>document.querySelector('#single-picture').dataset.picturePath?.endsWith('photo-1.ARW'));
   console.log('PASS: Grid selection then F hides previous fullscreen pixels during delayed drawing.');
   const shapes=new Set();
-  for(const [key,name] of [['ArrowRight','photo-2.dng'],['ArrowLeft','photo-1.ARW'],['ArrowLeft','photo-0.ARW'],['ArrowRight','photo-1.ARW']]) {
+  for(const [key,name] of [['ArrowRight',graded?'photo-2.ARW':'photo-2.dng'],['ArrowLeft','photo-1.ARW'],['ArrowLeft','photo-0.ARW'],['ArrowRight','photo-1.ARW']]) {
    const start=Date.now();await page.keyboard.press(key);
    await lib.waitForFunction(name=>document.querySelector('#single-picture').dataset.picturePath?.endsWith(name),name,{timeout:30000});
    const first=Date.now()-start;
@@ -75,7 +83,7 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
    shapes.add(await lib.evaluate(()=>{const c=document.querySelector('#single-picture');return c.width>c.height?'landscape':'portrait';}));
    console.log(name,`first picture ${first}ms; full preview ${Date.now()-start}ms`);
   }
-  assert.equal(shapes.size,2,'Navigation covers landscape and portrait');
+  if(!graded)assert.equal(shapes.size,2,'Navigation covers landscape and portrait');
   for(let i=0;i<10;i++){
    await page.keyboard.press(i%2?'ArrowLeft':'ArrowRight');
    await page.waitForTimeout(30);
@@ -88,11 +96,15 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
   }
   await lib.waitForFunction(()=>!document.querySelector('#single-picture').hidden&&document.querySelector('#single-picture').dataset.picturePath?.endsWith('photo-1.ARW'),null,{timeout:30000});
   await page.waitForTimeout(250);
-  fs.writeFileSync(path.join(output,'part0b-events.json'),JSON.stringify(await lib.evaluate(()=>window.part0bEvents),null,2));
+  fs.writeFileSync(path.join(output,graded?'part0c-events.json':'part0b-events.json'),JSON.stringify(await lib.evaluate(()=>window.part0bEvents),null,2));
   console.log('PASS: ten rapid direction changes retain the correct photo and finish sharp after stopping.');
   assert.ok(await lib.evaluate(()=>window.libraryShapeChecks)>0,'Checked shape during pixel loading');
   assert.deepEqual(errors,[]);
-  assert.equal(fs.readdirSync(folder).length,3,'Read-only browsing creates no settings files');
+  assert.deepEqual(fs.readdirSync(folder).sort(),initialFiles,'Read-only browsing creates no settings files');
+  for(const name of initialFiles)assert.equal(require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(folder,name))).digest('hex'),beforeFiles[name],name+' unchanged');
   console.log('PASS: fullscreen back/forward on disposable camera RAW copies; originals untouched.');
- } finally {await browser.close();}
+ } finally {
+  if(graded && lib)fs.writeFileSync(path.join(output,'part0c-events.json'),JSON.stringify(await lib.evaluate(()=>window.part0bEvents).catch(()=>[]),null,2));
+  await browser.close();
+ }
 })().catch(e=>{console.error(e);process.exitCode=1;});

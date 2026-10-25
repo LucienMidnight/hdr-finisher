@@ -20,12 +20,13 @@
       if (wanted && !wanted.has(id)) return Promise.reject(new DOMException("Superseded", "AbortError"));
       let entry = entries.get(id);
       if (entry) {
+        if (trace) entry.trace = trace;
         if (priority < entry.priority) { entry.priority = priority; promote(photo,priority); }
         return entry.promise;
       }
-      entry = {photo, priority, controller:new AbortController()}; entries.set(id, entry);
+      entry = {photo, priority, trace, controller:new AbortController()}; entries.set(id, entry);
       const current = () => entries.get(id) === entry && !entry.controller.signal.aborted && key(photo) === id;
-      entry.promise = Promise.resolve().then(() => load(photo, entry.controller.signal, current, entry.priority, trace, () => entry.priority, options)).then(value => {
+      entry.promise = Promise.resolve().then(() => load(photo, entry.controller.signal, current, entry.priority, trace, () => entry.priority, options, () => entry.trace)).then(value => {
         if (!current()) { if (value) dispose(value); throw new DOMException("Invalidated", "AbortError"); }
         if (!value) { entries.delete(id); return null; }
         entry.value = value; return value;

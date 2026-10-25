@@ -1,6 +1,26 @@
 /* Independent picture transport; Grade's renderer and pinned shaders are reused unchanged. */
 window.clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+// Small exact models survive fullscreen revisits without grid cache churn.
+// No pixel arrays or GPU resources are retained by this 16-entry LRU.
+const libraryDenoiseModels = new Map();
+async function libraryDenoiseModel(url) {
+  let model = libraryDenoiseModels.get(url);
+  if (model) { libraryDenoiseModels.delete(url); libraryDenoiseModels.set(url,model); return model; }
+  model = fetch(url).then(async response => {
+    if (!response.ok) throw Error(`Denoise noise model request failed (${response.status}).`);
+    return response.json();
+  }).catch(error => {
+    if (libraryDenoiseModels.get(url) === model) libraryDenoiseModels.delete(url);
+    throw error;
+  });
+  libraryDenoiseModels.set(url,model);
+  while (libraryDenoiseModels.size > 16) libraryDenoiseModels.delete(libraryDenoiseModels.keys().next().value);
+  return model;
+}
 class HDRLibraryGPU extends HDRWebGPUPreview {
+  async fetchDenoiseModel(url) {
+    return this.libraryMeta?.fullscreen ? libraryDenoiseModel(url) : super.fetchDenoiseModel(url);
+  }
   async reportDeliveryActivity(active) {
     // Every Library rendition is background work, including initialization.
     // Grade activity would pause our own source helper and preempt our leases.
@@ -105,7 +125,7 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     return proxy;
   }
 }
-window.HDRLibraryPictures = (() => {
+const HDRLibraryPictureFactory = (quick = false) => {
   const surface = document.createElement("canvas");
   let renderer, ready, queue = Promise.resolve(), draws = 0, foreground = 0;
   let configuredLimits;
@@ -139,7 +159,7 @@ window.HDRLibraryPictures = (() => {
       isCurrent = () => !signal.aborted && originalCurrent();
       if (signal.aborted || !isCurrent()) return;
       HDRLibraryStopwatch("draw_dispatched", { key: meta.key, queue_ms: performance.now() - queued });
-      window.HDRLibraryTrace?.mark(meta.trace,"queue_wait",queued,{key:meta.key});
+      window.HDRLibraryTrace?.mark(meta.trace,"queue_wait",Math.max(queued,meta.trace?.started || queued),{key:meta.key});
       const gpu = await initialize();
       if (signal.aborted || !isCurrent()) return;
       // Keep the accepted frame at its own shape while conversion and pixels load.
@@ -221,7 +241,7 @@ window.HDRLibraryPictures = (() => {
       return result;
     };
     const priority = typeof meta.draw_priority === "function" ? meta.draw_priority() : meta.draw_priority ?? 10;
-    const pending = (meta.route === "library-live" ? HDRLibraryScenes.draw(render,signal,priority,meta.path)
+    const pending = (quick ? HDRLibraryScenes.quickDraw(render,signal,priority,meta.path) : meta.route === "library-live" ? HDRLibraryScenes.draw(render,signal,priority,meta.path)
       : queue.catch(()=>{}).then(()=>render())).finally(() => { foreground--; });
     queue = pending;
     return pending.then(value => {
@@ -244,12 +264,13 @@ window.HDRLibraryPictures = (() => {
       return gpu.rawPictures.convert(meta, signal);
     }); queue = task; return task;
   }
-  window.HDRIdleWarmup?.run("library", async beforeNext => {
+  window.HDRIdleWarmup?.run(quick ? "library-quick" : "library", async beforeNext => {
     await beforeNext();
     const gpu = await initialize(true, beforeNext);
     if (gpu.adapterInfo?.fallback) return;
     await gpu.warmPipelines("rgba16float", beforeNext);
     await gpu.warmPipelines(navigator.gpu.getPreferredCanvasFormat(), beforeNext);
+    if (quick) return; // Quick scenes never develop RAW sensors.
     await beforeNext();
     gpu.rawPictures ||= HDRLibraryRawGPU.create(gpu);
     await gpu.rawPictures.initialize();
@@ -272,9 +293,21 @@ window.HDRLibraryPictures = (() => {
     });
     readyReports = report; return report;
   }
-  return Object.freeze({ show, initialize, prepare, readyMemory,
+  async function prepareDenoise(meta, hdr, trace) {
+    const lane = hdr ? "hdr" : "sdr";
+    if (!meta.denoise?.[lane]?.enabled) return;
+    const started = performance.now();
+    const geometry = JSON.stringify(meta.adjustments?.shared?.geometry || {});
+    const url = `/api/session/${meta.key}/denoise-model/${lane}?long_edge=${Math.max(256,meta.edge)}&edit_revision=0&geometry_signature=${encodeURIComponent(geometry)}`;
+    const cached = libraryDenoiseModels.has(url);
+    await libraryDenoiseModel(url);
+    window.HDRLibraryTrace?.mark(typeof trace === "function" ? trace() : trace,"denoise_prepare",started,{key:meta.key,cache_hit:cached});
+  }
+  return Object.freeze({ show, initialize, prepare, prepareDenoise, readyMemory,
     configure: async limits => { configuredLimits = limits; if (renderer) renderer.libraryLimits = limits; },
     usable: () => !!renderer?.available && !renderer.deviceLost && !renderer.adapterInfo?.fallback,
     resident: key => !!renderer?.rawPictures?.get(key),
     snapshot: () => renderer?.rawPictures?.snapshot() || {pictures:0,bytes:0} });
-})();
+};
+window.HDRLibraryPictures = HDRLibraryPictureFactory();
+window.HDRLibraryQuickPictures = HDRLibraryPictureFactory(true);
