@@ -218,3 +218,36 @@ again.
 | Partly built | Some of it is in the code. The module lists what is missing. |
 | Not built | No code yet. |
 | Decided out | Will not be built. Stays listed so it isn't proposed again. |
+
+### Glossary: Library pictures (Steve, October 25, 2026)
+
+Use these words in documents, briefs, logs, code comments and reports. Picture
+**sizes** describe what is stored or drawn. Fullscreen **steps** describe what
+the user sees happen. A step uses a size; the two are never interchangeable.
+
+**Picture sizes**
+
+| Term | Meaning |
+| --- | --- |
+| Camera preview | The JPEG embedded in a camera RAW file. Shown first in the grid and filmstrip only, never in Single or fullscreen (Steve, October 14). Not HDRF's grade. |
+| Thumbnail | 640 px picture with the current grade and HDR/SDR mode. Used in the grid and filmstrip. |
+| Screen preview | Picture sized to the display (2560 px long edge today), with the current grade and HDR/SDR mode. Used in Single, fullscreen and Compare at Fit. A *stored screen preview* is one saved to disk (planned). |
+| Detail preview | Full-resolution picture for 100% focus checking. Today it is developed for the selected photo only; stored detail previews are later work. |
+
+**Fullscreen steps**
+
+| Term | Meaning |
+| --- | --- |
+| Quick draw | The photo's own thumbnail, enlarged to Fit as an instant stand-in. |
+| Sharp draw | The screen preview replacing the quick draw. |
+
+**Related terms**
+
+| Term | Meaning |
+| --- | --- |
+| Scene | Developed, ungraded working data (640 and 2560 px, float16) that thumbnails and screen previews are drawn from. Not a finished picture. |
+| Ready window | Finished screen previews kept in memory around the current photo in fullscreen. |
+| Build previews | The planned user command that makes stored screen previews (and later detail previews) for a selection, kept until discarded. |
+
+Older documents say "640 tier", "2560 tier", "Fit picture", "kept picture",
+"stand-in" or "1:1". Read them with this table; do not rewrite history to match.
