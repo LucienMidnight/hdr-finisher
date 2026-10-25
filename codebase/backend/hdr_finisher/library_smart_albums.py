@@ -107,9 +107,17 @@ class SmartAlbums:
         try:
             info=self.marks.database.stat()
             with self.marks.database.open("rb") as handle: header=handle.read(100)
-            # SQLite's change counter catches rapid writes even if a filesystem
-            # rounds timestamps. This database uses its existing rollback journal.
-            return f"{info.st_ino}:{info.st_mtime_ns}:{info.st_size}:{header[24:28].hex()}"
+            # WAL does not increment the main-file change counter per commit.
+            # The backend's commit serial catches same-timestamp writes, even
+            # when the last connection closes and checkpoints/deletes the WAL.
+            wal = self.marks.database.with_name(self.marks.database.name + "-wal")
+            try:
+                wal_info = wal.stat()
+                with wal.open("rb") as handle: wal_header = handle.read(32)
+                wal_stamp = f"{wal_info.st_mtime_ns}:{wal_info.st_size}:{wal_header.hex()}"
+            except FileNotFoundError:
+                wal_stamp = ""
+            return f"{self.marks._revision}:{info.st_ino}:{info.st_mtime_ns}:{info.st_size}:{header[24:28].hex()}:{wal_stamp}"
         except FileNotFoundError: return "empty"
 
     def candidates(self, version=""):

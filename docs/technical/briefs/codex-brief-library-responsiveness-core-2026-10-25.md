@@ -147,3 +147,61 @@ Ask before:
 
 If the code contradicts a finding here, trust the code and report the
 difference.
+
+## Step 1 outcome — October 25, 2026
+
+Foreground document/grade lookup now reads committed grade and copy state on a
+read-only SQLite connection, before reading the atomic sidecar. Pending desired
+grades still win; default, recovery and copy selection retain their semantics.
+It acquires neither application lock. Existing session-before-Library locking,
+including the export snapshot regression, is unchanged. Database initialisation
+uses SQLite WAL so an index write cannot block this reader; existing settings
+tables and recovery formats are unchanged and no rebuild is needed. Smart-album
+cache invalidation includes a process-local commit serial and WAL stamp, so
+rapid writes still refresh candidates when the main-file timestamp is unchanged.
+
+Marks reads/results and writer acknowledgements reconcile only the affected
+original/copy families, retaining other recovery records. Folder listing skips
+the scan's full reconcile and does one scoped reconcile in the marks read.
+Folder facts and copy-family lookups use indexed path ranges; membership
+annotations query only the requested families. Background full reconciliation,
+kept checks and pin walks remain Step 2 work. Their shared-lock waits can still
+hold up ratings and folder opens; Step 1 does not meet all responsiveness targets.
+
+Step 0 normal-use logs since 513715b: 127 index batches held the lock for
+1,375/1,610 ms (p50/p95); 343 document lookups waited 0/203 ms and held it
+0/16 ms. Two folder listings waited at most 47 ms and held it at most 453 ms.
+Browser grid cache checks were 284/4,280 ms. There were no marks-change or
+fullscreen-tagged stage samples, so ratings and per-stage fullscreen timings
+cannot yet be assessed from normal use.
+
+One short disposable-data run used a read-only SQLite backup (155,879 files),
+a small comparison copy, and one scratch PNG on D:. Other personal-state rows
+were removed from the test copies only. Database pages were warm after setup;
+no scene/render cache was involved. Drive medium was not verified; this was
+not a USB badminton-folder run. The indexing condition used repeated one-photo
+metadata batches with 20 ms pauses, without helper decoding. Each condition had
+12 ratings/lookups and four post-scan listings. Reported times cover backend calls, not HTTP/page work.
+
+- During indexing on the large copy, rating p50/p95 was 867/947 ms: misses the
+  proposed 100 ms p95 target. Full background reconciliation still holds the
+  shared lock. Idle was 179/391 ms.
+- Document lookup during indexing was 4/15 ms, below the proposed 30 ms target
+  for that component. The full live-plan HTTP request was not measured; do not
+  treat this as a confirmed live-plan pass. Idle lookup was 6/7 ms.
+- The one-photo scratch listing after scan was 735/737 ms during indexing,
+  above 0.5 s; idle was 43/46 ms. Actual badminton was not measured.
+- Idle small-versus-large rating p50/p95 differed by under 10%, as did listing
+  p50/p95. During indexing the 10% scaling proposal failed because of shared
+  waits (small-copy rating 259/456 ms, listing 121/140 ms).
+
+Targets remain proposals. No live database, photos or sidecars were changed.
+Validation: Node fast checks 603 passed. The single Python fast run had
+2,541 passed, 3 skipped and two failures: an earlier version of the new copy
+test bypassed the proper grade baseline, and the existing same-timestamp
+smart-album check exposed WAL cache invalidation. The corrected real-save test
+and WAL invalidation fix passed the 22 affected tests (smart albums, membership,
+three new foreground results and the existing export/grade deadlock regression).
+The recovery-manifest publication-order correction was also covered by these
+focused checks. No full-suite rerun, GPU drivers, sweeps or further timing run.
+Stop here; Steps 2–3 remain open.

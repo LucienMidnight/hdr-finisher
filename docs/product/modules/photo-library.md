@@ -848,6 +848,39 @@ Validation: 603 Node tests passed; 2,539 Python tests passed, 3 skipped.
 No failures. Scratch app-data paths were used; no live library experiments,
 GPU drivers or timing sweeps.
 
+**October 25, 2026: responsiveness core, Step 1 (foreground paths).**
+Document and grade-open lookups use an independent read-only database snapshot
+and atomic sidecar reads, with pending grades and virtual copies preserved.
+SQLite WAL is enabled during normal database initialisation; no schema change,
+rebuild or settings-format change. These readers take neither application lock;
+all existing session-before-Library write locking remains unchanged.
+
+Ratings/marks, visited-folder reads and writer acknowledgements reconcile only
+the affected original/copy families and preserve unrelated recovery records.
+Folder listing performs one scoped reconcile; folder and copy path searches use
+indexes. Full index-batch reconciliation and whole-pin/kept checks remain open
+for Step 2, as does the Step 3 finished-picture window.
+
+A short warm-database run on a 155,879-row copy with simulated background
+metadata batches measured indexing-time p50/p95
+of 867/947 ms for ratings, 4/15 ms for document lookup and 735/737 ms for a
+one-photo scratch listing after scan. Ratings and listing miss the proposed
+100 ms and 0.5 s targets because background full reconciliation still holds
+the shared lock. Lookup alone is below 30 ms; the complete live-plan HTTP path
+and actual USB badminton folder were not measured. Idle small/large copy
+rating and listing times stayed within the proposed 10%; indexing did not.
+These are proposed targets, not newly agreed tolerances. Measurements used
+scratch data on D: (medium unverified), not Steve's photos or sidecars.
+See the active responsiveness brief for sample sizes, idle timings and scope.
+
+Smart-album cache invalidation uses the backend commit serial plus the WAL
+stamp; same-timestamp writes still refresh results. Validation: 603 Node tests
+passed; one Python fast run had 2,541 passed, 3 skipped and two failures, both
+corrected (new copy-test setup and WAL invalidation). All 22 affected result
+checks then passed, including the export/grade deadlock regression. No full
+rerun, GPU drivers, sweeps or additional timing runs.
+
+
 1. **Library speed plan** (Claude, October 18, from the speed exploration:
    [findings](../../technical/archive/library-speed-exploration-findings-2026-10-18.md)).
    Targets unchanged: every visible cell shows a picture within 1 s p90;

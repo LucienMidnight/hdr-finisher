@@ -79,26 +79,44 @@ class LibraryMembership:
             leaving = {source(p) for a,p in members if a.casefold() == album.casefold() and p in removed and not self.pinned(p, pins)} - survivors
             return {"leaving": len(leaving), "kept": 0}
 
-    def reconcile(self):
+    @staticmethod
+    def _scoped(db, table, paths, *, ordered=False):
+        column = "source" if table == "library_copies" else "path"
+        if paths is None:
+            return list(db.execute(f"SELECT * FROM {table}" + (f" ORDER BY {column}" if ordered else "")))
+        rows = []
+        # Exact original plus an indexed range for its virtual copies. Never
+        # read unrelated facts, marks, grades or album membership.
+        for start in range(0, len(paths), 200):
+            clauses, args = [], []
+            for path in paths[start:start+200]:
+                prefix = path + "|copy|"
+                clauses.append(f"({column}=? OR ({column}>=? AND {column}<?))")
+                args.extend((path, prefix, prefix[:-1] + "}"))
+            rows.extend(db.execute(f"SELECT * FROM {table} WHERE " + " OR ".join(clauses), args))
+        return sorted(rows, key=lambda row: row[1] if table == "album_photos" else row[0]) if ordered else rows
+
+    def reconcile(self, paths=None):
         with timed_lock(self.marks._lock, "reconcile"):
             if self._busy or not self.marks.database.exists():
                 return
+            paths = None if paths is None else sorted({source(p) for p in paths})
             self._busy = True
             try:
                 db = self.marks._connect()
                 try:
                     pins = self.pins()
-                    members = list(db.execute("SELECT album,path FROM album_photos"))
+                    members = self._scoped(db, "album_photos", paths)
                     kept = {source(p) for _,p in members}
                     contains = lambda p: source(p) in kept or self.pinned(p, pins)
                     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                    rows = list(db.execute("SELECT path,photo_id,marks,pending FROM photos"))
-                    files = {r[0]: list(r) for r in db.execute("SELECT * FROM files")}
+                    rows = self._scoped(db, "photos", paths)
+                    files = {r[0]: list(r) for r in self._scoped(db, "files", paths)}
                     retained = {source(p) for p,_,_,pending in rows if pending}
                     if "photo_grades" in tables:
-                        retained.update(source(p) for p,state in db.execute("SELECT path,state FROM photo_grades") if any(json.loads(state).get(k) for k in ("pending","recovery","conflict")) or "previous_grade" in json.loads(state))
+                        retained.update(source(p) for p,state in self._scoped(db, "photo_grades", paths) if any(json.loads(state).get(k) for k in ("pending","recovery","conflict")) or "previous_grade" in json.loads(state))
                     if "library_copies" in tables:
-                        retained.update(p for p,state in db.execute("SELECT source,state FROM library_copies") if json.loads(state).get("pending"))
+                        retained.update(p for p,state in self._scoped(db, "library_copies", paths) if json.loads(state).get("pending"))
                     with db:
                         # An album may be made from a temporarily browsed or offline photo.
                         for p in kept-files.keys():
@@ -129,8 +147,7 @@ class LibraryMembership:
                         elif table == "tags":
                             data = [list(r) for r in db.execute("SELECT * FROM tags ORDER BY tag")]
                         else:
-                            column = "source" if table == "library_copies" else "path"
-                            data = [list(r) for r in db.execute(f"SELECT * FROM {table} ORDER BY {column}") if source(r[1] if table == "album_photos" else r[0]) in (kept if table == "files" else protected)]
+                            data = [list(r) for r in self._scoped(db, table, paths, ordered=True) if source(r[1] if table == "album_photos" else r[0]) in (kept if table == "files" else protected)]
                         snapshot[table] = data
                     records = {}
                     for table, data in snapshot.items():
@@ -142,13 +159,30 @@ class LibraryMembership:
                     for name, record in records.items():
                         if record != self._saved_records.get(name):
                             atomic_json(self.records / (name+".json"),record)
-                    manifest = {"records":sorted(records),"albums":snapshot.get("albums",[]),"tags":snapshot.get("tags",[])}
+                    if paths is None:
+                        removed = self._saved_records.keys() - records.keys()
+                        names = sorted(records)
+                    else:
+                        touched = {sha256(p.encode()).hexdigest() for p in paths}
+                        removed = touched - records.keys()
+                        names_changed = (self._saved is None or
+                            any(name not in self._saved_records for name in records) or
+                            any(name in self._saved_records for name in removed))
+                        names = (sorted((self._saved_records.keys() - removed) | records.keys())
+                            if names_changed else self._saved["records"])
+                    manifest = {"records":names,"albums":snapshot.get("albums",[]),"tags":snapshot.get("tags",[])}
                     if manifest != self._saved:
                         atomic_json(self.path, manifest)
                         self._saved = manifest
-                    for name in self._saved_records.keys()-records.keys():
+                    # Publish the manifest before removing old records, just as
+                    # in a full pass: a crash must never leave dangling names.
+                    for name in removed:
                         (self.records / (name+".json")).unlink(missing_ok=True)
-                    self._saved_records = records
+                    if paths is None:
+                        self._saved_records = records
+                    else:
+                        for name in removed: self._saved_records.pop(name, None)
+                        self._saved_records.update(records)
                 finally:
                     db.close()
             finally:
@@ -173,7 +207,11 @@ class LibraryMembership:
 
     def describe(self, photos):
         pins = self.pins()
-        kept = {source(p) for _,p in self.marks._query("SELECT album,path FROM album_photos")}
+        db = self.marks._connect()
+        try:
+            kept = {source(p) for _,p in self._scoped(db, "album_photos", sorted({source(p["path"]) for p in photos}))}
+        finally:
+            db.close()
         for photo in photos:
             photo["kept_by_album"] = source(photo["path"]) in kept and not self.pinned(photo["path"], pins)
 

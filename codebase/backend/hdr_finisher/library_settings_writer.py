@@ -292,7 +292,7 @@ class LibrarySettingsWriter:
                 db.execute("DELETE FROM settings_writes WHERE path=?", (path,))
         finally:
             db.close()
-        if getattr(self.marks, "membership", None): self.marks.membership.reconcile()
+        if getattr(self.marks, "membership", None): self.marks.membership.reconcile([path])
         self._completed += 1
         if path in self._recovered:
             self._recovered.remove(path)

@@ -101,7 +101,7 @@ class LibraryIndex:
                 if generation != self._generation: raise _Restart()
 
     @audited("index_remember_scan")
-    def remember_scan(self, root, photos, *, epoch=None, generation=None):
+    def remember_scan(self, root, photos, *, epoch=None, generation=None, reconcile=True):
         """Record a folder listing and attach facts already known for unchanged files."""
         prefix = self._prefix(root)
         with timed_lock(self.marks._lock, "index_scan"):
@@ -109,7 +109,7 @@ class LibraryIndex:
             db = self.marks._connect()
             try:
                 known = {path: (size, modified, facts) for path, size, modified, facts in
-                    db.execute("SELECT path, bytes, mtime_ns, facts FROM files WHERE substr(path, 1, ?) = ?", (len(prefix), prefix))}
+                    db.execute("SELECT path, bytes, mtime_ns, facts FROM files WHERE path>=? AND path<?", (prefix, prefix[:-1] + chr(ord(prefix[-1])+1)))}
                 changed = []
                 files = getattr(self.marks, "file_commands", None)
                 if files:
@@ -128,7 +128,8 @@ class LibraryIndex:
                         db.executemany("DELETE FROM files WHERE path = ?", [(path,) for path in known])
             finally:
                 db.close()
-            self.membership.reconcile()
+            if reconcile:
+                self.membership.reconcile()
 
     @audited("index_remember_facts")
     def remember_facts(self, records, *, epoch=None, generation=None):

@@ -79,7 +79,7 @@ class LibraryCopies:
                 self.put(db, path, {"baseline":items})
                 prefix = str(path)+SEPARATOR
                 current = {prefix+i["photo_id"] for i in items}
-                old = [r[0] for r in db.execute("SELECT path FROM photos WHERE substr(path,1,?)=?", (len(prefix),prefix))]
+                old = [r[0] for r in db.execute("SELECT path FROM photos WHERE path>=? AND path<?", (prefix,prefix[:-1]+"}"))]
                 for key in set(old)-current:
                     for table in ("photos", "photo_tags", "album_photos"):
                         db.execute(f"DELETE FROM {table} WHERE path=?", (key,))

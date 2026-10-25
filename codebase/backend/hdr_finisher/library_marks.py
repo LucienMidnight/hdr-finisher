@@ -65,22 +65,49 @@ class NameTaken(ValueError):
     """The requested tag name is already in use; the caller may ask to merge."""
 
 
+class _LibraryConnection(sqlite3.Connection):
+    """Notify the process-local listing cache after a successful write commit."""
+    def _committed(self):
+        if self.total_changes != getattr(self, "_reported_changes", 0):
+            self._reported_changes = self.total_changes
+            self.on_commit()
+
+    def commit(self):
+        super().commit()
+        self._committed()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        result = super().__exit__(exc_type, exc_value, traceback)
+        if exc_type is None:
+            self._committed()
+        return result
+
+
 class LibraryMarks:
     def __init__(self, root: Path):
         self.database = Path(root) / "library.sqlite3"
         self._lock = RLock()
         self._schema_ready = False
+        self._revision = 0
         self._undo = deque(maxlen=100)
         self.writer = LibrarySettingsWriter(self)
         self.conflicts = LibraryConflicts()
+
+    def _committed(self):
+        # Cache identity only; authored data and recovery formats are unchanged.
+        self._revision += 1
 
     def _connect(self):
         existed = self.database.exists()
         if not self._schema_ready or not existed:
             self.database.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(self.database)
+        db = sqlite3.connect(self.database, factory=_LibraryConnection)
+        db.on_commit = self._committed
         if self._schema_ready and existed:
             return db
+        # Independent document readers must not queue behind an index write.
+        # WAL preserves all settings tables; no rebuild or data migration.
+        db.execute("PRAGMA journal_mode=WAL")
         db.execute("BEGIN")
         db.execute("CREATE TABLE IF NOT EXISTS photos (path TEXT PRIMARY KEY, photo_id TEXT NOT NULL, marks TEXT NOT NULL, pending INTEGER NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS tags (tag TEXT PRIMARY KEY COLLATE NOCASE)")
@@ -282,7 +309,7 @@ class LibraryMarks:
                 for value, document in zip(observed_paths, observed_documents):
                     self.copies.observe(value, document, states.get(value, {}))
             if getattr(self, "membership", None):
-                self.membership.reconcile()
+                self.membership.reconcile(paths)
                 self.membership.describe(photos)
                 self.membership.remember(photos)
             return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo)}
@@ -367,7 +394,7 @@ class LibraryMarks:
 
     def _result(self, photos, warnings, **extra):
         if getattr(self, "membership", None):
-            self.membership.reconcile()
+            self.membership.reconcile([p["path"] for p in photos])
             self.membership.describe(photos)
         return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo), **extra}
 

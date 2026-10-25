@@ -779,7 +779,7 @@ def create_library_router(worker, browser, store=None):
 
     def accepted_listing(result, root=None):
         if root is not None:
-            index.remember_scan(root, result["photos"])
+            index.remember_scan(root, result["photos"], reconcile=False)
         records = marks.read([photo["path"] for photo in result["photos"]])
         by_path = {row["path"]: row for row in records["photos"]}
         for photo in result["photos"]:

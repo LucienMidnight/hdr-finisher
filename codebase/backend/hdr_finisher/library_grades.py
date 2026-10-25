@@ -47,16 +47,12 @@ class LibraryGrades:
 
     def open_settings(self, source_path, item_key=None, recovery=False):
         """Read the same saved/pending grade attach will use, before decoding."""
-        with self.marks._lock:
-            key = str(self.marks._path(item_key or str(source_path)))
-            if self.marks.source_path(key).resolve() != Path(source_path).resolve():
-                raise ValueError("The copy belongs to another photo.")
-            state = self._get(key)
-            document = self.marks._document(Path(key)) or {}
-            grade = state.get("desired") if state.get("pending") else document.get("grade")
-            if recovery and not state.get("pending"):
-                grade = state.get("recovery") or grade
-            return validate_saved_document(grade) if grade else None
+        from .library_documents import LibraryDocuments
+        result = LibraryDocuments(self.marks).request(item_key or str(source_path), recovery=recovery)
+        if self.marks.source_path(result["path"]).resolve() != Path(source_path).resolve():
+            raise ValueError("The copy belongs to another photo.")
+        grade = result["grade"]
+        return validate_saved_document(grade) if grade else None
 
     def capture_edit(self, session):
         if str(session.session_id) in self.sessions:
