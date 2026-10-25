@@ -162,3 +162,58 @@ def test_three_workers_with_16_gb_two_below_and_the_setting_wins(monkeypatch):
         assert BatchExports._parallel() == expected
     monkeypatch.setenv("HDR_FINISHER_BATCH_PARALLEL", "1")
     assert BatchExports._parallel() == 1
+
+
+def test_export_snapshot_completes_during_grade_status(tmp_path):
+    from threading import RLock, Thread, current_thread
+    from hdr_finisher.batch_export_api import create_batch_router
+    from hdr_finisher.library_grades import LibraryGrades
+    from hdr_finisher.library_marks import LibraryMarks
+
+    store = SessionStore()
+    marks = LibraryMarks(tmp_path / "library")
+    LibraryGrades(marks, store)
+    create_batch_router(store)
+    attempted = Event()
+
+    class ObservedSessionLock:
+        def __init__(self):
+            self.lock = RLock()
+
+        def __enter__(self):
+            if current_thread().name == "snapshot-regression":
+                attempted.set()
+            self.lock.acquire()
+            return self
+
+        def __exit__(self, *args):
+            self.lock.release()
+
+    store._lock = ObservedSessionLock()
+    source = tmp_path / "photo.png"
+    Image.new("RGB", (4, 4)).save(source)
+    results, errors = [], []
+
+    def snapshot():
+        try:
+            results.append(store.batch_exports.snapshot(str(source)))
+        except Exception as error:
+            errors.append(error)
+
+    worker = Thread(target=snapshot, name="snapshot-regression", daemon=True)
+    try:
+        # Grade status holds the session lock before reading Library marks.
+        with store._lock:
+            worker.start()
+            assert attempted.wait(3), "Export did not reach the session read"
+            available = marks._lock.acquire(timeout=1)
+            if available:
+                marks._lock.release()
+        worker.join(3)
+        assert available, "Export held Library marks while waiting for grade status"
+        assert not worker.is_alive(), "Export snapshot did not finish"
+        assert not errors, errors
+        assert results[0]["source_path"] == str(source)
+    finally:
+        worker.join(3)
+        store.batch_exports.close()

@@ -499,3 +499,10 @@ file-lock retry), and edge-colour-raw (invalid GPU source diagnostic, currently
 an Infinity literal in generated WGSL). GPU edge-colour and HSL checks pass.
 All three protected project hashes are unchanged. No tolerance was relaxed;
 no push or installer build.
+
+### October 25: export snapshot lock order
+
+Export photo snapshots acquire the session lock before the Library lock, matching
+grade saving and status. This prevents an export-folder lookup from deadlocking
+with grade status and blocking other session work. Rendering and framing output
+are unchanged. A disposable-data concurrency regression covers the overlap.

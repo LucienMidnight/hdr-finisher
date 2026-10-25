@@ -24,7 +24,8 @@ def create_batch_router(store, grants=None, desktop=False):
     def snapshot(path):
         grades = store.library_grades
         marks = grades.marks
-        with marks._lock:
+        # Match grade saving/status: session first, then Library marks.
+        with store._lock, marks._lock:
             key = str(marks._path(path))
             source = marks.source_path(key)
             document = marks._document(Path(key)) or {}
