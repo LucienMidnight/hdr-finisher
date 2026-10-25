@@ -72,11 +72,6 @@
       const writer = health.writer, index = health.index;
       panel.replaceChildren(node("h2", "Activity", "panel-title"));
       const work = sceneWork(health, window.HDRLibraryScenes?.snapshot());
-      for(const failure of work.failures) {
-        const item = node(failure.revision ? "button" : "p", `${failure.path.split(/[\\/]/).at(-1)} · ${failure.reason}${failure.ignored ? " · Ignored" : ""}`, failure.revision ? "text-button library-picture-error-link" : "");
-        if (failure.revision) { item.type = "button"; item.dataset.action = "picture-error:" + failure.path; item.addEventListener("click", () => onPictureError?.(failure)); }
-        panel.append(item);
-      }
       if (work.jobs.length || health.helper.pending || health.helper.manual_paused) {
         const section = node("section", "", "library-activity-job");
         section.append(node("p", work.text + (health.helper.paused ? " · Reading paused" : "")));
@@ -99,10 +94,12 @@
         }); section.append(reveal); }
         panel.append(section);
       }
-      const writing = node("section", "", "library-activity-job");
-      writing.append(node("p", writerText(writer)));
-      if (writer.waiting) writing.append(action(writer.paused ? "Resume writing" : "Pause writing", "writer-pause", "/api/library/writer", { action: writer.paused ? "resume" : "pause" }));
-      panel.append(writing);
+      if (writer.waiting) {
+        const writing = node("section", "", "library-activity-job");
+        writing.append(node("p", writerText(writer)));
+        writing.append(action(writer.paused ? "Resume writing" : "Pause writing", "writer-pause", "/api/library/writer", { action: writer.paused ? "resume" : "pause" }));
+        panel.append(writing);
+      }
       if (checkText(index)) panel.append(node("p", checkText(index)));
       const indexing = node("section", "", "library-activity-job"); indexing.append(node("p", indexText(index)));
       if (index.state === "indexing" || index.state === "retrying" || index.paused) indexing.append(action(index.paused ? "Resume indexing" : "Pause indexing", "index-pause", "/api/library/index", { action: index.paused ? "resume" : "pause" }));
@@ -112,6 +109,11 @@
         const section=node("section","","library-activity-job");section.append(node("p",`${job.action}: ${job.done} of ${job.total}`),action(job.paused?"Resume command":"Pause command",`file-pause:${job.id}`,"/api/library/file-jobs",{id:job.id,action:job.paused?"resume":"pause"}),action("Cancel remaining",`file-cancel:${job.id}`,"/api/library/file-jobs",{id:job.id,action:"cancel"}));panel.append(section);
       }
       panel.append(indexing, node("h3", "Needs attention", "panel-title"));
+      for(const failure of work.failures) {
+        const item = node(failure.revision ? "button" : "p", `${failure.path.split(/[\\/]/).at(-1)} · ${failure.reason}${failure.ignored ? " · Ignored" : ""}`, failure.revision ? "text-button library-picture-error-link" : "");
+        if (failure.revision) { item.type = "button"; item.dataset.action = "picture-error:" + failure.path; item.addEventListener("click", () => onPictureError?.(failure)); }
+        panel.append(item);
+      }
       for(const item of health.file_commands?.attention || []) {const section=node("section","","library-activity-job");section.append(node("p",item.message),node("p",`Recorded photo and settings locations: ${(item.locations || [item.old,item.new]).join(" · ")}`),action("Try again",`file-retry:${item.id}`,"/api/library/file-jobs",{id:item.id,action:"resume"}));panel.append(section);}
       if (!work.failures.length && !(health.file_commands?.attention?.length) && !writer.attention.length && !(health.conflicts || []).length && !health.helper.failure && !health.helper.recovering && index.state !== "failed" && index.state !== "retrying" && !(index.checks?.folders || []).some(folder => folder.failure || folder.warnings?.length)) panel.append(node("p", "Nothing needs attention."));
       for (const group of writer.attention) {

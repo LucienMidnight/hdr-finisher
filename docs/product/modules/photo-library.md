@@ -1417,6 +1417,8 @@ from the beginning. Leaving the photo or invalidating the source still cancels
 its work. Activity refreshes preserve the scroll position and restore keyboard
 focus without scrolling a focused action into view.
 
+**Activity panel grouping (October 25, 2026).** Picture warnings appear below the Needs attention heading alongside the other problems. The settings-writing section appears only while settings writes are pending (including paused or waiting work); the idle "Settings files up to date" status is hidden.
+
 **Activity reporting (October 21, built).** Activity now lists filenames and
 actual waiting/running source, cache-check and drawing jobs, including backend
 RAW development and individual DNG brightness/distortion corrections. Resource
