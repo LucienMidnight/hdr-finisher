@@ -13,7 +13,7 @@ from threading import Event, RLock, Thread
 import time
 
 from .library_metadata import FACT_FIELDS
-from .library_diagnostics import audited, log, problem
+from .library_diagnostics import audited, log, problem, timed_lock
 
 LABELS = ("red", "orange", "green", "blue")
 
@@ -104,7 +104,7 @@ class LibraryIndex:
     def remember_scan(self, root, photos, *, epoch=None, generation=None):
         """Record a folder listing and attach facts already known for unchanged files."""
         prefix = self._prefix(root)
-        with self.marks._lock:
+        with timed_lock(self.marks._lock, "index_scan"):
             self.accept_read(epoch, generation)
             db = self.marks._connect()
             try:
@@ -134,7 +134,7 @@ class LibraryIndex:
     def remember_facts(self, records, *, epoch=None, generation=None):
         for record in records:
             record["indexed"] = record.get("mtime_ns") is not None
-        with self.marks._lock:
+        with timed_lock(self.marks._lock, "index_batch"):
             self.accept_read(epoch, generation)
             commands = getattr(self.marks, "file_commands", None)
             rows = [(r["path"], r["bytes"], r["mtime_ns"], json.dumps({name: r.get(name) for name in FACT_FIELDS}))

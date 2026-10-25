@@ -79,10 +79,15 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     const stride = Number(response.headers.get("X-Bytes-Per-Row"));
     const body = await response.arrayBuffer();
     HDRLibraryStopwatch("pixels_fetched", { key: sessionId, duration_ms: performance.now() - started });
+    this.libraryFetchMs = (this.libraryFetchMs || 0) + performance.now() - started;
+    window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"pixel_fetch",started,{key:sessionId});
     if (options.isCurrent?.() === false) return null;
+    const uploaded = performance.now();
     const texture = this.device.createTexture({ size: [width, height], format: "rgba16float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC });
     this.device.queue.writeTexture({ texture }, body, { bytesPerRow: stride, rowsPerImage: height }, [width, height]);
+    this.libraryUploadMs = (this.libraryUploadMs || 0) + performance.now() - uploaded;
+    window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"upload",uploaded,{key:sessionId});
     const proxy = { texture, width, height, sessionId, lane, longEdge,
       workingSpace: response.headers.get("X-Working-Space"), pixelFormat: "rgba16float",
       geometrySignature, sourceIdentity, identity: key, byteSize: body.byteLength, bindGroups: new Map() };
@@ -121,6 +126,7 @@ window.HDRLibraryPictures = (() => {
     const render = async () => {
       if (signal.aborted || !isCurrent()) return;
       HDRLibraryStopwatch("draw_dispatched", { key: meta.key, queue_ms: performance.now() - queued });
+      window.HDRLibraryTrace?.mark(meta.trace,"queue_wait",queued,{key:meta.key});
       const gpu = await initialize();
       if (signal.aborted || !isCurrent()) return;
       // Keep the accepted frame at its own shape while conversion and pixels load.
@@ -142,9 +148,13 @@ window.HDRLibraryPictures = (() => {
       adjustments.hdr.highlight_compression_target_nits = 1000;
       const started = performance.now();
       const native = meta.edge === 100000 && gpu.liveMode;
+      const leasing = performance.now();
       const lease = meta.route === "library-live" ? await HDRLibraryScenes.lease(meta, signal, native) : null;
+      window.HDRLibraryTrace?.mark(meta.trace,"lease_wait",leasing,{key:meta.key});
       if (lease) { clearInterval(gpu.deliveryActivityTimer); gpu.deliveryActivityTimer = null; }
       let result, refusal;
+      const rendering = performance.now();
+      gpu.libraryFetchMs = 0; gpu.libraryUploadMs = 0;
       const previousBudget = gpu.deliveryBudgetBytes;
       try {
       if (gpu.liveMode && gpu.sessionId !== meta.key) gpu.resetSession(meta.key);
@@ -179,6 +189,8 @@ window.HDRLibraryPictures = (() => {
         gpu.device.queue.submit([encoder.finish()]);
       }
       await gpu.waitForSubmittedWork();
+      window.HDRLibraryTrace?.mark(meta.trace,"render",rendering,{key:meta.key,
+        duration_ms:performance.now()-rendering-gpu.libraryFetchMs-gpu.libraryUploadMs});
       refusal = gpu.lastRenderRefusal?.reason;
       } finally {
         if (native) { gpu.deliveryBudgetBytes = previousBudget; gpu.gpuAllocator?.setBudget(gpu.memoryBudgetBytes()); }
@@ -186,6 +198,7 @@ window.HDRLibraryPictures = (() => {
       }
       if (signal.aborted || !isCurrent()) return;
       if (!result?.rendered && result?.execution !== "direct") throw new Error("The library picture could not be drawn: " + (result?.reason || refusal || "render refused"));
+      window.HDRLibraryTrace?.mark(meta.trace,"draw_complete",started,{key:meta.key,route:meta.route,cache_hit:!!meta.cache_hit});
       HDRLibraryStopwatch("picture_drawn", { key: meta.key, duration_ms: performance.now() - started, first: draws++ === 0, kept: false });
       canvas.dataset.rendition = hdr ? "hdr" : "sdr";
       canvas.dataset.surface = gpu.surfaceKeys.get(canvas);

@@ -169,6 +169,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **No usable GPU: visible-only CPU fallback.** Keep the existing CPU-made pictures only when the GPU is missing, software-only or lost. Make them only for photos on screen (visible cells, Single and full-screen), with no background picture queue and no pre-making pictures for pasted photos that are not visible. After device loss or driver reset, automatically return to live GPU drawing when a usable GPU becomes available; fallback must not latch for the session. As with CPU export, keep this route working without speed work or new features. | Steve, 2026-10-19 |
 | **Batch Export tiles share live Library drawing.** Visible photo tiles use the same live GPU renderer and visible-only CPU fallback. While export or Proof is running they are background work: draw each tile once and retain it, never redraw for progress updates, and yield GPU memory and turns to delivery. Verify export time per photo with the page open versus closed on the same three photos; the agreed timing noise allowance is 5%. | Steve, 2026-10-19 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
+| **Manual built previews work per photo** (any selection, also offered on folders), protected until discarded. Native 100% previews wait until everything else is fast. Design open; see Prepared-folder fullscreen culling. | Steve, 2026-10-25 |
 
 **V2 scope decision (Steve, October 21, 2026):** Library Looks (slice 7),
 linked photos (slice 7b) and portable projects (slice 10) are deferred to
@@ -796,6 +797,56 @@ Proof and Grade output; preparation yields to their existing priority. Assess
 prepared browsing during those jobs separately. No broad sweep, new budgets,
 codec choice or implementation is authorised by this research alone.
 
+**Built previews: per photo, user-chosen (Steve, October 25).** Besides
+automatic grid thumbnails and idle-built fullscreen previews, offer a manual
+"Build previews" command. Like Lightroom's per-photo 1:1 previews, it works on
+any selection, so users can filter or sort (for example by top rating) and
+build a limited set instead of a whole, possibly enormous, folder. It may also
+appear in the folder's right-click menu. User-built previews stay protected
+from automatic cleanup until discarded, and also suit keeping a gallery of
+favourite photos. Size tiers: automatic grid thumbnails plus display-sized
+fullscreen previews come first; native 100% detail previews are deferred until
+everything else is fast. Not built.
+
+**Review findings (Claude, October 25).** Measured during the 155k-photo
+indexing run: the global Library lock is held by whole-library membership
+reconciliation after every 32-photo index batch, every rating and every folder
+listing. Picture cache checks rose from about 20-50 ms to a 1.05 s median and
+ratings took 3.5-8.3 s; folder listings waited 1.9-6.1 s after a 31-42 ms scan.
+The 2560 scene cache was full (366 entries, 9.98 of 10 GiB). Each prepared flip
+still reloads, converts, uploads and re-grades its scene. In-process decoding at
+2560 px (crude test pixels, speed only): Ultra HDR SDR base 17-20 ms, HDR
+float16 about 100 ms on the CPU, 10-bit AVIF about 57 ms. Recommended order:
+instrument, take picture/rating paths off the lock, make reconciliation
+incremental, draw neighbours ahead, qualify codecs, then one stored-preview
+slice, then preparation and capacity. Not built or approved.
+
+
+
+**October 25, 2026: responsiveness core, Step 0 (instrumentation built).**
+Single and fullscreen navigation now carry a request ID through `cache_check`,
+`queue_wait`, `lease_wait`, `pixel_fetch`, `upload`, `render`, `present` and
+`key_to_picture` stopwatch events. Grid and filmstrip draws carry their own view
+and request IDs; the embedded-camera preview baseline uses the same stopwatch
+(with Sony ARW identified separately). Superseded navigation is recorded as
+cancelled. Cache-hit and route fields describe the picture path used.
+
+`upload` measures texture allocation and upload submission on the page;
+GPU completion remains in `render`, which excludes the measured fetch and
+upload submission time. `present` is the first checked browser paint opportunity
+(two animation frames) after the correct finished canvas is revealed, not
+physical display scanout. Backend `lock_timing` events report wait/hold
+milliseconds for folder listings, membership reconciliation, document lookup,
+marks reads/changes and index scan/metadata batches. Nested scopes overlap;
+do not add their hold times together.
+
+This step changes diagnostics only. No live library timing run was made;
+acceptance targets in the responsiveness brief remain proposals. Steps 1-3
+remain open, as do persistent previews and Prepare/Build previews.
+
+Validation: 603 Node tests passed; 2,539 Python tests passed, 3 skipped.
+No failures. Scratch app-data paths were used; no live library experiments,
+GPU drivers or timing sweeps.
 
 1. **Library speed plan** (Claude, October 18, from the speed exploration:
    [findings](../../technical/archive/library-speed-exploration-findings-2026-10-18.md)).

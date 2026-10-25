@@ -8,6 +8,8 @@ from pathlib import Path
 from .library_documents import atomic_json
 from .library_copies import source
 
+from .library_diagnostics import timed_lock
+
 
 class LibraryMembership:
     def __init__(self, index):
@@ -78,7 +80,7 @@ class LibraryMembership:
             return {"leaving": len(leaving), "kept": 0}
 
     def reconcile(self):
-        with self.marks._lock:
+        with timed_lock(self.marks._lock, "reconcile"):
             if self._busy or not self.marks.database.exists():
                 return
             self._busy = True

@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 from .desktop_security import SOURCE_EXTENSIONS
 from .library_pictures import SIDECAR_SUFFIX
 from .library_settings_writer import LibrarySettingsWriter
-from .library_diagnostics import audited, problem
+from .library_diagnostics import audited, problem, timed_lock
 from .library_conflicts import LibraryConflicts
 
 
@@ -217,7 +217,7 @@ class LibraryMarks:
     @audited("settings_read")
     def read(self, values, *, documents=None, canonical=False, connected=False):
         """Rebuild visited sidecar records; unmarked browsing creates no files."""
-        with self._lock:
+        with timed_lock(self._lock, "marks_read"):
             paths = [str(value) for value in values] if canonical else [str(Path(value).resolve()) for value in values]
             cached = self._rows(paths)
             photos, warnings, rebuilt, removed = [], [], [], []
@@ -373,7 +373,7 @@ class LibraryMarks:
 
     @audited("change", milestone=True)
     def change(self, values, change: MarkChange):
-        with self._lock:
+        with timed_lock(self._lock, "marks_change"):
             paths = list(dict.fromkeys(str(self._path(value)) for value in values))
             clear_label = change.toggle_label and all(row["marks"]["label"] == change.label for row in self.read(paths, canonical=True)["photos"])
 

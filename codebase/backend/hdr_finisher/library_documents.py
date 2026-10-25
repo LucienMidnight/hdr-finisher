@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from .library_grades import grade_key
+from .library_diagnostics import timed_lock
 
 
 def identity(grade):
@@ -26,7 +27,7 @@ class LibraryDocuments:
 
     def request(self, path):
         path=str(self.marks._path(path))
-        with self.marks._lock:
+        with timed_lock(self.marks._lock, "document_lookup"):
             state=self.marks.grades._get(path);doc=self.marks._document(Path(path)) or {}
             grade=state.get("desired") if state.get("pending") else doc.get("grade")
             default=doc.get("grade_default") or state.get("default")

@@ -81,3 +81,18 @@ def audited(operation, *, milestone=False):
             return result
         return call
     return decorate
+
+
+@contextmanager
+def timed_lock(lock, operation):
+    """Measure the existing lock scope without changing lock ownership/order."""
+    started = time.monotonic()
+    lock.acquire()
+    acquired = time.monotonic()
+    try:
+        yield
+    finally:
+        held = time.monotonic() - acquired
+        lock.release()
+        log("lock_timing", operation=operation,
+            wait_ms=round((acquired-started)*1000, 3), hold_ms=round(held*1000, 3))

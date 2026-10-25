@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.exceptions import RequestValidationError
-from .library_diagnostics import log, recent
+from .library_diagnostics import log, recent, timed_lock
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
@@ -28,6 +28,9 @@ class StopwatchEvent(BaseModel):
     path: str | None = Field(default=None, max_length=4096)
     request: str | None = Field(default=None, max_length=80)
     key: str | None = Field(default=None, max_length=64)
+    view: str | None = Field(default=None, max_length=32)
+    route: str | None = Field(default=None, max_length=64)
+    cache_hit: bool | None = None
     duration_ms: float | None = None
     queue_ms: float | None = None
     reason: str | None = Field(default=None, max_length=2048)
@@ -91,7 +94,6 @@ def user_error(error, subject="The Library"):
     if isinstance(error, ValidationError):
         return "Those marks could not be read. Nothing was changed; saved marks are safe."
     return str(error)
-
 
 
 class PictureRequest(BaseModel):
@@ -766,7 +768,7 @@ def create_library_router(worker, browser, store=None):
         return await run_in_threadpool(listing, result, result["path"])
 
     def listing(result, root=None):
-        with marks._lock:
+        with timed_lock(marks._lock, "folder_listing"):
             accept_helper(result)
             return accepted_listing(result, root)
 

@@ -26,7 +26,8 @@ window.HDRLibraryScenes = (() => {
     error.libraryError = result.library_error;
     return error;
   }
-  async function prepared(path, edge, signal, priority, identity, idle = false) {
+  async function prepared(path, edge, signal, priority, identity, idle = false, trace = null) {
+    const checked = performance.now();
     const generation=generations.get(path)||0;
     const plan = await probes.submit(path+"|"+edge+"|"+generation, async shared => {
       const response = await fetch("/api/library/live-plan", {method:"POST",signal:shared,
@@ -35,6 +36,7 @@ window.HDRLibraryScenes = (() => {
       if (!response.ok) throw failure(result);
       return result;
     }, signal, priority, {path,stage:"Checking stored picture"});
+    window.HDRLibraryTrace?.mark(trace,"cache_check",checked,{cache_hit:!!plan.cached});
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     if (generation!==(generations.get(path)||0)) throw new DOMException("Invalidated", "AbortError");
     const version=plan.source_identity || plan.revision;
@@ -60,16 +62,16 @@ window.HDRLibraryScenes = (() => {
     }, signal, priority, {heavy,cost,path,stage:"Reading and developing source"});
   }
   const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed});
-  async function load(path, edge, signal, priority = 10, idle = false) {
+  async function load(path, edge, signal, priority = 10, idle = false, trace = null) {
     const generation=generations.get(path)||0;
     const identity = path + (edge === 100000 ? "|native" : "");
-    let meta = await prepared(path, edge, signal, priority, identity, idle);
+    let meta = await prepared(path, edge, signal, priority, identity, idle, trace);
     if (!meta) return null;
     // One development stores both sizes. A waiter asking for the other size
     // reads it after the shared development; it never starts another import.
-    if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge);
+    if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, false, trace);
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
-    return {...meta, draw_priority:priority};
+    return {...meta, draw_priority:priority, trace};
   }
   async function develop(path, edge, signal, importance, version) {
     if (HDRLibraryGpuRaw.enabled()) {

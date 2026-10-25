@@ -256,14 +256,14 @@
     $("library-diagnostic").textContent = message;
     console.info("[library-picture]", message);
   }
-  async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null) {
+  async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null, trace = null) {
     const started = performance.now();
     let fallback = null;
     try {
       while (isCurrent() && !controller.signal.aborted) {
         try {
           await HDRLibraryPictures.initialize();
-          const meta = await (prepared || HDRLibraryScenes.load(photo.path,edge,controller.signal,priority));
+          const meta = await (prepared || HDRLibraryScenes.load(photo.path,edge,controller.signal,priority,false,trace));
           prepared = null;
           if (!isCurrent()) return;
           await drawPicture(meta,canvas,controller,isCurrent);
@@ -375,14 +375,20 @@
           if (!current() || cell.meta || !meta.url) return;
           canvas.src = meta.url; canvas.dataset.preview = "true";
           await canvas.decode();
-          if (current() && !cell.meta) { canvas.style.visibility=""; element.classList.remove("loading"); }
+          if (current() && !cell.meta) {
+            canvas.style.visibility=""; element.classList.remove("loading");
+            const baseline = HDRLibraryTrace.begin(container === space ? "grid" : "filmstrip",photo.path,started);
+            HDRLibraryTrace.mark(baseline,"embedded_preview_decoded",started,{route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : meta.route});
+            HDRLibraryTrace.present(baseline,()=>current() && !cell.meta,{route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : meta.route});
+          }
         }).catch(()=>{});
         let cpuShown = false;
         while (current()) {
           try {
             const gpu = await HDRLibraryPictures.initialize();
             if (gpu.adapterInfo?.fallback) throw Error("Hardware GPU unavailable.");
-            const meta = await HDRLibraryScenes.load(photo.path, cell.edge, cell.controller.signal);
+            const trace = HDRLibraryTrace.begin(container === space ? "grid" : "filmstrip",photo.path,started);
+            const meta = await HDRLibraryScenes.load(photo.path, cell.edge, cell.controller.signal,10,false,trace);
             if (!current()) return;
             await drawPicture(meta, fallback, cell.controller, current);
             if (!current()) return;
@@ -694,12 +700,19 @@
   function singleEdge() {
     return Math.max(1280, Math.min(2560, Math.max(browsingSize.width,browsingSize.height)));
   }
+  let navigationTrace = null;
   async function showSingle() {
+    const requestedTrace = navigationTrace; navigationTrace = null;
     if (!state.active || state.view !== "single") return;
     if (compare.enabled()) { void compare.show(); return; }
     const photo = selected(), edge = singleEdge();
     const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}` : "";
-    if (identity && identity === state.singleIdentity && !state.single?.signal.aborted) { positionZoom(); return; }
+    if (identity && identity === state.singleIdentity && !state.single?.signal.aborted) {
+      positionZoom();
+      if (requestedTrace && state.fitMeta && $("single-picture").dataset.picturePath === photo.path)
+        HDRLibraryTrace.present(requestedTrace,()=>selected()?.path === photo.path && state.singleIdentity === identity,{kept:true});
+      return;
+    }
     state.singleIdentity = identity;
     const fullIdentity = photo ? `${photo.path}|${photo.bytes}|${photo.mtime_ns}` : "";
     if (state.fullIdentity !== fullIdentity || state.nativeSource?.signal.aborted) {
@@ -709,7 +722,9 @@
     state.single?.abort(); state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; state.fitMeta = null; $("native-picture").hidden = true;
     if (!photo || !state.active || state.view !== "single") return;
     compare.hide();
+    const trace = requestedTrace || HDRLibraryTrace.begin(state.review ? "fullscreen" : "single",photo.path);
     const controller = new AbortController(); state.single = controller;
+    controller.signal.addEventListener("abort",()=>{if (!trace.presented) HDRLibraryTrace.mark(trace,"navigation_cancelled",trace.started);},{once:true});
     const current = () => state.active && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
     // The fitted canvas survives Grid/Single switches. Never reveal its old
     // pixels while a different selection is waiting for source or GPU work.
@@ -723,16 +738,17 @@
     status(`Loading ${photo.name}…`);
     try {
       startRawAhead();
-      const prepared = HDRLibraryScenes.load(photo.path,2560,controller.signal,0);
+      const prepared = HDRLibraryScenes.load(photo.path,2560,controller.signal,0,false,trace);
       const neighbours = [state.photos[state.index + 1], state.photos[state.index - 1]].filter(Boolean);
       readAhead.update(photo, neighbours, 2560);
-      const meta = await loadAndShow(photo, 2560, $("single-picture"), controller, current, 0, prepared);
+      const meta = await loadAndShow(photo, 2560, $("single-picture"), controller, current, 0, prepared, trace);
       if (!meta || !current()) return;
       if (state.fullSceneQuality && state.fullSceneQuality !== meta.quality) {
         state.nativeSource?.abort(); state.nativeSource = new AbortController(); state.fullDetail = null;
       }
       state.fullSceneQuality = meta.quality;
       state.fitMeta = meta; positionZoom(); if (state.zoom) void showNative();
+      HDRLibraryTrace.present(trace,current,{key:meta.key,route:meta.route,cache_hit:!!meta.cache_hit});
       updateSingleCaption();
       status(`${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
     } catch (error) { if (state.single === controller) state.singleIdentity = ""; if (!aborted(error) && !controller.signal.aborted) removeUnreadable(photo, error); }
@@ -1317,7 +1333,12 @@
     if (culling.shortcut(key)) { event.preventDefault(); return; }
     if (key === "t") { event.preventDefault(); collapse("right", false); $("library-tag-input")?.focus(); return; }
     const steps = { arrowright: 1, arrowleft: -1, arrowdown: state.view === "grid" ? state.layout?.columns || 1 : 1, arrowup: state.view === "grid" ? -(state.layout?.columns || 1) : -1 };
-    if (key in steps) { event.preventDefault(); select(state.index + steps[key], true, event.shiftKey ? "range" : "single"); }
+    if (key in steps) {
+      const target = state.photos[Math.max(0,Math.min(state.photos.length-1,state.index+steps[key]))];
+      if (state.view === "single" && target)
+        navigationTrace = HDRLibraryTrace.begin(state.review ? "fullscreen" : "single",target.path);
+      event.preventDefault(); select(state.index + steps[key], true, event.shiftKey ? "range" : "single");
+    }
     else if (key === "enter") { event.preventDefault(); openGrade(); }
     else if (key === "delete") { event.preventDefault(); fileCommands.remove(state.photos.filter(photo => state.selection.has(photo.path))).catch(error => status(error.message)); }
     else if (key === " ") { event.preventDefault(); setView(state.view === "grid" ? "single" : "grid"); }
