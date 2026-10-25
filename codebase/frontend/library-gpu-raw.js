@@ -739,9 +739,19 @@
         return response.json();
       };
       try {
+        // Finished Library surfaces are disposable, not a reason to abandon GPU development.
+        if (background) await root.HDRLibraryScenes?.reclaim(bytes,true);
+        let reclaimed = false;
         for (;;) {
           const value = await lease(false);
-          if (value.fallback) throw Error(value.fallback);
+          if (value.fallback) {
+            if (background && !reclaimed) { reclaimed = true; await root.HDRLibraryScenes?.reclaim(bytes,true); continue; }
+            if (background && root.HDRLibraryScenes?.snapshot().draws.active) {
+              // Drop this waiting reservation so the already-started window draw can finish.
+              await fetch(url,{method:"DELETE"}); await wait(50,signal); reclaimed = false; continue;
+            }
+            throw Error(value.fallback);
+          }
           if (!value.granted || value.preempt) {
             root.HDRLibraryScenes?.stage(meta.path,"Waiting for GPU preparation",true);
             if (value.granted) await lease(true);

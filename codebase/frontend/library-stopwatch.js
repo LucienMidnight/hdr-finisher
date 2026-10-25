@@ -32,15 +32,22 @@ window.HDRLibraryTrace = Object.freeze({
     HDRLibraryStopwatch(stage, {request:trace.request,view:trace.view,path:trace.path,
       duration_ms:performance.now()-started,...fields});
   },
+  end(trace,reason) {
+    if (!trace || trace.ended) return;
+    trace.ended = true;
+    this.mark(trace,"fullscreen_outcome",trace.started,{blank:!trace.presented,stand_in:!!trace.standInPresented,sharp:!!trace.sharpPresented,reason});
+  },
   present(trace, current, fields = {}) {
     if (!trace) return;
     const submitted = performance.now();
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!current()) return;
       trace.presented = true;
+      if (fields.stand_in) trace.standInPresented = true;
       if (fields.sharp) trace.sharpPresented = true;
       this.mark(trace,"present",submitted,fields);
       this.mark(trace,"key_to_picture",trace.started,fields);
+      if (fields.sharp) this.end(trace,"sharp presented");
     }));
   }
 });

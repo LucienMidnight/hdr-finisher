@@ -13,7 +13,8 @@ test('Single swaps the correct finished canvas and hides the previous grade whil
  const readyWindow=create({key,load:async p=>{const value={canvas:canvas(p),meta:{key:p.grade_identity,edge:2560}};if(block)await block;return value;},dispose:value=>{disposed.push(value);if(value.canvas===visible)value.canvas.hidden=true;}});
  const surfaces={has:()=>true};
  const context={state,navigationTrace:null,selected:()=>state.photos[state.index],singleEdge:()=>2560,readyKey:key,readyWindow,readySurfaces:surfaces,
-  compare:{enabled:()=>false,hide(){}},HDRLibraryTrace:{begin:()=>({}),mark(){},present:(trace,current)=>{assert.ok(current());assert.equal(visible.pixels,key(state.photos[state.index]));}},
+  quickWindow:{update(){},get:async()=>null},navigationGate:{touch(){}},beforeSource:async()=>{},showQuick(){},performance,
+  compare:{enabled:()=>false,hide(){}},HDRLibraryTrace:{begin:()=>({}),end(){},mark(){},present:(trace,current)=>{assert.ok(current());assert.equal(visible.pixels,key(state.photos[state.index]));}},
   restoreStandIn(){},showStandIn(){},AbortController,positionZoom(){},updateSingleCaption(){},status(){},startRawAhead(){},readyNeighbours:()=>[a,b].filter(p=>p!==state.photos[state.index]),warmReady(){},overlays:null,
   HDRLibraryPictures:{usable:()=>true},loadAndShow:()=>assert.fail('Unexpected fallback'),aborted:e=>e.name==='AbortError',removeUnreadable:(_p,e)=>{throw e;},$:()=>visible};
  vm.runInNewContext(fn+';this.showSingle=showSingle;',context);
@@ -34,11 +35,12 @@ test('memory polling preserves the stopped selection during source work and stil
  const context={readyPolling:false,readyBytes:50,state:{active:true,view:'single',singleIdentity:'selected'},
    api:async()=>permit,HDRLibraryPictures:{readyMemory:async()=>budget},
    HDRLibraryScenes:{snapshot:()=>({draws:{active:0},sources:{active:sourceActive},probes:{active:0}})},
-   readyWindow:{has:()=>finished,invalidate:()=>invalidated++},selected:()=>({path:'a'}),compare:{enabled:()=>false}};
+   tilePool:{snapshot:()=>({bytes:0})},quickWindow:{invalidate(){}},readyWindow:{has:()=>finished,invalidate:()=>invalidated++},selected:()=>({path:'a'}),compare:{enabled:()=>false}};
  vm.runInNewContext(fn+';this.poll=pollReadyMemory;',context);
  await context.poll();assert.equal(invalidated,0,'Pending selected photo finishes');
  finished=true;await context.poll();assert.equal(invalidated,0,'Neighbour source does not evict selected surface');
  sourceActive=0;await context.poll();assert.equal(invalidated,1,'Other delivery gets its memory');
  permit={ready:false,idle:false};sourceActive=1;await context.poll();assert.equal(invalidated,2,'Grade still preempts');
- permit={ready:true,idle:true};budget=25;await context.poll();assert.equal(invalidated,3,'Existing budget still enforced');
+ permit={ready:true,idle:true};budget=25;await context.poll();assert.equal(invalidated,2,'Own reservation must not cancel its draw');
+ sourceActive=0;await context.poll();assert.equal(invalidated,3,'Existing budget still enforced');
 });

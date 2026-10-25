@@ -69,6 +69,15 @@ including how often a stand-in versus a sharp picture appeared.
 
 ## Part A: thread audit and fixes
 
+**Part 0b follow-up, October 25 (before A/B).** Steve's badminton try requires
+a correct 640-scene stand-in when no finished grid picture exists, a quiet gate
+before source misses, preservation/promotion of in-window preparations and
+draws, Library surface eviction before RAW GPU budget fallback, Denoise model
+reuse without repeated scene loads, and removal of false Grade helper pauses.
+The implementation/outcome is recorded at the start of the Photo Library
+module PRD. Stop after committing Part 0b for Steve to retry. Parts A/B remain
+open; this brief stays here until they are completed.
+
 **Known caps** found October 25. Confirm each in the code; this list may be
 incomplete.
 

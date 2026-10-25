@@ -2,9 +2,9 @@
 window.clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 class HDRLibraryGPU extends HDRWebGPUPreview {
   async reportDeliveryActivity(active) {
-    // A live draw owns a background lease. It must never announce Grade activity.
-    if (this.liveMode) return {reserved:0};
-    return super.reportDeliveryActivity(active);
+    // Every Library rendition is background work, including initialization.
+    // Grade activity would pause our own source helper and preempt our leases.
+    return {reserved:0};
   }
   resourceMemorySnapshot() {
     const value = super.resourceMemorySnapshot();
@@ -220,7 +220,8 @@ window.HDRLibraryPictures = (() => {
       canvas.dataset.peakNits = hdr ? "1000" : "203";
       return result;
     };
-    const pending = (meta.route === "library-live" ? HDRLibraryScenes.draw(render,signal,meta.draw_priority ?? 10,meta.path)
+    const priority = typeof meta.draw_priority === "function" ? meta.draw_priority() : meta.draw_priority ?? 10;
+    const pending = (meta.route === "library-live" ? HDRLibraryScenes.draw(render,signal,priority,meta.path)
       : queue.catch(()=>{}).then(()=>render())).finally(() => { foreground--; });
     queue = pending;
     return pending.then(value => {

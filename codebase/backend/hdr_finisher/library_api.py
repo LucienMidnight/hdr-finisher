@@ -38,6 +38,7 @@ class StopwatchEvent(BaseModel):
     kept: bool | None = None
     stand_in: bool | None = None
     sharp: bool | None = None
+    blank: bool | None = None
 
 class OverlayRequest(BaseModel):
     path: str

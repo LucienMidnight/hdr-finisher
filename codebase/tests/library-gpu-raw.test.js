@@ -3,6 +3,21 @@ const assert = require('node:assert/strict');
 require('../frontend/library-gpu-raw.js');
 const { quantile, reducedSize } = globalThis.HDRLibraryGpuRaw;
 
+test('Library releases finished cache memory before accepting a RAW budget refusal', async () => {
+  const fs=require('node:fs'),vm=require('node:vm');
+  const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+  const fn=source.slice(source.indexOf('  async function scheduledDevelopment('),source.indexOf('  async function develop(path,'));
+  let held=80,drawn=0;const order=[];
+  const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
+    serial:task=>task(),gpu:async()=>{},rawBudget:()=>60,
+    root:{HDRLibraryScenes:{reclaim:async(bytes,required)=>{assert.equal(required,true);held=0;order.push('reclaim');},stage(){}}},
+    fetch:async(_url,options)=>{if(options.method==='DELETE')return {};order.push('lease');return {ok:true,json:async()=>held+60>100?{fallback:'budget'}:{granted:true}};},
+    developRaw:async()=>{drawn++;order.push('GPU');return {timings:{}};}};
+  vm.runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+  await context.run({meta:{},edges:[640,2560],background:true},new AbortController().signal);
+  assert.equal(drawn,1);assert.deepEqual(order,['reclaim','lease','GPU']);
+});
+
 // numpy.quantile(values, q) with the default linear method, for comparison.
 function numpyQuantile(values, q) {
   const sorted = [...values].sort((a, b) => a - b);

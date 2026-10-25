@@ -99,9 +99,15 @@ def test_delivery_does_not_hold_the_blanket_library_pause(monkeypatch):
     app.add_middleware(main.DesktopRequestBoundary)
     @app.post("/api/session/{identity}/{operation:path}")
     def operation(identity, operation): return {}
+    @app.post("/api/library/grade/{identity}")
+    def settings(identity): return {}
     with TestClient(app) as client:
         assert client.post("/api/session/photo/export").status_code==200
         assert client.post("/api/session/photo/proof/artifact").status_code==200
+        assert client.post("/api/session/live-library-picture/denoise-model").status_code==200
+        assert client.post("/api/session/live-library-picture/local-masks").status_code==200
+        assert client.post("/api/library/grade/photo", json={"action":"check"}).status_code==200
+        assert client.post("/api/library/grade/photo", json={"action":"save"}).status_code==200
         assert pauses==[]
         assert client.post("/api/session/photo/adjustments").status_code==200
         assert pauses==[True]

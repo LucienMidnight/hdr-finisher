@@ -1,5 +1,6 @@
 """Grade commands share the Library's sole writer and project's opening path."""
 from pathlib import Path
+from contextlib import nullcontext
 import json
 from typing import Literal
 from fastapi import HTTPException
@@ -81,6 +82,11 @@ def add_grade_routes(router, marks, store):
 
     @router.post("/grade/{session_id}")
     def grade_command(session_id: str, request: GradeRequest):
+        from .main import library_worker
+        with library_worker.busy() if request.action in {"load", "discard-for-paste"} else nullcontext():
+            return apply_grade_command(session_id, request)
+
+    def apply_grade_command(session_id: str, request: GradeRequest):
         try:
             if request.action == "attach":
                 if request.initialize:

@@ -14,8 +14,10 @@ window.HDRLibraryScenes = (() => {
       key:job.stage,duration_ms:performance.now()-(job.loggedAt || performance.now()),reason:error?.message});
     job.loggedAt=performance.now();
   };
-  const probes = HDRLibrarySceneScheduler.create(2, undefined, {onChange:changed,preemptLower:true});
-  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed,keepRunning:job=>job.priority>=10,preemptLower:true});
+  // In-window jobs (priority 0/5) finish; only ordinary grid/idle work is preemptible.
+  const preemptLower = job => job.priority >= 10;
+  const probes = HDRLibrarySceneScheduler.create(2, undefined, {onChange:changed,preemptLower});
+  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed,keepRunning:job=>job.priority>=10,preemptLower});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set();
@@ -26,7 +28,7 @@ window.HDRLibraryScenes = (() => {
     error.libraryError = result.library_error;
     return error;
   }
-  async function prepared(path, edge, signal, priority, identity, idle = false, trace = null) {
+  async function prepared(path, edge, signal, priority, identity, idle = false, trace = null, options = {}) {
     const checked = performance.now();
     const generation=generations.get(path)||0;
     const plan = await probes.submit(path+"|"+edge+"|"+generation, async shared => {
@@ -44,6 +46,9 @@ window.HDRLibraryScenes = (() => {
     versions.delete(path);versions.set(path,version);
     if(versions.size>1024)versions.delete(versions.keys().next().value);
     if (plan.cached) return plan.cached;
+    if (options.cachedOnly) return null;
+    await options.beforeSource?.();
+    if (signal?.aborted) throw new DOMException("Cancelled","AbortError");
     if (idle && !plan.warm_allowed) return null;
     const previous = history.get(path);
     const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
@@ -61,15 +66,15 @@ window.HDRLibraryScenes = (() => {
       }
     }, signal, priority, {heavy,cost,path,stage:"Reading and developing source"});
   }
-  const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed,preemptLower:true});
-  async function load(path, edge, signal, priority = 10, idle = false, trace = null) {
+  const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed,preemptLower});
+  async function load(path, edge, signal, priority = 10, idle = false, trace = null, options = {}) {
     const generation=generations.get(path)||0;
     const identity = path + (edge === 100000 ? "|native" : "");
-    let meta = await prepared(path, edge, signal, priority, identity, idle, trace);
+    let meta = await prepared(path, edge, signal, priority, identity, idle, trace, options);
     if (!meta) return null;
     // One development stores both sizes. A waiter asking for the other size
     // reads it after the shared development; it never starts another import.
-    if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, false, trace);
+    if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, false, trace, options);
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
     return {...meta, draw_priority:priority, trace};
   }
@@ -124,7 +129,11 @@ window.HDRLibraryScenes = (() => {
     catch(error) { await release(); throw error; }
     return {bytes,check:async()=>{ if (!await check()) {const error=Error("Library draw yielded to Grade or delivery.");error.libraryYield=true;throw error;} },release};
   }
+  let reclaim = async () => {};
   return Object.freeze({load,lease,
+    onReclaim:handler=>{reclaim=handler;},
+    reclaim:(bytes,required=false)=>reclaim(bytes,required),
+    promote:(path,priority)=>{probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);},
     viewport:(shown,around)=>{visible=new Set(shown);nearby=new Set(around);sources.reprioritize(rank);probes.reprioritize(rank);},
     invalidate:paths=>{const targets=new Set(paths);for(const path of targets)generations.set(path,(generations.get(path)||0)+1);sources.invalidate(path=>targets.has(path));probes.invalidate(path=>targets.has(path));},
     stage:(path,stage,waiting=false)=>sources.stage(path,stage,waiting),

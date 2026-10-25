@@ -63,6 +63,33 @@ def test_browsing_and_attaching_write_no_settings(setup):
     assert not grades._get(str(photo)).get("recovery")
 
 
+def test_settings_poll_and_save_do_not_pause_helper_but_loading_grade_does(setup, monkeypatch):
+    from contextlib import contextmanager
+    from fastapi import APIRouter, FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.main import library_worker
+    from hdr_finisher.library_grade_api import add_grade_routes
+    photo, store, session, marks, grades = setup
+    pauses = []
+    @contextmanager
+    def busy():
+        pauses.append(True)
+        yield
+    monkeypatch.setattr(library_worker, "busy", busy)
+    app = FastAPI()
+    router = APIRouter(prefix="/api/library")
+    add_grade_routes(router, marks, store)
+    app.include_router(router)
+    with TestClient(app) as client:
+        url = f"/api/library/grade/{session.session_id}"
+        for action in ("attach", "check", "save"):
+            assert client.post(url, json={"action": action}).status_code == 200
+        assert pauses == []
+        assert client.post(url, json={"action": "load", "reuse_source": True}).status_code == 200
+        assert pauses == [True]
+    marks.writer.drain()
+
+
 def test_round_trip_complete_document_keeps_latest_marks_albums_unknown_fields(setup):
     photo, store, session, marks, grades = setup
     marks.change([photo], MarkChange(rating=3, add_tag="Sea"))

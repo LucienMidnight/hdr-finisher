@@ -7,7 +7,7 @@
     const score=job=>job.cost-Math.min(5,(now()-job.created)/1000);
     const order=(a,b)=>a.priority-b.priority||score(a)-score(b)||a.sequence-b.sequence;
     let ranking=null;
-    const demand=job=>{job.priority=Math.min(80,...[...job.users].map(user=>user.priority===0?0:ranking?ranking(job.path):user.priority));};
+    const demand=job=>{job.priority=Math.min(80,...[...job.users].map(user=>user.priority<=5?user.priority:ranking?ranking(job.path):user.priority));};
     let borrowPending=false;
     function pump(borrow=false){
       while(active<limit&&waiting.length){
@@ -48,10 +48,12 @@
         user.stop=()=>{const retained=typeof keepRunning==="function"?keepRunning(job):keepRunning;job.users.delete(user);reject(cancelled());demand(job);if(!job.users.size&&!(retained&&job.running)){job.controller.abort();if(!job.running){const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);}onChange(job,job.running?"stopping":"cancelled");if(jobs.get(key)===job)jobs.delete(key);}};
         job.users.add(user);demand(job);signal?.addEventListener("abort",user.stop,{once:true});
       });
-      if (preemptLower) for (const running of runningJobs) if (running.priority > priority) running.controller.abort();
+      if (preemptLower) for (const running of runningJobs)
+        if (running.priority > priority && (typeof preemptLower !== "function" || preemptLower(running,priority))) running.controller.abort();
       pump();return result;
     }
     return Object.freeze({submit,
+      promote:(path,priority)=>{for(const job of jobs.values())if(job.path===path){for(const user of job.users)user.priority=Math.min(user.priority,priority);demand(job);}pump();},
       reprioritize:rank=>{ranking=rank;for(const job of jobs.values())demand(job);},
       invalidate:predicate=>{for(const job of [...jobs.values()])if(predicate(job.path)){job.controller.abort();const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);settle(job,cancelled());}},
       stage:(path,stage,waiting=false)=>{for(const job of jobs.values())if(job.path===path&&job.running&&(job.stage!==stage||job.resourceWaiting!==waiting)){job.stage=stage;job.resourceWaiting=waiting;onChange(job,"running");}},snapshot:()=>({failures:[...failures],active,waiting:waiting.filter(j=>!j.controller.signal.aborted).length,jobs:[...new Set([...jobs.values(),...runningJobs])].map(j=>({path:j.path,stage:j.stage,state:j.controller.signal.aborted?"stopping":j.running&&!j.resourceWaiting?"running":"waiting"}))})});

@@ -14,12 +14,13 @@ test('ready pictures reuse only their exact photo, grade, source and display ide
     window.invalidate();assert.equal(window.size(),0);assert.equal(disposed.length,2);
   }
 });
-test('navigation keeps finished neighbours and cancels unfinished superseded draws',async()=>{
+test('navigation keeps in-progress window draws through direction changes, then keeps their finished picture',async()=>{
   const a={path:'a'},b={path:'b'},c={path:'c'},blocked=gate();let cancelled=false;
   const window=create({key:p=>p.path,load:async(p,signal)=>{if(p===b){signal.addEventListener('abort',()=>{cancelled=true;});await blocked.promise;}return p;},dispose:()=>{}});
-  await window.get(a);const old=window.get(b);const rejected=assert.rejects(old,{name:'AbortError'});await Promise.resolve();
-  window.update(c,[a,b]);assert.equal(cancelled,true);assert.equal(await window.get(c),c);assert.equal(await window.get(a),a);
-  blocked.resolve();await rejected;
+  await window.get(a);const old=window.get(b);await Promise.resolve();
+  window.update(c,[a,b]);assert.equal(cancelled,false);assert.equal(await window.get(c),c);assert.equal(await window.get(a),a);
+  window.update(a,[b,c]);assert.equal(window.get(b),old);assert.equal(cancelled,false);
+  blocked.resolve();assert.equal(await old,b);assert.equal(await window.get(b),b);
 });
 
 
@@ -38,11 +39,22 @@ test('stand-in selects only finished pixels for the same source, grade, mode and
   valid.fallback.hidden=true;assert.equal(standIn([valid],valid.identity,2,true),undefined);
 });
 
-test('selected photo replaces an unfinished neighbour demand at foreground priority and finishes',async()=>{
-  const photo={path:'a'},blocked=gate(),priorities=[];
-  const window=create({key:p=>p.path,load:async(p,signal,current,priority)=>{priorities.push(priority);if(priority>0)await blocked.promise;return {path:p.path,priority};},dispose:()=>{}});
-  const neighbour=window.get(photo,5);const rejected=assert.rejects(neighbour,{name:'AbortError'});
+test('selected photo promotes the same unfinished neighbour demand without restarting it',async()=>{
+  const photo={path:'a'},blocked=gate(),priorities=[],promoted=[];
+  const window=create({key:p=>p.path,promote:(p,priority)=>promoted.push(priority),load:async(p,signal,current,priority,trace,importance)=>{priorities.push(priority);await blocked.promise;assert.equal(signal.aborted,false);return {path:p.path,priority:importance()};},dispose:()=>{}});
+  const neighbour=window.get(photo,5);
   await Promise.resolve();window.update(photo,[]);
-  assert.deepEqual(await window.get(photo,0),{path:'a',priority:0});
-  blocked.resolve();await rejected;assert.deepEqual(priorities,[5,0]);
+  assert.equal(window.get(photo,0),neighbour);blocked.resolve();
+  assert.deepEqual(await neighbour,{path:'a',priority:0});assert.deepEqual(priorities,[5]);assert.deepEqual(promoted,[0]);
+});
+
+test('rapid navigation delays source preparation until the last selection settles',async()=>{
+  const {navigationGate}=require('../frontend/library-ready-window');
+  let now=0;const ticks=[],started=[];
+  const navigation=navigationGate({now:()=>now,wait:()=>new Promise(resolve=>ticks.push(resolve))});
+  async function source(photo,signal){await navigation.settled(signal);if(!signal.aborted)started.push(photo);}
+  const passed=new AbortController();navigation.touch();const first=source('passed',passed.signal);
+  now=30;navigation.touch();passed.abort();const final=source('stopped',new AbortController().signal);
+  now=120;ticks.splice(0).forEach(resolve=>resolve());await Promise.resolve();assert.deepEqual(started,[]);
+  now=150;ticks.splice(0).forEach(resolve=>resolve());await Promise.all([first,final]);assert.deepEqual(started,['stopped']);
 });

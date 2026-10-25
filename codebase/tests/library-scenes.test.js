@@ -6,12 +6,32 @@ const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {reso
 function setup(plans,develop){
  let time=0;const requests=[],events=[];
  const context={window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,setTimeout,clearTimeout,
-  performance:{now:()=>time},console,
+  performance:{now:()=>time},console,crypto:require('node:crypto').webcrypto,
   HDRLibraryGpuRaw:{enabled:()=>true,liveScene:develop},
   fetch:async(url,options)=>{requests.push(JSON.parse(options.body));if(url==="/api/library/live-scene")return {ok:false,json:async()=>({detail:"decoder failed"})};const plan=plans[JSON.parse(options.body).path];return {ok:!plan.library_error,json:async()=>plan};}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/library-scenes.js'),'utf8'),context);
  return {scenes:context.window.HDRLibraryScenes,requests,events,advance:ms=>time+=ms};
 }
+
+test('quick stored-scene misses never start a source; a stopped request may prepare it',async()=>{
+ const started=[],plans={missing:{bytes:96e6,revision:'1'},stored:{cached:{edge:640,key:'current-grade'}}};
+ const {scenes}=setup(plans,async(path,edge)=>{started.push(path);return {edge,key:'developed'};});
+ assert.equal(await scenes.load('missing',640,null,0,false,null,{cachedOnly:true}),null);
+ assert.equal((await scenes.load('stored',640,null,0,false,null,{cachedOnly:true})).key,'current-grade');
+ assert.deepEqual(started,[]);
+ assert.equal((await scenes.load('missing',640,null,0)).key,'developed');assert.deepEqual(started,['missing']);
+});
+
+test('in-window drawing is not preempted by another selected photo and promotion keeps the same job',async()=>{
+ const {scenes}=setup({},()=>assert.fail('No source expected'));
+ const block=gate(),order=[];let signal;
+ scenes.viewport([],[]);
+ const neighbour=scenes.draw(async shared=>{signal=shared;order.push('neighbour');await block.promise;return 42;},null,5,'a');
+ await tick();scenes.promote('a',0);
+ const selected=scenes.draw(async()=>order.push('selected'),null,0,'b');await tick();
+ assert.equal(signal.aborted,false);assert.deepEqual(order,['neighbour']);
+ block.resolve();assert.equal(await neighbour,42);await selected;assert.deepEqual(order,['neighbour','selected']);
+});
 test('cached pictures bypass both occupied sources and light demand gets the next slot',async()=>{
  const block=gate(),started=[];
  const {scenes}=setup({a:{bytes:96e6,revision:'a'},b:{bytes:400e6,revision:'b'},

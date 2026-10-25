@@ -215,6 +215,12 @@ class LivePictures:
             render_cache=SessionRenderCache(pixels, reference, color_context=context))
 
 
+def metadata(identity):
+    with _registry_lock:
+        entry = _registry.get(identity)
+        return deepcopy(entry[1]) if entry else None
+
+
 def session(identity):
     if not identity.startswith("live-"):
         return None

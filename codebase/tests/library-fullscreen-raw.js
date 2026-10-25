@@ -15,6 +15,11 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
   const page=await browser.newPage(), errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error(e.stack);});
   await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
   const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>!!window.HDRLibrary);
+  await lib.evaluate(()=>{
+   const record=window.HDRLibraryStopwatch;
+   window.part0bEvents=[];
+   window.HDRLibraryStopwatch=(stage,fields)=>{window.part0bEvents.push({stage,...fields});record(stage,fields);};
+  });
   await lib.evaluate(folder=>HDRLibrary.browse(folder),folder);
   // Each cell finished: a drawn picture or, for camera RAWs, its saved thumbnail.
   await lib.waitForFunction(()=>[...document.querySelectorAll('#grid-space .library-cell')].filter(cell=>cell.querySelector('canvas[data-picture-key],img[data-picture-key]')).length===3,null,{timeout:90000});
@@ -38,6 +43,8 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
   await page.keyboard.press('Escape');
   await lib.locator('.library-cell').filter({hasText:'photo-0.ARW'}).click();
   await lib.evaluate(()=>{
+   const cell=[...document.querySelectorAll('#grid-space .library-cell')].find(cell=>cell.dataset.path.endsWith('photo-0.ARW'));
+   for(const canvas of cell.querySelectorAll('canvas')) delete canvas.dataset.picturePath;
    const pictures=HDRLibraryPictures;
    window.fullscreenDrawStarted=false;
    const gate=new Promise(resolve=>{window.releaseFullscreenDraw=resolve;});
@@ -50,6 +57,7 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
   await page.keyboard.press('f');
   await lib.waitForFunction(()=>window.fullscreenDrawStarted);
   assert.equal(await lib.locator('#single-picture').isVisible(),false,'Previous photo stays hidden while selected photo drawing waits');
+  await lib.waitForFunction(()=>[...document.querySelectorAll('canvas[data-stand-in="true"]')].some(canvas=>!canvas.hidden&&canvas.dataset.picturePath?.endsWith('photo-0.ARW')));
   assert.ok((await lib.locator('#single-caption').textContent()).includes('photo-0.ARW'),'Caption immediately follows selection');
   await lib.evaluate(()=>window.releaseFullscreenDraw());
   await lib.waitForFunction(()=>document.querySelector('#single-picture').dataset.picturePath?.endsWith('photo-0.ARW'));
@@ -68,6 +76,20 @@ for(let i=0;i<3;i++)fs.copyFileSync(i===2?portrait:source,path.join(folder,`phot
    console.log(name,`first picture ${first}ms; full preview ${Date.now()-start}ms`);
   }
   assert.equal(shapes.size,2,'Navigation covers landscape and portrait');
+  for(let i=0;i<10;i++){
+   await page.keyboard.press(i%2?'ArrowLeft':'ArrowRight');
+   await page.waitForTimeout(30);
+   const wrong=await lib.evaluate(()=>{
+    const name=document.querySelector('#single-caption').textContent;
+    return [...document.querySelectorAll('#single-stage canvas[data-picture-path]')]
+     .some(canvas=>!canvas.hidden&&canvas.style.visibility!=='hidden'&&!name.includes(canvas.dataset.picturePath.split(/[\\/]/).pop()));
+   });
+   assert.equal(wrong,false,'Rapid navigation never displays another photo');
+  }
+  await lib.waitForFunction(()=>!document.querySelector('#single-picture').hidden&&document.querySelector('#single-picture').dataset.picturePath?.endsWith('photo-1.ARW'),null,{timeout:30000});
+  await page.waitForTimeout(250);
+  fs.writeFileSync(path.join(output,'part0b-events.json'),JSON.stringify(await lib.evaluate(()=>window.part0bEvents),null,2));
+  console.log('PASS: ten rapid direction changes retain the correct photo and finish sharp after stopping.');
   assert.ok(await lib.evaluate(()=>window.libraryShapeChecks)>0,'Checked shape during pixel loading');
   assert.deepEqual(errors,[]);
   assert.equal(fs.readdirSync(folder).length,3,'Read-only browsing creates no settings files');

@@ -1,6 +1,95 @@
 # Module PRD: Photo Library
 
-**October 25, 2026: Part 0 fullscreen navigation (built; Steve's try pending)**
+**October 25, 2026: Part 0b rapid fullscreen navigation (built; Steve's retry pending)**
+
+Steve's badminton try at 16:29–16:32 exposed missing grid stand-ins, repeated
+source preparation and cancelled Denoise draws. This follow-up supersedes
+Part 0's restart-on-selection policy below; Parts A and B remain unstarted.
+
+- If no eligible finished grid picture exists, Single draws the stored 640
+  scene with the current grade and HDR/SDR shaders before the sharp picture.
+  A stored-scene miss waits for 120 ms of navigation quiet before preparing
+  the source; 30 ms arrow repeats therefore do not start developments for
+  photos merely passed. A stopped source miss produces its 640 picture first.
+  Filmstrip source misses also wait for the selected sharp picture.
+- In-progress source preparations and draws survive direction changes while
+  their exact photo/source/grade/display identity remains in the window.
+  Selection promotes existing demand to priority zero without restarting it.
+  Grade/source/display invalidation and leaving the window still cancel it.
+  A submitted in-window draw finishes before the next draw uses the shared
+  renderer; an arriving selection does not cancel that draw.
+- Before RAW GPU reservation, release finished Library window/tile surfaces
+  when necessary. Retry a budget refusal after reclamation; a running window
+  draw finishes before another attempt. Pending draw surfaces are not evicted.
+  Genuine GPU failures or insufficient memory after Library eviction retain
+  the existing CPU fallback. Memory limits and the rendering graph are unchanged.
+- Library Denoise model hits now use metadata before opening any stored pixel
+  arrays, keyed by source/grade, lane, edge and geometry, in the existing bounded
+  model cache. First measurement and GPU Denoise reconstruction remain unchanged.
+- Library `live-` Denoise/mask requests previously entered the middleware's
+  blanket session/Grade pause. An open Grade session also polls settings every
+  500 ms while Library is visible. Those reads, settings checks/saves and
+  Library revert-menu operations no longer count as Grade activity. Actual
+  Grade loads acquire the pause inside their route; normal Grade editing/import
+  and delivery gates remain. Library renderer initialization also no longer
+  advertises itself as Grade.
+
+Each navigation now logs a terminal `fullscreen_outcome`: whether any picture,
+a stand-in and/or a sharp picture reached a compositor opportunity. A request
+with no presentation is explicitly counted blank, including rapid supersession.
+
+Read-only baseline from Steve's 16:29–16:32 logs: **177 requests, 13 with no
+logged picture, 72 stand-in presentations and 127 sharp presentations** (a
+request may have both). There were 45 helper-pause events. Independent stage
+p50/p95 in milliseconds: cache 16.2/183.6; queue 0.1/294.0; lease 1.6/27.2;
+fetch 68.9/100.8; upload 15.4/17.4; Denoise analysis 156.9/1463.1; render
+35.2/1471.0; present 4.1/9.2; key-to-picture 6.1/625.7. Nested stages must
+not be added; these describe the original try, not a controlled benchmark.
+Per-request breakdown is retained in ignored
+`codebase/output/part0b-before-requests.json`.
+
+**Short disposable-copy try, one Single/live GPU driver at 2560x1440: PASS.**
+The driver forced a missing eligible grid surface, checked the correct 640
+stand-in during a held sharp draw, then navigated portrait/landscape and made
+ten reversals at roughly 30 ms per tap. No wrong photo was displayed and the
+stopped selection finished sharp. Four observed sharp arrivals were 231, 9, 7
+and 5 ms (driver checks, distinct from presentation records).
+
+The per-request presentation log contains **17 requests, four stand-in and 11
+sharp presentations, two without a logged picture**. Both unlogged requests
+were ordinary driver steps advanced after the visible-canvas check in under
+one display frame; all ten paced reversal requests logged sharp. There was no
+blank stopped selection. Full records, including each request's stages and
+blank flag: `codebase/output/part0b-after-requests.json` and `.csv`.
+
+| Stage | Trial p50 / p95 ms |
+| --- | ---: |
+| Cache check | 50.5 / 66.0 |
+| Queue | 0.1 / 0.1 |
+| Lease | 2.5 / 2.9 |
+| Pixel fetch | 89.2 / 94.3 |
+| Upload | 15.8 / 24.9 |
+| Render | 41.0 / 87.1 |
+| Present | 6.9 / 9.1 |
+| Key to picture | 8.4 / 66.8 |
+
+Only three draws reached these selected-request stage logs; kept pictures
+reuse work begun under another request. The trial includes deliberate draw/
+transport delays and ungraded disposable RAW copies, so it is not a badminton
+performance comparison and supplies no new Denoise timing. The final settings-
+poll pause fix followed this GPU run; it was covered by focused Python results
+without spending a second GPU run.
+
+Validation: one full fast run, **616 Node passed; 2,550 Python passed, three
+skipped**. Final result checks: **23 Node and three Python passed**, including
+wrong-photo/grade rejection, in-progress window completion/promotion, source
+quiet gating, cache reclamation before reservation, Denoise reuse, and settings
+checks/saves versus real Grade loading. The first final Python check exposed
+a worker-module/instance reference error; corrected and the same three checks
+passed. No live database, photo, sidecar or cache-folder writes. Stop for Steve
+to restart the app and retry the badminton folder before Parts A and B.
+
+**October 25, 2026: Part 0 fullscreen navigation (built; followed by Part 0b above)**
 
 Single/Fit borrows the selected photo's existing finished grid/filmstrip WebGPU
 canvas until its sharp picture arrives. The actual HDR/SDR surface is moved and
@@ -13,7 +102,8 @@ leaving Single and entering Compare restore it to its owner.
 
 The selected source probe, preparation and draw preempt lower-priority work;
 submitted GPU work must still finish. An unfinished neighbour selected by Steve
-restarts its demand at priority zero rather than keeping neighbour priority.
+originally restarted its demand at priority zero; Part 0b above replaces this
+with promotion of the same work.
 Memory polling preserves selected work during source loading, while Grade,
 export/Proof and the existing memory limits still take precedence. The existing
 forward-biased two-neighbours-each-side window remains; no budget changed.

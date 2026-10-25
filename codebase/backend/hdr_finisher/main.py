@@ -377,7 +377,13 @@ class DesktopRequestBoundary:
         # from reaching that queue. Grade/import still pause the decode helper.
         delivery_request = (request.url.path.startswith("/api/session/") and
             request.url.path.endswith(("/export", "/proof/artifact")))
-        if not delivery_request and (request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade")):
+        # Settings checks/autosaves continue for an open Grade session while
+        # browsing. Actual Grade loads acquire busy() inside their route.
+        library_read = (request.url.path.startswith("/api/session/live-") or
+            request.url.path.startswith("/api/library/grade/") or
+            request.url.path == "/api/library/grade-reverts" or
+            (request.method == "GET" and request.url.path.startswith("/api/library/grade")))
+        if not delivery_request and not library_read and (request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade")):
             with library_worker.busy():
                 await self.app(scope, receive, send_hardened)
         else:
@@ -1297,6 +1303,28 @@ def adaptive_denoise_model(
     edit_revision: int | None = Query(default=None, ge=0),
     geometry_signature: str | None = Query(default=None),
 ) -> dict:
+    if session_id.startswith("live-"):
+        from .library_live import metadata as live_metadata
+        metadata = live_metadata(session_id)
+        if metadata is None:
+            raise HTTPException(404, "Stored Library scene is unavailable.")
+        if edit_revision is not None and edit_revision != 0:
+            raise HTTPException(409, "Stale Library denoise revision dropped.")
+        geometry = metadata["adjustments"].get("shared", {}).get("geometry", {})
+        if geometry_signature is not None:
+            try:
+                if json.loads(geometry_signature) != geometry:
+                    raise HTTPException(409, "Stale geometry denoise request dropped.")
+            except json.JSONDecodeError as exc:
+                raise HTTPException(400, "Invalid geometry signature.") from exc
+        # The live key includes source + grade; lane and edge distinguish the measured pixels.
+        key = ("library", session_id, kind.value, long_edge, json.dumps(geometry, sort_keys=True))
+        return _cached_denoise_model(key, lambda: _adaptive_denoise_model(
+            session_id, kind, long_edge, edit_revision, geometry_signature, cached=False))
+    return _adaptive_denoise_model(session_id, kind, long_edge, edit_revision, geometry_signature)
+
+
+def _adaptive_denoise_model(session_id, kind, long_edge, edit_revision, geometry_signature, cached=True):
     """The adaptive denoise noise model: the source's own at full size, and
     below that measured on the proxy the WebGPU preview denoises at this size
     and geometry."""
@@ -1329,9 +1357,8 @@ def adaptive_denoise_model(
             return measured
         image, source_epoch = native
         key = (session_id, "native", source_epoch)
-        return _cached_denoise_model(
-            key, lambda: denoise_adaptive.estimate_adaptive_model(image).as_dict()
-        )
+        measure = lambda: denoise_adaptive.estimate_adaptive_model(image).as_dict()
+        return _cached_denoise_model(key, measure) if cached else measure()
     # A smaller level is measured on the proxy the preview denoises, at this
     # size and geometry, so the picture never depends on which geometry was
     # seen first.
@@ -1352,7 +1379,7 @@ def adaptive_denoise_model(
         return model.as_dict()
 
     try:
-        return _cached_denoise_model(key, measure)
+        return _cached_denoise_model(key, measure) if cached else measure()
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
 
