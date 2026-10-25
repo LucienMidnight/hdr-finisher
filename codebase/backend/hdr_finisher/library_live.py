@@ -40,8 +40,8 @@ def quality(document):
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
-def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progress=None):
-    """One existing full development produces both stored sizes; no CPU finishing."""
+def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progress=None, draw_first=False):
+    """One full development produces both scene sizes; no CPU finishing."""
     from .sessions import SessionStore
     from .models import EditDocument
     cache = cache or LibraryPictureCache(root)
@@ -87,7 +87,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
             metadata["default_document"] = source.edit_document().model_dump(mode="json")
         item = cache.build(path, size, source_quality, cancelled,
             (reduce_picture(source.image, size),
-             reduce_picture(source.sdr_reference_image, size) if source.sdr_reference_image is not None else None, metadata))
+             reduce_picture(source.sdr_reference_image, size) if source.sdr_reference_image is not None else None, metadata), defer_store=draw_first)
         if size == edge:
             result = item
     return result
@@ -97,7 +97,7 @@ _cpu_flights = {}
 _cpu_condition = Condition()
 
 
-def develop_cpu(root, path, document, edge, cancelled=None, progress=None):
+def develop_cpu(root, path, document, edge, cancelled=None, progress=None, draw_first=False):
     """Coalesce helper calls before allocating a decoder, across scene tiers."""
     from .library_pictures import picture_key, check_cancelled
     key = (str(root), picture_key(path, 100000 if edge == 100000 else 0, quality(document)))
@@ -115,7 +115,7 @@ def develop_cpu(root, path, document, edge, cancelled=None, progress=None):
                 def all_cancelled():
                     with _cpu_condition:
                         return all(user() for user in flight["users"])
-                flight["result"] = _develop_cpu(root, path, document, edge, all_cancelled, flight["cache"], progress)
+                flight["result"] = _develop_cpu(root, path, document, edge, all_cancelled, flight["cache"], progress, draw_first)
             except BaseException as error:
                 flight["error"] = error
             finally:
@@ -133,6 +133,17 @@ def develop_cpu(root, path, document, edge, cancelled=None, progress=None):
         result = dict(flight["result"]) if owner else flight["cache"].cached(path, edge, quality(document))
         if not result:
             raise ValueError("Source changed during Library preparation.")
+        if draw_first:
+            cache = flight["cache"]
+            scenes = []
+            with cache.transient_lock:
+                pending = list(cache.pending_stores.items())
+            for key, (source, size, source_quality, default, _) in pending:
+                if source == str(Path(path).resolve()):
+                    item = cache.cached(source, size, source_quality)
+                    if item:
+                        scenes.append(dict(item, _default_document=default))
+            result["_pending_scenes"] = scenes
         return result
     finally:
         with _cpu_condition:

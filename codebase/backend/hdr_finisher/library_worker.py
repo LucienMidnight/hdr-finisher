@@ -457,7 +457,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "live-scene":
                     from .library_live import develop_cpu
-                    output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set, progress=progress)
+                    output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set, progress=progress, draw_first=job.get("draw_first", False))
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)

@@ -1,5 +1,83 @@
 # Module PRD: Photo Library
 
+**October 25, 2026: Part 0d cold fullscreen development (built; Steve's try pending)**
+
+This supersedes Part 0c's 120 ms gate and neighbour-development policy below.
+Parts A/B and stored screen previews remain unstarted.
+
+- Fresh GPU-developed thumbnail and screen preview data is published into the
+  existing 256 MiB bounded RAM transport, rather than waiting for two disk
+  writes. Fullscreen draws the developed thumbnail first and then the screen
+  preview; background saving starts after the sharp surface is published.
+  The CPU development fallback hands both sizes through the same RAM transport.
+  Grid and idle warming still save data. No allowance, shader or picture quality
+  changed. Fullscreen still excludes camera previews and other photos.
+- Source identity/settings and owner checks run before RAM publication and
+  again before atomic disk publication. Cache eviction can discard pending
+  saves together with their RAM data. Saving holds no GPU lease. The tiny
+  default-document file is saved with the background data.
+- The quiet period is 350 ms, covering Steve's approximately 200 ms presses.
+  Unfinished passed requests are cancelled; selecting an existing neighbour
+  promotes that same request. Neighbours start only after the selection is
+  sharp and otherwise use idle source slots. A new selected development
+  preempts lower-priority developments at their existing cancellation boundary.
+- The apparent fixed two-second lease wait was **neighbour development**, not
+  an expiry/aging timer: DSC07169 held the GPU from 19:26:37.024 to 19:26:40.390,
+  while DSC07168 requested its sharp draw at 19:26:38.435. Its logged wait was
+  1,976 ms. Starting neighbours during the selected photo's disk writes let
+  them acquire the next lease first. The new order removes that overlap.
+
+**Capacity, read only.** At inspection, screen preview and detail preview data
+used 9.9867 GiB of the unchanged 10 GiB allowance. Idle warming requires about
+76 MiB of headroom for its next screen preview data plus overhead, so it was
+capacity-blocked. Thumbnail data was also at 1.9973 GiB of 2 GiB. Surviving
+current-recipe entries whose creation preceded the 19:25:53 startup establish
+at least **334/372 RAWs (89.8%) with thumbnail data and 174/372 (46.8%) with
+screen preview data**. Including the 81 indexed JPEG/PNG files below the folder,
+that is at least 415/453 thumbnails and 174/453 screen preview data entries.
+These are lower bounds: LRU eviction during the try prevents recovering an
+exact historical total from today's files. Access-time touches were excluded
+from the starting-coverage calculation; old recipe versions were checked.
+No live cache, database, sidecar or photo was written for this inspection.
+
+**One isolated Single/live GPU run, 2560x1440: PASS.** Existing fullscreen RAW
+driver, cold mode, disposable copies and profile/cache/database only. Two
+200 ms presses pass DSC07165 and DSC07166 before stopping on DSC07168. Neither
+passed photo developed before that stopped selection. The next selection
+promoted DSC07166 from neighbour work. The first correct fullscreen presentation
+was a developed thumbnail in both completed requests. Photo and sidecar hashes
+were unchanged. Timing is descriptive, with cold setup, concurrent Python fast
+checks and ordinary machine activity; no controlled performance comparison.
+
+Per-request seconds; lease pairs and store pairs are thumbnail / screen preview.
+Quick draw and sharp draw are navigation-to-presentation times; development is
+whole shared development including reading, GPU work, validation and RAM handoff.
+Stages overlap and must not be added. Background store is actual per-size
+`picture_stored` time; neither write delays these fullscreen presentations.
+
+| Request / source copy | Development | Background store | Lease | Quick draw | Sharp draw |
+| --- | ---: | --- | --- | ---: | ---: |
+| Passed DSC07165 | not started | — | — | — | — |
+| Passed DSC07166 | not started | — | — | — | — |
+| Stopped DSC07168 | 3.617 | 3.348 / 3.257 | .0030 / .0023 | 4.478 | 4.848 |
+| Selected DSC07166 | 2.984 shared/promoted | .104 / 3.028 | .0020 / .0027 | 2.954 | 3.518 |
+
+The passed requests ended at 207 and 204 ms. Successful store HTTP requests
+completed 6.857 and 6.515 seconds after their sharp draw submissions, entirely
+in the background; these include contention/queue time beyond the per-file
+store records above. GPU development including its queue was 2.146 / 1.940 s;
+reading/transfer to the page was .532 / .308 s. Cold development and RAM handoff
+remain visible costs. Stored screen previews (Part B and its following slice)
+remain the planned capacity/finished-picture reuse fix.
+
+Validation: Node fast checks once: 618 passed, one harness failure after the
+new fullscreen hook; corrected, then 18 affected behavior tests passed. Python
+fast checks once: 2,553 passed, three skipped. The final fallback handoff had
+16 focused live-scene tests pass. The final four focused publication checks passed. No second GPU run, broad sweep, push or installer.
+Evidence is ignored under `codebase/output/part0d/` and
+`codebase/output/library-fullscreen-raw/part0d-events.json`.
+
+
 **October 25, 2026: Library picture terminology (built in this commit)**
 
 Follows Part 0c and precedes Part A. The master PRD's "Glossary: Library

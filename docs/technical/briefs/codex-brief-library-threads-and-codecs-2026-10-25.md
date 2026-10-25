@@ -222,3 +222,15 @@ next normal-use logs. Post-change timing/counts await Steve's short try.
 Validation and commit outcome are recorded in that module entry. No live
 library database, photos, sidecars or cache folders were written. Keep this
 brief active for Steve's try and the later Parts A and B.
+
+
+## Part 0d follow-up — October 25, 2026
+
+Implemented the cold fullscreen follow-up before Part A: draw fresh developed
+thumbnail/screen preview data from memory, save afterwards, give the selected
+photo first development and promote it on stopping. The apparent two-second
+lease wait was a neighbour development admitted while the selection saved.
+The quiet gate is now 350 ms. Capacity inspection and the one isolated GPU
+run's per-request breakdown are in the module PRD's Part 0d entry.
+Allowances are unchanged. Commit and stop for Steve's try; Parts A/B remain
+unstarted. This brief remains active for those unfinished parts.

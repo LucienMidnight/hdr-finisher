@@ -59,6 +59,7 @@ class LibraryPictureCache:
         self.managed = LibraryCache(root)
         self.transient = OrderedDict()
         self.transient_lock = RLock()
+        self.pending_stores = {}
         self._native_lock = RLock()
         self._native_source = None
         self._native_paused = False
@@ -70,12 +71,15 @@ class LibraryPictureCache:
                 self.transient[result['key']] = base64.b64decode(body)
                 self.transient.move_to_end(result['key'])
                 while sum(map(len, self.transient.values())) > 256 * 1024**2:
-                    self.transient.popitem(last=False)
+                    expired, _ = self.transient.popitem(last=False)
+                    self.pending_stores.pop(expired, None)
         return result
 
-    def transient_result(self, key, arrays, metadata):
+    def transient_result(self, key, arrays, metadata, validate=None):
         stream = BytesIO()
         np.savez(stream, **arrays)
+        if validate:
+            validate()
         result = metadata | {'key': key, 'cache_hit': False, 'stored_bytes': 0,
             '_transient': base64.b64encode(stream.getvalue()).decode()}
         # Also retain it in this helper for repeat requests; transport stays in RAM.
@@ -160,7 +164,7 @@ class LibraryPictureCache:
             return None
 
     @audited("picture_cache_build")
-    def build(self, path, edge, quality="quick", cancelled=None, decoded=None):
+    def build(self, path, edge, quality="quick", cancelled=None, decoded=None, defer_store=False, persist=False, store_validate=None):
         path = Path(path).resolve(strict=True)
         if path.suffix.lower() not in SOURCE_EXTENSIONS:
             raise ValueError("Unsupported library file type.")
@@ -168,7 +172,7 @@ class LibraryPictureCache:
         browsing = path.suffix.lower() not in raw_import.RAW_EXTENSIONS and quality in {"quick", "fast"}
         lock_key = sha256(str(path).encode()).hexdigest() if browsing else key
         with _CACHE_LOCKS[int(lock_key[:2], 16) % len(_CACHE_LOCKS)]:
-            cached = self.cached(path, edge, quality)
+            cached = None if persist else self.cached(path, edge, quality)
             if cached:
                 return cached
             started = perf_counter()
@@ -185,7 +189,7 @@ class LibraryPictureCache:
             if picture_key(path, edge, quality) != key:
                 raise ValueError("Photo changed while its library picture was being read.")
             default_document = metadata.pop("default_document", None)
-            if default_document is not None:
+            if default_document is not None and not defer_store:
                 self.keep_default_document(path, default_document)
             look_started = perf_counter()
             starting_look = metadata.pop("starting_look", None)
@@ -201,6 +205,19 @@ class LibraryPictureCache:
                 "metadata": np.asarray(json.dumps(metadata))}
             if reference is not None:
                 arrays["reference"] = np.clip(reference, 0, 65504).astype(np.float16)
+            if defer_store:
+                # Publish validated half-float data in the existing bounded RAM
+                # transport. Encoding to disk starts only after the first draw.
+                def validate_memory():
+                    check_cancelled(cancelled)
+                    if picture_key(path, edge, quality) != key:
+                        raise ValueError("Photo changed before publishing preview data.")
+                result = self.transient_result(key, arrays, metadata, validate_memory)
+                with self.transient_lock:
+                    if key in self.transient:
+                        self.pending_stores[key] = (str(path), edge, quality, default_document, store_validate)
+                result.pop('_transient', None)
+                return result
             destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
             if not self.managed.preferences()['enabled']:
                 return self.transient_result(key, arrays, metadata)
@@ -225,6 +242,33 @@ class LibraryPictureCache:
                 self.trim()
             log("picture_stored", path=str(path), key=key, edge=edge, duration_ms=(perf_counter()-store_started)*1000)
             return result
+
+    def persist_pending(self, path, validate):
+        with self.transient_lock:
+            keys = [key for key, value in self.pending_stores.items() if value[0] == str(path)]
+        for key in keys:
+            with self.transient_lock:
+                pending = self.pending_stores.pop(key, None)
+                body = self.transient.get(key)
+            if pending is None or body is None:
+                continue
+            source, edge, quality, default, owner_check = pending
+            def checkpoint():
+                if owner_check:
+                    owner_check()
+                validate(quality)
+                if picture_key(source, edge, quality) != key:
+                    raise ValueError("Photo changed before saving preview data.")
+                return False
+            checkpoint()
+            with np.load(BytesIO(body), allow_pickle=False) as stored:
+                pixels = stored["pixels"].astype(np.float32)
+                reference = stored["reference"].astype(np.float32) if "reference" in stored else None
+                metadata = json.loads(str(stored["metadata"]))
+            metadata["starting_look"] = metadata["adjustments"]
+            if default is not None:
+                metadata["default_document"] = default
+            self.build(source, edge, quality, checkpoint, (pixels, reference, metadata), persist=True)
 
     @audited("picture_cache_build_native")
     def build_native(self, path, center_x, center_y, width, height, cancelled=None):

@@ -14,15 +14,13 @@ test('ready pictures reuse only their exact photo, grade, source and display ide
     window.invalidate();assert.equal(window.size(),0);assert.equal(disposed.length,2);
   }
 });
-test('navigation keeps in-progress window draws through direction changes, then keeps their finished picture',async()=>{
+test('navigation drops unfinished passed photos but promotes the stopped neighbour',async()=>{
   const a={path:'a'},b={path:'b'},c={path:'c'},blocked=gate();let cancelled=false;
   const window=create({key:p=>p.path,load:async(p,signal)=>{if(p===b){signal.addEventListener('abort',()=>{cancelled=true;});await blocked.promise;}return p;},dispose:()=>{}});
-  await window.get(a);const old=window.get(b);await Promise.resolve();
-  window.update(c,[a,b]);assert.equal(cancelled,false);assert.equal(await window.get(c),c);assert.equal(await window.get(a),a);
-  window.update(a,[b,c]);assert.equal(window.get(b),old);assert.equal(cancelled,false);
-  blocked.resolve();assert.equal(await old,b);assert.equal(await window.get(b),b);
+  await window.get(a);const old=window.get(b,0);const rejected=assert.rejects(old,{name:'AbortError'});await Promise.resolve();
+  window.update(c,[a,b]);assert.equal(cancelled,true);assert.equal(await window.get(c),c);assert.equal(await window.get(a),a);
+  blocked.resolve();await rejected;
 });
-
 
 test('stand-in selects only finished pixels for the same source, grade, mode and display',()=>{
   const {standIn}=require('../frontend/library-ready-window');
@@ -54,7 +52,7 @@ test('rapid navigation delays source preparation until the last selection settle
   const navigation=navigationGate({now:()=>now,wait:()=>new Promise(resolve=>ticks.push(resolve))});
   async function source(photo,signal){await navigation.settled(signal);if(!signal.aborted)started.push(photo);}
   const passed=new AbortController();navigation.touch();const first=source('passed',passed.signal);
-  now=30;navigation.touch();passed.abort();const final=source('stopped',new AbortController().signal);
-  now=120;ticks.splice(0).forEach(resolve=>resolve());await Promise.resolve();assert.deepEqual(started,[]);
-  now=150;ticks.splice(0).forEach(resolve=>resolve());await Promise.all([first,final]);assert.deepEqual(started,['stopped']);
+  now=200;navigation.touch();passed.abort();const final=source('stopped',new AbortController().signal);
+  now=350;ticks.splice(0).forEach(resolve=>resolve());await Promise.resolve();assert.deepEqual(started,[]);
+  now=550;ticks.splice(0).forEach(resolve=>resolve());await Promise.all([first,final]);assert.deepEqual(started,['stopped']);
 });

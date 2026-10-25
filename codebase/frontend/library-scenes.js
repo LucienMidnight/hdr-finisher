@@ -14,13 +14,14 @@ window.HDRLibraryScenes = (() => {
       ...window.HDRLibraryPictureLog?.(job),work_stage:job.stage,duration_ms:performance.now()-(job.loggedAt || performance.now()),reason:error?.message});
     job.loggedAt=performance.now();
   };
-  // In-window jobs (priority 0/5) finish; only ordinary grid/idle work is preemptible.
+  // Draws finish in flight. Developments yield to the selected photo,
+  // including unfinished neighbours (priority 5).
   const preemptLower = job => job.priority >= 10;
   const probes = HDRLibrarySceneScheduler.create(2, undefined, {onChange:changed,preemptLower});
-  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed,keepRunning:job=>job.priority>=10,preemptLower});
+  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed,keepRunning:job=>job.priority>=10,preemptLower:job=>job.priority>0});
   const versions = new Map();
   const history = new Map(), generations = new Map();
-  let visible = new Set(), nearby = new Set();
+  let visible = new Set(), nearby = new Set(), reviewPath = null;
   const rank = path => visible.has(path) ? 10 : nearby.has(path) ? 50 : 80;
   const largeBytes = 32 * 1024 * 1024;
   function failure(result) {
@@ -56,7 +57,7 @@ window.HDRLibraryScenes = (() => {
     const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
     return sources.submit(identity+"|"+(plan.source_identity || plan.revision)+"|"+generation, async (shared, importance) => {
       const started = performance.now();
-      try { return await develop(path, edge, shared, importance, version); }
+      try { const result = await develop(path, edge, shared, importance, version); if (idle) save(result); return result; }
       finally {
         if (!shared.aborted) {
           history.delete(path);
@@ -75,8 +76,8 @@ window.HDRLibraryScenes = (() => {
     const identity = path + (edge === 100000 ? "|native" : "");
     let meta = await prepared(path, edge, signal, priority, identity, idle, trace, options);
     if (!meta) return null;
-    // One development stores both sizes. A waiter asking for the other size
-    // reads it after the shared development; it never starts another import.
+    // One development publishes both sizes in memory. A waiter asking for
+    // the other size reuses that data; it never starts another import.
     if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, false, trace, options);
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
     return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};
@@ -133,7 +134,14 @@ window.HDRLibraryScenes = (() => {
     return {bytes,check:async()=>{ if (!await check()) {const error=Error("Library draw yielded to Grade or delivery.");error.libraryYield=true;throw error;} },release};
   }
   let reclaim = async () => {};
-  return Object.freeze({load,lease,
+  function save(meta, presented = false) {
+    if (reviewPath === meta.path && !presented) return;
+    const started = performance.now();
+    void fetch("/api/library/live-store/"+meta.key,{method:"POST"}).then(response=>{
+      window.HDRLibraryTrace?.mark(meta.trace,"picture_store",started,{picture_size:"thumbnail,screen preview",scope:"shared",key:meta.key,success:response.ok});
+    }).catch(()=>{});
+  }
+  return Object.freeze({load,lease,save,review:path=>{reviewPath=path;},
     onReclaim:handler=>{reclaim=handler;},
     reclaim:(bytes,required=false)=>reclaim(bytes,required),
     promote:(path,priority)=>{probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);quickDraws.promote(path,priority);},

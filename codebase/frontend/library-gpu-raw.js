@@ -832,9 +832,9 @@
     const quantileMs = performance.now() - measured;
     root.HDRLibraryScenes?.stage(path,"Saving preview data");
     let selectedResult;
-    for (const storedEdge of nativeMode ? [100000] : [...new Set([2560,640,edge])]) {
+    for (const storedEdge of nativeMode ? [100000] : [...new Set([640,2560,edge])]) {
       const picture = developed.reduced[storedEdge];
-      const header = { rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
+      const header = { draw_first:liveScene && !nativeMode, rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
       edge:storedEdge, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
@@ -852,6 +852,7 @@
       if (!stored.ok) { const error = new Error(result.detail || "Library request failed."); error.status = stored.status; throw error; }
       if (storedEdge === edge || nativeMode) selectedResult = result;
     }
+    root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs});
     return selectedResult;
     } finally { if(sourceJob) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{}); }
   }

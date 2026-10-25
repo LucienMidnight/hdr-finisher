@@ -238,6 +238,10 @@ const HDRLibraryPictureFactory = (quick = false) => {
       canvas.dataset.rendition = hdr ? "hdr" : "sdr";
       canvas.dataset.surface = gpu.surfaceKeys.get(canvas);
       canvas.dataset.peakNits = hdr ? "1000" : "203";
+      // Fullscreen saves after publishing both draws; grid saves
+      // after its thumbnail. The request owns no GPU reservation while saving.
+      if (meta.route === "library-live" && !meta.fullscreen)
+        HDRLibraryScenes.save(meta);
       return result;
     };
     const priority = typeof meta.draw_priority === "function" ? meta.draw_priority() : meta.draw_priority ?? 10;

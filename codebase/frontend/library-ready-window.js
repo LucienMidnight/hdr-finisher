@@ -13,7 +13,8 @@
     }
     function update(photo, neighbours) {
       wanted = new Set([photo, ...neighbours].map(key));
-      for (const id of entries.keys()) if (!wanted.has(id)) remove(id);
+      for (const [id, entry] of entries)
+        if (!wanted.has(id) || (id !== key(photo) && !entry.value)) remove(id);
     }
     function get(photo, priority = 5, trace = null, options = {}) {
       const id = key(photo);
@@ -43,7 +44,7 @@
       cell.fallback?.dataset.rendition === (hdr ? "hdr" : "sdr") &&
       cell.fallback.dataset.picturePath === cell.photo.path && !cell.fallback.hidden);
   }
-  function navigationGate({wait, now=()=>performance.now(), delay=120}) {
+  function navigationGate({wait, now=()=>performance.now(), delay=350}) {
     let touched = -Infinity;
     return Object.freeze({touch:()=>{touched=now();},
       async settled(signal) { while(now()-touched<delay) await wait(delay-(now()-touched),signal); }

@@ -885,6 +885,7 @@
     }
     restoreStandIn();
     navigationGate.touch();
+    HDRLibraryScenes.review?.(photo?.path || null);
     state.singleIdentity = identity;
     const fullIdentity = photo ? `${photo.path}|${photo.bytes}|${photo.mtime_ns}` : "";
     if (state.fullIdentity !== fullIdentity || state.nativeSource?.signal.aborted) {
@@ -916,8 +917,7 @@
       startRawAhead();
       const neighbours = readyNeighbours();
       readyWindow.update(photo,neighbours); quickWindow.update(photo,neighbours);
-      // Start preparation while this selection loads, not after it is sharp.
-      warmReady(photo,neighbours);
+      // Neighbour developments start only after this selection finishes sharp.
       let meta, kept = false;
       try {
         kept = readyWindow.has(photo);
@@ -964,12 +964,14 @@
       }
       if (!meta || !current()) return;
       restoreStandIn();
+      warmReady(photo,neighbours);
       if (state.fullSceneQuality && state.fullSceneQuality !== meta.quality) {
         state.nativeSource?.abort(); state.nativeSource = new AbortController(); state.fullDetail = null;
       }
       state.fullSceneQuality = meta.quality;
       state.fitMeta = meta; positionZoom(); if (state.zoom) void showNative();
       HDRLibraryTrace.present(trace,current,{key:meta.key,route:meta.route,cache_hit:!!meta.cache_hit,kept,quick_draw:false,sharp_draw:true});
+      HDRLibraryScenes.save?.(meta,true);
       updateSingleCaption();
       status(`${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
     } catch (error) { HDRLibraryTrace.end(trace,error.message); if (state.single === controller) state.singleIdentity = ""; if (!aborted(error) && !controller.signal.aborted) removeUnreadable(photo, error); }
@@ -1114,7 +1116,7 @@
   }, { passive: false });
   function setView(view) {
     if (view === "single" && !selected()) return;
-    if (view !== "single") compare.hide();
+    if (view !== "single") { compare.hide(); HDRLibraryScenes.review?.(null); }
     state.view = view; $("library-single").hidden = view !== "single"; grid.hidden = view !== "grid";
     $("zoom-button").disabled = view !== "single";
     $("grid-view").setAttribute("aria-pressed", String(view === "grid")); $("single-view").setAttribute("aria-pressed", String(view === "single"));

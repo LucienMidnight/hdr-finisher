@@ -277,3 +277,58 @@ def test_direct_stored_half_transport_matches_geometry_renderer_bytes(tmp_path, 
         expected_body, expected_stride = encode_rgba_proxy_rows(expected, pixel_format="rgba16float")
         assert (body, stride, actual_space) == (expected_body, expected_stride, space)
         assert (width, height) == (37, 19)
+
+
+@pytest.mark.parametrize("invalidate", [False, True])
+def test_fresh_scene_draws_from_memory_before_atomic_store(tmp_path, invalidate):
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    cache = LibraryPictureCache(tmp_path / "profile")
+    path = photo(tmp_path)
+    pixels = np.full((4, 8, 3), .18, dtype=np.float32)
+    valid = [True]
+    def owner_check():
+        if not valid[0]:
+            raise ValueError("owner changed")
+    result = cache.build(path, 640, quality(None), decoded=(pixels, None,
+        {"source_width": 8, "source_height": 4}), defer_store=True, store_validate=owner_check)
+    service = LivePictures(tmp_path / "profile", None)
+    service.cache = cache
+    meta = service.describe(path, result)
+    assert not cache.file(result["key"]).exists()
+    body, width, height, stride, space = service.pixels(meta["key"], "hdr")
+    assert (width, height, space) == (8, 4, "acescg")
+    np.testing.assert_allclose(np.frombuffer(body, dtype=np.float16).reshape(height, stride // 2)[:, :width*4].reshape(height, width, 4)[..., :3], pixels, atol=.0001)
+    if invalidate:
+        valid[0] = False
+        with pytest.raises(ValueError, match="owner changed"):
+            cache.persist_pending(str(path.resolve()), lambda _: None)
+        assert not cache.file(result["key"]).exists()
+    else:
+        cache.persist_pending(str(path.resolve()), lambda _: None)
+        assert cache.file(result["key"]).is_file()
+        assert cache.cached(path, 640, quality(None))["key"] == result["key"]
+    assert not list((tmp_path / "profile").rglob("*.tmp"))
+
+
+def test_cpu_fallback_hands_both_fresh_sizes_to_draw_before_store(tmp_path):
+    path = photo(tmp_path)
+    result = develop_cpu(tmp_path / "profile", path, None, 640, draw_first=True)
+    scenes = result.pop("_pending_scenes")
+    assert {scene["edge"] for scene in scenes} == {640, 2560}
+    assert all(scene.get("_transient") for scene in scenes)
+    assert not list((tmp_path / "profile").rglob("*.npz"))
+
+
+def test_changed_photo_during_memory_encoding_never_publishes(tmp_path, monkeypatch):
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    cache = LibraryPictureCache(tmp_path / "profile")
+    path = photo(tmp_path)
+    encode = np.savez
+    def changed(stream, **arrays):
+        encode(stream, **arrays)
+        path.write_bytes(path.read_bytes() + b"changed")
+    monkeypatch.setattr(np, "savez", changed)
+    with pytest.raises(ValueError, match="Photo changed"):
+        cache.build(path, 640, quality(None), decoded=(np.ones((4, 8, 3)), None, {}), defer_store=True)
+    assert not cache.transient and not cache.pending_stores
+    assert not list((tmp_path / "profile").rglob("*.npz"))

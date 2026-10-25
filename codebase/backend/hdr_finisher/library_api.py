@@ -409,9 +409,19 @@ def create_library_router(worker, browser, store=None):
                 transfer = True
                 return Response(library_gpu_raw.frame(header, *parts), media_type="application/octet-stream")
             result = await helper_result(request, "live-scene", path=path, document=document,
-                edge=command.edge, priority=command.priority, source_token=token)
+                edge=command.edge, priority=command.priority, source_token=token, draw_first=command.edge != 100000)
             if isinstance(result, Response): return result
             source_jobs.check(token, file_commands.epoch)
+            publication_epoch = file_commands.epoch
+            def validate_cpu_store():
+                if publication_epoch != file_commands.epoch or source_quality != live_quality(live.document(command.path)):
+                    raise ValueError("Source settings changed before saving preview data.")
+            for scene in result.pop("_pending_scenes", []):
+                default = scene.pop("_default_document", None)
+                live.cache.accept_transient(scene)
+                with live.cache.transient_lock:
+                    if scene["key"] in live.cache.transient:
+                        live.cache.pending_stores[scene["key"]] = (path, scene["edge"], source_quality, default, validate_cpu_store)
             live.cache.accept_transient(result)
             return await run_in_threadpool(live.describe, command.path, result)
         finally:
@@ -434,6 +444,7 @@ def create_library_router(worker, browser, store=None):
                 owner = source_jobs.check(header["source_job"], file_commands.epoch)
                 if owner["path"] != path or owner["quality"] != header["source_quality"] or (owner["edge"] == 100000) != (header["edge"] == 100000):
                     raise ValueError("Developed source does not match its preparation owner.")
+            publication_epoch = file_commands.epoch
             class SceneCache:
                 def build(self, source, edge, _quality, decoded):
                     pixels, reference, metadata = decoded
@@ -457,8 +468,11 @@ def create_library_router(worker, browser, store=None):
                         if header["source_quality"] != live_quality(live.document(item)):
                             raise ValueError("Source settings changed during development.")
                         return False
+                    def validate_store():
+                        if publication_epoch != file_commands.epoch or header["source_quality"] != live_quality(live.document(item)):
+                            raise ValueError("Source settings changed before saving preview data.")
                     result = live.cache.build(source, edge, header["source_quality"],
-                        cancelled=validate_owner, decoded=(pixels, reference, metadata))
+                        cancelled=validate_owner, decoded=(pixels, reference, metadata), defer_store=bool(header.get("draw_first")), store_validate=validate_store)
                     live.cache.accept_transient(result)
                     return result
             from . import library_rgb
@@ -466,6 +480,23 @@ def create_library_router(worker, browser, store=None):
             result = await run_in_threadpool(adapter.developed, SceneCache(), path, header, body)
             return await run_in_threadpool(live.describe, item, result)
         except (ValueError, OSError, KeyError) as error:
+            raise HTTPException(409, str(error)) from error
+
+    @router.post("/live-store/{key}")
+    def store_live_scene(key: str):
+        from .library_live import metadata as scene_metadata
+        meta = scene_metadata(key)
+        if not meta:
+            raise HTTPException(404, "Preview data unavailable; request it again.")
+        item = meta["path"]
+        epoch = file_commands.epoch
+        def validate(quality):
+            if epoch != file_commands.epoch or quality != live_quality(live.document(item)):
+                raise ValueError("Source settings changed before saving preview data.")
+        try:
+            live.cache.persist_pending(str(marks.source_path(item)), validate)
+            return {"saved": True}
+        except (ValueError, OSError) as error:
             raise HTTPException(409, str(error)) from error
 
     @router.get("/warmup-idle")
