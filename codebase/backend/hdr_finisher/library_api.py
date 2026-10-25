@@ -36,6 +36,8 @@ class StopwatchEvent(BaseModel):
     reason: str | None = Field(default=None, max_length=2048)
     first: bool | None = None
     kept: bool | None = None
+    stand_in: bool | None = None
+    sharp: bool | None = None
 
 class OverlayRequest(BaseModel):
     path: str

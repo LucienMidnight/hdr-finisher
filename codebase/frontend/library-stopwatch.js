@@ -38,6 +38,7 @@ window.HDRLibraryTrace = Object.freeze({
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!current()) return;
       trace.presented = true;
+      if (fields.sharp) trace.sharpPresented = true;
       this.mark(trace,"present",submitted,fields);
       this.mark(trace,"key_to_picture",trace.started,fields);
     }));

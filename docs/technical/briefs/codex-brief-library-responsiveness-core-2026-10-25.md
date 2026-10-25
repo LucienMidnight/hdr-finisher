@@ -360,3 +360,12 @@ finishing graph. In-flight submitted GPU work can finish before cancellation.
 The proposed 100 ms target and sustainable pace remain unverified; Steve judges
 by normal use. Implementation stops at Step 3. Keep this brief active until the
 fullscreen hardware result and normal-use acceptance are resolved.
+
+
+### Step 3 follow-up — October 25, 2026
+
+PASS: the existing library-fullscreen-raw driver reran once at 2560x1440,
+using its disposable profile and photo copies. No shared-budget refusal;
+portrait/landscape forward/back sharp arrivals completed at 366/260/249/6 ms.
+This was before threads/codecs Part 0. Hardware follow-up is closed; Steve's
+normal-use acceptance and Part 0 try remain pending. No live-data writes.

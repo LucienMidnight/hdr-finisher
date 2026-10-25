@@ -33,6 +33,16 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     for (const [key, proxy] of this.proxies) if (this.rawPictures?.owns(proxy.texture)) this.proxies.delete(key);
     super.resetSession(sessionId);
   }
+  async ensureDenoiseResolved(...args) {
+    const started = performance.now();
+    try { return await super.ensureDenoiseResolved(...args); }
+    finally { window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"denoise_resolve",started); }
+  }
+  async loadDirectMasks(...args) {
+    const started = performance.now();
+    try { return await super.loadDirectMasks(...args); }
+    finally { window.HDRLibraryTrace?.mark(this.libraryMeta?.trace,"local_masks",started); }
+  }
   async waitForSubmittedWork(...args) {
     const started = performance.now();
     const result = await super.waitForSubmittedWork(...args);
@@ -172,7 +182,9 @@ window.HDRLibraryPictures = (() => {
       }
       const edge = native ? Math.max(meta.scene_width,meta.scene_height,meta.width,meta.height) : Math.max(256,meta.edge);
       if (denoise?.enabled) {
+        const analysis = performance.now();
         if (!await gpu.analyzeDenoiseProxy(meta.key,lane,adjustments,edge,0,"source",denoise.controls)) throw Error("Library Denoise analysis failed.");
+        window.HDRLibraryTrace?.mark(meta.trace,"denoise_analysis",analysis,{key:meta.key});
       } else if (gpu.denoiseSourceSelector) gpu.denoiseSourceSelector.selected = "original";
       result = await gpu.renderTo(canvas, meta.key, lane, adjustments,
         sampleCurvePoints, edge, meta.locals || [], 0, null, meta.white,

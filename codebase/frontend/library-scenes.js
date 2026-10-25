@@ -14,8 +14,8 @@ window.HDRLibraryScenes = (() => {
       key:job.stage,duration_ms:performance.now()-(job.loggedAt || performance.now()),reason:error?.message});
     job.loggedAt=performance.now();
   };
-  const probes = HDRLibrarySceneScheduler.create(2, undefined, {onChange:changed});
-  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed,keepRunning:job=>job.priority>=10});
+  const probes = HDRLibrarySceneScheduler.create(2, undefined, {onChange:changed,preemptLower:true});
+  const sources = HDRLibrarySceneScheduler.create(2, undefined, {heavyLimit:1,onChange:changed,keepRunning:job=>job.priority>=10,preemptLower:true});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set();

@@ -250,3 +250,30 @@ def test_source_request_survives_grade_pause_without_restarting(tmp_path, route)
     assert helper.submitted == 1
     assert helper.polls >= 4
     assert response.json()["width"] == 640
+
+
+@pytest.mark.parametrize("authored", [False, True])
+def test_direct_stored_half_transport_matches_geometry_renderer_bytes(tmp_path, authored):
+    from hdr_finisher.render_cache import encode_rgba_proxy_rows
+    from hdr_finisher.models import PreviewKind
+    path = photo(tmp_path)
+    service = LivePictures(tmp_path/"cache", LibraryMarks(tmp_path/"cache"))
+    meta = service.describe(path, develop_cpu(tmp_path/"cache", path, None, 640))
+    # Include signed, very small and bright values, padded rows and an authored base.
+    rng = np.random.default_rng(4)
+    pixels = rng.uniform(-0.01, 20, (19, 37, 3)).astype(np.float16)
+    reference = rng.uniform(0, 1, pixels.shape).astype(np.float16)
+    scene = tmp_path/"transport.npz"
+    np.savez(scene, pixels=pixels, reference=reference)
+    service.cache.open = lambda key: scene
+    meta["adjustments"]["sdr"]["use_authored_base"] = authored
+    # describe registers a copy, so use the registered settings too.
+    import hdr_finisher.library_live as live
+    live._registry[meta["key"]][1]["adjustments"]["sdr"]["use_authored_base"] = authored
+    for lane in ("hdr", "sdr"):
+        frame = service.frame(meta)
+        expected, space, _ = frame.render_cache.geometry_source_proxy(PreviewKind(lane), meta["edge"], frame.adjustments)
+        body, width, height, stride, actual_space = service.pixels(meta["key"], lane)
+        expected_body, expected_stride = encode_rgba_proxy_rows(expected, pixel_format="rgba16float")
+        assert (body, stride, actual_space) == (expected_body, expected_stride, space)
+        assert (width, height) == (37, 19)

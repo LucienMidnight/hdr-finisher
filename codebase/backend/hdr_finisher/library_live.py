@@ -177,6 +177,22 @@ class LivePictures:
             owner, metadata = _registry[identity]
         if owner is not self:
             raise ValueError("Scene belongs to another Library.")
+        from .models import GeometryAdjustments
+        adjustments = AdjustmentState.model_validate(metadata["adjustments"])
+        if adjustments.shared.geometry == GeometryAdjustments():
+            # Stored scenes already have this edge. Pack the chosen half-float lane
+            # directly; avoid float32 expansion and loading an unused SDR reference.
+            with np.load(self.cache.open(metadata["source_key"]), allow_pickle=False) as stored:
+                authored = lane == "sdr" and adjustments.sdr.use_authored_base and "reference" in stored
+                pixels = stored["reference" if authored else "pixels"]
+            if max(pixels.shape[:2]) <= max(256, metadata["edge"]) and pixels.dtype == np.float16:
+                height, width = pixels.shape[:2]
+                stride = ((width * 8 + 255) // 256) * 256
+                packed = np.zeros((height, stride // 2), dtype="<f2")
+                rgba = packed[:, :width * 4].reshape(height, width, 4)
+                rgba[..., :3] = pixels[..., :3]
+                rgba[..., 3] = 1
+                return packed.tobytes(), width, height, stride, "linear-srgb" if authored else "acescg"
         frame = self.frame(metadata)
         from .models import PreviewKind
         pixels, space, _ = frame.render_cache.geometry_source_proxy(PreviewKind(lane), metadata["edge"], frame.adjustments)

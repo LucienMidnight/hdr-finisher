@@ -14,7 +14,7 @@ test('Single swaps the correct finished canvas and hides the previous grade whil
  const surfaces={has:()=>true};
  const context={state,navigationTrace:null,selected:()=>state.photos[state.index],singleEdge:()=>2560,readyKey:key,readyWindow,readySurfaces:surfaces,
   compare:{enabled:()=>false,hide(){}},HDRLibraryTrace:{begin:()=>({}),mark(){},present:(trace,current)=>{assert.ok(current());assert.equal(visible.pixels,key(state.photos[state.index]));}},
-  AbortController,positionZoom(){},updateSingleCaption(){},status(){},startRawAhead(){},readyNeighbours:()=>[a,b].filter(p=>p!==state.photos[state.index]),warmReady(){},overlays:null,
+  restoreStandIn(){},showStandIn(){},AbortController,positionZoom(){},updateSingleCaption(){},status(){},startRawAhead(){},readyNeighbours:()=>[a,b].filter(p=>p!==state.photos[state.index]),warmReady(){},overlays:null,
   HDRLibraryPictures:{usable:()=>true},loadAndShow:()=>assert.fail('Unexpected fallback'),aborted:e=>e.name==='AbortError',removeUnreadable:(_p,e)=>{throw e;},$:()=>visible};
  vm.runInNewContext(fn+';this.showSingle=showSingle;',context);
  await context.showSingle();assert.equal(visible.pixels,'a:old');
@@ -24,4 +24,21 @@ test('Single swaps the correct finished canvas and hides the previous grade whil
  const pending=context.showSingle();await Promise.resolve();assert.equal(visible.hidden,true);
  release();await pending;assert.equal(visible.pixels,'a:new');assert.equal(visible.hidden,false);
  assert.equal(visible.dataset.picturePath,'a');assert.equal(visible.dataset.pictureKey,'new');
+});
+
+
+test('memory polling preserves the stopped selection during source work and still yields to delivery',async()=>{
+ const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
+ const fn=source.slice(source.indexOf('  async function pollReadyMemory()'),source.indexOf('  setInterval(pollReadyMemory'));
+ let invalidated=0,finished=false,sourceActive=1,budget=100,permit={ready:true,idle:false};
+ const context={readyPolling:false,readyBytes:50,state:{active:true,view:'single',singleIdentity:'selected'},
+   api:async()=>permit,HDRLibraryPictures:{readyMemory:async()=>budget},
+   HDRLibraryScenes:{snapshot:()=>({draws:{active:0},sources:{active:sourceActive},probes:{active:0}})},
+   readyWindow:{has:()=>finished,invalidate:()=>invalidated++},selected:()=>({path:'a'}),compare:{enabled:()=>false}};
+ vm.runInNewContext(fn+';this.poll=pollReadyMemory;',context);
+ await context.poll();assert.equal(invalidated,0,'Pending selected photo finishes');
+ finished=true;await context.poll();assert.equal(invalidated,0,'Neighbour source does not evict selected surface');
+ sourceActive=0;await context.poll();assert.equal(invalidated,1,'Other delivery gets its memory');
+ permit={ready:false,idle:false};sourceActive=1;await context.poll();assert.equal(invalidated,2,'Grade still preempts');
+ permit={ready:true,idle:true};budget=25;await context.poll();assert.equal(invalidated,3,'Existing budget still enforced');
 });

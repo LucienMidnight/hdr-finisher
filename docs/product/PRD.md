@@ -54,6 +54,14 @@ may not contradict these.
    export, Proof and Library pictures should all run on the graphics card,
    as darktable does. The CPU path keeps working, for machines without a
    usable GPU, but it is not made faster.
+   **Use the whole machine** (Steve, October 25, 2026). CPU work that cannot
+   run on the GPU (decoding, encoding, indexing, preparation) should scale
+   across the available cores rather than be limited to one thread or a fixed
+   small count. Background work also scales up when the user is not competing
+   for the machine. It stays responsive by running at lower priority and
+   yielding to foreground work, rather than by being capped. Fixed caps need a
+   stated reason, such as a measured memory limit or a library that is not
+   thread-safe.
 4. **Judged by eye, within agreed tolerances.** Image differences are
    measured perceptually (ΔE 2000 for SDR, ΔE ITP for HDR): an average below
    the just-noticeable level plus a high-percentile limit, with no

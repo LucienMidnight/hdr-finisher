@@ -19,8 +19,11 @@
       const id = key(photo);
       if (wanted && !wanted.has(id)) return Promise.reject(new DOMException("Superseded", "AbortError"));
       let entry = entries.get(id);
+      // A selected photo must not inherit a running neighbour's lower priority.
+      // Restart its demand at foreground priority; lower-priority GPU work yields.
+      if (entry && !entry.value && priority < entry.priority) { remove(id); entry = null; }
       if (entry) return entry.promise;
-      entry = {photo, controller:new AbortController()}; entries.set(id, entry);
+      entry = {photo, priority, controller:new AbortController()}; entries.set(id, entry);
       const current = () => entries.get(id) === entry && !entry.controller.signal.aborted && key(photo) === id;
       entry.promise = Promise.resolve().then(() => load(photo, entry.controller.signal, current, priority, trace)).then(value => {
         if (!current()) { if (value) dispose(value); throw new DOMException("Invalidated", "AbortError"); }
@@ -30,6 +33,13 @@
     }
     return Object.freeze({get, update, invalidate, has:photo => !!entries.get(key(photo))?.value, size:() => entries.size});
   }
-  const api = Object.freeze({create});
+  // Only the finished live surface qualifies, never its camera JPEG sibling.
+  function standIn(cells, identity, epoch, hdr) {
+    return cells.find(cell => cell.identity === identity && cell.displayEpoch === epoch &&
+      !cell.controller.signal.aborted && cell.meta?.route === "library-live" &&
+      cell.fallback?.dataset.rendition === (hdr ? "hdr" : "sdr") &&
+      cell.fallback.dataset.picturePath === cell.photo.path && !cell.fallback.hidden);
+  }
+  const api = Object.freeze({create, standIn});
   if (typeof module !== "undefined") module.exports = api; else root.HDRLibraryReadyWindow = api;
 })(typeof window === "undefined" ? globalThis : window);

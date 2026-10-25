@@ -1,5 +1,80 @@
 # Module PRD: Photo Library
 
+**October 25, 2026: Part 0 fullscreen navigation (built; Steve's try pending)**
+
+Single/Fit borrows the selected photo's existing finished grid/filmstrip WebGPU
+canvas until its sharp picture arrives. The actual HDR/SDR surface is moved and
+restored; there is no JPEG encoding, CPU readback or colour conversion. Only
+`library-live` pictures with matching photo/source/grade identity, display epoch
+and rendition qualify. Camera embedded previews never qualify. Finished grid
+cells now survive entry into Single inside the existing 512 MiB tile pool.
+No extra surface is allocated for the stand-in. Cancellation, invalidation,
+leaving Single and entering Compare restore it to its owner.
+
+The selected source probe, preparation and draw preempt lower-priority work;
+submitted GPU work must still finish. An unfinished neighbour selected by Steve
+restarts its demand at priority zero rather than keeping neighbour priority.
+Memory polling preserves selected work during source loading, while Grade,
+export/Proof and the existing memory limits still take precedence. The existing
+forward-biased two-neighbours-each-side window remains; no budget changed.
+For neutral geometry, stored half-float pixels are packed directly from the
+requested HDR/SDR lane. Other geometries retain the existing path. Exact packed
+byte checks cover HDR and authored/non-authored SDR, signed/bright values and
+padded rows. No shader, effect setting, export or Proof pixel change.
+
+**Why graded Fit remains expensive.** Existing normal-use logs put most of the
+wait in the finishing graph: 1,746/2,454 ms render p50/p95, excluding fetch/upload.
+Read-only inspection of two slow badminton sidecars (DSC07217 and DSC07178)
+confirms adaptive Denoise in both lanes, Portra 400, grain amount 24 and halation;
+there are no local adjustments. DSC07178 also has sharpening amount 28.
+Each new Library scene reconstructs the Denoise model via the backend and runs
+adaptive reconstruction (32 dispatches per 512-pixel tile), then the film/grain/
+halation graph. Scene reset discards working resources between pictures. These
+are concrete repeated costs, but old logs do **not** isolate their individual
+shares; attributing all 1.7–2.8 seconds to Denoise or grain would be unsupported.
+Pipeline/highlight-anchor calls in the existing logs are generally sub-ms.
+Library-only per-request Denoise analysis, direct reconstruction and local-mask
+timings now separate those waits on the next try; tiled reconstruction remains
+inside render time. Nested stage timings must not be added together.
+
+Options, with no look change applied: retain finished previews (Part B qualifies
+the storage format); retain reusable Denoise models/results within existing
+budgets; avoid rebuilding identical effect resources. Drawing below 2560 pixels
+or simplifying Denoise/grain/halation could be cheaper but can change appearance
+and requires Steve's approval. The immediate stand-in leaves all effects intact.
+
+**Key-to-picture evidence.** Existing live logs, read only, before Part 0:
+87 navigation events, 60 sharp presentations, 28 cancellation events (a request
+can appear in both groups), zero stand-ins. Independent p50/p95 milliseconds:
+
+| Stage | Existing normal-use logs | Step 3 follow-up driver |
+| --- | ---: | ---: |
+| Cache check | 28.9 / 514.6 | 17.6 / 33.2 |
+| Queue | 0.2 / 87.4 | 0.1 / 2.3 |
+| Lease | 2.0 / 715.8 | 1.9 / 1.9 |
+| Pixel fetch | 233.7 / 603.0 | 189.0 / 213.7 |
+| Upload | 15.5 / 17.7 | 16.2 / 16.2 |
+| Render | 1746.2 / 2453.8 | 31.5 / 32.5 |
+| Present | 4.3 / 8.7 | 8.2 (one logged sample) |
+| Key to picture | 433.2 / 3253.5 | 9.0 (one logged kept hit) |
+
+The one authorized Step 3 driver ran **before** Part 0, once at 2560x1440,
+and passed. Its photo-path/edge observations confirmed four navigation sharp
+arrivals at 366, 260, 249 and 6 ms, including portrait/landscape; these are driver
+observations, not compositor timings. Only one sharp presentation reached its
+buffered log before teardown; zero stand-ins existed then. Neither dataset is
+a controlled before/after comparison. No Part 0 GPU rerun was made. Post-change
+stand-in/sharp counts and key-to-picture breakdown await Steve's short try;
+`stand_in`/`sharp` flags now distinguish first stand-in and subsequent sharp
+presentations, with cancellation recorded until sharp is presented.
+
+Validation: 612 Node checks passed in the one fast run, including stand-in
+identity/mode/camera rejection and selected-neighbour completion. Python: 2,549 passed, three skipped in the one fast run. Final view-cleanup/
+logging and own-source polling edits: 23 focused Node checks passed. No failures.
+No live database, photo, sidecar or cache-folder writes. Parts A and B have not
+started; stop here for Steve to try forward/back arrows, rapid reversals, then
+stop on a graded photo; also change grade and HDR/SDR and revisit it.
+
 **Fullscreen selection (October 24, 2026).** Entering Single/fullscreen with F
 hides the previous photo until the selected photo has finished drawing. The
 caption follows the selection immediately; waiting for source or GPU work must
@@ -38,9 +113,9 @@ identity is attempted once per folder pass. Idle work stops when either existing
 cache allowance lacks conservative headroom for both scene sizes (including a
 possible SDR reference); it does not deliberately evict entries to warm more.
 Large folders may therefore remain partly uncached. Foreground requests retain
-the ordinary cache eviction policy. Active preparation is bounded and is not
-preempted just to open another image, so an explicit request can wait for the
-next preparation slot. The next folder pass can reconsider cache headroom.
+the ordinary cache eviction policy. Active preparation is bounded. The October 25 Part 0 change above lets the
+selected Single photo preempt lower-priority probes and preparations; other
+requests still wait for the next preparation slot. The next folder pass can reconsider cache headroom.
 
 **DNG rejection detail (October 21, 2026).** Library quick and native picture
 requests preserve the DNG inspector's rejection reason, including insufficient
@@ -169,6 +244,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **No usable GPU: visible-only CPU fallback.** Keep the existing CPU-made pictures only when the GPU is missing, software-only or lost. Make them only for photos on screen (visible cells, Single and full-screen), with no background picture queue and no pre-making pictures for pasted photos that are not visible. After device loss or driver reset, automatically return to live GPU drawing when a usable GPU becomes available; fallback must not latch for the session. As with CPU export, keep this route working without speed work or new features. | Steve, 2026-10-19 |
 | **Batch Export tiles share live Library drawing.** Visible photo tiles use the same live GPU renderer and visible-only CPU fallback. While export or Proof is running they are background work: draw each tile once and retain it, never redraw for progress updates, and yield GPU memory and turns to delivery. Verify export time per photo with the page open versus closed on the same three photos; the agreed timing noise allowance is 5%. | Steve, 2026-10-19 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
+| **Fullscreen stand-in: the photo's own finished grid picture.** While the sharp fullscreen picture loads, show that photo's finished grid/filmstrip picture scaled to Fit (same grade and HDR/SDR mode), then swap. Never a camera embedded JPEG, another photo or an obsolete grade. Adjusts the October 24 hide-until-ready behaviour. | Steve, 2026-10-25 |
 | **Manual built previews work per photo** (any selection, also offered on folders), protected until discarded. Native 100% previews wait until everything else is fast. Design open; see Prepared-folder fullscreen culling. | Steve, 2026-10-25 |
 
 **V2 scope decision (Steve, October 21, 2026):** Library Looks (slice 7),
@@ -769,8 +845,38 @@ Compare a small shortlist, not a broad sweep:
   do not substitute a default tone map when generating the preview.
 - A losslessly compressed finished half-float baseline, such as OpenEXR ZIP/PIZ,
   to establish exact reference pixels and compare space/read/decode costs.
-  JPEG XL and lossy EXR remain secondary options if the first candidates fail
-  the measured speed, quality or capacity requirements.
+  Lossy EXR remains a secondary option if the candidates fail the measured
+  speed, quality or capacity requirements.
+- JPEG XL: a full third candidate (Steve, October 25). In a crude in-process
+  2560 px test, HDR PQ 16-bit decoded in about 30 ms with 8 threads (AVIF
+  10-bit: about 57 ms). Those test files were unrealistically small and untagged.
+  Facts checked October 25:
+  - The bundled `imagecodecs` contains libjxl 0.12.0. libjxl has had a gain-map
+    API (`JxlGainMapBundle`, ISO 21496-1 `jhgm` box) since 0.11.
+  - `imagecodecs.jpegxl_encode/decode` exposes PQ/primary tagging and a
+    decoding-speed setting, but no gain-map options.
+  - The app's Electron 43 uses Chromium 150. Chromium's JPEG XL decoder sits
+    behind a flag there; third-party reports say Chrome turned it on by default
+    only in 155. Whether Chromium renders JPEG XL HDR or gain maps is
+    unverified.
+  - Checked October 25 in the app's own Electron (Chromium 150.0.7871.224),
+    1709 x 2560 px, using `createImageBitmap`. JPEG XL fails to decode
+    without the `JXLImageFormat` feature; with it, a PQ-tagged 16-bit HDR file
+    (434 KiB) decoded in about 78 ms and an SDR file (260 KiB) in about 64 ms.
+    A plain JPEG took about 11 ms.
+  - In-process libjxl on the same files: HDR about 145 / 52 / 37 ms and SDR
+    about 121 / 39 / 28 ms with 1 / 4 / 8 threads.
+  - Enabling the feature works, but the browser decoder is about twice as slow
+    as multi-threaded libjxl, and its HDR precision on the way to a WebGPU
+    texture is unverified.
+
+  Test two forms:
+  - Separate HDR and authored-SDR JPEG XL renditions. Each mode decodes only
+    its own rendition, and this needs no new dependency.
+  - A single file with a gain map. This would need a small native libjxl
+    binding or helper, which is a planned update, not yet built.
+
+  Do not rely on the browser decoding JPEG XL.
 
 [libavif](https://github.com/AOMediaCodec/libavif) supports multiple decoder
 backends, including dav1d; [libultrahdr](https://github.com/google/libultrahdr)

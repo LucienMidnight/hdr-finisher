@@ -18,6 +18,7 @@
         while (bytes > limit) remove(entries.keys().next().value);
       },
       take:key => remove(key, false),
+      values:() => [...entries.values()].map(entry => entry.value),
       discard(predicate) { for (const [key, entry] of entries) if (predicate(entry.value)) remove(key); },
       clear() { for (const key of entries.keys()) remove(key); },
       snapshot:() => ({bytes, count:entries.size, limit})
