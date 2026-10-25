@@ -2995,6 +2995,61 @@ pairs), `1792774852959/results.json` (final geometry), and
 also explicitly selects CPU delivery so the shared Grade hook cannot silently
 turn a CPU reference into GPU work.
 
+**October 26, 2026: Library Film Look dependency repair (built in this commit; Steve's try pending)**
+
+Library's independent HTML document omitted `film-stocks.js`. Grade's shared
+renderer awaits that helper optionally; without it the stock slot is zero and
+the placeholder buffer silently bypasses stock colour/tone and paper/scan.
+`library_live.describe` preserves the recipe, and there is no live-session
+Film Look bypass. Grain and halation were already dispatched: grain fell back
+to direct RGB modulation instead of Portra negative density, so it was present
+but responded differently. Halation remained active. The repair loads Grade's
+existing stock helper before the renderer; no shader or separate implementation.
+Both Library factories and both lanes use it, including Export's shared tiles.
+
+The first darker grid picture is the current RAW's embedded camera JPEG,
+extracted by `rawpy.extract_thumb`, resized and displayed as a temporary
+`camera-preview-placeholder`. The grid requests it even for graded photos;
+Single's separate camera fallback is restricted to ungraded uncached photos.
+It is not a saved older graded picture and does not contain the saved grade.
+
+Validation uses disposable photo/sidecar copies and the runner's isolated app
+profile/cache. The existing live-picture driver now permanently grades its
+synthetic saved photo with Portra 400, grain 24 / size 30 and halation 4 in both
+lanes. Real DSC07202, DSC07217 and DSC07178 additionally compare Library's
+640/2560 finished pixels and the quick renderer with Grade's independent GPU
+renderer using standard Grade proxy transport over the same read-only scene.
+This isolates finishing agreement; it is not a new full RAW-development audit.
+Limits remain perceptual mean <1.0 and p99.9 <=3.0. Warm timing samples reproduce
+the previous missing-helper condition and alternate three paired sharp draws
+per lane, excluding readback; use the existing 10% noise guide and report the
+added stock-chain cost descriptively rather than impose a new speed budget.
+
+Validation: all 18 real-photo comparisons passed (both lanes at 640/2560,
+plus the separate 640 quick renderer). Measured mean and p99.9 were zero in
+every comparison. The permanent Film Look fixture also passed against Grade's
+numerical renderer: worst mean 0.134, p99.9 1.922, within the existing limits.
+The first GPU attempt stopped on a test-helper readback after scene release;
+the capture was moved inside renderTo and Steve approved one corrected run,
+which completed. No further GPU run or broad checks.
+
+DSC07202's three-pair warm sharp-draw medians, old missing-helper condition to
+fixed: SDR 167.9 -> 182.5 ms (+8.7%); HDR 170.7 -> 169.9 ms (-0.5%). Both are
+inside the 10% noise guide; no slowdown beyond that guide was measured. These
+exclude initial stock-table download, source development and CPU pixel readback,
+and are not cold end-to-end latency or an isolated grain/halation benchmark.
+
+Fast checks ran once: Node 630 passed, one unrelated failure in
+`library-scenes.test.js` (selected photo joining development-ahead keeps its
+CPU fallback if GPU fails: decoder failed). Python was interrupted at 50%
+when the session stopped; the process is gone and there is no final result.
+Neither was rerun under Steve's once-only limit. Original photos, sidecars,
+live Library database and cache were not written. Evidence: ignored
+`codebase/output/library-film-look-corrected.log` and
+`codebase/output/library-live-picture/1792971604518/film-results.json`.
+The real-photo extension is opt-in via `HDR_FINISHER_FILM_PHOTOS`; the permanent
+synthetic saved Film Look fixture always runs in `library-live-picture.js`.
+
 ## 6. Decisions waiting on Steve
 
 - **V2, deferred:** linked photos: whole grade or chosen groups; where the link is stored.

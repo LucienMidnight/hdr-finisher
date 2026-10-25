@@ -3906,7 +3906,7 @@
       "path": "tests/library-live-picture.js",
       "areas": ["library"],
       "tier": "core",
-      "protects": "Live Library HDR and SDR pictures agree with Grade before any thumbnail codec.",
+      "protects": "Live Library HDR and SDR pictures agree with Grade before any thumbnail codec, including saved Portra stock, grain and halation; opt-in real-photo thumbnail/quick and screen comparisons.",
       "launch": {"method": "electron"}
     },
     {
