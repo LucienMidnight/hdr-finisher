@@ -1,5 +1,115 @@
 # Module PRD: Photo Library
 
+## Start here: Library responsiveness status (October 26, 2026)
+
+A handoff summary of the October 25–26 work so a new thread can carry on.
+Details are in the dated entries below, the decisions table (section 3), the
+"Known slow items to target" table (section 5) and the linked documents.
+
+**Steve's goals.**
+
+- Prepare a 200–300 photo folder, then flip forwards and backwards through
+  finished fullscreen pictures instantly while culling and rating, with
+  restarts benefiting from the stored cache.
+- Cull **fresh, never-prepared folders** quickly too (a core workflow).
+
+The responsiveness baseline is opening a folder of Sony RAWs, where camera
+previews appear almost immediately. HDRF's grade and HDR/SDR look must be
+preserved.
+
+**Where things stand** (from Steve's own testing and the logs):
+
+- Prepared photos in the ready window: sharp draw in about 5 ms.
+- Prepared photos outside it: quick draw at once, sharp draw in about
+  0.2–0.5 s.
+- Plain RAWs browse well.
+- Graded photos with Denoise take about 1–2 s for the sharp draw (Denoise
+  preparation is the slow item).
+- Never-prepared RAWs show their camera preview at once if unedited, then
+  develop in about 2.8 s.
+- Never-prepared JPEG/PNG/TIFF take 5–15 s for the sharp draw, because of the
+  scene handoff (next brief). JPEG/PNG originals already give an instant
+  quick draw.
+- HEIC and JPEG XL take a slower CPU route; AVIF gain-map files take seconds
+  of serial CPU maths.
+- Ratings show immediately; their background save is about 110 ms.
+- The 2560 scene cache is full at 10 GiB (about one folder), so idle warming
+  has stopped.
+- Library pictures now include Film Look (fixed in 5f846b5; it had never
+  been applied before).
+
+**Work done** (commits, in order):
+
+| Commit | Change |
+| --- | --- |
+| 68ad8f8 | Proposal recorded. Claude's architecture review is a private artifact: https://claude.ai/artifact/VhYThwAqsNTd6ogzehCymH |
+| 513715b | Timing instrumentation (Step 0) |
+| ae6475a | Export/grade deadlock fix |
+| bb09db6 | Foreground off the shared lock (Step 1) |
+| 002519f | Incremental index maintenance (Step 2) |
+| 3e9bfb4 | Ready window (Step 3) |
+| ccc5ac1 | Grid stand-ins (Part 0) |
+| 50e0870 | Rapid navigation fixes (Part 0b) |
+| 7d7bc37 | Graded stand-ins and Denoise reuse (Part 0c) |
+| 021df6b | Glossary |
+| a6d4f7d | Terminology in the UI and logs |
+| d48d466 | RAW draw-before-store, stopped photo first (Part 0d) |
+| 58ab4b1 | Use the whole machine (Part A) |
+| 7bbfaa0 | Seamless swaps, indexing yields (Part 0e) |
+| d436ddb | Camera-preview quick draw, development ahead (Part 0f) |
+| 5f846b5 | Film Look fix |
+| 5cef188 | Codec and cold-decode experiment (Part B): [evidence](../../technical/evidence/library-codecs-and-cold-decode-2026-10-26.md) |
+| 37c85b2 | Cold non-RAW profiling; JPEG/PNG original quick draws |
+
+Finished briefs are in `docs/technical/archive/briefs/`
+(`codex-brief-library-responsiveness-core-2026-10-25.md`,
+`codex-brief-library-threads-and-codecs-2026-10-25.md`).
+
+**Decisions made** (details in section 3 and the master PRD):
+
+- Glossary of picture sizes and fullscreen steps (master PRD).
+- "Use the whole machine" principle (master PRD principle 3).
+- Fullscreen stand-ins: the photo's own thumbnail as the quick draw.
+- Camera preview as the quick draw for unedited photos only.
+- Cold-folder culling is a core workflow.
+- "Build previews" works per photo and selection; detail (100%) previews come
+  later.
+- Stored screen previews use JPEG XL q90, with AVIF q90 as a valid
+  alternative and Ultra HDR rejected.
+- The quality rule for stored previews is Steve's blink test at Fit.
+- Codex tasks use absolute minimum testing during this phase (Steve,
+  October 25).
+
+**Next, in order.** Steve confirms each before it starts.
+
+1. [Cold non-RAW draw-first brief](../../technical/briefs/codex-brief-library-cold-nonraw-handoff-2026-10-26.md)
+   (written, not yet sent to Codex).
+2. Stored JPEG XL screen preview slice (fullscreen first). This needs one
+   decision from Steve first: which HDR ceiling applies to stored previews
+   when a grade has Highlight compression switched off (Part B found Library
+   pictures above 1000 nits in that case).
+3. Denoise speed-up, as its own task.
+4. HEIC and JPEG XL CPU-route speed.
+5. AVIF gain-map reconstruction on the GPU (estimated 3–5 days).
+6. Build previews command, protected prepared set and space checks.
+7. Detail (100%) previews, last.
+
+**Other open items:**
+
+- Faster rating saves would trade durability; this is Steve's call.
+- 134,656 index entries still lack facts and are backfilling in the
+  background.
+- The scene cache allowance is full.
+
+**How this work is run.**
+
+- Steve tests in the app after restarting it. Claude reads
+  `%APPDATA%\hdr-finisher-desktop\logs\backend.log` with
+  `codebase/tools/summarize_library_log.py` (see "Library timing logs" in
+  `docs/technical/photo-library.md`).
+- Claude writes outcome-focused Codex prompts that cite logged evidence and
+  ask for minimal testing. Codex commits and stops for Steve to try.
+
 **October 26, 2026: cold non-RAW first-picture profiling (built in this commit; partial qualification)**
 
 Unedited, unchanged, resolved sRGB JPEG/PNG originals now offer a temporary quick draw using Grade's ICC/orientation decoder and existing source/grade/cache guards before and after decoding. Gain-map JPEGs and unresolved colour retain the normal route. Sharp-scene calculations remain unchanged. Live GPU scene handoff uses identical ArrayBuffer bytes instead of Blob upload. Added source/check/wait/transfer, CPU measurement/session and handoff telemetry; no stored-preview feature.
@@ -771,6 +881,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Fullscreen stand-in: the photo's own finished grid picture.** While the sharp fullscreen picture loads, show that photo's finished grid/filmstrip picture scaled to Fit (same grade and HDR/SDR mode), then swap. Never another photo or an obsolete grade. Adjusts the October 24 hide-until-ready behaviour. | Steve, 2026-10-25 |
 | **Camera preview as a quick draw, unedited photos only.** When a photo has no thumbnail yet and has no grade, fullscreen and Single may show its camera preview immediately, then replace it with HDRF's picture. Edited photos never show a camera preview. Amends the October 14 rule. | Steve, 2026-10-25 |
 | **Cold-folder culling is a core workflow.** Users often cull folders the app has never prepared, so stored previews cannot be the only route to speed. Every supported format needs a fast first picture on cold visits: camera previews for RAWs, and fast in-process decoding for JPEG, HEIF, AVIF, TIFF, PNG, EXR, DNG and similar (the file itself as the quick draw when unedited). Edited photos need fast development and finishing. Stored screen previews speed up returning to a folder; they do not replace cold speed. | Steve, 2026-10-25 |
+| **Stored screen preview format: JPEG XL q90** (distance 0.4, effort 3, decoding speed 1, all threads), as separate HDR (PQ 16-bit, BT.2100-tagged) and authored-SDR (sRGB 8-bit) files. About 2.3 MB per photo for both, about 4,400 photos per 10 GiB. Decode about 20 ms per rendition with 12 threads. Its decoded peak stayed at the 1000-nit edge in the Part B probe. **AVIF q90 remains a valid alternative** (native Chromium decoding, similar size, tiles needed for multi-core decoding, slight ceiling overshoot needs a post-decode clamp). Ultra HDR was rejected: visible artefacts in backgrounds at q90 and q95. **Quality rule for stored previews:** visually identical at Fit in Steve's blink test on his graded photos. This replaces the per-pixel perceptual guide for codec texture only; the guide still governs Library-vs-Grade/export colour agreement, and the exact HDR ceiling still applies. Not built. | Steve, 2026-10-26 |
 | **Manual built previews work per photo** (any selection, also offered on folders), protected until discarded. Native 100% previews wait until everything else is fast. Design open; see Prepared-folder fullscreen culling. | Steve, 2026-10-25 |
 
 **V2 scope decision (Steve, October 21, 2026):** Library Looks (slice 7),

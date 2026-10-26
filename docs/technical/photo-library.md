@@ -714,6 +714,44 @@ the plain invalid-settings wording remains unchanged.
 
 ## 12. Reading library health and diagnostics
 
+### Library timing logs (October 2026)
+
+Every Library picture step is logged to
+`%APPDATA%\hdr-finisher-desktop\logs\backend.log` as `[library] <event> {json}`
+lines. The file is large (over 150 MB); read it with a script, never by eye.
+
+- **Summary:** from `codebase`, run
+  `.venv/Scripts/python.exe tools/summarize_library_log.py` (latest app
+  launch), add `--since "YYYY-MM-DD HH:MM"`, or add `--list` for a
+  per-request fullscreen timeline. It is read-only.
+- **Events** are named `page_picture_<stage>` and use the glossary in their
+  fields:
+  - `picture_size`: camera preview, thumbnail, screen preview or detail
+    preview;
+  - `step`: quick draw or sharp draw;
+  - `view`: grid, filmstrip, single, fullscreen or compare;
+  - `request`: groups one navigation's events.
+- **Stages:** `cache_check`, `queue_wait`, `lease_wait`, `pixel_fetch`,
+  `upload`, `denoise_prepare`, `render`, `draw_complete`, `present`,
+  `development`, `store`.
+- **Per navigation:** `page_picture_review_outcome` records the result
+  (`quick_draw`, `sharp_draw`, `blank`, `reason`, and `duration_ms` from key
+  press).
+- **Other useful events:**
+  - `lock_timing` and `document_lookup_timing` (shared-lock wait and hold);
+  - `helper_job_*` (helper work such as indexing metadata batches and folder
+    scans);
+  - `picture_source_preparation_*`;
+  - `page_loaded`, which marks each app launch.
+- Logs before October 25, 19:42 use older names (`page_present`,
+  `page_key_to_picture`, `stand_in`/`sharp` fields). The mapping table is in
+  the photo-library module PRD.
+- A "present" event means the app believes the picture is visible. If what
+  Steve sees disagrees with the log, check the screen too, not just the log.
+  The October 26 Film Look bug was invisible in the logs.
+- `codebase/tools/profile_cold_picture.js` is an opt-in profiler for cold
+  first pictures on copied inputs.
+
 **One command:** `GET /api/library/health` returns settings-writing progress,
 waiting count, counts per failure reason, current folder/reason attention
 groups, pause/Grade-wait state, recent writer notices, helper running state

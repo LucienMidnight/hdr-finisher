@@ -1,6 +1,6 @@
 # Stored screen previews and cold original decoding — October 26, 2026
 
-Offline Part B experiment for the [Library threads/codecs brief](../briefs/codex-brief-library-threads-and-codecs-2026-10-25.md). Measured app revision: `5f846b5` (Library Film Look stock-table fix). No application integration or import-rule change.
+Offline Part B experiment for the [Library threads/codecs brief](../archive/briefs/codex-brief-library-threads-and-codecs-2026-10-25.md). Measured app revision: `5f846b5` (Library Film Look stock-table fix). No application integration or import-rule change.
 
 ## Decision
 
