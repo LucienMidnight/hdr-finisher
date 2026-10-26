@@ -557,6 +557,16 @@ Finished briefs are in `docs/technical/archive/briefs/`
 
 **Other open items:**
 
+- **Very large folder: grid blank while scrolling** (Steve, October 26 evening;
+  come back to it next, possibly October 27). After 7cb92ff–cf47441 `D:\Photos`
+  (155,873 photos) is "much better", but while Steve scrolls he sees neither
+  the grid nor thumbnails; other folders are fine. Log 21:26 launch: all rows
+  3.6 s (was 88 s); disk check 64 s (was 265 s); once a scroll settles, at most
+  30 picture requests and the first visible picture after 0.04 s median, 1.55 s
+  worst. So the gap is while the grid is moving, before a scroll settles. Also,
+  the first screen now waits for all rows (`first rows` 3.2 s, was 15 ms):
+  the first screen should show at once while the rest arrives.
+
 - **Switching HDR on or off is a bit slow** (Steve, October 26; for later, not
   now). Every visible thumbnail redraws, and graded photos prepare Denoise
   again, because the Denoise model reuse keeps HDR and SDR apart (batch policy
