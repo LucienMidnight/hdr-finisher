@@ -453,6 +453,21 @@ every photo carrying the name and run the steps above.
 
 ## 8. The helper process
 
+### October 27: draw cells independently of demand
+
+A compact full indexed extent retains the folder count, sort/filter facts and
+virtual-copy order; rich row descriptions follow in 8,192-row batches. Parsing
+yields between batches. Pinned folders skip redundant membership lookups. A
+second request to open the same loading folder joins its existing page request.
+Moving viewports reconcile placeholders, eligible recent thumbnails and bounded
+remembered camera previews; only settled visible cells start new source work.
+Loading cells that leave still cancel. Normal GPU thumbnail draws now report
+presentation, so first grid picture and first finished thumbnail are distinct.
+The October 27 single disposable D:\Photos profile missed 1 s: 21.18 s first,
+25.37 s 25th picture, amid three overlapping opens. The bottom screenshot shows
+neutral cells; 44/45 animation samples had cells, one preceded its scroll draw.
+Final same-folder joining and parser yields are unprofiled. See module status.
+
 ### October 26 viewport batch: complete extent and bounded demand
 
 The grid waits for one complete indexed snapshot, including cached marks,

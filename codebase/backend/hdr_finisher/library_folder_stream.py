@@ -46,7 +46,7 @@ def indexed_paths(index, root, after="", limit=8192):
     finally: db.close()
 
 
-def cached_rows(index, store, photos):
+def cached_rows(index, store, photos, root=None):
     """Database state only: no stat, settings read, or whole-folder lock."""
     if not photos:
         return photos
@@ -75,7 +75,10 @@ def cached_rows(index, store, photos):
         described = store.library_grades.describe([p["path"] for p in photos])
         for photo in photos:
             photo.update(described.get(photo["path"],{}))
-    index.membership.describe(photos)
+    if root is not None and index.membership.pinned(root, index.membership.pins()):
+        for photo in photos: photo["kept_by_album"] = False
+    else:
+        index.membership.describe(photos)
     return photos
 
 
@@ -110,12 +113,22 @@ async def stream_folder(index, store, request, root, enrich):
         # descriptions, full-grid sorting and paints at an ever-moving end.
         def snapshot():
             photos = indexed_page(index,root,limit=2147483647)
-            return len(photos), cached_rows(index,store,photos)
+            return len(photos), cached_rows(index,store,photos,root=root)
         total, rows = await run_in_threadpool(snapshot)
         first = not rows
         if rows:
+            empty_marks = Marks().model_dump()
             log("folder_open_first_rows",folder=root,request=token,rows=len(rows),duration_ms=(time.perf_counter()-started)*1000,route="index")
-            yield event("rows",photos=rows)
+            # The compact extent carries every row's sort/filter facts and identity.
+            # Repeated defaults and derivable labels need not cross the wire 155k times.
+            columns = sorted({key for photo in rows for key in photo if key not in
+                ("name", "type", "albums", "storage", "kept_by_album")})
+            yield event("rows", columns=columns, values=[
+                [photo.get(key) if key != "marks" or photo.get(key) != empty_marks else None
+                 for key in columns] for photo in rows], photos=[])
+            # Rich row descriptions follow without changing the extent or order.
+            for at in range(0, len(rows), 8192):
+                yield event("details", photos=rows[at:at+8192])
         del rows
         if total:
             log("folder_open_all_rows",folder=root,request=token,rows=total,duration_ms=(time.perf_counter()-started)*1000,route="index")

@@ -70,17 +70,22 @@ def main():
     switches = []
     scrolls, detail_reads, recovery = [], collections.defaultdict(list), []
     folder_opens = collections.OrderedDict()
+    grid_presentations = []
     disk_pages = collections.defaultdict(list)
     for name, d in events(since):
         if name == "page_grid_scroll_settled": scrolls.append(d)
         if name == "folder_disk_page": disk_pages[(d.get("folder"),d.get("request"))].append(d)
         if name == "camera_details_read": detail_reads[d.get("demand","unknown")].append(d)
         if name == "recovery_piece": recovery.append(d)
-        if name.startswith("folder_open_") or name in ("page_folder_first_rows","page_folder_first_camera_preview","page_folder_first_thumbnail","page_folder_complete"):
+        if name.startswith("folder_open_") or name in ("page_folder_first_rows","page_folder_first_grid_picture","page_folder_first_camera_preview","page_folder_first_thumbnail","page_folder_complete"):
             key=d.get("request")
             if key:
                 row=folder_opens.setdefault(key,{"folder":d.get("folder",d.get("path")),"events":{}})
                 row["events"].setdefault(name,d)
+        # Recover actual draws in older logs too: the old folder stopwatch missed
+        # normal GPU thumbnails and recorded a much later pool reuse instead.
+        if d.get("view") == "grid" and name in ("page_picture_shown", "page_picture_navigation_to_present"):
+            grid_presentations.append({**d, "picture_size": "thumbnail" if name == "page_picture_shown" else d.get("picture_size")})
         if name == "denoise_measurement":
             measurements[(d.get("usage", "CPU path"), d.get("route", "-"), d.get("width"), d.get("height"))].append(d.get("duration_ms",0))
         if name == "page_rendition_switch":
@@ -122,6 +127,21 @@ def main():
             r = requests.setdefault(d.get("request"), {"t": d["time"], "path": os.path.basename(str(d.get("path"))), "ev": []})
             r["ev"].append((short, d.get("step"), d.get("duration_ms"), d.get("reason")))
 
+    starts = sorted((row["events"]["folder_open_started"]["time"], key)
+                    for key, row in folder_opens.items() if "folder_open_started" in row["events"])
+    for position, (started, key) in enumerate(starts):
+        row = folder_opens[key]
+        end = starts[position+1][0] if position+1 < len(starts) else float("inf")
+        end = min(end, row["events"].get("folder_open_closed", {}).get("time", float("inf")))
+        prefix = str(row["folder"]).replace("/", "\\").rstrip("\\").casefold()+"\\"
+        for item in sorted(grid_presentations, key=lambda value:value["time"]):
+            if not started <= item["time"] < end or not str(item.get("path", "")).replace("/", "\\").casefold().startswith(prefix):
+                continue
+            for event in ("page_folder_first_grid_picture", "page_folder_first_thumbnail" if item.get("picture_size") == "thumbnail" else "page_folder_first_camera_preview"):
+                previous = row["events"].get(event)
+                if previous is None or item["time"] < previous["time"]:
+                    row["events"][event] = {**item, "duration_ms":(item["time"]-started)*1000}
+
     print("settled grid scrolls:",len(scrolls),"zero requests:",sum(d.get("picture_requests")==0 for d in scrolls))
     for d in scrolls:
         print("  grid",d.get("path"),"range",d.get("range_start"),d.get("range_end"),"of",d.get("total"),"requests",d.get("picture_requests"))
@@ -136,7 +156,7 @@ def main():
     for row in folder_opens.values():
         milestones=row["events"]
         print("folder open:",row["folder"])
-        for event,label in (("folder_open_first_rows","first rows"),("page_folder_first_camera_preview","first camera preview"),("page_folder_first_thumbnail","first thumbnail"),("folder_open_all_rows","all indexed rows"),("folder_open_disk_finished","disk check finished"),("folder_open_closed","closed")):
+        for event,label in (("folder_open_first_rows","first rows"),("page_folder_first_grid_picture","first grid picture"),("page_folder_first_camera_preview","first camera preview"),("page_folder_first_thumbnail","first finished thumbnail"),("folder_open_all_rows","all indexed rows"),("folder_open_disk_finished","disk check finished"),("folder_open_closed","closed")):
             item=milestones.get(event)
             if item:
                 print(" ",label,f"{item.get('duration_ms',0):.0f}ms", " ".join(f"{field}={item[field]}" for field in ("rows","added","removed","changed","settings","unreadable","reason") if field in item))
@@ -146,7 +166,7 @@ def main():
     print("startup (from backend process):", " ".join(f"{name}={(stamp-origin)*1000:.0f}ms" for name, stamp in startup.items()))
     app_origin = startup.get("app_start", origin)
     print("startup (from app launch):", " ".join(f"{name}={(stamp-app_origin)*1000:.0f}ms" for name, stamp in startup.items()))
-    for label, stamp in (("first folder listed", folder_listed), ("first thumbnail shown", first_thumbnail)):
+    for label, stamp in (("first folder listed", folder_listed), ("first finished thumbnail shown", first_thumbnail)):
         if stamp is not None:
             print(f"  {label}: {(stamp-origin)*1000:.0f}ms from backend; {(stamp-app_origin)*1000:.0f}ms from app")
     for name, d in phases:

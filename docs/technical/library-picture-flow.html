@@ -253,7 +253,7 @@ Words follow the master PRD glossary.</p>
 
   <div class="num">2</div>
   <div class="step backend"><div class="h">Rows from the index <span class="t fast">0.05–0.25 s ordinary</span> <span class="t slow">3.6 s for 155k</span></div>
-    <div class="d">Photos with their ratings, grades and camera details as stored. The grid knows the full folder size and order from the first screen. For D:\Photos the first screen waits for all rows (3.2 s; was 0.015 s for the first rows earlier) <span class="bugtag">OPEN</span>. Was 88 s for all rows earlier in the evening.</div>
+    <div class="d">Photos with their ratings, grades and camera details as stored. A compact indexed extent gives the full folder size, order and filter facts; rich row descriptions follow in batches. Duplicate opens join the current read; parsing yields to drawing. The about-1-s first-screen target remains open.  For D:\Photos the first screen waits for all rows (3.2 s; was 0.015 s for the first rows earlier) <span class="bugtag">OPEN</span>. Was 88 s for all rows earlier in the evening.</div>
     <div class="meta"><span class="cachetag">Index database</span><span class="cachetag">Settings files (.hdrf)</span></div></div>
 
   <div class="num">3</div>
@@ -279,7 +279,7 @@ Words follow the master PRD glossary.</p>
 
   <div class="num">0</div>
   <div class="step page"><div class="h">Ask only for what's on screen <span class="t fast">≤ 30 requests per stop</span></div>
-    <div class="d">Cells that scroll away cancel their work everywhere. First visible picture after a stop: 0.04 s typical, 1.6 s worst. Was 3,900–5,500 requests and 32 s. While the grid is still moving in a 155k folder nothing is drawn <span class="bugtag">OPEN</span>.</div></div>
+    <div class="d">Cells that scroll away cancel their work everywhere. First visible picture after a stop: 0.04 s typical, 1.6 s worst. Was 3,900–5,500 requests and 32 s. While moving, reconcile neutral cells and reuse eligible pool thumbnails or remembered camera previews. Start new picture work only at the settled viewport; cancel departed loading cells. October 27 bottom screenshot confirms neutral cells; Steve’s continuous-scroll check remains open.</div></div>
 
   <div class="num">A</div>
   <div class="step page decision"><div class="h">Finished thumbnail already in memory? <span class="t fast">~0 ms</span></div>
@@ -436,7 +436,7 @@ Words follow the master PRD glossary.</p>
 
 <div class="note"><strong>Planned, not built:</strong> <em>Build previews</em>: you choose photos or a folder, the app makes stored screen previews for them, and they're kept until you discard them. For now, stored screen previews are made automatically for every photo you view in fullscreen or Single and dropped oldest first. Detail (100%) previews come last.</div>
 
-<div class="note"><strong>Log label to fix:</strong> <code>summarize_library_log.py</code> reports a folder's "first thumbnail" as the first <em>reused</em> thumbnail, which can be minutes after opening (21–205 s this session). The real first picture in ordinary folders was 0.4–1.0 s.</div>
+<div class="note"><strong>October 27 log correction:</strong> <code>summarize_library_log.py</code> now reports first grid picture and first finished thumbnail separately. Ordinary GPU draws notify the folder stopwatch as well as pool reuses. The one cold D:\Photos profile recorded 21.18 s first / 25.37 s 25th picture; final duplicate-open and stream-yield corrections are unprofiled.</div>
 
 <p class="muted" style="margin-top:28px"><small>Sources: <code>%APPDATA%\hdr-finisher-desktop\logs\backend.log</code>, Steve's launches on October 26 at 20:54 and 21:27, read with <code>codebase/tools/summarize_library_log.py</code>; Codex profiles recorded in <code>docs/product/modules/photo-library.md</code>; code in <code>library_worker.py</code>, <code>library_pictures.py</code>, <code>library_cache.py</code>, <code>library_screen_previews.py</code>, <code>library-tile-pool.js</code>, <code>photo-library.js</code>. Update this page when a step's timing or owner changes.</small></p>
 

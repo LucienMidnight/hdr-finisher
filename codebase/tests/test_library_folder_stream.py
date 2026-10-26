@@ -77,7 +77,7 @@ def test_stream_serves_index_before_walk_and_emits_only_differences(setup):
         return result
     result=asyncio.run(read())
     assert result[0]["kind"]=="rows"
-    assert str(removed) in [p["path"] for p in result[0]["photos"]]
+    assert str(removed) in [dict(zip(result[0]["columns"], values))["path"] for values in result[0]["values"]]
     changes=[r for r in result if r["kind"]=="changes"]
     assert [p["path"] for r in changes for p in r["photos"]]==[str(added)]
     assert [p for r in changes for p in r["removed"]]==[str(removed)]
@@ -138,7 +138,7 @@ def test_first_grid_extent_contains_all_indexed_rows(setup):
         finally: await stream.aclose()
     first=asyncio.run(read())
     assert first["kind"]=="rows"
-    assert [p["path"] for p in first["photos"]]==[p["path"] for p in records]
+    assert [dict(zip(first["columns"], values))["path"] for values in first["values"]]==[p["path"] for p in records]
 
 
 def test_disk_page_reads_existing_settings_without_missing_path_probes(tmp_path,monkeypatch):

@@ -55,7 +55,33 @@ it; the old CPU premeasurement cost about 0.8–1.0 s per native photo. The
 CPU; those whole-export numbers compare renderer paths, not before/after this
 measurement change. No matched whole-export before/after is claimed.
 
-## Start here: Library responsiveness status (October 26, 2026)
+## Start here: Library responsiveness status (October 27, 2026)
+
+**October 27 batch, Part 1: scrolling cells and first-picture logging built;
+1 s first-screen target remains unverified.** Moving viewports now draw neutral
+cells, reuse eligible pool thumbnails and remembered camera previews, and defer
+new picture work until settling. Rich row descriptions follow a compact full
+extent containing sort/filter facts and virtual copies. Pinned folders avoid
+per-photo membership queries. Duplicate opens of the same loading folder are
+joined, and stream parsing yields to picture work. Departed loading cells still
+cancel. The summarizer separates first grid picture, camera preview and first
+finished thumbnail; ordinary GPU draws now notify the folder stopwatch.
+
+One disposable SQLite backup, empty isolated cache, source settings writes and
+membership reconciliation disabled. Log and screenshot confirm D:\Photos,
+155,877 rows. First grid picture 21.18 s; 25th presented picture 25.37 s. This
+misses the about-1-s target. Three overlapping startup opens competed in this
+run. Scroll sampling found cells in 44/45 animation samples (67–80 cells), one
+sample before its scroll event drew; the bottom screenshot shows neutral cells
+throughout. The one settled bottom viewport requested 67 cells at this smaller
+cell size, with no intermediate picture requests. This does not establish a
+30-cell viewport or a screen of finished thumbnails in 1 s. Same-folder joining
+and stream yields were corrected after the profile; **unprofiled**, no second
+run. Steve should try startup and a continuous scrollbar drag with his normal
+cell size. Fast checks deferred to the end of the three-part batch. No pixel
+math, GPU limits or tolerances changed. Profile artifacts:
+`codebase/output/oct27-library-profile/`.
+
 
 **October 26 viewport batch: three parts committed; speed targets partly met.**
 The single disposable profile opened D:\Photos (155,873 source rows, 155,877
@@ -565,7 +591,11 @@ drag-in pinning).
 
 **Other open items:**
 
-- **Very large folder: grid blank while scrolling** (Steve, October 26 evening;
+- **Very large folder: first-screen speed and Steve’s scrolling check remain open.**
+  October 27 cell drawing and telemetry are built; the one cold profile missed
+  1 s (21.18 s first / 25.37 s 25th picture). Duplicate-open and stream-yield
+  corrections followed, unprofiled. See Start here above. Historical evidence:
+  **Grid blank while scrolling** (Steve, October 26 evening;
   come back to it next, possibly October 27). After 7cb92ff–cf47441 `D:\Photos`
   (155,873 photos) is "much better", but while Steve scrolls he sees neither
   the grid nor thumbnails; other folders are fine. Log 21:26 launch: all rows

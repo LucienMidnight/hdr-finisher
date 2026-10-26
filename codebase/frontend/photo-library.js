@@ -572,7 +572,8 @@
     updateDetails(); paintGrid(); paintFilm();
     status(`${state.photos.length.toLocaleString()} photos · ${state.hiddenFiles} unreadable files hidden`);
   }
-  function makeCell(photo, container, index) {
+  const cameraCells = new Map();
+  function makeCell(photo, container, index, defer = false) {
     const element = document.createElement("div");
     element.className = "library-cell loading"; element.setAttribute("role", "option"); element.dataset.path = photo.path;
     const frame = document.createElement("div"); frame.className = "picture-frame";
@@ -590,6 +591,11 @@
       if (!state.selection.has(photo.path)) select(state.photos.findIndex(item => item.path === photo.path));
       event.dataTransfer.setData(HDRLibraryAlbums.DRAG, String(state.selection.size)); event.dataTransfer.effectAllowed = "copyMove";
     });
+    const remembered = cameraCells.get(cell.identity);
+    if (remembered) { canvas.src = remembered; canvas.style.visibility = ""; }
+    cell.start = () => {
+    if (cell.started) return;
+    cell.started = true;
     const started = performance.now();
     const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
     pictureErrors.paint(cell);
@@ -608,6 +614,8 @@
           canvas.src = meta.url; canvas.dataset.preview = "true";
           await canvas.decode();
           if (current() && !cell.meta) {
+            cameraCells.delete(cell.identity); cameraCells.set(cell.identity, meta.url);
+            while ([...cameraCells.values()].reduce((sum,url)=>sum+url.length*2,0) > 64*1024**2) cameraCells.delete(cameraCells.keys().next().value);
             canvas.style.visibility=""; element.classList.remove("loading");
             const baseline = HDRLibraryTrace.begin(container === space ? "grid" : "filmstrip",photo.path,started);
             HDRLibraryTrace.mark(baseline,"picture_camera_preview_decoded",started,{picture_size:"camera preview",route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : meta.route});
@@ -633,6 +641,7 @@
             fallback.hidden = false; canvas.hidden = true; canvas.removeAttribute("src"); element.classList.remove("loading");
             fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
             HDRLibraryStopwatch("picture_shown",{...window.HDRLibraryPictureLog?.(meta),view:container === space ? "grid" : "filmstrip",path:photo.path,key:meta.key,duration_ms:cell.elapsed});
+            HDRLibraryTrace.present(trace,current,{picture_size:"thumbnail",route:meta.route});
             overlays?.attach(photo,fallback,meta,cell.controller,current);
             return;
           } catch(error) {
@@ -654,8 +663,10 @@
           }
         }
       })().catch(error=>{if(current()&&!aborted(error)){if(error.folderDetails)status(error.message);else removeUnreadable(photo,error);pictureErrors.paint(cell);cell.controller.abort();}});
-      return cell;
     }
+    };
+    if (!defer) cell.start();
+    return cell;
   }
   // Finished cached-picture cells stay built for one screen beyond each edge, so
   // scrolling back shows them at once. Loading cells detach from shared preparation.
@@ -679,7 +690,7 @@
       const photo = state.photos[index];
       let cell = map.get(photo.path);
       if (cell && (cell.controller.signal.aborted || cell.edge !== thumbnailEdge() || cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.identity !== pictureIdentity(photo))) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
-      if (!cell && (index < start || index >= end || (map === state.cells && gridSettleTimer))) continue;
+      if (!cell && (index < start || index >= end)) continue;
       if (!cell) {
         cell = tilePool.take(tileKey(map, pictureIdentity(photo)));
         if (cell) {
@@ -689,9 +700,10 @@
           overlays?.attach(photo, cell.fallback, cell.meta, cell.controller,
             () => state.active && cell.element.isConnected && !cell.controller.signal.aborted);
         }
-        else { cell = makeCell(photo, container, index); requested++; }
+        else { cell = makeCell(photo, container, index, map === state.cells && !!gridSettleTimer); if (cell.started) requested++; }
         map.set(photo.path, cell);
       }
+      if (!cell.started && cell.start && !(map === state.cells && gridSettleTimer)) { cell.start(); requested++; }
       position(cell.element, index);
       const active = state.selection.has(photo.path);
       cell.element.classList.toggle("active", active); cell.element.setAttribute("aria-selected", String(active));
@@ -1281,6 +1293,7 @@
     const reader = response.body.getReader(), decoder = new TextDecoder();
     let readyResolve,readyReject;
     const ready=new Promise((resolve,reject)=>{readyResolve=resolve;readyReject=reject;});
+    opening.ready=ready;
     let pending = [], first = true;
     const paint = () => {
       clearTimeout(folderPaintTimer); folderPaintTimer = null;
@@ -1305,7 +1318,14 @@
           if(controller.signal.aborted || state.scan !== controller)return;
           opening.request=event.request;
           if(event.kind === "error")throw Error(event.message);
-          if(event.kind === "rows" || event.kind === "changes") {
+          if(event.columns) event.photos=event.values.map(values=>{
+            const photo=Object.fromEntries(event.columns.map((key,i)=>[key,values[i]]).filter(([,value])=>value!==null));
+            photo.name=photo.path.split(/[\\/]/).at(-1);
+            photo.type=photo.name.split(".").at(-1).toUpperCase();
+            if(photo.copy_id)photo.name += " · " + photo.copy_name;
+            return photo;
+          });
+          if(event.kind === "rows" || event.kind === "changes" || event.kind === "details") {
             for(const key of event.removed || []) {
               rows.delete(key);
               for(const copy of copies.get(key)||[])rows.delete(copy);
@@ -1319,15 +1339,17 @@
               if(photo.source_path){const family=copies.get(photo.source_path)||new Set();family.add(photo.path);copies.set(photo.source_path,family);}
               const previous=rows.get(photo.path);
               // Optimistic marks and visible hydration win over an older index page.
-              rows.set(photo.path,previous?Object.assign(previous,photo):photo);
+              rows.set(photo.path,previous?Object.assign(previous,previous._details ? {} : photo):photo);
             }
             if(first && rows.size) {
               first=false;state.reading=false;
               HDRLibraryStopwatch("folder_first_rows",{path,request:event.request,duration_ms:performance.now()-started});
               paint();readyResolve();
-            } else if(!folderPaintTimer)folderPaintTimer=setTimeout(paint,500);
+              await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+            } else if(event.kind !== "details" && !folderPaintTimer)folderPaintTimer=setTimeout(paint,500);
           }
           if(event.kind === "indexed") {
+            paint();
             state.reading=rows.size===0;if(first)paint();readyResolve();
             void readDates(controller, [...rows.values()].filter(photo=>!photo.indexed));
             HDRLibraryStopwatch("folder_listed",{path,request:event.request,duration_ms:performance.now()-started});
@@ -1353,7 +1375,9 @@
   window.HDRLibraryFolderPresented = (trace,fields={}) => {
     const opening=state.folderOpen;
     if(!opening || opening.controller.signal.aborted || trace.view!=="grid")return;
-    if(!opening.presented){opening.presented=true;folderPaintTimer=setTimeout(opening.paint,500);}
+    if(!opening.presented){opening.presented=true;
+      HDRLibraryStopwatch("folder_first_grid_picture",{path:opening.path,request:opening.request,duration_ms:performance.now()-opening.started});
+    }
     const camera=fields.picture_size==="camera preview";
     const flag=camera?"cameraPresented":"thumbnailPresented";
     if(opening[flag])return;opening[flag]=true;
@@ -1796,7 +1820,7 @@
   grid.addEventListener("scroll", () => {
     if(!gridSettleTimer)gridRequests=0;
     // Detach loading cells immediately; a settled viewport starts fresh demand.
-    for(const [path,cell] of state.cells)if(!cell.meta){cell.controller.abort();cell.element.remove();state.cells.delete(path);}
+    for(const [path,cell] of state.cells)if(!cell.meta && cell.started){cell.controller.abort();cell.element.remove();state.cells.delete(path);}
     idlePictures.touch();
     if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); });
     clearTimeout(gridSettleTimer);

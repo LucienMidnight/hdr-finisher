@@ -65,7 +65,7 @@ window.HDRLibraryTrace = Object.freeze({
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!current()) return;
       trace.presented = true;
-      window.HDRLibraryFolderPresented?.(trace,fields);
+      window.HDRLibraryFolderPresented?.(trace,{picture_size:trace.picture_size,...fields});
       if (fields.quick_draw) trace.standInPresented = true;
       if (fields.sharp_draw) trace.sharpPresented = true;
       this.mark(trace,"picture_present",submitted,fields);
