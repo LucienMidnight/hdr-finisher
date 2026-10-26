@@ -243,6 +243,16 @@ preserved.
 
 **Where things stand** (from Steve's own testing and the logs):
 
+- **Very large folders (290831e), Steve's try on October 26, 19:45: "seems to
+  work pretty great".** Opening `D:\Photos` (155,873 photos) showed first
+  rows in 96 ms and a first camera preview at 0.68 s; Steve moved on after 6 s,
+  so that folder's background disk check did not finish in his session. In
+  Codex's disposable profile the disk check timed out after 10 minutes, before
+  later lock and request-size fixes; whether a full background check of a
+  155k-photo folder completes, and how long it takes, is still unverified.
+  The same session's one RAW development took 2.2 s with the graphics card
+  given to one development at a time (was 10–26 s).
+
 - **After the five-part batch (a7e7da6–958e4e4), Steve's try on October 26
   evening: "so much better now".** Log 17:08–17:56: folder scans start at
   once (queue at most 1 ms, was 16–22 s); stored-preview writes wait at most
