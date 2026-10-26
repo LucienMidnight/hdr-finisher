@@ -23,9 +23,10 @@ preserved.
   no longer block the first page. Python starts alongside the Starting window;
   helper readiness overlaps page startup. The one disposable 155,879-file launch
   reached the page in 3.99 s from Python start, but its first thumbnail took
-  12.14 s. That run preceded the final window/Python overlap change. The ~3 s
-  launch and thumbnails within another ~1 s targets remain open; Steve's restart
-  must confirm the final code. See the startup follow-up below.
+  12.14 s. Steve's own restart on the final code (October 26, 15:55) felt
+  "super fast": page ready 2.4 s and first thumbnail 3.6 s from app launch,
+  against 17.5 s and about 19 s that morning. Startup is done. See the
+  startup follow-up below.
 
 - Prepared photos in the ready window: sharp draw in about 5 ms.
 - Prepared photos outside it: quick draw at once, sharp draw in about
@@ -159,8 +160,10 @@ Finished briefs are in `docs/technical/archive/briefs/`
 
 **Next, in order.** Steve confirms each before it starts.
 
-1. Stored JPEG XL screen preview slice (fullscreen first), together with
-   the startup fix below (built; whole-app restart confirmation pending).
+1. Done: stored JPEG XL screen previews (a8540f8; SDR tried by Steve,
+   sharp draw from a stored preview about 95-265 ms, mostly reading the
+   file; HDR not yet tried) and the startup fix (84f1166, 64482d8; confirmed
+   by Steve).
 2. Denoise speed-up, as its own task.
 3. HEIC and JPEG XL CPU-route speed.
 4. AVIF gain-map reconstruction on the GPU (estimated 3–5 days).
@@ -1581,7 +1584,7 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
-| **App startup** (after the 155k-photo D:\Photos index) | October 26 14:17: helper spawn 4.0 s, backend ready 8.7 s, page ready 9.8 s, thumbnails ~12 s from Python start. One disposable 155,879-file launch after removing blocking sweeps: 2.45 s / 2.54 s / 3.99 s / 12.14 s respectively. It also exposed 4.0 s before Python started. | Cache accounting and temporary-file cleanup deferred with foreground yielding; codec probing delayed; helper startup overlaps the page. Final shell change overlaps Python with the Starting window (not re-profiled). Targets remain open: folder listing, 1.36 s initial thumbnail checks and a 3.43 s first GPU queue wait still delay thumbnails. Steve confirms final restart. |
+| **App startup** (after the 155k-photo D:\Photos index) | October 26 14:17: helper spawn 4.0 s, backend ready 8.7 s, page ready 9.8 s, thumbnails ~12 s from Python start. One disposable 155,879-file launch after removing blocking sweeps: 2.45 s / 2.54 s / 3.99 s / 12.14 s respectively. It also exposed 4.0 s before Python started. | Cache accounting and temporary-file cleanup deferred with foreground yielding; codec probing delayed; helper startup overlaps the page. Final shell change overlaps Python with the Starting window (not re-profiled). Targets remain open: folder listing, 1.36 s initial thumbnail checks and a 3.43 s first GPU queue wait still delay thumbnails. Steve's restart 15:55: page ready 2.4 s, first thumbnail 3.6 s from app launch; felt super fast. **Done.** |
 | **Stored screen preview sharp draw** | Disposable real-photo restart: 226 ms first stored draw, 115 ms next SDR draw, 162 ms HDR; scene route 326 ms with capture disabled for the baseline. No scene dependency on stored hits. | Fullscreen and Single Fit built. ~100 ms first-use/HDR target still open; Steve's blink test and 200–300-photo workload pending. Build previews/protected set/disk-space checks deferred. |
 | **Cold first picture for non-RAW formats** (core workflow, see decisions; target sharp draw within 1 s, Steve October 26) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed and AVIF reconstruction remain open; stored screen previews now serve returning Fit pictures. OS cache warm; Steve's normal-folder try remains separate. |
 | **Cold RAW development** (badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |
