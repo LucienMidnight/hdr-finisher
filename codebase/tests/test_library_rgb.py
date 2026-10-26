@@ -323,7 +323,7 @@ def test_plain_avif_rejects_gainmap_before_primary_decode(tmp_path,monkeypatch):
     with pytest.raises(library_rgb.NotEligible,match='missing base or alternate HDR headroom'):library_rgb.decoded(path,recipe(None))
 
 
-def test_plain_heif_selects_primary_and_rejects_auxiliary(tmp_path,monkeypatch):
+def test_plain_heif_selects_primary_and_preserves_auxiliary_policy(tmp_path,monkeypatch):
     import pillow_heif
     from hdr_finisher import loader
     path=tmp_path/'photo.heic';path.write_bytes(b'not read')
@@ -342,7 +342,10 @@ def test_plain_heif_selects_primary_and_rejects_auxiliary(tmp_path,monkeypatch):
     assert header['colour']['transfer']=='HLG' and header['layout']['effective_bits']==10
     np.testing.assert_allclose(np.frombuffer(parts[0],dtype='<f4'),32768/65535)
     primary.info['aux']={'urn:com:apple:photo:2020:aux:hdrgainmap':[2]}
-    with pytest.raises(library_rgb.NotEligible,match='auxiliary'):library_rgb.decoded(path,recipe(None))
+    header, parts = library_rgb.decoded(path,recipe(None))
+    assert header["colour"]["decoder_metadata"]["heif_has_aux"]
+    assert "sdr_reference" not in header  # No Apple headroom: Grade also leaves this auxiliary unused.
+    # The same decoder/profile classification as Grade remains authoritative.
 
 @pytest.mark.parametrize("suffix,transfer",[("jxl",16),("avif",18),("heic",13)])
 def test_codec_publication_preserves_grade_start_document(tmp_path,suffix,transfer):
@@ -386,8 +389,14 @@ def test_real_gainmap_avif_preserves_reconstructed_and_encoded_reference_samples
     assert hashlib.sha256(path.read_bytes()).hexdigest()==before
     heif=root/'local-test-media/inputs/iphone-12-pro-HDR.heic'
     if heif.exists():
-        with pytest.raises(library_rgb.NotEligible,match='reconstruction route'):
-            library_rgb.decoded(heif,recipe(None))
+        from hdr_finisher import loader
+        expected, metadata = loader._load_heif(heif)
+        header, parts = library_rgb.decoded(heif, recipe(None))
+        np.testing.assert_array_equal(np.frombuffer(parts[0], dtype='<f4').reshape(expected.shape), expected)
+        reference = metadata.get("sdr_reference_image")
+        assert ("sdr_reference" in header) == (reference is not None)
+        if reference is not None:
+            np.testing.assert_array_equal(np.frombuffer(parts[1], dtype='<f4').reshape(reference.shape), reference)
 
 
 def test_backend_preparation_reports_file_until_cancelled_execution_returns():

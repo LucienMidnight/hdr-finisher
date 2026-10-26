@@ -339,7 +339,8 @@ def _load_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
 
     with tifffile.TiffFile(path) as tif:
         series = tif.series[0]
-        array = series.asarray()
+        from .cpu_budget import logical_cpus
+        array = series.asarray(maxworkers=logical_cpus())
         array = _normalize_tiff_layout(array, getattr(series, "axes", None))
         page = tif.pages[0]
         metadata = {
@@ -559,7 +560,8 @@ def _select_apple_gainmap_aux_type(aux: dict[str, Any]) -> str | None:
 
 
 def _load_heif(
-    path: Path, *, cancelled: Callable[[], bool] | None = None, primary_samples_only: bool = False
+    path: Path, *, cancelled: Callable[[], bool] | None = None, primary_samples_only: bool = False,
+    library_samples: bool = False
 ) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         from pillow_heif import open_heif
@@ -568,6 +570,11 @@ def _load_heif(
     except ImportError as exc:
         raise LoaderError("pillow-heif is required for HEIC/HEIF input.") from exc
 
+    from .cpu_budget import logical_cpus
+    from pillow_heif import options
+    # libheif takes this value when creating each context. It is a stable
+    # machine-wide choice, never temporarily changed around concurrent calls.
+    options.DECODE_THREADS = logical_cpus()
     heif_file = open_heif(path, convert_hdr_to_8bit=False)
     primary = heif_file[heif_file.primary_index]
     info = dict(primary.info)
@@ -589,7 +596,7 @@ def _load_heif(
         "heif_has_aux": bool(info.get("aux")),
         "heif_container_mimetype": heif_file.mimetype,
     }
-    if primary_samples_only:
+    if primary_samples_only or library_samples:
         metadata["heif_primary_index"] = heif_file.primary_index
         metadata["heif_icc_present"] = bool(info.get("icc_profile"))
     if apple_hdr:

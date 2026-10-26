@@ -86,10 +86,13 @@ def decoded_precision(path, inputs):
         facts.update(effective_bits=int(metadata["bit_depth"]), intermediate_bits=16, orientation=metadata["orientation"])
     elif suffix in {".heic", ".heif"}:
         try:
-            pixels, metadata = loader._load_heif(path, primary_samples_only=True)
+            pixels, metadata = loader._load_heif(path, library_samples=True)
         except loader.LoaderError as error:
             raise NotEligible(str(error)) from error
-        facts.update(orientation=None, effective_bits=int(metadata["bit_depth"]), primary_index=metadata["heif_primary_index"])
+        reference = metadata.pop("sdr_reference_image", None)
+        if reference is not None:
+            metadata.update(sdr_sample_color_space="sRGB", sdr_sample_transfer_function="LINEAR")
+        facts.update(orientation=None, effective_bits=32 if metadata["bit_depth"] == "32f" else int(metadata["bit_depth"]), primary_index=metadata["heif_primary_index"])
     elif suffix == ".exr":
         pixels, metadata = loader._load_exr(path, combined_channels=True)
         import OpenEXR
@@ -121,6 +124,11 @@ def decoded_precision(path, inputs):
         except Exception as error:
             raise NotEligible("HDR/PFM imageio decoder unavailable: " + str(error)) from error
     decode_ms = (perf_counter() - start) * 1000
+    from .library_diagnostics import log
+    from .cpu_budget import logical_cpus
+    log("picture_rgb_decode", path=str(path), route="decoded-samples-to-gpu",
+        format=suffix, workers=logical_cpus(), duration_ms=decode_ms,
+        has_reference=reference is not None)
     original_interpretation = {key:metadata.get(key) for key in ("color_space","transfer_function","needs_color_override")}
     override = {k: v for k, v in inputs["interpretation_override"].items() if v is not None}
     if reference is not None and override:

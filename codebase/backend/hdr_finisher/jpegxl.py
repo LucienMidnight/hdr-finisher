@@ -73,7 +73,8 @@ def decode_jpegxl(
         payload = path.read_bytes()
         info = _inspect_jpegxl_payload(payload)
         _raise_if_cancelled(cancelled)
-        decoded = np.asarray(imagecodecs.jpegxl_decode(payload))
+        from .cpu_budget import logical_cpus
+        decoded = np.asarray(imagecodecs.jpegxl_decode(payload, numthreads=logical_cpus()))
     except Exception as exc:
         raise JPEGXLError(f"Could not decode JPEG XL input: {exc}") from exc
 
@@ -257,7 +258,8 @@ def validate_jpegxl(
     try:
         import imagecodecs
 
-        decoded = np.asarray(imagecodecs.jpegxl_decode(payload))
+        from .cpu_budget import logical_cpus
+        decoded = np.asarray(imagecodecs.jpegxl_decode(payload, numthreads=logical_cpus()))
     except Exception as exc:
         raise JPEGXLError(f"JPEG XL validation decode failed: {exc}") from exc
     if decoded.shape[:2] != expected_shape:
@@ -296,7 +298,8 @@ def validate_sdr_jpegxl(payload: bytes, expected_shape: tuple[int, int]) -> str:
     try:
         import imagecodecs
 
-        decoded = np.asarray(imagecodecs.jpegxl_decode(payload))
+        from .cpu_budget import logical_cpus
+        decoded = np.asarray(imagecodecs.jpegxl_decode(payload, numthreads=logical_cpus()))
     except Exception as exc:
         raise JPEGXLError(f"JPEG XL validation decode failed: {exc}") from exc
     if decoded.shape[:2] != expected_shape:

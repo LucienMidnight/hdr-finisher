@@ -2,6 +2,17 @@
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 batch, Part 4 (app trial pending; 1 s target open).** TIFF strips/
+tiles and JPEG XL decode explicitly request all logical CPU cores. HEIC contexts
+also use all cores instead of pillow-heif's four-thread default. These thread
+settings affect Grade and export import too; the decoders and samples are
+unchanged. Library HEIC auxiliary maps now use Grade's existing reconstruction,
+then GPU colour preparation, reduction and direct drawing, retaining authored
+SDR. Unknown auxiliaries retain Grade's existing unused-map policy; unresolved primaries remain
+a CPU fallback. Decoder durations, format, GPU handoff and fallback reasons are
+summarized. No per-part driver/profile; final fast checks deferred. Cold-time
+claims require Steve's try; full-resolution CPU decode/transport remain costs.
+
 **October 26 batch, Part 3 (app trial pending; 0.5 s target still open).**
 Library measurements use all CPU cores for the unchanged independent windows,
 joined in their original order; the shared estimator's default is unchanged.
