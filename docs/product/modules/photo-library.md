@@ -16,6 +16,12 @@ stale revision/geometry guards remain in place. Concurrent requests within one
 page share the same measurement. Clearing or evicting the cache can require a
 new measurement; original photos and settings files are untouched.
 
+HDR/SDR names are excluded from the identity when measured pixels are shared.
+Authored SDR pixels remain separate; geometry or size changes that resample
+pixels also remain separate. Library mode switches now log a timestamp,
+rendition, display epoch and visible thumbnail count. The log summarizer groups
+measurements by GPU, CPU fallback and reused, size and Library/Grade/delivery.
+
 Proposed before implementation: compare finished denoised SDR pixels with the
 current CPU-measured result using mean Delta E 2000 <1 and p99 <3; finished HDR
 using mean Delta E ITP <1 and p99 <3. Typical changes stay below visibility,

@@ -66,7 +66,13 @@ def main():
     folder_listed = None
     routes = collections.defaultdict(list)
     stored = collections.defaultdict(list)
+    measurements = collections.defaultdict(list)
+    switches = []
     for name, d in events(since):
+        if name == "denoise_measurement":
+            measurements[(d.get("usage", "CPU path"), d.get("route", "-"), d.get("width"), d.get("height"))].append(d.get("duration_ms",0))
+        if name == "page_rendition_switch":
+            switches.append(d)
         if name in ("picture_camera_preview_ready", "page_picture_thumbnail_reused", "page_picture_thumbnail_reclaim", "helper_job_started", "helper_job_finished", "picture_helper_job_started", "picture_helper_job_finished", "page_picture_source_gpu_fallback", "page_picture_source_cpu_fallback", "page_picture_development_admitted", "picture_denoise_model", "page_picture_quick_draw_unavailable", "picture_rgb_decode", "picture_source_cpu_fallback", "picture_avif_reconstruction", "picture_avif_native_stages"):
             if d.get("format"):
                 routes[(name, d["format"])].append(d.get("duration_ms", 0))
@@ -122,6 +128,12 @@ def main():
         for part in ('read_ms', 'codec_ms', 'pack_ms'):
             values = [row[part] for row in rows if part in row]
             if values: print(f'    {part}: p50={pct(values, .5):.0f}ms max={max(values):.0f}ms')
+    print("Denoise measurements (Library, Grade, export/Proof):")
+    for (usage, route, width, height), times in sorted(measurements.items(),key=lambda item:str(item[0])):
+        print(f"  {usage} {route} {width}x{height}: n={len(times)} p50={pct(times,.5):.1f}ms max={max(times):.1f}ms")
+    for switch in switches:
+        print(f"  HDR/SDR switch {datetime.datetime.fromtimestamp(switch['time']):%H:%M:%S.%f}: "
+              f"{switch.get('rendition')} epoch={switch.get('display_epoch')} view={switch.get('view')} thumbnails={switch.get('visible_thumbnails')}")
     print("Library routes:")
     for (name, route), times in sorted(routes.items()):
         print(f"  {name} {route}: n={len(times)} p50={pct(times, .5):.0f}ms max={max(times):.0f}ms")

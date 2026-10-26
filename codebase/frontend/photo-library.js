@@ -529,6 +529,8 @@
     tilePool.clear();
     readyWindow.invalidate(); quickWindow.invalidate();
     state.hdr = !state.hdr; state.displayEpoch += 1;
+    HDRLibraryStopwatch("rendition_switch",{rendition:state.hdr?"hdr":"sdr",display_epoch:state.displayEpoch,
+      view:state.view,visible_thumbnails:[...state.cells.values()].filter(cell=>cell.element.isConnected).length});
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr));
     for (const cell of [...state.cells.values(), ...state.filmCells.values()]) {
       pictureMode(cell.canvas, state.hdr);

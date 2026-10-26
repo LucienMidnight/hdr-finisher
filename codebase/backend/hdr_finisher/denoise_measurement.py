@@ -70,7 +70,7 @@ def _context(store, session_id, kind, long_edge, edit_revision, geometry_signatu
             raise HTTPException(400, "Invalid geometry signature.") from exc
         if requested != geometry:
             raise HTTPException(409, "Stale geometry Denoise request dropped.")
-    identity = {"version": VERSION, "source": source, "lane": kind.value,
+    identity = {"version": VERSION, "source": source,
         "pixels": "authored-sdr" if authored else "scene", "size": "native" if native else long_edge,
         "geometry": None if native else geometry}
     key = sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
@@ -98,6 +98,8 @@ def _get(key):
                     _validate(candidate["model"])
                     value = candidate
                     _models[key] = value
+                    while len(_models) > 512:
+                        _models.popitem(last=False)
             except (OSError, ValueError, KeyError, HTTPException):
                 pass
         if value is not None:
