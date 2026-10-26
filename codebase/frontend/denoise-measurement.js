@@ -158,5 +158,11 @@ fn at(x:i32,y:i32,t:u32,reach:u32)->vec4f {
       const validation=await device.popErrorScope(),oom=await device.popErrorScope();if(validation||oom)throw Error((validation||oom).message);
     }
   }
-  window.HDRDenoiseMeasurement={measure,version:VERSION};
+  const pending = new Map();
+  function acquire(key, task) {
+    if (pending.has(key)) return pending.get(key);
+    const result = task().finally(()=>{if(pending.get(key)===result)pending.delete(key);});
+    pending.set(key,result);return result;
+  }
+  window.HDRDenoiseMeasurement={measure,acquire,version:VERSION};
 })();

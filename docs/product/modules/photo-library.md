@@ -9,6 +9,13 @@ CPU estimator remains the fallback. No reconstruction or ceiling arithmetic
 changes. Final fast checks and focused GPU qualification run after this batch;
 speed and finished-pixel acceptance are not claimed yet.
 
+Measurements now survive visits and restarts as small JSON entries in the
+managed Library preview cache. The source identity, measured size, geometry and
+algorithm version own them; finishing controls do not. Atomic publication and
+stale revision/geometry guards remain in place. Concurrent requests within one
+page share the same measurement. Clearing or evicting the cache can require a
+new measurement; original photos and settings files are untouched.
+
 Proposed before implementation: compare finished denoised SDR pixels with the
 current CPU-measured result using mean Delta E 2000 <1 and p99 <3; finished HDR
 using mean Delta E ITP <1 and p99 <3. Typical changes stay below visibility,

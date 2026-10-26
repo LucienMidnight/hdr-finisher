@@ -5485,6 +5485,7 @@
       const cached = await fetch(measurementURL);
       if (cached.status === 200) return cached.json();
       if (!cached.ok) throw new Error(`Denoise measurement request failed (${cached.status}).`);
+      return HDRDenoiseMeasurement.acquire(cached.headers.get("X-Denoise-Measurement-Key") || measurementURL, async () => {
       try {
         if (!this.available || this.deviceLost || this.adapterInfo?.fallback) throw Error("No usable graphics card.");
         const response = await fetch(measurementURL + (measurementURL.includes("?") ? "&" : "?") + "source=true");
@@ -5507,6 +5508,7 @@
         if (!response.ok) throw new Error(`Denoise CPU fallback failed (${response.status}).`);
         return response.json();
       }
+      });
     }
 
     async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls) {

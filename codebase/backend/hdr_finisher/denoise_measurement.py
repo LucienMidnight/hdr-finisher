@@ -9,6 +9,8 @@ from hashlib import sha256
 import json
 import struct
 from threading import RLock
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from time import perf_counter
 
 import numpy as np
@@ -75,9 +77,29 @@ def _context(store, session_id, kind, long_edge, edit_revision, geometry_signatu
     return key, frame, meta, dict(path=path, usage=usage, rendition=kind.value, edge=long_edge)
 
 
+def _cache():
+    from .config import APP_DATA_DIR
+    from .library_cache import LibraryCache
+    return LibraryCache(APP_DATA_DIR)
+
+
+def _file(cache, key):
+    return cache.directory("library-pictures") / (key + ".denoise.json")
+
+
 def _get(key):
     with _lock:
         value = _models.get(key)
+        if value is None:
+            try:
+                cache = _cache()
+                if cache.preferences()["enabled"]:
+                    candidate = json.loads(_file(cache,key).read_text(encoding="utf-8"))
+                    _validate(candidate["model"])
+                    value = candidate
+                    _models[key] = value
+            except (OSError, ValueError, KeyError, HTTPException):
+                pass
         if value is not None:
             _models.move_to_end(key)
         return value
@@ -89,6 +111,24 @@ def _put(key, model):
         _models.move_to_end(key)
         while len(_models) > 512:
             _models.popitem(last=False)
+    cache = _cache()
+    if not cache.preferences()["enabled"]:
+        return
+    temporary = None
+    try:
+        cache.prepare()
+        target = _file(cache,key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(dir=target.parent,suffix=".tmp",delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(json.dumps(model,allow_nan=False).encode("utf-8"))
+        temporary.replace(target)
+        cache.record(target)
+    except (OSError, ValueError) as error:
+        log("denoise_measurement_store_failed", reason=str(error))
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _validate(model):
@@ -121,7 +161,7 @@ def create_router(store):
                 duration_ms=(perf_counter()-started)*1000, **cached["measurement"])
             return cached["model"]
         if not source:
-            return Response(status_code=204)
+            return Response(status_code=204,headers={"X-Denoise-Measurement-Key":key})
         if frame is None:
             from .library_live import session
             frame = session(session_id)
