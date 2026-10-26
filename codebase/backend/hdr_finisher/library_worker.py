@@ -146,7 +146,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write"}:
+        if command not in {"picture", "native", "scan", "scan-page", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -496,6 +496,11 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 elif job["command"] == "metadata":
                     from .library_metadata import read_metadata
                     result = {"id": job["id"], "result": read_metadata(job["paths"], check, parallel=True)}
+                elif job["command"] == "scan-page":
+                    from .library_folders import scan_page
+                    output = scan_page(job["token"], job["path"], check,
+                        close=job.get("close",False), restart=job.get("restart",False))
+                    result = {"id":job["id"],"result":output}
                 elif job["command"] in {"scan", "tree"}:
                     output = scan_folder(job["path"], check, fingerprints=True) if job["command"] == "scan" else folder_tree(job["path"], check)
                     result = {"id": job["id"], "result": output}
@@ -566,7 +571,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "scan-page", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write"}:
                     message["queued_at"] = time.time()
                     sequence += 1
                     jobs[message["id"]] = Event()

@@ -263,17 +263,17 @@ Words follow the master PRD glossary.</p>
   <div class="step page"><div class="h">You click the folder</div></div>
 
   <div class="num">2</div>
-  <div class="step backend"><div class="h">List photos from the index <span class="t ok">0.5–0.66 s</span></div>
-    <div class="d">Holds the shared Library lock while listing. Ratings, labels and tags read alongside (once waited 0.7 s for the lock).</div>
+  <div class="step backend"><div class="h">Stream photos from the index <span class="t fast">first rows 29 ms in one 155k profile</span></div>
+    <div class="d">First 64 rows, then pages of 256, using cached marks and grades. No whole-folder lock or source walk before the grid. Visible settings are hydrated first in batches of at most 32.</div>
     <div class="meta"><span class="cachetag">Index database</span><span class="cachetag">Settings files (.hdrf) beside photos</span></div></div>
 
   <div class="num">3</div>
   <div class="step page"><div class="h">Grid laid out, thumbnails requested</div>
-    <div class="d">Only visible cells plus one screen beyond each edge. See stage 3.</div></div>
+    <div class="d">Only visible cells plus one screen beyond each edge start picture work. Incoming rows are coalesced; scrolling and selection work on what has arrived. See stage 3.</div></div>
 
   <div class="num last">4</div>
-  <div class="step helper"><div class="h">Folder scan: does the disk still match? <span class="t fast">baseline 0.04 s work</span> <span class="t slow">old queue 16–22 s</span></div>
-    <div class="d">Main lane now bypasses source-busy with its own admission, independent of picture jobs. Target: listing and completed scan within about 0.5 s; historical indexed listing itself was 0.5–0.66 s, so the full target remains open.</div></div>
+  <div class="step helper"><div class="h">Background disk check: apply only differences <span class="t slow">1 s first-screen target unverified</span></div>
+    <div class="d">The helper walks bounded pages and gives way between them; an unindexed folder streams discoveries. Changes update rows without resetting scroll or selection; switching folders cancels the stream. One disposable D:\Photos profile served all indexed rows in 34.2 s, showed a camera preview at 40.4 s, and timed out on its disk check. Request-size and metadata lock fixes followed that run; final thumbnail speed and completion await Steve’s app trial.</div></div>
 </div></div>
 
 <!-- ============ STAGE 3 ============ -->

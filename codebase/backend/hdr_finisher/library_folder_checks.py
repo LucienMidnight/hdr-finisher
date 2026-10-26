@@ -20,6 +20,8 @@ class FolderChecks:
         self.lock, self.wake = RLock(), Event()
         self.thread = self.running = None
         self.views, self.folders = {}, {}
+        self.streaming = {}
+        self.stream_requested = set()
         self.requested, self.events = deque(), deque(maxlen=50)
         self.revision = 0
         self.pins = []
@@ -49,6 +51,9 @@ class FolderChecks:
     def request(self, paths):
         with self.lock:
             for path in dict.fromkeys(paths):
+                if path in self.streaming:
+                    self.stream_requested.add(path)
+                    continue
                 if path not in self.requested:
                     self.requested.append(path)
         self.start()
@@ -69,11 +74,19 @@ class FolderChecks:
                     "duration": row.get("duration", 0), "offline": row.get("offline", False),
                     "failure": row.get("failure", ""), "warnings": list(dict.fromkeys(w for values in row.get("warnings", {}).values() for w in values))} for path, row in self.folders.items()]}
 
+    def streamed(self, path):
+        with self.lock:
+            return any(os.path.normcase(path)==os.path.normcase(root)
+                or self.index.membership.under(path,root) or self.index.membership.under(root,path)
+                for root in self.streaming)
+
     def choose(self, pins):
         now = self.clock()
         with self.lock:
-            if self.requested:
-                return self.requested.popleft(), True
+            while self.requested:
+                path=self.requested.popleft()
+                if self.streamed(path): continue
+                return path, True
             if self.index._paused:
                 return None
             for path in set(self.signals) - {p["path"] for p in pins}:
@@ -82,6 +95,7 @@ class FolderChecks:
             enabled = self.index.preferences()["background_indexing"]
             available = {p["path"]: p.get("available", True) for p in pins}
             for path in dict.fromkeys([*sorted(visible), *([p["path"] for p in pins] if enabled else [])]):
+                if self.streamed(path): continue
                 row = self.folders.setdefault(path, {"last": now, "duration": 0})
                 if row.get("offline") and available.get(path, row.get("connected", False)):
                     return path, False
@@ -102,6 +116,7 @@ class FolderChecks:
         job, future = self.index.worker.submit_library(command, priority=20, background=True, checking=True, **arguments)
         try:
             while not self.index._stop.is_set():
+                if self.running and self.streamed(self.running["path"]): raise CheckAhead()
                 if not self.running["requested"] and (self.requested or self.index._paused):
                     raise CheckAhead()
                 try:

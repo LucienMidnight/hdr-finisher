@@ -203,7 +203,7 @@ class LibraryIndex:
             if generation is not None or epoch is not None: time.sleep(.001)
 
     @audited("index_remember_facts")
-    def remember_facts(self, records, *, epoch=None, generation=None):
+    def remember_facts(self, records, *, epoch=None, generation=None, foreground=False):
         for record in records:
             record["indexed"] = record.get("mtime_ns") is not None
         with timed_lock(self.marks._lock, "index_batch"):
@@ -218,7 +218,11 @@ class LibraryIndex:
                     db.executemany("INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?)", rows)
             finally:
                 db.close()
-        self.membership.maintain([r[0] for r in rows])
+        paths = [r[0] for r in rows]
+        if foreground:
+            self.membership.reconcile(paths)
+        else:
+            self.membership.maintain(paths)
 
     @audited("index_photos")
     def photos(self, paths):
@@ -344,6 +348,10 @@ class LibraryIndex:
             return
         incomplete = False
         for pin in self.browser.pinned():
+            with self.checks.lock:
+                active=list(self.checks.streaming)
+            if any(self.membership.under(root,pin["path"]) or self.membership.under(pin["path"],root) or os.path.normcase(root)==os.path.normcase(pin["path"]) for root in active):
+                continue  # The open view owns bounded discovery; no second tree.
             if not pin.get("available"):
                 incomplete = True
                 log("index_offline", folder=pin["path"], reason="pinned folder not connected", action="entries kept; retry automatically")

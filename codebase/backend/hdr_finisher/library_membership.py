@@ -142,7 +142,12 @@ class LibraryMembership:
                             except OSError:
                                 size = modified = 0
                             db.execute("INSERT OR IGNORE INTO files VALUES (?,?,?,NULL)", (p,size,modified))
-                        db.executemany("DELETE FROM files WHERE path=?", [(p,) for p in files if not contains(p)])
+                        # A streamed, unpinned folder still needs its observed
+                        # files until its view closes; this does not pin it.
+                        with self.index.checks.lock:
+                            visible = tuple(self.index.checks.streaming)
+                        db.executemany("DELETE FROM files WHERE path=?", [(p,) for p in files
+                            if not contains(p) and not any(self.under(p, root) for root in visible)])
                         for p,identifier,marks,pending in rows:
                             if not contains(p):
                                 db.execute("DELETE FROM photo_tags WHERE path=?", (p,))

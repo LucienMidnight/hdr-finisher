@@ -592,6 +592,9 @@
     pictureErrors.paint(cell);
     {
       void (async () => {
+        await hydrateVisible(photo,current);
+        if(!current())return;
+        cell.identity=pictureIdentity(photo);
         const fallback = document.createElement("canvas"); cell.fallback = fallback;
         fallback.hidden = true; frame.append(fallback);
         const preview = fetch("/api/library/preview", {method:"POST", signal:cell.controller.signal,
@@ -641,12 +644,13 @@
               canvas.hidden=false; canvas.style.visibility=""; fallback.hidden=true;
               canvas.dataset.preview="false"; canvas.dataset.cpuFallback="true";
               pictureMode(canvas,state.hdr); element.classList.remove("loading");
-              cpuShown=true;
+              window.HDRLibraryFolderPresented?.({view:container === space ? "grid" : "filmstrip"});
+            cpuShown=true;
             }
             await sleep(2000,cell.controller.signal);
           }
         }
-      })().catch(error=>{if(current()&&!aborted(error)){removeUnreadable(photo,error);pictureErrors.paint(cell);cell.controller.abort();}});
+      })().catch(error=>{if(current()&&!aborted(error)){if(error.folderDetails)status(error.message);else removeUnreadable(photo,error);pictureErrors.paint(cell);cell.controller.abort();}});
       return cell;
     }
   }
@@ -676,6 +680,7 @@
         cell = tilePool.take(tileKey(map, pictureIdentity(photo)));
         if (cell) {
           container.append(cell.element); cell.photo = photo; cell.index = index;
+          window.HDRLibraryFolderPresented?.({view:map === state.cells ? "grid" : "filmstrip"});
           HDRLibraryStopwatch("picture_thumbnail_reused", {path:photo.path,view:map === state.cells ? "grid" : "filmstrip",route:"recent-thumbnail-pool",picture_size:"thumbnail",duration_ms:0,cache_hit:true});
           overlays?.attach(photo, cell.fallback, cell.meta, cell.controller,
             () => state.active && cell.element.isConnected && !cell.controller.signal.aborted);
@@ -912,6 +917,7 @@
     $("single-caption").replaceChildren(document.createTextNode(selected().name), culling.strip(selected()));
   }
   function select(index, scroll = false, mode = "single") {
+    if(state.folderOpen)state.folderOpen.restore=null;
     if (!state.photos.length) return;
     if (compare.enabled() && state.view === "single") mode = "single";
     const next = HDRLibrarySelection.choose(state.photos.map(photo => photo.path), state.selection, state.anchor, index, mode);
@@ -1230,13 +1236,14 @@
     state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells);
     state.collection = place.kind ? { kind: place.kind, name: place.name } : null; state.smartFilters = null; albums.setActive(place.kind === "album" ? place.name : ""); smart.setActive(place.kind === "smart" ? place.name : "");
     if (path) state.lastFolder = path;  // Where a deleted album's view returns to.
-    const controller = new AbortController(); state.scan = controller; state.path = path; state.reading = true; state.scanError = ""; state.allPhotos = []; state.photos = []; state.index = -1; state.selection.clear(); state.anchor = -1; state.hiddenFiles = 0;
+    const controller = new AbortController(); state.scan = controller; state.folderOpen = null; state.path = path; state.reading = true; state.scanError = ""; state.allPhotos = []; state.photos = []; state.index = -1; state.selection.clear(); state.anchor = -1; state.hiddenFiles = 0;
     setView("grid"); grid.scrollTop = 0;
     $("check-photos").disabled = !path;
     $("place-title").textContent = place.kind === "smart" ? smart.name(place.name) || "Smart album" : place.kind === "album" ? place.name : place.kind ? `Tag · ${place.name}` : path.split(/[\\/]/).filter(Boolean).at(-1) || path;
     $("place-title").title = place.kind === "smart" ? "Smart album · saved filter across the indexed library" : place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path; status(place.kind ? "Reading…" : "Reading folder…");
     for (const element of $("folders").querySelectorAll(".library-folder-row")) element.classList.toggle("active", !place.kind && element.dataset.path === path);
     try {
+      if (!place.kind) { await openFolderStream(path, controller); return; }
       const result = place.kind === "smart" ? await smart.open(place.name) : place.kind ? await api("/api/library/collection", { kind: place.kind, name: place.name }, controller.signal) : await api("/api/library/scan", { path }, controller.signal);
       if (controller.signal.aborted) return;
       if (place.kind === "smart") { state.smartFilters = result.filters; state.smartIndexing = result.indexing; $("place-title").textContent = result.name; }
@@ -1251,15 +1258,134 @@
       void readDates(controller, result.photos.filter(photo => !photo.indexed));
     } catch (error) { if (!aborted(error) && state.scan === controller) { state.reading = false; state.scanError = error.message; status(error.message); paintGrid(); } }
   }
+  let folderPaintTimer;
+  async function openFolderStream(path, controller) {
+    const started = performance.now(), rows = new Map(), copies = new Map();
+    const opening = {path, controller, started, request:null, presented:false};
+    state.folderOpen = opening;
+    HDRLibraryStopwatch("folder_open", {path});
+    const response = await fetch("/api/library/folder-stream", {method:"POST",signal:controller.signal,
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({path})});
+    if (!response.ok) throw Error("The folder could not be opened.");
+    const reader = response.body.getReader(), decoder = new TextDecoder();
+    let readyResolve,readyReject;
+    const ready=new Promise((resolve,reject)=>{readyResolve=resolve;readyReject=reject;});
+    let pending = "", first = true;
+    const paint = () => {
+      clearTimeout(folderPaintTimer); folderPaintTimer = null;
+      if (controller.signal.aborted || state.scan !== controller) return;
+      if (state.allPhotos.length && !opening.presented) return;
+      const top=grid.scrollTop,left=film.scrollLeft;
+      state.allPhotos = [...rows.values()];
+      applyQuery(); grid.scrollTop=top;film.scrollLeft=left;
+    };
+    opening.paint=paint;
+    const pump=async()=>{try {
+      for (;;) {
+        const {value,done} = await reader.read();
+        if (done) break;
+        pending += decoder.decode(value,{stream:true});
+        let end;
+        while ((end=pending.indexOf("\n"))>=0) {
+          const event=JSON.parse(pending.slice(0,end));pending=pending.slice(end+1);
+          if(controller.signal.aborted || state.scan !== controller)return;
+          opening.request=event.request;
+          if(event.kind === "error")throw Error(event.message);
+          if(event.kind === "rows" || event.kind === "changes") {
+            for(const key of event.removed || []) {
+              rows.delete(key);
+              for(const copy of copies.get(key)||[])rows.delete(copy);
+              copies.delete(key);
+            }
+            if(event.kind==="changes")for(const photo of event.photos)if(!photo.source_path) {
+              for(const copy of copies.get(photo.path)||[])rows.delete(copy);
+              copies.delete(photo.path);
+            }
+            for(const photo of event.photos) {
+              if(photo.source_path){const family=copies.get(photo.source_path)||new Set();family.add(photo.path);copies.set(photo.source_path,family);}
+              const previous=rows.get(photo.path);
+              // Optimistic marks and visible hydration win over an older index page.
+              rows.set(photo.path,previous?Object.assign(previous,photo):photo);
+            }
+            if(first && rows.size) {
+              first=false;state.reading=false;
+              HDRLibraryStopwatch("folder_first_rows",{path,request:event.request,duration_ms:performance.now()-started});
+              paint();readyResolve();
+            } else if(!folderPaintTimer)folderPaintTimer=setTimeout(paint,500);
+          }
+          if(event.kind === "indexed") {
+            state.reading=rows.size===0;paint();readyResolve();
+            HDRLibraryStopwatch("folder_listed",{path,request:event.request,duration_ms:performance.now()-started});
+          }
+          if(event.kind === "checked") {
+            state.reading=false;paint();
+            HDRLibraryStopwatch("folder_complete",{path,request:event.request,duration_ms:performance.now()-started});
+            if(event.unreadable_folders?.length)status("Some sub-folders could not be read; existing entries kept");
+          }
+        }
+      }
+    } catch(error) {
+      readyReject(error);
+      if(!aborted(error) && state.scan===controller){state.reading=false;state.scanError=error.message;status(error.message);}
+    } finally { readyResolve();reader.releaseLock();clearTimeout(folderPaintTimer); }};
+    void pump();
+    return ready;
+  }
+  window.HDRLibraryFolderPresented = (trace,fields={}) => {
+    const opening=state.folderOpen;
+    if(!opening || opening.controller.signal.aborted || trace.view!=="grid")return;
+    if(!opening.presented){opening.presented=true;folderPaintTimer=setTimeout(opening.paint,500);}
+    const camera=fields.picture_size==="camera preview";
+    const flag=camera?"cameraPresented":"thumbnailPresented";
+    if(opening[flag])return;opening[flag]=true;
+    HDRLibraryStopwatch(camera?"folder_first_camera_preview":"folder_first_thumbnail",{path:opening.path,request:opening.request,duration_ms:performance.now()-opening.started});
+  };
+  // Batch visible settings reads before any picture work. Offscreen rows already
+  // carry indexed marks/grades; their sources are never opened for drawing.
+  let visibleDetails = new Map(), detailsTimer;
+  function hydrateVisible(photo, current) {
+    if(!state.folderOpen || state.folderOpen.controller !== state.scan || photo._details)return Promise.resolve();
+    const controller=state.scan;
+    return new Promise((resolve,reject)=>{
+      const key=photo.source_path || photo.path;
+      const pending=visibleDetails.get(key)||[];
+      pending.push({photo,current,resolve,reject});visibleDetails.set(key,pending);
+      if(detailsTimer)return;
+      detailsTimer=setTimeout(async()=>{
+        detailsTimer=null;
+        const entries=[...visibleDetails];visibleDetails=new Map();
+        const live=entries.filter(([,items])=>items.some(item=>item.current()));
+        try {
+          for(let at=0;at<live.length;at+=32) {
+            const group=live.slice(at,at+32);
+            const result=await api("/api/library/folder-details",{paths:group.map(([path])=>path)},controller.signal);
+            if(controller.signal.aborted)throw new DOMException("Cancelled","AbortError");
+            const known=new Map(result.photos.map(photo=>[photo.path,photo]));
+            for(const [,items] of group)for(const item of items) {
+              if(item.current())Object.assign(item.photo,known.get(item.photo.path),{_details:true});
+              item.resolve();
+            }
+          }
+          for(const [,items] of entries)for(const item of items)item.resolve();
+          if(state.scan===controller){paintGrid();paintFilm();}
+        } catch(error) {error.folderDetails=true;for(const [,items] of entries)for(const item of items)item.reject(error);}
+      },0);
+    });
+  }
   function applyQuery() {
     paintFilterButton();
-    const lead = selected()?.path, anchor = state.photos[state.anchor]?.path;
+    const restored=state.folderOpen?.restore;
+    const lead = restored?.selected || selected()?.path, anchor = restored?.anchor || state.photos[state.anchor]?.path;
     const base = state.collection?.kind === "smart" ? HDRLibraryQuery.apply(state.allPhotos, state.sort, state.descending, state.smartFilters || {}) : state.allPhotos;
     state.photos = HDRLibraryQuery.apply(base, state.sort, state.descending, state.filters);
     const visible = new Set(state.photos.map(photo => photo.path));
     state.selection = new Set([...state.selection].filter(path => visible.has(path)));
     state.index = state.photos.findIndex(photo => photo.path === lead);
     if (state.index < 0 && state.photos.length) { state.index = 0; state.selection.add(state.photos[0].path); }
+    if(restored && visible.has(restored.selected)) {
+      state.selection=new Set((restored.selection||[restored.selected]).filter(path=>visible.has(path)));
+      state.selection.add(restored.selected);state.folderOpen.restore=null;
+    }
     state.anchor = state.photos.findIndex(photo => photo.path === anchor);
     if (state.anchor < 0) state.anchor = state.index;
     if (!selected() && state.view === "single") setView("grid");
@@ -1513,7 +1639,7 @@
   let checkEvent = 0, refreshingCheck = false;
   const checkClient = crypto.randomUUID();
   async function refreshCheckedFolders(checks) {
-    if (!checks || refreshingCheck || state.reading) return;
+    if (!checks || refreshingCheck || state.reading || (!state.collection && state.folderOpen?.controller === state.scan)) return;
     const events = checks.events.filter(event => event.id > checkEvent);
     if (!events.length) return;
     refreshingCheck = true;
@@ -1596,7 +1722,7 @@
   }
   void pollSettings();
   async function pollIndexing() {
-    if (state.active && !document.hidden) { try { await api("/api/library/checks", { client: checkClient, visible: state.path }); await activity.refresh(); } catch (error) { console.debug("Library index:", error.message); } }
+    if (state.active && !document.hidden) { try { await api("/api/library/checks", { client: checkClient, visible: state.folderOpen?.controller === state.scan ? "" : state.path }); await activity.refresh(); } catch (error) { console.debug("Library index:", error.message); } }
     setTimeout(pollIndexing, 1000);
   }
   $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintSize(); paintGrid(); paintFilm(); });
@@ -1726,6 +1852,7 @@
     await refreshPins();
     if (saved.collection) await browseCollection(saved.collection.kind, saved.collection.name);
     else if (saved.path) await browse(saved.path);
+    if(state.folderOpen && !state.photos.some(photo=>photo.path===saved.selected))state.folderOpen.restore=saved;
     state.index = state.photos.findIndex(photo => photo.path === saved.selected);
     if (state.index < 0 && state.photos.length) state.index = 0;
     const paths = new Set(state.photos.map(photo => photo.path));

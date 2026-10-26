@@ -12,7 +12,7 @@ from concurrent.futures import CancelledError
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.exceptions import RequestValidationError
 from .library_diagnostics import log, recent, timed_lock
@@ -876,6 +876,25 @@ def create_library_router(worker, browser, store=None):
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=user_error(exc)) from exc
 
+    @router.post("/folder-stream")
+    async def folder_stream(command: FolderRequest, request: Request):
+        from .library_folder_stream import stream_folder
+        # Normalise lexically; even an offline indexed folder may open.
+        root = os.path.abspath(os.path.expanduser(command.path))
+        return StreamingResponse(stream_folder(index, store, request, root, listing),
+            media_type="application/x-ndjson", headers={"Cache-Control":"no-store"})
+
+    @router.post("/folder-details")
+    def folder_details(command: MetadataRequest):
+        photos=[]
+        for value in dict.fromkeys(command.paths):
+            path=Path(str(marks.source_path(value)))
+            try:
+                stat=path.stat()
+            except OSError: continue
+            photos.append(dict(path=str(path),name=path.name,type=path.suffix[1:].upper(),bytes=stat.st_size,mtime_ns=stat.st_mtime_ns))
+        return listing(dict(path="",photos=photos,unreadable_folders=[]))
+
     @router.post("/scan")
     async def scan(command: FolderRequest, request: Request):
         result = await helper_result(request, "scan", path=command.path, priority=0)
@@ -884,9 +903,9 @@ def create_library_router(worker, browser, store=None):
         return await run_in_threadpool(listing, result, result["path"])
 
     def listing(result, root=None):
-        with timed_lock(marks._lock, "folder_listing"):
-            accept_helper(result)
-            return accepted_listing(result, root)
+        accept_helper(result)
+        # Indexing and marks readers own short transactions themselves.
+        return accepted_listing(result, root)
 
     def accept_helper(result):
         epoch = result.pop('_file_epoch', None)
@@ -896,7 +915,15 @@ def create_library_router(worker, browser, store=None):
     def accepted_listing(result, root=None):
         if root is not None:
             index.remember_scan(root, result["photos"], reconcile=False)
-        records = marks.read([photo["path"] for photo in result["photos"]])
+        records = {"photos":[],"warnings":[],"undo_available":bool(marks._undo)}
+        documents = {}
+        for start in range(0,len(result["photos"]),16):
+            with marks._lock:
+                page=marks.read([photo["path"] for photo in result["photos"][start:start+16]])
+                documents.update(marks.recent_documents)
+            records["photos"].extend(page["photos"])
+            records["warnings"].extend(page["warnings"])
+            records["undo_available"]=page["undo_available"]
         by_path = {row["path"]: row for row in records["photos"]}
         for photo in result["photos"]:
             photo.update(by_path[photo["path"]])
@@ -906,7 +933,7 @@ def create_library_router(worker, browser, store=None):
         if root is not None:
             index.checks.seed({**result,"photos":[dict(photo) for photo in result["photos"]]})
         if store is not None:
-            result["photos"] = marks.copies.expand(result["photos"], getattr(marks, "recent_documents", None))
+            result["photos"] = marks.copies.expand(result["photos"], documents)
             marks.recent_documents = {}
         if store is not None:
             saved_states = store.library_grades.describe([photo["path"] for photo in result["photos"]])
@@ -927,9 +954,8 @@ def create_library_router(worker, browser, store=None):
         return result
 
     def accept_facts(result):
-        with marks._lock:
-            accept_helper(result)
-            index.remember_facts(result['photos'])
+        accept_helper(result)
+        index.remember_facts(result['photos'], foreground=True)
 
     @router.post("/metadata")
     async def metadata(command: MetadataRequest, request: Request):

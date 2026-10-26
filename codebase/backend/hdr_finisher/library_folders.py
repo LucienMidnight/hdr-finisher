@@ -96,3 +96,77 @@ def scan_folder(value, cancelled=lambda: False, fingerprints=False):
     if fingerprints:
         result.update(folders=folders, settings=settings)
     return result
+
+
+# At most eight active page walks; abandoned browser requests expire quickly.
+# scandir iterators retain directory handles, never a whole tree of rows.
+_paged_walks = {}
+from threading import RLock
+_walk_lock = RLock()
+
+def _walk_photos(root, warnings, cancellation):
+    stack=[]
+    try:
+        stack.append(os.scandir(checked_folder(root)))
+        entries=0
+        while stack:
+            if cancellation[0](): raise CancelledError()
+            entries+=1
+            if entries%128==0: yield None  # Yield even through empty/unsupported trees.
+            try: entry=next(stack[-1])
+            except StopIteration:
+                stack.pop().close(); continue
+            try:
+                if entry.is_symlink(): continue
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(os.scandir(entry.path)); continue
+                path=Path(entry.path)
+                if path.suffix.lower() not in SOURCE_EXTENSIONS: continue
+                stat=entry.stat(follow_symlinks=False)
+                try:
+                    setting=Path(entry.path+SIDECAR_SUFFIX).lstat()
+                    settings=[setting.st_size,setting.st_mtime_ns]
+                except FileNotFoundError: settings=None
+                yield dict(path=entry.path,name=entry.name,type=path.suffix[1:].upper(),
+                    bytes=stat.st_size,mtime_ns=stat.st_mtime_ns,sidecar=settings is not None,settings=settings)
+            except OSError as error:
+                warnings.append(str(error.filename or entry.path))
+    finally:
+        for handle in stack: handle.close()
+
+
+def scan_page(token, root, cancelled=lambda:False, *, close=False, restart=False):
+    with _walk_lock:
+        return _scan_page(token,root,cancelled,close=close,restart=restart)
+
+
+def _scan_page(token, root, cancelled=lambda:False, *, close=False, restart=False):
+    import time
+    now=time.monotonic()
+    for key,(walk,warnings,touched,cancellation) in list(_paged_walks.items()):
+        if now-touched>30 or key==token and (close or restart):
+            walk.close(); _paged_walks.pop(key,None)
+    if close: return dict(photos=[],done=True,unreadable_folders=[])
+    if token not in _paged_walks:
+        if len(_paged_walks)>=8:
+            raise RuntimeError("Too many folder reads; close another Library window.")
+        warnings=[]
+        cancellation=[cancelled]
+        _paged_walks[token]=(_walk_photos(root,warnings,cancellation),warnings,now,cancellation)
+    walk,warnings,_,cancellation=_paged_walks[token]
+    cancellation[0]=cancelled
+    photos=[];done=False
+    try:
+        for _ in range(64):
+            if cancelled(): raise CancelledError()
+            try: photo=next(walk)
+            except StopIteration: done=True;break
+            if photo is None: break
+            photos.append(photo)
+    except BaseException:
+        walk.close();_paged_walks.pop(token,None);raise
+    result=dict(photos=photos,done=done,unreadable_folders=list(warnings))
+    warnings.clear()
+    if done: _paged_walks.pop(token,None)
+    else: _paged_walks[token]=(walk,warnings,now,cancellation)
+    return result

@@ -68,7 +68,13 @@ def main():
     stored = collections.defaultdict(list)
     measurements = collections.defaultdict(list)
     switches = []
+    folder_opens = collections.OrderedDict()
     for name, d in events(since):
+        if name.startswith("folder_open_") or name in ("page_folder_first_rows","page_folder_first_camera_preview","page_folder_first_thumbnail","page_folder_complete"):
+            key=d.get("request")
+            if key:
+                row=folder_opens.setdefault(key,{"folder":d.get("folder",d.get("path")),"events":{}})
+                row["events"].setdefault(name,d)
         if name == "denoise_measurement":
             measurements[(d.get("usage", "CPU path"), d.get("route", "-"), d.get("width"), d.get("height"))].append(d.get("duration_ms",0))
         if name == "page_rendition_switch":
@@ -110,6 +116,15 @@ def main():
             r = requests.setdefault(d.get("request"), {"t": d["time"], "path": os.path.basename(str(d.get("path"))), "ev": []})
             r["ev"].append((short, d.get("step"), d.get("duration_ms"), d.get("reason")))
 
+    for row in folder_opens.values():
+        milestones=row["events"]
+        print("folder open:",row["folder"])
+        for event,label in (("folder_open_first_rows","first rows"),("page_folder_first_camera_preview","first camera preview"),("page_folder_first_thumbnail","first thumbnail"),("folder_open_all_rows","all indexed rows"),("folder_open_disk_finished","disk check finished"),("folder_open_closed","closed")):
+            item=milestones.get(event)
+            if item:
+                print(" ",label,f"{item.get('duration_ms',0):.0f}ms", " ".join(f"{field}={item[field]}" for field in ("rows","added","removed","changed","settings","unreadable") if field in item))
+        failure=milestones.get("folder_open_failed")
+        if failure: print("  failed:",failure.get("reason"))
     origin = startup.get("backend_process_started", since)
     print("startup (from backend process):", " ".join(f"{name}={(stamp-origin)*1000:.0f}ms" for name, stamp in startup.items()))
     app_origin = startup.get("app_start", origin)

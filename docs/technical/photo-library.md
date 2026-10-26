@@ -453,6 +453,49 @@ every photo carrying the name and run the steps above.
 
 ## 8. The helper process
 
+### Index-first folder opening (October 26, 2026)
+
+`POST /folder-stream` returns NDJSON. The backend first reads the `files` index
+by path keyset: 64 physical rows for the first screen, then pages of 256.
+Cached marks, virtual copies, grades and membership are read per page, without
+source stat or settings reads. The page can sort, scroll and select the rows
+already received. It releases startup after the first rows; the connection
+continues for disk checks. The first visible rows stay stable until a picture
+is presented, and subsequent grid updates are coalesced.
+
+Visible cells request `/folder-details` in groups of at most 32. Settings reads
+use 16-photo transactions and local document snapshots before picture work.
+The old enclosing listing lock is gone. Visible `/metadata` acceptance also
+uses the index's short transaction and direct scoped membership reconciliation;
+it must never wait for helper upkeep while owning the marks lock.
+
+The helper `scan-page` command walks at most 64 photos per main-lane turn with
+low queue priority. It also yields through unsupported files and tests the
+current cancellation token between directory entries. Other foreground jobs
+can run between pages. At most eight walkers retain directory iterators;
+closing a stream cancels its current job and closes its walker. Open-folder
+streams take over matching timed checks and overlapping pinned-folder index
+passes, so those do not produce a competing whole-tree listing.
+
+The backend compares source stat/settings fingerprints in small batches. A
+temporary SQLite seen set on local temporary storage supports removal checks
+without retaining the tree in RAM; partial/unreadable walks never infer
+removals. Added/changed rows and removed keys update existing page objects,
+scroll position and selection. Virtual-copy families are updated by source.
+No offscreen row schedules thumbnails, screen previews, Detail previews or
+Denoise measurement. Checks repeat with a bounded duty cycle; an explicit
+re-scan requests the next pass. Sidecar and photo writes retain their existing
+single-writer ownership; this stream only reads source folders.
+
+Each open has a request token: `folder_open_started`, `folder_open_first_rows`,
+`folder_open_all_rows`, `folder_open_disk_finished` (added/removed/changed/settings
+counts), `folder_open_failed` and `folder_open_closed`. Page records include
+first camera preview separately from first finished thumbnail. The summarizer
+groups these by open. These timestamps describe compositor opportunities,
+not physical display scanout. See the module PRD for the failed single real-
+folder profile and the unmeasured final fixes; no speed target is claimed.
+
+
 Decoding RAW files and walking large folders is slow. The Library does this
 in a second process so that grading stays responsive.
 

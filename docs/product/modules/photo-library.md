@@ -57,6 +57,45 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 large-folder batch: built; speed acceptance remains open.** Folder
+browsing now streams indexed rows first (64, then 256 at a time), without a
+source/settings walk. A paged background walk sends differences; it does not
+replace the grid. Visible photos read settings in groups of at most 32 before
+picture work. Offscreen rows do not start pictures or Denoise measurements.
+There is no whole-folder listing lock. Visible metadata also no longer waits
+for upkeep while holding the marks lock (a deadlock found in this profile).
+Switching folders aborts the stream and its helper page; reconciliation uses
+a disposable on-disk seen set. Startup waits for initial rows, not the disk
+check. Existing picture caches retain their own bounds.
+
+The one requested D:\Photos profile used a disposable copy of the 155,873-row
+index, no live database, and disabled settings writes/source cleanup. First
+rows reached the page in 29 ms; all indexed rows were served in 34.2 s. The
+first *camera preview* appeared at 40.4 s; no finished-thumbnail presentation
+was recorded. The disk check stalled after 94,656 observations and timed out
+at 10 minutes. The run exposed the 64-vs-32 visible-details request mismatch
+and the metadata/upkeep lock deadlock, both corrected afterwards. Those
+corrections were not re-profiled, respecting the single-profile budget.
+Native Windows process counters observed a 1,058,508,800-byte backend peak
+(1.01 GiB) and 484,302,848-byte helper peak; these are separate process peaks,
+not a simultaneous total. The initial sampler measured the Python launcher
+instead of its child and required an unavailable psutil; its 4 MB/zero figures
+are invalid. The driver now samples the real backend with Windows counters.
+The proposed 768 MiB backend working target and about-1-second first-screen
+target are **not demonstrated**. Steve should try a large folder, switch to a
+small one during its check, change ratings/Grade, then relaunch with the large
+folder last open. Claude should inspect the per-open timeline before further
+performance work. No second profile, broad sweep, push or installer build.
+
+Final fast suites ran once: JavaScript 631 passed / 2 failed; Python 2604
+passed / 2 failed / 3 skipped. All six new folder-stream behavior tests passed.
+The four failures are the previously recorded library-scenes decoder fixture,
+library-single-ready missing HDRLibraryScreenPreviews, test_library_rgb missing
+SourceReference luminance, and test_retouch_integration CaptureCache missing
+defer_store. No unrelated failure was investigated or repaired. The summarizer
+read the disposable log successfully; the old profile's first-thumbnail label
+was a camera preview, corrected in the new logging. Syntax and diff checks passed.
+
 **Final Denoise batch verification, October 26.** Fast suites ran once at the
 end: JavaScript 628 passed / 5 failed; three were affected measurement/warm-up
 fixtures or behavior and were corrected, with four focused checks passing.
@@ -1216,6 +1255,7 @@ far less on screen.
 
 | Date | Batch decision | Status |
 | --- | --- | --- |
+| October 26, 2026 | Open folders from the index immediately; a background disk check applies differences. Briefly showing deleted photos or missing newly added photos is accepted. Unindexed folders stream discovery. Visible settings and pictures have priority; cancel on folder switch. | Built; first-screen, relaunch and memory targets await app acceptance |
 | October 26, 2026 | Five ordered local commits; one final fast run; focused Denoise parity only; Steve tests HDR/SDR and Claude summarizes backend.log. Screen wins over logs. | In force |
 | October 26, 2026 | Finished thumbnails before camera previews; bounded file-version camera-preview RAM reuse. Exclusive GPU development, folder scans admitted independently. | Built; app trial pending |
 | October 26, 2026 | GPU noise measurement for Library/Grade/export/Proof; persistent source-pixel identity excludes finishing grades and shared HDR/SDR names. Authored SDR separate; source/size/resampling changes invalidate. Mean <1/p99 <3 on finished pixels; exact HDR ceiling. | GPU corpus, shared renderer parity, Proof/delivery and copied RAW timing checked; 50 ms thumbnail/0.5 s Fit targets remain open |
@@ -1803,6 +1843,7 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
+| **Very large folder opening** | October 26 disposable D:\Photos: first rows 29 ms, all 155,873 indexed rows served 34.2 s, first camera preview 40.4 s, no finished-thumbnail milestone, disk check timed out after 10 minutes. Backend peak 1.01 GiB. | Index-first streaming, bounded settings reads/disk pages, difference updates and metadata lock fix built. The one profile preceded the final request-size/deadlock fixes. About-1-second first screen, 768 MiB working target, disk completion and fast relaunch remain unverified; Steve app trial required. |
 | **App startup** (after the 155k-photo D:\Photos index) | October 26 14:17: helper spawn 4.0 s, backend ready 8.7 s, page ready 9.8 s, thumbnails ~12 s from Python start. One disposable 155,879-file launch after removing blocking sweeps: 2.45 s / 2.54 s / 3.99 s / 12.14 s respectively. It also exposed 4.0 s before Python started. | Cache accounting and temporary-file cleanup deferred with foreground yielding; codec probing delayed; helper startup overlaps the page. Final shell change overlaps Python with the Starting window (not re-profiled). Targets remain open: folder listing, 1.36 s initial thumbnail checks and a 3.43 s first GPU queue wait still delay thumbnails. Steve's restart 15:55: page ready 2.4 s, first thumbnail 3.6 s from app launch; felt super fast. **Done.** |
 | **Back to grid after Single/fullscreen** | October 26: all 14 exits used camera previews; finished-thumbnail delay 0.4–4.2 s or over 5 s. | Finished routes now retained/reused by current grade and HDR/SDR mode; camera previews retained in 64 MiB RAM. Bounded-memory eviction can still require drawing again. App acceptance pending. |
 | **Folder opening during RAW development** | October 26 scans queued 16–22 s for about 40 ms work; stored writes queued 24–29 s. | Main scans admitted independently of source-busy/picture slots; stored writes no longer blocked by GPU source-busy. End-to-end 0.5 s target remains open (indexed listing alone was 0.5–0.66 s). |

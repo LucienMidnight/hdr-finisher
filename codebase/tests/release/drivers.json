@@ -4009,6 +4009,8 @@
     {"path":"tests/photo-framing-delivery.js","areas":["export-proof","ui","library"],"tier":"area",
       "protects":"Attached per-photo framing controls and actual GPU/CPU delivery geometry in all six formats, with full Proof inclusion and cache isolation.","launch":{"method":"electron"}},
     {"path":"tests/hsl-prototype-gpu.js","areas":["masks","ui"],"tier":"diagnostic",
-      "protects":"Isolated HSL prototype float GPU/CPU agreement, multi-range selection and basic UI gestures; no app integration.","launch":{"method":"native"}}
+      "protects":"Isolated HSL prototype float GPU/CPU agreement, multi-range selection and basic UI gestures; no app integration.","launch":{"method":"native"}},
+    {"path":"tests/performance/library-large-folder-open.js","areas":["library"],"tier":"diagnostic",
+      "protects":"Opt-in large-folder index-first timing, first grid thumbnail, complete disk check and backend memory on a disposable Library database.","launch":{"method":"electron"}}
   ]
 }
