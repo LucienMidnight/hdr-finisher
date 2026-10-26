@@ -387,7 +387,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     jobs: dict[str, Event] = {}
     stopping = Event()
     sequence = 0
-    state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False, "developing": 0}
+    state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False, "developing": 0, "scanning": 0}
 
     def lane(job):
         if job["command"] == "stored-screen-write":
@@ -430,9 +430,10 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 elif kind == "picture":
                     state["foreground"] += 1
                 if kind == "picture": state["developing"] += 1
+                if job["command"] == "scan-page": state["scanning"] += 1
 
                 from .library_metadata import pause_readers
-                pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]))
+                pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]) or bool(state["scanning"]))
             waited = [0.]
             def yielding():
                 wait_started = time.perf_counter()
@@ -523,7 +524,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 elif kind == "picture":
                     state["foreground"] -= 1
                 if kind == "picture": state["developing"] -= 1
-                pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]))
+                if job["command"] == "scan-page": state["scanning"] -= 1
+                pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]) or bool(state["scanning"]))
                 condition.notify_all()
             reply({"event":"work", "id":job["id"], "done":True})
             if not cancelled.is_set() and not stopping.is_set():
@@ -577,7 +579,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     jobs[message["id"]] = Event()
                     heapq.heappush(queue, (message["priority"], sequence, message))
                 from .library_metadata import pause_readers
-                pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]))
+                pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]) or bool(state["scanning"]))
                 condition.notify_all()
     except (EOFError, OSError) as error:
         library_diagnostics._sink = None

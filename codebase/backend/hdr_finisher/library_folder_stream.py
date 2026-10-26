@@ -116,17 +116,19 @@ async def stream_folder(index, store, request, root, enrich):
             counts = dict(added=0,removed=0,changed=0,settings=0)
             unreadable = []
             while True:
+                page_started=time.perf_counter()
                 result = await helper(restart=generation>1 and seen.execute("SELECT 1 FROM seen WHERE pass=? LIMIT 1",(generation,)).fetchone() is None)
+                helper_ms=(time.perf_counter()-page_started)*1000
+                accept_started=time.perf_counter()
                 photos = result["photos"]
                 unreadable.extend(result.get("unreadable_folders",[]))
                 def accept():
                     paths = [p["path"] for p in photos]
                     if not paths: return []
-                    with index.marks._lock:
-                        db=index.marks._connect()
-                        try:
-                            known={p:(b,m) for p,b,m in db.execute("SELECT path,bytes,mtime_ns FROM files WHERE path IN ("+",".join("?" for _ in paths)+")",paths)}
-                        finally: db.close()
+                    db=index.marks._connect()
+                    try:
+                        known={p:(b,m) for p,b,m in db.execute("SELECT path,bytes,mtime_ns FROM files WHERE path IN ("+",".join("?" for _ in paths)+")",paths)}
+                    finally: db.close()
                     changed=[]; read=[]
                     for photo in photos:
                         key=photo["path"]; stat=(photo["bytes"],photo["mtime_ns"])
@@ -149,6 +151,8 @@ async def stream_folder(index, store, request, root, enrich):
                         output.extend(enrich(dict(path=root,photos=batch,unreadable_folders=[]))["photos"])
                     return output
                 rows=await run_in_threadpool(accept)
+                log("folder_disk_page",folder=root,request=token,count=len(photos),helper_ms=helper_ms,
+                    accept_ms=(time.perf_counter()-accept_started)*1000,duration_ms=(time.perf_counter()-page_started)*1000)
                 if rows:
                     if first:
                         log("folder_open_first_rows",folder=root,request=token,rows=len(rows),duration_ms=(time.perf_counter()-started)*1000,route="disk")

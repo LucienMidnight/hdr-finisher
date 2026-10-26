@@ -57,6 +57,16 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 viewport batch, Part 3.** Disk pages reuse directory-enumeration
+settings fingerprints, removing a failing settings-file probe for every
+unmodified photo. All-core low-priority camera readers pause during each
+short disk page, resuming between pages; selected and visible reads retain
+their separate priority. Comparison reads no longer wait for the marks writer.
+`folder_disk_page` records helper and acceptance time separately, alongside
+existing helper queue/work timing, so disk I/O and backend waits are visible.
+Validation deferred to the single final profile and fast suites.
+
+
 **October 26 viewport batch, Part 2.** Folder opening delivers the entire
 indexed snapshot in one message, before disk checking or background camera
 details. The first grid therefore has the full count, sort and filter facts;

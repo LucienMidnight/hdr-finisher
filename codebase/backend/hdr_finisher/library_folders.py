@@ -107,32 +107,40 @@ _walk_lock = RLock()
 def _walk_photos(root, warnings, cancellation):
     stack=[]
     try:
-        stack.append(os.scandir(checked_folder(root)))
+        def directory(path):
+            # Windows DirEntry has stat data from enumeration. Missing sidecars
+            # must not cost one failing lstat (and antivirus probe) per photo.
+            settings={}
+            with os.scandir(path) as entries:
+                for entry in entries:
+                    if cancellation[0](): raise CancelledError()
+                    if entry.name.casefold().endswith(SIDECAR_SUFFIX):
+                        info=entry.stat(follow_symlinks=False)
+                        settings[os.path.normcase(entry.name)]=[info.st_size,info.st_mtime_ns]
+            return os.scandir(path),settings
+        stack.append(directory(checked_folder(root)))
         entries=0
         while stack:
             if cancellation[0](): raise CancelledError()
             entries+=1
             if entries%512==0: yield None  # Yield even through empty/unsupported trees.
-            try: entry=next(stack[-1])
+            try: entry=next(stack[-1][0])
             except StopIteration:
-                stack.pop().close(); continue
+                stack.pop()[0].close(); continue
             try:
                 if entry.is_symlink(): continue
                 if entry.is_dir(follow_symlinks=False):
-                    stack.append(os.scandir(entry.path)); continue
+                    stack.append(directory(entry.path)); continue
                 path=Path(entry.path)
                 if path.suffix.lower() not in SOURCE_EXTENSIONS: continue
                 stat=entry.stat(follow_symlinks=False)
-                try:
-                    setting=Path(entry.path+SIDECAR_SUFFIX).lstat()
-                    settings=[setting.st_size,setting.st_mtime_ns]
-                except FileNotFoundError: settings=None
+                settings=stack[-1][1].get(os.path.normcase(entry.name+SIDECAR_SUFFIX))
                 yield dict(path=entry.path,name=entry.name,type=path.suffix[1:].upper(),
                     bytes=stat.st_size,mtime_ns=stat.st_mtime_ns,sidecar=settings is not None,settings=settings)
             except OSError as error:
                 warnings.append(str(error.filename or entry.path))
     finally:
-        for handle in stack: handle.close()
+        for handle,_ in stack: handle.close()
 
 
 def scan_page(token, root, cancelled=lambda:False, *, close=False, restart=False):
