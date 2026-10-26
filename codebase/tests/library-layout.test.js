@@ -20,3 +20,13 @@ test("last row and narrow empty views never point outside the photo list", () =>
   const bottom = gridLayout(13, 1400, 100, initial.totalHeight - 100, 190);
   assert.equal(bottom.last, 13); assert.ok(bottom.first >= 0);
 });
+
+
+test("jumping to the end of a folder beyond Chromium's height limit keeps the final cells visible", () => {
+  const first = gridLayout(1000000, 400, 900, 0, 390);
+  const bottom = gridLayout(1000000, 400, 900, first.totalHeight - 900, 390);
+  assert.equal(bottom.last, 1000000);
+  assert.ok(bottom.last > bottom.first);
+  assert.ok(bottom.top(bottom.first) <= first.totalHeight - 900 + 3);
+  assert.ok(bottom.top(999999) < first.totalHeight);
+});

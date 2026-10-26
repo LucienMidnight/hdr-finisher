@@ -57,6 +57,15 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 follow-up, Part 1.** Grid scrolls repaint at the restored viewport,
+retry aborted cells, and record each settled scroll's visible range and number
+of picture requests (including zero). Very tall folders compress scrollbar
+travel below Chromium's element-height ceiling while retaining normal cell
+sizes. Returning to a Library with a cancelled folder request reopens it rather
+than passing the cancelled signal into new picture hydration. Validation is
+batched: one disposable D:\Photos profile and the fast suites at the end.
+
+
 **October 26 large-folder batch: built; speed acceptance remains open.** Folder
 browsing now streams indexed rows first (64, then 256 at a time), without a
 source/settings walk. A paged background walk sends differences; it does not

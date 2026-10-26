@@ -462,6 +462,9 @@
   function clearPrefetch() { restoreStandIn(); readAhead.clear(); stopRawAhead(); readyWindow.invalidate(); quickWindow.invalidate(); }
   function setActive(active) {
     state.active = active; idlePictures.touch();
+    if (active && state.scan?.signal.aborted) {
+      void reopen(); return;
+    }
     if (!active) {
       tilePool.clear();
       compare.cancel();
@@ -671,10 +674,11 @@
         tilePool.put(tileKey(map, cell.identity), cell, cell.fallback.width * cell.fallback.height * 16);
       } else cell.controller.abort();
     }
+    let requested = 0;
     for (let index = keepStart; index < keepEnd; index += 1) {
       const photo = state.photos[index];
       let cell = map.get(photo.path);
-      if (cell && (cell.edge !== thumbnailEdge() || cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.identity !== pictureIdentity(photo))) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
+      if (cell && (cell.controller.signal.aborted || cell.edge !== thumbnailEdge() || cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.identity !== pictureIdentity(photo))) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
       if (!cell && (index < start || index >= end)) continue;
       if (!cell) {
         cell = tilePool.take(tileKey(map, pictureIdentity(photo)));
@@ -685,7 +689,7 @@
           overlays?.attach(photo, cell.fallback, cell.meta, cell.controller,
             () => state.active && cell.element.isConnected && !cell.controller.signal.aborted);
         }
-        else cell = makeCell(photo, container, index);
+        else { cell = makeCell(photo, container, index); requested++; }
         map.set(photo.path, cell);
       }
       position(cell.element, index);
@@ -695,7 +699,9 @@
       cell.element.classList.toggle("rejected", photo.marks?.pick === "reject");
       cell.element.querySelector(".library-marks")?.remove(); cell.element.append(culling.strip(photo));
     }
+    return requested;
   }
+  let gridRequests = 0, gridSettleTimer;
   let lastGridTop = 0;
   function paintGrid() {
     const count = state.photos.length ? String(state.photos.length) : ""; if ($("place-count").textContent !== count) $("place-count").textContent = count;
@@ -707,8 +713,8 @@
     if (!state.photos.length) $("empty-message").textContent = state.reading ? "Reading folder…" : state.scanError || (state.allPhotos.length ? "No photos match these filters."
       : state.collection ? (state.collection.kind === "album" ? "This album is empty. Right-click photos, or drag them here, to add them." : "No connected photos carry this tag.")
       : state.path ? "No readable photos in this folder." : "Add a folder to start browsing.");
-    reconcile(state.cells, layout.first, layout.last, space, (element, index) => {
-      element.style.cssText = `left:${3 + (index % layout.columns) * layout.cellWidth}px;top:${3 + Math.floor(index / layout.columns) * layout.rowHeight}px;width:${layout.cellWidth - 3}px;height:${layout.rowHeight - 3}px`;
+    gridRequests += reconcile(state.cells, layout.first, layout.last, space, (element, index) => {
+      element.style.cssText = `left:${3 + (index % layout.columns) * layout.cellWidth}px;top:${layout.top(index)}px;width:${layout.cellWidth - 3}px;height:${layout.rowHeight - 3}px`;
     });
     const screen = Math.max(layout.columns, layout.last - layout.first);
     const forward = grid.scrollTop >= lastGridTop; lastGridTop = grid.scrollTop;
@@ -1277,7 +1283,7 @@
       if (state.allPhotos.length && !opening.presented) return;
       const top=grid.scrollTop,left=film.scrollLeft;
       state.allPhotos = [...rows.values()];
-      applyQuery(); grid.scrollTop=top;film.scrollLeft=left;
+      applyQuery(); grid.scrollTop=top;film.scrollLeft=left;paintGrid();paintFilm();
     };
     opening.paint=paint;
     const pump=async()=>{try {
@@ -1727,7 +1733,19 @@
   }
   $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintSize(); paintGrid(); paintFilm(); });
   let gridFrame = 0, filmFrame = 0;
-  grid.addEventListener("scroll", () => { idlePictures.touch(); if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); }); });
+  grid.addEventListener("scroll", () => {
+    idlePictures.touch();
+    if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); });
+    clearTimeout(gridSettleTimer);
+    gridSettleTimer = setTimeout(() => {
+      paintGrid();
+      const layout = state.layout;
+      HDRLibraryStopwatch("grid_scroll_settled", {path:state.path,request:state.folderOpen?.request,
+        first:layout?.first,last:layout?.last,total:state.photos.length,scroll_top:grid.scrollTop,
+        picture_requests:gridRequests,active:state.active});
+      gridRequests = 0;
+    },100);
+  });
   film.addEventListener("scroll", () => { idlePictures.touch(); if (!filmFrame) filmFrame = requestAnimationFrame(() => { filmFrame = 0; paintFilm(); }); });
   // An ordinary mouse wheel scrolls up and down; the filmstrip only scrolls sideways.
   film.addEventListener("wheel", event => {
