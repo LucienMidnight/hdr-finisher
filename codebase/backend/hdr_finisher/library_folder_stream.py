@@ -85,7 +85,7 @@ async def stream_folder(index, store, request, root, enrich):
         return json.dumps(dict(kind=kind,request=token,path=root,**values),separators=(",",":"))+"\n"
     close_reason = "client disconnected or app closing"
     async def helper(**values):
-        job, future = await run_in_threadpool(worker.submit_library,"scan-page",priority=100,checking=True,token=token,path=root,**values)
+        job, future = await run_in_threadpool(worker.submit_library,"scan-page",priority=100,token=token,path=root,**values)
         try:
             # StreamingResponse owns disconnect listening and cancels this
             # task. Await completion directly; polling added 20 ms per page.
@@ -153,7 +153,7 @@ async def stream_folder(index, store, request, root, enrich):
                         first=False
                     yield event("changes",photos=rows,removed=[])
                 if result["done"]: break
-                # A partial/offline walk cannot establish that a photo was removed.
+            # A partial/offline walk cannot establish that a photo was removed.
             if not unreadable:
                 after=""
                 while True:

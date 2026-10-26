@@ -57,11 +57,43 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 follow-up final verification.** Fast suites ran once: JavaScript
+632 passed / 2 failed; Python 2605 passed / 2 failed / 3 skipped (7m43s).
+The failures match the four previously recorded fixture problems below:
+Library scenes decoder fallback, Single missing screen-preview helper,
+RGB missing SourceReference luminance, and retouch CaptureCache missing
+`defer_store`. No unrelated failure was investigated, fixed or rerun. The
+new large-folder layout and telemetry checks passed. Final API model loading,
+zero-request field preservation, frontend syntax and diff checks passed.
+The summarizer read the disposable log, separating detail demands, recovery
+pieces and folder closure reasons; its pre-correction scroll record lacks
+range/count fields, as expected. Selected-read separation, CPU-scaled EXIF
+waves, coalesced background sorting, startup-restore guards, retained telemetry
+and independent main-lane disk admission are final unprofiled corrections.
+No extra GPU checks (picture arithmetic unchanged), second profile, push or
+installer build. The requested module status/slow-items table, technical
+section 8 and picture-flow chart are updated.
+
+**October 26 follow-up profile (one run; targets unverified).** A disposable
+snapshot of the live database was used, with an empty isolated picture cache
+and settings writes/source cleanup disabled. The page changed from D:\Photos
+to D:\Photos\Play_Raw before bottom selection, then timed out waiting 180 s
+for disk completion. Its 405 ms picture and 2 ms known-details figures are
+invalid for the requested large-folder scenario. There were no page errors.
+No second profile was run. Startup restoration can race navigation; it now
+only restores if navigation has not begun. Selected EXIF also now bypasses
+in-flight visible reads, and the telemetry schema retains range/count/demand
+fields instead of silently dropping them. These final corrections remain
+unprofiled. Steve should jump to the bottom of D:\Photos, select a photo,
+visit Grade and return while the check runs; Claude should inspect the new
+scroll, detail-read, recovery-piece and closure records. About 1 s pictures,
+0.3 s selected details and roughly 50 s disk checking remain open targets.
+
 **October 26 follow-up, Part 3.** Opening Grade no longer aborts the open
 folder stream. Only opening another place or closing its page ends it; page
 and backend closure logs include reasons. The observed 19:48:38 closure was
-immediately preceded by Grade opening. Disk pages use the check lane with
-foreground yielding; completion wakes the stream directly instead of adding
+immediately preceded by Grade opening. Disk pages use the main lane at low queue priority, independently of
+picture/source admission; completion wakes the stream directly instead of adding
 20 ms polling delays per page. Pages now hold at most 256 photos. Open walkers
 retain their place during long foreground pauses rather than expiring at 30 s.
 Startup recovery caused the post-open reconcile burst: it waited for helper
@@ -74,7 +106,8 @@ camera-details fill-in after indexed rows arrive. Selection requests bypass
 background readers with priority 0 and a 30 ms selection debounce; on-screen
 photos request details independently of pictures. Background reads use the
 all-core, below-normal helper pool and yield to foreground work. Known dates
-and camera filters update as details arrive. Logs distinguish selected,
+and camera filters update as details arrive; background arrivals are coalesced
+to at most one page sort per second. Logs distinguish selected,
 visible and background reads with counts and durations. The 0.3 s selected
 and 1 s visible-picture goals remain targets until the final profile/app try.
 Validation is deferred to the final batched run.
@@ -1884,6 +1917,7 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
+| **Large-folder scroll / camera details / disk checking** | October 26 app log: requests stopped, no EXIF reads, disk check closed when Grade opened; recovery resumed in a reconcile burst. | Three fixes committed: viewport retries/logging, demand-prioritized details, persistent yielding disk checks and 16-family recovery pieces. Single follow-up profile changed to Play_Raw and timed out; D:\Photos timings remain unverified. Final startup and telemetry corrections unprofiled. Steve app trial required. |
 | **Very large folder opening** | October 26 disposable D:\Photos: first rows 29 ms, all 155,873 indexed rows served 34.2 s, first camera preview 40.4 s, no finished-thumbnail milestone, disk check timed out after 10 minutes. Backend peak 1.01 GiB. | Index-first streaming, bounded settings reads/disk pages, difference updates and metadata lock fix built. The one profile preceded the final request-size/deadlock fixes. About-1-second first screen, 768 MiB working target, disk completion and fast relaunch remain unverified; Steve app trial required. |
 | **App startup** (after the 155k-photo D:\Photos index) | October 26 14:17: helper spawn 4.0 s, backend ready 8.7 s, page ready 9.8 s, thumbnails ~12 s from Python start. One disposable 155,879-file launch after removing blocking sweeps: 2.45 s / 2.54 s / 3.99 s / 12.14 s respectively. It also exposed 4.0 s before Python started. | Cache accounting and temporary-file cleanup deferred with foreground yielding; codec probing delayed; helper startup overlaps the page. Final shell change overlaps Python with the Starting window (not re-profiled). Targets remain open: folder listing, 1.36 s initial thumbnail checks and a 3.43 s first GPU queue wait still delay thumbnails. Steve's restart 15:55: page ready 2.4 s, first thumbnail 3.6 s from app launch; felt super fast. **Done.** |
 | **Back to grid after Single/fullscreen** | October 26: all 14 exits used camera previews; finished-thumbnail delay 0.4–4.2 s or over 5 s. | Finished routes now retained/reused by current grade and HDR/SDR mode; camera previews retained in 64 MiB RAM. Bounded-memory eviction can still require drawing again. App acceptance pending. |

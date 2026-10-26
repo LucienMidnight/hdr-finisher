@@ -68,8 +68,12 @@ def main():
     stored = collections.defaultdict(list)
     measurements = collections.defaultdict(list)
     switches = []
+    scrolls, detail_reads, recovery = [], collections.defaultdict(list), []
     folder_opens = collections.OrderedDict()
     for name, d in events(since):
+        if name == "page_grid_scroll_settled": scrolls.append(d)
+        if name == "camera_details_read": detail_reads[d.get("demand","unknown")].append(d)
+        if name == "recovery_piece": recovery.append(d)
         if name.startswith("folder_open_") or name in ("page_folder_first_rows","page_folder_first_camera_preview","page_folder_first_thumbnail","page_folder_complete"):
             key=d.get("request")
             if key:
@@ -116,13 +120,19 @@ def main():
             r = requests.setdefault(d.get("request"), {"t": d["time"], "path": os.path.basename(str(d.get("path"))), "ev": []})
             r["ev"].append((short, d.get("step"), d.get("duration_ms"), d.get("reason")))
 
+    print("settled grid scrolls:",len(scrolls),"zero requests:",sum(d.get("picture_requests")==0 for d in scrolls))
+    for d in scrolls:
+        print("  grid",d.get("path"),"range",d.get("range_start"),d.get("range_end"),"of",d.get("total"),"requests",d.get("picture_requests"))
+    for demand,reads in detail_reads.items():
+        print("camera details:",demand,"batches",len(reads),"photos",sum(d.get("count",0) for d in reads),"median ms",round(pct([d.get("duration_ms",0) for d in reads],.5),1))
+    if recovery: print("recovery pieces:",len(recovery),"photos",sum(d.get("count",0) for d in recovery),"max ms",round(max(d.get("duration_ms",0) for d in recovery),1))
     for row in folder_opens.values():
         milestones=row["events"]
         print("folder open:",row["folder"])
         for event,label in (("folder_open_first_rows","first rows"),("page_folder_first_camera_preview","first camera preview"),("page_folder_first_thumbnail","first thumbnail"),("folder_open_all_rows","all indexed rows"),("folder_open_disk_finished","disk check finished"),("folder_open_closed","closed")):
             item=milestones.get(event)
             if item:
-                print(" ",label,f"{item.get('duration_ms',0):.0f}ms", " ".join(f"{field}={item[field]}" for field in ("rows","added","removed","changed","settings","unreadable") if field in item))
+                print(" ",label,f"{item.get('duration_ms',0):.0f}ms", " ".join(f"{field}={item[field]}" for field in ("rows","added","removed","changed","settings","unreadable","reason") if field in item))
         failure=milestones.get("folder_open_failed")
         if failure: print("  failed:",failure.get("reason"))
     origin = startup.get("backend_process_started", since)

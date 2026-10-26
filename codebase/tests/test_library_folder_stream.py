@@ -116,3 +116,13 @@ def test_walk_yields_and_can_cancel_through_unsupported_files(tmp_path):
     assert not result["done"] and not result["photos"]
     with pytest.raises(Exception): scan_page("unsupported",str(tmp_path),lambda:True)
     assert "unsupported" not in _paged_walks
+
+
+def test_scroll_and_details_logging_keeps_counts_and_ranges():
+    from hdr_finisher.library_api import StopwatchEvent
+    event=StopwatchEvent(stage="grid_scroll_settled",time=1,range_start=155800,range_end=155873,
+        total=155873,picture_requests=0,scroll_top=2000000,active=True)
+    saved=event.model_dump(exclude_none=True)
+    assert (saved["range_start"],saved["range_end"],saved["picture_requests"])==(155800,155873,0)
+    details=StopwatchEvent(stage="camera_details_shown",time=1,demand="selected",count=1,duration_ms=42)
+    assert details.model_dump()["demand"]=="selected"

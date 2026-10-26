@@ -762,11 +762,11 @@
   let factsTimer, factsPath;
   function wantFacts(photo) {
     // The selected photo's details are read ahead of the folder-wide pass.
-    if (factsPath === photo.path && (factsTimer || photo.factsAsked)) return;
+    if (factsPath === photo.path && (factsTimer || photo.selectedFactsAsked)) return;
     clearTimeout(factsTimer); factsPath = photo.path;
-    if (photo.indexed || photo.factsAsked) return;
+    if (photo.indexed || photo.selectedFactsAsked) return;
     factsTimer = setTimeout(async () => {
-      factsTimer = null; photo.factsAsked = true;
+      factsTimer = null; photo.selectedFactsAsked = true;
       const started = performance.now();
       try {
         const result = await api("/api/library/metadata", { paths: [photo.path], demand:"selected" }, state.scan?.signal);
@@ -774,7 +774,7 @@
         HDRLibraryStopwatch("camera_details_shown",{path:photo.path,duration_ms:performance.now()-started,count:result.photos.length,demand:"selected"});
         if (state.sort === "time" || state.filters.rules?.length) applyQuery();
         else if (selected() === photo) updateDetails();
-      } catch (error) { photo.factsAsked = false; if (!aborted(error)) console.debug("Library details:", error.message); }
+      } catch (error) { photo.selectedFactsAsked = false; if (!aborted(error)) console.debug("Library details:", error.message); }
     }, 30);
   }
   async function refreshCopies() {
@@ -936,7 +936,7 @@
     startRawAhead(previousIndex);
     if (state.view === "grid") {
       if (scroll && state.layout) {
-        const top = Math.floor(state.index / state.layout.columns) * state.layout.rowHeight;
+        const top = state.layout.scrollFor(state.index);
         if (top < grid.scrollTop) grid.scrollTop = top;
         else if (top + state.layout.rowHeight + 3 > grid.scrollTop + grid.clientHeight) grid.scrollTop = top + state.layout.rowHeight + 3 - grid.clientHeight;
       }
@@ -1412,6 +1412,7 @@
     if (state.view === "single" && selected()?.path !== lead) showSingle();
     if (!state.reading) status(`${state.photos.length.toLocaleString()} of ${state.allPhotos.length.toLocaleString()} photos${state.hiddenFiles ? ` · ${state.hiddenFiles} unreadable files hidden` : ""}${state.collection?.kind === "smart" && state.smartIndexing ? " · Indexing is still running, so more may turn up." : ""}`);
   }
+  let factsQueryTimer;
   async function readVisibleFacts(photos, controller, demand="visible") {
     const waiting=photos.filter(photo=>!photo.indexed && !photo.factsAsked);
     if(!waiting.length)return;
@@ -1423,16 +1424,22 @@
       const known=new Map(result.photos.map(photo=>[photo.path,photo]));
       for(const photo of waiting){const name=photo.name;Object.assign(photo,known.get(photo.path));if(photo.copy_id)photo.name=name;}
       HDRLibraryStopwatch("camera_details_shown",{demand,count:result.photos.length,duration_ms:performance.now()-started});
-      if(state.sort==="time" || state.filters.rules?.length)applyQuery();
-      else if(waiting.includes(selected()))updateDetails();
+      if(state.sort==="time" || state.filters.rules?.length){
+        // Coalesce background fact arrivals instead of sorting a large folder
+        // once for every EXIF wave on the page's foreground thread.
+        if(!factsQueryTimer)factsQueryTimer=setTimeout(()=>{
+          factsQueryTimer=null;if(state.scan===controller && state.active)applyQuery();
+        },demand==="background"?1000:100);
+      } else if(waiting.includes(selected()))updateDetails();
     } catch(error){if(!aborted(error))console.debug("Library camera details:",error.message);}
     finally{if(demand!=="background")for(const photo of waiting)photo.factsAsked=false;}
   }
   async function readDates(controller, photos) {
     // The helper's low-priority index lane fills missing details. Visible rows
     // and the selection use independent foreground requests ahead of this pass.
-    for(let at=0;at<photos.length && !controller.signal.aborted;at+=32){
-      await readVisibleFacts(photos.slice(at,at+32),controller,"background");
+    const batch=Math.max(32,navigator.hardwareConcurrency || 32);
+    for(let at=0;at<photos.length && !controller.signal.aborted;at+=batch){
+      await readVisibleFacts(photos.slice(at,at+batch),controller,"background");
       await sleep(20,controller.signal).catch(()=>{});
     }
   }
@@ -1757,14 +1764,16 @@
   $("thumbnail-size").addEventListener("input", (event) => { state.size = Number(event.target.value); paintSize(); paintGrid(); paintFilm(); });
   let gridFrame = 0, filmFrame = 0;
   grid.addEventListener("scroll", () => {
+    if(!gridSettleTimer)gridRequests=0;
     idlePictures.touch();
     if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); });
     clearTimeout(gridSettleTimer);
     gridSettleTimer = setTimeout(() => {
+      gridSettleTimer=null;
       paintGrid();
       const layout = state.layout;
       HDRLibraryStopwatch("grid_scroll_settled", {path:state.path,request:state.folderOpen?.request,
-        first:layout?.first,last:layout?.last,total:state.photos.length,scroll_top:grid.scrollTop,
+        range_start:layout?.first,range_end:layout?.last,total:state.photos.length,scroll_top:grid.scrollTop,
         picture_requests:gridRequests,active:state.active});
       gridRequests = 0;
     },100);
@@ -1849,7 +1858,7 @@
     band.moved = true;
     const box = { left: Math.min(x, band.x), right: Math.max(x, band.x), top: Math.min(y, band.y), bottom: Math.max(y, band.y) };
     selectionBox.hidden = false; selectionBox.style.cssText = `left:${box.left}px;top:${box.top}px;width:${box.right - box.left}px;height:${box.bottom - box.top}px`;
-    const indices = HDRLibrarySelection.boxIndices(state.layout, state.photos.length, box);
+    const indices = HDRLibrarySelection.boxIndices(state.layout, state.photos.length, {...box,top:box.top+state.layout.logicalTop-grid.scrollTop,bottom:box.bottom+state.layout.logicalTop-grid.scrollTop});
     state.selection = new Set([...band.base, ...indices.map(index => state.photos[index].path)]);
     if (indices.length) { state.index = indices.at(-1); state.anchor = indices[0]; }
     updateDetails(); paintGrid();
@@ -1882,6 +1891,7 @@
   }
   async function restoreState(saved) {
     if (!saved) return;
+    const previousScan=state.scan;
     state.sort = saved.sort || "time"; state.descending = !!saved.descending; state.filters = { rules: saved.filters?.rules || [], any: false, raw: !!saved.filters?.raw };
     state.size = saved.size || 190; state.hdr = !!saved.hdr; state.zoom = !!saved.zoom;
     state.zoomX = saved.zoomX ?? .5; state.zoomY = saved.zoomY ?? .5; state.zoomScale = saved.zoomScale || 1;
@@ -1891,6 +1901,7 @@
     $("library-filterbar").hidden = !saved.filterOpen; paintFilterButton();
     collapse("left", !!saved.leftClosed); collapse("right", !!saved.rightClosed); ruleFilters.render();
     await refreshPins();
+    if(state.scan!==previousScan)return;
     if (saved.collection) await browseCollection(saved.collection.kind, saved.collection.name);
     else if (saved.path) await browse(saved.path);
     if(state.folderOpen && !state.photos.some(photo=>photo.path===saved.selected))state.folderOpen.restore=saved;
@@ -1937,10 +1948,13 @@
       const windowState = libraryDesktop ? await libraryDesktop.getLibraryWindow() : null;
       if (windowState) applyTheme(windowState.theme);
       const saved = windowState?.state;
-      if (saved) await restoreState(saved);
-      else { await refreshPins(); const first = state.pins.find((pin) => pin.available); if (first) await browse(first.path); }
+      if (!state.scan) {
+        if (saved) await restoreState(saved);
+        else { await refreshPins(); const first = state.pins.find((pin) => pin.available); if (first && !state.scan) await browse(first.path); }
+      }
       await libraryDesktop?.rendererReady();
       postParent("ready");
     } catch (error) { status(error.message); }
+    finally { document.body.dataset.libraryReady="true"; }
   })();
 })();

@@ -453,6 +453,48 @@ every photo carrying the name and run the steps above.
 
 ## 8. The helper process
 
+### October 26 follow-up: scroll demand, camera details and check lifetime
+
+Settled grid scrolls log `range_start`, `range_end`, `total` and
+`picture_requests`, including zero. The backend stopwatch schema retains these
+numeric fields. Reconciliation replaces aborted cells; streamed paints repaint
+after restoring scroll. Scrollbar travel is compressed only beyond 8 million
+pixels, with logical positions retained for selection. Asynchronous startup
+restoration cannot override navigation already started by the page.
+
+Camera details use separate selected (priority 0), visible (5) and background
+(95) demands. Selected reads debounce 30 ms and bypass both the background
+process pool and in-flight visible reads. Visible facts follow settings
+hydration without blocking picture requests. After all index rows arrive,
+missing details fill in through the helper index lane, using all available
+cores at below-normal priority. The existing Windows 61-child wait-handle
+limit still applies. Dates and camera filters refresh as facts arrive; background waves coalesce
+into at most one page sort per second.
+`camera_details_read` logs demand, count, time and outcome; page acceptance logs
+`camera_details_shown`. The summarizer prints these separately.
+
+Hiding Library for Grade keeps its folder stream alive. Opening another place
+cancels it; page cancellation records and backend closure records give the
+reason. The original 19:48:38 closure coincided with Grade opening. Streaming
+Response owns disconnect cancellation; the generator no longer competes for
+receive events. Disk pages await helper completion directly (no 20 ms polling
+floor), contain at most 256 photos and use the main lane at low queue priority.
+They do not wait for picture/source admission: doing so can starve disk checks
+through a full grid of RAW developments. Foreground main-lane work goes first. Walkers
+retain directory iterators across long pauses; stream cleanup explicitly
+closes them. Startup recovery resumes after helper idle and was the source of
+the post-open reconcile burst. It now handles at most 16 photo families per
+piece, logs `recovery_piece` count/time and yields between pieces.
+
+One disposable profile was run with a read-only snapshot of the live database,
+empty isolated picture cache, and disabled settings writes/source cleanup.
+It changed to D:\Photos\Play_Raw before the target observations, then timed out
+waiting for disk completion. Its 405 ms picture and 2 ms already-known details
+figures belong to that smaller folder and are invalid for D:\Photos. No target
+timing passed; no second profile was run. Startup-navigation and telemetry
+corrections followed this run and remain unprofiled. See the module PRD for
+final fast-suite results and Steve's app acceptance work.
+
 ### Index-first folder opening (October 26, 2026)
 
 `POST /folder-stream` returns NDJSON. The backend first reads the `files` index
@@ -460,8 +502,8 @@ by path keyset: 64 physical rows for the first screen, then pages of 256.
 Cached marks, virtual copies, grades and membership are read per page, without
 source stat or settings reads. The page can sort, scroll and select the rows
 already received. It releases startup after the first rows; the connection
-continues for disk checks. The first visible rows stay stable until a picture
-is presented, and subsequent grid updates are coalesced.
+continues for disk checks. Grid updates are coalesced and repaint at the restored scroll position;
+row arrival does not depend on a picture being presented.
 
 Visible cells request `/folder-details` in groups of at most 32. Settings reads
 use 16-photo transactions and local document snapshots before picture work.
@@ -469,11 +511,12 @@ The old enclosing listing lock is gone. Visible `/metadata` acceptance also
 uses the index's short transaction and direct scoped membership reconciliation;
 it must never wait for helper upkeep while owning the marks lock.
 
-The helper `scan-page` command walks at most 64 photos per main-lane turn with
+The helper `scan-page` command walks at most 256 photos per main-lane turn with
 low queue priority. It also yields through unsupported files and tests the
 current cancellation token between directory entries. Other foreground jobs
 can run between pages. At most eight walkers retain directory iterators;
-closing a stream cancels its current job and closes its walker. Open-folder
+closing a stream cancels its current job and closes its walker. Hiding the
+Library while its folder stays open preserves the stream. Open-folder
 streams take over matching timed checks and overlapping pinned-folder index
 passes, so those do not produce a competing whole-tree listing.
 

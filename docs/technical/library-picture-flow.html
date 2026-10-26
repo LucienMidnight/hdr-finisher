@@ -171,6 +171,8 @@ Words follow the master PRD glossary.</p>
     <span class="bugtag">BUG</span> <span class="muted"><small>not working as designed</small></span></div>
 </div>
 
+<div class="note"><strong>October 26 large-folder follow-up:</strong> Every settled grid scroll records its visible range and picture-request count, including zero. Aborted cells retry and very tall folders use compressed scrollbar travel. Selection reads missing camera details on demand ahead of visible and background fill-in. The all-core background readers yield to pictures and Grade. The open folder’s disk check survives visits to Grade, uses low-priority 256-photo main-lane pages, and logs why it closes. Startup recovery yields after at most 16 photo families. Targets remain about 1 s for visible pictures, 0.3 s for selected camera details and roughly 50 s for D:\Photos disk checking. The single disposable profile changed folders before target observations and timed out; no D:\Photos acceptance timing was established.</div>
+
 <h3>The four workers</h3>
 <div class="tablewrap">
 <table>
@@ -248,7 +250,7 @@ Words follow the master PRD glossary.</p>
 
   <div class="num last">9</div>
   <div class="step helper"><div class="h">Background indexing</div>
-    <div class="d">Index lane walks pinned folders (D:\Photos: 155,879 files). 134,656 still need camera details, filled in slowly in the background.</div>
+    <div class="d">Index lane walks pinned folders (D:\Photos: 155,879 files). The October 26 app run had 116,190 pending camera-detail reads. Streamed folders now fill missing details in the background with all-core readers; selected and visible reads go first.</div>
     <div class="meta"><span class="cachetag">Index database</span></div></div>
 </div></div>
 
@@ -431,7 +433,7 @@ Words follow the master PRD glossary.</p>
 <tr><td><strong>Screen preview data</strong></td><td>Disk (app data)</td><td>2560 px scene data, float16, ungraded (plus detail preview data)</td><td>10 GB · <span class="full">full</span> (~one folder); idle warming stopped</td><td><span class="chip backend">Backend</span></td><td>Same as above</td></tr>
 <tr><td><strong>Saved-grade pictures</strong></td><td>Disk (app data)</td><td>Older stored finished pictures for edited photos</td><td>2 GB</td><td><span class="chip backend">Backend</span></td><td>Grade change</td></tr>
 <tr><td><strong>Camera preview</strong></td><td>Backend RAM; original inside RAW</td><td>The camera's own JPEG</td><td>64 MiB, oldest out first; baseline extraction 0.3–0.5 s, memory hits unmeasured</td><td><span class="chip backend">Backend</span></td><td>App close, file version change, eviction</td></tr>
-<tr><td><strong>Index database</strong></td><td>Disk (<code>library.sqlite3</code>)</td><td>Every photo in pinned folders, camera details, marks, albums</td><td>155,879 files; 134,656 still need camera details</td><td><span class="chip helper">Helper</span> reads, <span class="chip backend">Backend</span> writes</td><td>Rebuildable from settings files</td></tr>
+<tr><td><strong>Index database</strong></td><td>Disk (<code>library.sqlite3</code>)</td><td>Every photo in pinned folders, camera details, marks, albums</td><td>October 26 snapshot: 155,879 files; D:\Photos had 116,190 pending camera-detail reads</td><td><span class="chip helper">Helper</span> reads, <span class="chip backend">Backend</span> writes</td><td>Rebuildable from settings files</td></tr>
 <tr><td><strong>Settings files</strong></td><td>Beside each photo (<code>.hdrf</code>)</td><td>Grade, ratings, labels, tags</td><td>—</td><td><span class="chip backend">Backend</span> (the only writer)</td><td>Never deleted by the app</td></tr>
 <tr><td><strong>Denoise reuse</strong></td><td>Managed Library preview data on disk; bounded memory</td><td>Measurements keyed by source pixels, measured size, resampling geometry and version; shared HDR/SDR pixels reuse them, authored SDR stays separate</td><td>512 backend models; managed disk-cache budget; bounded GPU scratch</td><td><span class="chip gpu">Graphics card</span> measurement and reconstruction; CPU fallback</td><td>Cache eviction/clear, source/version or resampled-pixel change; survives restart and finishing-grade changes</td></tr>
 </table>

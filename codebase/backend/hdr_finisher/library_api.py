@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from concurrent.futures import CancelledError
 from typing import Literal
+from .cpu_budget import logical_cpus
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -25,6 +26,14 @@ from .library_index import LibraryIndex
 
 
 class StopwatchEvent(BaseModel):
+    range_start: int | None = Field(default=None, ge=0)
+    range_end: int | None = Field(default=None, ge=0)
+    total: int | None = Field(default=None, ge=0)
+    count: int | None = Field(default=None, ge=0)
+    picture_requests: int | None = Field(default=None, ge=0)
+    scroll_top: float | None = Field(default=None, ge=0)
+    active: bool | None = None
+    demand: Literal["selected", "visible", "background"] | None = None
     display_epoch: int | None = Field(default=None, ge=0)
     visible_thumbnails: int | None = Field(default=None, ge=0)
     stage: str = Field(max_length=64, pattern=r"^[a-z_]+$")
@@ -182,6 +191,10 @@ class PinsRequest(BaseModel):
 class MetadataRequest(BaseModel):
     paths: list[str] = Field(max_length=32)
     demand: Literal["selected", "visible", "background"] = "visible"
+
+
+class CameraDetailsRequest(MetadataRequest):
+    paths: list[str] = Field(max_length=max(32, logical_cpus() * 4))
 
 
 class PathsRequest(BaseModel):
@@ -959,7 +972,7 @@ def create_library_router(worker, browser, store=None):
         index.remember_facts(result['photos'], foreground=True)
 
     @router.post("/metadata")
-    async def metadata(command: MetadataRequest, request: Request):
+    async def metadata(command: CameraDetailsRequest, request: Request):
         started = time.perf_counter()
         background = command.demand == "background"
         result = await helper_result(request, "metadata", paths=list(dict.fromkeys(str(marks.source_path(p)) for p in command.paths)),
