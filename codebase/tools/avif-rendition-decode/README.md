@@ -27,3 +27,26 @@ Copy the resulting executable and matching libavif DLL into `bin/`.
 `test_native_avif_transport_preserves_reconstructed_samples_and_cpu_fallback`
 checks exact decoded samples against the ordinary bundled utility. Platforms
 without this helper continue to use that utility.
+
+## October 26 row-parallel reconstruction
+
+Before configuring the pinned libavif v1.4.1 checkout, run
+`python tools/avif-rendition-decode/parallel_gainmap.py path/to/libavif`.
+Configure it with `-DCMAKE_C_FLAGS="/DWIN32 /D_WINDOWS /openmp"` on MSVC,
+or the corresponding OpenMP compile/link flags on other platforms. Rebuild
+libavif and this helper, then copy the matching DLL and executable to `bin/`.
+The helper links OpenMP and requests all logical cores; an optional final
+`threads` argument (1 through the machine count) supports serial comparison.
+The Windows distribution includes Microsoft's vcomp140 runtime, already used
+by bundled LibRaw/rawpy. No installer is rebuilt by this batch.
+
+Only independent reconstruction rows are parallel. Gain-map scaling, chroma
+sampling, RGB/YUV quantization, primaries, transfer and headroom are unchanged.
+CLLI requests remain serial to preserve their floating-point sum order. The
+same DLL serves Grade/export imports too. The existing fallback utility remains
+available for unsupported ICC/transform/alpha or native errors. Backend logs
+report native decode/reconstruction timings and the fallback route.
+
+Still open: GPU reconstruction/transfer and avoiding full-resolution CPU RGB
+transport, including exact chroma/gain-map resampling and 10-bit YUV/16-bit RGB
+boundary qualification. No 1 s first-picture claim is made without an app trial.

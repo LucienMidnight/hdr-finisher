@@ -1348,7 +1348,8 @@ def adaptive_denoise_model(
                     raise HTTPException(409, "Stale geometry denoise request dropped.")
             except json.JSONDecodeError as exc:
                 raise HTTPException(400, "Invalid geometry signature.") from exc
-        # The live key includes source + grade; lane and edge distinguish the measured pixels.
+        # Finishing grades share noise measurements; source scene, lane, size,
+        # authored SDR choice and geometry distinguish the measured pixels.
         key = ("library", metadata["source_key"], kind.value, long_edge,
             metadata["adjustments"].get("sdr", {}).get("use_authored_base", True), json.dumps(geometry, sort_keys=True))
         def measure_library():

@@ -67,10 +67,10 @@ def main():
     routes = collections.defaultdict(list)
     stored = collections.defaultdict(list)
     for name, d in events(since):
-        if name in ("picture_camera_preview_ready", "page_picture_thumbnail_reused", "page_picture_thumbnail_reclaim", "helper_job_started", "helper_job_finished", "picture_helper_job_started", "picture_helper_job_finished", "page_picture_source_gpu_fallback", "page_picture_development_admitted", "picture_denoise_model", "page_picture_quick_draw_unavailable", "picture_rgb_decode", "picture_source_cpu_fallback"):
+        if name in ("picture_camera_preview_ready", "page_picture_thumbnail_reused", "page_picture_thumbnail_reclaim", "helper_job_started", "helper_job_finished", "picture_helper_job_started", "picture_helper_job_finished", "page_picture_source_gpu_fallback", "page_picture_source_cpu_fallback", "page_picture_development_admitted", "picture_denoise_model", "page_picture_quick_draw_unavailable", "picture_rgb_decode", "picture_source_cpu_fallback", "picture_avif_reconstruction", "picture_avif_native_stages"):
             if d.get("format"):
                 routes[(name, d["format"])].append(d.get("duration_ms", 0))
-            for field in ("queue_ms", "work_ms", "yield_ms"):
+            for field in ("queue_ms", "work_ms", "yield_ms", "decode_ms", "reconstruction_ms", "discarded_decode_ms"):
                 if field in d:
                     routes[(name, str(d.get("operation", "-")) + "/" + field)].append(d[field])
             routes[(name, d.get("route", "-"))].append(d.get("duration_ms", 0))
@@ -89,6 +89,11 @@ def main():
         short = name.replace("page_picture_", "").replace("page_", "")
         if name == "page_picture_development":
             developments.append(d.get("duration_ms") or 0)
+            for field in ("sensor_ms", "gpu_ms", "quantiles_ms", "handoff_ms"):
+                if d.get(field) is not None:
+                    routes[(name, field)].append(d[field])
+            for field, value in (d.get("gpu_stages_ms") or {}).items():
+                routes[(name, "gpu/" + field)].append(value)
         if d.get("view") != "fullscreen":
             continue
         if name == "page_picture_review_outcome":

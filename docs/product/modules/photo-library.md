@@ -2,6 +2,48 @@
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 batch verification (final).** Fast suites ran once at the end:
+JavaScript 631 passed / 2 previously documented failures; Python 2588 passed /
+3 skipped / 3 failures. One Python failure was this batch's intentionally
+changed model-cache policy: its old fixture omitted source identity and
+expected finishing grades not to share a model. Updated the behavioural check
+to verify grade reuse while separating source scene, HDR/SDR, size, geometry
+and authored-SDR choice, and preserving stale-request guards; that one test
+then passed (1.31 s). No full-suite rerun. Native AVIF serial/parallel samples
+and utility fallback equality passed; serial/all-core noise-model equality
+passed. The single shared Denoise GPU check passed, 0% beyond half-float
+allowance (worst 0.44x allowance). No output/ceiling arithmetic changed.
+The updated summarizer read Steve's existing log successfully, read-only;
+its historical timings are not evidence of the new code's speed.
+
+Remaining unrelated fast failures, already recorded before this batch:
+- JavaScript library-scenes: selected development-ahead CPU fallback reports decoder failed.
+- JavaScript library-single-ready: its fixture lacks HDRLibraryScreenPreviews.
+- Python test_library_rgb publication guard: its SourceReference fixture lacks luminance.
+- Python test_retouch_integration: its capture-cache mock lacks defer_store.
+
+The chart now describes the committed routes and labels all timings as
+historical baselines. App acceptance in both HDR and SDR is still required:
+return-to-grid retention, folder scan <=0.5 s, selected RAW ~3 s, rapid jumps
+without blanks, Denoise Fit <=0.5 s and cold non-RAW sharp draws <=1 s.
+A cold graded Denoise jump can still lack a quick draw. Full GPU AVIF,
+Denoise reconstruction optimization and avoiding full-resolution decoder
+transport remain open; this batch does not claim those speed targets passed.
+
+**October 26 batch, Part 5 (app trial pending; 1 s target open).** The bundled
+libavif v1.4.1 reconstruction loop now processes independent rows on multiple
+cores. The native helper requests all cores for decode and reconstruction,
+retains the exact 10-bit YUV/16-bit RGB boundary, and reports both durations.
+CLLI requests stay serial to preserve summation order. Grade/export imports
+also use the rebuilt DLL; per-pixel colour arithmetic is unchanged. The final
+fast suite includes native serial/parallel byte equality and the existing
+comparison with the ordinary utility. No per-part GPU driver or profile.
+The reproducible narrow patch and build instructions live with the native helper.
+Full GPU reconstruction is not built. Still needed: GPU gain-map/chroma
+resampling, colour/transfer reconstruction, exact quantization, guarded direct
+GPU handoff and perceptual/ceiling qualification. CPU full-resolution decode,
+map scaling and transport remain; timings must come from Steve's app try.
+
 **October 26 batch, Part 4 (app trial pending; 1 s target open).** TIFF strips/
 tiles and JPEG XL decode explicitly request all logical CPU cores. HEIC contexts
 also use all cores instead of pillow-heif's four-thread default. These thread
@@ -10,7 +52,7 @@ unchanged. Library HEIC auxiliary maps now use Grade's existing reconstruction,
 then GPU colour preparation, reduction and direct drawing, retaining authored
 SDR. Unknown auxiliaries retain Grade's existing unused-map policy; unresolved primaries remain
 a CPU fallback. Decoder durations, format, GPU handoff and fallback reasons are
-summarized. No per-part driver/profile; final fast checks deferred. Cold-time
+summarized. No per-part driver/profile; final fast checks recorded above. Cold-time
 claims require Steve's try; full-resolution CPU decode/transport remain costs.
 
 **October 26 batch, Part 3 (app trial pending; 0.5 s target still open).**
@@ -24,7 +66,7 @@ a cold graded jump without a quick draw; exact finished-thumbnail preparation
 and faster new model estimation remain open. GPU reconstruction's 32 passes
 are unchanged. Grade/Proof/export keep the default worker partition and output.
 The one focused GPU check, denoise-adaptive-parity, passed (0% beyond the
-half-float allowance); fast checks are deferred. A fast behavioural assertion
+half-float allowance); final fast results are recorded above. A fast behavioural assertion
 compares serial and parallel models exactly. No brightness limit changed.
 
 **October 26 batch tolerance proposed before Part 3 edits.** Finished SDR:
@@ -46,7 +88,7 @@ The summary reports helper queue/work/yield times and GPU admission routes.
 The one blank outcome was DSC07343, abandoned after 222 ms: thumbnail-pool miss,
 150 ms cache check, then GPU admission wait, not a failed decode. Pool retention
 and exclusive preemption address those causes; immediate pixels on every rapid
-jump remain an app acceptance item. Fast checks deferred; no GPU run.
+jump remain an app acceptance item. Final fast results above; no per-part GPU run.
 
 **October 26 batch, Part 1 (app trial pending).** Finished thumbnails from all
 completed canvas routes survive Single/fullscreen transitions in the bounded
@@ -54,7 +96,7 @@ recent thumbnail pool; memory reclamation removes only as many as needed.
 Grid camera previews now obey the same no-thumbnail/no-grade guard as quick
 draws. Camera previews are retained in 64 MiB RAM, by exact file version.
 Logs distinguish extraction, memory hits, thumbnail reuse and reclamation;
-the summary reports each. Fast checks deferred to the end; no GPU driver run.
+the summary reports each. Final fast results above; no per-part GPU driver run.
 
 **Batch working agreement (Steve, October 26).** Five ordered parts, each
 committed locally, without intermediate stops. Run fast checks once at the
@@ -220,15 +262,19 @@ Finished briefs are in `docs/technical/archive/briefs/`
   draw; the target for cold non-RAW photos is a sharp draw within 1 s
   (Steve, October 26).
 
-**Next, in order.** Steve confirms each before it starts.
+**Next work.** The October 26 five-part batch is authorized without intermediate stops; later work is separate.
 
 1. Done: stored JPEG XL screen previews (a8540f8; SDR tried by Steve,
    sharp draw from a stored preview about 95-265 ms, mostly reading the
    file; HDR not yet tried) and the startup fix (84f1166, 64482d8; confirmed
    by Steve).
-2. Denoise speed-up, as its own task.
-3. HEIC and JPEG XL CPU-route speed.
-4. AVIF gain-map reconstruction on the GPU (estimated 3–5 days).
+2. Denoise: all-core exact model estimation and reuse built in this batch;
+   quick-draw misses no longer wait. The 0.5 s sharp-draw target and GPU
+   reconstruction optimization remain open.
+3. HEIC/JPEG XL/TIFF: all-core decode and eligible HEIC GPU preparation built;
+   the 1 s cold sharp-draw target needs Steve's trial.
+4. AVIF: native parallel CPU reconstruction built; full GPU reconstruction
+   remains open (previous estimate 3–5 days).
 5. Build previews command, protected prepared set and space checks.
 6. Detail (100%) previews, last.
 
@@ -1070,6 +1116,14 @@ far less on screen.
 
 ## 3. Decisions in force
 
+| Date | Batch decision | Status |
+| --- | --- | --- |
+| October 26, 2026 | Five ordered local commits; one final fast run; focused Denoise parity only; Steve tests HDR/SDR and Claude summarizes backend.log. Screen wins over logs. | In force |
+| October 26, 2026 | Finished thumbnails before camera previews; bounded file-version camera-preview RAM reuse. Exclusive GPU development, folder scans admitted independently. | Built; app trial pending |
+| October 26, 2026 | Exact all-core Library noise models; no approximate Denoise quick draw. SDR mean Delta E 2000 <1/p99 <3; HDR mean Delta E ITP <1/p99 <3; exact Highlight compression ceiling. | Proposed tolerance recorded before edits; output arithmetic unchanged |
+| October 26, 2026 | All-core codec decode; Library HEIC reconstruction followed by GPU colour preparation. Parallel libavif rows before a full GPU route. | Built; timing targets remain open |
+
+
 The detailed record of the October 9 to 14 decisions is in the archived
 Library PRD, section 4. These later decisions replace older ones:
 
@@ -1651,14 +1705,16 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 | Item | Evidence | Status |
 | --- | --- | --- |
 | **App startup** (after the 155k-photo D:\Photos index) | October 26 14:17: helper spawn 4.0 s, backend ready 8.7 s, page ready 9.8 s, thumbnails ~12 s from Python start. One disposable 155,879-file launch after removing blocking sweeps: 2.45 s / 2.54 s / 3.99 s / 12.14 s respectively. It also exposed 4.0 s before Python started. | Cache accounting and temporary-file cleanup deferred with foreground yielding; codec probing delayed; helper startup overlaps the page. Final shell change overlaps Python with the Starting window (not re-profiled). Targets remain open: folder listing, 1.36 s initial thumbnail checks and a 3.43 s first GPU queue wait still delay thumbnails. Steve's restart 15:55: page ready 2.4 s, first thumbnail 3.6 s from app launch; felt super fast. **Done.** |
+| **Back to grid after Single/fullscreen** | October 26: all 14 exits used camera previews; finished-thumbnail delay 0.4–4.2 s or over 5 s. | Finished routes now retained/reused by current grade and HDR/SDR mode; camera previews retained in 64 MiB RAM. Bounded-memory eviction can still require drawing again. App acceptance pending. |
+| **Folder opening during RAW development** | October 26 scans queued 16–22 s for about 40 ms work; stored writes queued 24–29 s. | Main scans admitted independently of source-busy/picture slots; stored writes no longer blocked by GPU source-busy. End-to-end 0.5 s target remains open (indexed listing alone was 0.5–0.66 s). |
 | **Stored screen preview sharp draw** | Disposable real-photo restart: 226 ms first stored draw, 115 ms next SDR draw, 162 ms HDR; scene route 326 ms with capture disabled for the baseline. No scene dependency on stored hits. | Fullscreen and Single Fit built. ~100 ms first-use/HDR target still open; Steve's blink test and 200–300-photo workload pending. Build previews/protected set/disk-space checks deferred. |
-| **Cold first picture for non-RAW formats** (core workflow, see decisions; target sharp draw within 1 s, Steve October 26) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed and AVIF reconstruction remain open; stored screen previews now serve returning Fit pictures. OS cache warm; Steve's normal-folder try remains separate. |
-| **Cold RAW development** (badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |
-| **Denoise in Library drawing.** Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: thumbnail analysis 250–530 ms per draw even after reuse; screen-preview measurements already cost 1.6 s in the 18:45 test. Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Reuse fix in Part 0c; exact estimator threading and selected-first measurement scheduling in Part 0f. Reconstruction dispatch optimization remains open; Steve's timing try pending. |
+| **Cold first picture for non-RAW formats** (October 26: all-core TIFF/HEIC/JXL and auxiliary HEIC GPU preparation built; app timing pending; core workflow, see decisions; target sharp draw within 1 s, Steve October 26) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed and AVIF reconstruction remain open; stored screen previews now serve returning Fit pictures. OS cache warm; Steve's normal-folder try remains separate. |
+| **Cold RAW development** (October 26: exclusive GPU developments, develop-ahead after selected sharp draw; app timing pending; badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |
+| **Denoise in Library drawing.** October 26 exact all-core model scheduling and source-key reuse built; quick-draw misses skip Denoise preparation. 0.5 s target and reconstruction optimization remain open. Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: thumbnail analysis 250–530 ms per draw even after reuse; screen-preview measurements already cost 1.6 s in the 18:45 test. Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Reuse fix in Part 0c; exact estimator threading and selected-first measurement scheduling in Part 0f. Reconstruction dispatch optimization remains open; Steve's timing try pending. |
 | Film grain and halation in Library drawing | Present in all slow graded photos (Portra 400, grain 24, halation). Not timed apart from Denoise. | Suspected; measure. |
 | Sharpening | Present on one slow photo (DSC07178). No timing. | Unmeasured; check only. |
 | Stored-scene pixel fetch | 65–150 ms per 2560 scene after Part 0, down from 140–800 ms. | Measured; improved. |
-| AVIF and Ultra HDR source decoding | Part B local copies: Ultra HDR first picture 1.87 s, CPU boundary 771 ms vs memory probe 92 ms; large gain-map AVIF 12.70 s, CPU boundary 8.75 s vs memory probe 6.73 s. Small gain-map and direct AVIF measured below. | Remeasured offline at 640 px. Large AVIF gain reconstruction remains slow despite memory input/all-thread requests. Live USB/2560 fullscreen trial still pending; no decoder integrated. |
+| AVIF and Ultra HDR source decoding (October 26: row-parallel native AVIF reconstruction built; GPU route and 1 s target open) | Part B local copies: Ultra HDR first picture 1.87 s, CPU boundary 771 ms vs memory probe 92 ms; large gain-map AVIF 12.70 s, CPU boundary 8.75 s vs memory probe 6.73 s. Small gain-map and direct AVIF measured below. | Remeasured offline at 640 px. Large AVIF gain reconstruction remains slow despite memory input/all-thread requests. October 26 batch integrates native row-parallel reconstruction with exact transport; full GPU reconstruction and live USB/2560 fullscreen timings remain open. |
 | Cold RAW development | Previous GPU two-size preparation 1.9–2.3 s per 42 MP RAW; CPU fallback 8–10 s. Part A local-copy LibRaw decode: 230 → 193 ms; unpack 78 → 78 ms; exact transport bytes. | CPU decode remeasured; USB read, GPU development and cache-write timings await the 30-photo app trial. |
 | Highlight reconstruction | 42 MP GPU about 3.2 s against a 1 s target. | Measured (October 24). |
 | Rating save | About 110 ms in the background: 58 ms SQLite commits, 32 ms recovery flush. Screen no longer waits. Cutting it further trades durability, which is Steve's decision. | Measured; option pending. |

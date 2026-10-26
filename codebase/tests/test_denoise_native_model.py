@@ -209,34 +209,47 @@ def test_intermediate_models_are_per_geometry_size_and_source(monkeypatch) -> No
     assert request(kind=PreviewKind.SDR) != sdr
 
 
-def test_library_model_reuse_skips_scene_loading_and_never_crosses_grade_or_lane(monkeypatch):
+def test_library_model_reuse_skips_loading_across_finishing_grades_but_keeps_pixel_identity(monkeypatch):
     from hdr_finisher import main, library_live
     from fastapi import HTTPException
     import json
 
-    geometry = GeometryAdjustments().model_dump(mode="json")
-    monkeypatch.setattr(library_live, "metadata", lambda identity: {"adjustments": {"shared": {"geometry": geometry}}})
+    adjustments = AdjustmentState()
+    def metadata(identity):
+        return {"source_key": "other-scene" if identity == "live-other-source" else "reuse-scene",
+                "adjustments": adjustments.model_dump(mode="json")}
+    monkeypatch.setattr(library_live, "metadata", metadata)
+    monkeypatch.setattr(main, "_DENOISE_MODEL_CACHE", {})
     loads = []
-    def measure(identity, kind, edge, revision, signature, cached=True):
-        loads.append((identity, kind, edge))
-        assert not cached
-        return {"measurement": len(loads)}
-    monkeypatch.setattr(main, "_adaptive_denoise_model", measure)
+    frame = SimpleNamespace(adjustments=adjustments, render_cache=SessionRenderCache(_noisy_source(80, 80), None))
+    def session(identity):
+        loads.append(identity)
+        return frame
+    monkeypatch.setattr(library_live, "session", session)
+    monkeypatch.setattr(da, "estimate_adaptive_model", lambda image, **kwargs:
+        SimpleNamespace(as_dict=lambda: {"measurement": len(loads)}))
     def request(identity="live-reuse-grade1", kind=PreviewKind.HDR, edge=2560, revision=0, signature=None):
         return main.adaptive_denoise_model(identity, kind, edge, revision, signature)
     first = request()
     assert request() == first and len(loads) == 1
-    assert request("live-reuse-grade2") != first
+    # Finishing grades do not change the pixels measured for this noise model.
+    assert request("live-reuse-grade2") == first and len(loads) == 1
+    assert request("live-other-source") != first
     assert request(kind=PreviewKind.SDR) != first
     assert request(edge=640) != first
     assert len(loads) == 4
+    adjustments.sdr.use_authored_base = False
+    assert request(kind=PreviewKind.SDR) != first
+    adjustments.shared.geometry = GeometryAdjustments(straighten_angle=3)
+    assert request() != first
+    assert len(loads) == 6
     with pytest.raises(HTTPException) as stale:
         request(revision=1)
     assert stale.value.status_code == 409
     with pytest.raises(HTTPException) as stale:
         request(signature=json.dumps({"straighten_angle": 5}))
     assert stale.value.status_code == 409
-    assert len(loads) == 4
+    assert len(loads) == 6
 
 
 def test_source_epoch_can_be_checked_by_resize_workers_under_cache_lock() -> None:

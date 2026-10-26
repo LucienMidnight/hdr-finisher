@@ -344,13 +344,20 @@ def test_apple_gainmap_aux_selection_ignores_other_auxiliary_images() -> None:
     assert _select_apple_gainmap_aux_type({}) is None
 
 
-def test_native_avif_transport_preserves_reconstructed_samples_and_cpu_fallback(monkeypatch):
+def test_native_avif_transport_preserves_reconstructed_samples_and_cpu_fallback(monkeypatch, tmp_path):
     from hdr_finisher import gainmap_decoders as gain
     source=Path(__file__).resolve().parents[1]/"samples/hdr_reference.avif"
     resolve=gain.resolve_binary
     if resolve("hdrf-avif-decode") is None:
         import pytest
         pytest.skip("Native AVIF handoff is not built on this platform")
+    import subprocess
+    one, many = tmp_path/"serial.rgb16", tmp_path/"parallel.rgb16"
+    info = gain.inspect_avif(source)["gain_map"]
+    headroom = max(info["base_headroom"], info["alternate_headroom"])
+    for target, threads in ((one, "1"), (many, "12")):
+        subprocess.run([str(resolve("hdrf-avif-decode")), str(source), str(target), str(headroom), threads], check=True, capture_output=True)
+    assert one.read_bytes() == many.read_bytes()
     hdr, sdr, metadata=gain.decode_avif(source,encoded_samples=True)
     monkeypatch.setattr(gain,"resolve_binary",lambda name: None if name=="hdrf-avif-decode" else resolve(name))
     fallback_hdr, fallback_sdr, fallback_metadata=gain.decode_avif(source,encoded_samples=True)

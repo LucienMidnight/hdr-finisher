@@ -5,3 +5,6 @@ add_executable(hdrf-avif-decode decode.cpp)
 target_compile_features(hdrf-avif-decode PRIVATE cxx_std_17)
 target_include_directories(hdrf-avif-decode PRIVATE "${AVIF_SOURCE}/include")
 target_link_libraries(hdrf-avif-decode PRIVATE "${AVIF_IMPORT_LIBRARY}")
+
+find_package(OpenMP REQUIRED)
+target_link_libraries(hdrf-avif-decode PRIVATE OpenMP::OpenMP_CXX)

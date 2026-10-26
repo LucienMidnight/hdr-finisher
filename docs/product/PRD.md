@@ -6,6 +6,11 @@
   in [archive](archive/README.md).
 - **Last status check:** October 18, 2026, against the code on
   `film-look-rebuild`. A read-only audit compared every PRD with the code.
+- **Library batch, October 26:** Steve tests HDR and SDR in the app; Claude
+  traces backend.log with summarize_library_log.py. Logs record routes and
+  stage durations; the screen wins when they disagree. Five local parts, one
+  final fast run, only the focused shared-Denoise GPU check. Built work,
+  tolerance and remaining timing targets are in the [Library status](modules/photo-library.md).
 
 This page describes what HDR Finisher is, the ideas that shape it, and how
 it is divided into modules. Each module has its own PRD, which holds that
@@ -229,9 +234,9 @@ the user sees happen. A step uses a size; the two are never interchangeable.
 
 | Term | Meaning |
 | --- | --- |
-| Camera preview | The JPEG embedded in a camera RAW file. Not HDRF's grade. Shown first in the grid and filmstrip. In Single and fullscreen it may be the quick draw only for an **unedited** photo with no thumbnail yet (Steve, October 25; amends the October 14 "never" rule). |
+| Camera preview | The JPEG embedded in a camera RAW file. Not HDRF's grade. Used in the grid and filmstrip only without an eligible finished thumbnail; extracted previews are retained in bounded RAM (October 26). In Single and fullscreen it may be the quick draw only for an **unedited** photo with no thumbnail yet (Steve, October 25; amends the October 14 "never" rule). |
 | Thumbnail | 640 px picture with the current grade and HDR/SDR mode. Used in the grid and filmstrip. |
-| Screen preview | Picture sized to the display (2560 px long edge today), with the current grade and HDR/SDR mode. Used in Single, fullscreen and Compare at Fit. A *stored screen preview* is one saved to disk (planned). |
+| Screen preview | Picture sized to the display (2560 px long edge today), with the current grade and HDR/SDR mode. Used in Single, fullscreen and Compare at Fit. A *stored screen preview* is one saved to disk (built for Single/fullscreen Fit, October 26; Build previews remains planned). |
 | Detail preview | Full-resolution picture for 100% focus checking. Today it is developed for the selected photo only; stored detail previews are later work. |
 
 **Fullscreen steps**

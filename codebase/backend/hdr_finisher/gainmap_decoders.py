@@ -329,12 +329,20 @@ def _decode_avif_gain_map(
         # The native handoff preserves the same libavif gain-map math and
         # 10-bit YUV/16-bit RGB boundary, avoiding a compressed PNG round trip.
         encoded_hdr = None
+        reconstruction_route = "serial-utility"
         native = resolve_binary("hdrf-avif-decode")
         if native is not None:
             raw_path = temp_dir / "hdr.rgb16"
             try:
                 decoded = _run([str(native), str(path), str(raw_path), _format_float(hdr_headroom)], cancelled=cancelled)
                 dimensions = json.loads(decoded.stdout)
+                reconstruction_route = "native-parallel-rows"
+                from .library_diagnostics import log
+                match = re.search(r"threads=(\d+) decode_ms=([\d.]+) reconstruction_ms=([\d.]+)", decoded.stderr)
+                if match:
+                    log("picture_avif_native_stages", path=str(path), route=reconstruction_route,
+                        workers=int(match[1]), decode_ms=float(match[2]), reconstruction_ms=float(match[3]),
+                        duration_ms=float(match[2])+float(match[3]))
                 width, height = int(dimensions["width"]), int(dimensions["height"])
                 if width <= 0 or height <= 0 or raw_path.stat().st_size != width * height * 6:
                     raise ValueError("Incomplete native AVIF rendition")
@@ -344,6 +352,7 @@ def _decode_avif_gain_map(
                 if cancelled is not None and cancelled():
                     raise GainMapDecodeError("Import cancelled")
         if encoded_hdr is None:
+            reconstruction_route = "serial-utility"
             _run(
                 [
                     str(utility),
@@ -361,6 +370,9 @@ def _decode_avif_gain_map(
             )
             encoded_hdr = _decode_png_pixels(hdr_png)
         timings["hdr_reconstruction"] = round((perf_counter() - phase_started) * 1000.0, 3)
+        from .library_diagnostics import log
+        log("picture_avif_reconstruction", path=str(path), route=reconstruction_route if encoded_hdr is not None else "serial-utility",
+            duration_ms=timings["hdr_reconstruction"])
 
         if progress:
             progress("sdr_decode", "Decoding the AVIF SDR base rendition")

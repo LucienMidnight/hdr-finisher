@@ -9,6 +9,10 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <chrono>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 static void check(avifResult r) {
     if(r!=AVIF_RESULT_OK)throw std::runtime_error(avifResultToString(r));
 }
@@ -49,9 +53,15 @@ static void compatibleHDR(const std::filesystem::path& path, const avifImage* ba
     avifImageDestroy(target);
 }
 int main(int argc,char** argv) try {
-    if(argc!=4)throw std::runtime_error("Usage: hdrf-avif-decode input.avif output.rgb16 headroom");
+    if(argc!=4 && argc!=5)throw std::runtime_error("Usage: hdrf-avif-decode input.avif output.rgb16 headroom [threads]");
     avifDecoder* decoder=avifDecoderCreate();
-    decoder->maxThreads=std::max(1u,std::thread::hardware_concurrency()/2);
+    const int cores = std::max(1u,std::thread::hardware_concurrency());
+    const int threads = argc == 5 ? std::max(1,std::min(cores,std::stoi(argv[4]))) : cores;
+    decoder->maxThreads=threads;
+#ifdef _OPENMP
+    omp_set_num_threads(threads);
+#endif
+    const auto start=std::chrono::steady_clock::now();
     decoder->imageContentToDecode=AVIF_IMAGE_CONTENT_ALL;
     check(avifDecoderSetIOFile(decoder,argv[1]));
     check(avifDecoderParse(decoder));
@@ -60,7 +70,12 @@ int main(int argc,char** argv) try {
     if(!base->gainMap || !base->gainMap->image || base->icc.size || base->gainMap->altICC.size ||
        base->transformFlags || base->alphaPlane)
         throw std::runtime_error("This AVIF retains the ordinary rendition decoder");
+    const auto decoded=std::chrono::steady_clock::now();
     compatibleHDR(argv[2],base,std::stof(argv[3]));
+    const auto finished=std::chrono::steady_clock::now();
+    std::cerr<<"HDRF AVIF rows threads="<<threads<<" decode_ms="
+      <<std::chrono::duration<double,std::milli>(decoded-start).count()
+      <<" reconstruction_ms="<<std::chrono::duration<double,std::milli>(finished-decoded).count()<<'\n';
     std::cout<<"{\"width\":"<<base->width<<",\"height\":"<<base->height<<"}";
     avifDecoderDestroy(decoder);
     return 0;
