@@ -43,6 +43,7 @@ The final small encoded fixture passes the agreed Denoise limits: HDR mean
 The small encoded fixture additionally reports the older, stricter delivery
 p99.9 check separately; its HDR p99.9 was 3.38 against 3.0 (mean 0.78). That
 limit remains unchanged; this is not a claim of a full delivery release pass.
+October 26 follow-up: the matched Denoise-enabled fixture on pre-batch cf2c975 (CPU-measured model, isolated worktree) also gives HDR p99.9 3.377 / mean 0.780; this predates GPU measurement. No output or limit changed.
 
 **Panel alignment (October 24, 2026).** Proof and Export rails share the preview-header top and divider height. Both sides remain adjustable; the Export center overlay leaves the two resize handles uncovered, including after Metadata was collapsed in Grade.
 
