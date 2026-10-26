@@ -446,6 +446,8 @@ from .delivery import create_delivery_router
 app.include_router(create_delivery_router())
 from .gpu_delivery import create_gpu_delivery_router
 app.include_router(create_gpu_delivery_router())
+from .denoise_measurement import create_router as create_denoise_measurement_router
+app.include_router(create_denoise_measurement_router(store))
 import_jobs = ImportJobManager(store, media_browser_store, workers=1)
 atexit.register(import_jobs.close)
 external_proof_tokens: dict[str, tuple[str, float]] = {}

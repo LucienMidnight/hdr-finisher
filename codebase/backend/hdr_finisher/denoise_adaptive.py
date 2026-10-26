@@ -514,21 +514,31 @@ class _WindowSource:
 
 
 def estimate_adaptive_model(image: np.ndarray, *, workers=None) -> AdaptiveNoiseModel:
+    from time import perf_counter
+    from .library_diagnostics import log
+    started = perf_counter()
     token = _ESTIMATION_WORKERS.set(workers)
     try:
         return _estimate(np.asarray(image, dtype=np.float32))
     finally:
         _ESTIMATION_WORKERS.reset(token)
+        log("denoise_measurement", route="CPU fallback", width=image.shape[1], height=image.shape[0],
+            duration_ms=(perf_counter()-started)*1000)
 
 
 def estimate_adaptive_model_from_windows(height: int, width: int, read, *, workers=None) -> AdaptiveNoiseModel:
     """``estimate_adaptive_model`` of a ``height`` x ``width`` frame that is not
     built: ``read(y0, x0, y1, x1)`` returns that rectangle of it."""
+    from time import perf_counter
+    from .library_diagnostics import log
+    started = perf_counter()
     token = _ESTIMATION_WORKERS.set(workers)
     try:
         return _estimate(_WindowSource(height, width, read))
     finally:
         _ESTIMATION_WORKERS.reset(token)
+        log("denoise_measurement", route="CPU fallback", width=width, height=height,
+            duration_ms=(perf_counter()-started)*1000)
 
 
 def _estimate(source) -> AdaptiveNoiseModel:

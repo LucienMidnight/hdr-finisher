@@ -4,14 +4,11 @@ window.clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, 
 // No pixel arrays or GPU resources are retained by this 16-entry LRU.
 const libraryDenoiseModels = new Map();
 const libraryDenoiseMeasurements = HDRLibrarySceneScheduler.create(1);
-async function libraryDenoiseModel(url, meta = {}) {
+async function libraryDenoiseModel(url, meta = {}, measure) {
   const priority = typeof meta.draw_priority === 'function' ? meta.draw_priority() : meta.draw_priority ?? 5;
   let model = libraryDenoiseModels.get(url);
   if (model) { libraryDenoiseMeasurements.promote(meta.path,priority); libraryDenoiseModels.delete(url); libraryDenoiseModels.set(url,model); return model; }
-  const measure = () => fetch(url).then(async response => {
-    if (!response.ok) throw Error(`Denoise noise model request failed (${response.status}).`);
-    return response.json();
-  });
+  if (!measure) throw Error("Denoise measurement requires the picture renderer.");
   // Keep quick draws independent. Only one large measurement runs at a time;
   // a selected photo moves ahead of queued neighbour measurements.
   model = (meta.edge > 640 ? libraryDenoiseMeasurements.submit(url,measure,undefined,priority,{path:meta.path}) : measure()).catch(error => {
@@ -25,7 +22,7 @@ async function libraryDenoiseModel(url, meta = {}) {
 class HDRLibraryGPU extends HDRWebGPUPreview {
   async requestPreviewDevice() { return (await HDRLibraryGpuRaw.shared.gpu()).device; }
   async fetchDenoiseModel(url) {
-    return this.libraryMeta?.fullscreen ? libraryDenoiseModel(url,this.libraryMeta) : super.fetchDenoiseModel(url);
+    return this.libraryMeta?.fullscreen ? libraryDenoiseModel(url,this.libraryMeta,()=>super.fetchDenoiseModel(url)) : super.fetchDenoiseModel(url);
   }
   async reportDeliveryActivity(active) {
     // Every Library rendition is background work, including initialization.
@@ -329,7 +326,8 @@ const HDRLibraryPictureFactory = (quick = false) => {
     const geometry = JSON.stringify(meta.adjustments?.shared?.geometry || {});
     const url = `/api/session/${meta.key}/denoise-model/${lane}?long_edge=${Math.max(256,meta.edge)}&edit_revision=0&geometry_signature=${encodeURIComponent(geometry)}`;
     const cached = libraryDenoiseModels.has(url);
-    await libraryDenoiseModel(url,meta);
+    const gpu = await initialize();
+    await libraryDenoiseModel(url,meta,()=>HDRWebGPUPreview.prototype.fetchDenoiseModel.call(gpu,url));
     window.HDRLibraryTrace?.mark(typeof trace === "function" ? trace() : trace,"picture_denoise_prepare",started,{...window.HDRLibraryPictureLog?.(meta),key:meta.key,cache_hit:cached});
   }
   return Object.freeze({ show, initialize, prepare, prepareDenoise, readyMemory,

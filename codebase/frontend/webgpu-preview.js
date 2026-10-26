@@ -5460,10 +5460,8 @@
       const key = `${sessionId}:${lane}:${native}`;
       if (this.denoiseModelWarm?.key === key) return this.denoiseModelWarm.promise;
       const warm = { key, promise: null };
-      warm.promise = fetch(`/api/session/${sessionId}/denoise-model/${lane}?long_edge=${native}`)
-        .then(async (response) => {
-          if (!response.ok) throw new Error(`Denoise warm-up failed (${response.status}).`);
-          await response.json();
+      warm.promise = this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?long_edge=${native}`)
+        .then(async () => {
           return true;
         }).catch(() => {
           // Failed warm-ups may be retried; they must not poison this photo.
@@ -5482,9 +5480,33 @@
      * evidence, or the frame, at all.
      */
     async fetchDenoiseModel(url) {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Denoise noise model request failed (${response.status}).`);
-      return response.json();
+      const measurementURL = url.replace("/denoise-model/", "/denoise-measurement/");
+      const started = performance.now();
+      const cached = await fetch(measurementURL);
+      if (cached.status === 200) return cached.json();
+      if (!cached.ok) throw new Error(`Denoise measurement request failed (${cached.status}).`);
+      try {
+        if (!this.available || this.deviceLost || this.adapterInfo?.fallback) throw Error("No usable graphics card.");
+        const response = await fetch(measurementURL + (measurementURL.includes("?") ? "&" : "?") + "source=true");
+        if (!response.ok) throw Error(`Denoise source request failed (${response.status}).`);
+        if (response.headers.get("content-type")?.includes("application/json")) return response.json();
+        const body = await response.arrayBuffer(), length = new DataView(body).getUint32(0,true);
+        const description = JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,length)));
+        const pixels = new Float32Array(body,4+length);
+        const snapshot = this.resourceMemorySnapshot();
+        const budget = Math.max(0,this.memoryBudgetBytes() - snapshot.totals.peakLogicalBytes);
+        const result = await HDRDenoiseMeasurement.measure(this.device,description,pixels,budget);
+        const stored = await fetch(measurementURL,{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({...result,key:description.key,width:description.source_width,height:description.source_height,
+            gpu_ms:result.duration_ms,duration_ms:performance.now()-started})});
+        if (!stored.ok) throw Error(`Denoise measurement publication failed (${stored.status}).`);
+        return stored.json();
+      } catch (error) {
+        if (/request failed|publication failed|source request/.test(error.message)) throw error;
+        const response = await fetch(url + (url.includes("?") ? "&" : "?") + "fallback_reason=" + encodeURIComponent(error.message));
+        if (!response.ok) throw new Error(`Denoise CPU fallback failed (${response.status}).`);
+        return response.json();
+      }
     }
 
     async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls) {

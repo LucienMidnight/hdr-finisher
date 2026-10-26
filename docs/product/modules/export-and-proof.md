@@ -1,5 +1,24 @@
 # Module PRD: Export and Proof
 
+## October 26: GPU Denoise measurement (qualification pending)
+
+GPU pixel filters, per-block noise statistics and sampled clumping measurement
+are implemented for the shared renderer. The host fits only the compact
+statistics. Source sampling reads at most 1 MP without resizing. The existing
+CPU estimator remains the fallback. No reconstruction or ceiling arithmetic
+changes. Final fast checks and focused GPU qualification run after this batch;
+speed and finished-pixel acceptance are not claimed yet.
+
+Proposed before implementation: compare finished denoised SDR pixels with the
+current CPU-measured result using mean Delta E 2000 <1 and p99 <3; finished HDR
+using mean Delta E ITP <1 and p99 <3. Typical changes stay below visibility,
+with a bounded high percentile and no per-pixel colour maximum. The Highlight
+compression target remains an exact ceiling, allowing only encoder rounding.
+Steve allows approximate noise measurement and differences between GPU and CPU;
+preview and export must agree within this tolerance. Preserve the Denoise look.
+Timing targets: thumbnail preparation about 50 ms and uncached Fit sharp draw
+about 0.5 s, with 5% run-to-run allowance. Measure Grade on a 42 MP RAW and export.
+
 **Panel alignment (October 24, 2026).** Proof and Export rails share the preview-header top and divider height. Both sides remain adjustable; the Export center overlay leaves the two resize handles uncovered, including after Metadata was collapsed in Grade.
 
 - **Owner:** Steve
