@@ -57,6 +57,15 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 viewport batch, Part 1.** Intermediate scroll positions no longer
+start picture work. Settling requests only the visible cells; finished cells
+remain cached one screen beyond either edge. Leaving cells abort shared source
+work instead of allowing it to finish off screen. Settings hydration cancels
+when its cells leave and adopts the new identity before repaint, avoiding a
+second request for the same cell. Stream paints restore scroll before drawing.
+Validation: deferred to the single final profile and fast suites.
+
+
 **October 26 follow-up final verification.** Fast suites ran once: JavaScript
 632 passed / 2 failed; Python 2605 passed / 2 failed / 3 skipped (7m43s).
 The failures match the four previously recorded fixture problems below:

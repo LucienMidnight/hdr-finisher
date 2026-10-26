@@ -19,7 +19,7 @@ window.HDRLibraryScenes = (() => {
   const preemptLower = job => job.priority >= 10;
   const cpuLanes = Math.max(1, Math.floor(Math.sqrt(globalThis.navigator?.hardwareConcurrency || 1)));
   const probes = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {onChange:changed,preemptLower});
-  const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {heavyLimit:cpuLanes,onChange:changed,keepRunning:job=>job.priority>=5,preemptLower:job=>job.priority>0,preemptForCapacity:true});
+  const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {heavyLimit:cpuLanes,onChange:changed,preemptLower:job=>job.priority>0,preemptForCapacity:true});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set(), reviewPath = null;

@@ -595,7 +595,7 @@
     pictureErrors.paint(cell);
     {
       void (async () => {
-        await hydrateVisible(photo,current);
+        await hydrateVisible(photo,current,cell.controller.signal);
         if(!current())return;
         cell.identity=pictureIdentity(photo);
         const fallback = document.createElement("canvas"); cell.fallback = fallback;
@@ -679,7 +679,7 @@
       const photo = state.photos[index];
       let cell = map.get(photo.path);
       if (cell && (cell.controller.signal.aborted || cell.edge !== thumbnailEdge() || cell.photo.bytes !== photo.bytes || cell.photo.mtime_ns !== photo.mtime_ns || cell.identity !== pictureIdentity(photo))) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); cell = null; }
-      if (!cell && (index < start || index >= end)) continue;
+      if (!cell && (index < start || index >= end || (map === state.cells && gridSettleTimer))) continue;
       if (!cell) {
         cell = tilePool.take(tileKey(map, pictureIdentity(photo)));
         if (cell) {
@@ -1287,7 +1287,7 @@
       if (controller.signal.aborted || state.scan !== controller) return;
       const top=grid.scrollTop,left=film.scrollLeft;
       state.allPhotos = [...rows.values()];
-      applyQuery(); grid.scrollTop=top;film.scrollLeft=left;paintGrid();paintFilm();
+      applyQuery(false); grid.scrollTop=top;film.scrollLeft=left;paintGrid();paintFilm();
     };
     opening.paint=paint;
     const pump=async()=>{try {
@@ -1357,13 +1357,13 @@
   // Batch visible settings reads before any picture work. Offscreen rows already
   // carry indexed marks/grades; their sources are never opened for drawing.
   let visibleDetails = new Map(), detailsTimer;
-  function hydrateVisible(photo, current) {
+  function hydrateVisible(photo, current, signal) {
     if(!state.folderOpen || state.folderOpen.controller !== state.scan || photo._details)return Promise.resolve();
     const controller=state.scan;
     return new Promise((resolve,reject)=>{
       const key=photo.source_path || photo.path;
       const pending=visibleDetails.get(key)||[];
-      pending.push({photo,current,resolve,reject});visibleDetails.set(key,pending);
+      pending.push({photo,current,signal,resolve,reject});visibleDetails.set(key,pending);
       if(detailsTimer)return;
       detailsTimer=setTimeout(async()=>{
         detailsTimer=null;
@@ -1372,7 +1372,21 @@
         try {
           for(let at=0;at<live.length;at+=32) {
             const group=live.slice(at,at+32);
-            const result=await api("/api/library/folder-details",{paths:group.map(([path])=>path)},controller.signal);
+            const demand=new AbortController();
+            const items=group.flatMap(([,items])=>items);
+            const cancel=()=>{if(controller.signal.aborted || !items.some(item=>item.current()))demand.abort();};
+            controller.signal.addEventListener("abort",cancel,{once:true});
+            for(const item of items)item.signal?.addEventListener("abort",cancel,{once:true});
+            let result;
+            try {
+              cancel();
+              if(demand.signal.aborted)continue;
+              result=await api("/api/library/folder-details",{paths:group.filter(([,items])=>items.some(item=>item.current())).map(([path])=>path)},demand.signal);
+            } catch(error) {if(demand.signal.aborted && !controller.signal.aborted)continue;throw error;}
+            finally {
+              controller.signal.removeEventListener("abort",cancel);
+              for(const item of items)item.signal?.removeEventListener("abort",cancel);
+            }
             if(controller.signal.aborted)throw new DOMException("Cancelled","AbortError");
             const known=new Map(result.photos.map(photo=>[photo.path,photo]));
             for(const [,items] of group)for(const item of items) {
@@ -1382,6 +1396,9 @@
           }
           for(const [,items] of entries)for(const item of items)item.resolve();
           if(state.scan===controller){
+            // Hydration changes grade identity before the awaiting cell resumes.
+            for(const map of [state.cells,state.filmCells])for(const cell of map.values())
+              if(!cell.meta && !cell.controller.signal.aborted)cell.identity=pictureIdentity(cell.photo);
             paintGrid();paintFilm();
             const visible=live.flatMap(([,items])=>items.filter(item=>item.current()).map(item=>item.photo));
             for(let at=0;at<visible.length;at+=32)void readVisibleFacts(visible.slice(at,at+32),controller);
@@ -1390,7 +1407,7 @@
       },0);
     });
   }
-  function applyQuery() {
+  function applyQuery(paint = true) {
     paintFilterButton();
     const restored=state.folderOpen?.restore;
     const lead = restored?.selected || selected()?.path, anchor = restored?.anchor || state.photos[state.anchor]?.path;
@@ -1407,7 +1424,7 @@
     state.anchor = state.photos.findIndex(photo => photo.path === anchor);
     if (state.anchor < 0) state.anchor = state.index;
     if (!selected() && state.view === "single") setView("grid");
-    updateDetails(); paintGrid(); paintFilm();
+    updateDetails(); if(paint){paintGrid();paintFilm();}
     startRawAhead();
     if (state.view === "single" && selected()?.path !== lead) showSingle();
     if (!state.reading) status(`${state.photos.length.toLocaleString()} of ${state.allPhotos.length.toLocaleString()} photos${state.hiddenFiles ? ` · ${state.hiddenFiles} unreadable files hidden` : ""}${state.collection?.kind === "smart" && state.smartIndexing ? " · Indexing is still running, so more may turn up." : ""}`);
@@ -1765,6 +1782,8 @@
   let gridFrame = 0, filmFrame = 0;
   grid.addEventListener("scroll", () => {
     if(!gridSettleTimer)gridRequests=0;
+    // Detach loading cells immediately; a settled viewport starts fresh demand.
+    for(const [path,cell] of state.cells)if(!cell.meta){cell.controller.abort();cell.element.remove();state.cells.delete(path);}
     idlePictures.touch();
     if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); });
     clearTimeout(gridSettleTimer);
