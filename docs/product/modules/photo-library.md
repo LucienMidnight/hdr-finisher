@@ -199,6 +199,10 @@ end of Part 2, as Steve requested; no GPU check applies to this startup change.
   `docs/technical/photo-library.md`).
 - Claude writes outcome-focused Codex prompts that cite logged evidence and
   ask for minimal testing. Codex commits and stops for Steve to try.
+- The Library picture flow chart, [`docs/technical/library-picture-flow.html`](../../technical/library-picture-flow.html),
+  shows each step from launch to fullscreen and back, which process does it,
+  what is kept and current timings. Update it when a step's timing or owner
+  changes.
 
 **October 26, 2026: cold non-RAW draw first, background storage (built in this commit; Steve's try pending)**
 
