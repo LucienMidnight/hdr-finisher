@@ -80,13 +80,18 @@ Finished briefs are in `docs/technical/archive/briefs/`
 - The quality rule for stored previews is Steve's blink test at Fit.
 - Codex tasks use absolute minimum testing during this phase (Steve,
   October 25).
+- Stored screen previews follow the live screen preview's HDR ceiling: the
+  exact Highlight compression target when it is on, no extra cap when it is
+  off (Steve, October 26).
+- Never-prepared JPEGs are accepted for now at about 0.85–0.9 s to the sharp
+  draw; the target for cold non-RAW photos is a sharp draw within 1 s
+  (Steve, October 26).
 
 **Next, in order.** Steve confirms each before it starts.
 
-1. Stored JPEG XL screen preview slice (fullscreen first). This needs one
-   decision from Steve first: which HDR ceiling applies to stored previews
-   when a grade has Highlight compression switched off (Part B found Library
-   pictures above 1000 nits in that case).
+1. Stored JPEG XL screen preview slice (fullscreen first), together with
+   finding why app startup became slow (about 16–21 s to back-end ready
+   since October 25, against 2–5 s before).
 2. Denoise speed-up, as its own task.
 3. HEIC and JPEG XL CPU-route speed.
 4. AVIF gain-map reconstruction on the GPU (estimated 3–5 days).
@@ -940,6 +945,8 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Camera preview as a quick draw, unedited photos only.** When a photo has no thumbnail yet and has no grade, fullscreen and Single may show its camera preview immediately, then replace it with HDRF's picture. Edited photos never show a camera preview. Amends the October 14 rule. | Steve, 2026-10-25 |
 | **Cold-folder culling is a core workflow.** Users often cull folders the app has never prepared, so stored previews cannot be the only route to speed. Every supported format needs a fast first picture on cold visits: camera previews for RAWs, and fast in-process decoding for JPEG, HEIF, AVIF, TIFF, PNG, EXR, DNG and similar (the file itself as the quick draw when unedited). Edited photos need fast development and finishing. Stored screen previews speed up returning to a folder; they do not replace cold speed. | Steve, 2026-10-25 |
 | **Stored screen preview format: JPEG XL q90** (distance 0.4, effort 3, decoding speed 1, all threads), as separate HDR (PQ 16-bit, BT.2100-tagged) and authored-SDR (sRGB 8-bit) files. About 2.3 MB per photo for both, about 4,400 photos per 10 GiB. Decode about 20 ms per rendition with 12 threads. Its decoded peak stayed at the 1000-nit edge in the Part B probe. **AVIF q90 remains a valid alternative** (native Chromium decoding, similar size, tiles needed for multi-core decoding, slight ceiling overshoot needs a post-decode clamp). Ultra HDR was rejected: visible artefacts in backgrounds at q90 and q95. **Quality rule for stored previews:** visually identical at Fit in Steve's blink test on his graded photos. This replaces the per-pixel perceptual guide for codec texture only; the guide still governs Library-vs-Grade/export colour agreement, and the exact HDR ceiling still applies. Not built. | Steve, 2026-10-26 |
+| **Stored screen previews follow the live HDR ceiling.** When Highlight compression is on, the decoded stored HDR preview never exceeds its target (encoder rounding only; a post-decode clamp is fine). When it is off, the stored preview matches the live screen preview with no extra cap, so a stored preview never looks different from a fresh one. | Steve, 2026-10-26 |
+| **Cold non-RAW sharp-draw target: within 1 s.** About 0.85-0.9 s for never-prepared JPEGs (8b64302) is accepted for now; faster is wanted later. | Steve, 2026-10-26 |
 | **Manual built previews work per photo** (any selection, also offered on folders), protected until discarded. Native 100% previews wait until everything else is fast. Design open; see Prepared-folder fullscreen culling. | Steve, 2026-10-25 |
 
 **V2 scope decision (Steve, October 21, 2026):** Library Looks (slice 7),
@@ -1451,7 +1458,8 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
-| **Cold first picture for non-RAW formats** (core workflow, see decisions) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed, AVIF reconstruction and stored screen previews remain open. OS cache warm; Steve's normal-folder try remains separate. |
+| **App startup** (after the 155k-photo D:\Photos index) | Every start since October 25 15:35 takes 16–21 s from back-end process start to back-end ready (2–5 s before). About 3,330 `reconcile` lock operations run first; the helper starts only at about 15 s; the window is visible at 0.4 s but the page is ready at about 17.7 s. On October 26 12:53 the first folder scan then waited 21 s in the helper queue. First slow start followed 002519f (incremental maintenance). | Open; investigate with the stored-preview slice. |
+| **Cold first picture for non-RAW formats** (core workflow, see decisions; target sharp draw within 1 s, Steve October 26) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed, AVIF reconstruction and stored screen previews remain open. OS cache warm; Steve's normal-folder try remains separate. |
 | **Cold RAW development** (badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |
 | **Denoise in Library drawing.** Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: thumbnail analysis 250–530 ms per draw even after reuse; screen-preview measurements already cost 1.6 s in the 18:45 test. Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Reuse fix in Part 0c; exact estimator threading and selected-first measurement scheduling in Part 0f. Reconstruction dispatch optimization remains open; Steve's timing try pending. |
 | Film grain and halation in Library drawing | Present in all slow graded photos (Portra 400, grain 24, halation). Not timed apart from Denoise. | Suspected; measure. |
