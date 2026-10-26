@@ -455,8 +455,8 @@
     dst[outIdx] = select(0.0, acc / ww, ww != 0.0);
   }`;
 
-  // One device and one set of pipelines; the shared broker admits parallel
-  // Library RAW developments only when their combined reservations fit.
+  // One device and one set of pipelines. Developments are exclusive: fitting
+  // in memory does not mean two photos can share GPU bandwidth at full speed.
   let shared = null, storageLimit = 0;
   async function sourceStorageLimit() {
     if(!storageLimit){
@@ -736,7 +736,7 @@
     const lease = async release => {
       if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
       const response = await fetch(url, { method: "POST", signal,
-        headers: {"Content-Type": "application/json"}, body: JSON.stringify({bytes, release, background, priority:importance(),concurrent:background && !meta.rgb && !edges.includes(100000)}) });
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify({bytes, release, background, priority:importance(),concurrent:false}) });
       if (!response.ok) throw Error("GPU memory scheduler unavailable.");
       return response.json();
     };
@@ -760,6 +760,7 @@
           if (value.granted) await lease(true);
           await wait(50, signal); continue;
         }
+        root.HDRLibraryStopwatch?.("picture_development_admitted", {path:meta.path,route:"exclusive-gpu",duration_ms:0,reason:importance() === 0 ? "selected photo" : "spare capacity"});
         let touched = 0;
         let edgePermitAt = 0;
         const beforeSubmit = async () => {

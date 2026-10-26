@@ -322,7 +322,7 @@
         // Probe stored developments immediately; only a source miss waits for navigation.
         const meta = await HDRLibraryScenes.load(photo.path,edge,signal,importance(),false,trace,
           {cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance),
-            onSourceDemand:()=>{if(edge===2560 && importance()===0 && current())developAhead(photo);}});
+            onSourceDemand:()=>{}});
         if (!meta) return null;
         if (!current()) throw new DOMException("Invalidated","AbortError");
         Object.defineProperty(meta,"trace",{get:getTrace,configurable:true});
@@ -984,7 +984,7 @@
         sharp?.catch(()=>{});
         let quick = null;
         if (!kept && !borrowed) {
-          const first = await Promise.race([sharp.then(value=>({value})),quickWindow.get(photo,0,trace).then(quick=>({quick}))]);
+          const first = await Promise.race([sharp.then(value=>({value})),quickWindow.get(photo,0,trace).then(quick=>({quick})).catch(()=>({quick:null}))]);
           quick = first.quick || null;
           if (!current()) return;
           showQuick(quick,controller,current,trace);
@@ -1030,6 +1030,7 @@
       }
       if (!meta || !current()) return;
       restoreStandIn();
+      developAhead(photo);
       warmReady(photo,neighbours);
       if (state.fullSceneQuality && state.fullSceneQuality !== meta.quality) {
         state.nativeSource?.abort(); state.nativeSource = new AbortController(); state.fullDetail = null;

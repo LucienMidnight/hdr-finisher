@@ -2,6 +2,19 @@
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 batch, Part 2 (app trial pending).** Main-lane folder scans have
+independent admission and no longer wait for source-busy or picture-lane slots.
+Stored screen preview writes may run during GPU development; CPU picture work
+and indexing still yield where resources compete. RAW developments request an
+exclusive GPU lease, so memory capacity no longer permits overlapping Bayer
+work. Develop-ahead starts after the selected sharp draw is published; queued
+lower-priority leases yield at existing stage boundaries to selected work.
+The summary reports helper queue/work/yield times and GPU admission routes.
+The one blank outcome was DSC07343, abandoned after 222 ms: thumbnail-pool miss,
+150 ms cache check, then GPU admission wait, not a failed decode. Pool retention
+and exclusive preemption address those causes; immediate pixels on every rapid
+jump remain an app acceptance item. Fast checks deferred; no GPU run.
+
 **October 26 batch, Part 1 (app trial pending).** Finished thumbnails from all
 completed canvas routes survive Single/fullscreen transitions in the bounded
 recent thumbnail pool; memory reclamation removes only as many as needed.

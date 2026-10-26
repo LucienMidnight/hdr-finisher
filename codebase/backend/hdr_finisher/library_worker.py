@@ -412,7 +412,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             with condition:
                 while not stopping.is_set():
                     candidates = [(item, index) for index, item in enumerate(queue) if lane(item[2]) == kind]
-                    if candidates and not state["paused"] and not state["source_busy"] and (kind not in {"main", "picture"} or (state["foreground"] < lanes and not any(item[0] < min(candidates)[0][0] and lane(item[2]) in {"main", "picture"} for item in queue))):
+                    if candidates and not state["paused"] and (kind in {"main", "stored"} or not state["source_busy"]) and (kind != "picture" or state["foreground"] < lanes):
                         _, index = min(candidates)
                         _priority, _sequence, job = queue.pop(index)
                         heapq.heapify(queue)
@@ -427,7 +427,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     continue
                 if kind == "check":
                     state["checking"] += 1
-                elif kind not in {"index", "kept", "stored"}:
+                elif kind == "picture":
                     state["foreground"] += 1
                 if kind == "picture": state["developing"] += 1
 
@@ -445,7 +445,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         allowed = {"index", "check", "stored"} if kind == "check" else {"index", "kept", "stored"}
                         if kind == "kept":
                             allowed.add("check")
-                        if (not state["paused"] and not state["source_busy"] and (
+                        if (not state["paused"] and (kind == "stored" or not state["source_busy"]) and (
                                 not state["foreground"]
                                 and (kind in {"check", "kept"} or not state["checking"])
                                 and all(lane(item[2]) in allowed for item in queue))):
@@ -515,7 +515,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 jobs.pop(job["id"], None)
                 if kind == "check":
                     state["checking"] -= 1
-                elif kind not in {"index", "kept", "stored"}:
+                elif kind == "picture":
                     state["foreground"] -= 1
                 if kind == "picture": state["developing"] -= 1
                 pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]))
