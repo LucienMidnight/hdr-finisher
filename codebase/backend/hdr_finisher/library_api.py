@@ -37,6 +37,7 @@ class StopwatchEvent(BaseModel):
     scope: str | None = Field(default=None, max_length=32)
     view: str | None = Field(default=None, max_length=64)
     route: str | None = Field(default=None, max_length=64)
+    rendition: Literal['hdr', 'sdr'] | None = None
     cache_hit: bool | None = None
     duration_ms: float | None = None
     queue_ms: float | None = None
@@ -284,6 +285,8 @@ def create_library_router(worker, browser, store=None):
 
     from .library_live import LivePictures, quality as live_quality, recipe as live_recipe
     live = LivePictures(browser.root, marks, documents if store is not None else None)
+    from .library_screen_previews import add_screen_preview_routes
+    add_screen_preview_routes(router, live, worker)
     from .library_picture_errors import PictureErrors
     picture_errors = PictureErrors(marks)
 

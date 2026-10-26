@@ -146,7 +146,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback"}:
+        if command not in {"picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -390,6 +390,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False, "developing": 0}
 
     def lane(job):
+        if job["command"] == "stored-screen-write":
+            return "stored"
         if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
             return "picture"
         if job["command"] == "overlay":
@@ -425,7 +427,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     continue
                 if kind == "check":
                     state["checking"] += 1
-                elif kind not in {"index", "kept"}:
+                elif kind not in {"index", "kept", "stored"}:
                     state["foreground"] += 1
                 if kind == "picture": state["developing"] += 1
 
@@ -440,7 +442,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         # Maps outrank folder checks. Only checks
                         # wait for that lane, never the reverse (including a
                         # second queued map while the first one is running).
-                        allowed = {"index", "check"} if kind == "check" else {"index", "kept"}
+                        allowed = {"index", "check", "stored"} if kind == "check" else {"index", "kept", "stored"}
                         if kind == "kept":
                             allowed.add("check")
                         if (not state["paused"] and not state["source_busy"] and (
@@ -461,9 +463,16 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 last_stage[:] = [stage, now]
                 reply({"event":"work", "id":job["id"], "path":job.get("path"), "stage":text})
             if job["command"] in {"live-scene", "live-fallback"}: progress("reading", "Reading photo")
-            check = yielding if kind in {"index", "check", "kept"} else cancelled.is_set
+            check = yielding if kind in {"index", "check", "kept", "stored"} else cancelled.is_set
             try:
-                if job["command"] == "overlay":
+                if job["command"] == "stored-screen-write":
+                    from .library_screen_previews import StoredScreenPreviews
+                    if check(): raise CancelledError()
+                    output = StoredScreenPreviews(root).write(job['identity'], Path(job['body_path']).read_bytes(),
+                        job['width'], job['height'], job['stride'], check,
+                        source_width=job['source_width'], source_height=job['source_height'])
+                    result = {"id": job['id'], "result": output}
+                elif job["command"] == "overlay":
                     from .library_overlays import OverlayMaps
                     output = OverlayMaps(root).build(job["path"],job["kind"],job["quality"],cancelled=check)
                     result = {"id":job["id"],"result":output}
@@ -506,7 +515,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 jobs.pop(job["id"], None)
                 if kind == "check":
                     state["checking"] -= 1
-                elif kind not in {"index", "kept"}:
+                elif kind not in {"index", "kept", "stored"}:
                     state["foreground"] -= 1
                 if kind == "picture": state["developing"] -= 1
                 pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]))
@@ -529,6 +538,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     # Unvisited pinned folders are indexed on their own lane, so a long
     # background scan never queues ahead of the folder the user just clicked.
     Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()
+    Thread(target=decode, args=("stored",), name="hdr-library-stored-screen", daemon=True).start()
     Thread(target=decode, args=("check",), name="hdr-library-check", daemon=True).start()
     # Map work yields at checkpoints to foreground work and all pause gates.
     for index in range(lanes):
@@ -556,7 +566,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write"}:
                     message["queued_at"] = time.time()
                     sequence += 1
                     jobs[message["id"]] = Event()

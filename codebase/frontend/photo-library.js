@@ -276,7 +276,7 @@
   }
   const readySurfaces = new Map();
   let readyBytes = 0, readyPolling = false;
-  const readyKey = photo => `${pictureIdentity(photo)}|${state.hdr}|${state.displayEpoch}`;
+  const readyKey = photo => `${pictureIdentity(photo)}|${state.hdr}|${state.displayEpoch}|${JSON.stringify(HDRLibraryScreenPreviews.display())}`;
   function releaseReady(value) {
     // Keep the previous selection until a replacement can be published in the
     // same turn. It retains its own identity and is never reported as the new photo.
@@ -300,6 +300,25 @@
       promote:(photo,priority)=>HDRLibraryScenes.promote(photo.path,priority),
       load:async (photo, signal, current, priority, trace, importance, options, getTrace = () => trace) => {
         const epoch = state.displayEpoch, hdr = state.hdr;
+        if (edge === 2560) {
+          const canvas = document.createElement('canvas'); canvas.className = $('single-picture').className;
+          let value;
+          let meta;
+          try { meta = await HDRLibraryScreenPreviews.load(photo,canvas,signal,current,hdr,async meta=>{
+            value={canvas,meta,bytes:meta.width*meta.height*8};
+            readySurfaces.set(canvas,value);readyBytes+=value.bytes;
+            const upload=meta.width*meta.height*8;
+            await HDRLibraryScenes.reclaim(upload);
+            const budget=await HDRLibraryPictures.readyMemory(readyBytes+tilePool.snapshot().bytes);
+            if(readyBytes+tilePool.snapshot().bytes>tilePool.snapshot().limit || readyBytes+tilePool.snapshot().bytes+upload>budget){
+              const error=Error('Stored screen preview yielded its memory budget.');error.libraryYield=true;throw error;
+            }
+          }); } catch(error) {if(value)releaseReady(value);throw error;}
+          if (meta) {
+            if (!current() || epoch !== state.displayEpoch) {releaseReady(value);throw new DOMException('Invalidated','AbortError');}
+            return value;
+          }
+        }
         // Probe stored developments immediately; only a source miss waits for navigation.
         const meta = await HDRLibraryScenes.load(photo.path,edge,signal,importance(),false,trace,
           {cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance),
@@ -912,7 +931,7 @@
     if (!state.active || state.view !== "single") return;
     if (compare.enabled()) { restoreStandIn(); readyWindow.invalidate(); quickWindow.invalidate(); void compare.show(); return; }
     const photo = selected(), edge = singleEdge();
-    const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}` : "";
+    const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${JSON.stringify(HDRLibraryScreenPreviews.display())}` : "";
     if (identity && identity === state.singleIdentity && !state.single?.signal.aborted) {
       positionZoom();
       if (requestedTrace && state.fitMeta && $("single-picture").dataset.picturePath === photo.path)
@@ -958,14 +977,15 @@
       try {
         kept = readyWindow.has(photo);
         if (kept) developAhead(photo);
-        let sharp = readyWindow.contains(photo) ? readyWindow.get(photo,0,trace) : null;
+        let sharp = readyWindow.get(photo,0,trace);
         sharp?.catch(()=>{});
         let quick = null;
         if (!kept && !borrowed) {
-          quick = await quickWindow.get(photo,0,trace);
+          const first = await Promise.race([sharp.then(value=>({value})),quickWindow.get(photo,0,trace).then(quick=>({quick}))]);
+          quick = first.quick || null;
           if (!current()) return;
           showQuick(quick,controller,current,trace);
-          if (!quick) void showCameraPreview(photo,controller,current,trace);
+          if (!quick && !first.value) void showCameraPreview(photo,controller,current,trace);
         }
         if (!sharp) {
           // A stored sharp development must not sit behind the quiet gate.
@@ -1033,6 +1053,7 @@
     const left = stage.clientWidth / 2 - center.x * width / dpr, top = stage.clientHeight / 2 - center.y * height / dpr;
     HDRPhotoFraming.draw(stage,box,framing,{scale:scale/dpr,left:`${left+width/dpr/2}px`,top:`${top+height/dpr/2}px`});
     canvas.style.cssText = `position:absolute;z-index:1;width:${width / dpr}px;height:${height / dpr}px;left:${left}px;top:${top}px;object-fit:fill`;
+    if (state.fitMeta?.route === 'stored-screen-preview') canvas.style.visibility = state.zoom ? 'hidden' : '';
     native.hidden=!state.zoom;
     if (state.zoom && state.nativeMeta) {
       const crop = state.nativeMeta;
@@ -1052,7 +1073,7 @@
     const photo = selected(); if (!photo || !state.fitMeta || !state.zoom || !state.active || state.view !== "single") return;
     const stage = $("single-stage"), dpr = window.devicePixelRatio || 1, scale = state.zoomScale, percent = `${Math.round(scale * 100)}%`;
     const fit = state.fitMeta;
-    if (fit.source_width && fit.width >= fit.source_width * scale) {
+    if (fit.route !== 'stored-screen-preview' && fit.source_width && fit.width >= fit.source_width * scale) {
       state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; $("native-picture").hidden = true; positionZoom();
       status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`); return;
     }

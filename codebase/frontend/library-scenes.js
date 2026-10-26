@@ -141,6 +141,7 @@ window.HDRLibraryScenes = (() => {
   }
   let reclaim = async () => {};
   function save(meta, presented = false) {
+    if (meta.route === 'stored-screen-preview') return;
     if (reviewPath === meta.path && !presented) return;
     const started = performance.now();
     void Promise.resolve().then(()=>meta.directScene?.store()).then(()=>fetch("/api/library/live-store/"+meta.key,{method:"POST"})).then(response=>{

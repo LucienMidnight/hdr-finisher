@@ -35,12 +35,14 @@
     submittedAt,
     halfToFloat,
     raw = false,
+    snapshot = false,
   }) {
     try {
       await resource.readBuffer.mapAsync(GPUMapMode.READ);
-      if (renderer.scopeSources.get(canvas) !== source) return null;
+      if (!snapshot && renderer.scopeSources.get(canvas) !== source) return null;
       const mappedAt = performance.now();
       const sourceBytes = new Uint16Array(resource.readBuffer.getMappedRange());
+      if (raw === "rgba") return {body:sourceBytes.slice().buffer, width, height, stride:resource.bytesPerRow};
       const rowStride = resource.bytesPerRow / 2;
       if (raw) {
         // The caller forwards the half floats as they are: RGB, rows packed.

@@ -3909,6 +3909,8 @@
       "protects": "Live Library HDR and SDR pictures agree with Grade before any thumbnail codec, including saved Portra stock, grain and halation; opt-in real-photo thumbnail/quick and screen comparisons.",
       "launch": {"method": "electron"}
     },
+    {"path":"tests/library-stored-screen-preview.js","areas":["library"],"tier":"diagnostic",
+      "protects":"Disposable prepared screen preview restart timing and decoded HDR compression ceiling.","launch":{"method":"electron"}},
     {
       "path": "tests/library-live-native.js",
       "areas": ["library"],

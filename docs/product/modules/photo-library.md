@@ -25,7 +25,10 @@ preserved.
 
 - Prepared photos in the ready window: sharp draw in about 5 ms.
 - Prepared photos outside it: quick draw at once, sharp draw in about
-  0.2–0.5 s.
+  0.2–0.5 s through the scene route. Stored screen previews now bypass scenes
+  in fullscreen and Single at Fit, including after restart. Disposable profile:
+  226 ms first stored sharp draw, 115 ms next SDR draw, 162 ms HDR draw.
+  The ~100 ms target remains open for first use and HDR.
 - Plain RAWs browse well.
 - Graded photos with Denoise take about 1–2 s for the sharp draw (Denoise
   preparation is the slow item).
@@ -65,6 +68,7 @@ preserved.
 | 5f846b5 | Film Look fix |
 | 5cef188 | Codec and cold-decode experiment (Part B): [evidence](../../technical/evidence/library-codecs-and-cold-decode-2026-10-26.md) |
 | 37c85b2 | Cold non-RAW profiling; JPEG/PNG original quick draws |
+| 84f1166 | Defer startup reconciliation and report startup/upkeep timings |
 
 Finished briefs are in `docs/technical/archive/briefs/`
 (`codex-brief-library-responsiveness-core-2026-10-25.md`,
@@ -961,7 +965,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Fullscreen stand-in: the photo's own finished grid picture.** While the sharp fullscreen picture loads, show that photo's finished grid/filmstrip picture scaled to Fit (same grade and HDR/SDR mode), then swap. Never another photo or an obsolete grade. Adjusts the October 24 hide-until-ready behaviour. | Steve, 2026-10-25 |
 | **Camera preview as a quick draw, unedited photos only.** When a photo has no thumbnail yet and has no grade, fullscreen and Single may show its camera preview immediately, then replace it with HDRF's picture. Edited photos never show a camera preview. Amends the October 14 rule. | Steve, 2026-10-25 |
 | **Cold-folder culling is a core workflow.** Users often cull folders the app has never prepared, so stored previews cannot be the only route to speed. Every supported format needs a fast first picture on cold visits: camera previews for RAWs, and fast in-process decoding for JPEG, HEIF, AVIF, TIFF, PNG, EXR, DNG and similar (the file itself as the quick draw when unedited). Edited photos need fast development and finishing. Stored screen previews speed up returning to a folder; they do not replace cold speed. | Steve, 2026-10-25 |
-| **Stored screen preview format: JPEG XL q90** (distance 0.4, effort 3, decoding speed 1, all threads), as separate HDR (PQ 16-bit, BT.2100-tagged) and authored-SDR (sRGB 8-bit) files. About 2.3 MB per photo for both, about 4,400 photos per 10 GiB. Decode about 20 ms per rendition with 12 threads. Its decoded peak stayed at the 1000-nit edge in the Part B probe. **AVIF q90 remains a valid alternative** (native Chromium decoding, similar size, tiles needed for multi-core decoding, slight ceiling overshoot needs a post-decode clamp). Ultra HDR was rejected: visible artefacts in backgrounds at q90 and q95. **Quality rule for stored previews:** visually identical at Fit in Steve's blink test on his graded photos. This replaces the per-pixel perceptual guide for codec texture only; the guide still governs Library-vs-Grade/export colour agreement, and the exact HDR ceiling still applies. Not built. | Steve, 2026-10-26 |
+| **Stored screen preview format: JPEG XL q90** (distance 0.4, effort 3, decoding speed 1, all threads), as separate HDR (PQ 16-bit, BT.2100-tagged) and authored-SDR (sRGB 8-bit) files. About 2.3 MB per photo for both, about 4,400 photos per 10 GiB. Decode about 20 ms per rendition with 12 threads. Its decoded peak stayed at the 1000-nit edge in the Part B probe. **AVIF q90 remains a valid alternative** (native Chromium decoding, similar size, tiles needed for multi-core decoding, slight ceiling overshoot needs a post-decode clamp). Ultra HDR was rejected: visible artefacts in backgrounds at q90 and q95. **Quality rule for stored previews:** visually identical at Fit in Steve's blink test on his graded photos. This replaces the per-pixel perceptual guide for codec texture only; the guide still governs Library-vs-Grade/export colour agreement, and the exact HDR ceiling still applies. Fullscreen/Single Fit storage built October 26; Steve's blink test pending. | Steve, 2026-10-26 |
 | **Stored screen previews follow the live HDR ceiling.** When Highlight compression is on, the decoded stored HDR preview never exceeds its target (encoder rounding only; a post-decode clamp is fine). When it is off, the stored preview matches the live screen preview with no extra cap, so a stored preview never looks different from a fresh one. | Steve, 2026-10-26 |
 | **Cold non-RAW sharp-draw target: within 1 s.** About 0.85-0.9 s for never-prepared JPEGs (8b64302) is accepted for now; faster is wanted later. | Steve, 2026-10-26 |
 | **Manual built previews work per photo** (any selection, also offered on folders), protected until discarded. Native 100% previews wait until everything else is fast. Design open; see Prepared-folder fullscreen culling. | Steve, 2026-10-25 |
@@ -1381,6 +1385,46 @@ crop route; its move to live native scenes remains open with that cleanup.
 
 ## 5. V1 open work, in order
 
+**October 26: stored screen previews, fullscreen first.** Built automatic
+background capture and JPEG XL q90 storage of finished 2560 screen previews,
+with separate PQ 16-bit BT.2100 HDR and authored sRGB 8-bit SDR files. The
+below-normal helper has a separate write lane which yields to foreground
+work and Grade; two bounded uploads prevent folder-sized RAM queues. Fit
+reads validate the complete grade (including Film Look), source stamp, source
+settings, rendition, display dimensions and format version. Misses and stale
+entries use the existing scene route. The ready window shares its existing
+memory allowance; 100% uses the detail preview and hides the stored Fit picture
+while detail is pending. A separate fixed 10 GiB oldest-first allowance leaves
+the scene cache policy unchanged. Cache off also disables these reads/writes.
+
+The focused disposable real-photo profile used a copied RAW/sidecar and an
+explicit disposable scene cache. The scene-route sharp draw was 326 ms,
+with capture disabled during that baseline to compare today's route fairly.
+After a process restart, with scene loading deliberately forbidden, stored
+sharp draws were 226 ms first use, 115 ms next SDR draw and 162 ms HDR. The
+~100 ms target is not met on first use or HDR; local transport and first-use
+setup remain open. A compression-on copied photo near the target decoded at
+999.86 nits against 1000 nits. The first failed harness attempt selected the
+shared scene cache before the explicit disposable cache was added; the live
+Library database, original photos and sidecars were not changed. No quality
+study or broad GPU sweep; Steve's Fit blink test remains authoritative.
+
+Next: Steve's normal launch and Fit/100% try, first-use/HDR transport latency,
+then Build previews, a protected prepared set and disk-space checks. Those
+preparation commands and protection policies are not built. Under pressure,
+background capture may be skipped; a later finished screen preview retries it.
+
+**Validation, once at the end of both parts.** Node: 632 passed, one existing
+development-ahead CPU-fallback test failed (`library-scenes.test.js`, decoder
+failed). Python: 2,585 passed, three skipped, two unrelated fixture failures:
+`test_rgb_description_precedes_pixels_and_keeps_publication_guards[None]`
+constructs a SourceReference without the required luminance field;
+`test_library_native_source_uses_same_repair_before_reduction` has the
+already documented cache mock without `defer_store`. The three new stored
+screen preview checks passed (restart/grade/source identity, decoded HDR ceiling
+on/off, independent oldest-first removal). No repeat of the broad fast suites.
+
+
 
 
 ## Part A — Use the whole machine (October 25, 2026)
@@ -1476,7 +1520,8 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 | Item | Evidence | Status |
 | --- | --- | --- |
 | **App startup** (after the 155k-photo D:\Photos index) | Live launches 16–21 s; 002519f made full reconciliation thousands of per-family operations but left it in the constructor. Disposable snapshot reproduced 3,327 lock operations and 41.38 s; deferred constructor 0.26 s (scratch disk/OS cache differ from live). | Startup blocker fixed: background recovery upkeep, yielding to foreground helper/source work and Grade. Whole-app ~3 s and first-folder scan queue need Steve's restart. |
-| **Cold first picture for non-RAW formats** (core workflow, see decisions; target sharp draw within 1 s, Steve October 26) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed, AVIF reconstruction and stored screen previews remain open. OS cache warm; Steve's normal-folder try remains separate. |
+| **Stored screen preview sharp draw** | Disposable real-photo restart: 226 ms first stored draw, 115 ms next SDR draw, 162 ms HDR; scene route 326 ms with capture disabled for the baseline. No scene dependency on stored hits. | Fullscreen and Single Fit built. ~100 ms first-use/HDR target still open; Steve's blink test and 200–300-photo workload pending. Build previews/protected set/disk-space checks deferred. |
+| **Cold first picture for non-RAW formats** (core workflow, see decisions; target sharp draw within 1 s, Steve October 26) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed and AVIF reconstruction remain open; stored screen previews now serve returning Fit pictures. OS cache warm; Steve's normal-folder try remains separate. |
 | **Cold RAW development** (badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |
 | **Denoise in Library drawing.** Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: thumbnail analysis 250–530 ms per draw even after reuse; screen-preview measurements already cost 1.6 s in the 18:45 test. Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Reuse fix in Part 0c; exact estimator threading and selected-first measurement scheduling in Part 0f. Reconstruction dispatch optimization remains open; Steve's timing try pending. |
 | Film grain and halation in Library drawing | Present in all slow graded photos (Portra 400, grain 24, halation). Not timed apart from Denoise. | Suspected; measure. |
@@ -1774,9 +1819,9 @@ The local side-by-side gallery is `D:/AI/AI Projects/HDR Finisher Tool/ai/output
 
 Part B is complete as an offline experiment. Only this PRD and its report are committed; scripts/images/raw measurements remain ignored. No app behaviour or import rule changed, no app tests were run, and all 34 source/copy hash pairs are unchanged. The brief remains active for unfinished normal-use/implementation work.
 
-**Next implementation boundary.** First qualify one finished-preview vertical
-slice from GPU capture to disk to colour-correct fullscreen presentation. Use
-existing source scenes to isolate browsing gains from decoder cost. Then add
+**Next implementation boundary.** The October 26 stored screen preview slice
+now connects GPU capture, disk and fullscreen/Single Fit presentation. Finish
+first-use/HDR timing and Steve's Fit blink test, then add
 folder readiness/space policy and shared grid/Single/Compare consumers. Exercise
 a prepared 200-300-photo workload, sequential/reverse/random navigation, rating,
 relaunch, edits, both renditions, cache clear/off, capacity exhaustion and GPU

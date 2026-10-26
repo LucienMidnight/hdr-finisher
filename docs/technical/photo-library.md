@@ -743,6 +743,14 @@ lines. The file is large (over 150 MB); read it with a script, never by eye.
       the backend process, including before page load;
     - `startup_upkeep_started/finished/cancelled/failed`: deferred Library
       recovery work, with elapsed time including foreground yields;
+    - `stored_screen_preview_read`: `result` is `hit`, `miss` or `stale`, with
+      `rendition` (HDR/SDR) and `decode_ms` including packing for local transport;
+    - `stored_screen_preview_write`: `write_ms` and encoded `bytes`. Writes
+      run on the helper's separate low-priority lane and yield to foreground
+      work and Grade. The store has its own fixed 10 GiB oldest-first limit;
+    - `page_picture_stored_screen_preview_draw`: stored screen preview to
+      sharp draw, including HTTP, decode, upload and GPU presentation. The
+      summary reports stored reads/writes and this stage separately;
   - `lock_timing` and `document_lookup_timing` (shared-lock wait and hold);
   - `helper_job_*` (helper work such as indexing metadata batches and folder
     scans);

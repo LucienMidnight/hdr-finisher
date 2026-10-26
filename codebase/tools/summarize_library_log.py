@@ -19,7 +19,7 @@ import sys
 LOG = os.path.expandvars(r"%APPDATA%\hdr-finisher-desktop\logs\backend.log")
 STAGES = ("cache_check", "queue_wait", "lease_wait", "pixel_fetch", "upload",
           "denoise_prepare", "denoise_analysis", "render", "draw_complete",
-          "development", "store")
+          "development", "store", "stored_screen_preview_draw")
 
 
 def events(since):
@@ -66,7 +66,10 @@ def main():
     requests = collections.OrderedDict()
     startup = {}
     upkeep = []
+    stored = collections.defaultdict(list)
     for name, d in events(since):
+        if name.startswith('stored_screen_preview_') or name == 'page_picture_stored_screen_preview_draw':
+            stored[(name, d.get('rendition', '-'), d.get('result', '-'))].append(d)
         if name in ("app_start", "backend_process_started", "helper_process_started", "backend_ready", "page_loaded", "page_ready"):
             startup[name] = d["time"]
         if name.startswith("startup_upkeep_"):
@@ -88,6 +91,10 @@ def main():
     print("startup (from backend process):", " ".join(f"{name}={(stamp-origin)*1000:.0f}ms" for name, stamp in startup.items()))
     for name, d in upkeep:
         print(f"  {name}: {(d['time']-origin)*1000:.0f}ms; duration={d.get('duration_ms', 0):.0f}ms")
+    print('stored screen previews:')
+    for (name, lane, result), rows in sorted(stored.items()):
+        times = [row.get('decode_ms', row.get('write_ms', row.get('duration_ms', 0))) for row in rows]
+        print(f'  {name} {lane} {result}: n={len(rows)} p50={pct(times, .5):.0f}ms max={max(times):.0f}ms')
     sharp = [o["duration_ms"] for o in outcomes if o.get("sharp_draw")]
     hits = [o["duration_ms"] for o in outcomes if o.get("sharp_draw") and not o.get("quick_draw")]
     misses = [o["duration_ms"] for o in outcomes if o.get("sharp_draw") and o.get("quick_draw")]
