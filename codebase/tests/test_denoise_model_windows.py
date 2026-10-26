@@ -105,3 +105,16 @@ def test_geometry_that_needs_a_downsample_keeps_the_whole_frame_path(monkeypatch
     monkeypatch.setattr(render_cache_module, "geometry_output_dimensions", lambda *_: (257, 100))
 
     assert cache.geometry_source_windows(PreviewKind.HDR, 256, adjustments) is None
+
+
+def test_library_all_core_measurement_keeps_the_exact_noise_model():
+    import numpy as np
+    from hdr_finisher import denoise_adaptive as d
+    rng = np.random.default_rng(71)
+    # Force multiple independent windows without an expensive large fixture.
+    image = rng.uniform(.01, .3, (80, 80, 3)).astype(np.float32)
+    from unittest.mock import patch
+    with patch.object(d, "ESTIMATION_TILE", 32), patch.object(d, "ESTIMATION_MAX_TILES", 4):
+        serial = d.estimate_adaptive_model(image, workers=1).as_dict()
+        parallel = d.estimate_adaptive_model(image, workers=4).as_dict()
+    assert serial == parallel

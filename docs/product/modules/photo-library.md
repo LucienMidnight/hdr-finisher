@@ -2,6 +2,28 @@
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 batch, Part 3 (app trial pending; 0.5 s target still open).**
+Library measurements use all CPU cores for the unchanged independent windows,
+joined in their original order; the shared estimator's default is unchanged.
+Models are keyed by source scene, rendition, size, authored SDR choice and
+geometry rather than finishing grade. Quick draws use finished thumbnails;
+with a Denoise thumbnail miss they explicitly yield to the sharp draw instead
+of waiting for a model or displaying an approximate grade. This can still leave
+a cold graded jump without a quick draw; exact finished-thumbnail preparation
+and faster new model estimation remain open. GPU reconstruction's 32 passes
+are unchanged. Grade/Proof/export keep the default worker partition and output.
+The one focused GPU check, denoise-adaptive-parity, passed (0% beyond the
+half-float allowance); fast checks are deferred. A fast behavioural assertion
+compares serial and parallel models exactly. No brightness limit changed.
+
+**October 26 batch tolerance proposed before Part 3 edits.** Finished SDR:
+mean Delta E 2000 <1, p99 <3; finished HDR: mean Delta E ITP <1, p99 <3.
+These keep typical differences below visibility with a bounded high percentile,
+without a hard per-pixel colour maximum. The exact Highlight compression ceiling
+still applies, allowing only encoder rounding. Exact decoder samples remain
+exact; this batch aims to change scheduling, not the look. Timing goals have
+5% run-to-run allowance and remain targets until Steve's app trial.
+
 **October 26 batch, Part 2 (app trial pending).** Main-lane folder scans have
 independent admission and no longer wait for source-busy or picture-lane slots.
 Stored screen preview writes may run during GPU development; CPU picture work

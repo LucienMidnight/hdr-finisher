@@ -67,7 +67,7 @@ def main():
     routes = collections.defaultdict(list)
     stored = collections.defaultdict(list)
     for name, d in events(since):
-        if name in ("picture_camera_preview_ready", "page_picture_thumbnail_reused", "page_picture_thumbnail_reclaim", "helper_job_started", "helper_job_finished", "picture_helper_job_started", "picture_helper_job_finished", "page_picture_source_gpu_fallback", "page_picture_development_admitted"):
+        if name in ("picture_camera_preview_ready", "page_picture_thumbnail_reused", "page_picture_thumbnail_reclaim", "helper_job_started", "helper_job_finished", "picture_helper_job_started", "picture_helper_job_finished", "page_picture_source_gpu_fallback", "page_picture_development_admitted", "picture_denoise_model", "page_picture_quick_draw_unavailable"):
             for field in ("queue_ms", "work_ms", "yield_ms"):
                 if field in d:
                     routes[(name, str(d.get("operation", "-")) + "/" + field)].append(d[field])

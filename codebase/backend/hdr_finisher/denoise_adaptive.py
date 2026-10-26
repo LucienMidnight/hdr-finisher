@@ -34,6 +34,9 @@ from .cpu_budget import CpuExecutor, native_threads
 from dataclasses import dataclass
 from statistics import NormalDist
 from threading import Lock
+from contextvars import ContextVar
+
+_ESTIMATION_WORKERS = ContextVar("denoise_estimation_workers", default=None)
 
 import numpy as np
 
@@ -301,7 +304,7 @@ def _sample_tiles(height: int, width: int) -> list[tuple[int, int, int, int]]:
 def _map_estimation_windows(function, windows):
     # Windows are independent; join in the original order so all quantiles and
     # fitting arithmetic see exactly the same samples as serial measurement.
-    workers = min(len(windows), max(1, int(os.environ.get('HDR_CPU_THREADS', native_threads()))))
+    workers = min(len(windows), max(1, int(_ESTIMATION_WORKERS.get() or os.environ.get('HDR_CPU_THREADS', native_threads()))))
     if workers <= 1:
         return [function(window) for window in windows]
     results = [None] * len(windows)
@@ -510,14 +513,22 @@ class _WindowSource:
         return self._windows[window]
 
 
-def estimate_adaptive_model(image: np.ndarray) -> AdaptiveNoiseModel:
-    return _estimate(np.asarray(image, dtype=np.float32))
+def estimate_adaptive_model(image: np.ndarray, *, workers=None) -> AdaptiveNoiseModel:
+    token = _ESTIMATION_WORKERS.set(workers)
+    try:
+        return _estimate(np.asarray(image, dtype=np.float32))
+    finally:
+        _ESTIMATION_WORKERS.reset(token)
 
 
-def estimate_adaptive_model_from_windows(height: int, width: int, read) -> AdaptiveNoiseModel:
+def estimate_adaptive_model_from_windows(height: int, width: int, read, *, workers=None) -> AdaptiveNoiseModel:
     """``estimate_adaptive_model`` of a ``height`` x ``width`` frame that is not
     built: ``read(y0, x0, y1, x1)`` returns that rectangle of it."""
-    return _estimate(_WindowSource(height, width, read))
+    token = _ESTIMATION_WORKERS.set(workers)
+    try:
+        return _estimate(_WindowSource(height, width, read))
+    finally:
+        _ESTIMATION_WORKERS.reset(token)
 
 
 def _estimate(source) -> AdaptiveNoiseModel:

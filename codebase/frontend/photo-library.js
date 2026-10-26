@@ -329,7 +329,12 @@
         meta.draw_priority = importance;
         meta.fullscreen = true;
         meta.log_view = "fullscreen"; meta.log_step = edge === 640 ? "quick draw" : "sharp draw";
-        // Model measurement is CPU preparation, outside either GPU draw queue.
+        // A quick draw never starts or waits for Denoise. Finished thumbnails
+        // in the pool are already usable; a miss proceeds to the sharp draw.
+        if (edge === 640 && meta.denoise?.[hdr ? "hdr" : "sdr"]?.enabled) {
+          HDRLibraryTrace.mark(getTrace(),"picture_quick_draw_unavailable",performance.now(),{reason:"No finished Denoise thumbnail",route:"sharp-only"});
+          return null;
+        }
         await HDRLibraryPictures.prepareDenoise(meta,hdr,getTrace);
         if (!current()) throw new DOMException("Invalidated","AbortError");
         const pictures = edge === 640 ? HDRLibraryQuickPictures : HDRLibraryPictures;
@@ -1000,7 +1005,7 @@
         if (!borrowed && !quick && !kept) {
           const small = quickWindow.get(photo,0,trace,{allowSource:true});
           small.catch(()=>{});
-          const first = await Promise.race([sharp.then(value=>({value})),small.then(quick=>({quick}))]);
+          const first = await Promise.race([sharp.then(value=>({value})),small.then(quick=>({quick})).catch(()=>({quick:null}))]);
           if (!current()) return;
           if (first.value) value = first.value;
           else { showQuick(first.quick,controller,current,trace); value = await sharp; }

@@ -1349,9 +1349,31 @@ def adaptive_denoise_model(
             except json.JSONDecodeError as exc:
                 raise HTTPException(400, "Invalid geometry signature.") from exc
         # The live key includes source + grade; lane and edge distinguish the measured pixels.
-        key = ("library", session_id, kind.value, long_edge, json.dumps(geometry, sort_keys=True))
-        return _cached_denoise_model(key, lambda: _adaptive_denoise_model(
-            session_id, kind, long_edge, edit_revision, geometry_signature, cached=False))
+        key = ("library", metadata["source_key"], kind.value, long_edge,
+            metadata["adjustments"].get("sdr", {}).get("use_authored_base", True), json.dumps(geometry, sort_keys=True))
+        def measure_library():
+            from .cpu_budget import logical_cpus
+            from .library_diagnostics import log
+            from .library_live import session as library_session
+            started = time.perf_counter()
+            frame = library_session(session_id)
+            if frame is None:
+                raise HTTPException(404, "Stored Library scene is unavailable.")
+            request = (kind, long_edge, frame.adjustments)
+            native = frame.render_cache.native_denoise_source(*request)
+            if native is not None:
+                model = denoise_adaptive.estimate_adaptive_model(native[0], workers=logical_cpus())
+            else:
+                windows = frame.render_cache.geometry_source_windows(*request)
+                if windows is not None:
+                    model = denoise_adaptive.estimate_adaptive_model_from_windows(*windows, workers=logical_cpus())
+                else:
+                    proxy, _, _ = frame.render_cache.geometry_source_proxy(*request)
+                    model = denoise_adaptive.estimate_adaptive_model(proxy, workers=logical_cpus())
+            log("picture_denoise_model", path=metadata.get("path"), route="library-exact-all-cores",
+                edge=long_edge, workers=logical_cpus(), duration_ms=(time.perf_counter()-started)*1000)
+            return model.as_dict()
+        return _cached_denoise_model(key, measure_library)
     return _adaptive_denoise_model(session_id, kind, long_edge, edit_revision, geometry_signature)
 
 
