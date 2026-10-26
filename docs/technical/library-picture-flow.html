@@ -151,9 +151,8 @@ td .full { color: var(--slow); font-weight: 600; }
 <main>
 
 <h1>Library picture flow</h1>
-<p class="sub">How a photo gets from disk to the screen in the Library, which part of the app does each piece of work, what is kept, and how long each piece takes today.
-As of the October 26 five-part batch; app acceptance pending.
-All timings below are historical baselines from Steve's app runs (backend.log, Oct 25–26), before this batch. GPU Denoise measurement is now built; measurement timings and qualification are in the module PRD. Full app-draw targets are 0.5 s for folder scans and graded Denoise Fit, 1 s for cold non-RAW sharp draws. Matched 42 MP Grade measurement: 809–969 ms CPU → 169–176 ms GPU. Library thumbnail/screen measurement: 1464/983 ms CPU → 92/203 ms GPU; shared HDR/SDR reuse ~3 ms. Source development excluded.
+<p class="sub">How a photo gets from disk to the screen in the Library, which part of the app does each piece of work, what is kept, and how long each piece takes.
+<strong>Timings as of October 26, 2026, 21:27 session</strong> (Steve's app, code through <code>cf47441</code>), read from backend.log with <code>summarize_library_log.py</code>. Where the app run didn't exercise a step, the number is marked <em>profile</em> (Codex's disposable test) or <em>baseline</em> (before tonight's fixes). Grade timings are out of scope except Denoise.
 Words follow the master PRD glossary.</p>
 
 <div class="legend">
@@ -168,46 +167,42 @@ Words follow the master PRD glossary.</p>
     <span class="t slow">over 1 s</span></div>
   <div><b>Other</b>
     <span class="cachetag">something kept</span>
-    <span class="bugtag">BUG</span> <span class="muted"><small>not working as designed</small></span></div>
+    <span class="bugtag">OPEN</span> <span class="muted"><small>known problem, not fixed yet</small></span></div>
 </div>
-
-<div class="note"><strong>October 26 viewport batch:</strong> Complete indexed extent on first paint; settled-only visible requests; departed work cancels. One disposable D:\Photos profile confirmed 155,873 sources / 155,877 grid rows: backend all rows 4.98 s, page 6.06 s, 77 requests for 77 visible bottom cells. Best available picture first/25th: 0.26/1.16 s after settling; finished thumbnails: 9.96/18.91 s. Disk check: 92.79 s. Targets remain about 5 s page readiness, 1 s visible pictures and 60 s disk checking (5% variation). The window closed before final page collection; log measurements were recovered and the bottom screenshot checked. Final directory, row-setup, removal and camera-cache corrections remain unprofiled. Steve’s app trial decides acceptance; see the module PRD for fast checks.</div>
 
 <h3>The four workers</h3>
 <div class="tablewrap">
 <table>
 <tr><th style="width:16%">Worker</th><th>What it is</th><th>What it does in the Library</th></tr>
-<tr><td><span class="chip page">Page</span></td><td>The app window (Electron). Runs the Library screen and talks to the graphics card through WebGPU.</td><td>Decides what to show; keeps finished thumbnails and screen previews in memory; sends drawing and RAW development work to the graphics card; shows quick draws and sharp draws.</td></tr>
-<tr><td><span class="chip backend">Backend</span></td><td>The main Python process (the same one Grade uses). The only writer of the database and settings files.</td><td>Lists folders from the index; checks and reads the scene cache and stored screen previews; reads RAW sensor data (LibRaw) and decodes JPEG/PNG/TIFF; pulls camera previews out of RAWs; saves scene data after a draw.</td></tr>
-<tr><td><span class="chip helper">Helper</span></td><td>A second Python process (<code>hdr-library</code>) at below-normal priority, with separate lanes: main, picture, index, check, stored, kept.</td><td>Folder scans and background indexing of pinned folders; camera details; writing stored screen previews (JPEG XL encode); CPU decoding for HEIC/JPEG XL/AVIF. Pauses whenever Grade, import or export is working.</td></tr>
-<tr><td><span class="chip gpu">Graphics card</span></td><td>One shared card. Library drawing, RAW development, Grade, Proof and export all queue for it.</td><td>Develops RAWs (highlight reconstruction, demosaic, colour); draws every thumbnail and screen preview with the current grade, Denoise, Film Look and HDR/SDR mode.</td></tr>
+<tr><td><span class="chip page">Page</span></td><td>The app window (Electron). Runs the Library screen and talks to the graphics card through WebGPU.</td><td>Decides what to show; keeps finished thumbnails and screen previews in memory; sends drawing, RAW development and Denoise measurement to the graphics card; shows quick draws and sharp draws.</td></tr>
+<tr><td><span class="chip backend">Backend</span></td><td>The main Python process (the same one Grade uses). The only writer of the database and settings files.</td><td>Serves folder rows from the index; checks and reads the scene cache and stored screen previews; reads RAW sensor data (LibRaw) and decodes JPEG/PNG/TIFF; pulls camera previews out of RAWs and keeps them in memory; saves scene data after a draw.</td></tr>
+<tr><td><span class="chip helper">Helper</span></td><td>A second Python process (<code>hdr-library</code>) at below-normal priority, with separate lanes: main, picture, index, check, stored, kept.</td><td>Background disk checks and indexing; camera details (EXIF); writing stored screen previews (JPEG XL encode); CPU decoding for HEIC/JPEG XL/AVIF. Pauses whenever Grade, import or export is working.</td></tr>
+<tr><td><span class="chip gpu">Graphics card</span></td><td>One shared card. Library drawing, RAW development, Grade, Proof and export all queue for it.</td><td>Develops RAWs one at a time; measures noise for Denoise; draws every thumbnail and screen preview with the current grade, Denoise, Film Look and HDR/SDR mode.</td></tr>
 </table>
 </div>
 
-<div class="note"><strong>Batch verification:</strong> Steve tries both HDR and SDR; Claude reads route and stage timings with <code>summarize_library_log.py</code>. The screen wins if it disagrees with the log. Focused Denoise measurement/reconstruction, Full-tier, delivery and Proof/encoded-ceiling checks passed the task limits. The stricter legacy delivery p99.9 warning and fast results are recorded in the module PRD. Normal-folder timings await Steve’s app run.</div>
-
-<h2>Where the time went before this batch</h2>
-<p class="muted">Ranked by how much you'd feel it, from the Oct 26 15:56–16:02 HDR try. This is the list to make trade-offs from.</p>
+<h2>Where the time goes now</h2>
+<p class="muted">Ranked by how much you'd feel it. "Was" is the same step earlier on October 26.</p>
 <ol class="ranked">
-  <li><span class="n">1</span><span class="what">Developing a never-viewed RAW <span class="cachetag">changed; app trial pending</span></span><span class="t slow">10–26 s</span>
-    <span class="why">Was about 3 s on Oct 25. Now developments take exclusive GPU leases and developing ahead starts after the selected sharp draw. Selected work preempts spare work at stage boundaries. <span class="chip gpu">Graphics card</span></span></li>
-  <li><span class="n">2</span><span class="what">Opening a folder during a development <span class="cachetag">changed; app trial pending</span></span><span class="t slow">16–22 s wait</span>
-    <span class="why">The scan took 0.04 s but queued behind source-busy. Now main-lane folder scans have independent admission; GPU development no longer gates them. <span class="chip helper">Helper</span></span></li>
-  <li><span class="n">3</span><span class="what">Sharp draw for graded photos with Denoise</span><span class="t slow">1.4 s typical, up to 3.8 s</span>
-    <span class="why">Historical CPU Denoise preparation. Noise measurement now runs on the graphics card and is kept with Library preview data. Quick draws use finished thumbnails or yield to the sharp draw; they never start Denoise preparation. GPU reconstruction is unchanged. <span class="chip gpu">Graphics card</span></span></li>
-  <li><span class="n">4</span><span class="what">Back to the grid after fullscreen <span class="cachetag">changed; app trial pending</span></span><span class="t slow">0.4–4.2 s</span>
-    <span class="why">Now completed thumbnails survive Single/fullscreen transitions in the bounded pool, keyed by current grade/mode. Camera previews are guarded and retained in 64 MiB RAM. <span class="chip page">Page</span> <span class="chip backend">Backend</span></span></li>
-  <li><span class="n">5</span><span class="what">HEIC, JPEG XL and AVIF first pictures</span><span class="t slow">4–8 s (AVIF gain map up to 12.7 s)</span>
-    <span class="why">Now TIFF/HEIC/JPEG XL decoding requests all cores. Eligible HEIC samples use GPU preparation; AVIF gain-map reconstruction uses independent CPU rows in parallel. Full GPU AVIF remains open. <span class="chip helper">Helper</span> <span class="chip backend">Backend</span></span></li>
-  <li><span class="n">6</span><span class="what">Sharp draw from a stored screen preview</span><span class="t ok">0.24 s SDR · 0.28 s HDR</span>
-    <span class="why">Target about 0.1 s. Reading and decoding the file takes 0.06–0.09 s; most of the rest is getting it from the backend into the page. <span class="chip backend">Backend</span> <span class="chip page">Page</span></span></li>
-  <li><span class="n">7</span><span class="what">Never-prepared JPEG/PNG sharp draw</span><span class="t ok">0.85–1.1 s</span>
-    <span class="why">Accepted for now; target under 1 s (Steve, Oct 26). TIFF is 2.0–2.4 s.</span></li>
+  <li><span class="n">1</span><span class="what">Scrolling a very large folder (D:\Photos, 155,873 photos) <span class="bugtag">OPEN</span></span><span class="t slow">grid blank while moving</span>
+    <span class="why">Steve sees no grid or thumbnails while scrolling; other folders are fine. Once a scroll stops: at most 30 picture requests, first visible picture 0.04 s typical, 1.6 s worst. Opening it: first picture 4.7 s (a camera preview), because the first screen now waits for all rows (3.2 s). Next task. <span class="chip page">Page</span></span></li>
+  <li><span class="n">2</span><span class="what">Switching HDR / SDR <span class="bugtag">OPEN</span></span><span class="t ok">redraw not measured yet</span>
+    <span class="why">Steve: "a bit slow"; parked for later. The switch is now logged (27 visible thumbnails at 21:38:59). Denoise no longer re-measures: reuse after the switch took at most 0.03 s (was 0.5–1.1 s per photo).</span></li>
+  <li><span class="n">3</span><span class="what">Disk check of a 155k-photo folder</span><span class="t slow">64 s</span>
+    <span class="why">Background only, gives way to everything on screen. Was 265 s, and never finished before that. Target about 60 s. <span class="chip helper">Helper</span></span></li>
+  <li><span class="n">4</span><span class="what">Developing a never-viewed RAW</span><span class="t ok">0.7 s typical</span>
+    <span class="why">1.8 s for the slowest 1 in 10, 3.4 s worst (97 developments). Was 10–26 s with several developments sharing the card; now one at a time. <span class="chip gpu">Graphics card</span></span></li>
+  <li><span class="n">5</span><span class="what">Sharp draw from a stored screen preview</span><span class="t ok">0.24 s</span>
+    <span class="why">Target about 0.1 s. Reading and decoding the file takes 0.06 s; most of the rest (0.17 s) is getting it from the backend into the page. <span class="chip backend">Backend</span> <span class="chip page">Page</span></span></li>
+  <li><span class="n">6</span><span class="what">HEIC, JPEG XL and AVIF first pictures</span><span class="t slow">baseline 4–8 s</span>
+    <span class="why">All-core decoding and parallel AVIF rows are built, but not yet measured in the app. Full GPU AVIF remains open. <span class="chip helper">Helper</span> <span class="chip backend">Backend</span></span></li>
+  <li><span class="n">7</span><span class="what">Sharp draw for graded photos with Denoise</span><span class="t ok">0.25 s typical, 0.54 s worst</span>
+    <span class="why">Was 1.4 s typical, 3.8 s worst. Noise measurement now runs on the graphics card (0.2 s for a screen preview, 0.06 s for a thumbnail) and is kept, so revisits reuse it in about 1 ms. <span class="chip gpu">Graphics card</span></span></li>
 </ol>
 
 <!-- ============ STAGE 1 ============ -->
 <h2>1 · App launch</h2>
-<p class="muted">Steve's restart, Oct 26 15:56. Seconds from clicking the app icon. Felt "super fast".</p>
+<p class="muted">Seconds from clicking the app icon. Steve's 21:27 launch (window time from the 20:54 launch).</p>
 <div class="flow"><div class="lanes">
   <div class="lanehead"></div>
   <div class="lanehead page">Page<span>window, WebGPU</span></div>
@@ -216,47 +211,39 @@ Words follow the master PRD glossary.</p>
   <div class="lanehead gpu">Graphics card<span>shared</span></div>
 
   <div class="num">1</div>
-  <div class="step page"><div class="h">Window appears <span class="t fast">0.35 s</span></div>
+  <div class="step page"><div class="h">Window appears <span class="t fast">0.33 s</span></div>
     <div class="d">"Starting" window. Python starts at the same moment, not after.</div></div>
 
   <div class="num">2</div>
   <div class="step backend"><div class="h">Python loads its code <span class="t ok">1.1 s</span></div>
-    <div class="d">Loading libraries (colour maths, exporters, web server). Then crash recovery (0.015 s) and the settings writer start.</div>
+    <div class="d">Libraries (colour maths, exporters, web server). Then crash recovery (0.015 s) and the settings writer.</div>
     <div class="meta"><span class="cachetag">Index database</span><span class="cachetag">Recovery records</span></div></div>
 
   <div class="num">3</div>
-  <div class="step backend"><div class="h">Backend ready <span class="t ok">at 1.5 s</span></div>
-    <div class="d">Big upkeep jobs no longer block this point (fixed today; was 17–21 s).</div></div>
+  <div class="step backend"><div class="h">Backend ready <span class="t ok">at 1.6 s</span></div>
+    <div class="d">Was 17–21 s on the morning of October 26.</div></div>
 
   <div class="num">4</div>
-  <div class="step helper"><div class="h">Helper starts <span class="t ok">ready at 3.0 s</span></div>
+  <div class="step helper"><div class="h">Helper ready <span class="t ok">at 3.3 s</span></div>
     <div class="d">Starts alongside the page; nothing waits for it unless it's needed.</div></div>
 
   <div class="num">5</div>
-  <div class="step page"><div class="h">Library page ready <span class="t ok">at 2.4 s</span></div></div>
-
-  <div class="num">6</div>
-  <div class="step backend"><div class="h">Last folder listed <span class="t ok">at 3.2 s</span></div>
+  <div class="step backend"><div class="h">Last folder listed <span class="t ok">at 2.8 s</span></div>
     <div class="d">From the index database, not by walking the disk.</div>
     <div class="meta"><span class="cachetag">Index database</span></div></div>
 
-  <div class="num">7</div>
-  <div class="step gpu"><div class="h">First thumbnail on screen <span class="t ok">at 3.6 s</span></div>
+  <div class="num">6</div>
+  <div class="step gpu"><div class="h">First thumbnail on screen <span class="t ok">at 3.3 s</span></div>
     <div class="d">See stage 3 for how each thumbnail is made.</div></div>
 
-  <div class="num">8</div>
-  <div class="step backend"><div class="h">Upkeep, after the page <span class="t fast">from ~5.4 s</span></div>
-    <div class="d">Recovery reconciliation, cache size accounting, settings temp-file cleanup, codec check (0.35 s). Low priority; gives way to anything you do.</div></div>
-
-  <div class="num last">9</div>
-  <div class="step helper"><div class="h">Background indexing</div>
-    <div class="d">Index lane walks pinned folders (D:\Photos: 155,879 files). The October 26 app run had 116,190 pending camera-detail reads. Streamed folders now fill missing details in the background with all-core readers; selected and visible reads go first.</div>
-    <div class="meta"><span class="cachetag">Index database</span></div></div>
+  <div class="num last">7</div>
+  <div class="step backend"><div class="h">Upkeep, after the page <span class="t fast">from 5.6 s</span></div>
+    <div class="d">Recovery in small pieces (2,010 pieces, longest 0.27 s), cache size accounting (61 s), codec check (1 s). All in the background at low priority; finished after about 6 minutes without being felt.</div></div>
 </div></div>
 
 <!-- ============ STAGE 2 ============ -->
-<h2>2 · Open a mixed folder</h2>
-<p class="muted">For example badminton: 372 Sony RAWs plus 81 JPEG/PNG exports.</p>
+<h2>2 · Open a folder</h2>
+<p class="muted">Ordinary folders (badminton: 453 photos; Play_Raw: 52) and the very large D:\Photos (155,873 photos in all subfolders).</p>
 <div class="flow"><div class="lanes">
   <div class="lanehead"></div>
   <div class="lanehead page">Page</div><div class="lanehead backend">Backend</div><div class="lanehead helper">Helper</div><div class="lanehead gpu">Graphics card</div>
@@ -265,118 +252,124 @@ Words follow the master PRD glossary.</p>
   <div class="step page"><div class="h">You click the folder</div></div>
 
   <div class="num">2</div>
-  <div class="step backend"><div class="h">Read all indexed photos <span class="t ok">4.98 s backend / 6.06 s page, 155k profile</span></div>
-    <div class="d">One complete snapshot with cached marks, grades, virtual copies and camera facts. Independent WAL reads; disk checking and camera-detail fill-in start afterwards. The first grid has its full scrollbar. Visible settings hydrate in batches of at most 32.</div>
-    <div class="meta"><span class="cachetag">Index database</span><span class="cachetag">Settings files (.hdrf) beside photos</span></div></div>
+  <div class="step backend"><div class="h">Rows from the index <span class="t fast">0.05–0.25 s ordinary</span> <span class="t slow">3.6 s for 155k</span></div>
+    <div class="d">Photos with their ratings, grades and camera details as stored. The grid knows the full folder size and order from the first screen. For D:\Photos the first screen waits for all rows (3.2 s; was 0.015 s for the first rows earlier) <span class="bugtag">OPEN</span>. Was 88 s for all rows earlier in the evening.</div>
+    <div class="meta"><span class="cachetag">Index database</span><span class="cachetag">Settings files (.hdrf)</span></div></div>
 
   <div class="num">3</div>
-  <div class="step page"><div class="h">Grid laid out, thumbnails requested</div>
-    <div class="d">Only the settled viewport starts picture work. Finished cells stay retained one screen beyond each edge; departed loading cells cancel their page, backend and helper demand. First paint has the complete folder size and order. See stage 3.</div></div>
+  <div class="step gpu"><div class="h">First thumbnail on screen <span class="t ok">0.4–1.0 s ordinary</span> <span class="t slow">4.7 s for 155k</span></div>
+    <div class="d">D:\Photos: first camera preview at 4.7 s, first finished thumbnail at 6.0 s. See stage 3.</div></div>
 
-  <div class="num last">4</div>
-  <div class="step helper"><div class="h">Background disk check: apply only differences <span class="t slow">1 s first-screen target unverified</span></div>
-    <div class="d">The helper walks at most 256 photos per page, using directory settings names instead of failed per-photo probes. All-core camera readers pause during a page. Changes preserve scroll/selection; switching folders cancels. Latest disposable D:\Photos check: 92.79 s (target about 60 s). Single directory enumeration and path-only removal verification followed that profile and remain unprofiled. Logs separate helper and backend acceptance time.</div></div>
+  <div class="num">4</div>
+  <div class="step helper"><div class="h">Camera details (EXIF) <span class="t fast">selected 0.04 s</span> <span class="t fast">visible 0.13 s</span></div>
+    <div class="d">The selected photo first, then what's on screen, then the rest in the background (17,792 photos filled in during this session).</div>
+    <div class="meta"><span class="cachetag">Index database</span></div></div>
+
+  <div class="num last">5</div>
+  <div class="step helper"><div class="h">Background disk check, applies only differences <span class="t ok">0.1–1.1 s ordinary</span> <span class="t slow">64 s for 155k</span></div>
+    <div class="d">Walks the folder in pages (1,072 pages for D:\Photos: helper 45 s, backend 8 s). Keeps scroll and selection; switching folders cancels it; going to Grade no longer stops it. Was 265 s earlier in the evening.</div></div>
 </div></div>
 
 <!-- ============ STAGE 3 ============ -->
 <h2>3 · Grid thumbnails</h2>
-<p class="muted">For each visible cell. A thumbnail is the 640 px picture with the current grade and HDR/SDR mode. The checks run top to bottom; the first one that has the picture wins.</p>
+<p class="muted">For each visible cell, once a scroll stops. A thumbnail is the 640 px picture with the current grade and HDR/SDR mode. The checks run top to bottom; the first one that has the picture wins.</p>
 <div class="flow"><div class="lanes">
   <div class="lanehead"></div>
   <div class="lanehead page">Page</div><div class="lanehead backend">Backend</div><div class="lanehead helper">Helper</div><div class="lanehead gpu">Graphics card</div>
 
+  <div class="num">0</div>
+  <div class="step page"><div class="h">Ask only for what's on screen <span class="t fast">≤ 30 requests per stop</span></div>
+    <div class="d">Cells that scroll away cancel their work everywhere. First visible picture after a stop: 0.04 s typical, 1.6 s worst. Was 3,900–5,500 requests and 32 s. While the grid is still moving in a 155k folder nothing is drawn <span class="bugtag">OPEN</span>.</div></div>
+
   <div class="num">A</div>
-  <div class="step page decision"><div class="h">Finished thumbnail already in memory?</div>
-    <div class="d"><span class="branch yes">Yes</span> <span class="arrow">→</span> shown at once <span class="t fast">~0 ms</span>. <span class="branch no">No</span> <span class="arrow">→</span> B.</div>
+  <div class="step page decision"><div class="h">Finished thumbnail already in memory? <span class="t fast">~0 ms</span></div>
+    <div class="d"><span class="branch yes">Yes</span> <span class="arrow">→</span> shown at once (137 reuses this session). <span class="branch no">No</span> <span class="arrow">→</span> B.</div>
     <div class="meta"><span class="cachetag">Recent thumbnail pool · 512 MiB · page memory</span></div></div>
 
   <div class="num">B</div>
-  <div class="step backend decision"><div class="h">Thumbnail scene data on disk? <span class="t fast">0.04 s typical</span> <span class="t ok">0.5–0.77 s in a burst</span></div>
-    <div class="d">"Checking thumbnail cache". Scene data is developed but <em>ungraded</em>, so it still has to be drawn with the grade. Slow when many cells ask at once (startup).</div>
+  <div class="step backend decision"><div class="h">Thumbnail scene data on disk? <span class="t fast">0.03 s typical</span> <span class="t ok">0.25 s slowest 1 in 10</span></div>
+    <div class="d">Scene data is developed but <em>ungraded</em>, so it still has to be drawn with the grade.</div>
     <div class="meta"><span class="cachetag">Thumbnail data · 2 GB · full</span></div></div>
-
   <div class="num">B1</div>
-  <div class="step backend"><div class="h"><span class="branch yes">Yes:</span> send the scene to the page <span class="t fast">0.02 s typical</span> <span class="t ok">up to 0.27 s</span></div></div>
-  <div class="num">B2</div>
-  <div class="step gpu"><div class="h">Draw with the current grade <span class="t fast">0.04 s</span></div>
-    <div class="d">Graded photos with Denoise reuse a stored source-pixel measurement or measure on the graphics card. Historical CPU preparation: <span class="t ok">0.33 s typical</span> <span class="t slow">up to 1.45 s</span>. Then the finished thumbnail goes into the recent thumbnail pool.</div></div>
+  <div class="step gpu"><div class="h"><span class="branch yes">Yes:</span> draw with the current grade <span class="t fast">0.01–0.04 s</span></div>
+    <div class="d">Graded Denoise photos: a kept noise measurement is reused in about 1 ms (80 reuses); a new one is measured on the card in 0.06 s typical, 0.17 s worst. Then the thumbnail goes into the recent thumbnail pool.</div>
+    <div class="meta"><span class="cachetag">Denoise measurements</span></div></div>
 
   <div class="num">C</div>
-  <div class="step backend"><div class="h"><span class="branch no">No, RAW:</span> pull the camera preview out of the RAW <span class="t ok">0.3–0.5 s</span></div>
-    <div class="d">Used only without an eligible finished thumbnail and without a grade. Retained in a 64 MiB backend RAM pool keyed by file path, size, modification time and picture edge. Logs distinguish extraction and memory hits.</div></div>
+  <div class="step backend"><div class="h"><span class="branch no">No, unedited RAW:</span> camera preview <span class="t fast">memory hit ~0 s</span> <span class="t ok">first extraction 0.13 s</span></div>
+    <div class="d">Kept in memory after the first extraction (117 memory hits, 46 extractions; slowest 0.26 s). Shown as a stand-in until the photo is developed.</div>
+    <div class="meta"><span class="cachetag">Camera previews · 64 MiB · backend memory</span></div></div>
   <div class="num">C1</div>
-  <div class="step gpu"><div class="h">Develop the RAW when there's room</div>
-    <div class="d">Same development as fullscreen (stage 4, path E). Makes the thumbnail and screen preview scene data together and saves both.</div>
+  <div class="step gpu"><div class="h">Develop the RAW <span class="t ok">0.7 s typical</span></div>
+    <div class="d">Same development as fullscreen (stage 4, E). Makes thumbnail and screen preview scene data together and saves both.</div>
     <div class="meta"><span class="cachetag">Thumbnail data</span><span class="cachetag">Screen preview data</span></div></div>
 
   <div class="num">D</div>
-  <div class="step backend"><div class="h"><span class="branch no">No, JPEG/PNG/TIFF:</span> decode, then develop on the card <span class="t ok">JPEG/PNG 0.3–1.1 s</span> <span class="t slow">TIFF 2.0–2.4 s</span></div>
-    <div class="d">Unedited JPEG/PNG can show the decoded original early as a quick draw. Drawn straight from the card; saving happens afterwards.</div></div>
+  <div class="step backend"><div class="h"><span class="branch no">No, JPEG/PNG/TIFF/EXR:</span> decode, then develop on the card <span class="t ok">EXR 0.35 s decode</span></div>
+    <div class="d">Baseline sharp draws: JPEG/PNG 0.85–1.1 s, TIFF 2.0–2.4 s (target 1 s; not re-measured in the app after the all-core change). Unedited JPEG/PNG show the decoded original early.</div></div>
 
   <div class="num last">E</div>
-  <div class="step helper"><div class="h"><span class="branch no">No, HEIC/JPEG XL/AVIF:</span> CPU decode, eligible samples to GPU <span class="t slow">4–8 s</span> <span class="t slow">AVIF gain map up to 12.7 s</span></div>
-    <div class="d">HEIC/JPEG XL decode on all cores. Apple HEIC gain maps retain Grade's reconstruction and authored SDR, then use GPU colour preparation/reduction. Unresolved colour uses the CPU fallback. Native AVIF gain-map rows run in parallel; full GPU reconstruction remains open. The displayed times are pre-batch baselines.</div></div>
+  <div class="step helper"><div class="h"><span class="branch no">No, HEIC/JPEG XL/AVIF:</span> CPU decode <span class="t slow">baseline 4–8 s</span></div>
+    <div class="d">All-core decoding; eligible HEIC goes to the card for colour work; AVIF gain-map rows run in parallel. Not yet measured in the app. Full GPU AVIF is open.</div></div>
 </div></div>
 
 <!-- ============ STAGE 4 ============ -->
 <h2>4 · Fullscreen</h2>
-<p class="muted">For each photo you land on. First the <strong>quick draw</strong> (the photo's own thumbnail enlarged), then the <strong>sharp draw</strong> (the screen preview, 2560 px). Checks run top to bottom.</p>
+<p class="muted">For each photo you land on. First the <strong>quick draw</strong> (the photo's own thumbnail enlarged), then the <strong>sharp draw</strong> (the screen preview, 2560 px). Sharp draws this session: 0.25 s typical, 0.5 s slowest 1 in 10, 0.54 s worst (badminton RAWs). Checks run top to bottom.</p>
 <div class="flow"><div class="lanes">
   <div class="lanehead"></div>
   <div class="lanehead page">Page</div><div class="lanehead backend">Backend</div><div class="lanehead helper">Helper</div><div class="lanehead gpu">Graphics card</div>
 
   <div class="num">A</div>
-  <div class="step page decision"><div class="h">In the ready window? <span class="t fast">sharp in 6 ms typical</span></div>
-    <div class="d">Finished screen previews kept on the card for the current photo, 2 ahead and 2 behind. <span class="branch yes">Yes</span> <span class="arrow">→</span> done. 30 of 55 sharp draws in the HDR try. <span class="branch no">No</span> <span class="arrow">→</span> B.</div>
+  <div class="step page decision"><div class="h">In the ready window? <span class="t fast">sharp in 5 ms</span></div>
+    <div class="d">Finished screen previews kept on the card for the current photo, 2 ahead and 2 behind. <span class="branch yes">Yes</span> <span class="arrow">→</span> done. <span class="branch no">No</span> <span class="arrow">→</span> B.</div>
     <div class="meta"><span class="cachetag">Ready window · 5 photos · graphics memory</span></div></div>
 
   <div class="num">B</div>
-  <div class="step page"><div class="h">Quick draw <span class="t fast">usually at once</span></div>
-    <div class="d">The photo's own finished thumbnail, enlarged. An unedited RAW with no thumbnail may use its retained camera preview. A graded Denoise thumbnail miss yields directly to the sharp draw; no Denoise preparation blocks the quick draw. This cold miss can still have no quick draw.</div>
-    <div class="meta"><span class="cachetag">Recent thumbnail pool</span></div></div>
+  <div class="step page"><div class="h">Quick draw <span class="t fast">0.03 s</span></div>
+    <div class="d">The photo's own finished thumbnail, enlarged, or an unedited RAW's camera preview. Never waits for Denoise; a graded photo with no thumbnail goes straight to the sharp draw (4 times this session).</div>
+    <div class="meta"><span class="cachetag">Recent thumbnail pool</span><span class="cachetag">Camera previews</span></div></div>
 
   <div class="num">C</div>
-  <div class="step backend decision"><div class="h">Stored screen preview on disk? <span class="t fast">read + decode 0.06–0.09 s</span></div>
-    <div class="d">Finished pictures saved as JPEG XL, separate HDR and SDR files, about 2.3 MB per photo. Must match the photo, grade (incl. Film Look), HDR/SDR mode and screen size, or it's ignored. New since today.</div>
-    <div class="meta"><span class="cachetag">Stored screen previews · 10 GiB · own limit</span></div></div>
+  <div class="step backend decision"><div class="h">Stored screen preview on disk? <span class="t fast">read + decode 0.06 s</span></div>
+    <div class="d">Finished pictures saved as JPEG XL, separate HDR and SDR files, about 2.3 MB per photo. Must match the photo, grade (incl. Film Look), HDR/SDR mode and screen size, or it's ignored.</div>
+    <div class="meta"><span class="cachetag">Stored screen previews · 10 GiB</span></div></div>
   <div class="num">C1</div>
-  <div class="step page wide2"><div class="h"><span class="branch yes">Yes:</span> fetch, upload, draw <span class="t ok">sharp 0.24 s SDR · 0.28 s HDR</span></div>
-    <div class="d">Fetch into the page 0.14–0.19 s, setup 0.04–0.06 s, upload 0.01 s, draw 0.02 s. No Denoise or grading needed: it's already finished. Target ~0.1 s.</div></div>
+  <div class="step page wide2"><div class="h"><span class="branch yes">Yes:</span> fetch, upload, draw <span class="t ok">sharp 0.24 s</span></div>
+    <div class="d">Fetch into the page 0.17 s, setup 0.02 s, upload 0.01 s, draw 0.01 s. Already finished, so no Denoise or grading. Target about 0.1 s.</div></div>
 
   <div class="num">D</div>
-  <div class="step backend decision"><div class="h"><span class="branch no">No:</span> screen-preview scene data on disk?</div>
+  <div class="step backend decision"><div class="h"><span class="branch no">No:</span> screen-preview scene data on disk? <span class="t fast">fetch 0.08 s</span></div>
     <div class="d">Ungraded 2560 px scene data.</div>
     <div class="meta"><span class="cachetag">Screen preview data · 10 GB · full</span></div></div>
   <div class="num">D1</div>
-  <div class="step backend"><div class="h"><span class="branch yes">Yes:</span> send it to the page <span class="t fast">0.08 s typical</span> <span class="t ok">up to 1 s</span></div></div>
-  <div class="num">D2</div>
-  <div class="step gpu"><div class="h">Grade and draw it <span class="t ok">0.21 s</span></div>
-    <div class="d">Historical Denoise preparation on graded photos: <span class="t slow">1.4 s typical, up to 3.8 s</span>. Overall: quick-then-sharp <span class="t ok">0.47 s typical</span>, <span class="t slow">2.6 s for the slowest 1 in 10</span>.</div></div>
+  <div class="step gpu"><div class="h"><span class="branch yes">Yes:</span> grade and draw <span class="t fast">0.04 s draw</span> <span class="t ok">+ 0.2 s new Denoise measurement</span></div>
+    <div class="d">A kept Denoise measurement is reused in about 1 ms. New measurement on the card: 0.2 s for a screen preview (was 1.4 s typical, 3.8 s worst on the CPU).</div>
+    <div class="meta"><span class="cachetag">Denoise measurements</span></div></div>
 
-  <div class="note step backend wide2">Denoise: reuse the stored measurement, otherwise measure bounded actual source windows on the graphics card; CPU only on GPU failure/unavailability. Finishing controls and shared HDR/SDR pixels reuse it. Authored SDR bases remain separate. GPU reconstruction arithmetic is unchanged. Matched screen preview: 203 ms preparation + 363 ms draw (~0.57 s); target 0.5 s still open. Thumbnail preparation 92 ms, target ~50 ms still open. App acceptance remains Steve’s.</div>
   <div class="num">E</div>
-  <div class="step backend"><div class="h"><span class="branch no">No: develop the RAW.</span> Read file and sensor data <span class="t ok">0.66 s file read + 0.06 s LibRaw</span></div>
-    <div class="d">USB drive read dominates. Sensor data then sent to the page (0.17 s).</div></div>
+  <div class="step backend"><div class="h"><span class="branch no">No: develop the RAW.</span> Read sensor data <span class="t fast">0.06 s typical</span> <span class="t slow">1.6 s worst</span></div>
+    <div class="d">File read plus LibRaw. The slow cases are cold reads from the USB drive.</div></div>
   <div class="num">E1</div>
-  <div class="step gpu"><div class="h">Develop on the card <span class="t ok">baseline ~1.3 s alone</span> <span class="t slow">old overlap 9–24 s</span></div>
-    <div class="d">Upload 0.13, highlight reconstruction 0.26, demosaic 0.46, colour 0.27, reduce 0.13, read back 0.06 s (Oct 25 diagnostic). The old overlapping developments took 10–26 s total. Now admission is exclusive even when GPU memory reservations would fit together; admission and GPU stage timings are logged.</div></div>
+  <div class="step gpu"><div class="h">Develop on the card, one at a time <span class="t ok">0.55 s typical</span> <span class="t slow">3.2 s worst</span></div>
+    <div class="d">Upload, highlight reconstruction, demosaic, colour, reduce, read back. Whole development including reading and hand-over: 0.7 s typical, 1.8 s slowest 1 in 10, 3.4 s worst. Was 10–26 s when developments overlapped.</div></div>
   <div class="num">E2</div>
-  <div class="step backend"><div class="h">Hand both sizes to the page via RAM <span class="t ok">0.6–0.99 s</span></div>
-    <div class="d">Thumbnail and screen preview scene data; drawn before anything is saved. Whole development was about 3.2 s on Oct 25.</div>
+  <div class="step backend"><div class="h">Hand both sizes to the page via RAM <span class="t fast">0.04 s typical</span></div>
+    <div class="d">Thumbnail and screen preview scene data; drawn before anything is saved.</div>
     <div class="meta"><span class="cachetag">RAM transport · 256 MiB</span></div></div>
 
   <div class="num">F</div>
-  <div class="step backend"><div class="h">After the sharp draw: save scene data <span class="t fast">~0.03 s each</span></div>
-    <div class="d">Background. Oldest data is dropped when full; the 2560 allowance is full, so idle folder warming has stopped.</div>
+  <div class="step backend"><div class="h">After the sharp draw: save scene data <span class="t fast">0.004 s typical</span></div>
+    <div class="d">Background. Oldest data is dropped when full.</div>
     <div class="meta"><span class="cachetag">Thumbnail data</span><span class="cachetag">Screen preview data</span></div></div>
   <div class="num">F1</div>
-  <div class="step helper"><div class="h">Write stored screen preview <span class="t ok">0.25–0.7 s each</span> <span class="t slow">waited up to 29 s</span></div>
-    <div class="d">Stored lane: JPEG XL encode of the finished picture, HDR and SDR separately. Low priority; no longer held by source-busy alone, but still yields to competing CPU picture jobs and app pause requests.</div>
+  <div class="step helper"><div class="h">Write stored screen preview <span class="t ok">0.3 s each</span></div>
+    <div class="d">JPEG XL encode of the finished picture. Waited at most 0.06 s in the queue (was up to 29 s).</div>
     <div class="meta"><span class="cachetag">Stored screen previews</span></div></div>
 
   <div class="num last">G</div>
   <div class="step gpu"><div class="h">Develop ahead</div>
-    <div class="d">Up to 12 uncached photos ahead in your direction of travel start developing once the current photo is sharp. Exclusive leases permit one development at a time. Selected work has priority, with cancellation/preemption checks at GPU stage boundaries.</div></div>
+    <div class="d">Up to 12 uncached photos ahead in your direction of travel, one at a time, after the current photo is sharp. The current photo always comes first.</div></div>
 </div></div>
 
 <!-- ============ STAGE 5 ============ -->
@@ -387,16 +380,13 @@ Words follow the master PRD glossary.</p>
 
   <div class="num">1</div>
   <div class="step page"><div class="h">Finished thumbnails reused <span class="t fast">~0 ms</span></div>
-    <div class="d">From the recent thumbnail pool, matching current grade and HDR/SDR mode. Completed canvas routes are retained when cells leave the grid; memory pressure can still evict them.</div>
+    <div class="d">From the recent thumbnail pool, matching the current grade and HDR/SDR mode. Was a flash of camera previews, then 0.4–4.2 s.</div>
     <div class="meta"><span class="cachetag">Recent thumbnail pool</span></div></div>
 
-  <div class="num">2</div>
-  <div class="step backend"><div class="h">No finished thumbnail: eligible camera preview</div>
-    <div class="d">Only eligible unedited RAWs without a thumbnail use this route. A file-version RAM hit avoids another extraction; changed files invalidate it.</div></div>
-
-  <div class="num last">3</div>
-  <div class="step gpu"><div class="h">Pool miss: finish a thumbnail <span class="t slow">old delay 0.4–4.2 s</span></div>
-    <div class="d">Only misses need stage 3 again (scene check, grade, draw). Logs show reuse and memory reclamation; return from Single/fullscreen in both HDR and SDR awaits app acceptance.</div></div>
+  <div class="num last">2</div>
+  <div class="step backend"><div class="h">No finished thumbnail yet: camera preview from memory <span class="t fast">~0 ms</span></div>
+    <div class="d">Only for unedited RAWs that have never been developed. Missing ones go through stage 3 again.</div>
+    <div class="meta"><span class="cachetag">Camera previews</span></div></div>
 </div></div>
 
 <!-- ============ STAGE 6 ============ -->
@@ -407,41 +397,48 @@ Words follow the master PRD glossary.</p>
 
   <div class="num">1</div>
   <div class="step page"><div class="h">Grade appears and loads the photo</div>
-    <div class="d">Grade opens the original at full quality through its own route. Library pictures and stored previews are not used; no thumbnail stand-in is shown. (Grade timing not covered here.)</div></div>
+    <div class="d">Grade opens the original at full quality through its own route; Library pictures are not used. (Grade timing not covered here.)</div></div>
 
   <div class="num">2</div>
-  <div class="step helper"><div class="h">Helper pauses</div>
-    <div class="d">Whenever Grade, import or export is working, the helper's background lanes wait. Already-kept pictures are still served.</div></div>
+  <div class="step gpu"><div class="h">Denoise measurement at full size <span class="t fast">0.11–0.2 s</span></div>
+    <div class="d">24–42 MP photos in this session. Was 0.8–1.0 s on the CPU. Export and Proof use the same measurement (0.2 s in Codex's profile).</div>
+    <div class="meta"><span class="cachetag">Denoise measurements</span></div></div>
 
-  <div class="num last">3</div>
+  <div class="num">3</div>
+  <div class="step helper"><div class="h">Helper pauses, background work continues afterwards</div>
+    <div class="d">While Grade, import or export is working, the helper's background lanes wait. A folder's disk check is kept and finishes later (it used to be cancelled).</div></div>
+
+  <div class="num last">4</div>
   <div class="step backend"><div class="h">Saving a grade makes that photo's finished pictures stale</div>
-    <div class="d">The grade identity changes, so its pool thumbnail, ready-window entry and stored screen previews no longer match. Scene data is ungraded, so it stays valid unless the change affects development itself (for example RAW settings); then the next Library visit only re-grades and re-draws (stage 3 B / stage 4 D) and stores a new screen preview.</div>
+    <div class="d">Its pool thumbnail, ready-window entry and stored screen previews no longer match. Scene data and the Denoise measurement are ungraded, so they stay valid unless the change affects development itself (for example RAW settings). The next Library visit re-grades, re-draws and stores a new screen preview.</div>
     <div class="meta"><span class="cachetag">Settings file (.hdrf)</span></div></div>
 </div></div>
 
 <!-- ============ CACHES ============ -->
 <h2>Everything that is kept</h2>
-<p class="muted">Finished pictures include the grade and HDR/SDR mode and are ready to show. Scene data is developed but ungraded: cheaper than a new development, but it still needs grading, Denoise and drawing.</p>
+<p class="muted">Finished pictures include the grade and HDR/SDR mode and are ready to show. Scene data is developed but ungraded: cheaper than a new development, but it still needs grading and drawing.</p>
 <div class="tablewrap">
 <table>
 <tr><th>What</th><th>Where</th><th>Holds</th><th>Limit · state</th><th>Made by</th><th>Lost on</th></tr>
 <tr><td><strong>Ready window</strong></td><td>Graphics memory (page)</td><td>Finished screen previews: current photo, 2 ahead, 2 behind</td><td>5 photos</td><td><span class="chip gpu">Graphics card</span></td><td>Moving out of range, grade change</td></tr>
-<tr><td><strong>Recent thumbnail pool</strong></td><td>Page memory</td><td>Finished thumbnails for grid and filmstrip</td><td>512 MiB, oldest out first</td><td><span class="chip gpu">Graphics card</span></td><td>App close, grade or HDR/SDR change</td></tr>
+<tr><td><strong>Recent thumbnail pool</strong></td><td>Page memory</td><td>Finished thumbnails for grid and filmstrip</td><td>512 MiB, oldest out first</td><td><span class="chip gpu">Graphics card</span></td><td>App close, grade or HDR/SDR change, memory pressure</td></tr>
+<tr><td><strong>Camera previews</strong></td><td>Backend memory (original inside the RAW)</td><td>The camera's own JPEG, for unedited RAWs</td><td>64 MiB, oldest out first</td><td><span class="chip backend">Backend</span></td><td>App close, file change</td></tr>
 <tr><td><strong>RAM transport</strong></td><td>Backend memory</td><td>Freshly developed scene data on its way to the page, before saving</td><td>256 MiB</td><td><span class="chip backend">Backend</span></td><td>Once saved</td></tr>
 <tr><td><strong>Stored screen previews</strong></td><td>Disk (app data, <code>stored-screen-previews</code>)</td><td>Finished 2560 px pictures, JPEG XL q90, HDR and SDR separately, ~2.3 MB per photo</td><td>10 GiB, oldest out first (~4,400 photos)</td><td><span class="chip helper">Helper</span> (stored lane)</td><td>Grade, mode, screen size or file change (ignored, then replaced)</td></tr>
-<tr><td><strong>Thumbnail data</strong></td><td>Disk (app data)</td><td>640 px scene data, float16, ungraded</td><td>2 GB · <span class="full">full</span> (1.997 GB)</td><td><span class="chip backend">Backend</span></td><td>File change, development settings change</td></tr>
+<tr><td><strong>Denoise measurements</strong></td><td>Disk, with Library preview data; plus memory</td><td>Noise measurement per photo, size and measured pixels; HDR and SDR share it unless the SDR is an authored base</td><td>Part of the managed cache</td><td><span class="chip gpu">Graphics card</span> (CPU fallback)</td><td>File or development change, cache eviction. Survives restarts and grade changes</td></tr>
+<tr><td><strong>Thumbnail data</strong></td><td>Disk (app data)</td><td>640 px scene data, float16, ungraded</td><td>2 GB · <span class="full">full</span></td><td><span class="chip backend">Backend</span></td><td>File change, development settings change</td></tr>
 <tr><td><strong>Screen preview data</strong></td><td>Disk (app data)</td><td>2560 px scene data, float16, ungraded (plus detail preview data)</td><td>10 GB · <span class="full">full</span> (~one folder); idle warming stopped</td><td><span class="chip backend">Backend</span></td><td>Same as above</td></tr>
 <tr><td><strong>Saved-grade pictures</strong></td><td>Disk (app data)</td><td>Older stored finished pictures for edited photos</td><td>2 GB</td><td><span class="chip backend">Backend</span></td><td>Grade change</td></tr>
-<tr><td><strong>Camera preview</strong></td><td>Backend RAM; original inside RAW</td><td>The camera's own JPEG</td><td>64 MiB, oldest out first; baseline extraction 0.3–0.5 s, memory hits unmeasured</td><td><span class="chip backend">Backend</span></td><td>App close, file version change, eviction</td></tr>
-<tr><td><strong>Index database</strong></td><td>Disk (<code>library.sqlite3</code>)</td><td>Every photo in pinned folders, camera details, marks, albums</td><td>October 26 snapshot: 155,879 files; D:\Photos had 116,190 pending camera-detail reads</td><td><span class="chip helper">Helper</span> reads, <span class="chip backend">Backend</span> writes</td><td>Rebuildable from settings files</td></tr>
+<tr><td><strong>Index database</strong></td><td>Disk (<code>library.sqlite3</code>)</td><td>Every photo in pinned folders, camera details, marks, albums</td><td>155,879 files; camera details still filling in for D:\Photos</td><td><span class="chip helper">Helper</span> reads, <span class="chip backend">Backend</span> writes</td><td>Rebuildable from settings files</td></tr>
 <tr><td><strong>Settings files</strong></td><td>Beside each photo (<code>.hdrf</code>)</td><td>Grade, ratings, labels, tags</td><td>—</td><td><span class="chip backend">Backend</span> (the only writer)</td><td>Never deleted by the app</td></tr>
-<tr><td><strong>Denoise reuse</strong></td><td>Managed Library preview data on disk; bounded memory</td><td>Measurements keyed by source pixels, measured size, resampling geometry and version; shared HDR/SDR pixels reuse them, authored SDR stays separate</td><td>512 backend models; managed disk-cache budget; bounded GPU scratch</td><td><span class="chip gpu">Graphics card</span> measurement and reconstruction; CPU fallback</td><td>Cache eviction/clear, source/version or resampled-pixel change; survives restart and finishing-grade changes</td></tr>
 </table>
 </div>
 
-<div class="note"><strong>Planned, not built:</strong> <em>Build previews</em>: you choose photos or a folder, the app makes stored screen previews for them, and they're kept until you discard them (open item 5). For now, stored screen previews are made automatically for every photo you view in fullscreen or Single and dropped oldest first. Detail (100%) previews come last (item 6).</div>
+<div class="note"><strong>Planned, not built:</strong> <em>Build previews</em>: you choose photos or a folder, the app makes stored screen previews for them, and they're kept until you discard them. For now, stored screen previews are made automatically for every photo you view in fullscreen or Single and dropped oldest first. Detail (100%) previews come last.</div>
 
-<p class="muted" style="margin-top:28px"><small>Sources: <code>%APPDATA%\hdr-finisher-desktop\logs\backend.log</code> (Oct 25 evening; Oct 26 14:17, 15:56–16:02) read with <code>codebase/tools/summarize_library_log.py</code>; Oct 25 Part 0e development breakdown and Oct 26 Codex profiles in <code>docs/product/modules/photo-library.md</code>; code in <code>library_worker.py</code> (helper lanes, source-busy gate), <code>library_pictures.py</code> (camera preview), <code>library_cache.py</code> (allowances), <code>library_screen_previews.py</code>, <code>library-tile-pool.js</code>, <code>photo-library.js</code> (ready window, develop ahead). Update this page when a step's timing or owner changes.</small></p>
+<div class="note"><strong>Log label to fix:</strong> <code>summarize_library_log.py</code> reports a folder's "first thumbnail" as the first <em>reused</em> thumbnail, which can be minutes after opening (21–205 s this session). The real first picture in ordinary folders was 0.4–1.0 s.</div>
+
+<p class="muted" style="margin-top:28px"><small>Sources: <code>%APPDATA%\hdr-finisher-desktop\logs\backend.log</code>, Steve's launches on October 26 at 20:54 and 21:27, read with <code>codebase/tools/summarize_library_log.py</code>; Codex profiles recorded in <code>docs/product/modules/photo-library.md</code>; code in <code>library_worker.py</code>, <code>library_pictures.py</code>, <code>library_cache.py</code>, <code>library_screen_previews.py</code>, <code>library-tile-pool.js</code>, <code>photo-library.js</code>. Update this page when a step's timing or owner changes.</small></p>
 
 </main>
 </body>
