@@ -27,9 +27,10 @@ preserved.
   preparation is the slow item).
 - Never-prepared RAWs show their camera preview at once if unedited, then
   develop in about 2.8 s.
-- Never-prepared JPEG/PNG/TIFF take 5–15 s for the sharp draw, because of the
-  scene handoff (next brief). JPEG/PNG originals already give an instant
-  quick draw.
+- Never-prepared JPEG/PNG/TIFF now draw their GPU-prepared thumbnail and
+  screen preview before background scene acceptance and cache storage. JPEG/PNG
+  originals still give an early quick draw. The dated draw-first entry below
+  records both repetitions; Steve's normal-folder try is pending.
 - HEIC and JPEG XL take a slower CPU route; AVIF gain-map files take seconds
   of serial CPU maths.
 - Ratings show immediately; their background save is about 110 ms.
@@ -82,17 +83,15 @@ Finished briefs are in `docs/technical/archive/briefs/`
 
 **Next, in order.** Steve confirms each before it starts.
 
-1. [Cold non-RAW draw-first brief](../../technical/briefs/codex-brief-library-cold-nonraw-handoff-2026-10-26.md)
-   (written, not yet sent to Codex).
-2. Stored JPEG XL screen preview slice (fullscreen first). This needs one
+1. Stored JPEG XL screen preview slice (fullscreen first). This needs one
    decision from Steve first: which HDR ceiling applies to stored previews
    when a grade has Highlight compression switched off (Part B found Library
    pictures above 1000 nits in that case).
-3. Denoise speed-up, as its own task.
-4. HEIC and JPEG XL CPU-route speed.
-5. AVIF gain-map reconstruction on the GPU (estimated 3–5 days).
-6. Build previews command, protected prepared set and space checks.
-7. Detail (100%) previews, last.
+2. Denoise speed-up, as its own task.
+3. HEIC and JPEG XL CPU-route speed.
+4. AVIF gain-map reconstruction on the GPU (estimated 3–5 days).
+5. Build previews command, protected prepared set and space checks.
+6. Detail (100%) previews, last.
 
 **Other open items:**
 
@@ -110,11 +109,70 @@ Finished briefs are in `docs/technical/archive/briefs/`
 - Claude writes outcome-focused Codex prompts that cite logged evidence and
   ask for minimal testing. Codex commits and stops for Steve to try.
 
+**October 26, 2026: cold non-RAW draw first, background storage (built in this commit; Steve's try pending)**
+
+JPEG/PNG/TIFF GPU development now returns validated scene descriptions and retained
+half-float GPU textures for the thumbnail and screen preview. The Library renderers
+share the development device and copy these textures directly into their managed
+source proxies. Pixel upload, backend acceptance and cache persistence start after
+the selected sharp surface is published; drawing needs no scene-pixel fetch.
+The small metadata handoff still validates source ownership/fingerprint and the
+current finishing grade. Complex geometry, local adjustments and Denoise retain
+the established acceptance route. Native detail previews are unchanged.
+
+Direct scenes are keyed by source recipe plus finishing-grade identity, bounded
+and expired, and forgotten on invalidation. Background publication retains the
+source owner until acceptance finishes and uses the existing atomic cache checks.
+GPU packing explicitly rounds to the same half-float values as persisted scenes.
+Reduced scene readback is still preparation work for background storage (about
+87 ms on the JPEG); it no longer supplies the viewer's source texture.
+
+Seconds, **first visible / sharp draw**, both repetitions. These are cold source
+and scene-cache misses with warmed renderers and OS file cache, measured from
+initial single-view navigation through compositor presentation opportunities.
+Same-photo refreshes keep that initial time origin.
+
+| Format | Before 1 | Before 2 | After 1 | After 2 |
+|---|---:|---:|---:|---:|
+| JPEG | 0.393 / 1.798 | 0.656 / 1.825 | 0.327 / 0.844 | 0.390 / 0.896 |
+| PNG | 0.277 / 1.786 | 0.705 / 2.137 | 0.262 / 1.067 | 0.403 / 1.094 |
+| TIFF | 3.208 / 3.208 | 3.307 / 3.307 | 2.362 / 2.362 | 2.017 / 2.017 |
+| HEIC | 6.815 / 7.298 | 8.109 / 8.322 | 7.857 / 7.857 | 7.579 / 7.579 |
+| JXL | 5.033 / 5.225 | 5.008 / 5.341 | 6.318 / 6.661 | 4.161 / 4.945 |
+
+All 20 cases stored successfully. Finished HDR and authored SDR pixels before
+monitor encoding are exactly identical across both phases and repetitions for
+all five formats. All copied inputs/photos retained their hashes; no copied-photo
+sidecars were created. Only disposable copies, profiles, databases and caches
+were used. No extra Library GPU driver ran.
+
+The earlier ~2 s first-JPEG thumbnail fetch did not recur: baseline headers were
+4.7/5.8 ms, backend queue 0.15/0.31 ms and packing 2.95/3.69 ms. Direct GPU draws
+now make zero scene-pixel fetches. Profiler DevTools recording of complete binary
+uploads caused major measurement overhead and closed its debug connection on TIFF;
+bounded debug recording fixes that measurement problem. It does not establish the
+historical stall's exact cause, and no speculative backend scheduling change was
+made. Earlier 5–15 s figures are not directly comparable to this bounded profiler.
+
+Fast checks ran once: Node 631 passed/2 failed; Python 2581 passed/3 skipped/2
+failed. One failure in each suite is the already-known fallback/test-double issue.
+The other two exposed incomplete fixtures for retained-byte accounting and valid
+grade documents; those fixtures were corrected without rerunning the suites.
+The profiler caught a new GPU half-rounding difference, which was fixed; only the
+three affected/inconsistently instrumented samples were replaced. Its final
+20-case qualification passed. No broader test run, release check or installer.
+
+HEIC/JXL CPU speed remains open (including JXL timing variation); AVIF GPU gain-map
+reconstruction remains estimated, not built. JPEG XL q90 stored screen previews
+remain a recorded decision, not an implementation. That decision was already
+committed in `a633430` while this work was underway and is preserved here.
+[Detailed method and retained ledger](../../technical/evidence/library-codecs-and-cold-decode-2026-10-26.md#b4--cold-non-raw-direct-gpu-draw-october-26-2026).
+
 **October 26, 2026: cold non-RAW first-picture profiling (built in this commit; partial qualification)**
 
 Unedited, unchanged, resolved sRGB JPEG/PNG originals now offer a temporary quick draw using Grade's ICC/orientation decoder and existing source/grade/cache guards before and after decoding. Gain-map JPEGs and unresolved colour retain the normal route. Sharp-scene calculations remain unchanged. Live GPU scene handoff uses identical ArrayBuffer bytes instead of Blob upload. Added source/check/wait/transfer, CPU measurement/session and handoff telemetry; no stored-preview feature.
 
-Both warmed-renderer baseline runs completed on disposable copies/profile/database/cache for JPEG, PNG, TIFF, HEIC and JXL. Electron exited during the after phase: JPEG first draw was 102 ms, sharp 6.826 s (before 6.254/7.785 s), with exactly unchanged finished canvas. HEIC and recovered TIFF after results do not establish a sharp-time improvement. PNG/JXL after, second after runs, fine CPU splits and remaining pixel comparisons stay **open** under Steve's GPU-run cap. Scene handoff dominated the GPU route at 4.4–13.3 s. [Full table, stage evidence, test results and AVIF GPU estimate](../../technical/evidence/library-codecs-and-cold-decode-2026-10-26.md#b3--cold-first-picture-profiling-october-26-2026). AVIF reconstruction was estimated only, not built.
+Both warmed-renderer baseline runs completed on disposable copies/profile/database/cache for JPEG, PNG, TIFF, HEIC and JXL. The session hit its token limit and Electron exited with it, not an app crash: JPEG first draw was 102 ms, sharp 6.826 s (before 6.254/7.785 s), with exactly unchanged finished canvas. HEIC and recovered TIFF after results do not establish a sharp-time improvement. PNG/JXL after, second after runs and remaining pixel comparisons were incomplete then; the draw-first follow-up below completes them. Fine CPU splits remain outside that follow-up. Scene handoff dominated the GPU route at 4.4–13.3 s. [Full table, stage evidence, test results and AVIF GPU estimate](../../technical/evidence/library-codecs-and-cold-decode-2026-10-26.md#b3--cold-first-picture-profiling-october-26-2026). AVIF reconstruction was estimated only, not built.
 
 
 **October 25, 2026: Part 0f cold quick draws and development ahead (built in this commit; Steve's try pending)**
@@ -1393,7 +1451,7 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
-| **Cold first picture for non-RAW formats** (core workflow, see decisions) | Part B, October 26: 12 copied originals, 640 px first picture in the current Library, 1.05–12.70 s; current CPU boundaries and in-process alternatives measured separately below. | Offline plan measured; implementation open. No import-rule change. OS cache warm; USB/fullscreen app trial remains separate. |
+| **Cold first picture for non-RAW formats** (core workflow, see decisions) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed, AVIF reconstruction and stored screen previews remain open. OS cache warm; Steve's normal-folder try remains separate. |
 | **Cold RAW development** (badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |
 | **Denoise in Library drawing.** Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: thumbnail analysis 250–530 ms per draw even after reuse; screen-preview measurements already cost 1.6 s in the 18:45 test. Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Reuse fix in Part 0c; exact estimator threading and selected-first measurement scheduling in Part 0f. Reconstruction dispatch optimization remains open; Steve's timing try pending. |
 | Film grain and halation in Library drawing | Present in all slow graded photos (Portra 400, grain 24, halation). Not timed apart from Denoise. | Suspected; measure. |

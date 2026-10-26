@@ -23,6 +23,7 @@ async function libraryDenoiseModel(url, meta = {}) {
   return model;
 }
 class HDRLibraryGPU extends HDRWebGPUPreview {
+  async requestPreviewDevice() { return (await HDRLibraryGpuRaw.shared.gpu()).device; }
   async fetchDenoiseModel(url) {
     return this.libraryMeta?.fullscreen ? libraryDenoiseModel(url,this.libraryMeta) : super.fetchDenoiseModel(url);
   }
@@ -105,6 +106,20 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
       this.proxies.set(key, proxy);
       return proxy;
     }
+    const direct=this.libraryMeta?.directScene, retained=direct?.texture(lane);
+    if(retained && direct.device===this.device){
+      const width=this.libraryMeta.scene_width,height=this.libraryMeta.scene_height;
+      const texture=this.device.createTexture({size:[width,height],format:"rgba16float",
+        usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.COPY_SRC});
+      const encoder=this.device.createCommandEncoder();encoder.copyTextureToTexture({texture:retained},{texture},[width,height]);
+      this.device.queue.submit([encoder.finish()]);
+      const proxy={texture,width,height,sessionId,lane,longEdge,workingSpace:lane==="sdr" && this.libraryMeta.adjustments.sdr.use_authored_base && this.libraryMeta.has_reference ? "linear-srgb" : "acescg",
+        pixelFormat:"rgba16float",geometrySignature,sourceIdentity,identity:key,byteSize:width*height*8,bindGroups:new Map()};
+      this.proxies.set(key,proxy);
+      HDRLibraryStopwatch("picture_direct_scene",{...window.HDRLibraryPictureLog?.(this.libraryMeta),key:sessionId});
+      return proxy;
+    }
+    if(direct)await direct.store();
     const started = performance.now();
     const url = this.libraryMeta?.route === "library-live" ? `/api/library/live-pixels/${sessionId}?lane=${lane}` : this.libraryMeta?.route === "camera-raw-scene" ? `/api/library/raw-thumbnail/${sessionId}` : `/api/library/pixels/${sessionId}?lane=${lane}`;
     const response = await fetch(url, { signal: this.librarySignal });
@@ -299,7 +314,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
       const budget = gpu.memoryBudgetBytes(); gpu.deliveryBudgetBytes = previous;
       const response = await fetch("/api/delivery/gpu/activity", {method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({id:readyClient ||= "library-ready-" + crypto.randomUUID(),active:false,bytes,budget})});
+        body:JSON.stringify({id:readyClient ||= "library-ready-" + crypto.randomUUID(),active:false,bytes:bytes+(HDRLibraryGpuRaw.directBytes?.() || 0),budget})});
       if (!response.ok) throw Error("Ready window accounting unavailable.");
       return (await response.json()).budget;
     });

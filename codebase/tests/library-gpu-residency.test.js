@@ -33,18 +33,18 @@ test('Shared accounting includes retained Library scenes outside the current pro
 });
 
 test('ready surfaces report the configured budget without feeding back shared deductions',async()=>{
- const reports=[];
+ const reports=[];let retained=16;
  class Base {
   constructor(){this.deliveryBudgetBytes=32;}
   async initialize(){return true;}
   memoryBudgetBytes(){return this.deliveryBudgetBytes ?? 1024;}
  }
   const context=vm.createContext({window:{},document:{createElement:()=>({})},performance,HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler'),
-  HDRWebGPUPreview:Base,HDRLibraryStopwatch:()=>{},crypto:{randomUUID:()=> 'test'},
+  HDRLibraryGpuRaw:{directBytes:()=>retained},HDRWebGPUPreview:Base,HDRLibraryStopwatch:()=>{},crypto:{randomUUID:()=> 'test'},
   fetch:async(url,options)=>{const value=JSON.parse(options.body);reports.push(value);return {ok:true,json:async()=>({budget:value.budget-value.bytes})};}});
  vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-gpu.js'),'utf8'),context);
  const pictures=context.window.HDRLibraryPictures;
- assert.equal(await pictures.readyMemory(100),924);assert.equal(await pictures.readyMemory(0),1024);
+ assert.equal(await pictures.readyMemory(100),908);retained=0;assert.equal(await pictures.readyMemory(0),1024);
  assert.deepEqual(reports.map(r=>r.budget),[1024,1024]);assert.ok(reports.every(r=>r.active===false));
  assert.equal((await pictures.initialize()).deliveryBudgetBytes,32);
 });

@@ -677,3 +677,128 @@ Fast checks ran once: Node 630 passed, one existing `selected photo joining deve
 B2's large 14.3 MP gain-map example took 8.747 s on the current CPU boundary and 6.730 s in the native memory probe; the small example took 2.118/1.118 s. The native probe still calls serial `avifImageApplyGainMap`, followed by BT.2020 PQ through 10-bit YUV and back to RGB. Moving gain-map reconstruction arithmetic to compute should remove seconds of serial transfer/gamut/power maths. AVIF decoding, source upload and retained output conversions remain.
 
 Engineering estimate: 1–2 days for a measured prototype; about 3–5 days total for integration, cancellation/fallback and pixel qualification. Provisional target: subsecond reconstruction maths at 14 MP, perhaps 0.1–0.3 s on this GPU, **not a measured end-to-end forecast**. Existing JPEG gain-map GPU waits are tens of milliseconds but its algorithm differs. First isolate decode, ApplyGainMap and output conversions. Preserve base/gain sampling, gamma/offset/channel bounds, gamut choice, orientation, interpolation, headroom rounding (4.11 versus 4.113112926), and existing quantization/YUV round trips before claiming unchanged finished pixels. No AVIF implementation was changed.
+
+
+## B4 — Cold non-RAW direct GPU draw (October 26, 2026)
+
+Follow-up to 37c85b2. The preceding B3 session ended at its token limit, not an
+app crash. This follow-up completed the previously missing formats/repetitions
+and compares finished pixels before monitor encoding, in both HDR and authored SDR.
+
+### Method and timing results
+
+One profiler experiment, resumed from its incremental ledger instead of repeating
+completed samples. Command from `codebase`:
+
+```powershell
+$env:HDR_FINISHER_ELECTRON_WINDOW_SIZE = '2560x1440'
+# Supply a NEW disposable profile directory that already exists:
+$env:HDR_FINISHER_ELECTRON_TEST_USER_DATA = '<experiment profile>'
+node --require ./tools/profile_cold_picture_network.cjs tests/run-in-electron.js tools/profile_cold_picture.js --manifest ../output/part-b-codecs-2026-10-26/cold-manifest.json
+# Interrupted experiments continue with --resume <experiment directory>.
+```
+
+Existing experiment copies supplied all originals; every case copied its photo
+into a new directory. Both renderers and actual draws were warmed before each
+photo; the page was reloaded between photos to release retained GPU resources.
+Grid source preparation was suppressed; selecting/opening the photo initiated
+cold scene preparation. Before selects the preceding backend-acceptance route,
+including the same original stand-ins and current guards; after enables retained
+GPU scenes. OS file cache is warm. These are not cold app-start or USB timings.
+No live Library database, photo, sidecar or cache folder was written.
+
+Seconds, **first visible / sharp draw**, anchored to the initial single-view
+navigation for the selected photo. A same-photo metadata refresh can reset its
+per-request stopwatch; using those later durations alone falsely reported the
+second after JXL sharp draw as 0.491 s. The saved event clocks give 4.945 s from
+the original navigation. All rows below use that common time origin.
+
+| Format | Before 1 | Before 2 | After 1 | After 2 |
+|---|---:|---:|---:|---:|
+| JPEG | 0.393 / 1.798 | 0.656 / 1.825 | 0.327 / 0.844 | 0.390 / 0.896 |
+| PNG | 0.277 / 1.786 | 0.705 / 2.137 | 0.262 / 1.067 | 0.403 / 1.094 |
+| TIFF | 3.208 / 3.208 | 3.307 / 3.307 | 2.362 / 2.362 | 2.017 / 2.017 |
+| HEIC | 6.815 / 7.298 | 8.109 / 8.322 | 7.857 / 7.857 | 7.579 / 7.579 |
+| JXL | 5.033 / 5.225 | 5.008 / 5.341 | 6.318 / 6.661 | 4.161 / 4.945 |
+
+Mean sharp draw: JPEG 1.811 → 0.870 s, PNG 1.962 → 1.080 s,
+TIFF 3.257 → 2.190 s. HEIC/JXL CPU routes were not optimized; JXL after
+variation (6.661/4.945 s) does not establish a CPU speed change.
+
+Ledger and raw captures: `output/cold-nonraw-sharp/1792992142384/results.json`,
+`input-hashes.json` and `{phase}-{format}-{repeat}-{hdr,sdr}.f16`.
+All 20 rows have successful cache-store events and matching input/photo hashes;
+no copied-photo `.hdrf` appeared. Each format's four finished HDR hashes match
+exactly, and its four authored SDR hashes match exactly (40 captures total).
+The ledger retains timing/stage events and bounded response metadata as each
+photo/capture completes, before later store/capture assertions can fail.
+
+### Direct draw and publication
+
+Library preparation and both picture renderers share one hardware WebGPU device.
+GPU reduction retains half-float source textures for thumbnail and screen preview;
+the viewer copies them directly into its managed proxies. The source scene remains
+ungraded: normal finishing still runs in the renderer. A metadata-only acceptance
+request checks source owner, current identity/fingerprint, recipe and finishing
+grade without publishing scene pixels. Direct entries use the current source and
+finishing-grade identities, are bounded to 256 MiB and expire after 30 seconds.
+Invalidation releases them. Retained bytes join shared ready-memory accounting.
+
+The selected surface is published before starting full pixel upload/acceptance
+and persistence. Source ownership survives until background acceptance finishes;
+existing RAM publication and atomic disk publication checks remain in force.
+Geometry/local-adjustment/Denoise cases that require backend scene data retain
+the established route. RAW/DNG reconstruction and native detail preview behavior
+are unchanged. Reduced-scene readback still costs about 87 ms for JPEG; it is
+storage preparation, not the viewer's source. No rendering shader/order changed.
+
+After JPEG/PNG/TIFF rows record direct texture draws and **zero** `/live-pixels`
+fetches, including their finished-pixel captures. JPEG's description handoff is
+82/93 ms versus baseline pixel handoff 644/709 ms; pixel handoff happens later in
+the after phase. Store starts after sharp-surface publication, about one frame
+before the trace's later two-animation-frame presentation confirmation.
+
+### First-fetch stall and profiler repair
+
+The historical ~2 s first JPEG quick fetch overlapped a 2172 ms index lock hold
+in B3's backend log. That overlap does not prove lock ownership caused the fetch
+wait: this pixel route does not take the index/marks lock. The new response headers
+separate route-to-worker queue time and pixel packing. Bounded baseline JPEG
+thumbnail fetch headers: **4.7/5.8 ms**; queue **0.15/0.31 ms**; packing
+**2.95/3.69 ms**. The ~2 s wait did not recur. Direct GPU drawing removes that
+scene-fetch dependency altogether; no unproven executor/locking change was added.
+
+The profiler itself exposed avoidable overhead: Playwright's DevTools network
+recording serialized complete binary scene POST bodies. TIFF closed the debug
+connection while the app/backend continued to draw/store; main-process diagnostics
+recorded no renderer/GPU crash or window/app shutdown. Bounding `Network.enable`
+`maxPostDataSize` to one byte affects debug recording only. It let TIFF finish,
+and removed much of the apparent handoff cost. For example, the preliminary
+unbounded JPEG baseline was 5.448 s sharp with a 2.542 s handoff, versus the
+bounded 1.798/1.825 s sharp and 0.644/0.709 s handoff. B3's 5–15 s figures include
+observer/transport overhead and cannot serve as clean before timings here.
+The historical 2 s quick-fetch stall's exact cause remains unproven; debug
+recording is a plausible contributor, not a proven backend contention diagnosis.
+
+Seventeen completed samples were retained. Only the two initial samples taken
+before this instrumentation repair, and the first after JPEG sample with a GPU
+half-rounding defect, were replaced. Their records/captures remain as
+`superseded-results.json` and `superseded-*.f16`. Native half-float texture stores
+rounded differently from NumPy; explicit nearest/ties-to-even packing fixed it.
+Final profiler log: `output/cold-nonraw-profiler-final.log`, ending PASS.
+Other attempt logs: `output/cold-nonraw-profiler*.log`. No extra Library GPU driver.
+
+### Checks and remaining scope
+
+Fast checks once: Node **631 pass/2 fail**, Python **2581 pass/3 skip/2 fail**.
+Known failures: `selected photo joining development-ahead keeps its CPU fallback
+if GPU fails`; `test_library_native_source_uses_same_repair_before_reduction`
+(`CaptureCache.build` lacks the existing `defer_store` argument). New fixture
+failures: missing `HDRLibraryGpuRaw.directBytes` stub and an incomplete
+`EditDocument` used for a grade-identity check. Both fixtures were corrected;
+suites were not repeated. New stale-source/stale-recipe cases and draw/store
+ordering cases passed in the one run. Fast logs: `output/cold-nonraw-fast-*.log`.
+
+No HEIC/JXL CPU speed work, AVIF GPU reconstruction or stored-preview implementation
+was done. JPEG XL q90 stored screen previews remain the decision already recorded
+in `a633430`, preserved in the module PRD. Steve's normal-folder trial remains.

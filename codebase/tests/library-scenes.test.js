@@ -10,7 +10,7 @@ function setup(plans,develop,cores=4){
   HDRLibraryGpuRaw:{enabled:()=>true,liveScene:develop},
   fetch:async(url,options)=>{requests.push(JSON.parse(options.body));if(url==="/api/library/live-scene")return {ok:false,json:async()=>({detail:"decoder failed"})};const plan=plans[JSON.parse(options.body).path];return {ok:!plan.library_error,json:async()=>plan};}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/library-scenes.js'),'utf8'),context);
- return {scenes:context.window.HDRLibraryScenes,requests,events,advance:ms=>time+=ms};
+ return {context,scenes:context.window.HDRLibraryScenes,requests,events,advance:ms=>time+=ms};
 }
 
 test('quick stored-scene misses never start a source; a stopped request may prepare it',async()=>{
@@ -159,4 +159,26 @@ test('selected photo joining development-ahead keeps its CPU fallback if GPU fai
  const selected=scenes.load('photo',2560,null,0);await tick();block.resolve();
  const [a,b]=await Promise.all([ahead,selected]);assert.ok(a&&b);
  assert.ok(requests.some(request=>request.body?.gpu===false&&request.body.priority===0));
+});
+
+
+test('direct scenes reuse both sizes only for the current finishing grade',async()=>{
+ const plans={photo:{source_identity:'same-source',render_identity:'grade-a'}};
+ const {context,scenes}=setup(plans,()=>assert.fail('Direct scenes need no second development'));
+ const forgotten=[];
+ context.HDRLibraryGpuRaw.cachedDirect=(p,e,v)=>({path:p,edge:e,key:v});
+ context.HDRLibraryGpuRaw.forgetDirect=p=>forgotten.push(p);
+ assert.equal((await scenes.load('photo',640,null,0,false,null,{cachedOnly:true})).key,'grade-a');
+ plans.photo.render_identity='grade-b';
+ assert.equal((await scenes.load('photo',2560,null,0)).key,'grade-b');
+ scenes.invalidate(['photo']);assert.deepEqual(forgotten,['photo']);
+});
+
+test('direct scene persistence waits for acceptance and starts after presentation',async()=>{
+ const {context,scenes}=setup({},()=>{}),accepted=gate(),calls=[];
+ context.fetch=async url=>{calls.push(url);return {ok:true};};
+ const meta={path:'photo',key:'current',directScene:{store:()=>{calls.push('accept');return accepted.promise;}}};
+ scenes.review('photo');scenes.save(meta);await tick();assert.deepEqual(calls,[]);
+ scenes.save(meta,true);await tick();assert.deepEqual(calls,['accept']);
+ accepted.resolve();await tick();assert.deepEqual(calls,['accept','/api/library/live-store/current']);
 });

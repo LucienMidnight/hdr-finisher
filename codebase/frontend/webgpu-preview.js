@@ -601,7 +601,7 @@
           Number(this.adapter.limits.maxBufferSize) || (256 * 1024 * 1024),
           512 * 1024 * 1024,
         );
-        this.device = await this.adapter.requestDevice({
+        this.device = await (this.requestPreviewDevice ? this.requestPreviewDevice.bind(this) : this.adapter.requestDevice.bind(this.adapter))({
           requiredFeatures: timestampQueries ? ["timestamp-query"] : [],
           requiredLimits: { maxBufferSize: fullSurfaceBufferLimit },
         });

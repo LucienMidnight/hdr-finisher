@@ -4,9 +4,13 @@
 
 **Date:** October 26, 2026 · **Written by:** Claude, for Steve · **Read first:** `ai/AGENTS.md`
 
-**Status:** not started. This is the next brief in the Library responsiveness
-work; see the status block at the top of
-`docs/product/modules/photo-library.md`.
+**Status:** built October 26, 2026; Steve's normal-folder try pending.
+Outcome and both repetitions are recorded in `docs/product/modules/photo-library.md`
+and B4 of `docs/technical/evidence/library-codecs-and-cold-decode-2026-10-26.md`.
+All finished HDR/SDR comparisons passed exactly. The historical first-fetch stall
+did not recur; its exact cause remains unproven. Profiler upload-body recording
+was bounded after exposing debug overhead/connection loss. HEIC/JXL CPU speed,
+AVIF reconstruction and stored screen previews remain outside this change.
 
 ## Goal
 

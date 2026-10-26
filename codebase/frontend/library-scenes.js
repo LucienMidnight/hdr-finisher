@@ -43,10 +43,12 @@ window.HDRLibraryScenes = (() => {
     window.HDRLibraryTrace?.mark(trace,"picture_cache_check",checked,{cache_hit:!!plan.cached});
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     if (generation!==(generations.get(path)||0)) throw new DOMException("Invalidated", "AbortError");
-    const version=plan.source_identity || plan.revision;
+    const version=plan.render_identity || plan.source_identity || plan.revision;
     if(versions.has(path)&&versions.get(path)!==version)sources.invalidate(candidate=>candidate===path);
     versions.delete(path);versions.set(path,version);
     if(versions.size>1024)versions.delete(versions.keys().next().value);
+    const direct = HDRLibraryGpuRaw.cachedDirect?.(path,edge,version);
+    if (direct) { options.onSourceDemand?.(); return direct; }
     if (plan.cached) { options.onSourceDemand?.(); return plan.cached; }
     if (options.cachedOnly) return null;
     await options.beforeSource?.();
@@ -56,7 +58,7 @@ window.HDRLibraryScenes = (() => {
     const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
     const heavy = plan.bytes >= largeBytes || elapsed >= 2000;
     const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
-    const pending = sources.submit(identity+"|"+(plan.source_identity || plan.revision)+"|"+generation, async (shared, importance) => {
+    const pending = sources.submit(identity+"|"+version+"|"+generation, async (shared, importance) => {
       const started = performance.now();
       try { const result = await develop(path, edge, shared, importance, version, options.gpuOnly); if (result && idle) save(result); return result; }
       finally {
@@ -141,16 +143,16 @@ window.HDRLibraryScenes = (() => {
   function save(meta, presented = false) {
     if (reviewPath === meta.path && !presented) return;
     const started = performance.now();
-    void fetch("/api/library/live-store/"+meta.key,{method:"POST"}).then(response=>{
+    void Promise.resolve().then(()=>meta.directScene?.store()).then(()=>fetch("/api/library/live-store/"+meta.key,{method:"POST"})).then(response=>{
       window.HDRLibraryTrace?.mark(meta.trace,"picture_store",started,{picture_size:"thumbnail,screen preview",scope:"shared",key:meta.key,success:response.ok});
-    }).catch(()=>{});
+    }).catch(error=>{window.HDRLibraryTrace?.mark(meta.trace,"picture_store",started,{key:meta.key,success:false,reason:error.message});});
   }
   return Object.freeze({load,lease,save,review:path=>{reviewPath=path;},
     onReclaim:handler=>{reclaim=handler;},
     reclaim:(bytes,required=false)=>reclaim(bytes,required),
     promote:(path,priority)=>{probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);quickDraws.promote(path,priority);},
     viewport:(shown,around)=>{visible=new Set(shown);nearby=new Set(around);sources.reprioritize(rank);probes.reprioritize(rank);},
-    invalidate:paths=>{const targets=new Set(paths);for(const path of targets)generations.set(path,(generations.get(path)||0)+1);sources.invalidate(path=>targets.has(path));probes.invalidate(path=>targets.has(path));},
+    invalidate:paths=>{const targets=new Set(paths);for(const path of targets){generations.set(path,(generations.get(path)||0)+1);HDRLibraryGpuRaw.forgetDirect?.(path);}sources.invalidate(path=>targets.has(path));probes.invalidate(path=>targets.has(path));},
     stage:(path,stage,waiting=false)=>sources.stage(path,stage,waiting),
     draw:(task,signal,priority=10,path="Photo",labels={})=>draws.submit(crypto.randomUUID(),task,signal,priority,{path,...labels,stage:`Drawing ${labels.edge === 100000 ? "detail preview" : labels.edge <= 640 ? "thumbnail" : "screen preview"}`}),
     quickDraw:(task,signal,priority=10,path="Photo",labels={})=>quickDraws.submit(crypto.randomUUID(),task,signal,priority,{path,...labels,stage:"Drawing thumbnail for quick draw"}),

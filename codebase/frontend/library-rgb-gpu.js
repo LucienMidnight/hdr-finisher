@@ -189,19 +189,38 @@ window.HDRLibraryRGB = (() => {
       layout:{dtype:ref.dtype},colour:{...options.meta.colour,transfer:ref.transfer,authored_sdr:false},
       rgb_to_acescg:ref.rgb_to_acescg,dng_linear:null,dng_warp:null,sdr_reference:null,
       reference_only:true,direct_srgb:ref.direct_srgb,quantize_half:ref.quantize_half};
-    const reference=await developFrame({...options,meta,mosaic:ref.samples});
-    for(const [edge,picture] of Object.entries(reference.reduced))result.reduced[edge].planes.push(...picture.planes);
+    let reference;
+    try { reference=await developFrame({...options,meta,mosaic:ref.samples}); }
+    catch(error){for(const picture of Object.values(result.reduced))for(const texture of picture.textures || [])texture.destroy();throw error;}
+    for(const [edge,picture] of Object.entries(reference.reduced)){ result.reduced[edge].planes.push(...picture.planes); result.reduced[edge].textures?.push(...(picture.textures || [])); }
     result.peaks.sdr=reference.peaks.sdr;
     result.memory_peak_bytes=Math.max(result.memory_peak_bytes,reference.memory_peak_bytes);
     for(const [stage,ms] of Object.entries(reference.timings))result.timings['reference_'+stage]=ms;
     return result;
   }
-  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity }) {
+  const PACK = `@group(0) @binding(0) var<storage,read> r:array<f32>;
+    @group(0) @binding(1) var<storage,read> g:array<f32>;
+    @group(0) @binding(2) var<storage,read> b:array<f32>;
+    @group(0) @binding(3) var out:texture_storage_2d<rgba16float,write>;
+    @compute @workgroup_size(16,16) fn main(@builtin(global_invocation_id) p:vec3u) {
+      let size=textureDimensions(out);if(any(p.xy>=size)){return;}let i=p.y*size.x+p.x;
+      // Storage texture conversion may truncate. Round explicitly to IEEE half,
+      // ties to even, matching NumPy's persisted float16 scene exactly.
+      let v=clamp(vec3f(r[i],g[i],b[i]),vec3f(0),vec3f(65504));
+      let bits=bitcast<vec3u>(v);
+      let normal=bitcast<vec3f>((bits+vec3u(4095u)+((bits>>vec3u(13u))&vec3u(1u)))&vec3u(4294959104u));
+      let units=v*16777216.0;let base=floor(units);let fraction=units-base;
+      let increment=select(vec3f(0),vec3f(1),fraction>vec3f(0.5))
+        +select(vec3f(0),vec3f(1),fraction==vec3f(0.5))*vec3f(vec3u(base)&vec3u(1u));
+      let subnormal=(base+increment)/16777216.0;
+      textureStore(out,vec2i(p.xy),vec4f(select(subnormal,normal,v>=vec3f(0.00006103515625)),1));
+    }`;
+  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity, direct = false }) {
     const shared = await gpu(), {device,errors} = shared;
     let pipelines=compiled.get(device);
     if(!pipelines){
       pipelines={REDUCE:shared.pipelines.REDUCE};
-      for(const [name,code] of Object.entries({RGB,RGB_SDR,REFERENCE,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GRADE,DNG_TILE_GAIN,DNG_LINEAR}))
+      for(const [name,code] of Object.entries({RGB,RGB_SDR,REFERENCE,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GRADE,DNG_TILE_GAIN,DNG_LINEAR,PACK}))
         pipelines[name]=await device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}});
       compiled.set(device,pipelines);
     }
@@ -220,6 +239,7 @@ window.HDRLibraryRGB = (() => {
       if (liveBytes + size > memoryBudget) throw Error("RGB preparation exceeds the reserved memory budget.");
       return own(device.createBuffer({ size, usage }));
     };
+    const textures = new Set(); let completed = false;
     const timings = {}; let mark = performance.now();
     const stage = async name => { await device.queue.onSubmittedWorkDone(); const now = performance.now(); timings[name] = (timings[name] || 0) + now - mark; mark = now; };
     try {
@@ -305,10 +325,12 @@ window.HDRLibraryRGB = (() => {
       const reduced = {};
       for (const edge of edges) {
         const [rh, rw] = reducedSize(meta, edge);
-        reduced[edge] = { height: rh, width: rw, planes: [] };
+        reduced[edge] = { height: rh, width: rw, planes: [], textures: [] };
+        const retained = [];
         for (const plane of planes) {
           if(rh===h && rw===w){
             const start=performance.now();
+            if(direct)retained.push(plane);
             reduced[edge].planes.push(await read(plane,n*4));
             timings.rgb_readback=(timings.rgb_readback||0)+performance.now()-start;
             continue;
@@ -326,9 +348,22 @@ window.HDRLibraryRGB = (() => {
             const start=performance.now();
             reduced[edge].planes.push(await read(out,rh*rw*4));
             timings.rgb_readback=(timings.rgb_readback||0)+performance.now()-start;
-            release(out);
+            if(direct)retained.push(out);else release(out);
           }
         }
+        if(direct)for(let c=0;c<retained.length;c+=3){
+          const bytes=rh*rw*8;
+          if(liveBytes+bytes>memoryBudget)throw Error("Direct scene exceeds the reserved GPU memory budget.");
+          const texture=device.createTexture({size:[rw,rh],format:"rgba16float",
+            usage:GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_SRC});
+          textures.add(texture);liveBytes+=bytes;peakBytes=Math.max(peakBytes,liveBytes);
+          const pipe=pipelines.PACK,group=device.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:[
+            ...retained.slice(c,c+3).map((buffer,binding)=>({binding,resource:{buffer}})),{binding:3,resource:texture.createView()}]});
+          const enc=device.createCommandEncoder(),pass=enc.beginComputePass();pass.setPipeline(pipe);pass.setBindGroup(0,group);
+          pass.dispatchWorkgroups(Math.ceil(rw/16),Math.ceil(rh/16));pass.end();device.queue.submit([enc.finish()]);
+          reduced[edge].textures.push(texture);
+        }
+        if(direct)for(const buffer of retained)if(!planes.includes(buffer))release(buffer);
       }
       await stage("reduce");
       await device.queue.onSubmittedWorkDone();
@@ -338,12 +373,14 @@ window.HDRLibraryRGB = (() => {
       await stage("readback");
       timings.reduce-=timings.rgb_readback||0;timings.readback+=timings.rgb_readback||0;delete timings.rgb_readback;
       if (errors.length) throw new Error(errors.join("\n"));
-      return { timings, memory_peak_bytes: peakBytes, errors: [...errors],
+      completed = true;
+      return { device, timings, memory_peak_bytes: peakBytes, errors: [...errors],
         peaks: { peak: peakValues[0], peak_luma: peakValues[1], peak_bt2020: peakValues[2], sdr: peakValues[3] },
         samples: sampleData, sampleShape: [sh, sw], reduced };
     } finally {
       await device.queue.onSubmittedWorkDone().catch(() => {});
       for (const buffer of [...owned]) release(buffer);
+      if(!completed)for(const texture of textures)texture.destroy();
     }
   }
 

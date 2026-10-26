@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from hashlib import sha256
 from contextlib import asynccontextmanager
 import os
 import time
@@ -65,6 +67,7 @@ class LibraryRoute(APIRoute):
     def get_route_handler(self):
         handler = super().get_route_handler()
         async def checked(request):
+            request.state.library_arrived = time.perf_counter()
             async def context():
                 if request.method != "POST" or "application/json" not in request.headers.get("content-type", ""):
                     return dict(request.query_params)
@@ -346,7 +349,8 @@ def create_library_router(worker, browser, store=None):
             return Response(status_code=204)
 
     @router.get("/live-pixels/{key}")
-    def live_pixels(key: str, lane: Literal["hdr", "sdr"] = "hdr"):
+    def live_pixels(request: Request, key: str, lane: Literal["hdr", "sdr"] = "hdr"):
+        started = time.perf_counter()
         try:
             body, width, height, stride, space = live.pixels(key, lane)
         except (KeyError, ValueError, OSError, EOFError) as error:
@@ -354,7 +358,8 @@ def create_library_router(worker, browser, store=None):
         return Response(body, media_type="application/octet-stream", headers={
             "X-Image-Width": str(width), "X-Image-Height": str(height),
             "X-Bytes-Per-Row": str(stride), "X-Working-Space": space,
-            "Cache-Control": "private, no-store"})
+            "Cache-Control": "private, no-store", "X-Library-Pixels-Ms": str((time.perf_counter()-started)*1000),
+            "X-Library-Pixels-Queue-Ms": str((started-request.state.library_arrived)*1000)})
 
     from .library_pictures import picture_key
     from .library_source_jobs import SourceJobs
@@ -386,6 +391,7 @@ def create_library_router(worker, browser, store=None):
         return {"cached": live.describe(command.path, cached) if cached else None,
                 "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}",
                 "source_identity": picture_key(path, 0, live_quality(document)),
+                "render_identity": picture_key(path, 0, live_quality(document)) + ":" + sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest(),
                 "warm_allowed": live.cache.managed.can_warm()}
 
     @router.post("/live-scene")
@@ -505,15 +511,36 @@ def create_library_router(worker, browser, store=None):
                     def validate_store():
                         if publication_epoch != file_commands.epoch or header["source_quality"] != live_quality(live.document(item)):
                             raise ValueError("Source settings changed before saving preview data.")
+                    if header.get("describe_only"):
+                        # Same defaults/grade/identity as normal acceptance, without
+                        # receiving, packing or persisting any scene pixels.
+                        validate_owner()
+                        look = metadata.pop("starting_look")
+                        metadata.pop("default_document", None)
+                        result = dict(metadata, key=picture_key(source, edge, header["source_quality"]),
+                            path=str(source), edge=edge, quality=header["source_quality"],
+                            width=header["width"], height=header["height"], adjustments=look,
+                            white=203, has_reference=bool(header["colour"].get("authored_sdr", True) or header.get("has_sdr_reference")),
+                            cache_hit=False, stored_bytes=0)
+                        return result
                     result = live.cache.build(source, edge, header["source_quality"],
                         cancelled=validate_owner, decoded=(pixels, reference, metadata), defer_store=bool(header.get("draw_first")), store_validate=validate_store)
                     live.cache.accept_transient(result)
                     return result
             from . import library_rgb
             adapter = library_rgb if header.get("rgb") else library_gpu_raw
-            result = await run_in_threadpool(adapter.developed, SceneCache(), path, header, body)
+            if header.get("describe_only") and (not header.get("rgb") or header["edge"] == 100000 or body):
+                raise ValueError("Only reduced RGB scene metadata can be described without pixels.")
+            result = await run_in_threadpool(adapter.developed, SceneCache(), path, header, None if header.get("describe_only") else body)
             log("picture_live_developed", path=str(path), edge=header["edge"], **(header.get("timing_ms") or {}))
-            return await run_in_threadpool(live.describe, item, result)
+            described = await run_in_threadpool(live.describe, item, result)
+            if header.get("describe_only"):
+                from .models import GeometryAdjustments, AdjustmentState
+                adjustments = AdjustmentState.model_validate(described["adjustments"])
+                described["direct_supported"] = (adjustments.shared.geometry == GeometryAdjustments()
+                    and not described["locals"]
+                    and not any(v.get("enabled") for v in described["denoise"].values() if isinstance(v, dict)))
+            return described
         except (ValueError, OSError, KeyError) as error:
             raise HTTPException(409, str(error)) from error
 

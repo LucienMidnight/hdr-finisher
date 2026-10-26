@@ -474,7 +474,7 @@
       if (adapter.isFallbackAdapter || /swiftshader|llvmpipe|lavapipe|software rasterizer/i.test(
         [adapter.info?.vendor, adapter.info?.architecture, adapter.info?.device, adapter.info?.description].join(" ")))
         throw new Error("No hardware GPU is available.");
-      const device = await adapter.requestDevice({ requiredLimits: {
+      const device = await adapter.requestDevice({ requiredFeatures:adapter.features.has("timestamp-query") ? ["timestamp-query"] : [], requiredLimits: {
         maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
         maxBufferSize: adapter.limits.maxBufferSize,
         maxStorageBuffersPerShaderStage: Math.min(10, adapter.limits.maxStorageBuffersPerShaderStage) } });
@@ -779,7 +779,7 @@
           edgePermitAt=performance.now();
         };
         root.HDRLibraryScenes?.stage(meta.path,"Developing photo");
-        try { return await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, memoryBudget:bytes}); }
+        try { return await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy}); }
         catch (error) { if (!error.yieldRaw) throw error; }
         // developRaw's finally has freed every buffer before Grade sees zero.
         await lease(true); await wait(50, signal);
@@ -787,9 +787,18 @@
     } finally { await fetch(url, {method:"DELETE"}).catch(() => {}); }
   }
 
-  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30) {
+  const directScenes = new Map();
+  const directBytes = () => [...directScenes.values()].reduce((n,entry)=>n+entry.bytes,0);
+  function forgetDirect(path = null) {
+    for(const [key,entry] of directScenes)if(path===null || entry.path===path){entry.dispose();directScenes.delete(key);}
+  }
+  function cachedDirect(path,edge,version) {
+    return directScenes.get(path+"|"+version)?.variants[edge] || null;
+  }
+  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "") {
     const begun = performance.now();
     const sourceJob=liveScene ? crypto.randomUUID().replaceAll("-", "") : null;
+    let retainedSource = false, gpuResult;
     try {
     // Inspect only the adapter limit; do not wait for pipeline compilation.
     const sourceLimit=liveScene ? await sourceStorageLimit() : null;
@@ -828,7 +837,7 @@
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
     root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
-    const developed = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
+    const developed = gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
     const gpuMs = performance.now() - started;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const measured = performance.now();
@@ -837,6 +846,7 @@
     root.HDRLibraryScenes?.stage(path,"Saving preview data");
     let selectedResult;
     const handoffStarted = performance.now();
+    const entries = [];
     for (const storedEdge of nativeMode ? [100000] : [...new Set([640,2560,edge])]) {
       const picture = developed.reduced[storedEdge];
       const header = { draw_first:liveScene && !nativeMode, rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
@@ -847,21 +857,66 @@
       edge_diagnostics: developed.edge_diagnostics,
       dng_diagnostics: developed.dng_tiles ? {tiles:developed.dng_tiles,max_source_bytes:developed.dng_max_source_bytes,reserved_bytes:rawBudget(meta,nativeMode?[100000]:[640,2560,edge])} : undefined,
       timing_ms: { ...meta.source_timings_ms, ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
-      // Chromium's Blob upload can stall before the backend receives a large
-      // scene. Materialize the identical framed bytes for the live handoff.
-      const packedAt = performance.now();
-      const framed = handoffBody(header, picture.planes);
-      const payload = liveScene ? await framed.arrayBuffer() : framed;
-      const sentAt = performance.now();
-      const stored = await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed", { method: "POST", signal, headers: { "Content-Type": "application/octet-stream" }, body: payload });
-      root.HDRLibraryStopwatch?.("picture_scene_handoff",{path,edge:storedEdge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes:framed.size});
-      const result = await stored.json();
-      if (!stored.ok) { const error = new Error(result.detail || "Library request failed."); error.status = stored.status; throw error; }
-      if (storedEdge === edge || nativeMode) selectedResult = result;
+      entries.push({header,picture});
+    }
+    const send = async (entry, describeOnly = false) => {
+      const {header,picture}=entry, packedAt=performance.now();
+      const framed=handoffBody(describeOnly ? {...header,describe_only:true} : header,describeOnly ? [] : picture.planes);
+      const payload=liveScene ? await framed.arrayBuffer() : framed, sentAt=performance.now();
+      const stored=await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed",{
+        method:"POST",signal,headers:{"Content-Type":"application/octet-stream"},body:payload});
+      root.HDRLibraryStopwatch?.(describeOnly ? "picture_scene_description" : "picture_scene_handoff",{
+        path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes:framed.size});
+      const result=await stored.json();
+      if(!stored.ok){const error=Error(result.detail || "Library request failed.");error.status=stored.status;throw error;}
+      return result;
+    };
+    if(liveScene && meta.rgb && !nativeMode && !root.HDRLibraryProfileLegacy && entries.every(({picture})=>picture.textures?.length)){
+      const variants={};
+      for(const entry of entries)variants[entry.header.edge]=await send(entry,true);
+      if(Object.values(variants).every(value=>value.direct_supported && value.grade_identity===sceneIdentity.split(":").at(-1)) && entries.reduce((n,{picture})=>n+picture.planes.reduce((m,p)=>m+p.byteLength,0)+picture.width*picture.height*8*(picture.textures?.length || 0),0)<=256*1024**2){
+        const poolKey=path+"|"+sceneIdentity;
+        let storing, disposed=false;
+        const release=()=>fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
+        const dispose=()=>{
+          if(disposed)return;disposed=true;clearTimeout(timer);
+          for(const {picture} of entries)for(const texture of picture.textures || [])texture.destroy();
+          if(!storing){for(const {picture} of entries)picture.planes=[];void release();}
+        };
+        const store=()=>storing ||= (async()=>{
+          if(disposed)throw Error("Direct scene expired; request this photo again.");
+          try {for(const entry of entries)await send(entry);}
+          finally {
+            for(const {picture} of entries)picture.planes=[];
+            const retained=directScenes.get(poolKey);
+            if(retained?.variants===variants)retained.bytes=entries.reduce((n,{picture})=>n+picture.width*picture.height*8*(picture.textures?.length || 0),0);
+            await release();
+          }
+        })();
+        for(const {header,picture} of entries){
+          const value=variants[header.edge];
+          value.directScene={device:developed.device,texture:lane=>!disposed && picture.textures?.[lane==="sdr" && value.adjustments.sdr.use_authored_base && value.has_reference ? 1 : 0],store};
+        }
+        const bytes=entries.reduce((n,{picture})=>n+picture.planes.reduce((m,p)=>m+p.byteLength,0)+picture.width*picture.height*8*(picture.textures?.length || 0),0);
+        const timer=setTimeout(()=>{dispose();if(directScenes.get(poolKey)?.variants===variants)directScenes.delete(poolKey);},30000);
+        timer.unref?.();
+        directScenes.get(poolKey)?.dispose();
+        directScenes.set(poolKey,{path,variants,bytes,dispose});
+        while(directBytes()>256*1024**2 && directScenes.size>1){const key=directScenes.keys().next().value;directScenes.get(key).dispose();directScenes.delete(key);}
+        retainedSource=true;
+        selectedResult=variants[edge];
+      }
+    }
+    if(!selectedResult){
+      try {for(const entry of entries){const result=await send(entry);if(entry.header.edge===edge || nativeMode)selectedResult=result;}}
+      finally {for(const {picture} of entries)for(const texture of picture.textures || [])texture.destroy();}
     }
     root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs, source_ms:meta.source_timings_ms, gpu_stages_ms:developed.timings, quantiles_ms:quantileMs, handoff_ms:performance.now()-handoffStarted});
     return selectedResult;
-    } finally { if(sourceJob) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{}); }
+    } finally {
+      if(!retainedSource)for(const picture of Object.values(gpuResult?.reduced || {}))for(const texture of picture.textures || [])texture.destroy();
+      if(sourceJob && !retainedSource) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
+    }
   }
 
   // At most two photos in flight: their sensor transfers must never hold up
@@ -889,7 +944,7 @@
       const controller = new AbortController();
       job = { controller, users: 0 };
       job.promise = new Promise((resolve, reject) => {
-        waiting.push({ signal: controller.signal, resolve, reject, importance, task: () => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene, importance) });
+        waiting.push({ signal: controller.signal, resolve, reject, importance, task: () => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity) });
         pump();
       }).finally(() => { if (inflight.get(key) === job) inflight.delete(key); });
       job.promise.catch(() => {});
@@ -903,7 +958,7 @@
       job.promise.then(value => {
         signal?.removeEventListener("abort", leave);
         if (value && !value.kept && !nativeMode && value.edge !== edge)
-          resolve(develop(path, edge, signal, savedGradeOnly, nativeMode, liveScene, importance));
+          resolve(cachedDirect(path,edge,sceneIdentity) || develop(path, edge, signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity));
         else resolve(value);
       },
         error => { signal?.removeEventListener("abort", leave); reject(error); });
@@ -953,7 +1008,7 @@
     return peak;
   }
   const rawBudget = (meta,edges=[640,2560]) => meta.dng_warp ? dngBudget(meta,edges) : meta.width*meta.height*44+64*1024*1024;
-  const exported = Object.freeze({ rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity}) });
+  const exported = Object.freeze({ cachedDirect, forgetDirect, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

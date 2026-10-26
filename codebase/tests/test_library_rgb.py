@@ -488,3 +488,53 @@ def test_source_changed_during_encoding_cannot_publish_old_pixels(tmp_path, monk
         assert 'invalidated' in result.json()['detail']
         assert not list(profile.rglob('*.npz'))
         assert not list(profile.rglob('*.tmp'))
+
+
+@pytest.mark.parametrize("changed", [None, "source", "recipe"])
+def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, monkeypatch, changed):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.library_gpu_raw import unframe, frame
+    from hdr_finisher.library_live import LivePictures
+    class Helper:
+        def status(self): return {"running": True, "paused": False, "pending": 0}
+    photo = tmp_path / "photo.png"
+    Image.new("RGB", (8, 4), (120, 80, 20)).save(photo)
+    profile = tmp_path / "profile"
+    grade = [None]
+    monkeypatch.setattr(LivePictures, "document", lambda self, path: grade[0])
+    app = FastAPI(); app.include_router(create_library_router(Helper(), MediaBrowserStore(profile)))
+    with TestClient(app) as client:
+        header, _ = unframe(client.post("/api/library/live-scene", json={"path":str(photo), "edge":640, "gpu":True}).content)
+        header.update(height=4, width=8, source_width=8, source_height=4, memory_peak_bytes=1024,
+            peaks={"peak":.18,"peak_luma":.18,"peak_bt2020":.18,"sdr":.5},
+            robust={"channel":.18,"luma":.18,"bt2020":.18}, draw_first=True)
+        if changed == "source":
+            stat = photo.stat(); os.utime(photo, ns=(stat.st_atime_ns,stat.st_mtime_ns+2_000_000_000))
+        if changed == "recipe": grade[0] = {"hdr_reference_white_nits":100}
+        response = client.post("/api/library/live-developed", content=frame({**header,"describe_only":True}))
+        assert response.status_code == (409 if changed else 200)
+        assert not list(profile.rglob("*.npz"))
+        assert not list(profile.rglob("*.tmp"))
+        assert not Path(str(photo)+".hdrf").exists()
+        if changed: return
+        described = response.json()
+        assert described["direct_supported"] and described["scene_width"] == 8
+        pixels = np.full((6,4,8), .125, dtype="<f4").tobytes()
+        accepted = client.post("/api/library/live-developed", content=frame(header,pixels))
+        assert accepted.status_code == 200
+        assert accepted.json()["key"] == described["key"]
+        assert accepted.json()["adjustments"] == described["adjustments"]
+        assert client.post("/api/library/live-store/"+described["key"]).status_code == 200
+        assert list(profile.rglob("*.npz"))
+        old = client.post("/api/library/live-plan",json={"path":str(photo),"edge":640}).json()
+        from hdr_finisher.models import EditDocument, SourceReference, AdjustmentState
+        grade[0] = EditDocument(hdr_reference_white_nits=203,
+            global_adjustments=AdjustmentState.model_validate(described["adjustments"]),
+            source=SourceReference(filename=photo.name, durable_path=str(photo), byte_size=photo.stat().st_size,
+                fingerprint_sha256=hashlib.sha256(photo.read_bytes()).hexdigest())).model_dump(mode="json")
+        new = client.post("/api/library/live-plan",json={"path":str(photo),"edge":640}).json()
+        assert old["source_identity"] == new["source_identity"]
+        assert old["render_identity"] != new["render_identity"]
