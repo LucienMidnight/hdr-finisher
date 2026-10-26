@@ -606,3 +606,74 @@ DSC00636.ARW,uhdr95half,20.272,17.026,19.574,9.5,55.4,0.578041,2.919129,2.462217
 ```
 
 </details>
+
+## B3 — Cold first-picture profiling (October 26, 2026)
+
+**Partial qualification, no stored-preview work.** Copies of the B2 JPEG/PNG/TIFF/HEIC/JXL samples, disposable app database/profile/cache, cold application scenes, uncontrolled OS file caches. Both 640 and 2560 renderers were warmed by actual draws before each phase. Grid development was suppressed to keep selected-photo development cold. Timing allowance proposed beforehand: 10%; baseline variation exceeded it. These navigation-to-visible results cover more work than B2 and should not be compared directly with its figures.
+
+The driver resumed after fixing a warmup-only instrumentation error, before sample measurements. All ten baseline samples completed. Electron exited during the after phase: JPEG and HEIC have one completed after sample; TIFF presentation was recovered from the backend stopwatch log without a completed canvas capture. No replacement GPU run was launched. Both after repetitions for all five formats were therefore **not completed**.
+
+### Before/after, seconds
+
+Each entry is **first visible / sharp**. First visible may be a temporary original stand-in.
+
+| Format | Before 1 | Before 2 | After 1 | After 2 |
+|---|---:|---:|---:|---:|
+| JPEG | 6.254 / 6.254 | 7.785 / 7.785 | **0.102 / 6.826** | not reached |
+| PNG | 6.154 / 6.154 | 6.138 / 6.277 | not reached | not reached |
+| TIFF | 17.257 / 17.257 | 18.595 / 18.595 | 18.533 / 18.533* | not reached |
+| HEIC | 9.114 / 9.114 | 11.610 / 12.071 | 10.265 / 10.265 | not reached |
+| JXL | 5.004 / 5.198 | 7.112 / 7.258 | not reached | not reached |
+
+*Recovered TIFF log, no earlier quick presentation recorded. No sharp-navigation improvement is established by these partial after samples.*
+
+### Stage breakdown
+
+Baseline GPU-route means, milliseconds. Development includes the following source, GPU, quantile and handoff intervals. Substages overlap their parents; do not sum every row.
+
+| Stage | JPEG | PNG | TIFF |
+|---|---:|---:|---:|
+| Development total | 5962 | 5017 | 14823 |
+| Source request + transfer | 104 | 67 | 518 |
+| GPU preparation | 356 | 526 | 962 |
+| GPU upload | 39 | 66 | 353 |
+| GPU colour + measurement | 138 | 271 | 358 |
+| GPU scene reduction | 93 | 90 | 162 |
+| GPU readback | 74 | 88 | 74 |
+| Quantiles | 10 | 11 | 70 |
+| Scene handoff round trip | **5493** | **4413** | **13274** |
+
+Handoff includes transport and backend acceptance, not just network bytes. Its internal cause is not fully isolated. Representative first metadata/claim checks: JPEG 10.1, PNG 4.0, TIFF 9.5 ms. Source body transfers: 14.7, 19.1, 198.6 ms respectively. Sharp scene fetches across formats took about 71–100 ms; viewer GPU wait/draw about 13–63 ms. First JPEG quick-fetch stalled about 2 s; scheduling/backend contention remains a target. Cache-store success was observed after presentation; displaying an available picture does not inherently require cache persistence, although the current scene route awaits backend acceptance before handing it to the viewer.
+
+CPU fallback baseline means, milliseconds:
+
+| Stage | HEIC | JXL |
+|---|---:|---:|
+| Decode | 2363 | 1461 |
+| Normalize/colour including reference | 2036 | 82 |
+| Analysis | 612 | 289 |
+| Full import | 5012 | 1832 |
+| Session render cache | 388 | 113 |
+| Highlight source peaks | 71 | <1 |
+| Reduction + packing after session preparation | 1660 | 536 |
+
+HEIC first full session preparation took 5355 ms; JXL 1878 ms. HEIF auxiliary reconstruction retains the CPU route; unresolved JXL primaries retain Grade's interpretation gate. Speculative fallback and claim waits are logged, but complete allocation of all scheduling/fallback waits was not obtained.
+
+Telemetry now covers source scheduling/202 sleeps, interpretation/claim, decode/transfer, CPU preparation, GPU upload/colour/measurement/reduction/readback, handoff and existing navigation/draw/store events. New fine CPU fields split luminance, robust channel/BT.2020 measurements, SDR reference, session cache and highlight peaks. Those finer fields were added after the experiment backend started: **this run contains aggregate analysis, not every new measurement split**. Explicit request-wait time counts 202 sleeps; encompassing request time also includes server work.
+
+### Built changes and remaining targets
+
+- Unedited, currently unchanged, resolved sRGB JPEG/PNG can use the decoded original for a temporary quick draw. Grade's shared decoder applies ICC/orientation. Gain-map JPEG and unresolved colour are excluded; source/grade/cache guards run before and after decode. The normal sharp pipeline remains intact. TIFF precision and HEIC/JXL interpretation require separate qualification.
+- Live GPU handoff now materializes identical framed bytes as an ArrayBuffer rather than uploading a Blob. JPEG's one after development/handoff was 3014/2517 ms versus baseline means 5962/5493. TIFF's recovered development/handoff was 12065/9157 versus 14823/13274. This suggests a transport improvement, but does not establish an overall sharp-time win. It adds a temporary reduced-scene payload copy, not a full-source copy.
+- The original stand-in bypasses ACES scene preparation, luminance/highlight analysis, SDR reference, quantiles, 2560 reduction, readback, backend handoff and cache persistence. All can follow first display. The sharp pipeline still performs them to preserve its result.
+- Next structural target: expose 640 before preparing/storing both renditions, then retain GPU results for direct drawing instead of readback → backend upload → fetch → GPU upload. Not implemented here. Faster decoding alone cannot remove the dominant handoff interval.
+
+JPEG finished canvas captures were exactly identical across both before samples and its completed after sample. Other after finished-pixel comparisons remain incomplete. Fast behavioural tests extend source/grade/cache-race guards to JPEG/PNG and verify original quick-draw ICC/orientation against the shared decode. All 13 copied experiment sample hashes matched input copies; no copied-photo sidecars appeared. Live library/database/photos/sidecars/cache were not used.
+
+Fast checks ran once: Node 630 passed, one existing `selected photo joining development-ahead keeps its CPU fallback if GPU fails` failure; Python 2579 passed, three skipped, one unrelated `test_library_native_source_uses_same_repair_before_reduction` test-double failure (`CaptureCache.build` lacks the existing `defer_store` argument). No reruns. The reusable opt-in `codebase/tools/profile_cold_picture.js` was extracted from the interrupted experiment afterward; it retains bounded metadata and canvas hashes instead of screenshots and was not launched again.
+
+### AVIF gain-map GPU estimate — not built
+
+B2's large 14.3 MP gain-map example took 8.747 s on the current CPU boundary and 6.730 s in the native memory probe; the small example took 2.118/1.118 s. The native probe still calls serial `avifImageApplyGainMap`, followed by BT.2020 PQ through 10-bit YUV and back to RGB. Moving gain-map reconstruction arithmetic to compute should remove seconds of serial transfer/gamut/power maths. AVIF decoding, source upload and retained output conversions remain.
+
+Engineering estimate: 1–2 days for a measured prototype; about 3–5 days total for integration, cancellation/fallback and pixel qualification. Provisional target: subsecond reconstruction maths at 14 MP, perhaps 0.1–0.3 s on this GPU, **not a measured end-to-end forecast**. Existing JPEG gain-map GPU waits are tens of milliseconds but its algorithm differs. First isolate decode, ApplyGainMap and output conversions. Preserve base/gain sampling, gamma/offset/channel bounds, gamut choice, orientation, interpolation, headroom rounding (4.11 versus 4.113112926), and existing quantization/YUV round trips before claiming unchanged finished pixels. No AVIF implementation was changed.

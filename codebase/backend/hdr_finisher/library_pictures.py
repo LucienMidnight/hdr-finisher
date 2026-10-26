@@ -353,6 +353,26 @@ def check_cancelled(cancelled):
         raise CancelledError("Library picture was cancelled.")
 
 
+def original_preview(path, edge):
+    """An unedited, resolved SDR file can stand in while its scene develops."""
+    path = Path(path)
+    if path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+        raise ValueError("No original quick draw for this format")
+    if path.suffix.lower() != ".png" and loader.is_ultrahdr_jpeg(path):
+        raise ValueError("Gain-map JPEG needs its HDR interpretation")
+    pixels, metadata = loader._load_with_pillow(path, encoded_samples=True)
+    if metadata.get("needs_color_override") or metadata.get("color_space") != "sRGB":
+        raise ValueError("Original quick draw needs resolved SDR colour")
+    # Grade's decoder already applied ICC and orientation. Only this temporary
+    # stand-in is reduced/encoded; the finished scene uses the normal pipeline.
+    image = Image.fromarray(pixels)
+    image.thumbnail((edge, edge))
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return {"route": "original-preview-placeholder", "url": "data:image/png;base64," + base64.b64encode(output.getvalue()).decode(),
+        "width": image.width, "height": image.height, "edge": edge, "kept": False}
+
+
 def camera_preview(path, edge):
     """Extract the camera JPEG without unpacking or demosaicing the RAW."""
     import base64

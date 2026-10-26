@@ -793,22 +793,26 @@
     try {
     // Inspect only the adapter limit; do not wait for pipeline compilation.
     const sourceLimit=liveScene ? await sourceStorageLimit() : null;
-    let response;
+    let response, requestWaitMs = 0;
     for (;;) {
       response = await fetch(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", signal,
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
       if (response.status !== 202) break;
       root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
+      const waitingAt = performance.now();
       await wait(150, signal);
+      requestWaitMs += performance.now()-waitingAt;
     }
     root.HDRLibraryScenes?.stage(path,"Reading photo samples");
     if (response.status === 204) {
-      root.HDRLibraryStopwatch?.("picture_source_cpu_fallback", {path,reason:response.headers.get("X-Library-Fallback")});
+      root.HDRLibraryStopwatch?.("picture_source_cpu_fallback", {path,reason:response.headers.get("X-Library-Fallback"),duration_ms:performance.now()-begun,request_wait_ms:requestWaitMs});
       return null;
     }
     if (!response.ok) { const result = await response.json().catch(() => ({})); const error = new Error(result.detail || "Library request failed."); error.status = response.status; error.libraryError = result.library_error; throw error; }
     if ((response.headers.get("Content-Type") || "").includes("application/json")) return response.json();
+    const transferAt = performance.now();
     const body = await response.arrayBuffer();
+    root.HDRLibraryStopwatch?.("picture_source_transfer",{path,duration_ms:performance.now()-transferAt,bytes:body.byteLength,request_wait_ms:requestWaitMs});
     const sensorMs = performance.now() - begun;
     const length = new DataView(body).getUint32(0, true);
     const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(body, 4, length)));
@@ -843,7 +847,14 @@
       edge_diagnostics: developed.edge_diagnostics,
       dng_diagnostics: developed.dng_tiles ? {tiles:developed.dng_tiles,max_source_bytes:developed.dng_max_source_bytes,reserved_bytes:rawBudget(meta,nativeMode?[100000]:[640,2560,edge])} : undefined,
       timing_ms: { ...meta.source_timings_ms, ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
-      const stored = await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed", { method: "POST", signal, headers: { "Content-Type": "application/octet-stream" }, body: handoffBody(header, picture.planes) });
+      // Chromium's Blob upload can stall before the backend receives a large
+      // scene. Materialize the identical framed bytes for the live handoff.
+      const packedAt = performance.now();
+      const framed = handoffBody(header, picture.planes);
+      const payload = liveScene ? await framed.arrayBuffer() : framed;
+      const sentAt = performance.now();
+      const stored = await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed", { method: "POST", signal, headers: { "Content-Type": "application/octet-stream" }, body: payload });
+      root.HDRLibraryStopwatch?.("picture_scene_handoff",{path,edge:storedEdge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes:framed.size});
       const result = await stored.json();
       if (!stored.ok) { const error = new Error(result.detail || "Library request failed."); error.status = stored.status; throw error; }
       if (storedEdge === edge || nativeMode) selectedResult = result;

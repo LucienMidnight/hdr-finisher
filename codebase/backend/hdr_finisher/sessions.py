@@ -147,7 +147,10 @@ class LoadedSession:
             )
         self.source_fingerprint_sha256 = prepared_fingerprint if prepared_fingerprint is not None else _sha256_file(self.source_path)
         self.source_byte_size = self.source_path.stat().st_size
+        session_at = perf_counter()
         self._apply_import_defaults(self.adjustments)
+        self.metadata.setdefault("import_timings_ms", {})["sdr_defaults"] = (perf_counter()-session_at)*1000
+        session_at = perf_counter()
         self.render_cache = SessionRenderCache(
             self.image,
             self.sdr_reference_image,
@@ -156,7 +159,10 @@ class LoadedSession:
             sdr_identity=_source_mip_identity(self, lane="sdr") if self.sdr_reference_image is not None else None,
             mip_store=default_source_mip_store(),
         )
+        self.metadata.setdefault("import_timings_ms", {})["render_cache"] = (perf_counter()-session_at)*1000
+        session_at = perf_counter()
         self._sync_highlight_source_peaks()
+        self.metadata["import_timings_ms"]["highlight_source_peaks"] = (perf_counter()-session_at)*1000
 
     def _apply_import_defaults(self, adjustments: AdjustmentState) -> None:
         apply_import_defaults(adjustments, self.sdr_reference_image)

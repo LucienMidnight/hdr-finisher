@@ -214,11 +214,13 @@ def load_image(
     # A plain SDR file is a finished picture (Steve, 2026-10-19): the file is
     # the SDR rendition, as a gain-map file's base is, and HDR shows it with
     # its white at reference white. No generated SDR, no extra brightening.
+    reference_started = perf_counter()
     if (sdr_reference_image is None and not metadata.get("needs_color_override")
             and not metadata.get("decoder_normalized_to_acescg")
             and display_referred_sdr(metadata.get("color_space"), metadata.get("transfer_function"), suffix)):
         normalized, sdr_reference_image = sdr_file_renditions(normalized)
         metadata["sdr_file_rendition"] = True
+    reference_ms = (perf_counter()-reference_started)*1000
     # Unknown/conflicting primaries must be resolved before an irreversible
     # AP1 gamut operation. All resolved import routes share this boundary,
     # including decoder-normalized RAW, DNG and JPEG Ultra HDR.
@@ -250,6 +252,8 @@ def load_image(
     metadata["import_timings_ms"] = {
         "decode": round(decode_ms, 3),
         "normalize_to_acescg": round(normalize_ms, 3),
+        "sdr_reference": round(reference_ms, 3),
+        "measurements": metadata.get("analysis_timings_ms"),
         "analysis": round((perf_counter() - analysis_started) * 1000.0, 3),
         "total": round((perf_counter() - total_started) * 1000.0, 3),
     }

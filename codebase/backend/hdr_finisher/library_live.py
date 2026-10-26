@@ -9,6 +9,7 @@ from copy import deepcopy
 from hashlib import sha256
 import json
 from pathlib import Path
+from time import perf_counter
 from threading import RLock, Condition
 from types import SimpleNamespace
 
@@ -51,11 +52,13 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
         return cached
     inputs = recipe(document)
     from .highlight_edge_gpu import source_work
+    prepared_at = perf_counter()
     with source_work(priority=15, cancelled=cancelled):
         source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
             raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
             interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]),
             hdr_reference_white_nits=inputs["hdr_reference_white_nits"])
+    preparation_ms = (perf_counter() - prepared_at) * 1000
     if document:
         saved = EditDocument.model_validate(document)
         wanted = saved.source.fingerprint_sha256
@@ -77,6 +80,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
                     source.retouch_worker = None
     if progress: progress("reduction", "Preparing thumbnail and screen preview")
     result = None
+    reduction_at = perf_counter()
     for size in sorted({640, 2560, edge}, reverse=True):
         metadata = {"route": "library-live", "renderer": "cpu", "raw_input": True,
             "starting_look": source.starting_adjustments().model_dump(mode="json"),
@@ -90,6 +94,10 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
              reduce_picture(source.sdr_reference_image, size) if source.sdr_reference_image is not None else None, metadata), defer_store=draw_first)
         if size == edge:
             result = item
+    from .library_diagnostics import log
+    log("picture_cpu_stages", path=str(path), prepare_session_ms=preparation_ms,
+        import_ms=source.metadata.get("import_timings_ms"),
+        reduction_pack_ms=(perf_counter()-reduction_at)*1000)
     return result
 
 

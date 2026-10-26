@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+from time import perf_counter
 
 import numpy as np
 
@@ -17,17 +18,26 @@ def classify_hdr(
     *,
     cancelled: Callable[[], bool] | None = None,
 ) -> HDRAnalysis:
+    measured_at = perf_counter()
     peak = float(np.max(image)) if image.size else 0.0
+    timings = {"maximum": (perf_counter()-measured_at)*1000}
     if image.size and image.ndim >= 3 and image.shape[-1] >= 3:
+        measured_at = perf_counter()
         peak_luma, robust_peak_luma = _luma_peaks(image, cancelled=cancelled)
+        timings["luminance"] = (perf_counter()-measured_at)*1000
+        measured_at = perf_counter()
         robust_peak = _robust_channel_peak(image)
+        timings["robust_channel"] = (perf_counter()-measured_at)*1000
+        measured_at = perf_counter()
         peak_bt2020, robust_peak_bt2020 = _bt2020_channel_peaks(image, cancelled=cancelled)
+        timings["bt2020"] = (perf_counter()-measured_at)*1000
     else:
         peak_luma = peak
         robust_peak_luma = peak
         robust_peak = peak
         peak_bt2020 = peak
         robust_peak_bt2020 = peak
+    metadata["analysis_timings_ms"] = timings
     transfer = detect_transfer_function(metadata, suffix)
     linear_hint = transfer == "LINEAR"
     encoded_hint = transfer in {"PQ", "HLG"}

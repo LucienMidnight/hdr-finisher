@@ -320,9 +320,10 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/preview")
     async def live_preview(command: CameraPreviewRequest):
-        from .library_pictures import camera_preview
+        from .library_pictures import camera_preview, original_preview
         path = str(marks.source_path(command.path))
-        if not await run_in_threadpool(camera_raw, path):
+        original = Path(path).suffix.lower() in {".jpg", ".jpeg", ".png"}
+        if not original and not await run_in_threadpool(camera_raw, path):
             return Response(status_code=204)
         try:
             identity = Path(path).stat()
@@ -335,10 +336,10 @@ def create_library_router(worker, browser, store=None):
                     and (command.mtime_ns is None or float(stat.st_mtime_ns) == float(command.mtime_ns))
                     and picture_document(command.path) is None
                     and live.cache.cached(path, 640, live_quality(None)) is None)
-            if command.quick_draw and not await run_in_threadpool(eligible):
+            if (command.quick_draw or original) and not await run_in_threadpool(eligible):
                 return Response(status_code=204)
-            preview = await run_in_threadpool(camera_preview, path, 640)
-            if command.quick_draw and not await run_in_threadpool(eligible):
+            preview = await run_in_threadpool(original_preview if original else camera_preview, path, 640)
+            if (command.quick_draw or original) and not await run_in_threadpool(eligible):
                 return Response(status_code=204)
             return preview
         except (ValueError, OSError):
@@ -390,6 +391,7 @@ def create_library_router(worker, browser, store=None):
     @router.post("/live-scene")
     @picture_errors.guard
     async def live_scene(command: LiveSceneRequest, request: Request):
+        requested_at = time.perf_counter()
         document = await run_in_threadpool(picture_document, command.path)
         path = str(marks.source_path(command.path))
         source_quality = live_quality(document)
@@ -402,6 +404,8 @@ def create_library_router(worker, browser, store=None):
         token = source_jobs.claim(path, source_quality, command.edge, command.priority, file_commands.epoch, command.source_job)
         if token is None:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
+        claimed_at = time.perf_counter()
+        log("picture_source_claim", path=path, checks_claim_ms=(claimed_at-requested_at)*1000, gpu=command.gpu)
         transfer = False
         try:
             if command.gpu:
@@ -429,11 +433,12 @@ def create_library_router(worker, browser, store=None):
                         header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_gpu_raw.sensor, Path(path),
                             RawImportSettings.model_validate(inputs["raw_import_settings"]))
                 except library_gpu_raw.NotEligible as error:
-                    log("picture_source_cpu_fallback", path=path, reason=str(error))
+                    log("picture_source_cpu_fallback", path=path, reason=str(error), discarded_decode_ms=(time.perf_counter()-claimed_at)*1000)
                     return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
                 source_jobs.check(token, file_commands.epoch)
                 if await request.is_disconnected():
                     raise HTTPException(499, "Library request cancelled.")
+                header.setdefault("source_timings_ms", {}).update(checks_claim=(claimed_at-requested_at)*1000, decode_prepare=(time.perf_counter()-claimed_at)*1000)
                 header.update(edge=command.edge, source_quality=source_quality, item_path=command.path, source_job=token)
                 transfer = True
                 return Response(library_gpu_raw.frame(header, *parts), media_type="application/octet-stream")

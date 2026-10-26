@@ -1,5 +1,12 @@
 # Module PRD: Photo Library
 
+**October 26, 2026: cold non-RAW first-picture profiling (built in this commit; partial qualification)**
+
+Unedited, unchanged, resolved sRGB JPEG/PNG originals now offer a temporary quick draw using Grade's ICC/orientation decoder and existing source/grade/cache guards before and after decoding. Gain-map JPEGs and unresolved colour retain the normal route. Sharp-scene calculations remain unchanged. Live GPU scene handoff uses identical ArrayBuffer bytes instead of Blob upload. Added source/check/wait/transfer, CPU measurement/session and handoff telemetry; no stored-preview feature.
+
+Both warmed-renderer baseline runs completed on disposable copies/profile/database/cache for JPEG, PNG, TIFF, HEIC and JXL. Electron exited during the after phase: JPEG first draw was 102 ms, sharp 6.826 s (before 6.254/7.785 s), with exactly unchanged finished canvas. HEIC and recovered TIFF after results do not establish a sharp-time improvement. PNG/JXL after, second after runs, fine CPU splits and remaining pixel comparisons stay **open** under Steve's GPU-run cap. Scene handoff dominated the GPU route at 4.4–13.3 s. [Full table, stage evidence, test results and AVIF GPU estimate](../../technical/evidence/library-codecs-and-cold-decode-2026-10-26.md#b3--cold-first-picture-profiling-october-26-2026). AVIF reconstruction was estimated only, not built.
+
+
 **October 25, 2026: Part 0f cold quick draws and development ahead (built in this commit; Steve's try pending)**
 
 - Single and fullscreen can show the selected unedited RAW's camera preview

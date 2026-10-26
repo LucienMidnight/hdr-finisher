@@ -359,7 +359,7 @@
     HDRLibraryTrace.present(trace,()=>current() && canvas.dataset.standIn === "true",{key:value.meta.key,quick_draw:true,sharp_draw:false});
   }
   async function showCameraPreview(photo,controller,current,trace) {
-    if (photo.edited || !rawTypes.has(photo.type)) return;
+    if (photo.edited || (!rawTypes.has(photo.type) && !["jpg", "jpeg", "png"].includes(photo.type.toLowerCase()))) return;
     const sourceIdentity = pictureIdentity(photo), started = performance.now();
     const eligible = () => current() && pictureIdentity(selected() || {}) === sourceIdentity && !photo.edited &&
       !readyWindow.has(photo) && !quickWindow.has(photo) && !$('single-stage').querySelector('[data-stand-in="true"]');

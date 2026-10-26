@@ -15,8 +15,9 @@ from hdr_finisher.library_source_jobs import SourceJobs
 from hdr_finisher.sessions import SessionStore
 
 
+@pytest.mark.parametrize('suffix', ['ARW', 'jpg', 'png'])
 @pytest.mark.parametrize('state', ['cold', 'edited', 'thumbnail', 'changed_source', 'edited_during_read', 'thumbnail_during_read'])
-def test_camera_quick_draw_requires_current_unedited_photo_without_thumbnail(tmp_path, monkeypatch, state):
+def test_camera_quick_draw_requires_current_unedited_photo_without_thumbnail(tmp_path, monkeypatch, state, suffix):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from hdr_finisher.library_api import create_library_router
@@ -26,7 +27,7 @@ def test_camera_quick_draw_requires_current_unedited_photo_without_thumbnail(tmp
     from hdr_finisher import library_pictures
     class Helper:
         def status(self): return {'running': True, 'paused': False, 'pending': 0}
-    path = tmp_path / 'photo.ARW'; path.write_bytes(b'camera-source')
+    path = tmp_path / ('photo.' + suffix); path.write_bytes(b'camera-source')
     stat = path.stat(); calls = []
     grade = [{} if state == 'edited' else None]
     cached = [{'key': 'thumbnail'} if state == 'thumbnail' else None]
@@ -39,6 +40,7 @@ def test_camera_quick_draw_requires_current_unedited_photo_without_thumbnail(tmp
         if state == 'thumbnail_during_read': cached[0] = {'key': 'thumbnail'}
         return {'url': 'data:image/jpeg;base64,camera', 'route': 'camera-preview'}
     monkeypatch.setattr(library_pictures, 'camera_preview', preview)
+    monkeypatch.setattr(library_pictures, 'original_preview', preview)
     app = FastAPI(); app.include_router(create_library_router(Helper(), MediaBrowserStore(tmp_path / 'profile')))
     with TestClient(app) as client:
         response = client.post('/api/library/preview', json={'path': str(path), 'quick_draw': True,
@@ -63,6 +65,13 @@ def test_rgb_boundary_keeps_cpu_icc_and_orientation(tmp_path):
     pixels = np.frombuffer(parts[0], dtype='uint8').reshape(80,40,3)
     from hdr_finisher.loader import _load_with_pillow
     np.testing.assert_array_equal(pixels, _load_with_pillow(path, encoded_samples=True)[0])
+    # The temporary original draw uses the same ICC/orientation boundary.
+    import base64
+    from io import BytesIO
+    from hdr_finisher.library_pictures import original_preview
+    preview = original_preview(path, 640)
+    shown = np.asarray(Image.open(BytesIO(base64.b64decode(preview['url'].split(',', 1)[1]))))
+    np.testing.assert_array_equal(shown, pixels)
     assert path.read_bytes() == before
     changed = recipe(None); changed['interpretation_override']['color_space'] = 'BT.2020'
     with pytest.raises(library_rgb.NotEligible, match='overrides'):
