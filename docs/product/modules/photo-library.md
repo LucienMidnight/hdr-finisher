@@ -57,6 +57,16 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 follow-up, Part 2.** Streamed folders now start the missing
+camera-details fill-in after indexed rows arrive. Selection requests bypass
+background readers with priority 0 and a 30 ms selection debounce; on-screen
+photos request details independently of pictures. Background reads use the
+all-core, below-normal helper pool and yield to foreground work. Known dates
+and camera filters update as details arrive. Logs distinguish selected,
+visible and background reads with counts and durations. The 0.3 s selected
+and 1 s visible-picture goals remain targets until the final profile/app try.
+Validation is deferred to the final batched run.
+
 **October 26 follow-up, Part 1.** Grid scrolls repaint at the restored viewport,
 retry aborted cells, and record each settled scroll's visible range and number
 of picture requests (including zero). Very tall folders compress scrollbar

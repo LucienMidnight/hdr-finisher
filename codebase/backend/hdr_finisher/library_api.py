@@ -181,6 +181,7 @@ class PinsRequest(BaseModel):
 
 class MetadataRequest(BaseModel):
     paths: list[str] = Field(max_length=32)
+    demand: Literal["selected", "visible", "background"] = "visible"
 
 
 class PathsRequest(BaseModel):
@@ -959,7 +960,12 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/metadata")
     async def metadata(command: MetadataRequest, request: Request):
-        result = await helper_result(request, "metadata", paths=list(dict.fromkeys(str(marks.source_path(p)) for p in command.paths)), priority=90)
+        started = time.perf_counter()
+        background = command.demand == "background"
+        result = await helper_result(request, "metadata", paths=list(dict.fromkeys(str(marks.source_path(p)) for p in command.paths)),
+            priority=95 if background else 0 if command.demand == "selected" else 5, background=background)
+        log("camera_details_read", demand=command.demand, count=len(command.paths),
+            duration_ms=(time.perf_counter()-started)*1000, outcome="pending" if isinstance(result, Response) else "completed")
         if not isinstance(result, Response):
             await run_in_threadpool(accept_facts, result)
             facts={p["path"]:p for p in result["photos"]}

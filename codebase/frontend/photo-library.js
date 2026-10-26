@@ -759,19 +759,23 @@
     }
     if (tagFocused) $("library-tag-input")?.focus();
   }
-  let factsTimer;
+  let factsTimer, factsPath;
   function wantFacts(photo) {
     // The selected photo's details are read ahead of the folder-wide pass.
-    clearTimeout(factsTimer);
+    if (factsPath === photo.path && (factsTimer || photo.factsAsked)) return;
+    clearTimeout(factsTimer); factsPath = photo.path;
     if (photo.indexed || photo.factsAsked) return;
     factsTimer = setTimeout(async () => {
-      photo.factsAsked = true;
+      factsTimer = null; photo.factsAsked = true;
+      const started = performance.now();
       try {
-        const result = await api("/api/library/metadata", { paths: [photo.path] }, state.scan?.signal);
+        const result = await api("/api/library/metadata", { paths: [photo.path], demand:"selected" }, state.scan?.signal);
         const name=photo.name; Object.assign(photo, result.photos[0]); if(photo.copy_id)photo.name=name;
-        if (selected() === photo) updateDetails();
+        HDRLibraryStopwatch("camera_details_shown",{path:photo.path,duration_ms:performance.now()-started,count:result.photos.length,demand:"selected"});
+        if (state.sort === "time" || state.filters.rules?.length) applyQuery();
+        else if (selected() === photo) updateDetails();
       } catch (error) { photo.factsAsked = false; if (!aborted(error)) console.debug("Library details:", error.message); }
-    }, 200);
+    }, 30);
   }
   async function refreshCopies() {
     if(state.collection) await browseCollection(state.collection.kind,state.collection.name);
@@ -1321,6 +1325,7 @@
           }
           if(event.kind === "indexed") {
             state.reading=rows.size===0;paint();readyResolve();
+            void readDates(controller, [...rows.values()].filter(photo=>!photo.indexed));
             HDRLibraryStopwatch("folder_listed",{path,request:event.request,duration_ms:performance.now()-started});
           }
           if(event.kind === "checked") {
@@ -1373,7 +1378,11 @@
             }
           }
           for(const [,items] of entries)for(const item of items)item.resolve();
-          if(state.scan===controller){paintGrid();paintFilm();}
+          if(state.scan===controller){
+            paintGrid();paintFilm();
+            const visible=live.flatMap(([,items])=>items.filter(item=>item.current()).map(item=>item.photo));
+            for(let at=0;at<visible.length;at+=32)void readVisibleFacts(visible.slice(at,at+32),controller);
+          }
         } catch(error) {error.folderDetails=true;for(const [,items] of entries)for(const item of items)item.reject(error);}
       },0);
     });
@@ -1400,17 +1409,28 @@
     if (state.view === "single" && selected()?.path !== lead) showSingle();
     if (!state.reading) status(`${state.photos.length.toLocaleString()} of ${state.allPhotos.length.toLocaleString()} photos${state.hiddenFiles ? ` · ${state.hiddenFiles} unreadable files hidden` : ""}${state.collection?.kind === "smart" && state.smartIndexing ? " · Indexing is still running, so more may turn up." : ""}`);
   }
+  async function readVisibleFacts(photos, controller, demand="visible") {
+    const waiting=photos.filter(photo=>!photo.indexed && !photo.factsAsked);
+    if(!waiting.length)return;
+    const started=performance.now();
+    if(demand!=="background")for(const photo of waiting)photo.factsAsked=true;
+    try {
+      const result=await api("/api/library/metadata",{paths:waiting.map(photo=>photo.path),demand},controller.signal);
+      if(controller.signal.aborted || state.scan!==controller)return;
+      const known=new Map(result.photos.map(photo=>[photo.path,photo]));
+      for(const photo of waiting){const name=photo.name;Object.assign(photo,known.get(photo.path));if(photo.copy_id)photo.name=name;}
+      HDRLibraryStopwatch("camera_details_shown",{demand,count:result.photos.length,duration_ms:performance.now()-started});
+      if(state.sort==="time" || state.filters.rules?.length)applyQuery();
+      else if(waiting.includes(selected()))updateDetails();
+    } catch(error){if(!aborted(error))console.debug("Library camera details:",error.message);}
+    finally{if(demand!=="background")for(const photo of waiting)photo.factsAsked=false;}
+  }
   async function readDates(controller, photos) {
-    // One small low-priority batch at a time; picture connections stay available.
-    for (let start = 0; start < photos.length && !controller.signal.aborted; start += 32) {
-      try {
-        const result = await api("/api/library/metadata", { paths: photos.slice(start, start + 32).map(photo => photo.path) }, controller.signal);
-        if (controller.signal.aborted || state.scan !== controller) return;
-        const byPath = new Map(result.photos.map(photo => [photo.path, photo]));
-        for (const photo of photos.slice(start, start + 32)) { const name=photo.name; Object.assign(photo, byPath.get(photo.path)); if(photo.copy_id)photo.name=name; }
-        if (state.sort === "time" || state.filters.rules?.length) applyQuery();
-        else if (byPath.has(selected()?.path)) updateDetails();
-      } catch (error) { if (!aborted(error)) console.debug("Library capture dates:", error.message); return; }
+    // The helper's low-priority index lane fills missing details. Visible rows
+    // and the selection use independent foreground requests ahead of this pass.
+    for(let at=0;at<photos.length && !controller.signal.aborted;at+=32){
+      await readVisibleFacts(photos.slice(at,at+32),controller,"background");
+      await sleep(20,controller.signal).catch(()=>{});
     }
   }
   function folderRow(folder, depth = 0) {
