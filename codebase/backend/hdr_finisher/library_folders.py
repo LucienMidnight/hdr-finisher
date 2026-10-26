@@ -112,7 +112,7 @@ def _walk_photos(root, warnings, cancellation):
         while stack:
             if cancellation[0](): raise CancelledError()
             entries+=1
-            if entries%128==0: yield None  # Yield even through empty/unsupported trees.
+            if entries%512==0: yield None  # Yield even through empty/unsupported trees.
             try: entry=next(stack[-1])
             except StopIteration:
                 stack.pop().close(); continue
@@ -144,7 +144,7 @@ def _scan_page(token, root, cancelled=lambda:False, *, close=False, restart=Fals
     import time
     now=time.monotonic()
     for key,(walk,warnings,touched,cancellation) in list(_paged_walks.items()):
-        if now-touched>30 or key==token and (close or restart):
+        if key==token and (close or restart):
             walk.close(); _paged_walks.pop(key,None)
     if close: return dict(photos=[],done=True,unreadable_folders=[])
     if token not in _paged_walks:
@@ -157,7 +157,7 @@ def _scan_page(token, root, cancelled=lambda:False, *, close=False, restart=Fals
     cancellation[0]=cancelled
     photos=[];done=False
     try:
-        for _ in range(64):
+        for _ in range(256):
             if cancelled(): raise CancelledError()
             try: photo=next(walk)
             except StopIteration: done=True;break

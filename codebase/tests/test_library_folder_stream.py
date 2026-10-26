@@ -44,9 +44,9 @@ def test_index_pages_do_not_read_source_or_settings(setup,monkeypatch):
     assert not (folder/"0000.jpg").exists()
 
 def test_helper_yields_first_page_and_cancels_without_collecting_tree(tmp_path):
-    for i in range(150): (tmp_path/f"{i}.jpg").write_bytes(b"photo")
+    for i in range(600): (tmp_path/f"{i}.jpg").write_bytes(b"photo")
     first=scan_page("test-bounded",str(tmp_path))
-    assert len(first["photos"])==64 and not first["done"]
+    assert len(first["photos"])==256 and not first["done"]
     assert "test-bounded" in _paged_walks
     scan_page("test-bounded",str(tmp_path),close=True)
     assert "test-bounded" not in _paged_walks
@@ -111,7 +111,7 @@ def test_foreground_metadata_does_not_wait_for_pending_helper_jobs(setup,monkeyp
 
 
 def test_walk_yields_and_can_cancel_through_unsupported_files(tmp_path):
-    for i in range(400): (tmp_path/f"{i}.txt").write_text("ignored")
+    for i in range(800): (tmp_path/f"{i}.txt").write_text("ignored")
     result=scan_page("unsupported",str(tmp_path))
     assert not result["done"] and not result["photos"]
     with pytest.raises(Exception): scan_page("unsupported",str(tmp_path),lambda:True)

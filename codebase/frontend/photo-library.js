@@ -469,7 +469,7 @@
       tilePool.clear();
       compare.cancel();
       clearCells(state.cells); clearCells(state.filmCells); clearPrefetch(); state.single?.abort();
-      state.scan?.abort(); state.native?.abort(); state.nativeSource?.abort();
+      state.native?.abort(); state.nativeSource?.abort();
     } else if ((state.path || state.collection) && !state.photos.length) void reopen();
     else { paintGrid(); paintFilm(); if (state.view === "single") showSingle(); }
   }
@@ -1243,6 +1243,7 @@
   async function openPlace(place) {
     const path = place.path || "";
     restoreSourceSort(place);
+    if(state.folderOpen)HDRLibraryStopwatch("folder_open_cancelled",{path:state.path,request:state.folderOpen.request,reason:"opened another place"});
     state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells);
     state.collection = place.kind ? { kind: place.kind, name: place.name } : null; state.smartFilters = null; albums.setActive(place.kind === "album" ? place.name : ""); smart.setActive(place.kind === "smart" ? place.name : "");
     if (path) state.lastFolder = path;  // Where a deleted album's view returns to.
@@ -1284,7 +1285,6 @@
     const paint = () => {
       clearTimeout(folderPaintTimer); folderPaintTimer = null;
       if (controller.signal.aborted || state.scan !== controller) return;
-      if (state.allPhotos.length && !opening.presented) return;
       const top=grid.scrollTop,left=film.scrollLeft;
       state.allPhotos = [...rows.values()];
       applyQuery(); grid.scrollTop=top;film.scrollLeft=left;paintGrid();paintFilm();
@@ -1338,7 +1338,10 @@
     } catch(error) {
       readyReject(error);
       if(!aborted(error) && state.scan===controller){state.reading=false;state.scanError=error.message;status(error.message);}
-    } finally { readyResolve();reader.releaseLock();clearTimeout(folderPaintTimer); }};
+    } finally {
+      readyResolve();reader.releaseLock();clearTimeout(folderPaintTimer);
+      HDRLibraryStopwatch("folder_stream_ended",{path,request:opening.request,reason:controller.signal.aborted?"opened another place":"connection ended"});
+    }};
     void pump();
     return ready;
   }

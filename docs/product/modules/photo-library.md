@@ -57,6 +57,18 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 follow-up, Part 3.** Opening Grade no longer aborts the open
+folder stream. Only opening another place or closing its page ends it; page
+and backend closure logs include reasons. The observed 19:48:38 closure was
+immediately preceded by Grade opening. Disk pages use the check lane with
+foreground yielding; completion wakes the stream directly instead of adding
+20 ms polling delays per page. Pages now hold at most 256 photos. Open walkers
+retain their place during long foreground pauses rather than expiring at 30 s.
+Startup recovery caused the post-open reconcile burst: it waited for helper
+idle, then reconciled one photo family per lock. Recovery now handles at most
+16 families per piece, logs count/time, and checks foreground demand between
+pieces. Validation is deferred to the final profile and fast suites.
+
 **October 26 follow-up, Part 2.** Streamed folders now start the missing
 camera-details fill-in after indexed rows arrive. Selection requests bypass
 background readers with priority 0 and a 30 ms selection debounce; on-screen

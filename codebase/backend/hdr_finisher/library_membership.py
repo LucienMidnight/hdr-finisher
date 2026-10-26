@@ -213,10 +213,13 @@ class LibraryMembership:
     def maintain(self, paths):
         """Background recovery work yields after each physical photo family."""
         paths = sorted({source(p) for p in paths})
-        for at, path in enumerate(paths):
+        for at in range(0,len(paths),16):
             self.index.wait_for_upkeep()
-            self.reconcile([path])
-            if at + 1 < len(paths): time.sleep(.001)
+            started=time.perf_counter()
+            self.reconcile(paths[at:at+16])
+            from .library_diagnostics import log
+            log("recovery_piece",count=len(paths[at:at+16]),duration_ms=(time.perf_counter()-started)*1000)
+            time.sleep(.005)
 
     def _reconcile_all(self):
         # Key-only, indexed pages. No facts snapshot or lock spans the pass.

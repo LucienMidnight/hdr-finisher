@@ -83,14 +83,13 @@ async def stream_folder(index, store, request, root, enrich):
     log("folder_open_started",folder=root,request=token)
     def event(kind, **values):
         return json.dumps(dict(kind=kind,request=token,path=root,**values),separators=(",",":"))+"\n"
+    close_reason = "client disconnected or app closing"
     async def helper(**values):
-        job, future = await run_in_threadpool(worker.submit_library,"scan-page",priority=100,token=token,path=root,**values)
+        job, future = await run_in_threadpool(worker.submit_library,"scan-page",priority=100,checking=True,token=token,path=root,**values)
         try:
-            while not future.done():
-                if await request.is_disconnected():
-                    raise asyncio.CancelledError()
-                await asyncio.sleep(.02)
-            return future.result()
+            # StreamingResponse owns disconnect listening and cancels this
+            # task. Await completion directly; polling added 20 ms per page.
+            return await asyncio.wrap_future(future)
         finally:
             worker.cancel(job)
     try:
@@ -105,12 +104,11 @@ async def stream_folder(index, store, request, root, enrich):
                 log("folder_open_first_rows",folder=root,request=token,rows=len(rows),duration_ms=(time.perf_counter()-started)*1000,route="index")
                 first = False
             yield event("rows",photos=rows)
-            if await request.is_disconnected(): return
         if total:
             log("folder_open_all_rows",folder=root,request=token,rows=total,duration_ms=(time.perf_counter()-started)*1000,route="index")
         yield event("indexed",rows=total)
         generation = 0
-        while not await request.is_disconnected():
+        while True:
             generation += 1; check_started = time.perf_counter()
             epoch = getattr(getattr(index.marks,"file_commands",None),"epoch",None)
             counts = dict(added=0,removed=0,changed=0,settings=0)
@@ -155,8 +153,7 @@ async def stream_folder(index, store, request, root, enrich):
                         first=False
                     yield event("changes",photos=rows,removed=[])
                 if result["done"]: break
-                if await request.is_disconnected(): return
-            # A partial/offline walk cannot establish that a photo was removed.
+                # A partial/offline walk cannot establish that a photo was removed.
             if not unreadable:
                 after=""
                 while True:
@@ -181,7 +178,6 @@ async def stream_folder(index, store, request, root, enrich):
             # Only the seen set persists, on disk. No settings or picture work
             # is scheduled merely because a row exists in the index.
             for _ in range(int(max(15,10*duration)*4)):
-                if await request.is_disconnected(): return
                 with index.checks.lock:
                     requested=root in index.checks.stream_requested
                     index.checks.stream_requested.discard(root)
@@ -190,6 +186,7 @@ async def stream_folder(index, store, request, root, enrich):
     except asyncio.CancelledError:
         raise
     except Exception as error:
+        close_reason = "failed: " + str(error)
         log("folder_open_failed",folder=root,request=token,reason=str(error))
         yield event("error",message=str(error))
     finally:
@@ -201,4 +198,4 @@ async def stream_folder(index, store, request, root, enrich):
             if count: index.checks.streaming[root]=count
             else: index.checks.streaming.pop(root,None)
         seen.close(); temporary.cleanup()
-        log("folder_open_closed",folder=root,request=token,duration_ms=(time.perf_counter()-started)*1000)
+        log("folder_open_closed",folder=root,request=token,duration_ms=(time.perf_counter()-started)*1000,reason=close_reason)
