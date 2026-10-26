@@ -345,10 +345,10 @@ def create_library_router(worker, browser, store=None):
                     and (command.mtime_ns is None or float(stat.st_mtime_ns) == float(command.mtime_ns))
                     and picture_document(command.path) is None
                     and live.cache.cached(path, 640, live_quality(None)) is None)
-            if (command.quick_draw or original) and not await run_in_threadpool(eligible):
+            if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
             preview = await run_in_threadpool(original_preview if original else camera_preview, path, 640)
-            if (command.quick_draw or original) and not await run_in_threadpool(eligible):
+            if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
             return preview
         except (ValueError, OSError):

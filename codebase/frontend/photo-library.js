@@ -408,7 +408,9 @@
     // Evict finished surfaces only. In-progress window draws finish at their normal boundary.
     const other = photo => readyKey(photo) !== readyKey(selected() || {});
     readyWindow.evictFinished(other); quickWindow.evictFinished(other);
-    tilePool.discard(cell => cell.fallback?.dataset.standIn !== "true");
+    while (bytes + readyBytes + tilePool.snapshot().bytes > budget &&
+      tilePool.evictOne(cell => cell.fallback?.dataset.standIn !== "true")) {}
+    HDRLibraryStopwatch("picture_thumbnail_reclaim", {route:"incremental",duration_ms:0,reason:required ? "source development" : "draw"});
     held = readyBytes + tilePool.snapshot().bytes;
     budget = await HDRLibraryPictures.readyMemory(held);
     if (required && bytes + held > budget) {
@@ -652,7 +654,7 @@
     for (const [path, cell] of map) {
       if (wanted.has(path) && kept(cell, wanted.get(path))) continue;
       cell.element.remove(); map.delete(path);
-      if (cell.meta && cell.scene?.route === "library-live" && cell.displayEpoch === state.displayEpoch && !cell.controller.signal.aborted) {
+      if (cell.meta && cell.fallback && cell.displayEpoch === state.displayEpoch && !cell.controller.signal.aborted) {
         // Budget 16 bytes per pixel for the live surface and presentation buffers.
         overlays?.detach(cell.fallback);
         tilePool.put(tileKey(map, cell.identity), cell, cell.fallback.width * cell.fallback.height * 16);
@@ -667,6 +669,7 @@
         cell = tilePool.take(tileKey(map, pictureIdentity(photo)));
         if (cell) {
           container.append(cell.element); cell.photo = photo; cell.index = index;
+          HDRLibraryStopwatch("picture_thumbnail_reused", {path:photo.path,view:map === state.cells ? "grid" : "filmstrip",route:"recent-thumbnail-pool",picture_size:"thumbnail",duration_ms:0,cache_hit:true});
           overlays?.attach(photo, cell.fallback, cell.meta, cell.controller,
             () => state.active && cell.element.isConnected && !cell.controller.signal.aborted);
         }
@@ -1188,7 +1191,7 @@
       // Preserve finished grid surfaces in the existing bounded pool for quick draws.
       for (const cell of state.cells.values()) {
         cell.element.remove();
-        if (cell.meta?.route === "library-live" && cell.displayEpoch === state.displayEpoch && !cell.controller.signal.aborted) {
+        if (cell.meta && cell.fallback && cell.displayEpoch === state.displayEpoch && !cell.controller.signal.aborted) {
           overlays?.detach(cell.fallback);
           tilePool.put(tileKey(state.cells,cell.identity),cell,cell.fallback.width * cell.fallback.height * 16);
         } else cell.controller.abort();

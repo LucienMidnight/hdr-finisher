@@ -373,7 +373,36 @@ def original_preview(path, edge):
         "width": image.width, "height": image.height, "edge": edge, "kept": False}
 
 
+_CAMERA_PREVIEWS = OrderedDict()
+_CAMERA_PREVIEW_LOCK = RLock()
+_CAMERA_PREVIEW_BYTES = 64 * 1024**2
+
+
 def camera_preview(path, edge):
+    # A bounded RAM cache of the camera preview, keyed by the exact file version.
+    path = Path(path).resolve(strict=True)
+    stat = path.stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns, edge)
+    started = perf_counter()
+    with _CAMERA_PREVIEW_LOCK:
+        cached = _CAMERA_PREVIEWS.pop(key, None)
+        if cached is not None:
+            _CAMERA_PREVIEWS[key] = cached
+            log("picture_camera_preview_ready", path=str(path), route="camera-preview-memory",
+                cache_hit=True, duration_ms=(perf_counter()-started)*1000)
+            return dict(cached)
+        result = _extract_camera_preview(path, edge)
+        after = path.stat()
+        if (after.st_size, after.st_mtime_ns) != (stat.st_size, stat.st_mtime_ns):
+            raise ValueError("Camera preview source changed")
+        result["kept"] = True
+        _CAMERA_PREVIEWS[key] = result
+        while sum(len(row["url"]) for row in _CAMERA_PREVIEWS.values()) > _CAMERA_PREVIEW_BYTES:
+            _CAMERA_PREVIEWS.popitem(last=False)
+        return dict(result)
+
+
+def _extract_camera_preview(path, edge):
     """Extract the camera JPEG without unpacking or demosaicing the RAW."""
     import base64
     import rawpy
@@ -386,7 +415,7 @@ def camera_preview(path, edge):
         image.thumbnail((edge, edge))
         output = BytesIO()
         image.save(output, format="JPEG", quality=90)
-    log("picture_camera_preview_ready", path=str(path), duration_ms=(perf_counter()-started)*1000)
+    log("picture_camera_preview_ready", path=str(path), route="camera-preview-extract", cache_hit=False, duration_ms=(perf_counter()-started)*1000)
     return {"route": "camera-preview-placeholder", "url": "data:image/jpeg;base64," + base64.b64encode(output.getvalue()).decode(),
         "width": image.width, "height": image.height, "edge": edge, "kept": False}
 

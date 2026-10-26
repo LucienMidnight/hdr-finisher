@@ -20,6 +20,10 @@
       take:key => remove(key, false),
       values:() => [...entries.values()].map(entry => entry.value),
       discard(predicate) { for (const [key, entry] of entries) if (predicate(entry.value)) remove(key); },
+      evictOne(predicate = () => true) {
+        for (const [key, entry] of entries) if (predicate(entry.value)) { remove(key); return true; }
+        return false;
+      },
       clear() { for (const key of entries.keys()) remove(key); },
       snapshot:() => ({bytes, count:entries.size, limit})
     });

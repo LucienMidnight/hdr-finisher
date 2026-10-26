@@ -2,6 +2,22 @@
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 batch, Part 1 (app trial pending).** Finished thumbnails from all
+completed canvas routes survive Single/fullscreen transitions in the bounded
+recent thumbnail pool; memory reclamation removes only as many as needed.
+Grid camera previews now obey the same no-thumbnail/no-grade guard as quick
+draws. Camera previews are retained in 64 MiB RAM, by exact file version.
+Logs distinguish extraction, memory hits, thumbnail reuse and reclamation;
+the summary reports each. Fast checks deferred to the end; no GPU driver run.
+
+**Batch working agreement (Steve, October 26).** Five ordered parts, each
+committed locally, without intermediate stops. Run fast checks once at the
+end; only shared Denoise output changes may run their focused GPU checks.
+Steve tries HDR and SDR in the app, then Claude traces backend.log with
+summarize_library_log.py. Logs identify routes and stage durations. Steve's
+screen takes precedence over the log; discrepancies require screen inspection.
+
+
 A handoff summary of the October 25–26 work so a new thread can carry on.
 Details are in the dated entries below, the decisions table (section 3), the
 "Known slow items to target" table (section 5) and the linked documents.

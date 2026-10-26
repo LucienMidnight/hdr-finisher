@@ -64,8 +64,11 @@ def main():
     phases = []
     first_thumbnail = None
     folder_listed = None
+    routes = collections.defaultdict(list)
     stored = collections.defaultdict(list)
     for name, d in events(since):
+        if name in ("picture_camera_preview_ready", "page_picture_thumbnail_reused", "page_picture_thumbnail_reclaim"):
+            routes[(name, d.get("route", "-"))].append(d.get("duration_ms", 0))
         if name.startswith(('stored_screen_preview_', 'page_picture_stored_screen_preview_')):
             stored[(name, d.get('rendition', '-'), d.get('result', '-'))].append(d)
         if name in ("app_start", "backend_process_started", "helper_process_started", "helper_ready", "writer_start", "backend_ready", "app_ready", "window_created", "window_visible", "page_loaded", "page_ready"):
@@ -109,6 +112,9 @@ def main():
         for part in ('read_ms', 'codec_ms', 'pack_ms'):
             values = [row[part] for row in rows if part in row]
             if values: print(f'    {part}: p50={pct(values, .5):.0f}ms max={max(values):.0f}ms')
+    print("Library routes:")
+    for (name, route), times in sorted(routes.items()):
+        print(f"  {name} {route}: n={len(times)} p50={pct(times, .5):.0f}ms max={max(times):.0f}ms")
     sharp = [o["duration_ms"] for o in outcomes if o.get("sharp_draw")]
     hits = [o["duration_ms"] for o in outcomes if o.get("sharp_draw") and not o.get("quick_draw")]
     misses = [o["duration_ms"] for o in outcomes if o.get("sharp_draw") and o.get("quick_draw")]
