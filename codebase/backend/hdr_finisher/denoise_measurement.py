@@ -31,7 +31,7 @@ def source_identity(frame):
     identity = getattr(frame.render_cache, "source_identity", None)
     if identity is not None:
         return asdict(identity)
-    return {"session": frame.session_id, "epoch": frame.render_cache.source_epoch}
+    return {"session": getattr(frame, "session_id", str(id(frame.image))), "epoch": frame.render_cache.source_epoch}
 
 
 def _context(store, session_id, kind, long_edge, edit_revision, geometry_signature):

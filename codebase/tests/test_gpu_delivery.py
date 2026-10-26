@@ -343,11 +343,13 @@ def test_live_background_draw_does_not_age_ahead_of_export(tmp_path, monkeypatch
         assert client.post(url,json={"bytes":400,"background":True}).json()["granted"]
 
 
-def test_full_size_denoise_model_is_measured_before_the_gpu_turn(tmp_path, monkeypatch):
-    """The renderer asks for the full-size noise model mid-turn; the worker now
-    measures it before queueing, on the same pixels, and the broker serves it."""
+def test_full_size_denoise_does_not_measure_on_cpu_before_the_gpu_turn(tmp_path, monkeypatch):
+    """GPU delivery queues original pixels without waiting for CPU estimation."""
     import json
-    from hdr_finisher.denoise_adaptive import estimate_adaptive_model
+    from hdr_finisher import denoise_adaptive
+    def forbidden(*args, **kwargs):
+        raise AssertionError("GPU delivery measured noise on the CPU")
+    monkeypatch.setattr(denoise_adaptive, "estimate_adaptive_model", forbidden)
     from hdr_finisher.render_cache import SessionRenderCache
     app = _broker(tmp_path, monkeypatch)
     image = np.random.default_rng(7).uniform(.05, .6, (96, 128, 3)).astype(np.float32)
@@ -359,8 +361,8 @@ def test_full_size_denoise_model_is_measured_before_the_gpu_turn(tmp_path, monke
         pending = worker.submit(gpu_delivery.render_pair, frame, ExportSettings(), frame.adjustments)
         while (job := client.get("/api/delivery/gpu/next").json()) is None:
             time.sleep(.01)
-        expected = json.loads(json.dumps(estimate_adaptive_model(image).as_dict()))
-        assert gpu_delivery.session(job["id"]).native_denoise_models == {"hdr": expected}
+        assert gpu_delivery.session(job["id"]).denoise_source_identity == job["denoise_source_identity"]
+        assert "denoise_models" not in job
         assert job["authored_sdr"] is False
         client.post(f"/api/delivery/gpu/{job['id']}/complete", json={"error": "stop"})
         assert pending.result(timeout=5) is None

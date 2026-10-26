@@ -158,7 +158,7 @@ def _render_pair(frame, owner, settings, adjustments):
             for lane in ("hdr", "sdr")})
         lane_memory = {lane: memory.allocate((output[1], output[0], 4))[0] for lane in ("hdr", "sdr")}
         denoise = getattr(frame, "denoise", None) or DenoiseDocumentSettings()
-        models = {} if raw else _native_denoise_models(frame, adjustments, denoise)
+        from .denoise_measurement import source_identity
         _atomic(directory / "request.json", {
             "memory": {"source": source_memory, "reference": reference_memory, "raw": raw_memory, **lane_memory},
             "raw": {key: value for key, value in raw.items() if key != "body"} if raw else None,
@@ -168,7 +168,7 @@ def _render_pair(frame, owner, settings, adjustments):
             "authored_sdr": reference is not None,
             "white": getattr(frame, "hdr_reference_white_nits", 203), "adjustments": adjustments.model_dump(mode="json"),
             "locals": [v.model_dump(mode="json") for v in adjustments.enabled_locals(getattr(frame, "local_adjustments", []))],
-            "denoise": denoise.model_dump(mode="json"), "denoise_models": models,
+            "denoise": denoise.model_dump(mode="json"), "denoise_source_identity": source_identity(frame),
             "finishing": settings.output_finishing.model_dump(mode="json"),
             "priority": getattr(frame, "delivery_priority", 20), "created": time.time()})
         reply = _wait_for_result(directory, root, frame)
@@ -207,38 +207,6 @@ def _render_pair(frame, owner, settings, adjustments):
         frame._delivery_cache = owner._delivery_cache = (signature, result, record)
     return result
 
-
-
-def _native_denoise_models(frame, adjustments, denoise):
-    """The full-size Denoise noise models the renderer will ask for, measured
-    here before the job queues for the GPU.
-
-    The renderer used to request them mid-turn, leaving the GPU idle for the
-    2-3 s CPU measurement of a 42 MP source. This is the same measurement of the
-    same pixels (main.adaptive_denoise_model's native branch), so it moves the
-    work out of the serialized GPU turn without changing the model.
-    """
-    from .denoise_adaptive import estimate_adaptive_model
-    from .models import PreviewKind
-    cache = getattr(frame, "render_cache", None)
-    if cache is None:
-        return {}
-    models, measured = {}, {}
-    long_edge = max(frame.image.shape[:2])
-    for lane in ("hdr", "sdr"):
-        if not getattr(denoise, lane).enabled:
-            continue
-        try:
-            native = cache.native_denoise_source(PreviewKind(lane), long_edge, adjustments)
-        except (AttributeError, ValueError):
-            continue
-        if native is None:
-            continue
-        image = native[0]
-        if id(image) not in measured:
-            measured[id(image)] = estimate_adaptive_model(image).as_dict()
-        models[lane] = measured[id(image)]
-    return models
 
 
 def _wait_for_result(directory, root, frame):
@@ -420,7 +388,7 @@ def create_gpu_delivery_router():
             local_adjustments=[LocalAdjustment.model_validate(v) for v in value["locals"]],
             denoise=DenoiseDocumentSettings.model_validate(value["denoise"]),
             hdr_reference_white_nits=value["white"], color_context=context, edit_revision=0,
-            native_denoise_models=value.get("denoise_models") or {},
+            denoise_source_identity=value.get("denoise_source_identity"),
             render_cache=SessionRenderCache(image, reference, color_context=context))
         with _lock: _sessions[value["id"]] = frame
         active[value["id"]] = (directory, value)

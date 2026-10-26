@@ -1,5 +1,16 @@
 # Module PRD: Export and Proof
 
+## October 26: shared GPU Denoise preparation (qualification pending)
+
+Grade, GPU export and Proof acquire noise measurements through the same GPU
+renderer method. GPU export no longer measures noise on the CPU before queueing.
+Full-size Grade and delivery share the source measurement across geometry and
+finishing changes; reduced previews still measure their own resampled pixels.
+An authored SDR base remains a separate source. CPU measurement is retained for
+fallback and reference checks. Finished-pixel limits: SDR mean Delta E 2000 <1,
+p99 <3; HDR mean Delta E ITP <1, p99 <3. The Highlight compression ceiling stays
+exact. Checks and 42 MP Grade timing are deferred to the final batch run.
+
 ## October 26: GPU Denoise measurement (qualification pending)
 
 GPU pixel filters, per-block noise statistics and sampled clumping measurement
