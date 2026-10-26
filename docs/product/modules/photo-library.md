@@ -57,6 +57,17 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 viewport batch, Part 2.** Folder opening delivers the entire
+indexed snapshot in one message, before disk checking or background camera
+details. The first grid therefore has the full count, sort and filter facts;
+jumping anywhere starts only that viewport. Bulk index enrichment uses an
+independent WAL reader instead of waiting behind the marks writer. This removes
+hundreds of repeated database setups and full-grid sorts. Camera-detail sort
+updates preserve the top visible photo. Targets: all rows about 5 s, best
+available visible picture about 1 s, disk check about 60 s; allow 5% run
+variation. Validation deferred to the single final profile and fast suites.
+
+
 **October 26 viewport batch, Part 1.** Intermediate scroll positions no longer
 start picture work. Settling requests only the visible cells; finished cells
 remain cached one screen beyond either edge. Leaving cells abort shared source

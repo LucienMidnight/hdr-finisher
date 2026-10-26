@@ -42,8 +42,9 @@ def cached_rows(index, store, photos):
         return photos
     marks = index.marks
     paths = [p["path"] for p in photos]
-    with marks._lock:
-        rows = marks._rows(paths)
+    # Independent WAL reader: indexed delivery must never wait for upkeep's
+    # writer lock. Each SELECT sees committed state; visible hydration refreshes.
+    rows = marks._rows(paths)
     for photo in photos:
         photo.update(rows.get(photo["path"],dict(marks=Marks().model_dump(),albums=[],storage="none")))
     if store is not None:
@@ -93,17 +94,18 @@ async def stream_folder(index, store, request, root, enrich):
         finally:
             worker.cancel(job)
     try:
-        after = ""; total = 0; first = True
-        while True:
-            photos = await run_in_threadpool(indexed_page,index,root,after,64 if first else PAGE)
-            if not photos: break
-            after = photos[-1]["path"]
-            total += len(photos)
-            rows = await run_in_threadpool(cached_rows,index,store,photos)
-            if first:
-                log("folder_open_first_rows",folder=root,request=token,rows=len(rows),duration_ms=(time.perf_counter()-started)*1000,route="index")
-                first = False
+        # Deliver one complete index snapshot before admitting the disk check
+        # or background EXIF. Hundreds of tiny pages repeated SQL setup, grade
+        # descriptions, full-grid sorting and paints at an ever-moving end.
+        def snapshot():
+            photos = indexed_page(index,root,limit=2147483647)
+            return len(photos), cached_rows(index,store,photos)
+        total, rows = await run_in_threadpool(snapshot)
+        first = not rows
+        if rows:
+            log("folder_open_first_rows",folder=root,request=token,rows=len(rows),duration_ms=(time.perf_counter()-started)*1000,route="index")
             yield event("rows",photos=rows)
+        del rows
         if total:
             log("folder_open_all_rows",folder=root,request=token,rows=total,duration_ms=(time.perf_counter()-started)*1000,route="index")
         yield event("indexed",rows=total)

@@ -1324,7 +1324,7 @@
             } else if(!folderPaintTimer)folderPaintTimer=setTimeout(paint,500);
           }
           if(event.kind === "indexed") {
-            state.reading=rows.size===0;paint();readyResolve();
+            state.reading=rows.size===0;if(first)paint();readyResolve();
             void readDates(controller, [...rows.values()].filter(photo=>!photo.indexed));
             HDRLibraryStopwatch("folder_listed",{path,request:event.request,duration_ms:performance.now()-started});
           }
@@ -1445,7 +1445,15 @@
         // Coalesce background fact arrivals instead of sorting a large folder
         // once for every EXIF wave on the page's foreground thread.
         if(!factsQueryTimer)factsQueryTimer=setTimeout(()=>{
-          factsQueryTimer=null;if(state.scan===controller && state.active)applyQuery();
+          factsQueryTimer=null;
+          if(state.scan===controller && state.active){
+            const anchor=state.photos[state.layout?.first]?.path;
+            const offset=state.layout ? grid.scrollTop-state.layout.scrollFor(state.layout.first) : 0;
+            applyQuery(false);
+            const index=state.photos.findIndex(photo=>photo.path===anchor);
+            if(index>=0 && state.layout)grid.scrollTop=state.layout.scrollFor(index)+offset;
+            paintGrid();paintFilm();
+          }
         },demand==="background"?1000:100);
       } else if(waiting.includes(selected()))updateDetails();
     } catch(error){if(!aborted(error))console.debug("Library camera details:",error.message);}
