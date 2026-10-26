@@ -1275,19 +1275,40 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
-| **Cold first picture for non-RAW formats** (core workflow, see decisions) | AVIF and Ultra HDR sources decode through per-photo command-line tools (seconds). JPEG, HEIF, TIFF, PNG, EXR and DNG cold timings have not been measured as a set. | Open; needs a fast in-process decoding plan per format. |
+| **Cold first picture for non-RAW formats** (core workflow, see decisions) | Part B, October 26: 12 copied originals, 640 px first picture in the current Library, 1.05–12.70 s; current CPU boundaries and in-process alternatives measured separately below. | Offline plan measured; implementation open. No import-rule change. OS cache warm; USB/fullscreen app trial remains separate. |
 | **Cold RAW development** (badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |
 | **Denoise in Library drawing.** Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: thumbnail analysis 250–530 ms per draw even after reuse; screen-preview measurements already cost 1.6 s in the 18:45 test. Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Reuse fix in Part 0c; exact estimator threading and selected-first measurement scheduling in Part 0f. Reconstruction dispatch optimization remains open; Steve's timing try pending. |
 | Film grain and halation in Library drawing | Present in all slow graded photos (Portra 400, grain 24, halation). Not timed apart from Denoise. | Suspected; measure. |
 | Sharpening | Present on one slow photo (DSC07178). No timing. | Unmeasured; check only. |
 | Stored-scene pixel fetch | 65–150 ms per 2560 scene after Part 0, down from 140–800 ms. | Measured; improved. |
-| AVIF and Ultra HDR source decoding | Previous AVIF about 5.6 s of CPU decode/gain-map work; one uncached AVIF 8.1 s fullscreen. AVIF already defaulted to all CPUs; explicit job sharing added. Ultra HDR CLI has no job option. | Not remeasured: open one uncached AVIF and one Ultra HDR source in fullscreen, wait for sharp draw, then revisit. No new decoder or accuracy change. |
+| AVIF and Ultra HDR source decoding | Part B local copies: Ultra HDR first picture 1.87 s, CPU boundary 771 ms vs memory probe 92 ms; large gain-map AVIF 12.70 s, CPU boundary 8.75 s vs memory probe 6.73 s. Small gain-map and direct AVIF measured below. | Remeasured offline at 640 px. Large AVIF gain reconstruction remains slow despite memory input/all-thread requests. Live USB/2560 fullscreen trial still pending; no decoder integrated. |
 | Cold RAW development | Previous GPU two-size preparation 1.9–2.3 s per 42 MP RAW; CPU fallback 8–10 s. Part A local-copy LibRaw decode: 230 → 193 ms; unpack 78 → 78 ms; exact transport bytes. | CPU decode remeasured; USB read, GPU development and cache-write timings await the 30-photo app trial. |
 | Highlight reconstruction | 42 MP GPU about 3.2 s against a 1 s target. | Measured (October 24). |
 | Rating save | About 110 ms in the background: 58 ms SQLite commits, 32 ms recovery flush. Screen no longer waits. Cutting it further trades durability, which is Steve's decision. | Measured; option pending. |
 | Indexing throughput | Previous 0.35 s per 32-photo batch, one lane. Part A 12-copy metadata read: 75.8 ms serial → 9.7 ms warm parallel; 477.4 ms including process startup. | Metadata remeasured only; 155k-library end-to-end throughput awaits a normal indexing session. |
 | Whole-pin folder walks | Initial and changed pins still walk their whole scope (D:\Photos holds about 155k photos). | Known; scoped since Step 2. |
 | Full-size Ultra HDR export | About 33 s per photo (CPU export, maximum fidelity). | Measured (October 19); GPU delivery brief exists. |
+
+### Cold-original decoding — Part B offline findings (October 26, 2026)
+
+**Measured, not built.** One real read-only copy per format family, two gain-map AVIF examples and a direct AVIF. App already running; isolated Library scene/cache misses, OS file cache warm. First picture is the current finished 640 px GPU picture plus two animation frames, not a cold app launch, folder-click latency or the sharp 2560 picture. JPEG goes first and includes first-use renderer setup. The CPU boundary is timed separately; RGB memory probes exclude file reads; DNG keeps warm reads inside its existing in-process preparation. Most metadata validation is outside the fast timing. Estimated first picture = current first − current CPU boundary + fast probe, not a measured integrated fast path. [Full method, samples and accuracy results](../../technical/evidence/library-codecs-and-cold-decode-2026-10-26.md#b2--cold-originals).
+
+| Format / copied sample | Current first ms | Current CPU / fast probe ms | Estimated first ms | Recommended path and sample differences |
+| --- | --- | --- | --- | --- |
+| JPEG / `DSC_3931_01.jpg` | 4644.7 | 51.4 / 6.3 | 4599.6 | libjpeg-turbo memory; exact full samples. Reduced IDCT 6.8 ms vs 6.3 full: no gain here; reduced 640 px ΔE2000 0.184 / 2.527. |
+| Ultra HDR JPEG / `DSCF6495_finished.jpg` | 1866.5 | 770.9 / 91.8 | 1187.5 | libultrahdr memory, both views; HDR exact, SDR max 5.96e-8. Retain 0.18 scale, gamut/orientation and gain metadata. |
+| AVIF gain map, full / `DSCF6495_finished.avif` | 12696.2 | 8747.0 / 6730.4 | 10679.6 | libavif memory, both views, 12 threads; retain current 4.11 headroom: HDR max 5.96e-8. Full metadata precision changes pixels (report). Serial gain maths still dominates. |
+| AVIF gain map, half / `5M071612_finished.avif` | 3237.3 | 2118.1 / 1118.1 | 2237.2 | libavif memory, both views, 12 threads; HDR max 5.96e-8. SDR max 0.0004963 from a different 10/16-bit RGB boundary: retain current quantization before integration. |
+| HEIF/HEIC / `IMG_3324.HEIC` | 6736.7 | 1613.9 / 1597.7 | 6720.5 | Keep libheif with decode workers and Apple auxiliary-map/ICC path. HDR exact; no measured decode gain, new headroom parser excluded. |
+| TIFF / `2026-03-30-0072.tif` | 2729.6 | 149.8 / 72.2 | 2651.9 | tifffile/imagecodecs workers on independent strips/tiles; max 5.96e-8. Preserve normalization, channels, ICC and orientation policy. |
+| PNG / `IMG_2981.PNG` | 1049.6 | 16.5 / 5.2 | 1038.2 | libpng memory; exact 8-bit sample here. Full decode then reduce; retain ICC/alpha rules and any current precision boundary. |
+| EXR / `DSCF6495.exr` | 2808.4 | 179.3 / 387.0 | 3016.1 | Keep current combined-channel OpenEXR (179 ms). Memory probe slower (387 ms), exact only with explicit RGB channel gathering. |
+| JXL / `DSC01302.jxl` | 4178.8 | 1149.0 / 217.2 | 3247.0 | libjxl memory, 12 threads; exact fallback samples. Keep source-interpretation gate/profile handling; no browser dependency. |
+| Mosaic DNG / `Leica-X2-L1021324.DNG` | 3221.3 | 579.5 / 587.4 | 3229.1 | Existing complete experimental DNG preparation, LibRaw/OpenMP and TIFF workers; exact. No speed gain; retain opcodes, profile, crop and demosaic. |
+| Linear DNG / `DJI_0071-2-HDR.dng` | 4960.4 | 2009.4 / 1949.7 | 4900.7 | Existing complete linear-DNG preparation and TIFF workers; exact. No speed gain; retain calibration, highlight support and embedded SDR work. |
+| AVIF direct / `DSC08883.avif` | 2692.8 | 1508.6 / 648.4 | 1832.6 | libavif memory, 12 threads; max 5.96e-8; retain CICP/ICC, orientation and interpretation rules. |
+
+Sample differences are absolute returned-sample units, normalized float for precision formats; they are not interchangeable with perceptual ΔE. Values at 5.96e-8 are float32 rounding. EXR, HEIC and both DNG probes establish no useful decode-speed improvement. JXL/HEIC adapter gates still use the existing fallback. No required import accuracy, metadata, DNG correction or authored-SDR rule is relaxed. Gain-map AVIF headroom 4.113112926 vs the current parsed 4.11 gives HDR ΔEITP mean 0.0618 / p99.9 2.0596; the table deliberately retains 4.11. More native metadata precision is a separate import decision. No per-photo command-line tool or intermediate file occurs inside the fast probes.
 
 ### Prepared-folder fullscreen culling (October 25, 2026)
 
@@ -1517,6 +1538,40 @@ path while respecting resource priorities. The smallest file alone is not the
 winner. Retained previews remain regenerable cache products keyed to
 source/grade/version, not archival replacements for originals and non-destructive
 edit metadata.
+
+**Part B offline codec result — October 26, 2026.** No storage or decoder integration. Measured real GPU finished HDR and authored SDR screen previews at 2560 px Fit after `5f846b5`, including Film Look: the existing 16-source RAW set already contains alley and wide-gamut IMG_0790; add graded DSC07202, DSC07178 and DSC07217 with Denoise, Portra grain and halation. Lossless half-float is the reference only. [Report, full settings, 1/4/all-thread decode tables, per-photo bytes/metrics and cold-original findings](../../technical/evidence/library-codecs-and-cold-decode-2026-10-26.md).
+
+**Recommended next storage slice:** HDR AVIF q100, PQ10 / BT.2100 CICP 9/16/9 / YUV444 / speed 8, eight tiles (`tilelog2=(1,2)`, column/row order), all available decoder threads (12 here); separate lossless authored-SDR sRGB8 PNG level 3. Decode only the chosen rendition, ahead of navigation. The pair averages 12.12 MiB (844 photos per 10 GiB), median 437 ms encode, 75.4 ms HDR decode and 38.0 ms SDR decode at 12 threads. Both renditions meet the guide on 19/19 photos. Store interpretation explicitly; the PNG is an independent authored SDR rendition.
+
+Lossless PQ16 BT.2100 HDR JXL + lossless sRGB8 SDR JXL (effort 3, decoding-speed 1, all threads) is the precision-first alternative: 20.94 MiB, 489 photos/10 GiB, 213 ms pair encode, 62.7 / 56.7 ms HDR/SDR decode. AVIF/PNG uses about 42% less space; JXL has much smaller HDR error and faster preparation. Lossless sRGB16 JXL improves SDR quantization but makes a 33.19 MiB pair. None of the tested q90/q95 settings passes both renditions across all 19 photos; near-lossless JXL distance 0.004 and AVIF99 also fail. Quality labels are not equivalent across codecs.
+
+| Setting | Mean MiB/photo (both views) | Min–max MiB | Photos/10 GiB | Encode ms | Worst HDR mean / p99.9 | Worst SDR mean / p99.9 | Both pass |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| uhdr90full | 1.77 | 0.98–5.20 | 5777 | 221.4 | 23.404 / 117.934 | 3.357 / 15.453 | 0/19 |
+| uhdr90half | 1.11 | 0.72–2.01 | 9230 | 151.7 | 20.859 / 75.135 | 3.357 / 15.453 | 0/19 |
+| uhdr95full | 3.00 | 1.71–7.45 | 3412 | 227.6 | 17.253 / 75.290 | 2.655 / 10.825 | 0/19 |
+| uhdr95half | 1.91 | 1.20–3.57 | 5361 | 156.1 | 15.239 / 57.149 | 2.655 / 10.825 | 0/19 |
+| avif90 | 2.31 | 1.07–5.67 | 4423 | 227.3 | 14.475 / 53.234 | 2.639 / 10.807 | 0/19 |
+| avif95 | 3.18 | 1.46–7.64 | 3220 | 309.4 | 6.518 / 23.442 | 2.639 / 10.807 | 0/19 |
+| jxl90 | 2.32 | 0.97–5.23 | 4417 | 189.1 | 13.941 / 54.204 | 2.670 / 10.989 | 0/19 |
+| jxl95 | 3.99 | 1.86–7.81 | 2567 | 213.6 | 9.249 / 39.784 | 1.931 / 7.704 | 0/19 |
+| half-zstd | 41.06 | 36.34–45.25 | 249 | 214.4 | 0.000 / 0.000 | 0.000 / 0.000 | 19/19 |
+| avif100 | 20.18 | 13.19–30.05 | 507 | 1656.1 | 0.726 / 1.914 | 0.021 / 0.058 | 19/19 |
+| jxl99.9 | 8.81 | 4.42–13.76 | 1162 | 253.6 | 3.323 / 17.254 | 0.711 / 3.255 | 1/19 |
+| jxl100 | 33.19 | 25.69–40.17 | 308 | 234.2 | 0.006 / 0.015 | 0.001 / 0.004 | 19/19 |
+| avif99tiled-png | 9.76 | 5.89–15.52 | 1049 | 399.8 | 2.044 / 6.924 | 0.330 / 0.936 | 0/19 |
+| avif100tiled-png | 12.12 | 7.67–18.68 | 844 | 437.2 | 0.726 / 1.914 | 0.330 / 0.936 | 19/19 |
+| jxl100s8 | 20.94 | 14.80–27.69 | 489 | 212.7 | 0.006 / 0.015 | 0.330 / 0.936 | 19/19 |
+
+Tables count both renditions. “Worst” = largest per-photo mean/p99.9, independently; HDR ΔEITP and SDR ΔE2000 use the unchanged guide, mean <1.0 and p99.9 ≤3.0 for every photo. Capacity is floor(10 GiB / mean pair bytes), excluding metadata/reserve. Encode once; decode median of three memory runs, then median across photos. Thread requests do not guarantee parallel work: untiled AVIF100 HDR stays about 306 ms at 1/4/12 threads, while eight tiles give about 308 / 109 / 75 ms. Ultra HDR/Zstandard have no binding thread knob; the report uses process affinity 1/4/12 and states that limit.
+
+**Ultra HDR GPU option:** two libjpeg-turbo JPEG decodes plus standalone WGSL reconstruction were measured for all 76 Ultra HDR files. Full-size gain maps agree with libultrahdr within the preview guide on 15/19 photos; half-size maps on 6/19. All still fail the guide against the uncompressed HDR reference at these settings. Keep the discrepancies; the exploratory shader is not an interchangeable decoder. The report separates JPEG time, CPU allocation/upload enqueueing and queued GPU upload/submit/wait time.
+
+**Ceiling and visual qualification remain open.** Twelve actual Library references exceed 1000 nits with Highlight compression disabled (maximum 5372.5 nits); they were not silently clipped to make the codec experiment pass. The separate near-1000-nit edge probe exposes lossy reconstruction overshoot (for example half-size Ultra HDR about 1258.4 nits). The q100 tiled AVIF edge result is 998.93 nits, while lossless JXL is 1000.14 vs a half-float input peak of 1000.083; one synthetic case does not establish a universal ceiling. A future slice must resolve the uncapped reference and verify the required ceiling after decoding, allowing only encoder rounding. No codec is fully qualified until that and Steve's visual grain judgment are resolved.
+
+The local side-by-side gallery is `D:/AI/AI Projects/HDR Finisher Tool/ai/output/part-b-codecs-2026-10-26/gallery/index.html`: 34 worst-case/grain cases, both renditions, numeric half-float HDR canvas plus a labelled SDR fallback. The HDR canvas/case switching was verified; screenshots/fallbacks cannot qualify HDR. Initial crop inspection favours AVIF100/PNG and lossless JXL for retained texture; Steve's grain judgment is pending. Browser `createImageBitmap` precision is untested. A useful native libjxl gain-map slice is estimated at 2–4 engineering days (minimal metadata wrapper half–one day), so no binding was built.
+
+Part B is complete as an offline experiment. Only this PRD and its report are committed; scripts/images/raw measurements remain ignored. No app behaviour or import rule changed, no app tests were run, and all 34 source/copy hash pairs are unchanged. The brief remains active for unfinished normal-use/implementation work.
 
 **Next implementation boundary.** First qualify one finished-preview vertical
 slice from GPU capture to disk to colour-correct fullscreen presentation. Use
