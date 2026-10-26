@@ -453,6 +453,47 @@ every photo carrying the name and run the steps above.
 
 ## 8. The helper process
 
+### October 26 viewport batch: complete extent and bounded demand
+
+The grid waits for one complete indexed snapshot, including cached marks,
+grades, virtual copies and camera facts, before its first paint. It immediately
+knows the full count and sort order. Jumping anywhere requests pictures and
+settings only for that viewport; no additional row walk is needed. Independent
+WAL readers avoid the marks writer lock. Empty marks/grade descriptions are
+reused within a read. Disk checking and background facts start afterwards.
+
+During a scroll, loading cells detach and no intermediate viewport creates
+new work. On settling, only the visible cells start work; finished cells remain
+retained within one screen beyond either edge. Leaving demand aborts page fetches,
+shared scene preparation and the corresponding backend/helper requests at their
+cancellation checkpoints. Settings batches abort when all their cells depart.
+Camera-preview endpoints check disconnect before extraction and publication;
+cache bookkeeping does not hold its lock while another photo extracts. Native
+operations already in progress still reach their next cancellation boundary.
+Hydrated identities are adopted before repaint; row paints restore scroll first.
+Camera-fact sorting preserves the top visible photo rather than moving the view.
+
+Disk pages use one scandir listing per directory and reuse its cached stat data
+and settings names, avoiding one failed lstat per photo without settings.
+Only entries in the current directory/ancestor stack are retained, not the tree.
+All-core below-normal background EXIF readers pause during each disk page and
+resume between pages; selected/visible readers stay independent. Comparisons
+use independent database reads. Removal verification reads only indexed paths,
+8,192 per batch, rather than loading facts again. `folder_disk_page` records
+helper/acceptance milliseconds, count, folder and open request. The existing
+summarizer groups those costs by open alongside helper queue/work/yield timing.
+
+One disposable D:\Photos profile: 4.98 s backend all rows, 6.06 s page ready;
+77 requests for 77 bottom cells; first/25th best available picture 0.26/1.16 s
+after settling, finished thumbnail 9.96/18.91 s. Disk check 92.79 s, finishing
+97.78 s after folder open. About 5 s page readiness, 1 s pictures and 60 s disk
+checking (5% variation) remain acceptance targets. The window closed before
+final page collection; values were recovered from the log and the saved bottom
+screenshot was inspected. Directory single-pass, path-only removal checks,
+empty-description reuse and parallel camera extraction followed this one run;
+no second profile was run. Final fast results are in the module PRD.
+
+
 ### October 26 follow-up: scroll demand, camera details and check lifetime
 
 Settled grid scrolls log `range_start`, `range_end`, `total` and
@@ -498,11 +539,10 @@ final fast-suite results and Steve's app acceptance work.
 ### Index-first folder opening (October 26, 2026)
 
 `POST /folder-stream` returns NDJSON. The backend first reads the `files` index
-by path keyset: 64 physical rows for the first screen, then pages of 256.
-Cached marks, virtual copies, grades and membership are read per page, without
-source stat or settings reads. The page can sort, scroll and select the rows
-already received. It releases startup after the first rows; the connection
-continues for disk checks. Grid updates are coalesced and repaint at the restored scroll position;
+as one complete snapshot. Cached marks, virtual copies, grades and membership
+are described in bulk, without source stat or settings reads. The first grid
+knows its complete extent and order; the connection continues for disk checks.
+Change updates are coalesced and repaint at the restored scroll position;
 row arrival does not depend on a picture being presented.
 
 Visible cells request `/folder-details` in groups of at most 32. Settings reads

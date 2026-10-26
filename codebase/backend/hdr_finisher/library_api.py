@@ -344,8 +344,9 @@ def create_library_router(worker, browser, store=None):
             edge=command.edge, priority=command.priority)
 
     @router.post("/preview")
-    async def live_preview(command: CameraPreviewRequest):
+    async def live_preview(command: CameraPreviewRequest, request: Request):
         from .library_pictures import camera_preview, original_preview
+        if await request.is_disconnected(): return Response(status_code=499)
         path = str(marks.source_path(command.path))
         original = Path(path).suffix.lower() in {".jpg", ".jpeg", ".png"}
         if not original and not await run_in_threadpool(camera_raw, path):
@@ -363,7 +364,9 @@ def create_library_router(worker, browser, store=None):
                     and live.cache.cached(path, 640, live_quality(None)) is None)
             if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
+            if await request.is_disconnected(): return Response(status_code=499)
             preview = await run_in_threadpool(original_preview if original else camera_preview, path, 640)
+            if await request.is_disconnected(): return Response(status_code=499)
             if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
             return preview

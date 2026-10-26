@@ -171,7 +171,7 @@ Words follow the master PRD glossary.</p>
     <span class="bugtag">BUG</span> <span class="muted"><small>not working as designed</small></span></div>
 </div>
 
-<div class="note"><strong>October 26 large-folder follow-up:</strong> Every settled grid scroll records its visible range and picture-request count, including zero. Aborted cells retry and very tall folders use compressed scrollbar travel. Selection reads missing camera details on demand ahead of visible and background fill-in. The all-core background readers yield to pictures and Grade. The open folder’s disk check survives visits to Grade, uses low-priority 256-photo main-lane pages, and logs why it closes. Startup recovery yields after at most 16 photo families. Targets remain about 1 s for visible pictures, 0.3 s for selected camera details and roughly 50 s for D:\Photos disk checking. The single disposable profile changed folders before target observations and timed out; no D:\Photos acceptance timing was established.</div>
+<div class="note"><strong>October 26 viewport batch:</strong> Complete indexed extent on first paint; settled-only visible requests; departed work cancels. One disposable D:\Photos profile confirmed 155,873 sources / 155,877 grid rows: backend all rows 4.98 s, page 6.06 s, 77 requests for 77 visible bottom cells. Best available picture first/25th: 0.26/1.16 s after settling; finished thumbnails: 9.96/18.91 s. Disk check: 92.79 s. Targets remain about 5 s page readiness, 1 s visible pictures and 60 s disk checking (5% variation). The window closed before final page collection; log measurements were recovered and the bottom screenshot checked. Final directory, row-setup, removal and camera-cache corrections remain unprofiled. Steve’s app trial decides acceptance; see the module PRD for fast checks.</div>
 
 <h3>The four workers</h3>
 <div class="tablewrap">
@@ -265,17 +265,17 @@ Words follow the master PRD glossary.</p>
   <div class="step page"><div class="h">You click the folder</div></div>
 
   <div class="num">2</div>
-  <div class="step backend"><div class="h">Stream photos from the index <span class="t fast">first rows 29 ms in one 155k profile</span></div>
-    <div class="d">First 64 rows, then pages of 256, using cached marks and grades. No whole-folder lock or source walk before the grid. Visible settings are hydrated first in batches of at most 32.</div>
+  <div class="step backend"><div class="h">Read all indexed photos <span class="t ok">4.98 s backend / 6.06 s page, 155k profile</span></div>
+    <div class="d">One complete snapshot with cached marks, grades, virtual copies and camera facts. Independent WAL reads; disk checking and camera-detail fill-in start afterwards. The first grid has its full scrollbar. Visible settings hydrate in batches of at most 32.</div>
     <div class="meta"><span class="cachetag">Index database</span><span class="cachetag">Settings files (.hdrf) beside photos</span></div></div>
 
   <div class="num">3</div>
   <div class="step page"><div class="h">Grid laid out, thumbnails requested</div>
-    <div class="d">Only visible cells plus one screen beyond each edge start picture work. Incoming rows are coalesced; scrolling and selection work on what has arrived. See stage 3.</div></div>
+    <div class="d">Only the settled viewport starts picture work. Finished cells stay retained one screen beyond each edge; departed loading cells cancel their page, backend and helper demand. First paint has the complete folder size and order. See stage 3.</div></div>
 
   <div class="num last">4</div>
   <div class="step helper"><div class="h">Background disk check: apply only differences <span class="t slow">1 s first-screen target unverified</span></div>
-    <div class="d">The helper walks bounded pages and gives way between them; an unindexed folder streams discoveries. Changes update rows without resetting scroll or selection; switching folders cancels the stream. One disposable D:\Photos profile served all indexed rows in 34.2 s, showed a camera preview at 40.4 s, and timed out on its disk check. Request-size and metadata lock fixes followed that run; final thumbnail speed and completion await Steve’s app trial.</div></div>
+    <div class="d">The helper walks at most 256 photos per page, using directory settings names instead of failed per-photo probes. All-core camera readers pause during a page. Changes preserve scroll/selection; switching folders cancels. Latest disposable D:\Photos check: 92.79 s (target about 60 s). Single directory enumeration and path-only removal verification followed that profile and remain unprofiled. Logs separate helper and backend acceptance time.</div></div>
 </div></div>
 
 <!-- ============ STAGE 3 ============ -->

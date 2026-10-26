@@ -1,6 +1,7 @@
 """Bounded index-first folder reads; the helper only walks, the backend writes.
 
-Only one small page is retained in memory. A disposable SQLite seen-set makes
+The complete indexed extent is delivered once; disk checks use bounded pages.
+A disposable SQLite seen-set makes
 removal reconciliation independent of folder size. No photo folder is written.
 """
 import asyncio
@@ -30,10 +31,19 @@ def indexed_page(index, root, after="", limit=PAGE):
         db.close()
     photos = []
     for path, size, modified, facts in rows:
-        p = Path(path)
-        photos.append(dict(path=path,name=p.name,type=p.suffix[1:].upper(),bytes=size,mtime_ns=modified,
+        name = os.path.basename(path)
+        photos.append(dict(path=path,name=name,type=os.path.splitext(name)[1][1:].upper(),bytes=size,mtime_ns=modified,
             indexed=bool(facts),**(json.loads(facts) if facts else {})))
     return photos
+
+
+def indexed_paths(index, root, after="", limit=8192):
+    prefix=index._prefix(root)
+    db=sqlite3.connect(index.marks.database.as_uri()+"?mode=ro",uri=True)
+    try:
+        return [row[0] for row in db.execute("SELECT path FROM files WHERE path>=? AND path<? AND path>? ORDER BY path LIMIT ?",
+            (prefix,prefix[:-1]+chr(ord(prefix[-1])+1),after,limit))]
+    finally: db.close()
 
 
 def cached_rows(index, store, photos):
@@ -45,8 +55,9 @@ def cached_rows(index, store, photos):
     # Independent WAL reader: indexed delivery must never wait for upkeep's
     # writer lock. Each SELECT sees committed state; visible hydration refreshes.
     rows = marks._rows(paths)
+    empty=dict(marks=Marks().model_dump(),albums=[],storage="none")
     for photo in photos:
-        photo.update(rows.get(photo["path"],dict(marks=Marks().model_dump(),albums=[],storage="none")))
+        photo.update(rows.get(photo["path"],empty))
     if store is not None:
         # Expand the indexed copy baseline without opening a settings file.
         states = marks.copies.states(paths)
@@ -163,10 +174,10 @@ async def stream_folder(index, store, request, root, enrich):
             if not unreadable:
                 after=""
                 while True:
-                    photos=await run_in_threadpool(indexed_page,index,root,after)
-                    if not photos: break
-                    after=photos[-1]["path"]
-                    removed=[p["path"] for p in photos if not seen.execute("SELECT 1 FROM seen WHERE path=? AND pass=?",(p["path"],generation)).fetchone()]
+                    paths=await run_in_threadpool(indexed_paths,index,root,after)
+                    if not paths: break
+                    after=paths[-1]
+                    removed=[p for p in paths if not seen.execute("SELECT 1 FROM seen WHERE path=? AND pass=?",(p,generation)).fetchone()]
                     if removed:
                         def retire():
                             index.remember_scan(root,[],epoch=epoch,reconcile=False,removed=removed)

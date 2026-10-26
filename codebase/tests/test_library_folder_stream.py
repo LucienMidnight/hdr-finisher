@@ -126,3 +126,44 @@ def test_scroll_and_details_logging_keeps_counts_and_ranges():
     assert (saved["range_start"],saved["range_end"],saved["picture_requests"])==(155800,155873,0)
     details=StopwatchEvent(stage="camera_details_shown",time=1,demand="selected",count=1,duration_ms=42)
     assert details.model_dump()["demand"]=="selected"
+
+
+def test_first_grid_extent_contains_all_indexed_rows(setup):
+    folder,index=setup
+    records=[dict(path=str(folder/f"{i:04}.jpg"),bytes=4,mtime_ns=1) for i in range(600)]
+    index.remember_scan(str(folder),records,reconcile=False,removed=[])
+    async def read():
+        stream=stream_folder(index,None,None,str(folder),lambda result:result)
+        try: return json.loads(await anext(stream))
+        finally: await stream.aclose()
+    first=asyncio.run(read())
+    assert first["kind"]=="rows"
+    assert [p["path"] for p in first["photos"]]==[p["path"] for p in records]
+
+
+def test_disk_page_reads_existing_settings_without_missing_path_probes(tmp_path,monkeypatch):
+    photo=tmp_path/"one.jpg";photo.write_bytes(b"photo")
+    settings=tmp_path/"one.jpg.hdrf";settings.write_bytes(b"settings")
+    (tmp_path/"two.jpg").write_bytes(b"photo")
+    def forbidden(*args,**kwargs): raise AssertionError("Per-photo settings probe")
+    monkeypatch.setattr(Path,"lstat",forbidden)
+    result=scan_page("settings-enumeration",str(tmp_path))
+    rows={p["name"]:p for p in result["photos"]}
+    assert rows["one.jpg"]["settings"][0]==8
+    assert rows["two.jpg"]["settings"] is None
+
+
+def test_visible_camera_previews_extract_independently(tmp_path,monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from hdr_finisher import library_pictures
+    paths=[tmp_path/"first.arw",tmp_path/"second.arw"]
+    for path in paths:path.write_bytes(b"raw")
+    both=Barrier(2)
+    def extract(path,edge):
+        both.wait(timeout=5)
+        return dict(url="data:image/jpeg;base64,a",edge=edge)
+    monkeypatch.setattr(library_pictures,"_extract_camera_preview",extract)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda path:library_pictures.camera_preview(path,640),paths))
+    assert all(row["kept"] for row in results)

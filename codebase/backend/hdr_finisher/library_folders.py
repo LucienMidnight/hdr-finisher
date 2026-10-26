@@ -99,7 +99,7 @@ def scan_folder(value, cancelled=lambda: False, fingerprints=False):
 
 
 # At most eight active page walks; abandoned browser requests expire quickly.
-# scandir iterators retain directory handles, never a whole tree of rows.
+# Active walks retain ancestor directory entries, never a whole tree of rows.
 _paged_walks = {}
 from threading import RLock
 _walk_lock = RLock()
@@ -110,14 +110,20 @@ def _walk_photos(root, warnings, cancellation):
         def directory(path):
             # Windows DirEntry has stat data from enumeration. Missing sidecars
             # must not cost one failing lstat (and antivirus probe) per photo.
-            settings={}
+            settings={};listing=[]
             with os.scandir(path) as entries:
                 for entry in entries:
                     if cancellation[0](): raise CancelledError()
+                    listing.append(entry)
                     if entry.name.casefold().endswith(SIDECAR_SUFFIX):
-                        info=entry.stat(follow_symlinks=False)
-                        settings[os.path.normcase(entry.name)]=[info.st_size,info.st_mtime_ns]
-            return os.scandir(path),settings
+                        try:
+                            info=entry.stat(follow_symlinks=False)
+                            settings[os.path.normcase(entry.name)]=[info.st_size,info.st_mtime_ns]
+                        except OSError as error:
+                            warnings.append(str(error.filename or entry.path))
+            # Retain one directory's entries, as os.walk does, instead of
+            # enumerating the same directory twice. Never collect the tree.
+            return (entry for entry in listing),settings
         stack.append(directory(checked_folder(root)))
         entries=0
         while stack:

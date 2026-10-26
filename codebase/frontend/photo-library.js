@@ -1281,7 +1281,7 @@
     const reader = response.body.getReader(), decoder = new TextDecoder();
     let readyResolve,readyReject;
     const ready=new Promise((resolve,reject)=>{readyResolve=resolve;readyReject=reject;});
-    let pending = "", first = true;
+    let pending = [], first = true;
     const paint = () => {
       clearTimeout(folderPaintTimer); folderPaintTimer = null;
       if (controller.signal.aborted || state.scan !== controller) return;
@@ -1294,10 +1294,14 @@
       for (;;) {
         const {value,done} = await reader.read();
         if (done) break;
-        pending += decoder.decode(value,{stream:true});
-        let end;
-        while ((end=pending.indexOf("\n"))>=0) {
-          const event=JSON.parse(pending.slice(0,end));pending=pending.slice(end+1);
+        // A large complete snapshot spans many network chunks. Scan each
+        // chunk once and join once per event, rather than rescanning/copying
+        // the entire growing JSON message on every 64 KiB arrival.
+        const chunk=decoder.decode(value,{stream:true});
+        let offset=0,end;
+        while ((end=chunk.indexOf("\n",offset))>=0) {
+          pending.push(chunk.slice(offset,end));
+          const event=JSON.parse(pending.join(""));pending=[];offset=end+1;
           if(controller.signal.aborted || state.scan !== controller)return;
           opening.request=event.request;
           if(event.kind === "error")throw Error(event.message);
@@ -1334,6 +1338,7 @@
             if(event.unreadable_folders?.length)status("Some sub-folders could not be read; existing entries kept");
           }
         }
+        if(offset<chunk.length)pending.push(chunk.slice(offset));
       }
     } catch(error) {
       readyReject(error);

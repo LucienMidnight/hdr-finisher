@@ -136,7 +136,12 @@ class LibraryGrades:
         result = {}
         exports = getattr(self.store, "batch_export", None)
         export_records = exports.read_records() if exports else None
+        empty = {"edited":False,"grade_identity":identity(None)}
+        if exports: empty.update(exported=False,edited_since_export=False,last_export=None)
         for path in paths:
+            if str(path) not in states and (not exports or str(path) not in export_records):
+                result[str(path)] = empty.copy()
+                continue
             state = states.get(str(path), {})
             grade = state.get("desired") if state.get("pending") else state.get("indexed_grade", state.get("baseline"))
             result[str(path)] = {"edited": grade is not None and grade_key(grade) != grade_key(state.get("default")), "grade_identity": identity(grade)}

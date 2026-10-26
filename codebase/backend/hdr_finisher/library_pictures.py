@@ -391,11 +391,14 @@ def camera_preview(path, edge):
             log("picture_camera_preview_ready", path=str(path), route="camera-preview-memory",
                 cache_hit=True, duration_ms=(perf_counter()-started)*1000)
             return dict(cached)
-        result = _extract_camera_preview(path, edge)
-        after = path.stat()
-        if (after.st_size, after.st_mtime_ns) != (stat.st_size, stat.st_mtime_ns):
-            raise ValueError("Camera preview source changed")
-        result["kept"] = True
+    # Different visible photos extract independently. The cache lock protects
+    # only its bookkeeping, not file reads and JPEG processing for the screen.
+    result = _extract_camera_preview(path, edge)
+    after = path.stat()
+    if (after.st_size, after.st_mtime_ns) != (stat.st_size, stat.st_mtime_ns):
+        raise ValueError("Camera preview source changed")
+    result["kept"] = True
+    with _CAMERA_PREVIEW_LOCK:
         _CAMERA_PREVIEWS[key] = result
         while sum(len(row["url"]) for row in _CAMERA_PREVIEWS.values()) > _CAMERA_PREVIEW_BYTES:
             _CAMERA_PREVIEWS.popitem(last=False)

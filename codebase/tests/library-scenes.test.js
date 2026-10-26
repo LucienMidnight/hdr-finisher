@@ -101,14 +101,14 @@ test('GPU failures retain their reason in the loading log before CPU fallback',a
  assert.deepEqual(events.filter(event=>event.stage==="picture_source_gpu_fallback"),[{stage:'picture_source_gpu_fallback',path:'photo',reason:'Source transfer exceeds available GPU memory'}]);
 });
 
-test('source job survives an entirely absent tile and explicit invalidation rejects its old result',async()=>{
+test('departed tile cancels its source job and invalidation rejects a fresh request',async()=>{
  const block=gate(),started=[];let shared;
  const {scenes}=setup({photo:{bytes:10,revision:'1'}},async(path,edge,signal)=>{
   shared=signal;started.push(path);await block.promise;return {edge,key:'stored'};
  });
  const cancel=new AbortController(),first=scenes.load('photo',640,cancel.signal);
- await tick();cancel.abort();await assert.rejects(first,{name:'AbortError'});assert.equal(shared.aborted,false);
- const returned=scenes.load('photo',640);await tick();assert.deepEqual(started,['photo']);
+ await tick();cancel.abort();await assert.rejects(first,{name:'AbortError'});assert.equal(shared.aborted,true);
+ const returned=scenes.load('photo',640);await tick();assert.deepEqual(started,['photo','photo']);
  scenes.invalidate(['photo']);await assert.rejects(returned,{name:'AbortError'});assert.equal(shared.aborted,true);
  block.resolve();await tick();assert.equal(scenes.snapshot().sources.active,0);
 });

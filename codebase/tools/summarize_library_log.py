@@ -70,8 +70,10 @@ def main():
     switches = []
     scrolls, detail_reads, recovery = [], collections.defaultdict(list), []
     folder_opens = collections.OrderedDict()
+    disk_pages = collections.defaultdict(list)
     for name, d in events(since):
         if name == "page_grid_scroll_settled": scrolls.append(d)
+        if name == "folder_disk_page": disk_pages[(d.get("folder"),d.get("request"))].append(d)
         if name == "camera_details_read": detail_reads[d.get("demand","unknown")].append(d)
         if name == "recovery_piece": recovery.append(d)
         if name.startswith("folder_open_") or name in ("page_folder_first_rows","page_folder_first_camera_preview","page_folder_first_thumbnail","page_folder_complete"):
@@ -123,6 +125,11 @@ def main():
     print("settled grid scrolls:",len(scrolls),"zero requests:",sum(d.get("picture_requests")==0 for d in scrolls))
     for d in scrolls:
         print("  grid",d.get("path"),"range",d.get("range_start"),d.get("range_end"),"of",d.get("total"),"requests",d.get("picture_requests"))
+    for (folder,request),pages in disk_pages.items():
+        print("disk pages:",folder,"request",request,"pages",len(pages),"photos",sum(d.get("count",0) for d in pages))
+        for field in ("helper_ms","accept_ms"):
+            values=[d.get(field,0) for d in pages]
+            print(" ",field,"median",round(pct(values,.5),1),"total",round(sum(values),1),"ms")
     for demand,reads in detail_reads.items():
         print("camera details:",demand,"batches",len(reads),"photos",sum(d.get("count",0) for d in reads),"median ms",round(pct([d.get("duration_ms",0) for d in reads],.5),1))
     if recovery: print("recovery pieces:",len(recovery),"photos",sum(d.get("count",0) for d in recovery),"max ms",round(max(d.get("duration_ms",0) for d in recovery),1))

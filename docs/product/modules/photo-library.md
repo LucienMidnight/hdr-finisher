@@ -57,6 +57,51 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
+**October 26 viewport batch: three parts committed; speed targets partly met.**
+The single disposable profile opened D:\Photos (155,873 source rows, 155,877
+including virtual copies), confirmed by backend log and bottom-grid screenshot.
+All rows: backend 4.98 s against about 5 s; page receipt/sort 6.06 s, still slow.
+One bottom settle requested exactly its 77 visible cells, with no intermediate
+viewport requests. Best available pictures appeared at 0.26 s first / 1.16 s
+25th after settling, close to but beyond the 1 s + 5% target for the 25th.
+Finished thumbnails appeared at 9.96 s first / 18.91 s 25th on the empty cache.
+Disk checking completed in 92.79 s (97.78 s from folder open), against about
+60 s + 5%. The screenshot confirms a reachable bottom with pictures and many
+remaining blanks; the log does not establish a fully ready screen in 1 s.
+
+Disk helper work median fell from 79 ms to 9.8 ms; total helper round trips
+were 68.61 s and backend acceptance 8.52 s over 1,072 pages. Queue median was
+0 ms: queue waits do not explain the remaining disk cost in this run. The
+remainder includes removal verification and stream/response work. Repeated
+missing-settings probes and tiny indexed-row deliveries are removed. After the
+profile, directory enumeration was reduced from two passes to one, removal
+verification reads only paths in larger batches, empty marks/grade descriptions
+are reused, and camera-preview extraction no longer serializes the whole
+screen under its cache lock. Large JSON messages now assemble in linear work
+instead of repeatedly scanning and copying the growing message. These final
+corrections are **unprofiled**.
+
+The profile window closed before final page-result collection. Presentation
+and completion measurements above were recovered from the retained backend
+log; screenshot and log both name D:\Photos. The JSON records that failure
+and the recovered measurements. No second profile. Separate empty picture
+cache and read-only database backup; settings draining/source cleanup disabled.
+Fast checks run once: Python 2,608 passed, 2 existing failures, 3 skipped;
+JavaScript 631 passed, 3 failures. The intentional departed-cell cancellation
+expectation was updated and its focused test passed; two existing JavaScript
+failures remain (selected-photo CPU fallback and Single ready fixture). Python
+failures remain the RGB SourceReference fixture and repair CaptureCache mock.
+No new pixel arithmetic, GPU budget or tolerance changed. The one Electron
+profile covers this batch; no further GPU sweep or performance rerun. Cold
+finished pictures also logged direct-scene expiry errors; their readiness
+remains open alongside the measured timing misses.
+Steve should open D:\Photos, jump directly to the bottom as soon as the grid
+appears, jump elsewhere rapidly, then select a photo and visit Grade while the
+disk check runs. Claude should compare each settled range with picture requests,
+first/25th pictures and disk-page helper/acceptance totals in the new log.
+
+
+
 **October 26 viewport batch, Part 3.** Disk pages reuse directory-enumeration
 settings fingerprints, removing a failing settings-file probe for every
 unmodified photo. All-core low-priority camera readers pause during each
@@ -1947,8 +1992,8 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
-| **Large-folder scroll / camera details / disk checking** | October 26 app log: requests stopped, no EXIF reads, disk check closed when Grade opened; recovery resumed in a reconcile burst. | Three fixes committed: viewport retries/logging, demand-prioritized details, persistent yielding disk checks and 16-family recovery pieces. Single follow-up profile changed to Play_Raw and timed out; D:\Photos timings remain unverified. Final startup and telemetry corrections unprofiled. Steve app trial required. |
-| **Very large folder opening** | October 26 disposable D:\Photos: first rows 29 ms, all 155,873 indexed rows served 34.2 s, first camera preview 40.4 s, no finished-thumbnail milestone, disk check timed out after 10 minutes. Backend peak 1.01 GiB. | Index-first streaming, bounded settings reads/disk pages, difference updates and metadata lock fix built. The one profile preceded the final request-size/deadlock fixes. About-1-second first screen, 768 MiB working target, disk completion and fast relaunch remain unverified; Steve app trial required. |
+| **Large-folder scroll / camera details / disk checking** | October 26 viewport profile: 77 requests for 77 visible cells; first/25th best available pictures 0.26/1.16 s; finished thumbnails 9.96/18.91 s; disk check 92.79 s. | Settled-only requests, departed-demand cancellation and faster disk enumeration built. One-second whole-screen and roughly one-minute disk targets remain open. Post-profile cache-lock/enumeration/removal corrections await Steve. |
+| **Very large folder opening** | October 26 viewport profile: all 155,873 indexed sources served in 4.98 s; page receipt/sort 6.06 s. First grid has 155,877 rows including copies. | Complete snapshot replaces tiny pages and repeated sorting; full scrollbar reachable on first paint. Independent WAL reads avoid marks-writer waits. Five-second page target and memory target remain open; final empty-state setup reductions unprofiled. |
 | **App startup** (after the 155k-photo D:\Photos index) | October 26 14:17: helper spawn 4.0 s, backend ready 8.7 s, page ready 9.8 s, thumbnails ~12 s from Python start. One disposable 155,879-file launch after removing blocking sweeps: 2.45 s / 2.54 s / 3.99 s / 12.14 s respectively. It also exposed 4.0 s before Python started. | Cache accounting and temporary-file cleanup deferred with foreground yielding; codec probing delayed; helper startup overlaps the page. Final shell change overlaps Python with the Starting window (not re-profiled). Targets remain open: folder listing, 1.36 s initial thumbnail checks and a 3.43 s first GPU queue wait still delay thumbnails. Steve's restart 15:55: page ready 2.4 s, first thumbnail 3.6 s from app launch; felt super fast. **Done.** |
 | **Back to grid after Single/fullscreen** | October 26: all 14 exits used camera previews; finished-thumbnail delay 0.4–4.2 s or over 5 s. | Finished routes now retained/reused by current grade and HDR/SDR mode; camera previews retained in 64 MiB RAM. Bounded-memory eviction can still require drawing again. App acceptance pending. |
 | **Folder opening during RAW development** | October 26 scans queued 16–22 s for about 40 ms work; stored writes queued 24–29 s. | Main scans admitted independently of source-busy/picture slots; stored writes no longer blocked by GPU source-busy. End-to-end 0.5 s target remains open (indexed listing alone was 0.5–0.66 s). |
