@@ -123,6 +123,14 @@ preserved.
 
 **Where things stand** (from Steve's own testing and the logs):
 
+- **After the five-part batch (a7e7da6–958e4e4), Steve's try on October 26
+  evening: "so much better now".** Log 17:08–17:56: folder scans start at
+  once (queue at most 1 ms, was 16–22 s); stored-preview writes wait at most
+  0.3 s (was up to 29 s); no blank fullscreen; returning to the grid reused
+  finished thumbnails from the recent pool (323 reuses). Denoise is still the
+  slowest sharp draw: preparation median 1.2 s, worst 2.5 s (was 1.4 / 3.8 s),
+  against the 0.5 s target.
+
 - Startup cache accounting, temporary settings-file cleanup and codec probing
   no longer block the first page. Python starts alongside the Starting window;
   helper readiness overlaps page startup. The one disposable 155,879-file launch
@@ -262,7 +270,7 @@ Finished briefs are in `docs/technical/archive/briefs/`
   draw; the target for cold non-RAW photos is a sharp draw within 1 s
   (Steve, October 26).
 
-**Next work.** The October 26 five-part batch is authorized without intermediate stops; later work is separate.
+**Next work.** The October 26 five-part batch is done and tried by Steve (see above); later work is separate.
 
 1. Done: stored JPEG XL screen previews (a8540f8; SDR tried by Steve,
    sharp draw from a stored preview about 95-265 ms, mostly reading the
@@ -279,6 +287,15 @@ Finished briefs are in `docs/technical/archive/briefs/`
 6. Detail (100%) previews, last.
 
 **Other open items:**
+
+- **Switching HDR on or off is a bit slow** (Steve, October 26; for later, not
+  now). Every visible thumbnail redraws, and graded photos prepare Denoise
+  again, because the Denoise model reuse keeps HDR and SDR apart (batch policy
+  in e94650f) although Denoise itself does not depend on the mode. Log 17:52:
+  a 70-thumbnail grid took 2.9–5.1 s to finish, with about 40 Denoise
+  preparations of 0.5–1.1 s; some 20-thumbnail redraws just after took
+  12–21 s. There is no log line for the switch itself; add one when this is
+  picked up.
 
 - Faster rating saves would trade durability; this is Steve's call.
 - 134,656 index entries still lack facts and are backfilling in the
