@@ -131,3 +131,14 @@ def test_full_maintenance_yields_to_foreground_between_pages(tmp_path, monkeypat
             foreground.set()
         maintenance.result(timeout=3)
     assert not marks._query("SELECT path FROM files")
+
+
+def test_restart_does_not_reconcile_before_helper_start(tmp_path, monkeypatch):
+    from hdr_finisher.library_index import LibraryIndex
+    from hdr_finisher.library_membership import LibraryMembership
+    folder, photos, browser, marks, index = library(tmp_path)
+    calls = []
+    monkeypatch.setattr(LibraryMembership, "reconcile", lambda *args: calls.append(args))
+    restarted = LibraryIndex(marks, browser, None)
+    assert restarted.membership.marks is marks
+    assert calls == []

@@ -738,6 +738,11 @@ lines. The file is large (over 150 MB); read it with a script, never by eye.
   (`quick_draw`, `sharp_draw`, `blank`, `reason`, and `duration_ms` from key
   press).
 - **Other useful events:**
+    - `backend_process_started`, `helper_process_started`, `backend_ready`
+      (with `duration_ms`) and `page_ready`; the summary reports startup from
+      the backend process, including before page load;
+    - `startup_upkeep_started/finished/cancelled/failed`: deferred Library
+      recovery work, with elapsed time including foreground yields;
   - `lock_timing` and `document_lookup_timing` (shared-lock wait and hold);
   - `helper_job_*` (helper work such as indexing metadata batches and folder
     scans);

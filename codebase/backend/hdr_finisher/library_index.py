@@ -38,6 +38,7 @@ class LibraryIndex:
         self._stop = Event()
         self._retry_seconds = 15
         self._thread = None
+        self._upkeep_thread = None
         from .library_folder_checks import FolderChecks
         self.checks = FolderChecks(self)
         self._generation = 0
@@ -46,6 +47,31 @@ class LibraryIndex:
         self._progress = {"state": "idle", "folder": "", "done": 0, "total": 0, "passes": 0}
         from .library_membership import LibraryMembership
         self.membership = LibraryMembership(self)
+
+    def wait_for_upkeep(self):
+        """Yield between photo families, without owning a database lock."""
+        while self.worker is not None:
+            if self._stop.is_set():
+                raise CancelledError()
+            status = self.worker.status()
+            if not self._paused and not status.get("paused") and not status.get("source_busy") and not status.get("pending"):
+                return
+            self._stop.wait(.05)
+
+    def _startup_upkeep(self):
+        # Let the last folder and its grid get their first requests in first.
+        if self._stop.wait(3):
+            return
+        started = time.monotonic()
+        log("startup_upkeep_started", action="background Library recovery reconciliation")
+        try:
+            self.wait_for_upkeep()
+            self.membership.reconcile()
+            log("startup_upkeep_finished", duration_ms=round((time.monotonic()-started)*1000, 2))
+        except CancelledError:
+            log("startup_upkeep_cancelled", duration_ms=round((time.monotonic()-started)*1000, 2))
+        except Exception as error:
+            problem("startup_upkeep_failed", self.browser.root, error, "durable recovery retained; retry on next launch")
 
     # Personal settings stay outside the database, which can be rebuilt.
 
@@ -231,6 +257,9 @@ class LibraryIndex:
             return
         with self._state:
             self._generation += 1
+            if self._upkeep_thread is None:
+                self._upkeep_thread = Thread(target=self._startup_upkeep, name="hdr-library-upkeep", daemon=True)
+                self._upkeep_thread.start()
             if self._thread is None or not self._thread.is_alive():
                 self._thread = Thread(target=self._run, name="hdr-library-indexer", daemon=True)
                 self._thread.start()

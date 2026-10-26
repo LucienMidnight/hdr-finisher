@@ -19,6 +19,10 @@ preserved.
 
 **Where things stand** (from Steve's own testing and the logs):
 
+- Startup reconciliation is deferred until after the page starts; recovery upkeep
+  yields between photo families. Disposable 155k-photo database constructor:
+  41.38 s before, 0.26 s after. Whole-app ~3 s target awaits Steve's launch.
+
 - Prepared photos in the ready window: sharp draw in about 5 ms.
 - Prepared photos outside it: quick draw at once, sharp draw in about
   0.2–0.5 s.
@@ -90,8 +94,7 @@ Finished briefs are in `docs/technical/archive/briefs/`
 **Next, in order.** Steve confirms each before it starts.
 
 1. Stored JPEG XL screen preview slice (fullscreen first), together with
-   finding why app startup became slow (about 16–21 s to back-end ready
-   since October 25, against 2–5 s before).
+   the startup fix below (built; whole-app restart confirmation pending).
 2. Denoise speed-up, as its own task.
 3. HEIC and JPEG XL CPU-route speed.
 4. AVIF gain-map reconstruction on the GPU (estimated 3–5 days).
@@ -104,6 +107,20 @@ Finished briefs are in `docs/technical/archive/briefs/`
 - 134,656 index entries still lack facts and are backfilling in the
   background.
 - The scene cache allowance is full.
+
+**October 26: startup reconciliation (Part 1).** The incremental-maintenance
+change left full reconciliation in `LibraryMembership.__init__`. Small lock
+holds did not make that call asynchronous: it delayed helper creation. Startup
+now loads durable recovery without replaying it; the first Library page schedules
+the still-needed pass after three seconds, with cancellable foreground/Grade
+gates between photo families and key pages. Explicit membership commands keep
+their reconciliation. Startup and upkeep appear in the log summary.
+
+One read-only SQLite backup per phase, copied recovery records and settings,
+no live data/log writes: constructor 41,375 ms / 3,327 lock operations before,
+256 ms / zero reconciliation operations after. These are constructor timings,
+not whole-app launch timings. Fast checks are deliberately deferred until the
+end of Part 2, as Steve requested; no GPU check applies to this startup change.
 
 **How this work is run.**
 
@@ -1458,7 +1475,7 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
-| **App startup** (after the 155k-photo D:\Photos index) | Every start since October 25 15:35 takes 16–21 s from back-end process start to back-end ready (2–5 s before). About 3,330 `reconcile` lock operations run first; the helper starts only at about 15 s; the window is visible at 0.4 s but the page is ready at about 17.7 s. On October 26 12:53 the first folder scan then waited 21 s in the helper queue. First slow start followed 002519f (incremental maintenance). | Open; investigate with the stored-preview slice. |
+| **App startup** (after the 155k-photo D:\Photos index) | Live launches 16–21 s; 002519f made full reconciliation thousands of per-family operations but left it in the constructor. Disposable snapshot reproduced 3,327 lock operations and 41.38 s; deferred constructor 0.26 s (scratch disk/OS cache differ from live). | Startup blocker fixed: background recovery upkeep, yielding to foreground helper/source work and Grade. Whole-app ~3 s and first-folder scan queue need Steve's restart. |
 | **Cold first picture for non-RAW formats** (core workflow, see decisions; target sharp draw within 1 s, Steve October 26) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed, AVIF reconstruction and stored screen previews remain open. OS cache warm; Steve's normal-folder try remains separate. |
 | **Cold RAW development** (badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |
 | **Denoise in Library drawing.** Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: thumbnail analysis 250–530 ms per draw even after reuse; screen-preview measurements already cost 1.6 s in the 18:45 test. Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Reuse fix in Part 0c; exact estimator threading and selected-first measurement scheduling in Part 0f. Reconstruction dispatch optimization remains open; Steve's timing try pending. |

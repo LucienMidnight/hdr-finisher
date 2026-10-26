@@ -40,7 +40,7 @@ def latest_session_start():
     start = 0.0
     with open(LOG, encoding="utf-8", errors="replace") as handle:
         for line in handle:
-            if line.startswith("[library] page_loaded "):
+            if line.startswith("[library] app_start "):
                 try:
                     start = json.loads(line.split(" ", 2)[2])["time"]
                 except (ValueError, KeyError, IndexError):
@@ -64,7 +64,13 @@ def main():
 
     outcomes, stages, developments = [], collections.defaultdict(list), []
     requests = collections.OrderedDict()
+    startup = {}
+    upkeep = []
     for name, d in events(since):
+        if name in ("app_start", "backend_process_started", "helper_process_started", "backend_ready", "page_loaded", "page_ready"):
+            startup[name] = d["time"]
+        if name.startswith("startup_upkeep_"):
+            upkeep.append((name, d))
         short = name.replace("page_picture_", "").replace("page_", "")
         if name == "page_picture_development":
             developments.append(d.get("duration_ms") or 0)
@@ -78,6 +84,10 @@ def main():
             r = requests.setdefault(d.get("request"), {"t": d["time"], "path": os.path.basename(str(d.get("path"))), "ev": []})
             r["ev"].append((short, d.get("step"), d.get("duration_ms"), d.get("reason")))
 
+    origin = startup.get("backend_process_started", since)
+    print("startup (from backend process):", " ".join(f"{name}={(stamp-origin)*1000:.0f}ms" for name, stamp in startup.items()))
+    for name, d in upkeep:
+        print(f"  {name}: {(d['time']-origin)*1000:.0f}ms; duration={d.get('duration_ms', 0):.0f}ms")
     sharp = [o["duration_ms"] for o in outcomes if o.get("sharp_draw")]
     hits = [o["duration_ms"] for o in outcomes if o.get("sharp_draw") and not o.get("quick_draw")]
     misses = [o["duration_ms"] for o in outcomes if o.get("sharp_draw") and o.get("quick_draw")]

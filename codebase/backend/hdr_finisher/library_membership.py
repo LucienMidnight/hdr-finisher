@@ -37,7 +37,8 @@ class LibraryMembership:
                 # With a database present, it remains the source for rebuilding
                 # recovery. Missing-database restore above still fails safely.
                 pass
-        self.reconcile()
+        # Recovery is durable already. Re-walking every photo family here used
+        # to delay helper startup; the index schedules upkeep after page startup.
 
     def pins(self):
         browser = self.index.browser
@@ -208,6 +209,7 @@ class LibraryMembership:
         """Background recovery work yields after each physical photo family."""
         paths = sorted({source(p) for p in paths})
         for at, path in enumerate(paths):
+            self.index.wait_for_upkeep()
             self.reconcile([path])
             if at + 1 < len(paths): time.sleep(.001)
 
@@ -232,6 +234,7 @@ class LibraryMembership:
             column = "source" if table == "library_copies" else "path"
             after = ""
             while True:
+                self.index.wait_for_upkeep()
                 with self.marks._lock:
                     db = self.marks._connect()
                     try:

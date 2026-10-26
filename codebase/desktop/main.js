@@ -313,6 +313,7 @@ async function startBackend() {
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const backendStarted = Date.now();
   libraryStage("backend_process_started", { pid: child.pid });
   child.stderr.pipe(log, { end: false });
 
@@ -341,7 +342,7 @@ async function startBackend() {
     });
   });
 
-  libraryStage("backend_ready");
+  libraryStage("backend_ready", { duration_ms: Date.now() - backendStarted });
   if (ready.protocol_version !== 1 || ready.backend_version !== app.getVersion()) {
     child.kill();
     throw new Error(`Desktop/backend version mismatch (${app.getVersion()} / ${ready.backend_version}).`);
