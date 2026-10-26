@@ -1,15 +1,36 @@
 # Module PRD: Grade
 
-## October 26: shared GPU Denoise preparation (qualification pending)
+## October 26: GPU Denoise preparation
 
-Grade, GPU export and Proof acquire noise measurements through the same GPU
-renderer method. GPU export no longer measures noise on the CPU before queueing.
-Full-size Grade and delivery share the source measurement across geometry and
-finishing changes; reduced previews still measure their own resampled pixels.
-An authored SDR base remains a separate source. CPU measurement is retained for
-fallback and reference checks. Finished-pixel limits: SDR mean Delta E 2000 <1,
-p99 <3; HDR mean Delta E ITP <1, p99 <3. The Highlight compression ceiling stays
-exact. Checks and 42 MP Grade timing are deferred to the final batch run.
+Noise measurement now runs on the renderer's graphics card for Grade, Library,
+GPU export and Proof. The CPU remains the fallback for an unavailable, failed
+or insufficient-memory GPU. Export no longer performs CPU noise measurement
+before entering the GPU queue. Bounded source windows retain actual pixels:
+at most 1 MP, without resizing; the host fits only compact GPU statistics.
+Reconstruction and Highlight compression arithmetic are unchanged.
+
+Measurements are kept as versioned JSON in the managed Library preview cache.
+They survive visits and restarts while that cache is retained. Identity includes
+source pixels, size and resampling geometry, excluding finishing controls and
+HDR/SDR names. Full-size Grade/export/Proof share the native source measurement;
+reduced pictures measure their own pixels. Authored SDR bases stay separate.
+Clearing/evicting preview data or changing source interpretation requires a new
+measurement. GPU allocation respects the existing memory budget and Library
+admission; repeated requests within a page share work. Proof inherits its source
+owner's identity, with a distinct identity for a reduced source.
+
+Proposed before implementation: finished SDR mean Delta E 2000 <1 and p99 <3;
+finished HDR mean Delta E ITP <1 and p99 <3 against the current CPU measurement.
+Steve allows approximate measurement and CPU/GPU differences; preview and export
+must agree perceptually. No per-pixel colour maximum; Highlight compression is
+an exact ceiling allowing only encoder rounding. All 13 existing Denoise corpus
+cases passed at two strengths in both renditions: worst HDR mean 0.152/p99 2.350,
+SDR mean 0.012/p99 0.124. Existing GPU reconstruction parity and Full-tier Denoise
+checks passed. Real 42 MP RAW preparation: CPU 809–969 ms, GPU 169–176 ms (about 93 ms
+compute), two matched runs excluding RAW development. Fallback delivery also
+keeps/reuses the native measurement; no usable GPU is required to retain it.
+Final fast-suite results and focused reruns are recorded in the
+[Library status block](photo-library.md#start-here-library-responsiveness-status-october-26-2026).
 
 **Photo framing (October 24, 2026).** Background retains the viewer-surround
 preference. Frame authors the saved two-layer photo frame with grouped undo/redo;

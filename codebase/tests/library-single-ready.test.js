@@ -57,14 +57,15 @@ test('selected Denoise measurements pass queued neighbours while quick draws sta
  const context={HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler'),fetch:async url=>{
   calls.push(url);if(url==='running')await block;return {ok:true,json:async()=>({url})};}};
  vm.runInNewContext(fn+';this.model=libraryDenoiseModel;',context);
+ const model=(url,meta)=>context.model(url,meta,async()=>(await context.fetch(url)).json());
  const meta=(path,priority,edge=2560)=>({path,draw_priority:priority,edge});
- const first=context.model('running',meta('a',5));await new Promise(r=>setImmediate(r));
- const neighbour=context.model('neighbour',meta('b',5));
- const selected=context.model('selected',meta('c',0));
- const quick=context.model('quick',meta('c',0,640));await quick;
+ const first=model('running',meta('a',5));await new Promise(r=>setImmediate(r));
+ const neighbour=model('neighbour',meta('b',5));
+ const selected=model('selected',meta('c',0));
+ const quick=model('quick',meta('c',0,640));await quick;
  assert.deepEqual(calls,['running','quick']);release();await Promise.all([first,selected,neighbour]);
  assert.deepEqual(calls,['running','quick','selected','neighbour']);
- await context.model('selected',meta('c',0));assert.equal(calls.length,4,'Exact model reused');
+ await model('selected',meta('c',0));assert.equal(calls.length,4,'Exact model reused');
 });
 
 

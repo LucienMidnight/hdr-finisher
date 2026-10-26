@@ -513,6 +513,19 @@ class _WindowSource:
         return self._windows[window]
 
 
+from contextvars import ContextVar
+from contextlib import contextmanager
+_MEASUREMENT_USAGE = ContextVar("denoise_measurement_usage", default="CPU path")
+
+@contextmanager
+def measurement_usage(usage):
+    token = _MEASUREMENT_USAGE.set(usage)
+    try:
+        yield
+    finally:
+        _MEASUREMENT_USAGE.reset(token)
+
+
 def estimate_adaptive_model(image: np.ndarray, *, workers=None) -> AdaptiveNoiseModel:
     from time import perf_counter
     from .library_diagnostics import log
@@ -522,7 +535,7 @@ def estimate_adaptive_model(image: np.ndarray, *, workers=None) -> AdaptiveNoise
         return _estimate(np.asarray(image, dtype=np.float32))
     finally:
         _ESTIMATION_WORKERS.reset(token)
-        log("denoise_measurement", route="CPU fallback", width=image.shape[1], height=image.shape[0],
+        log("denoise_measurement", route="CPU fallback", usage=_MEASUREMENT_USAGE.get(), width=image.shape[1], height=image.shape[0],
             duration_ms=(perf_counter()-started)*1000)
 
 
@@ -537,7 +550,7 @@ def estimate_adaptive_model_from_windows(height: int, width: int, read, *, worke
         return _estimate(_WindowSource(height, width, read))
     finally:
         _ESTIMATION_WORKERS.reset(token)
-        log("denoise_measurement", route="CPU fallback", width=width, height=height,
+        log("denoise_measurement", route="CPU fallback", usage=_MEASUREMENT_USAGE.get(), width=width, height=height,
             duration_ms=(perf_counter()-started)*1000)
 
 

@@ -528,6 +528,8 @@
         "method": "electron"
       }
     },
+    {"path":"tests/gpu-denoise-measurement.js","areas":["detail","library","export-proof"],"tier":"area",
+      "protects":"GPU measurement versus current CPU on the existing Denoise corpus, finished HDR/SDR perceptual limits, exact ceiling and shared source reuse.","launch":{"method":"electron"}},
     {
       "path": "tests/denoise-adaptive-parity.js",
       "areas": [

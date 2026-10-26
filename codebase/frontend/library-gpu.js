@@ -327,7 +327,17 @@ const HDRLibraryPictureFactory = (quick = false) => {
     const url = `/api/session/${meta.key}/denoise-model/${lane}?long_edge=${Math.max(256,meta.edge)}&edit_revision=0&geometry_signature=${encodeURIComponent(geometry)}`;
     const cached = libraryDenoiseModels.has(url);
     const gpu = await initialize();
-    await libraryDenoiseModel(url,meta,()=>HDRWebGPUPreview.prototype.fetchDenoiseModel.call(gpu,url));
+    await libraryDenoiseModel(url,meta,async()=>{
+      const response=await fetch(url.replace("/denoise-model/","/denoise-measurement/"));
+      if(response.status===200)return response.json();
+      if(!response.ok)throw Error(`Denoise measurement request failed (${response.status}).`);
+      const lease=await HDRLibraryScenes.lease(meta,undefined,meta.edge===100000);
+      const previous=gpu.deliveryBudgetBytes;
+      try {
+        gpu.deliveryBudgetBytes=Math.min(gpu.memoryBudgetBytes(),lease.bytes);
+        return await HDRWebGPUPreview.prototype.fetchDenoiseModel.call(gpu,url);
+      } finally {gpu.deliveryBudgetBytes=previous;await lease.release();}
+    });
     window.HDRLibraryTrace?.mark(typeof trace === "function" ? trace() : trace,"picture_denoise_prepare",started,{...window.HDRLibraryPictureLog?.(meta),key:meta.key,cache_hit:cached});
   }
   return Object.freeze({ show, initialize, prepare, prepareDenoise, readyMemory,

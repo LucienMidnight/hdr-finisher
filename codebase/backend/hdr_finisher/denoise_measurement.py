@@ -28,10 +28,23 @@ def source_identity(frame):
     explicit = getattr(frame, "denoise_source_identity", None)
     if explicit is not None:
         return explicit
-    identity = getattr(frame.render_cache, "source_identity", None)
+    owner = getattr(frame, "delivery_owner", None)
+    if owner is not None and owner is not frame:
+        parent = source_identity(owner)
+        if frame.image is owner.image:
+            return parent
+        return {"parent": parent, "proof_size": list(frame.image.shape[:2])}
+    render_cache = getattr(frame, "render_cache", None)
+    if render_cache is None:
+        # Lightweight callers have neither a source identity nor an epoch.
+        # A session label alone must not let different arrays share a model.
+        image = np.ascontiguousarray(frame.image)
+        return {"pixels": sha256(image.view(np.uint8)).hexdigest(), "shape": list(image.shape)}
+    epoch = getattr(render_cache, "source_epoch", 0)
+    identity = getattr(render_cache, "source_identity", None)
     if identity is not None:
-        return asdict(identity)
-    return {"session": getattr(frame, "session_id", str(id(frame.image))), "epoch": frame.render_cache.source_epoch}
+        return {"identity":asdict(identity),"epoch":epoch}
+    return {"session": getattr(frame, "session_id", str(id(frame.image))), "epoch": epoch}
 
 
 def _context(store, session_id, kind, long_edge, edit_revision, geometry_signature):
@@ -147,6 +160,28 @@ def _validate(model):
     return model
 
 
+def cpu_delivery_model(frame):
+    """No usable GPU: retain the native source measurement for later delivery."""
+    from .denoise_adaptive import AdaptiveNoiseModel, estimate_adaptive_model, measurement_usage
+    started = perf_counter()
+    identity = {"version": VERSION, "source": source_identity(frame),
+        "pixels": "scene", "size": "native", "geometry": None}
+    key = sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    cached = _get(key)
+    if cached is None:
+        with measurement_usage("export/Proof"):
+            model = estimate_adaptive_model(frame.image)
+        height, width = frame.image.shape[:2]
+        _put(key, {"model": model.as_dict(), "measurement": {
+            "width": width, "height": height, "measured_pixels": min(width*height,4*1024*1024)}})
+        return model
+    log("denoise_measurement", usage="export/Proof", route="reused", measurement_key=key,
+        duration_ms=(perf_counter()-started)*1000, **cached["measurement"])
+    value = cached["model"]
+    return AdaptiveNoiseModel(a=value["a"], b=value["b"], c=value["c"],
+        band_sigmas=tuple(tuple(row) for row in value["band_sigmas"]))
+
+
 def create_router(store):
     router = APIRouter()
 
@@ -164,11 +199,18 @@ def create_router(store):
             return cached["model"]
         if not source:
             return Response(status_code=204,headers={"X-Denoise-Measurement-Key":key})
+        native = None
         if frame is None:
-            from .library_live import session
-            frame = session(session_id)
-        request = (kind, long_edge, frame.adjustments)
-        native = frame.render_cache.native_denoise_source(*request)
+            authored = kind == PreviewKind.SDR and meta.get("has_reference", False) and meta["adjustments"].get("sdr", {}).get("use_authored_base", True)
+            if not authored and long_edge >= max(meta["scene_width"],meta["scene_height"]):
+                from .library_live import native_denoise_pixels
+                native = (native_denoise_pixels(session_id), 0)
+            else:
+                from .library_live import session
+                frame = session(session_id)
+        if frame is not None:
+            request = (kind, long_edge, frame.adjustments)
+            native = frame.render_cache.native_denoise_source(*request)
         if native is not None:
             image = native[0]
             height, width = image.shape[:2]
@@ -209,11 +251,11 @@ def create_router(store):
             raise HTTPException(409,"Stale GPU Denoise measurement dropped.")
         model=_validate(value.get("model",{}))
         measurement={name:int(value[name]) for name in ("width","height","measured_pixels")}
-        if min(measurement.values())<1 or measurement["measured_pixels"]>1024*1024:
+        if min(measurement.values())<1 or measurement["measured_pixels"]>4*1024*1024:
             raise HTTPException(400,"Invalid measurement size.")
         _put(key,{"model":model,"measurement":measurement})
-        log("denoise_measurement",**fields,route="GPU",measurement_key=key,**measurement,
-            duration_ms=value.get("duration_ms"),gpu_ms=value.get("gpu_ms"))
+        log("denoise_measurement",**fields,route="CPU fallback" if value.get("route")=="CPU fallback" else "GPU",measurement_key=key,**measurement,
+            duration_ms=value.get("duration_ms"),gpu_ms=value.get("gpu_ms"),reason=value.get("reason"))
         return model
 
     return router

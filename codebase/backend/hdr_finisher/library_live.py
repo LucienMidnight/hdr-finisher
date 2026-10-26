@@ -240,6 +240,17 @@ def metadata(identity):
         return deepcopy(entry[1]) if entry else None
 
 
+def native_denoise_pixels(identity):
+    """Read stored native scene pixels without unrelated peak/grade setup."""
+    with _registry_lock:
+        entry = _registry.get(identity)
+    if entry is None:
+        raise ValueError("Stored Library scene is unavailable.")
+    owner, meta = entry
+    with np.load(owner.cache.open(meta["source_key"]), allow_pickle=False) as stored:
+        return stored["pixels"]
+
+
 def session(identity):
     if not identity.startswith("live-"):
         return None

@@ -153,7 +153,7 @@ td .full { color: var(--slow); font-weight: 600; }
 <h1>Library picture flow</h1>
 <p class="sub">How a photo gets from disk to the screen in the Library, which part of the app does each piece of work, what is kept, and how long each piece takes today.
 As of the October 26 five-part batch; app acceptance pending.
-All timings below are historical baselines from Steve's app runs (backend.log, Oct 25–26), before this batch. No new speed is claimed; targets are 0.5 s for folder scans and graded Denoise Fit, 1 s for cold non-RAW sharp draws. Grade timings are out of scope.
+All timings below are historical baselines from Steve's app runs (backend.log, Oct 25–26), before this batch. GPU Denoise measurement is now built; measurement timings and qualification are in the module PRD. Full app-draw targets are 0.5 s for folder scans and graded Denoise Fit, 1 s for cold non-RAW sharp draws. Matched 42 MP Grade measurement: 809–969 ms CPU → 169–176 ms GPU. Library thumbnail/screen measurement: 1464/983 ms CPU → 92/203 ms GPU; shared HDR/SDR reuse ~3 ms. Source development excluded.
 Words follow the master PRD glossary.</p>
 
 <div class="legend">
@@ -182,7 +182,7 @@ Words follow the master PRD glossary.</p>
 </table>
 </div>
 
-<div class="note"><strong>Batch verification:</strong> Steve tries both HDR and SDR; Claude reads route and stage timings with <code>summarize_library_log.py</code>. The screen wins if it disagrees with the log. The one shared Denoise GPU parity check passed; final fast results are in the module PRD. New timings await Steve's app run.</div>
+<div class="note"><strong>Batch verification:</strong> Steve tries both HDR and SDR; Claude reads route and stage timings with <code>summarize_library_log.py</code>. The screen wins if it disagrees with the log. Focused Denoise measurement/reconstruction, Full-tier, delivery and Proof/encoded-ceiling checks passed the task limits. The stricter legacy delivery p99.9 warning and fast results are recorded in the module PRD. Normal-folder timings await Steve’s app run.</div>
 
 <h2>Where the time went before this batch</h2>
 <p class="muted">Ranked by how much you'd feel it, from the Oct 26 15:56–16:02 HDR try. This is the list to make trade-offs from.</p>
@@ -192,7 +192,7 @@ Words follow the master PRD glossary.</p>
   <li><span class="n">2</span><span class="what">Opening a folder during a development <span class="cachetag">changed; app trial pending</span></span><span class="t slow">16–22 s wait</span>
     <span class="why">The scan took 0.04 s but queued behind source-busy. Now main-lane folder scans have independent admission; GPU development no longer gates them. <span class="chip helper">Helper</span></span></li>
   <li><span class="n">3</span><span class="what">Sharp draw for graded photos with Denoise</span><span class="t slow">1.4 s typical, up to 3.8 s</span>
-    <span class="why">Historical Denoise preparation. Now exact Library noise models use all cores and source-scene reuse. Quick draws use finished thumbnails or yield to the sharp draw; they never start Denoise preparation. GPU reconstruction is unchanged. <span class="chip gpu">Graphics card</span></span></li>
+    <span class="why">Historical CPU Denoise preparation. Noise measurement now runs on the graphics card and is kept with Library preview data. Quick draws use finished thumbnails or yield to the sharp draw; they never start Denoise preparation. GPU reconstruction is unchanged. <span class="chip gpu">Graphics card</span></span></li>
   <li><span class="n">4</span><span class="what">Back to the grid after fullscreen <span class="cachetag">changed; app trial pending</span></span><span class="t slow">0.4–4.2 s</span>
     <span class="why">Now completed thumbnails survive Single/fullscreen transitions in the bounded pool, keyed by current grade/mode. Camera previews are guarded and retained in 64 MiB RAM. <span class="chip page">Page</span> <span class="chip backend">Backend</span></span></li>
   <li><span class="n">5</span><span class="what">HEIC, JPEG XL and AVIF first pictures</span><span class="t slow">4–8 s (AVIF gain map up to 12.7 s)</span>
@@ -297,7 +297,7 @@ Words follow the master PRD glossary.</p>
   <div class="step backend"><div class="h"><span class="branch yes">Yes:</span> send the scene to the page <span class="t fast">0.02 s typical</span> <span class="t ok">up to 0.27 s</span></div></div>
   <div class="num">B2</div>
   <div class="step gpu"><div class="h">Draw with the current grade <span class="t fast">0.04 s</span></div>
-    <div class="d">Graded photos with Denoise first prepare Denoise: <span class="t ok">0.33 s typical</span> <span class="t slow">up to 1.45 s</span>. Then the finished thumbnail goes into the recent thumbnail pool.</div></div>
+    <div class="d">Graded photos with Denoise reuse a stored source-pixel measurement or measure on the graphics card. Historical CPU preparation: <span class="t ok">0.33 s typical</span> <span class="t slow">up to 1.45 s</span>. Then the finished thumbnail goes into the recent thumbnail pool.</div></div>
 
   <div class="num">C</div>
   <div class="step backend"><div class="h"><span class="branch no">No, RAW:</span> pull the camera preview out of the RAW <span class="t ok">0.3–0.5 s</span></div>
@@ -351,7 +351,7 @@ Words follow the master PRD glossary.</p>
   <div class="step gpu"><div class="h">Grade and draw it <span class="t ok">0.21 s</span></div>
     <div class="d">Historical Denoise preparation on graded photos: <span class="t slow">1.4 s typical, up to 3.8 s</span>. Overall: quick-then-sharp <span class="t ok">0.47 s typical</span>, <span class="t slow">2.6 s for the slowest 1 in 10</span>.</div></div>
 
-  <div class="note step backend wide2">Library Denoise models now use all cores and source-scene/geometry reuse; the shared default and GPU reconstruction arithmetic remain unchanged. Target 0.5 s sharp draw remains open.</div>
+  <div class="note step backend wide2">Denoise: reuse the stored measurement, otherwise measure bounded actual source windows on the graphics card; CPU only on GPU failure/unavailability. Finishing controls and shared HDR/SDR pixels reuse it. Authored SDR bases remain separate. GPU reconstruction arithmetic is unchanged. Matched screen preview: 203 ms preparation + 363 ms draw (~0.57 s); target 0.5 s still open. Thumbnail preparation 92 ms, target ~50 ms still open. App acceptance remains Steve’s.</div>
   <div class="num">E</div>
   <div class="step backend"><div class="h"><span class="branch no">No: develop the RAW.</span> Read file and sensor data <span class="t ok">0.66 s file read + 0.06 s LibRaw</span></div>
     <div class="d">USB drive read dominates. Sensor data then sent to the page (0.17 s).</div></div>
@@ -433,7 +433,7 @@ Words follow the master PRD glossary.</p>
 <tr><td><strong>Camera preview</strong></td><td>Backend RAM; original inside RAW</td><td>The camera's own JPEG</td><td>64 MiB, oldest out first; baseline extraction 0.3–0.5 s, memory hits unmeasured</td><td><span class="chip backend">Backend</span></td><td>App close, file version change, eviction</td></tr>
 <tr><td><strong>Index database</strong></td><td>Disk (<code>library.sqlite3</code>)</td><td>Every photo in pinned folders, camera details, marks, albums</td><td>155,879 files; 134,656 still need camera details</td><td><span class="chip helper">Helper</span> reads, <span class="chip backend">Backend</span> writes</td><td>Rebuildable from settings files</td></tr>
 <tr><td><strong>Settings files</strong></td><td>Beside each photo (<code>.hdrf</code>)</td><td>Grade, ratings, labels, tags</td><td>—</td><td><span class="chip backend">Backend</span> (the only writer)</td><td>Never deleted by the app</td></tr>
-<tr><td><strong>Denoise reuse</strong></td><td>Memory, while the app runs</td><td>Exact Library noise models keyed by source scene, geometry, size and authored SDR choice; GPU preparation results</td><td>16 backend models; bounded GPU memory</td><td><span class="chip backend">Backend</span> all-core estimation; <span class="chip gpu">Graphics card</span> reconstruction</td><td>App close, eviction, source/geometry change</td></tr>
+<tr><td><strong>Denoise reuse</strong></td><td>Managed Library preview data on disk; bounded memory</td><td>Measurements keyed by source pixels, measured size, resampling geometry and version; shared HDR/SDR pixels reuse them, authored SDR stays separate</td><td>512 backend models; managed disk-cache budget; bounded GPU scratch</td><td><span class="chip gpu">Graphics card</span> measurement and reconstruction; CPU fallback</td><td>Cache eviction/clear, source/version or resampled-pixel change; survives restart and finishing-grade changes</td></tr>
 </table>
 </div>
 

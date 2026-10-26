@@ -3,6 +3,9 @@ import json
 from pathlib import Path
 import sys
 import numpy as np
+import colour
+from hdr_finisher.color import acescg_to_linear_bt2020
+from hdr_finisher.color_context import scene_linear_to_nits
 from hdr_finisher.delivery_colour import compare_finished_pixels
 from hdr_finisher.hdr_delivery import check_decoded_hdr_ceiling
 from hdr_finisher.loader import load_image
@@ -19,6 +22,15 @@ else:
     results={}
     for lane,index in (("hdr",0),("sdr",4)):
         metric=compare_finished_pixels(first[index],second[index],lane)
-        results[lane]={"mean":metric.mean,"p999":metric.p999,"passed":metric.passed}
+        pair=[first[index],second[index]]
+        if lane=="sdr":
+            converted=[colour.XYZ_to_Lab(colour.RGB_to_XYZ(np.clip(v,0,1),colour.RGB_COLOURSPACES["sRGB"])) for v in pair]
+            delta=colour.difference.delta_E_CIE2000(*converted)
+        else:
+            converted=[colour.RGB_to_ICtCp(np.maximum(scene_linear_to_nits(acescg_to_linear_bt2020(v),203),0),method="ITU-R BT.2100-2 PQ") for v in pair]
+            delta=colour.difference.delta_E_ITP(*converted)
+        p99=float(np.percentile(delta,99))
+        results[lane]={"mean":metric.mean,"p999":metric.p999,"passed":metric.passed,
+            "p99":p99,"denoise_passed":metric.mean<1 and p99<3}
     results["peak_nits"]=check_decoded_hdr_ceiling(root/"gpu.jpg","jpeg_ultrahdr",1000)
     print(json.dumps(results))

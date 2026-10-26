@@ -9,6 +9,33 @@
 **Pipeline baseline:** `95060fa`; see [Image Processing Pipeline](image-processing-pipeline.md).
 **Research archive:** [Denoising Technology Watch — August 2026](denoising-technology-watch-2026.md) is background only and is not an implementation plan.
 
+## October 26, 2026: GPU noise measurement
+
+The shared renderer now measures the adaptive model on WebGPU. Actual source
+windows (at most 1 MP) pass through the existing opponent/B3 filters; GPU
+histograms provide variance quantiles and GPU reductions provide block/band
+statistics. The host fits compact statistics only. GPU work is serialized per
+device and admitted within the configured GPU budget; CPU measurement remains
+fallback. Reconstruction shaders and the exact HDR ceiling are unchanged.
+
+`denoise_measurement.py` transports bounded source windows and keeps models in
+the managed Library preview cache. Source identity, measured size, resampling
+geometry, authored SDR source and algorithm version determine reuse. Finishing
+controls and rendition names do not. Native source measurements are independent
+of geometry, matching the established native reconstruction contract. Reduced
+previews retain geometry in the identity. Stale edit/source work cannot publish.
+Grade, Library, export and Proof use the same frontend acquisition method; GPU
+export does no CPU measurement before queueing. Full-size Proof inherits the
+photo identity; reduced Proof pixels remain distinct.
+
+Finished-pixel acceptance is recorded in the Library and Export/Proof PRDs:
+SDR Delta E 2000 and HDR Delta E ITP mean <1, p99 <3; no colour maximum. The
+Highlight compression ceiling remains exact. GPU and CPU measurements may differ.
+Every backend measurement/reuse logs route, size, elapsed time and usage.
+Native Library measurement reads the same stored scene samples directly,
+avoiding unrelated Grade peak-candidate setup. CPU fallback delivery retains
+its native model in the same source-pixel cache.
+
 ## 1. Purpose
 
 This document is the canonical plan for the next authored-image denoising attempt. It replaces the previous broad research and prototype proposals.

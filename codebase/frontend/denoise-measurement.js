@@ -80,22 +80,74 @@ fn at(x:i32,y:i32,t:u32,reach:u32)->vec4f {
     }
     return {a:result[1],b:Math.max(result[2],Math.min(...vs)*.02,1e-20),c:result[0]};
   }
-  function variance(samples) {
-    const values=[];for(let i=0;i<samples.length;i+=4)if(samples[i]>0)values.push([samples[i],samples[i+1],samples[i+2]]);
-    if(values.length<1000)return {a:0,b:1e-8,c:0};
-    const edges=Array.from({length:13},(_,i)=>quantile(values.map(v=>v[0]),.02+i*.08));
+  const histogramShader=`
+struct P {mode:u32,n:u32,sets:u32,pad:u32}
+@group(0) @binding(0) var<storage,read> src:array<vec4f>;
+@group(0) @binding(1) var<storage,read_write> hist:array<atomic<u32>>;
+@group(0) @binding(2) var<storage,read> thresholds:array<f32>;
+@group(0) @binding(3) var<storage,read_write> result:array<vec4f>;
+@group(0) @binding(4) var<uniform> p:P;
+fn bucket(v:f32)->u32 {return min(bitcast<u32>(max(v,0.))>>16u,65535u);}
+@compute @workgroup_size(128) fn histogram(@builtin(global_invocation_id) id:vec3u){
+ let i=id.x;if(i>=p.n){return;}let v=src[i];if(!(v.x>0.)){return;}
+ if(p.mode==0u){atomicAdd(&hist[bucket(v.x)],1u);return;}
+ var bin=12u;for(var k=0u;k<12u;k++){if(v.x>=thresholds[k]&&v.x<thresholds[k+1u]){bin=k;break;}}
+ if(bin==12u){return;}
+ if(p.mode==1u){atomicAdd(&hist[bin*65536u+bucket(v.z)],1u);return;}
+ if(v.z>thresholds[13u+bin]){return;}
+ atomicAdd(&hist[bin*65536u+bucket(abs(v.y))],1u);
+ atomicAdd(&hist[(12u+bin)*65536u+bucket(v.x)],1u);
+}
+var<workgroup> sums:array<u32,256>;
+@compute @workgroup_size(256) fn quantiles(@builtin(local_invocation_id) lid:vec3u,@builtin(workgroup_id) group:vec3u){
+ let t=lid.x;let slot=select(group.x,0u,p.mode==0u);let base=slot*65536u+t*256u;
+ var total=0u;for(var k=0u;k<256u;k++){total+=atomicLoad(&hist[base+k]);}
+ sums[t]=total;workgroupBarrier();
+ for(var step=1u;step<256u;step*=2u){var add=0u;if(t>=step){add=sums[t-step];}workgroupBarrier();sums[t]+=add;workgroupBarrier();}
+ let count=sums[255];var before=0u;if(t>0u){before=sums[t-1u];}
+ var q=.3;if(p.mode==0u){q=.02+f32(group.x)*.08;}else if(p.mode==2u){q=select(.25,.5,group.x>=12u);}
+ let rank=u32(floor(f32(max(count,1u)-1u)*q));
+ if(before<=rank&&before+total>rank){
+  for(var k=0u;k<256u;k++){let c=atomicLoad(&hist[base+k]);if(before+c>rank){let index=t*256u+k;
+   let low=bitcast<f32>(index<<16u);let high=bitcast<f32>((index+1u)<<16u);
+   let fraction=(f32(rank-before)+.5)/f32(c);
+   result[group.x]=vec4f(low+(high-low)*fraction,f32(count),0,0);break;}before+=c;}
+ }
+}`;
+  const histogramPipelines=new WeakMap();
+  async function gpuVariance(device, stats, length, make, read) {
+    await warm(device);
+    const pipes=await histogramPipelines.get(device);
+    let thresholds=Array(25).fill(0), last;
+    for(let mode=0;mode<3;mode++){
+      const sets=[1,12,24][mode], groups=mode===0?13:sets;
+      const hist=make(sets*65536*4), input=make(25*4), output=make(groups*16), params=make(16,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);
+      device.queue.writeBuffer(input,0,new Float32Array(thresholds));device.queue.writeBuffer(params,0,new Uint32Array([mode,length,sets,0]));
+      const encoder=device.createCommandEncoder();
+      for(let stage=0;stage<2;stage++){
+        const pass=encoder.beginComputePass(),pipe=pipes[stage];
+        const buffers=[stats,hist,input,output,params];
+        // Auto layout omits unused bindings from each entry point.
+        const bindings=stage===0?[0,1,2,4]:[1,3,4];
+        const bind=device.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:bindings.map(binding=>({binding,resource:{buffer:buffers[binding]}}))});
+        pass.setPipeline(pipe);pass.setBindGroup(0,bind);pass.dispatchWorkgroups(stage===0?Math.ceil(length/128):groups);pass.end();
+      }
+      device.queue.submit([encoder.finish()]);last=await read(output,groups*16);
+      if(mode===0)thresholds.splice(0,13,...Array.from({length:13},(_,i)=>last[i*4]));
+      if(mode===1)thresholds.splice(13,12,...Array.from({length:12},(_,i)=>last[i*4]));
+      hist.destroy();input.destroy();output.destroy();params.destroy();
+    }
     const xs=[],vs=[],ws=[];
     for(let i=0;i<12;i++){
-      const bin=values.filter(v=>v[0]>=edges[i]&&v[0]<edges[i+1]);if(bin.length<8)continue;
-      const limit=quantile(bin.map(v=>v[2]),.3), flat=bin.filter(v=>v[2]<=limit);
-      const std=quantile(flat.map(v=>Math.abs(v[1])),.25)/.31863936396437514/6;
-      xs.push(quantile(flat.map(v=>v[0]),.5));vs.push(std*std);ws.push(flat.length);
+      const count=last[i*4+1];if(count<150)continue;
+      const std=last[i*4]/.31863936396437514/6;
+      xs.push(last[(12+i)*4]);vs.push(std*std);ws.push(count);
     }
     return xs.length>=2?fit(xs,vs,ws):{a:0,b:vs[0]||1e-8,c:0};
   }
   async function measure(device, description, pixels, budget=512*1024**2) {
     const start=performance.now(), {width:w,height:h,windows}=description, count=windows.length;
-    const size=w*h*count*16, required=size*8+4*1024**2;
+    const size=w*h*count*16, required=size*8+8*1024**2;
     if(required>budget||size>device.limits.maxStorageBufferBindingSize)throw Error("Denoise measurement exceeds available GPU memory.");
     const pipe=await pipeline(device), owned=[];
     const make=(bytes,usage=GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC)=>{const b=device.createBuffer({size:Math.max(16,bytes),usage});owned.push(b);return b;};
@@ -112,23 +164,24 @@ fn at(x:i32,y:i32,t:u32,reach:u32)->vec4f {
         const encoder=device.createCommandEncoder(), pass=encoder.beginComputePass();pass.setPipeline(pipe);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(length/128));pass.end();device.queue.submit([encoder.finish()]);
       };
       const read=async(buffer,bytes)=>{const staging=make(bytes,GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST);const enc=device.createCommandEncoder();enc.copyBufferToBuffer(buffer,0,staging,0,bytes);device.queue.submit([enc.finish()]);await staging.mapAsync(GPUMapMode.READ);const result=new Float32Array(staging.getMappedRange().slice(0));staging.unmap();staging.destroy();return result;};
-      const sample=async(buffer)=>{const stride=Math.max(1,Math.ceil(w*h*count/16384)), length=Math.ceil(w*h*count/stride);dispatch(5,buffer,temp,buffer,{stride},length);return read(temp,length*16);};
+      const sample=async(buffer,limit=16384)=>{const stride=Math.max(1,Math.ceil(w*h*count/limit)), length=Math.ceil(w*h*count/stride);dispatch(5,buffer,temp,buffer,{stride},length);return read(temp,length*16);};
       const blur=(src,dst,step)=>{dispatch(1,src,temp,src,{step,axis:0});dispatch(1,temp,dst,temp,{step,axis:1});};
       dispatch(0,input,original);
       dispatch(3,original,band);dispatch(4,band,energy);
-      const model=variance(await sample(energy));
+      const model=await gpuVariance(device,energy,w*h*count,make,read);
       blur(original,current,1);blur(current,smooth,2);dispatch(2,smooth,sigma,smooth,model);
       // The opponent current keeps its luminance channel through the blur.
       let src=original, dst=current;
-      const blockCount=Math.floor(w/16)*Math.floor(h/16)*count, stds=[], energies=[];
+      const blockCount=Math.floor(w/16)*Math.floor(h/16)*count, stdReads=[], energyReads=[];
       for(let level=0;level<4;level++){
         blur(src,dst,2**level);
         dispatch(10,src,band,dst);dispatch(11,band,energy,sigma);
-        if(level<2){dispatch(7,energy,band,energy,{},blockCount);stds.push(await read(band,blockCount*16));}
+        if(level<2){dispatch(7,energy,band,energy,{},blockCount);stdReads.push(read(band,blockCount*16));}
         dispatch(8,energy,band);dispatch(9,band,temp,band,{axis:0});dispatch(9,temp,energy,temp,{axis:1});
-        energies.push(await sample(energy));
+        energyReads.push(sample(energy));
         src=dst;dst=dst===current?smooth:current;
       }
+      const [stds,energies]=await Promise.all([Promise.all(stdReads),Promise.all(energyReads)]);
       const luma=Array.from({length:blockCount},(_,i)=>stds[0][i*4]);const limit=quantile(luma,.25), flat=luma.map((v,i)=>v<=limit?i:-1).filter(i=>i>=0);
       const rows=[];
       for(let k=0;k<3;k++){
@@ -158,11 +211,26 @@ fn at(x:i32,y:i32,t:u32,reach:u32)->vec4f {
       const validation=await device.popErrorScope(),oom=await device.popErrorScope();if(validation||oom)throw Error((validation||oom).message);
     }
   }
+  async function warm(device) {
+    if(!histogramPipelines.has(device)){
+      const module=device.createShaderModule({code:histogramShader});
+      histogramPipelines.set(device,Promise.all(["histogram","quantiles"].map(entryPoint=>device.createComputePipelineAsync({layout:"auto",compute:{module,entryPoint}})))
+        .catch(error=>{histogramPipelines.delete(device);throw error;}));
+    }
+    await Promise.all([pipeline(device),histogramPipelines.get(device)]);
+  }
+  const turns=new WeakMap();
+  function serialMeasure(device,...args) {
+    const previous=turns.get(device)||Promise.resolve();
+    const result=previous.catch(()=>{}).then(()=>measure(device,...args));turns.set(device,result);
+    result.finally(()=>{if(turns.get(device)===result)turns.delete(device);}).catch(()=>{});
+    return result;
+  }
   const pending = new Map();
   function acquire(key, task) {
     if (pending.has(key)) return pending.get(key);
     const result = task().finally(()=>{if(pending.get(key)===result)pending.delete(key);});
     pending.set(key,result);return result;
   }
-  window.HDRDenoiseMeasurement={measure,acquire,version:VERSION};
+  window.HDRDenoiseMeasurement={measure:serialMeasure,warm,acquire,version:VERSION};
 })();

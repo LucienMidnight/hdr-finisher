@@ -16,6 +16,11 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
     if(!upload.ok())throw Error(await upload.text());
     console.log("fixture uploaded");
     const session=(await upload.json()).session;
+    const edits=await page.request.get(api(`/api/session/${session.session_id}/edit-state`));
+    const editState=await edits.json();
+    editState.document.denoise.hdr.enabled=true;editState.document.denoise.sdr.enabled=true;
+    const changed=await page.request.put(api(`/api/session/${session.session_id}/edit-state?expected_revision=${editState.revision}`),{data:editState.document});
+    if(!changed.ok())throw Error(await changed.text());
     for(const forced of [false,true]){
       await page.request.post(api("/api/delivery/preferences"),{data:{force_cpu:forced}});
       const target=path.join(root,forced?"cpu.jpg":"gpu.jpg");
@@ -37,6 +42,7 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
       console.log("Proof shares",proof.renderer,"delivery");
     }
     const result=JSON.parse(execFileSync(python,[helper,"compare",root],{env,encoding:"utf8"}));console.log(JSON.stringify(result));
-    if(!result.hdr.passed||!result.sdr.passed)console.error("Perceptual limits exceeded; hand build to Steve for first testing.");
+    if(!result.hdr.passed||!result.sdr.passed)console.error("Existing stricter delivery p99.9 limit exceeded; recorded separately from Denoise measurement's agreed p99.");
+    if(!result.hdr.denoise_passed||!result.sdr.denoise_passed)throw Error("Denoise delivery perceptual limits exceeded.");
   }finally{await page.request.post(api("/api/delivery/preferences"),{data:{force_cpu:false}}).catch(()=>{});await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

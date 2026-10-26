@@ -25,6 +25,8 @@ from .library_index import LibraryIndex
 
 
 class StopwatchEvent(BaseModel):
+    display_epoch: int | None = Field(default=None, ge=0)
+    visible_thumbnails: int | None = Field(default=None, ge=0)
     stage: str = Field(max_length=64, pattern=r"^[a-z_]+$")
     time: float
     path: str | None = Field(default=None, max_length=4096)

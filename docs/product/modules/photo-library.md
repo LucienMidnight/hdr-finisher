@@ -1,40 +1,89 @@
 # Module PRD: Photo Library
 
-## October 26: GPU Denoise measurement (qualification pending)
+## October 26: GPU Denoise preparation
 
-GPU pixel filters, per-block noise statistics and sampled clumping measurement
-are implemented for the shared renderer. The host fits only the compact
-statistics. Source sampling reads at most 1 MP without resizing. The existing
-CPU estimator remains the fallback. No reconstruction or ceiling arithmetic
-changes. Final fast checks and focused GPU qualification run after this batch;
-speed and finished-pixel acceptance are not claimed yet.
+Noise measurement now runs on the renderer's graphics card for Grade, Library,
+GPU export and Proof. The CPU remains the fallback for an unavailable, failed
+or insufficient-memory GPU. Export no longer performs CPU noise measurement
+before entering the GPU queue. Bounded source windows retain actual pixels:
+at most 1 MP, without resizing; the host fits only compact GPU statistics.
+Reconstruction and Highlight compression arithmetic are unchanged.
 
-Measurements now survive visits and restarts as small JSON entries in the
-managed Library preview cache. The source identity, measured size, geometry and
-algorithm version own them; finishing controls do not. Atomic publication and
-stale revision/geometry guards remain in place. Concurrent requests within one
-page share the same measurement. Clearing or evicting the cache can require a
-new measurement; original photos and settings files are untouched.
+Measurements are kept as versioned JSON in the managed Library preview cache.
+They survive visits and restarts while that cache is retained. Identity includes
+source pixels, size and resampling geometry, excluding finishing controls and
+HDR/SDR names. Full-size Grade/export/Proof share the native source measurement;
+reduced pictures measure their own pixels. Authored SDR bases stay separate.
+Clearing/evicting preview data or changing source interpretation requires a new
+measurement. GPU allocation respects the existing memory budget and Library
+admission; repeated requests within a page share work. Proof inherits its source
+owner's identity, with a distinct identity for a reduced source.
 
-HDR/SDR names are excluded from the identity when measured pixels are shared.
-Authored SDR pixels remain separate; geometry or size changes that resample
-pixels also remain separate. Library mode switches now log a timestamp,
-rendition, display epoch and visible thumbnail count. The log summarizer groups
-measurements by GPU, CPU fallback and reused, size and Library/Grade/delivery.
+Proposed before implementation: finished SDR mean Delta E 2000 <1 and p99 <3;
+finished HDR mean Delta E ITP <1 and p99 <3 against the current CPU measurement.
+Steve allows approximate measurement and CPU/GPU differences; preview and export
+must agree perceptually. No per-pixel colour maximum; Highlight compression is
+an exact ceiling allowing only encoder rounding. All 13 existing Denoise corpus
+cases passed at two strengths in both renditions: worst HDR mean 0.152/p99 2.350,
+SDR mean 0.012/p99 0.124. Existing GPU reconstruction parity and Full-tier Denoise
+checks passed. Real 42 MP RAW preparation: CPU 809–969 ms, GPU 169–176 ms (about 93 ms
+compute), two matched runs excluding RAW development. Fallback delivery also
+keeps/reuses the native measurement; no usable GPU is required to retain it.
 
-Proposed before implementation: compare finished denoised SDR pixels with the
-current CPU-measured result using mean Delta E 2000 <1 and p99 <3; finished HDR
-using mean Delta E ITP <1 and p99 <3. Typical changes stay below visibility,
-with a bounded high percentile and no per-pixel colour maximum. The Highlight
-compression target remains an exact ceiling, allowing only encoder rounding.
-Steve allows approximate noise measurement and differences between GPU and CPU;
-preview and export must agree within this tolerance. Preserve the Denoise look.
-Timing targets: thumbnail preparation about 50 ms and uncached Fit sharp draw
-about 0.5 s, with 5% run-to-run allowance. Measure Grade on a 42 MP RAW and export.
+Library records every backend measurement as GPU, CPU fallback or reused, with
+source size, measured pixel count, duration and usage (Library, Grade, export/Proof).
+Mode switches record timestamp, rendition, display epoch and visible thumbnail
+count. `summarize_library_log.py` reports both groups. Finishing-grade changes
+and HDR/SDR switches reuse a measurement when the underlying pixels are shared.
+
+Timing targets remain about 50 ms thumbnail preparation and 0.5 s uncached Fit
+sharp draw, allowing 5% run variation. Final real-Library run on a copied 42 MP RAW: thumbnail CPU preparation
+1464 ms → GPU 92 ms; screen-preview CPU preparation 983 ms → GPU 203 ms.
+The first CPU result includes calibration startup. GPU compute itself was about
+45/87 ms. HDR/SDR reuse was 3 ms with exactly one measurement per size. Source
+reading avoids unrelated Grade peak-candidate setup and preserves the same half
+float scene samples. Screen-preview drawing after preparation took 363 ms,
+about 0.57 s combined; thumbnail drawing took 145 ms. This excludes source
+RAW development. The 50 ms preparation and 0.5 s combined sharp-draw targets
+remain open, as does Steve's normal-folder/fullscreen app acceptance. These
+single-photo figures do not replace Steve's 1.6 s/270 ms historical medians.
+Corpus preparation was 65–94 ms after pipeline warm-up, reuse 2–4 ms.
+
+Real RAW GPU export measured in 208 ms within its GPU turn, then Proof reused
+it; the old CPU premeasurement cost about 0.8–1.0 s per native photo. The
+4000 px Ultra HDR GPU export took 28.14 s in this check, versus 119.69 s forced
+CPU; those whole-export numbers compare renderer paths, not before/after this
+measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 26, 2026)
 
-**October 26 batch verification (final).** Fast suites ran once at the end:
+**Final Denoise batch verification, October 26.** Fast suites ran once at the
+end: JavaScript 628 passed / 5 failed; three were affected measurement/warm-up
+fixtures or behavior and were corrected, with four focused checks passing.
+Python 2597 passed / 3 failed / 3 skipped; the new fallback cache exposed one
+real identity collision in lightweight export frames with a repeated session
+label. Fixed the source identity (real sessions retain their source/epoch
+identity); the 19 export/cache checks then passed. Neither full suite was rerun.
+The remaining two JavaScript and two Python failures are the already recorded
+unrelated failures listed below; their code/fixtures were not changed.
+
+Focused GPU checks ran sequentially in 2560x1440 Electron: the existing adaptive
+reconstruction parity, Full-tier Denoise, Denoise-enabled delivery smoke, and
+saved RAW export/Proof identity + encoded ceiling checks. The new registered
+measurement driver passed all 52 finished-pixel corpus comparisons and verified
+shared HDR/SDR measurements; the narrow Library run verified one measurement
+per size and mode reuse. GPU quantile histograms replaced an initial sampled
+variance estimate that failed HDR acceptance; the final limits were not relaxed.
+Delivery smoke passes the task's mean/p99 tolerance; its pre-existing stricter
+p99.9 diagnostic warns at HDR 3.377 against 3.0 (mean 0.780), recorded in the
+Export/Proof PRD. Real RAW Proof/export bytes and exact ceiling passed on both
+renderer paths. No other sweeps, push or installer build. The updated log
+summarizer successfully read the disposable Library log, including GPU/reuse
+sizes and durations. Mode-switch telemetry retains display epoch/count fields.
+
+
+
+**Earlier October 26 responsiveness batch verification.** Fast suites ran once at the end:
 JavaScript 631 passed / 2 previously documented failures; Python 2588 passed /
 3 skipped / 3 failures. One Python failure was this batch's intentionally
 changed model-cache policy: its old fixture omitted source identity and
@@ -1169,6 +1218,7 @@ far less on screen.
 | --- | --- | --- |
 | October 26, 2026 | Five ordered local commits; one final fast run; focused Denoise parity only; Steve tests HDR/SDR and Claude summarizes backend.log. Screen wins over logs. | In force |
 | October 26, 2026 | Finished thumbnails before camera previews; bounded file-version camera-preview RAM reuse. Exclusive GPU development, folder scans admitted independently. | Built; app trial pending |
+| October 26, 2026 | GPU noise measurement for Library/Grade/export/Proof; persistent source-pixel identity excludes finishing grades and shared HDR/SDR names. Authored SDR separate; source/size/resampling changes invalidate. Mean <1/p99 <3 on finished pixels; exact HDR ceiling. | GPU corpus, shared renderer parity, Proof/delivery and copied RAW timing checked; 50 ms thumbnail/0.5 s Fit targets remain open |
 | October 26, 2026 | Exact all-core Library noise models; no approximate Denoise quick draw. SDR mean Delta E 2000 <1/p99 <3; HDR mean Delta E ITP <1/p99 <3; exact Highlight compression ceiling. | Proposed tolerance recorded before edits; output arithmetic unchanged |
 | October 26, 2026 | All-core codec decode; Library HEIC reconstruction followed by GPU colour preparation. Parallel libavif rows before a full GPU route. | Built; timing targets remain open |
 
@@ -1759,7 +1809,7 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 | **Stored screen preview sharp draw** | Disposable real-photo restart: 226 ms first stored draw, 115 ms next SDR draw, 162 ms HDR; scene route 326 ms with capture disabled for the baseline. No scene dependency on stored hits. | Fullscreen and Single Fit built. ~100 ms first-use/HDR target still open; Steve's blink test and 200–300-photo workload pending. Build previews/protected set/disk-space checks deferred. |
 | **Cold first picture for non-RAW formats** (October 26: all-core TIFF/HEIC/JXL and auxiliary HEIC GPU preparation built; app timing pending; core workflow, see decisions; target sharp draw within 1 s, Steve October 26) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed and AVIF reconstruction remain open; stored screen previews now serve returning Fit pictures. OS cache warm; Steve's normal-folder try remains separate. |
 | **Cold RAW development** (October 26: exclusive GPU developments, develop-ahead after selected sharp draw; app timing pending; badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |
-| **Denoise in Library drawing.** October 26 exact all-core model scheduling and source-key reuse built; quick-draw misses skip Denoise preparation. 0.5 s target and reconstruction optimization remain open. Separate task: speed up Denoise itself, not only reuse its results. | Badminton graded photos: thumbnail analysis 250–530 ms per draw even after reuse; screen-preview measurements already cost 1.6 s in the 18:45 test. Adaptive reconstruction runs 32 dispatches per 512 px tile inside render. Graded Fit render 300–600 ms after Part 0b; 1.7–2.8 s before. | Reuse fix in Part 0c; exact estimator threading and selected-first measurement scheduling in Part 0f. Reconstruction dispatch optimization remains open; Steve's timing try pending. |
+| **Denoise in Library drawing.** GPU measurement and persistent source-pixel reuse built October 26. Finishing grades and shared HDR/SDR pixels do not re-measure; authored SDR remains separate. | Historical CPU measurement: screen preview median 1.6 s/worst 2.5 s; thumbnail median 270 ms/worst 1.1 s. Matched copied RAW: thumbnail CPU 1464 ms → GPU 92 ms; screen-preview CPU 983 ms → GPU 203 ms; HDR/SDR reuse ~3 ms. Screen-preview draw 363 ms after preparation (~0.57 s combined). Source development excluded. | About 50 ms thumbnail preparation and 0.5 s uncached Fit sharp draw still require app acceptance. Reconstruction optimization remains open. |
 | Film grain and halation in Library drawing | Present in all slow graded photos (Portra 400, grain 24, halation). Not timed apart from Denoise. | Suspected; measure. |
 | Sharpening | Present on one slow photo (DSC07178). No timing. | Unmeasured; check only. |
 | Stored-scene pixel fetch | 65–150 ms per 2560 scene after Part 0, down from 140–800 ms. | Measured; improved. |

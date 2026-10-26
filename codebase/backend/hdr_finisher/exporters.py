@@ -135,9 +135,11 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
     if lane is None:
         return image
     controls = lane.controls
+    from .denoise_measurement import cpu_delivery_model
+    model = cpu_delivery_model(session)
     return denoise_adaptive.resolve_adaptive(
         image,
-        denoise_adaptive.estimate_adaptive_model(image),
+        model,
         denoise_adaptive.AdaptiveControls(
             amount=controls.amount,
             luminance=controls.luminance,

@@ -5486,13 +5486,14 @@
       if (cached.status === 200) return cached.json();
       if (!cached.ok) throw new Error(`Denoise measurement request failed (${cached.status}).`);
       return HDRDenoiseMeasurement.acquire(cached.headers.get("X-Denoise-Measurement-Key") || measurementURL, async () => {
+      let description;
       try {
-        if (!this.available || this.deviceLost || this.adapterInfo?.fallback) throw Error("No usable graphics card.");
         const response = await fetch(measurementURL + (measurementURL.includes("?") ? "&" : "?") + "source=true");
         if (!response.ok) throw Error(`Denoise source request failed (${response.status}).`);
         if (response.headers.get("content-type")?.includes("application/json")) return response.json();
         const body = await response.arrayBuffer(), length = new DataView(body).getUint32(0,true);
-        const description = JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,length)));
+        description = JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,length)));
+        if (!this.available || this.deviceLost || this.adapterInfo?.fallback) throw Error("No usable graphics card.");
         const pixels = new Float32Array(body,4+length);
         const snapshot = this.resourceMemorySnapshot();
         const budget = Math.max(0,this.memoryBudgetBytes() - snapshot.totals.peakLogicalBytes);
@@ -5506,7 +5507,16 @@
         if (/request failed|publication failed|source request/.test(error.message)) throw error;
         const response = await fetch(url + (url.includes("?") ? "&" : "?") + "fallback_reason=" + encodeURIComponent(error.message));
         if (!response.ok) throw new Error(`Denoise CPU fallback failed (${response.status}).`);
-        return response.json();
+        const model = await response.json();
+        if (description) {
+          const stored = await fetch(measurementURL,{method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({model,key:description.key,version:description.version,route:"CPU fallback",
+              width:description.source_width,height:description.source_height,
+              measured_pixels:Math.min(description.source_width*description.source_height,4*1024*1024),
+              duration_ms:performance.now()-started,reason:error.message})});
+          if (!stored.ok) throw Error(`Denoise fallback publication failed (${stored.status}).`);
+        }
+        return model;
       }
       });
     }
@@ -6701,6 +6711,10 @@
     }
 
     async warmPipelines(format, beforeNext) {
+      if (window.HDRDenoiseMeasurement) {
+        await beforeNext();
+        await window.HDRDenoiseMeasurement.warm(this.device);
+      }
       if (this.pipelines.has(format)) return;
       const pending = [];
       const staged = this.pipelineFor(format, descriptor => {

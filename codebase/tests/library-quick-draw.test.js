@@ -18,18 +18,18 @@ test('quick work runs independently and selected sharp follows only the in-fligh
  hold.resolve();await selected;assert.deepEqual(started.slice(0,3),['first','stand-in','selected']);
  await Promise.all([first,...neighbours]);
 });
-test('repeat Library model preparations reuse exact photo, grade, lane, size and geometry within 16 entries',async()=>{
+test('repeat Library model lookups coalesce and retain 16 request identities',async()=>{
  let requests=0;
  const window={};
-  const context=vm.createContext({window,document:{createElement:()=>({})},performance,fetch:async url=>({ok:true,json:async()=>({url,measurement:++requests})}),HDRWebGPUPreview:class {},HDRLibrarySceneScheduler:{create}});
+  const context=vm.createContext({window,document:{createElement:()=>({})},performance,HDRLibraryStopwatch:()=>{},fetch:async url=>({ok:true,status:200,json:async()=>({url,measurement:++requests})}),HDRWebGPUPreview:class {async initialize(){return true;}},HDRLibrarySceneScheduler:{create}});
  vm.runInContext(fs.readFileSync(require.resolve('../frontend/library-gpu'),'utf8'),context);
  const prepare=window.HDRLibraryPictures.prepareDenoise;
  const meta=(key='live-photo-grade1',edge=2560,geometry={})=>({key,edge,denoise:{hdr:{enabled:true},sdr:{enabled:true}},adjustments:{shared:{geometry}}});
  const a=meta();await prepare(a,true);await prepare(meta('live-neighbour'),true);await prepare(a,true);
- assert.equal(requests,2,'Back-and-forth must not remeasure');
+ assert.equal(requests,2,'Back-and-forth reuses model lookup');
  await window.HDRLibraryQuickPictures.prepareDenoise(a,true);assert.equal(requests,2,'Renderers share model results');
  await prepare(a,false);await prepare(meta(a.key,640),true);await prepare(meta('live-photo-grade2'),true);await prepare(meta(a.key,2560,{rotate:90}),true);
- assert.equal(requests,6,'Changed measured pixels never reuse a model');
+ assert.equal(requests,6,'Different request identities perform their own source-cache lookup');
  for(let i=0;i<16;i++)await prepare(meta('live-other-'+i),true);
  await prepare(a,true);assert.equal(requests,23,'Old models evict at the bounded capacity');
 });
