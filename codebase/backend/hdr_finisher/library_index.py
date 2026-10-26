@@ -65,6 +65,12 @@ class LibraryIndex:
         started = time.monotonic()
         log("startup_upkeep_started", action="background Library recovery reconciliation")
         try:
+            from .cpu_budget import lower_thread_priority
+            lower_thread_priority()
+            self.wait_for_upkeep()
+            if getattr(self, "cache_upkeep", None):
+                self.cache_upkeep(self.wait_for_upkeep)
+            self.marks.writer.startup_cleanup(self.wait_for_upkeep)
             self.wait_for_upkeep()
             self.membership.reconcile()
             log("startup_upkeep_finished", duration_ms=round((time.monotonic()-started)*1000, 2))

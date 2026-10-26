@@ -43,11 +43,14 @@ window.HDRLibraryScreenPreviews = (() => {
   `;
   async function load(photo,canvas,signal,current,hdr,admit=async()=>{}) {
     const started=performance.now();
+    const stage=(name,at)=>HDRLibraryStopwatch('picture_stored_screen_preview_'+name,{path:photo.path,rendition:hdr?'hdr':'sdr',picture_size:'screen preview',duration_ms:performance.now()-at});
     const response=await fetch('/api/library/stored-screen-preview?'+query(photo.path,hdr),{signal});
     if(response.status===204)return null;
     if(!response.ok)return null;
     const meta={...JSON.parse(response.headers.get('X-Preview-Meta')),route:'stored-screen-preview',edge:2560,cache_hit:true};
     const body=await response.arrayBuffer();
+    stage("fetch",started);
+    const setupStarted=performance.now();
     if(!current()||signal.aborted)throw new DOMException('Invalidated','AbortError');
     const gpu=await HDRLibraryPictures.initialize();
     await admit(meta);
@@ -58,13 +61,18 @@ window.HDRLibraryScreenPreviews = (() => {
     let pipeline=cache.get(id);
     if(!pipeline){const module=gpu.device.createShaderModule({code:shader});pipeline=await gpu.device.createRenderPipelineAsync({layout:'auto',
       vertex:{module,entryPoint:'vertex'},fragment:{module,entryPoint:hdr?(surface.hdr?'hdr':'hdrSdr'):'sdr',...(!surface.hdr&&hdr?{constants:{white:meta.white}}:{}),targets:[{format:surface.format}]},primitive:{topology:'triangle-list'}});cache.set(id,pipeline);}
+    stage("setup",setupStarted);
+    const uploadStarted=performance.now();
     const texture=gpu.device.createTexture({size:[meta.width,meta.height],format:hdr?'rgba16uint':'rgba8uint',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
     try {
       gpu.device.queue.writeTexture({texture},body,{bytesPerRow:meta.width*(hdr?8:4)},[meta.width,meta.height]);
+      stage("upload",uploadStarted);
       if(!current()||signal.aborted)throw new DOMException('Invalidated','AbortError');
+      const drawStarted=performance.now();
       const encoder=gpu.device.createCommandEncoder(),pass=encoder.beginRenderPass({colorAttachments:[{view:context.getCurrentTexture().createView(),loadOp:'clear',storeOp:'store'}]});
       pass.setPipeline(pipeline);pass.setBindGroup(0,gpu.device.createBindGroup({layout:pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:texture.createView()}]}));pass.draw(3);pass.end();
       gpu.device.queue.submit([encoder.finish()]);await gpu.device.queue.onSubmittedWorkDone();
+      stage("gpu_draw",drawStarted);
     } finally {texture.destroy();}
     canvas.dataset.picturePath=photo.path;canvas.dataset.pictureEdge='2560';canvas.dataset.pictureKey=meta.key;
     canvas.dataset.rendition=hdr?'hdr':'sdr';

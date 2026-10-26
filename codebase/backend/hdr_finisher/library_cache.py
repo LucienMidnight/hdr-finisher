@@ -75,15 +75,16 @@ class LibraryCache:
             return 'saved_grade'
         return 'thumbnail'
 
-    def _ledger(self, reconcile=True):
-        """Shared across backend/helper processes; rebuild once per process start.
+    def _ledger(self, reconcile=False):
+        """Shared durable accounting across backend/helper processes.
 
-        Only final published files count. Settings usage and actual eviction
-        reconcile outside edits; routine publications never list the folder.
+        Only final published files count. A new ledger and explicit Settings
+        usage reconcile outside edits; routine restarts trust the saved totals.
         """
         root = self.prepare()
         key = str(root.resolve())
         if key not in _LEDGERS:
+            new_ledger = not (root / '.library-cache-size.sqlite3').exists()
             db = sqlite3.connect(root / '.library-cache-size.sqlite3', timeout=30, check_same_thread=False)
             db.execute('PRAGMA journal_mode=WAL')
             # Disposable size bookkeeping is rebuilt from published files. WAL
@@ -96,7 +97,7 @@ class LibraryCache:
             """)
             _LEDGERS[key] = db
             try:
-                if reconcile:
+                if reconcile or new_ledger:
                     self._reconcile(db)
             except BaseException:
                 del _LEDGERS[key]
@@ -152,6 +153,32 @@ class LibraryCache:
                         companion = file.with_suffix('.json')
                         if not companion.is_symlink():
                             companion.unlink(missing_ok=True)
+
+    def reconcile_background(self, wait):
+        """Recover drift after the first page, with no directory-sized lock."""
+        from .library_diagnostics import startup_phase
+        root = self.prepare()
+        with startup_phase("cache_reconciliation"):
+            for name in DIRECTORIES:
+                directory = self.directory(name)
+                for file in directory.glob('*'):
+                    wait()
+                    if file.is_symlink() or not file.is_file() or file.suffix == '.tmp' or file.name.startswith('kept-'):
+                        continue
+                    self.record(file)
+            # Missing files are not in the directory walk. Page the saved keys
+            # too, checking each file under the short publication lock.
+            after = ""
+            while True:
+                wait()
+                with _LOCK:
+                    rows = self._ledger().execute('SELECT path FROM files WHERE path>? ORDER BY path LIMIT 128', (after,)).fetchall()
+                if not rows:
+                    break
+                for (filename,) in rows:
+                    wait()
+                    self.record(filename)
+                after = rows[-1][0]
 
     def record(self, file):
         """Record a final publication/replacement or removal in constant time."""

@@ -13,9 +13,11 @@ async function boot() {
   bindEvents();
   applyExportPreset(els.exportFormat.value, "web_default", { invalidate: false });
   await initializeGpuPreview();
-  await loadCapabilities().catch(() => {
-  });
-  await loadDefaultExportDirectory().catch(() => null);
+  // Export setup does not gate the first Library page.
+  setTimeout(() => {
+    void loadCapabilities().then(() => { renderCapabilities(); updateExportAvailability(); }).catch(() => {});
+    void loadDefaultExportDirectory().catch(() => null);
+  }, 3000);
   renderReadouts();
   drawCurveEditor();
   drawToneEqualizerEditor();

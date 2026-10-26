@@ -453,3 +453,18 @@ def test_unwritable_single_settings_file_does_not_hold_up_same_folder(tmp_path, 
     store.writer.drain()
     assert store.writer.status()["reasons"] == {"unwritable": 1}
     assert document(photos[1])["marks"]["rating"] == 5
+
+
+def test_deferred_cleanup_visits_folders_and_retains_unrelated_files(tmp_path):
+    store, photos = setup(tmp_path, 2)
+    store.change(photos, MarkChange(rating=4))
+    row = store.read(photos)["photos"][0]
+    owned = photos[0].parent / (f".hdrf-settings.{photos[0].name}.hdrf.{store.writer.owner(row['photo_id'])}.12345678.tmp")
+    owned.write_text("{ interrupted")
+    unrelated = photos[0].parent / ".other.png.hdrf.abcdefgh.tmp"
+    unrelated.write_text("leave alone")
+    yields = []
+    store.writer.startup_cleanup(lambda: yields.append(True))
+    assert not owned.exists()
+    assert unrelated.read_text() == "leave alone"
+    assert yields

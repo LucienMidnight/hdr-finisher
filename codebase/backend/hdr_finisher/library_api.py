@@ -255,14 +255,17 @@ def create_library_router(worker, browser, store=None):
     if store is not None:
         from .library_grade_api import add_grade_routes
     index = LibraryIndex(marks, browser, worker)
+    index.cache_upkeep = cache.managed.reconcile_background
 
     file_commands = None
 
     @asynccontextmanager
     async def lifespan(_app):
-        await run_in_threadpool(cache.managed.usage)
-        await run_in_threadpool(file_commands.start)
-        await run_in_threadpool(marks.writer.start, lambda: worker.status()["paused"])
+        from .library_diagnostics import startup_phase
+        with startup_phase("file_recovery"):
+            await run_in_threadpool(file_commands.start)
+        with startup_phase("settings_writer"):
+            await run_in_threadpool(marks.writer.start, lambda: worker.status()["paused"])
         try:
             yield
         finally:

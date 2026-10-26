@@ -14,6 +14,7 @@ import collections
 import datetime
 import json
 import os
+import re
 import sys
 
 LOG = os.path.expandvars(r"%APPDATA%\hdr-finisher-desktop\logs\backend.log")
@@ -25,27 +26,18 @@ STAGES = ("cache_check", "queue_wait", "lease_wait", "pixel_fetch", "upload",
 def events(since):
     with open(LOG, encoding="utf-8", errors="replace") as handle:
         for line in handle:
-            if not line.startswith("[library] "):
-                continue
-            name, _, payload = line[10:].partition(" ")
-            try:
-                data = json.loads(payload)
-            except ValueError:
-                continue
-            if data.get("time", 0) >= since:
-                yield name, data
+            # Also recover entries joined by older concurrent log writers.
+            for match in re.finditer(r"\[library\] (\S+) ", line):
+                try:
+                    data, _ = json.JSONDecoder().raw_decode(line[match.end():])
+                except ValueError:
+                    continue
+                if data.get("time", 0) >= since:
+                    yield match[1], data
 
 
 def latest_session_start():
-    start = 0.0
-    with open(LOG, encoding="utf-8", errors="replace") as handle:
-        for line in handle:
-            if line.startswith("[library] app_start "):
-                try:
-                    start = json.loads(line.split(" ", 2)[2])["time"]
-                except (ValueError, KeyError, IndexError):
-                    pass
-    return start
+    return max((data["time"] for name, data in events(0) if name == "app_start"), default=0.0)
 
 
 def pct(values, p):
@@ -54,10 +46,13 @@ def pct(values, p):
 
 
 def main():
+    global LOG
     parser = argparse.ArgumentParser()
+    parser.add_argument("--log", default=LOG, help="read a disposable profile log")
     parser.add_argument("--since", help='local time "YYYY-MM-DD HH:MM"; default: latest app launch')
     parser.add_argument("--list", action="store_true", help="print a per-request fullscreen timeline")
     args = parser.parse_args()
+    LOG = args.log
     since = (datetime.datetime.strptime(args.since, "%Y-%m-%d %H:%M").timestamp()
              if args.since else latest_session_start())
     print("since", datetime.datetime.fromtimestamp(since))
@@ -66,12 +61,21 @@ def main():
     requests = collections.OrderedDict()
     startup = {}
     upkeep = []
+    phases = []
+    first_thumbnail = None
+    folder_listed = None
     stored = collections.defaultdict(list)
     for name, d in events(since):
-        if name.startswith('stored_screen_preview_') or name == 'page_picture_stored_screen_preview_draw':
+        if name.startswith(('stored_screen_preview_', 'page_picture_stored_screen_preview_')):
             stored[(name, d.get('rendition', '-'), d.get('result', '-'))].append(d)
-        if name in ("app_start", "backend_process_started", "helper_process_started", "backend_ready", "page_loaded", "page_ready"):
+        if name in ("app_start", "backend_process_started", "helper_process_started", "helper_ready", "writer_start", "backend_ready", "app_ready", "window_created", "window_visible", "page_loaded", "page_ready"):
             startup[name] = d["time"]
+        if name == "page_picture_shown" and d.get("view") == "grid" and first_thumbnail is None:
+            first_thumbnail = d["time"]
+        if name == "page_folder_listed" and folder_listed is None:
+            folder_listed = d["time"]
+        if name in ("startup_phase", "startup_import", "desktop_startup_join"):
+            phases.append((name, d))
         if name.startswith("startup_upkeep_"):
             upkeep.append((name, d))
         short = name.replace("page_picture_", "").replace("page_", "")
@@ -89,12 +93,22 @@ def main():
 
     origin = startup.get("backend_process_started", since)
     print("startup (from backend process):", " ".join(f"{name}={(stamp-origin)*1000:.0f}ms" for name, stamp in startup.items()))
+    app_origin = startup.get("app_start", origin)
+    print("startup (from app launch):", " ".join(f"{name}={(stamp-app_origin)*1000:.0f}ms" for name, stamp in startup.items()))
+    for label, stamp in (("first folder listed", folder_listed), ("first thumbnail shown", first_thumbnail)):
+        if stamp is not None:
+            print(f"  {label}: {(stamp-origin)*1000:.0f}ms from backend; {(stamp-app_origin)*1000:.0f}ms from app")
+    for name, d in phases:
+        print(f"  {name} {d.get('phase', d.get('module'))}: {(d['time']-origin)*1000:.0f}ms; duration={d['duration_ms']:.0f}ms")
     for name, d in upkeep:
         print(f"  {name}: {(d['time']-origin)*1000:.0f}ms; duration={d.get('duration_ms', 0):.0f}ms")
     print('stored screen previews:')
     for (name, lane, result), rows in sorted(stored.items()):
         times = [row.get('decode_ms', row.get('write_ms', row.get('duration_ms', 0))) for row in rows]
         print(f'  {name} {lane} {result}: n={len(rows)} p50={pct(times, .5):.0f}ms max={max(times):.0f}ms')
+        for part in ('read_ms', 'codec_ms', 'pack_ms'):
+            values = [row[part] for row in rows if part in row]
+            if values: print(f'    {part}: p50={pct(values, .5):.0f}ms max={max(values):.0f}ms')
     sharp = [o["duration_ms"] for o in outcomes if o.get("sharp_draw")]
     hits = [o["duration_ms"] for o in outcomes if o.get("sharp_draw") and not o.get("quick_draw")]
     misses = [o["duration_ms"] for o in outcomes if o.get("sharp_draw") and o.get("quick_draw")]

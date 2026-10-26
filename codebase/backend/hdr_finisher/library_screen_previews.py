@@ -52,6 +52,7 @@ class StoredScreenPreviews:
         started = perf_counter()
         directory = self.directory
         result = 'miss'
+        read_ms = codec_ms = pack_ms = 0.0
         try:
             info = json.loads((directory / (identity['slot'] + '.json')).read_text('utf-8'))
             if info['identity'] != identity:
@@ -61,7 +62,12 @@ class StoredScreenPreviews:
             filename = info['file']
             if Path(filename).name != filename or not filename.startswith(identity['key'] + '-') or not filename.endswith('.jxl'):
                 raise ValueError('Invalid stored screen preview filename')
-            decoded = imagecodecs.jpegxl_decode((directory / filename).read_bytes(), numthreads=os.cpu_count() or 1)
+            encoded = (directory / filename).read_bytes()
+            read_ms = (perf_counter()-started)*1000
+            decoding = perf_counter()
+            decoded = imagecodecs.jpegxl_decode(encoded, numthreads=os.cpu_count() or 1)
+            codec_ms = (perf_counter()-decoding)*1000
+            packing = perf_counter()
             if decoded.shape != (info['height'], info['width'], 3):
                 result = 'stale'
                 return None
@@ -79,7 +85,9 @@ class StoredScreenPreviews:
                 rgba[..., :3] = decoded
             rgba[..., 3] = 65535 if identity['lane'] == 'hdr' else 255
             result = 'hit'
-            return info, rgba.tobytes()
+            body = rgba.tobytes()
+            pack_ms = (perf_counter()-packing)*1000
+            return info, body
         except FileNotFoundError:
             return None
         except (ValueError, KeyError, TypeError, OSError, RuntimeError):
@@ -87,7 +95,8 @@ class StoredScreenPreviews:
             return None
         finally:
             log('stored_screen_preview_read', path=identity['path'], rendition=identity['lane'],
-                result=result, decode_ms=round((perf_counter()-started)*1000, 2), picture_size='screen preview')
+                result=result, decode_ms=round((perf_counter()-started)*1000, 2),
+                read_ms=round(read_ms, 2), codec_ms=round(codec_ms, 2), pack_ms=round(pack_ms, 2), picture_size='screen preview')
 
     def write(self, identity, body, width, height, stride, cancelled=lambda: False, source_width=None, source_height=None):
         import imagecodecs

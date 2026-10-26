@@ -19,9 +19,13 @@ preserved.
 
 **Where things stand** (from Steve's own testing and the logs):
 
-- Startup reconciliation is deferred until after the page starts; recovery upkeep
-  yields between photo families. Disposable 155k-photo database constructor:
-  41.38 s before, 0.26 s after. Whole-app ~3 s target awaits Steve's launch.
+- Startup cache accounting, temporary settings-file cleanup and codec probing
+  no longer block the first page. Python starts alongside the Starting window;
+  helper readiness overlaps page startup. The one disposable 155,879-file launch
+  reached the page in 3.99 s from Python start, but its first thumbnail took
+  12.14 s. That run preceded the final window/Python overlap change. The ~3 s
+  launch and thumbnails within another ~1 s targets remain open; Steve's restart
+  must confirm the final code. See the startup follow-up below.
 
 - Prepared photos in the ready window: sharp draw in about 5 ms.
 - Prepared photos outside it: quick draw at once, sharp draw in about
@@ -45,6 +49,64 @@ preserved.
   has stopped.
 - Library pictures now include Film Look (fixed in 5f846b5; it had never
   been applied before).
+
+**October 26 startup follow-up.** The unlogged pre-writer interval contained
+synchronous cache inventory/retired-cache cleanup and a settings writer sweep
+through every indexed photo folder. Both move to low-priority upkeep after the
+first page, yielding to foreground work. Existing durable cache totals are used
+at restart; a new ledger and explicit Settings usage still rebuild counts.
+Pending settings writes still recover immediately and clean their own folder.
+Stored screen preview directories are not scanned at launch or by cache upkeep.
+
+Capability subprocess probing is lazy and requested after the first page.
+The helper starts alongside the page rather than gating backend readiness.
+The desktop now starts Python alongside the Starting window; the disposable
+launch had exposed a separate 4.0 s wait for that window to finish loading.
+Slow imports (at least 100 ms), recovery, helper startup and upkeep phases are
+logged. Python emits each event with its newline in one locked write; the desktop
+also assembles complete child-process lines. The summary accepts joined older
+entries and prints both app-launch and Python-start timelines.
+
+The one full desktop profile used copied database and caches, with copied pending
+writes disabled. Live database/cache files were read only. Its measured breakdown,
+in seconds from `backend_process_started`, was:
+
+| Milestone | Steve, October 26 14:17 | Disposable copy |
+| --- | ---: | ---: |
+| Helper process started | 4.0 | 2.45 |
+| Helper ready | 4.8 | 4.14 |
+| Settings writer started | 8.6 | 2.44 |
+| Backend ready | 8.7 | 2.54 |
+| Page ready | 9.8 | 3.99 |
+| First thumbnail shown | ~12 | 12.14 |
+
+This profile preceded the final window/Python overlap and yielding cache-upkeep
+implementation; it is not a measurement of the final commit. From app launch,
+the measured page/first thumbnail were 7.99/16.14 s. The helper's historical extra
+1.5 s was variable: Steve's later 15:00 log already spawned it at 1.67 s before
+this change. Slow-import logging now makes recurring costs visible. The 14:17
+window delay was also variable; the later live launch showed about 0.18 s.
+The measured thumbnail delay includes folder listing, 1.36 s initial cache checks
+and a 3.43 s first GPU queue wait. These remain open; no ~3 s success is claimed.
+
+Stored SDR screen preview timing was 192 ms: fetch/body 146 ms, setup 13 ms,
+upload 15 ms, GPU draw/wait 17 ms. Backend time inside the fetch was 85 ms:
+36 ms disk read, 24 ms JPEG XL decode and 25 ms RGBA packing. No single small
+change accounted for enough of the delay to establish the ~100 ms target, so
+rendering is unchanged and the new per-stage timings remain for Steve's try.
+
+Validation: fast suites ran once (JavaScript: 631 passed, two unrelated failures;
+Python: 2,579 passed, three skipped, eleven failures). Nine Python failures were
+Proof tests reading the old eager capability variable: their setup now calls
+the lazy getter, and all nine passed on one focused rerun. Output assertions
+were unchanged. Remaining unrelated failures are the selected-photo CPU fallback
+(`library-scenes.test.js`), the missing stored-preview mock
+(`library-single-ready.test.js`), the missing source luminance fixture
+(`test_library_rgb.py`) and the old cache mock lacking `defer_store`
+(`test_retouch_integration.py`). Deferred cache-count recovery, temporary-file
+ownership, concurrent complete log lines and joined-log parsing checks passed.
+No additional GPU sweep or desktop profile was run; the desktop profile exercised
+the existing stored-preview rendering with timing instrumentation only.
 
 **Work done** (commits, in order):
 
@@ -1519,7 +1581,7 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
-| **App startup** (after the 155k-photo D:\Photos index) | Live launches 16–21 s; 002519f made full reconciliation thousands of per-family operations but left it in the constructor. Disposable snapshot reproduced 3,327 lock operations and 41.38 s; deferred constructor 0.26 s (scratch disk/OS cache differ from live). | Startup blocker fixed: background recovery upkeep, yielding to foreground helper/source work and Grade. Whole-app ~3 s and first-folder scan queue need Steve's restart. |
+| **App startup** (after the 155k-photo D:\Photos index) | October 26 14:17: helper spawn 4.0 s, backend ready 8.7 s, page ready 9.8 s, thumbnails ~12 s from Python start. One disposable 155,879-file launch after removing blocking sweeps: 2.45 s / 2.54 s / 3.99 s / 12.14 s respectively. It also exposed 4.0 s before Python started. | Cache accounting and temporary-file cleanup deferred with foreground yielding; codec probing delayed; helper startup overlaps the page. Final shell change overlaps Python with the Starting window (not re-profiled). Targets remain open: folder listing, 1.36 s initial thumbnail checks and a 3.43 s first GPU queue wait still delay thumbnails. Steve confirms final restart. |
 | **Stored screen preview sharp draw** | Disposable real-photo restart: 226 ms first stored draw, 115 ms next SDR draw, 162 ms HDR; scene route 326 ms with capture disabled for the baseline. No scene dependency on stored hits. | Fullscreen and Single Fit built. ~100 ms first-use/HDR target still open; Steve's blink test and 200–300-photo workload pending. Build previews/protected set/disk-space checks deferred. |
 | **Cold first picture for non-RAW formats** (core workflow, see decisions; target sharp draw within 1 s, Steve October 26) | October 26 draw-first follow-up: two cold-source repetitions per phase for JPEG/PNG/TIFF/HEIC/JXL; see dated entry and B4 evidence. | JPEG/PNG/TIFF direct GPU thumbnail/screen preview built. HEIC/JXL CPU speed and AVIF reconstruction remain open; stored screen previews now serve returning Fit pictures. OS cache warm; Steve's normal-folder try remains separate. |
 | **Cold RAW development** (badminton, 21:36) | About 2.8 s per uncached RAW: file read about 0.65 s (USB drive), GPU development 1.3–1.4 s, RAM handoff 0.7–0.8 s. | Measured baseline; Part 0f removes repeated fingerprint reads and an extra handoff copy, and adds directional development ahead. Steve's timing try pending. |

@@ -5,6 +5,7 @@ from collections import Counter, deque
 import errno
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 from .library_diagnostics import log, problem, audited
@@ -78,8 +79,8 @@ class LibrarySettingsWriter:
                         self._recovered = {row[0] for row in db.execute("SELECT path FROM photos WHERE pending=1")}
                 finally:
                     db.close()
-            removed = self.cleanup()
-            self.log("writer_start", waiting=len(self._recovered), temporary_removed=removed)
+            # Pending writes clean their own folder; sweep later during upkeep.
+            self.log("writer_start", waiting=len(self._recovered), temporary_removed=0)
             self._stop.clear()
             self._thread = Thread(target=self._run, name="hdr-library-settings", daemon=True)
             self._thread.start()
@@ -103,12 +104,36 @@ class LibrarySettingsWriter:
         if getattr(self.marks, "file_commands", None) and self.marks.file_commands.blocked(path): return False
         return bool(self.marks._query("SELECT 1 FROM photos JOIN settings_writes USING(path) WHERE path=? AND pending=1 AND revision=?", (path, revision))) and not self._stop.is_set()
 
+    def startup_cleanup(self, wait):
+        from .library_diagnostics import startup_phase
+        with startup_phase("settings_temporary_cleanup"):
+            after, folder = "", None
+            while not self._stop.is_set():
+                wait()
+                with self.marks._lock:
+                    rows = self.marks._query("SELECT path FROM photos WHERE path>? ORDER BY path LIMIT 128", (after,))
+                if not rows:
+                    break
+                for (path,) in rows:
+                    parent = Path(path).parent
+                    if parent != folder:
+                        wait()
+                        with self._lane:
+                            self.cleanup(parent)
+                        folder = parent
+                after = rows[-1][0]
+
     @audited("writer_cleanup")
     def cleanup(self, only_folder=None):
         """Only known-photo temps with our exact name, document and photo ID."""
         removed = 0
         folders = {}
-        for path, photo_id in self.marks._query("SELECT path, photo_id FROM photos"):
+        if only_folder is None:
+            rows = self.marks._query("SELECT path, photo_id FROM photos")
+        else:
+            prefix = str(only_folder) + os.sep
+            rows = self.marks._query("SELECT path, photo_id FROM photos WHERE path>=? AND path<?", (prefix, prefix[:-1] + chr(ord(prefix[-1])+1)))
+        for path, photo_id in rows:
             source = Path(path)
             folders.setdefault(source.parent, {})[source.name] = photo_id
         for folder, known in folders.items():

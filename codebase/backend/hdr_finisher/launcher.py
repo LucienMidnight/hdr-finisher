@@ -151,7 +151,9 @@ def _parent_is_alive(parent_pid: int) -> bool:
 
 def run_desktop_sidecar(parent_pid: int) -> None:
     """Run the authenticated backend on an atomically selected loopback port."""
-    from .main import app
+    from .library_diagnostics import startup_imports, startup_phase
+    with startup_phase("backend_imports"), startup_imports():
+        from .main import app
 
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

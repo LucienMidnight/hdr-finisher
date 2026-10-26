@@ -119,7 +119,7 @@ def test_running_total_publications_replacements_drift_and_clear(tmp_path, monke
     assert cache._used(cache._ledger())['thumbnail'] == 0
 
 
-def test_cache_total_shared_with_another_process_and_recovers_on_restart(tmp_path):
+def test_cache_total_shared_with_another_process_and_recovers_after_first_page(tmp_path):
     import subprocess, sys
     cache = LibraryCache(tmp_path); root = cache.prepare()
     folder = cache.directory('library-pictures'); folder.mkdir(exist_ok=True)
@@ -128,7 +128,7 @@ def test_cache_total_shared_with_another_process_and_recovers_on_restart(tmp_pat
     subprocess.run([sys.executable, '-c', code, str(tmp_path)], check=True, env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "backend")})
     assert cache._used(cache._ledger())['thumbnail'] == 3
     (folder / 'child.npz').unlink()
-    subprocess.run([sys.executable, '-c', "from hdr_finisher.library_cache import LibraryCache; import sys; c=LibraryCache(sys.argv[1]); assert c._used(c._ledger())['thumbnail'] == 0", str(tmp_path)], check=True, env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "backend")})
+    subprocess.run([sys.executable, '-c', "from hdr_finisher.library_cache import LibraryCache; import sys; c=LibraryCache(sys.argv[1]); assert c._used(c._ledger())['thumbnail'] == 3; c.reconcile_background(lambda: None); assert c._used(c._ledger())['thumbnail'] == 0", str(tmp_path)], check=True, env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "backend")})
     assert cache._used(cache._ledger())['thumbnail'] == 0
 
 

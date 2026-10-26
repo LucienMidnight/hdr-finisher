@@ -113,11 +113,22 @@ from .test_pattern import build_delivery_proof_pattern
 
 @asynccontextmanager
 async def library_lifecycle(_app):
-    await run_in_threadpool(library_worker.start)
+    from .library_diagnostics import startup_phase
+    async def start_helper():
+        try:
+            with startup_phase("helper_start"):
+                await run_in_threadpool(library_worker.start)
+        except Exception as error:
+            from .library_diagnostics import log
+            log("helper_start_failed", reason=str(error))
+    # Cached thumbnails and the page do not wait for the decoder. A real
+    # helper request still calls start() and waits for readiness.
+    starting = asyncio.create_task(start_helper())
     try:
         yield
     finally:
         await run_in_threadpool(library_worker.close)
+        await starting
 
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=library_lifecycle)
@@ -401,14 +412,34 @@ app.add_middleware(
 instrument_work = InstrumentWork()
 store = SessionStore(grade_import_parallel=True)
 atexit.register(store.clear)
-capabilities = probe_capabilities()
-export_backends = build_export_backends(capabilities)
+capabilities = None
+export_backends = None
+_capability_lock = Lock()
+
+
+def get_capabilities():
+    global capabilities
+    with _capability_lock:
+        if capabilities is None:
+            from .library_diagnostics import startup_phase
+            with startup_phase("codec_capabilities"):
+                capabilities = probe_capabilities()
+    return capabilities
+
+
+def get_export_backends():
+    global export_backends
+    if export_backends is None:
+        export_backends = build_export_backends(get_capabilities())
+    return export_backends
 proof_store = ProofArtifactStore()
 evidence_store = EvidenceStore()
 library_worker = LibraryWorker(MediaBrowserStore().root)
 atexit.register(library_worker.close)
 media_browser_store = MediaBrowserStore(thumbnail_worker=library_worker)
-app.include_router(create_library_router(library_worker, media_browser_store, store))
+from .library_diagnostics import startup_phase
+with startup_phase("library_routes_and_recovery"):
+    app.include_router(create_library_router(library_worker, media_browser_store, store))
 from .batch_export_api import create_batch_router
 app.include_router(create_batch_router(store, desktop_path_grants, bool(desktop_authoring_secret)))
 from .delivery import create_delivery_router
@@ -609,7 +640,7 @@ def save_desktop_project(session_id: str, request: DesktopProjectSaveRequest) ->
 
 @app.get("/api/capabilities")
 def api_capabilities() -> dict[str, object]:
-    return {"capabilities": capabilities}
+    return {"capabilities": get_capabilities()}
 
 
 @app.get("/api/film-stocks")
@@ -2150,7 +2181,7 @@ def export(session_id: str, settings: ExportSettings):
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
 
-    backend = export_backends.get(settings.format)
+    backend = get_export_backends().get(settings.format)
     if backend is None:
         raise HTTPException(status_code=400, detail=f"Unsupported export format: {settings.format}")
     if session.metadata.get("experimental_dng_import"):
@@ -2228,7 +2259,7 @@ def create_proof_artifact(session_id: str, request: ProofArtifactRequest) -> Pro
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
-    backend = export_backends.get(request.format)
+    backend = get_export_backends().get(request.format)
     if backend is None:
         raise HTTPException(status_code=400, detail=f"Unsupported proof format: {request.format}")
     try:
@@ -2542,7 +2573,7 @@ def record_media_browser_import(request: FavoritePathRequest) -> dict[str, objec
 @app.get("/api/lens-profiles")
 def lens_profiles(q: str | None = Query(default=None), limit: int = Query(default=250, ge=1, le=1000)) -> dict[str, object]:
     profiles = [profile.as_dict() for profile in list_lens_profiles(q, limit)]
-    return {"profiles": profiles, "available": capabilities["lens_correction"].status == "available"}
+    return {"profiles": profiles, "available": get_capabilities()["lens_correction"].status == "available"}
 
 
 def _asset_version() -> str:

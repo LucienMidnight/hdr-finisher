@@ -32,7 +32,10 @@ def log(event, **fields):
     if _sink is not None:
         _sink(record)
     else:
-        print("[library] " + event + " " + json.dumps({"time": record["time"], **fields}, ensure_ascii=False, default=str), file=sys.stderr, flush=True)
+        # A single locked write includes the newline.
+        with _lock:
+            sys.stderr.write("[library] " + event + " " + json.dumps({"time": record["time"], **fields}, ensure_ascii=False, default=str) + "\n")
+            sys.stderr.flush()
 
 
 def recent():
@@ -105,3 +108,33 @@ def timed_lock(lock, operation):
         lock.release()
         log("lock_timing", operation=operation,
             wait_ms=round((acquired-started)*1000, 3), hold_ms=round(held*1000, 3))
+
+
+@contextmanager
+def startup_phase(phase):
+    started = time.perf_counter()
+    log("startup_phase_started", phase=phase)
+    try:
+        yield
+    finally:
+        log("startup_phase", phase=phase, duration_ms=round((time.perf_counter()-started)*1000, 2))
+
+
+@contextmanager
+def startup_imports():
+    """Expose slow imports while loading the backend; restore before serving."""
+    import builtins
+    original = builtins.__import__
+    def measured(name, *args, **kwargs):
+        started = time.perf_counter()
+        try:
+            return original(name, *args, **kwargs)
+        finally:
+            elapsed = (time.perf_counter()-started)*1000
+            if elapsed >= 100:
+                log("startup_import", module=name, duration_ms=round(elapsed, 2))
+    builtins.__import__ = measured
+    try:
+        yield
+    finally:
+        builtins.__import__ = original

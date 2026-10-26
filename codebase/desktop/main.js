@@ -315,7 +315,7 @@ async function startBackend() {
   });
   const backendStarted = Date.now();
   libraryStage("backend_process_started", { pid: child.pid });
-  child.stderr.pipe(log, { end: false });
+  readline.createInterface({ input: child.stderr }).on("line", line => log.write(`${line}\n`));
 
   const ready = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("The image-processing backend did not become ready in time.")), 30000);
@@ -1270,8 +1270,11 @@ if (!gotLock) {
     loadApplicationPreferences();
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {
-      await createWindow();
-      await startBackend();
+      // The Starting page and Python imports are independent startup work.
+      // Start Python before BrowserWindow construction can occupy this thread.
+      const shellStarted = Date.now();
+      await Promise.all([startBackend(), createWindow()]);
+      libraryStage("desktop_startup_join", { duration_ms: Date.now() - shellStarted });
       if (shuttingDown || !mainWindow || mainWindow.isDestroyed()) return;
       const activeBackend = backend;
       session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`] }, (details, callback) => {

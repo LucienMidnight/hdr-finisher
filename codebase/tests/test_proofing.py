@@ -37,7 +37,7 @@ from hdr_finisher.proofing import (
 )
 from hdr_finisher.color import linear_bt2020_to_acescg, linear_srgb_to_acescg
 from hdr_finisher.render_cache import SessionRenderCache
-from hdr_finisher.main import app, capabilities, store as session_store
+from hdr_finisher.main import app, get_capabilities, store as session_store
 
 
 client = TestClient(app)
@@ -652,8 +652,8 @@ def test_real_proof_artifact_and_matrix_endpoints(
     suffix: str,
     media_type: str,
 ) -> None:
-    if capabilities[capability_name].status != CapabilityStatus.AVAILABLE:
-        pytest.skip(capabilities[capability_name].detail)
+    if get_capabilities()[capability_name].status != CapabilityStatus.AVAILABLE:
+        pytest.skip(get_capabilities()[capability_name].detail)
     fixture = Path(__file__).resolve().parent / "fixtures" / "hdr_headroom.tiff"
     upload = client.post("/api/session", files={"file": (fixture.name, fixture.read_bytes(), "image/tiff")})
     assert upload.status_code == 200
@@ -707,8 +707,8 @@ def test_real_proof_artifact_and_matrix_endpoints(
 
 @pytest.mark.parametrize(("bit_depth", "chroma"), [(8, "420"), (10, "422"), (12, "444")])
 def test_real_avif_proof_honors_primary_precision_and_chroma(bit_depth: int, chroma: str) -> None:
-    if capabilities["avif_gain_map_encoder"].status != CapabilityStatus.AVAILABLE:
-        pytest.skip(capabilities["avif_gain_map_encoder"].detail)
+    if get_capabilities()["avif_gain_map_encoder"].status != CapabilityStatus.AVAILABLE:
+        pytest.skip(get_capabilities()["avif_gain_map_encoder"].detail)
     fixture = Path(__file__).resolve().parent / "fixtures" / "hdr_headroom.tiff"
     upload = client.post("/api/session", files={"file": (fixture.name, fixture.read_bytes(), "image/tiff")})
     assert upload.status_code == 200
@@ -733,8 +733,8 @@ def test_real_avif_proof_honors_primary_precision_and_chroma(bit_depth: int, chr
 
 @pytest.mark.parametrize("gain_map_chroma", ["444", "422", "420", "400"])
 def test_real_avif_proof_honors_gain_map_chroma(gain_map_chroma: str) -> None:
-    if capabilities["avif_gain_map_encoder"].status != CapabilityStatus.AVAILABLE:
-        pytest.skip(capabilities["avif_gain_map_encoder"].detail)
+    if get_capabilities()["avif_gain_map_encoder"].status != CapabilityStatus.AVAILABLE:
+        pytest.skip(get_capabilities()["avif_gain_map_encoder"].detail)
     fixture = Path(__file__).resolve().parent / "fixtures" / "hdr_headroom.tiff"
     upload = client.post("/api/session", files={"file": (fixture.name, fixture.read_bytes(), "image/tiff")})
     assert upload.status_code == 200
