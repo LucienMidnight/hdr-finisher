@@ -625,6 +625,18 @@ function registerIpc() {
   });
   handle("desktop:get-preferences", () => applicationPreferences);
   handle("desktop:get-default-preset-directory", () => defaultPresetDirectory());
+  handle("desktop:import-grading-preset-file", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {title:"Import grading presets", properties:["openFile"], filters:[{name:"HDR Finisher presets",extensions:["json"]}]});
+    if (result.canceled || !result.filePaths.length) return null;
+    if (fs.statSync(result.filePaths[0]).size > 2*1024*1024) throw Error("Preset file is too large (2 MiB maximum).");
+    return fs.readFileSync(result.filePaths[0], "utf8");
+  });
+  handle("desktop:export-grading-preset-file", async (text) => {
+    if (typeof text !== "string" || text.length > 2*1024*1024 || JSON.parse(text).format !== "hdr-finisher-grading-presets") throw Error("Invalid preset file.");
+    const result = await dialog.showSaveDialog(mainWindow, {title:"Export grading presets", defaultPath:"grading-presets.json", filters:[{name:"HDR Finisher presets",extensions:["json"]}]});
+    if (result.canceled || !result.filePath) return false;
+    fs.writeFileSync(result.filePath, text, "utf8");return true;
+  });
   handle("desktop:list-grading-presets", (groupId) => listGradingPresets(groupId));
   handle("desktop:save-grading-preset", (preset) => saveGradingPreset(preset));
   handle("desktop:delete-grading-preset", (presetId) => deleteGradingPreset(presetId));

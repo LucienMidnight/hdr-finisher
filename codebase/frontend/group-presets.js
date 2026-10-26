@@ -47,6 +47,8 @@ function initializeGroupPresetControls() {
     if (header) header.insertBefore(button, reset || header.querySelector(".section-bypass"));
   });
   initializeFilmStagePresets();
+  document.getElementById("group-preset-import")?.addEventListener("click", () => void groupPresetAction(importGroupPresetFile));
+  document.getElementById("group-preset-export")?.addEventListener("click", () => void groupPresetAction(exportGroupPresetFile));
   els.groupPresetClose?.addEventListener("click", closeGroupPresetDialog);
   els.groupPresetDialog?.addEventListener("cancel", (event) => {
     event.preventDefault();
@@ -149,7 +151,13 @@ function appendGroupPresetRow(preset) {
   name.className = "group-preset-name";
   const strong = document.createElement("strong");
   strong.textContent = preset.name;
-  name.append(strong);
+  const label = document.createElement("label"), selected = document.createElement("input");
+  selected.type = "checkbox"; selected.setAttribute("aria-label", `Select ${preset.name} for export`);
+  selected.addEventListener("change", () => {
+    if(selected.checked) groupPresetSelection.set(preset.id,preset); else groupPresetSelection.delete(preset.id);
+    document.getElementById("group-preset-export").disabled = !groupPresetSelection.size;
+  });
+  label.append(selected,strong); name.append(label);
   if (preset.description) {
     const description = document.createElement("span");
     description.textContent = preset.description;
@@ -167,18 +175,24 @@ function appendGroupPresetRow(preset) {
   apply.addEventListener("click", () => applyGroupPreset(preset));
   row.append(name, apply);
   if (!preset.builtIn) {
+    for (const [title, action] of [["Rename", renameGroupPreset], ["Update", updateGroupPreset]]) {
+      const button=document.createElement("button");button.type="button";button.className="text-button";
+      button.textContent=title;button.addEventListener("click",()=>void groupPresetAction(()=>action(preset)));
+      row.append(button);
+    }
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "text-button";
     remove.textContent = "Delete";
-    remove.addEventListener("click", async () => {
+    remove.addEventListener("click", () => void groupPresetAction(async () => {
       if (!await window.HDRDialogs.confirm(
         `Delete the “${preset.name}” preset?`,
         { title: "Delete preset", confirmLabel: "Delete", destructive: true },
       )) return;
       await removeGroupPreset(preset);
       await renderGroupPresetList();
-    });
+      els.groupPresetName.focus();
+    }));
     row.append(remove);
   }
   els.groupPresetList.append(row);
@@ -187,6 +201,8 @@ function appendGroupPresetRow(preset) {
 async function renderGroupPresetList() {
   const context = state.groupPresetContext;
   if (!context) return;
+  groupPresetSelection.clear();
+  document.getElementById("group-preset-export").disabled = true;
   els.groupPresetList.replaceChildren();
   const loading = document.createElement("p");
   loading.className = "group-preset-empty";
@@ -238,11 +254,78 @@ async function saveCurrentGroupPreset() {
       `Replace the existing “${name}” preset?`,
       { title: "Replace preset", confirmLabel: "Replace", destructive: true },
     )) return;
-  const values = Object.fromEntries(context.paths.map((path) => [path, JSON.parse(JSON.stringify(context.group === "film-look" ? HDRFilmCharacter.sparse(groupPresetPathValue(context, path)) : groupPresetPathValue(context, path)))]));
+  const values = currentGroupPresetValues(context);
   await persistGroupPreset({ groupId: context.groupId, name, recipeVersion: context.group === "film-look" ? FILM_LOOK_PRESET_RECIPE_VERSION : 1, values });
   els.groupPresetName.value = "";
   els.groupPresetStatus.textContent = `Saved “${name}”.`;
   await renderGroupPresetList();
+}
+
+const groupPresetSelection = new Map();
+async function groupPresetAction(action) {
+  try { await action(); } catch(error) { els.groupPresetStatus.textContent=error?.message || "Presets could not be saved."; }
+}
+function currentGroupPresetValues(context) {
+  return Object.fromEntries(context.paths.map(path=>[path,JSON.parse(JSON.stringify(context.group === "film-look"
+    ? HDRFilmCharacter.sparse(groupPresetPathValue(context,path)) : groupPresetPathValue(context,path)))]));
+}
+async function renameGroupPreset(preset) {
+  const context=state.groupPresetContext;
+  if(!context || preset.builtIn)return;
+  const answer=await window.HDRDialogs.prompt("Preset name",preset.name,{title:"Rename preset",confirmLabel:"Rename"});
+  if(answer===null || state.groupPresetContext!==context)return;
+  const name=answer.trim().replace(/\s+/g," ");
+  if(!name || name.length>80)throw Error("Preset names must contain 1 to 80 characters.");
+  if(name===preset.name)return;
+  const existing=[...builtInGroupPresets(context),...await listSavedGroupPresets(context.groupId)];
+  if(existing.some(p=>p.id!==preset.id && p.name.toLocaleLowerCase()===name.toLocaleLowerCase()))throw Error("That preset name is already taken.");
+  const saved=await persistGroupPreset({groupId:preset.groupId,name,recipeVersion:preset.recipeVersion,values:preset.values});
+  if(saved.id!==preset.id)await removeGroupPreset(preset);
+  await renderGroupPresetList();els.groupPresetName.focus();els.groupPresetStatus.textContent=`Renamed to “${name}”.`;
+}
+async function updateGroupPreset(preset) {
+  const context=state.groupPresetContext;
+  if(!context || preset.builtIn)return;
+  if(!await window.HDRDialogs.confirm(`Update “${preset.name}” from the current settings?`,{title:"Update preset",confirmLabel:"Update",destructive:true}) || state.groupPresetContext!==context)return;
+  await persistGroupPreset({groupId:preset.groupId,name:preset.name,recipeVersion:context.group==="film-look"?FILM_LOOK_PRESET_RECIPE_VERSION:1,values:currentGroupPresetValues(context)});
+  await renderGroupPresetList();els.groupPresetName.focus();
+  els.groupPresetStatus.textContent=`Updated “${preset.name}”.`;
+}
+async function exportGroupPresetFile() {
+  if(!groupPresetSelection.size)return;
+  const text=HDRGradingPresetFiles.encode([...groupPresetSelection.values()]);
+  if(window.hdrFinisherDesktop?.exportGradingPresetFile) {
+    if(!await window.hdrFinisherDesktop.exportGradingPresetFile(text))return;
+  } else {
+    const url=URL.createObjectURL(new Blob([text],{type:"application/json"}));
+    const link=document.createElement("a");link.href=url;link.download="grading-presets.json";link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  els.groupPresetStatus.textContent=`Exported ${groupPresetSelection.size} preset(s).`;
+}
+async function importGroupPresetText(text,context=state.groupPresetContext) {
+  if(!context || state.groupPresetContext!==context)return;
+  const imported=HDRGradingPresetFiles.decode(text);
+  if(imported.some(p=>p.groupId!==context.groupId || Object.keys(p.values).some(path=>!context.paths.includes(path))))
+    throw Error("This file contains presets for another adjustment group. Open that group’s presets to import it.");
+  const existing=[...builtInGroupPresets(context),...await listSavedGroupPresets(context.groupId)];
+  const planned=HDRGradingPresetFiles.keepBoth(imported,existing);
+  for(const preset of planned)await persistGroupPreset(preset);
+  await renderGroupPresetList();els.groupPresetName.focus();
+  const renamed=planned.filter((p,i)=>p.name!==imported[i].name).length;
+  els.groupPresetStatus.textContent=`Imported ${planned.length} preset(s).${renamed?" Name clashes kept both, labelled (imported).":""}`;
+}
+async function importGroupPresetFile() {
+  const context=state.groupPresetContext;
+  if(window.hdrFinisherDesktop?.importGradingPresetFile) {
+    const text=await window.hdrFinisherDesktop.importGradingPresetFile();
+    if(text!==null)await importGroupPresetText(text,context);
+  } else {
+    const input=document.createElement("input");input.type="file";input.accept=".json";
+    input.addEventListener("change",()=>void groupPresetAction(async()=>{
+      if(input.files[0])await importGroupPresetText(await input.files[0].text(),context);
+    }),{once:true});input.click();
+  }
 }
 
 function applyGroupPreset(preset) {

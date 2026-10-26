@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   rendererReady: () => ipcRenderer.invoke("desktop:renderer-ready"),
   getPreferences: () => ipcRenderer.invoke("desktop:get-preferences"),
   getDefaultPresetDirectory: () => ipcRenderer.invoke("desktop:get-default-preset-directory"),
+  importGradingPresetFile: () => ipcRenderer.invoke("desktop:import-grading-preset-file"),
+  exportGradingPresetFile: (text) => ipcRenderer.invoke("desktop:export-grading-preset-file", text),
   listGradingPresets: (groupId) => ipcRenderer.invoke("desktop:list-grading-presets", groupId),
   saveGradingPreset: (preset) => ipcRenderer.invoke("desktop:save-grading-preset", preset),
   deleteGradingPreset: (presetId) => ipcRenderer.invoke("desktop:delete-grading-preset", presetId),

@@ -222,8 +222,8 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
 - **Highlight and Shadow Desaturation** as general Color controls
   (COLOR-DESAT-01). They were removed from Film Look in the rebuild and
   are meant to return here. The film-look plan counts on them.
-- **Presets window management** (PRESETS-01): rename, edit, import and
-  export are missing.
+- **Presets window management** (PRESETS-01), built October 27 (see section 5): rename, confirmed Update, import and
+  selected export are built; Steve’s app check is pending.
 - **Match entire HDR grade fault** reported October 11: a match reported
   success with wrong colours, and later the automatic match failed. Not
   investigated; Steve's photos and message are not recorded yet.
@@ -293,7 +293,16 @@ reviews) are after v1. Items 6 and 7 are unchanged and not v1 requirements.
 
 1. Highlight and Shadow Desaturation in Color (COLOR-DESAT-01).
 2. Investigate the Match fault once Steve has recorded a photo and message.
-3. Presets window: rename, edit, import, export (PRESETS-01).
+3. **PRESETS-01 built October 27; Steve’s keyboard/app check pending.** Saved
+   presets support Rename, confirmed Update from current settings, selected
+   export to JSON and import through the existing preset storage. Name clashes
+   keep both with “(imported)” (numbered for repeated clashes); built-ins have
+   no rename/update/delete actions. Import validates every record and group
+   before saving. Native buttons, checkboxes, Tab/Space/Enter and existing
+   prompt/confirmation dialogs retain keyboard operation. Projects and settings
+   files are unaffected. Small round-trip/clash/identity checks: 3 passed; fast
+   suites deferred to batch end. Steve should select two presets, export/import,
+   rename one and confirm/cancel Update.
 4. Decide, with Steve, whether to remove HDR Lift/Gamma/Gain.
 5. Reviews before 1.0: whole-pipeline order (PIPE-01), Texture against
    Microcontrast (DETAIL-01), local Clarity cost (CLARITY-01).

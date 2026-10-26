@@ -1124,7 +1124,7 @@
       ? shell.preferences.gradingPresets[preset.groupId]
       : [];
     const existing = group.findIndex((candidate) => candidate.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase());
-    const saved = { id: existing >= 0 ? group[existing].id : `browser-${Date.now()}`, ...clone(preset) };
+    const saved = { id: existing >= 0 ? group[existing].id : `browser-${crypto.randomUUID()}`, ...clone(preset) };
     if (existing >= 0) group[existing] = saved;
     else group.push(saved);
     shell.preferences.gradingPresets[preset.groupId] = group;
