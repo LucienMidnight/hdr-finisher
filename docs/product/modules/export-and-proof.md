@@ -363,6 +363,11 @@ Settings rules (from v1.2 section 5, still in force):
 
 ## 6. Open work, in order
 
+**V1 scope (Steve, October 26, 2026):** batch-export metadata (item 3) is v1.
+The rest of item 0 (full-size single export under 15 s, RAW development on
+the GPU inside export, tiled finishing for large sharpened originals) is
+after v1; batch export already meets its pace target.
+
 0. **GPU export speed, end to end** (Steve, October 20: before the live
    recorded test session). Brief:
    [codex-brief-export-gpu-speed-2026-10-20](../../technical/briefs/codex-brief-export-gpu-speed-2026-10-20.md).

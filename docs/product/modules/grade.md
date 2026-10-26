@@ -279,6 +279,18 @@ are now available; their quality review remains open (October 23 note below).
 
 ## 5. Open work, in order
 
+**V1 scope (Steve, October 26, 2026):** items 1, 3, 8 and 9 and the new
+Sharpen review below are v1. Item 2 waits on Steve's recorded photo. Items 4
+and 5 (removing HDR Lift/Gamma/Gain; the PIPE-01, DETAIL-01 and CLARITY-01
+reviews) are after v1. Items 6 and 7 are unchanged and not v1 requirements.
+
+- **Sharpen review (v1, added by Steve, October 26, 2026):** Steve suspects
+  Grade's Sharpen control (Detail section) is broken or simply a weak
+  algorithm. Check what it does on real photos in HDR and SDR, compare with
+  how established editors sharpen, and propose a fix or a replacement for
+  Steve to judge by eye. Export output sharpening is separate and only in
+  scope if it shares the same code.
+
 1. Highlight and Shadow Desaturation in Color (COLOR-DESAT-01).
 2. Investigate the Match fault once Steve has recorded a photo and message.
 3. Presets window: rename, edit, import, export (PRESETS-01).

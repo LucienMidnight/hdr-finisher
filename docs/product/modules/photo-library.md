@@ -541,6 +541,14 @@ Finished briefs are in `docs/technical/archive/briefs/`
 
 **Next work.** The October 26 five-part batch is done and tried by Steve (see above); later work is separate.
 
+**V1 scope (Steve, October 26, 2026):** v1 still needs smooth scrolling in
+very large folders (next), Build previews (item 5), batch-export metadata and
+the polish pass. After v1: Denoise sharp draws at 0.5 s (item 2's remaining
+target), GPU AVIF reconstruction (item 4), detail previews (item 6), faster
+HDR/SDR switching, stored previews at 0.1 s, and the leftovers listed under
+"V1 open work" (comfort cap, indexing settings, dimmed offline drives,
+drag-in pinning).
+
 1. Done: stored JPEG XL screen previews (a8540f8; SDR tried by Steve,
    sharp draw from a stored preview about 95-265 ms, mostly reading the
    file; HDR not yet tried) and the startup fix (84f1166, 64482d8; confirmed
@@ -1867,6 +1875,10 @@ effects remain open. Compare's detail view still uses the legacy native
 crop route; its move to live native scenes remains open with that cleanup.
 
 ## 5. V1 open work, in order
+
+**V1 scope (Steve, October 26, 2026):** the "Leftovers" item below (comfort
+cap, indexing settings, dimmed offline drives, drag a folder in to pin it)
+is moved to after v1. Batch-export metadata and the polish pass stay v1.
 
 **October 26: stored screen previews, fullscreen first.** Built automatic
 background capture and JPEG XL q90 storage of finished 2560 screen previews,

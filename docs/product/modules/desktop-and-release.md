@@ -74,6 +74,12 @@ investigation; the test remains failing.
 
 ## 5. Open work, in order
 
+**V1 scope (Steve, October 26, 2026):** items 1–3 (Linux HDR warning, the
+Flatpak release entry, the Releases link) are after v1. Before v1 comes the
+repair of the broken release checks (reviewed plan:
+`docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md`), then the
+installer and a methodical bug hunt.
+
 1. Linux: show the HDR warning only once a photo is open.
 2. Add the 0.9.1 Flatpak release entry at the next release.
 3. Releases link in the Updates panel.

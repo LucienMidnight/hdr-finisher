@@ -114,6 +114,37 @@ operate the app. These are not v1 launch requirements. The MCP server
 will have its own PRD when work starts. Existing Film Look presets remain
 in v1; the deferred Looks feature is the Library browser and workflow.
 
+**V1 scope check (Steve, October 26, 2026).** Remaining v1 work, before the
+broken release checks are repaired, the polish pass, the installer and the
+bug hunt:
+
+- Retouch brush (Inpaint, Heal, Clone) and the hue-selection local mask
+  (October 21 requirements).
+- Highlight and Shadow Desaturation in Color (COLOR-DESAT-01).
+- Presets window: rename, edit, import, export (PRESETS-01). Moved up to v1
+  by Steve.
+- Review of Grade's Sharpen control (Detail section). Steve suspects it is
+  broken or simply a weak algorithm. Added by Steve.
+- Photo Library: smooth scrolling in very large folders, the Build previews
+  command, and batch-export metadata (bundled ExifTool, title and caption,
+  creator/copyright template, privacy options).
+- Steve's by-eye reviews (RAW exposure sheet, film grain/Looks/lens filter,
+  HSL, exposure-warning wording, Black & White sliders) and the Match fault.
+
+**After v1 (Steve, October 26, 2026).** Not v1 launch requirements; kept in
+each module's open work:
+
+- Detail (100%) stored previews; GPU AVIF gain-map reconstruction.
+- Library speed polish: faster HDR/SDR switching, stored previews at
+  0.1 s, graded Denoise sharp draws at 0.5 s.
+- Library leftovers: HDR grid comfort cap, indexing settings, dimmed
+  offline drives, drag a folder in to pin it.
+- Export speed: full-size single export under 15 s, RAW development on the
+  GPU inside export, tiled finishing for large sharpened originals.
+- Grade reviews: pipeline order (PIPE-01), Texture against Microcontrast
+  (DETAIL-01), local Clarity cost (CLARITY-01); removing HDR Lift/Gamma/Gain.
+- Linux leftovers, unrecognised TIFF colour profiles, the Releases link.
+
 **Later, not planned yet:** AI search and tagging (version 2 at the earliest).
 
 ## 4. How the app is built
@@ -147,6 +178,11 @@ Working rules for coding agents, including how much to test:
 | Desktop and release | Electron shell, windows, packaging, updates, platforms, release process | `codebase/desktop/`, `packaging/`, `.github/` | [desktop-and-release](modules/desktop-and-release.md) | 0.9.1 tagged. Linux leftovers open. |
 
 ## 6. Priorities (Steve, October 18, 2026)
+
+**Superseded October 26, 2026:** GPU delivery, Library responsiveness and
+the RAW Exposure zero start are built (pending Steve's reviews where noted
+in their modules). The remaining v1 work is the "V1 scope check" list in
+section 3; the October 18 list below is kept as history.
 
 1. **GPU delivery:** export, batch export, Proof and saved-grade Library
    pictures on the GPU. Brief:

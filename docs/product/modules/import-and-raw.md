@@ -384,6 +384,10 @@ Library loading results and remaining AVIF/queue costs are in the Photo Library 
 
 ## 6. Open work, in order
 
+**V1 scope (Steve, October 26, 2026):** item 1 (Steve's review of the zero
+RAW start) is v1. Items 2 and 3 (Linux mounted drives; unrecognised TIFF
+colour profiles) are after v1.
+
 1. **Finish validation of the zero RAW start:** obtain Steve's visual review
    of the final sheet. Kept thumbnail JPEG compression still exceeds the
    agreed perceptual limits on some photos. The unchanged quick
