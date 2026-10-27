@@ -116,12 +116,19 @@ function renderHslPanels(){
     const signature=JSON.stringify([hslOwner(ui)?.hsl,hslOwner(ui)?.hsl_section_enabled,ui.channel,ui.range,Boolean(state.session)]);
     if(signature!==ui.signature){ui.signature=signature;hslSync(ui);}
   }
-  const overlayOwner=hslUI.panels.find(ui=>ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true');
+  let overlayOwner=hslUI.panels.find(ui=>ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true');
+  // A bypassed tool shows no selection.
+  if(overlayOwner&&hslBypassed(overlayOwner)){hslClearSelection();overlayOwner=null;}
   const selectionKey=`${state.editRevision}:${state.globalEditGeneration}`;
   if(overlayOwner&&!overlayOwner.gesture&&selectionKey!==hslUI.selectionKey){
     hslUI.selectionKey=selectionKey;clearTimeout(hslUI.selectionTimer);
     hslUI.selectionTimer=setTimeout(()=>{if(overlayOwner.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(overlayOwner);},250);
   }
+}
+function hslBypassed(ui){
+  if(hslOwner(ui)?.hsl_section_enabled===false)return true;
+  if(ui.scope==='global')return false;
+  return selectedLocal()?.enabled===false||state.adjustments?.shared?.local_adjustments_enabled===false;
 }
 function hslSync(ui){
   const owner=hslOwner(ui),c=hslChannel(ui);ui.host.hidden=!owner;if(!c)return;
@@ -265,7 +272,7 @@ function hslPlaceOverlay(){
   Object.assign(image.style,{left:`${r.left-pane.left}px`,top:`${r.top-pane.top}px`,width:`${r.width}px`,height:`${r.height}px`});
 }
 async function hslSelection(ui){
-  const checked=ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true';hslClearSelection();if(!checked||!state.session||state.activeWorkflow!=='grade')return;ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','true');
+  const checked=ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true';hslClearSelection();if(!checked||!state.session||state.activeWorkflow!=='grade'||hslBypassed(ui))return;ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','true');
   const revision=hslUI.overlayRevision;
   try{const data=await hslFetchStage(ui,[{x:.5,y:.5}],{selection_recipe:hslChannel(ui).recipe,long_edge:1600});if(revision!==hslUI.overlayRevision)return;const image=document.createElement('img');image.id='hsl-selection-overlay';image.alt='';image.src=data.selection_overlay;image.style.cssText='position:absolute;pointer-events:none;z-index:3;max-width:none;';els.previewPrimaryPane.append(image);hslPlaceOverlay();}catch(error){hslNotice(ui,error.message);}
 }

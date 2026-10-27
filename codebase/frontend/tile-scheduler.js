@@ -44,6 +44,7 @@
     // vocabulary exists now so the scheduler can already carry them.
     detail: null,
     "black-and-white": null,
+    "hsl-selection": null,
     denoise: null,
     halation: null,
     "lens-filter": null,

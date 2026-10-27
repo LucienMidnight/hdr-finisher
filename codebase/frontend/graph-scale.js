@@ -609,6 +609,7 @@
     spatialReachDetail,
     spatialReach,
     blackAndWhiteGuideReach,
+    hslSelectionReach,
     composedReach,
     alignReach,
     MODULE_SCALE_CONTRACT,
