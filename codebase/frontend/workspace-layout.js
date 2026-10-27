@@ -445,6 +445,7 @@ function activateWorkflowTab(workflow, { focus = false, batch = false } = {}) {
   if (next !== "grade") abandonPerspectiveDraft();
   if (next !== "grade" && state.rotateDraftGeometry) closeRotateMode(false);
   if (next !== "grade" && state.cropMode) closeCropMode(true);
+  if (next !== "grade") hideLocalMaskOverlayForGradePreview();
   state.activeWorkflow = next;
   document.body.dataset.workflow = next;
   els.workflowTabs.forEach((button) => {

@@ -28,10 +28,11 @@ function syncLocalMaskOverlayViewport() {
   }
   const paneRect = pane.getBoundingClientRect();
   const viewportRect = viewport.getBoundingClientRect();
-  const left = Math.max(0, viewportRect.left - paneRect.left);
-  const top = Math.max(0, viewportRect.top - paneRect.top);
-  const right = Math.min(paneRect.width, viewportRect.right - paneRect.left);
-  const bottom = Math.min(paneRect.height, viewportRect.bottom - paneRect.top);
+  const photoRect = activePreviewElement().getBoundingClientRect();
+  const left = Math.max(0, viewportRect.left - paneRect.left, photoRect.left - paneRect.left);
+  const top = Math.max(0, viewportRect.top - paneRect.top, photoRect.top - paneRect.top);
+  const right = Math.min(paneRect.width, viewportRect.right - paneRect.left, photoRect.right - paneRect.left);
+  const bottom = Math.min(paneRect.height, viewportRect.bottom - paneRect.top, photoRect.bottom - paneRect.top);
   Object.assign(canvas.style, {
     inset: "auto",
     left: `${left}px`,

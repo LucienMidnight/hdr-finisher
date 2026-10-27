@@ -978,7 +978,8 @@ function scheduleSpatialMaskPreview(local) {
 function gpuLumaMaskOverlayOptions() {
   const local = selectedLocal();
   if (
-    state.gradeMode !== "local"
+    state.activeWorkflow !== "grade"
+    || state.gradeMode !== "local"
     || !state.localShowMask
     || local?.enabled === false
     || state.selectedSubMaskId

@@ -1,5 +1,33 @@
 # Local adjustments
 
+## October 27: selection overlay containment (Part 1)
+
+HSL Show selection is an absolute image in `previewPrimaryPane`, positioned
+against the actual preview rectangle by `syncOverlayPlacement`, including
+zoom/pan and frame replacement. The pane and scrolling viewer clip it; it is
+never a fixed child of document.body. Workflow/disclosure cleanup invalidates
+pending replies as well as removing the mounted image and clearing all pressed
+buttons. Existing photo/lane/mode identity invalidation remains in place.
+Unselected pixels have zero alpha; selected pixels use cyan at up to 115/255
+alpha, preserving the photo rather than dimming the unselected image.
+
+`syncLocalMaskOverlayViewport` now intersects the actual photo, pane and viewer.
+Hue/Luma/other mask drawings and Retouch source marks share that bounded canvas.
+Luma's GPU overlay now also explicitly requires Grade, and workflow navigation
+clears the Local overlay button and schedules removal of baked Luma tint.
+Their existing Grade-only visibility and redraw hooks remain in use. Coverage,
+colour processing, CPU/GPU export, Highlight compression and native hue-field
+preparation are unchanged. The registered `hsl-overlay-review.js` Electron check
+covers panel/scope samples, several zooms, disclosure/mode cleanup and populated
+Library cleanup on disposable assets. Reviewed screenshots live in
+`codebase/output/hsl-smooth/index.html`.
+
+Global HSL still computes pointwise stage-input hue. The previous Green crop
+observation does not establish quality for Steve's Yellow settings. Native
+shared HSL selection preparation and its rendering/speed checks remain open;
+no smoothing improvement or Library timing result is claimed in Part 1.
+
+
 Local adjustments are an ordered stage between global color grading and post-local finishing. Film Look, vignette, and final grain therefore retain their existing order, including the grain-last contract.
 
 ## V1 additions planned (Steve, October 21, 2026)

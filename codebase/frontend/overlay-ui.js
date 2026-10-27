@@ -170,6 +170,7 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
 }
 
 function syncOverlayPlacement() {
+  hslPlaceOverlay();
   const preview = activePreviewElement();
   if (!previewIsVisible()) {
     renderScopeRegionOverlay();

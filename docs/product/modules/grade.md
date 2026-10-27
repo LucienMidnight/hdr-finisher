@@ -1,5 +1,49 @@
 # Module PRD: Grade
 
+## October 27: Show selection containment repair (Part 1)
+
+Reproduced Steve's Balanced Rock / IMG_0114.CR2 Global HSL Yellow report in
+Electron at 113% before editing: the fixed, body-level image darkened Metadata,
+Control Panel, toolbar and scopes, then survived return to Library. HSL now
+mounts inside the clipped primary photo pane and follows the shared preview
+placement hook on zoom and pan. Selection uses a translucent cyan tint;
+unselected pixels remain transparent rather than darkening the photo.
+Disclosure changes and workflow navigation clear the pressed state and reject
+late responses. Existing session/lane/Global–Local–Retouch identity guards remain.
+The Local canvas used by hue masks, Luma and Retouch source indicators is also
+bounded by the photo/viewport intersection rather than the viewport alone.
+Luma's GPU overlay now also explicitly requires Grade, and workflow navigation
+clears the Local overlay button and schedules removal of baked Luma tint.
+No grade or export arithmetic changed.
+
+The focused Electron check passes sampled panel, toolbar and scope pixels,
+photo alignment at Fit, 75%, 100%, 113% and 125%, collapse, another section,
+mode change and return to a populated disposable Library. A tightened pass keeps
+selection active throughout zoom/pan, checks SDR, and checks Proof/Export cleanup;
+it passes. Whole-window
+before/after screenshots: `codebase/output/hsl-smooth/index.html` (reviewed).
+The initial harness used a non-desktop import grant; corrected to the desktop
+bridge. A subsequent check used the wrong Tone selector; corrected to hdr-tone.
+The completed check passes. The screenshot page states the Library comparison
+limits; it does not establish an ordinary-folder speed result. Fast checks ran once: 637 JavaScript passed, 2,628 Python passed and 3 skipped
+(Python 8m16s). The four supplied known failures remain: library-scenes,
+library-single-ready, test_rgb_description_precedes_pixels_and_keeps_publication_guards[None],
+and test_library_native_source_uses_same_repair_before_reduction. None was
+investigated, changed or rerun. The later Local workflow guard was covered by
+the final focused Electron check; the fast suites were not repeated. That
+check initially used a pending Luma row incorrectly; it now authors a valid
+range and commits mask content, and passes.
+
+**Still open from this brief:** Part 2 global HSL smoothing, native selection
+reuse, speed measurements and the Local hue recheck; Part 3 matched ordinary
+folder timings and the October 27 12:43 log investigation. The earlier Green
+channel crop observation does not close Steve's Yellow / +0.80 EV report.
+Native HSL guide transport would alter shared shader resources and requires
+strict preview/fallback/export validation. Estimated complete validation,
+including native real-photo checks: 35–45 minutes, beyond this brief's roughly
+30-minute stop limit. No Part 2 rendering change or Part 3 conclusion is claimed.
+
+
 ## October 26: GPU Denoise preparation
 
 Noise measurement now runs on the renderer's graphics card for Grade, Library,

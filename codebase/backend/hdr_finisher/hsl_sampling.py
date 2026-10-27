@@ -78,7 +78,8 @@ def sample_stage(cache, request):
                     mask = compile_geometry_fixed_mask(source, target.mask, request.adjustments.shared.geometry)
                     weight *= mask.astype(float) / 255
                 overlay = np.zeros((*weight.shape, 4), dtype=np.uint8)
-                overlay[..., 3] = np.rint((1 - weight) * 190).astype(np.uint8)
+                overlay[..., :3] = [31, 184, 219]
+                overlay[..., 3] = np.rint(weight * 115).astype(np.uint8)
                 encoded = BytesIO()
                 Image.fromarray(overlay).save(encoded, format="PNG")
                 return {"selection_overlay": "data:image/png;base64," + base64.b64encode(encoded.getvalue()).decode()}
