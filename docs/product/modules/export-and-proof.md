@@ -2,6 +2,8 @@
 
 ## October 27: finished export agreement investigation
 
+**V1 accepted by Steve; JPEG agreement improvements deferred to v2.**
+
 **Finding: the main split is after rendering, in Ultra HDR JPEG encoding.**
 No rendering, encoder, Proof pixels or tolerances changed in this investigation.
 The earlier Sharpen review's twelve comparisons were GPU versus forced-CPU
@@ -49,14 +51,17 @@ not reached. In contrast, all four new crop Proofs (two photos × GPU/CPU,
 Sharpen off) are byte-identical to their exports and meet the ceiling. Existing
 before-encode parity tests cannot qualify the finished JPEG round trip.
 
-**Recommendation / open design choice.** Retain the existing agreement limits
-and schedule encoding-quality work separately. Steve should compare the crop
-pairs at 100% before choosing whether to pursue more retained shadow texture
-at the risk of reintroducing chroma patching, or keep the present gain-map
-smoothing while accepting its visible texture loss. Reducing smoothing alone
-will not resolve the earlier lossy JPEG round-trip error. Do not mark finished
-agreement passed, relax tolerances, or replace the Sharpen method to hide this.
-The unrelated full-size Proof mismatch needs its own isolated diagnosis.
+**Steve’s decision, October 27: accepted for v1; revisit in v2.** The slight
+JPEG differences are acceptable for v1. Keep the current encoding and gain-map
+smoothing. V2 work: revisit JPEG preview/export and GPU/CPU finished agreement,
+including shadow texture, gain-map smoothing and the earlier lossy JPEG round
+trip. The decision accepts the observed visual differences for v1; measured
+failures remain recorded and numerical tolerances stay unchanged. No Sharpen
+or export pixel change is required for this decision. The separately unisolated
+full-size RAW Proof mismatch remains its own open diagnosis.
+
+Decision-record validation: documentation and diff checks only; no executable
+code, pixels or test expectations changed. Existing test results below stand.
 
 **Validation:** final fast suites ran once: JavaScript 637 passed / 2 known
 failures; Python 2,608 passed / 2 known failures / 3 skipped. Grade’s four-part
@@ -453,10 +458,11 @@ The rest of item 0 (full-size single export under 15 s, RAW development on
 the GPU inside export, tiled finishing for large sharpened originals) is
 after v1; batch export already meets its pace target.
 
-**October 27 agreement remains open:** see the investigation at the top. Both
-renderers pass before encoding and miss finished JPEG limits; review matched
-crops before deciding gain-map texture/noise policy. Full-size RAW Proof also
-has a separately unisolated HDR mismatch. No tolerance or pixel change.
+**October 27 JPEG agreement: accepted for v1, deferred to v2 by Steve.**
+Both renderers pass before encoding and miss finished JPEG limits; Steve
+accepts the slight visual differences for v1. Preserve measurements and
+unchanged tolerances for v2 encoding-quality work. The separate full-size RAW
+Proof HDR mismatch still needs diagnosis. No pixel change.
 
 0. **GPU export speed, end to end** (Steve, October 20: before the live
    recorded test session). Brief:

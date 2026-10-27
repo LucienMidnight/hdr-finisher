@@ -403,7 +403,9 @@ colour limits: mean <1 and p99.9 ≤3, without a per-pixel maximum.
 exports. Actual native preview captures now locate the main split after
 rendering, at JPEG/gain-map encoding and subsequent gain-map smoothing. Both
 renderers agree with the preview before encoding; both miss finished limits.
-See [Export and Proof findings and open decision](export-and-proof.md#october-27-finished-export-agreement-investigation)
+Steve accepts the slight JPEG differences for v1 and defers encoding-quality
+work to v2 (October 27); measured failures and tolerances remain unchanged.
+See [Export and Proof findings and v1 decision](export-and-proof.md#october-27-finished-export-agreement-investigation)
 and `codebase/output/export-agreement/index.html`. No Sharpen or export pixel
 change was made.
 
@@ -432,7 +434,8 @@ Steve decided **keep the present method for v1**, judged at 100%, with the
 in-app reminder (October 27). Trade-off: fast processing and verified isolated CPU/GPU
 behavior, but limited blur recovery, disappearing small-radius effects at Fit
 and noise amplification. More advanced sharpening is v2 exploration. The production delivery
-agreement failure remains separate open work and must not be marked passed.
+agreement failure is accepted for v1, with improvements deferred to v2; its
+measurements must not be marked passed.
 
 Part 2 validation: no pixel changes; fast checks deferred to this batch’s end.
 Steve should hover Sharpen in Detail and judge the effect at 100%.
