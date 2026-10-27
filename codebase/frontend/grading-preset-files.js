@@ -36,6 +36,17 @@
       names.add(name.toLocaleLowerCase());return {...copy,name};
     });
   }
-  const api=Object.freeze({encode,decode,keepBoth});
+  function exportName(presets, section = "Grading") {
+    const single = presets.length === 1;
+    const stem = String(single ? presets[0].name : section)
+      .replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g, "")
+      .trim().replace(/\s+/g, "-").replace(/^[.]+|[. -]+$/g, "").slice(0, 160) || "Grading";
+    return `${stem}-${single ? "preset" : "presets"}.json`;
+  }
+  function filter(presets, query) {
+    const needle = query.trim().toLocaleLowerCase();
+    return presets.filter(preset => preset.name.toLocaleLowerCase().includes(needle));
+  }
+  const api=Object.freeze({encode,decode,keepBoth,exportName,filter});
   if(typeof module!=="undefined")module.exports=api;else root.HDRGradingPresetFiles=api;
 })(typeof window==="undefined"?globalThis:window);

@@ -293,7 +293,15 @@ reviews) are after v1. Items 6 and 7 are unchanged and not v1 requirements.
 
 1. Highlight and Shadow Desaturation in Color (COLOR-DESAT-01).
 2. Investigate the Match fault once Steve has recorded a photo and message.
-3. **PRESETS-01 built October 27; Steve’s keyboard/app check pending.** Saved
+3. **PRESETS-01 finishing touches, October 27.** Search opens focused, filters
+   built-in and saved names without case sensitivity, and shows a plain empty
+   result. Arrows and Enter apply filtered choices; Escape clears then closes.
+   Single exports suggest `<name>-preset.json`, preserving case, replacing
+   spaces with hyphens and removing illegal filename characters; multiple
+   exports use the section plus `-presets.json`. The save name remains editable.
+   Focused filename/filter checks: passed; fast suites deferred to batch end.
+   Steve should try search, arrows/Enter, two Escapes and single/multiple export.
+   Saved
    presets support Rename, confirmed Update from current settings, selected
    export to JSON and import through the existing preset storage. Name clashes
    keep both with “(imported)” (numbered for repeated clashes); built-ins have

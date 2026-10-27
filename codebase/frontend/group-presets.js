@@ -52,7 +52,22 @@ function initializeGroupPresetControls() {
   els.groupPresetClose?.addEventListener("click", closeGroupPresetDialog);
   els.groupPresetDialog?.addEventListener("cancel", (event) => {
     event.preventDefault();
-    closeGroupPresetDialog();
+    const search = document.getElementById("group-preset-search");
+    if (search.value) { search.value = ""; paintGroupPresetList(); search.focus(); }
+    else closeGroupPresetDialog();
+  });
+  document.getElementById("group-preset-search").addEventListener("input", paintGroupPresetList);
+  els.groupPresetDialog.addEventListener("keydown", (event) => {
+    const search = document.getElementById("group-preset-search");
+    const buttons = [...els.groupPresetList.querySelectorAll(".group-preset-row > .button-secondary")];
+    if (!["ArrowDown", "ArrowUp", "Enter"].includes(event.key)
+      || (event.target !== search && !buttons.includes(event.target))) return;
+    event.preventDefault();
+    if (!buttons.length) return;
+    const current = buttons.indexOf(document.activeElement);
+    if (event.key === "Enter") (buttons[current < 0 ? 0 : current]).click();
+    else buttons[current < 0 ? (event.key === "ArrowDown" ? 0 : buttons.length - 1)
+      : (current + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
   });
   els.groupPresetSave?.addEventListener("click", saveCurrentGroupPreset);
   els.groupPresetName?.addEventListener("keydown", (event) => {
@@ -78,8 +93,9 @@ async function openGroupPresetDialog(groupElement) {
   els.groupPresetName.value = "";
   els.groupPresetStatus.textContent = "";
   if (!els.groupPresetDialog.open) els.groupPresetDialog.showModal();
+  document.getElementById("group-preset-search").value = "";
+  document.getElementById("group-preset-search").focus();
   await renderGroupPresetList();
-  els.groupPresetName.focus();
 }
 
 function closeGroupPresetDialog() {
@@ -198,6 +214,22 @@ function appendGroupPresetRow(preset) {
   els.groupPresetList.append(row);
 }
 
+let groupPresetRows = { builtIns: [], saved: [] };
+function paintGroupPresetList() {
+  const query = document.getElementById("group-preset-search").value;
+  const builtIns = HDRGradingPresetFiles.filter(groupPresetRows.builtIns, query);
+  const presets = HDRGradingPresetFiles.filter(groupPresetRows.saved, query);
+  groupPresetSelection.clear();
+  document.getElementById("group-preset-export").disabled = true;
+  els.groupPresetList.replaceChildren();
+  if (builtIns.length) { appendGroupPresetSubheading("Built-in"); builtIns.forEach(appendGroupPresetRow); }
+  if (presets.length) { appendGroupPresetSubheading("Saved"); presets.forEach(appendGroupPresetRow); }
+  if (!presets.length && !builtIns.length) {
+    const empty = document.createElement("p"); empty.className = "group-preset-empty";
+    empty.textContent = query.trim() ? "No presets match your search." : "No presets saved for this group yet.";
+    els.groupPresetList.append(empty);
+  }
+}
 async function renderGroupPresetList() {
   const context = state.groupPresetContext;
   if (!context) return;
@@ -212,20 +244,8 @@ async function renderGroupPresetList() {
     const presets = await listSavedGroupPresets(context.groupId);
     const builtIns = builtInGroupPresets(context);
     if (state.groupPresetContext !== context) return;
-    els.groupPresetList.replaceChildren();
-    if (builtIns.length) {
-      appendGroupPresetSubheading("Built-in");
-      builtIns.forEach(appendGroupPresetRow);
-    }
-    if (presets.length) {
-      appendGroupPresetSubheading("Saved");
-      presets.forEach(appendGroupPresetRow);
-    } else if (!builtIns.length) {
-      const empty = document.createElement("p");
-      empty.className = "group-preset-empty";
-      empty.textContent = "No presets saved for this group yet.";
-      els.groupPresetList.append(empty);
-    }
+    groupPresetRows = { builtIns, saved: presets };
+    paintGroupPresetList();
   } catch (error) {
     els.groupPresetList.replaceChildren();
     const failure = document.createElement("p");
@@ -298,7 +318,7 @@ async function exportGroupPresetFile() {
     if(!await window.hdrFinisherDesktop.exportGradingPresetFile(text))return;
   } else {
     const url=URL.createObjectURL(new Blob([text],{type:"application/json"}));
-    const link=document.createElement("a");link.href=url;link.download="grading-presets.json";link.click();
+    const link=document.createElement("a");link.href=url;link.download=HDRGradingPresetFiles.exportName([...groupPresetSelection.values()],state.groupPresetContext.label);link.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   els.groupPresetStatus.textContent=`Exported ${groupPresetSelection.size} preset(s).`;

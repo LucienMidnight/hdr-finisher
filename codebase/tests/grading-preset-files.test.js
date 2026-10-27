@@ -19,3 +19,16 @@ test("portable files never carry a built-in flag or storage id",()=>{
  assert.equal(preset.builtIn,undefined);assert.equal(preset.id,undefined);
  assert.throws(()=>files.decode('{"format":"other","version":1,"presets":[]}'));
 });
+test("export names preserve case and remove cross-platform illegal characters",()=>{
+ assert.equal(files.exportName([{name:"Portra 400 natural"}]),"Portra-400-natural-preset.json");
+ assert.equal(files.exportName([{name:' A<>:"/\\|?* B. '}]),"A-B-preset.json");
+ assert.equal(files.exportName([{name:"CON"}]),"CON-preset.json");
+ assert.equal(files.exportName([{name:"..."}]),"Grading-preset.json");
+ assert.equal(files.exportName([{},{}],"Film Look"),"Film-Look-presets.json");
+});
+test("search narrows built-in and saved names and clearing restores them",()=>{
+ const presets=[{name:"Portra 400",builtIn:true},{name:"Natural"},{name:"Portra soft"}];
+ assert.deepEqual(files.filter(presets,"pORtra"),[presets[0],presets[2]]);
+ assert.deepEqual(files.filter(presets,"absent"),[]);
+ assert.deepEqual(files.filter(presets,""),presets);
+});

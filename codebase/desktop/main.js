@@ -633,7 +633,7 @@ function registerIpc() {
   });
   handle("desktop:export-grading-preset-file", async (text) => {
     if (typeof text !== "string" || text.length > 2*1024*1024 || JSON.parse(text).format !== "hdr-finisher-grading-presets") throw Error("Invalid preset file.");
-    const result = await dialog.showSaveDialog(mainWindow, {title:"Export grading presets", defaultPath:"grading-presets.json", filters:[{name:"HDR Finisher presets",extensions:["json"]}]});
+    const result = await dialog.showSaveDialog(mainWindow, {title:"Export grading presets", defaultPath:require("../frontend/grading-preset-files").exportName(JSON.parse(text).presets, JSON.parse(text).presets[0]?.groupId?.replace(/^(hdr|sdr)-/, "")), filters:[{name:"HDR Finisher presets",extensions:["json"]}]});
     if (result.canceled || !result.filePath) return false;
     fs.writeFileSync(result.filePath, text, "utf8");return true;
   });
