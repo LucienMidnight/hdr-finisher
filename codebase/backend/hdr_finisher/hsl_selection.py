@@ -60,6 +60,7 @@ class PreparedSelection:
     protection: np.ndarray   # bright-edge / colour-mismatch protection
     geometry: SelectionGeometry
     origin: tuple
+    scale: float
 
     @property
     def shape(self):
@@ -129,7 +130,7 @@ def prepare_fields(ab, guide, scale=1.0, origin=(0, 0)):
     # No bright-spot protection: small bright spots follow their surroundings
     # (Steve, 2026-10-27; excluding them left harsh dots when darkening).
     protection = np.ones(guide.shape, np.float32)
-    return PreparedSelection(coarse, guide, protection, geo, origin)
+    return PreparedSelection(coarse, guide, protection, geo, origin, min(1, max(MIN_SCALE, float(scale))))
 
 
 def _qualify(chroma, ranges, floor):
@@ -145,17 +146,45 @@ def _qualify(chroma, ranges, floor):
     return (inc * (1 - exc) * _smooth(floor, floor + .04, np.linalg.norm(chroma, axis=-1))).astype(np.float32)
 
 
-def select(prepared, ranges, floor=.02):
+def select(prepared, ranges, floor=.02, *, edge=0, edge_feather=0, edge_detail=50):
     """Coverage 0..1 at full resolution for one set of hue ranges."""
     geo, guide = prepared.geometry, prepared.guide
     low = _interpolate(_qualify(prepared.chroma, ranges, floor), guide.shape, prepared.origin, geo.cell)
     mean_i = _box(guide, geo.guide)
     mean_p = _box(low, geo.guide)
     variance = _box(guide * guide, geo.guide) - mean_i * mean_i
-    a = (_box(guide * low, geo.guide) - mean_i * mean_p) / np.maximum(variance + GUIDE_EPSILON, GUIDE_EPSILON)
+    epsilon = GUIDE_EPSILON * 10 ** ((50 - edge_detail) / 25)
+    a = (_box(guide * low, geo.guide) - mean_i * mean_p) / np.maximum(variance + epsilon, epsilon)
+    if edge_detail == 0:
+        a = np.zeros_like(a)
     b = mean_p - a * mean_i
     refined = _box(a, geo.guide) * guide + _box(b, geo.guide)
-    return np.clip(refined * prepared.protection, 0, 1).astype(np.float32)
+    refined = np.clip(refined * prepared.protection, 0, 1).astype(np.float32)
+    if edge == 0 and edge_feather == 0:
+        return refined
+    radius = abs(edge) * prepared.scale
+    # Separable square grow/shrink, interpolated for fractional source pixels.
+    for axis in (0, 1):
+        lo = math.floor(radius)
+        def morph(r):
+            kernel = np.ones((1, 2*r+1) if axis == 0 else (2*r+1, 1), np.uint8)
+            return (cv2.dilate if edge >= 0 else cv2.erode)(refined, kernel, borderType=cv2.BORDER_REFLECT)
+        refined = morph(lo) * (1 - (radius-lo)) + morph(math.ceil(radius)) * (radius-lo)
+    sigma = edge_feather * prepared.scale / 2
+    if sigma > 0:
+        taps = math.ceil(4*sigma)
+        kernel = np.exp(-.5 * (np.arange(-taps, taps+1)/sigma)**2)
+        kernel = (kernel/kernel.sum()).astype(np.float32)
+        refined = cv2.sepFilter2D(refined, -1, kernel, kernel, borderType=cv2.BORDER_REFLECT)
+    # Excluded colours and neutrals are a ceiling, never a source of growth.
+    ab = _interpolate(prepared.chroma, guide.shape, prepared.origin, geo.cell)
+    hue = np.degrees(np.arctan2(ab[..., 1], ab[..., 0]))
+    exc = np.zeros_like(hue)
+    for r in ranges:
+        if r.subtract:
+            exc = np.maximum(exc, 1-_smooth(r.width, r.width+r.feather, np.abs(_delta(hue, r.center))))
+    permitted = (1-exc)*_smooth(floor, floor+.04, np.linalg.norm(ab, axis=-1))
+    return np.minimum(refined, permitted).astype(np.float32)
 
 
 def hue_ranges(leaf):
@@ -168,4 +197,5 @@ def select_hue(prepared, leaf):
     """Local hue controls; combine/invert/opacity belongs to the mask owner."""
     if leaf.hue_center is None:
         return np.zeros(prepared.shape, np.float32)
-    return select(prepared, hue_ranges(leaf), leaf.saturation_floor)
+    return select(prepared, hue_ranges(leaf), leaf.saturation_floor, edge=leaf.edge,
+                  edge_feather=leaf.edge_feather, edge_detail=leaf.edge_detail)

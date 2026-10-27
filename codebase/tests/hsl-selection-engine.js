@@ -35,7 +35,7 @@ const {_electron}=require('playwright');
    }
    const result={cases:{},errors};
    for(const c of f.cases){
-    const at=await run(c,f.channels),diff=[];
+    const at=await run(c,c.channels||f.channels),diff=[];
     const [ix,iy,iw,ih]=c.interior||[0,0,c.width,c.height];
     for(let lane=0;lane<2;lane++)for(let y=iy;y<iy+ih;y++)for(let x=ix;x<ix+iw;x++){
      const g=at(lane,x,y);if(!Number.isFinite(g))throw Error('Non-finite coverage');diff.push(Math.abs(g-c.weights[lane][y][x]));
@@ -53,6 +53,8 @@ const {_electron}=require('playwright');
    await run(full,f.channels,{prepareKey:'above:1',selectKey:'a'});const serial=engine.serial;
    const t0=performance.now();await run(full,[{ranges:[{center:109,width:24,feather:41}],floor:.04}],{prepareKey:'above:1',selectKey:'b'});
    result.rangeEditMs=performance.now()-t0;result.reused=engine.serial===serial;
+   const t1=performance.now();await run(full,[{...f.channels[0],edge:8,edge_feather:16,edge_detail:100}],{prepareKey:'above:1',selectKey:'edges'});
+   result.edgeEditMs=performance.now()-t1;result.edgesReused=engine.serial===serial;
    await run(full,f.channels,{prepareKey:'above:2',selectKey:'b'});result.invalidated=engine.serial!==serial;
    engine.destroy();device.destroy();return result;
   },fixture);
@@ -60,7 +62,7 @@ const {_electron}=require('playwright');
    assert.ok(c.mean<.0001&&c.p99<.002,`${name}: ${JSON.stringify(c)}`);
   }
   assert.ok(report.equalGlobalLocal,'Equal Global/Local settings produced different coverage');
-  assert.ok(report.reused&&report.invalidated,JSON.stringify(report));assert.deepEqual(report.errors,[]);
+  assert.ok(report.reused&&report.edgesReused&&report.invalidated,JSON.stringify(report));assert.deepEqual(report.errors,[]);
   assert.equal(fixture.tile_seam_max,0);
   assert.ok(fixture.selected_mean>.8);assert.ok(fixture.noisy_std_after<fixture.noisy_std_before*.3);assert.ok(fixture.fringe_mean>.8);assert.ok(fixture.neutral_mean<.001);
   fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(report,null,2));console.log('PASS shared selection GPU/CPU',JSON.stringify(report));

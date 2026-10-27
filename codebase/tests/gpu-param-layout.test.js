@@ -12,7 +12,7 @@ const shaderSource=shaders.SHADER_SOURCE+'\n'+shaders.PEAK_REDUCTION_SHADER_SOUR
 const audit=(js=sources,wgsl=shaderSource)=>auditGlobalParameterUses(js,wgsl,layout.fields);
 
 test('the global parameter list preserves all 198 names and original positions',()=>{
- assert.equal(layout.count,200+13*136);
+ assert.equal(layout.count,200+13*140);
  assert.equal(new Set(layout.fields.map(f=>f.name)).size,200);
  assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:200},(_,i)=>i));
  assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.slice(0,198).map(({name,index})=>[name,index]))).digest('hex'),'747c44e32a4d4f1effaedfc6b9fb79803511f2aba42ce7a1015902798be9d5e9');

@@ -9,12 +9,13 @@
 (function () {
   const CELL = 4, GUIDE = 4, SURROUND = 2, MIN_SCALE = .05, LANE_RANGES = 32;
   const round = v => Math.floor(v + .5);
-  function geometry(scale = 1) {
+  function geometry(scale = 1, controls = {}) {
     const s = Math.min(1, Math.max(MIN_SCALE, Number(scale) || 1));
     const cell = Math.max(1, round(CELL * s)), sigma = CELL * s / cell;
     const taps = Math.max(1, Math.ceil(4 * sigma));
     const guide = Math.max(1, round(GUIDE * s)), surround = Math.max(1, round(SURROUND * s));
-    return { cell, sigma, taps, guide, surround, reach: cell * (taps + 2) + 2 * guide + surround + 2 };
+    return { cell, sigma, taps, guide, surround, reach: cell * (taps + 2) + 2 * guide + surround + 2
+      + Math.ceil(Math.abs(controls.edge || 0) * s) + Math.ceil(2 * (controls.edge_feather || 0) * s) };
   }
   const shader = `
 @group(0) @binding(0) var fields: texture_2d<f32>;
@@ -26,10 +27,12 @@
 @group(0) @binding(6) var<storage,read> ranges: array<vec4f>;
 @group(0) @binding(7) var storeA: texture_storage_2d<rgba32float,write>;
 @group(0) @binding(8) var storeB: texture_storage_2d<rgba32float,write>;
+@group(0) @binding(10) var coverage: texture_2d_array<f32>;
 @group(0) @binding(9) var storeLayers: texture_storage_2d_array<rgba32float,write>;
 // p: 0 width, 1 height, 2 coarse width, 3 coarse height, 4 origin x, 5 origin y,
 // 6 cell, 7 sigma, 8 taps, 9 guide radius, 10 surround radius, 11 layer,
-// 12..15 lane neutral floors, 16..19 lane range counts.
+// 12..15 floors, 16..19 counts, 20..23 signed edge radii,
+// 24..27 feather sigma, 28..31 guide epsilon, 32..35 guide enabled.
 const EPSILON: f32 = .03;
 fn region() -> vec2i { return vec2i(i32(p[0]), i32(p[1])); }
 fn coarseSize() -> vec2i { return vec2i(i32(p[2]), i32(p[3])); }
@@ -118,7 +121,8 @@ fn qualifyLane(ab: vec2f, lane: u32) -> f32 {
   } }
   let n = f32((2 * g + 1) * (2 * g + 1)); mp /= n; mip /= n;
   let c = guideAt(xy);
-  let a = (mip - c.z * mp) / max(c.w + EPSILON, EPSILON);
+  let eps = vec4f(p[28],p[29],p[30],p[31]);
+  let a = (mip - c.z * mp) / max(vec4f(c.w) + eps, eps) * vec4f(p[32],p[33],p[34],p[35]);
   textureStore(storeA, xy, a); textureStore(storeB, xy, mp - a * c.z);
 }
 @compute @workgroup_size(8,8) fn refinement(@builtin(global_invocation_id) id: vec3u) {
@@ -131,6 +135,72 @@ fn qualifyLane(ab: vec2f, lane: u32) -> f32 {
   let n = f32((2 * g + 1) * (2 * g + 1)); let c = guideAt(xy);
   textureStore(storeLayers, xy, i32(p[11]), clamp((ma / n * c.x + mb / n) * c.y, vec4f(0.), vec4f(1.)));
 }
+
+// The coefficient textures are free after refinement: reuse them for shaping.
+fn initial(xy: vec2i) -> vec4f { return textureLoad(coverage, reflect2(xy, region()), i32(p[11]), 0); }
+fn morph(xy: vec2i, axis: vec2i, first: bool) -> vec4f {
+  var result = vec4f(0.);
+  for (var lane=0u; lane<4u; lane++) {
+    let radius=abs(p[20u+lane]); let lo=i32(floor(radius)); let hi=i32(ceil(radius));
+    var inner=select(vec4f(1.),vec4f(0.),p[20u+lane]>=0.);
+    var outer=inner;
+    for(var i=-hi;i<=hi;i++) {
+      let t=xy+axis*i;
+      var v=vec4f(0.);
+      if(first) { v=initial(t); } else { v=field(t); }
+      if(p[20u+lane]>=0.) {
+        outer=max(outer,v); if(abs(i)<=lo) { inner=max(inner,v); }
+      } else {
+        outer=min(outer,v); if(abs(i)<=lo) { inner=min(inner,v); }
+      }
+    }
+    result[lane]=mix(inner[lane],outer[lane],fract(radius));
+  }
+  return result;
+}
+@compute @workgroup_size(8,8) fn edgeHorizontal(@builtin(global_invocation_id) id: vec3u) {
+  let xy=vec2i(id.xy); if(!inside(xy,region())) { return; }
+  textureStore(storeA,xy,morph(xy,vec2i(1,0),true));
+}
+@compute @workgroup_size(8,8) fn edgeVertical(@builtin(global_invocation_id) id: vec3u) {
+  let xy=vec2i(id.xy); if(!inside(xy,region())) { return; }
+  textureStore(storeA,xy,morph(xy,vec2i(0,1),false));
+}
+fn feathered(xy: vec2i, axis: vec2i) -> vec4f {
+  var result=vec4f(0.);
+  for(var lane=0u;lane<4u;lane++) {
+    let sigma=p[24u+lane];
+    if(sigma==0.) { result[lane]=field(xy)[lane]; continue; }
+    let taps=i32(ceil(4.*sigma)); var sum=0.; var total=0.;
+    for(var i=-taps;i<=taps;i++) {
+      let w=exp(-.5*(f32(i)/sigma)*(f32(i)/sigma));
+      sum+=field(xy+axis*i)[lane]*w;total+=w;
+    }
+    result[lane]=sum/total;
+  }
+  return result;
+}
+@compute @workgroup_size(8,8) fn featherHorizontal(@builtin(global_invocation_id) id: vec3u) {
+  let xy=vec2i(id.xy); if(!inside(xy,region())) { return; }
+  textureStore(storeA,xy,feathered(xy,vec2i(1,0)));
+}
+@compute @workgroup_size(8,8) fn featherVertical(@builtin(global_invocation_id) id: vec3u) {
+  let xy=vec2i(id.xy); if(!inside(xy,region())) { return; }
+  var v=feathered(xy,vec2i(0,1)); let ab=interpolate(xy).xy;
+  let h=degrees(atan2(ab.y,ab.x));
+  for(var lane=0u;lane<4u;lane++) {
+    if(p[20u+lane]==0. && p[24u+lane]==0.) { continue; }
+    var exc=0.;
+    for(var j=0u;j<u32(p[16u+lane]);j++) {
+      let r=ranges[lane*${LANE_RANGES}u+j];
+      let delta=abs((h-r.x+180.)-floor((h-r.x+180.)/360.)*360.-180.);
+      if(r.w>.5) { exc=max(exc,1.-smoothstep(r.y,r.y+r.z,delta)); }
+    }
+    let floor_=p[12u+lane];
+    v[lane]=min(v[lane],(1.-exc)*smoothstep(floor_,floor_+.04,length(ab)));
+  }
+  textureStore(storeLayers,xy,i32(p[11]),v);
+}
 `;
   class HslSelectionGpu {
     constructor(device, { onAllocate = null } = {}) {
@@ -141,12 +211,12 @@ fn qualifyLane(ab: vec2f, lane: u32) -> f32 {
       const module = this.device.createShaderModule({ label: "HSL selection", code: shader });
       const errors = (await module.getCompilationInfo()).messages.filter(m => m.type === "error");
       if (errors.length) throw Error(errors.map(e => `${e.lineNum}:${e.linePos} ${e.message}`).join("\n"));
-      const names = ["reduce", "horizontal", "vertical", "guide", "qualification", "coefficients", "refinement"];
+      const names = ["reduce", "horizontal", "vertical", "guide", "qualification", "coefficients", "refinement", "edgeHorizontal", "edgeVertical", "featherHorizontal", "featherVertical"];
       this.pipelines = Object.fromEntries(await Promise.all(names.map(async entry => [entry,
         await this.device.createComputePipelineAsync({ label: `HSL selection ${entry}`, layout: "auto", compute: { module, entryPoint: entry } })])));
       return this;
     }
-    static geometry(scale) { return geometry(scale); }
+    static geometry(scale, controls) { return geometry(scale, controls); }
     /** Another scratch/cache owner sharing these compiled pipelines. */
     fork() { const engine = new HslSelectionGpu(this.device, { onAllocate: this.onAllocate }); engine.pipelines = this.pipelines; return engine; }
     static bytesPerPixel(channels) { return 64 + 16 * Math.max(1, Math.ceil(channels / 4)); }
@@ -224,19 +294,32 @@ fn qualifyLane(ab: vec2f, lane: u32) -> f32 {
       this.selectedKey = null;
       for (let layer = 0; layer < layers; layer++) {
         const lanes = channels.slice(layer * 4, layer * 4 + 4);
-        const values = new Float32Array(20);
-        values.set(base); values[11] = layer;
+        const values = new Float32Array(36);
+        values.set(base); values[11] = layer; values.fill(.03,28,32); values.fill(1,32,36);
         const packed = new Float32Array(4 * LANE_RANGES * 4);
         lanes.forEach((channel, lane) => {
           if (channel.ranges.length > LANE_RANGES) throw Error(`Selection is limited to ${LANE_RANGES} ranges`);
           values[12 + lane] = Number(channel.floor ?? .02); values[16 + lane] = channel.ranges.length;
+          const scale_ = Math.min(1, Math.max(MIN_SCALE, Number(scale) || 1));
+          values[20+lane] = (channel.edge ?? 0)*scale_;
+          values[24+lane] = (channel.edge_feather ?? 0)*scale_/2;
+          values[28+lane] = .03 * 10 ** ((50-(channel.edge_detail ?? 50))/25);
+          values[32+lane] = channel.edge_detail === 0 ? 0 : 1;
           channel.ranges.forEach((r, j) => packed.set([r.center, r.width, r.feather, r.subtract ? 1 : 0], (lane * LANE_RANGES + j) * 4));
         });
         const params = { 5: { buffer: this.paramBuffer(values) } };
-        this.dispatch(encoder, "qualification", { 1: view(t.coarse), ...params, 6: { buffer: this.paramBuffer(packed) }, 7: view(t.qualified) }, cw, ch);
+        const rangeBuffer = { buffer: this.paramBuffer(packed) };
+        this.dispatch(encoder, "qualification", { 1: view(t.coarse), ...params, 6: rangeBuffer, 7: view(t.qualified) }, cw, ch);
         this.dispatch(encoder, "coefficients", { 1: view(t.qualified), 2: view(t.guide), ...params, 7: view(t.a), 8: view(t.b) }, width, height);
         this.dispatch(encoder, "refinement", { 2: view(t.guide), 3: view(t.a), 4: view(t.b), ...params,
           9: t.output.createView({ dimension: "2d-array" }) }, width, height);
+        if (lanes.some(c => c.edge || c.edge_feather)) {
+          this.dispatch(encoder, "edgeHorizontal", { 0: view(t.b), 10: this.outputView(), ...params, 7: view(t.a) }, width, height);
+          this.dispatch(encoder, "edgeVertical", { 0: view(t.a), 10: this.outputView(), ...params, 7: view(t.b) }, width, height);
+          this.dispatch(encoder, "featherHorizontal", { 0: view(t.b), ...params, 7: view(t.a) }, width, height);
+          this.dispatch(encoder, "featherVertical", { 0: view(t.a), 1: view(t.coarse), ...params, 6: rangeBuffer,
+            9: this.outputView() }, width, height);
+        }
       }
       return { layers, prepareKey: prepared ? undefined : prepareKey, selectKey };
     }

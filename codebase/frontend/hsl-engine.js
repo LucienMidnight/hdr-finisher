@@ -32,12 +32,13 @@ function describe(rgb) {
   return { L, chroma, hue: wrap(Math.atan2(b, a) * 180 / Math.PI), relativeChroma: chroma / Math.max(Math.abs(L), 1e-6) };
 }
 function newRecipe() {
-  return { version: 1, ranges: [], hue: 0, saturation: 0, luminance: 0, uniformity: 0, opacity: 1 };
+  return { version: 1, ranges: [], hue: 0, saturation: 0, luminance: 0, uniformity: 0, opacity: 1, edge: 0, edge_feather: 0, edge_detail: 50 };
 }
 function validateRecipe(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.ranges) || value.ranges.length > MAX_RANGES) throw Error('Invalid HSL prototype recipe');
   const finite = (v, lo, hi) => { if (!Number.isFinite(v) || v < lo || v > hi) throw Error('Recipe value outside supported range'); return v; };
   return { version: 1, ranges: value.ranges.map(r => ({ center: finite(r.center, 0, 360), width: finite(r.width, 1, 180), feather: finite(r.feather, 1, 90), subtract: Boolean(r.subtract) })),
+    edge: finite(value.edge ?? 0, -8, 8), edge_feather: finite(value.edge_feather ?? 0, 0, 16), edge_detail: finite(value.edge_detail ?? 50, 0, 100),
     hue: finite(value.hue, -180, 180), saturation: finite(value.saturation, -100, 100), luminance: finite(value.luminance, -2, 2), uniformity: finite(value.uniformity, 0, 100), opacity: finite(value.opacity, 0, 1) };
 }
 function addSample(recipe, rgb, mode = 'pick', width = 16, feather = 12) {
@@ -124,13 +125,13 @@ function defaultSettings(){return {channels:[{id:'all',name:'All',kind:'all',rec
 const active=r=>Boolean(r?.opacity && r.ranges?.length && (r.hue||r.saturation||r.luminance||r.uniformity));
 function applyChannels(rgb,channels){const result=[...rgb];for(const c of channels){if(!active(c.recipe))continue;const v=applyPixel(rgb,c.recipe);for(let i=0;i<3;i++)result[i]+=v[i]-rgb[i];}return result;}
 // Appended parameter block; existing parameter indices never move.
-const PARAM_BASE=198, CHANNEL_BASE=200, CHANNEL_STRIDE=136, MAX_CHANNELS=13;
+const PARAM_BASE=198, CHANNEL_BASE=200, CHANNEL_STRIDE=140, MAX_CHANNELS=13;
 function pack(params,settings,enabled=true,local=false){
  const recipes=enabled?(local?(settings?[settings]:[]):settings?.channels?.map(c=>c.recipe)||[]):[];
  const selected=recipes.filter(active);
  if(selected.length>MAX_CHANNELS)throw Error('HSL supports at most 13 channels');
  params[PARAM_BASE]=selected.length;
- selected.forEach((r,i)=>{validateRecipe(r);const at=CHANNEL_BASE+i*CHANNEL_STRIDE;params.set([r.hue,r.saturation,r.luminance,r.uniformity,r.ranges.length,r.opacity,0,0],at);r.ranges.forEach((v,j)=>params.set([v.center,v.width,v.feather,Number(v.subtract)],at+8+4*j));});
+ selected.forEach((r,i)=>{validateRecipe(r);const at=CHANNEL_BASE+i*CHANNEL_STRIDE;params.set([r.hue,r.saturation,r.luminance,r.uniformity,r.ranges.length,r.opacity,r.edge ?? 0,r.edge_feather ?? 0],at);r.ranges.forEach((v,j)=>params.set([v.center,v.width,v.feather,Number(v.subtract)],at+8+4*j));params[at+136]=r.edge_detail ?? 50;});
  return selected.length;
 }
 

@@ -208,7 +208,7 @@
   ]);
 
   const indices = Object.freeze(Object.fromEntries(fields.map(({ name, index }) => [name, index])));
-  const HDRGpuParamLayout = Object.freeze({ fields, indices, count: 200 + 13 * 136 });
+  const HDRGpuParamLayout = Object.freeze({ fields, indices, count: 200 + 13 * 140 });
 
   if (typeof window !== "undefined") window.HDRGpuParamLayout = HDRGpuParamLayout;
   if (typeof module !== "undefined" && module.exports) module.exports = { HDRGpuParamLayout };

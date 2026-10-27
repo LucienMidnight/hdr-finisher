@@ -48,6 +48,24 @@ tile_weight = np.asarray(cases[1]['weights'][0])
 before = selection(rgb, yellow)[0]
 seam = float(np.abs(tile_weight[ty - y0:ty - y0 + th, tx - x0:tx - x0 + tw] - weight[ty:ty + th, tx:tx + tw]).max())
 cases[0]['weights'][0] = weight.tolist()
+# Exercise every edge control on the full frame, half scale, and a halo tile.
+for edge, feather, detail in [(-3,0,50),(3,0,50),(0,6,50),(0,0,0),(0,0,100),(8,16,100),(-8,16,0),(.75,.5,25)]:
+    controls=dict(edge=edge,edge_feather=feather,edge_detail=detail)
+    cs=[dict(c,**controls) for c in channels]
+    for scale in (1,.5):
+        prepared=prepare(rgb,scale)
+        weights=[select(prepared,yellow,**controls),select(prepared,wide,.04,**controls)]
+        cases.append(dict(name=f'edge-{edge}-{feather}-{detail}-scale-{scale}',x=0,y=0,width=w,height=h,scale=scale,
+                          channels=cs,weights=[v.tolist() for v in weights]))
+        halo=geometry(scale).reach + int(np.ceil(abs(edge)*scale)) + int(np.ceil(2*feather*scale))
+        x0,y0=max(0,tx-halo),max(0,ty-halo)
+        x1,y1=min(w,tx+tw+halo),min(h,ty+th+halo)
+        prepared=prepare(rgb[y0:y1,x0:x1],scale,(x0,y0))
+        cropped=[select(prepared,yellow,**controls),select(prepared,wide,.04,**controls)]
+        for full_weights,tile_weights in zip(weights,cropped):
+            np.testing.assert_allclose(tile_weights[ty-y0:ty-y0+th,tx-x0:tx-x0+tw],full_weights[ty:ty+th,tx:tx+tw],atol=1e-6)
+        cases.append(dict(name=f'tile-{edge}-{feather}-{detail}-scale-{scale}',x=x0,y=y0,width=x1-x0,height=y1-y0,scale=scale,
+                          interior=[tx-x0,ty-y0,tw,th],channels=cs,weights=[v.tolist() for v in cropped]))
 path = Path(__file__).resolve().parents[1] / 'output/hsl-selection-engine'
 path.mkdir(parents=True, exist_ok=True)
 payload = dict(width=w, height=h, fields=fields(rgb).tolist(), channels=channels, cases=cases,

@@ -1,5 +1,23 @@
 # Local adjustments
 
+## October 27: selection edge controls
+
+Global recipes and hue leaves persist `edge` (−8..8 source px), `edge_feather`
+(0..16 source px), and `edge_detail` (0..100, default 50). Missing fields take
+those defaults. At 50, guided epsilon is exactly .03; otherwise it is
+`.03 * 10^((50-detail)/25)`, with zero guide coefficients at detail 0.
+After the existing refinement, separable max/min grows/shrinks coverage by
+`abs(edge)*scale`, interpolating adjacent integer radii. Feather is a separable
+Gaussian with sigma `edge_feather*scale/2`, truncated at ceil(4 sigma).
+The final shaped coverage is capped by the interpolated coarse chroma's
+subtraction and neutral gate. Edge=Feather=0 skips shaping entirely.
+Reach increases by ceil(abs(edge)*scale)+ceil(2*edge_feather*scale); the tile
+planner and hue-band overlap include it. GPU passes reuse coefficient A/B
+once refinement has consumed them; allocation formulas stay unchanged.
+The packed HSL channel stride is 140 floats, retaining all 32 ranges;
+slots 6/7 hold Edge/Feather and slot 136 holds detail. Selection preparation
+and its cache key stay independent of all three controls.
+
 ## October 27: shared pre-HSL selection (Global HSL built)
 
 `HslSelectionGpu` (`frontend/hsl-selection-gpu.js`) and its CPU reference

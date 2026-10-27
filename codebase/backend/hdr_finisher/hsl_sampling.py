@@ -90,7 +90,9 @@ def sample_stage(cache, request):
                 if request.local_id is None:
                     # Global HSL: the same shared selection the render applies.
                     from .hsl_selection import prepare, select
-                    weight = select(prepare(pixels, scale), request.selection_recipe.ranges)
+                    weight = select(prepare(pixels, scale), request.selection_recipe.ranges,
+                                    edge=request.selection_recipe.edge, edge_feather=request.selection_recipe.edge_feather,
+                                    edge_detail=request.selection_recipe.edge_detail)
                 else:
                     weight = selection(pixels, request.selection_recipe.ranges)[0]
                 if request.local_id is not None:

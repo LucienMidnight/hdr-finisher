@@ -1722,7 +1722,7 @@
           const r = at + 8 + 4 * j;
           ranges.push({ center: params[r], width: params[r + 1], feather: params[r + 2], subtract: params[r + 3] > 0.5 });
         }
-        channels.push({ ranges, floor: 0.02 });
+        channels.push({ ranges, floor: 0.02, edge: params[at+6], edge_feather: params[at+7], edge_detail: params[at+136] });
       }
       return channels;
     }
@@ -1806,7 +1806,7 @@
       const ox = source.region?.x || 0, oy = source.region?.y || 0, leaf = expression.leaf || {};
       const prepareBase = this.hueContextIdentity(hue, source);
       const key = `${sessionId}:gpu-hue:${prepareBase}:${JSON.stringify([leaf.hue_center ?? null, leaf.hue_width,
-        leaf.hue_smoothness, leaf.saturation_floor, Boolean(expression.inverted)])}`;
+        leaf.hue_smoothness, leaf.saturation_floor, leaf.edge, leaf.edge_feather, leaf.edge_detail, Boolean(expression.inverted)])}`;
       let entry = this.localMasks.get(key);
       if (entry && !entry.destroyed) {
         this.localMasks.delete(key);
@@ -1821,11 +1821,11 @@
         if (leaf.hue_center != null) {
           const engine = (this.hslMaskEngine ||= this.hslSelectionTemplate.fork());
           const scale = hue.params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1;
-          const reach = globalThis.HDRHslSelectionGpu.geometry(scale).reach;
+          const reach = globalThis.HDRHslSelectionGpu.geometry(scale, leaf).reach;
           const bandRows = Math.max(64, Math.floor(HUE_MASK_BAND_PIXELS / Math.max(1, width)));
           const single = height <= bandRows;
           const channels = [{ ranges: [{ center: leaf.hue_center, width: leaf.hue_width, feather: leaf.hue_smoothness, subtract: false }],
-            floor: Number(leaf.saturation_floor ?? 0.04) }];
+            floor: Number(leaf.saturation_floor ?? 0.04), edge: leaf.edge, edge_feather: leaf.edge_feather, edge_detail: leaf.edge_detail }];
           const pipelines = this.pipelineFor("rgba16float");
           const scratch = single ? null : this.device.createTexture({
             label: "Hue mask band source", size: [width, Math.min(height, bandRows + 2 * reach)],

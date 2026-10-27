@@ -393,7 +393,14 @@
       || !(params[GPU_PARAMS.HSL_CHANNEL_COUNT] > 0)) return 0;
     const Selection = globalThis.HDRHslSelectionGpu
       || (typeof module !== "undefined" && module.exports && require("./hsl-selection-gpu.js").HslSelectionGpu);
-    return Selection ? Selection.geometry(params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1).reach : 0;
+    if (!Selection) return 0;
+    let reach = 0;
+    const HSL = globalThis.HDRHSL || require("./hsl-engine.js");
+    for (let k=0; k<params[GPU_PARAMS.HSL_CHANNEL_COUNT]; k++) {
+      const at=HSL.CHANNEL_BASE+k*HSL.CHANNEL_STRIDE;
+      reach=Math.max(reach,Selection.geometry(params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1,{edge:params[at+6],edge_feather:params[at+7]}).reach);
+    }
+    return reach;
   }
 
   function spatialReach(width, height, params) {

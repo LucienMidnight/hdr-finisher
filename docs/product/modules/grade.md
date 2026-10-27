@@ -1,5 +1,27 @@
 # Module PRD: Grade
 
+## October 27: HSL selection edge controls
+
+The shared selection now accepts Edge grow/shrink (−8..+8 source pixels),
+Feather (0..16 source pixels), and Edge detail (0..100, default 50). Zero
+Edge/Feather and detail 50 preserve the existing selection exactly. The
+GPU and CPU use the same operations; HSL colour response curves are unchanged.
+Grow/shrink operates on coverage, then a Gaussian softens it. Subtracted
+colours and the neutral floor cap shaped coverage so growth cannot fill
+excluded areas. Detail changes guided-filter regularization; 0 ignores the
+lightness guide. Preparation stays independent of all three controls.
+
+Spatial reach adds ceil(abs(Edge)*scale) + ceil(2*Feather*scale) to the existing
+halo, including Local hue bands. Edge passes reuse the two coefficient
+textures, so scratch bytes per pixel do not increase. The packed HSL channel
+stride is 140 floats (32 ranges retained; Edge/Feather in 6/7, detail in 136).
+Missing saved fields use defaults; no migration code.
+
+Checks so far: extended real-GPU shared-selection check passes at full/half
+scale and on halo tiles, including extrema and fractional controls. Focused
+Python selection tests pass, including exact default coverage and saved-value
+round trips. UI, delivery, and Steve's review page are being completed.
+
 ## October 27: HSL selection fixes after Steve's review
 
 - Horizontal line at magnified zoom (Balanced Rock, Yellow Luminance -2 EV,
@@ -19,8 +41,7 @@
   overlay and centre handle, and Local mask overlays and handles when Local
   Adjustments is off. Denoise's Show noise already followed its bypass.
 
-**Open:** edge handling for HSL selections (a user grow/shrink and feather
-control, or edge-aware alternatives), to be discussed with Steve.
+**Open:** complete edge-control delivery validation and visual review (see above).
 
 ## October 27: Local hue mask on the shared selection (Stage 2, validation ongoing)
 

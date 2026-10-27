@@ -32,6 +32,9 @@ class HSLRecipe(BaseModel):
     luminance: float = Field(default=0, ge=-2, le=2)
     uniformity: float = Field(default=0, ge=0, le=100)
     opacity: float = Field(default=1, ge=0, le=1)
+    edge: float = Field(default=0, ge=-8, le=8)
+    edge_feather: float = Field(default=0, ge=0, le=16)
+    edge_detail: float = Field(default=50, ge=0, le=100)
 
 
 BANDS = (
@@ -181,7 +184,7 @@ def apply_recipes(image, recipes, mask=None, shared_selection=None):
         weight, target, lab, hue, chroma = selection(original, r.ranges)
         if prepared is not None:
             from .hsl_selection import select
-            weight = select(prepared, r.ranges).astype(np.float64)
+            weight = select(prepared, r.ranges, edge=r.edge, edge_feather=r.edge_feather, edge_detail=r.edge_detail).astype(np.float64)
         weight *= r.opacity
         if mask is not None:
             weight *= np.clip(mask, 0, 1)

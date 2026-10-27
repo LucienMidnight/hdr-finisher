@@ -39,7 +39,7 @@ fn applyHsl(input:vec3f,hdr:bool)->vec3f {
  let v=hslLab(original);let C=length(v.yz);let h=degrees(atan2(v.z,v.y));
  var result=original;
  for(var k=0u;k<count;k++){
-  let at=200u+k*136u;
+  let at=200u+k*140u;
   var inc=0.0;var exc=0.0;var cv=vec2f(0.0);
   for(var j=0u;j<u32(p[at+4u]);j++){
    let ri=at+8u+4u*j;let center=p[ri];let width=p[ri+1u];let feather=p[ri+2u];

@@ -75,3 +75,10 @@ Make a page at `D:\AI\AI Projects\HDR Finisher Tool\ai\codebase\output\hsl-edge-
 ## Questions protocol
 
 If anything here conflicts with the existing code, or a requirement cannot be met cleanly (for example, grow against subtracted ranges, or interactive speed at large Feather), stop and ask before inventing a new pattern.
+
+## Implementation timing tolerance
+
+Proposed before measuring: edge-control selection edits within 20% of Range edits,
+with a 10 ms allowance for short runs (GPU queue/readback noise and added bounded
+passes). Preparation must remain cached. Existing coverage and delivery tolerances
+are unchanged.
