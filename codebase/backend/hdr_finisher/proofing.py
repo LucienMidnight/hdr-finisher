@@ -196,7 +196,8 @@ class ProofArtifactStore:
         denoise = getattr(session, "denoise", None)
         signature = self._request_signature(getattr(session, "session_id"), request, context, denoise,
             source_epoch=getattr(getattr(session, "render_cache", None), "source_epoch", 0),
-            framing=getattr(session, "framing", None))
+            framing=getattr(session, "framing", None),
+            local_adjustments=request.adjustments.enabled_locals(getattr(session, "local_adjustments", None)))
         if not request.force:
             with self._lock:
                 cached_id = self._request_cache.get(signature)
@@ -586,6 +587,7 @@ class ProofArtifactStore:
         denoise: object | None = None,
         source_epoch: int = 0,
         framing: object | None = None,
+        local_adjustments: list | None = None,
     ) -> str:
         # ``force`` selects how the request is served, not what it produces, so
         # it stays out of the signature. Denoise is not part of the request, so
@@ -601,11 +603,19 @@ class ProofArtifactStore:
                 if hasattr(denoise, "model_dump_json")
                 else json.dumps(denoise, sort_keys=True, default=str)
             )
+        # Local adjustments live on the session, not in the request, so they are
+        # folded in like Denoise: a proof made before a Local edit must not be
+        # served for it when the request carries no edit revision.
+        locals_payload = json.dumps([
+            local.model_dump(mode="json") if hasattr(local, "model_dump") else local
+            for local in (local_adjustments or [])
+        ], sort_keys=True, default=str)
         from .delivery import renderer_record, preferences
         try: policy = preferences()["effective_force_cpu"]
         except (OSError, ValueError, AttributeError): policy = renderer_record()["fallback_reason"]
         payload = (
             f"{APP_VERSION}|{session_id}|{color_context.cache_key}|{denoise_payload}|{request_payload}|{policy}|{source_epoch}"
+            f"|{locals_payload}"
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()[:24]
 

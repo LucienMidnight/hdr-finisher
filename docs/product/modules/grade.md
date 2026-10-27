@@ -37,13 +37,16 @@ cold preparation time. Range changes were 0.042-0.054 / 0.129-0.141 at 24 MP,
 The delivery test's full-size Proof/export mismatch is a stale Proof cache:
 its key omits the session's Local adjustments when the request omits edit
 revision (the app supplies a revision). The retained Local Proof files equal the
-previous neutral exports byte for byte on both GPU and CPU. No Proof/export
-code was changed; that area is Still strict.
+previous neutral exports byte for byte on both GPU and CPU. Fixed with
+Steve's approval (October 27): the Proof cache key now includes the Local
+adjustments the render applies, like Denoise. Only reuse changes, never pixels.
+Checked: `hsl-selection-delivery --local` (full-size Proof now equals the
+export on GPU and CPU), `hue-mask-delivery`, `proof-size-interaction`, and the
+Proof signature/identity Python tests.
 
 **Still open (Stage 2):** Show mask must display the exact applied Local hue
-mask at each zoom and lane, including tiled views; the existing Proof cache
-must account for Local adjustments, subject to Steve's approval before changing
-Proof/export. Cold first-preparation timing has not been isolated.
+mask at each zoom and lane, including tiled views. Cold first-preparation
+timing has not been isolated.
 
 ## October 27: shared colour selection built for Global HSL (Stage 1)
 

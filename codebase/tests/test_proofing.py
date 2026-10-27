@@ -798,3 +798,18 @@ def test_forced_build_re_encodes_instead_of_replaying_the_cache(monkeypatch, tmp
     # Identical input still yields identical content, so the artifact identity
     # and every tile derived from it stay stable across a forced rebuild.
     assert rebuilt.artifact_id == first.artifact_id
+
+
+def test_proof_signature_tracks_local_adjustments() -> None:
+    """Locals live on the session, so a proof made before a Local edit must not
+    be reused for it when the request has no edit revision."""
+    from hdr_finisher.models import LocalAdjustment, MaskExpression, MaskLeaf
+    request = ProofArtifactRequest(adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256)
+    context = RenderColorContext()
+    local = LocalAdjustment(mask=MaskExpression(operator="leaf", leaf=MaskLeaf(
+        type="hue_range", hue_center=109, hue_width=24, hue_smoothness=41)))
+    edited = local.model_copy(deep=True)
+    edited.sdr_grade.exposure = 1.05
+    signature = lambda locals_: ProofArtifactStore._request_signature("session", request, context, local_adjustments=locals_)
+    assert len({signature(None), signature([local]), signature([edited])}) == 3
+    assert signature([local]) == signature([local.model_copy(deep=True)])
