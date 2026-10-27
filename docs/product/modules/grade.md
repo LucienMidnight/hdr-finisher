@@ -284,12 +284,14 @@ Sharpen review below are v1. Item 2 waits on Steve's recorded photo. Items 4
 and 5 (removing HDR Lift/Gamma/Gain; the PIPE-01, DETAIL-01 and CLARITY-01
 reviews) are after v1. Items 6 and 7 are unchanged and not v1 requirements.
 
-- **Sharpen review (v1, added by Steve, October 26, 2026):** Steve suspects
-  Grade's Sharpen control (Detail section) is broken or simply a weak
-  algorithm. Check what it does on real photos in HDR and SDR, compare with
-  how established editors sharpen, and propose a fix or a replacement for
-  Steve to judge by eye. Export output sharpening is separate and only in
-  scope if it shares the same code.
+- **Sharpen v1 accepted by Steve, October 27, 2026.** Keep the method.
+  The earlier impression came from judging zoomed out; sharpening works at
+  100%. Global and local Detail use the existing tooltip style to remind:
+  “Judge sharpening at 100% zoom.” No rendered pixels changed.
+- **V2 sharpening exploration:** use the October 27 comparison below as the
+  starting point for methods that amplify noise less: deconvolution/capture
+  sharpening, edge or noise masking, and darktable’s diffuse-or-sharpen
+  approach. Compare quality and processing cost before choosing.
 
 1. Highlight and Shadow Desaturation in Color (COLOR-DESAT-01).
 2. Investigate the Match fault once Steve has recorded a photo and message.
@@ -325,8 +327,8 @@ reviews) are after v1. Items 6 and 7 are unchanged and not v1 requirements.
 
 ### Sharpen investigation — October 27, 2026
 
-**Investigation complete; Steve’s visual decision and delivery discrepancy remain
-open. No pixel code or sharpening method changed.** The comparison is
+**Investigation complete; Steve accepted the method for v1 on October 27.
+Delivery discrepancy remains open. No pixel code or sharpening method changed.** The comparison is
 `codebase/output/sharpen-review/index.html`, with two read-only badminton RAWs,
 DSC07147.ARW and DSC07178.ARW. Off, default, working and strong are matched
 512-pixel crops at 100%, in SDR PNG and true HDR PQ AVIF; a labeled tone-mapped
@@ -408,12 +410,14 @@ recommends judging at 100%; it does not disclose its exact filter there.
 HDR Finisher has a simple contrast threshold rather than that separate masking
 control or deconvolution/capture-sharpening stage.
 
-Recommend **keep the present method for v1**, judged at 100%, pending Steve’s
-view of the crops. Trade-off: fast processing and verified isolated CPU/GPU
+Steve decided **keep the present method for v1**, judged at 100%, with the
+in-app reminder (October 27). Trade-off: fast processing and verified isolated CPU/GPU
 behavior, but limited blur recovery, disappearing small-radius effects at Fit
-and noise amplification. Steve’s decision remains open: accept that trade-off
-for v1 or commission a replacement afterwards. The production delivery
+and noise amplification. More advanced sharpening is v2 exploration. The production delivery
 agreement failure remains separate open work and must not be marked passed.
+
+Part 2 validation: no pixel changes; fast checks deferred to this batch’s end.
+Steve should hover Sharpen in Detail and judge the effect at 100%.
 
 ### October 27 batch validation
 
