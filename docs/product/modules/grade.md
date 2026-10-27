@@ -46,16 +46,20 @@ Resolve, darktable, DxO).
   space (scene-linear for HDR and generated SDR; display-linear for the
   zones in SDR, which run where Lift/Gamma/Gain ran, after SDR highlight
   placement, so SDR white sits about 2.5 stops above). Blacks multiplies by
-  2^(amount) on the darkest tones, full at -7 stops and none from -3. Each zone
-  adds amount x (1 - smoothstep(0, Width/2, |stop - Center|)) stops.
+  2^(stops) on the darkest tones, full at -7 stops and none from -3. Each zone
+  adds stops x (1 - smoothstep(0, Width/2, |stop - Center|)).
 - Defaults (same both lanes): Shadows -2.5 / 5, Midtones 0 / 4, Highlights
   +1.25 / 2.5 (Center / Width, stops). Highlights ends at SDR white and below
-  HDR speculars. Sliders run -2 to +2 stops.
-- Tone order: all three zone amounts shrink together only where the curve
-  would fall below a slope of 0.1. A single slider therefore reaches at most
-  about 1.5 (Shadows), 1.2 (Midtones) and 0.75 (Highlights) stops at default
-  widths; wider zones allow more. Open with Steve: keep stops with these
-  ceilings, or move the zone sliders to a -100..+100 strength scale.
+  HDR speculars.
+- **Scale (Steve, October 27): every tone slider is a strength, -100 to
+  +100.** Blacks 100 = 2 stops on the darkest tones. A zone's 100 is the most
+  it can move its centre without tones swapping order (0.6 x Width/2 stops:
+  1.5 Shadows, 1.2 Midtones, 0.75 Highlights at default widths; wider zones go
+  further), so the whole slider travel is useful. Center and Width stay in
+  stops (EV).
+- Tone order: where overlapping zones would still fold the curve (slope
+  below 0.1), all three shrink together just enough. A single zone at
+  +/-100 is never reduced.
 - Zones are part of Tone (Tone's bypass and Reset). The Lift/Gamma/Gain group,
   `primaries_section_enabled`, `shadow_lift` and SDR `shadow` are removed; GPU
   slots 4-7 and 54-59 are renamed, not moved. Hovering a zone tile shows its
@@ -69,8 +73,9 @@ Resolve, darktable, DxO).
 - Checks: fast JS and Python (known Library failures only); new
   `tests/test_tone_zones.py`, `tests/tone-zones.test.js` (GPU and CPU limits
   identical) and `tests/tone-zones-delivery.js` (GPU finished pixels equal CPU:
-  HDR mean dITP 0.03, SDR mean dE2000 0.007; Proof equals export; peak 980
-  nits). Review page: `codebase/output/tone-zones/index.html`.
+  HDR mean dITP 0.03, SDR mean dE2000 0.007; Proof equals export; peak 975
+  nits, rerun after the strength scale). Review page:
+  `codebase/output/tone-zones/index.html`.
 
 ## October 27: HSL selection edge controls
 

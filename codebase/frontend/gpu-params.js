@@ -144,9 +144,15 @@
   // Shadows, Midtones and Highlights in stops as the renderer applies them:
   // all three shrink together only where the response would otherwise lose
   // its minimum slope of 0.1, so tones never swap order.
+  // Sliders are strengths, -100..+100. Blacks 100 is two stops; a zone's 100
+  // is the most its centre can move without flattening: 0.6 x Width/2 stops.
   const TONE_ZONES = ["shadows", "midtones", "highlights"];
+  function blacksStops(strength) { return (Number(strength) || 0) / 100 * 2; }
   function toneZoneAmounts(branch) {
-    const amounts = TONE_ZONES.map((zone) => Number(branch?.[zone]) || 0);
+    const amounts = TONE_ZONES.map((zone) => {
+      const half = Math.max(Number(branch?.[`${zone}_width`]) * 0.5, 1e-3);
+      return (Number(branch?.[zone]) || 0) / 100 * (0.9 * half / 1.5);
+    });
     if (!amounts.some(Boolean)) return [0, 0, 0];
     let lowest = Infinity;
     for (let index = 0; index <= 1024; index += 1) {
@@ -196,7 +202,7 @@
     let peak = Math.max(1, Number(authoredPeak) || 1000) * 0.18 / referenceWhiteNits;
     if (!toneEnabled) return peak;
     peak *= Math.pow(2, Number(branch.exposure) || 0);
-    peak *= blacksFactor(peak, Number(branch.blacks) || 0);
+    peak *= blacksFactor(peak, blacksStops(branch.blacks));
     const contrast = Number(branch.contrast) || 0;
     if (contrast !== 0 && peak > 0.00000001) {
       const pivot = Math.max(Number(branch.contrast_pivot) || 0.1845, 0.000001);
@@ -224,7 +230,7 @@
     const colorActive = colorEnabled && !colorSettingsNeutral(colorSource);
     params[GPU_PARAMS.EXPOSURE] = toneEnabled ? branch.exposure || 0 : 0;
     params[GPU_PARAMS.HIGHLIGHT_SOFTNESS] = highlightEnabled ? branch.highlight_compression_softness || 0 : 0;
-    params[GPU_PARAMS.BLACKS] = toneEnabled ? branch.blacks || 0 : 0;
+    params[GPU_PARAMS.BLACKS] = toneEnabled ? blacksStops(branch.blacks) : 0;
     const zoneAmounts = toneEnabled ? toneZoneAmounts(branch) : [0, 0, 0];
     params[GPU_PARAMS.SHADOWS] = zoneAmounts[0];
     params[GPU_PARAMS.MIDTONES] = zoneAmounts[1];

@@ -49,7 +49,7 @@ function toneAdjustedHighlightPeakNits(hdr) {
   if (hdr.tone_section_enabled === false) return Math.max(1, peakLinear * referenceWhite / 0.18);
   peakLinear *= 2 ** (Number(hdr.exposure) || 0);
   // Blacks (full at -7 stops, none from -3): mirrors blacksFactor in gpu-params.js.
-  const blacks = Number(hdr.blacks) || 0;
+  const blacks = (Number(hdr.blacks) || 0) / 100 * 2; // strength -100..+100 as stops
   if (blacks !== 0) {
     const t = clamp((Math.log2(Math.max(peakLinear, 1e-8) / 0.18) + 7) / 4, 0, 1);
     peakLinear *= 2 ** (blacks * (1 - t * t * (3 - 2 * t)));

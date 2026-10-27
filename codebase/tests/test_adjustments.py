@@ -677,7 +677,7 @@ def test_sdr_contrast_is_gentle_for_scene_linear_midtones() -> None:
 
 
 def test_sdr_blacks_at_max_stays_in_display_range() -> None:
-    state = AdjustmentState(sdr=SDRAdjustments(blacks=2.0))
+    state = AdjustmentState(sdr=SDRAdjustments(blacks=100.0))
     image = np.ones((4, 4, 3), dtype=np.float32) * 0.3
     output = _apply_sdr_adjustments(image, state)
     assert output.max() <= 1.0, "SDR Blacks at max should not exceed display white"
@@ -742,7 +742,7 @@ def test_default_curve_has_three_editable_control_points() -> None:
 
 
 def test_hdr_blacks_is_luminance_masked() -> None:
-    state = AdjustmentState(hdr=HDRAdjustments(blacks=1.0))
+    state = AdjustmentState(hdr=HDRAdjustments(blacks=50.0))
     dark_image = np.ones((4, 4, 3), dtype=np.float32) * 0.18 * 2 ** -8
     bright_image = np.ones((4, 4, 3), dtype=np.float32) * 2.0
     dark_output = _apply_hdr_adjustments(dark_image, state)
@@ -753,7 +753,7 @@ def test_hdr_blacks_is_luminance_masked() -> None:
 
 
 def test_hdr_blacks_does_not_clip() -> None:
-    state = AdjustmentState(hdr=HDRAdjustments(blacks=2.0))
+    state = AdjustmentState(hdr=HDRAdjustments(blacks=100.0))
     image = np.ones((4, 4, 3), dtype=np.float32) * 3.0
     output = _apply_hdr_adjustments(image, state)
     assert not np.any(np.isinf(output)), "HDR Blacks should not produce infinities"
@@ -803,11 +803,11 @@ def test_direct_entry_headroom_is_accepted_by_adjustment_models() -> None:
         exposure=-8,
         highlight_compression_start_percent=99,
         highlight_compression_manual_peak_percent=1_000_000,
-        blacks=-2,
+        blacks=-100,
         contrast_pivot=0.999,
         white_balance_kelvin=1000,
         vibrance=3,
-        midtones=-2,
+        midtones=-100,
         midtones_width=24,
     )
 
@@ -1044,7 +1044,7 @@ def test_peak_fit_anchor_is_applied_after_other_tone_controls() -> None:
     state = AdjustmentState(
         hdr=HDRAdjustments(
             exposure=-0.85,
-            blacks=-0.5,
+            blacks=-25,
             contrast=-0.187,
             contrast_pivot=0.02,
             highlight_compression_mode="peak_fit",
@@ -1402,7 +1402,7 @@ def test_hdr_section_bypass_retains_settings_but_removes_render_effect() -> None
             exposure=2,
             highlight_compression_mode="soft_ceiling",
             highlight_compression_softness=100,
-            blacks=0.4,
+            blacks=20,
             tone_equalizer_nodes=[
                 {"input_ev": -6, "adjustment_ev": 1},
                 {"input_ev": 6, "adjustment_ev": -1},
@@ -1415,9 +1415,9 @@ def test_hdr_section_bypass_retains_settings_but_removes_render_effect() -> None
             blue_purity=45,
             tint_hue=-80,
             tint_purity=8,
-            shadows=0.6,
-            midtones=-0.8,
-            highlights=0.5,
+            shadows=30,
+            midtones=-40,
+            highlights=25,
             luma_curve=[[0, 0], [1, 0.5]],
         )
     )
@@ -1678,10 +1678,10 @@ def test_single_sdr_exposure_step_is_continuous_for_wide_exr() -> None:
     [
         (PreviewKind.HDR, "hdr.exposure", 0.05),
         (PreviewKind.HDR, "hdr.highlight_compression_softness", 1),
-        (PreviewKind.HDR, "hdr.blacks", 0.02),
-        (PreviewKind.HDR, "hdr.shadows", 0.02),
-        (PreviewKind.HDR, "hdr.midtones", 0.02),
-        (PreviewKind.HDR, "hdr.highlights", 0.02),
+        (PreviewKind.HDR, "hdr.blacks", 1),
+        (PreviewKind.HDR, "hdr.shadows", 1),
+        (PreviewKind.HDR, "hdr.midtones", 1),
+        (PreviewKind.HDR, "hdr.highlights", 1),
         (PreviewKind.HDR, "hdr.contrast", 0.001),
         (PreviewKind.HDR, "hdr.white_balance_kelvin", 50),
         (PreviewKind.HDR, "hdr.tint", 0.01),
@@ -1690,10 +1690,10 @@ def test_single_sdr_exposure_step_is_continuous_for_wide_exr() -> None:
         (PreviewKind.HDR, "hdr.red_hue", 0.1),
         (PreviewKind.HDR, "hdr.red_purity", 0.5),
         (PreviewKind.SDR, "sdr.exposure", 0.05),
-        (PreviewKind.SDR, "sdr.blacks", 0.02),
-        (PreviewKind.SDR, "sdr.shadows", 0.02),
-        (PreviewKind.SDR, "sdr.midtones", 0.02),
-        (PreviewKind.SDR, "sdr.highlights", 0.02),
+        (PreviewKind.SDR, "sdr.blacks", 1),
+        (PreviewKind.SDR, "sdr.shadows", 1),
+        (PreviewKind.SDR, "sdr.midtones", 1),
+        (PreviewKind.SDR, "sdr.highlights", 1),
         (PreviewKind.SDR, "sdr.contrast", 0.001),
     ],
 )
@@ -1719,10 +1719,10 @@ def test_one_slider_step_is_finite_ordered_and_gradual(kind: PreviewKind, path: 
     ("path", "step"),
     [
         ("sdr.exposure", 0.05),
-        ("sdr.blacks", 0.02),
-        ("sdr.shadows", 0.02),
-        ("sdr.midtones", 0.02),
-        ("sdr.highlights", 0.02),
+        ("sdr.blacks", 1),
+        ("sdr.shadows", 1),
+        ("sdr.midtones", 1),
+        ("sdr.highlights", 1),
         ("sdr.contrast", 0.001),
     ],
 )
@@ -1750,19 +1750,19 @@ def test_sdr_reference_slider_step_is_finite_ordered_and_gradual(path: str, step
     [
         (PreviewKind.HDR, "hdr", "exposure", (-1.3, 1.3)),
         (PreviewKind.HDR, "hdr", "highlight_compression_softness", (0.0, 75.0)),
-        (PreviewKind.HDR, "hdr", "blacks", (-1.0, 1.0)),
-        (PreviewKind.HDR, "hdr", "shadows", (-1.0, 1.0)),
-        (PreviewKind.HDR, "hdr", "midtones", (-1.0, 1.0)),
-        (PreviewKind.HDR, "hdr", "highlights", (-1.0, 1.0)),
+        (PreviewKind.HDR, "hdr", "blacks", (-50.0, 50.0)),
+        (PreviewKind.HDR, "hdr", "shadows", (-50.0, 50.0)),
+        (PreviewKind.HDR, "hdr", "midtones", (-50.0, 50.0)),
+        (PreviewKind.HDR, "hdr", "highlights", (-50.0, 50.0)),
         (PreviewKind.HDR, "hdr", "contrast", (-0.32, 0.32)),
         (PreviewKind.HDR, "hdr", "contrast_pivot", (0.08, 0.4)),
         (PreviewKind.HDR, "hdr", "white_balance_kelvin", (3900, 9100)),
         (PreviewKind.HDR, "hdr", "tint", (-0.65, 0.65)),
         (PreviewKind.SDR, "sdr", "exposure", (-1.3, 1.3)),
-        (PreviewKind.SDR, "sdr", "blacks", (-1.0, 1.0)),
-        (PreviewKind.SDR, "sdr", "shadows", (-1.0, 1.0)),
-        (PreviewKind.SDR, "sdr", "midtones", (-1.0, 1.0)),
-        (PreviewKind.SDR, "sdr", "highlights", (-1.0, 1.0)),
+        (PreviewKind.SDR, "sdr", "blacks", (-50.0, 50.0)),
+        (PreviewKind.SDR, "sdr", "shadows", (-50.0, 50.0)),
+        (PreviewKind.SDR, "sdr", "midtones", (-50.0, 50.0)),
+        (PreviewKind.SDR, "sdr", "highlights", (-50.0, 50.0)),
         (PreviewKind.SDR, "sdr", "contrast", (-0.32, 0.32)),
         (PreviewKind.SDR, "sdr", "contrast_pivot", (0.19, 0.81)),
     ],

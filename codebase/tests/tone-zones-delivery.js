@@ -27,7 +27,7 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
  await page.evaluate(async ()=>{
    await syncGlobalEditState();
    for(const lane of ['hdr','sdr']){
-    Object.assign(state.adjustments[lane],{blacks:0.6,shadows:1.2,midtones:-0.6,highlights:0.5,shadows_width:3.5});
+    Object.assign(state.adjustments[lane],{blacks:30,shadows:70,midtones:-40,highlights:40,shadows_width:3.5});
    }
    for(const lane of ['hdr','sdr']){
     const b=state.adjustments[lane];b.highlight_section_enabled=lane==='hdr';b.highlight_compression_mode='peak_fit';

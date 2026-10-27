@@ -639,7 +639,7 @@ def _apply_hdr_base_adjustments(image: np.ndarray, adjustments: AdjustmentState)
     result = image.astype(np.float32, copy=True)
     result *= np.float32(2.0 ** hdr.exposure)
     if hdr.blacks != 0:
-        result = result * _blacks_factor(_acescg_luma(result), hdr.blacks)[..., None]
+        result = result * _blacks_factor(_acescg_luma(result), blacks_stops(hdr.blacks))[..., None]
     return result
 
 
@@ -686,7 +686,7 @@ def _tone_adjusted_source_peak_nits(
     peak_linear = float(nits_to_scene_linear(peak, context.hdr_reference_white_nits)) * (2.0 ** float(getattr(hdr, "exposure", 0.0)))
     blacks = float(getattr(hdr, "blacks", 0.0))
     if blacks != 0.0:
-        peak_linear *= float(_blacks_factor(np.float32(peak_linear), blacks))
+        peak_linear *= float(_blacks_factor(np.float32(peak_linear), blacks_stops(blacks)))
     contrast = float(getattr(hdr, "contrast", 0.0))
     if contrast != 0.0 and peak_linear > 1e-8:
         pivot = max(float(getattr(hdr, "contrast_pivot", 0.1845)), 1e-6)
@@ -890,7 +890,7 @@ def _sdr_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState)
     if sdr.tone_section_enabled:
         result = np.clip(result * np.float32(2.0 ** sdr.exposure), 0.0, None)
     if sdr.tone_section_enabled and sdr.blacks != 0:
-        result = result * _blacks_factor(_acescg_luma(result), sdr.blacks)[..., None]
+        result = result * _blacks_factor(_acescg_luma(result), blacks_stops(sdr.blacks))[..., None]
     if _sdr_color_is_enabled(adjustments):
         result = _apply_hdr_color(result, adjustments.sdr, PreviewKind.SDR)
     return result
@@ -904,7 +904,7 @@ def _sdr_reference_before_black_and_white(image: np.ndarray, adjustments: Adjust
     if sdr.tone_section_enabled:
         result *= np.float32(2.0 ** sdr.exposure)
     if sdr.tone_section_enabled and sdr.blacks != 0:
-        result = result * _blacks_factor(_linear_luma(result), sdr.blacks)[..., None]
+        result = result * _blacks_factor(_linear_luma(result), blacks_stops(sdr.blacks))[..., None]
     return result
 
 
@@ -989,10 +989,17 @@ TONE_GREY = np.float32(0.18)
 BLACKS_FULL_STOP = -7.0
 BLACKS_ZERO_STOP = -3.0
 TONE_ZONES = ("shadows", "midtones", "highlights")
+# Blacks at 100 moves the darkest tones by this many stops.
+BLACKS_FULL_STOPS = 2.0
 # Tones never swap order: zone amounts shrink together until the response
 # keeps at least this slope (output stops per input stop) everywhere.
 TONE_ZONE_MIN_SLOPE = 0.1
 _TONE_ZONE_GRID = np.linspace(-16.0, 16.0, 1025)
+
+
+def blacks_stops(strength: float) -> float:
+    """Blacks strength (-100..+100) as stops on the darkest tones."""
+    return float(strength) / 100.0 * BLACKS_FULL_STOPS
 
 
 def _blacks_factor(luma: np.ndarray, amount: float) -> np.ndarray:
@@ -1011,12 +1018,17 @@ def _tone_zone_shape(branch: object, zone: str) -> tuple[float, float]:
 def tone_zone_amounts(branch: object) -> tuple[float, float, float]:
     """Shadows, Midtones and Highlights in stops, as the renderer applies them.
 
-    Each zone adds its amount times a smooth bump (1 at Center, 0 at Center
-    +/- Width/2). Where large amounts meet narrow or opposing zones the
-    response could fold back, so all three shrink together just enough to
-    keep the minimum slope. ``gpu-params.js`` mirrors this exactly.
+    Each slider is a strength, -100..+100. Strength 100 moves the zone's centre
+    by the most a smooth bump (1 at Center, 0 at Center +/- Width/2) can
+    without the response flattening below the minimum slope: 0.6 x Width/2
+    stops. Where zones overlap and still fold, all three shrink together just
+    enough to keep the minimum slope. ``gpu-params.js`` mirrors this exactly.
     """
-    amounts = [float(getattr(branch, zone, 0.0)) for zone in TONE_ZONES]
+    amounts = []
+    for zone in TONE_ZONES:
+        _center, half = _tone_zone_shape(branch, zone)
+        full = (1.0 - TONE_ZONE_MIN_SLOPE) * half / 1.5
+        amounts.append(float(getattr(branch, zone, 0.0)) / 100.0 * full)
     if not any(amounts):
         return (0.0, 0.0, 0.0)
     derivative = np.zeros_like(_TONE_ZONE_GRID)

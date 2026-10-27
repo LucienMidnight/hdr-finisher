@@ -434,10 +434,10 @@ def test_all_hdr_lane_controls_are_isolated_from_manual_sdr_fallback() -> None:
                 "exposure": 1.5,
                 "highlight_compression_mode": "soft_ceiling",
                 "highlight_compression_softness": 75,
-                "blacks": 0.4,
-                "shadows": 0.4,
-                "midtones": -0.6,
-                "highlights": 0.5,
+                "blacks": 20,
+                "shadows": 20,
+                "midtones": -30,
+                "highlights": 25,
                 "contrast": 0.5,
                 "contrast_pivot": 0.3,
                 "white_balance_kelvin": 11000,
@@ -462,10 +462,10 @@ def test_all_hdr_lane_controls_are_isolated_from_manual_embedded_sdr_reference()
                 "exposure": -2.0,
                 "highlight_compression_mode": "soft_ceiling",
                 "highlight_compression_softness": 100,
-                "blacks": -0.5,
-                "shadows": -0.8,
-                "midtones": 1.2,
-                "highlights": -0.6,
+                "blacks": -25,
+                "shadows": -40,
+                "midtones": 60,
+                "highlights": -30,
                 "contrast": -0.7,
                 "white_balance_kelvin": 2500,
                 "tint": -0.9,
@@ -513,8 +513,8 @@ def test_sdr_shadows_and_highlights_target_their_tones() -> None:
     # with or without Gain, and the comparison is left to float rounding.
     image = np.array([[[0.01, 0.01, 0.01], [0.1, 0.1, 0.1], [0.3, 0.3, 0.3]]], dtype=np.float32)
     off = {"highlight_section_enabled": False}
-    lifted = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {**off, "shadows": 0.5}}), PreviewKind.SDR)
-    gained = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {**off, "highlights": 0.5}}), PreviewKind.SDR)
+    lifted = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {**off, "shadows": 40}}), PreviewKind.SDR)
+    gained = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {**off, "highlights": 60}}), PreviewKind.SDR)
     baseline = apply_adjustments(image, AdjustmentState.model_validate({"sdr": off}), PreviewKind.SDR)
 
     assert lifted[0, 0].mean() - baseline[0, 0].mean() > lifted[0, 2].mean() - baseline[0, 2].mean()

@@ -8,11 +8,11 @@ const PHOTOS=[
 ];
 const STATES=[
  ['neutral',{}],
- ['blacks+1',{blacks:1}],['blacks-1',{blacks:-1}],
- ['shadows+1',{shadows:1}],['shadows-1',{shadows:-1}],
- ['midtones+1',{midtones:1}],['midtones-1',{midtones:-1}],
- ['highlights+1',{highlights:1}],['highlights-1',{highlights:-1}],
- ['shadows+1-narrow',{shadows:1,shadows_width:2}],['shadows+1-wide',{shadows:1,shadows_width:8}],
+ ['blacks+60',{blacks:60}],['blacks-60',{blacks:-60}],
+ ['shadows+60',{shadows:60}],['shadows-60',{shadows:-60}],
+ ['midtones+60',{midtones:60}],['midtones-60',{midtones:-60}],
+ ['highlights+60',{highlights:60}],['highlights-60',{highlights:-60}],
+ ['shadows+60-narrow',{shadows:60,shadows_width:2}],['shadows+60-wide',{shadows:60,shadows_width:8}],
 ];
 const NEUTRAL={blacks:0,shadows:0,midtones:0,highlights:0,shadows_center:-2.5,shadows_width:5,midtones_center:0,midtones_width:4,highlights_center:1.25,highlights_width:2.5};
 const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.lane===state.currentView
@@ -38,7 +38,7 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
     const file=`${name}-${lane}-${label}.png`;await page.screenshot({path:path.join(out,file),clip});rows.push({name,lane,label,file});
    }
    // The scope band for Shadows while its slider is hovered.
-   await page.evaluate(async({lane,neutral})=>{Object.assign(state.adjustments[lane],neutral,{shadows:1});state.globalEditDirty=true;await syncGlobalEditState();
+   await page.evaluate(async({lane,neutral})=>{Object.assign(state.adjustments[lane],neutral,{shadows:60});state.globalEditDirty=true;await syncGlobalEditState();
     invalidatePreview(lane);await settlePreview(lane,{});
     const group=document.querySelector(`[data-group="${lane}-tone"]`);group.classList.remove('collapsed');group.querySelector('.group-toggle')?.setAttribute('aria-expanded','true');},{lane,neutral:NEUTRAL});
    await page.waitForFunction(settled,null,{timeout:180000});await page.waitForTimeout(800);
@@ -56,6 +56,6 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
  const html=`<!doctype html><meta charset="utf-8"><title>Tone sliders review</title>
 <style>body{background:#111;color:#ddd;font:14px system-ui;margin:24px}h2{margin-top:36px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px}figure{margin:0}img{width:100%;background:#000}figcaption{padding:4px 0}</style>
 <h1>Tone sliders: Blacks, Shadows, Midtones, Highlights</h1>
-<p>Each slider at +1 and −1 stop with default Center and Width; Shadows +1 with a narrow (2 stops) and a wide (8 stops) Width; the scope band while Shadows is hovered; the new Tone panel. Copies of the photos, default grade otherwise.</p>
+<p>Each slider at +60 and −60 (of ±100) with default Center and Width; Shadows +60 with a narrow (2 stops) and a wide (8 stops) Width; the scope band while Shadows is hovered; the new Tone panel. Copies of the photos, default grade otherwise.</p>
 ${Object.entries(groups).map(([title,items])=>`<h2>${title}</h2><div class="grid">${items.map(r=>`<figure><img src="${r.file}" loading="lazy"><figcaption>${r.label}</figcaption></figure>`).join('')}</div>`).join('')}`;
  fs.writeFileSync(path.join(out,'index.html'),html);await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1});

@@ -431,13 +431,14 @@ class _BranchAdjustments(BaseModel):
     )
     tone_equalizer_influence_radius: float = Field(default=1.5, ge=0.25, le=12.0)
     tone_equalizer_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
-    # Tone sliders (Steve, 2026-10-27). Amounts are stops. Each zone is
-    # Center +/- Width/2, in stops from middle grey (0.18) in the lane's
-    # working space; Blacks works on the darkest tones only.
-    blacks: float = Field(default=0.0, ge=-2.0, le=2.0)
-    shadows: float = Field(default=0.0, ge=-2.0, le=2.0)
-    midtones: float = Field(default=0.0, ge=-2.0, le=2.0)
-    highlights: float = Field(default=0.0, ge=-2.0, le=2.0)
+    # Tone sliders (Steve, 2026-10-27), strength -100..+100. Blacks: 100 is
+    # two stops on the darkest tones. Each zone is Center +/- Width/2, in stops
+    # from middle grey (0.18) in the lane's working space; 100 is the most that
+    # zone can move its centre without tones swapping order.
+    blacks: float = Field(default=0.0, ge=-100.0, le=100.0)
+    shadows: float = Field(default=0.0, ge=-100.0, le=100.0)
+    midtones: float = Field(default=0.0, ge=-100.0, le=100.0)
+    highlights: float = Field(default=0.0, ge=-100.0, le=100.0)
     shadows_center: float = Field(default=-2.5, ge=-12.0, le=12.0)
     shadows_width: float = Field(default=5.0, ge=0.5, le=24.0)
     midtones_center: float = Field(default=0.0, ge=-12.0, le=12.0)
