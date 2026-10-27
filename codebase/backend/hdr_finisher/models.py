@@ -1387,12 +1387,28 @@ class ExportSettings(_EncodingSettings):
         *_ENCODING_FIELD_ORDER[:10],
         "sdr_png_bit_depth",
         *_ENCODING_FIELD_ORDER[10:],
-        "metadata_policy", "guarantee_hdr_peak", "output_path", "path_grant", "overwrite", "overwrite_target",
+        "metadata_policy", "metadata_template", "metadata_strip_location", "metadata_strip_serials", "metadata_sequence", "guarantee_hdr_peak", "output_path", "path_grant", "overwrite", "overwrite_target",
         "edit_revision", "output_finishing", "export_with_frame", "editing_measurements",
     )
 
     sdr_png_bit_depth: Literal[8, 16] = 8
     metadata_policy: Literal["none", "copyright", "all_except_location", "all_including_location"] = "none"
+    metadata_template: dict[Literal["title", "caption", "creator", "copyright"], str] = Field(default_factory=dict)
+    metadata_strip_location: bool = False
+    metadata_strip_serials: bool = False
+    metadata_sequence: int = Field(default=1, ge=1)
+
+    @field_validator("metadata_template")
+    @classmethod
+    def validate_metadata_template(cls, value):
+        import re
+        for text in value.values():
+            if len(text) > 8000 or "\x00" in text:
+                raise ValueError("Metadata template fields must be at most 8000 characters without nulls.")
+            if re.search(r"\{(?!(?:filename|capture_date|sequence|seq)\})[^{}]*\}", text):
+                raise ValueError("Metadata tokens are {filename}, {capture_date} and {sequence}.")
+        return value
+
     # Optional decoded HDR peak check and local correction, per preset version.
     # Off by default: encode once without checking the decoded peak.
     guarantee_hdr_peak: bool = False

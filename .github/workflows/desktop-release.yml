@@ -45,6 +45,10 @@ jobs:
           python -m pip install -r requirements-dev.txt
           npm ci --prefix desktop
 
+      - name: Prepare and verify bundled ExifTool
+        working-directory: codebase
+        run: python tools/fetch_exiftool.py
+
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/')
         working-directory: codebase
@@ -133,6 +137,10 @@ jobs:
           python -m pip install -r requirements-dev.txt
           npm ci --prefix desktop
 
+      - name: Prepare and verify bundled ExifTool
+        working-directory: codebase
+        run: python tools/fetch_exiftool.py
+
       - name: Verify Apple Silicon runner and release version
         working-directory: codebase
         run: |
@@ -206,6 +214,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r codebase/requirements-dev.txt
           npm ci --prefix codebase/desktop
+
+      - name: Prepare and verify bundled ExifTool
+        working-directory: codebase
+        run: python tools/fetch_exiftool.py
 
       - name: Verify release version
         working-directory: codebase
@@ -287,6 +299,7 @@ jobs:
         run: |
           package_version="$(node -p "require('../../codebase/desktop/package.json').version")"
           flatpak install --user -y "HDR-Finisher-${package_version}-Linux-x86_64.flatpak"
+          flatpak run --user --command=/app/bin/perl io.github.LucienMidnight.hdr-finisher /app/hdr-finisher-runtime/bin/exiftool-runtime/bin/exiftool -ver | grep -x 13.59
           sidecar="/app/hdr-finisher/resources/backend/HDR Finisher Backend"
           flatpak run --user --env=HDR_FINISHER_DESKTOP_SECRET=ci --env=HDR_FINISHER_DESKTOP_CONTROL_SECRET=ci --env=HDR_FINISHER_APP_DATA_DIR=/tmp/hdr-finisher-ci --command="$sidecar" io.github.LucienMidnight.hdr-finisher --desktop-sidecar --parent-pid 999999999 | grep "\"backend_version\":\"${package_version}\""
           set +e

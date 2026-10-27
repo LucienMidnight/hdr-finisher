@@ -1,5 +1,57 @@
 # Module PRD: Export and Proof
 
+## October 27: source metadata and reusable templates
+
+All six export formats use bundled ExifTool 13.59 after encoding, in single
+and batch export. The four source policies now also work for AVIF. Metadata
+None without a template skips the helper. Optional title, caption, creator and
+copyright fields accept {filename} (stem), {capture_date} (YYYY-MM-DD, empty
+when unavailable), and {sequence}/{seq} (one-based batch order; 1 for a single
+export). Blank fields keep whatever the source policy copied. Templates and
+both privacy checkboxes persist in the ordinary multi-version export presets.
+Explicit Strip GPS and location overrides All including location; Strip camera/
+lens serial numbers and owner name is separate. Opaque maker notes are removed
+when either privacy filter is active because they can conceal private values.
+Delivery orientation, geometry, colour and HDR tags never come from the source.
+
+Metadata writes occur on the unpublished staged file. JPEG protects the exact
+compressed base, complete gain-map JPEG, ICC/ISO markers and original HDR RDF
+description bytes; the helper never merges those descriptions. Only container
+header sizes and MPF layout pointers change. PNG protects image/colour chunks,
+JXL its codestream (including embedded colour), AVIF its non-metadata item data
+and codec/colour properties. Any mismatch aborts without publishing. Encoders,
+rendered pixels and Proof rendering are unchanged. One persistent serialized
+helper avoids process startup per batch photo; timing logs name policy, privacy
+and metadata milliseconds. The tiny-file run measured 34–92 ms after startup
+(first metadata write 297 ms); this is not a full-size batch pace measurement.
+
+The pinned fetcher retains ExifTool/Perl/packaging licences and source/patches.
+Windows carries Perl; macOS uses system Perl, Debian declares the dependency,
+and Flatpak includes Perl. All desktop build paths fetch/check the helper;
+packaging executes its packaged copy, including an installed Flatpak CI probe.
+Only Windows development execution was tested locally; macOS/Linux package
+execution is wired into CI and has not been run in this batch. Missing ExifTool
+fails plainly instead of dropping selected metadata.
+
+Validation: a disposable 64 × 48 source, Ultra HDR JPEG and PNG under all four
+policies, plus metadata-bearing AVIF, HDR/SDR JXL and SDR JPEG, all read back
+correctly and retained protected bytes exactly against their no-metadata
+exports. The app's HDR decoder opened all four JPEGs; installed Chrome 155
+opened them with identical float16 canvas samples. Chrome was headless, so
+Steve's HDR-display visual check remains manual. Result-based tests cover
+privacy overrides, template fields, preset save/reload and missing-helper errors.
+An actual saved/reloaded batch preset wrote sequence 7 and removed GPS/serial
+metadata in a disposable source/export directory.
+Final fast checks, run once across all three parts: JavaScript 637 passed,
+2 known failures; Python 2,619 passed, 3 skipped, 2 known failures (6m47s).
+Known failures only: library-scenes (CPU fallback fixture), library-single-ready
+(missing screen-preview fixture), test_rgb_description_precedes_pixels_and_keeps_publication_guards[None],
+and test_library_native_source_uses_same_repair_before_reduction. The tightened
+namespace-wide privacy filter then passed its 10 targeted metadata tests (7.2s).
+No known failure was changed, investigated or rerun. No broad GPU sweep,
+installer build or push. Steve's manual trial remains the acceptance step. No photo folder,
+live Library database, installer or remote branch was written.
+
 ## October 27: finished export agreement investigation
 
 **V1 accepted by Steve; JPEG agreement improvements deferred to v2.**
@@ -191,8 +243,8 @@ although they are made by the same delivery renderer.
 
 | Format | Role |
 | --- | --- |
-| AVIF with ISO 21496-1 gain map | Primary. Default: 10-bit 4:2:0 primary, half-resolution 10-bit 4:4:4 gain map. |
-| JPEG Ultra HDR | Widest compatibility. Default 4:2:0. A gentle, SDR-guided denoise is applied to the gain map automatically. |
+| AVIF with ISO 21496-1 gain map | Available. Default: 10-bit 4:2:0 primary, half-resolution 10-bit 4:4:4 gain map. |
+| JPEG Ultra HDR | Current HDR delivery format (Steve, October 27). Widest compatibility. Default 4:2:0. A gentle, SDR-guided denoise is applied to the gain map automatically. |
 | JPEG XL HDR | Direct Rec.2020 PQ. 12-bit integer by default. |
 | SDR JPEG, SDR PNG (8 or 16-bit), SDR JPEG XL | Utility outputs. |
 
@@ -211,6 +263,8 @@ Settings rules (from v1.2 section 5, still in force):
 
 | Decision | Date |
 | --- | --- |
+| Slight exported JPEG/preview differences are accepted for v1; improving JPEG agreement is v2 (31de689). Numerical test limits stay unchanged. | Steve, 2026-10-27 |
+| Ultra HDR JPEG remains the HDR export format for now. | Steve, 2026-10-27 |
 | **GPU first, including export.** Export, Proof and Library pictures render on the GPU at full size (tiled where memory needs it); the CPU is the fallback. CPU export is no longer an exact reference. | Steve, 2026-10-18 |
 | **Approved GPU architecture:** a hidden Electron renderer reuses Grade's renderer and shaders. Export resize and output sharpening join the shared GPU graph, after the creative look and before the final highlight limiter. Preset versions that share rendering reuse the same finished lanes. | Steve, 2026-10-18 |
 | **Scheduling:** Grade first, then visible Library pictures (top-left first), then background export. GPU work yields between bounded submissions and shares one memory budget. Closing the last visible window cancels a batch cleanly; finished files stay. | Steve, 2026-10-18 |
@@ -489,9 +543,11 @@ Proof HDR mismatch still needs diagnosis. No pixel change.
      the backend receives the same bytes and the hand-off time is unchanged.
 2. Replace the old file-side parity allowance (`target × 1.01 + 1`) with
    the zero-upward-allowance check, once GPU delivery exists.
-3. Batch-export metadata follow-ups (shared with Photo Library): bundled
-   ExifTool, title/caption/copyright template, privacy options (strip
-   location and serial numbers).
+3. **Built October 27:** bundled ExifTool, reusable title/caption/creator/
+   copyright templates and explicit location/serial/owner privacy options.
+   All six formats share the staged write and protected-content check. See the
+   October 27 status above; macOS/Linux packaging awaits CI execution and
+   Steve's on-screen HDR acceptance remains manual.
 4. AVIF gain-map denoise: only if a corpus shows a net benefit.
 
 **Ideas (not scheduled)**

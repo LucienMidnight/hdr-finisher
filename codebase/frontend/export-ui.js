@@ -305,7 +305,10 @@ function currentExportSettings(outputPath = null, overwrite = false, pathGrant =
       sdr_png_bit_depth: Number(els.sdrPngBitDepth.value),
       jpegxl_precision: els.jpegxlPrecision.value,
       dithering: els.exportDithering.value,
-      metadata_policy: els.exportMetadataPolicy.disabled ? "none" : els.exportMetadataPolicy.value,
+      metadata_policy: els.exportMetadataPolicy.value,
+      metadata_template: Object.fromEntries(["title","caption","creator","copyright"].map(key=>[key,document.getElementById(`export-metadata-${key}`).value])),
+      metadata_strip_location: document.getElementById("export-metadata-strip-location").checked,
+      metadata_strip_serials: document.getElementById("export-metadata-strip-serials").checked,
       guarantee_hdr_peak: els.exportGuaranteePeak?.checked === true,
       export_with_frame: els.exportWithFrame?.checked !== false,
       output_path: outputPath,
@@ -467,7 +470,7 @@ function renderFormatCards() {
   els.exportQualityRow.classList.toggle("disabled-setting", !qualityApplicable);
   els.exportQualityRow.title = qualityApplicable ? "" : "PNG compression is lossless; the Quality setting does not apply.";
 
-  const sourceMetadataApplicable = format !== "avif_gain_map";
+  const sourceMetadataApplicable = true;
   els.exportMetadataPolicy.disabled = !sourceMetadataApplicable;
   els.exportMetadataPolicyField.classList.toggle("disabled-setting", !sourceMetadataApplicable);
   els.exportMetadataPolicyNote.textContent = sourceMetadataApplicable

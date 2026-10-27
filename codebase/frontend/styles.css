@@ -2585,10 +2585,15 @@ input[type="range"] {
 .jpegxl-settings,
 .sdr-png-settings,
 #export-dithering-field,
-.advanced-settings-body > label:has(#export-metadata-policy),
+#export-metadata-policy-field,
 .export-resolved-encoding {
   grid-column: 1 / -1;
 }
+
+#export-metadata-policy-field { display: grid; gap: 10px; min-width: 0; }
+#export-metadata-policy-field > label { display: grid; gap: 6px; }
+#export-metadata-policy-field > .checkbox-row { display: flex; flex-direction: row; }
+#export-metadata-policy-field textarea { width: 100%; resize: vertical; }
 
 .jpegxl-settings .helper {
   display: block;

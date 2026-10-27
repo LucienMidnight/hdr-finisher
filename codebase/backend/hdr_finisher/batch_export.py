@@ -225,7 +225,7 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
                 target = version_destination(directory, version, photo, sequence, preset.name)
                 with tempfile.TemporaryDirectory(prefix=".hdr-export-", dir=target.parent) as staging:
                     staged = Path(staging) / target.name
-                    settings = version.settings.model_copy(update={"output_path":str(staged),"overwrite":False,"path_grant":None,"edit_revision":None})
+                    settings = version.settings.model_copy(update={"output_path":str(staged),"overwrite":False,"path_grant":None,"edit_revision":None,"metadata_sequence":sequence})
                     response = backends[settings.format].export(session, settings)
                     if not response.accepted: raise RuntimeError(response.message)
                     if cancelled(): break

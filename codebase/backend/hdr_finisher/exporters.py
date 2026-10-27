@@ -257,6 +257,10 @@ def _execute_export(
         ) as staged_file:
             staged_output = Path(staged_file.name)
         prepared.write(staged_output)
+        from .export_metadata import write_metadata
+        metadata_started = perf_counter()
+        write_metadata(staged_output, session, settings)
+        timings["metadata"] = round((perf_counter() - metadata_started) * 1000, 3)
         _fsync_path(staged_output)
         validation = prepared.validate(staged_output)
         os.replace(staged_output, output_path)
@@ -313,7 +317,7 @@ class SDRPNGExportBackend(ExportBackend):
         def prepare() -> _PreparedExport:
             finishing_adjustments = _finishing_adjustments_for_export(session)
             image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-            exif_payload = _source_exif_payload(session, settings.metadata_policy)
+            exif_payload = None
             return _PreparedExport(
                 ".sdr.tmp.png",
                 lambda staged: _write_sdr_png(
@@ -347,7 +351,7 @@ class SDRJPEGExportBackend(ExportBackend):
         def prepare() -> _PreparedExport:
             finishing_adjustments = _finishing_adjustments_for_export(session)
             image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-            exif_payload = _source_exif_payload(session, settings.metadata_policy)
+            exif_payload = None
             return _PreparedExport(
                 ".sdr.tmp.jpg",
                 lambda staged: _write_sdr_jpeg(
@@ -388,7 +392,7 @@ class SDRJPEGXLExportBackend(ExportBackend):
                 sdr_image,
                 int(settings.quality),
                 dithering=settings.dithering,
-                exif_payload=_source_exif_payload(session, settings.metadata_policy),
+                exif_payload=None,
             )
             shape = sdr_image.shape[:2]
             return _PreparedExport(
@@ -622,7 +626,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             def write(staged_output: Path) -> None:
                 write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
-                    exif_payload=_source_exif_payload(session, settings.metadata_policy),
+                    exif_payload=None,
                     ceiling_nits=_peak_ceiling(settings, finishing_adjustments), notes=notes, photo_rect=photo_rect)
 
             return _PreparedExport(
@@ -657,7 +661,7 @@ class JPEGXLHDRExportBackend(ExportBackend):
             finishing_adjustments = _finishing_adjustments_for_export(session)
             hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
             reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
-            exif_payload = _source_exif_payload(session, settings.metadata_policy)
+            exif_payload = None
             payload = encode_within_ceiling(
                 hdr_image,
                 reference_white_nits,
@@ -848,37 +852,6 @@ def _dither_srgb_in_place(
                 * np.float32((2.0 * amplitude_lsb) / 255.0)
             )
             srgb[row_start:row_end, :, channel] += noise
-
-
-def _source_exif_payload(session: object, policy: str) -> bytes | None:
-    """Return privacy-filtered source EXIF without touching required codec signaling."""
-
-    if policy == "none":
-        return None
-    try:
-        from PIL import Image
-
-        source_path = Path(getattr(session, "source_path"))
-        with Image.open(source_path) as source:
-            source_exif = source.getexif()
-        if policy == "copyright":
-            filtered = Image.Exif()
-            for tag in (315, 33432):  # Artist, Copyright
-                if source_exif.get(tag):
-                    filtered[tag] = source_exif[tag]
-        else:
-            filtered = Image.Exif()
-            filtered.load(source_exif.tobytes())
-            # Pixels have already been normalized to display orientation; carrying
-            # the source orientation would rotate the finished export a second time.
-            for tag in (256, 257, 273, 274, 279):
-                filtered.pop(tag, None)
-            if policy == "all_except_location":
-                filtered.pop(34853, None)  # GPSInfo IFD
-        payload = filtered.tobytes()
-        return payload if len(filtered) else None
-    except (AttributeError, OSError, TypeError, ValueError):
-        return None
 
 
 def _write_temporary_exif(directory: Path, payload: bytes | None) -> Path | None:

@@ -67,3 +67,6 @@ codebase/desktop/output/
 # Affinity design sources stay local; only exported SVGs are tracked.
 *.af
 *.af~lock~
+
+# Pinned metadata runtime fetched and checked by tools/fetch_exiftool.py
+codebase/bin/exiftool-runtime/

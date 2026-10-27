@@ -57,6 +57,19 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 27, 2026)
 
+**Three-part batch:** export metadata is now shared by single and Library batch
+export: all source policies, reusable title/caption/creator/copyright templates,
+location/serial/owner privacy and bundled ExifTool. See Export and Proof's
+October 27 status for the exact protected-content checks and packaging limits.
+Final fast checks, run once across all three parts: JavaScript 637 passed,
+2 known failures; Python 2,619 passed, 3 skipped, 2 known failures (6m47s).
+Known failures only: library-scenes (CPU fallback fixture), library-single-ready
+(missing screen-preview fixture), test_rgb_description_precedes_pixels_and_keeps_publication_guards[None],
+and test_library_native_source_uses_same_repair_before_reduction. The tightened
+namespace-wide privacy filter then passed its 10 targeted metadata tests (7.2s).
+No known failure was changed, investigated or rerun. No broad GPU sweep,
+installer build or push. Steve's manual trial remains the acceptance step.
+
 **October 27 three-part batch, Part 2: Build previews built.** Selection and
 folder context menus offer Build previews and Discard built previews. The
 existing scene queues and GPU draw graph prepare both HDR and SDR screen

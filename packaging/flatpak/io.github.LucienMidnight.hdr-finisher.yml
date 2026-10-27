@@ -18,6 +18,19 @@ finish-args:
   - --share=network
 
 modules:
+  - name: perl-metadata-runtime
+    buildsystem: simple
+    build-commands:
+      - ./Configure -des -Dprefix=/app -Dman1dir=none -Dman3dir=none
+      - make -j${FLATPAK_BUILDER_N_JOBS}
+      - make install
+      - install -Dm644 Artistic /app/share/licenses/io.github.LucienMidnight.hdr-finisher/Perl-Artistic
+      - install -Dm644 Copying /app/share/licenses/io.github.LucienMidnight.hdr-finisher/Perl-Copying
+    sources:
+      - type: archive
+        url: https://www.cpan.org/src/5.0/perl-5.42.0.tar.xz
+        sha256: 73cf6cc1ea2b2b1c110a18c14bbbc73a362073003893ffcedc26d22ebdbdd0c3
+
   - name: cpython-3.12
     buildsystem: simple
     build-options:
@@ -110,7 +123,10 @@ modules:
         XDG_CACHE_HOME: /run/build/hdr-finisher/flatpak-node/cache
         npm_config_cache: /run/build/hdr-finisher/flatpak-node/npm-cache
         PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        HDR_FINISHER_FLATPAK_BUILD: '1'
     build-commands:
+      - test -x /app/bin/perl
+      - /app/bin/perl exiftool-runtime/bin/exiftool -ver | grep -x 13.59
       - install -d 'source/codebase/dist/HDR Finisher Backend'
       - install -m755 source/packaging/flatpak/backend-wrapper.sh 'source/codebase/dist/HDR Finisher Backend/HDR Finisher Backend'
       - cd source/packaging/flatpak/npm && npm ci --offline
@@ -121,6 +137,7 @@ modules:
       - cp -a source/codebase/backend source/codebase/frontend source/codebase/samples /app/hdr-finisher-runtime/
       - cp -a source/docs /app/hdr-finisher-runtime/docs
       - install -m644 source/codebase/run_app.py /app/hdr-finisher-runtime/run_app.py
+      - cp -a exiftool-runtime /app/hdr-finisher-runtime/bin/exiftool-runtime
       - install -m755 /app/bin/avifenc /app/bin/avifdec /app/bin/avifgainmaputil /app/bin/ultrahdr_app /app/hdr-finisher-runtime/bin/
       - install -Dm755 source/packaging/flatpak/hdr-finisher.sh /app/bin/hdr-finisher
       - install -Dm644 source/packaging/flatpak/io.github.LucienMidnight.hdr-finisher.desktop /app/share/applications/io.github.LucienMidnight.hdr-finisher.desktop
@@ -150,4 +167,8 @@ modules:
           - codebase/dist
           - codebase/dist-electron
           - codebase/desktop/node_modules
+      - type: archive
+        url: https://registry.npmjs.org/exiftool-vendored.pl/-/exiftool-vendored.pl-13.59.3.tgz
+        sha256: dea9f92a8748a75a43ff42aae017644a48982aead848f985c6a443ec11e0b8f5
+        dest: exiftool-runtime
       - generated-sources/node-sources.json

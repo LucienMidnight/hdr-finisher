@@ -13,6 +13,8 @@ $desktop = Join-Path $codebase "desktop"
 
 Push-Location $codebase
 try {
+    & $python .\tools\fetch_exiftool.py
+    if ($LASTEXITCODE -ne 0) { throw "Bundled ExifTool check failed." }
     & $python -m PyInstaller --noconfirm --clean .\HDRFinisherBackend.spec
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller backend build failed." }
 }

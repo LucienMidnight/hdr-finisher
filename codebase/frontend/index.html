@@ -1605,10 +1605,18 @@
           <select id="export-dithering" aria-describedby="export-dithering-note"><option value="auto" selected>Auto</option><option value="off">Off</option><option value="subtle">Subtle</option></select>
           <small class="helper visually-hidden" id="export-dithering-note">Auto applies deterministic signal-domain dithering when the selected output is quantized to 8 bits.</small>
         </label>
-        <label id="export-metadata-policy-field">Source Metadata
+        <div id="export-metadata-policy-field"><label>Source Metadata
           <select id="export-metadata-policy" aria-describedby="export-metadata-policy-note"><option value="none" selected>None</option><option value="copyright">Copyright only</option><option value="all_except_location">All except location</option><option value="all_including_location">All including location</option></select>
           <small class="helper visually-hidden" id="export-metadata-policy-note">Color, HDR, and gain-map signaling is always retained. “All including location” may expose GPS coordinates.</small>
         </label>
+        <label>Title <input id="export-metadata-title" type="text" maxlength="8000"></label>
+        <label>Caption <textarea id="export-metadata-caption" maxlength="8000" rows="2"></textarea></label>
+        <label>Creator <input id="export-metadata-creator" type="text" maxlength="8000"></label>
+        <label>Copyright <input id="export-metadata-copyright" type="text" maxlength="8000"></label>
+        <p class="helper">Optional templates: {filename}, {capture_date} (YYYY-MM-DD), {sequence}. Empty fields keep the chosen source metadata. Save with an export preset.</p>
+        <label class="checkbox-row"><input id="export-metadata-strip-location" type="checkbox"> Strip GPS and location</label>
+        <label class="checkbox-row"><input id="export-metadata-strip-serials" type="checkbox"> Strip camera/lens serial numbers and owner name</label>
+        </div>
         <div id="export-guarantee-peak-field"><label class="checkbox-row" title="Checks HDR files near the target and corrects overshoots locally. Adds time for decoding and correction; files still over target are delivered with a note."><input id="export-guarantee-peak" type="checkbox" aria-describedby="export-guarantee-peak-note"> Guarantee HDR peak<small class="helper visually-hidden" id="export-guarantee-peak-note">Checks HDR files near the target and corrects overshoots locally. Adds time for decoding and correction; files still over target are delivered with a note.</small></label></div>
         <p class="helper export-resolved-encoding" id="export-resolved-encoding"></p>
         <p class="helper export-resolved-encoding" id="export-reference-white"></p>

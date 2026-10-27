@@ -14,6 +14,9 @@
     const v=model.draft.versions[model.version], s=v.settings;
     const controls={format:"exportFormat",quality:"exportQuality",jpeg_gain_map_quality:"jpegGainMapQuality",jpeg_gain_map_scale:"jpegGainMapScale",avif_bit_depth:"avifBitDepth",avif_chroma_subsampling:"avifChromaSubsampling",avif_gain_map_quality:"avifGainMapQuality",avif_gain_map_scale:"avifGainMapScale",sdr_png_bit_depth:"sdrPngBitDepth",jpegxl_precision:"jpegxlPrecision",dithering:"exportDithering",metadata_policy:"exportMetadataPolicy"};
     for(const [key,id] of Object.entries(controls)) if(s[key]!=null&&els[id]) els[id].value=String(s[key]);
+    for(const key of ["title","caption","creator","copyright"]) $("export-metadata-"+key).value=s.metadata_template?.[key]||"";
+    $("export-metadata-strip-location").checked=s.metadata_strip_location===true;
+    $("export-metadata-strip-serials").checked=s.metadata_strip_serials===true;
     els.jpegChromaSubsampling.value=s.jpeg_chroma_subsampling||"420"; els.jpegUltrahdrChromaSubsampling.value=s.jpeg_chroma_subsampling||"420";
     const f=s.output_finishing||{}; for(const [key,id] of Object.entries({resize_mode:"exportResizeMode",long_edge:"exportLongEdge",width:"exportWidth",height:"exportHeight",sharpening:"exportSharpening"}))if(f[key]!=null)els[id].value=String(f[key]);
     if(els.exportWithFrame)els.exportWithFrame.checked=s.export_with_frame!==false;

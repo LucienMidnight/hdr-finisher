@@ -114,7 +114,8 @@
     "deb": {
       "packageName": "hdr-finisher",
       "packageCategory": "graphics",
-      "priority": "optional"
+      "priority": "optional",
+      "depends": ["libgtk-3-0", "libnss3", "libxss1", "libasound2", "libgbm1", "libnotify4", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0", "perl"]
     },
     "dmg": {
       "artifactName": "HDR-Finisher-${version}-macOS-${arch}.${ext}",

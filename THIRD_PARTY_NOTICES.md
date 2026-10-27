@@ -174,3 +174,18 @@ code to the public domain (with MIT also offered). The prototype uses the
 public-domain grant. Adaptations are JavaScript/WGSL ports with signed cube
 roots for unbounded floating-point inputs. The multi-range selection,
 mask composition and prototype interface are HDR Finisher code.
+
+## ExifTool metadata helper (13.59; npm packaging 13.59.3)
+
+ExifTool by Phil Harvey is distributed separately as an executable/script under
+Perl's terms (Artistic License or GPL). The pinned PhotoStructure vendored
+package includes the licence text, its MIT packaging licence and upstream source
+in `bin/exiftool-runtime`; Windows also includes the Strawberry Perl runtime,
+its notices and `Licenses_Strawberry_Perl.zip`. The Windows launcher is CC0.
+The vendored stdin-EOF and image-hash-progress patches and their source are
+included. Source: https://github.com/photostructure/exiftool-vendored.exe and
+https://github.com/photostructure/exiftool-vendored.pl; upstream https://exiftool.org/.
+The build fetcher verifies pinned SHA-512 package integrity before extraction.
+macOS uses /usr/bin/perl; Debian declares perl as a dependency. Flatpak ships
+Perl 5.42.0 from CPAN, under the Artistic/GPL dual terms, with Artistic and
+Copying under /app/share/licenses/io.github.LucienMidnight.hdr-finisher.

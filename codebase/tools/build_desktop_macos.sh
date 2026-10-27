@@ -45,6 +45,7 @@ for tool in avifenc avifdec avifgainmaputil ultrahdr_app; do
 done
 
 cd "$codebase_dir"
+"$python_bin" tools/fetch_exiftool.py
 "$python_bin" -m PyInstaller --noconfirm --clean HDRFinisherBackend.spec
 
 backend_executable="$codebase_dir/dist/HDR Finisher Backend/HDR Finisher Backend"

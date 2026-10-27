@@ -38,3 +38,15 @@ The Windows `hdrf-avif-decode.exe` and matching `avif.dll` provide the raw
 AVIF gain-map rendition transport. Build instructions and the pinned libavif
 configuration are in [tools/avif-rendition-decode](../tools/avif-rendition-decode/README.md).
 Other platforms retain the ordinary rendition decoder until this helper is built.
+
+## Source metadata
+
+From codebase, run `.venv/Scripts/python.exe tools/fetch_exiftool.py` (Unix:
+`.venv/bin/python tools/fetch_exiftool.py`). This downloads ExifTool 13.59 from
+the pinned vendored 13.59.3 archive, verifies SHA-512 and retains all licence,
+source and patch files under `exiftool-runtime/`. That generated folder is not
+committed. Desktop build scripts fetch/check it before packaging; the packaged
+app check executes its copy. Windows includes Perl; macOS uses /usr/bin/perl;
+Debian declares perl and Flatpak builds its own /app/bin/perl. A missing helper
+fails metadata-bearing exports explicitly. Metadata=None without templates
+continues to need only the encoder's own colour/HDR signalling.
