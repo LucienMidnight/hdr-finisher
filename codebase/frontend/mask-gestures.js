@@ -275,6 +275,7 @@ async function finishLuminanceSampleGesture(gesture) {
         points: gesture.points,
         edit_revision: state.editRevision,
         long_edge: settledProxyLongEdge(),
+        lane: state.currentView,
       }),
     });
     const sample = await safeJson(response);

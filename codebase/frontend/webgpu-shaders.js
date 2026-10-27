@@ -2646,6 +2646,17 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return hslSelectionFields(hslCaptured);
     }
 
+    // A Local hue-mask leaf: lane 0 of the bound shared selection, written into
+    // a mask texture. TILE_ORIGIN is the selection region's offset inside the
+    // mask (one band of a large frame); HSL_SHARED_SELECTION 2 inverts.
+    @fragment fn hslMaskFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      hslSelectionPixel = vec2i(input.position.xy)
+        - vec2i(i32(p[${GPU_PARAMS.TILE_ORIGIN_X}]), i32(p[${GPU_PARAMS.TILE_ORIGIN_Y}]));
+      var coverage = hslSharedCoverage(0u);
+      if (p[${GPU_PARAMS.HSL_SHARED_SELECTION}] > 1.5) { coverage = 1.0 - coverage; }
+      return vec4f(coverage, 0.0, 0.0, 1.0);
+    }
+
     // Where a pass's pixel falls in its mask texture. A mask texture normally
     // has one texel per pixel of the pass. A soft mask is one small bitmap of
     // a stated rectangle of the picture (slots 186-189: origin and size, in

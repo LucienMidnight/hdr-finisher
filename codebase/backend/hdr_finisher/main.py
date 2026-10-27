@@ -2177,7 +2177,7 @@ def local_hue_sample(session_id: str, request: LocalLuminanceSampleRequest):
         raise _revision_conflict(exc) from exc
     _guard_preview_resources(session, request.long_edge)
     try:
-        return session.render_cache.sample_hue(session.adjustments, request.points, request.long_edge)
+        return session.render_cache.sample_hue(session.adjustments, request.points, request.long_edge, request.lane)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

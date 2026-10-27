@@ -39,6 +39,20 @@ def tap(pixels, kind, local_id=None):
         raise _Captured(pixels, kind)
 
 
+def capture_stage_input(source, adjustments, kind, *, reference=None, color_context=None, source_pixel_scale=1.0):
+    """The Global HSL stage input of ``source`` (geometry applied), in the lane's space."""
+    from .adjustments import apply_adjustments
+    token = _target.set(("stage", None))
+    try:
+        apply_adjustments(source, adjustments, kind, sdr_reference_image=reference,
+                          color_context=color_context, source_pixel_scale=source_pixel_scale)
+    except _Captured as captured:
+        return captured.pixels
+    finally:
+        _target.reset(token)
+    raise ValueError("The HSL stage could not be captured")
+
+
 def sample_stage(cache, request):
     from .adjustments import apply_adjustments
     from .color import acescg_to_linear_srgb
@@ -80,8 +94,10 @@ def sample_stage(cache, request):
                 else:
                     weight = selection(pixels, request.selection_recipe.ranges)[0]
                 if request.local_id is not None:
-                    from .local_adjustments import compile_geometry_fixed_mask
-                    mask = compile_geometry_fixed_mask(source, target.mask, request.adjustments.shared.geometry)
+                    mask = cache.compiled_local_mask(request.adjustments, target, request.long_edge,
+                                                     lane=request.lane)
+                    if mask.shape != weight.shape:
+                        mask = np.asarray(Image.fromarray(mask).resize(weight.shape[::-1], Image.Resampling.BILINEAR))
                     weight *= mask.astype(float) / 255
                 overlay = np.zeros((*weight.shape, 4), dtype=np.uint8)
                 overlay[..., :3] = [31, 184, 219]

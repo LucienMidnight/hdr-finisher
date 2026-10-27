@@ -226,7 +226,8 @@ def mask_region_margin(expression: MaskExpression, long_edge: int) -> int | None
     if leaf.type == "brush":
         return None if leaf.mask_feather > 0.0 or leaf.mask_shift_edge != 0.0 else 0
     if leaf.type == "hue_range":
-        return HUE_MASK_MARGIN
+        # Selected from the whole frame's HSL stage input, never a region.
+        return None
     if leaf.type == "luminance_range":
         if leaf.mask_feather <= 0.0:
             return 0
@@ -426,10 +427,6 @@ def source_coordinate_grid(
     elif geometry.rotation == 270:
         u, v = 1.0 - v, u
     return u.astype(np.float32), v.astype(np.float32)
-
-
-# Native-pixel colour filtering plus the final coverage filter's whole reach.
-HUE_MASK_MARGIN = 5
 
 
 def has_hue_mask(expression: MaskExpression) -> bool:

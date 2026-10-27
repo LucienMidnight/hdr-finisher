@@ -139,7 +139,7 @@ fn qualifyLane(ab: vec2f, lane: u32) -> f32 {
   class HslSelectionGpu {
     constructor(device, { onAllocate = null } = {}) {
       this.device = device; this.onAllocate = onAllocate;
-      this.textures = {}; this.capacity = null; this.preparedKey = null; this.selectedKey = null; this.serial = 0;
+      this.textures = {}; this.retired = []; this.capacity = null; this.preparedKey = null; this.selectedKey = null; this.serial = 0;
     }
     async initialize() {
       const module = this.device.createShaderModule({ label: "HSL selection", code: shader });
@@ -161,7 +161,9 @@ fn qualifyLane(ab: vec2f, lane: u32) -> f32 {
       if (cap && cap.width >= width && cap.height >= height && cap.layers >= layers && cap.cw >= cw && cap.ch >= ch) return;
       const next = { width: Math.max(width, cap?.width || 0), height: Math.max(height, cap?.height || 0),
         layers: Math.max(layers, cap?.layers || 0), cw: Math.max(cw, cap?.cw || 0), ch: Math.max(ch, cap?.ch || 0) };
-      this.release();
+      // Commands already encoded but not yet submitted may still use the old
+      // textures, so they are retired, not destroyed, until dropRetired().
+      this.retired.push(...Object.values(this.textures)); this.textures = {}; this.capacity = null; this.invalidate();
       const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
       const make = (label, w, h, extra = 0, depth = 1) => this.device.createTexture({ label, size: [w, h, depth], format: "rgba32float", usage: usage | extra });
       this.textures = {
@@ -249,7 +251,9 @@ fn qualifyLane(ab: vec2f, lane: u32) -> f32 {
     }
     /** Forget cached preparation; the next encode re-reads the fields. */
     invalidate() { this.preparedKey = null; this.selectedKey = null; }
-    release() { for (const texture of Object.values(this.textures)) texture.destroy(); this.textures = {}; this.capacity = null; this.invalidate(); }
+    /** Destroy grown-out textures; call only once every encoder using them is submitted or dropped. */
+    dropRetired() { for (const texture of this.retired) texture.destroy(); this.retired = []; }
+    release() { for (const texture of Object.values(this.textures)) texture.destroy(); this.textures = {}; this.capacity = null; this.dropRetired(); this.invalidate(); }
     destroy() { this.release(); }
   }
   globalThis.HDRHslSelectionGpu = HslSelectionGpu;

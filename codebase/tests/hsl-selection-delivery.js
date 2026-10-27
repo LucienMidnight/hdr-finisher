@@ -33,10 +33,12 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
     const settings={format:'jpeg_ultrahdr',quality:95,jpeg_chroma_subsampling:'444',jpeg_gain_map_quality:95,jpeg_gain_map_scale:'full',dithering:'off',guarantee_hdr_peak:true,output_finishing:{resize_mode:'original',sharpening:'off'}};
     const t=Date.now();const exported=await api(`/api/session/${session.session_id}/export`,{...settings,output_path:file,path_grant:grant.grant});
     timings[forced?'cpu_export_s':'gpu_export_s']=(Date.now()-t)/1000;
-    assert.ok(exported.accepted);assert.equal(exported.renderer,forced?'cpu':'gpu');
+    assert.ok(exported.accepted);assert.equal(exported.renderer,forced?'cpu':'gpu',JSON.stringify(exported));
     const proof=await api(`/api/session/${session.session_id}/proof/artifact`,{...settings,full_size:true});assert.equal(proof.renderer,exported.renderer);
     const bytes=await page.request.get(new URL(`/api/proof/artifact/${proof.artifact_id}.jpg`,base).href);assert.ok(bytes.ok());
-    assert.ok(fs.readFileSync(file).equals(await bytes.body()),'Proof equals delivered bytes');
+    const proofBytes=await bytes.body();
+    if(!fs.readFileSync(file).equals(proofBytes)){fs.writeFileSync(file.replace(/\.jpg$/,'-proof.jpg'),proofBytes);
+     if(keep)console.log('proof differs',file);else assert.fail('Proof equals delivered bytes');}
    }
    const result=JSON.parse(execFileSync(python,[path.join(__dirname,'helpers/gpu_delivery_fixture.py'),'compare',dir],{env,encoding:'utf8'}));
    result.cpu_peak_nits=JSON.parse(execFileSync(python,['-c','import sys,json;from hdr_finisher.hdr_delivery import check_decoded_hdr_ceiling;print(json.dumps(check_decoded_hdr_ceiling(sys.argv[1],"jpeg_ultrahdr",1000)))',path.join(dir,'cpu.jpg')],{env,encoding:'utf8'}));

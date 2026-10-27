@@ -1,4 +1,12 @@
 (function () {
+  // Local hue masks: selection pixels per band; larger frames are banded.
+  const HUE_MASK_BAND_PIXELS = 4 * 1024 * 1024;
+  function maskHasHueLeaf(expression) {
+    if (!expression) return false;
+    if (expression.operator === "leaf") return expression.leaf?.type === "hue_range";
+    return (expression.children || []).some(maskHasHueLeaf);
+  }
+
   class HDRWebGPUPreview {
     static directPreviewMemoryModel(width, height, options = {}) {
       return directPreviewMemoryModel(width, height, options);
@@ -1690,6 +1698,9 @@
         for (const engine of Object.values(owned)) this.destroyAfterActiveRenders(() => engine.destroy());
       }
       this.hslSelectionEngines = new Map();
+      const maskEngine = this.hslMaskEngine;
+      this.hslMaskEngine = null;
+      if (maskEngine) this.destroyAfterActiveRenders(() => maskEngine.destroy());
     }
 
     hslSelectionBytes() {
@@ -1742,8 +1753,10 @@
      * the fields pass reads the same source and parameters. Returns the view to
      * bind in slot 7 and the token to commit after submission, or null.
      */
-    encodeHslSelection(engine, encoder, pipelines, bindGroup, { width, height, originX = 0, originY = 0, params, prepareKey = null }) {
-      const channels = engine ? this.hslSelectionChannels(params) : [];
+    encodeHslSelection(engine, encoder, pipelines, bindGroup, {
+      width, height, originX = 0, originY = 0, params, prepareKey = null, channels = null,
+    }) {
+      channels = engine ? channels || this.hslSelectionChannels(params) : [];
       if (!channels.length) return null;
       const scale = params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1;
       engine.ensure(width, height, Math.ceil(channels.length / 4), globalThis.HDRHslSelectionGpu.geometry(scale).cell);
@@ -1763,6 +1776,124 @@
         selectKey: prepareKey == null ? null : JSON.stringify(channels),
       });
       return { view: engine.outputView(), token };
+    }
+
+    /**
+     * The picture a Local hue mask selects from depends on the lane's grade
+     * above HSL, so its leaves are keyed by that, not by the mask alone.
+     */
+    hueContextIdentity(hue, source) {
+      if (!hue?.params || !source?.texture) return "";
+      const width = source.textureWidth || source.width, height = source.textureHeight || source.height;
+      return `${hue.lane}|${source.region ? `${source.region.x},${source.region.y}` : "0,0"}|`
+        + this.hslPrepareKey(source.texture, hue.params, width, height);
+    }
+
+    /**
+     * A Local hue-mask leaf from the shared selection (Global HSL's engine and
+     * maths), over the source `hue.proxy` or `sourceOverride` (a region). The
+     * frame is processed in bands with the selection's reach as overlap, so a
+     * large frame never holds the selection scratch for all of it; the bands
+     * together equal the whole-frame result. Unsampled leaves stay empty, even
+     * inverted. Returns a mask entry, or null when the route is unavailable.
+     */
+    async loadGpuHueLeaf(sessionId, expression, hue, longEdge, isCurrent = () => true, sourceOverride = null,
+      editingMeasurement = false) {
+      if (!this.hslSelectionTemplate || globalThis.HDRHueMaskSharedSelection === false || !hue?.params) return null;
+      const source = sourceOverride || hue.proxy;
+      if (!source?.texture || !isCurrent()) return null;
+      const width = source.textureWidth || source.width, height = source.textureHeight || source.height;
+      const ox = source.region?.x || 0, oy = source.region?.y || 0, leaf = expression.leaf || {};
+      const prepareBase = this.hueContextIdentity(hue, source);
+      const key = `${sessionId}:gpu-hue:${prepareBase}:${JSON.stringify([leaf.hue_center ?? null, leaf.hue_width,
+        leaf.hue_smoothness, leaf.saturation_floor, Boolean(expression.inverted)])}`;
+      let entry = this.localMasks.get(key);
+      if (entry && !entry.destroyed) {
+        this.localMasks.delete(key);
+        this.localMasks.set(key, entry);
+      } else {
+        const startedAt = performance.now();
+        entry = {
+          kind: "gpu-hue", texture: this.createMaskTexture(width, height), width, height,
+          byteSize: width * height * 2,
+          frameRect: source.region ? [ox / source.width, oy / source.height, width / source.width, height / source.height] : null,
+        };
+        if (leaf.hue_center != null) {
+          const engine = (this.hslMaskEngine ||= this.hslSelectionTemplate.fork());
+          const scale = hue.params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1;
+          const reach = globalThis.HDRHslSelectionGpu.geometry(scale).reach;
+          const bandRows = Math.max(64, Math.floor(HUE_MASK_BAND_PIXELS / Math.max(1, width)));
+          const single = height <= bandRows;
+          const channels = [{ ranges: [{ center: leaf.hue_center, width: leaf.hue_width, feather: leaf.hue_smoothness, subtract: false }],
+            floor: Number(leaf.saturation_floor ?? 0.04) }];
+          const pipelines = this.pipelineFor("rgba16float");
+          const scratch = single ? null : this.device.createTexture({
+            label: "Hue mask band source", size: [width, Math.min(height, bandRows + 2 * reach)],
+            format: source.texture.format, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+          });
+          engine.ensure(width, single ? height : Math.min(height, bandRows + 2 * reach), 1,
+            globalThis.HDRHslSelectionGpu.geometry(scale).cell);
+          const encoder = this.device.createCommandEncoder(), tokens = [], buffers = [];
+          const buffer = (values) => {
+            const created = this.createStorageBuffer(values);
+            this.device.queue.writeBuffer(created, 0, values);
+            buffers.push(created);
+            return { buffer: created };
+          };
+          for (let top = 0; top < height; top += bandRows) {
+            const y0 = single ? 0 : Math.max(0, top - reach);
+            const rows = single ? height : Math.min(height, top + bandRows + reach) - y0;
+            if (!single) {
+              encoder.copyTextureToTexture({ texture: source.texture, origin: { x: 0, y: y0, z: 0 } },
+                { texture: scratch, origin: { x: 0, y: 0, z: 0 } }, { width, height: rows, depthOrArrayLayers: 1 });
+            }
+            const view = (single ? source.texture : scratch).createView();
+            const values = new Float32Array(hue.params);
+            values[GPU_PARAMS.TILE_ORIGIN_X] = ox;
+            values[GPU_PARAMS.TILE_ORIGIN_Y] = oy + y0;
+            values[GPU_PARAMS.TILE_VALID_WIDTH] = width;
+            values[GPU_PARAMS.TILE_VALID_HEIGHT] = rows;
+            values[GPU_PARAMS.FRAME_WIDTH] = source.width;
+            values[GPU_PARAMS.FRAME_HEIGHT] = source.height;
+            const selection = this.encodeHslSelection(engine, encoder, pipelines,
+              this.bindGraphResources(view, view, buffer(values), view), {
+                width, height: rows, originX: ox, originY: oy + y0, params: values, channels,
+                prepareKey: single ? prepareBase : null,
+              });
+            tokens.push(selection.token);
+            const maskValues = new Float32Array(values);
+            maskValues[GPU_PARAMS.TILE_ORIGIN_X] = 0;
+            maskValues[GPU_PARAMS.TILE_ORIGIN_Y] = y0;
+            maskValues[GPU_PARAMS.HSL_SHARED_SELECTION] = expression.inverted ? 2 : 1;
+            const keepRows = single ? height : Math.min(bandRows, height - top);
+            const pass = encoder.beginRenderPass({ colorAttachments: [{ view: entry.texture.createView(), loadOp: "load", storeOp: "store" }] });
+            pass.setViewport(0, single ? 0 : top, width, keepRows, 0, 1);
+            pass.setScissorRect(0, single ? 0 : top, width, keepRows);
+            pass.setPipeline(pipelines.hslMask);
+            pass.setBindGroup(0, this.bindGraphResources(view, view, buffer(maskValues), view, selection.view));
+            pass.draw(3);
+            pass.end();
+          }
+          this.device.queue.submit([encoder.finish()]);
+          tokens.forEach((token) => engine.commit(token));
+          engine.dropRetired();
+          buffers.forEach((created) => created.destroy());
+          scratch?.destroy();
+          // Range drags at Fit reuse the prepared data; a big frame's scratch goes.
+          if (!single) engine.release();
+          if (this.instrumentationEnabled) {
+            this.performanceMetrics.maskEvents ||= [];
+            this.performanceMetrics.maskEvents.push({ kind: "gpu-hue", longEdge, width, height, bands: single ? 1 : Math.ceil(height / bandRows),
+              encodeSubmitMs: performance.now() - startedAt, cpuMaskRequest: false });
+          }
+        }
+        // An unsampled leaf keeps the zeroed texture: it selects nothing, inverted or not.
+        this.localMasks.set(key, entry);
+      }
+      entry.lastUseSerial = this.maskUseSerial;
+      if (editingMeasurement) this.retainEditingMask(entry);
+      else this.retainLocalMask(entry, longEdge);
+      return entry;
     }
 
     /**
@@ -2574,9 +2705,22 @@
      */
     async loadLocalMaskTiles(
       sessionId, batch, longEdge, editRevision, geometrySignature, isCurrent, signal, proxy = null,
-      sceneMaskSource = null,
+      sceneMaskSource = null, hue = null,
     ) {
       const signature = gpuMaskIdentity(batch.local.mask);
+      if (hue && proxy && maskHasHueLeaf(batch.local.mask)) {
+        // One GPU mask over the region this generation processes, shared by
+        // its tiles, made from this lane's picture before HSL.
+        const entry = batch.local.mask.operator === "leaf"
+          ? await this.loadGpuHueLeaf(sessionId, batch.local.mask, hue, longEdge, isCurrent, proxy)
+          : await this.loadGpuMaskGraph(sessionId, batch.local, longEdge, editRevision, geometrySignature,
+            isCurrent, signal, true, proxy, hue);
+        if (entry) {
+          entry.wholeFrame = true;
+          return { localIndex: batch.localIndex, entries: new Map(batch.tiles.map((tile) => [tile.key, entry])) };
+        }
+        if (signal?.aborted || !isCurrent()) return { localIndex: batch.localIndex, entries: new Map() };
+      }
       if (this.gpuAnalyticMasksEnabled && proxy) {
         const resampled = await this.loadGpuResampledRegion(sessionId,batch,longEdge,geometrySignature,isCurrent,signal,proxy);
         if (resampled) return resampled;
@@ -3860,7 +4004,8 @@
                 return {localIndex:batch.localIndex, entries:new Map(batch.tiles.map(tile => [tile.key,entry]))};
               }
               return this.loadLocalMaskTiles(options.sessionId, batch, longEdge, editRevision,
-                options.geometrySignature || "{}", isCurrent, signal, proxy, sceneMaskSource);
+                options.geometrySignature || "{}", isCurrent, signal, proxy, sceneMaskSource,
+                { lane: options.lane, params, proxy });
             },
             isCurrent,
           )
@@ -4049,8 +4194,18 @@
         }
         this.configureSurface(canvas, context, lane === "hdr");
       }
-      // Tiles never reuse a selection: each recomputes over its own halo.
+      // Tiles never reuse a selection: each recomputes over its own halo. The
+      // scratch is sized once for the largest region, so it never grows while
+      // earlier tiles' commands still wait in the encoder.
       const hslTileEngine = this.hslSelectionEngine(canvas, "tiled");
+      const hslTileChannels = hslTileEngine ? this.hslSelectionChannels(params).length : 0;
+      if (hslTileChannels) {
+        const regions = [...plan.tiles.map((tile) => tile.haloRect), ...(clarityFrame?.chunks || []).map(({ region }) => region)];
+        hslTileEngine.ensure(Math.max(1, ...regions.map((r) => r.width)), Math.max(1, ...regions.map((r) => r.height)),
+          Math.ceil(hslTileChannels / 4), globalThis.HDRHslSelectionGpu.geometry(params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1).cell);
+        // An earlier, superseded generation may still hold outgrown textures.
+        if (hslTileEngine.retired.length) this.destroyAfterActiveRenders(() => hslTileEngine.dropRetired());
+      }
       let encodeError = null;
       let validationError = null;
       let validationScopeOpen = false;
@@ -4905,6 +5060,7 @@
           geometrySignature,
           isCurrent: isMaskCurrent,
           remember: !sourceOptions?.measureOnly || Boolean(sourceOptions?.scopeAnalysis),
+          hue: { lane, params: new Float32Array(params), proxy: sourceProxy },
         });
         masks = loadedMasks.results;
         masksReadyAt = performance.now();
@@ -5359,7 +5515,10 @@
         encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
       this.device.queue.submit([encoder.finish()]);
-      if (hslSelection) hslEngine.commit(hslSelection.token);
+      if (hslSelection) {
+        hslEngine.commit(hslSelection.token);
+        if (hslEngine.retired.length) this.destroyAfterActiveRenders(() => hslEngine.dropRetired());
+      }
       } finally {
         presentation.release();
       }
@@ -6671,6 +6830,12 @@
         fragment: { module: this.module, entryPoint: "hslFieldsFragmentMain", targets: [{ format: "rgba32float" }] },
         primitive: { topology: "triangle-list" },
       });
+      const hslMask = create({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "hslMaskFragmentMain", targets: [{ format: "r16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
       const response = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
@@ -6829,6 +6994,7 @@
         })])),
         base,
         hslFields,
+        hslMask,
         finish,
         scopePeakTile,
         local,
@@ -7256,7 +7422,7 @@
 
     async loadDirectMasks({
       generation, sessionId, activeLocals, longEdge, editRevision, geometrySignature, isCurrent = () => true,
-      remember = true,
+      remember = true, hue = null,
     }) {
       const tasks = Array.from(activeLocals || []);
       if (!tasks.length) return { results: [], current: isCurrent() };
@@ -7265,7 +7431,7 @@
         for (const local of tasks) {
           if (!isCurrent()) break;
           results.push(await this.loadLocalMask(
-            sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, undefined, remember,
+            sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, undefined, remember, hue,
           ));
         }
         while (results.length < tasks.length) results.push(null);
@@ -7275,7 +7441,7 @@
         generation,
         tasks,
         (local, _index, signal) => this.loadLocalMask(
-          sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal, remember,
+          sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal, remember, hue,
         ),
         isCurrent,
       );
@@ -7283,9 +7449,15 @@
 
     async loadLocalMask(
       sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
-      remember = true,
+      remember = true, hue = null,
     ) {
       if (local.mask?.operator !== "leaf") {
+        // A combination with a hue leaf is composed from GPU-made leaves of
+        // this lane's picture; the source-space route has no hue producer.
+        if (hue && maskHasHueLeaf(local.mask)) {
+          return this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal,
+            remember, null, hue);
+        }
         if (this.gpuAnalyticMasksEnabled) {
           // Composed in source space and warped once, as export does it.
           const resampled = await this.loadGpuResampledLeaf(sessionId, local.mask, longEdge, geometrySignature, isCurrent, signal);
@@ -7296,14 +7468,19 @@
       }
       return this.loadMaskLeaf(
         sessionId, local, local.mask, "", longEdge, editRevision, geometrySignature, isCurrent, signal, true, remember,
+        hue,
       );
     }
 
     async loadMaskLeaf(
       sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature,
-      isCurrent = () => true, signal = undefined, allowSoft = true, remember = true,
+      isCurrent = () => true, signal = undefined, allowSoft = true, remember = true, hue = null,
     ) {
       if (signal?.aborted || !isCurrent()) return null;
+      if (hue && expression?.operator === "leaf" && expression.leaf?.type === "hue_range") {
+        const leafEntry = await this.loadGpuHueLeaf(sessionId, expression, hue, longEdge, isCurrent, null, !remember);
+        if (leafEntry) return leafEntry;
+      }
       if (this.gpuAnalyticMasksEnabled) {
         const resampled = await this.loadGpuResampledLeaf(sessionId, expression, longEdge, geometrySignature, isCurrent, signal);
         if (resampled) return resampled;
@@ -7571,13 +7748,15 @@
       sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
       remember = true,
       sourceOverride = null,
+      hue = null,
     ) {
       const startedAt = performance.now();
       const layoutIdentity = gpuMaskGraphLayoutIdentity(local.mask);
+      const hueIdentity = maskHasHueLeaf(local.mask) ? (hue ? this.hueContextIdentity(hue, sourceOverride || hue.proxy) : "cpu") : "";
       const key = `${sessionId}:${local.id}:${longEdge}:${geometrySignature}:gpu-mask-graph:${layoutIdentity}`
-        + (sourceOverride ? `:region:${JSON.stringify(sourceOverride.region)}` : "");
+        + (sourceOverride ? `:region:${JSON.stringify(sourceOverride.region)}` : "") + (hueIdentity ? `:hue:${hue?.lane}` : "");
       let entry = this.localMasks.get(key);
-      const influenceIdentity = JSON.stringify(gpuMaskRenderPayload(local.mask));
+      const influenceIdentity = JSON.stringify(gpuMaskRenderPayload(local.mask)) + hueIdentity;
       if (entry?.influenceIdentity === influenceIdentity) {
         this.localMasks.delete(key);
         this.localMasks.set(key, entry);
@@ -7587,6 +7766,10 @@
 
       const resolveNode = async (expression, path) => {
         if (expression.operator === "leaf") {
+          if (hue && expression.leaf?.type === "hue_range") {
+            const leafEntry = await this.loadGpuHueLeaf(sessionId, expression, hue, longEdge, isCurrent, sourceOverride, !remember);
+            return leafEntry ? { expression, leafEntry, children: [] } : null;
+          }
           if (sourceOverride) {
             const leafLocal = { ...local, id: `${local.id}:${path}`, mask: expression };
             const leafEntry = isGpuLumaMask(expression)
@@ -7601,6 +7784,7 @@
           // leaf is loaded at the frame's own size, never as a small bitmap.
           const leafEntry = await this.loadMaskLeaf(
             sessionId, local, expression, path, longEdge, editRevision, geometrySignature, isCurrent, signal, false, remember,
+            hue,
           );
           return leafEntry ? { expression, leafEntry, children: [] } : null;
         }

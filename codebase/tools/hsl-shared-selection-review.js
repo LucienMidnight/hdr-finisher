@@ -47,7 +47,7 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
       const l=Math.max(v.left,i.left),t=Math.max(v.top,i.top),r=Math.min(v.right,i.right),b=Math.min(v.bottom,i.bottom);
       const cx=Math.round((l+r)/2),cy=Math.round((t+b)/2);return{x:cx-256,y:cy-256,width:512,height:512};});
      const name=`${scope}-${lane}-${region}-${zoom}-${mode}.png`;await page.screenshot({path:path.join(out,name),clip});
-     const info=await page.evaluate(()=>({execution:state.acceptedPresentation?.execution||null,zoom:state.zoomPercent??null,
+     const info=await page.evaluate(()=>({execution:state.acceptedPresentation?.execution||null,zoom:state.zoomPercent??null,hueMasks:[...state.gpuPreview.localMasks.values()].filter(e=>e.kind==='gpu-hue'&&!e.destroyed).map(e=>`${e.width}x${e.height}`),
       engines:[...(state.gpuPreview.hslSelectionEngines?.values()||[])].flatMap(o=>Object.entries(o).map(([k,e])=>`${k}:${e.capacity?.width}x${e.capacity?.height}`))}));
      log.push({name,...info});console.log(name,JSON.stringify(info));
     }

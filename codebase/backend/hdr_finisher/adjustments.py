@@ -131,12 +131,14 @@ def apply_adjustments(
     geometry = adjustments.shared.geometry
     fixed_source = apply_geometry(image, geometry)
     if local_adjustments and compiled_local_masks is None:
-        from .local_adjustments import compile_geometry_fixed_mask
+        from .local_adjustments import compile_geometry_fixed_mask, has_hue_mask
 
+        # Hue masks select from this frame's HSL stage input, so the local
+        # stack evaluates them during the render (``_local_hue_stage``).
         compiled_local_masks = {
             local.id: compile_geometry_fixed_mask(image, local.mask, geometry, spatial_only=True)
             for local in local_adjustments
-            if local.enabled and local.opacity > 0.0
+            if local.enabled and local.opacity > 0.0 and not has_hue_mask(local.mask)
         }
     fixed_reference = (
         apply_geometry(sdr_reference_image, geometry)
@@ -258,6 +260,7 @@ def _apply_hdr_adjustments(
         )
     from .hsl_sampling import tap
     tap(result, PreviewKind.HDR)
+    hue_stage = _local_hue_stage(result, local_adjustments, PreviewKind.HDR, source_pixel_scale)
     if hdr.hsl_section_enabled:
         from .hsl import apply_stage
         result = apply_stage(result, [c.recipe for c in hdr.hsl.channels], PreviewKind.HDR,
@@ -269,17 +272,19 @@ def _apply_hdr_adjustments(
     if hdr.detail_section_enabled:
         result = apply_detail(result, hdr.detail, PreviewKind.HDR, source_pixel_scale=source_pixel_scale)
     if local_adjustments:
+        from .hue_mask import stage
         from .local_adjustments import apply_local_stack
 
-        result = apply_local_stack(
-            result,
-            image if fixed_source is None else fixed_source,
-            local_adjustments,
-            PreviewKind.HDR,
-            adjustments.shared.geometry,
-            compiled_masks=compiled_local_masks,
-            source_pixel_scale=source_pixel_scale,
-        )
+        with stage(hue_stage):
+            result = apply_local_stack(
+                result,
+                image if fixed_source is None else fixed_source,
+                local_adjustments,
+                PreviewKind.HDR,
+                adjustments.shared.geometry,
+                compiled_masks=compiled_local_masks,
+                source_pixel_scale=source_pixel_scale,
+            )
     if hdr.film_look_section_enabled or _structure_is_active(hdr):
         result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=include_grain, frame_window=frame_window, source_pixel_scale=source_pixel_scale)
     if hdr.vignette_section_enabled:
@@ -294,6 +299,17 @@ def _apply_hdr_adjustments(
         # different picture than the whole-frame path gives it.
         return result
     return np.clip(result, 0.0, None)
+
+
+def _local_hue_stage(result, local_adjustments, kind, source_pixel_scale):
+    """The shared selection prepared from this frame's HSL stage input, when a
+    local's mask has a hue leaf; Local hue masks select from it like Global HSL."""
+    from .local_adjustments import has_hue_mask
+    if not any(local.enabled and local.opacity > 0.0 and has_hue_mask(local.mask)
+               for local in (local_adjustments or [])):
+        return None
+    from .hue_mask import prepare_stage_input
+    return prepare_stage_input(result, kind, source_pixel_scale)
 
 
 def apply_hdr_output_highlight_compression(
@@ -814,6 +830,7 @@ def _apply_sdr_post_highlight_tail(
         )
     from .hsl_sampling import tap
     tap(result, PreviewKind.SDR)
+    hue_stage = _local_hue_stage(result, local_adjustments, PreviewKind.SDR, source_pixel_scale)
     if sdr.hsl_section_enabled:
         from .hsl import apply_stage
         result = apply_stage(result, [c.recipe for c in sdr.hsl.channels], PreviewKind.SDR,
@@ -825,17 +842,19 @@ def _apply_sdr_post_highlight_tail(
     if sdr.detail_section_enabled:
         result = apply_detail(result, sdr.detail, PreviewKind.SDR, source_pixel_scale=source_pixel_scale)
     if local_adjustments:
+        from .hue_mask import stage
         from .local_adjustments import apply_local_stack
 
-        result = apply_local_stack(
-            result,
-            image if fixed_source is None else fixed_source,
-            local_adjustments,
-            PreviewKind.SDR,
-            adjustments.shared.geometry,
-            compiled_masks=compiled_local_masks,
-            source_pixel_scale=source_pixel_scale,
-        )
+        with stage(hue_stage):
+            result = apply_local_stack(
+                result,
+                image if fixed_source is None else fixed_source,
+                local_adjustments,
+                PreviewKind.SDR,
+                adjustments.shared.geometry,
+                compiled_masks=compiled_local_masks,
+                source_pixel_scale=source_pixel_scale,
+            )
     if sdr.film_look_section_enabled or _structure_is_active(sdr):
         result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=include_grain, frame_window=frame_window, source_pixel_scale=source_pixel_scale)
     if sdr.vignette_section_enabled:

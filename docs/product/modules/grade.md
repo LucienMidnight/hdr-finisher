@@ -1,5 +1,35 @@
 # Module PRD: Grade
 
+## October 27: Local hue mask on the shared selection (Stage 2, partly validated)
+
+The Local hue mask now selects with the shared Light selection from the lane's
+picture just before HSL, like Global HSL. GPU: `loadGpuHueLeaf` builds the
+leaf from the render's own source and settings (whole frame, tiles' region,
+or as a leaf of a combined mask), in 4 MP bands with the selection's reach as
+overlap, into an r16float mask; entries are keyed by lane and everything
+above HSL. CPU: the grade passes its HSL stage input to the local stack
+(`hue_mask.stage`); mask endpoints capture it with `capture_stage_input`
+(they carry no lane, so they use HDR; renders use their own lane). The hue
+picker samples the same picture for the current lane. Unsampled leaves stay
+empty, also inverted. The old source-pixel route (0c9b407: bilateral fields
+cache, native reduction) is removed; old-route tests were rewritten.
+`HDRHueMaskSharedSelection = false` switches only the GPU producer off.
+
+Checks: hue-mask-delivery passes; hue-mask/HSL/local Python tests pass;
+`hsl-selection-delivery --local` stays within the agreed margin (HDR +0.14,
+SDR +0.03 over the neutral gap; ceiling holds). Full-size Proof is not
+byte-identical to the export with a Local hue mask on this photo, on GPU and
+CPU; the Stage 1 code (old route) shows the same, so it predates this work
+and is not yet investigated. Old route, 24 MP: hue range change 0.52 s at
+Fit, 1.3-5.8 s at 100%.
+
+**Still open (Stage 2):** Local app crops (after) and the screenshot page
+`codebase/output/hsl-smoothing-built/index.html` (Global crops and Local
+before-crops are captured there); Local timings on the new route (24/42 MP)
+and Local Exposure drag; Show mask check at 100/272/527%; tiled Local view
+check; the existing Proof/export mismatch with Local hue masks; full fast
+checks once at the end.
+
 ## October 27: shared colour selection built for Global HSL (Stage 1)
 
 Global HSL now selects through the shared Light selection

@@ -63,20 +63,6 @@ class StaleRender(RuntimeError):
     """Raised before expensive work when a newer render superseded this one."""
 
 
-def _reduce_native_hue_mask(native, proxy_source, geometry):
-    """Native coverage on the proxy's exact geometry grid, retaining r8 transport."""
-    from PIL import Image
-    target = geometry_output_dimensions(proxy_source.shape[1], proxy_source.shape[0], geometry)
-    if target == (native.shape[1], native.shape[0]):
-        return native
-    edge = max(target)
-    if target == (round(native.shape[1]*edge/max(native.shape)), round(native.shape[0]*edge/max(native.shape))):
-        reduced = downsample_image(native, edge)
-    else:
-        reduced = np.asarray(Image.fromarray(native.astype(np.float32)).resize(target, Image.Resampling.LANCZOS))
-    return np.rint(np.clip(reduced, 0, 255)).astype(np.uint8)
-
-
 def adjustment_signature(adjustments: AdjustmentState) -> str:
     payload = adjustments.model_dump(mode="json")
     shared = payload.get("shared", {})
@@ -777,8 +763,7 @@ class SessionRenderCache:
     _peak_candidates: dict[str, np.ndarray] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self._hue_source = self.image.view()
-        self._hue_source.setflags(write=False)
+        self._hue_stages: OrderedDict = OrderedDict()
         self._build_peak_candidates()
 
     def _build_peak_candidates(self) -> None:
@@ -822,8 +807,7 @@ class SessionRenderCache:
                 if self.sdr_identity is not None:
                     self.mip_store.discard_memory(self.sdr_identity)
             self.image = image
-            self._hue_source = image.view()
-            self._hue_source.setflags(write=False)
+            self._hue_stages.clear()
             self.sdr_reference_image = sdr_reference_image
             self.source_identity = identity
             self.sdr_identity = sdr_identity
@@ -1094,6 +1078,39 @@ class SessionRenderCache:
                 self._geometry_maps.popitem(last=False)
         return result
 
+    def _hue_stage(self, adjustments: AdjustmentState, edge: int, lane: PreviewKind):
+        """Shared selection prepared from the lane's HSL stage input at ``edge``,
+        with the geometry-fixed frame it belongs to. Keyed by every setting."""
+        from .hsl_sampling import capture_stage_input
+        from .hue_mask import prepare_stage_input
+        key = (self._source_epoch, edge, PreviewKind(lane).value, adjustment_signature(adjustments),
+               repr(self.color_context.cache_key))
+        with self._lock:
+            cached = self._hue_stages.get(key)
+            if cached is not None:
+                self._hue_stages.move_to_end(key)
+                return cached
+            source, reference = self._proxies_locked(edge)
+        scale = min(1.0, edge / max(self.image.shape[:2]))
+        pixels = capture_stage_input(source, adjustments, PreviewKind(lane), reference=reference,
+                                     color_context=self.color_context, source_pixel_scale=scale)
+        fixed = apply_geometry(source, adjustments.shared.geometry)
+        result = (prepare_stage_input(pixels, PreviewKind(lane), scale), fixed)
+        with self._lock:
+            self._hue_stages[key] = result
+            while len(self._hue_stages) > 2:
+                self._hue_stages.popitem(last=False)
+        return result
+
+    def _hue_mask(self, adjustments, expression, edge, lane, *, spatial_only):
+        """A mask with hue leaves, compiled on the geometry-fixed frame."""
+        from .hue_mask import stage
+        from .local_adjustments import compile_preview_mask, compile_spatial_preview_mask
+        prepared, fixed = self._hue_stage(adjustments, edge, lane)
+        with stage(prepared):
+            compile = compile_spatial_preview_mask if spatial_only else compile_preview_mask
+            return downsample_image(compile(fixed, expression, adjustments.shared.geometry), edge)
+
     def compiled_local_mask(
         self,
         adjustments: AdjustmentState,
@@ -1101,8 +1118,15 @@ class SessionRenderCache:
         long_edge: int,
         *,
         spatial_only: bool = False,
+        lane: PreviewKind = PreviewKind.HDR,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
+        from .local_adjustments import has_hue_mask
+        if has_hue_mask(local_adjustment.mask):
+            # Selected from the lane's picture just before HSL. Mask requests
+            # carry no lane, so they use HDR; renders evaluate their own lane.
+            return np.rint(np.clip(self._hue_mask(adjustments, local_adjustment.mask, edge, lane,
+                                                  spatial_only=spatial_only), 0, 255)).astype(np.uint8)
         with mask_cache_lock(self._lock):
             source_epoch = self._source_epoch
             with mask_phase("source"):
@@ -1125,12 +1149,6 @@ class SessionRenderCache:
         # The compatibility/influence endpoint remains byte-identical to the
         # authoritative evaluator. Interactive GPU clients request spatial_only
         # and keep the reusable base texture resident instead.
-        from .local_adjustments import has_hue_mask
-        if has_hue_mask(local_adjustment.mask):
-            with self._lock:
-                native_source = self._hue_source
-            native = compile_geometry_fixed_mask(native_source, local_adjustment.mask, adjustments.shared.geometry)
-            return _reduce_native_hue_mask(native, source, adjustments.shared.geometry)
         return downsample_image(
             compile_geometry_fixed_mask(source, local_adjustment.mask, adjustments.shared.geometry), edge)
 
@@ -1153,7 +1171,7 @@ class SessionRenderCache:
             with mask_phase("source"):
                 source, _sdr_reference = self._proxies_locked(edge)
         from .local_adjustments import has_hue_mask
-        if has_hue_mask(local_adjustment.mask) and source.shape[:2] != self.image.shape[:2]:
+        if has_hue_mask(local_adjustment.mask):
             return None
         with mask_phase("compute"):
             return compile_geometry_fixed_mask_region(
@@ -1169,20 +1187,24 @@ class SessionRenderCache:
         """Compile an uncommitted mask with the exact settled-render pipeline."""
         from .local_adjustments import has_hue_mask
         edge = max(256, int(long_edge))
-        source, _sdr_reference = self._proxies(edge)
         if has_hue_mask(expression):
-            with self._lock:
-                native_source = self._hue_source
-            native = compile_geometry_fixed_mask(native_source, expression, adjustments.shared.geometry)
-            return _reduce_native_hue_mask(native, source, adjustments.shared.geometry)
+            return self._hue_mask(adjustments, expression, edge, PreviewKind.HDR, spatial_only=False)
+        source, _sdr_reference = self._proxies(edge)
         return downsample_image(compile_geometry_fixed_mask(source, expression, adjustments.shared.geometry), edge)
 
-    def sample_hue(self, adjustments, points, long_edge):
+    def sample_hue(self, adjustments, points, long_edge, lane: PreviewKind = PreviewKind.HDR):
+        """Pick a hue from the picture the hue mask selects from (before HSL)."""
+        from .color import linear_srgb_to_acescg
+        from .hsl_sampling import capture_stage_input
         from .local_adjustments import sample_hue_range
         edge = max(256, int(long_edge))
-        source, _ = self._proxies(edge)
-        fixed = downsample_image(apply_geometry(source, adjustments.shared.geometry), edge)
-        return sample_hue_range(fixed, points)
+        source, reference = self._proxies(edge)
+        pixels = capture_stage_input(source, adjustments, PreviewKind(lane), reference=reference,
+                                     color_context=self.color_context,
+                                     source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])))
+        if PreviewKind(lane) == PreviewKind.SDR:
+            pixels = linear_srgb_to_acescg(pixels)
+        return sample_hue_range(pixels, points)
 
     def sample_luminance(
         self,
@@ -1582,9 +1604,17 @@ class SessionRenderCache:
         *,
         source_epoch: int,
     ) -> dict[str, np.ndarray] | None:
+        from .local_adjustments import has_hue_mask
         active = [item for item in (local_adjustments or []) if item.enabled and item.opacity > 0.0]
         if not active:
             return None
+        hue = [item for item in active if has_hue_mask(item.mask)]
+        if hue:
+            # Hue masks read this render's HSL stage input; the local stack
+            # evaluates them in place. Compiled-only callers ask per mask.
+            active = [item for item in active if not has_hue_mask(item.mask)]
+            if not active:
+                return {}
         geometry = adjustments.shared.geometry
         geometry_signature = geometry.model_dump_json()
         compiled: dict[str, np.ndarray] = {}
@@ -1637,17 +1667,7 @@ class SessionRenderCache:
                     mask_checkpoint()
                     with mask_shared_work(lambda: self._flight_waiters.get(flight_key, 0) > 0):
                         with mask_phase("compute"):
-                            from .local_adjustments import has_hue_mask
-                            if has_hue_mask(local.mask) and source.shape[:2] != self.image.shape[:2]:
-                                # Select at native resolution once, then reduce coverage;
-                                # never re-measure noisy colour on a preview mip.
-                                with self._lock:
-                                    native_source = self.image
-                                native = self._compiled_masks(native_source, adjustments, [local],
-                                    max(native_source.shape[:2]), source_epoch=source_epoch)[local.id]
-                                mask = _reduce_native_hue_mask(native, source, geometry)
-                            else:
-                                mask = compile_geometry_fixed_mask(self._hue_source if has_hue_mask(local.mask) else source, local.mask, geometry, spatial_only=True)
+                            mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True)
                     # An obsolete mask is never cached. A finished, still-valid
                     # one is, even when its own requester left meanwhile: the
                     # key names the mask, not the request, and the next request

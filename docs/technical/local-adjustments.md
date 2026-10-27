@@ -30,7 +30,10 @@ Tiles and Clarity chunks use a per-canvas tile engine with no cache;
 `composedReach` adds the selection reach to the tile halo and the planner
 charges `64 + 16*ceil(channels/4)` bytes per pixel. CPU `apply_stage(...,
 shared_selection=scale)` applies the same coverage; CPU strips refuse active
-HSL. The Local hue mask still uses its fixed-source CPU route until Stage 2.
+HSL. Stage 2: the Local hue mask uses the same selection (see the Grade PRD's
+Stage 2 note): GPU leaves from `loadGpuHueLeaf` (banded, keyed by lane and
+the settings above HSL), CPU leaves from the frame's stage input via
+`hue_mask.stage`; region mask compiles refuse hue leaves (whole frame only).
 Checks: `tests/hsl-selection-engine.js` (GPU vs CPU, halo tile, reuse),
 `tests/hsl-selection-delivery.js` (real photo export/Proof), `test_hsl_selection.py`.
 

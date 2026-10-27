@@ -1309,6 +1309,8 @@ class LocalLuminanceSampleRequest(BaseModel):
     points: list[MaskPoint] = Field(min_length=1, max_length=512)
     edit_revision: int | None = Field(default=None, ge=0)
     long_edge: int = Field(default=1600, ge=256, le=16384)
+    # Hue picking samples this lane's picture before HSL (the hue mask's input).
+    lane: PreviewKind = PreviewKind.HDR
 
 
 class LocalLuminanceSampleResponse(BaseModel):
