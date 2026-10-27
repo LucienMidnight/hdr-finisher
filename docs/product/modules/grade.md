@@ -1,5 +1,45 @@
 # Module PRD: Grade
 
+## October 27: Tone sliders replace Lift/Gamma/Gain (Steve's decision, v1)
+
+**Naming rule for the whole app.** "Exposure" always means an equal change in
+stops: every pixel by the same ratio, never curved. A slider named after a
+tone (Blacks, Shadows, Midtones, Highlights) is a curve on that part of the
+range that fades smoothly and leaves the other tones alone. Tone ranges are
+measured in stops from middle grey, so a name means the same in HDR and SDR.
+Tools that look at the surrounding area (none yet) get a different kind of
+name. Research and reasoning: chat of October 27 (Lightroom, Capture One,
+Resolve, darktable, DxO).
+
+**Global Tone, for v1 (HDR and SDR alike):**
+
+| Control | Behaviour |
+| --- | --- |
+| Exposure | Unchanged: equal change in stops. |
+| Contrast, Pivot | Unchanged. |
+| Blacks | Moves the dark end of the range. Replaces HDR "Shadow / Black" (`shadow_lift`) and SDR "Shadow". |
+| Shadows | Brightens or darkens the shadow zone in stops. Leaves black alone. Center and Width set the zone. |
+| Midtones | Same for the middle zone, black and white held. Center and Width. |
+| Highlights | Same for the bright zone. Leaves the brightest tones alone, so it never moves the peak that Highlight compression measures. Center and Width. |
+| Highlight compression | Unchanged. Owns the bright end; no Whites or Highlight Recovery slider. |
+
+- Shadows, Midtones and Highlights keep the Pivot/Range work from
+  Lift/Gamma/Gain, renamed Center and Width, shown in stops, so people who do
+  not use curves can aim at the histogram directly. While dragging any of
+  them, the histogram shows the zone being changed.
+- The separate Lift/Gamma/Gain group is removed in both lanes. SDR's
+  display-referred Lift/Gamma/Gain maths goes; both lanes use the stop-based
+  zones. Existing grades that used Lift/Gamma/Gain or Shadow change; pre-1.0,
+  no migration.
+- Tones never swap order at any setting (existing HDR rule).
+- Local adjustments already have Blacks/Shadows/Midtones/Highlights in stops
+  with fixed zones, and SDR Match fits through them. For v1 they stay as they
+  are. Open: whether Local Highlights should also leave the brightest tones
+  alone and gain Center/Width (this changes Match's fitting).
+- HSL Luminance under this rule (rename to Exposure, add Shadows/Highlights per
+  colour) is not decided.
+- Brief: `docs/technical/briefs/codex-brief-tone-zones-2026-10-27.md`.
+
 ## October 27: HSL selection edge controls
 
 The shared selection now accepts Edge grow/shrink (−8..+8 source pixels),
@@ -423,7 +463,8 @@ every edit must be undoable.
 
 - The HDR and SDR lanes and their panels: Tone, Highlight Compression,
   Exposure Bands (tone equalizer), Color (including Highlight/Shadow
-  Desaturation, built October 27), Lift/Gamma/Gain, Base Rendition
+  Desaturation, built October 27), Lift/Gamma/Gain (becoming Tone's
+  Shadows/Midtones/Highlights for v1), Base Rendition
   (SDR), HSL, Curves, Color Grading, Detail, Black & White, Vignette, Denoise.
 - Crop, rotate, straighten, perspective, lens corrections.
 - Local adjustments and masks (brush, gradients, luminance, colour,
@@ -445,7 +486,8 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | HDR controls stay continuous at neutral, keep luminance order and add no hidden ceiling. Values above the curve range pass through. | 2026-08 |
 | Detail (Texture, Clarity, Sharpen) is corrective and separate from Film Look's fixed-scale character. Global Detail runs after the colour grade and before local adjustments; local Detail runs inside each local grade. | 2026-09 |
 | Match entire HDR grade captures the whole HDR recipe (global, locals, Detail, Film Look, vignette, grain) and builds an SDR base from it. SDR controls stay as trims. Rematch and Revert are single history steps. | 2026-09 |
-| HDR Lift/Gamma/Gain is deprecated now that Exposure Bands exists. Remove it after real-photo checks, unless a workflow needs it. The SDR trims stay. | 2026-08, pending |
+| ~~HDR Lift/Gamma/Gain is deprecated now that Exposure Bands exists.~~ Superseded: Lift/Gamma/Gain in both lanes becomes Tone's Shadows/Midtones/Highlights with Center and Width, plus Blacks; see the October 27 tone note at the top. | 2026-08; replaced by Steve 2026-10-27 |
+| Naming rule: "Exposure" is always an equal change in stops; tone names (Blacks, Shadows, Midtones, Highlights) are curves on that part of the range, measured in stops from middle grey. | Steve, 2026-10-27 |
 | COLOR-DESAT-01 is built in both Color lanes, after Saturation/Vibrance and before HSL; zero amounts are exactly neutral. Starts and fade widths await by-eye review. | Steve’s October 26 brief; built 2026-10-27 |
 | A healing brush in the local adjustment module and hue selection as a local-adjustment mask are required for v1. Hue selection is built October 27; the complete Retouch feature remains open. | Steve, 2026-10-21 |
 | Retouch starts on the CPU, preserving a fallback for later GPU work. Inpaint is the default, targeting PatchMatch with Krita as the main reference; Heal follows darktable/GIMP and Clone shares the brush infrastructure. See the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026). Quality/performance are not yet validated. | Steve, 2026-10-21 |
@@ -721,9 +763,9 @@ are now available; their quality review remains open (October 23 note below).
 ## 5. Open work, in order
 
 **V1 scope (Steve, October 26, 2026):** items 1, 3, 8 and 9 and the new
-Sharpen review below are v1. Item 2 waits on Steve's recorded photo. Items 4
-and 5 (removing HDR Lift/Gamma/Gain; the PIPE-01, DETAIL-01 and CLARITY-01
-reviews) are after v1. Items 6 and 7 are unchanged and not v1 requirements.
+Sharpen review below are v1. Item 2 waits on Steve's recorded photo. Item 4
+(the tone sliders replacing Lift/Gamma/Gain) became v1 on October 27. Item 5
+(the PIPE-01, DETAIL-01 and CLARITY-01 reviews) is after v1. Items 6 and 7 are unchanged and not v1 requirements.
 
 - **Sharpen v1 accepted by Steve, October 27, 2026.** Keep the method.
   The earlier impression came from judging zoomed out; sharpening works at
@@ -765,7 +807,9 @@ No GPU processing check applies to this HTML/CSS layout correction.
    files are unaffected. Small round-trip/clash/identity checks: 3 passed; batch fast-check
    results are recorded below. Steve should select two presets, export/import,
    rename one and confirm/cancel Update.
-4. Decide, with Steve, whether to remove HDR Lift/Gamma/Gain.
+4. **V1 (Steve, October 27, 2026):** Tone's Blacks, Shadows, Midtones and
+   Highlights replace Lift/Gamma/Gain and Shadow / Black in both lanes (see
+   the tone note at the top). Not built yet.
 5. Reviews before 1.0: whole-pipeline order (PIPE-01), Texture against
    Microcontrast (DETAIL-01), local Clarity cost (CLARITY-01).
 6. Local-grade transfer between lanes (its own piece of work).

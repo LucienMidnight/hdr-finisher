@@ -135,6 +135,10 @@ bug hunt:
   accepted large-folder speed (now the regression baseline); Build previews
   and metadata await his try. Slight JPEG export differences are accepted for
   v1 and Ultra HDR JPEG stays the HDR export format.
+- Tone sliders (Steve, October 27, 2026): Blacks, Shadows, Midtones and
+  Highlights with Center and Width replace Lift/Gamma/Gain and Shadow / Black
+  in both lanes, under one app-wide naming rule ("Exposure" is an equal
+  change in stops; tone names are curves). See the Grade PRD.
 - Steve's by-eye reviews (RAW exposure sheet, film grain/Looks/lens filter,
   HSL, exposure-warning wording, Black & White sliders) and the Match fault.
 
@@ -149,7 +153,8 @@ each module's open work:
 - Export speed: full-size single export under 15 s, RAW development on the
   GPU inside export, tiled finishing for large sharpened originals.
 - Grade reviews: pipeline order (PIPE-01), Texture against Microcontrast
-  (DETAIL-01), local Clarity cost (CLARITY-01); removing HDR Lift/Gamma/Gain.
+  (DETAIL-01), local Clarity cost (CLARITY-01). (Lift/Gamma/Gain moved into
+  v1 as the new tone sliders, October 27.)
 - Linux leftovers, unrecognised TIFF colour profiles, the Releases link.
 
 **Idea for v2 (Steve, October 27, 2026):** a fringe tool in RAW development
