@@ -62,7 +62,7 @@ const {_electron}=require('playwright');
   assert.ok(report.equalGlobalLocal,'Equal Global/Local settings produced different coverage');
   assert.ok(report.reused&&report.invalidated,JSON.stringify(report));assert.deepEqual(report.errors,[]);
   assert.equal(fixture.tile_seam_max,0);
-  assert.ok(fixture.selected_mean>.8);assert.ok(fixture.noisy_std_after<fixture.noisy_std_before*.3);assert.ok(fixture.fringe_mean<.01);assert.ok(fixture.neutral_mean<.001);
+  assert.ok(fixture.selected_mean>.8);assert.ok(fixture.noisy_std_after<fixture.noisy_std_before*.3);assert.ok(fixture.fringe_mean>.8);assert.ok(fixture.neutral_mean<.001);
   fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(report,null,2));console.log('PASS shared selection GPU/CPU',JSON.stringify(report));
  }finally{await app.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

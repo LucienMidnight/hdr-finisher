@@ -160,6 +160,11 @@ function vignetteOutlinePath(vignette, radius, width, height) {
   return `${points.join("")}Z`;
 }
 
+// A bypassed tool shows no overlay or handle on the picture.
+function vignetteBypassed() {
+  return state.adjustments?.[state.currentView]?.vignette_section_enabled === false;
+}
+
 function renderVignetteShape() {
   const overlay = els.vignetteShapeOverlay;
   if (!overlay) return;
@@ -170,6 +175,7 @@ function renderVignetteShape() {
   const frameWidth = preview instanceof HTMLCanvasElement ? preview.width : preview?.naturalWidth;
   const frameHeight = preview instanceof HTMLCanvasElement ? preview.height : preview?.naturalHeight;
   const visible = Boolean(state.session) && state.vignetteShowOverlay && groupOpen && state.activeWorkflow === "grade"
+    && !vignetteBypassed()
     && imageRect?.width > 0 && frameWidth > 0 && frameHeight > 0;
   overlay.classList.toggle("hidden", !visible);
   if (els.vignetteShowOverlay) {
@@ -205,7 +211,7 @@ function renderVignetteCenter() {
     els.vignetteCenterHandle.style.top = `${imageRect.top - paneRect.top + imageRect.height * vignette.center_y}px`;
   }
   const groupOpen = !document.querySelector(".vignette-group")?.classList.contains("collapsed");
-  const visible = state.activeWorkflow === "grade" && (state.vignettePickCenter || groupOpen);
+  const visible = state.activeWorkflow === "grade" && (state.vignettePickCenter || groupOpen) && !vignetteBypassed();
   els.vignetteCenterHandle.classList.toggle("hidden", !visible);
   els.vignettePickCenter?.setAttribute("aria-pressed", String(state.vignettePickCenter));
   renderVignetteShape();

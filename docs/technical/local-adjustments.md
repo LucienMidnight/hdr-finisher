@@ -12,7 +12,10 @@ area-average relative chroma on a frame-anchored grid of `cell` pixels,
 Gaussian blur on that grid, then a guide texture `(log2 L, protection, box
 mean, box variance)`. Selection (per four channels): qualify the coarse grid
 (include/subtract ranges, neutral floor), guided-filter coefficients and
-refinement at full resolution, times protection; output rgba32float array
+refinement at full resolution, times protection (now always 1: the
+bright-edge exclusion was removed on October 27, 2026, at Steve's request,
+because it left bright dots when darkening; the slot and the surround radius
+in `reach` are kept so a future edge control needs no layout change); output rgba32float array
 layers, one lane per channel. Geometry by processing scale `s` (GPU
 `SOURCE_PIXEL_SCALE`, CPU `source_pixel_scale`, clamped .05..1): cell
 `max(1, round(4s))`, sigma `4s/cell` cells, taps `ceil(4 sigma)`, guided radius

@@ -920,6 +920,9 @@ function bindEvents() {
     button.addEventListener("click", () => {
       const path = resolveAdjustmentPath(button.dataset.sectionPath);
       setValueByPath(state.adjustments, path, getValueByPath(state.adjustments, path) === false);
+      // A bypassed tool hides its overlays and handles on the picture.
+      renderVignetteCenter();
+      renderLocalMaskOverlay();
       if (path.startsWith("shared.")) {
         // The Local Adjustments eye belongs to both renditions.
         invalidatePreview("hdr", { local: true });

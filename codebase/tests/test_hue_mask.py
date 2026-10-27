@@ -33,16 +33,30 @@ def test_sampled_hue_selects_its_colour_and_not_neutral():
     assert not hue_range_mask(leaf, np.ones((32, 32, 3), np.float32)).any()
 
 
-def test_noisy_patch_is_smooth_and_does_not_select_neutral_or_bright_fringe():
+def test_noisy_patch_is_smooth_and_does_not_select_neutral():
     image = noisy_patch()
     leaf = MaskLeaf(type='hue_range', hue_center=109, hue_width=12, hue_smoothness=20)
     mask = hue_range_mask(leaf, image)
     assert mask[8:-8, 8:84].mean() > .9
     assert mask[8:-8, 8:84].std() < .05
     assert mask[:, 112:].max() < .01
-    assert mask[:, 97].mean() < .08
     # Exposure invariance includes highlights above reference white.
     np.testing.assert_allclose(mask, hue_range_mask(leaf, image * 16), atol=.005)
+
+
+def test_small_bright_spots_follow_their_selected_surroundings():
+    # Sunlit specks in foliage: brighter and a different hue than the patch,
+    # yet selected with it, so a Luminance edit never leaves them behind.
+    image = noisy_patch()
+    rng = np.random.default_rng(3)
+    ys, xs = rng.integers(12, 84, 40), rng.integers(12, 72, 40)
+    lab = np.zeros((1, 1, 3), np.float32); lab[..., 0] = 1.2
+    lab[..., 1], lab[..., 2] = .08 * np.cos(np.radians(10)), .08 * np.sin(np.radians(10))
+    image[ys, xs] = linear_srgb_to_acescg(from_lab(lab).astype(np.float32))[0, 0]
+    leaf = MaskLeaf(type='hue_range', hue_center=109, hue_width=12, hue_smoothness=20)
+    mask = hue_range_mask(leaf, image)
+    assert mask[ys, xs].min() > .8
+    assert np.abs(mask[ys, xs] - mask[ys, xs + 3]).max() < .15
 
 
 def test_the_leaf_reads_the_frames_stage_input_when_a_render_provides_it():

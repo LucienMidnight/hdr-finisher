@@ -126,11 +126,10 @@ def prepare_fields(ab, guide, scale=1.0, origin=(0, 0)):
     kernel = np.exp(-.5 * (np.arange(-geo.taps, geo.taps + 1) / geo.sigma) ** 2)
     kernel = (kernel / kernel.sum()).astype(np.float32)
     coarse = cv2.sepFilter2D(coarse, -1, kernel, kernel, borderType=cv2.BORDER_REFLECT)
-    contrast = guide - _box(guide, geo.surround)
-    average = _interpolate(coarse, guide.shape, origin, geo.cell)
-    mismatch = _smooth(.04, .16, np.linalg.norm(ab - average, axis=-1))
-    protection = (1 - _smooth(.07, .30, contrast)) * (1 - mismatch * _smooth(.025, .12, np.abs(contrast)))
-    return PreparedSelection(coarse, guide, protection.astype(np.float32), geo, origin)
+    # No bright-spot protection: small bright spots follow their surroundings
+    # (Steve, 2026-10-27; excluding them left harsh dots when darkening).
+    protection = np.ones(guide.shape, np.float32)
+    return PreparedSelection(coarse, guide, protection, geo, origin)
 
 
 def _qualify(chroma, ranges, floor):

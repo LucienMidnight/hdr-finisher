@@ -13,7 +13,7 @@ angle = np.radians(109 + rng.normal(0, 18, (h, w)))
 lab[..., 1] = .12 * np.cos(angle); lab[..., 2] = .12 * np.sin(angle)
 lab[:, 160:, 1:] = 0
 rgb = from_lab(lab).astype(np.float32)
-rgb[:, 158:160] *= 8
+rgb[:, 158:160] *= 8  # a bright edge of the patch: selected with it, not left out
 
 
 def fields(pixels):

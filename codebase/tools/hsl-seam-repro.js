@@ -1,7 +1,8 @@
 // Reproduce Steve's horizontal line: Balanced Rock (copy), SDR, Yellow 15/21 Luminance -2 EV, 423% on the bush.
-// Run from codebase: node tests/run-in-electron.js tools/hsl-seam-repro.js
+// Run from codebase: node tests/run-in-electron.js tools/hsl-seam-repro.js [--lum -2] [--tag name-]
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path');
-const out=path.resolve('output/hsl-seam');fs.mkdirSync(out,{recursive:true});
+const out=path.resolve('output/hsl-seam');const arg=(n,d)=>{const i=process.argv.indexOf(n);return i>0?process.argv[i+1]:d;};
+const lum=Number(arg('--lum','-2')),tag=arg('--tag','');fs.mkdirSync(out,{recursive:true});
 const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.lane===state.currentView
  &&state.acceptedPresentation.generation===state.previewGeneration[state.currentView]&&viewerState().status==='ready';
 (async()=>{const browser=await chromium.launch(),page=await browser.newPage();try{
@@ -12,9 +13,9 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
   while(!['ready','error','cancelled'].includes(job.state)){await new Promise(r=>setTimeout(r,150));job=(await projectIo.pollImportJob(fetch,job.job_id)).payload;}
   if(job.state!=='ready')throw Error(JSON.stringify(job));await activateDesktopSession((await projectIo.fetchSession(fetch,job.session_id)).payload.session,'');activateWorkflowTab('grade');},photo);
  await page.waitForFunction(settled,null,{timeout:180000});
- await page.evaluate(async()=>{await switchLane('sdr');const b=state.adjustments.sdr,r=b.hsl.channels.find(c=>c.id==='yellow').recipe;
-  r.ranges[0].width=15;r.ranges[0].feather=21;r.luminance=-2;r.uniformity=0;r.opacity=1;b.hsl_section_enabled=true;
-  state.globalEditDirty=true;await syncGlobalEditState();});
+ await page.evaluate(async lum=>{await switchLane('sdr');const b=state.adjustments.sdr,r=b.hsl.channels.find(c=>c.id==='yellow').recipe;
+  r.ranges[0].width=15;r.ranges[0].feather=21;r.luminance=lum;r.uniformity=0;r.opacity=1;b.hsl_section_enabled=true;
+  state.globalEditDirty=true;await syncGlobalEditState();},lum);
  await page.evaluate(()=>setCustomZoom(423));await page.waitForFunction(settled,null,{timeout:180000});
  await page.evaluate(([x,y])=>{const image=activePreviewElement().getBoundingClientRect(),view=els.dropzone.getBoundingClientRect();
   els.dropzone.scrollLeft+=image.left+x*image.width-(view.left+view.width/2);els.dropzone.scrollTop+=image.top+y*image.height-(view.top+view.height/2);},[.37,.58]);
@@ -24,7 +25,7 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
   await page.evaluate(async mode=>{globalThis.HDRHslSharedSelection=mode!=='before';state.adjustments.sdr.hsl_section_enabled=mode!=='off';
    state.globalEditDirty=true;await syncGlobalEditState();invalidatePreview('sdr');await settlePreview('sdr',{});},mode);
   await page.waitForFunction(settled,null,{timeout:180000});await page.waitForTimeout(600);
-  await page.screenshot({path:path.join(out,`${mode}.png`),clip});
+  await page.screenshot({path:path.join(out,`${tag}${mode}.png`),clip});
   const info=await page.evaluate(()=>({execution:state.acceptedPresentation?.execution,zoom:state.zoomPercent,
    stages:(state.gpuPreview.stageLog||state.gpuPreview.stages||[]).slice?.(-6)}));
   console.log(mode,JSON.stringify(info));

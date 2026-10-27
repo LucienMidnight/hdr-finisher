@@ -117,7 +117,8 @@ function renderLocalMaskOverlay() {
   const active = state.activeWorkflow === "grade"
     && state.gradeMode === "local"
     && Boolean(local)
-    && local.enabled !== false;
+    && local.enabled !== false
+    && state.adjustments?.shared?.local_adjustments_enabled !== false;
   const gizmoVisible = localGizmoVisible(local);
   canvas.classList.toggle("editing", active && gizmoVisible);
   syncLocalMaskOverlayViewport();

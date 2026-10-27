@@ -78,21 +78,17 @@ fn blur(xy: vec2i, axis: vec2i) -> vec4f {
   let xy = vec2i(id.xy); if (!inside(xy, coarseSize())) { return; } textureStore(storeA, xy, blur(xy, vec2i(0, 1)));
 }
 // Range-independent: (log2 L, protection, box mean of log2 L, its box variance).
+// Protection is 1 everywhere: small bright spots follow their surroundings
+// (Steve, 2026-10-27; the bright-spot exclusion left harsh dots when darkening).
 @compute @workgroup_size(8,8) fn guide(@builtin(global_invocation_id) id: vec3u) {
   let xy = vec2i(id.xy); if (!inside(xy, region())) { return; }
-  let f = field(xy); let q = i32(p[10]); let g = i32(p[9]);
-  var surround = 0.;
-  for (var y = -q; y <= q; y++) { for (var x = -q; x <= q; x++) { surround += field(xy + vec2i(x, y)).z; } }
-  surround /= f32((2 * q + 1) * (2 * q + 1));
+  let f = field(xy); let g = i32(p[9]);
   var mean = 0.; var square = 0.;
   for (var y = -g; y <= g; y++) { for (var x = -g; x <= g; x++) {
     let v = field(xy + vec2i(x, y)).z; mean += v; square += v * v;
   } }
   let n = f32((2 * g + 1) * (2 * g + 1)); mean /= n; square /= n;
-  let contrast = f.z - surround;
-  let mismatch = smoothstep(.04, .16, length(f.xy - interpolate(xy).xy));
-  let protection = (1. - smoothstep(.07, .30, contrast)) * (1. - mismatch * smoothstep(.025, .12, abs(contrast)));
-  textureStore(storeA, xy, vec4f(f.z, protection, mean, square - mean * mean));
+  textureStore(storeA, xy, vec4f(f.z, 1., mean, square - mean * mean));
 }
 fn qualifyLane(ab: vec2f, lane: u32) -> f32 {
   let count = u32(p[16u + lane]); if (count == 0u) { return 0.; }
@@ -220,7 +216,7 @@ fn qualifyLane(ab: vec2f, lane: u32) -> f32 {
         this.dispatch(encoder, "reduce", { 0: view(t.fields), ...params, 7: view(t.scratch) }, cw, ch);
         this.dispatch(encoder, "horizontal", { 1: view(t.scratch), ...params, 7: view(t.qualified) }, cw, ch);
         this.dispatch(encoder, "vertical", { 1: view(t.qualified), ...params, 7: view(t.coarse) }, cw, ch);
-        this.dispatch(encoder, "guide", { 0: view(t.fields), 1: view(t.coarse), ...params, 7: view(t.guide) }, width, height);
+        this.dispatch(encoder, "guide", { 0: view(t.fields), ...params, 7: view(t.guide) }, width, height);
         // Cached data counts only once the commands writing it are submitted.
         this.preparedKey = null; this.selectedKey = null; this.serial += 1;
       }

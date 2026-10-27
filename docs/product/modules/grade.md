@@ -1,5 +1,27 @@
 # Module PRD: Grade
 
+## October 27: HSL selection fixes after Steve's review
+
+- Horizontal line at magnified zoom (Balanced Rock, Yellow Luminance -2 EV,
+  423%): the tile planner did not give tiles the selection's halo when HSL was
+  the only neighbourhood tool. Fixed (b08d47d); the selection now declares its
+  halo. Reproduce with `codebase/tools/hsl-seam-repro.js`.
+- Bright-spot protection removed (Steve's decision). It excluded pixels about
+  23% brighter than their 5x5 surround, plus darker rims of mismatched colour,
+  so darkening left harsh bright dots that no range could select. Small bright
+  spots now follow their surroundings for both Global HSL and the Local hue
+  mask. Brightening a colour now also brightens tiny bright edges beside it;
+  the Highlight compression ceiling is unchanged. Tests now expect bright edges
+  and specks to be selected with their area. Crops:
+  `codebase/output/hsl-seam/index.html`.
+- A bypassed tool hides what it draws on the picture: HSL Show selection
+  (Global; Local when the adjustment or Local Adjustments is off), Vignette
+  overlay and centre handle, and Local mask overlays and handles when Local
+  Adjustments is off. Denoise's Show noise already followed its bypass.
+
+**Open:** edge handling for HSL selections (a user grow/shrink and feather
+control, or edge-aware alternatives), to be discussed with Steve.
+
 ## October 27: Local hue mask on the shared selection (Stage 2, validation ongoing)
 
 The Local hue mask now selects with the shared Light selection from the lane's
@@ -57,8 +79,8 @@ HSL receives it (after exposure, white balance and colour edits) and the
 selection runs on it; the base pass then reads one coverage per active
 channel instead of judging each pixel alone. Distances are source pixels
 converted by the processing scale (chroma averaged over 4x4 source pixels,
-Gaussian sigma 4 source pixels, guided filter radius 4, bright-edge surround
-2), so Fit, every zoom, tiles and export select the same area of the photo.
+Gaussian sigma 4 source pixels, guided filter radius 4; the bright-edge
+protection was removed later the same day, see above), so Fit, every zoom, tiles and export select the same area of the photo.
 The coarse grid is anchored to the frame, and the tile halo includes the
 selection's reach (36 processing pixels at 100%), so tiles match the whole
 frame exactly. Whole-frame renders reuse the selection per canvas until the
