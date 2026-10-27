@@ -6,7 +6,7 @@ const {HDRGpuParamLayout:layout}=require('../frontend/gpu-param-layout.js');
 test('HSL packs every bounded channel and range without touching existing slots',()=>{
  const settings=h.defaultSettings();
  for(let i=0;i<4;i++)settings.channels.push({id:`custom-${i}`,kind:'custom',recipe:h.newRecipe()});
- for(const c of settings.channels){c.recipe.hue=25;c.recipe.ranges=Array.from({length:32},(_,i)=>({center:i*10,width:5,feather:2,subtract:i%2===1}));}
+ for(const c of settings.channels){c.recipe.hue=25;c.recipe.edge_detail=100;c.recipe.ranges=Array.from({length:32},(_,i)=>({center:i*10,width:5,feather:2,subtract:i%2===1}));}
  const values=new Float32Array(layout.count).fill(-7);
  assert.equal(h.pack(values,settings),13);
  assert.ok(values.slice(0,198).every(v=>v===-7));
@@ -14,6 +14,7 @@ test('HSL packs every bounded channel and range without touching existing slots'
  for(let i=0;i<13;i++){
   const at=200+i*140;assert.deepEqual(Array.from(values.slice(at,at+6)),[25,0,0,0,32,1]);
   assert.deepEqual(Array.from(values.slice(at+8+31*4,at+8+32*4)),[310,5,2,1]);
+  assert.equal(values[at+136],100);
  }
  assert.equal(200+13*140,values.length);
  assert.equal(h.pack(values,settings,false),0);assert.equal(values[198],0);

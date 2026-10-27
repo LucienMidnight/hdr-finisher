@@ -77,6 +77,32 @@ Resolve, darktable, DxO).
   nits, rerun after the strength scale). Review page:
   `codebase/output/tone-zones/index.html`.
 
+## October 27: HSL performance investigation (in progress)
+
+Proposed timing targets before measuring: defaults within 10% of the earlier
+Fit/100% timings; non-default Edge +3, Feather 8, detail 75 at least 24 frames/s
+at Fit and 100% on 24 MP. Treat paired timing changes within 10% as noise.
+Keep the existing GPU/CPU coverage and finished-picture tolerances; no quality
+reduction or new GPU parameter slots. Measure copied Balanced Rock and 42 MP
+in both lanes at Fit, 100% and 400%, including selection controls, grade sliders,
+pan/zoom and overlays.
+
+Investigation record: the copied 24/42 MP, SDR/HDR Fit/100/400 matrix is in
+`codebase/output/hsl-performance/before-*.json`; the repeatable driver is
+`codebase/tools/hsl-performance.js`. Fit produces 43–52 frames/s, but native
+zoom often produces no completed drag frames: newer inputs retire the work
+before it finishes. Local native hue selection also computes offscreen pixels;
+its range edits take about 0.12–0.29 s while cached Local Exposure stays near
+50 frames/s. Global Show selection uses the CPU and takes about 0.5–1.9 s.
+The pan/zoom/Local-overlay observations include explicit wait floors and are
+not pure rendering latency measurements.
+
+Validation: fast JS 644 pass / 2 unrelated Library failures; Python 2657 pass,
+3 skip / 2 unrelated Library failures (SourceReference fixture and repair-cache
+mock). The stale 1968-parameter literal came from the HSL stride expansion;
+replaced with all-13-channel packing coverage, including the last edge field.
+Native shared selection GPU/CPU check passes, including edge cases and tiles.
+
 ## October 27: HSL selection edge controls
 
 The shared selection now accepts Edge grow/shrink (−8..+8 source pixels),
