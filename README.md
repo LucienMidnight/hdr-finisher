@@ -88,6 +88,6 @@ GPU-first HDR/SDR composition. See the
 
 ## License
 
-GPL-3.0. Bundled encoders keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+GPL-3.0. Bundled encoders and tools, including ExifTool (Artistic License or GPL) and, on Windows, its Strawberry Perl runtime, keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Created by Steven Funcke ([@LucienMidnight](https://github.com/LucienMidnight)). If HDR Finisher is useful to you, you can [donate via PayPal](https://www.paypal.com/ncp/payment/TMM9TRHJUUTJS).

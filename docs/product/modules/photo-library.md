@@ -57,6 +57,30 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 27, 2026)
 
+**Large-folder performance accepted; this is the baseline (Steve, October 27,
+2026).** Steve is happy with large-folder speed after 015baf7. The about-1-s
+first-screen target for very large folders is retired as a v1 requirement.
+The numbers below are now the reference for spotting regressions and for
+choosing any future speed work; they are not targets to chase.
+
+| Measure | Baseline | Source |
+| --- | --- | --- |
+| `D:\Photos` (155,877 rows): first 256 sorted rows usable | 3.81 s (page rows 3.74 s) | Disposable cold profile, 015baf7 |
+| `D:\Photos`: first grid picture | 4.20 s | Same profile |
+| `D:\Photos`: 25th grid picture | 5.40 s | Same profile |
+| Ordinary folder (253 photos): first grid picture | 1.46 s | Same profile |
+| After a scroll settles: picture requests | at most about 30 | Steve's log, October 26 21:26 |
+| After a scroll settles: first visible picture | 0.04 s typical, 1.55 s worst | Same log |
+| Background disk check, 155k-photo folder | 64 s | Same log |
+
+How to use it: rerun `tools/profile_large_folder.py <new-output-directory>`
+from `codebase` on a fresh disposable copy of the Library database (never the
+live one) and compare. One profile varies from run to run: treat a result as
+a regression only if it is more than about 10% slower than the baseline on
+two runs, or if Steve notices it. Report any regression with the stage that
+grew (rows, first request, first picture). Ordinary folders are judged by
+Steve's eye, with the 0.4–1.0 s first pictures of October 26 as reference.
+
 **Three-part batch:** export metadata is now shared by single and Library batch
 export: all source policies, reusable title/caption/creator/copyright templates,
 location/serial/owner privacy and bundled ExifTool. See Export and Proof's
@@ -669,9 +693,9 @@ Finished briefs are in `docs/technical/archive/briefs/`
 
 **Next work.** The October 26 five-part batch is done and tried by Steve (see above); later work is separate.
 
-**V1 scope (Steve, October 26, 2026):** v1 still needs smooth scrolling in
-very large folders (next), Build previews (item 5), batch-export metadata and
-the polish pass. After v1: Denoise sharp draws at 0.5 s (item 2's remaining
+**V1 scope (Steve, October 26, 2026):** v1 still needs the polish pass. Large-folder scrolling and opening, Build
+previews (item 5) and batch-export metadata were built on October 27; Steve
+accepted large-folder speed, and Build previews and metadata await his try. After v1: Denoise sharp draws at 0.5 s (item 2's remaining
 target), GPU AVIF reconstruction (item 4), detail previews (item 6), faster
 HDR/SDR switching, stored previews at 0.1 s, and the leftovers listed under
 "V1 open work" (comfort cap, indexing settings, dimmed offline drives,
@@ -693,25 +717,13 @@ drag-in pinning).
 
 **Other open items:**
 
-- **Very large folder: first-screen speed and Steve’s scrolling check remain open.**
-  Ordered pages now draw before completion (three-part batch above); first
-  picture 4.20 s, 25th 5.40 s. One-second target remains open. Historical
-  four-part batch: 17.33 s before / 6.42 s after for the first picture,
-  with 155,877 rows; still outside about 1 s. See Start here for stage timings,
-  the missing reliable after-25th timing and the two disposable profile paths.
-  The older numbers below are historical, superseded by that measured result.
-  October 27 cell drawing and telemetry are built; the one cold profile missed
-  1 s (21.18 s first / 25.37 s 25th picture). Duplicate-open and stream-yield
-  corrections followed, unprofiled. See Start here above. Historical evidence:
-  **Grid blank while scrolling** (Steve, October 26 evening;
-  come back to it next, possibly October 27). After 7cb92ff–cf47441 `D:\Photos`
-  (155,873 photos) is "much better", but while Steve scrolls he sees neither
-  the grid nor thumbnails; other folders are fine. Log 21:26 launch: all rows
-  3.6 s (was 88 s); disk check 64 s (was 265 s); once a scroll settles, at most
-  30 picture requests and the first visible picture after 0.04 s median, 1.55 s
-  worst. So the gap is while the grid is moving, before a scroll settles. Also,
-  the first screen now waits for all rows (`first rows` 3.2 s, was 15 ms):
-  the first screen should show at once while the rest arrives.
+- **Very large folders: done for v1 (Steve, October 27, 2026).** Steve
+  accepted the speed after 015baf7: ordered pages, neutral cells while
+  scrolling, first picture 4.20 s and 25th 5.40 s in `D:\Photos`. The
+  about-1-s target is retired; the measured numbers are the regression
+  baseline in "Start here". Earlier evidence (17.33 s → 6.42 s → 4.20 s first
+  picture; grid blank while scrolling on October 26) is kept in the dated
+  batch notes above.
 
 - **Switching HDR on or off is a bit slow** (Steve, October 26; for later, not
   now). Every visible thumbnail redraws, and graded photos prepare Denoise
@@ -2152,8 +2164,8 @@ from Steve's machine and logs on October 25, unless stated otherwise.
 
 | Item | Evidence | Status |
 | --- | --- | --- |
-| **Large-folder scroll / camera details / disk checking** | October 26 viewport profile: 77 requests for 77 visible cells; first/25th best available pictures 0.26/1.16 s; finished thumbnails 9.96/18.91 s; disk check 92.79 s. | Settled-only requests, departed-demand cancellation and faster disk enumeration built. One-second whole-screen and roughly one-minute disk targets remain open. Post-profile cache-lock/enumeration/removal corrections await Steve. |
-| **Very large folder opening** | October 26 viewport profile: all 155,873 indexed sources served in 4.98 s; page receipt/sort 6.06 s. First grid has 155,877 rows including copies. | Complete snapshot replaces tiny pages and repeated sorting; full scrollbar reachable on first paint. Independent WAL reads avoid marks-writer waits. Five-second page target and memory target remain open; final empty-state setup reductions unprofiled. |
+| **Large-folder scroll / camera details / disk checking** | October 26 viewport profile: 77 requests for 77 visible cells; first/25th best available pictures 0.26/1.16 s; finished thumbnails 9.96/18.91 s; disk check 92.79 s. | **Done (Steve, October 27).** Neutral cells while moving, settled-only requests and cancellation built. Settled scroll and 64 s disk check are the regression baseline (Start here). |
+| **Very large folder opening** | October 27 disposable profile (015baf7): first 256 sorted rows usable 3.81 s, first picture 4.20 s, 25th 5.40 s; 155,877 rows. | **Done (Steve, October 27).** Ordered pages with the full extent first. These numbers are the regression baseline (Start here); the about-1-s and five-second targets are retired. |
 | **App startup** (after the 155k-photo D:\Photos index) | October 26 14:17: helper spawn 4.0 s, backend ready 8.7 s, page ready 9.8 s, thumbnails ~12 s from Python start. One disposable 155,879-file launch after removing blocking sweeps: 2.45 s / 2.54 s / 3.99 s / 12.14 s respectively. It also exposed 4.0 s before Python started. | Cache accounting and temporary-file cleanup deferred with foreground yielding; codec probing delayed; helper startup overlaps the page. Final shell change overlaps Python with the Starting window (not re-profiled). Targets remain open: folder listing, 1.36 s initial thumbnail checks and a 3.43 s first GPU queue wait still delay thumbnails. Steve's restart 15:55: page ready 2.4 s, first thumbnail 3.6 s from app launch; felt super fast. **Done.** |
 | **Back to grid after Single/fullscreen** | October 26: all 14 exits used camera previews; finished-thumbnail delay 0.4–4.2 s or over 5 s. | Finished routes now retained/reused by current grade and HDR/SDR mode; camera previews retained in 64 MiB RAM. Bounded-memory eviction can still require drawing again. App acceptance pending. |
 | **Folder opening during RAW development** | October 26 scans queued 16–22 s for about 40 ms work; stored writes queued 24–29 s. | Main scans admitted independently of source-busy/picture slots; stored writes no longer blocked by GPU source-busy. End-to-end 0.5 s target remains open (indexed listing alone was 0.5–0.66 s). |

@@ -122,12 +122,18 @@ bug hunt:
   (October 21 requirements).
 - Highlight and Shadow Desaturation in Color (COLOR-DESAT-01).
 - Presets window: rename, edit, import, export (PRESETS-01). Moved up to v1
-  by Steve.
+  by Steve. **Built October 27:** rename, update, export/import, search and
+  `<name>-preset.json` file names.
 - Review of Grade's Sharpen control (Detail section). Steve suspects it is
-  broken or simply a weak algorithm. Added by Steve.
+  broken or simply a weak algorithm. Added by Steve. **Done October 27:**
+  kept for v1 with a "judge at 100%" reminder; better noise-aware sharpening
+  is v2.
 - Photo Library: smooth scrolling in very large folders, the Build previews
   command, and batch-export metadata (bundled ExifTool, title and caption,
-  creator/copyright template, privacy options).
+  creator/copyright template, privacy options). **Built October 27.** Steve
+  accepted large-folder speed (now the regression baseline); Build previews
+  and metadata await his try. Slight JPEG export differences are accepted for
+  v1 and Ultra HDR JPEG stays the HDR export format.
 - Steve's by-eye reviews (RAW exposure sheet, film grain/Looks/lens filter,
   HSL, exposure-warning wording, Black & White sliders) and the Match fault.
 
