@@ -1,199 +1,257 @@
-/* Experimental native colour-selection pass. Deliberately not loaded by index.html.
- * Input: the owner's native pre-HSL D65 linear-sRGB texture, including signed/HDR values.
- * Output: rgba32float (coverage, circular circularTarget degrees, 0, 1). No RGB is altered.
+/* Shared "Light" colour selection for Global HSL and the Local hue mask.
+ * GPU route; backend/hdr_finisher/hsl_selection.py is the matching CPU reference.
+ * Input: a fields texture the renderer fills from the HSL stage input (D65 linear
+ * sRGB): (a/L, b/L, log2 L, 1). Output: rgba32float array layers, one coverage per
+ * lane (four channels per layer). RGB is never altered here.
+ * Distances are source pixels converted by the processing scale; the coarse grid
+ * is anchored to the frame origin so tiles with enough halo match the whole frame.
  */
 (function () {
-  const shader = `
-@group(0) @binding(0) var source: texture_2d<f32>;
-@group(0) @binding(1) var coarse: texture_2d<f32>;
-@group(0) @binding(2) var work: texture_2d<f32>;
-@group(0) @binding(3) var output: texture_storage_2d<rgba32float,write>;
-@group(0) @binding(4) var<storage,read> p: array<f32>;
-@group(0) @binding(5) var<storage,read> ranges: array<vec4f>;
-fn reflectIndex(v:i32,n:i32)->i32 {
- let period=2*n; let q=((v%period)+period)%period;
- return select(q,period-1-q,q>=n);
-}
-fn readSample(t:texture_2d<f32>,xy:vec2i)->vec4f {
- let size=vec2i(textureDimensions(t));
- return textureLoad(t,vec2i(reflectIndex(xy.x,size.x),reflectIndex(xy.y,size.y)),0);
-}
-fn lab(rgb:vec3f)->vec3f {
- let x=vec3f(dot(rgb,vec3f(.4122214708,.5363325363,.0514459929)),dot(rgb,vec3f(.2119034982,.6806995451,.1073969566)),dot(rgb,vec3f(.0883024619,.2817188376,.6299787005)));
- let v=sign(x)*pow(abs(x),vec3f(1.0/3.0));
- return vec3f(dot(v,vec3f(.2104542553,.793617785,-.0040720468)),dot(v,vec3f(1.9779984951,-2.428592205,.4505937099)),dot(v,vec3f(.0259040371,.7827717662,-.808675766)));
-}
-fn fields(xy:vec2i)->vec3f {
- let v=lab(readSample(source,xy).xyz); let light=max(abs(v.x),1e-6);
- return vec3f(v.yz/light,log2(max(light,1e-4)));
-}
-fn interpolate(xy:vec2i)->vec2f {
- let size=vec2i(textureDimensions(coarse));
- let position=(vec2f(xy)+.5)*vec2f(size)/vec2f(p[0],p[1])-.5;
- let base=vec2i(floor(position));let f=fract(position);
- // OpenCV resize clamps the outermost sample rather than reflecting it.
- let a=textureLoad(coarse,clamp(base,vec2i(0),size-1),0).xy;
- let b=textureLoad(coarse,clamp(base+vec2i(1,0),vec2i(0),size-1),0).xy;
- let c=textureLoad(coarse,clamp(base+vec2i(0,1),vec2i(0),size-1),0).xy;
- let d=textureLoad(coarse,clamp(base+1,vec2i(0),size-1),0).xy;
- return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
-}
-fn qualify(ab:vec2f)->vec4f {
- let h=degrees(atan2(ab.y,ab.x));var inc=0.;var exc=0.;var circularTarget=vec2f(0.);
- for(var j=0u;j<u32(p[5]);j++){
-  let r=ranges[j];let delta=abs((h-r.x+180.)-floor((h-r.x+180.)/360.)*360.-180.);
-  let w=1.-smoothstep(r.y,r.y+r.z,delta);
-  if(r.w>.5){exc=max(exc,w);}else{inc=max(inc,w);circularTarget+=w*vec2f(cos(radians(r.x)),sin(radians(r.x)));}
- }
- var angle=h;if(length(circularTarget)>1e-5){angle=degrees(atan2(circularTarget.y,circularTarget.x));}
- return vec4f(inc*(1.-exc)*smoothstep(p[4],p[4]+.04,length(ab)),circularTarget,angle);
-}
-fn qualifiedAt(xy:vec2i)->vec4f {
- let size=vec2i(textureDimensions(coarse));
- return qualify(textureLoad(coarse,clamp(xy,vec2i(0),size-1),0).xy);
-}
-fn interpolatedSelection(xy:vec2i)->vec2f {
- let size=vec2i(textureDimensions(coarse));
- let position=(vec2f(xy)+.5)*vec2f(size)/vec2f(p[0],p[1])-.5;
- let base=vec2i(floor(position));let f=fract(position);
- let q=mix(mix(qualifiedAt(base),qualifiedAt(base+vec2i(1,0)),f.x),
-           mix(qualifiedAt(base+vec2i(0,1)),qualifiedAt(base+1),f.x),f.y);
- let ab=interpolate(xy);var angle=degrees(atan2(ab.y,ab.x));
- if(length(q.yz)>1e-5){angle=degrees(atan2(q.z,q.y));}
- return vec2f(q.x,angle);
-}
-@compute @workgroup_size(8,8) fn reduce(@builtin(global_invocation_id) id:vec3u){
- let xy=vec2i(id.xy);let size=vec2i(textureDimensions(output));if(any(xy>=size)){return;}
- // Area average: every source pixel contributes, including odd-sized edges.
- let lo=vec2f(xy)*vec2f(p[0],p[1])/vec2f(size);
- let hi=vec2f(xy+1)*vec2f(p[0],p[1])/vec2f(size);
- var sum=vec2f(0.);var total=0.;
- for(var y=i32(floor(lo.y));y<i32(ceil(hi.y));y++){
-  for(var x=i32(floor(lo.x));x<i32(ceil(hi.x));x++){
-   let overlap=max(vec2f(0.),min(hi,vec2f(vec2i(x+1,y+1)))-max(lo,vec2f(vec2i(x,y))));
-   let weight=overlap.x*overlap.y;sum+=fields(vec2i(x,y)).xy*weight;total+=weight;
+  const CELL = 4, GUIDE = 4, SURROUND = 2, MIN_SCALE = .05, LANE_RANGES = 32;
+  const round = v => Math.floor(v + .5);
+  function geometry(scale = 1) {
+    const s = Math.min(1, Math.max(MIN_SCALE, Number(scale) || 1));
+    const cell = Math.max(1, round(CELL * s)), sigma = CELL * s / cell;
+    const taps = Math.max(1, Math.ceil(4 * sigma));
+    const guide = Math.max(1, round(GUIDE * s)), surround = Math.max(1, round(SURROUND * s));
+    return { cell, sigma, taps, guide, surround, reach: cell * (taps + 2) + 2 * guide + surround + 2 };
   }
- }
- textureStore(output,xy,vec4f(sum/max(total,1e-8),0.,1.));
+  const shader = `
+@group(0) @binding(0) var fields: texture_2d<f32>;
+@group(0) @binding(1) var coarse: texture_2d<f32>;
+@group(0) @binding(2) var guideTex: texture_2d<f32>;
+@group(0) @binding(3) var coefA: texture_2d<f32>;
+@group(0) @binding(4) var coefB: texture_2d<f32>;
+@group(0) @binding(5) var<storage,read> p: array<f32>;
+@group(0) @binding(6) var<storage,read> ranges: array<vec4f>;
+@group(0) @binding(7) var storeA: texture_storage_2d<rgba32float,write>;
+@group(0) @binding(8) var storeB: texture_storage_2d<rgba32float,write>;
+@group(0) @binding(9) var storeLayers: texture_storage_2d_array<rgba32float,write>;
+// p: 0 width, 1 height, 2 coarse width, 3 coarse height, 4 origin x, 5 origin y,
+// 6 cell, 7 sigma, 8 taps, 9 guide radius, 10 surround radius, 11 layer,
+// 12..15 lane neutral floors, 16..19 lane range counts.
+const EPSILON: f32 = .03;
+fn region() -> vec2i { return vec2i(i32(p[0]), i32(p[1])); }
+fn coarseSize() -> vec2i { return vec2i(i32(p[2]), i32(p[3])); }
+fn cell() -> i32 { return i32(p[6]); }
+fn origin() -> vec2i { return vec2i(i32(p[4]), i32(p[5])); }
+fn firstCell() -> vec2i { return origin() / cell(); }
+fn reflectIndex(v: i32, n: i32) -> i32 {
+  let period = 2 * n; let q = ((v % period) + period) % period;
+  return select(q, period - 1 - q, q >= n);
 }
-fn blur(xy:vec2i,axis:vec2i)->vec4f{
- var sum=vec4f(0.);var total=0.;
- for(var i=-4;i<=4;i++){let w=exp(-.5*f32(i*i));sum+=readSample(coarse,xy+axis*i)*w;total+=w;}
- return sum/total;
+fn reflect2(xy: vec2i, n: vec2i) -> vec2i { return vec2i(reflectIndex(xy.x, n.x), reflectIndex(xy.y, n.y)); }
+fn field(xy: vec2i) -> vec4f { return textureLoad(fields, reflect2(xy, region()), 0); }
+fn guideAt(xy: vec2i) -> vec4f { return textureLoad(guideTex, reflect2(xy, region()), 0); }
+fn coarseAt(xy: vec2i) -> vec4f { return textureLoad(coarse, clamp(xy, vec2i(0), coarseSize() - 1), 0); }
+// Bilinear from cell centres in frame coordinates; outermost samples clamp.
+fn interpolate(xy: vec2i) -> vec4f {
+  let position = (vec2f(xy + origin()) + .5) / f32(cell()) - .5 - vec2f(firstCell());
+  let base = vec2i(floor(position)); let f = position - floor(position);
+  return mix(mix(coarseAt(base), coarseAt(base + vec2i(1, 0)), f.x),
+             mix(coarseAt(base + vec2i(0, 1)), coarseAt(base + 1), f.x), f.y);
 }
-@compute @workgroup_size(8,8) fn horizontal(@builtin(global_invocation_id) id:vec3u){
- let xy=vec2i(id.xy);if(any(xy>=vec2i(textureDimensions(output)))){return;}textureStore(output,xy,blur(xy,vec2i(1,0)));
+fn inside(xy: vec2i, size: vec2i) -> bool { return all(xy >= vec2i(0)) && all(xy < size); }
+
+@compute @workgroup_size(8,8) fn reduce(@builtin(global_invocation_id) id: vec3u) {
+  let xy = vec2i(id.xy); if (!inside(xy, coarseSize())) { return; }
+  let c = cell(); let lo = max((firstCell() + xy) * c - origin(), vec2i(0));
+  let hi = min((firstCell() + xy + 1) * c - origin(), region());
+  var sum = vec2f(0.); var count = 0.;
+  for (var y = lo.y; y < hi.y; y++) { for (var x = lo.x; x < hi.x; x++) {
+    sum += textureLoad(fields, vec2i(x, y), 0).xy; count += 1.;
+  } }
+  textureStore(storeA, xy, vec4f(sum / max(count, 1.), 0., 1.));
 }
-@compute @workgroup_size(8,8) fn vertical(@builtin(global_invocation_id) id:vec3u){
- let xy=vec2i(id.xy);if(any(xy>=vec2i(textureDimensions(output)))){return;}textureStore(output,xy,blur(xy,vec2i(0,1)));
+fn blur(xy: vec2i, axis: vec2i) -> vec4f {
+  var sum = vec4f(0.); var total = 0.; let taps = i32(p[8]);
+  for (var i = -taps; i <= taps; i++) {
+    let w = exp(-.5 * (f32(i) / p[7]) * (f32(i) / p[7]));
+    sum += textureLoad(coarse, reflect2(xy + axis * i, coarseSize()), 0) * w; total += w;
+  }
+  return sum / total;
 }
-@compute @workgroup_size(8,8) fn qualification(@builtin(global_invocation_id) id:vec3u){
- let xy=vec2i(id.xy);if(any(xy>=vec2i(textureDimensions(output)))){return;}
- let f=fields(xy);textureStore(output,xy,vec4f(interpolatedSelection(xy).x,f.z,0.,1.));
+@compute @workgroup_size(8,8) fn horizontal(@builtin(global_invocation_id) id: vec3u) {
+  let xy = vec2i(id.xy); if (!inside(xy, coarseSize())) { return; } textureStore(storeA, xy, blur(xy, vec2i(1, 0)));
 }
-@compute @workgroup_size(8,8) fn coefficients(@builtin(global_invocation_id) id:vec3u){
- let xy=vec2i(id.xy);if(any(xy>=vec2i(textureDimensions(output)))){return;}
- var means=vec4f(0.);
- for(var y=-4;y<=4;y++){for(var x=-4;x<=4;x++){
-  let v=readSample(work,xy+vec2i(x,y)).xy;means+=vec4f(v.y,v.x,v.x*v.y,v.y*v.y);
- }}
- means/=81.;let a=(means.z-means.x*means.y)/max(means.w-means.x*means.x+.03,.03);
- textureStore(output,xy,vec4f(a,means.y-a*means.x,0.,1.));
+@compute @workgroup_size(8,8) fn vertical(@builtin(global_invocation_id) id: vec3u) {
+  let xy = vec2i(id.xy); if (!inside(xy, coarseSize())) { return; } textureStore(storeA, xy, blur(xy, vec2i(0, 1)));
 }
-@compute @workgroup_size(8,8) fn refinement(@builtin(global_invocation_id) id:vec3u){
- let xy=vec2i(id.xy);if(any(xy>=vec2i(textureDimensions(output)))){return;}
- var mean=vec2f(0.);for(var y=-4;y<=4;y++){for(var x=-4;x<=4;x++){mean+=readSample(work,xy+vec2i(x,y)).xy;}}
- mean/=81.;let f=fields(xy);let averaged=interpolate(xy);
- var surround=0.;for(var y=-2;y<=2;y++){for(var x=-2;x<=2;x++){surround+=fields(xy+vec2i(x,y)).z;}}
- let contrast=f.z-surround/25.;
- let protection=(1.-smoothstep(.07,.30,contrast))*(1.-smoothstep(.04,.16,length(f.xy-averaged))*smoothstep(.025,.12,abs(contrast)));
- let selected=clamp((mean.x*f.z+mean.y)*protection,0.,1.);
- textureStore(output,xy,vec4f(selected,interpolatedSelection(xy).y,0.,1.));
+// Range-independent: (log2 L, protection, box mean of log2 L, its box variance).
+@compute @workgroup_size(8,8) fn guide(@builtin(global_invocation_id) id: vec3u) {
+  let xy = vec2i(id.xy); if (!inside(xy, region())) { return; }
+  let f = field(xy); let q = i32(p[10]); let g = i32(p[9]);
+  var surround = 0.;
+  for (var y = -q; y <= q; y++) { for (var x = -q; x <= q; x++) { surround += field(xy + vec2i(x, y)).z; } }
+  surround /= f32((2 * q + 1) * (2 * q + 1));
+  var mean = 0.; var square = 0.;
+  for (var y = -g; y <= g; y++) { for (var x = -g; x <= g; x++) {
+    let v = field(xy + vec2i(x, y)).z; mean += v; square += v * v;
+  } }
+  let n = f32((2 * g + 1) * (2 * g + 1)); mean /= n; square /= n;
+  let contrast = f.z - surround;
+  let mismatch = smoothstep(.04, .16, length(f.xy - interpolate(xy).xy));
+  let protection = (1. - smoothstep(.07, .30, contrast)) * (1. - mismatch * smoothstep(.025, .12, abs(contrast)));
+  textureStore(storeA, xy, vec4f(f.z, protection, mean, square - mean * mean));
+}
+fn qualifyLane(ab: vec2f, lane: u32) -> f32 {
+  let count = u32(p[16u + lane]); if (count == 0u) { return 0.; }
+  let h = degrees(atan2(ab.y, ab.x)); var inc = 0.; var exc = 0.;
+  for (var j = 0u; j < count; j++) {
+    let r = ranges[lane * ${LANE_RANGES}u + j];
+    let delta = abs((h - r.x + 180.) - floor((h - r.x + 180.) / 360.) * 360. - 180.);
+    let w = 1. - smoothstep(r.y, r.y + r.z, delta);
+    if (r.w > .5) { exc = max(exc, w); } else { inc = max(inc, w); }
+  }
+  let floor_ = p[12u + lane];
+  return inc * (1. - exc) * smoothstep(floor_, floor_ + .04, length(ab));
+}
+// Coarse resolution, four channels per texel.
+@compute @workgroup_size(8,8) fn qualification(@builtin(global_invocation_id) id: vec3u) {
+  let xy = vec2i(id.xy); if (!inside(xy, coarseSize())) { return; }
+  let ab = textureLoad(coarse, xy, 0).xy;
+  textureStore(storeA, xy, vec4f(qualifyLane(ab, 0u), qualifyLane(ab, 1u), qualifyLane(ab, 2u), qualifyLane(ab, 3u)));
+}
+// Guided filter with log2 L as the guide; coarse here is the qualified grid.
+@compute @workgroup_size(8,8) fn coefficients(@builtin(global_invocation_id) id: vec3u) {
+  let xy = vec2i(id.xy); if (!inside(xy, region())) { return; }
+  let g = i32(p[9]); var mp = vec4f(0.); var mip = vec4f(0.);
+  for (var y = -g; y <= g; y++) { for (var x = -g; x <= g; x++) {
+    let t = reflect2(xy + vec2i(x, y), region());
+    let v = interpolate(t); mp += v; mip += textureLoad(guideTex, t, 0).x * v;
+  } }
+  let n = f32((2 * g + 1) * (2 * g + 1)); mp /= n; mip /= n;
+  let c = guideAt(xy);
+  let a = (mip - c.z * mp) / max(c.w + EPSILON, EPSILON);
+  textureStore(storeA, xy, a); textureStore(storeB, xy, mp - a * c.z);
+}
+@compute @workgroup_size(8,8) fn refinement(@builtin(global_invocation_id) id: vec3u) {
+  let xy = vec2i(id.xy); if (!inside(xy, region())) { return; }
+  let g = i32(p[9]); var ma = vec4f(0.); var mb = vec4f(0.);
+  for (var y = -g; y <= g; y++) { for (var x = -g; x <= g; x++) {
+    let t = reflect2(xy + vec2i(x, y), region());
+    ma += textureLoad(coefA, t, 0); mb += textureLoad(coefB, t, 0);
+  } }
+  let n = f32((2 * g + 1) * (2 * g + 1)); let c = guideAt(xy);
+  textureStore(storeLayers, xy, i32(p[11]), clamp((ma / n * c.x + mb / n) * c.y, vec4f(0.), vec4f(1.)));
 }
 `;
   class HslSelectionGpu {
-    constructor(device) { this.device=device;this.prepared=null;this.serial=0; }
+    constructor(device, { onAllocate = null } = {}) {
+      this.device = device; this.onAllocate = onAllocate;
+      this.textures = {}; this.capacity = null; this.preparedKey = null; this.selectedKey = null; this.serial = 0;
+    }
     async initialize() {
-      const d=this.device;
-      this.layout=d.createBindGroupLayout({entries:[
-        ...[0,1,2].map(binding=>({binding,visibility:GPUShaderStage.COMPUTE,texture:{sampleType:"unfilterable-float"}})),
-        {binding:3,visibility:GPUShaderStage.COMPUTE,storageTexture:{access:"write-only",format:"rgba32float"}},
-        ...[4,5].map(binding=>({binding,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}})),
-      ]});
-      const module=d.createShaderModule({code:shader});
-      const errors=(await module.getCompilationInfo()).messages.filter(m=>m.type==="error");
-      if(errors.length)throw Error(errors.map(e=>e.message).join("\n"));
-      const layout=d.createPipelineLayout({bindGroupLayouts:[this.layout]});
-      this.pipelines=Object.fromEntries(await Promise.all(["reduce","horizontal","vertical","qualification","coefficients","refinement"].map(async entry=>[entry,await d.createComputePipelineAsync({layout,compute:{module,entryPoint:entry}})])));
+      const module = this.device.createShaderModule({ label: "HSL selection", code: shader });
+      const errors = (await module.getCompilationInfo()).messages.filter(m => m.type === "error");
+      if (errors.length) throw Error(errors.map(e => `${e.lineNum}:${e.linePos} ${e.message}`).join("\n"));
+      const names = ["reduce", "horizontal", "vertical", "guide", "qualification", "coefficients", "refinement"];
+      this.pipelines = Object.fromEntries(await Promise.all(names.map(async entry => [entry,
+        await this.device.createComputePipelineAsync({ label: `HSL selection ${entry}`, layout: "auto", compute: { module, entryPoint: entry } })])));
       return this;
     }
-    texture(width,height,label) {
-      return this.device.createTexture({label,size:[width,height],format:"rgba32float",usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.COPY_SRC});
+    static geometry(scale) { return geometry(scale); }
+    /** Another scratch/cache owner sharing these compiled pipelines. */
+    fork() { const engine = new HslSelectionGpu(this.device, { onAllocate: this.onAllocate }); engine.pipelines = this.pipelines; return engine; }
+    static bytesPerPixel(channels) { return 64 + 16 * Math.max(1, Math.ceil(channels / 4)); }
+    /** Grow-only scratch: fields, guide, coefficients and the output layers. */
+    ensure(width, height, layers, cellSize) {
+      const cap = this.capacity;
+      const cw = Math.ceil(width / cellSize) + 2, ch = Math.ceil(height / cellSize) + 2;
+      if (cap && cap.width >= width && cap.height >= height && cap.layers >= layers && cap.cw >= cw && cap.ch >= ch) return;
+      const next = { width: Math.max(width, cap?.width || 0), height: Math.max(height, cap?.height || 0),
+        layers: Math.max(layers, cap?.layers || 0), cw: Math.max(cw, cap?.cw || 0), ch: Math.max(ch, cap?.ch || 0) };
+      this.release();
+      const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
+      const make = (label, w, h, extra = 0, depth = 1) => this.device.createTexture({ label, size: [w, h, depth], format: "rgba32float", usage: usage | extra });
+      this.textures = {
+        fields: make("HSL selection fields", next.width, next.height, GPUTextureUsage.RENDER_ATTACHMENT),
+        guide: make("HSL selection guide", next.width, next.height),
+        a: make("HSL selection coefficient a", next.width, next.height),
+        b: make("HSL selection coefficient b", next.width, next.height),
+        output: make("HSL selection", next.width, next.height, 0, next.layers),
+        coarse: make("HSL coarse chroma", next.cw, next.ch),
+        scratch: make("HSL coarse scratch", next.cw, next.ch),
+        qualified: make("HSL qualified coarse", next.cw, next.ch),
+      };
+      this.capacity = next; this.preparedKey = null; this.selectedKey = null;
+      this.onAllocate?.(next.width * next.height * (64 + 16 * next.layers) + next.cw * next.ch * 48, next);
     }
-    encode(encoder,entry,source,coarse,work,output,params,ranges) {
-      const pass=encoder.beginComputePass({label:"HSL selection "+entry});
-      pass.setPipeline(this.pipelines[entry]);
-      pass.setBindGroup(0,this.device.createBindGroup({layout:this.layout,entries:[
-        ...[source,coarse,work,output].map((t,binding)=>({binding,resource:t.createView()})),
-        {binding:4,resource:{buffer:params}},{binding:5,resource:{buffer:ranges}},
-      ]}));
-      pass.dispatchWorkgroups(Math.ceil(output.width/8),Math.ceil(output.height/8));pass.end();
+    fieldsView() { return this.textures.fields.createView(); }
+    outputView() { return this.textures.output.createView({ dimension: "2d-array" }); }
+    bytes() {
+      const c = this.capacity; return c ? c.width * c.height * (64 + 16 * c.layers) + c.cw * c.ch * 48 : 0;
     }
-    buffer(values) {
-      const b=this.device.createBuffer({size:Math.max(16,values.byteLength),usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
-      this.device.queue.writeBuffer(b,0,values);return b;
+    /** True when the fields for this key are already reduced into guide/coarse data. */
+    isPrepared(key) { return key != null && key === this.preparedKey; }
+    paramBuffer(values) {
+      const buffer = this.device.createBuffer({ size: Math.max(16, values.byteLength), usage: GPUBufferUsage.STORAGE, mappedAtCreation: true });
+      new Float32Array(buffer.getMappedRange()).set(values); buffer.unmap(); return buffer;
     }
-    prepare(source,key) {
-      if(this.prepared?.source===source&&this.prepared.key===key)return this.prepared;
-      this.clear();
-      const width=source.width,height=source.height,cw=Math.max(1,Math.floor(width/4)),ch=Math.max(1,Math.floor(height/4));
-      const owned=[];const make=(w,h,label)=>{const t=this.texture(w,h,label);owned.push(t);return t;};
-      const params=this.buffer(new Float32Array([width,height,cw,ch,0,0,0,0]));
-      try {
-        const reduced=make(cw,ch,"HSL reduced chroma"),horizontal=make(cw,ch,"HSL horizontal chroma"),chroma=make(cw,ch,"HSL prepared chroma");
-        const ranges=this.buffer(new Float32Array(4));const encoder=this.device.createCommandEncoder();
-        this.encode(encoder,"reduce",source,source,source,reduced,params,ranges);
-        this.encode(encoder,"horizontal",source,reduced,source,horizontal,params,ranges);
-        this.encode(encoder,"vertical",source,horizontal,source,chroma,params,ranges);
-        this.device.queue.submit([encoder.finish()]);params.destroy();ranges.destroy();
-        reduced.destroy();horizontal.destroy();
-        this.prepared={source,key,width,height,chroma,serial:++this.serial};return this.prepared;
-      }catch(error){for(const t of owned)t.destroy();params.destroy();throw error;}
+    dispatch(encoder, entry, resources, width, height) {
+      const pipeline = this.pipelines[entry], layout = pipeline.getBindGroupLayout(0);
+      const pass = encoder.beginComputePass({ label: `HSL selection ${entry}` });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, this.device.createBindGroup({ layout, entries: Object.entries(resources)
+        .map(([binding, resource]) => ({ binding: Number(binding), resource })) }));
+      pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8)); pass.end();
     }
-    select(recipe,floor=.02) {
-      if(!this.prepared)throw Error("Prepare a native pre-HSL texture first");
-      if(!Array.isArray(recipe.ranges)||recipe.ranges.length>32)throw Error("Selection requires at most 32 ranges");
-      const {source,chroma,width,height}=this.prepared;
-      const params=this.buffer(new Float32Array([width,height,0,0,floor,recipe.ranges.length,0,0]));
-      const packed=new Float32Array(Math.max(4,recipe.ranges.length*4));
-      recipe.ranges.forEach((r,i)=>packed.set([r.center,r.width,r.feather,r.subtract?1:0],i*4));
-      const ranges=this.buffer(packed),owned=[];
-      const make=label=>{const t=this.texture(width,height,label);owned.push(t);return t;};
-      try {
-        const coverage=make("HSL qualification"),coefficients=make("HSL guided coefficients"),selection=make("HSL selection");
-        const encoder=this.device.createCommandEncoder();
-        this.encode(encoder,"qualification",source,chroma,source,coverage,params,ranges);
-        this.encode(encoder,"coefficients",source,chroma,coverage,coefficients,params,ranges);
-        this.encode(encoder,"refinement",source,chroma,coefficients,selection,params,ranges);
-        this.device.queue.submit([encoder.finish()]);
-        coverage.destroy();coefficients.destroy();return selection; // caller owns this texture
-      }catch(error){for(const t of owned)t.destroy();throw error;}
-      finally{params.destroy();ranges.destroy();}
-    }
-    // Local controls are only a frontend adapter; no second selection algorithm.
-    // Expression inversion, combination and opacity remain the mask owner's job.
-    selectHue(leaf) {
-      if(!this.prepared)throw Error("Prepare a native pre-HSL texture first");
-      if(leaf.hue_center==null) {
-        return this.texture(this.prepared.width,this.prepared.height,"Empty unsampled hue selection");
+    /**
+     * Encode preparation (when needed) and selection. The caller must already have
+     * rendered the fields for `region` unless `isPrepared(prepareKey)`. `channels`
+     * is [{ ranges: [{center,width,feather,subtract}], floor }]. Returns layer count.
+     */
+    encode(encoder, { width, height, originX = 0, originY = 0, scale = 1, channels, prepareKey = null, selectKey = null }) {
+      if (!channels.length) throw Error("Selection needs at least one channel");
+      if (channels.length > 16) throw Error("Selection supports at most 16 channels");
+      const geo = geometry(scale), layers = Math.ceil(channels.length / 4);
+      this.ensure(width, height, layers, geo.cell);
+      const t = this.textures, view = texture => texture.createView();
+      const first = [Math.floor(originX / geo.cell), Math.floor(originY / geo.cell)];
+      const cw = Math.floor((originX + width - 1) / geo.cell) - first[0] + 1;
+      const ch = Math.floor((originY + height - 1) / geo.cell) - first[1] + 1;
+      const base = [width, height, cw, ch, originX, originY, geo.cell, geo.sigma, geo.taps, geo.guide, geo.surround, 0];
+      const prepared = this.isPrepared(prepareKey);
+      const selected = prepared && selectKey != null && selectKey === this.selectedKey;
+      if (!prepared) {
+        const params = { 5: { buffer: this.paramBuffer(new Float32Array([...base, 0, 0, 0, 0, 0, 0, 0, 0])) } };
+        this.dispatch(encoder, "reduce", { 0: view(t.fields), ...params, 7: view(t.scratch) }, cw, ch);
+        this.dispatch(encoder, "horizontal", { 1: view(t.scratch), ...params, 7: view(t.qualified) }, cw, ch);
+        this.dispatch(encoder, "vertical", { 1: view(t.qualified), ...params, 7: view(t.coarse) }, cw, ch);
+        this.dispatch(encoder, "guide", { 0: view(t.fields), 1: view(t.coarse), ...params, 7: view(t.guide) }, width, height);
+        // Cached data counts only once the commands writing it are submitted.
+        this.preparedKey = null; this.selectedKey = null; this.serial += 1;
       }
-      return this.select({ranges:[{
-        center:leaf.hue_center,width:leaf.hue_width,feather:leaf.hue_smoothness,subtract:false,
-      }]},leaf.saturation_floor);
+      if (selected) return { layers };
+      this.selectedKey = null;
+      for (let layer = 0; layer < layers; layer++) {
+        const lanes = channels.slice(layer * 4, layer * 4 + 4);
+        const values = new Float32Array(20);
+        values.set(base); values[11] = layer;
+        const packed = new Float32Array(4 * LANE_RANGES * 4);
+        lanes.forEach((channel, lane) => {
+          if (channel.ranges.length > LANE_RANGES) throw Error(`Selection is limited to ${LANE_RANGES} ranges`);
+          values[12 + lane] = Number(channel.floor ?? .02); values[16 + lane] = channel.ranges.length;
+          channel.ranges.forEach((r, j) => packed.set([r.center, r.width, r.feather, r.subtract ? 1 : 0], (lane * LANE_RANGES + j) * 4));
+        });
+        const params = { 5: { buffer: this.paramBuffer(values) } };
+        this.dispatch(encoder, "qualification", { 1: view(t.coarse), ...params, 6: { buffer: this.paramBuffer(packed) }, 7: view(t.qualified) }, cw, ch);
+        this.dispatch(encoder, "coefficients", { 1: view(t.qualified), 2: view(t.guide), ...params, 7: view(t.a), 8: view(t.b) }, width, height);
+        this.dispatch(encoder, "refinement", { 2: view(t.guide), 3: view(t.a), 4: view(t.b), ...params,
+          9: t.output.createView({ dimension: "2d-array" }) }, width, height);
+      }
+      return { layers, prepareKey: prepared ? undefined : prepareKey, selectKey };
     }
-    clear() {this.prepared?.chroma.destroy();this.prepared=null;}
-    destroy() {this.clear();}
+    /** Call after the encoder holding `token`'s commands has been submitted. */
+    commit(token) {
+      if (token?.prepareKey !== undefined) this.preparedKey = token.prepareKey;
+      if (token?.selectKey !== undefined) this.selectedKey = token.selectKey;
+    }
+    /** Forget cached preparation; the next encode re-reads the fields. */
+    invalidate() { this.preparedKey = null; this.selectedKey = null; }
+    release() { for (const texture of Object.values(this.textures)) texture.destroy(); this.textures = {}; this.capacity = null; this.invalidate(); }
+    destroy() { this.release(); }
   }
-  globalThis.HDRHslSelectionGpu=HslSelectionGpu;
-  if(typeof module!=="undefined")module.exports={HslSelectionGpu,shader};
+  globalThis.HDRHslSelectionGpu = HslSelectionGpu;
+  if (typeof module !== "undefined") module.exports = { HslSelectionGpu, geometry, shader };
 })();

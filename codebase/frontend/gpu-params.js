@@ -180,6 +180,10 @@
     const projectReferenceWhite = Number(referenceWhiteNits) === 100 ? 100 : 203;
     const branch = adjustments[lane];
     params[GPU_PARAMS.HSL_CHANNEL_COUNT] = HSL.pack(params, branch.hsl, branch.hsl_section_enabled !== false);
+    // Global HSL reads the shared selection when the renderer can build it.
+    // Setting HDRHslSharedSelection to false switches the route off.
+    params[GPU_PARAMS.HSL_SHARED_SELECTION] = params[GPU_PARAMS.HSL_CHANNEL_COUNT] > 0
+      && globalThis.HDRHslSelectionGpu && globalThis.HDRHslSharedSelection !== false ? 1 : 0;
     const colorSource = branch;
     params[GPU_PARAMS.HDR_LANE] = lane === "hdr" ? 1 : 0;
     params[GPU_PARAMS.SOURCE_LINEAR_SRGB] = workingSpace === "linear-srgb" ? 1 : 0;

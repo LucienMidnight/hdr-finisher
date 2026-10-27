@@ -1,4 +1,6 @@
-// Owns an isolated GPU window; the shipping app does not load this engine.
+// Shared colour selection on the real GPU against its CPU reference: whole frame,
+// a halo tile (interior must match the frame), reduced scale, Global/Local equality,
+// unsampled emptiness and preparation reuse. Runs in an isolated window.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {_electron}=require('playwright');
 (async()=>{
@@ -14,59 +16,53 @@ const {_electron}=require('playwright');
    const adapter=await navigator.gpu.requestAdapter();if(!adapter)throw Error('No GPU adapter');
    const device=await adapter.requestDevice();const errors=[];device.addEventListener('uncapturederror',e=>errors.push(e.error.message));
    const engine=await new HDRHslSelectionGpu(device).initialize();
-   const input=new Float32Array(f.width*f.height*4);
-   f.pixels.flat().forEach((rgb,i)=>input.set([...rgb,1],i*4));
-   const source=device.createTexture({size:[f.width,f.height],format:'rgba32float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
-   device.queue.writeTexture({texture:source},input,{bytesPerRow:f.width*16},{width:f.width,height:f.height});
-   const start=performance.now();const prepared=engine.prepare(source,'above-HSL:1');
-   const selection=engine.select({ranges:f.ranges});
-   const row=Math.ceil(f.width*16/256)*256;
-   const read=device.createBuffer({size:row*f.height,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
-   const encoder=device.createCommandEncoder();
-   encoder.copyTextureToBuffer({texture:selection},{buffer:read,bytesPerRow:row},{width:f.width,height:f.height});
-   device.queue.submit([encoder.finish()]);await read.mapAsync(GPUMapMode.READ);
-   const values=new Float32Array(read.getMappedRange()),diff=[],angles=[];
-   for(let y=0;y<f.height;y++)for(let x=0;x<f.width;x++){
-    const at=y*row/4+x*4;
-    if(!Number.isFinite(values[at]))throw Error('Non-finite coverage');
-    diff.push(Math.abs(values[at]-f.weight[y][x]));
-    if(f.weight[y][x]>.01)angles.push(Math.abs(((values[at+1]-f.target[y][x]+540)%360)-180));
+   const all=new Float32Array(f.width*f.height*4);f.fields.flat().forEach((v,i)=>all.set(v,i*4));
+   async function run(c,channels,{prepareKey=null,selectKey=null}={}){
+    const encoder=device.createCommandEncoder();
+    engine.ensure(c.width,c.height,Math.ceil(channels.length/4),HDRHslSelectionGpu.geometry(c.scale).cell);
+    if(!engine.isPrepared(prepareKey)){
+     const region=new Float32Array(c.width*c.height*4);
+     for(let y=0;y<c.height;y++)region.set(all.subarray(((c.y+y)*f.width+c.x)*4,((c.y+y)*f.width+c.x+c.width)*4),y*c.width*4);
+     device.queue.writeTexture({texture:engine.textures.fields},region,{bytesPerRow:c.width*16},{width:c.width,height:c.height});
+    }
+    const token=engine.encode(encoder,{width:c.width,height:c.height,originX:c.x,originY:c.y,scale:c.scale,channels,prepareKey,selectKey}),layers=token.layers;
+    const row=Math.ceil(c.width*16/256)*256;
+    const read=device.createBuffer({size:row*c.height*layers,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+    encoder.copyTextureToBuffer({texture:engine.textures.output},{buffer:read,bytesPerRow:row,rowsPerImage:c.height},{width:c.width,height:c.height,depthOrArrayLayers:layers});
+    device.queue.submit([encoder.finish()]);engine.commit(token);await read.mapAsync(GPUMapMode.READ);
+    const v=new Float32Array(read.getMappedRange().slice(0));read.unmap();read.destroy();
+    return (lane,x,y)=>v[Math.floor(lane/4)*row/4*c.height+y*row/4+x*4+lane%4];
    }
-   diff.sort((a,b)=>a-b);angles.sort((a,b)=>a-b);
-   const saved=new Float32Array(values);
-   read.unmap();
-   const local=engine.selectHue({hue_center:109,hue_width:15,hue_smoothness:21,saturation_floor:.02});
-   const copy=device.createCommandEncoder();
-   copy.copyTextureToBuffer({texture:local},{buffer:read,bytesPerRow:row},{width:f.width,height:f.height});
-   device.queue.submit([copy.finish()]);await read.mapAsync(GPUMapMode.READ);
-   const localValues=new Float32Array(read.getMappedRange());
-   let equal=true;
-   for(let y=0;y<f.height;y++)for(let x=0;x<f.width;x++) {
-     const at=y*row/4+x*4;if(localValues[at]!==saved[at])equal=false;
+   const result={cases:{},errors};
+   for(const c of f.cases){
+    const at=await run(c,f.channels),diff=[];
+    const [ix,iy,iw,ih]=c.interior||[0,0,c.width,c.height];
+    for(let lane=0;lane<2;lane++)for(let y=iy;y<iy+ih;y++)for(let x=ix;x<ix+iw;x++){
+     const g=at(lane,x,y);if(!Number.isFinite(g))throw Error('Non-finite coverage');diff.push(Math.abs(g-c.weights[lane][y][x]));
+    }
+    diff.sort((a,b)=>a-b);
+    result.cases[c.name]={mean:diff.reduce((a,b)=>a+b,0)/diff.length,p99:diff[Math.floor(diff.length*.99)],max:diff.at(-1)};
    }
-   if(!equal)throw Error('Equal Global/Local settings produced different coverage');
-   read.unmap();local.destroy();
-   const empty=engine.selectHue({hue_center:null});
-   const emptyCopy=device.createCommandEncoder();
-   emptyCopy.copyTextureToBuffer({texture:empty},{buffer:read,bytesPerRow:row},{width:f.width,height:f.height});
-   device.queue.submit([emptyCopy.finish()]);await read.mapAsync(GPUMapMode.READ);
-   const emptyValues=new Float32Array(read.getMappedRange());
-   for(let y=0;y<f.height;y++)for(let x=0;x<f.width;x++){
-     if(emptyValues[y*row/4+x*4]!==0)throw Error('Unsampled Local hue selected pixels');
-   }
-   empty.destroy();
-   const same=engine.prepare(source,'above-HSL:1')===prepared;
-   const retained=engine.prepared.serial;
-   const second=engine.select({ranges:[{center:109,width:24,feather:41}]},.04);second.destroy();
-   if(engine.prepared.serial!==retained)throw Error('Selection controls rebuilt prepared chroma');
-   engine.prepare(source,'above-HSL:2');const invalidated=engine.prepared.serial!==retained;
-   const result={mean:diff.reduce((a,b)=>a+b,0)/diff.length,p99:diff[Math.floor(diff.length*.99)],targetP99:angles[Math.floor(angles.length*.99)],cached:same,invalidated,equalGlobalLocal:true,unsampledEmpty:true,elapsed_ms:performance.now()-start,errors};
-   read.unmap();read.destroy();selection.destroy();engine.destroy();source.destroy();device.destroy();return result;
+   // Local adapter: equal settings give identical coverage (same lane maths).
+   const full=f.cases[0];
+   const global=await run(full,[f.channels[0]]);
+   const local=await run(full,[{ranges:[{center:109,width:15,feather:21,subtract:false}],floor:.02}]);
+   let equal=true;for(let y=0;y<full.height;y++)for(let x=0;x<full.width;x++)if(global(0,x,y)!==local(0,x,y))equal=false;
+   result.equalGlobalLocal=equal;
+   // Preparation reuse: range edits keep the prepared serial; a new key rebuilds.
+   await run(full,f.channels,{prepareKey:'above:1',selectKey:'a'});const serial=engine.serial;
+   const t0=performance.now();await run(full,[{ranges:[{center:109,width:24,feather:41}],floor:.04}],{prepareKey:'above:1',selectKey:'b'});
+   result.rangeEditMs=performance.now()-t0;result.reused=engine.serial===serial;
+   await run(full,f.channels,{prepareKey:'above:2',selectKey:'b'});result.invalidated=engine.serial!==serial;
+   engine.destroy();device.destroy();return result;
   },fixture);
-  // Engineering coverage check only; final-image perceptual acceptance is still required.
-  assert.ok(report.mean<.0001,JSON.stringify(report));assert.ok(report.p99<.002,JSON.stringify(report));
-  assert.ok(report.targetP99<.02,JSON.stringify(report));assert.ok(report.cached&&report.invalidated);assert.deepEqual(report.errors,[]);
+  for(const [name,c] of Object.entries(report.cases)){
+   assert.ok(c.mean<.0001&&c.p99<.002,`${name}: ${JSON.stringify(c)}`);
+  }
+  assert.ok(report.equalGlobalLocal,'Equal Global/Local settings produced different coverage');
+  assert.ok(report.reused&&report.invalidated,JSON.stringify(report));assert.deepEqual(report.errors,[]);
+  assert.equal(fixture.tile_seam_max,0);
   assert.ok(fixture.selected_mean>.8);assert.ok(fixture.noisy_std_after<fixture.noisy_std_before*.3);assert.ok(fixture.fringe_mean<.01);assert.ok(fixture.neutral_mean<.001);
-  fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(report,null,2));console.log('PASS isolated selection GPU/CPU',JSON.stringify(report));
+  fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(report,null,2));console.log('PASS shared selection GPU/CPU',JSON.stringify(report));
  }finally{await app.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

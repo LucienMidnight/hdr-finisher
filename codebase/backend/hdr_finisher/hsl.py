@@ -159,17 +159,29 @@ def recipe_active(recipe):
         recipe.hue or recipe.saturation or recipe.luminance or recipe.uniformity))
 
 
-def apply_recipes(image, recipes, mask=None):
-    """Add channel deltas from one input; neutral returns the original array."""
+def apply_recipes(image, recipes, mask=None, shared_selection=None):
+    """Add channel deltas from one input; neutral returns the original array.
+
+    ``shared_selection`` is a processing scale: Global HSL then takes its
+    coverage from the shared selection (hsl_selection.py) at that scale.
+    Without it each pixel is judged alone, as Local HSL still is.
+    """
     active = [r for r in recipes if recipe_active(r)]
     if not active:
         return image
     original = np.asarray(image)[..., :3].astype(np.float64)
     if mask is not None and np.shape(mask) != original.shape[:-1]:
         raise ValueError("HSL mask dimensions must match the image")
+    prepared = None
+    if shared_selection is not None:
+        from .hsl_selection import prepare
+        prepared = prepare(original.astype(np.float32), shared_selection)
     result = original.copy()
     for r in active:
         weight, target, lab, hue, chroma = selection(original, r.ranges)
+        if prepared is not None:
+            from .hsl_selection import select
+            weight = select(prepared, r.ranges).astype(np.float64)
         weight *= r.opacity
         if mask is not None:
             weight *= np.clip(mask, 0, 1)
@@ -183,14 +195,14 @@ def apply_recipes(image, recipes, mask=None):
     return output
 
 
-def apply_stage(image, recipes, kind):
+def apply_stage(image, recipes, kind, shared_selection=None):
     """Apply in the engine's D65 space, retaining exact neutral passthrough."""
     if not any(recipe_active(r) for r in recipes):
         return image
     from .color import acescg_to_linear_srgb, linear_srgb_to_acescg
     if str(getattr(kind, "value", kind)) == "hdr":
-        return linear_srgb_to_acescg(apply_recipes(acescg_to_linear_srgb(image), recipes))
-    return apply_recipes(image, recipes)
+        return linear_srgb_to_acescg(apply_recipes(acescg_to_linear_srgb(image), recipes, shared_selection=shared_selection))
+    return apply_recipes(image, recipes, shared_selection=shared_selection)
 
 
 def sample_neighborhood(image, x, y, radius=2):

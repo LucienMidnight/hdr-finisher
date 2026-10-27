@@ -52,13 +52,14 @@ def sample_stage(cache, request):
         target.opacity = 1
         getattr(target, f"{request.lane.value}_grade").enabled = True
     source, reference = cache._proxies(request.long_edge)
+    scale = min(1, request.long_edge / max(cache.image.shape[:2]))
     token = _target.set(("stage", request.local_id))
     try:
         try:
             apply_adjustments(source, request.adjustments, request.lane,
                               sdr_reference_image=reference, local_adjustments=locals_,
                               color_context=cache.color_context,
-                              source_pixel_scale=min(1, request.long_edge / max(cache.image.shape[:2])))
+                              source_pixel_scale=scale)
         except _Captured as captured:
             pixels = captured.pixels
             if captured.kind == PreviewKind.HDR:
@@ -72,7 +73,12 @@ def sample_stage(cache, request):
                 from io import BytesIO
                 import numpy as np
                 from PIL import Image
-                weight = selection(pixels, request.selection_recipe.ranges)[0]
+                if request.local_id is None:
+                    # Global HSL: the same shared selection the render applies.
+                    from .hsl_selection import prepare, select
+                    weight = select(prepare(pixels, scale), request.selection_recipe.ranges)
+                else:
+                    weight = selection(pixels, request.selection_recipe.ranges)[0]
                 if request.local_id is not None:
                     from .local_adjustments import compile_geometry_fixed_mask
                     mask = compile_geometry_fixed_mask(source, target.mask, request.adjustments.shared.geometry)

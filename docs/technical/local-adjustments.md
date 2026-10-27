@@ -1,33 +1,38 @@
 # Local adjustments
 
-## October 27: experimental shared pre-HSL selection (inactive)
+## October 27: shared pre-HSL selection (Global HSL built)
 
-Stage 2 partial implementation: Local hue controls now adapt directly to the
-inactive shared engine through `selectHue(leaf)` / CPU `select_hue`. Hue,
-half-range, smoothness and saturation floor map to one ordinary HSL range.
-The real-GPU driver verifies exact equal coverage at equal Global/Local
-settings and an empty unsampled hue mask, without rebuilding preparation.
-Shipping Local hue-mask compilation remains active on its old CPU source route.
-Replacing that route, stage-input picking, mask algebra, native overlay and
-all delivery consumers remains open; this adapter is not app integration.
+`HslSelectionGpu` (`frontend/hsl-selection-gpu.js`) and its CPU reference
+`hsl_selection.py` are one selection for Global HSL and the Local hue mask.
+Input is a fields texture `(a/L, b/L, log2 L, 1)` of the HSL stage input in
+D65 linear sRGB, rendered by the base shader's `hslFieldsFragmentMain` (same
+prefix as the base pass; the HDR or SDR lane is chosen with if/else, because
+WGSL `select()` evaluates both lanes). Preparation (range-independent):
+area-average relative chroma on a frame-anchored grid of `cell` pixels,
+Gaussian blur on that grid, then a guide texture `(log2 L, protection, box
+mean, box variance)`. Selection (per four channels): qualify the coarse grid
+(include/subtract ranges, neutral floor), guided-filter coefficients and
+refinement at full resolution, times protection; output rgba32float array
+layers, one lane per channel. Geometry by processing scale `s` (GPU
+`SOURCE_PIXEL_SCALE`, CPU `source_pixel_scale`, clamped .05..1): cell
+`max(1, round(4s))`, sigma `4s/cell` cells, taps `ceil(4 sigma)`, guided radius
+`max(1, round(4s))`, surround `max(1, round(2s))`; reach
+`cell*(taps+2) + 2*guide + surround + 2` (36 at s = 1). Rounding is
+JavaScript `Math.round` on both sides.
 
-Steve's Option A replaces the fixed-source requirement for the planned shared
-colour engine: both Global HSL and the Local hue mask will select the native
-image immediately before global HSL, after upstream exposure, white balance
-and colour edits. HSL corrections and Local Exposure must reuse prepared fields.
-Current shipping hue masks still use the fixed-source CPU route until production
-integration is completed.
-
-The isolated `HslSelectionGpu` accepts an owner-supplied native D65 linear-sRGB
-GPU texture and upstream identity. `prepare(texture,key)` retains quarter-size
-smoothed relative Oklab chroma. `select(recipe,floor)` builds native coverage
-and a circular target; correction values are not inputs. Output is rgba32float
-(coverage, target degrees, 0, 1), owned by the caller. The caller retains and
-eventually destroys its input and output textures. `destroy()` releases retained
-preparation. The CPU reference applies the same Light maths. Neither is called
-by the app, export or Proof. Memory admission, cancellation, native ownership
-across preview levels and production scheduling remain required before enabling
-it. The focused native driver `tests/hsl-selection-engine.js` is diagnostic.
+Renderer integration (`webgpu-preview.js`): bind slot 7 is a
+`texture_2d_array` of coverage (a 1x1 placeholder elsewhere; the base shader
+then stays per pixel). `p[199] HSL_SHARED_SELECTION` is set by `buildParams`
+when channels are active. Direct renders keep a per-canvas engine keyed by the
+source texture, the denoise state and every parameter slot above HSL; a range
+change reuses preparation; `commit()` after submit makes the cache valid.
+Tiles and Clarity chunks use a per-canvas tile engine with no cache;
+`composedReach` adds the selection reach to the tile halo and the planner
+charges `64 + 16*ceil(channels/4)` bytes per pixel. CPU `apply_stage(...,
+shared_selection=scale)` applies the same coverage; CPU strips refuse active
+HSL. The Local hue mask still uses its fixed-source CPU route until Stage 2.
+Checks: `tests/hsl-selection-engine.js` (GPU vs CPU, halo tile, reuse),
+`tests/hsl-selection-delivery.js` (real photo export/Proof), `test_hsl_selection.py`.
 
 
 ## October 27: selection overlay containment (Part 1)

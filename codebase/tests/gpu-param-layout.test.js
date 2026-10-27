@@ -17,7 +17,8 @@ test('the global parameter list preserves all 198 names and original positions',
  assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:200},(_,i)=>i));
  assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.slice(0,198).map(({name,index})=>[name,index]))).digest('hex'),'747c44e32a4d4f1effaedfc6b9fb79803511f2aba42ce7a1015902798be9d5e9');
  // Position 60 became HIGHLIGHT_ATTENUATION (AgX-style Attenuate prototype, Oct 2026).
- assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,83,84,87,94,96,147,199]);
+ // Position 199 became HSL_SHARED_SELECTION (shared colour selection, Oct 27 2026).
+ assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,83,84,87,94,96,147]);
  assert.deepEqual(layout.fields.filter(f=>f.hostOnly).map(f=>f.name),['DETAIL_ENABLED']);
  assert.ok(Object.isFrozen(layout)&&Object.isFrozen(layout.indices)&&Object.isFrozen(layout.fields));
  assert.ok(layout.fields.every(Object.isFrozen));

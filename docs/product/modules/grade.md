@@ -1,5 +1,59 @@
 # Module PRD: Grade
 
+## October 27: shared colour selection built for Global HSL (Stage 1)
+
+Global HSL now selects through the shared Light selection
+(`frontend/hsl-selection-gpu.js`, CPU reference `hsl_selection.py`), on the
+GPU first. Before the base pass a fields pass renders the picture exactly as
+HSL receives it (after exposure, white balance and colour edits) and the
+selection runs on it; the base pass then reads one coverage per active
+channel instead of judging each pixel alone. Distances are source pixels
+converted by the processing scale (chroma averaged over 4x4 source pixels,
+Gaussian sigma 4 source pixels, guided filter radius 4, bright-edge surround
+2), so Fit, every zoom, tiles and export select the same area of the photo.
+The coarse grid is anchored to the frame, and the tile halo includes the
+selection's reach (36 processing pixels at 100%), so tiles match the whole
+frame exactly. Whole-frame renders reuse the selection per canvas until the
+source or anything above HSL changes; HSL's own sliders and later stages
+reuse it. Range edits redo only the selection, not the preparation. A cached
+selection counts only once the frame that wrote it is submitted. Tiles
+recompute their own selection each render (measured cheap, below). The
+memory planner counts 80 bytes per pixel for one to four channels.
+
+The CPU fallback runs the same maths at its own processing scale. CPU strip
+rendering refuses active HSL (it reads a neighbourhood) and renders whole
+frame. Show selection for Global HSL uses the same maths at a 1600-px proxy
+(was per pixel at 1000 px); it is not a readback of the GPU frame, so at
+other sizes it can differ in fine detail, not in what is selected. HSL at
+neutral is unchanged: no channel is packed and the route is skipped.
+
+Design choices not settled by Steve's decisions, chosen closest to Lightroom:
+the Uniformity target hue is still taken per pixel (Uniformity pulls hues
+together, so noise there does not speckle); Local HSL inside a Local
+adjustment still judges each pixel, since only Global HSL and the hue mask
+were in scope. `HDRHslSharedSelection = false` switches the route off.
+
+Checks: shared-selection engine GPU against CPU (full, reduced scale, halo
+tile): mean difference below 0.0000001; `hsl-integration` passes (SDR mean
+0.92, HDR mean 0.77, peak 990 nits); new `hsl-selection-delivery` on a copy of
+Balanced Rock passes. That photo's full-size GPU and CPU RAW exports already
+differ with HSL neutral (HDR mean 1.80 / SDR 0.81, outside the general
+limits; existing, not investigated). Proposed and used tolerance: active HSL
+may add at most 0.15 mean and 0.5 p99 to that neutral gap, well below the
+just-noticeable level; it added 0.00 HDR and 0.02 SDR. Every file stays under
+1000 nits and full-size Proof equals the export. `gpu-delivery-smoke`,
+`hsl-overlay-review` and `hue-mask-delivery` pass.
+
+App review (SDR and HDR, 100/272/527%): the bush and flowers brighten evenly
+without speckle, branches stay sharp, no glow onto rock or sand. Lift with
+Yellow +0.80 EV, measured on the pixels the old route lifted: bush +0.58 EV
+(before +0.64), flowers +0.44 EV (before +0.65); whole-crop average unchanged
+(bush +0.42 vs +0.41, flowers +0.26 vs +0.27). Same as the Light test page.
+Timings (settled render, SDR, s): 24 MP Fit first preparation 0.03, range
+change 0.03; 100% range change 0.05 (old route 0.03). 42 MP Fit 0.04/0.03,
+100% 0.06 (old 0.04). HSL Luminance drag: 28 frames/s (old 29) at 24 MP,
+27 (old 28) at 42 MP.
+
 ## October 27: Library return check after HSL / hue work
 
 One disposable-profile app run used 25 copied 42 MP badminton RAWs and a copy
@@ -600,6 +654,11 @@ No GPU processing check applies to this HTML/CSS layout correction.
 9. Claude's design pass on the integrated global/local HSL panel, then
    Steve's real-photo HDR review. The required hue-selection mask remains
    built separately October 27 in item 8.
+10. **Shared colour selection (Steve, October 27):** Global HSL is built on
+   the shared Light selection (Stage 1, see the October 27 note). The Local
+   hue mask moves onto it in Stage 2. Open: halve the selection's 80-byte
+   per-pixel scratch (half-float storage) if memory becomes a problem; a GPU
+   readback for Show selection if its 1600-px proxy ever disagrees visibly.
 
 ### Sharpen investigation — October 27, 2026
 

@@ -444,6 +444,13 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
    * presentation surface whole but sizes the working set to one tile plus its
    * halo, so peak residency stops following the image.
    */
+  // Shared HSL selection scratch: fields, guide and two coefficient textures
+  // (rgba32float), plus one rgba32float coverage layer per four channels.
+  function hslSelectionBytesPerPixel(channels) {
+    const count = Math.max(0, Math.floor(Number(channels) || 0));
+    return count > 0 ? 64 + 16 * Math.ceil(count / 4) : 0;
+  }
+
   function buildTiledPlan(options = {}) {
     const width = Math.max(1, Math.floor(Number(options.width) || 1));
     const height = Math.max(1, Math.floor(Number(options.height) || 1));
@@ -490,6 +497,8 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
         Math.ceil(workWidth / spatialGridScale(width, height)) * Math.ceil(workHeight / spatialGridScale(width, height)) * 8 * 2,
         { textures: 2, tile: true });
     }
+    add("tile-hsl-selection", "hsl-selection", "resident", workPixels * hslSelectionBytesPerPixel(options.hslSelectionChannels),
+      { tile: true, channels: options.hslSelectionChannels || 0 });
     if (denoiseLevels > 0) {
       const denoise = denoiseLogicalBytes(workWidth, workHeight, denoiseLevels);
       add("tile-denoise-evidence", "denoise", "cached", denoise.evidenceBytes, { levels: denoiseLevels, tile: true });
@@ -583,6 +592,8 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
     add("grading-core", "grading", "resident", pixels * 8 * 4, { textures: 4 });
     if (detailActive) add("grading-detail", "detail", "resident", pixels * 8 * 2, { textures: 2 });
     if (spatialActive) add("spatial-film", "spatial", "resident", spatialPixels * 8 * 2, { textures: 2 });
+    add("hsl-selection", "hsl-selection", "resident", pixels * hslSelectionBytesPerPixel(options.hslSelectionChannels),
+      { channels: options.hslSelectionChannels || 0 });
 
     if (denoiseLevels > 0) {
       const denoise = denoiseLogicalBytes(width, height, denoiseLevels);

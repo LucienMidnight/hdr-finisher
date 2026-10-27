@@ -435,6 +435,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     @group(0) @binding(4) var spatialSampler: sampler;
     @group(0) @binding(5) var overlayMaskTexture: texture_2d<f32>;
     @group(0) @binding(6) var<storage, read> filmStock: array<f32>;
+    // Global HSL coverage from the shared selection (hsl-selection-gpu.js),
+    // four channels per layer, one texel per base-pass pixel. Other passes
+    // bind a 1x1 placeholder, which keeps HSL pointwise there.
+    @group(0) @binding(7) var hslSelection: texture_2d_array<f32>;
 
     struct VertexOut { @builtin(position) position: vec4f, @location(0) @interpolate(flat) lensComponent: u32 }
 
@@ -2621,8 +2625,25 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (blackAndWhiteNeedsGuide()) {
         blackAndWhiteGuideSource = blackAndWhiteLatticeMean(sourceTexture, coordinate, validTileDimensions());
       }
+      hslSelectionActive = p[${GPU_PARAMS.HSL_SHARED_SELECTION}] > 0.5 && textureDimensions(hslSelection).x > 1u;
+      hslSelectionPixel = coordinate;
       let output = select(renderSdrBase(source), renderHdrBase(source), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
       return vec4f(output, 1.0);
+    }
+
+    // The HSL stage input as selection fields, for the shared selection. Same
+    // prefix as the base pass; everything after HSL is discarded.
+    @fragment fn hslFieldsFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let source = textureLoad(sourceTexture, coordinate, 0).rgb;
+      if (blackAndWhiteNeedsGuide()) {
+        blackAndWhiteGuideSource = blackAndWhiteLatticeMean(sourceTexture, coordinate, validTileDimensions());
+      }
+      hslCapture = true;
+      // Not select(): it evaluates both lanes and the last capture would win.
+      if (p[${GPU_PARAMS.HDR_LANE}] > 0.5) { _ = renderHdrBase(source); } else { _ = renderSdrBase(source); }
+      return hslSelectionFields(hslCaptured);
     }
 
     // Where a pass's pixel falls in its mask texture. A mask texture normally

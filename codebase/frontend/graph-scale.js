@@ -386,6 +386,16 @@
     return 0;
   }
 
+  // Global HSL's shared selection reads the HSL stage input around each pixel
+  // (hsl-selection-gpu.js geometry().reach, in processing pixels).
+  function hslSelectionReach(params) {
+    if (!(params.length > GPU_PARAMS.HSL_SHARED_SELECTION) || !(params[GPU_PARAMS.HSL_SHARED_SELECTION] > 0.5)
+      || !(params[GPU_PARAMS.HSL_CHANNEL_COUNT] > 0)) return 0;
+    const Selection = globalThis.HDRHslSelectionGpu
+      || (typeof module !== "undefined" && module.exports && require("./hsl-selection-gpu.js").HslSelectionGpu);
+    return Selection ? Selection.geometry(params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1).reach : 0;
+  }
+
   function spatialReach(width, height, params) {
     return spatialReachDetail(width, height, params).total;
   }
@@ -410,7 +420,9 @@
     // Black & White reads each pixel's colour from the source around it
     // (BW_GUIDE_REACH in adjustments.py) before any later stage runs, so that
     // reach adds to whatever Detail and the film stage need.
-    const blackAndWhiteHalo = blackAndWhiteGuideReach(params);
+    // The selection reads the HSL stage input, which Black & White's guide
+    // already widened, and Detail then reads HSL's output: all three add.
+    const blackAndWhiteHalo = blackAndWhiteGuideReach(params) + hslSelectionReach(params);
     const spatialHalo = filmNeighbourhoodActive ? spatialReach(width, height, params) : 0;
     const halo = spatialHalo > 0
       ? Math.ceil((detailHalo + spatialHalo + blackAndWhiteHalo) / SPATIAL_SCALE) * SPATIAL_SCALE

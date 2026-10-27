@@ -1,4 +1,4 @@
-/* One pointwise GPU operation, sharing the app's device and parameter buffer. */
+/* HSL in the base pass. Global HSL reads the shared selection; Local HSL stays pointwise. */
 (function(){
   const wgsl = `
 fn hslLab(rgb: vec3f) -> vec3f {
@@ -16,7 +16,22 @@ fn hslDelta(h:f32,c:f32)->f32{return fract((h-c+180.0)/360.0)*360.0-180.0;}
 fn hslSrgbToAces(rgb:vec3f)->vec3f {
  return vec3f(dot(rgb,vec3f(.61311781290644,.34118199585562525,.04578734428233729)),dot(rgb,vec3f(.06993408230751336,.9181030375085815,.011932775530201238)),dot(rgb,vec3f(.0204629926377373,.1067686633825107,.8727159106194422)));
 }
+// Shared selection (hsl-selection-gpu.js). The fields pass captures the stage
+// input; the base pass then reads coverage per channel at its own pixel.
+var<private> hslCapture: bool = false;
+var<private> hslCaptured: vec3f = vec3f(0.0);
+var<private> hslSelectionActive: bool = false;
+var<private> hslSelectionPixel: vec2i = vec2i(0);
+fn hslSelectionFields(rgb: vec3f) -> vec4f {
+ let v = hslLab(rgb); let light = max(abs(v.x), 1e-6);
+ return vec4f(v.yz / light, log2(max(light, 1e-4)), 1.0);
+}
+fn hslSharedCoverage(k: u32) -> f32 {
+ var lanes = textureLoad(hslSelection, hslSelectionPixel, i32(k / 4u), 0);
+ return lanes[k % 4u];
+}
 fn applyHsl(input:vec3f,hdr:bool)->vec3f {
+ if(hslCapture){hslCaptured=select(input,acescgToSrgb(input),hdr);return input;}
  let count=u32(p[198]);
  if(count==0u){return input;}
  var original=input;
@@ -31,7 +46,8 @@ fn applyHsl(input:vec3f,hdr:bool)->vec3f {
    let weight=1.0-smoothstep(width,width+feather,abs(hslDelta(h,center)));
    if(p[ri+3u]>0.5){exc=max(exc,weight);}else{inc=max(inc,weight);cv+=weight*vec2f(cos(radians(center)),sin(radians(center)));}
   }
-  let weight=inc*(1.0-exc)*smoothstep(.02,.06,C/max(abs(v.x),1e-6))*p[at+5u];
+  var weight=inc*(1.0-exc)*smoothstep(.02,.06,C/max(abs(v.x),1e-6))*p[at+5u];
+  if(hslSelectionActive){weight=hslSharedCoverage(k)*p[at+5u];}
   if(weight==0.0){continue;}
   var hueTarget=h;if(length(cv)>1e-5){hueTarget=degrees(atan2(cv.y,cv.x));}
   let angle=radians(h+hslDelta(hueTarget,h)*p[at+3u]/100.0+p[at]);

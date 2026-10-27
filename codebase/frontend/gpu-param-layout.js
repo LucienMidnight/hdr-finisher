@@ -204,7 +204,7 @@
     Object.freeze({ name: "FILM_STOCK_TINT", index: 196 }),
     Object.freeze({ name: "FILM_STOCK_PREFLASH", index: 197 }),
     Object.freeze({ name: "HSL_CHANNEL_COUNT", index: 198 }),
-    Object.freeze({ name: "RESERVED_HSL", index: 199, reserved: true }),
+    Object.freeze({ name: "HSL_SHARED_SELECTION", index: 199 }),
   ]);
 
   const indices = Object.freeze(Object.fromEntries(fields.map(({ name, index }) => [name, index])));

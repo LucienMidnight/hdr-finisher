@@ -267,7 +267,7 @@ function hslPlaceOverlay(){
 async function hslSelection(ui){
   const checked=ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true';hslClearSelection();if(!checked||!state.session||state.activeWorkflow!=='grade')return;ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','true');
   const revision=hslUI.overlayRevision;
-  try{const data=await hslFetchStage(ui,[{x:.5,y:.5}],{selection_recipe:hslChannel(ui).recipe});if(revision!==hslUI.overlayRevision)return;const image=document.createElement('img');image.id='hsl-selection-overlay';image.alt='';image.src=data.selection_overlay;image.style.cssText='position:absolute;pointer-events:none;z-index:3;max-width:none;';els.previewPrimaryPane.append(image);hslPlaceOverlay();}catch(error){hslNotice(ui,error.message);}
+  try{const data=await hslFetchStage(ui,[{x:.5,y:.5}],{selection_recipe:hslChannel(ui).recipe,long_edge:1600});if(revision!==hslUI.overlayRevision)return;const image=document.createElement('img');image.id='hsl-selection-overlay';image.alt='';image.src=data.selection_overlay;image.style.cssText='position:absolute;pointer-events:none;z-index:3;max-width:none;';els.previewPrimaryPane.append(image);hslPlaceOverlay();}catch(error){hslNotice(ui,error.message);}
 }
 
 function hslWheelAnchors() {

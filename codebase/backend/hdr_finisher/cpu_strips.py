@@ -220,6 +220,10 @@ def strip_execution_refusals(
     # refusal any more; the GPU side lifted the same two in the same phase.
     if denoise_active:
         reasons.append("denoise")
+    from .hsl import recipe_active
+    if branch.hsl_section_enabled and any(recipe_active(c.recipe) for c in branch.hsl.channels):
+        # Global HSL's shared selection reads a neighbourhood of the HSL input.
+        reasons.append("HSL colour selection")
 
     geometry = adjustments.shared.geometry
     if geometry_resample_stage(geometry) == "roll":

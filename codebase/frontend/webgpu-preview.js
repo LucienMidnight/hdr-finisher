@@ -643,8 +643,13 @@
             { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
             { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
             { binding: 6, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+            { binding: 7, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } },
           ],
         });
+        this.hslSelectionPlaceholder = this.device.createTexture({
+          label: "HSL selection placeholder", size: [1, 1, 1], format: "rgba32float", usage: GPUTextureUsage.TEXTURE_BINDING,
+        });
+        this.hslSelectionPlaceholderView = this.hslSelectionPlaceholder.createView({ dimension: "2d-array" });
         this.spatialSampler = this.device.createSampler({
           magFilter: "linear",
           minFilter: "linear",
@@ -696,6 +701,13 @@
           shapeRaster: await maskPipeline("shapeRasterFragmentMain"),
           brushRegionalErase: await maskPipeline("brushRegionalEraseFragmentMain"),
         };
+        await beforePipeline();
+        this.hslSelectionEngines = new Map();
+        this.hslSelectionTemplate = globalThis.HDRHslSelectionGpu
+          ? await new globalThis.HDRHslSelectionGpu(this.device, {
+            onAllocate: (bytes, detail) => this.recordAllocation("hsl-selection", bytes, detail),
+          }).initialize()
+          : null;
         const lostDevice = this.device;
         this.device.lost.then((info) => {
           // A rebuild replaces the device; the old loss must not clear the new
@@ -767,12 +779,17 @@
       this.scaledFilmPeakReductionModule = null;
       this.maskProbePipeline = null;
       this.frameMaskRecord = null;
+      this.hslSelectionTemplate = null;
+      this.hslSelectionEngines = new Map();
+      this.hslSelectionPlaceholder = null;
+      this.hslSelectionPlaceholderView = null;
       this.deviceLost = false;
       return this.initialize();
     }
 
     resetSession(sessionId = null) {
       this.resourceGeneration += 1;
+      this.releaseHslSelection();
       this.denoiseModelWarm = null;
       this.editingCandidateCache?.clear();
       this.editingAnalysisCanvas = null;
@@ -1639,7 +1656,8 @@
     }
 
     /** The one bind-group shape every pass on either route uses. */
-    bindGraphResources(sourceView, spatialView, parameterBinding = { buffer: this.paramBuffer }, overlayView = spatialView) {
+    bindGraphResources(sourceView, spatialView, parameterBinding = { buffer: this.paramBuffer }, overlayView = spatialView,
+      hslSelectionView = this.hslSelectionPlaceholderView) {
       return this.device.createBindGroup({
         layout: this.bindGroupLayout,
         entries: [
@@ -1650,8 +1668,101 @@
           { binding: 4, resource: this.spatialSampler },
           { binding: 5, resource: overlayView },
           { binding: 6, resource: this.filmStockBinding() },
+          { binding: 7, resource: hslSelectionView },
         ],
       });
+    }
+
+    /**
+     * Shared colour selection for Global HSL (hsl-selection-gpu.js). Each canvas
+     * owns a whole-frame cache and a tile scratch, so one canvas's pending,
+     * unsubmitted frame can never read another's half-written selection.
+     */
+    hslSelectionEngine(canvas, route) {
+      if (!this.hslSelectionTemplate) return null;
+      let owned = this.hslSelectionEngines.get(canvas);
+      if (!owned) this.hslSelectionEngines.set(canvas, owned = {});
+      return owned[route] ||= this.hslSelectionTemplate.fork();
+    }
+
+    releaseHslSelection() {
+      for (const owned of this.hslSelectionEngines?.values() || []) {
+        for (const engine of Object.values(owned)) this.destroyAfterActiveRenders(() => engine.destroy());
+      }
+      this.hslSelectionEngines = new Map();
+    }
+
+    hslSelectionBytes() {
+      let bytes = 0;
+      for (const owned of this.hslSelectionEngines?.values() || []) {
+        for (const engine of Object.values(owned)) bytes += engine.bytes();
+      }
+      return bytes;
+    }
+
+    /** Global HSL channels as the selection reads them, from the packed slots. */
+    hslSelectionChannels(params) {
+      if (!(params[GPU_PARAMS.HSL_SHARED_SELECTION] > 0.5)) return [];
+      const HSL = globalThis.HDRHSL, channels = [];
+      const count = Math.round(params[GPU_PARAMS.HSL_CHANNEL_COUNT] || 0);
+      for (let k = 0; k < count; k += 1) {
+        const at = HSL.CHANNEL_BASE + k * HSL.CHANNEL_STRIDE, ranges = [];
+        for (let j = 0; j < params[at + 4]; j += 1) {
+          const r = at + 8 + 4 * j;
+          ranges.push({ center: params[r], width: params[r + 1], feather: params[r + 2], subtract: params[r + 3] > 0.5 });
+        }
+        channels.push({ ranges, floor: 0.02 });
+      }
+      return channels;
+    }
+
+    /**
+     * What a whole-frame selection depends on: the source texture and every
+     * slot that can change the picture before HSL. HSL's own sliders and the
+     * stages after it are left out, so dragging them reuses the selection.
+     */
+    hslPrepareKey(sourceTexture, params, width, height) {
+      if (!this.hslTextureIds) { this.hslTextureIds = new WeakMap(); this.hslTextureSerial = 0; }
+      let id = this.hslTextureIds.get(sourceTexture);
+      if (!id) this.hslTextureIds.set(sourceTexture, id = ++this.hslTextureSerial);
+      const g = GPU_PARAMS, after = [[g.VIGNETTE_SCALE_X, g.VIGNETTE_SCALE_Y], [g.CURVES_ENABLED, g.CURVES_ENABLED],
+        [g.FILM_RESPONSE_ENABLED, g.GRAIN_SEED_LOW], [g.COLOR_GRADING_ENABLED, g.SCOPE_HEIGHT],
+        [g.DETAIL_ENABLED, g.SHARPEN_THRESHOLD], [g.FILM_LOOK_ENABLED, g.GRAIN_VIEW_MAP],
+        [g.CLARITY_MAP_SCALE, g.GRAIN_SEED_HIGH], [g.MASK_RECT_X, g.FILM_STOCK_PREFLASH]];
+      const above = [];
+      for (let i = 0; i < g.HSL_CHANNEL_COUNT; i += 1) {
+        if (!after.some(([lo, hi]) => i >= lo && i <= hi)) above.push(params[i]);
+      }
+      return `${id}|${width}x${height}|${this.denoiseSourceSelector?.resolvedFor ?? ""}|${above.join(",")}`;
+    }
+
+    /**
+     * Encode the selection for one region (the whole frame, a tile or a Clarity
+     * chunk) before its base pass. `bindGroup` is the base pass's own binding;
+     * the fields pass reads the same source and parameters. Returns the view to
+     * bind in slot 7 and the token to commit after submission, or null.
+     */
+    encodeHslSelection(engine, encoder, pipelines, bindGroup, { width, height, originX = 0, originY = 0, params, prepareKey = null }) {
+      const channels = engine ? this.hslSelectionChannels(params) : [];
+      if (!channels.length) return null;
+      const scale = params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1;
+      engine.ensure(width, height, Math.ceil(channels.length / 4), globalThis.HDRHslSelectionGpu.geometry(scale).cell);
+      if (!engine.isPrepared(prepareKey)) {
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [{ view: engine.fieldsView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "store" }],
+        });
+        pass.setViewport(0, 0, width, height, 0, 1);
+        pass.setScissorRect(0, 0, width, height);
+        pass.setPipeline(pipelines.hslFields);
+        pass.setBindGroup(0, bindGroup);
+        pass.draw(3);
+        pass.end();
+      }
+      const token = engine.encode(encoder, {
+        width, height, originX, originY, scale, channels, prepareKey,
+        selectKey: prepareKey == null ? null : JSON.stringify(channels),
+      });
+      return { view: engine.outputView(), token };
     }
 
     /**
@@ -3938,6 +4049,8 @@
         }
         this.configureSurface(canvas, context, lane === "hdr");
       }
+      // Tiles never reuse a selection: each recomputes over its own halo.
+      const hslTileEngine = this.hslSelectionEngine(canvas, "tiled");
       let encodeError = null;
       let validationError = null;
       let validationScopeOpen = false;
@@ -4087,7 +4200,12 @@
               { width: region.width, height: region.height, depthOrArrayLayers: 1 },
             );
           }
-          pass(baseView, pipelines.base, bindWith(sourceView, binding), region.width, region.height);
+          const chunkSelection = this.encodeHslSelection(hslTileEngine, encoder, pipelines, bindWith(sourceView, binding), {
+            width: region.width, height: region.height, originX: region.x, originY: region.y, params,
+          });
+          pass(baseView, pipelines.base, chunkSelection
+            ? this.bindGraphResources(sourceView, sourceView, binding, sourceView, chunkSelection.view)
+            : bindWith(sourceView, binding), region.width, region.height);
           this.encodeClarityPass(encoder, reduced.createView(), pipelines.clarityReduce, bindWith(baseView, binding), texels, true);
           batchTiles += 1;
           if (batchTiles >= tileBatchSize) {
@@ -4157,9 +4275,16 @@
             { width, height, depthOrArrayLayers: 1 },
           );
         }
+        // Each tile selects over its halo rectangle; the halo covers the
+        // selection's reach, so the kept interior matches the whole frame.
+        const tileSelection = noiseView ? null : this.encodeHslSelection(hslTileEngine, encoder, pipelines, bind(sourceView), {
+          width, height, originX: tile.haloRect.x, originY: tile.haloRect.y, params,
+        });
         pass(baseView, pipelines.base, noiseView && denoiseActive
           ? bind(sourceView, sourceView, graph.denoiseResolvedTexture.createView())
-          : bind(sourceView), width, height);
+          : (tileSelection
+            ? this.bindGraphResources(sourceView, sourceView, parameterBinding, sourceView, tileSelection.view)
+            : bind(sourceView)), width, height);
         // Show noise presents the base pass itself; the grade never runs.
         if (!noiseView) {
           let localSource = graph.baseTexture;
@@ -4689,6 +4814,7 @@
         halo: this.composedTileHalo(proxy.width, proxy.height, params, activeLocals, lane).halo,
         sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
         tier: sourceOptions?.tier ?? null,
+        hslSelectionChannels: this.hslSelectionTemplate ? this.hslSelectionChannels(params).length : 0,
       });
       // A region source belongs to the tiled route. When admission chooses
       // Direct for a viewport request, Direct executes every active node over
@@ -4928,7 +5054,7 @@
       const spatialAView = intermediate.spatialATexture?.createView() || fallbackSpatialView;
       // Show noise binds the original as the source and the resolved picture
       // in the overlay slot, so the base pass can difference the two.
-      const baseBindGroup = params[NOISE_VIEW_INDEX] === 1
+      let baseBindGroup = params[NOISE_VIEW_INDEX] === 1
         ? makeBindGroup(proxy.texture.createView(), spatialAView, this.paramBuffer, sourceProxy.texture.createView())
         : makeBindGroup(sourceProxy.texture.createView(), spatialAView);
       // Detail blur samples the filterable spatial binding so fractional radii
@@ -4956,6 +5082,17 @@
         masks[overlayIndex]?.texture?.createView() || spatialAView,
       );
       const encoder = this.device.createCommandEncoder();
+      // Global HSL's selection reads the HSL stage input over the whole frame,
+      // and is reused while nothing above HSL changes.
+      const hslEngine = noiseView ? null : this.hslSelectionEngine(canvas, "direct");
+      const hslSelection = this.encodeHslSelection(hslEngine, encoder, pipelines, baseBindGroup, {
+        width: proxy.width, height: proxy.height, params,
+        prepareKey: this.hslPrepareKey(sourceProxy.texture, params, proxy.width, proxy.height),
+      });
+      if (hslSelection) {
+        baseBindGroup = this.bindGraphResources(sourceProxy.texture.createView(), spatialAView,
+          { buffer: this.paramBuffer }, spatialAView, hslSelection.view);
+      }
       if (sourceOptions?.captureClarity) {
         sourceOptions.captureClarity.frameWidth = proxy.width;
         sourceOptions.captureClarity.frameHeight = proxy.height;
@@ -5222,6 +5359,7 @@
         encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
       this.device.queue.submit([encoder.finish()]);
+      if (hslSelection) hslEngine.commit(hslSelection.token);
       } finally {
         presentation.release();
       }
@@ -6257,6 +6395,7 @@
           { binding: 4, resource: this.spatialSampler },
           { binding: 5, resource: source.spatialTexture.createView() },
           { binding: 6, resource: this.filmStockBinding() },
+          { binding: 7, resource: this.hslSelectionPlaceholderView },
         ],
       });
       const encoder = this.device.createCommandEncoder();
@@ -6526,6 +6665,12 @@
         fragment: { module: this.module, entryPoint: "baseFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
+      const hslFields = create({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "hslFieldsFragmentMain", targets: [{ format: "rgba32float" }] },
+        primitive: { topology: "triangle-list" },
+      });
       const response = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
@@ -6683,6 +6828,7 @@
           primitive: { topology: "triangle-list" },
         })])),
         base,
+        hslFields,
         finish,
         scopePeakTile,
         local,
