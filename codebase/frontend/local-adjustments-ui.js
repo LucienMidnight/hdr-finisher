@@ -459,6 +459,9 @@ function bindLocalAdjustmentEvents() {
 
 function setGradeMode(mode) {
   const next = ["global", "local", "retouch"].includes(mode) ? mode : "global";
+  // The mask tint is drawn into the GPU picture, so leaving or entering Local
+  // needs a redraw, not just a cleared gizmo canvas.
+  const hadMaskTint = Boolean(gpuLumaMaskOverlayOptions());
   if (state.gradeMode !== next) {
     if (state.localPathDraft && (selectedMaskLeaf()?.nodes?.length || 0) >= 3) void finishLocalPathDraft();
     else if (unusedLocal()) discardUnusedLocal();
@@ -498,6 +501,10 @@ function setGradeMode(mode) {
   if (next !== "global") void ensureGeometryCoordinateMap();
   renderLocalAdjustments();
   renderLocalMaskOverlay();
+  if (hadMaskTint !== Boolean(gpuLumaMaskOverlayOptions())) {
+    invalidatePreview(state.currentView);
+    debouncePreview(state.currentView);
+  }
 }
 
 function updateLocalToolState() {
@@ -982,6 +989,7 @@ function gpuLumaMaskOverlayOptions() {
     || state.gradeMode !== "local"
     || !state.localShowMask
     || local?.enabled === false
+    || state.adjustments?.shared?.local_adjustments_enabled === false
     || state.selectedSubMaskId
     || !gpuLumaMaskPreviewActive(local)
   ) return null;
