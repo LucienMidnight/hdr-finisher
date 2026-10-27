@@ -1,6 +1,6 @@
 # Module PRD: Grade
 
-## October 27: Local hue mask on the shared selection (Stage 2, partly validated)
+## October 27: Local hue mask on the shared selection (Stage 2, validation ongoing)
 
 The Local hue mask now selects with the shared Light selection from the lane's
 picture just before HSL, like Global HSL. GPU: `loadGpuHueLeaf` builds the
@@ -17,18 +17,33 @@ cache, native reduction) is removed; old-route tests were rewritten.
 
 Checks: hue-mask-delivery passes; hue-mask/HSL/local Python tests pass;
 `hsl-selection-delivery --local` stays within the agreed margin (HDR +0.14,
-SDR +0.03 over the neutral gap; ceiling holds). Full-size Proof is not
-byte-identical to the export with a Local hue mask on this photo, on GPU and
-CPU; the Stage 1 code (old route) shows the same, so it predates this work
-and is not yet investigated. Old route, 24 MP: hue range change 0.52 s at
-Fit, 1.3-5.8 s at 100%.
+SDR +0.03 over the neutral gap; ceiling holds). Local app crops at 100/272/527%
+in SDR and HDR, and 15/21 degrees in SDR, were captured on tiled GPU renders;
+the logs show GPU hue leaves. The comparison page is
+`codebase/output/hsl-smoothing-built/index.html`; Local before images are from
+the old route. Reviewed app crops show smoother brightening, with fine branches
+and edges retained. Show mask captures at 100/272/527% show no visible tile
+seam, but do not establish an exact match to the applied mask: the overlay is a
+separate HDR-lane CPU mask at Fit resolution (675 x 1013 on this photo), enlarged
+at zoom, whereas the picture uses lane-specific GPU tiles.
 
-**Still open (Stage 2):** Local app crops (after) and the screenshot page
-`codebase/output/hsl-smoothing-built/index.html` (Global crops and Local
-before-crops are captured there); Local timings on the new route (24/42 MP)
-and Local Exposure drag; Show mask check at 100/272/527%; tiled Local view
-check; the existing Proof/export mismatch with Local hue masks; full fast
-checks once at the end.
+Local timings on copied photos, SDR (seconds): the tool's enable/first
+preparation measurement was 0.041/0.045 at Fit/100% for 24 MP, and 0.033/0.042
+for 42 MP. The mask was set up before these measurements, so they do not prove
+cold preparation time. Range changes were 0.042-0.054 / 0.129-0.141 at 24 MP,
+0.039-0.053 / 0.135-0.169 at 42 MP. Local Exposure drag remained live at about
+31 frames/s. The 24 MP target was about 0.3 s; these measurements are below it. The old 24 MP route measured 0.52 s at Fit and 1.3-5.8 s at 100%.
+
+The delivery test's full-size Proof/export mismatch is a stale Proof cache:
+its key omits the session's Local adjustments when the request omits edit
+revision (the app supplies a revision). The retained Local Proof files equal the
+previous neutral exports byte for byte on both GPU and CPU. No Proof/export
+code was changed; that area is Still strict.
+
+**Still open (Stage 2):** Show mask must display the exact applied Local hue
+mask at each zoom and lane, including tiled views; the existing Proof cache
+must account for Local adjustments, subject to Steve's approval before changing
+Proof/export. Cold first-preparation timing has not been isolated.
 
 ## October 27: shared colour selection built for Global HSL (Stage 1)
 
@@ -686,7 +701,8 @@ No GPU processing check applies to this HTML/CSS layout correction.
    built separately October 27 in item 8.
 10. **Shared colour selection (Steve, October 27):** Global HSL is built on
    the shared Light selection (Stage 1, see the October 27 note). The Local
-   hue mask moves onto it in Stage 2. Open: halve the selection's 80-byte
+   hue mask is built on it in Stage 2; exact Show mask and the existing Proof
+   cache issue remain open (see the Stage 2 note). Open: halve the selection's 80-byte
    per-pixel scratch (half-float storage) if memory becomes a problem; a GPU
    readback for Show selection if its 1600-px proxy ever disagrees visibly.
 
