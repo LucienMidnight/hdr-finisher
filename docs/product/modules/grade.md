@@ -1,5 +1,56 @@
 # Module PRD: Grade
 
+## October 27: Library return check after HSL / hue work
+
+One disposable-profile app run used 25 copied 42 MP badminton RAWs and a copy
+of Balanced Rock, with Global Yellow 15/21 degrees, +0.80 EV, uniformity 0%,
+amount 100%, and Local hue 109 degrees, 24/41 degrees, neutrals 4%, +1.05 EV.
+No live database or original-photo folders were written. The warmed skip-Grade
+return showed first/25th pictures in 0.25/0.46 s; after Grade, 0.37/0.55 s.
+Both app screenshots were reviewed: all 25 cells contain pictures. These are
+embedded camera previews, not finished thumbnails. Grade reached an exact
+frame before leaving; cancellation during pending preparation was not exercised.
+The first return was 46%
+slower (0.12 s), outside a proposed 20% paired-run allowance, but below the
+1.46 s ordinary-folder baseline. One pair does not establish a regression.
+Cold copied-folder rows took 6.64 s to become usable; first/25th pictures took
+6.96/7.55 s. No clear Grade-return cause was established, so no Library fix
+or Library PRD change was made.
+
+The read-only 12:40-12:48 Bangkok log extract places the reported 12:43 events
+immediately after app startup. HDR Test Images had 3.48 s Library GPU wait;
+first picture was 4.39 s. Play_Raw first/25th pictures were 1.04/11.62 s.
+The 8.99 s reconciliation and 41.22 s startup upkeep overlap those requests;
+that timing alone does not prove upkeep caused the delay. Five failed picture
+attempts all name Balanced Rock and unreadable saved edits. No compatibility
+repair was added under the pre-1.0 rule. These log timings do not implicate
+Grade selection preparation: Global selection is still inline in the current
+shader and Local hue preparation still runs on the CPU. Cancellation/yield
+for the new inactive engine remains open with its app integration.
+
+Reproduction: `tools/hsl-library-return-review.js`, through the disposable
+Electron launcher, expects 25 copied ARWs in `output/hsl-library-return/ordinary`,
+an empty sibling folder, and a copied `IMG_0114.CR2`; set the launcher's
+`HDR_FINISHER_ELECTRON_TEST_USER_DATA` to a fresh disposable profile.
+`tools/hsl_library_log_window.py` reads the explicitly dated Bangkok log window.
+Reviewed captures and JSON: `codebase/output/hsl-library-return/index.html`.
+This does not complete the shared-engine app screenshots, zoom checks, drag
+speed or bush-lift measurements; no smoothing appearance claim is made.
+
+
+Batch validation: JavaScript fast checks ran once (637 passed, two known
+failures); Python fast checks ran once (2,632 passed, three skipped, two known
+failures, 8m29s). The four unchanged failures are `library-scenes`,
+`library-single-ready`,
+`test_rgb_description_precedes_pixels_and_keeps_publication_guards[None]`, and
+`test_library_native_source_uses_same_repair_before_reduction`. New CPU
+selection behavior checks passed. The isolated GPU selection driver passed;
+its initial WGSL compiler-name/conversion errors were corrected before commit.
+The disposable Library comparison completed and its three screenshots were
+reviewed. No production render path changed, so strict finished-image checks
+were not run; they remain mandatory before activation. Validation stayed
+within Steve's 75-minute allowance. No push was made.
+
 ## October 27: shared colour-selection decision and staged implementation
 
 Stage 2 partial implementation: Local hue controls now adapt directly to the
@@ -34,7 +85,7 @@ bright-fringe rejection, CPU coverage agreement and preparation reuse and
 invalidation. Coverage mean difference was below 0.000001; these engineering
 coverage checks do not establish finished-image perceptual acceptance.
 Shipping shaders, tolerances and Highlight compression are unchanged.
-Fast checks are deferred to the three-stage run's end.
+Batch fast-check results are recorded in the Library return note above.
 
 Still required before activation: split the production base pass at pre-HSL;
 native selection ownership, memory admission and cancellation; transport into
