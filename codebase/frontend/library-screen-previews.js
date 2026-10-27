@@ -7,24 +7,27 @@ window.HDRLibraryScreenPreviews = (() => {
     display_height:Math.min(2560,Math.round(screen.height*(devicePixelRatio||1)))});
   function query(path,hdr) { return new URLSearchParams({path,lane:hdr?'hdr':'sdr',...display()}); }
   function capture(gpu,meta,canvas,hdr) {
-    if (meta.edge !== 2560 || meta.route !== 'library-live' || pending >= 2) return;
+    if (meta.edge !== 2560 || meta.route !== 'library-live' || (!meta.buildPreview && pending >= 2)) return;
     pending++;
     const status={lane:hdr?'hdr':'sdr',stage:'readback'};captures.push(status);if(captures.length>20)captures.shift();
     HDRLibraryStopwatch('picture_stored_screen_preview_capture',{path:meta.path,picture_size:'screen preview'});
     const params = query(meta.path,hdr);
+    if(meta.buildPreview)params.set("protected","true");
     for (const [key,value] of Object.entries({grade_identity:meta.grade_identity,source_key:meta.source_key,
       source_width:meta.source_width,source_height:meta.source_height})) params.set(key,value);
     // Commands are submitted after the current draw; mapping/HTTP/encoding
     // are deliberately not awaited by the draw or its scene lease.
-    void gpu.analyzeScope(canvas,{width:meta.width,height:meta.height,tier:'picture',raw:'rgba',snapshot:true})
+    const task=gpu.analyzeScope(canvas,{width:meta.width,height:meta.height,tier:'picture',raw:'rgba',snapshot:true})
       .then(async pixels => {
         status.stage='upload';
-        if (!pixels) {console.debug('Stored screen preview: no finished GPU pixels');return;}
+        if (!pixels) throw Error('No finished GPU pixels for screen preview.');
         for (const name of ['width','height','stride']) params.set(name,pixels[name]);
         const response = await fetch('/api/library/stored-screen-preview?'+params,{method:'POST',body:pixels.body});
         status.stage='accepted';status.http=response.status;
-        if (!response.ok) throw Error('Stored screen preview write refused: '+response.status);
-      }).catch(error=>{status.stage='failed';status.error=error.message;console.debug('Stored screen preview:',error.message);}).finally(()=>pending--);
+        if (!response.ok || (meta.buildPreview && response.status!==200)) throw Error('Stored screen preview was not saved: '+response.status);
+      }).finally(()=>pending--);
+    if(meta.buildPreview)return task;
+    void task.catch(error=>{status.stage='failed';status.error=error.message;console.debug('Stored screen preview:',error.message);});
   }
   const shader = `
     override white:f32=203.0;

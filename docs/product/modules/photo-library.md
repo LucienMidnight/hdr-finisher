@@ -57,6 +57,33 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 27, 2026)
 
+**October 27 three-part batch, Part 2: Build previews built.** Selection and
+folder context menus offer Build previews and Discard built previews. The
+existing scene queues and GPU draw graph prepare both HDR and SDR screen
+previews at the current display size, saved in the existing JPEG XL format.
+The CPU is the fallback. Decode/encode uses all available cores; the existing
+memory broker still serialises GPU draws. Preparation runs at background
+priority, waits for helper pauses (Grade/import/export), and shows progress,
+errors and Cancel in Activity. Closing the Library page ends its job.
+
+A per-file protection flag survives app restarts and automatic cleanup;
+replacements inherit protection. A changed grade fails the identity check
+immediately, so an old protected picture is never current; viewing/building it
+again replaces it. Discard removes the protected files, leaving grades alone.
+Activity shows protected bytes against the 10 GiB stored-preview limit. The
+preflight budgets 6 MiB per photo for both lanes, checks free disk space and
+protected usage, and offers a smaller set when the full selection will not
+fit. Actual publication also checks protected capacity; cleanup never evicts
+protected files to make room. Detail previews remain v2.
+
+Disposable 20-photo app run: 40 protected HDR/SDR JPEG XL files built in
+33.3 s. A fresh cache reader reused every file; all survived forced cleanup,
+all rejected a changed grade as stale, and discard removed all 40. Sources
+were generated PNGs inside the disposable profile, not Steve's photo folders.
+Artifacts: `codebase/output/oct27-three-part/previews`. Fast checks run once
+at the end of the batch. Steve should filter to a small favourite selection,
+build previews, reopen Single in HDR and SDR, change a grade, then discard.
+
 **October 27 three-part batch, Part 1:** ordered progressive delivery is built.
 Large folders deliver the first 256 sorted rows, then 4,096-source pages, from
 an independent read-only WAL snapshot. The full count includes virtual copies;
@@ -648,7 +675,7 @@ drag-in pinning).
    the 1 s cold sharp-draw target needs Steve's trial.
 4. AVIF: native parallel CPU reconstruction built; full GPU reconstruction
    remains open (previous estimate 3–5 days).
-5. Build previews command, protected prepared set and space checks.
+5. Build previews, protection, discard, capacity checks and Activity progress built October 27; Steve’s trial remains.
 6. Detail (100%) previews, last.
 
 **Other open items:**
@@ -2437,7 +2464,7 @@ appear in the folder's right-click menu. User-built previews stay protected
 from automatic cleanup until discarded, and also suit keeping a gallery of
 favourite photos. Size tiers: automatic grid thumbnails plus display-sized
 fullscreen previews come first; native 100% detail previews are deferred until
-everything else is fast. Not built.
+everything else is fast. Screen previews built October 27; see Start here for the implementation and disposable lifecycle check.
 
 **Review findings (Claude, October 25).** Measured during the 155k-photo
 indexing run: the global Library lock is held by whole-library membership

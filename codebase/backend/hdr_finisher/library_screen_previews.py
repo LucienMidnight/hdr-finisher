@@ -98,7 +98,7 @@ class StoredScreenPreviews:
                 result=result, decode_ms=round((perf_counter()-started)*1000, 2),
                 read_ms=round(read_ms, 2), codec_ms=round(codec_ms, 2), pack_ms=round(pack_ms, 2), picture_size='screen preview')
 
-    def write(self, identity, body, width, height, stride, cancelled=lambda: False, source_width=None, source_height=None):
+    def write(self, identity, body, width, height, stride, cancelled=lambda: False, source_width=None, source_height=None, protected=False):
         import imagecodecs
         from .color import acescg_to_linear_bt2020
         from .jpegxl import _pq_oetf, _srgb_oetf
@@ -134,16 +134,60 @@ class StoredScreenPreviews:
         filename = identity['key'] + '-' + uuid4().hex + '.jxl'
         file = directory / filename
         with _lock:
+            info_path=directory / (identity['slot'] + '.json')
+            try: previous=json.loads(info_path.read_text('utf-8'))
+            except (FileNotFoundError,ValueError): previous={}
+            protected=protected or previous.get('protected',False)
+            # Protected files alone must never be evicted to admit another file.
+            usage=self.usage()
+            old_size=(directory / previous['file']).stat().st_size if previous.get('file') and (directory / previous['file']).is_file() else 0
+            if usage['protected_bytes'] + len(encoded) - (old_size if previous.get('protected') else 0) > LIMIT_BYTES:
+                raise ValueError('Protected screen previews fill the stored-preview limit. Discard some or build fewer photos.')
             file.write_bytes(encoded)
             atomic_json(directory / (identity['slot'] + '.json'), dict(identity=identity,
-                file=filename, width=width, height=height,
+                file=filename, protected=bool(protected), width=width, height=height,
                 source_width=source_width or width, source_height=source_height or height))
+            if previous.get('file') and previous['file']!=filename and Path(previous['file']).name==previous['file']:
+                (directory / previous['file']).unlink(missing_ok=True)
             self.trim()
         log('stored_screen_preview_write', path=identity['path'], rendition=identity['lane'],
             write_ms=round((perf_counter()-started)*1000, 2), bytes=len(encoded), picture_size='screen preview')
         return True
 
+    def records(self):
+        for file in self.directory.glob('*.json'):
+            if file.is_symlink(): continue
+            try:
+                info=json.loads(file.read_text('utf-8'))
+                name=info['file']
+                if Path(name).name!=name: continue
+                picture=self.directory/name
+                if picture.is_symlink(): continue
+                yield file,picture,info
+            except (OSError,ValueError,KeyError,TypeError): continue
+
+    def usage(self):
+        total=protected=count=0
+        for manifest,picture,info in self.records():
+            try: size=manifest.stat().st_size+picture.stat().st_size
+            except FileNotFoundError: continue
+            total+=size
+            if info.get('protected'): protected+=size;count+=1
+        return dict(bytes=total,protected_bytes=protected,protected_previews=count,limit_bytes=LIMIT_BYTES)
+
+    def discard(self, paths):
+        wanted=set(paths); removed=0
+        with _lock:
+            for manifest,picture,info in self.records():
+                if info['identity']['path'] in wanted and info.get('protected'):
+                    picture.unlink(missing_ok=True);manifest.unlink(missing_ok=True);removed+=1
+        log('built_previews_discarded',count=removed)
+        return dict(discarded=removed,**self.usage())
+
     def trim(self):
+        protected=set()
+        for manifest,picture,info in self.records():
+            if info.get('protected'): protected.update((manifest,picture))
         entries = []
         for file in self.directory.glob('*'):
             if file.suffix not in ('.jxl', '.json') or file.is_symlink(): continue
@@ -152,11 +196,13 @@ class StoredScreenPreviews:
         total = sum(size for _, size, _ in entries)
         for _, size, file in sorted(entries):
             if total <= LIMIT_BYTES: break
+            if file in protected: continue
             file.unlink(missing_ok=True)
             total -= size
 
 
 def add_screen_preview_routes(router, live, worker):
+    import asyncio
     from fastapi import HTTPException, Request
     from fastapi.responses import Response
     from starlette.concurrency import run_in_threadpool
@@ -186,7 +232,7 @@ def add_screen_preview_routes(router, live, worker):
     @router.post('/stored-screen-preview')
     async def write(request: Request, path: str, display_width: int, display_height: int,
                     lane: str, width: int, height: int, stride: int, grade_identity: str, source_key: str,
-                    source_width: int, source_height: int):
+                    source_width: int, source_height: int, protected: bool = False):
         if not slots.acquire(blocking=False): return Response(status_code=202)
         release_here = True
         try:
@@ -212,14 +258,22 @@ def add_screen_preview_routes(router, live, worker):
                 body_path.unlink(missing_ok=True)
                 slots.release()
             try:
-                _, future = await run_in_threadpool(worker.submit_library, 'stored-screen-write',
+                job, future = await run_in_threadpool(worker.submit_library, 'stored-screen-write',
                     priority=99, background=True, identity=current, body_path=str(body_path), width=width, height=height, stride=stride,
-                    source_width=source_width, source_height=source_height)
+                    source_width=source_width, source_height=source_height, protected=protected)
             except Exception:
                 body_path.unlink(missing_ok=True)
                 raise
             future.add_done_callback(finished)
             release_here = False
+            if protected:
+                try:
+                    saved=await asyncio.wrap_future(future)
+                except asyncio.CancelledError:
+                    worker.cancel(job)
+                    raise
+                if not saved: raise HTTPException(409,'The photo changed or preview building was cancelled. Try again.')
+                return Response(status_code=200)
             return Response(status_code=202)
         finally:
             if release_here: slots.release()

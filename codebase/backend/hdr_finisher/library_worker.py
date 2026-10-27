@@ -146,7 +146,7 @@ class LibraryWorker:
         return job_id, future
 
     def submit_library(self, command: str, *, priority: int = 10, **arguments) -> tuple[str, Future]:
-        if command not in {"picture", "native", "scan", "scan-page", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write"}:
+        if command not in {"picture", "native", "scan", "scan-page", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write", "stored-screen-build"}:
             raise ValueError("Unknown library helper command.")
         self.start()
         job_id = uuid4().hex
@@ -390,7 +390,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False, "developing": 0, "scanning": 0}
 
     def lane(job):
-        if job["command"] == "stored-screen-write":
+        if job["command"] in {"stored-screen-write", "stored-screen-build"}:
             return "stored"
         if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
             return "picture"
@@ -466,12 +466,16 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             if job["command"] in {"live-scene", "live-fallback"}: progress("reading", "Reading photo")
             check = yielding if kind in {"index", "check", "kept", "stored"} else cancelled.is_set
             try:
-                if job["command"] == "stored-screen-write":
+                if job["command"] == "stored-screen-build":
+                    from .library_build_previews import build_cpu
+                    output=build_cpu(root,job['path'],job.get('document'),job['display_width'],job['display_height'],check)
+                    result={"id":job['id'],"result":output}
+                elif job["command"] == "stored-screen-write":
                     from .library_screen_previews import StoredScreenPreviews
                     if check(): raise CancelledError()
                     output = StoredScreenPreviews(root).write(job['identity'], Path(job['body_path']).read_bytes(),
                         job['width'], job['height'], job['stride'], check,
-                        source_width=job['source_width'], source_height=job['source_height'])
+                        source_width=job['source_width'], source_height=job['source_height'], protected=job.get('protected',False))
                     result = {"id": job['id'], "result": output}
                 elif job["command"] == "overlay":
                     from .library_overlays import OverlayMaps
@@ -573,7 +577,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
-                elif message["command"] in {"thumbnail", "picture", "native", "scan", "scan-page", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write"}:
+                elif message["command"] in {"thumbnail", "picture", "native", "scan", "scan-page", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write", "stored-screen-build"}:
                     message["queued_at"] = time.time()
                     sequence += 1
                     jobs[message["id"]] = Event()

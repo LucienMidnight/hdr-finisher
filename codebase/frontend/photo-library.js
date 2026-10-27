@@ -915,6 +915,7 @@
       {label:"Paste grade (choose settings)…", key:"Ctrl+Shift+V", disabled:!commands.canPaste(), run:() => commands.paste(true)},
       {separator:true}, {label:"Quick export…",key:"Ctrl+Shift+E",run:commands.quickExport},
       {label:"Open in Export",run:commands.openExport});
+    grades.push({label:"Build previews…",run:()=>HDRLibraryBuildPreviews.start({paths})},{label:"Discard built previews…",run:()=>HDRLibraryBuildPreviews.discard({paths})});
     grades.push({ label: "Create virtual copy…", run: () => createCopy(chosen) });
     if (one && photo.copy_id) grades.push({ label: "Rename copy…", run: () => renameCopy(photo) });
     showMenu(event, [{ header: one ? photo.name : `${paths.length.toLocaleString()} photos` },
@@ -1623,6 +1624,7 @@
         { label: "Move folder…", run: () => fileCommands.folder('folder_move',selection) },
         { label: "Show in Explorer", run: () => control("show") });
     }
+    if(path && !state.picker)actions.push({separator:true},{label:"Build previews…",run:()=>HDRLibraryBuildPreviews.start({folder:path})},{label:"Discard built previews…",run:()=>HDRLibraryBuildPreviews.discard({folder:path})});
     if (path && !state.picker) actions.unshift({ label: "Check for new photos", run: () => requestCheck([...state.folderSelection]) }, { separator: true });
     showMenu(event, actions, { label: "Folder actions", anchor: event.target.closest("button") || $("add-folder"),
       onError: error => { if (state.picker) $("picker-status").textContent = error.message; else status(error.message); } });

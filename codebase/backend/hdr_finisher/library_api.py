@@ -308,6 +308,8 @@ def create_library_router(worker, browser, store=None):
     live = LivePictures(browser.root, marks, documents if store is not None else None)
     from .library_screen_previews import add_screen_preview_routes
     add_screen_preview_routes(router, live, worker)
+    from .library_build_previews import add_build_preview_routes
+    add_build_preview_routes(router, live, index, store, worker)
     from .library_picture_errors import PictureErrors
     picture_errors = PictureErrors(marks)
 

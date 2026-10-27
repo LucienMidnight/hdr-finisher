@@ -71,6 +71,9 @@
       const focused = panel.contains(document.activeElement) ? document.activeElement.dataset.action : null;
       const writer = health.writer, index = health.index;
       panel.replaceChildren(node("h2", "Activity", "panel-title"));
+      const built=window.HDRLibraryBuildPreviews?.snapshot();
+      if(built?.usage){const u=built.usage;panel.append(node('p',`Protected screen previews: ${(u.protected_bytes/1024**3).toFixed(2)} of ${(u.limit_bytes/1024**3).toFixed(0)} GiB · ${u.protected_previews} HDR/SDR files${u.protected_bytes>=u.limit_bytes?' · Limit reached: discard some previews before building more':''}`));}
+      if(built?.job){const j=built.job,section=node('section','','library-activity-job');section.append(node('p',`Build previews: ${j.done} of ${j.total} · ${j.state}${j.error?' · '+j.error:''}`));if(['running','paused'].includes(j.state)){const cancel=node('button','Cancel building previews','text-button');cancel.onclick=()=>window.HDRLibraryBuildPreviews.cancel();section.append(cancel);}panel.append(section);}
       const work = sceneWork(health, window.HDRLibraryScenes?.snapshot());
       if (work.jobs.length || health.helper.pending || health.helper.manual_paused) {
         const section = node("section", "", "library-activity-job");
@@ -144,7 +147,7 @@
       if (focused) ([...panel.querySelectorAll("button")].find(item => item.dataset.action === focused) || button).focus({preventScroll:true});
       panel.scrollTop = scrollTop;
     }
-    function update(next, fetched = true) { health = next; button.hidden = false; button.textContent = (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next); if (fetched) onHealth?.(next); render(); }
+    function update(next, fetched = true) { health = next; button.hidden = false; button.textContent = (window.HDRLibraryBuildPreviews?.snapshot().job && ["running","paused"].includes(window.HDRLibraryBuildPreviews.snapshot().job.state) ? "Build previews · " : "") + (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next); if (fetched) onHealth?.(next); render(); }
     window.addEventListener("library-work-changed", () => { queueMicrotask(() => { if (health) update(health, false); }); });
     function close() { panel.hidden = true; button.setAttribute("aria-expanded", "false"); }
     button.addEventListener("click", () => { panel.hidden = !panel.hidden; button.setAttribute("aria-expanded", String(!panel.hidden)); render(); if (!panel.hidden) panel.querySelector("button")?.focus(); });

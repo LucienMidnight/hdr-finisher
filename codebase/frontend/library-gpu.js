@@ -242,7 +242,8 @@ const HDRLibraryPictureFactory = (quick = false) => {
       }
       await gpu.waitForSubmittedWork();
       if (result?.rendered || result?.execution === "direct")
-        window.HDRLibraryScreenPreviews?.capture(gpu,meta,canvas,hdr);
+        if(meta.buildPreview)await window.HDRLibraryScreenPreviews.capture(gpu,meta,canvas,hdr);
+        else window.HDRLibraryScreenPreviews?.capture(gpu,meta,canvas,hdr);
       window.HDRLibraryTrace?.mark(meta.trace,"picture_render",rendering,{...window.HDRLibraryPictureLog?.(meta),key:meta.key,
         duration_ms:performance.now()-rendering-gpu.libraryFetchMs-gpu.libraryUploadMs});
       refusal = gpu.lastRenderRefusal?.reason;

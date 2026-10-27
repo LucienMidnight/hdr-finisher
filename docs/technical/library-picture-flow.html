@@ -436,7 +436,7 @@ Words follow the master PRD glossary.</p>
 </table>
 </div>
 
-<div class="note"><strong>Planned, not built:</strong> <em>Build previews</em>: you choose photos or a folder, the app makes stored screen previews for them, and they're kept until you discard them. For now, stored screen previews are made automatically for every photo you view in fullscreen or Single and dropped oldest first. Detail (100%) previews come last.</div>
+<h2>7 · Build previews</h2><div class="note">Choose photos (including a filtered selection) or right-click a folder → Build previews → check space estimate (6 MiB per photo, HDR and SDR) → confirm the whole selection or a smaller set → existing background scene preparation and GPU drawing → protected JPEG XL screen previews. Activity shows progress, protected bytes and Cancel; Grade/import/export pauses preparation. A disposable 20-photo run built 40 files in 33.3 s; all reopened, survived cleanup, rejected a changed grade and were discarded. Automatic previews remain disposable; user-built previews stay until Discard built previews. Detail (100%) previews remain v2.</div>
 
 <div class="note"><strong>October 27 log correction:</strong> <code>summarize_library_log.py</code> now reports first grid picture and first finished thumbnail separately. Ordinary GPU draws notify the folder stopwatch as well as pool reuses. The one cold D:\Photos profile recorded 21.18 s first / 25.37 s 25th picture; subsequent four-part batch measured the corrections: 17.33 s before / 6.42 s after first picture, still outside the about-1-s target. Backend row preparation/transfer remains the main wait. The after log contains only 24 distinct picture presentations, so no reliable 25th time is claimed.</div>
 
