@@ -141,7 +141,7 @@ async function assignToolToPending(type) {
   state.localCreationTool = null;
   state.localTool = type;
   state.localErase = false;
-  if (["brush", "linear_gradient", "luminance_range"].includes(type)) state.localShowMask = true;
+  if (["brush", "linear_gradient", "luminance_range", "hue_range"].includes(type)) state.localShowMask = true;
 
   if (state.pendingSubMask) {
     const pending = state.pendingSubMask;
@@ -861,6 +861,7 @@ function localMaskTypeLabel(type) {
     brush: "Brush",
     linear_gradient: "Linear gradient",
     luminance_range: "Luma range",
+    hue_range: "Hue range",
     path: "Path",
   })[type] || type.replaceAll("_", " ");
 }

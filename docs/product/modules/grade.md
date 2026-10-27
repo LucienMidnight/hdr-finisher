@@ -84,7 +84,7 @@ every edit must be undoable.
 - Local adjustments and masks (brush, gradients, luminance, colour,
   combined masks). V1 must add a healing brush in the local adjustment
   module (one Retouch brush with Inpaint, Heal and Clone modes) and hue
-  selection as a local-adjustment mask; neither is built.
+  selection as a local-adjustment mask. Hue selection is built October 27; the complete Retouch feature remains open.
 - Match entire HDR grade (SDR Match).
 - Group presets, history and undo, saving (autosave and explicit save),
   projects.
@@ -101,7 +101,7 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | Detail (Texture, Clarity, Sharpen) is corrective and separate from Film Look's fixed-scale character. Global Detail runs after the colour grade and before local adjustments; local Detail runs inside each local grade. | 2026-09 |
 | Match entire HDR grade captures the whole HDR recipe (global, locals, Detail, Film Look, vignette, grain) and builds an SDR base from it. SDR controls stay as trims. Rematch and Revert are single history steps. | 2026-09 |
 | HDR Lift/Gamma/Gain is deprecated now that Exposure Bands exists. Remove it after real-photo checks, unless a workflow needs it. The SDR trims stay. | 2026-08, pending |
-| A healing brush in the local adjustment module and hue selection as a local-adjustment mask are required for v1. Both are unbuilt; detailed interaction and rendering design remain to be specified. | Steve, 2026-10-21 |
+| A healing brush in the local adjustment module and hue selection as a local-adjustment mask are required for v1. Hue selection is built October 27; the complete Retouch feature remains open. | Steve, 2026-10-21 |
 | Retouch starts on the CPU, preserving a fallback for later GPU work. Inpaint is the default, targeting PatchMatch with Krita as the main reference; Heal follows darktable/GIMP and Clone shares the brush infrastructure. See the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026). Quality/performance are not yet validated. | Steve, 2026-10-21 |
 | Retouch repairs are shared by HDR/SDR and run before crop/rotation and denoise. Content-dependent selections see the repaired source. After repair changes, show Rematch required and retain existing SDR Match controls until an explicit Rematch. The current Match materializes editable controls, not a separate baked photo; imported authored SDR remains independent until explicitly replaced through Match. | Steve, 2026-10-22 |
 | The inspected v3 PatchMatch examples are accepted for proceeding with implementation. Skip further natural-dust study work; Steve will test natural dust manually when the tool and settings exist. This is not general photographic validation. | Steve, 2026-10-22 |
@@ -215,9 +215,32 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   fast suites: 585 JavaScript checks and 2,424 Python checks passed (3 Python
   skips); their existing unrelated failures remain (3 edit-sync helper failures
   and 6 frontend wording contracts).
-- **V1 hue-selection mask:** add hue selection as a local-adjustment mask,
-  compatible with the existing combined-mask workflow. Not built; selection
-  controls and hue evaluation remain to be specified.
+- **V1 hue-selection mask, built October 27:** Local → Hue creates an unused
+  empty selection until a photo click/drag samples it. Repeat sampling replaces
+  the colour. Hue centre, angular half-range, Smoothness and Exclude neutrals
+  use existing sliders. Combined masks retain Union, Subtract and Intersection.
+  Selection measures geometry-transformed repaired ACEScg source before lane
+  grades, exactly where Luma measures it, using exposure-invariant Oklab hue
+  and relative chroma. The overlay, CPU fallback and GPU finishing consume the
+  same compiled selection. Projects/sidecars, Proof and Library replay the leaf;
+  completed sampling and slider gestures use the existing single-step history.
+  Defaults: ±16° half-range, 12° smoothstep falloff, relative chroma floor 4%
+  with a further 4% smooth transition. Sampling fits the circular mean and 90th
+  percentile spread plus 4°, minimum ±8°. There is no migration.
+  Reference patterns: [Lightroom Color Range](https://helpx.adobe.com/lightroom-classic/desktop/process-and-develop-photos/masking.html)
+  click/drag sampling, [darktable parametric hue/chroma](https://docs.darktable.org/usermanual/3.6/en/darkroom/masking-and-blending/masks/parametric/)
+  and [Capture One range/Smoothness](https://support.captureone.com/hc/en-us/articles/360002601738-Adjusting-a-color-range).
+  The implementation reuses HDRF's HSL Oklab maths and Luma source contract.
+  Real-photo review: `codebase/output/hue-mask/index.html` (HDR AVIF and SDR PNG,
+  Fit and 100%); Steve should sample skin or kit, refine, and combine with Brush.
+  Focused chart check passes neutral exclusion, smooth edges, HDR scaling and
+  JSON replay. `hue-mask-delivery.js` passes active HDR/SDR GPU finishing
+  against CPU export maths within the existing mean <1 / p99.9 ≤3 limits;
+  encoded output remains below 1000 nits and Proof equals export bytes.
+  Initial SDR Peak Fit chart comparison also failed with a neutral local grade;
+  that unrelated baseline mismatch was isolated, not repaired or tolerated away.
+  The focused hue verdict uses ordinary SDR output and HDR Peak Fit.
+  Fast suites run once after Part 2.
 
 - **Highlight and Shadow Desaturation** as general Color controls
   (COLOR-DESAT-01). They were removed from Film Look in the rebuild and
@@ -330,10 +353,10 @@ No GPU processing check applies to this HTML/CSS layout correction.
 7. Remove unused legacy shader inputs, if confirmed unused.
 8. **Required for v1 (Steve, October 21, 2026):** healing brush in the
    local adjustment module, and hue selection as a local-adjustment mask.
-   Specify and implement both; neither is built.
+   Hue selection is built October 27 (section 4). Complete Retouch remains open.
 9. Claude's design pass on the integrated global/local HSL panel, then
    Steve's real-photo HDR review. The required hue-selection mask remains
-   separate open work in item 8.
+   built separately October 27 in item 8.
 
 ### Sharpen investigation — October 27, 2026
 

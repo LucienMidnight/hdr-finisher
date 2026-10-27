@@ -1146,6 +1146,13 @@ class SessionRenderCache:
         source, _sdr_reference = self._proxies(edge)
         return downsample_image(compile_geometry_fixed_mask(source, expression, adjustments.shared.geometry), edge)
 
+    def sample_hue(self, adjustments, points, long_edge):
+        from .local_adjustments import sample_hue_range
+        edge = max(256, int(long_edge))
+        source, _ = self._proxies(edge)
+        fixed = downsample_image(apply_geometry(source, adjustments.shared.geometry), edge)
+        return sample_hue_range(fixed, points)
+
     def sample_luminance(
         self,
         adjustments: AdjustmentState,

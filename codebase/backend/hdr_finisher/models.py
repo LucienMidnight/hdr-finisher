@@ -722,6 +722,7 @@ class MaskLeaf(BaseModel):
         "brush",
         "linear_gradient",
         "luminance_range",
+        "hue_range",
         "path",
         "sampled_point",
         "sampled_gradient",
@@ -754,6 +755,10 @@ class MaskLeaf(BaseModel):
     feather_nodes: list[FeatherPathNode] = Field(default_factory=list, max_length=16384)
     sample: MaskPoint | None = None
     radius: float = Field(default=0.2, gt=0.0, le=2.0)
+    hue_center: float | None = Field(default=None, ge=0.0, le=360.0)
+    hue_width: float = Field(default=16.0, ge=1.0, le=180.0)
+    hue_smoothness: float = Field(default=12.0, ge=1.0, le=90.0)
+    saturation_floor: float = Field(default=0.04, ge=0.0, le=1.0)
     luma_tolerance_ev: float = Field(default=1.0, gt=0.0, le=12.0)
     chroma_tolerance: float = Field(default=0.08, gt=0.0, le=1.0)
 

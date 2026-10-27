@@ -7273,7 +7273,7 @@
       sessionId, local, expression, maskPath, editRevision, geometrySignature,
       isCurrent = () => true, signal = undefined,
     ) {
-      if (expression?.operator !== "leaf" || expression.leaf?.type === "luminance_range") return null;
+      if (expression?.operator !== "leaf" || ["luminance_range", "hue_range"].includes(expression.leaf?.type)) return null;
       const identity = softMaskIdentity(sessionId, geometrySignature, gpuMaskIdentity(expression));
       let entry = this.softMasks.get(identity);
       // The verdict belongs to the mask and its bitmap size, so it outlives

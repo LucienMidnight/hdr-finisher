@@ -8,7 +8,21 @@ function renderMaskTreeEditor(local) {
   }
   if (state.selectedSubMaskId) appendLocalMaskComparisonLegend();
   if (!leaf) return;
-  if (leaf.type === "luminance_range") {
+  if (leaf.type === "hue_range") {
+    const panel = createLocalMaskSubpanel("Hue settings", leaf.hue_center == null ? "Sample photo" : "Sampled");
+    const hint = document.createElement("p");
+    hint.className = "luma-sampling-hint";
+    hint.textContent = "Click or drag over a small coloured area. Sample again to replace the colour. Unsampled masks select nothing.";
+    panel.append(hint);
+    [
+      { name: "hue_center", label: "Hue", min: 0, max: 360, step: 1, value: leaf.hue_center ?? 0, defaultValue: 0, display: v => `${Math.round(v)}°`, store: v => v },
+      { name: "hue_width", label: "Hue range ±", min: 1, max: 180, step: 1, value: leaf.hue_width ?? 16, defaultValue: 16, display: v => `${Math.round(v)}°`, store: v => v },
+      { name: "hue_smoothness", label: "Smoothness", min: 1, max: 90, step: 1, value: leaf.hue_smoothness ?? 12, defaultValue: 12, display: v => `${Math.round(v)}°`, store: v => v },
+      { name: "saturation_floor", label: "Exclude neutrals", min: 0, max: 100, step: 1, value: (leaf.saturation_floor ?? .04)*100, defaultValue: 4, display: v => `${Math.round(v)}%`, store: v => v/100 },
+      { name: "mask_opacity", label: "Opacity", min: 0, max: 100, step: 1, value: (leaf.mask_opacity ?? 1)*100, defaultValue: 100, display: v => `${Math.round(v)}%`, store: v => v/100 },
+    ].forEach(def => appendLocalMaskSlider(panel, leaf, def, { authoritativePreview: true, disabled: leaf.hue_center == null }));
+    els.localMaskTreeSummary.append(panel);
+  } else if (leaf.type === "luminance_range") {
     const panel = createLocalMaskSubpanel("Luma settings", "Default");
     const helper = document.createElement("p");
     helper.className = "luma-sampling-hint";

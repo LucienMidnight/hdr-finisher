@@ -118,8 +118,8 @@ in v1; the deferred Looks feature is the Library browser and workflow.
 broken release checks are repaired, the polish pass, the installer and the
 bug hunt:
 
-- Retouch brush (Inpaint, Heal, Clone) and the hue-selection local mask
-  (October 21 requirements).
+- Retouch brush (Inpaint, Heal, Clone), October 21 requirement. Hue-selection
+  local mask **built October 27**, awaiting Steve’s by-eye review.
 - Highlight and Shadow Desaturation in Color (COLOR-DESAT-01).
 - Presets window: rename, edit, import, export (PRESETS-01). Moved up to v1
   by Steve. **Built October 27:** rename, update, export/import, search and

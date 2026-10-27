@@ -9,11 +9,11 @@ function bindLocalMaskCanvas() {
     const leaf = selectedMaskLeaf(local);
     if (!leaf) return;
     const displayPoint = localDisplayPointerPoint(event);
-    const point = leaf.type === "luminance_range"
+    const point = ["luminance_range", "hue_range"].includes(leaf.type)
       ? displayPoint
       : localPointerPoint(event, displayPoint);
     if (!point) return;
-    if (!["brush", "linear_gradient", "luminance_range", "path"].includes(leaf.type)) return;
+    if (!["brush", "linear_gradient", "luminance_range", "hue_range", "path"].includes(leaf.type)) return;
     // A new structural gesture supersedes any settled preview queued by the
     // preceding commit. Its overlay remains visible while the gesture is in
     // progress, and the final commit schedules the next adjusted frame.
@@ -51,7 +51,7 @@ function bindLocalMaskCanvas() {
         state.localMaskDraftDirty = true;
         state.localPointerGesture = { type: "linear_gradient", leaf, handle: "end", creating: true };
       }
-    } else if (leaf.type === "luminance_range") {
+    } else if (["luminance_range", "hue_range"].includes(leaf.type)) {
       state.localPointerGesture = {
         type: "luminance_sample",
         leaf,
@@ -263,11 +263,12 @@ async function finishLuminanceSampleGesture(gesture) {
   // An asynchronous preview/edit refresh can replace the selected local while
   // a pointer gesture is active. Always mutate the leaf that will actually be
   // serialized, rather than the pointerdown snapshot retained by the gesture.
-  const leaf = firstMaskLeaf(local.mask, "luminance_range");
+  const leaf = selectedMaskLeaf(local);
+  if (!["luminance_range", "hue_range"].includes(leaf?.type)) return;
   if (!leaf) return;
   const sessionId = state.session.session_id;
   try {
-    const response = await fetch(`/api/session/${sessionId}/local-luminance-sample`, {
+    const response = await fetch(`/api/session/${sessionId}/${leaf.type === "hue_range" ? "local-hue-sample" : "local-luminance-sample"}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -279,7 +280,10 @@ async function finishLuminanceSampleGesture(gesture) {
     const sample = await safeJson(response);
     if (!response.ok) throw new Error(sample.detail || "Luminance sampling failed.");
     if (state.session?.session_id !== sessionId || selectedLocal() !== local || selectedMaskLeaf(local) !== leaf || state.gradeMode !== "local") return;
-    if (!applyLuminanceSample(leaf, sample, gesture.remove)) return;
+    if (leaf.type === "hue_range") {
+      leaf.hue_center = sample.center;
+      leaf.hue_width = sample.width;
+    } else if (!applyLuminanceSample(leaf, sample, gesture.remove)) return;
     scheduleSpatialMaskPreview(local);
     renderMaskTreeEditor(local);
     syncRangeVisuals(els.localEditor);

@@ -167,7 +167,7 @@ function renderLocalMaskOverlay() {
     finishPathMaskProgress(local.id, authoritative.signature, authoritative.spatialOnly);
   }
   const needsAuthoritativeOverlay = local.mask?.operator !== "leaf"
-    || ["linear_gradient", "luminance_range"].includes(local.mask?.leaf?.type);
+    || ["linear_gradient", "luminance_range", "hue_range"].includes(local.mask?.leaf?.type);
   const drawOptions = {
     localId: local.id,
     maskSignature,
@@ -530,7 +530,7 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
     }
     const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
     if (renderGizmo && cursor) drawBrushGizmo(context, cursor, brushSettings(leaf), x, y);
-  } else if (leaf.type === "luminance_range") {
+  } else if (["luminance_range", "hue_range"].includes(leaf.type)) {
     if (renderMask && state.localShowMask && options.authoritative && !options.gpuLumaOverlay) {
       drawAuthoritativeMaskOverlay(context, options.authoritative.canvas, x, y, options.authoritative.spatialOnly ? leaf.mask_opacity : 1);
     }

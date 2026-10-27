@@ -32,6 +32,9 @@
         mask_opacity: 1,
       };
     }
+    if (type === "hue_range") {
+      return { type, hue_center: null, hue_width: 16, hue_smoothness: 12, saturation_floor: 0.04, mask_opacity: 1 };
+    }
     if (type === "luminance_range") {
       return {
         type,

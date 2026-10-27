@@ -531,7 +531,7 @@
 
   function maskUsesLuminance(expression) {
     if (!expression) return false;
-    if (expression.operator === "leaf") return expression.leaf?.type === "luminance_range";
+    if (expression.operator === "leaf") return ["luminance_range", "hue_range"].includes(expression.leaf?.type);
     return (expression.children || []).some(maskUsesLuminance);
   }
 

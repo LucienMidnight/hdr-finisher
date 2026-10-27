@@ -411,6 +411,36 @@ def source_coordinate_grid(
     return u.astype(np.float32), v.astype(np.float32)
 
 
+def hue_range_mask(leaf, image):
+    """Exposure-invariant Oklab hue on the fixed repaired ACEScg source."""
+    from .color import acescg_to_linear_srgb
+    from .hsl import to_lab, _smooth, _delta
+    if leaf.hue_center is None:
+        return np.zeros(image.shape[:2], dtype=np.float32)
+    lab = to_lab(acescg_to_linear_srgb(image[..., :3]))
+    hue = np.degrees(np.arctan2(lab[..., 2], lab[..., 1])) % 360
+    relative = np.hypot(lab[..., 1], lab[..., 2]) / np.maximum(np.abs(lab[..., 0]), 1e-6)
+    angular = 1 - _smooth(leaf.hue_width, leaf.hue_width + leaf.hue_smoothness,
+                          np.abs(_delta(hue, leaf.hue_center)))
+    neutral = _smooth(leaf.saturation_floor, leaf.saturation_floor + .04, relative)
+    return (angular * neutral).astype(np.float32)
+
+
+def sample_hue_range(image, points):
+    from .color import acescg_to_linear_srgb
+    from .hsl import to_lab, sample_neighborhood, _delta
+    h, w = image.shape[:2]
+    samples = np.array([sample_neighborhood(image, min(w-1, int(p.x*w)), min(h-1, int(p.y*h))) for p in points])
+    lab = to_lab(acescg_to_linear_srgb(samples))
+    valid = np.hypot(lab[:, 1], lab[:, 2]) / np.maximum(np.abs(lab[:, 0]), 1e-6) > .04
+    if not np.any(valid):
+        raise ValueError("Sample a coloured area; this area is neutral.")
+    angles = np.arctan2(lab[valid, 2], lab[valid, 1])
+    center = float(np.degrees(np.arctan2(np.mean(np.sin(angles)), np.mean(np.cos(angles)))) % 360)
+    width = float(np.clip(np.percentile(np.abs(_delta(np.degrees(angles), center)), 90) + 4, 8, 180))
+    return {"center": center, "width": width}
+
+
 def _evaluate_leaf(
     leaf: MaskLeaf | None,
     fixed_source_tile: np.ndarray,
@@ -422,6 +452,8 @@ def _evaluate_leaf(
         return np.zeros(source_x.shape, dtype=np.float32)
     if leaf.type == "linear_gradient":
         return _linear_gradient(leaf, fixed_source_tile, source_x, source_y)
+    if leaf.type == "hue_range":
+        return hue_range_mask(leaf, fixed_source_tile)
     if leaf.type == "luminance_range":
         return _luminance_range(leaf, fixed_source_tile)
     if leaf.type == "brush":

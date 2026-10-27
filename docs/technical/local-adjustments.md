@@ -7,11 +7,24 @@ Local adjustments are an ordered stage between global color grading and post-loc
 - **Healing brush:** required in the local adjustment module for v1. Not
   implemented. See the Retouch brush development plan below for Inpaint,
   Heal and Clone modes, CPU-first reasoning and implementation gates.
-- **Hue-selection mask:** required as a local-adjustment mask for v1,
-  including use in the existing combined-mask workflow. Not implemented;
-  selection controls and hue evaluation remain to be specified.
+- **Hue-selection mask, built October 27:** `hue_range` is an ordinary mask
+  leaf with nullable `hue_center`, `hue_width` (half-range), `hue_smoothness`,
+  `saturation_floor` and mask opacity. Null centre selects nothing. Photo
+  click/drag uses 5×5 fixed-source neighborhoods; circular mean and 90th-percentile
+  angular spread plus 4° determine the sampled interval (minimum ±8°).
+  Oklab hue/relative chroma are measured after ACEScg→linear sRGB conversion
+  on the same geometry-transformed repaired source as Luma. Angular distance
+  wraps across 0°; cubic smoothstep fades beyond the full range. A relative
+  chroma floor plus 4% ramp excludes neutrals without brightness dependence.
+  No clipping at reference white or lane-dependent hue measurements occur.
+  Overlay, combined masks and GPU finishing use the shared compiled mask.
+  CPU fallback evaluates the same leaf in export tiles. No approximate soft-mask
+  stretching is used for this content-dependent mask. Existing document/sidecar,
+  revision/history and Library replay paths serialize it without migration.
+  Plain Hue/range/Smoothness/Exclude neutrals sliders reuse Local styling.
+  The Grade PRD records editor references, defaults and photographic review.
 
-These are planned requirements, not part of the shipping contracts below.
+Retouch remains planned in full; hue selection is part of the contracts below.
 The [Grade module PRD](../product/modules/grade.md) owns their scope and
 implementation status.
 
