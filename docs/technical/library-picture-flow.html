@@ -233,7 +233,7 @@ Words follow the master PRD glossary.</p>
     <div class="meta"><span class="cachetag">Index database</span></div></div>
 
   <div class="num">6</div>
-  <div class="step gpu"><div class="h">First thumbnail on screen <span class="t ok">at 3.3 s</span></div>
+  <div class="step gpu"><div class="h">First grid picture on screen <span class="t ok">at 3.3 s</span></div>
     <div class="d">See stage 3 for how each thumbnail is made.</div></div>
 
   <div class="num last">7</div>
@@ -252,13 +252,13 @@ Words follow the master PRD glossary.</p>
   <div class="step page"><div class="h">You click the folder</div></div>
 
   <div class="num">2</div>
-  <div class="step backend"><div class="h">Rows from the index <span class="t fast">0.05–0.25 s ordinary</span> <span class="t slow">3.6 s for 155k</span></div>
-    <div class="d">Photos with their ratings, grades and camera details as stored. A compact indexed extent gives the full folder size, order and filter facts; rich row descriptions follow in batches. Duplicate opens join the current read; parsing yields to drawing. The about-1-s first-screen target remains open.  For D:\Photos the first screen waits for all rows (3.2 s; was 0.015 s for the first rows earlier) <span class="bugtag">OPEN</span>. Was 88 s for all rows earlier in the evening.</div>
+  <div class="step backend"><div class="h">Rows from the index <span class="t fast">0.05–0.25 s ordinary</span> <span class="t slow">3.79 s for 155k (backend)</span></div>
+    <div class="d">Photos with their ratings, grades and camera details as stored. The compact indexed extent gives the full folder size, order and filter facts; visible rows hydrate before pictures draw. Duplicate opens join the current read. Latest D:\Photos profile: backend rows 3.79 s, page rows 5.26 s and sorted usable cells 5.78 s. Full-index preparation and transfer still delay the first screen <span class="bugtag">OPEN</span>.</div>
     <div class="meta"><span class="cachetag">Index database</span><span class="cachetag">Settings files (.hdrf)</span></div></div>
 
   <div class="num">3</div>
-  <div class="step gpu"><div class="h">First thumbnail on screen <span class="t ok">0.4–1.0 s ordinary</span> <span class="t slow">6.42 s for 155k (latest cold profile)</span></div>
-    <div class="d">D:\Photos latest disposable cold profile: first camera preview 17.33 s before / 6.42 s after. Backend indexed rows 3.79 s; page rows 5.26 s, usable sorted cells 5.78 s, first picture request 5.77 s. One open replaces three competing opens. Full 155,877-row count/order preserved. About-1-s first-screen target remains open; no reliable after-25th presentation time. See stage 3.</div></div>
+  <div class="step gpu"><div class="h">First grid picture on screen <span class="t ok">0.4–1.0 s ordinary</span> <span class="t slow">6.42 s for 155k (latest cold profile)</span></div>
+    <div class="d">D:\Photos latest disposable cold profile: first camera preview 17.33 s before / 6.42 s after. Backend indexed rows 3.79 s; page rows 5.26 s, usable sorted cells 5.78 s, first picture request 5.77 s. One open replaces three competing opens. Full 155,877-row count/order preserved. About-1-s first-screen target remains open; no reliable after-25th presentation time.</div></div>
 
   <div class="num">4</div>
   <div class="step helper"><div class="h">Camera details (EXIF) <span class="t fast">selected 0.04 s</span> <span class="t fast">visible 0.13 s</span></div>

@@ -389,6 +389,14 @@ quality-100 gain map, no dithering/resizing/output sharpening. Renderer labels
 confirmed each route. Decoded HDR and SDR comparisons used the existing finished
 colour limits: mean <1 and p99.9 ≤3, without a per-pixel maximum.
 
+**October 27 follow-up:** the values below compare GPU and CPU finished
+exports. Actual native preview captures now locate the main split after
+rendering, at JPEG/gain-map encoding and subsequent gain-map smoothing. Both
+renderers agree with the preview before encoding; both miss finished limits.
+See [Export and Proof findings and open decision](export-and-proof.md#october-27-finished-export-agreement-investigation)
+and `codebase/output/export-agreement/index.html`. No Sharpen or export pixel
+change was made.
+
 **Export agreement failed even with Sharpen off.** Off HDR mean 1.048–1.217,
 p99.9 5.725–6.816; off SDR mean 0.226–0.246, p99.9 3.044–3.148. Active HDR
 worst mean 1.421 / p99.9 9.070; active SDR worst mean 0.359 / p99.9 3.469.
@@ -418,6 +426,26 @@ agreement failure remains separate open work and must not be marked passed.
 
 Part 2 validation: no pixel changes; fast checks deferred to this batch’s end.
 Steve should hover Sharpen in Detail and judge the effect at 100%.
+
+### October 27 four-part batch: final validation
+
+Fast suites ran once after all four parts: JavaScript 637 passed / 2 failed;
+Python 2,608 passed / 2 failed / 3 skipped (6 min 32 s). The five small preset
+filename/filter tests passed earlier. Syntax and diff checks passed. Exactly
+two disposable D:\Photos profiles ran (one before, one after), followed by the
+focused export investigation and two existing delivery checks. No export,
+Proof, shader or tolerance changes; no strict before/after pixel-change sweep
+was needed. No push or installer build. Unrelated fast failures, unchanged:
+
+- `library-scenes`: decoder failure while joining development-ahead loses its CPU fallback.
+- `library-single-ready`: isolated fixture omits `HDRLibraryScreenPreviews`.
+- `test_rgb_description_precedes_pixels_and_keeps_publication_guards[None]`: RGB SourceReference luminance fixture mismatch.
+- `test_library_native_source_uses_same_repair_before_reduction`: CaptureCache fixture lacks `defer_store`.
+
+The focused export findings (including stricter smoke HDR agreement and the
+full-size RAW Proof mismatch) are in [Export and Proof](export-and-proof.md#october-27-finished-export-agreement-investigation).
+Steve should try preset search/keyboard/export naming, hover Sharpen and judge
+at 100%, open D:\Photos and scroll continuously, and inspect the matched crops.
 
 ### October 27 batch validation
 

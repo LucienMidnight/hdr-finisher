@@ -84,8 +84,10 @@ Logging adds folder click/join, usable rows and first picture request, alongside
 first picture presentation; summarize_library_log.py includes these milestones.
 Reproduce with `tools/profile_large_folder.py <new-output-directory>` from
 codebase. Artifacts: `codebase/output/oct27-four-part/{before,after}/`.
-Fast checks deferred to batch end. Steve should open D:\Photos and drag the
-scrollbar continuously. Remaining work: progressive ordered extent delivery
+Final fast checks: JavaScript 637 passed / 2 known failures; Python 2,608
+passed / 2 known failures / 3 skipped. All four unrelated failures are named
+in Grade’s October 27 four-part batch validation note. Steve should open
+D:\Photos and drag the scrollbar continuously. Remaining work: progressive ordered extent delivery
 without waiting for full rich row construction; the one-second target stays open.
 
 

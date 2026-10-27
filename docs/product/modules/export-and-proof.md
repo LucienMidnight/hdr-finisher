@@ -1,5 +1,90 @@
 # Module PRD: Export and Proof
 
+## October 27: finished export agreement investigation
+
+**Finding: the main split is after rendering, in Ultra HDR JPEG encoding.**
+No rendering, encoder, Proof pixels or tolerances changed in this investigation.
+The earlier Sharpen review's twelve comparisons were GPU versus forced-CPU
+finished exports, not captured preview versus export. This run adds actual
+native GPU presentation captures at 100%, before-encode arrays, unfiltered
+Ultra HDR files and finished files from the same production delivery routes.
+Two read-only real-photo crops (DSC07147 and DSC07178), each padded to 576 × 576,
+were measured with Sharpen off, 80/.8/10 and 200/3/0. JPEG and full-size gain
+map quality were 100, 4:4:4; no dithering, resize or output sharpening. Both
+requested renderers were verified. Metrics cover the entire picture, unchanged
+mean <1 / p99.9 ≤3; the crop selection alone avoids the 32px processing border.
+
+- **Before encoding, both delivery routes agree with the preview.** HDR
+  preview/GPU mean 0.056–0.060, p99.9 0.132–0.140; preview/CPU mean
+  0.060–0.082, p99.9 0.146–0.200. SDR preview/GPU p99.9 0.895–0.926 and
+  preview/CPU 0.897–0.928 pass. GPU/CPU before encoding also pass both lanes.
+  These measurements do not implicate Sharpen, highlight compression or the
+  rendering colour transforms as the main cause for these pictures.
+- **The initial Ultra HDR JPEG round trip already misses both limits in HDR:**
+  GPU mean 1.789–1.927, p99.9 5.898–11.736. Subsequent existing gain-map
+  denoising adds mean 1.002–1.168 / p99.9 7.583–11.745 against that intermediate.
+  This locates contributions at encoding/reconstruction and gain-map smoothing,
+  rather than proving a single faulty colour transform. The intermediate CLI's
+  below-white capacity metadata is remuxed with the existing product repair;
+  its primary and gain JPEG streams are unchanged for this measurement.
+- **Finished HDR disagrees with the preview on both routes:** GPU mean
+  1.984–2.137 / p99.9 8.323–15.401; CPU mean 1.961–2.149 / p99.9 8.256–15.282.
+  The darkest quarter and flatter/noisy areas are worse than the strongest
+  edges. These crops peak below 185 nits: they do not qualify bright highlights.
+- **SDR tails appear in the JPEG base encode:** preview/GPU finished mean
+  0.724–0.756 / p99.9 3.196–3.343; preview/CPU mean 0.733–0.771 / p99.9
+  3.206–3.372. Eight-bit transfer rounding alone passes; gain-map filtering
+  leaves decoded SDR exactly unchanged. Shadow/flat differences are present
+  across both photographs; this is not confined to sharpened edges.
+
+**Other existing export/Proof checks.** `gpu-delivery-smoke` completes, but
+its stricter HDR finished-output measurement still fails: mean 0.780 / p99.9
+3.377. Its separate Denoise p99 allowance passes, as does SDR (0.586 / 2.264).
+`gpu-delivery-ceiling` fails its full-size Proof/export byte-identity assertion
+on DSC07060 before reaching CPU or its ceiling assertion. Retained GPU files
+are both 4000 × 2671; decoded SDR is identical, HDR mean 0.853 / p99.9 26.458
+fails, while peaks 798.184 / 798.088 nits are below the 1000-nit target. This
+separate full-size HDR mismatch remains unisolated; the CPU ceiling route was
+not reached. In contrast, all four new crop Proofs (two photos × GPU/CPU,
+Sharpen off) are byte-identical to their exports and meet the ceiling. Existing
+before-encode parity tests cannot qualify the finished JPEG round trip.
+
+**Recommendation / open design choice.** Retain the existing agreement limits
+and schedule encoding-quality work separately. Steve should compare the crop
+pairs at 100% before choosing whether to pursue more retained shadow texture
+at the risk of reintroducing chroma patching, or keep the present gain-map
+smoothing while accepting its visible texture loss. Reducing smoothing alone
+will not resolve the earlier lossy JPEG round-trip error. Do not mark finished
+agreement passed, relax tolerances, or replace the Sharpen method to hide this.
+The unrelated full-size Proof mismatch needs its own isolated diagnosis.
+
+**Validation:** final fast suites ran once: JavaScript 637 passed / 2 known
+failures; Python 2,608 passed / 2 known failures / 3 skipped. Grade’s four-part
+batch validation names each. Focused smoke and ceiling outcomes are above;
+no repeated or broad GPU sweep, no production pixel fix, no relaxed limit.
+
+**Artifacts and reproduction.** Open
+`codebase/output/export-agreement/index.html`: matched native-preview/decoded-
+export worst 128px regions in HDR AVIF (with explicit tone-mapped PNG fallback)
+and SDR PNG. All 48 displayed images loaded at 128 × 128; the page was visually
+reviewed. `analysis.json` retains stage and region metrics; `capture.log`,
+`existing-smoke.log` and `existing-ceiling.log` retain the production checks.
+The ceiling retained comparison is beside its files under
+`codebase/output/gpu-delivery-ceiling/1793062406442/retained-comparison.json`.
+Tools: `tools/export-agreement.cjs`, `tools/export_agreement_capture.py` and
+`tools/export_agreement_analyze.py`. The capture module is test-process-only
+instrumentation loaded from an isolated profile's `sitecustomize.py`; set
+`HDR_PROBE_BACKEND`/`HDR_PROBE_TOOLS` to absolute backend/tools paths,
+`HDR_EXPORT_AGREEMENT_OUT` to output/export-agreement, and `PYTHONPATH` to
+that sitecustomize directory, then run
+`node tests/run-in-electron.js tools/export-agreement.cjs` with
+`HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440`. The sitecustomize inserts both
+probe directories into sys.path and imports export_agreement_capture. Use a
+fresh artifact destination (move retained output aside before reproducing),
+then run `.venv/Scripts/python.exe tools/export_agreement_analyze.py` without
+the capture PYTHONPATH. Inputs are the retained EXR crops in output/sharpen-review;
+originals and the live Library are not written. No installer or push.
+
 ## October 26: GPU Denoise preparation
 
 Noise measurement now runs on the renderer's graphics card for Grade, Library,
@@ -367,6 +452,11 @@ Settings rules (from v1.2 section 5, still in force):
 The rest of item 0 (full-size single export under 15 s, RAW development on
 the GPU inside export, tiled finishing for large sharpened originals) is
 after v1; batch export already meets its pace target.
+
+**October 27 agreement remains open:** see the investigation at the top. Both
+renderers pass before encoding and miss finished JPEG limits; review matched
+crops before deciding gain-map texture/noise policy. Full-size RAW Proof also
+has a separately unisolated HDR mismatch. No tolerance or pixel change.
 
 0. **GPU export speed, end to end** (Steve, October 20: before the live
    recorded test session). Brief:
