@@ -43,6 +43,10 @@ imagecodecs_datas, imagecodecs_binaries, imagecodecs_hiddenimports = collect_all
 datas += imagecodecs_datas
 rawpy_datas, rawpy_binaries, rawpy_hiddenimports = collect_all("rawpy")
 lensfun_datas, lensfun_binaries, lensfun_hiddenimports = collect_all("lensfunpy")
+# Native hue selection uses OpenCV filtering. collect_all retains the wheel's
+# full LICENSE.txt and LICENSE-3RD-PARTY.txt as well as its native libraries.
+cv2_datas, cv2_binaries, cv2_hiddenimports = collect_all("cv2")
+datas += cv2_datas
 datas += rawpy_datas + lensfun_datas
 
 hiddenimports = collect_submodules("uvicorn") + imagecodecs_hiddenimports + rawpy_hiddenimports + lensfun_hiddenimports
@@ -50,9 +54,9 @@ hiddenimports = collect_submodules("uvicorn") + imagecodecs_hiddenimports + rawp
 a = Analysis(
     ["run_app.py"],
     pathex=["backend"],
-    binaries=imagecodecs_binaries + rawpy_binaries + lensfun_binaries,
+    binaries=imagecodecs_binaries + rawpy_binaries + lensfun_binaries + cv2_binaries,
     datas=datas,
-    hiddenimports=hiddenimports,
+    hiddenimports=hiddenimports + cv2_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

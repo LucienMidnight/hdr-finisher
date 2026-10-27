@@ -18,11 +18,60 @@ Local adjustments are an ordered stage between global color grading and post-loc
   chroma floor plus 4% ramp excludes neutrals without brightness dependence.
   No clipping at reference white or lane-dependent hue measurements occur.
   Overlay, combined masks and GPU finishing use the shared compiled mask.
-  CPU fallback evaluates the same leaf in export tiles. No approximate soft-mask
-  stretching is used for this content-dependent mask. Existing document/sidecar,
+  CPU fallback consumes full compiled coverage or exact bounded regions. Hue
+  selections always compile on native pixels before preview reduction. Existing document/sidecar,
   revision/history and Library replay paths serialize it without migration.
   Plain Hue/range/Smoothness/Exclude neutrals sliders reuse Local styling.
   The Grade PRD records editor references, defaults and photographic review.
+
+### Native hue refinement (October 27, 2026)
+
+`hue_mask.py` prepares only selection fields, leaving photo RGB untouched.
+After the existing ACEScg → D65 linear-sRGB → Oklab conversion, normalize a/b
+by absolute L. A 7×7 bilateral filter (source-pixel radius 3, spatial sigma
+1.5, range sigma .10) smooths relative a/b plus .10×log2(AP1 luminance).
+Signed/HDR working values are retained. Angular smoothstep and the existing
+4% Exclude neutrals ramp then operate on that denoised chroma. A 5×5 Gaussian
+(sigma .85) refines coverage, capped by the unblurred colour coverage to avoid
+bleeding across excluded-colour boundaries. This deliberately favours slight
+erosion over halos. Image-space geometry is applied only after native selection.
+
+Protection reduces positive fine luminance contrast over .20–.90 EV against a
+5×5 local mean, and colour disagreement over .025–.10 relative chroma where
+absolute local contrast exceeds .08–.35 EV. Relative chroma below .005–.02
+is independently suppressed to keep neutral boundaries clean. These are fixed
+defaults, not new controls. They suppress bright thin highlights/fringes at any
+exposure, including above reference white; they cannot identify every aberration
+or sensor clipping value. Broad bright colour may still be selected. There is
+no absolute scene-white cutoff. Expression inversion/opacity/combine still
+operate after this leaf; a null hue centre remains empty even when inverted.
+
+Fields pack hue to uint16 (about .0055° steps), square-root-encoded relative
+chroma to a byte (full neutral-control range retained), and protection to a
+byte. One weakly identified immutable source can retain at most 192 MiB,
+separate from the unchanged 96/160 MiB compiled-mask LRU. Closing/replacing its
+source releases that identity. Mutable inputs and small bounded regions are
+recomputed. Preparation uses 128-row strips and cancellation checkpoints;
+control changes use lookup tables and 256-row coverage strips. The complete
+source-pixel reach is five pixels, including mask refinement. Native region
+compilation includes it; reduced region requests use full native coverage.
+`SessionRenderCache` reduces the finished native byte mask onto the source
+proxy's exact geometry grid, retaining r8 transport for GPU and overlay.
+Colour-only mask graphs avoid allocating unused native coordinate grids.
+
+The review generator `tools/hue_mask_smooth_review.py` opens Balanced Rock
+read-only, caches its development under output, and saves matched native and
+five-times bush/flower crops, mask/overlay, independent HDR/SDR results and
+native-selection Fit comparisons. It retains the saved global grade, with an
+inactive invalid saved SDR threshold normalized only in the review copy.
+Global Green HSL hue/luminance diagnostics are included: no same conspicuous
+fault was observed there, so HSL/Show selection and exact neutral bypass stay
+unchanged. Synthetic behavior, native-region/full and proxy tests live in
+`test_hue_mask.py`; `hue-mask-delivery.js` exercises real GPU preview, CPU and
+GPU float finishing, high-precision encoded AVIF perceptual agreement,
+Proof/export identity and exact decoded HDR ceiling. No tolerances changed.
+Measurements, codec limitation, defaults and final validation are recorded in
+the Grade PRD's October 27 hue-refinement note.
 
 Retouch remains planned in full; hue selection is part of the contracts below.
 The [Grade module PRD](../product/modules/grade.md) owns their scope and
@@ -275,9 +324,11 @@ errors, and per-case `.npz` files containing clean, dirty and repaired float
 arrays, mask, source/target patch centres and optional coherent-donor offset.
 `texture-comparison.png` enlarges the affected 32px regions side by side with
 the prior result when supplied. No test project is opened or
-modified. Optional `opencv-python-headless` is only a comparison dependency,
+modified. At the original prototype milestone, `opencv-python-headless` was a comparison dependency,
 not a shipped requirement; the inspected environment used OpenCV 5.0.0
-(wheel 5.0.0.93) and NumPy 2.5.3. Without cv2 the study explicitly skips it.
+(wheel 5.0.0.93) and NumPy 2.5.3. Without cv2 the study explicitly skips it. Since October 27, hue refinement
+requires the pinned OpenCV runtime; both packaging specifications retain its
+full bundled licence/third-party notices.
 
 For the October 22 real-background study, append these arguments (one command):
 

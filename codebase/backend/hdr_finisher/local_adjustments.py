@@ -102,7 +102,8 @@ def _mask_needs_full_frame_evaluation(expression: MaskExpression) -> bool:
         return bool(
             expression.leaf
             and (
-                (expression.leaf.type == "brush" and expression.leaf.mask_shift_edge != 0.0)
+                (expression.leaf.type == "hue_range")
+                or (expression.leaf.type == "brush" and expression.leaf.mask_shift_edge != 0.0)
                 or (expression.leaf.type in {"brush", "luminance_range"} and expression.leaf.mask_feather > 0.0)
             )
         )
@@ -117,7 +118,16 @@ def compile_preview_mask(
     """Compile one preview mask to an r8-equivalent array for cache reuse."""
     mask_checkpoint()
     height, width = fixed_source.shape[:2]
-    source_x, source_y = source_coordinate_grid(width, height, 0, 0, width, height, geometry)
+    def colour_only(node):
+        if node.operator == "leaf":
+            return node.leaf is None or node.leaf.type == "hue_range"
+        return all(colour_only(child) for child in node.children)
+    if has_hue_mask(expression) and colour_only(expression):
+        # These leaves read colour, never coordinates. Avoid two native-size
+        # coordinate arrays on every hue/range gesture.
+        source_x = source_y = np.broadcast_to(np.float32(0), (height, width))
+    else:
+        source_x, source_y = source_coordinate_grid(width, height, 0, 0, width, height, geometry)
     mask = evaluate_mask(expression, fixed_source, source_x, source_y, width / max(height, 1))
     return np.rint(np.clip(mask, 0.0, 1.0) * 255.0).astype(np.uint8)
 
@@ -183,6 +193,8 @@ def compile_geometry_fixed_mask(
     source_mask = compile_preview_mask(source, mask_expression, GeometryAdjustments())
     mask_checkpoint()
     fixed = apply_geometry(source_mask[..., None], geometry)[..., 0]
+    if fixed.dtype == np.uint8:
+        return np.ascontiguousarray(fixed)
     return np.rint(np.clip(fixed, 0.0, 255.0)).astype(np.uint8)
 
 
@@ -213,6 +225,8 @@ def mask_region_margin(expression: MaskExpression, long_edge: int) -> int | None
         return 0
     if leaf.type == "brush":
         return None if leaf.mask_feather > 0.0 or leaf.mask_shift_edge != 0.0 else 0
+    if leaf.type == "hue_range":
+        return HUE_MASK_MARGIN
     if leaf.type == "luminance_range":
         if leaf.mask_feather <= 0.0:
             return 0
@@ -308,6 +322,9 @@ def evaluate_mask(
     pixel_aspect: float = 1.0,
 ) -> np.ndarray:
     mask_checkpoint()
+    if (expression.operator == "leaf" and expression.leaf is not None
+            and expression.leaf.type == "hue_range" and expression.leaf.hue_center is None):
+        return np.zeros(fixed_source_tile.shape[:2], dtype=np.float32)
     if not expression.enabled:
         if expression.operator != "leaf" and expression.children:
             return evaluate_mask(
@@ -411,19 +428,18 @@ def source_coordinate_grid(
     return u.astype(np.float32), v.astype(np.float32)
 
 
+# Native-pixel colour filtering plus the final coverage filter's whole reach.
+HUE_MASK_MARGIN = 5
+
+
+def has_hue_mask(expression: MaskExpression) -> bool:
+    return bool(expression.leaf and expression.leaf.type == "hue_range") or any(
+        has_hue_mask(child) for child in expression.children)
+
+
 def hue_range_mask(leaf, image):
-    """Exposure-invariant Oklab hue on the fixed repaired ACEScg source."""
-    from .color import acescg_to_linear_srgb
-    from .hsl import to_lab, _smooth, _delta
-    if leaf.hue_center is None:
-        return np.zeros(image.shape[:2], dtype=np.float32)
-    lab = to_lab(acescg_to_linear_srgb(image[..., :3]))
-    hue = np.degrees(np.arctan2(lab[..., 2], lab[..., 1])) % 360
-    relative = np.hypot(lab[..., 1], lab[..., 2]) / np.maximum(np.abs(lab[..., 0]), 1e-6)
-    angular = 1 - _smooth(leaf.hue_width, leaf.hue_width + leaf.hue_smoothness,
-                          np.abs(_delta(hue, leaf.hue_center)))
-    neutral = _smooth(leaf.saturation_floor, leaf.saturation_floor + .04, relative)
-    return (angular * neutral).astype(np.float32)
+    from .hue_mask import select_hue
+    return select_hue(leaf, image)
 
 
 def sample_hue_range(image, points):

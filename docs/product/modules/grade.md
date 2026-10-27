@@ -217,6 +217,60 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   fast suites: 585 JavaScript checks and 2,424 Python checks passed (3 Python
   skips); their existing unrelated failures remain (3 edit-sync helper failures
   and 6 frontend wording contracts).
+- **Hue mask refinement (October 27):** native-source colour confidence is
+  prepared with a seven-pixel bilateral neighbourhood in relative Oklab chroma
+  and log luminance. Photo luminance/texture is never blurred. The finished
+  coverage receives a conservative five-pixel Gaussian refinement, capped by
+  the colour selection so it cannot spread onto excluded colours. Positive
+  fine luminance detail and inconsistent edge colour reduce influence; this
+  also works above reference white without a hidden HDR ceiling. Existing Hue,
+  range, Smoothness, Exclude neutrals, opacity, invert and combine controls stay;
+  an unsampled hue leaf stays empty even when inverted. No new sliders.
+  Defaults favour smooth objects and protecting bright thin detail; very fine
+  coloured twigs/petals can receive less adjustment. Protection is an image
+  heuristic, not a chromatic-aberration detector or absolute clipping detector;
+  broad bright saturated areas can remain selected.
+  Preview levels reduce a native compiled selection rather than measuring hue
+  again on mips. Overlay/drafts, native regions, CPU fallback and GPU delivery
+  use the same evaluator; bounded regions include the five-source-pixel reach.
+  One immutable source retains four packed bytes/pixel within a separate
+  192 MiB preparation limit (about 96/168 MB at 24/42 MP). The existing spatial
+  mask LRU remains unchanged. Repaired/replaced sources get a new identity.
+  Balanced Rock review: `codebase/output/hue-mask-smooth/index.html`, with the
+  saved global grade, requested 109°/±24°/41°/4%/+1.05 EV, matched bush/flower
+  overlays and results at 100% and 500%, both lanes, native-selection Fit, true
+  HDR AVIF and SDR-view PNG. Steve's source and sidecar were read only. An
+  inactive saved SDR desaturation-start value of 1.0 is clamped to .99 only in
+  the review copy because today's schema rejects it; its amount is zero.
+  Global Green HSL +35° Hue and +1.05 EV Luminance diagnostics showed no similarly
+  conspicuous speckling in these crops, so global/local HSL arithmetic and Show
+  selection remain unchanged; neutral HSL remains exactly identical. This is
+  a narrow photo check, not general HSL photographic acceptance.
+  Synthetic noisy patch: mean selection 1.000, standard deviation <.00001;
+  neutral area and bright fringe both zero. Native region/whole-image and
+  reduced-overlay checks cover zoom independence and mask opacity. Active
+  finished GPU/CPU floats passed existing mean <1 / p99.9 ≤3 limits, as did
+  decoded 12-bit 4:4:4 AVIF gain-map output (HDR mean .119/p99.9 1.968;
+  SDR mean .013/p99.9 .060). GPU and CPU Proof were byte-identical to their
+  respective exports; decoded peak ≤998.89 nits at target 1000.
+  The first 8-bit JPEG synthetic stress comparison exceeded the same HDR
+  percentile limit (4.19), despite close pre-encoding agreement. The old
+  hue-delivery driver explicitly accepted JPEG codec differences; the revised
+  driver instead asserts the unchanged limits on high-precision encoded output.
+  JPEG stress agreement remains a limitation, not a relaxed acceptance limit.
+  The unrelated real-photo ceiling driver stopped at a Proof/export byte
+  mismatch with no locals; both produced files measured 798.09 nits at an
+  800-nit target.
+  End-to-end native mask compilation on 24/42 MP takes 4.15/7.22 seconds
+  initially, then about 258/459 ms per hue-control update with prepared colour
+  cached (three warm updates each). Exposure and opacity reuse the spatial mask.
+  Packed preparation costs four bytes per source pixel (96/168 MB here),
+  bounded to one source and 192 MiB. Steve should judge slider responsiveness;
+  this is an added native-selection cost, not an export speed improvement.
+  Editor research confirmed angular Smoothness and image-guided mask feathering,
+  without assuming vendors' internal denoisers:
+  [Capture One](https://support.captureone.com/hc/en-us/articles/360002601738-Adjusting-a-color-range),
+  [darktable](https://docs.darktable.org/usermanual/3.6/en/darkroom/masking-and-blending/masks/refinement-controls/).
 - **V1 hue-selection mask, built October 27:** Local → Hue creates an unused
   empty selection until a photo click/drag samples it. Repeat sampling replaces
   the colour. Hue centre, angular half-range, Smoothness and Exclude neutrals
@@ -793,3 +847,23 @@ Four unrelated failures remain: library-scenes; library-single-ready;
 `test_rgb_description_precedes_pixels_and_keeps_publication_guards[None]`;
 `test_library_native_source_uses_same_repair_before_reduction` (CaptureCache
 lacks `defer_store`). No broad GPU sweep or installer build was run.
+
+### October 27 native hue refinement checks
+
+Fast suites ran once: JavaScript 637 passed / 2 failed; Python 2,627 passed /
+2 failed / 3 skipped. The four unchanged failures are:
+- `library-scenes` (CPU fallback reports decoder failed).
+- `library-single-ready` (`HDRLibraryScreenPreviews` undefined).
+- `test_rgb_description_precedes_pixels_and_keeps_publication_guards[None]`.
+- `test_library_native_source_uses_same_repair_before_reduction` (`defer_store`).
+
+The seven hue behaviour tests pass (six in the focused run, plus the mixed
+Hue/feathered-Luma test after correcting its fixture's operator spelling).
+They cover native region/geometry agreement, reduction of native coverage,
+neutral/fringe protection, HDR exposure invariance, unsampled inverted masks,
+full Exclude neutrals range, opacity/invert and soft combinations. The focused
+GPU delivery driver passes native preview and CPU fallback agreement plus
+high-precision HDR/SDR export and Proof. The independent real-photo ceiling
+check's unrelated Proof byte mismatch and JPEG stress limitation are recorded
+in the refinement note above. Packaging specifications parse; no installer or
+broad GPU sweep was built/run. Photo and sidecar remained read-only.

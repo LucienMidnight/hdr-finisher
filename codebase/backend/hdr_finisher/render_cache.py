@@ -63,6 +63,20 @@ class StaleRender(RuntimeError):
     """Raised before expensive work when a newer render superseded this one."""
 
 
+def _reduce_native_hue_mask(native, proxy_source, geometry):
+    """Native coverage on the proxy's exact geometry grid, retaining r8 transport."""
+    from PIL import Image
+    target = geometry_output_dimensions(proxy_source.shape[1], proxy_source.shape[0], geometry)
+    if target == (native.shape[1], native.shape[0]):
+        return native
+    edge = max(target)
+    if target == (round(native.shape[1]*edge/max(native.shape)), round(native.shape[0]*edge/max(native.shape))):
+        reduced = downsample_image(native, edge)
+    else:
+        reduced = np.asarray(Image.fromarray(native.astype(np.float32)).resize(target, Image.Resampling.LANCZOS))
+    return np.rint(np.clip(reduced, 0, 255)).astype(np.uint8)
+
+
 def adjustment_signature(adjustments: AdjustmentState) -> str:
     payload = adjustments.model_dump(mode="json")
     shared = payload.get("shared", {})
@@ -763,6 +777,8 @@ class SessionRenderCache:
     _peak_candidates: dict[str, np.ndarray] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        self._hue_source = self.image.view()
+        self._hue_source.setflags(write=False)
         self._build_peak_candidates()
 
     def _build_peak_candidates(self) -> None:
@@ -806,6 +822,8 @@ class SessionRenderCache:
                 if self.sdr_identity is not None:
                     self.mip_store.discard_memory(self.sdr_identity)
             self.image = image
+            self._hue_source = image.view()
+            self._hue_source.setflags(write=False)
             self.sdr_reference_image = sdr_reference_image
             self.source_identity = identity
             self.sdr_identity = sdr_identity
@@ -1107,10 +1125,14 @@ class SessionRenderCache:
         # The compatibility/influence endpoint remains byte-identical to the
         # authoritative evaluator. Interactive GPU clients request spatial_only
         # and keep the reusable base texture resident instead.
+        from .local_adjustments import has_hue_mask
+        if has_hue_mask(local_adjustment.mask):
+            with self._lock:
+                native_source = self._hue_source
+            native = compile_geometry_fixed_mask(native_source, local_adjustment.mask, adjustments.shared.geometry)
+            return _reduce_native_hue_mask(native, source, adjustments.shared.geometry)
         return downsample_image(
-            compile_geometry_fixed_mask(source, local_adjustment.mask, adjustments.shared.geometry),
-            edge,
-        )
+            compile_geometry_fixed_mask(source, local_adjustment.mask, adjustments.shared.geometry), edge)
 
     def compiled_local_mask_region(
         self,
@@ -1130,6 +1152,9 @@ class SessionRenderCache:
         with mask_cache_lock(self._lock):
             with mask_phase("source"):
                 source, _sdr_reference = self._proxies_locked(edge)
+        from .local_adjustments import has_hue_mask
+        if has_hue_mask(local_adjustment.mask) and source.shape[:2] != self.image.shape[:2]:
+            return None
         with mask_phase("compute"):
             return compile_geometry_fixed_mask_region(
                 source, local_adjustment.mask, adjustments.shared.geometry, rect, spatial_only=True,
@@ -1142,8 +1167,14 @@ class SessionRenderCache:
         long_edge: int,
     ) -> np.ndarray:
         """Compile an uncommitted mask with the exact settled-render pipeline."""
+        from .local_adjustments import has_hue_mask
         edge = max(256, int(long_edge))
         source, _sdr_reference = self._proxies(edge)
+        if has_hue_mask(expression):
+            with self._lock:
+                native_source = self._hue_source
+            native = compile_geometry_fixed_mask(native_source, expression, adjustments.shared.geometry)
+            return _reduce_native_hue_mask(native, source, adjustments.shared.geometry)
         return downsample_image(compile_geometry_fixed_mask(source, expression, adjustments.shared.geometry), edge)
 
     def sample_hue(self, adjustments, points, long_edge):
@@ -1606,7 +1637,17 @@ class SessionRenderCache:
                     mask_checkpoint()
                     with mask_shared_work(lambda: self._flight_waiters.get(flight_key, 0) > 0):
                         with mask_phase("compute"):
-                            mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True)
+                            from .local_adjustments import has_hue_mask
+                            if has_hue_mask(local.mask) and source.shape[:2] != self.image.shape[:2]:
+                                # Select at native resolution once, then reduce coverage;
+                                # never re-measure noisy colour on a preview mip.
+                                with self._lock:
+                                    native_source = self.image
+                                native = self._compiled_masks(native_source, adjustments, [local],
+                                    max(native_source.shape[:2]), source_epoch=source_epoch)[local.id]
+                                mask = _reduce_native_hue_mask(native, source, geometry)
+                            else:
+                                mask = compile_geometry_fixed_mask(self._hue_source if has_hue_mask(local.mask) else source, local.mask, geometry, spatial_only=True)
                     # An obsolete mask is never cached. A finished, still-valid
                     # one is, even when its own requester left meanwhile: the
                     # key names the mask, not the request, and the next request

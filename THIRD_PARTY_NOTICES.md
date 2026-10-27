@@ -42,8 +42,11 @@ They preserve contiguous donor detail instead of averaging unrelated texture
 samples. No further third-party source or application dependencies were added.
 
 `tools/retouch_prototype.py` optionally calls OpenCV for comparison only.
-The local comparison used `opencv-python-headless` 5.0.0.93 / OpenCV 5.0.0;
-it is not a runtime requirement or bundled component. OpenCV's top-level
+The comparison originally used optional `opencv-python-headless` 5.0.0.93 /
+OpenCV 5.0.0. Since October 27, native hue-mask colour smoothing also uses its
+bilateral, box and Gaussian filters at runtime. It is now a pinned runtime
+requirement; both PyInstaller specifications collect its native libraries and
+full LICENSE.txt / LICENSE-3RD-PARTY.txt. OpenCV's top-level
 [5.0.0 LICENSE](https://github.com/opencv/opencv/blob/5.0.0/LICENSE) is Apache-2.0;
 the exact [inpaint.cpp](https://github.com/opencv/opencv/blob/5.0.0/modules/photo/src/inpaint.cpp)
 also retains the Intel Open Source Computer Vision Library licence, Copyright
